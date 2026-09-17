@@ -1,0 +1,30 @@
+{% extends "_base.j2" %}
+{% block main %}
+<header class="scenarios-header">
+  <div>
+    <span class="eyebrow">Operate · security planning</span>
+    <h1>Risk work packages</h1>
+    <p class="page-hero"><strong>{{ rows|length }} Milestone-1 planning groups</strong> connect {{ candidate_count }} candidate-risk IDs to {{ evidence_count }} evidence references. {{ available_evidence_count }} referenced paths are available in this deployment.</p>
+  </div>
+  <div class="definition-actions">
+    <a class="cta cta--ghost" href="/learn/risk-packages" target="_blank" rel="noopener">Learn the lifecycle</a>
+    <a class="cta cta--ghost" href="/api/risk-packages/export" download>Download all</a>
+  </div>
+</header>
+<section class="asset-diagnostics"><strong>Terminology boundary</strong><p>These are planning and grouping records retained under the legacy <code>dwarf/evidence-packages/</code> path. They are not run evidence bundles, testcase buckets, findings, or accepted risks.</p></section>
+<hr class="hairline">
+<div class="filter-bar">
+  <label for="risk-package-search" class="eyebrow">Search</label>
+  <input id="risk-package-search" type="search" aria-label="Search risk work packages" placeholder="Package, candidate risk, status, blocker, scenario, or profile">
+  <p class="filter-count" aria-live="polite"><span data-risk-package-count>{{ rows|length }}</span> work packages</p>
+</div>
+{% if rows %}<div class="learn-tile-grid">
+  {% for row in rows %}<article class="learn-tile" data-risk-package-row data-search="{{ row.id }} {{ row.label }} {{ row.status_text }} {{ row.candidate_ids|join(' ') }} {{ row.blockers|join(' ') }} {{ row.scenario_ids|join(' ') }} {{ row.profile_id or '' }}">
+    <span class="learn-tile__eyebrow">{{ row.id }} · {{ row.run_state }} · {{ row.status }}</span>
+    <h2 class="learn-tile__title"><a href="/operate/risk-packages/{{ row.id }}">{{ row.label }}</a></h2>
+    <p class="learn-tile__sub">{{ row.status_text }}</p>
+    <p class="asset-pill-row"><span class="pill">{{ row.candidate_ids|length }} candidate risks</span><span class="pill">{{ row.evidence|length }} evidence refs</span><span class="pill">{{ row.blockers|length }} blockers</span></p>
+  </article>{% endfor %}
+</div>{% else %}<p class="empty-section-statement">No risk work-package sources are available from the explicit package root.</p>{% endif %}
+<script>(()=>{const input=document.getElementById('risk-package-search');const rows=[...document.querySelectorAll('[data-risk-package-row]')];const count=document.querySelector('[data-risk-package-count]');if(!input||!count)return;input.addEventListener('input',()=>{const needle=input.value.trim().toLowerCase();let visible=0;for(const row of rows){const show=!needle||row.dataset.search.toLowerCase().includes(needle);row.hidden=!show;if(show)visible+=1;}count.textContent=String(visible);});})();</script>
+{% endblock %}

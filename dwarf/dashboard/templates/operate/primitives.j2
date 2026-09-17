@@ -1,0 +1,144 @@
+{% extends "_base.j2" %}
+{% block main %}
+<header class="scenarios-header">
+  <div>
+    <span class="eyebrow">Operate · reusable assets</span>
+    <h1>Primitives</h1>
+    <p class="page-hero">The live scenario vocabulary reconciled from the built-in registry and declarative plugin registries. Inventory checks validate registration, schemas, and trusted built-in executor classes; they do not claim a primitive has run successfully.</p>
+  </div>
+  <div class="definition-actions" aria-label="Primitive catalog actions">
+    <a class="cta cta--ghost" href="/learn/primitives" target="_blank" rel="noopener">Learn the contract</a>
+    <a class="cta cta--ghost" href="/operate/primitives/new">Scaffold primitive</a>
+    <a class="cta cta--ghost" href="/api/assets/primitives/export" download>Download all</a>
+  </div>
+</header>
+
+<hr class="hairline">
+
+<section class="status-summary" aria-labelledby="primitive-summary-heading">
+  <h2 id="primitive-summary-heading" class="visually-hidden">Primitive summary</h2>
+  <div class="status-tile-grid">
+    <article class="status-tile">
+      <span class="eyebrow">Registered</span>
+      <span class="status-tile__metric">{{ rows|length }}</span>
+      <p class="status-tile__sub">built-in and statically declared plugin primitives</p>
+    </article>
+    {% for family, count in family_counts.items() %}
+    <article class="status-tile">
+      <span class="eyebrow">{{ family }}</span>
+      <span class="status-tile__metric">{{ count }}</span>
+      <p class="status-tile__sub">registered {{ family }} primitives</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+{% if errors %}
+<section class="callout callout--warning" aria-labelledby="primitive-diagnostics-heading">
+  <h2 id="primitive-diagnostics-heading">Catalog diagnostics</h2>
+  <ul>{% for error in errors %}<li><code>{{ error }}</code></li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<section aria-labelledby="primitive-catalog-heading">
+  <span class="eyebrow">Catalog</span>
+  <h2 id="primitive-catalog-heading">Primitive catalog</h2>
+
+  <form class="primitive-filter-bar" data-primitive-filters>
+    <div>
+      <label for="primitive-search">Search</label>
+      <input id="primitive-search" type="search" aria-label="Search primitives" placeholder="Name, class, family, target, or runtime">
+    </div>
+    <div>
+      <label for="primitive-family">Family</label>
+      <select id="primitive-family" name="family">
+        <option value="">All families</option>
+        {% for family in family_counts %}<option value="{{ family }}">{{ family }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="primitive-runtime">Runtime</label>
+      <select id="primitive-runtime" name="runtime">
+        <option value="">All runtimes</option>
+        {% for runtime in runtimes %}<option value="{{ runtime }}">{{ runtime }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="primitive-support">Target</label>
+      <select id="primitive-support" name="support">
+        <option value="">All targets</option>
+        {% for support in supports %}<option value="{{ support }}">{{ support }}</option>{% endfor %}
+      </select>
+    </div>
+    <p class="filter-count" aria-live="polite"><span data-primitive-count>{{ rows|length }}</span> items</p>
+  </form>
+
+  {% if rows %}
+  <div class="responsive-table">
+    <table class="asset-catalog-table primitive-catalog-table">
+      <thead><tr><th scope="col">Primitive</th><th scope="col">Contract</th><th scope="col">Targets / runtimes</th><th scope="col">Usage</th><th scope="col">Status</th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr data-primitive-row data-family="{{ row.family }}" data-runtimes="{{ row.runtimes|join(' ') }}" data-supports="{{ row.supports|join(' ') }}" data-search="{{ row.id }} {{ row.class_name }} {{ row.family }} {{ row.module }} {{ row.runtimes|join(' ') }} {{ row.supports|join(' ') }} {{ row.source_type }}">
+          <td data-label="Primitive"><a href="/operate/primitives/{{ row.id }}"><strong><code>{{ row.id }}</code></strong></a><br><span class="muted">{{ row.source_type }}{% if row.plugin_id %} · {{ row.plugin_id }}{% endif %}</span></td>
+          <td data-label="Contract"><span class="pill">{{ row.family }}</span><br><code>{{ row.class_name }}</code><br><span class="muted">v{{ row.version }}</span></td>
+          <td data-label="Targets / runtimes"><span class="eyebrow">Targets</span> {{ row.supports|join(', ') or 'none declared' }}<br><span class="eyebrow">Runtimes</span> {{ row.runtimes|join(', ') or 'none declared' }}</td>
+          <td data-label="Usage"><strong>{{ row.referencing_scenario_count }}</strong> scenario{{ '' if row.referencing_scenario_count == 1 else 's' }}</td>
+          <td data-label="Status"><span class="pill">{{ row.status }}</span><br><span class="muted">{{ row.schema_status }} · {{ row.executor_status }}</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-section-statement">No primitives are available from the configured registry or plugin roots.</p>
+  {% endif %}
+</section>
+
+<style>
+.primitive-filter-bar{display:grid;grid-template-columns:minmax(16rem,2fr) repeat(3,minmax(10rem,1fr));gap:12px;align-items:end;margin:18px 0}
+.primitive-filter-bar label{display:block;margin:0 0 5px;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted)}
+.primitive-filter-bar input,.primitive-filter-bar select{box-sizing:border-box;width:100%;min-height:44px;padding:9px 11px;border:1px solid var(--rule);border-radius:8px;background:var(--obsidian-1);color:var(--ink);font:inherit}
+.primitive-filter-bar input:focus,.primitive-filter-bar select:focus{outline:2px solid color-mix(in srgb,var(--accent) 65%,transparent);outline-offset:2px}
+.primitive-filter-bar .filter-count{grid-column:1/-1;margin:0;color:var(--ink-muted)}
+.primitive-catalog-table code{overflow-wrap:anywhere}
+@media(max-width:760px){
+  .primitive-filter-bar{grid-template-columns:1fr}.primitive-filter-bar .filter-count{grid-column:auto}
+  .responsive-table>.primitive-catalog-table{display:block;width:100%;min-width:0}
+  .primitive-catalog-table thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  .primitive-catalog-table tbody{display:grid;gap:12px;width:100%}
+  .primitive-catalog-table tr{display:block;padding:14px;border:1px solid var(--rule);border-radius:10px;background:var(--obsidian-1)}
+  .primitive-catalog-table td{display:grid;grid-template-columns:minmax(7.5rem,36%) minmax(0,1fr);gap:10px;padding:7px 0;border:0;overflow-wrap:anywhere}
+  .primitive-catalog-table td::before{content:attr(data-label);color:var(--ink-muted);font-size:.68rem;line-height:1.4;text-transform:uppercase;letter-spacing:.06em}
+  .primitive-catalog-table td:first-child{padding-top:0}.primitive-catalog-table td:last-child{padding-bottom:0}
+}
+</style>
+
+<script>
+(() => {
+  const form = document.querySelector('[data-primitive-filters]');
+  if (!form) return;
+  const search = form.querySelector('#primitive-search');
+  const family = form.querySelector('#primitive-family');
+  const runtime = form.querySelector('#primitive-runtime');
+  const support = form.querySelector('#primitive-support');
+  const count = form.querySelector('[data-primitive-count]');
+  const rows = [...document.querySelectorAll('[data-primitive-row]')];
+  const apply = () => {
+    const needle = search.value.trim().toLowerCase();
+    let visible = 0;
+    for (const row of rows) {
+      const show = (!needle || row.dataset.search.toLowerCase().includes(needle))
+        && (!family.value || row.dataset.family === family.value)
+        && (!runtime.value || row.dataset.runtimes.split(' ').includes(runtime.value))
+        && (!support.value || row.dataset.supports.split(' ').includes(support.value));
+      row.hidden = !show;
+      if (show) visible += 1;
+    }
+    count.textContent = String(visible);
+  };
+  form.addEventListener('input', apply);
+  form.addEventListener('submit', event => event.preventDefault());
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,19 @@
+{
+  "id": "cardano-node-cbor-decode-plutus-data",
+  "binary": "dwarf/targets/cardano-node/bin/cardano-node-cbor-decode-plutus-data",
+  "input_format": "stdin_bytes",
+  "implementation": "cardano-node",
+  "language": "haskell",
+  "upstream_commit": "CHaP 2026-04-01T21:20:01Z; cardano-ledger-conway-1.20.0.0; cardano-ledger-core-1.18.0.0",
+  "decoder_type": "CBOR codec",
+  "expected_outcomes": {
+    "ok": "exit 0 with stdout 'OK'",
+    "clean_error": "exit 1 with stdout starting 'ERR '",
+    "crash": "any other exit code, signal, hang, or stdout"
+  },
+  "invariants": [
+    "typed Plutus data deserialization",
+    "no panic on bounded input",
+    "complete input consumption"
+  ]
+}

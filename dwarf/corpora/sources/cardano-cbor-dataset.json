@@ -1,0 +1,39 @@
+{
+  "id": "cardano-cbor-dataset",
+  "repository": "https://github.com/r2rationality/cardano-cbor-dataset.git",
+  "revision": "a7561cd063550c2218898571520f14c3674efe91",
+  "revision_date": "2026-09-02",
+  "dataset_roots": [
+    "dataset/conway-123-100",
+    "dataset/dijkstra-123-100"
+  ],
+  "eras": {
+    "conway": {
+      "rules": 25,
+      "checked_in_samples": 9200
+    },
+    "dijkstra": {
+      "rules": 31,
+      "checked_in_samples": 11900
+    }
+  },
+  "categories": [
+    "valid",
+    "zap-1",
+    "zap-2",
+    "zap-3"
+  ],
+  "verification_modes": [
+    "deserialize",
+    "reserialize",
+    "expected"
+  ],
+  "initial_dwarf_surface": {
+    "era": "conway",
+    "rule": "plutus_data",
+    "reference_target": "cardano-node-cbor-decode-plutus-data",
+    "candidate_target": "amaru-cbor-decode-plutus-data",
+    "claim_scope": "typed_library_decoder_only"
+  },
+  "storage": "external-pinned-source-not-vendored"
+}

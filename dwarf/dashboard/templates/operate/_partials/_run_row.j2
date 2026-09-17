@@ -1,0 +1,38 @@
+<tr data-status="{{ row.exit_status or '' }}">
+  <td>
+    {% if row.is_local %}
+    <a href="{{ row.run_url }}"><code>{{ row.run_id }}</code></a>
+    {% else %}
+    <code>{{ row.run_id }}</code> <small>on {{ row.source }}</small>
+    {% endif %}
+  </td>
+  <td>{{ row.ended_at or '—' }}</td>
+  <td>{% if row.scenario_id %}<code>{{ row.scenario_id }}</code>{% else %}—{% endif %}</td>
+  <td>
+    {% if row.execution.kind == 'profile' and row.profile_url %}
+    {{ row.execution.label }} · <a href="{{ row.profile_url }}"><code>{{ row.execution.value }}</code></a>
+    {% elif row.execution.kind == 'profile' and row.execution.value %}
+    {{ row.execution.label }} · <code title="Profile is not in the current catalog">{{ row.execution.value }}</code>
+    {% else %}
+    {{ row.execution.label }}{% if row.execution.value %} · <code>{{ row.execution.value }}</code>{% endif %}
+    {% endif %}
+  </td>
+  <td><span{% if row.workload_title %} title="{{ row.workload_title }}"{% endif %}>{{ row.workload_label }}</span></td>
+  <td>
+    {% if row.evidence_tags %}
+    <span class="asset-pill-row">{% for tag in row.evidence_tags %}<span class="pill">{{ tag }}</span>{% endfor %}</span>
+    {% else %}—{% endif %}
+  </td>
+  <td>{{ row.runtime or '—' }}</td>
+  <td>
+    {% if row.exit_status %}
+    <span class="result-pill result-pill--{{ row.exit_status }}">{{ row.exit_status }}</span>
+    {% else %}—{% endif %}
+    {% if row.thinness_signals %}
+    {% for s in row.thinness_signals %}
+    <span class="thinness-pill" title="{{ s.reason }}">thin · {{ s.rule }}</span>
+    {% endfor %}
+    {% endif %}
+  </td>
+  <td>{{ row.target_implementation or '—' }}</td>
+</tr>

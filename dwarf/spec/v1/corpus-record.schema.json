@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/corpus-record.schema.json",
+  "title": "DWARF fuzz corpus catalog record",
+  "type": "object",
+  "required": [
+    "id",
+    "label",
+    "root_kind",
+    "writable",
+    "status",
+    "input_count",
+    "size_bytes",
+    "duplicate_input_count",
+    "metadata_status",
+    "source_path",
+    "target_ids",
+    "grammar_ids",
+    "scenario_ids"
+  ],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "label": {"type": "string", "minLength": 1},
+    "root_kind": {"type": "string", "enum": ["repository", "runtime"]},
+    "writable": {"type": "boolean"},
+    "status": {"type": "string", "enum": ["ready", "empty", "disabled", "retired", "diagnostic"]},
+    "input_count": {"type": "integer", "minimum": 0},
+    "size_bytes": {"type": "integer", "minimum": 0},
+    "duplicate_input_count": {"type": "integer", "minimum": 0},
+    "metadata_status": {"type": "string", "enum": ["absent", "valid", "malformed"]},
+    "source_path": {"type": "string", "minLength": 1},
+    "target_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "grammar_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "scenario_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+  },
+  "additionalProperties": false
+}

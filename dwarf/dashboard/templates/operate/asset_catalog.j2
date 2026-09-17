@@ -1,0 +1,66 @@
+{% extends "_base.j2" %}
+{% block main %}
+<header class="scenarios-header" data-asset-catalog="{{ catalog.slug }}">
+  <div>
+    <span class="eyebrow">Operate · reusable assets</span>
+    <h1>{{ catalog.label }}</h1>
+    <p>{{ catalog.description }}</p>
+  </div>
+  <div class="definition-actions" aria-label="Catalog actions">
+    <a class="cta cta--ghost" href="{{ export_url }}" download>Download all</a>
+  </div>
+</header>
+
+<hr class="hairline">
+
+{% if empty %}
+<p class="empty-section-statement">No {{ catalog.label|lower }} are available from the configured source.</p>
+{% else %}
+<div class="filter-bar">
+  <label for="asset-search-{{ catalog.slug }}" class="eyebrow">Search</label>
+  <input id="asset-search-{{ catalog.slug }}" type="search" aria-label="Search {{ catalog.label|lower }}" placeholder="ID, label, status, source, or capability">
+  <p class="filter-count" aria-live="polite"><span data-asset-count>{{ rows|length }}</span> items</p>
+</div>
+
+<div class="responsive-table">
+  <table class="asset-catalog-table">
+    <thead>
+      <tr>
+        <th scope="col">Asset</th>
+        <th scope="col">Status</th>
+        <th scope="col">Capabilities</th>
+        <th scope="col">Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr data-asset-row data-search="{{ row.id }} {{ row.label }} {{ row.status }} {{ row.source_path }}{% for facet in row.facets %} {{ facet['values']|join(' ') }}{% endfor %}">
+        <td><a href="{{ row.url }}"><strong>{{ row.label }}</strong></a><br><code>{{ row.id }}</code><br><span class="muted">{{ row.summary }}</span></td>
+        <td><span class="pill">{{ row.status }}</span></td>
+        <td>{% for facet in row.facets %}<span class="eyebrow">{{ facet.label }}</span> {{ facet['values']|join(', ') }}{% if not loop.last %}<br>{% endif %}{% else %}<span class="muted">None declared</span>{% endfor %}</td>
+        <td><code>{{ row.source_path }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+(() => {
+  const input = document.getElementById("asset-search-{{ catalog.slug }}");
+  const rows = [...document.querySelectorAll("[data-asset-row]")];
+  const count = document.querySelector("[data-asset-count]");
+  input.addEventListener("input", () => {
+    const needle = input.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach((row) => {
+      const show = !needle || row.dataset.search.toLowerCase().includes(needle);
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    count.textContent = String(visible);
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/risk-work-package.schema.json",
+  "title": "DWARF risk work package",
+  "description": "A Milestone-1 planning and grouping record that connects candidate risks to evidence and remaining work; it is not a forensic runtime bundle.",
+  "type": "object",
+  "required": [
+    "id",
+    "label",
+    "runnable",
+    "status",
+    "candidate_ids",
+    "evidence_paths",
+    "blockers",
+    "read_only_actions"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "description": "Stable work-package identifier and URL segment."
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable grouping of related security surfaces."
+    },
+    "runnable": {
+      "type": "boolean",
+      "description": "Whether the legacy CLI has an implemented read-only evidence action for this package."
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Current planning/evidence status; this does not promote or accept a risk."
+    },
+    "candidate_ids": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+      "uniqueItems": true,
+      "description": "Exact candidate-risk identifiers grouped by the package."
+    },
+    "evidence_paths": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true,
+      "description": "Repository-relative evidence references; availability is checked separately."
+    },
+    "blockers": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Evidence, instrumentation, or policy gaps that prevent closure or promotion."
+    },
+    "read_only_actions": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Completed observations or explicitly allowed read-only follow-up actions."
+    },
+    "runtime_profile": {
+      "type": "string",
+      "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "description": "Optional exact profile identifier used by the legacy evidence action."
+    },
+    "runtime_root": {
+      "type": "string",
+      "description": "Optional remote runtime root used by the legacy evidence action."
+    }
+  },
+  "additionalProperties": false
+}

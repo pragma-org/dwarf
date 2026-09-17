@@ -1,0 +1,10 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Learn · profile authoring</span><h1>Profile-template reference</h1>
+<p class="lede">A profile template is a read-only, shipped scaffold that seeds a new deployment profile. A template is not a deployed profile: the builder substitutes a new identity and portable runtime values, then validates and saves a separate profile definition.</p>
+<div class="definition-actions"><a class="cta" href="/operate/profile-templates">Browse {{ rows|length }} templates</a><a class="cta cta--ghost" href="/operate/profiles/new">Create a profile</a></div>
+<hr class="hairline">
+<section><span class="eyebrow">Lifecycle</span><h2>From scaffold to runtime</h2><ol><li>Choose a shipped archetype and inspect its node mix, network, topology, and defaults.</li><li>Select <strong>Use template</strong> to open the existing structured/raw profile builder with that source preselected.</li><li>Set a unique profile id and review every environment-specific field.</li><li>Validate and save the new profile; the shipped template remains unchanged.</li><li>Deploy and verify the resulting real-node topology through the normal DWARF workflow.</li></ol></section>
+<section><span class="eyebrow">Syntax</span><h2>Substitutions and schema reuse</h2><p>Templates are JSON-compatible YAML and may use <code>{{ '{{PROFILE_ID}}' }}</code>, <code>{{ '{{PROFILE_LABEL}}' }}</code>, <code>{{ '{{REMOTE_RUNTIME_ROOT}}' }}</code>, and <code>{{ '{{COMPOSE_PROJECT}}' }}</code>. After substitution, the result uses the same profile schema and validation path as manually authored profiles; there is no second runtime format.</p></section>
+<section><span class="eyebrow">Safety boundary</span><h2>What a template does not prove</h2><p>Template validity proves only that the rendered definition satisfies the profile contract. It does not prove that remote paths exist, ports are free, images or binaries are present, credentials work, nodes bootstrap, or the topology converges. Those facts require deployment and runtime evidence.</p></section>
+{% endblock %}

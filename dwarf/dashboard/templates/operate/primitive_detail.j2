@@ -1,0 +1,74 @@
+{% extends "_base.j2" %}
+{% block main %}
+<nav class="definition-breadcrumb" aria-label="Breadcrumb"><a href="/operate/primitives">Primitives</a><span aria-hidden="true">/</span><span>{{ primitive.id }}</span></nav>
+
+<header class="definition-header">
+  <div>
+    <span class="eyebrow">{{ primitive.family }} primitive · {{ primitive.source_type }}</span>
+    <h1>{{ primitive.id }}</h1>
+    <p class="page-hero">{{ primitive.summary }}</p>
+  </div>
+  <div class="definition-actions" aria-label="Primitive actions">
+    <a class="cta cta--ghost" href="/learn/primitives" target="_blank" rel="noopener">Learn the contract</a>
+    <a class="cta cta--ghost" href="/api/assets/primitives/{{ primitive.id }}/export" download>Export with manifest</a>
+    <a class="cta cta--ghost" href="/api/assets/primitives/{{ primitive.id }}/download" download>Download record</a>
+  </div>
+</header>
+
+<dl class="definition-summary">
+  <div><dt>Family</dt><dd><code>{{ primitive.family }}</code></dd></div>
+  <div><dt>Version</dt><dd><code>{{ primitive.version }}</code></dd></div>
+  <div><dt>Targets</dt><dd><code>{{ primitive.supports|join(', ') or 'none declared' }}</code></dd></div>
+  <div><dt>Runtimes</dt><dd><code>{{ primitive.runtimes|join(', ') or 'none declared' }}</code></dd></div>
+  <div><dt>Schema</dt><dd><code>{{ primitive.schema_status }}</code></dd></div>
+  <div><dt>Executor</dt><dd><code>{{ primitive.executor_status }}</code></dd></div>
+  <div><dt>Source</dt><dd><code>{{ primitive.source_type }}{% if primitive.plugin_id %} · {{ primitive.plugin_id }}{% endif %}</code></dd></div>
+</dl>
+
+<section class="callout" aria-labelledby="primitive-verification-heading">
+  <span class="eyebrow">Verification boundary</span>
+  <h2 id="primitive-verification-heading">Catalog validity is not runtime-execution proof</h2>
+  <p>This page proves that the registry record is structurally loadable, its parameter schema is readable, and—for trusted built-ins—the named executor class exists and implements the primitive base contract. Only retained scenario evidence can prove behavior against a real target.</p>
+</section>
+
+{% if primitive.errors %}
+<section class="callout callout--warning" aria-labelledby="primitive-errors-heading"><h2 id="primitive-errors-heading">Diagnostics</h2><ul>{% for error in primitive.errors %}<li><code>{{ error }}</code></li>{% endfor %}</ul></section>
+{% endif %}
+
+<section aria-labelledby="primitive-implementation-heading">
+  <span class="eyebrow">Implementation contract</span>
+  <h2 id="primitive-implementation-heading">Executor and provenance</h2>
+  <dl class="definition-summary">
+    <div><dt>Module</dt><dd><code>{{ primitive.module }}</code></dd></div>
+    <div><dt>Class</dt><dd><code>{{ primitive.class_name }}</code></dd></div>
+    <div><dt>Registry source</dt><dd><code>{{ primitive.source_path }}</code></dd></div>
+  </dl>
+</section>
+
+<section aria-labelledby="primitive-scenarios-heading">
+  <span class="eyebrow">Reverse references</span>
+  <h2 id="primitive-scenarios-heading">Referencing scenarios</h2>
+  {% if primitive.referencing_scenarios %}
+  <ul class="primitive-reference-list">
+    {% for scenario_id in primitive.referencing_scenarios %}<li><a href="/operate/scenarios/{{ scenario_id }}"><code>{{ scenario_id }}</code></a></li>{% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-section-statement">No configured scenario references this primitive.</p>
+  {% endif %}
+</section>
+
+<section class="definition-source" aria-labelledby="primitive-schema-heading">
+  <div class="definition-source__head"><div><span class="eyebrow">Validation</span><h2 id="primitive-schema-heading">Parameter schema</h2></div><code>{{ primitive.schema_path or 'not declared' }}</code></div>
+  {% if primitive.schema_source %}<pre><code>{{ primitive.schema_source }}</code></pre>{% else %}<p class="empty-section-statement">No readable parameter schema is available.</p>{% endif %}
+</section>
+
+<section class="definition-source" aria-labelledby="primitive-registry-heading">
+  <div class="definition-source__head"><div><span class="eyebrow">Registration</span><h2 id="primitive-registry-heading">Exact registry record</h2></div><code>{{ primitive.source_path }}</code></div>
+  <pre><code>{{ primitive.registry_source }}</code></pre>
+</section>
+
+<style>
+.primitive-reference-list{columns:2;gap:24px;padding-left:20px}.primitive-reference-list li{break-inside:avoid;margin:0 0 7px}.primitive-reference-list code{overflow-wrap:anywhere}
+@media(max-width:760px){.primitive-reference-list{columns:1}}
+</style>
+{% endblock %}

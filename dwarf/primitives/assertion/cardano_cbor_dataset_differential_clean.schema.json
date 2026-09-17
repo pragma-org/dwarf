@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cardano_cbor_dataset_differential_clean params",
+  "type": "object",
+  "properties": {
+    "min_completed": {"type": "integer", "minimum": 1},
+    "min_inputs_processed": {"type": "integer", "minimum": 4},
+    "min_samples_per_category": {"type": "integer", "minimum": 1}
+  },
+  "additionalProperties": false
+}

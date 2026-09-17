@@ -1,0 +1,42 @@
+{% extends "_base.j2" %}
+{% block main %}
+<nav class="definition-breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ catalog_url }}">{{ catalog|capitalize }}</a>
+  <span aria-hidden="true">/</span>
+  <span>{{ definition_id }}</span>
+</nav>
+
+<header class="definition-header">
+  <div>
+    <span class="eyebrow">{{ catalog_label }}</span>
+    <h1>{{ title }}</h1>
+    <p class="definition-header__id"><code>{{ definition_id }}</code></p>
+  </div>
+  <div class="definition-actions" aria-label="Definition actions">
+    <a class="cta cta--primary" href="{{ edit_url }}">Edit</a>
+    <a class="cta cta--ghost" href="{{ download_url }}" download>Download source</a>
+  </div>
+</header>
+
+{% if summary_fields %}
+<dl class="definition-summary">
+  {% for field in summary_fields %}
+  <div>
+    <dt>{{ field.key }}</dt>
+    <dd><code>{{ field.value }}</code></dd>
+  </div>
+  {% endfor %}
+</dl>
+{% endif %}
+
+<section class="definition-source" aria-labelledby="definition-source-heading">
+  <div class="definition-source__head">
+    <div>
+      <span class="eyebrow">Source</span>
+      <h2 id="definition-source-heading">Complete definition</h2>
+    </div>
+    <code>{{ source_path }}</code>
+  </div>
+  <pre><code>{{ raw_source }}</code></pre>
+</section>
+{% endblock %}

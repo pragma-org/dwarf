@@ -1,0 +1,51 @@
+{% extends "_base.j2" %}
+{% block main %}
+<header class="scenarios-header">
+  <div><span class="eyebrow">Operate · profile authoring</span><h1>Profile templates</h1><p class="page-hero"><strong>{{ rows|length }} templates</strong> ship with this DWARF revision. Templates are immutable source scaffolds; use one to seed the existing validated profile builder.</p></div>
+  <div class="definition-actions" aria-label="Profile-template catalog actions">
+    <a class="cta cta--ghost" href="/learn/profile-templates" target="_blank" rel="noopener">Learn the contract</a>
+    <a class="cta cta--ghost" href="/api/assets/profile-templates/export" download>Download all</a>
+  </div>
+</header>
+
+<hr class="hairline">
+
+<div class="filter-bar">
+  <label for="profile-template-search" class="eyebrow">Search</label>
+  <input id="profile-template-search" type="search" aria-label="Search profile templates" placeholder="Name, implementation, topology, or network">
+  <p class="filter-count" aria-live="polite"><span data-template-count>{{ rows|length }}</span> templates</p>
+</div>
+
+{% if rows %}
+<div class="learn-tile-grid profile-template-grid">
+  {% for row in rows %}
+  <article class="learn-tile" data-template-row data-search="{{ row.id }} {{ row.node_type }} {{ row.topology_pattern }} {{ row.network_magic }} {{ row.assumptions|join(' ') }}">
+    <span class="learn-tile__eyebrow">{{ row.node_type }} · {{ row.node_total }} node{{ '' if row.node_total == 1 else 's' }}</span>
+    <h2 class="learn-tile__title"><a href="/operate/profile-templates/{{ row.id }}"><code>{{ row.id }}</code></a></h2>
+    <p class="learn-tile__sub">{{ row.summary }}</p>
+    <p><span class="pill">{{ row.status }}</span> <span class="pill">peer sharing {{ 'on' if row.peer_sharing else 'off' }}</span></p>
+    <div class="definition-actions"><a class="cta cta--ghost" href="{{ row.use_url }}">Use template</a></div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}<p class="empty-section-statement">No shipped profile templates are available.</p>{% endif %}
+
+<script>
+(() => {
+  const input = document.getElementById('profile-template-search');
+  const rows = [...document.querySelectorAll('[data-template-row]')];
+  const count = document.querySelector('[data-template-count]');
+  if (!input || !count) return;
+  input.addEventListener('input', () => {
+    const needle = input.value.trim().toLowerCase();
+    let visible = 0;
+    for (const row of rows) {
+      const show = !needle || row.dataset.search.toLowerCase().includes(needle);
+      row.hidden = !show;
+      if (show) visible += 1;
+    }
+    count.textContent = String(visible);
+  });
+})();
+</script>
+{% endblock %}

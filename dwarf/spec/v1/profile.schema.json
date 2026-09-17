@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/profile.schema.json",
+  "title": "DWARF deployment profile",
+  "type": "object",
+  "required": ["id", "label", "network_magic", "peer_sharing"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$", "description": "Immutable catalog identifier."},
+    "label": {"type": "string", "minLength": 1, "description": "Human-readable profile name shown in DWARF."},
+    "node_type": {"type": "string", "enum": ["cardano-node", "amaru", "mixed"], "description": "Implementation mix provisioned by this profile.", "x-ui-option-descriptions": {"cardano-node": "Provision only Haskell cardano-node processes.", "amaru": "Provision only Rust Amaru processes.", "mixed": "Provision interoperating cardano-node and Amaru processes."}},
+    "node_count": {"type": "integer", "minimum": 0, "description": "Legacy Haskell node count."},
+    "amaru_node_count": {"type": "integer", "minimum": 0, "description": "Legacy Amaru node count."},
+    "haskell_count": {"type": "integer", "minimum": 0, "description": "Generated-profile Haskell node count."},
+    "amaru_count": {"type": "integer", "minimum": 0, "description": "Generated-profile Amaru node count."},
+    "network_magic": {"type": "integer", "minimum": 0, "description": "Cardano network discriminator shared by every node in the profile."},
+    "peer_sharing": {"type": "boolean", "description": "Whether nodes advertise and consume peer-sharing information."},
+    "remote_runtime_root": {"type": "string", "description": "Absolute deployment directory used for this profile on the runtime host."},
+    "compose_project": {"type": "string", "description": "Docker Compose project name used to isolate this profile's containers and network."},
+    "topology_pattern": {"type": "string", "enum": ["local-mesh"], "description": "Topology generator used to connect the provisioned nodes.", "x-ui-option-descriptions": {"local-mesh": "Connect locally provisioned nodes as a peer mesh."}},
+    "shared_genesis": {"type": "boolean", "description": "Whether all implementations start from the same generated genesis and network parameters."},
+    "amaru_network": {"type": "string", "enum": ["preview", "preprod", "mainnet"], "description": "Named public-network configuration supplied to Amaru.", "x-ui-option-descriptions": {"preview": "Use Cardano's Preview test network configuration.", "preprod": "Use Cardano's Pre-production test network configuration.", "mainnet": "Use Cardano mainnet configuration; treat operations as production-sensitive."}},
+    "upstream_peer_address": {"type": "string", "description": "Host and port of an external upstream peer used by attached or relay profiles."},
+    "listen_address": {"type": "string", "description": "Address on which the generated node service listens for peer traffic."},
+    "config_source_dir": {"type": "string", "description": "Directory containing source node configuration and genesis material."},
+    "public_network": {"type": "string", "enum": ["preview", "preprod", "mainnet"], "description": "Named Cardano public network used as the profile's configuration source.", "x-ui-option-descriptions": {"preview": "Use Cardano's Preview test network.", "preprod": "Use Cardano's Pre-production test network.", "mainnet": "Use Cardano mainnet; treat operations as production-sensitive."}},
+    "testbed": {"type": "string", "description": "Optional testbed selector forwarded to deployment-specific profile tooling."}
+  },
+  "additionalProperties": true
+}

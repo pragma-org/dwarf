@@ -1,0 +1,31 @@
+{% extends "_base.j2" %}
+{% block main %}
+<p class="breadcrumb"><a href="/operate/risk-packages">Risk work packages</a> <span>/</span> <code>{{ package.id }}</code></p>
+<header class="definition-header">
+  <div><span class="eyebrow">Milestone-1 planning group · {{ package.status }}</span><h1>{{ package.label }}</h1><p class="page-hero">{{ package.status_text }}</p></div>
+  <div class="definition-actions"><a class="cta cta--ghost" href="/api/risk-packages/{{ package.id }}/download" download>Download source</a><a class="cta cta--ghost" href="/api/risk-packages/{{ package.id }}/export" download>Export package</a><a class="cta cta--ghost" href="/learn/risk-packages" target="_blank" rel="noopener">Schema and lifecycle</a></div>
+</header>
+<dl class="definition-summary">
+  <div><dt>Package</dt><dd><code>{{ package.id }}</code></dd></div>
+  <div><dt>Candidate risks</dt><dd>{{ package.candidate_ids|length }}</dd></div>
+  <div><dt>Evidence references</dt><dd>{{ package.evidence|length }}</dd></div>
+  <div><dt>Available here</dt><dd>{{ package.available_evidence_count }}</dd></div>
+  <div><dt>Legacy action state</dt><dd>{{ package.run_state }}</dd></div>
+  <div><dt>Write policy</dt><dd>read-only catalog</dd></div>
+</dl>
+{% if package.diagnostics %}<section class="asset-diagnostics"><span class="eyebrow">Diagnostics</span><h2>Schema or identity exceptions</h2><ul>{% for diagnostic in package.diagnostics %}<li>{{ diagnostic }}</li>{% endfor %}</ul></section>{% endif %}
+
+<section><span class="eyebrow">Risk-register grouping</span><h2>Candidate-risk IDs</h2><p>These identifiers are preserved exactly from the planning record. Their classification is not changed by this page.</p><p class="asset-pill-row risk-candidate-pills">{% for id in package.candidate_ids %}<span class="pill"><code>{{ id }}</code></span>{% else %}<span class="pill">none declared</span>{% endfor %}</p><a class="text-link" href="/learn/threat-coverage">Open the threat / risk coverage map</a></section>
+
+<section><span class="eyebrow">Source-backed relationships</span><h2>Scenarios and profile</h2><div class="relationship-grid">
+  <div><strong>Scenarios</strong>{% if package.scenario_ids %}<ul>{% for id in package.scenario_ids %}<li><a href="/operate/scenarios/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% else %}<p>No current scenario declares one of this package's candidate-risk IDs.</p>{% endif %}</div>
+  <div><strong>Runtime profile</strong>{% if package.profile_id and package.profile_available %}<p><a href="/operate/profiles/{{ package.profile_id }}"><code>{{ package.profile_id }}</code></a></p>{% elif package.profile_id %}<p><code>{{ package.profile_id }}</code> is declared but unavailable in this deployment.</p>{% else %}<p>None declared.</p>{% endif %}</div>
+  <div><strong>Runtime root</strong><p>{% if package.runtime_root %}<code>{{ package.runtime_root }}</code>{% else %}None declared.{% endif %}</p></div>
+</div></section>
+
+<section><span class="eyebrow">Evidence references</span><h2>Availability in this deployment</h2><p>A link appears only for a regular file that exists beneath the explicit evidence root. Missing, directory, and unsafe references remain visible without a fabricated download.</p>{% if package.evidence %}<div class="risk-evidence-grid">{% for item in package.evidence %}<article class="risk-evidence-record"><span class="eyebrow">{{ item.status }}</span><code>{{ item.path }}</code>{% if item.download_url %}<a href="{{ item.download_url }}" download>Download exact source</a>{% else %}<span class="small">No download in this deployment</span>{% endif %}</article>{% endfor %}</div>{% else %}<p class="empty-section-statement">No evidence paths declared.</p>{% endif %}</section>
+
+<section><span class="eyebrow">Remaining work</span><h2>Blockers</h2><ul>{% for blocker in package.blockers %}<li>{{ blocker }}</li>{% else %}<li>No blockers declared.</li>{% endfor %}</ul></section>
+<section><span class="eyebrow">Recorded scope</span><h2>Read-only actions and observations</h2><ul>{% for action in package.read_only_actions %}<li>{{ action }}</li>{% else %}<li>No read-only actions declared.</li>{% endfor %}</ul>{% if package.runnable %}<p><strong>Legacy CLI:</strong> <code>cardano-profile evidence run {{ package.id }} --dry-run</code>. This dashboard does not execute the action.</p>{% endif %}</section>
+<section><span class="eyebrow">Provenance</span><h2>Compatible source record</h2><p><code>{{ package.source_path }}</code></p><pre class="asset-source"><code>{{ package.raw_text }}</code></pre></section>
+{% endblock %}

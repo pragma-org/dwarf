@@ -1,0 +1,40 @@
+{% extends "_base.j2" %}
+{% block main %}
+<header class="scenarios-header">
+  <div>
+    <span class="eyebrow">Operate · generation assets</span>
+    <h1>Generation grammars</h1>
+    <p class="page-hero"><strong>{{ rows|length }} structure/token sets</strong> expose {{ token_count }} parsed mutation tokens. {{ ready_count }} definitions validate cleanly; shipped sources are read-only.</p>
+  </div>
+  <div class="definition-actions">
+    <a class="cta cta--ghost" href="/learn/grammars" target="_blank" rel="noopener">Learn generation assets</a>
+    <a class="cta cta--ghost" href="/api/grammars/export" download>Download all</a>
+  </div>
+</header>
+<hr class="hairline">
+<div class="filter-bar">
+  <label for="grammar-search" class="eyebrow">Search</label>
+  <input id="grammar-search" type="search" aria-label="Search generation grammars" placeholder="Grammar, target, format, source, relationship, or status">
+  <p class="filter-count" aria-live="polite"><span data-grammar-count>{{ rows|length }}</span> structure/token sets</p>
+</div>
+{% if rows %}
+<div class="learn-tile-grid">
+  {% for row in rows %}
+  <article class="learn-tile" data-grammar-row data-search="{{ row.id }} {{ row.label }} {{ row.target or '' }} {{ row.format or '' }} {{ row.status }} {{ row.root_kind }} {{ row.scenario_ids|join(' ') }} {{ row.target_ids|join(' ') }} {{ row.corpus_ids|join(' ') }}">
+    <span class="learn-tile__eyebrow">{{ row.root_kind }} · {{ row.format or 'unknown format' }} · {{ row.status }}</span>
+    <h2 class="learn-tile__title"><a href="/operate/grammars/{{ row.id }}"><code>{{ row.label }}</code></a></h2>
+    <p class="learn-tile__sub">{{ row.target or 'target unavailable' }}</p>
+    <p class="asset-pill-row">
+      <span class="pill">{{ row.token_count }} mutation tokens</span>
+      <span class="pill">structure {{ row.structure_status }}</span>
+      <span class="pill">dictionary {{ row.dictionary_status }}</span>
+      <span class="pill">{{ 'editable runtime clone' if row.writable else 'shipped read-only' }}</span>
+    </p>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty-section-statement">No generation grammar roots are available from the two explicitly configured locations.</p>
+{% endif %}
+<script>(()=>{const input=document.getElementById('grammar-search');const rows=[...document.querySelectorAll('[data-grammar-row]')];const count=document.querySelector('[data-grammar-count]');if(!input||!count)return;input.addEventListener('input',()=>{const needle=input.value.trim().toLowerCase();let visible=0;for(const row of rows){const show=!needle||row.dataset.search.toLowerCase().includes(needle);row.hidden=!show;if(show)visible+=1;}count.textContent=String(visible);});})();</script>
+{% endblock %}

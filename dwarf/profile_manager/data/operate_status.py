@@ -1,0 +1,329 @@
+"""Pure data extractors for /operate/status — substrate health + config.
+
+Slice 25 consolidates the legacy /architecture (live deployment topology
+visualization) and /settings (config + active-profile table) into a
+single read-only operator surface. All data flows through this module:
+the view layer remains a render-only adapter.
+
+Source of truth chain:
+    substrate_health     -> data.health.<live_health, _health_from_body>
+    active_profile_tile  -> data.profiles._profile_rows + payload.live.profile_id
+    last_sync_tile       -> payload.generated_at + last_local_health.evidence_path
+    dashboard_serving    -> token / port / bind passed in by the view caller
+    configuration_rows   -> payload.config
+
+Substrate health pill semantics:
+    "ok"      : live SSH poll succeeded and all parsed counts present
+    "stale"   : evidence is local-cached (live disabled or SSH unreachable)
+    "error"   : poll attempted but returncode != 0 or counts missing
+
+No fabrication: cells render the literal value from the source payload,
+or "unknown" / "—" when the field is genuinely absent on disk.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+
+_UNKNOWN = "unknown"
+_DASH = "—"
+
+
+def _safe_int(value: Any) -> int | None:
+    if value in (None, "", _UNKNOWN):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def substrate_health(payload: dict[str, Any]) -> dict[str, Any]:
+    """Top-tile + node-pill data for the live substrate.
+
+    Returns:
+        {
+            "source":            "live" | "cached" | "missing",
+            "state":             "ok" | "stale" | "error",
+            "tip_block":         str,
+            "sync_progress":     str,
+            "node_processes":    int | None,
+            "expected_nodes":    int | None,
+            "socket_count":      int | None,
+            "listener_count":    int | None,
+            "loopback_only":     "true" | "false" | "unknown",
+            "evidence_path":     str | None,
+            "node_pills":        [{"name": "node1", "state": "ok"|"warn"}, ...]
+        }
+
+    State logic intentionally conservative: only "ok" when the live SSH
+    poll completed (returncode == 0) AND parsed counts are present AND
+    the running process count matches the active profile's expected
+    node_count. Any deviation is "stale" or "error".
+    """
+    live = payload.get("live") or {}
+    last_local = payload.get("last_local_health") or {}
+    health = live.get("health") or last_local or {}
+    parsed = health.get("parsed") or {}
+    returncode = health.get("returncode")
+
+    if live.get("enabled") and returncode == 0:
+        source = "live"
+    elif last_local.get("evidence_path"):
+        source = "cached"
+    else:
+        source = "missing"
+
+    node_processes = _safe_int(parsed.get("cardano_node_processes"))
+    socket_count = _safe_int(parsed.get("socket_count"))
+    listener_count = _safe_int(parsed.get("listener_count"))
+    loopback_only = str(parsed.get("loopback_only") or _UNKNOWN).lower()
+
+    active = active_profile(payload)
+    expected_nodes = _safe_int(active.get("node_count"))
+
+    if source == "missing":
+        state = "error"
+    elif source == "cached":
+        state = "stale"
+    elif node_processes is None or expected_nodes is None:
+        state = "error"
+    elif node_processes == expected_nodes:
+        state = "ok"
+    else:
+        state = "stale"
+
+    # A successful poll that finds zero running nodes means no substrate is
+    # composed — present it as the clean "idle / no substrate" surface rather
+    # than a live-but-stale tile. (status.j2 maps source=="missing" to idle,
+    # not to the alarming error-red.)
+    if node_processes == 0:
+        source = "missing"
+        state = "error"
+
+    pills = []
+    for idx in range(expected_nodes or 0):
+        name = f"node{idx + 1}"
+        if state == "ok":
+            pill_state = "ok"
+        elif state == "stale" and node_processes and idx < node_processes:
+            pill_state = "ok"
+        elif state == "stale":
+            pill_state = "warn"
+        else:
+            pill_state = "error"
+        pills.append({"name": name, "state": pill_state})
+
+    # When no substrate is composed (idle), the per-node probes are simply not
+    # applicable — show an em-dash rather than a misleading "unknown".
+    _idle = not node_processes
+    return {
+        "source": source,
+        "state": state,
+        "transport": live.get("transport"),
+        "tip_block": _DASH if _idle else (parsed.get("tip_block") or _UNKNOWN),
+        "sync_progress": _DASH if _idle else (parsed.get("sync_progress") or _UNKNOWN),
+        "node_processes": node_processes,
+        "expected_nodes": expected_nodes,
+        "socket_count": socket_count,
+        "listener_count": listener_count,
+        "loopback_only": _DASH if _idle else loopback_only,
+        "evidence_path": health.get("evidence_path") or last_local.get("evidence_path"),
+        "node_pills": pills,
+    }
+
+
+def active_profile(payload: dict[str, Any]) -> dict[str, Any]:
+    """Pick the profile referenced by payload.live.profile_id.
+
+    Falls back to the first profile in payload.profiles if the live
+    block omits a profile_id, and to an empty stub if there are no
+    profiles at all.
+    """
+    profiles = payload.get("profiles") or []
+    live_id = (payload.get("live") or {}).get("profile_id")
+    if live_id:
+        for p in profiles:
+            if p.get("id") == live_id:
+                return dict(p)
+    if profiles:
+        return dict(profiles[0])
+    return {}
+
+
+def active_profile_tile(payload: dict[str, Any]) -> dict[str, Any]:
+    """Render-ready tile for the active profile (id, label, fleet shape)."""
+    p = active_profile(payload)
+    if not p:
+        return {
+            "id": _DASH,
+            "label": "no profiles loaded",
+            "node_type": _DASH,
+            "node_count": _DASH,
+            "peer_sharing": False,
+            "remote_runtime_root": _DASH,
+        }
+    return {
+        "id": p.get("id") or _DASH,
+        "label": p.get("label") or _DASH,
+        "node_type": p.get("node_type") or _DASH,
+        "node_count": p.get("node_count") if p.get("node_count") is not None else _DASH,
+        "peer_sharing": bool(p.get("peer_sharing")),
+        "remote_runtime_root": p.get("remote_runtime_root") or _DASH,
+    }
+
+
+def last_sync_tile(payload: dict[str, Any]) -> dict[str, Any]:
+    """Render-ready tile for the last sync timestamp + evidence path."""
+    last_local = payload.get("last_local_health") or {}
+    return {
+        "generated_at": payload.get("generated_at") or _DASH,
+        "evidence_path": last_local.get("evidence_path") or _DASH,
+        "live_enabled": bool((payload.get("live") or {}).get("enabled")),
+    }
+
+
+def dashboard_serving_tile(*, port: int | None = None, bind: str | None = None,
+                            token: str | None = None) -> dict[str, Any]:
+    """Render-ready tile for the running dashboard's network surface.
+
+    The view layer must pass in the live runtime values; nothing here
+    introspects the running process. token redacted to a length-only
+    hint so the page can be screenshot-shared without leaking the
+    secret.
+    """
+    return {
+        "port": port if port is not None else _DASH,
+        "bind": bind or _DASH,
+        "token_set": bool(token),
+        "token_length": len(token) if token else 0,
+    }
+
+
+def configuration_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Configuration table rows. Each row is {label, value, copyable}.
+
+    Rows:
+        host                — config.host
+        ssh_user            — config.ssh_user
+        remote_base_path    — config.remote_base_path
+        config_path         — config.path
+        deployment_name     — config.deployment_name
+        active_profile      — active profile id
+        runtime_root        — active profile remote_runtime_root
+    """
+    cfg = payload.get("config") or {}
+    profile = active_profile(payload)
+    if not cfg.get("present"):
+        return [
+            {"label": "config", "value": cfg.get("message") or "Config missing", "copyable": False},
+            {"label": "config path", "value": cfg.get("path") or _DASH, "copyable": True},
+        ]
+    return [
+        {"label": "deployment", "value": cfg.get("deployment_name") or _DASH, "copyable": True},
+        {"label": "host", "value": cfg.get("host") or _DASH, "copyable": True},
+        {"label": "ssh user", "value": cfg.get("ssh_user") or _DASH, "copyable": True},
+        {"label": "remote base path", "value": cfg.get("remote_base_path") or _DASH, "copyable": True},
+        {"label": "config path", "value": cfg.get("path") or _DASH, "copyable": True},
+        {"label": "active profile", "value": profile.get("id") or _DASH, "copyable": True},
+        {"label": "runtime root", "value": profile.get("remote_runtime_root") or _DASH, "copyable": True},
+    ]
+
+
+def all_profiles(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return all profile rows enriched with an `is_active` flag."""
+    live_id = (payload.get("live") or {}).get("profile_id")
+    rows = []
+    for p in payload.get("profiles") or []:
+        rows.append({
+            **p,
+            "is_active": p.get("id") == live_id,
+        })
+    return rows
+
+
+def wallet_status_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for wallet in payload.get("wallets") or []:
+        txs = wallet.get("recent_transactions") or []
+        rows.append({
+            "id": wallet.get("id") or _DASH,
+            "label": wallet.get("label") or wallet.get("id") or _DASH,
+            "role": wallet.get("role") or _DASH,
+            "network": wallet.get("network") or _DASH,
+            "address": wallet.get("address") or _DASH,
+            "state": wallet.get("state") or "unknown",
+            "balance_tada": wallet.get("balance_tada") or _UNKNOWN,
+            "balance_lovelace": wallet.get("balance_lovelace"),
+            "utxo_count": wallet.get("utxo_count"),
+            "queried_at": wallet.get("queried_at") or _DASH,
+            "error": wallet.get("error"),
+            "recent_transactions": txs,
+        })
+    return rows
+
+
+def moog_status_tile(payload: dict[str, Any]) -> dict[str, Any]:
+    moog = payload.get("moog") or {}
+    summary = moog.get("summary") or {}
+    state = str(summary.get("state") or moog.get("state") or "unknown")
+    raw_error = moog.get("error")
+    # Graceful degradation. The deployment-health probe reaches the Moog *host*
+    # over SSH to inspect its systemd service + deploy directories. From the
+    # isolated dashboard container that host/key isn't reachable, so a raw SSH
+    # failure would otherwise render as a scary ERROR. Detect the connectivity
+    # case and show a clean "not reachable" instead. (Moog's requester flow
+    # itself is Cardano tx + MPFS — it does not use SSH.)
+    _ssh_markers = ("identity file", "host key verification", "permission denied",
+                    "connection refused", "could not resolve", "no route to host",
+                    "connection timed out", "ssh:", "not accessible",
+                    # The deploy key is a restricted forced-command key; any probe
+                    # that isn't a whitelisted verb comes back refused. Treat that
+                    # the same as "not reachable from here", not a scary ERROR.
+                    "dwarf-deploy-shim", "refused", "verb-not-allowed",
+                    "bad-token-count", "forced command", "not permitted")
+    _err_l = (raw_error or "").lower()
+    token_id = summary.get("token_id") or _DASH
+    if token_id == _DASH:
+        # Moog isn't linked in this deployment (no requester token bound). Present
+        # a neutral "not configured" — this is an expected unconfigured state, not
+        # a failure. (Reuse the non-red "unreachable" tile styling.)
+        state = "unreachable"
+        metric = "NOT CONFIGURED"
+        clean_error = ("Moog is not linked in this deployment (no requester token bound). "
+                       "Set it up via the Moog panel on Config — the requester flow uses "
+                       "Cardano / MPFS, not SSH.")
+    elif state == "error" and any(m in _err_l for m in _ssh_markers):
+        state = "unreachable"
+        metric = "NOT REACHABLE"
+        clean_error = ("Moog deployment host not reachable from the dashboard container "
+                       "(SSH access not configured). Run deployment checks on the Moog host; "
+                       "the Moog requester flow itself uses Cardano / MPFS, not SSH.")
+    else:
+        metric = state.upper() if state else "UNKNOWN"
+        clean_error = raw_error
+    return {
+        "state": state,
+        "metric": metric,
+        "linkage_state": "linked" if token_id != _DASH else "not linked",
+        "check_count": summary.get("check_count") or 0,
+        "ok_count": summary.get("ok_count") or 0,
+        "warn_count": summary.get("warn_count") or 0,
+        "error_count": summary.get("error_count") or 0,
+        "deploy_root": summary.get("deploy_root") or _DASH,
+        "mpfs_host": summary.get("mpfs_host") or _DASH,
+        "token_id": token_id,
+        "oracle_service": summary.get("oracle_service") or _DASH,
+        "requester_address": summary.get("requester_address") or _DASH,
+        "oracle_address": summary.get("oracle_address") or _DASH,
+        "checks": [
+            {
+                "id": check.get("id") or _DASH,
+                "state": check.get("state") or "unknown",
+                "detail": check.get("detail") or _DASH,
+            }
+            for check in (moog.get("checks") or [])
+            if isinstance(check, dict)
+        ],
+        "error": clean_error,
+    }

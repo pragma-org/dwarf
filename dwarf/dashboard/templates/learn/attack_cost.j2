@@ -1,0 +1,46 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Learn</span>
+<h1>Cost to attack Cardano</h1>
+<p>The textbook figure is "51% of the stake." The <em>effective</em> figure is lower — because only part of all ADA is actively staked, an attacker needs a fraction of <strong>active</strong> stake, not of total supply. The server reads on-chain data from Koios and ADA/USD from CoinGecko, caches it briefly, and labels the baked fallback explicitly.</p>
+<hr class="hairline">
+
+<div id="dwarf-attackcost">
+  {% raw %}<style>
+    #dwarf-attackcost{--g:#3fb950;--mut:#8b949e;--pan:#0f1a16;--rule:rgba(140,255,203,.18);--ink:#e6edf3}
+    #dwarf-attackcost .tg{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;margin:12px 0}
+    #dwarf-attackcost .hero{background:var(--pan);border:1px solid var(--g);border-radius:16px;padding:20px 22px;box-shadow:0 0 0 1px var(--g) inset}
+    #dwarf-attackcost .lab{color:var(--mut);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}
+    #dwarf-attackcost .big{font-size:clamp(2.2rem,6vw,3.4rem);font-weight:800;color:var(--g);letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.05;margin:6px 0}
+    #dwarf-attackcost .sub{color:var(--ink);font-size:.95rem}
+    #dwarf-attackcost .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    #dwarf-attackcost .card{background:var(--pan);border:1px solid var(--rule);border-radius:12px;padding:12px 14px}
+    #dwarf-attackcost .card b{display:block;font-size:1.2rem;color:var(--ink);font-variant-numeric:tabular-nums}
+    #dwarf-attackcost .card span{color:var(--mut);font-size:.74rem}
+    #dwarf-attackcost .rows{margin:10px 0}
+    #dwarf-attackcost .row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--rule);padding:8px 2px;font-size:.9rem}
+    #dwarf-attackcost .row span{color:var(--mut)}#dwarf-attackcost .row b{color:var(--ink);font-variant-numeric:tabular-nums;text-align:right}
+    #dwarf-attackcost .st{color:var(--g);font-size:.82rem;margin-top:8px}
+    @media (max-width:640px){#dwarf-attackcost .tg{grid-template-columns:1fr}}
+  </style>{% endraw %}
+  <div class="tg">
+    <div class="hero">
+      <div class="lab">Est. cost to reach the ~40%-of-active-stake band</div>
+      <div class="big" id="ac-cost">{{ attack.cost_40 }}</div>
+      <div class="sub"><span id="ac-ada">{{ attack.ada_40 }}</span> ADA · <span id="ac-pct">{{ attack.supply_pct_40 }}</span> of circulating supply</div>
+    </div>
+    <div class="cards">
+      <div class="card"><b id="ac-active">{{ attack.active_display }}</b><span>active stake (ADA)</span></div>
+      <div class="card"><b id="ac-ratio">{{ attack.staking_ratio }}</b><span>staking ratio (of circulating)</span></div>
+      <div class="card"><b id="ac-price">{{ attack.price_display }}</b><span>ADA price</span></div>
+      <div class="card"><b id="ac-epoch">{{ attack.epoch }}</b><span>epoch</span></div>
+    </div>
+  </div>
+  <div class="rows">
+    <div class="row"><span>~40% of active stake (effective / harm-onset band)</span><b id="ac-r40">{{ attack.row_40 }}</b></div>
+    <div class="row"><span>50% of active stake (majority)</span><b id="ac-r50">{{ attack.row_50 }}</b></div>
+  </div>
+  <div class="st" id="ac-status">{{ attack.source_detail }} · checked {{ attack.fetched_at }}</div>
+  <p style="color:var(--mut);font-size:.84rem;margin-top:10px">The theoretical Praos threshold (~48% of active stake at mainnet's block rate) barely moves; the economic figures tick with staking ratio and price. Acquiring this much ADA would itself crash the price — the cost is a deterrent, not just a number. See <a href="/learn/glossary#term-k-security-parameter">the consensus glossary</a>.</p>
+</div>
+{% endblock %}

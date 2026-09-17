@@ -1,0 +1,104 @@
+{% extends "_base.j2" %}
+{% block main %}
+<nav class="definition-breadcrumb" aria-label="Breadcrumb">
+  <a href="/operate/scenarios">Scenarios</a><span aria-hidden="true">/</span><span>{{ 'New' if create else definition_id }}</span>
+</nav>
+<div class="definition-editor scenario-builder" data-catalog="scenarios" data-create="{{ 'true' if create else 'false' }}" data-definition-id="{{ definition_id }}" data-token="{{ token }}">
+  <div class="definition-header">
+    <div><span class="eyebrow">Operate · Scenario</span><h1>{{ 'Create' if create else 'Edit' }} scenario</h1></div>
+    <div class="definition-actions">
+      <a class="cta cta--ghost definition-help-link" href="{{ help_href }}" target="_blank" rel="noopener noreferrer" aria-label="{{ help_aria_label }} (opens in a new tab)">Authoring guide <span aria-hidden="true">↗</span></a>
+      <a class="cta cta--ghost" href="/operate/scenarios{% if not create %}/{{ definition_id }}{% endif %}">Cancel</a>
+      <button class="cta cta--ghost" type="button" data-editor-validate>Validate</button>
+      <button class="cta" type="button" data-editor-save disabled>Save</button>
+    </div>
+  </div>
+
+  {% if create %}
+  <label class="definition-editor__template">Start from
+    <select data-scenario-template>
+      <option value="">Blank scenario</option>
+      {% for item in scenario_templates %}<option value="{{ item.id }}"{% if item.id == selected_template %} selected{% endif %}>{{ item.id }} — {{ item.title }}</option>{% endfor %}
+    </select>
+    <small>Every current scenario can be cloned. Its identifier and title are reset before editing.</small>
+  </label>
+  {% endif %}
+
+  <div class="scenario-builder__inventory" role="status">
+    <strong>{{ primitive_count }} registered primitives</strong>
+    <span>{{ family_counts.get('setup', 0) }} setup</span><span>{{ family_counts.get('load', 0) }} load</span>
+    <span>{{ family_counts.get('fault', 0) }} fault</span><span>{{ family_counts.get('probe', 0) }} probe</span>
+    <span>{{ family_counts.get('assertion', 0) }} assertion</span><span>{{ family_counts.get('teardown', 0) }} teardown</span>
+  </div>
+
+  <div class="definition-editor__tabs" role="tablist" aria-label="Editor mode">
+    <button type="button" role="tab" aria-selected="true" data-editor-tab="structured">Structured</button>
+    <button type="button" role="tab" aria-selected="false" data-editor-tab="raw">Advanced raw JSON/YAML</button>
+  </div>
+
+  <section data-editor-panel="structured" aria-label="Structured scenario builder">
+    <section class="scenario-builder__section">
+      <div class="scenario-builder__section-head"><div><span class="eyebrow">Definition</span><h2>Scenario contract</h2></div><p>Required identity, target, runtime, and execution limits.</p></div>
+      <div class="definition-editor__fields scenario-builder__header-fields">
+        <label class="definition-field"><span>Id *</span><input type="text" data-scenario-field="id"{% if not create %} readonly aria-readonly="true"{% endif %}><small>Stable lowercase kebab-case identifier.</small></label>
+        <label class="definition-field"><span>Title *</span><input type="text" data-scenario-field="title"></label>
+        <label class="definition-field"><span>Target implementation *</span><select data-scenario-field="target.implementation"><option value="amaru">amaru</option><option value="cardano-node">cardano-node</option></select></label>
+        <label class="definition-field"><span>Target version *</span><input type="text" data-scenario-field="target.version"></label>
+        <label class="definition-field"><span>Runtime *</span><select data-scenario-field="runtime"><option value="library">library</option><option value="single-node">single-node</option><option value="devnet">devnet</option></select><small>Primitive choices are filtered by runtime and implementation.</small></label>
+        <label class="definition-field"><span>Profile</span><select data-scenario-field="profile"><option value="">— inline substrate / attachment / none —</option>{% for item in profile_options %}<option value="{{ item.id }}">{{ item.id }} — {{ item.label }}</option>{% endfor %}</select><small>Devnet requires exactly one of profile, substrate, or attach.</small></label>
+        <label class="definition-field"><span>Duration</span><input type="text" data-scenario-field="duration" placeholder="30s, 10m, 2h"></label>
+        <label class="definition-field"><span>Seed</span><input type="text" data-scenario-field="seed" placeholder="integer, hex, or token"></label>
+        <label class="definition-field"><span>Iterations</span><input type="number" min="1" data-scenario-field="iterations"></label>
+        <label class="definition-field definition-field--boolean"><span>Shrink failing FUZZ cases</span><select data-scenario-field="shrink"><option value="">default (true)</option><option value="true">true</option><option value="false">false</option></select></label>
+      </div>
+    </section>
+
+    <section class="scenario-builder__section">
+      <div class="scenario-builder__section-head"><div><span class="eyebrow">Traceability</span><h2>Index and evidence intent</h2></div><p>Optional catalog metadata retained in evidence bundles.</p></div>
+      <div class="definition-editor__fields">
+        <label class="definition-field definition-field--array"><span>Authors</span><textarea rows="3" data-scenario-field="authors" data-value-type="lines" placeholder="One value per line"></textarea></label>
+        <label class="definition-field definition-field--array"><span>Tags</span><textarea rows="3" data-scenario-field="tags" data-value-type="lines" placeholder="One value per line"></textarea></label>
+        <label class="definition-field definition-field--array"><span>Related milestones</span><textarea rows="3" data-scenario-field="related_milestones" data-value-type="lines" placeholder="One value per line"></textarea></label>
+        <label class="definition-field"><span>Evidence intent</span><select data-scenario-field="evidence_intent"><option value="">—</option><option value="candidate">candidate</option><option value="regression">regression</option><option value="finding-validation">finding-validation</option><option value="risk-support">risk-support</option></select></label>
+        <label class="definition-field definition-field--array"><span>Promotion blockers</span><textarea rows="3" data-scenario-field="promotion_blockers" data-value-type="lines" placeholder="One value per line"></textarea></label>
+        <label class="definition-field definition-field--object"><span>Milestone 1 trace</span><textarea rows="5" data-scenario-field="m1_trace" data-value-type="json" placeholder="{ &quot;threat_ids&quot;: [] }"></textarea></label>
+        <label class="definition-field definition-field--object"><span>Testcase candidate</span><textarea rows="5" data-scenario-field="testcase_candidate" data-value-type="json" placeholder="{ }"></textarea></label>
+      </div>
+    </section>
+
+    {% set phase_rows = [('setup', 'Setup', 'setup'), ('load', 'Load', 'load'), ('faults', 'Faults', 'fault'), ('probes', 'Probes', 'probe'), ('assertions', 'Assertions', 'assertion'), ('teardown', 'Teardown', 'teardown')] %}
+    {% for phase, label, family in phase_rows %}
+    <section class="scenario-builder__section scenario-phase" data-scenario-phase="{{ phase }}" data-primitive-family="{{ family }}">
+      <div class="scenario-builder__section-head"><div><span class="eyebrow">Lifecycle</span><h2>{{ label }}</h2></div><p data-phase-summary>No primitives.</p></div>
+      <div class="scenario-phase__list" data-phase-list></div>
+      <div class="scenario-phase__add">
+        <label><span class="visually-hidden">Add {{ label | lower }} primitive</span><select data-phase-picker aria-label="Add {{ label | lower }} primitive"></select></label>
+        <button type="button" class="cta cta--ghost" data-phase-add>Add primitive</button>
+      </div>
+    </section>
+    {% endfor %}
+
+    <details class="scenario-builder__section scenario-builder__advanced">
+      <summary>Advanced topology and phased execution</summary>
+      <p class="page-subhero">These schema-valid structures remain JSON because their contents are intentionally extensible.</p>
+      <div class="definition-editor__fields">
+        <label class="definition-field definition-field--object"><span>Inline substrate</span><textarea rows="8" data-scenario-field="substrate" data-value-type="json" placeholder="{ }"></textarea></label>
+        <label class="definition-field definition-field--object"><span>Attach to topology</span><textarea rows="6" data-scenario-field="attach" data-value-type="json" placeholder="{ }"></textarea></label>
+        <label class="definition-field definition-field--object"><span>Phases</span><textarea rows="8" data-scenario-field="phases" data-value-type="json" placeholder="[ ]"></textarea></label>
+        <label class="definition-field definition-field--object"><span>Declarative invariants</span><textarea rows="6" data-scenario-field="invariants" data-value-type="json" placeholder="[ ] or { }"></textarea></label>
+      </div>
+    </details>
+  </section>
+
+  <section data-editor-panel="raw" aria-label="Raw definition" hidden>
+    <label class="definition-editor__raw">Complete JSON or YAML
+      <textarea data-editor-raw spellcheck="false">{{ initial_source }}</textarea>
+    </label>
+    <p class="page-subhero">Raw mode is authoritative. Switching back validates the complete definition first; unsupported or lossy content stays in Raw until corrected.</p>
+  </section>
+  <pre class="definition-editor__report" data-editor-report role="status" aria-live="polite">Edit a field, then validate.</pre>
+  <script type="application/json" data-editor-initial>{{ initial_data_json | safe }}</script>
+  <script type="application/json" data-scenario-registry>{{ descriptor_json | safe }}</script>
+</div>
+<script src="/static/js/scenario-editor.js"></script>
+{% endblock %}

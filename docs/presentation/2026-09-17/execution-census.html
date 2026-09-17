@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>DWARF execution census</title>
+<style>
+:root{--bg:var(--wb-bg,#06080b);--surface:var(--wb-surface,#10171f);--ink:var(--wb-ink,#edf7f7);--muted:var(--wb-muted,#9fb1ba);--rule:var(--wb-rule,rgba(43,224,224,.2));--accent:var(--wb-accent,#2be0e0);--accent2:var(--wb-accent-2,#b58a4f);--success:var(--wb-success,#65d28a);--error:var(--wb-error,#e1685b);--body:var(--wb-font-body,"IBM Plex Sans",Inter,system-ui,sans-serif);--mono:var(--wb-font-mono,"JetBrains Mono",ui-monospace,monospace)}
+*{box-sizing:border-box}html{background:var(--bg);color:var(--ink);font-family:var(--body)}body{margin:0;background:radial-gradient(circle at 92% 0,rgba(43,224,224,.1),transparent 34%),var(--bg)}main{width:min(1120px,calc(100% - 32px));margin:auto;padding:54px 0 72px}.eyebrow{color:var(--accent);font:800 12px/1.2 var(--mono);letter-spacing:.15em;text-transform:uppercase}h1{max-width:850px;margin:14px 0 12px;font-size:clamp(40px,7vw,78px);line-height:.96;letter-spacing:-.05em}.lede{max-width:780px;margin:0;color:var(--muted);font-size:clamp(18px,2.2vw,27px);line-height:1.4}.summary{display:grid;grid-template-columns:1.3fr repeat(2,.85fr);gap:18px;margin:46px 0 24px;padding:24px 0;border-top:4px solid var(--accent);border-bottom:1px solid var(--rule)}.metric strong{display:block;color:var(--success);font:800 clamp(36px,5vw,64px)/1 var(--mono)}.metric span{display:block;margin-top:9px;color:var(--muted);font-size:15px}.math{margin:0 0 34px;padding:17px 20px;border-left:4px solid var(--success);background:color-mix(in srgb,var(--success) 7%,transparent);font:700 clamp(13px,1.5vw,17px)/1.55 var(--mono)}.controls{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 18px}.controls button{padding:9px 13px;border:1px solid var(--rule);border-radius:var(--wb-rounded-sm,3px);background:var(--surface);color:var(--muted);font:700 12px/1 var(--mono);cursor:pointer}.controls button.active,.controls button:hover{border-color:var(--accent);color:var(--bg);background:var(--accent)}.rows{border-top:2px solid var(--accent)}.row{display:grid;grid-template-columns:1.5fr 130px 1.8fr;gap:22px;align-items:start;padding:20px 0;border-bottom:1px solid var(--rule)}.row.hidden{display:none}.row h2{margin:0 0 5px;font-size:20px}.row p{margin:0;color:var(--muted);font-size:14px;line-height:1.5}.count{color:var(--success);font:800 27px/1 var(--mono)}.tier{display:block;margin-top:6px;color:var(--accent2);font:700 11px/1.3 var(--mono);text-transform:uppercase}.evidence{color:var(--muted);font-size:14px;line-height:1.55}.evidence code{color:var(--accent);font-family:var(--mono)}details{margin-top:28px;border-top:1px solid var(--rule)}summary{padding:18px 0;color:var(--accent);font:800 13px/1.2 var(--mono);cursor:pointer;text-transform:uppercase}details p,details li{color:var(--muted);font-size:15px;line-height:1.6}details ul{padding-left:1.2em}.limit{margin-top:30px;padding:20px;border-left:4px solid var(--accent2);background:color-mix(in srgb,var(--accent2) 7%,transparent)}.limit strong{display:block;margin-bottom:7px;color:var(--accent2);font:800 12px/1.2 var(--mono);text-transform:uppercase}.limit p{margin:0;color:var(--muted);line-height:1.55}.footer{display:flex;justify-content:space-between;gap:20px;margin-top:36px;padding-top:18px;border-top:1px solid var(--rule);color:var(--muted);font:600 12px/1.5 var(--mono)}
+@media(max-width:760px){main{width:min(100% - 28px,1120px);padding-top:34px}.summary{grid-template-columns:1fr 1fr}.summary .metric:first-child{grid-column:1/-1}.row{grid-template-columns:1fr;gap:10px}.footer{display:block}.footer span{display:block;margin-top:8px}}
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">DWARF presentation evidence</div>
+  <h1>Execution census</h1>
+  <p class="lede">A conservative count of traceable DWARF executions across retained development files, workbench records, and Antithesis.</p>
+
+  <section class="summary" aria-label="Census summary">
+    <div class="metric"><strong>1,900+</strong><span>audience-facing traceable execution count</span></div>
+    <div class="metric"><strong>576</strong><span>distinct scenario IDs exercised</span></div>
+    <div class="metric"><strong>11</strong><span>verified portable evidence bundles</span></div>
+  </section>
+
+  <p class="math">1,893 manifest-backed local runs + 13 tier-1 workbench-only runs + 39 DWARF-owned Antithesis runs = 1,945 strict traceable executions</p>
+
+  <div class="controls" aria-label="Evidence filters">
+    <button class="active" data-filter="all">All evidence</button>
+    <button data-filter="local">Local</button>
+    <button data-filter="workbench">Workbench</button>
+    <button data-filter="antithesis">Antithesis</button>
+    <button data-filter="bundle">Bundles</button>
+  </div>
+
+  <section class="rows" aria-label="Evidence sources">
+    <article class="row" data-source="local">
+      <div><h2>Canonical local runs</h2><p>Deduplicated by embedded run ID across preserved DWARF versions and directories.</p></div>
+      <div><span class="count">1,893</span><span class="tier">Strict</span></div>
+      <div class="evidence">Every counted run has nonempty <code>manifest.json</code>, <code>scenario.yaml</code>, <code>log.ndjson</code>, and <code>assertions.json</code>. The set contains 1,430 passes, 391 failures, and 72 errors.</div>
+    </article>
+    <article class="row" data-source="workbench">
+      <div><h2>Workbench-only execution records</h2><p>Historical runs whose local manifests no longer remain in the present filesystem census.</p></div>
+      <div><span class="count">13</span><span class="tier">Tier 1 confirmed</span></div>
+      <div class="evidence">Only records explicitly stored in <code>dwarf-execute (tier_1_live_confirmed)</code> objects enter the strict total. Seven weaker workbench references remain excluded.</div>
+    </article>
+    <article class="row" data-source="antithesis">
+      <div><h2>DWARF-owned Antithesis runs</h2><p>pragma-org/dwarf runs requested by the DWARF operator identity.</p></div>
+      <div><span class="count">39</span><span class="tier">Strict</span></div>
+      <div class="evidence">The retained forensic ledger proves 29 earlier runs. The current Moog listing proves 10 later runs. Together they contain 33 completed and 6 incomplete runs.</div>
+    </article>
+    <article class="row" data-source="bundle">
+      <div><h2>Portable evidence bundles</h2><p>Unique run-linked archives found across historical cardano-box storage.</p></div>
+      <div><span class="count">11</span><span class="tier">Current contract</span></div>
+      <div class="evidence">Twelve unique archives pass gzip integrity validation. One older archive lacks <code>manifest.json</code>, so the strict portable-bundle count remains eleven.</div>
+    </article>
+    <article class="row" data-source="local">
+      <div><h2>Live dashboard retention window</h2><p>The deployed dashboard's current indexed history.</p></div>
+      <div><span class="count">90</span><span class="tier">Current state</span></div>
+      <div class="evidence">This number remains useful for the walkthrough. It describes what the live dashboard indexes now, not the lifetime development history.</div>
+    </article>
+  </section>
+
+  <details>
+    <summary>Counted and excluded evidence</summary>
+    <ul>
+      <li>Counted: unique canonical run IDs with complete minimum evidence, tier-1 live-confirmed workbench run IDs, and DWARF-owned Antithesis run IDs.</li>
+      <li>Excluded: duplicated preserved copies, raw Compose and debug projects, upstream Cardano Foundation control runs, and internal fuzz iterations.</li>
+      <li>Excluded from the strict total: seven workbench-only IDs found only in weaker status, hypothesis, implementation, or rollup notes.</li>
+      <li>The local Mac and worker hosts added no new canonical run IDs beyond the cardano-box union.</li>
+    </ul>
+  </details>
+
+  <div class="limit"><strong>Known limitation</strong><p>The installed Moog CLI repeated its first page when given a pagination cursor. The strict total may therefore undercount DWARF-owned Antithesis runs that are absent from the retained forensic ledger and the latest 100 platform records. The slide uses “1,900+” to avoid false precision.</p></div>
+
+  <div class="footer"><span>Audit date: 2026-09-10</span><span>Slide claim: 1,900+ traceable executions</span></div>
+</main>
+<script>
+(()=>{const buttons=[...document.querySelectorAll('[data-filter]')],rows=[...document.querySelectorAll('[data-source]')];buttons.forEach(button=>button.addEventListener('click',()=>{const filter=button.dataset.filter;buttons.forEach(item=>item.classList.toggle('active',item===button));rows.forEach(row=>row.classList.toggle('hidden',filter!=='all'&&row.dataset.source!==filter));localStorage.setItem('dwarf-execution-census-filter',filter)}));const saved=localStorage.getItem('dwarf-execution-census-filter');document.querySelector(`[data-filter="${saved}"]`)?.click()})();
+</script>
+</body>
+</html>

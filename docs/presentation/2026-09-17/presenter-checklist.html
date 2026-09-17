@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>DWARF Presenter Checklist</title>
+<style>
+:root{
+  --bg:var(--wb-bg,#06080b);--surface:var(--wb-surface,#131a22);--surface-2:var(--wb-custom-obsidian-3,#1c242e);
+  --ink:var(--wb-ink,#e6f2f2);--muted:var(--wb-muted,#a4b5bd);--rule:var(--wb-rule,rgba(43,224,224,.18));
+  --cyan:var(--wb-accent,#2be0e0);--brass:var(--wb-accent-2,#b58a4f);--green:var(--wb-success,#65d28a);--red:var(--wb-error,#c03030);
+  --radius:var(--wb-card-radius,var(--wb-rounded-lg,8px));--shadow:var(--wb-card-shadow,0 0 0 1px rgba(43,224,224,.03));
+  --body:var(--wb-font-body,"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif);--mono:var(--wb-font-mono,"JetBrains Mono",ui-monospace,monospace)
+}
+*{box-sizing:border-box}html{background:var(--bg);color:var(--ink);scroll-behavior:smooth}body{margin:0;min-width:0;font-family:var(--body);line-height:1.48;background:radial-gradient(circle at 88% 0,rgba(43,224,224,.1),transparent 35rem),radial-gradient(circle at 5% 72%,rgba(181,138,79,.07),transparent 30rem),var(--bg)}
+button,input,textarea{font:inherit}button,a{touch-action:manipulation}button{cursor:pointer}.shell{width:min(1180px,100%);margin:auto;padding:28px 24px 80px}.hero,.toolbar,.section,.notes-panel{border:1px solid var(--rule);border-radius:var(--radius);background:rgba(19,26,34,.94);box-shadow:var(--shadow)}
+.hero{position:relative;overflow:hidden;padding:34px}.hero:after{content:"";position:absolute;right:-105px;top:-155px;width:310px;height:310px;border:1px solid rgba(43,224,224,.22);transform:rotate(45deg);pointer-events:none}.eyebrow{color:var(--cyan);font:800 11px/1.3 var(--mono);letter-spacing:.14em;text-transform:uppercase}h1{max-width:900px;margin:10px 0 0;font-size:clamp(35px,5vw,62px);line-height:.98;letter-spacing:-.045em}h2{margin:0;font-size:clamp(20px,2.5vw,28px);letter-spacing:-.025em}.lead{max-width:880px;margin:16px 0 0;color:var(--muted);font-size:clamp(16px,2vw,20px)}
+.hero-facts{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}.fact{padding:7px 10px;border:1px solid var(--rule);background:rgba(6,8,11,.45);color:var(--muted);font:700 11px/1.3 var(--mono)}.fact strong{color:var(--ink)}
+.toolbar{position:sticky;z-index:10;top:8px;display:grid;grid-template-columns:minmax(190px,1fr) auto;gap:14px;align-items:center;margin:16px 0;padding:13px 15px;background:rgba(11,15,20,.96);backdrop-filter:blur(12px)}.progress-copy{display:flex;align-items:baseline;gap:10px;min-width:0}.progress-copy strong{font:800 18px/1 var(--mono);color:var(--cyan)}.progress-copy span{color:var(--muted);font-size:13px}.progress-track{height:5px;margin-top:8px;overflow:hidden;background:rgba(164,181,189,.15)}.progress-track i{display:block;width:0;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green));transition:width .2s ease}.toolbar-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.btn{min-height:40px;padding:8px 11px;border:1px solid var(--rule);border-radius:4px;background:var(--surface);color:var(--ink);text-decoration:none}.btn:hover,.btn:focus-visible{border-color:var(--cyan);outline:none}.btn.danger{color:#ff9088;border-color:rgba(192,48,48,.5)}
+.jump{display:flex;gap:7px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:thin}.jump a{flex:0 0 auto;padding:7px 10px;border:1px solid var(--rule);border-radius:99px;color:var(--muted);font:700 11px/1.2 var(--mono);text-decoration:none}.jump a:hover{color:var(--bg);background:var(--cyan);border-color:var(--cyan)}
+.section{margin-top:14px;overflow:hidden}.section summary{list-style:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:19px 22px;cursor:pointer}.section summary::-webkit-details-marker{display:none}.section summary:before{content:"+";display:grid;place-items:center;width:26px;height:26px;border:1px solid var(--rule);color:var(--cyan);font:800 16px/1 var(--mono)}.section[open] summary:before{content:"−"}.section summary:hover{background:rgba(43,224,224,.035)}.section-title small{display:block;margin-top:3px;color:var(--muted);font-size:13px;font-weight:400}.section-progress{min-width:78px;text-align:right;color:var(--muted);font:800 12px/1.3 var(--mono)}.section-progress.complete{color:var(--green)}.section-body{padding:0 22px 22px;border-top:1px solid var(--rule)}
+.items{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:18px}.item{position:relative;display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;min-width:0;padding:13px 14px;border:1px solid rgba(43,224,224,.12);background:rgba(6,8,11,.38);cursor:pointer}.item:hover{border-color:rgba(43,224,224,.38)}.item input{width:18px;height:18px;margin:2px 0 0;accent-color:var(--cyan)}.item strong{display:block;color:var(--ink);font-size:14px}.item span span{display:block;margin-top:4px;color:var(--muted);font-size:13px}.item:has(input:checked){border-color:rgba(101,210,138,.28);background:rgba(101,210,138,.055)}.item:has(input:checked) strong{color:var(--green)}.tag{display:inline-block!important;width:max-content;margin:0 0 5px!important;padding:2px 6px;border:1px solid var(--rule);color:var(--brass)!important;font:800 9px/1.3 var(--mono)!important;letter-spacing:.09em;text-transform:uppercase}.item code,.callout code{color:var(--cyan);font-family:var(--mono);overflow-wrap:anywhere}.callout{margin-top:16px;padding:14px 16px;border-left:3px solid var(--brass);background:rgba(181,138,79,.075);color:var(--muted)}.callout strong{color:var(--ink)}.callout.critical{border-color:var(--red);background:rgba(192,48,48,.07)}.callout.critical strong{color:#ff8d85}.callout.good{border-color:var(--green);background:rgba(101,210,138,.06)}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.links a{padding:8px 10px;border:1px solid var(--rule);border-radius:4px;color:var(--cyan);font:700 12px/1.3 var(--mono);text-decoration:none}.links a:hover{color:var(--bg);background:var(--cyan)}
+.notes-panel{margin-top:16px;padding:22px}.notes-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.notes-panel label{display:block;color:var(--cyan);font:800 11px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase}.notes-panel textarea{width:100%;min-height:130px;margin-top:7px;padding:12px;border:1px solid var(--rule);border-radius:4px;resize:vertical;background:#0b0f14;color:var(--ink);font-family:var(--body)}.notes-panel textarea:focus{border-color:var(--cyan);outline:none}.save-status{margin-top:10px;color:var(--muted);font:12px/1.4 var(--mono)}
+footer{margin-top:22px;color:var(--muted);text-align:center;font-size:12px}footer code{color:var(--cyan);font-family:var(--mono)}
+@media(max-width:800px){.shell{padding:12px 10px 54px}.hero{padding:24px 18px}.toolbar{top:4px;grid-template-columns:1fr;padding:11px}.toolbar-actions{justify-content:flex-start}.items,.notes-grid{grid-template-columns:1fr}.section summary{grid-template-columns:auto minmax(0,1fr);padding:16px 14px}.section-progress{grid-column:2;text-align:left}.section-body{padding:0 14px 16px}.item{padding:12px}.btn{flex:1 1 42%;white-space:nowrap}.hero-facts{gap:6px}}
+@media print{body{background:#fff;color:#142025}.shell{max-width:none;padding:0}.hero,.section,.notes-panel{break-inside:avoid;background:#fff;border-color:#9eb1b8;box-shadow:none}.toolbar,.jump,footer{display:none}.section:not([open])>.section-body{display:block}.item{break-inside:avoid;background:#fff;border-color:#c8d3d7}.item span span,.lead,.callout{color:#46585f}}
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="hero">
+    <div class="eyebrow">DWARF · presentation control</div>
+    <h1>Presenter checklist</h1>
+    <p class="lead">A second-screen guide for the deck, product walkthrough, live real-node demo, and client discussion. Check items as you go; progress saves automatically.</p>
+    <div class="hero-facts"><span class="fact"><strong>Real implementations</strong> · no simulator</span><span class="fact"><strong>Evidence after claims</strong></span><span class="fact"><strong>Current vs proposed</strong></span><span class="fact"><strong>No live debugging</strong></span></div>
+  </header>
+
+  <div class="toolbar" aria-label="Checklist controls">
+    <div><div class="progress-copy"><strong id="progress-count">0 / 0</strong><span id="progress-label">complete</span></div><div class="progress-track" aria-hidden="true"><i id="progress-bar"></i></div></div>
+    <div class="toolbar-actions"><button class="btn" id="expand-all" type="button">Expand all</button><button class="btn" id="collapse-complete" type="button">Collapse completed</button><button class="btn" id="export" type="button">Export JSON</button><button class="btn danger" id="reset" type="button">Reset</button></div>
+  </div>
+
+  <nav class="jump" aria-label="Jump to section">
+    <a href="#preflight">Preflight</a><a href="#opening">Opening</a><a href="#deck">Deck</a><a href="#learn">Learn</a><a href="#operate">Operate</a><a href="#demo">Demo</a><a href="#fallback">Fallback</a><a href="#discussion">Discussion</a><a href="#followup">Follow-up</a>
+  </nav>
+
+  <details class="section" id="preflight" open>
+    <summary><div class="section-title"><h2>1 · Before anyone joins</h2><small>Remove avoidable risk before screen share starts.</small></div><span class="section-progress"></span></summary>
+    <div class="section-body"><div class="items">
+      <label class="item"><input type="checkbox" data-id="p-browser"><span><strong>Use a clean presentation browser</strong><span>Close private tabs, password managers, terminals, email, and unrelated workbench objects.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="p-notifications"><span><strong>Silence notifications</strong><span>Enable do-not-disturb and share the intended browser window—not the entire desktop.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="p-zoom"><span><strong>Set readable zoom</strong><span>Use a zoom level that keeps headings, IDs, and assertion results legible over remote screen share.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="p-tabs"><span><strong>Pre-open the route sequence</strong><span>Deck, DWARF home, Learn, Operate, Status, Scenarios, Runs, proven run, and this checklist.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="p-links"><span><strong>Open every critical link once</strong><span>Catch authentication, DNS, certificate, or session problems before the audience sees them.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="p-demo-id"><span><strong>Copy the exact demo ID</strong><span><code>runtime-substrate-honest-baseline-docker-mode-example-smoke</code></span></span></label>
+      <label class="item"><input type="checkbox" data-id="p-fallback"><span><strong>Load the retained passing result</strong><span>Keep run <code>20260915T080317Z-f1f34924</code> open in a separate tab.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="p-no-secrets"><span><strong>Keep configuration private</strong><span>Do not open secret-bearing configuration fields, shell history, PATs, wallets, or Antithesis credentials.</span></span></label>
+    </div><div class="links"><a target="_blank" rel="noopener" href="https://bench.gainpalfam.com/wb/dwarf-presentation/o/obj_5830ef66a7f14b979dd70c40">Presentation deck ↗</a><a target="_blank" rel="noopener" href="https://dwarf.gainpalfam.com/operate">DWARF Operate ↗</a><a target="_blank" rel="noopener" href="https://dwarf.gainpalfam.com/operate/runs/20260915T080317Z-f1f34924">Proven demo run ↗</a></div></div>
+  </details>
+
+  <details class="section" id="opening" open>
+    <summary><div class="section-title"><h2>2 · Open with the problem</h2><small>Give the audience the reason to care before explaining the machinery.</small></div><span class="section-progress"></span></summary>
+    <div class="section-body"><div class="items">
+      <label class="item"><input type="checkbox" data-id="o-goal"><span><span class="tag">Focus</span><strong>Lead with the security goal</strong><span>Identify infrastructure vulnerabilities before malicious actors can exploit them.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="o-scope"><span><strong>Bound the scope</strong><span>Node and blockchain infrastructure: networking, protocol handling, consensus, ledger processing, persistence, bootstrap, recovery, resources, configuration, and deployment—not smart-contract application audits.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="o-real"><span><strong>State what makes DWARF different</strong><span>It exercises real Cardano-node and Amaru implementations and their real interfaces; it does not replace them with a simulator.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="o-hard"><span><strong>Explain why this is difficult</strong><span>Two independent implementations, different languages, complex distributed behavior, decentralized development and deployment, and costly recovery when failures escape.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="o-answer"><span><strong>Describe the answer in one sentence</strong><span>Reproducible workloads and faults go in; evidence-backed, replayable outcomes come out.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="o-roadmap"><span><strong>Tell them the route</strong><span>Goal and threat model → product and inventory → tested evidence → walkthrough → live demo → proposals and decisions.</span></span></label>
+    </div><div class="callout good"><strong>Useful opening line:</strong> “DWARF is the security-testing workbench for asking whether the real Cardano infrastructure remains safe, compatible, and recoverable when inputs, peers, state, and infrastructure stop behaving nicely.”</div></div>
+  </details>
+
+  <details class="section" id="deck">
+    <summary><div class="section-title"><h2>3 · While presenting the deck</h2><small>Keep the story moving; use the slides as evidence, not a script.</small></div><span class="section-progress"></span></summary>
+    <div class="section-body"><div class="items">
+      <label class="item"><input type="checkbox" data-id="d-no-read"><span><strong>Do not read the slide</strong><span>State the conclusion, point to the visual proof, and add one useful implication.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="d-pause"><span><strong>Pause on the threat maps</strong><span>Explain the color key and B- identifiers before discussing coverage against them.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="d-inventory"><span><strong>Separate inventory from proof</strong><span>Catalog counts show available definitions and capabilities. They do not mean every scenario has produced valid coverage.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="d-current"><span><strong>Label current capability clearly</strong><span>Use “implemented,” “run,” “observed,” or “reported” only where the retained evidence supports it.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="d-proposal"><span><strong>Hold proposals until the end</strong><span>Do not let metrics, operating thresholds, cadence, or issue-lifecycle decisions interrupt the product walkthrough.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="d-questions"><span><strong>Park deep questions deliberately</strong><span>Capture the question, answer the headline if possible, and return after the demo unless it blocks understanding.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="d-claims"><span><strong>Use the claim → evidence → limit pattern</strong><span>Say what happened, show where it is retained, then state what that result does not prove.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="d-clean"><span><strong>Treat clean runs as useful results</strong><span>They establish negative evidence for the exact workload and revision; they are not “nothing happened.”</span></span></label>
+    </div></div>
+  </details>
+
+  <details class="section" id="learn">
+    <summary><div class="section-title"><h2>4 · Learn walkthrough</h2><small>Show that the product teaches an operator how the system and evidence model work.</small></div><span class="section-progress"></span></summary>
+    <div class="section-body"><div class="items">
+      <label class="item"><input type="checkbox" data-id="l-home"><span><strong>Open Learn as the documentation front door</strong><span>Orientation, getting started, architecture, concepts, examples, and operator guidance are accessible inside DWARF.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="l-architecture"><span><strong>Show the execution architecture</strong><span>One scenario definition can drive local execution, CI, or generated Antithesis assets while retaining a common evidence model.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="l-schema"><span><strong>Show authoring guidance</strong><span>Profiles, scenarios, targets, primitives, corpora, grammars, plugins, and evidence assets have technical descriptions and examples.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="l-threat"><span><strong>Open Threat coverage</strong><span>Use the detailed map to connect scenario families to the Milestone 1 threat model and risk register.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="l-runbook"><span><strong>Point out the operator runbook</strong><span>DWARF includes the recurring sequence for preflight, execution, observation, classification, retention, and reporting.</span></span></label>
+    </div><div class="links"><a target="_blank" rel="noopener" href="https://dwarf.gainpalfam.com/learn">Learn ↗</a><a target="_blank" rel="noopener" href="https://dwarf.gainpalfam.com/learn/architecture">Architecture ↗</a><a target="_blank" rel="noopener" href="https://dwarf.gainpalfam.com/learn/threat-coverage">Threat coverage ↗</a></div></div>
+  </details>
+
+  <details class="section" id="operate">
+    <summary><div class="section-title"><h2>5 · Operate walkthrough</h2><small>Follow the operator loop instead of opening pages in arbitrary order.</small></div><span class="section-progress"></span></summary>
+    <div class="section-body"><div class="items">
+      <label class="item"><input type="checkbox" data-id="r-home"><span><strong>Start with the Operate overview</strong><span>Point out current activity, catalog inventory, retained evidence, integrations, and shortcuts.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="r-status"><span><strong>Explain Status honestly</strong><span>The page checks framework and topology health. The pre-staged mixed topology can be unhealthy without blocking the isolated demo scenario.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="r-redeploy"><span><strong>Show the recovery control without using it</strong><span>The warning offers a manual fresh redeploy; automatic redeploy is intentionally opt-in so troubleshooting state is not destroyed unexpectedly.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="r-catalogs"><span><strong>Show the definition catalogs</strong><span>Scenarios express test intent; profiles topology; targets executable boundaries; primitives typed operations; related assets remain inspectable.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="r-builders"><span><strong>Demonstrate builders without saving</strong><span>Show structured fields, supported values, contextual help, and raw YAML/JSON escape hatches. Do not create or overwrite catalog objects live.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="r-runs"><span><strong>Show Runs before launching</strong><span>Explain filters, scenario/profile/primitive metadata, outcomes, and the difference between framework status and security classification.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="r-evidence"><span><strong>Open one run deeply</strong><span>Manifest, exact scenario, seed, assertions, events, metrics, outputs, tamper verification, bundle, and SARIF make the result inspectable.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="r-antithesis"><span><strong>Describe Antithesis without launching it</strong><span>DWARF generates and preflights assets; Moog submits the pinned package; Antithesis explores it. No paid/live submission during this walkthrough.</span></span></label>
+    </div><div class="callout"><strong>Do not expose:</strong> configuration secrets, tokens, wallet data, private report URLs, or shell history. The presentation can explain these integrations without opening their sensitive values.</div></div>
+  </details>
+
+  <details class="section" id="demo" open>
+    <summary><div class="section-title"><h2>6 · Live real-node demo</h2><small>Use the fresh, isolated scenario proven through the same GUI button.</small></div><span class="section-progress"></span></summary>
+    <div class="section-body"><div class="callout good"><strong>Selected scenario:</strong> <code>runtime-substrate-honest-baseline-docker-mode-example-smoke</code><br>Expected wall time is roughly 45 seconds on cardano-box. It creates two real Cardano-node 10.7.1 containers, observes them for 10 seconds, evaluates three assertions, retains evidence, and tears the temporary topology down.</div><div class="items">
+      <label class="item"><input type="checkbox" data-id="m-boundary"><span><span class="tag">Say first</span><strong>State the demo boundary</strong><span>“This is a reliable operational smoke of the full local DWARF loop. It is real-node execution, but it is not the mixed adversarial campaign.”</span></span></label>
+      <label class="item"><input type="checkbox" data-id="m-scenarios"><span><strong>Open Scenarios</strong><span>Use the Run a scenario control at the top of <code>/operate/scenarios</code>.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="m-select"><span><strong>Paste the exact scenario ID</strong><span>Avoid a near-match from the 243-entry catalog.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="m-run"><span><strong>Click Run once</strong><span>Do not double-click, refresh, or start a second copy while the request is streaming.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="m-narrate"><span><strong>Narrate phases, not log lines</strong><span>Install/resolve → compose fresh devnet → wait for real chain progress → observe nodes → assert → teardown → retain bundle.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="m-result"><span><strong>Confirm the terminal result</strong><span>Expect <code>exit_status: pass</code>, three passing assertions, and a new run ID. If not, pivot.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="m-open"><span><strong>Open the new run</strong><span>Show the plain-English summary and <code>3 / 3</code> assertion tile before going deeper.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="m-proof"><span><strong>Show non-vacuous evidence</strong><span>Two containers started healthy, both nodes responded, both peer edges were observed, and both reached the same selected tip.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="m-artifacts"><span><strong>Show the retained outputs</strong><span>Compose report, runtime metadata, observation summary, assertions, host/process metrics, SARIF, and teardown report.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="m-close"><span><strong>Close the loop</strong><span>“The important output is not the green badge; it is the exact, portable evidence explaining why this run passed.”</span></span></label>
+    </div><div class="links"><a target="_blank" rel="noopener" href="https://dwarf.gainpalfam.com/operate/scenarios">Scenario runner ↗</a><a target="_blank" rel="noopener" href="https://dwarf.gainpalfam.com/operate/scenarios/runtime-substrate-honest-baseline-docker-mode-example-smoke">Scenario definition ↗</a><a target="_blank" rel="noopener" href="https://dwarf.gainpalfam.com/operate/runs/20260915T080317Z-f1f34924">Passing reference run ↗</a></div></div>
+  </details>
+
+  <details class="section" id="fallback">
+    <summary><div class="section-title"><h2>7 · If the live path misbehaves</h2><small>Preserve the presentation; do not turn the meeting into an incident call.</small></div><span class="section-progress"></span></summary>
+    <div class="section-body"><div class="items">
+      <label class="item"><input type="checkbox" data-id="f-clock"><span><strong>Set a hard pivot point</strong><span>If there is no credible progress within 90 seconds, stop waiting and use the retained passing run.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="f-say"><span><strong>Explain the pivot once</strong><span>“The live path is not completing inside the demo window, so I’m switching to the retained execution prepared for this case.”</span></span></label>
+      <label class="item"><input type="checkbox" data-id="f-open"><span><strong>Open the retained passing run</strong><span>Use <code>20260915T080317Z-f1f34924</code> to show the same manifest, assertions, node evidence, artifacts, and SARIF.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="f-no-debug"><span><strong>Do not debug live</strong><span>No SSH, Docker logs, restarts, fresh redeploys, config edits, or repeated submissions while presenting.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="f-mixed"><span><strong>Classify the mixed-topology warning correctly</strong><span>The recurring Amaru stall is a separate pre-staged topology problem. It is why the dependable demo now uses an isolated self-composed devnet.</span></span></label>
+    </div><div class="callout critical"><strong>Never imply a failed launch found a node vulnerability.</strong> Setup, readiness, harness, workload, assertion, and target failures must be separated before security classification.</div></div>
+  </details>
+
+  <details class="section" id="discussion">
+    <summary><div class="section-title"><h2>8 · Return to proposals and decisions</h2><small>Make the client choices explicit after they have seen the product work.</small></div><span class="section-progress"></span></summary>
+    <div class="section-body"><div class="items">
+      <label class="item"><input type="checkbox" data-id="c-security"><span><strong>Protect DWARF’s primary purpose</strong><span>Recommend security and adversarial testing as the center; use existing specialist tooling for broad benchmarking or general CI where it already fits.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="c-test-types"><span><strong>Agree on valuable test categories</strong><span>Ask which security, compatibility, recovery, differential, and release-gate bundles matter most to Cardano-node and Amaru owners.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="c-metrics"><span><strong>Offer bounded measurement options</strong><span>External protocol/chain/resource observation is lower maintenance; internal stage timing is deeper but introduces version-sensitive node instrumentation and observer effects.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="c-threshold"><span><strong>Ask for acceptance thresholds</strong><span>20,000-block baselines, regression tolerances, recovery bounds, cadence, and release-blocking conditions require owner agreement.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="c-cadence"><span><strong>Confirm cadence</strong><span>Discuss Amaru weekly testing and Cardano-node release-based testing as proposals, not active policy.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="c-security-process"><span><strong>Confirm the security issue lifecycle</strong><span>Private preservation, proof, classification, accountable owner, remediation state, regression verification, coordinated closure.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="c-owner"><span><strong>End each decision with ownership</strong><span>Record one owner, one next action, and the evidence or decision needed to close it.</span></span></label>
+    </div></div>
+  </details>
+
+  <details class="section" id="followup">
+    <summary><div class="section-title"><h2>9 · Before ending the call</h2><small>Turn discussion into an actionable handoff.</small></div><span class="section-progress"></span></summary>
+    <div class="section-body"><div class="items">
+      <label class="item"><input type="checkbox" data-id="a-questions"><span><strong>Read back unresolved questions</strong><span>Separate technical unknowns from policy choices and scheduling decisions.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="a-decisions"><span><strong>Confirm decisions aloud</strong><span>Restate agreed test categories, cadence, thresholds, measurement depth, and security-reporting expectations.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="a-actions"><span><strong>Assign next actions</strong><span>Each action needs an owner and expected artifact or outcome.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="a-links"><span><strong>Offer the useful links</strong><span>DWARF Learn, threat coverage, run evidence, presentation handout, and security process—not the private operator configuration.</span></span></label>
+      <label class="item"><input type="checkbox" data-id="a-save"><span><strong>Save this checklist</strong><span>Confirm the status below says “Saved to workbench,” then export JSON if you want a standalone record.</span></span></label>
+    </div></div>
+  </details>
+
+  <section class="notes-panel" aria-labelledby="notes-title"><div class="eyebrow">Capture during the call</div><h2 id="notes-title">Presenter notes and follow-up</h2><div class="notes-grid"><label>Presenter notes<textarea id="presenter-notes" placeholder="Pacing, phrasing, reminders, audience context…"></textarea></label><label>Questions, decisions, and owners<textarea id="followup-notes" placeholder="Question or decision · owner · next action…"></textarea></label></div><div class="save-status" id="save-status">Loading saved state…</div></section>
+
+  <footer>DWARF · presenter checklist · state stored in <code>localStorage</code> and mirrored to Arctic Base when available · updated 2026-09-15</footer>
+</main>
+<script>
+(() => {
+  const KEY = "dwarf-presenter-checklist-v1";
+  const checks = [...document.querySelectorAll('input[type="checkbox"][data-id]')];
+  const sections = [...document.querySelectorAll("details.section")];
+  const presenterNotes = document.getElementById("presenter-notes");
+  const followupNotes = document.getElementById("followup-notes");
+  const status = document.getElementById("save-status");
+  let state = { checks: {}, open: {}, presenter_notes: "", followup_notes: "", saved_at: null };
+  let saveTimer;
+
+  function readLocal() {
+    try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (_) { return null; }
+  }
+  function merge(saved) {
+    if (!saved || typeof saved !== "object") return;
+    state = { ...state, ...saved, checks: { ...state.checks, ...(saved.checks || {}) }, open: { ...state.open, ...(saved.open || {}) } };
+  }
+  function snapshot() {
+    checks.forEach(c => state.checks[c.dataset.id] = c.checked);
+    sections.forEach(s => state.open[s.id] = s.open);
+    state.presenter_notes = presenterNotes.value;
+    state.followup_notes = followupNotes.value;
+    state.saved_at = new Date().toISOString();
+    return state;
+  }
+  function saveLocal() { localStorage.setItem(KEY, JSON.stringify(snapshot())); }
+  async function persist() {
+    saveLocal();
+    status.textContent = "Saved in this browser";
+    if (window.workbench && typeof window.workbench.saveAll === "function") {
+      try { await window.workbench.saveAll(state); status.textContent = "Saved to workbench · " + new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); }
+      catch (_) { status.textContent = "Saved locally · workbench mirror unavailable"; }
+    }
+  }
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    saveLocal();
+    status.textContent = "Saving…";
+    saveTimer = setTimeout(persist, 250);
+  }
+  function updateProgress() {
+    const done = checks.filter(c => c.checked).length;
+    const pct = checks.length ? Math.round(done * 100 / checks.length) : 0;
+    document.getElementById("progress-count").textContent = `${done} / ${checks.length}`;
+    document.getElementById("progress-label").textContent = `${pct}% complete`;
+    document.getElementById("progress-bar").style.width = pct + "%";
+    sections.forEach(section => {
+      const own = [...section.querySelectorAll('input[type="checkbox"][data-id]')];
+      const ownDone = own.filter(c => c.checked).length;
+      const el = section.querySelector(".section-progress");
+      el.textContent = `${ownDone} / ${own.length}`;
+      el.classList.toggle("complete", own.length > 0 && ownDone === own.length);
+    });
+  }
+  function apply() {
+    checks.forEach(c => c.checked = !!state.checks[c.dataset.id]);
+    sections.forEach(s => { if (Object.prototype.hasOwnProperty.call(state.open, s.id)) s.open = !!state.open[s.id]; });
+    presenterNotes.value = state.presenter_notes || "";
+    followupNotes.value = state.followup_notes || "";
+    updateProgress();
+  }
+  async function initialise() {
+    merge(readLocal());
+    if (window.workbench && typeof window.workbench.loadAll === "function") {
+      try { merge(await window.workbench.loadAll()); } catch (_) {}
+    }
+    apply();
+    status.textContent = state.saved_at ? "Restored saved checklist" : "Ready · changes save automatically";
+  }
+
+  checks.forEach(c => c.addEventListener("change", () => { updateProgress(); scheduleSave(); }));
+  sections.forEach(s => s.addEventListener("toggle", scheduleSave));
+  [presenterNotes, followupNotes].forEach(t => t.addEventListener("input", scheduleSave));
+  document.getElementById("expand-all").addEventListener("click", () => { sections.forEach(s => s.open = true); scheduleSave(); });
+  document.getElementById("collapse-complete").addEventListener("click", () => { sections.forEach(s => { const own = [...s.querySelectorAll('input[type="checkbox"][data-id]')]; if (own.length && own.every(c => c.checked)) s.open = false; }); scheduleSave(); });
+  document.getElementById("export").addEventListener("click", () => { const blob = new Blob([JSON.stringify(snapshot(), null, 2)], {type:"application/json"}); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "dwarf-presenter-checklist.json"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
+  document.getElementById("reset").addEventListener("click", async () => { if (!confirm("Reset every checkbox and both notes fields?")) return; const defaultOpen = new Set(["preflight","opening","demo"]); state = { checks:{}, open:Object.fromEntries(sections.map(s => [s.id, defaultOpen.has(s.id)])), presenter_notes:"", followup_notes:"", saved_at:null }; localStorage.removeItem(KEY); apply(); await persist(); });
+  initialise();
+})();
+</script>
+</body>
+</html>

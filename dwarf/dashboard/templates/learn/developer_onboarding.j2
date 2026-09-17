@@ -1,0 +1,130 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Learn · Developer onboarding</span>
+<h1>Developer onboarding</h1>
+<p class="page-hero">How to add a primitive, scenario, assertion, or profile to Dwarf without breaking the existing surface. The conventions here are load-bearing — they keep the catalog, registry, and delivery contract in sync.</p>
+
+<hr class="hairline">
+
+<section>
+  <header><span class="eyebrow">Step 1</span><h2>TDD pattern</h2></header>
+  <p>Every primitive, view, and data extractor lands red-test → impl → green:</p>
+  <ol>
+    <li>Write a focused check that asserts the desired behaviour at the smallest meaningful unit.</li>
+    <li>Run it and watch it fail with the right error message. If the failure is for the wrong reason (e.g. ImportError instead of AssertionError), the test is broken first — fix it before writing the impl.</li>
+    <li>Write the minimum impl that turns the test green. Resist scope creep.</li>
+    <li>Run the delivery contract to confirm the package layout and public surface still match the expected scope.</li>
+    <li>Commit. The narrow commit pattern makes the next step easier.</li>
+  </ol>
+  <p>The delivery contract is intentionally narrow: it guards the package shape, required files, scripts, image tag, and catalog scope.</p>
+</section>
+
+<hr class="hairline">
+
+<section>
+  <header><span class="eyebrow">Step 2</span><h2>Narrow commit + commit message style</h2></header>
+  <p>Commits are one logical change. Three files for a feature is fine; thirty is suspicious. The commit message follows this shape:</p>
+  <pre class="run-payload-pre"><code>feat: short imperative summary in <70 chars
+
+Two-paragraph body explaining the WHY (the constraint or symptom)
+and the HOW (the minimum-viable approach). Reference the issue or
+ticket that motivated the change.
+
+Tests cover X, Y, Z. Manually verified by Q.</code></pre>
+  <p>Type prefixes: <code>feat</code> (new feature), <code>fix</code> (bug fix), <code>refactor</code> (no behavioural change), <code>test</code> (test-only), <code>docs</code>.</p>
+</section>
+
+<hr class="hairline">
+
+<section>
+  <header><span class="eyebrow">Step 3</span><h2>Local validate flow</h2></header>
+  <p>Before pushing, these commands cover most regressions:</p>
+  <pre class="run-payload-pre"><code># Validate the whole catalog: every scenario parses, references only
+# registered primitives, and asserts only known assertion types
+python3 dwarf/scripts/validate_scenarios.py
+
+# Semantic-validate a single scenario while iterating on it
+./dwarf/cardano-profile scenario validate --semantic \
+  dwarf/scenarios/amaru-cbor-tx-body-fuzz.yaml
+
+# Confirm delivery package layout and catalog scope
+bash delivery/tests/test_delivery_contract.sh</code></pre>
+</section>
+
+<hr class="hairline">
+
+<section>
+  <header><span class="eyebrow">Step 4</span><h2>Authoring a new scenario from a template</h2></header>
+  <p>Any existing scenario is a template: <code>scenario new</code> clones one as the starting point and rewrites its <code>id</code> / <code>title</code> to the new name. The whole catalog (and anything added later) is available — pick the closest existing scenario and adapt it.</p>
+  <pre class="run-payload-pre"><code>./dwarf/cardano-profile scenario new \
+  --template runtime-substrate-byzantine-blockfetch-example-smoke \
+  --name my-byzantine-experiment</code></pre>
+  <p>Or use <a href="/operate/scenarios/new">/operate/scenarios/new</a> in the dashboard — pick a source scenario, type a name, preview, click Create. Hot-reload picks up the new file on the next <code>/operate/scenarios</code> request. The template ids are the files under <code>dwarf/scenarios/</code> (also listed at <a href="/operate/scenarios">/operate/scenarios</a>).</p>
+</section>
+
+<hr class="hairline">
+
+<section>
+  <header><span class="eyebrow">Step 5</span><h2>Authoring a new primitive</h2></header>
+  <p>Primitives are atomic actions the framework can execute. Family is the fixed lifecycle bucket — one of <code>setup</code>, <code>load</code>, <code>probe</code>, <code>assertion</code>, <code>fault</code>, <code>teardown</code>; name is the verb.</p>
+  <pre class="run-payload-pre"><code>./dwarf/cardano-profile primitive new \
+  --family load \
+  --name my_new_primitive</code></pre>
+  <p>The scaffold writes (family shown as <code>load</code> here):</p>
+  <ul>
+    <li><code>dwarf/primitives/load/my_new_primitive.schema.json</code> — the params schema.</li>
+    <li><code>dwarf/scripts/runtime_my_new_primitive.py</code> — the executor helper.</li>
+    <li><code>tests/test_runtime_my_new_primitive.py</code> — a focused test for the new primitive.</li>
+  </ul>
+  <p>It also appends the entry to <code>dwarf/primitives/registry.json</code> so the primitive is discoverable.</p>
+  <p>A good primitive review covers: the name fits the family's verb taxonomy, the params schema is JSON-schema-valid, the executor's outputs are deterministic given a seed, and the test asserts a load-bearing invariant.</p>
+</section>
+
+<hr class="hairline">
+
+<section id="authoring-profiles">
+  <header><span class="eyebrow">Step 6</span><h2>Authoring a new profile</h2></header>
+  <p>Profiles are named deployment configurations. The current immutable templates under <code>dwarf/profiles/templates/</code> cover Haskell, Amaru, generated, mixed, and peer-sharing shapes; use <a href="/operate/profile-templates">the live template catalog</a> for the source-backed inventory rather than copying a fixed count into documentation.</p>
+  <pre class="run-payload-pre"><code>./dwarf/cardano-profile profile new \
+  --template haskell-preview \
+  --name my-deployment</code></pre>
+  <p>Edit the resulting <code>profiles/my-deployment.yaml</code> for host-specific values (paths, peer counts, network magic). Then deploy:</p>
+  <pre class="run-payload-pre"><code>./dwarf/cardano-profile deploy my-deployment</code></pre>
+</section>
+
+<hr class="hairline">
+
+<section id="authoring-targets">
+  <header><span class="eyebrow">Step 7</span><h2>Authoring a new target</h2></header>
+  <p>A target manifest registers one executable surface that DWARF can drive. The required fields identify the binary, real implementation, implementation language, input-delivery method, decoder family, exact upstream revision, and invariants that every generated input must preserve.</p>
+  <p><code>decoder_type</code> uses one of three catalog categories:</p>
+  <ul>
+    <li><code>CBOR codec</code> for a directly driven CBOR parser or codec.</li>
+    <li><code>Mini-protocol decoder</code> for a Cardano mini-protocol message decoder or state-machine surface.</li>
+    <li><code>Coverage-guided AFL++ harness (native SanitizerCoverage)</code> for an instrumented AFL++ target with native coverage feedback.</li>
+  </ul>
+  <p><code>upstream_commit</code> is provenance, not readiness metadata. For a new runnable target, record the full upstream Git commit SHA represented by the binary. Use <code>status</code> for an explicit readiness caveat and <code>source_caveat</code> for a limitation in what the target represents.</p>
+  <p>The optional <code>harness</code> object records runner details such as an environment selector, entrypoint, corpus, or instrumentation. <strong>Variants are not a target manifest field.</strong> Register a materially different executable or protocol surface as a separate target; keep configuration of the same executable under <code>harness</code>. Unknown raw extension fields are preserved but do nothing unless DWARF implements them.</p>
+  <p>After saving, confirm the referenced binary exists and run the delivery contract before using the target in a scenario:</p>
+  <pre class="run-payload-pre"><code>bash delivery/tests/test_delivery_contract.sh</code></pre>
+</section>
+
+<hr class="hairline">
+
+<section id="authoring-assets">
+  <header><span class="eyebrow">Step 8</span><h2>Authoring and curating reusable assets</h2></header>
+  <p>The reusable catalogs intentionally do not share one mutation model. Respect the source of truth shown on each detail page:</p>
+  <ul>
+    <li><strong>Profile templates and risk work packages</strong> are versioned repository records. Change them through source control and validation; Operate is read-only.</li>
+    <li><strong>Testcases</strong> retain mutable triage state while pointing back to immutable run artifacts. <strong>Testcase buckets</strong> are derived views and have no file to edit.</li>
+    <li><strong>Corpora</strong> keep shipped inputs immutable. Use the bounded runtime overlay for import, testcase promotion, deduplication, disable/enable, and recoverable removal.</li>
+    <li><strong>Generation grammars</strong> keep shipped <code>structure.json</code>/<code>dict.txt</code> pairs immutable. Clone first; a runtime pair is saved only when both the structure schema and token parser pass.</li>
+    <li><strong>Plugins</strong> are authored outside the browser. Inventory reads only <code>plugin.json</code> and explicitly declared files without executing the entrypoint; runtime loading is a privileged, unsandboxed trust decision.</li>
+  </ul>
+  <p>Every exact-source or archive export is non-executing and source-only. Manifest-bearing archives record the source revision, reproducible generation time, object IDs, portable paths, byte sizes, and SHA-256 hashes. See <a href="/learn/examples#asset-examples">the concrete asset examples</a> before adding or promoting an object.</p>
+</section>
+
+<hr class="hairline">
+
+<p class="page-subhero">Cross-reference: <a href="/learn/cli">CLI reference</a> · <a href="/learn/architecture">architecture</a> · <a href="/learn/api">REST API</a> · <a href="/learn/examples#asset-examples">asset examples</a> · <a href="/learn/plugin-authoring">plugin authoring</a></p>
+{% endblock %}

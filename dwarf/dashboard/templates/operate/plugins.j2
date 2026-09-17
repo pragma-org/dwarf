@@ -1,0 +1,26 @@
+{% extends "_base.j2" %}
+{% block main %}
+<header class="scenarios-header">
+  <div><span class="eyebrow">Operate · extension inventory</span><h1>Plugins</h1><p class="page-hero"><strong>{{ plugins|length }} candidates</strong> expose {{ total_primitives }} statically declared primitives. {{ runtime_unknown_count }} candidates also use runtime registration that this safe inventory does not execute.</p></div>
+  <div class="definition-actions"><a class="cta cta--ghost" href="/api/plugins/export" download>Export catalog sources</a><a class="cta cta--ghost" href="/learn/plugin-authoring" target="_blank" rel="noopener">Authoring and trust model</a><a class="cta cta--ghost" href="/operate/primitives">Primitive catalog</a></div>
+</header>
+<section class="asset-diagnostics"><strong>Trust boundary</strong><p>{{ trust_warning }}</p></section>
+{% if global_errors %}<section class="asset-diagnostics"><strong>Registry diagnostics</strong><ul>{% for error in global_errors %}<li>{{ error }}</li>{% endfor %}</ul></section>{% endif %}
+<dl class="definition-summary">
+  <div><dt>Candidates</dt><dd>{{ plugins|length }}</dd></div><div><dt>Static primitives</dt><dd>{{ total_primitives }}</dd></div><div><dt>Invalid</dt><dd>{{ invalid_count }}</dd></div><div><dt>Runtime-unknown</dt><dd>{{ runtime_unknown_count }}</dd></div><div><dt>Expected API</dt><dd><code>{{ expected_api_version }}</code></dd></div>
+</dl>
+<section><span class="eyebrow">Discovery roots</span><h2>Inspected without imports</h2><p>Direct child directories are inspected under <code>{{ plugins_env }}</code> and the default root. Missing and malformed candidates remain visible instead of hiding healthy siblings.</p><div class="plugin-root-list">{% for root in plugin_roots %}<code>{{ root }}</code>{% else %}<span>No configured roots.</span>{% endfor %}</div></section>
+<hr class="hairline">
+<div class="filter-bar"><label for="plugin-search" class="eyebrow">Search</label><input id="plugin-search" type="search" aria-label="Search plugins" placeholder="Plugin, path, mode, primitive, error, or status"><p class="filter-count" aria-live="polite"><span data-plugin-count>{{ plugins|length }}</span> candidates</p></div>
+{% if plugins %}<div class="plugin-catalog">
+  {% for p in plugins %}<article class="plugin-card" data-plugin-row data-search="{{ p.plugin_id }} {{ p.directory_name }} {{ p.plugin_root }} {{ p.load_mode }} {{ p.status }} {% for primitive in p.primitives %}{{ primitive.id }} {% endfor %}{% for error in p.errors %}{{ error }} {% endfor %}">
+    <div class="plugin-card__head"><div><span class="eyebrow">{{ p.status }} · {{ p.load_mode }}</span><h2><a href="/operate/plugins/{{ p.catalog_id }}"><code>{{ p.plugin_id }}</code></a></h2>{% if p.description %}<p>{{ p.description }}</p>{% endif %}</div><span class="pill">{{ p.static_primitive_count }} static</span></div>
+    <dl class="plugin-card__facts"><div><dt>API</dt><dd><code>{{ p.dwarf_api_version or 'missing' }}</code></dd></div><div><dt>Version</dt><dd><code>{{ p.version or 'undeclared' }}</code></dd></div><div><dt>Directory</dt><dd><code>{{ p.directory_name }}</code></dd></div></dl>
+    <code class="plugin-card__path">{{ p.plugin_root }}</code>
+    {% if p.errors %}<p class="plugin-card__diagnostic plugin-card__diagnostic--error">{{ p.errors|length }} validation error{{ '' if p.errors|length == 1 else 's' }}</p>{% endif %}
+    {% if p.runtime_contributions_unknown %}<p class="plugin-card__diagnostic">Entrypoint contributions are runtime-unknown.</p>{% endif %}
+    <a class="text-link" href="/operate/plugins/{{ p.catalog_id }}">Inspect manifest, paths, and reconciliation</a>
+  </article>{% endfor %}
+</div>{% else %}<p class="empty-section-statement">No plugin candidate directories were found. The configured roots are still shown above so deployment configuration can be verified.</p>{% endif %}
+<script>(()=>{const input=document.getElementById('plugin-search');const rows=[...document.querySelectorAll('[data-plugin-row]')];const count=document.querySelector('[data-plugin-count]');if(!input||!count)return;input.addEventListener('input',()=>{const needle=input.value.trim().toLowerCase();let visible=0;for(const row of rows){const show=!needle||row.dataset.search.toLowerCase().includes(needle);row.hidden=!show;if(show)visible+=1;}count.textContent=String(visible);});})();</script>
+{% endblock %}

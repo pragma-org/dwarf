@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+._*
+
+# outputs / tooling / sensitive — never commit
+dwarf/runs/
+dwarf/evidence/
+evidence/
+sp1-closure/
+notes/
+agent/
+.serena/
+TEST-OUTPUTS.md
+*.m2bak
+docs/superpowers/
+delivery/audit/

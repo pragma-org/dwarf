@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DWARF — September 17 audience handout</title>
+<style>
+  :root{--ink:#eaf2f2;--muted:#9caeb4;--bg:#05090b;--panel:#10191f;--line:#18414a;--cyan:#2bd8df;--brass:#c69752;--green:#71d69b;--red:#ef7b73;--paper:#fff;--paper-ink:#172127}
+  *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 90% 0,#0b2428 0,transparent 35%),var(--bg);color:var(--ink);font:15px/1.48 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  button{font:inherit}.shell{max-width:1180px;margin:auto;padding:32px 24px 56px}.mast{border:1px solid var(--line);background:linear-gradient(135deg,#121d23,#0c1419);padding:30px 34px;position:relative;overflow:hidden}.mast:after{content:"";position:absolute;right:-50px;top:-85px;width:270px;height:270px;border:1px solid var(--line);transform:rotate(45deg)}
+  .kicker,.eyebrow{color:var(--cyan);font:700 11px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.16em;text-transform:uppercase}.mast h1{font-size:clamp(36px,6vw,72px);line-height:.96;margin:14px 0 12px;letter-spacing:-.055em}.dek{color:#bdcbd0;font-size:clamp(16px,2vw,21px);max-width:800px;margin:0}.actions{display:flex;gap:9px;flex-wrap:wrap;margin:16px 0}.actions button{border:1px solid var(--line);background:#0d171c;color:var(--ink);padding:9px 13px;border-radius:3px;cursor:pointer}.actions button.active{background:var(--cyan);border-color:var(--cyan);color:#061013}.actions .print{margin-left:auto;border-color:var(--brass)}
+  .view{display:none}.view.active{display:block}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}.card{grid-column:span 4;border:1px solid var(--line);background:rgba(16,25,31,.96);padding:20px}.wide{grid-column:span 8}.full{grid-column:1/-1}.half{grid-column:span 6}.card h2{margin:8px 0 8px;font-size:22px;letter-spacing:-.02em}.card h3{margin:0 0 7px;font-size:16px}.card p{margin:6px 0;color:var(--muted)}.rule{height:2px;background:var(--cyan);margin:13px 0}.stat{font:700 29px/1 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--cyan)}.label{font-size:12px;color:var(--muted);margin-top:6px}.mini-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.mini{border-left:2px solid var(--brass);padding:3px 0 3px 12px}.mini strong{display:block;color:var(--ink);font-size:14px}.mini span{color:var(--muted);font-size:12px}.status{font:700 10px/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase}.yes{color:var(--green)}.partial{color:var(--brass)}.gap{color:var(--red)}
+  ul{padding-left:18px;margin:8px 0;color:var(--muted)}li{margin:5px 0}li::marker{color:var(--cyan)}.flow{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:13px}.step{border-top:2px solid var(--cyan);padding:9px;background:#0b1317}.step b{display:block;font-size:13px}.step span{font-size:11px;color:var(--muted)}.evidence{display:grid;gap:9px}.story{display:grid;grid-template-columns:155px 1fr;gap:16px;border-top:1px solid var(--line);padding-top:10px}.story:first-child{border:0;padding-top:0}.story b{font-size:13px}.story p{margin:0}.callout{border-left:3px solid var(--brass);padding:10px 13px;background:rgba(198,151,82,.08);color:#d9e1e2}.decisions{counter-reset:decision;display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.decision{border:1px solid var(--line);padding:14px;background:#0b1317}.decision:before{counter-increment:decision;content:"0" counter(decision);display:block;color:var(--cyan);font:700 11px ui-monospace,SFMono-Regular,Consolas,monospace}.decision strong{display:block;margin-top:4px}.decision span{display:block;color:var(--muted);font-size:13px;margin-top:3px}.footer{color:#72858c;text-align:center;font-size:11px;margin-top:16px}.print-only{display:none}
+  @media(max-width:760px){.shell{padding:12px 10px 34px}.mast{padding:22px 18px}.actions .print{margin-left:0}.card,.wide,.half{grid-column:1/-1}.mini-grid,.flow,.decisions{grid-template-columns:1fr}.story{grid-template-columns:1fr;gap:3px}.mast h1{font-size:42px}}
+  @media print{@page{size:A4;margin:10mm}body{background:#fff;color:var(--paper-ink);font-size:9pt}.shell{max-width:none;padding:0}.mast,.card{background:#fff;color:var(--paper-ink);border-color:#9db3b8;break-inside:avoid}.mast{padding:8mm}.mast:after,.actions,.footer{display:none}.mast h1{font-size:34pt;margin:4mm 0 2mm}.dek,.card p,ul,.mini span,.step span,.decision span{color:#3d5058}.view{display:block!important}.view+.view{break-before:page}.grid{gap:3mm}.card{padding:4mm}.card h2{font-size:15pt}.card h3{font-size:10pt}.stat{font-size:18pt}.flow{gap:2mm}.step,.decision{background:#fff}.print-only{display:inline}.screen-only{display:none}}
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="mast">
+    <div class="kicker">September 17 · Cardano + Amaru</div>
+    <h1>DWARF</h1>
+    <p class="dek">A real-node adversarial test framework that turns deterministic workloads, faults, observations, and assertions into retained, reviewable evidence.</p>
+  </header>
+  <nav class="actions" aria-label="Handout sections">
+    <button class="active" data-view="evidence">What exists</button>
+    <button data-view="program">What comes next</button>
+    <button class="print" onclick="window.print()">Print / save PDF</button>
+  </nav>
+
+  <section class="view active" id="evidence">
+    <div class="grid">
+      <article class="card wide"><div class="eyebrow">Execution boundary</div><h2>Real implementations, real protocols, evidence-first verdicts</h2><p>DWARF runs actual Cardano-node and Amaru software in controlled topologies. A scenario coordinates setup, load, fault, observation, recovery, and assertion phases; every useful claim must prove target identity, workload reachability, non-vacuity, and outcome.</p><div class="flow"><div class="step"><b>Select</b><span>scenario + profile</span></div><div class="step"><b>Run</b><span>real nodes</span></div><div class="step"><b>Adversary</b><span>load + faults</span></div><div class="step"><b>Observe</b><span>tips + protocols</span></div><div class="step"><b>Assert</b><span>exact property</span></div><div class="step"><b>Retain</b><span>portable bundle</span></div></div></article>
+      <article class="card"><div class="eyebrow">Current inventory</div><div class="stat">242</div><div class="label">scenario definitions</div><div class="rule"></div><div class="stat">206</div><div class="label">registered primitives</div><div class="rule"></div><div class="stat">86</div><div class="label">retained run directories</div><p>Inventory is not coverage and run status is not a security verdict.</p></article>
+
+      <article class="card"><span class="status yes">Demonstrated</span><h2>Working now</h2><ul><li>Local real-node scenario execution through the GUI</li><li>Profiles, targets, scheduling, run lifecycle, retained bundles</li><li>Deterministic seeds and phase-aware evidence</li><li>Mixed Cardano/Amaru differential observations</li><li>Generative N2N mini-protocol state machines</li><li>Fault injection through Antithesis/Moog</li></ul></article>
+      <article class="card"><span class="status partial">Partial / bounded</span><h2>Evidence with limits</h2><ul><li>Mixed mini-protocol Antithesis delivery and 24/24 cells per target</li><li>KES non-adoption under a run with harness-invalid fork checks</li><li>Fee-boundary differential with limited closure breadth</li><li>Bootstrap and state-lifecycle differences that are not exploit claims</li><li>Node-level throughput design, not implementation</li></ul></article>
+      <article class="card"><span class="status gap">Not yet claimed</span><h2>Open coverage</h2><ul><li>Clean mixed mini-protocol containment/recovery rerun after exclusion repair</li><li>Production-network TPS or benchmark-grade capacity</li><li>Full internal stage attribution for both nodes</li><li>Universal consensus equivalence or finality</li><li>Exhaustive ledger, VM, epoch, network, and recovery coverage</li></ul></article>
+
+      <article class="card full"><div class="eyebrow">Representative evidence</div><h2>What the retained results actually say</h2><div class="evidence">
+        <div class="story"><b>Amaru rewards panic</b><p>Deterministic epoch-transition failure, reproduced 2,249 times in the official W34 control and matched to an upstream fix.</p></div>
+        <div class="story"><b>Fee boundary</b><p>At the exact minimum fee, Cardano-node accepted while Amaru rejected. A valid fault-free differential; breadth and closure remain limited.</p></div>
+        <div class="story"><b>Chain selection</b><p>466 mixed-network iterations across five regimes produced zero genuine selection divergences; nine flags were one-slot propagation jitter.</p></div>
+        <div class="story"><b>N2N state machine</b><p>Both targets reached all 24 protocol/class cells in Antithesis with no victim panic; protected-control naming invalidated the containment/recovery verdict.</p></div>
+      </div></article>
+
+      <article class="card half"><div class="eyebrow">Operator path</div><h2>Use DWARF in one loop</h2><div class="mini-grid"><div class="mini"><strong>Orient</strong><span>Learn + overview</span></div><div class="mini"><strong>Configure</strong><span>profiles + targets</span></div><div class="mini"><strong>Select</strong><span>scenario contract</span></div><div class="mini"><strong>Execute</strong><span>run from GUI</span></div><div class="mini"><strong>Inspect</strong><span>output + assertions</span></div><div class="mini"><strong>Export</strong><span>evidence bundle</span></div></div></article>
+      <article class="card half"><div class="eyebrow">Claim discipline</div><h2>A failed run can find a bug. A passed run can prove very little.</h2><p>DWARF classifies the claim, not merely the process exit: proven, partial, finding, harness-invalid, infrastructure-invalid, known/duplicate, or untested.</p><div class="callout">The framework is valuable when it preserves enough evidence to distinguish a node defect from a harness, topology, setup, or platform failure.</div></article>
+    </div>
+  </section>
+
+  <section class="view" id="program">
+    <div class="grid">
+      <article class="card full"><div class="eyebrow">Proposed operating program</div><h2>Measure useful real-node work without turning DWARF into a simulator</h2><p>Reuse the existing execution and evidence machinery. Add wire transcripts, existing node telemetry, a small set of bounded instrumented builds, independent outcome observation, and resource cost per unit of useful work.</p><div class="mini-grid"><div class="mini"><strong>Block path</strong><span>validate · apply · transfer · adopt</span></div><div class="mini"><strong>Runtime</strong><span>restart · recover · sync · drain</span></div><div class="mini"><strong>Ledger / VM</strong><span>transactions · scripts · epoch transition</span></div></div></article>
+
+      <article class="card half"><div class="eyebrow">Proposed baseline gate</div><h2>Repeatable before “fast”</h2><ul><li>20,000 successfully processed blocks minimum</li><li>Three clean repetitions on the same host class</li><li>Zero new correctness divergence, panic, fatal exit, or permanent stall</li><li>All required cells and targets reached</li><li>Independent observer confirms outcome</li><li>Backlogs drain after fault removal</li></ul><p>Initial relative review thresholds: goodput −10%, p95 latency +15%, recovery +20%, CPU/RSS per useful work +15%. These require stakeholder agreement and later calibration.</p></article>
+      <article class="card half"><div class="eyebrow">Cadence</div><h2>Start small and make it routine</h2><ul><li><b>Amaru:</b> weekly pinned candidate</li><li><b>Cardano-node:</b> release candidate / release initially</li><li><b>Both:</b> affected bundles after consensus, ledger, network, VM, or security changes</li><li><b>Harness changes:</b> preflight plus known-good control before any new node claim</li></ul><p>Scenario tags connect ownership and intent: correctness, consensus, ledger, network, recovery, performance, VM, security, adversarial, differential, and mixed-net.</p></article>
+
+      <article class="card full"><div class="eyebrow">Decisions requested</div><h2>What agreement unlocks next</h2><div class="decisions"><div class="decision"><strong>Adopt the test categories</strong><span>Agree which bundles are valuable and which subsystem owns each result.</span></div><div class="decision"><strong>Approve the baseline method</strong><span>Confirm 20k blocks, repetitions, hardware pinning, and initial review thresholds.</span></div><div class="decision"><strong>Confirm the cadence</strong><span>Amaru weekly; Cardano release-based initially; both on affected changes.</span></div><div class="decision"><strong>Adopt the security lifecycle</strong><span>Private-first intake, one accountable owner, one next action, and fixed-build verification.</span></div></div></article>
+
+      <article class="card half"><div class="eyebrow">Security handling</div><h2>Every signal gets a class and an owner</h2><p>Preserve privately → prove setup and non-vacuity → classify scope and novelty → reproduce and bound impact → report → track → rerun fixed and neighboring cases → disclose and close.</p></article>
+      <article class="card half"><div class="eyebrow">What this still will not claim</div><h2>Explicit boundaries</h2><p>No production-network TPS, uncontrolled cross-hardware benchmark, full internal causation without tracing, comparable performance across different roles, finality beyond the observation horizon, or absence of instrumentation bias without a paired stock run.</p></article>
+    </div>
+  </section>
+  <p class="footer">DWARF · presentation handout · evidence state frozen 2026-09-10 · proposals require Cardano/Amaru stakeholder agreement</p>
+</main>
+<script>
+  const buttons=[...document.querySelectorAll('[data-view]')], views=[...document.querySelectorAll('.view')];
+  function show(id){buttons.forEach(b=>b.classList.toggle('active',b.dataset.view===id));views.forEach(v=>v.classList.toggle('active',v.id===id));location.hash=id;}
+  buttons.forEach(b=>b.addEventListener('click',()=>show(b.dataset.view)));
+  const initial=location.hash.slice(1); if(document.getElementById(initial)) show(initial);
+</script>
+</body>
+</html>

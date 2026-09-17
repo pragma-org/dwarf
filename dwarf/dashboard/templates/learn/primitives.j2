@@ -1,0 +1,58 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Learn · scenario vocabulary</span>
+<h1>Primitive reference</h1>
+<p class="lede">A primitive is one typed operation in a DWARF scenario. The current catalog contains <strong>{{ primitive_count }}</strong> registered records. Each record declares where it can run, which implementation it supports, how its parameters validate, and which executor the runtime instantiates.</p>
+
+<div class="definition-actions" aria-label="Primitive reference actions">
+  <a class="cta" href="/operate/primitives">Browse primitives</a>
+  <a class="cta cta--ghost" href="/operate/primitives/new">Scaffold a primitive</a>
+</div>
+
+<hr class="hairline">
+
+<section aria-labelledby="primitive-families-heading">
+  <span class="eyebrow">Execution lifecycle</span>
+  <h2 id="primitive-families-heading">Six families</h2>
+  <div class="status-tile-grid">
+    <article class="status-tile"><h3>setup</h3><p>Prepare topology, software, state, or runtime prerequisites before load begins.</p><strong>{{ family_counts.setup }}</strong></article>
+    <article class="status-tile"><h3>load</h3><p>Generate honest or adversarial work against the selected real-node surface.</p><strong>{{ family_counts.load }}</strong></article>
+    <article class="status-tile"><h3>probe</h3><p>Observe target or harness state without deciding whether the run passed.</p><strong>{{ family_counts.probe }}</strong></article>
+    <article class="status-tile"><h3>assertion</h3><p>Evaluate an evidence-backed property and record a pass or failure.</p><strong>{{ family_counts.assertion }}</strong></article>
+    <article class="status-tile"><h3>fault</h3><p>Inject infrastructure or protocol adversity at an explicit point in the run.</p><strong>{{ family_counts.fault }}</strong></article>
+    <article class="status-tile"><h3>teardown</h3><p>Perform declared cleanup after evidence and assertions are retained.</p><strong>{{ family_counts.teardown }}</strong></article>
+  </div>
+</section>
+
+<section aria-labelledby="primitive-contract-heading">
+  <span class="eyebrow">Source contracts</span>
+  <h2 id="primitive-contract-heading">Registry, schema, and executor</h2>
+  <ol>
+    <li><strong>Registry record.</strong> The scenario name resolves to a module, class, version, family, supported runtimes, supported implementations, and parameter-schema path.</li>
+    <li><strong>JSON Schema.</strong> The primitive-specific object constrains the parameters authors may place beside <code>primitive:</code> in a scenario.</li>
+    <li><strong>Executor.</strong> At runtime, DWARF imports the declared built-in or plugin implementation and invokes the hook for its family.</li>
+  </ol>
+  <p><strong>Compatibility declarations are gates, not evidence.</strong> A target/runtime declaration and a loadable executor do not prove the operation succeeded. Runtime evidence comes from an end-to-end scenario run and its retained assertions, events, metrics, and bundle.</p>
+</section>
+
+<section aria-labelledby="primitive-provenance-heading">
+  <span class="eyebrow">Provenance and trust</span>
+  <h2 id="primitive-provenance-heading">Built-in versus plugin</h2>
+  <p><strong>Built-in</strong> records live in <code>dwarf/primitives/registry.json</code> and name trusted DWARF executor classes. <strong>Plugin</strong> records live under configured plugin roots. The catalog reads plugin manifests and static registries but does not execute plugin entrypoints just to display inventory; those entries remain labelled <code>declared-unloaded</code> until runtime loading.</p>
+</section>
+
+<section id="authoring" aria-labelledby="primitive-authoring-heading">
+  <span class="eyebrow">Authoring lifecycle</span>
+  <h2 id="primitive-authoring-heading">Adding a primitive is a code change</h2>
+  <ol>
+    <li>Scaffold the executor, parameter schema, test, and proposed registry entry.</li>
+    <li>Implement the family hook and validate parameters and compatibility in tests.</li>
+    <li>Merge the registry entry and regenerate the reference documentation.</li>
+    <li>Rebuild and deploy the DWARF image; scaffolding alone does not register live code.</li>
+    <li>Run an end-to-end scenario and retain runtime evidence before claiming behavior.</li>
+  </ol>
+  <p><a href="/operate/primitives/new">Open the scaffold builder</a> or browse the <a href="/operate/primitives">complete live catalog</a>.</p>
+</section>
+
+{% if errors %}<section class="callout callout--warning"><h2>Current catalog diagnostics</h2><ul>{% for error in errors %}<li><code>{{ error }}</code></li>{% endfor %}</ul></section>{% endif %}
+{% endblock %}

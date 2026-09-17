@@ -1,0 +1,11 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Operate · {{ catalog_label }}</span>
+<h1>{{ singular_label }} not found</h1>
+<p class="page-hero">No catalog record exists for <code>{{ item_id }}</code>.</p>
+
+<hr class="hairline">
+
+<p>The identifier may be mistyped, or the source record may have been removed from this DWARF revision.</p>
+<p>Browse <a href="/operate/{{ catalog_slug }}">the {{ catalog_label|lower }} catalog</a> to select an available record.</p>
+{% endblock %}

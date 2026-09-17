@@ -1,0 +1,12 @@
+<li class="scenario-row" id="{{ row.id }}" data-family="{{ row.family }}">
+  <div class="scenario-row__head">
+    <code class="scenario-row__id">{{ row.id }}</code>
+    <span class="scenario-row__runtime">{{ row.runtime or '' }}</span>
+  </div>
+  <div class="scenario-row__title">{{ row.title }}</div>
+  <div class="catalog-row-actions">
+    <a href="{{ row.url }}">View</a>
+    <a href="{{ row.edit_url }}">Edit</a>
+    <a href="{{ row.download_url }}" download>Download</a>
+  </div>
+</li>

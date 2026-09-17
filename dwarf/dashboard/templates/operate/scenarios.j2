@@ -1,0 +1,118 @@
+{% extends "_base.j2" %}
+{% block main %}
+<div class="scenarios-header">
+  <div>
+    <span class="eyebrow">Operate</span>
+    <h1>Scenarios</h1>
+  </div>
+  <div class="definition-actions">
+    <a class="cta cta--ghost" href="/api/catalog/scenarios/export" download>Download all</a>
+    <a class="cta" href="/operate/scenarios/new">+ New scenario</a>
+  </div>
+</div>
+<p>All scenarios visible to the dashboard, derived from <code>dwarf/scenarios/*.yaml</code> at request time. Filter by family to narrow the list; the filter is client-side and refresh resets it.</p>
+
+<div class="run-scenario" style="margin:14px 0;background:var(--obsidian-2);border:1px solid var(--rule);border-radius:12px;padding:14px 16px">
+  <span class="eyebrow">Run a scenario</span>
+  <p class="page-subhero" style="margin:4px 0 8px">Pick a scenario and run it; output streams live below. Library/CBOR scenarios run in-container; substrate (<code>devnet</code>) scenarios need a Docker host.</p>
+  {% if auto_redeploy_enabled %}
+  <p class="auto-repair-warning"><strong>AUTO-REPAIR ENABLED FOR ATTACHED SCENARIOS</strong> If the mixed topology fails preflight, DWARF will preserve evidence and make one redeploy attempt before deciding whether the workload may start. <a href="/operate/config/edit">Review setting</a>.</p>
+  {% endif %}
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <label class="visually-hidden" for="run-scn-id">Scenario id</label>
+    <input id="run-scn-id" list="run-scn-list" placeholder="scenario id — e.g. amaru-cbor-tx-body-fuzz" style="flex:1;min-width:280px;background:var(--obsidian-1);border:1px solid var(--rule);color:var(--ink);border-radius:8px;padding:8px 11px;font-family:var(--font-mono);font-size:.84rem">
+    <datalist id="run-scn-list">{% for r in rows %}<option value="{{ r.id }}">{% endfor %}</datalist>
+    <button id="run-scn-btn" type="button" onclick="runScn()" style="background:var(--accent);color:var(--obsidian-0);border:none;border-radius:8px;padding:8px 18px;font-weight:700;cursor:pointer">Run</button>
+  </div>
+  <pre id="run-scn-out" style="margin:10px 0 0;background:#04060a;border:1px solid var(--rule);border-radius:10px;padding:12px 14px;min-height:56px;max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--font-mono);font-size:.78rem;color:#cfeaea;display:none"></pre>
+</div>
+<script>
+function scnToken(){return new URLSearchParams(location.search).get('token')||'{{ token }}'||'dwarf';}
+async function runScn(){
+  var id=(document.getElementById('run-scn-id').value||'').trim();
+  if(!id){return;}
+  var out=document.getElementById('run-scn-out'); out.style.display='block'; out.textContent='$ scenario run '+id+'\n';
+  var btn=document.getElementById('run-scn-btn'); btn.disabled=true;
+  var path=encodeURIComponent('{{ scenarios_dir }}/'+id+'.yaml');
+  try{
+    var resp=await fetch('/api/scenario/run?token='+encodeURIComponent(scnToken())+'&path='+path,{method:'POST'});
+    if(!resp.ok){out.textContent+='HTTP '+resp.status+': '+(await resp.text());return;}
+    var rd=resp.body.getReader(),dec=new TextDecoder(),buf='';
+    while(true){var r=await rd.read();if(r.done)break;buf+=dec.decode(r.value,{stream:true});var parts=buf.split('\n\n');buf=parts.pop();
+      for(var p of parts){for(var line of p.split('\n')){if(line.indexOf('data: ')===0){out.textContent+=line.slice(6)+'\n';out.scrollTop=out.scrollHeight;}else if(line.indexOf('event: done')===0){out.textContent+='[done]\n';}}}}
+  }catch(e){out.textContent+='\n[error] '+String(e);}
+  finally{btn.disabled=false;}
+}
+</script>
+
+{% if shim_enabled and coverage_ids %}
+<div class="run-coverage" style="margin:14px 0;background:var(--obsidian-2);border:1px solid var(--rule);border-radius:12px;padding:14px 16px">
+  <span class="eyebrow">Run AFL coverage (on the substrate host)</span>
+  <p class="page-subhero" style="margin:4px 0 8px">Coverage-guided cardano-node fuzz campaigns can't run in this hardened container (AFL forkserver needs host privileges), so they run on the substrate host over the restricted control channel. Output streams below.</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <label class="visually-hidden" for="run-cov-id">Coverage scenario id</label>
+    <input id="run-cov-id" list="run-cov-list" placeholder="coverage scenario id — e.g. cardano-node-cov-applyblock-aflpp-smoke" style="flex:1;min-width:320px;background:var(--obsidian-1);border:1px solid var(--rule);color:var(--ink);border-radius:8px;padding:8px 11px;font-family:var(--font-mono);font-size:.84rem">
+    <datalist id="run-cov-list">{% for c in coverage_ids %}<option value="{{ c }}">{% endfor %}</datalist>
+    <button id="run-cov-btn" type="button" onclick="runCov()" style="background:var(--accent);color:var(--obsidian-0);border:none;border-radius:8px;padding:8px 18px;font-weight:700;cursor:pointer">Run on host</button>
+  </div>
+  <pre id="run-cov-out" style="margin:10px 0 0;background:#04060a;border:1px solid var(--rule);border-radius:10px;padding:12px 14px;min-height:56px;max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--font-mono);font-size:.78rem;color:#cfeaea;display:none"></pre>
+</div>
+<script>
+async function runCov(){
+  var id=(document.getElementById('run-cov-id').value||'').trim();
+  if(!id){return;}
+  var out=document.getElementById('run-cov-out'); out.style.display='block'; out.textContent='$ coverage run '+id+'  (host)\n';
+  var btn=document.getElementById('run-cov-btn'); btn.disabled=true;
+  try{
+    var resp=await fetch('/api/coverage/run?token='+encodeURIComponent(scnToken())+'&id='+encodeURIComponent(id),{method:'POST'});
+    if(!resp.ok){out.textContent+='HTTP '+resp.status+': '+(await resp.text());return;}
+    var rd=resp.body.getReader(),dec=new TextDecoder(),buf='';
+    while(true){var r=await rd.read();if(r.done)break;buf+=dec.decode(r.value,{stream:true});var parts=buf.split('\n\n');buf=parts.pop();
+      for(var p of parts){for(var line of p.split('\n')){if(line.indexOf('data: ')===0){out.textContent+=line.slice(6)+'\n';out.scrollTop=out.scrollHeight;}else if(line.indexOf('event: done')===0){out.textContent+='[done]\n';}}}}
+  }catch(e){out.textContent+='\n[error] '+String(e);}
+  finally{btn.disabled=false;}
+}
+</script>
+{% endif %}
+
+<details class="paste-scenario" id="paste-scenario">
+  <summary class="paste-scenario__summary">
+    <span class="eyebrow">Paste a scenario</span>
+    <span class="paste-scenario__hint">Drop YAML in to validate and stage as a pending scenario</span>
+  </summary>
+  <div class="paste-scenario__body">
+    <p class="page-subhero">YAML is validated against <code>dwarf/spec/v1/schema.json</code> and, if valid, written to <code>dwarf/scenarios/pending/&lt;id&gt;.yaml</code>. Promotion into the live corpus is a separate step (<code>cardano-profile scenario promote</code>) gated on declared promotion blockers.</p>
+    <label class="paste-scenario__label" for="paste-scenario-yaml">
+      <span class="eyebrow">Scenario YAML</span>
+    </label>
+    <textarea id="paste-scenario-yaml" class="paste-scenario__textarea" rows="14" autocomplete="off" spellcheck="false" placeholder="id: my-new-scenario&#10;title: ...&#10;runtime: library&#10;target_id: ...&#10;steps:&#10;  - ..."></textarea>
+    <div class="paste-scenario__actions">
+      <button type="button" class="cta cta--primary" data-paste-submit>Validate &amp; stage</button>
+      <button type="button" class="cta cta--ghost" data-paste-clear>Clear</button>
+    </div>
+    <pre class="paste-scenario__output" data-paste-output hidden></pre>
+  </div>
+</details>
+
+<hr class="hairline">
+
+<div class="filter-bar">
+  <span class="eyebrow">Family</span>
+  <div class="filter-pills" role="group" aria-label="Filter by family">
+    <button type="button" class="pill" data-family="" aria-pressed="true">all</button>
+    {% for family in families %}
+    <button type="button" class="pill" data-family="{{ family.slug }}" aria-pressed="false">{{ family.label }}</button>
+    {% endfor %}
+  </div>
+  <p class="filter-count" aria-live="polite">{{ total }} scenarios</p>
+</div>
+
+<ul class="scenario-list">
+{% for row in rows %}
+{% include "operate/_partials/_scenario_row.j2" %}
+{% endfor %}
+</ul>
+
+<script type="module" src="/static/js/scenario-filter.js"></script>
+<script type="module" src="/static/js/paste-scenario.js"></script>
+{% endblock %}

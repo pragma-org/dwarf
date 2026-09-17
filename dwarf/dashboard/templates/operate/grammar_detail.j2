@@ -1,0 +1,113 @@
+{% extends "_base.j2" %}
+{% block main %}
+<p class="breadcrumb"><a href="/operate/grammars">Generation grammars</a> <span>/</span> <code>{{ grammar.id }}</code></p>
+<header class="definition-header">
+  <div>
+    <span class="eyebrow">{{ grammar.root_kind }} · {{ grammar.format or 'unknown format' }} · {{ grammar.status }}</span>
+    <h1>{{ grammar.label }}</h1>
+    <p class="page-hero"><code>{{ grammar.source_path }}</code></p>
+  </div>
+  <div class="definition-actions">
+    <a class="cta" href="#grammar-management">{{ 'Edit runtime clone' if grammar.writable else 'Clone to edit' }}</a>
+    <a class="cta cta--ghost" href="/api/grammars/{{ grammar.id }}/export" download>Export definition</a>
+    <a class="cta cta--ghost" href="/learn/grammars" target="_blank" rel="noopener">Schema and lifecycle</a>
+  </div>
+</header>
+
+<dl class="definition-summary grammar-summary">
+  <div><dt>Target declaration</dt><dd><code>{{ grammar.target or 'unavailable' }}</code></dd></div>
+  <div><dt>Format</dt><dd>{{ grammar.format or 'unavailable' }}</dd></div>
+  <div><dt>Mutation tokens</dt><dd>{{ grammar.token_count }}</dd></div>
+  <div><dt>Structure</dt><dd>{{ grammar.structure_status }}</dd></div>
+  <div><dt>Dictionary</dt><dd>{{ grammar.dictionary_status }}</dd></div>
+  <div><dt>Write policy</dt><dd>{{ 'validated runtime edits' if grammar.writable else 'shipped read-only' }}</dd></div>
+</dl>
+
+{% if grammar.diagnostics %}
+<section class="asset-diagnostics" aria-labelledby="grammar-diagnostics-heading">
+  <span class="eyebrow">Diagnostics</span>
+  <h2 id="grammar-diagnostics-heading">Validation exceptions</h2>
+  <ul>{% for diagnostic in grammar.diagnostics %}<li>{{ diagnostic }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<section aria-labelledby="grammar-relationships-heading">
+  <span class="eyebrow">Evidence-backed relationships</span>
+  <h2 id="grammar-relationships-heading">References in repository sources</h2>
+  <p>Links appear only when a source literally names this grammar path or a corpus explicitly declares its grammar ID.</p>
+  <div class="relationship-grid">
+    <div><strong>Targets</strong>{% if grammar.target_ids %}<ul>{% for id in grammar.target_ids %}<li><a href="/operate/targets/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% else %}<p>None explicitly referenced.</p>{% endif %}</div>
+    <div><strong>Corpora</strong>{% if grammar.corpus_ids %}<ul>{% for id in grammar.corpus_ids %}<li><a href="/operate/corpora/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% else %}<p>None explicitly referenced.</p>{% endif %}</div>
+    <div><strong>Scenarios</strong>{% if grammar.scenario_ids %}<ul>{% for id in grammar.scenario_ids %}<li><a href="/operate/scenarios/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% else %}<p>None explicitly referenced.</p>{% endif %}</div>
+  </div>
+</section>
+
+<section aria-labelledby="grammar-sources-heading">
+  <span class="eyebrow">Exact sources</span>
+  <h2 id="grammar-sources-heading">Structure and mutation-token files</h2>
+  <div class="definition-actions">
+    {% if grammar.structure_raw is not none %}<a class="cta cta--ghost" href="/api/grammars/{{ grammar.id }}/structure.json/download" download>Download structure.json</a>{% endif %}
+    {% if grammar.dictionary_raw is not none %}<a class="cta cta--ghost" href="/api/grammars/{{ grammar.id }}/dict.txt/download" download>Download dict.txt</a>{% endif %}
+  </div>
+  {% if grammar.structure_pretty %}<h3>Rendered structure</h3><pre class="asset-source grammar-source"><code>{{ grammar.structure_pretty }}</code></pre>{% endif %}
+  {% if grammar.decoder_entrypoint %}<p><strong>Decoder entrypoint</strong><br><code>{{ grammar.decoder_entrypoint }}</code></p>{% endif %}
+</section>
+
+<section aria-labelledby="grammar-tokens-heading">
+  <span class="eyebrow">Mutation tokens</span>
+  <h2 id="grammar-tokens-heading">Finite parsed inventory</h2>
+  <p>Tokens are parsed as quoted bytes; DWARF does not execute or semantically decode dictionary content.</p>
+  {% if grammar.tokens %}
+  <div class="grammar-token-grid">
+    {% for token in grammar.tokens %}
+    <article class="learn-tile grammar-token">
+      <span class="learn-tile__eyebrow">{{ token.size_bytes }} bytes{% if token.name %} · named{% endif %}</span>
+      <h3 class="learn-tile__title"><code>{{ token.name or token.literal }}</code></h3>
+      {% if token.name %}<p class="small"><code>{{ token.literal }}</code></p>{% endif %}
+      <pre class="corpus-preview"><code>{{ token.hex or '(empty token)' }}</code></pre>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}<p class="empty-section-statement">No valid mutation tokens were parsed from this definition.</p>{% endif %}
+</section>
+
+<section id="grammar-management" class="grammar-management" data-grammar-manager data-grammar-id="{{ grammar.id }}" data-control-token="{{ control_token }}" data-writable="{{ 'true' if grammar.writable else 'false' }}">
+  {% if not grammar.writable %}
+  <span class="eyebrow">Immutable shipped definition</span>
+  <h2>Clone before editing</h2>
+  <p>Clone the exact source pair into the explicit runtime grammar root. The shipped files remain unchanged.</p>
+  <button class="cta" type="button" data-grammar-clone>Clone to runtime</button>
+  <p class="form-message" data-grammar-message aria-live="polite"></p>
+  {% else %}
+  <span class="eyebrow">Token-gated authoring</span>
+  <h2>Validated runtime editor</h2>
+  <p>Structured and raw modes save the same two files. Both modes validate the generation-structure schema and every mutation-token line before any write.</p>
+  <div class="mode-tabs" role="tablist" aria-label="Grammar editor mode">
+    <button class="mode-tab is-active" type="button" role="tab" aria-selected="true" data-grammar-mode="structured">Structured editor</button>
+    <button class="mode-tab" type="button" role="tab" aria-selected="false" data-grammar-mode="raw">Raw files</button>
+  </div>
+  <form class="grammar-editor" data-grammar-editor="structured">
+    <div class="grammar-field-grid">
+      <label title="The byte-level encoding described by this record.">Format<select name="format"><option value="cbor"{% if grammar.format == 'cbor' %} selected{% endif %}>CBOR</option></select><small>Currently supported: CBOR.</small></label>
+      <label title="The fuzz target that consumes inputs shaped by this record.">Target<input name="target" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]*" value="{{ grammar.target or '' }}"><small>A stable target identifier, not a filesystem path.</small></label>
+    </div>
+    <label title="The real decoder function or harness file reached by the target.">Decoder entrypoint<input name="decoder_entrypoint" required value="{{ grammar.decoder_entrypoint or '' }}"><small>Provenance for the code path; it does not execute from this field.</small></label>
+    <label title="The descriptive outer input shape. This metadata is validated but is not itself an executable generator.">Shape JSON<textarea name="shape" rows="10" required>{{ shape_json }}</textarea></label>
+    <div class="grammar-field-grid">
+      <label title="Optional groupings of relevant CBOR major types.">Major types JSON<textarea name="major_types" rows="7">{{ major_types_json }}</textarea></label>
+      <label title="Optional explanatory CBOR token groups; separate from dict.txt mutation tokens.">CBOR token notes JSON<textarea name="cbor_tokens" rows="7">{{ cbor_tokens_json }}</textarea></label>
+    </div>
+    <label title="Repository paths used to derive or verify this structure, one per line.">Sample sources<textarea name="sample_sources" rows="4">{{ sample_sources_text }}</textarea></label>
+    <label title="libFuzzer-style quoted byte tokens, one per line. Comments beginning with # are allowed.">Mutation tokens (dict.txt)<textarea name="dictionary" rows="12" required>{{ grammar.dictionary_raw or '' }}</textarea></label>
+    <button class="cta" type="submit">Validate and save</button>
+  </form>
+  <form class="grammar-editor" data-grammar-editor="raw" hidden>
+    <label title="Complete generation structure JSON. It must pass the published schema.">Raw structure.json<textarea name="structure_raw" rows="22" required>{{ grammar.structure_raw or grammar.structure_pretty }}</textarea></label>
+    <label title="Exact mutation dictionary text. No content is executed.">Raw dict.txt<textarea name="dictionary_raw" rows="14" required>{{ grammar.dictionary_raw or '' }}</textarea></label>
+    <button class="cta" type="submit">Validate and save raw files</button>
+  </form>
+  <p class="form-message" data-grammar-message aria-live="polite"></p>
+  {% endif %}
+</section>
+<script src="/static/js/grammar-manager.js" defer></script>
+{% endblock %}

@@ -1,0 +1,45 @@
+# Dwarf Framework Docker Assets
+
+This directory contains only the Docker files required by the Dwarf delivery package.
+
+## Files
+
+- `dwarf-fw.Dockerfile`: builds the framework image `dwarf/framework:current`.
+- `dwarf-fw-entrypoint.sh`: forwards container commands to `python3 dwarf/cardano-profile`.
+- `requirements-framework.txt`: hash-locked Python dependencies used by the image build.
+
+## Build
+
+Use the delivery wrapper from the repository root:
+
+```bash
+bash delivery/scripts/build-image.sh
+```
+
+Equivalent direct command:
+
+```bash
+docker build \
+  -f infrastructure/docker/dwarf-fw.Dockerfile \
+  -t dwarf/framework:current \
+  .
+```
+
+## Deploy
+
+Use the delivery Compose file and lifecycle scripts:
+
+```bash
+bash delivery/scripts/install.sh
+bash delivery/scripts/build-image.sh
+bash delivery/scripts/deploy.sh
+bash delivery/scripts/status.sh
+```
+
+The container serves the dashboard on port `8787` inside the container. The default host bind is `0.0.0.0:8787`.
+
+## Scope
+
+This framework/dashboard delivery is intended to run on any Docker-capable Linux host with Docker Compose v2. It is not tied to any specific host.
+
+The included Compose file starts the DWARF framework dashboard and mounts runtime data directories. It does not automatically start every possible Cardano target-node topology; those target services are selected by the operator when running campaigns.

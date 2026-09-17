@@ -1,0 +1,67 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Learn · Examples</span>
+<h1>Examples gallery</h1>
+<p class="page-hero">Representative scenarios and concrete examples for every reusable DWARF asset. Scenario bodies come verbatim from <code>dwarf/scenarios/</code>; asset examples state the exact schema, source-of-truth, lifecycle, mutability, and relationships that bound each catalog. Definitions and examples are inputs to execution, not runtime evidence.</p>
+
+<hr class="hairline">
+
+{% if not examples %}
+<p class="empty-section-statement">No example scenarios on disk.
+  <span class="empty-section-statement__cite">expected <code>dwarf/scenarios/*.yaml</code></span>
+</p>
+{% else %}
+<section class="learn-examples">
+  {% for ex in examples %}
+  <article class="learn-example" id="{{ ex.scenario_id }}">
+    <header>
+      <span class="eyebrow">{{ ex.family }}</span>
+      <h2><code>{{ ex.scenario_id }}</code></h2>
+    </header>
+    <p>{{ ex.demonstrates }}</p>
+    <dl class="learn-example__rows">
+      <div><dt>Expected</dt><dd>{{ ex.expected }}</dd></div>
+      <div><dt>CLI</dt><dd><code>{{ ex.cli_command }}</code></dd></div>
+    </dl>
+    <details>
+      <summary>YAML body ({{ ex.size_bytes }} bytes)</summary>
+      <pre class="run-payload-pre"><code>{{ ex.body }}</code></pre>
+    </details>
+    <p>
+      <a class="cta cta--ghost" href="{{ ex.scenarios_url }}">Find in /operate/scenarios →</a>
+    </p>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+<hr class="hairline">
+
+<section id="asset-examples">
+  <header>
+    <span class="eyebrow">Reusable assets</span>
+    <h2>Catalog examples</h2>
+  </header>
+  <p>These examples explain how the objects fit together. They do not duplicate the live inventories: current rows and counts always come from the matching Operate catalog.</p>
+  <div class="learn-examples">
+    {% for ex in asset_examples %}
+    <article class="learn-example" id="asset-{{ ex.catalog }}">
+      <header>
+        <span class="eyebrow">{{ ex.catalog }}</span>
+        <h3><code>{{ ex.object }}</code></h3>
+      </header>
+      <dl class="learn-example__rows">
+        <div><dt>Purpose</dt><dd>{{ ex.purpose }}</dd></div>
+        <div><dt>Schema</dt><dd><code>{{ ex.schema }}</code></dd></div>
+        <div><dt>Lifecycle</dt><dd>{{ ex.lifecycle }}</dd></div>
+        <div><dt>Source of truth</dt><dd><code>{{ ex.source_of_truth }}</code></dd></div>
+        <div><dt>Mutability</dt><dd>{{ ex.mutability }}</dd></div>
+        <div><dt>Relationships</dt><dd>{{ ex.relationships }}</dd></div>
+      </dl>
+      <pre class="run-payload-pre"><code>{{ ex.example }}</code></pre>
+      <p><a class="cta cta--ghost" href="{{ ex.operate_url }}">Open catalog →</a> <a class="cta cta--ghost" href="{{ ex.learn_url }}">Read reference →</a></p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

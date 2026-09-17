@@ -1,0 +1,19 @@
+{
+  "id": "amaru-cbor-decode-plutus-data",
+  "binary": "dwarf/targets/amaru/target/release/amaru-cbor-decode-plutus-data",
+  "input_format": "stdin_bytes",
+  "implementation": "amaru",
+  "language": "rust",
+  "upstream_commit": "bbce06e56ba3bfc915840922fd37c868cc6000be",
+  "decoder_type": "CBOR codec",
+  "expected_outcomes": {
+    "ok": "exit 0 with stdout 'OK'",
+    "clean_error": "exit 1 with stdout starting 'ERR '",
+    "crash": "any other exit code, signal, hang, or stdout"
+  },
+  "invariants": [
+    "typed Plutus data deserialization",
+    "no panic on bounded input",
+    "complete input consumption"
+  ]
+}

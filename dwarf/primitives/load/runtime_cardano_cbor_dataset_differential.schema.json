@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime_cardano_cbor_dataset_differential params",
+  "type": "object",
+  "required": [
+    "dataset_dir",
+    "dataset_repo_dir",
+    "expected_source_revision",
+    "source_repository",
+    "era",
+    "rule",
+    "manifests_dir",
+    "reference_target_id",
+    "candidate_target_id",
+    "output_dir"
+  ],
+  "properties": {
+    "dataset_dir": {"type": "string", "minLength": 1},
+    "dataset_repo_dir": {"type": "string", "minLength": 1},
+    "expected_source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "source_repository": {"type": "string", "minLength": 1},
+    "era": {"type": "string", "enum": ["conway", "dijkstra"]},
+    "rule": {"type": "string", "minLength": 1},
+    "samples_per_category": {"type": "integer", "minimum": 1},
+    "manifests_dir": {"type": "string", "minLength": 1},
+    "reference_target_id": {"type": "string", "minLength": 1},
+    "candidate_target_id": {"type": "string", "minLength": 1},
+    "reference_verifier_binary": {"type": "string", "minLength": 1},
+    "reference_verifier_image": {"type": "string", "minLength": 1},
+    "reference_verifier_platform": {"type": "string", "minLength": 1},
+    "docker_binary": {"type": "string", "minLength": 1},
+    "output_dir": {"type": "string", "minLength": 1},
+    "per_input_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "reference_verifier_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "expect_exit": {"type": "integer"}
+  },
+  "oneOf": [
+    {
+      "required": ["reference_verifier_binary"],
+      "not": {"required": ["reference_verifier_image"]}
+    },
+    {
+      "required": ["reference_verifier_image"],
+      "not": {"required": ["reference_verifier_binary"]}
+    }
+  ],
+  "additionalProperties": false
+}

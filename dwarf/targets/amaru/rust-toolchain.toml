@@ -1,0 +1,6 @@
+# Pin the harness build to the toolchain used by the qualified Amaru revision
+# bbce06e56ba3bfc915840922fd37c868cc6000be. Keep this in sync when the target
+# manifest advances to a newer Amaru revision.
+[toolchain]
+channel = "nightly-2026-09-04"
+components = ["rustc", "rust-src", "rustfmt", "clippy"]

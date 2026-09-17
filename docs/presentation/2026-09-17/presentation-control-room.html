@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>DWARF Presentation Control Room</title>
+<style>
+  :root {
+    --bg: var(--wb-bg, #06080b);
+    --surface: var(--wb-surface, #131a22);
+    --ink: var(--wb-ink, #e6f2f2);
+    --muted: var(--wb-muted, #a4b5bd);
+    --rule: var(--wb-rule, rgba(43,224,224,.18));
+    --accent: var(--wb-accent, #2be0e0);
+    --accent2: var(--wb-accent-2, #b58a4f);
+    --success: var(--wb-success, #65d28a);
+    --error: var(--wb-error, #c03030);
+    --radius: var(--wb-card-radius, 8px);
+    --shadow: var(--wb-card-shadow, 0 18px 50px rgba(0,0,0,.32));
+    --body: var(--wb-font-body, "IBM Plex Sans", system-ui, sans-serif);
+    --mono: var(--wb-font-mono, "JetBrains Mono", ui-monospace, monospace);
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); color: var(--ink); }
+  body { margin: 0; min-height: 100vh; font-family: var(--body); line-height: 1.5;
+    background:
+      radial-gradient(circle at 78% 5%, rgba(43,224,224,.10), transparent 30rem),
+      radial-gradient(circle at 10% 75%, rgba(181,138,79,.08), transparent 28rem),
+      var(--bg); }
+  button, textarea { font: inherit; }
+  button { cursor: pointer; }
+  .shell { width: min(1180px, 100%); margin: 0 auto; padding: 28px 24px 80px; }
+  .hero { position: relative; overflow: hidden; padding: 34px; border: 1px solid var(--rule);
+    border-radius: var(--radius); background: linear-gradient(145deg, rgba(19,26,34,.97), rgba(11,15,20,.92));
+    box-shadow: var(--shadow); }
+  .hero::after { content: ""; position: absolute; width: 240px; height: 240px; right: -90px;
+    top: -120px; border: 1px solid rgba(43,224,224,.20); transform: rotate(45deg); }
+  .eyebrow { margin: 0 0 10px; color: var(--accent); font: 700 12px/1.2 var(--mono);
+    letter-spacing: .14em; text-transform: uppercase; }
+  h1 { margin: 0; max-width: 780px; font-size: clamp(34px, 5vw, 62px); line-height: .98;
+    letter-spacing: -.045em; }
+  .lead { max-width: 760px; margin: 18px 0 0; color: var(--muted); font-size: clamp(16px, 2vw, 20px); }
+  .facts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+  .fact { padding: 7px 10px; border: 1px solid var(--rule); border-radius: 999px;
+    color: var(--ink); background: rgba(6,8,11,.5); font: 600 12px/1.2 var(--mono); }
+  .fact.pending { color: var(--accent2); border-color: rgba(181,138,79,.35); }
+  .statusline { display: grid; grid-template-columns: minmax(180px, 1fr) 2fr auto; gap: 16px;
+    align-items: center; margin: 18px 0 0; padding: 14px 16px; background: rgba(6,8,11,.66);
+    border-left: 3px solid var(--accent); }
+  .statusline strong { font-size: 13px; }
+  .bar { height: 7px; overflow: hidden; border-radius: 10px; background: rgba(164,181,189,.14); }
+  .bar > span { display: block; width: 7%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+  .toolbar button { border: 1px solid var(--rule); border-radius: 4px; padding: 9px 12px;
+    color: var(--ink); background: var(--surface); }
+  .toolbar button:hover, .toolbar button.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+  .toolbar .spacer { flex: 1; }
+  .panel { display: none; }
+  .panel.active { display: block; animation: reveal .16s ease-out; }
+  @keyframes reveal { from { opacity: .3; transform: translateY(4px); } }
+  .section { margin-top: 18px; padding: 24px; border: 1px solid var(--rule); border-radius: var(--radius);
+    background: rgba(19,26,34,.91); box-shadow: 0 12px 32px rgba(0,0,0,.18); }
+  .section h2 { margin: 0 0 6px; font-size: 25px; letter-spacing: -.02em; }
+  .section > p { margin: 0 0 18px; color: var(--muted); }
+  .timeline { display: grid; grid-template-columns: 100px 1fr; gap: 0; }
+  .time, .moment { padding: 14px 0; border-top: 1px solid var(--rule); }
+  .time { color: var(--accent); font: 700 13px/1.4 var(--mono); }
+  .moment strong { display: block; margin-bottom: 3px; }
+  .moment span { color: var(--muted); }
+  .slides { display: grid; gap: 10px; }
+  details { border-top: 1px solid var(--rule); }
+  details:first-child { border-top: 0; }
+  summary { display: grid; grid-template-columns: 44px minmax(0,1fr) auto; gap: 12px;
+    align-items: center; padding: 15px 0; cursor: pointer; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  .num { display: grid; place-items: center; width: 34px; height: 34px; color: var(--bg);
+    background: var(--accent); border-radius: 50%; font: 800 13px/1 var(--mono); }
+  .summary-title strong { display: block; }
+  .summary-title small { color: var(--muted); }
+  .state { color: var(--success); font: 700 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .state.pending { color: var(--accent2); }
+  .detail { padding: 0 0 18px 56px; color: var(--muted); }
+  .detail b { color: var(--ink); }
+  .step-list { display: grid; gap: 8px; }
+  .step { display: grid; grid-template-columns: 32px minmax(0,1fr); gap: 10px; align-items: start;
+    padding: 12px; border: 1px solid transparent; border-radius: 4px; }
+  .step:hover { border-color: var(--rule); background: rgba(6,8,11,.35); }
+  .step input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); }
+  .step label { cursor: pointer; }
+  .step label strong { display: block; }
+  .step label span { color: var(--muted); font-size: 14px; }
+  .callout { margin: 18px 0 0; padding: 15px 16px; border-left: 3px solid var(--accent2);
+    background: rgba(181,138,79,.08); color: var(--muted); }
+  .callout strong { color: var(--accent2); }
+  textarea { width: 100%; min-height: 130px; padding: 13px; resize: vertical; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--rule); border-radius: 4px; font-family: var(--mono); }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+  .actions button { padding: 9px 12px; border: 1px solid var(--rule); border-radius: 4px;
+    background: var(--surface); color: var(--ink); }
+  .actions .primary { background: var(--success); border-color: var(--success); color: #06100a; font-weight: 800; }
+  .save-status { align-self: center; color: var(--muted); font: 12px/1.2 var(--mono); }
+  footer { margin-top: 24px; color: var(--muted); font-size: 12px; text-align: center; }
+  @media (max-width: 720px) {
+    .shell { padding: 14px 12px 56px; }
+    .hero, .section { padding: 20px 16px; }
+    .statusline { grid-template-columns: 1fr; }
+    .timeline { grid-template-columns: 76px 1fr; }
+    summary { grid-template-columns: 38px minmax(0,1fr); }
+    .state { grid-column: 2; }
+    .detail { padding-left: 50px; }
+    .toolbar .spacer { display: none; }
+    .toolbar button { flex: 1 1 42%; }
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <section class="hero">
+    <p class="eyebrow">September 17 · presentation build</p>
+    <h1>DWARF presentation control room</h1>
+    <p class="lead">One source of truth for the slideshow, guided walkthrough, real-node demo, evidence audit, and presenter readiness.</p>
+    <div class="facts">
+      <span class="fact">Completeness first</span><span class="fact">Remote</span><span class="fact">Mixed audience</span>
+      <span class="fact">21 main + 6 appendix</span><span class="fact">Real nodes</span><span class="fact">Decisions requested</span>
+    </div>
+    <div class="statusline">
+      <strong>Technical demo 3/3 · full delivery rehearsal pending</strong>
+      <div class="bar" aria-label="Overall progress"><span></span></div>
+      <span id="completion">0 / 27 checks complete</span>
+    </div>
+  </section>
+
+  <nav class="toolbar" aria-label="Control room sections">
+    <button class="tab active" data-panel="run">Run of show</button>
+    <button class="tab" data-panel="slides">Slides</button>
+    <button class="tab" data-panel="walk">Walkthrough</button>
+    <button class="tab" data-panel="demo">Demo</button>
+    <button class="tab" data-panel="build">Build</button>
+    <span class="spacer"></span>
+    <button id="export">Export state</button>
+  </nav>
+
+  <section class="panel active" id="panel-run">
+    <div class="section">
+      <h2>Four-part delivery path</h2>
+      <p>The audience first sees current product and evidence, then operates it, watches a real-node run, and returns to the deck only for proposals and decisions.</p>
+      <div class="timeline">
+        <div class="time">PART 1</div><div class="moment"><strong>Presentation · slides 1–16</strong><span>Why, real-node boundary, deployment, inventory, object model, authoring, coverage, risks, evidence, and the operator transition.</span></div>
+        <div class="time">PART 2</div><div class="moment"><strong>Complete dashboard walkthrough</strong><span>Fresh checkout to opening DWARF; every Learn and Operate page; safe authoring preview.</span></div>
+        <div class="time">PART 3</div><div class="moment"><strong>Immediate real-node demo</strong><span>Launch the rehearsed mixed observation through the GUI, prove real progress, and inspect retained evidence.</span></div>
+        <div class="time">PART 4</div><div class="moment"><strong>Return to deck · slides 17–21</strong><span>Proposed bundles/tags, node metrics/cadence, acceptance gate, security ownership, and decisions.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-slides">
+    <div class="section">
+      <h2>Main slideshow</h2>
+      <p>Twenty-one main slides: current product and evidence through slide 16, then five explicitly proposed operating-model slides after the walkthrough and demo. Six technical appendices remain available.</p>
+      <div class="slides">
+        <details open><summary><span class="num">1</span><span class="summary-title"><strong>DWARF</strong><small>Product identity and session promise</small></span><span class="state">approved</span></summary><div class="detail">Show what is running, how operators use it, and what has and has not been tested.</div></details>
+        <details><summary><span class="num">2</span><span class="summary-title"><strong>The testing gap</strong><small>Why real-node adversarial execution matters</small></span><span class="state">approved</span></summary><div class="detail">Connect source/build testing to runtime behavior under malformed input and faults.</div></details>
+        <details><summary><span class="num">3</span><span class="summary-title"><strong>Real-node execution boundary</strong><small>No simulation or replacement protocol stack</small></span><span class="state">approved</span></summary><div class="detail">Diagram DWARF, real N2N/N2C endpoints, faults, probes, assertions, and retained evidence.</div></details>
+        <details><summary><span class="num">4</span><span class="summary-title"><strong>Deployment lifecycle</strong><small>Fresh checkout through retained evidence and controlled update</small></span><span class="state">verified</span></summary><div class="detail">Eight stages distinguish product deployment from one scenario execution.</div></details>
+        <details><summary><span class="num">5</span><span class="summary-title"><strong>What a fresh install provides</strong><small>Packaged product assets versus environment-supplied authority</small></span><span class="state">verified</span></summary><div class="detail">Framework, catalogs, schemas, adapters, and evidence tools ship with DWARF; nodes, infrastructure, credentials, and retained history do not.</div></details>
+        <details><summary><span class="num">6</span><span class="summary-title"><strong>Current deployment</strong><small>Hardware, services, storage, and runtime boundary</small></span><span class="state">verified</span></summary><div class="detail">Only verified current deployment values enter the deck.</div></details>
+        <details><summary><span class="num">7</span><span class="summary-title"><strong>Current DWARF inventory</strong><small>Current catalog and traceable execution history are counted separately</small></span><span class="state">verified</span></summary><div class="detail">242 scenarios, 13 profiles, 38 targets, and 206 primitives in the current catalog. Historical audit: 1,900+ traceable executions, 576 scenario IDs exercised, and 11 verified portable bundles. Exact strict total: 1,945.</div></details>
+        <details><summary><span class="num">8</span><span class="summary-title"><strong>What DWARF does today</strong><small>Operator capability map</small></span><span class="state">verified</span></summary><div class="detail">Configure, execute, observe, preserve, and scale out.</div></details>
+        <details><summary><span class="num">9</span><span class="summary-title"><strong>DWARF object model</strong><small>Target, profile, scenario, primitive, and run/evidence bundle</small></span><span class="state">verified</span></summary><div class="detail">Reusable catalog objects resolve into one inspectable execution record.</div></details>
+        <details><summary><span class="num">10</span><span class="summary-title"><strong>Profile and target-manifest syntax</strong><small>Real configuration excerpts from the current repository</small></span><span class="state">verified</span></summary><div class="detail">Profiles shape reusable topology; target manifests pin implementation and input contracts.</div></details>
+        <details><summary><span class="num">11</span><span class="summary-title"><strong>Scenario and primitive syntax</strong><small>Phase composition and schema-checked registry resolution</small></span><span class="state">verified</span></summary><div class="detail">A scenario composes named primitives across setup, load, fault, probe, assertion, and teardown.</div></details>
+        <details><summary><span class="num">12</span><span class="summary-title"><strong>Definition catalogs and builders</strong><small>Inspect, export, create, validate, edit, and execute</small></span><span class="state">verified</span></summary><div class="detail">Every scenario, target, and profile has a complete detail view and exact download. Structured builders and Advanced JSON/YAML feed the existing Run and Deploy paths.</div></details>
+        <details><summary><span class="num">13</span><span class="summary-title"><strong>Tested and untested</strong><small>Evidence-classified coverage matrix</small></span><span class="state">verified</span></summary><div class="detail">Proven locally, proven in Antithesis, finding, partial, harness-invalid, and untested.</div></details>
+        <details><summary><span class="num">14</span><span class="summary-title"><strong>Threat and risk coverage</strong><small>Scenario families mapped to demonstrated, partial, and open risks</small></span><span class="state">verified</span></summary><div class="detail">High-level coverage map with a direct link to the complete DWARF Learn page.</div></details>
+        <details><summary><span class="num">15</span><span class="summary-title"><strong>Representative evidence</strong><small>Findings, differential behavior, and high-value negative results</small></span><span class="state">verified</span></summary><div class="detail">Current evidence is complete before leaving the deck for the product tour.</div></details>
+        <details><summary><span class="num">16</span><span class="summary-title"><strong>Operator workflow</strong><small>Walkthrough → immediate demo → return at slide 17</small></span><span class="state">verified</span></summary><div class="detail">The separate walkthrough covers every current page and hands directly to the rehearsed demo.</div></details>
+        <details><summary><span class="num">17</span><span class="summary-title"><strong>Proposed test bundles and tags</strong><small>Correctness, consensus, networking, performance, security</small></span><span class="state pending">proposal</span></summary><div class="detail">Bundle tests by the engineering decision they support, then apply stable subsystem and cadence tags.</div></details>
+        <details><summary><span class="num">18</span><span class="summary-title"><strong>Proposed metrics and cadence</strong><small>Node/mini-protocol evidence, Amaru weekly, Cardano release-based</small></span><span class="state pending">proposal</span></summary><div class="detail">20,000-block validation baseline, four path times, VM, epoch, restart, sync, and distributed load.</div></details>
+        <details><summary><span class="num">19</span><span class="summary-title"><strong>Proposed acceptance gate</strong><small>Absolute correctness and proof; relative performance</small></span><span class="state pending">proposal</span></summary><div class="detail">Zero correctness regressions, full reachability/provenance, median of three, and provisional relative thresholds.</div></details>
+        <details><summary><span class="num">20</span><span class="summary-title"><strong>Proposed security accountability</strong><small>Private-first classification, ownership, remediation, and retest</small></span><span class="state pending">proposal</span></summary><div class="detail">Node, interoperability, harness, infrastructure, known, duplicate, and inconclusive signals follow one lifecycle.</div></details>
+        <details><summary><span class="num">21</span><span class="summary-title"><strong>Decisions requested</strong><small>Test program, acceptance gate, and security ownership</small></span><span class="state">approved</span></summary><div class="detail">Close with three specific stakeholder decisions.</div></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-walk">
+    <div class="section">
+      <h2>Dashboard walkthrough</h2>
+      <p>Completeness-first tour. Use the dedicated guide's collapsible groups so every current page has an exact route and one-to-two-sentence explanation.</p>
+      <div class="step-list" data-group="walk">
+        <div class="step"><input type="checkbox" id="w1"><label for="w1"><strong>Start / install</strong><span>Fresh checkout, environment-supplied inputs, service start, health, and opening DWARF.</span></label></div>
+        <div class="step"><input type="checkbox" id="w2"><label for="w2"><strong>Learn orientation and examples</strong><span>Landing, getting started, examples, attack cost, concepts, glossary, and walkthroughs.</span></label></div>
+        <div class="step"><input type="checkbox" id="w3"><label for="w3"><strong>Learn architecture and operations</strong><span>Architecture, API, CLI, FAQ, troubleshooting, runbook, onboarding, plugin authoring, and documentation status.</span></label></div>
+        <div class="step"><input type="checkbox" id="w4"><label for="w4"><strong>Learn coverage and consensus</strong><span>Coverage, threat coverage, consensus context, and registered product overview.</span></label></div>
+        <div class="step"><input type="checkbox" id="w5"><label for="w5"><strong>Operate run/evidence loop</strong><span>Overview, runs, live/detail views, bundles, timeline, and audit.</span></label></div>
+        <div class="step"><input type="checkbox" id="w6"><label for="w6"><strong>Operate definitions and comparison</strong><span>Search the scenario, profile, and target catalogs; open one complete definition; show exact download, full export, plugins, and comparison.</span></label></div>
+        <div class="step"><input type="checkbox" id="w7"><label for="w7"><strong>Operate health and integrations</strong><span>Status, coverage, crashes, schedule, static analysis, config, notifications, Antithesis, and contract.</span></label></div>
+        <div class="step"><input type="checkbox" id="w8"><label for="w8"><strong>Structured and raw authoring</strong><span>Open New and Edit, show supported-value controls and Advanced JSON/YAML, validate, then explain that both save into the same existing Run or Deploy workflow.</span></label></div>
+        <div class="step"><input type="checkbox" id="w9"><label for="w9"><strong>Immediate demo handoff</strong><span>Select the exact candidate and continue directly to the GUI run.</span></label></div>
+      </div>
+      <div class="callout"><strong>Presenter rule:</strong> every page is represented, but no page gets more than two sentences unless the audience asks. Preview authoring; never submit a write.</div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-demo">
+    <div class="section">
+      <h2>Real-node demo</h2>
+      <p>Seven minutes. The exact backend path passed three consecutive fresh mixed-topology rehearsals in about 151 seconds each. Recheck health day-of; use the retained fallback if any abort condition is met.</p>
+      <div class="step-list" data-group="demo">
+        <div class="step"><input type="checkbox" id="d1"><label for="d1"><strong>Precheck</strong><span>Dashboard, Docker, disk, images, health, and completed fallback.</span></label></div>
+        <div class="step"><input type="checkbox" id="d2"><label for="d2"><strong>Open the exact scenario</strong><span>Name target, seed, workload, probe, assertion, and duration.</span></label></div>
+        <div class="step"><input type="checkbox" id="d3"><label for="d3"><strong>Launch through DWARF</strong><span>Confirm the new run ID and setup phase.</span></label></div>
+        <div class="step"><input type="checkbox" id="d4"><label for="d4"><strong>Prove observation activity</strong><span>Show successful samples accumulating across all six queryable nodes.</span></label></div>
+        <div class="step"><input type="checkbox" id="d5"><label for="d5"><strong>Prove target activity</strong><span>Show advancing blocks and slots, then final hash agreement and slot gap zero.</span></label></div>
+        <div class="step"><input type="checkbox" id="d6"><label for="d6"><strong>Inspect completed evidence</strong><span>Manifest, workload event, probe, assertion, and output.</span></label></div>
+        <div class="step"><input type="checkbox" id="d7"><label for="d7"><strong>State the boundary</strong><span>Say exactly what the run proves and does not prove.</span></label></div>
+      </div>
+      <div class="callout"><strong>Proof boundary:</strong> this is a clean mixed-chain observation through native Amaru relays, not a fault campaign or a direct native-Amaru tip query. Never debug live; pivot to the pre-proven retained bundle.</div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-build">
+    <div class="section">
+      <h2>Build and verification</h2>
+      <p>Every factual slide starts in the evidence ledger. No unsupported number reaches the deck.</p>
+      <div class="step-list" data-group="build">
+        <div class="step"><input type="checkbox" id="b1"><label for="b1"><strong>Deployment and feature audit</strong><span>Current code, dashboard, hardware, services, paths, and revisions.</span></label></div>
+        <div class="step"><input type="checkbox" id="b2"><label for="b2"><strong>Evidence and coverage ledger</strong><span>Tested, partial, invalid, known, and untested with exact sources.</span></label></div>
+        <div class="step"><input type="checkbox" id="b3"><label for="b3"><strong>Metrics and cadence proposal</strong><span>Definitions, observation boundaries, test bundles, and schedules.</span></label></div>
+        <div class="step"><input type="checkbox" id="b4"><label for="b4"><strong>Security process</strong><span>Classification, ownership, reporting, remediation, retest, and closure.</span></label></div>
+        <div class="step"><input type="checkbox" id="b5"><label for="b5"><strong>Walkthrough proof</strong><span>Execute the exact route and capture every fallback.</span></label></div>
+        <div class="step"><input type="checkbox" id="b6"><label for="b6"><strong>Demo proof</strong><span>Fresh real-node GUI run and retained evidence.</span></label></div>
+        <div class="step"><input type="checkbox" id="b7"><label for="b7"><strong>Deck build</strong><span>Interactive HTML slideshow, embedded speaker notes, appendix, guides, and handout.</span></label></div>
+        <div class="step"><input type="checkbox" id="b8"><label for="b8"><strong>Visual and factual QA</strong><span>Render every slide and verify every claim against evidence.</span></label></div>
+        <div class="step"><input type="checkbox" id="b9"><label for="b9"><strong>Full-flow rehearsal</strong><span>Rehearse the four transitions and record actual duration with every fallback ready.</span></label></div>
+        <div class="step"><input type="checkbox" id="b10"><label for="b10"><strong>Final freeze</strong><span>Archive exact deck, PDF, cheatsheets, evidence, and hashes.</span></label></div>
+        <div class="step"><input type="checkbox" id="b11"><label for="b11"><strong>September 17 delivery</strong><span>Clean remote session and verified presentation package.</span></label></div>
+      </div>
+      <label for="notes" class="eyebrow" style="display:block;margin-top:22px">Presenter notes and decisions</label>
+      <textarea id="notes" placeholder="Capture rehearsal results, risks, audience feedback, and decision changes here."></textarea>
+      <div class="actions"><button class="primary" id="save">Save state</button><button id="submit">Submit checkpoint</button><button id="reset">Reset local state</button><span class="save-status" id="save-status"></span></div>
+    </div>
+  </section>
+  <footer>DWARF presentation control room · four-part flow updated 2026-09-11 · state saves locally and mirrors to the workbench API when available</footer>
+</main>
+<script>
+const KEY = "dwarf-presentation-control-room-v2";
+const ids = [...document.querySelectorAll('input[type="checkbox"]')].map(x => x.id);
+function readLocal() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) { return {}; } }
+function collect() {
+  const checks = {}; ids.forEach(id => checks[id] = document.getElementById(id).checked);
+  return { checks, notes: document.getElementById("notes").value, active: document.querySelector(".tab.active").dataset.panel };
+}
+function apply(state) {
+  const checks = state.checks || {}; ids.forEach(id => document.getElementById(id).checked = !!checks[id]);
+  document.getElementById("notes").value = state.notes || "";
+  switchPanel(state.active || "run"); updateProgress();
+}
+function updateProgress() {
+  const done = ids.filter(id => document.getElementById(id).checked).length;
+  const total = ids.length;
+  document.getElementById("completion").textContent = `${done} / ${total} checks complete`;
+  document.querySelector(".bar > span").style.width = `${Math.round(done / total * 100)}%`;
+}
+async function persist(submit) {
+  const state = collect(); localStorage.setItem(KEY, JSON.stringify(state));
+  const status = document.getElementById("save-status");
+  if (window.workbench) {
+    try {
+      const result = submit ? await window.workbench.submit(state) : await window.workbench.saveAll(state);
+      status.textContent = submit && result ? `checkpoint v${result.version}` : "saved";
+    } catch (e) { status.textContent = "API save failed; local state retained"; }
+  } else { status.textContent = "saved locally"; }
+}
+function switchPanel(name) {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.panel === name));
+  document.querySelectorAll(".panel").forEach(x => x.classList.toggle("active", x.id === `panel-${name}`));
+}
+document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => { switchPanel(tab.dataset.panel); persist(false); }));
+document.querySelectorAll('input[type="checkbox"]').forEach(input => input.addEventListener("change", () => { updateProgress(); persist(false); }));
+document.getElementById("notes").addEventListener("input", () => persist(false));
+document.getElementById("save").addEventListener("click", () => persist(false));
+document.getElementById("submit").addEventListener("click", () => persist(true));
+document.getElementById("reset").addEventListener("click", () => {
+  if (!confirm("Reset all local presentation state?")) return;
+  localStorage.removeItem(KEY); apply({}); persist(false);
+});
+document.getElementById("export").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(collect(), null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob); const a = document.createElement("a");
+  a.href = url; a.download = "dwarf-presentation-state.json"; a.click(); URL.revokeObjectURL(url);
+});
+(async function init() {
+  let state = readLocal();
+  if (window.workbench) { try { const remote = await window.workbench.loadAll(); if (remote && Object.keys(remote).length) state = remote; } catch (_) {} }
+  apply(state);
+})();
+</script>
+</body>
+</html>

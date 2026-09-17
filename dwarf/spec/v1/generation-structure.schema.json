@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/generation-structure.schema.json",
+  "title": "DWARF generation structure",
+  "description": "Descriptive input-shape metadata paired with a mutation-token dictionary.",
+  "type": "object",
+  "required": ["format", "target", "decoder_entrypoint", "shape"],
+  "properties": {
+    "format": {
+      "type": "string",
+      "enum": ["cbor"]
+    },
+    "target": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "decoder_entrypoint": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "shape": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "major_types": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"type": "string"}
+      }
+    },
+    "cbor_tokens": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"type": "string"}
+      }
+    },
+    "sample_sources": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,102 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Learn · Getting started</span>
+<h1>Hello Dwarf</h1>
+<p class="page-hero">A 5-step walkthrough: install the framework, run your first scenario, capture a forensic bundle, write your first assertion, and inspect everything from the dashboard. Reading time ~10 min; copy-paste-and-go.</p>
+
+<hr class="hairline">
+
+<section class="learn-walkthrough">
+  <article class="learn-step">
+    <header><span class="eyebrow">Step 1</span><h2>Install</h2></header>
+
+    <h3>Recommended: Docker deployment</h3>
+    <p>Clone the repository and run the four delivery scripts in order. Any Docker-capable Linux host with Compose v2 and ~20&nbsp;GB free disk works; no credentials or wallet are needed for local use.</p>
+    <pre class="run-payload-pre"><code>git clone https://github.com/pragma-org/dwarf.git
+cd dwarf
+bash delivery/scripts/install.sh       # create ~/.local/share/dwarf/{runs,state,bundles}
+bash delivery/scripts/build-image.sh   # build dwarf/framework:current
+bash delivery/scripts/deploy.sh        # start container dwarf-fw on :8787</code></pre>
+    <p>The deployment starts the <code>dwarf/framework:current</code> image, mounts <code>runs/</code> · <code>state/</code> · <code>bundles/</code> from <code>~/.local/share/dwarf/</code> by default, and starts the dashboard at <a href="http://127.0.0.1:8787/operate"><code>http://127.0.0.1:8787/operate</code></a>. Set <code>DWARF_RUNTIME_ROOT</code> to use another location. Prerequisites and options are in <code>INSTALL.md</code>. Use a different port with <code>DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/deploy.sh</code>.</p>
+    <p>This is the primary deploy path. The container layer pins framework dependencies so installs are reproducible across Docker-capable Linux hosts.</p>
+
+    <h3>Confirm it's working</h3>
+    <pre class="run-payload-pre"><code>bash delivery/scripts/status.sh                               # image / container / port / inventory
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/operate   # expect 200
+docker exec dwarf-fw python3 dwarf/scripts/validate_scenarios.py         # expect RESULT: PASS, 0 failures</code></pre>
+    <p>Then open <a href="http://127.0.0.1:8787/operate"><code>http://127.0.0.1:8787/operate</code></a> (or <code>http://&lt;host-lan-ip&gt;:8787/operate</code>). To tear down later: <code>bash delivery/scripts/uninstall.sh</code> (add <code>--purge</code> to also remove runtime data).</p>
+
+    <h3>Alternative: bare-metal CLI</h3>
+    <p>To develop on Dwarf itself or skip Docker, run the CLI from the source tree on a host with Python&nbsp;3.11+:</p>
+    <pre class="run-payload-pre"><code>git clone https://github.com/pragma-org/dwarf.git
+cd dwarf
+python3 -m pip install -r infrastructure/docker/requirements-framework.txt
+./dwarf/cardano-profile --help
+./dwarf/cardano-profile dashboard serve --bind 0.0.0.0 --port 8787</code></pre>
+    <p>You'll get the same CLI surface, but the framework runs as host processes rather than container processes. The Docker deployment above remains the supported path.</p>
+  </article>
+
+  <article class="learn-step">
+    <header><span class="eyebrow">Step 2</span><h2>Pick a scenario and run it</h2></header>
+    <p>Open <a href="/operate/scenarios">/operate/scenarios</a>, choose an id in <strong>Run a scenario</strong>, and click <strong>Run</strong>. Output streams in the page and the resulting evidence bundle appears under <a href="/operate/runs">Runs</a>. The button uses the configured execution adapter: a restricted host control channel when one is installed, otherwise the framework runtime itself. Target binaries and Docker-backed devnets must exist on that execution host.</p>
+    <p>The equivalent host CLI remains useful for automation and deployments without a control channel:</p>
+    <p>The same fuzz scenarios also run in CI: the public repo's <strong>library-fuzz</strong> GitHub Action (<code>.github/workflows/dwarf-fuzz.yml</code>) builds the Amaru decoder harnesses and fuzzes every decode target on each push / PR, failing the build on any crash — see the operator runbook's <em>Continuous integration</em> note.</p>
+    <p><strong>Fuzz scenarios</strong> (CBOR / ledger-rule / mini-protocol) decode into a target binary, so build the targets once — Rust for <code>amaru</code>, GHC/cabal for <code>cardano-node</code>:</p>
+    <pre class="run-payload-pre"><code>make -C dwarf/targets amaru        # or: make -C dwarf/targets all
+./dwarf/cardano-profile scenario run \
+    dwarf/scenarios/amaru-cbor-tx-body-fuzz.yaml</code></pre>
+    <p><strong>Substrate scenarios</strong> compose a containerized devnet, so they need Docker and the <code>devnet</code> runtime. The honest-baseline composes a 3-node substrate and asserts all three nodes converge on the same tip:</p>
+    <pre class="run-payload-pre"><code>./dwarf/cardano-profile scenario run --runtime devnet \
+    dwarf/scenarios/runtime-substrate-honest-baseline-example-smoke.yaml</code></pre>
+    <p>The framework writes a fresh run bundle to <code>runs/&lt;timestamp&gt;-&lt;hash&gt;/</code> with manifest, log.ndjson, observation outputs, and assertion results.</p>
+  </article>
+
+  <article class="learn-step">
+    <header><span class="eyebrow">Step 3</span><h2>Find your run in the dashboard</h2></header>
+    <p>The bundle is auto-discovered. Open <a href="/operate/runs">/operate/runs</a> and your new run-id will be at the top of the list. Click in to land on the bundle inspector:</p>
+    <ul>
+      <li>Status banner — pass/fail + scenario id + target impl + runtime</li>
+      <li>Tile grid — assertions, tamper-check, wall-time, iteration outcomes</li>
+      <li>Substrate evidence — topology / multi-node observation / hf-boundary tiles when the scenario produces them</li>
+      <li>Recorded assertions + log tail — drill into the per-event detail</li>
+    </ul>
+    <p>The <a href="/operate/runs">Live tail</a> button at the top of the inspector streams <code>log.ndjson</code> via SSE — useful when you re-run and want to watch progress without refreshing.</p>
+  </article>
+
+  <article class="learn-step">
+    <header><span class="eyebrow">Step 4</span><h2>Preserve a forensic bundle</h2></header>
+    <p>The framework keeps every run in <code>runs/</code> by default but bundles you want to keep across cleanup runs go to <code>bundles/</code> as signed tar.gz archives:</p>
+    <pre class="run-payload-pre"><code># Inside Docker
+docker exec dwarf-fw dwarf/cardano-profile bundle &lt;run-id&gt;
+
+# Bare metal
+./dwarf/cardano-profile bundle &lt;run-id&gt;</code></pre>
+    <p>From the dashboard, the <code>Export bundle (.tar.gz)</code> button on the run inspector header does the same thing. To re-import a bundle on another box, drop it on <a href="/operate/bundles">/operate/bundles</a> via the Import form (or run <code>cardano-profile bundle import &lt;path&gt;</code>).</p>
+  </article>
+
+  <article class="learn-step">
+    <header><span class="eyebrow">Step 5</span><h2>Write your first assertion</h2></header>
+    <p>Scenarios drive primitives; primitives emit observations; assertions check observations. This assertion requires at least one completed load event and rejects any non-OK outcome:</p>
+    <pre class="run-payload-pre"><code>{
+  "primitive": "load_events_are_ok",
+  "min_completed": 1,
+  "min_event_count": 1
+}</code></pre>
+    <p>Use the <a href="/operate/scenarios/new">structured builder</a> to start blank or clone any catalog scenario, select compatible primitives for each lifecycle phase, and fill parameters from their registered schemas. Validate before Save; use <strong>Advanced raw JSON/YAML</strong> when you need complete source control. Every scenario, target, and profile can also be viewed or downloaded individually, and each catalog provides <strong>Download all</strong>.</p>
+  </article>
+</section>
+
+<hr class="hairline">
+
+<section>
+  <h2>Next steps</h2>
+  <ul>
+    <li><a href="/learn/examples">Examples gallery</a> — 10 annotated scenarios across families</li>
+    <li><a href="/learn/walkthroughs">Walkthroughs</a> — deeper deployment + multi-host recipes</li>
+    <li><a href="/learn/cli">CLI reference</a> — every <code>cardano-profile</code> subcommand</li>
+    <li><a href="/learn/architecture">Architecture</a> — how primitives compose into substrates</li>
+    <li><a href="/learn/api">REST API</a> — JSON endpoints for ops integrations</li>
+    <li><a href="/learn/glossary">Glossary</a> · <a href="/learn/faq">FAQ</a> · <a href="/learn/troubleshooting">Troubleshooting</a></li>
+  </ul>
+</section>
+{% endblock %}

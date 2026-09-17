@@ -1,0 +1,57 @@
+{% extends "_base.j2" %}
+{% block main %}
+<nav class="definition-breadcrumb" aria-label="Breadcrumb">
+  <a href="/operate/{{ catalog.slug }}">{{ catalog.label }}</a>
+  <span aria-hidden="true">/</span>
+  <span>{{ item.item_id }}</span>
+</nav>
+
+<header class="definition-header">
+  <div>
+    <span class="eyebrow">{{ catalog.singular_label }}</span>
+    <h1>{{ item.label }}</h1>
+    <p class="definition-header__id"><code>{{ item.item_id }}</code></p>
+    <p>{{ item.summary }}</p>
+  </div>
+  <div class="definition-actions" aria-label="Asset actions">
+    <a class="cta cta--ghost" href="{{ export_url }}" download>Export with manifest</a>
+    <a class="cta cta--ghost" href="{{ download_url }}" download>Download source</a>
+  </div>
+</header>
+
+<dl class="definition-summary">
+  <div><dt>Status</dt><dd><code>{{ item.status }}</code></dd></div>
+  {% for field in fields %}
+  <div><dt>{{ field.key }}</dt><dd><code>{{ field.value }}</code></dd></div>
+  {% endfor %}
+</dl>
+
+<section aria-labelledby="asset-relationships-heading">
+  <span class="eyebrow">Connections</span>
+  <h2 id="asset-relationships-heading">Related DWARF objects</h2>
+  {% if item.relationships %}
+  <ul class="asset-relationship-list">
+    {% for relationship in item.relationships %}
+    <li>
+      {% if relationship.resolved is sameas false %}<code>{{ relationship.label }}</code> <span class="pill">unresolved</span>{% else %}<a href="{{ relationship.url }}">{{ relationship.label }}</a>{% endif %}
+      {% if relationship.relation %}<span> · {{ relationship.relation }}</span>{% endif %}
+      {% if relationship.source_path %}<small><code>{{ relationship.source_path }}</code></small>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-section-statement">No source-backed relationships are recorded for this asset.</p>
+  {% endif %}
+</section>
+
+<section class="definition-source" aria-labelledby="asset-source-heading">
+  <div class="definition-source__head">
+    <div>
+      <span class="eyebrow">Source</span>
+      <h2 id="asset-source-heading">Complete source</h2>
+    </div>
+    <code>{{ item.source_path }}</code>
+  </div>
+  <pre><code>{{ item.raw_text }}</code></pre>
+</section>
+{% endblock %}

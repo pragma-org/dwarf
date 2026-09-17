@@ -1,0 +1,67 @@
+{% extends "_base.j2" %}
+{% block main %}
+<nav class="definition-breadcrumb" aria-label="Breadcrumb">
+  <a href="/operate/{{ catalog }}">{{ catalog | title }}</a><span aria-hidden="true">/</span><span>{{ 'New' if create else definition_id }}</span>
+</nav>
+<div class="definition-editor" data-catalog="{{ catalog }}" data-create="{{ 'true' if create else 'false' }}" data-definition-id="{{ definition_id }}" data-token="{{ token }}">
+  <div class="definition-header">
+    <div><span class="eyebrow">Operate · {{ catalog_label }}</span><h1>{{ 'Create' if create else 'Edit' }} {{ catalog_label | lower }}</h1></div>
+    <div class="definition-actions">
+      <a class="cta cta--ghost definition-help-link" href="{{ help_href }}" target="_blank" rel="noopener noreferrer" aria-label="{{ help_aria_label }} (opens in a new tab)">Authoring guide <span aria-hidden="true">↗</span></a>
+      {% if not create %}<a class="cta cta--ghost" href="/operate/{{ catalog }}/{{ definition_id }}">Cancel</a>{% else %}<a class="cta cta--ghost" href="/operate/{{ catalog }}">Cancel</a>{% endif %}
+      <button class="cta cta--ghost" type="button" data-editor-validate>Validate</button>
+      <button class="cta" type="button" data-editor-save disabled>Save</button>
+    </div>
+  </div>
+
+  {% if create and templates %}
+  <label class="definition-editor__template">Template
+    <select data-editor-template>
+      {% for name in templates %}<option value="{{ name }}"{% if name == selected_template %} selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+
+  <div class="definition-editor__tabs" role="tablist" aria-label="Editor mode">
+    <button type="button" role="tab" aria-selected="true" data-editor-tab="structured">Structured</button>
+    <button type="button" role="tab" aria-selected="false" data-editor-tab="raw">Advanced raw JSON/YAML</button>
+  </div>
+
+  <section data-editor-panel="structured" aria-label="Structured fields">
+    <div class="definition-editor__fields">
+      {% for field in fields %}
+      <label class="definition-field definition-field--{{ field.type }}">
+        <span class="definition-field__name" tabindex="0" data-field-help="{{ field.description }}">{{ field.label }}{% if field.required %} <span aria-hidden="true">*</span>{% endif %}</span>
+        {% if field.enum %}
+        <select name="{{ field.name }}" data-field="{{ field.name }}" data-field-type="{{ field.type }}" data-field-description="{{ field.description }}" aria-describedby="{{ catalog }}-{{ field.name }}-help"{% if field.name == 'id' and not create %} disabled{% endif %}>
+          <option value="" data-option-help="No value selected.">—</option>{% for option in field.enum_options %}<option value="{{ option.value }}" data-option-help="{{ option.description }}">{{ option.value }}</option>{% endfor %}
+        </select>
+        {% elif field.type == 'array' %}
+        <textarea name="{{ field.name }}" data-field="{{ field.name }}" data-field-type="array" rows="5" placeholder="One value per line" aria-describedby="{{ catalog }}-{{ field.name }}-help"></textarea>
+        {% elif field.type == 'object' %}
+        <textarea name="{{ field.name }}" data-field="{{ field.name }}" data-field-type="object" rows="7" spellcheck="false" placeholder="{ }" aria-describedby="{{ catalog }}-{{ field.name }}-help"></textarea>
+        {% elif field.type == 'boolean' %}
+        <input type="checkbox" name="{{ field.name }}" data-field="{{ field.name }}" data-field-type="boolean" aria-describedby="{{ catalog }}-{{ field.name }}-help">
+        {% elif field.type == 'integer' %}
+        <input type="number" name="{{ field.name }}" data-field="{{ field.name }}" data-field-type="integer" aria-describedby="{{ catalog }}-{{ field.name }}-help"{% if field.minimum is not none %} min="{{ field.minimum }}"{% endif %}{% if field.name == 'id' and not create %} readonly{% endif %}>
+        {% else %}
+        <input type="text" name="{{ field.name }}" data-field="{{ field.name }}" data-field-type="string"{% if field.placeholder %} placeholder="{{ field.placeholder }}"{% endif %}{% if field.name == 'id' and not create %} readonly aria-readonly="true"{% endif %} aria-describedby="{{ catalog }}-{{ field.name }}-help">
+        {% endif %}
+        {% if field.description %}<small class="visually-hidden definition-field__description" id="{{ catalog }}-{{ field.name }}-help">{{ field.description }}</small>{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section data-editor-panel="raw" aria-label="Raw definition" hidden>
+    <label class="definition-editor__raw">Complete JSON or YAML
+      <textarea data-editor-raw spellcheck="false">{{ initial_source }}</textarea>
+    </label>
+    <p class="page-subhero">Unknown extension fields are preserved. Switching back to Structured requires valid JSON/YAML and never silently deletes fields.</p>
+  </section>
+  <pre class="definition-editor__report" data-editor-report role="status" aria-live="polite">Edit a field, then validate.</pre>
+  <script type="application/json" data-editor-initial>{{ initial_data_json | safe }}</script>
+  <script type="application/json" data-editor-templates>{{ templates_json | safe }}</script>
+</div>
+<script src="/static/js/definition-editor.js"></script>
+{% endblock %}

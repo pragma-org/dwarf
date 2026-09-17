@@ -1,0 +1,25 @@
+{% extends "_base.j2" %}
+{% block main %}
+<header class="scenarios-header"><div><span class="eyebrow">Learn · security planning</span><h1>Risk work packages</h1><p class="page-hero">Risk work packages are <strong>planning and grouping</strong> records: they connect candidate-risk IDs, evidence references, blockers, and bounded follow-up work.</p></div><div class="definition-actions"><a class="cta cta--ghost" href="/operate/risk-packages">Browse work packages</a><a class="cta cta--ghost" href="/api/risk-packages/export" download>Download sources</a></div></header>
+
+<section><span class="eyebrow">Critical distinction</span><h2>A work package is not a forensic bundle</h2><div class="learn-tile-grid">
+  <article class="learn-tile"><span class="learn-tile__eyebrow">Plan and group</span><h3 class="learn-tile__title">Risk work package</h3><p>Groups candidate risks, references evidence, records blockers, and scopes read-only follow-up. Its status does not confirm a finding, accept a risk, or prove a run.</p></article>
+  <article class="learn-tile"><span class="learn-tile__eyebrow">Execute and retain</span><h3 class="learn-tile__title">Scenario + run</h3><p>A scenario declares the real workload, faults, probes, and assertions. A run is one execution with a target revision and seed.</p></article>
+  <article class="learn-tile"><span class="learn-tile__eyebrow">Forensic artifact</span><h3 class="learn-tile__title">Evidence bundle</h3><p>A portable run artifact containing manifests, logs, events, results, hashes, and attestations. Testcases and buckets then support triage.</p></article>
+</div></section>
+
+<section><span class="eyebrow">Compatibility</span><h2>Why the source path still says evidence-packages</h2><p>The files predate the clarified UI term. DWARF preserves the legacy <code>dwarf/evidence-packages/package-*.yaml</code> directory, <code>EvidencePackage</code> Python type, and <code>cardano-profile evidence</code> CLI for compatibility. New Operate/Learn pages call the objects risk work packages so they cannot be confused with forensic evidence bundles.</p><p>The browser catalog is read-only. Package C's legacy runnable flag means a bounded CLI evidence action exists; it does not make the planning record a scenario or a bundle.</p></section>
+
+<section><span class="eyebrow">Schema</span><h2><code>risk-work-package.schema.json</code></h2><div class="responsive-table"><table class="config-table"><thead><tr><th>Field</th><th>Required</th><th>Meaning</th></tr></thead><tbody>{% for name, field in schema.properties.items() %}<tr><td><code>{{ name }}</code></td><td>{{ 'yes' if name in schema.required else 'no' }}</td><td>{{ field.description }}</td></tr>{% endfor %}</tbody></table></div></section>
+
+<section><span class="eyebrow">Lifecycle</span><h2>Group → execute → retain → review</h2><ol><li>Group exact candidate-risk IDs by security surface.</li><li>Link planned scenarios, profiles, and evidence paths explicitly.</li><li>Run the relevant real-node scenario through its normal DWARF path.</li><li>Retain the forensic evidence bundle and testcase lifecycle records.</li><li>Review the evidence separately before confirming a finding, promoting a candidate risk, accepting risk, or closing a blocker.</li></ol></section>
+
+<section><span class="eyebrow">Availability rule</span><h2>References are honest about deployment state</h2><p>Package files preserve historical evidence paths even when those artifacts are not installed in the current dashboard image. Operate marks each reference available, directory, missing, or unsafe. Only existing regular files below the explicit evidence root receive download links; names are never treated as proof.</p></section>
+
+<section><span class="eyebrow">Current inventory</span><h2>Milestone-1 planning groups</h2><div class="learn-tile-grid">{% for row in rows %}<a class="learn-tile" href="/operate/risk-packages/{{ row.id }}"><span class="learn-tile__eyebrow">{{ row.id }} · {{ row.status }}</span><h3 class="learn-tile__title">{{ row.label }}</h3><p class="learn-tile__sub">{{ row.candidate_ids|length }} candidate risks · {{ row.evidence|length }} evidence references · {{ row.blockers|length }} blockers</p></a>{% endfor %}</div></section>
+
+<section><span class="eyebrow">Examples</span><h2>Read-only inspection</h2><article class="example-block"><h3>Browse and export</h3><pre><code>GET /operate/risk-packages
+GET /operate/risk-packages/package-c
+GET /api/risk-packages/export</code></pre></article><article class="example-block"><h3>Legacy CLI compatibility</h3><p>Inspect status or preview the one implemented read-only action without changing the dashboard catalog.</p><pre><code>cardano-profile evidence status package-c
+cardano-profile evidence run package-c --dry-run</code></pre></article></section>
+{% endblock %}

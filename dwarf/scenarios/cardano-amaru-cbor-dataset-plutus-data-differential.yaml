@@ -1,0 +1,43 @@
+{
+  "spec_version": "v1",
+  "id": "cardano-amaru-cbor-dataset-plutus-data-differential",
+  "title": "Pinned Cardano CBOR dataset differential for Conway Plutus data",
+  "authors": ["dwarf"],
+  "tags": ["ser-deser", "cbor", "differential", "cardano-node", "amaru", "huddle", "coverage", "plutus-data"],
+  "target": {
+    "implementation": "amaru",
+    "version": "any"
+  },
+  "runtime": "library",
+  "seed": "0xA7561CD0",
+  "load": [
+    {
+      "primitive": "runtime_cardano_cbor_dataset_differential",
+      "dataset_repo_dir": "$DWARF_CARDANO_CBOR_DATASET_REPO",
+      "dataset_dir": "$DWARF_CARDANO_CBOR_DATASET_REPO/dataset/conway-123-100",
+      "expected_source_revision": "a7561cd063550c2218898571520f14c3674efe91",
+      "source_repository": "https://github.com/r2rationality/cardano-cbor-dataset.git",
+      "era": "conway",
+      "rule": "plutus_data",
+      "samples_per_category": 25,
+      "manifests_dir": "targets/manifests",
+      "reference_target_id": "cardano-node-cbor-decode-plutus-data",
+      "candidate_target_id": "amaru-cbor-decode-plutus-data",
+      "reference_verifier_image": "cardano-cbor-dataset:a7561cd",
+      "reference_verifier_platform": "linux/amd64",
+      "output_dir": "outputs/cardano-cbor-dataset-plutus-data-differential",
+      "per_input_timeout_seconds": 5,
+      "reference_verifier_timeout_seconds": 600,
+      "timeout_seconds": 1200
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "cardano_cbor_dataset_differential_clean",
+      "min_completed": 1,
+      "min_inputs_processed": 100,
+      "min_samples_per_category": 25
+    }
+  ],
+  "teardown": []
+}

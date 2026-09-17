@@ -1,0 +1,26 @@
+{% extends "_base.j2" %}
+{% block main %}
+<nav class="definition-breadcrumb" aria-label="Breadcrumb"><a href="/operate/profile-templates">Profile templates</a><span aria-hidden="true">/</span><span>{{ template.id }}</span></nav>
+<header class="definition-header">
+  <div><span class="eyebrow">{{ template.node_type }} profile scaffold</span><h1>{{ template.id }}</h1><p class="page-hero">{{ template.summary }}</p></div>
+  <div class="definition-actions" aria-label="Profile-template actions"><a class="cta" href="{{ template.use_url }}">Use template</a><a class="cta cta--ghost" href="/api/assets/profile-templates/{{ template.id }}/export" download>Export with manifest</a><a class="cta cta--ghost" href="/api/assets/profile-templates/{{ template.id }}/download" download>Download source</a></div>
+</header>
+
+{% if template.validation_error %}<section class="callout callout--warning"><h2>Template diagnostic</h2><p><code>{{ template.validation_error }}</code></p></section>{% endif %}
+
+<dl class="definition-summary">
+  <div><dt>Status</dt><dd><code>{{ template.status }}</code></dd></div>
+  <div><dt>Node type</dt><dd><code>{{ template.node_type }}</code></dd></div>
+  <div><dt>Cardano nodes</dt><dd><code>{{ template.node_mix['cardano-node'] }}</code></dd></div>
+  <div><dt>Amaru nodes</dt><dd><code>{{ template.node_mix.amaru }}</code></dd></div>
+  <div><dt>Network magic</dt><dd><code>{{ template.network_magic }}</code></dd></div>
+  <div><dt>Peer sharing</dt><dd><code>{{ template.peer_sharing }}</code></dd></div>
+</dl>
+
+<section aria-labelledby="template-substitutions-heading"><span class="eyebrow">Rendering contract</span><h2 id="template-substitutions-heading">Required substitutions</h2>{% if template.required_substitutions %}<ul>{% for name in template.required_substitutions %}<li><code>{{ '{{' }}{{ name }}{{ '}}' }}</code></li>{% endfor %}</ul>{% else %}<p class="empty-section-statement">This source declares no substitutions.</p>{% endif %}</section>
+
+<section aria-labelledby="template-assumptions-heading"><span class="eyebrow">Defaults and safety</span><h2 id="template-assumptions-heading">Template assumptions</h2><ul>{% for assumption in template.assumptions %}<li>{{ assumption }}</li>{% endfor %}</ul><p>A template is not a deployed profile. Review host paths, network selection, ports, topology, counts, and implementation revisions in the generated profile before deployment.</p></section>
+
+<section class="definition-source" aria-labelledby="template-preview-heading"><div class="definition-source__head"><div><span class="eyebrow">In-memory render</span><h2 id="template-preview-heading">Rendered preview</h2></div><code>profile id: preview-{{ template.id }}</code></div><pre><code>{{ template.rendered_source }}</code></pre></section>
+<section class="definition-source" aria-labelledby="template-source-heading"><div class="definition-source__head"><div><span class="eyebrow">Immutable source</span><h2 id="template-source-heading">Complete template source</h2></div><code>{{ template.source_path }}</code></div><pre><code>{{ template.raw_source }}</code></pre></section>
+{% endblock %}
