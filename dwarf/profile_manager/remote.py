@@ -74,9 +74,14 @@ def resolve_ssh_key_path(config) -> str:
         return str(configured)
 
     parts = configured.parts
-    if len(parts) >= 5 and parts[:4] == ("/", "home", "dwarf", ".ssh"):
+    if (
+        len(parts) >= 5
+        and parts[0:2] == ("/", "home")
+        and parts[-2] == ".ssh"
+    ):
         candidates = [
             Path.home() / ".ssh" / configured.name,
+            Path("/home/dwarf/.ssh") / configured.name,
             Path("/home") / str(config.ssh_user) / ".ssh" / configured.name,
             Path("/Users") / str(config.ssh_user) / ".ssh" / configured.name,
         ]

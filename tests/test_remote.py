@@ -18,3 +18,23 @@ def test_render_ssh_command_resolves_container_key_path_on_host(tmp_path, monkey
     argv = render_ssh_command(config, "true")
 
     assert argv[argv.index("-i") + 1] == str(host_key)
+
+
+def test_render_ssh_command_maps_host_home_key_to_container_home(
+    tmp_path, monkeypatch
+):
+    container_home = tmp_path / "dwarf"
+    mounted_key = container_home / ".ssh" / "cardano-box"
+    mounted_key.parent.mkdir(parents=True)
+    mounted_key.write_text("private key placeholder", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(container_home))
+
+    config = DeploymentConfig.from_dict({
+        "ssh_user": "nigel",
+        "host": "127.0.0.1",
+        "ssh_key_path": "/home/host-user/.ssh/cardano-box",
+    })
+
+    argv = render_ssh_command(config, "true")
+
+    assert argv[argv.index("-i") + 1] == str(mounted_key)
