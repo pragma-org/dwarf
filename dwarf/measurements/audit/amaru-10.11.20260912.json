@@ -1,0 +1,334 @@
+{
+  "schema_version": "v1",
+  "audited_at": "2026-09-18T15:42:43Z",
+  "implementation": "amaru",
+  "release": "10.11.20260912",
+  "release_tag": "v10.11.20260912",
+  "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260912",
+  "source_repository": "https://github.com/pragma-org/amaru",
+  "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+  "image": {
+    "reference": "ghcr.io/pragma-org/amaru:v10.11.20260912",
+    "digest": "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
+    "local_image_id": "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e"
+  },
+  "qualification": {
+    "scope": "amaru-only",
+    "status": "confirmed",
+    "default": true,
+    "supporting_cardano_version": "10.7.1",
+    "evidence": [
+      "state:version-qualifications/20260918T091139Z-dwarf-qual-amaru-10-7-1-10-11-20260912-ae435ef5"
+    ]
+  },
+  "dwarf_baseline": {
+    "repository": "https://github.com/pragma-org/dwarf",
+    "commit": "25e1ad0867d8ebac8628707c73b388a5654efa21"
+  },
+  "release_verification": {
+    "github_releases_api_checked": true,
+    "tag_ref_checked": true,
+    "version_catalog_checked": true,
+    "local_oci_identity_checked": true,
+    "all_identities_agree": true
+  },
+  "export_contract": {
+    "open_telemetry": true,
+    "json_traces": true,
+    "open_telemetry_flag": "--with-open-telemetry",
+    "json_trace_flag": "--with-json-traces",
+    "source_paths": [
+      "crates/amaru-node/src/telemetry.rs",
+      "crates/amaru-node/src/telemetry/open_telemetry.rs",
+      "monitoring/README.md",
+      "docs/TRACES.md",
+      "docs/traces-schema.json"
+    ]
+  },
+  "stock_signals": [
+    {
+      "id": "header-lifecycle",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-consensus/src/performance/header.rs",
+        "crates/amaru-metrics/src/consensus.rs",
+        "docs/TRACES.md"
+      ],
+      "fields": [
+        "outcome",
+        "peer",
+        "header_hash",
+        "slot_start_to_header_micros",
+        "block_fetch_wait_micros",
+        "block_fetch_micros",
+        "forward_micros"
+      ],
+      "claim": "Terminal header outcome plus the existing receive, fetch-request, fetch-receive, and adopt/invalidate/abandon intervals."
+    },
+    {
+      "id": "fork-switch",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-consensus/src/performance/header.rs",
+        "crates/amaru-metrics/src/consensus.rs",
+        "docs/TRACES.md"
+      ],
+      "fields": ["header_hash", "outcome", "duration_micros"],
+      "claim": "Fork detection to application or abandonment duration and outcome."
+    },
+    {
+      "id": "mempool",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-consensus/src/stages/mempool/traces.rs",
+        "crates/amaru-metrics/src/mempool.rs",
+        "crates/amaru-observability/src/schemas.rs",
+        "docs/TRACES.md"
+      ],
+      "fields": [
+        "tx_id",
+        "origin",
+        "insertion_result",
+        "rejection_reason",
+        "eviction_reason",
+        "tip",
+        "size_bytes",
+        "tx_count",
+        "revalidation_duration_micros"
+      ],
+      "claim": "Transaction receipt, admission/rejection, current mempool state, revalidation cost, and eviction after adopted-block inclusion or invalidation."
+    },
+    {
+      "id": "ledger-rule-stages",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-observability/src/schemas.rs",
+        "docs/TRACES.md",
+        "docs/traces-schema.json"
+      ],
+      "fields": [
+        "preflight_micros",
+        "validity_interval_micros",
+        "metadata_micros",
+        "inputs_micros",
+        "fees_micros",
+        "collateral_micros",
+        "mint_micros",
+        "outputs_micros",
+        "withdrawals_micros",
+        "certificates_micros",
+        "proposals_micros",
+        "votes_micros",
+        "donation_micros",
+        "signatures_micros",
+        "scripts_micros",
+        "script_context_micros"
+      ],
+      "claim": "Existing phase-one rule attribution and common phase-two script-context time when the fields are emitted."
+    },
+    {
+      "id": "transaction-validation",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-observability/src/schemas.rs",
+        "docs/TRACES.md"
+      ],
+      "fields": ["tx_id", "span_duration"],
+      "claim": "Transaction validation span keyed by transaction ID; context fetch and state application must be separated when the requested metric requires it."
+    },
+    {
+      "id": "plutus-execution",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-observability/src/schemas.rs",
+        "docs/TRACES.md",
+        "docs/traces-schema.json"
+      ],
+      "fields": [
+        "purpose",
+        "index",
+        "acquire_arena_micros",
+        "decode_script_micros",
+        "build_uplc_program_micros",
+        "evaluate_uplc_program_micros"
+      ],
+      "claim": "Real VM-stage timing for each traced redeemer execution; result and CPU/MEM budget scoreboards still come from conformance outputs."
+    },
+    {
+      "id": "block-epoch",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-ledger/src/state.rs",
+        "crates/amaru-ledger/src/state/volatile/overlay.rs",
+        "crates/amaru-observability/src/schemas.rs",
+        "docs/TRACES.md"
+      ],
+      "fields": [
+        "block_prepare_span_duration",
+        "block_apply_span_duration",
+        "block_id",
+        "block_number",
+        "block_body_size",
+        "epoch",
+        "epoch_apply_span_duration",
+        "should_end_epoch",
+        "should_snapshot",
+        "should_begin_epoch"
+      ],
+      "claim": "Existing block prepare/apply and epoch-transition overlay flush spans at their documented boundaries."
+    },
+    {
+      "id": "chain-tip",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-metrics/src/ledger.rs",
+        "crates/amaru-metrics/src/protocol.rs",
+        "crates/amaru-observability/src/schemas.rs",
+        "docs/TRACES.md"
+      ],
+      "fields": [
+        "slot",
+        "header_hash",
+        "parent_hash",
+        "block_height",
+        "tx_count",
+        "epoch",
+        "density"
+      ],
+      "claim": "Locally selected/adopted tip identity, progress, block transaction count, and chain health for correlation and controlled sync measurements."
+    },
+    {
+      "id": "networking",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-metrics/src/protocol.rs",
+        "crates/amaru-protocols/src/keepalive/initiator.rs",
+        "crates/amaru-observability/src/schemas.rs",
+        "docs/TRACES.md"
+      ],
+      "fields": [
+        "inbound_connections",
+        "outbound_connections",
+        "unidirectional_connections",
+        "served_block_count",
+        "peer",
+        "connection_id",
+        "keepalive_rtt",
+        "mux_protocol_id",
+        "mux_bytes"
+      ],
+      "claim": "Connection, served-block, KeepAlive, and mux activity exposed by the stock node; it is not a complete protocol transcript."
+    },
+    {
+      "id": "process-resources",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-metrics/src/system.rs",
+        "crates/amaru-node/src/system_metrics.rs"
+      ],
+      "fields": [
+        "runtime_seconds",
+        "cpu_percent",
+        "rss_bytes",
+        "footprint_bytes",
+        "virtual_bytes",
+        "disk_read_bytes",
+        "disk_write_bytes",
+        "host_memory_used_bytes",
+        "host_memory_total_bytes",
+        "open_files"
+      ],
+      "claim": "Node-emitted process and host resource series; network counters and thread count require DWARF external collection."
+    },
+    {
+      "id": "otel-json-export",
+      "available": true,
+      "source_paths": [
+        "crates/amaru-node/src/telemetry.rs",
+        "crates/amaru-node/src/telemetry/open_telemetry.rs",
+        "monitoring/README.md"
+      ],
+      "fields": ["metrics", "traces", "logs", "trace_id", "span_id", "service_name", "service_instance_id"],
+      "claim": "Stock OTLP metrics/traces/logs and JSON trace export with service identity and trace correlation."
+    }
+  ],
+  "visibility_gaps": [
+    {
+      "id": "live-protocol-cbor-decode",
+      "missing_boundary": "Successful and failed CBOR decode duration plus protocol/message identity for each tested live mini-protocol surface is not uniformly exposed by stock spans.",
+      "patch_mode": "patched-node",
+      "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+      "stock_overlap_reviewed": ["networking", "header-lifecycle", "otel-json-export"],
+      "patch_required": true
+    },
+    {
+      "id": "blockfetch-handler-queue",
+      "missing_boundary": "Stock header lifecycle exposes request-to-receive BlockFetch time, but not a complete handler/decode/internal queue depth and residence breakdown.",
+      "patch_mode": "patched-node",
+      "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+      "stock_overlap_reviewed": ["header-lifecycle", "networking"],
+      "patch_required": true
+    },
+    {
+      "id": "txsubmission-inflight-residence",
+      "missing_boundary": "Stock mempool signals expose transaction outcomes and mempool state, but not continuous TxSubmission2 pending/in-flight depth and request-to-body-to-insertion residence.",
+      "patch_mode": "patched-node",
+      "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+      "stock_overlap_reviewed": ["mempool", "networking"],
+      "patch_required": true
+    }
+  ],
+  "deferred_patch_candidates": [
+    {
+      "id": "scheduler-mailbox-lock-attribution",
+      "reason": "This is useful only after stock plus first-gap measurements demonstrate a specific unexplained bottleneck. Broad scheduler or lock instrumentation would add overhead and maintenance without an identified attribution question.",
+      "patch_required": false
+    }
+  ],
+  "input_and_coverage_boundaries": {
+    "cuddle_role": "structurally-valid-seed-and-scaffolding-supplier",
+    "cuddle_is_runtime_fuzzer": false,
+    "cardano_cbor_dataset": {
+      "repository": "https://github.com/r2rationality/cardano-cbor-dataset",
+      "revision": "a7561cd063550c2218898571520f14c3674efe91",
+      "qualified_surfaces": ["conway/plutus_data"],
+      "unqualified_surfaces_must_fail_closed": true
+    },
+    "compiler_coverage_is_performance_authority": false,
+    "compiler_coverage_is_correctness": false,
+    "coverage_role": "record-production-path-reachability-and-guide-fuzzing"
+  },
+  "dwarf_existing_support": {
+    "full_live_state_machine_protocols": ["chainsync", "blockfetch", "txsubmission2", "keepalive"],
+    "decode_protocols": [
+      "handshake",
+      "chainsync",
+      "blockfetch",
+      "txsubmission2",
+      "keepalive",
+      "peersharing",
+      "localstatequery",
+      "localtxsubmission",
+      "localtxmonitor"
+    ],
+    "amaru_typed_surfaces": [
+      "transaction-body",
+      "plutus-data",
+      "block-header",
+      "certificate",
+      "auxiliary-data",
+      "block",
+      "submit-api-transaction"
+    ]
+  },
+  "claim_boundaries": {
+    "library_execution_is_live_node": false,
+    "submission_success_is_chain_adoption": false,
+    "mempool_admission_is_chain_adoption": false,
+    "compiler_coverage_is_correctness": false,
+    "compiler_coverage_is_threat_coverage": false,
+    "patched_only_behavior_is_vulnerability": false,
+    "amaru_only_proves_cardano_or_mixed_parity": false,
+    "unavailable_internal_visibility_may_be_inferred": false
+  }
+}
