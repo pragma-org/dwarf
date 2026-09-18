@@ -136,7 +136,10 @@ def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
     assert transformed["services"]["p1"]["image"] == "new-cardano"
     assert transformed["services"]["amaru-consumer"]["image"] == "new-cardano"
     assert transformed["services"]["amaru-relay-1"]["image"] == "new-amaru"
-    assert "/usr/local/bin/amaru run" in transformed["services"]["amaru-relay-1"]["command"][1]
+    assert transformed["services"]["amaru-relay-1"]["user"] == "0:0"
+    assert "chown -R 10000:10000 /srv/amaru /startup /opt/amaru-logs" in transformed["services"]["amaru-relay-1"]["command"][1]
+    assert "setpriv --reuid=10000 --regid=10000 --clear-groups /usr/local/bin/amaru run" in transformed["services"]["amaru-relay-1"]["command"][1]
+    assert "exec chown" not in transformed["services"]["amaru-relay-1"]["command"][1]
     assert transformed["services"]["bootstrap-producer"]["image"] == "bootstrap"
     assert transformed["volumes"]["external"].get("external") is not True
 

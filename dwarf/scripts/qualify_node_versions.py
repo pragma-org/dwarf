@@ -164,7 +164,12 @@ def build_project_name(
 
 def _replace_command(value: Any) -> Any:
     if isinstance(value, str):
-        return value.replace("/bin/amaru node run", "/usr/local/bin/amaru run")
+        return value.replace(
+            "exec /bin/amaru node run",
+            "chown -R 10000:10000 /srv/amaru /startup /opt/amaru-logs\n"
+            "        exec setpriv --reuid=10000 --regid=10000 --clear-groups "
+            "/usr/local/bin/amaru run",
+        )
     if isinstance(value, list):
         return [_replace_command(item) for item in value]
     return value
@@ -215,6 +220,10 @@ def transform_compose_model(
             service["image"] = cardano_image
         if name in AMARU_RELAYS and amaru_image:
             service["image"] = amaru_image
+            # The upstream wrapper prepares fresh named volumes before exec.
+            # Run that preparation as root, then drop back to the UID/GID from
+            # the official Amaru image for the actual node process.
+            service["user"] = "0:0"
             service["command"] = _replace_command(service.get("command"))
 
     for volume in (transformed.get("volumes") or {}).values():
