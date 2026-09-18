@@ -1263,11 +1263,22 @@ def _cli_command(*args):
     return [sys.executable, str(DEFAULT_CLI_ENTRYPOINT), *args]
 
 
-def _default_cli_command_builder(action, *, profile=None, test_id=None, approve=False, scenario_path=None):
+def _default_cli_command_builder(
+    action,
+    *,
+    profile=None,
+    test_id=None,
+    approve=False,
+    scenario_path=None,
+    acknowledge_unknown_version=False,
+):
     if action == "deploy":
         if not profile:
             raise ValueError("deploy requires profile")
-        return _cli_command("deploy", profile, "--approve")
+        command = _cli_command("deploy", profile, "--approve")
+        if acknowledge_unknown_version:
+            command.append("--acknowledge-unknown-version")
+        return command
     if action == "remove":
         return _cli_command("remove", "--approve")
     if action == "fuzz":
@@ -1434,17 +1445,47 @@ def dispatch_mutating_request(*, method, path, expected_token, cli_command_build
     scenario_path = (qs.get("path") or [None])[0]
     approve_raw = (qs.get("approve") or [None])[0]
     approve = approve_raw in ("1", "true", "yes")
+    acknowledge_unknown_raw = (qs.get("acknowledge_unknown_version") or [None])[0]
+    acknowledge_unknown_version = acknowledge_unknown_raw in ("1", "true", "yes")
     if action == "deploy" and not profile:
         return (400, "text/plain; charset=utf-8", b"missing profile query parameter\n")
     if action in ("fuzz", "smoke", "coverage") and not test_id:
         return (400, "text/plain; charset=utf-8", b"missing id query parameter\n")
     if action in ("compare", "scenario_run") and not scenario_path:
         return (400, "text/plain; charset=utf-8", b"missing path query parameter\n")
+    if action == "deploy":
+        from profile_manager.deployment_versions import (
+            DeploymentVersionGateError,
+            enforce_deployment_version_gate,
+            profile_deployment_version_preview,
+        )
+
+        try:
+            preview = profile_deployment_version_preview(profile)
+            enforce_deployment_version_gate(
+                preview, acknowledge_unknown=acknowledge_unknown_version
+            )
+        except DeploymentVersionGateError as exc:
+            body = json.dumps({"ok": False, "error": exc.code, "message": str(exc)}).encode("utf-8")
+            return (409, "application/json; charset=utf-8", body)
+        except Exception as exc:
+            body = json.dumps(
+                {"ok": False, "error": "version-preview-failed", "message": str(exc)}
+            ).encode("utf-8")
+            return (400, "application/json; charset=utf-8", body)
     if not try_acquire_mutating_lock():
         return (409, "text/plain; charset=utf-8", b"another mutating action is already in progress\n")
     builder = cli_command_builder or _default_cli_command_builder
     try:
-        cmd = builder(action, profile=profile, test_id=test_id, approve=approve, scenario_path=scenario_path)
+        builder_kwargs = {
+            "profile": profile,
+            "test_id": test_id,
+            "approve": approve,
+            "scenario_path": scenario_path,
+        }
+        if action == "deploy":
+            builder_kwargs["acknowledge_unknown_version"] = acknowledge_unknown_version
+        cmd = builder(action, **builder_kwargs)
     except Exception as exc:
         release_mutating_lock()
         return (400, "text/plain; charset=utf-8", (f"bad request: {exc}\n").encode("utf-8"))
@@ -1455,6 +1496,32 @@ def dispatch_mutating_request(*, method, path, expected_token, cli_command_build
         finally:
             release_mutating_lock()
     return (200, "text/event-stream; charset=utf-8", _gen())
+
+
+def dispatch_deployment_preview_request(*, method, path):
+    from urllib.parse import parse_qs, urlsplit
+    from profile_manager.deployment_versions import (
+        DeploymentVersionGateError,
+        profile_deployment_version_preview,
+    )
+
+    parts = urlsplit(path)
+    if parts.path != "/api/deploy/preview":
+        return None
+    if method != "GET":
+        return (405, "text/plain; charset=utf-8", b"method not allowed\n")
+    profile_id = (parse_qs(parts.query).get("profile") or [""])[0]
+    if not profile_id:
+        return (400, "application/json; charset=utf-8", b'{"ok":false,"error":"missing-profile"}')
+    try:
+        preview = profile_deployment_version_preview(profile_id)
+    except DeploymentVersionGateError as exc:
+        body = json.dumps({"ok": False, "error": exc.code, "message": str(exc)}).encode("utf-8")
+        return (409, "application/json; charset=utf-8", body)
+    except Exception as exc:
+        body = json.dumps({"ok": False, "error": "preview-failed", "message": str(exc)}).encode("utf-8")
+        return (404, "application/json; charset=utf-8", body)
+    return (200, "application/json; charset=utf-8", json.dumps(preview).encode("utf-8"))
 
 
 def dispatch_topology_redeploy_request(
@@ -3049,6 +3116,13 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 "/operate/config/save",
             }
             path_only = self.path.split("?", 1)[0]
+            deployment_preview = dispatch_deployment_preview_request(
+                method="GET", path=self.path
+            )
+            if deployment_preview is not None:
+                status, ctype, response_body = deployment_preview
+                self._send(status, ctype, response_body)
+                return
             if path_only.startswith("/api/corpora/") and path_only.endswith("/actions"):
                 self._send(405, "text/plain; charset=utf-8", b"use POST for mutating endpoints\n")
                 return

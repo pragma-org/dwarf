@@ -345,6 +345,11 @@ def build_parser():
     deploy.add_argument("--replace", action="store_true")
     deploy.add_argument("--approve", action="store_true",
                         help="Skip the interactive y/N prompt. Required for non-interactive use (e.g. dashboard).")
+    deploy.add_argument(
+        "--acknowledge-unknown-version",
+        action="store_true",
+        help="Allow this one deployment to use a stable release that has not yet passed its scoped runtime contract.",
+    )
 
     remove = subcommands.add_parser("remove")
     remove.add_argument("--dry-run", action="store_true")
@@ -1314,8 +1319,28 @@ def cmd_antithesis(args):
 
 
 def cmd_deploy(args):
+    from dataclasses import asdict
+    from profile_manager.deployment_versions import (
+        DeploymentVersionGateError,
+        build_deployment_version_preview,
+        enforce_deployment_version_gate,
+    )
+
     config = _load_or_intake("deploy")
     profile = find_profile(args.profile_id)
+    try:
+        version_preview = build_deployment_version_preview(asdict(profile))
+        version_gate = (
+            {"allowed": True, "preview": version_preview, "acknowledgement": None}
+            if args.dry_run
+            else enforce_deployment_version_gate(
+                version_preview,
+                acknowledge_unknown=bool(args.acknowledge_unknown_version),
+            )
+        )
+    except DeploymentVersionGateError as exc:
+        print(f"Version selection refused ({exc.code}): {exc}", file=sys.stderr)
+        return 2
     active = ssh_command(config, active_profile_command(), timeout=30, dry_run=args.dry_run, verb=("active",))
     if args.dry_run:
         print(deploy_dry_run_text(profile), end="")
@@ -1331,6 +1356,7 @@ def cmd_deploy(args):
                 deploy_dry_run_text(profile).strip(),
                 "No remote state changed.",
             ],
+            metadata={"version_selection": version_preview, "version_gate": version_gate},
         )
         _record_forensic_for_legacy_run(
             args,
@@ -1381,6 +1407,7 @@ def cmd_deploy(args):
         config,
         [active, result],
         limitations=["Profile deployment command executed over SSH."],
+        metadata={"version_selection": version_preview, "version_gate": version_gate},
     )
     _record_forensic_for_legacy_run(
         args,
