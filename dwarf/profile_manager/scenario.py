@@ -788,7 +788,8 @@ def _auto_redeploy_configured(explicit):
 def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                  framework_version="0.1.0", framework_commit="unknown", actor="shared:dwarf",
                  topology_preflight=None, topology_redeploy=None,
-                 auto_redeploy_unhealthy=None):
+                 auto_redeploy_unhealthy=None, measurement_context=None,
+                 measurement_collector_factories=None):
     """Execute a scenario end-to-end, producing a forensic bundle.
 
     v1 runs setup → load → per-iteration probe fan-out → assertions → teardown.
@@ -822,6 +823,7 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         actor=actor,
         runs_dir=runs_dir,
         state_dir=state_dir,
+        measurement_context=measurement_context,
     )
     handle.set_start_resource_snapshot(forensic.capture_local_resource_snapshot(pid=os.getpid(), data_dir=handle.run_dir))
     topology_id = _attached_topology_id(scen)
@@ -974,6 +976,20 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
             if topology_lock is not None:
                 topology_lock.close()
             return handle
+    measurement_runtime = None
+    if measurement_context is not None:
+        from profile_manager.measurement_runtime import MeasurementRuntime
+
+        measurement_runtime = MeasurementRuntime(
+            run_dir=handle.run_dir,
+            resolution=measurement_context,
+            collector_factories=measurement_collector_factories or {},
+            scenario_id=scen.id,
+        )
+        measurement_runtime.prepare()
+        measurement_runtime.start()
+        handle.set_measurement_context(measurement_runtime.snapshot())
+
     observer = telemetry.ObserverCollector(metrics_dir=handle.run_dir / "metrics", pid=os.getpid())
     observer.start()
 
@@ -1062,6 +1078,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
 
     try:
         for index, phase_obj in enumerate(phases, start=1):
+            if measurement_runtime is not None:
+                measurement_runtime.mark_phase(
+                    phase_obj.id, "start", phase_index=index
+                )
             handle.log(
                 phase="framework",
                 primitive="framework",
@@ -1107,6 +1127,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                     handle, rng, registry, scen, phase_obj.teardown, _phase_step(phase_obj.id, "teardown"),
                     ignore_errors=True, shared_state=shared_state,
                 )
+                if measurement_runtime is not None:
+                    measurement_runtime.mark_phase(
+                        phase_obj.id, "end", phase_index=index
+                    )
                 if phase_ok:
                     handle.log(
                         phase="framework",
@@ -1133,6 +1157,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     finally:
         observer.stop()
         handle.set_telemetry_summary(observer.summarize())
+        if measurement_runtime is not None:
+            measurement_result = measurement_runtime.finalize()
+            handle.set_measurement_context(measurement_result)
+            overall = measurement_runtime.scenario_exit_status(overall)
 
     handle.end(
         exit_status=overall,

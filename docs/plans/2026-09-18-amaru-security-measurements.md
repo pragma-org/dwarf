@@ -9,6 +9,22 @@
 **Workbench:** `dwarf-latest / obj_89d14c031cf44235a20e654e`
 **Starting commit:** `25e1ad0867d8ebac8628707c73b388a5654efa21`
 
+## Implementation status
+
+- Batch 0 — complete at `bfd7fe0`; exact Amaru source and signal audit pinned.
+- Batch 1 — complete at `74d2b50`; measurement and measurement-profile
+  catalogs, schemas, editors, and pinned definitions added.
+- Batch 2 — complete at `c44d5a1`; scenario selection, compatibility
+  resolution, and evidence retention added.
+- Batch 3 — complete locally on 2026-09-18; lifecycle isolation, real phase
+  windows, opt-in gates, deterministic distributions/rates/backlog/recovery,
+  normalized bundle reports, multi-identifier correlation, and bounded/redacted
+  full protocol transcripts are covered by the 688-test regression suite.
+- Batch 4 — next; implement stock Amaru collectors against the audited
+  `v10.11.20260912` source and measure the actual target rather than DWARF.
+- Internal push — queued because the rebooted host has no usable credential for
+  the unrelated-history internal remote. No public push has been attempted.
+
 ## Batch 0 — pin the audit and executable requirements
 
 ### Task 0.1: Add source-contract tests
