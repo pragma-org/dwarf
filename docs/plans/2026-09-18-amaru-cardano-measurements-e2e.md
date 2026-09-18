@@ -147,6 +147,50 @@ a portable bundle downloadable through the GUI.
 Record run ID, artifact digests, sample counts, claims/non-claims, and teardown
 evidence in the plan and workbench.
 
+#### Amaru gate evidence — complete 2026-09-18
+
+- DWARF commit and deployed image revision:
+  `df255de7775f070465dbbc6e1ae3cb3358cf5a4a`; dashboard image ID
+  `sha256:34f15ac62508f43d3ab2d5bd05aaa1c1d52001112af048c8e96fc3c85bdf91bd`.
+- GUI-launched run: `20260918T234213Z-64959688`, pass, one of one
+  assertion passed, fixed seed `0xA11CE501`.
+- Exact target: Amaru `10.11.20260912`, source
+  `b159172f25a9c389f82f20bca4f15e3032791638`, OCI digest
+  `sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e`.
+- All 11 selected collectors finalized with zero collector errors. The bounded
+  trace export read 3,851 real node records, normalized 39 supported records,
+  rejected zero valid records, and was not truncated or incomplete.
+- The workload retained all 100 hostile handshake attempts and their terminal
+  rejected outcomes. Offered rate was 9.382 operations/s; attempt latency was
+  median 101,108 us, p95 102,037 us, p99 102,166 us.
+- Real node samples included four header-to-fetch observations (median 831 us),
+  four BlockFetch observations (median 628.5 us), four paired node JSON
+  `block.prepare` spans (median 6 us), four paired `block.apply` spans
+  (median 136 us), four tip updates, and an independent monotonic tip probe
+  showing height 1,410 to 1,416 over 10.662 seconds (0.56275 blocks/s).
+- Real target resource samples included 11 CPU and 12 RSS observations plus
+  explicitly labeled process-network-namespace RX/TX deltas. These are not
+  controller-process values.
+- Measurement summary: 49 rows, 28 available and 21 honestly unavailable.
+  Missing epoch, VM, mempool, restart, and other boundaries were not rendered
+  as zero. Threshold gates remained disabled/non-gating.
+- The retained testnet uses `system_start: 0`; therefore the node-reported
+  slot-start-to-header interval represents absolute synthetic slot age and is
+  not a comparable propagation-latency baseline. Raw evidence is retained, but
+  this value is excluded from benchmark claims.
+- Portable bundle download passed gzip inspection and contained no `._*`,
+  `.DS_Store`, cache, or bytecode entries. Archive SHA-256:
+  `4897730b504a1419a327c42cb3b03e3bef53cf105c94571bcbea6f9f192d947a`.
+- Core artifact SHA-256 values: manifest
+  `f8b1560ab4bc93c6edc82442fb31b1b4b304186d93de5d509cbb492e70e25461`,
+  summary `ba6a95482893ec7419c4687c4f269d5907c36ce0e01b7baa5fb131a2be1fd1e4`,
+  report `e0d3ffb61d819391595b414d4561e199ec2f7eff92be1f9040a3b82e3f4c6231`,
+  runtime `1912d7b117f724b2300b654033a3ae8bc5ce60909d50cb8946e1a9e8d5ff9e37`,
+  selection `19e4355af46c5ec83d2cf3fd26073a16cedc7dc14efb4e9b2fc4f8d379d41049`.
+
+The Amaru gate is complete. Batch 0/Cardano source audit is now the active
+implementation boundary; mixed-node work remains prohibited in this scope.
+
 ## Batch 2: Cardano Measurement and Measurement Profile catalogs
 
 ### Task 2.1: Add Cardano definitions

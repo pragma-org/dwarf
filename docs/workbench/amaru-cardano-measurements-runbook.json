@@ -1,0 +1,89 @@
+{
+  "title": "DWARF real-node measurements — Amaru proof and Cardano parity",
+  "description": "Persistent implementation tracker. Amaru is proven end to end through the deployed GUI; Cardano-node 11.1.2 is the active phase. Mixed-node measurements remain explicitly out of scope until both independent workflows pass.",
+  "updated_at": "2026-09-18T23:45:00Z",
+  "baseline": {
+    "dwarf_commit": "df255de7775f070465dbbc6e1ae3cb3358cf5a4a",
+    "amaru_version": "10.11.20260912",
+    "amaru_source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+    "amaru_image_digest": "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
+    "amaru_gui_run": "20260918T234213Z-64959688",
+    "cardano_version": "11.1.2",
+    "cardano_source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+    "cardano_image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+    "scope_boundary": "Stop after independent Cardano-node proof; do not start mixed-node measurement comparison."
+  },
+  "steps": [
+    {
+      "id": "design",
+      "title": "Define reusable measurements independent of scenarios",
+      "status": "done",
+      "evidence": "Measurement and Measurement Profile catalogs, optional non-gating lifecycle, exact compatibility, outcome-independent timing, correlation, reports, and portable evidence reuse the existing DWARF runner."
+    },
+    {
+      "id": "amaru-catalog-runtime",
+      "title": "Implement exact-version Amaru stock, external, resource, coverage, and patched taps",
+      "status": "done",
+      "evidence": "Exact 10.11.20260912/b159172 source and image identity; stock JSON/OTLP normalization; real-process resources; workload/restart/sync taps; revision-locked patched boundaries and stock/patched calibration; compiler-coverage linkage."
+    },
+    {
+      "id": "amaru-frontend",
+      "title": "Expose measurements, profiles, run reports, and guidance in DWARF",
+      "status": "done",
+      "evidence": "/operate/measurements, /operate/measurement-profiles, /learn/measurements, retained run report, searchable responsive table, report downloads, SARIF state, collector health, and portable bundle export are wired."
+    },
+    {
+      "id": "amaru-gui-proof",
+      "title": "Prove Amaru end to end through the deployed GUI",
+      "status": "done",
+      "evidence": "Run 20260918T234213Z-64959688 passed at DWARF df255de7. It retained all 100 timed hostile attempts, 39 normalized real-node records, four header/BlockFetch/block-apply samples, six adopted blocks over 10.662s, real target resources, 11 finalized collectors, zero collector errors, exact target identity, and a clean downloadable bundle."
+    },
+    {
+      "id": "amaru-claims",
+      "title": "Record Amaru claims and non-claims",
+      "status": "done",
+      "evidence": "This proves collection and evidence plumbing, not a performance threshold or vulnerability. Twenty-one unavailable rows remain unavailable rather than zero. The system_start=0 synthetic slot-age value is retained but excluded from comparable propagation-latency claims. Five full example workflows are deferred unless needed for system proof."
+    },
+    {
+      "id": "cardano-source-audit",
+      "title": "Audit exact Cardano-node 11.1.2 stock visibility and patch gaps",
+      "status": "in-progress",
+      "evidence": "Failing source-contract test is preserved. Audit must cover ChainSync, BlockFetch, TxSubmission2, KeepAlive, mempool, ChainDB, ledger, Plutus, epoch, restart/sync, resources, and coverage without inferring absent boundaries."
+    },
+    {
+      "id": "cardano-catalog-resolution",
+      "title": "Add Cardano measurements, profiles, target modes, and exact identity resolution",
+      "status": "todo"
+    },
+    {
+      "id": "cardano-stock-external",
+      "title": "Implement Cardano stock telemetry, workload, sync, restart, and real-resource collectors",
+      "status": "todo"
+    },
+    {
+      "id": "cardano-coverage-patched",
+      "title": "Register coverage and build only source-audited patched boundaries",
+      "status": "todo"
+    },
+    {
+      "id": "cardano-calibration",
+      "title": "Prove paired stock/patched observer overhead",
+      "status": "todo"
+    },
+    {
+      "id": "cardano-gui-proof",
+      "title": "Run the representative Cardano-node scenario through the deployed GUI",
+      "status": "todo"
+    },
+    {
+      "id": "final-qa",
+      "title": "Run full regression, browser, export, forbidden-file, and secret checks",
+      "status": "todo"
+    },
+    {
+      "id": "stop-before-mixed",
+      "title": "Report independent Amaru and Cardano status and stop before mixed",
+      "status": "todo"
+    }
+  ]
+}

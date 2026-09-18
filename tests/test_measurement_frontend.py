@@ -50,6 +50,9 @@ def test_measurement_learn_route_explains_modes_outcomes_and_claim_boundary():
     assert "unavailable" in lower
     assert "do not change the security verdict by default" in html
     assert "/operate/measurements" in html
+    assert "20260918T234213Z-64959688" in html
+    assert "Cardano-node parity is the active next phase" in html
+    assert "Mixed-node measurement comparison has not started" in html
 
 
 def test_run_measurement_section_surfaces_identity_collectors_and_metrics(tmp_path: Path):
