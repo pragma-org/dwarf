@@ -1,0 +1,53 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "amaru"}},
+          {"key": "service.instance.id", "value": {"stringValue": "amaru-1"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "amaru"},
+          "spans": [
+            {
+              "traceId": "trace-block",
+              "spanId": "span-block",
+              "name": "apply",
+              "startTimeUnixNano": "1000000000",
+              "endTimeUnixNano": "5300000000",
+              "attributes": [
+                {"key": "code.namespace", "value": {"stringValue": "amaru::ledger::block"}},
+                {"key": "point_slot", "value": {"intValue": "1000"}},
+                {"key": "block_hash", "value": {"stringValue": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}}
+              ]
+            },
+            {
+              "traceId": "trace-epoch",
+              "spanId": "span-epoch",
+              "name": "apply",
+              "startTimeUnixNano": "6000000000",
+              "endTimeUnixNano": "9500000000",
+              "attributes": [
+                {"key": "code.namespace", "value": {"stringValue": "amaru::ledger::epoch_transition"}},
+                {"key": "epoch", "value": {"intValue": "4"}}
+              ]
+            },
+            {
+              "traceId": "trace-tx",
+              "spanId": "span-tx",
+              "name": "validate",
+              "startTimeUnixNano": "10000000000",
+              "endTimeUnixNano": "10000233000",
+              "attributes": [
+                {"key": "code.namespace", "value": {"stringValue": "amaru::ledger::transaction"}},
+                {"key": "tx_id", "value": {"stringValue": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

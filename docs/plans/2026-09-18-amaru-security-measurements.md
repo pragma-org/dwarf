@@ -16,12 +16,18 @@
   catalogs, schemas, editors, and pinned definitions added.
 - Batch 2 — complete at `c44d5a1`; scenario selection, compatibility
   resolution, and evidence retention added.
-- Batch 3 — complete locally on 2026-09-18; lifecycle isolation, real phase
+- Batch 3 — complete at `f3124b5`; lifecycle isolation, real phase
   windows, opt-in gates, deterministic distributions/rates/backlog/recovery,
   normalized bundle reports, multi-identifier correlation, and bounded/redacted
-  full protocol transcripts are covered by the 688-test regression suite.
-- Batch 4 — next; implement stock Amaru collectors against the audited
-  `v10.11.20260912` source and measure the actual target rather than DWARF.
+  full protocol transcripts are covered by the regression suite.
+- Batch 4 — complete locally on 2026-09-18; stock JSON/OTLP normalization,
+  outcome-independent attempt timing, workload/restart/sync collectors, and
+  actual Amaru process resource sampling are implemented. The exact pinned
+  `10.11.20260912` / `b159172...` topology passed all qualification gates, and
+  the component proof sampled the real `/target/amaru` PID with no collector
+  errors. The established `tests/` regression suite passes 715 tests.
+- Batch 5 — next; add the fail-closed revision-locked patch builder and only
+  the audited decode, BlockFetch, and TxSubmission2 internal probes.
 - Internal push — queued because the rebooted host has no usable credential for
   the unrelated-history internal remote. No public push has been attempted.
 
@@ -267,6 +273,12 @@ Build fixtures from the exact `b159172...` trace/metric schemas. Test header,
 fork, mempool, ledger, Plutus, block/epoch, connection, KeepAlive, mux, and
 resource normalization plus trace/span correlation and incomplete export.
 
+For every attempt-level measurement, retain elapsed time regardless of terminal
+outcome and render combined plus per-outcome distributions. Accepted,
+rejected, malformed, duplicate, timeout, disconnected, and unclassified
+attempts must remain visible; never discard their timing because they are not
+goodput.
+
 Do not run a general monitoring stack as a new report store. The collector may
 receive OTLP and/or bounded JSON traces, but writes the selected normalized and
 raw evidence into the DWARF run bundle.
@@ -301,6 +313,31 @@ elapsed monotonic time. Preserve the controlled chain range and peer policy.
 Run fixtures, focused integration tests, representative existing resource and
 topology scenarios, then one short real stock-Amaru collector proof outside the
 GUI only as a component gate. This is not yet end-to-end completion.
+
+**Evidence — 2026-09-18**
+
+- Exact qualification:
+  `/home/nigel/.local/share/dwarf/state/version-qualifications/20260918T165505Z-dwarf-qual-amaru-10-7-1-10-11-20260912-33ba7660`
+- Result SHA-256:
+  `35a80a758c8147ec5e3b5412ff6a5286b91dc62e0a66cdf5da6afe11e7a493c9`
+- Classification: `passed-all-gates`; all ten required gates passed, including
+  exact identity, fresh state, chain progress, peer formation, consumer
+  convergence, Amaru-only consumer path, no fatal signatures/restart loop, and
+  clean teardown.
+- Real-process component proof:
+  `/home/nigel/.local/share/dwarf/state/measurement-component-proofs/20260918T172100Z-amaru-10.11.20260912-resources-success`
+- Collector result SHA-256:
+  `5fba3d094f3736bc2e7f14a324500d5e077383715fa3a730178e3b3aa2280b06`
+- Six samples targeted host PID `3425210`, verified as `/target/amaru run ...`.
+  CPU time/rate, CPU percentage, RSS, threads, and network-namespace RX/TX
+  counters were available. This host denied `/proc/<pid>/fd` and
+  `/proc/<pid>/io`; those fields are explicitly unavailable, not zero or
+  inferred. The replay ended with zero remaining project containers/volumes.
+- Verification: 37 focused collector/runtime tests passed before the live gate;
+  the established repository suite then passed 715 tests. Running unscoped
+  root pytest still encounters the pre-existing duplicate module-name
+  collection conflict in two Antithesis package test directories, so the
+  repository's established `tests/` suite is the regression authority here.
 
 ## Batch 5 — revision-locked patched Amaru target
 

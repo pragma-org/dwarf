@@ -101,6 +101,12 @@ Current generic telemetry observes the DWARF controller process and host.
 metrics, but no typed reusable measurement catalog, compatibility resolver,
 distribution aggregator, or client report exists. This is the missing layer.
 
+Linux CPU time, RSS, disk IO, file-descriptor, and thread values are sampled
+from the resolved Amaru PID. `/proc/<pid>/net/dev` is a network-namespace
+counter, not a per-process byte counter, and must be labeled that way in every
+result. It is valid for container/network-namespace cost comparison but not for
+claiming that every observed byte was emitted by Amaru itself.
+
 ### Existing security surfaces
 
 DWARF already has Amaru target manifests for:
@@ -268,6 +274,14 @@ Every timed series contains:
 - measurement definition digest and collector version;
 - baseline/hostile/drain/recovered window;
 - observer-overhead status where applicable.
+
+Attempt timing is outcome-independent. Every operation that reaches a measured
+boundary retains its elapsed time and terminal classification, including
+accepted, rejected, malformed, duplicate, timeout, disconnected, and
+unclassified attempts. Reports expose the combined attempted population and a
+separate latency distribution for each outcome. A rejected operation is never
+dropped merely because it did not become goodput; if the relevant boundary was
+not observed, the timing is reported as unavailable rather than zero.
 
 The compact table has rows for Transfer, Block Application, Virtual Machine,
 Epoch Transition, Time to Restart, and Sync Speed. Each populated value links

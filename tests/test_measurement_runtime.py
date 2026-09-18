@@ -211,6 +211,43 @@ def test_only_explicit_threshold_gate_can_change_scenario_exit_status(tmp_path):
     assert gated.scenario_exit_status("error") == "error"
 
 
+def test_threshold_gate_reads_normalized_measurements_mapping(tmp_path):
+    gate = {
+        "enabled": True,
+        "thresholds": [
+            {
+                "metric": "successful_operations_per_second",
+                "operator": "gte",
+                "value": 5,
+                "unit": "operations/s",
+            }
+        ],
+    }
+    result = {
+        "measurements": {
+            "successful_operations_per_second": {
+                "status": "available",
+                "value": 7.0,
+                "unit": "operations/s",
+            }
+        }
+    }
+    runtime = MeasurementRuntime(
+        run_dir=tmp_path,
+        resolution=_resolution(_resolved("tap-a", gate=gate)),
+        collector_factories={
+            "tap-a": lambda _entry: RecordingCollector([], result=result),
+        },
+    )
+    runtime.prepare()
+    runtime.start()
+
+    finalized = runtime.finalize()
+
+    assert finalized["threshold_gates"]["tap-a"]["result"] == "pass"
+    assert finalized["gate_failed"] is False
+
+
 def test_explicit_gate_fails_closed_when_collector_is_unavailable(tmp_path):
     gate = {
         "enabled": True,

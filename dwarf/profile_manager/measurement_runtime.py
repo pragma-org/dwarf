@@ -224,6 +224,11 @@ class MeasurementRuntime:
         for metric in result.get("metrics") or []:
             if isinstance(metric, dict) and isinstance(metric.get("name"), str):
                 mapped[metric["name"]] = metric
+        measurements = result.get("measurements")
+        if isinstance(measurements, dict):
+            for name, metric in measurements.items():
+                if isinstance(name, str) and isinstance(metric, dict):
+                    mapped[name] = {"name": name, **metric}
         return mapped
 
     @staticmethod

@@ -1,7 +1,7 @@
 schema_version: v1
 id: amaru-stock-resources
 title: Amaru process resource cost
-description: Measures the actual Amaru process CPU, RSS, disk, network, open-file, and thread cost rather than only DWARF host usage.
+description: Measures actual Amaru process CPU, RSS, disk IO, open-file, and thread cost plus explicitly labeled container or process-network-namespace RX/TX rather than only DWARF host usage.
 output_schema: dwarf/spec/v1/measurement-result.schema.json
 compatibility:
   implementation: amaru
