@@ -38,6 +38,15 @@ runtime: library                # required: library | single-node | devnet
 profile: null                   # required when runtime is devnet, forbidden otherwise
                                 # devnet profile id; resolved profile is captured in the bundle
 
+measurement_profile: null       # optional catalog id; omit for compatible defaults, or use "none"
+measurements:                    # optional bounded overrides applied after profile/default selection
+  - id: amaru-stock-mempool
+    enabled: true
+    parameters: {window_seconds: 5}
+    threshold_gate:             # disabled unless explicitly enabled with at least one threshold
+      enabled: false
+      thresholds: []
+
 duration: 10m                   # optional; bounds the load phase. units: s|m|h
 seed: 0xCAFE                    # optional; integer or hex string. auto-generated if omitted; recorded in manifest
 

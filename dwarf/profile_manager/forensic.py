@@ -144,7 +144,7 @@ def compute_run_id(*, timestamp, scenario_bytes, profile_bytes, env_bytes, seed)
 class RunHandle:
     def __init__(self, *, run_id, run_dir, state_dir, scenario_id, scenario_sha256, scenario_path,
                  target, runtime, profile_id, profile_sha256, env_sha256, seed, framework_version,
-                 framework_commit, actor, started_at):
+                 framework_commit, actor, started_at, measurement_context=None):
         self.run_id = run_id
         self.run_dir = run_dir
         self._state_dir = state_dir
@@ -179,6 +179,9 @@ class RunHandle:
         self._end_resource_snapshot = None
         self._telemetry_summary = None
         self._precondition = None
+        self._measurement_context = None
+        if measurement_context is not None:
+            self.set_measurement_context(measurement_context)
 
     def log(self, *, phase, primitive, level, event, payload=None):
         entry = {
@@ -222,6 +225,12 @@ class RunHandle:
     def set_precondition(self, precondition):
         self._precondition = dict(precondition) if precondition is not None else None
 
+    def set_measurement_context(self, context):
+        """Retain a detached JSON-safe snapshot of resolver/runtime state."""
+        self._measurement_context = json.loads(
+            json.dumps(context, sort_keys=True, ensure_ascii=False)
+        )
+
     def end(self, *, exit_status, end_resource_snapshot=None):
         ended_at = _utc_now_iso()
         self._end_resource_snapshot = end_resource_snapshot
@@ -239,6 +248,10 @@ class RunHandle:
             events_dir=self._events_dir,
             metrics_dir=self._metrics_dir,
             telemetry_summary=self._telemetry_summary,
+        )
+        measurement_manifest = _materialize_measurement_selection(
+            run_dir=self.run_dir,
+            context=self._measurement_context,
         )
         manifest = {
             "run_id": self.run_id,
@@ -261,6 +274,8 @@ class RunHandle:
             "resource_snapshot": _build_resource_snapshot(self._start_resource_snapshot, self._end_resource_snapshot, self._started_at, ended_at),
             "telemetry": telemetry_summary,
         }
+        if measurement_manifest is not None:
+            manifest["measurements"] = measurement_manifest
         if self._precondition is not None:
             manifest["precondition"] = dict(self._precondition)
         manifest_bytes = _canonical_json(manifest)
@@ -417,7 +432,8 @@ def _build_resource_snapshot(start, end, started_at, ended_at):
 
 def start_run(*, scenario_id, scenario_yaml, target, runtime, profile_id, profile_resolved,
               framework_version, framework_commit, seed, actor=DEFAULT_ACTOR,
-              runs_dir, state_dir, start_resource_snapshot=None):
+              runs_dir, state_dir, start_resource_snapshot=None,
+              measurement_context=None):
     if seed is None:
         seed = 0
     runs_dir = Path(runs_dir)
@@ -477,10 +493,59 @@ def start_run(*, scenario_id, scenario_yaml, target, runtime, profile_id, profil
         framework_commit=framework_commit,
         actor=actor,
         started_at=_utc_now_iso(),
+        measurement_context=measurement_context,
     )
     if start_resource_snapshot is not None:
         handle.set_start_resource_snapshot(start_resource_snapshot)
     return handle
+
+
+def _materialize_measurement_selection(*, run_dir, context):
+    if context is None:
+        return None
+    snapshot = json.loads(json.dumps(context, sort_keys=True, ensure_ascii=False))
+    resolution = snapshot.get("resolution") if "resolution" in snapshot else snapshot
+    resolved = list(resolution.get("resolved") or [])
+    collector_states = dict(snapshot.get("collector_states") or {})
+    for entry in resolved:
+        collector_states.setdefault(entry["id"], "selected")
+    for state, key in (
+        ("skipped", "skipped"),
+        ("incompatible", "incompatible"),
+        ("disabled", "disabled"),
+    ):
+        for entry in resolution.get(key) or []:
+            if entry.get("id"):
+                collector_states.setdefault(entry["id"], state)
+    threshold_gates = dict(snapshot.get("threshold_gates") or {})
+    for entry in resolved:
+        threshold_gates.setdefault(
+            entry["id"],
+            dict(entry.get("threshold_gate") or {"enabled": False, "thresholds": []}),
+        )
+    retained = {
+        "schema_version": "v1",
+        "resolution": resolution,
+        "collector_states": collector_states,
+        "threshold_gates": threshold_gates,
+    }
+    measurement_dir = Path(run_dir) / "measurements"
+    measurement_dir.mkdir(parents=True, exist_ok=True)
+    selection_path = measurement_dir / "selection.json"
+    selection_bytes = _canonical_json(retained)
+    selection_path.write_bytes(selection_bytes)
+    return {
+        "selection_path": "measurements/selection.json",
+        "selection_sha256": _sha256_hex(selection_bytes),
+        "target_identity": resolution.get("target_identity"),
+        "profile": resolution.get("profile"),
+        "collector_states": collector_states,
+        "threshold_gates": threshold_gates,
+        "resolved_count": len(resolved),
+        "skipped_count": len(resolution.get("skipped") or []),
+        "incompatible_count": len(resolution.get("incompatible") or []),
+        "disabled_count": len(resolution.get("disabled") or []),
+    }
 
 
 def _materialize_telemetry(*, log_path, events_dir, metrics_dir, telemetry_summary):

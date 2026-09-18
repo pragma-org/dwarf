@@ -23,6 +23,20 @@ A scenario is a YAML document describing one test, security test, or fuzz run ag
 8. Validate with `cardano-profile scenario validate <id>` (Slice 8).
 9. Promote with `cardano-profile scenario promote <id>` (Slice 10) once it passes.
 
+## Optional measurement taps
+
+Measurements are independent observers; they do not replace scenario workloads,
+faults, or security assertions. Omit `measurement_profile` to let DWARF select
+compatible passive defaults, name a profile such as `amaru-security-default`,
+or set it to `none` to disable every optional tap. The `measurements` list can
+then enable or disable individual catalog IDs and provide bounded parameters.
+
+Thresholds are never implicit. A threshold can affect run status only when its
+measurement declares threshold support and the scenario explicitly sets
+`threshold_gate.enabled: true` with at least one threshold. Collection failure
+remains evidence and does not silently turn a security scenario into a pass or
+failure.
+
 ## M1 traceability metadata
 
 Use these optional fields for attack scenario library work:

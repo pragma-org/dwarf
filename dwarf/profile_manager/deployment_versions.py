@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,10 @@ class DeploymentVersionGateError(ValueError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
+
+
+_SHA256_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_SOURCE_REVISION = re.compile(r"^[0-9a-f]{40}$")
 
 
 def version_catalog_revision(
@@ -97,6 +102,101 @@ def build_deployment_version_preview(
 def profile_deployment_version_preview(profile_id: str) -> dict[str, Any]:
     record = load_definition("profiles", profile_id)
     return build_deployment_version_preview(record.data)
+
+
+def build_measurement_target_identity(
+    preview: dict[str, Any],
+    *,
+    implementation: str,
+    mode: str,
+    image_reference: str | None = None,
+    image_digest: str | None = None,
+    executable_digest: str | None = None,
+) -> dict[str, Any]:
+    """Return the immutable real-target identity consumed by tap resolution."""
+    if implementation not in {"amaru", "cardano-node"}:
+        raise DeploymentVersionGateError(
+            "measurement-target-implementation", "unsupported measurement target implementation"
+        )
+    if mode not in {"stock", "coverage", "patched"}:
+        raise DeploymentVersionGateError(
+            "measurement-target-mode", "measurement target mode must be stock, coverage, or patched"
+        )
+    release = (preview.get("resolved") or {}).get(implementation)
+    if not isinstance(release, dict):
+        raise DeploymentVersionGateError(
+            "measurement-target-missing", f"deployment preview does not resolve {implementation}"
+        )
+    version = release.get("version")
+    source_revision = release.get("source_revision")
+    if not isinstance(version, str) or not version:
+        raise DeploymentVersionGateError(
+            "measurement-version-missing", "resolved target has no exact version"
+        )
+    if not isinstance(source_revision, str) or not _SOURCE_REVISION.fullmatch(source_revision):
+        raise DeploymentVersionGateError(
+            "measurement-revision-missing", "resolved target has no exact source revision"
+        )
+
+    artifact = next(
+        (
+            item for item in release.get("artifacts") or []
+            if item.get("kind") == "oci" and item.get("availability") == "available"
+        ),
+        None,
+    )
+    if mode == "stock":
+        if artifact is None:
+            raise DeploymentVersionGateError(
+                "measurement-image-missing", "stock target has no available immutable OCI artifact"
+            )
+        catalog_digest = artifact.get("digest")
+        if image_digest is not None and image_digest != catalog_digest:
+            raise DeploymentVersionGateError(
+                "measurement-image-mismatch",
+                "stock target image digest does not match the version catalog",
+            )
+        image_digest = image_digest or catalog_digest
+        image_reference = image_reference or artifact.get("reference")
+    elif image_digest is None or image_reference is None:
+        raise DeploymentVersionGateError(
+            "measurement-instrumented-image-missing",
+            f"{mode} target requires an explicit immutable image reference and digest",
+        )
+    if not isinstance(image_digest, str) or not _SHA256_DIGEST.fullmatch(image_digest):
+        raise DeploymentVersionGateError(
+            "measurement-image-invalid", "measurement image_digest must be immutable sha256"
+        )
+    if not isinstance(image_reference, str) or not image_reference:
+        raise DeploymentVersionGateError(
+            "measurement-image-reference-missing", "measurement image reference is required"
+        )
+    if "@sha256:" in image_reference:
+        reference_digest = "sha256:" + image_reference.rsplit("@sha256:", 1)[1]
+        if reference_digest != image_digest:
+            raise DeploymentVersionGateError(
+                "measurement-image-reference-mismatch",
+                "measurement image reference digest does not match image_digest",
+            )
+    else:
+        image_reference = f"{image_reference}@{image_digest}"
+    if executable_digest is not None and not _SHA256_DIGEST.fullmatch(executable_digest):
+        raise DeploymentVersionGateError(
+            "measurement-executable-invalid", "executable_digest must be immutable sha256"
+        )
+    return {
+        "implementation": implementation,
+        "version": version,
+        "source_revision": source_revision,
+        "mode": mode,
+        "image_reference": image_reference,
+        "image_digest": image_digest,
+        "executable_digest": executable_digest,
+        "version_catalog_revision": preview.get("catalog_revision"),
+        "profile_id": preview.get("profile_id"),
+        "deployment_adapter": preview.get("deployment_adapter"),
+        "qualification_status": preview.get("status"),
+    }
 
 
 def enforce_deployment_version_gate(

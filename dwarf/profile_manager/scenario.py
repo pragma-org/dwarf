@@ -174,6 +174,16 @@ class ScenarioPhase:
 
 
 @dataclass(frozen=True)
+class ScenarioMeasurementSelection:
+    id: str
+    enabled: bool
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    threshold_gate: Dict[str, Any] = field(
+        default_factory=lambda: {"enabled": False, "thresholds": []}
+    )
+
+
+@dataclass(frozen=True)
 class Scenario:
     id: str
     title: str
@@ -189,6 +199,8 @@ class Scenario:
     evidence_intent: Optional[str]
     promotion_blockers: List[str]
     testcase_candidate: Optional[Dict[str, str]]
+    measurement_profile: Optional[str]
+    measurements: List[ScenarioMeasurementSelection]
     setup: List[PrimitiveRef]
     load: List[PrimitiveRef]
     faults: List[PrimitiveRef]
@@ -517,6 +529,140 @@ def _validate_testcase_candidate(body):
         "producer": producer,
         "source_artifact_path": source_artifact_path,
     }
+
+
+def _bounded_measurement_parameter(value: Any) -> bool:
+    if value is None or isinstance(value, (bool, int, float)):
+        return True
+    if isinstance(value, str):
+        return len(value) <= 1024
+    if isinstance(value, list):
+        return len(value) <= 64 and all(
+            item is None
+            or isinstance(item, (bool, int, float))
+            or (isinstance(item, str) and len(item) <= 1024)
+            for item in value
+        )
+    return False
+
+
+def _validate_measurement_config(
+    body: Dict[str, Any],
+) -> tuple[Optional[str], List[ScenarioMeasurementSelection]]:
+    from profile_manager.data.catalog_definitions import CatalogError, load_definition
+
+    profile = body.get("measurement_profile")
+    if profile is not None:
+        if not isinstance(profile, str) or not profile:
+            raise ScenarioValidationError(
+                "measurement_profile must be a non-empty catalog id, 'none', or null"
+            )
+        if profile != "none":
+            try:
+                load_definition("measurement-profiles", profile)
+            except CatalogError as exc:
+                raise ScenarioValidationError(
+                    f"unknown measurement_profile {profile!r}"
+                ) from exc
+
+    raw_selections = body.get("measurements", []) or []
+    if not isinstance(raw_selections, list) or len(raw_selections) > 64:
+        raise ScenarioValidationError("measurements must be a list of at most 64 selections")
+    selections: List[ScenarioMeasurementSelection] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(raw_selections):
+        context = f"measurements[{index}]"
+        if not isinstance(raw, dict):
+            raise ScenarioValidationError(f"{context} must be a mapping")
+        unexpected = set(raw) - {"id", "enabled", "parameters", "threshold_gate"}
+        if unexpected:
+            raise ScenarioValidationError(
+                f"{context} has unsupported fields: {', '.join(sorted(unexpected))}"
+            )
+        measurement_id = raw.get("id")
+        if not isinstance(measurement_id, str) or not measurement_id:
+            raise ScenarioValidationError(f"{context}.id must be a non-empty string")
+        if measurement_id in seen:
+            raise ScenarioValidationError(f"duplicate measurement {measurement_id!r}")
+        seen.add(measurement_id)
+        try:
+            measurement = load_definition("measurements", measurement_id).data
+        except CatalogError as exc:
+            raise ScenarioValidationError(
+                f"unknown measurement {measurement_id!r}"
+            ) from exc
+
+        enabled = raw.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ScenarioValidationError(f"{context}.enabled must be a boolean")
+        parameters = raw.get("parameters", {})
+        if not isinstance(parameters, dict) or len(parameters) > 32:
+            raise ScenarioValidationError(
+                f"{context}.parameters must contain at most 32 entries"
+            )
+        for name, value in parameters.items():
+            if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name):
+                raise ScenarioValidationError(
+                    f"{context}.parameters keys must be lowercase identifiers"
+                )
+            if not _bounded_measurement_parameter(value):
+                raise ScenarioValidationError(
+                    f"{context}.parameters.{name} must be a bounded scalar or scalar list"
+                )
+
+        gate = raw.get("threshold_gate") or {"enabled": False, "thresholds": []}
+        if not isinstance(gate, dict) or set(gate) - {"enabled", "thresholds"}:
+            raise ScenarioValidationError(f"{context}.threshold_gate is invalid")
+        gate_enabled = gate.get("enabled", False)
+        thresholds = gate.get("thresholds", [])
+        if not isinstance(gate_enabled, bool):
+            raise ScenarioValidationError(
+                f"{context}.threshold_gate.enabled must be a boolean"
+            )
+        if not isinstance(thresholds, list) or len(thresholds) > 16:
+            raise ScenarioValidationError(
+                f"{context}.threshold_gate.thresholds must contain at most 16 entries"
+            )
+        if gate_enabled and not thresholds:
+            raise ScenarioValidationError(
+                f"{context}.threshold_gate requires at least one threshold"
+            )
+        if gate_enabled and not measurement["threshold_gate"]["supported"]:
+            raise ScenarioValidationError(
+                f"measurement {measurement_id!r} does not support threshold gating"
+            )
+        normalized_thresholds = []
+        for threshold_index, threshold in enumerate(thresholds):
+            threshold_context = f"{context}.threshold_gate.thresholds[{threshold_index}]"
+            if not isinstance(threshold, dict):
+                raise ScenarioValidationError(f"{threshold_context} must be a mapping")
+            if set(threshold) - {"metric", "operator", "value", "unit"}:
+                raise ScenarioValidationError(f"{threshold_context} has unsupported fields")
+            metric = threshold.get("metric")
+            operator = threshold.get("operator")
+            value = threshold.get("value")
+            unit = threshold.get("unit")
+            if not isinstance(metric, str) or not metric:
+                raise ScenarioValidationError(f"{threshold_context}.metric is required")
+            if operator not in {"lt", "lte", "gt", "gte", "eq"}:
+                raise ScenarioValidationError(f"{threshold_context}.operator is invalid")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ScenarioValidationError(f"{threshold_context}.value must be numeric")
+            if unit is not None and (not isinstance(unit, str) or len(unit) > 64):
+                raise ScenarioValidationError(f"{threshold_context}.unit is invalid")
+            normalized_thresholds.append(dict(threshold))
+        selections.append(
+            ScenarioMeasurementSelection(
+                id=measurement_id,
+                enabled=enabled,
+                parameters=dict(parameters),
+                threshold_gate={
+                    "enabled": gate_enabled,
+                    "thresholds": normalized_thresholds,
+                },
+            )
+        )
+    return profile, selections
 
 
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "primitives" / "registry.json"
@@ -1557,6 +1703,7 @@ def validate_scenario_body(body_bytes):
         schedule = _validate_schedule(body)
         promotion_blockers = _optional_string_list(body, "promotion_blockers")
         testcase_candidate = _validate_testcase_candidate(body)
+        _validate_measurement_config(body)
         phases = _phase_refs(body)
         if phases:
             for key in ("setup", "load", "faults", "probes", "assertions", "teardown"):
@@ -1677,6 +1824,7 @@ def _scenario_from_data(body, *, raw, path):
     schedule = _validate_schedule(body)
     promotion_blockers = _optional_string_list(body, "promotion_blockers")
     testcase_candidate = _validate_testcase_candidate(body)
+    measurement_profile, measurements = _validate_measurement_config(body)
     phases = _phase_refs(body)
     if phases:
         for key in ("setup", "load", "faults", "probes", "assertions", "teardown"):
@@ -1710,6 +1858,8 @@ def _scenario_from_data(body, *, raw, path):
         evidence_intent=evidence_intent,
         promotion_blockers=promotion_blockers,
         testcase_candidate=testcase_candidate,
+        measurement_profile=measurement_profile,
+        measurements=measurements,
         setup=setup,
         load=load,
         faults=faults,
