@@ -8,6 +8,7 @@ def test_amaru_bootstrap_assets_are_bundled_and_loader_is_digest_pinned():
     assert (bootstrap.AMARU_TESTNET_DIR / "cardano-loader.sh").is_file()
     assert (bootstrap.AMARU_TESTNET_DIR / "amaru-loader.sh").is_file()
     assert "@sha256:" in bootstrap.DEFAULT_LOADER_BASE_IMAGE
+    assert "@sha256:" in bootstrap.DEFAULT_BOOTSTRAP_PRODUCER_IMAGE
 
 
 def test_staged_legacy_loader_keeps_its_supported_header_import_contract(tmp_path):
@@ -131,32 +132,41 @@ def test_bootstrap_state_copies_generated_era_history_to_each_amaru_target(tmp_p
     assert "time_ms" not in upgraded["eras"][2]["start"]
 
 
-def test_bootstrap_synthesis_builds_loader_from_selected_amaru_artifact(monkeypatch, tmp_path):
-    selected = "ghcr.io/pragma-org/amaru:v10.11.20260730@sha256:" + "c" * 64
-    observed = {}
-    (tmp_path / "amaru-bootstrap-loader").mkdir()
-
-    def fake_ensure_loader_image(**kwargs):
-        observed.update(kwargs)
-        return kwargs["loader_image"]
-
+def test_bootstrap_producer_command_uses_synthesized_cardano_db_and_exact_image(tmp_path):
     layout = {
         "network_name": "testnet_42",
         "workspace_root": str(tmp_path / "workspace"),
-        "generated_root": str(tmp_path / "generated"),
-        "amaru_slot_map": {},
+        "config_roots": {"1": str(tmp_path / "configs" / "1")},
+        "cardano_state_roots": {"1": str(tmp_path / "state" / "1")},
     }
-    monkeypatch.setattr(bootstrap, "ensure_loader_image", fake_ensure_loader_image)
-    monkeypatch.setattr(bootstrap, "prepare_loader_workspace", lambda **_kwargs: layout)
-    monkeypatch.setattr(bootstrap, "loader_commands", lambda **_kwargs: (["true"], ["true"]))
-    monkeypatch.setattr(bootstrap, "run_command", lambda _command: type("Result", (), {"returncode": 0})())
-    monkeypatch.setattr(bootstrap, "_apply_staged_state", lambda _layout: None)
 
-    bootstrap.synthesize_amaru_bootstrap(
-        runtime_root=tmp_path,
-        plan={"nodes": []},
-        loader_image="dwarf/amaru-loader:selected",
-        amaru_image=selected,
-    )
+    command = bootstrap.bootstrap_producer_command(layout=layout)
 
-    assert observed["amaru_image"] == selected
+    assert bootstrap.DEFAULT_BOOTSTRAP_PRODUCER_IMAGE in command
+    assert f"{layout['cardano_state_roots']['1']}:/cardano/state:ro" in command
+    assert f"{layout['config_roots']['1']}:/cardano/config:ro" in command
+    assert "/cardano/state" in command
+    assert "/cardano/config/configs" in command
+    assert "/bundle" in command
+    assert "testnet_42" in command
+
+
+def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path):
+    bundle = tmp_path / "workspace" / "producer-bundle" / "testnet_42"
+    (bundle / "ledger.testnet_42.db").mkdir(parents=True)
+    (bundle / "chain.testnet_42.db").mkdir()
+    (bundle / "ledger.testnet_42.db" / "ledger").write_text("ok", encoding="utf-8")
+    (bundle / "chain.testnet_42.db" / "chain").write_text("ok", encoding="utf-8")
+    (bundle / "era-history.json").write_text('{"eras": []}\n', encoding="utf-8")
+    target = tmp_path / "target" / "amaru1"
+    layout = {
+        "network_name": "testnet_42",
+        "workspace_root": str(tmp_path / "workspace"),
+        "target_amaru_state_roots": {"1": str(target)},
+    }
+
+    bootstrap.apply_producer_bundle(layout)
+
+    assert (target / "ledger.db" / "ledger").read_text(encoding="utf-8") == "ok"
+    assert (target / "chain.db" / "chain").read_text(encoding="utf-8") == "ok"
+    assert (target / "era-history.json").is_file()

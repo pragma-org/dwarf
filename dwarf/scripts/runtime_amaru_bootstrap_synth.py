@@ -17,6 +17,10 @@ DEFAULT_LOADER_BASE_IMAGE = (
 )
 DEFAULT_AMARU_IMAGE = "dwarf/amaru:0.1.2"
 DEFAULT_LOADER_IMAGE = "dwarf/amaru-loader:0.1.2"
+DEFAULT_BOOTSTRAP_PRODUCER_IMAGE = (
+    "ghcr.io/lambdasistemi/amaru-bootstrap-producer@"
+    "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36"
+)
 
 
 def _copy_tree_contents(source: Path, destination: Path) -> None:
@@ -230,6 +234,64 @@ def loader_commands(*, layout: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -
     return cardano_cmd, amaru_cmd
 
 
+def bootstrap_producer_command(
+    *, layout: dict, producer_image: str = DEFAULT_BOOTSTRAP_PRODUCER_IMAGE
+) -> list[str]:
+    first_slot = sorted(layout["config_roots"], key=int)[0]
+    bundle_root = Path(str(layout["workspace_root"])) / "producer-bundle"
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--tmpfs",
+        "/tmp",
+        "--tmpfs",
+        "/run",
+        "-e",
+        "AMARU_WAIT_DEADLINE_SECONDS=30",
+        "-e",
+        "AMARU_CLUSTER_READY_DEADLINE_SECONDS=30",
+        "-e",
+        "AMARU_POLL_INTERVAL_SECONDS=1",
+        "-v",
+        f"{layout['cardano_state_roots'][first_slot]}:/cardano/state:ro",
+        "-v",
+        f"{layout['config_roots'][first_slot]}:/cardano/config:ro",
+        "-v",
+        f"{bundle_root}:/bundle",
+        "--entrypoint",
+        "/bin/bootstrap-producer",
+        producer_image,
+        "/cardano/state",
+        "/cardano/config/configs",
+        "/bundle",
+        str(layout["network_name"]),
+    ]
+
+
+def apply_producer_bundle(layout: dict) -> None:
+    network_name = str(layout["network_name"])
+    source = Path(str(layout["workspace_root"])) / "producer-bundle" / network_name
+    ledger_source = source / f"ledger.{network_name}.db"
+    chain_source = source / f"chain.{network_name}.db"
+    history_source = source / "era-history.json"
+    for required in (ledger_source, chain_source, history_source):
+        if not required.exists():
+            raise RuntimeError(f"Amaru bootstrap producer omitted {required.name}")
+    for target_text in layout["target_amaru_state_roots"].values():
+        target = Path(str(target_text))
+        if target.exists():
+            shutil.rmtree(target)
+        target.mkdir(parents=True)
+        shutil.copytree(ledger_source, target / "ledger.db")
+        shutil.copytree(chain_source, target / "chain.db")
+        shutil.copy2(history_source, target / "era-history.json")
+
+
 def _replace_tree(target_root: Path, source_root: Path) -> None:
     if target_root.exists():
         shutil.rmtree(target_root)
@@ -288,28 +350,32 @@ def synthesize_amaru_bootstrap(
     loader_image: str = DEFAULT_LOADER_IMAGE,
     amaru_image: str = DEFAULT_AMARU_IMAGE,
 ) -> dict:
-    loader_image = ensure_loader_image(
-        runtime_root=runtime_root,
-        loader_image=loader_image,
-        amaru_image=amaru_image,
-    )
+    producer_image = DEFAULT_BOOTSTRAP_PRODUCER_IMAGE
+    inspect = run_command(["docker", "image", "inspect", producer_image])
+    if inspect.returncode != 0:
+        pull = run_command(["docker", "pull", producer_image])
+        if pull.returncode != 0:
+            raise RuntimeError(f"failed to pull immutable Amaru bootstrap producer: {pull.stderr or pull.stdout}")
     layout = prepare_loader_workspace(runtime_root=runtime_root, plan=plan)
-    cardano_cmd, amaru_cmd = loader_commands(layout=layout, loader_image=loader_image)
+    Path(str(layout["workspace_root"]), "producer-bundle").mkdir(parents=True, exist_ok=True)
+    cardano_cmd, _legacy_amaru_cmd = loader_commands(layout=layout, loader_image=loader_image)
     cardano = run_command(cardano_cmd)
     if cardano.returncode != 0:
         raise RuntimeError(f"cardano loader failed: {cardano.stderr or cardano.stdout}")
-    amaru = run_command(amaru_cmd)
-    if amaru.returncode != 0:
-        raise RuntimeError(f"amaru loader failed: {amaru.stderr or amaru.stdout}")
-    _apply_staged_state(layout)
+    producer_cmd = bootstrap_producer_command(layout=layout, producer_image=producer_image)
+    producer = run_command(producer_cmd)
+    if producer.returncode != 0:
+        raise RuntimeError(f"Amaru bootstrap producer failed: {producer.stderr or producer.stdout}")
+    apply_producer_bundle(layout)
     report = {
         "network_name": layout["network_name"],
         "loader_image": loader_image,
+        "bootstrap_producer_image": producer_image,
         "workspace_root": layout["workspace_root"],
         "generated_root": layout["generated_root"],
         "amaru_slot_map": layout["amaru_slot_map"],
         "cardano_command": cardano_cmd,
-        "amaru_command": amaru_cmd,
+        "amaru_command": producer_cmd,
     }
     report_path = runtime_root / "amaru-bootstrap-loader" / "synth-report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
