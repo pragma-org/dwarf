@@ -139,6 +139,26 @@ def test_confirmed_status_requires_evidence_and_exact_revisions():
         validate_version_catalog(catalog)
 
 
+def test_confirmed_amaru_contract_requires_a_known_cardano_support_release():
+    catalog = _catalog()
+    verification = catalog["releases"][1]["verification"]
+    verification["amaru-only"] = {
+        "status": "confirmed",
+        "default": False,
+        "checked_at": "2026-09-18T05:00:00Z",
+        "reason": "Passed the relay/consumer contract.",
+        "evidence": ["qualification:demo"],
+        "issues": [],
+    }
+
+    with pytest.raises(CatalogError, match="supporting_cardano_version"):
+        validate_version_catalog(catalog)
+
+    verification["amaru-only"]["supporting_cardano_version"] = "99.99.99"
+    with pytest.raises(CatalogError, match="unknown cardano-node"):
+        validate_version_catalog(catalog)
+
+
 def test_mixed_default_resolves_a_compatible_exact_pair():
     catalog = validate_version_catalog(_catalog())
 
