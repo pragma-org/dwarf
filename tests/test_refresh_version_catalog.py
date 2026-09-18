@@ -42,7 +42,7 @@ def _existing_catalog() -> dict:
                 "verification": {
                     "amaru-only": {
                         "status": "blocked",
-                        "default": True,
+                        "default": False,
                         "checked_at": "2026-09-11T00:00:00Z",
                         "reason": "Known bootstrap blocker.",
                         "evidence": ["run:amaru-old"],
@@ -151,6 +151,7 @@ def test_refresh_preserves_human_verification_and_default_records():
     assert prior["verification"]["cardano-only"]["evidence"] == ["run:old"]
     assert prior["verification"]["cardano-only"]["default"] is True
     assert amaru_prior["verification"]["amaru-only"]["status"] == "blocked"
+    assert amaru_prior["verification"]["amaru-only"]["default"] is False
     assert amaru_prior["verification"]["amaru-only"]["issues"] == ["https://example.test/issue/1"]
 
 
