@@ -291,13 +291,24 @@ def classify_terminal_runtime_failure(logs: str) -> str | None:
 
 
 def propose_catalog_update(result: dict[str, Any]) -> dict[str, Any]:
+    terminal_failure = str(result.get("terminal_failure") or "")
+    if result.get("passed"):
+        proposed_status = "confirmed"
+    elif terminal_failure in {
+        "amaru-bootstrap-store-incompatible",
+        "amaru-runtime-interface-incompatible",
+    }:
+        proposed_status = "incompatible"
+    else:
+        proposed_status = "unknown"
     return {
         "schema_version": 1,
         "apply_automatically": False,
         "review_required": True,
         "scope": result.get("scope"),
         "candidate": result.get("candidate"),
-        "proposed_status": "confirmed" if result.get("passed") else "unknown",
+        "proposed_status": proposed_status,
+        "reason": terminal_failure or result.get("classification"),
         "checked_at": result.get("completed_at"),
         "classification": result.get("classification"),
         "evidence": [f"qualification:{result.get('evidence_root')}"] if result.get("evidence_root") else [],

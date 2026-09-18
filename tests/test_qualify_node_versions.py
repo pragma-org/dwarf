@@ -267,6 +267,23 @@ def test_catalog_proposal_never_mutates_or_auto_confirms(tmp_path):
     assert proposal["review_required"] is True
 
 
+def test_terminal_compatibility_failure_proposes_incompatible_not_unknown(tmp_path):
+    result = {
+        "scope": "amaru-only",
+        "passed": False,
+        "candidate": {"cardano_version": "10.7.1", "amaru_version": "10.11.20260903"},
+        "completed_at": "2026-09-18T04:30:00Z",
+        "evidence_root": str(tmp_path),
+        "classification": "runtime-contract-failed",
+        "terminal_failure": "amaru-bootstrap-store-incompatible",
+    }
+
+    proposal = propose_catalog_update(result)
+
+    assert proposal["proposed_status"] == "incompatible"
+    assert proposal["reason"] == "amaru-bootstrap-store-incompatible"
+
+
 @pytest.mark.parametrize("project", sorted(PROTECTED_PROJECTS))
 def test_transform_refuses_protected_projects(project):
     with pytest.raises(QualificationError, match="protected"):
