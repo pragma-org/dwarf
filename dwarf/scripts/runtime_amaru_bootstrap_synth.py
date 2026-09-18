@@ -284,6 +284,16 @@ def apply_producer_bundle(layout: dict) -> None:
     for required in (ledger_source, chain_source, history_source):
         if not required.exists():
             raise RuntimeError(f"Amaru bootstrap producer omitted {required.name}")
+    staged_cardano = layout["cardano_state_roots"]
+    target_cardano = layout["target_cardano_state_roots"]
+    if set(staged_cardano) != set(target_cardano):
+        raise RuntimeError("Cardano bootstrap state mapping is incomplete")
+    for slot, source_text in staged_cardano.items():
+        source_db = Path(str(source_text))
+        target_db = Path(str(target_cardano[slot]))
+        if target_db.exists():
+            shutil.rmtree(target_db)
+        shutil.copytree(source_db, target_db)
     for target_text in layout["target_amaru_state_roots"].values():
         target = Path(str(target_text))
         if target.exists():

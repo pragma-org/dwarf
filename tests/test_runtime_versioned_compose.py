@@ -161,9 +161,16 @@ def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path)
     (bundle / "chain.testnet_42.db" / "chain").write_text("ok", encoding="utf-8")
     (bundle / "era-history.json").write_text('{"eras": []}\n', encoding="utf-8")
     target = tmp_path / "target" / "amaru1"
+    staged_cardano = tmp_path / "staged-cardano" / "1"
+    staged_cardano.mkdir(parents=True)
+    (staged_cardano / "immutable").mkdir()
+    (staged_cardano / "immutable" / "00000.chunk").write_text("chain", encoding="utf-8")
+    target_cardano = tmp_path / "target-cardano" / "node1" / "db"
     layout = {
         "network_name": "testnet_42",
         "workspace_root": str(tmp_path / "workspace"),
+        "cardano_state_roots": {"1": str(staged_cardano)},
+        "target_cardano_state_roots": {"1": str(target_cardano)},
         "target_amaru_state_roots": {"1": str(target)},
     }
 
@@ -172,3 +179,4 @@ def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path)
     assert (target / "ledger.db" / "ledger").read_text(encoding="utf-8") == "ok"
     assert (target / "chain.db" / "chain").read_text(encoding="utf-8") == "ok"
     assert (target / "era-history.json").is_file()
+    assert (target_cardano / "immutable" / "00000.chunk").read_text(encoding="utf-8") == "chain"
