@@ -785,8 +785,14 @@ def _auto_redeploy_configured(explicit):
         return False
 
 
+def _resolve_framework_commit(explicit):
+    if explicit is not None and str(explicit).strip():
+        return str(explicit).strip()
+    return os.environ.get("DWARF_SOURCE_REVISION", "").strip() or "unknown"
+
+
 def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
-                 framework_version="0.1.0", framework_commit="unknown", actor="shared:dwarf",
+                 framework_version="0.1.0", framework_commit=None, actor="shared:dwarf",
                  topology_preflight=None, topology_redeploy=None,
                  auto_redeploy_unhealthy=None, measurement_context=None,
                  measurement_collector_factories=None):
@@ -823,6 +829,7 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     rng = random.Random(rng_seed)
 
     profile_resolved = {"id": scen.profile} if scen.runtime == "devnet" and scen.profile else None
+    framework_commit = _resolve_framework_commit(framework_commit)
 
     handle = forensic.start_run(
         scenario_id=scen.id,
