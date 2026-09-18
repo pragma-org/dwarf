@@ -1,0 +1,17 @@
+schema_version: v1
+id: cardano-stock-chain-lifecycle
+title: Cardano chain lifecycle
+description: Consumes stock ChainSync and ChainDB traces for downloaded, validated, rolled-back, selected, and adopted chain events.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: cardano-node
+  versions: [{version: 11.1.2, source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5}]
+  target_modes: [stock, patched]
+collection_mode: stock-telemetry
+required_capabilities: [cardano-new-tracing, cardano-chainsync-traces, cardano-chaindb-traces]
+default_enabled: true
+overhead_class: low
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/cardano-stock-chain-lifecycle/result.json]
+correlation_identifiers: [run_id, workload_phase, peer_id, header_hash, block_hash]
+threshold_gate: {supported: true, default_enabled: false}

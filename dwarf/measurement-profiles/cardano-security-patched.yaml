@@ -1,0 +1,21 @@
+schema_version: v1
+id: cardano-security-patched
+title: Cardano security measurements — patched attribution
+description: Stock and external taps plus revision-locked patched-node visibility for attribution and calibrated comparison; patched-only behavior is not vulnerability authority.
+implementation: cardano-node
+target_modes: [patched]
+measurements:
+  - {id: cardano-stock-chain-lifecycle, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-blockfetch, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-txsubmission-mempool, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-ledger-block-epoch, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-plutus-execution, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-network, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-resources, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-external-restart-readiness, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-external-sync-speed, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-external-workload-accounting, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-patched-protocol-decode, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-patched-blockfetch-handler-queue, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-patched-txsubmission-residence, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-patched-ledger-plutus-stages, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}

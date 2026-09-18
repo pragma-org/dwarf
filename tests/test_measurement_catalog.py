@@ -227,7 +227,7 @@ def test_measurement_catalog_rejects_unsafe_ids(tmp_path, monkeypatch, bad_id):
 
 
 def test_seed_catalog_is_exactly_version_pinned_and_modes_are_not_conflated():
-    expected = {
+    expected_amaru = {
         "amaru-stock-header-lifecycle",
         "amaru-stock-fork-switch",
         "amaru-stock-mempool",
@@ -244,16 +244,47 @@ def test_seed_catalog_is_exactly_version_pinned_and_modes_are_not_conflated():
         "amaru-patched-blockfetch-queues",
         "amaru-patched-txsubmission-residence",
     }
+    expected_cardano = {
+        "cardano-stock-chain-lifecycle",
+        "cardano-stock-blockfetch",
+        "cardano-stock-txsubmission-mempool",
+        "cardano-stock-ledger-block-epoch",
+        "cardano-stock-plutus-execution",
+        "cardano-stock-network",
+        "cardano-stock-resources",
+        "cardano-external-restart-readiness",
+        "cardano-external-sync-speed",
+        "cardano-external-workload-accounting",
+        "cardano-coverage-production-paths",
+        "cardano-patched-protocol-decode",
+        "cardano-patched-blockfetch-handler-queue",
+        "cardano-patched-txsubmission-residence",
+        "cardano-patched-ledger-plutus-stages",
+    }
+    expected = expected_amaru | expected_cardano
     records = list_definitions("measurements")
     assert {record.definition_id for record in records} == expected
     for record in records:
         versions = record.data["compatibility"]["versions"]
-        assert versions == [{"version": AMARU_VERSION, "source_revision": AMARU_REVISION}]
+        expected_identity = (
+            {"version": AMARU_VERSION, "source_revision": AMARU_REVISION}
+            if record.definition_id in expected_amaru
+            else {
+                "version": "11.1.2",
+                "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+            }
+        )
+        assert versions == [expected_identity]
         if record.data["collection_mode"] in {"patched-node", "compiler-coverage"}:
             assert record.data["default_enabled"] is False
 
     profiles = {record.definition_id: record.data for record in list_definitions("measurement-profiles")}
-    assert set(profiles) == {"amaru-security-default", "amaru-security-patched"}
+    assert set(profiles) == {
+        "amaru-security-default",
+        "amaru-security-patched",
+        "cardano-security-default",
+        "cardano-security-patched",
+    }
     assert all(
         selection["threshold_gate"]["enabled"] is False
         for profile in profiles.values()

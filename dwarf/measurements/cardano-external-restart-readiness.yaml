@@ -1,0 +1,17 @@
+schema_version: v1
+id: cardano-external-restart-readiness
+title: Cardano restart readiness
+description: Measures restart-to-listener, local-state-query, peer-session, chain-progress, and workload readiness gates against the real node.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: cardano-node
+  versions: [{version: 11.1.2, source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5}]
+  target_modes: [stock, patched]
+collection_mode: external
+required_capabilities: [dwarf-target-lifecycle, cardano-readiness-probe]
+default_enabled: true
+overhead_class: negligible
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/cardano-external-restart-readiness/result.json]
+correlation_identifiers: [run_id, fault_id, target_node]
+threshold_gate: {supported: true, default_enabled: false}

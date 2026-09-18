@@ -1,0 +1,17 @@
+schema_version: v1
+id: cardano-stock-ledger-block-epoch
+title: Cardano ledger, block, and epoch boundaries
+description: Consumes stock ChainDB, forge, validation, and ledger metrics while preserving unavailable stage durations when no authoritative boundary is emitted.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: cardano-node
+  versions: [{version: 11.1.2, source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5}]
+  target_modes: [stock, patched]
+collection_mode: stock-telemetry
+required_capabilities: [cardano-new-tracing, cardano-chaindb-traces, cardano-ledger-metrics]
+default_enabled: true
+overhead_class: low
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/cardano-stock-ledger-block-epoch/result.json]
+correlation_identifiers: [run_id, workload_phase, block_hash, slot]
+threshold_gate: {supported: true, default_enabled: false}

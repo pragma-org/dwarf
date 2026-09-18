@@ -1,0 +1,17 @@
+schema_version: v1
+id: cardano-security-default
+title: Cardano security measurements — stock default
+description: Compatible passive stock and external taps for real Cardano-node security runs; unavailable boundaries remain explicit and measurements are non-gating.
+implementation: cardano-node
+target_modes: [stock]
+measurements:
+  - {id: cardano-stock-chain-lifecycle, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-blockfetch, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-txsubmission-mempool, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-ledger-block-epoch, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-plutus-execution, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-network, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-stock-resources, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-external-restart-readiness, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-external-sync-speed, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: cardano-external-workload-accounting, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
