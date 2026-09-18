@@ -341,6 +341,12 @@ def versioned_substrate_for_profile(profile, version_preview):
 
 def _versioned_deploy_command(profile, version_preview):
     substrate = versioned_substrate_for_profile(profile, version_preview)
+    use_amaru_control = substrate["scope"] in {"amaru-only", "mixed"}
+    adapter = (
+        "runtime_amaru_control_substrate.py"
+        if use_amaru_control
+        else "runtime_compose_substrate.py"
+    )
     runtime = shlex.quote(profile.remote_runtime_root)
     project = shlex.quote(profile.compose_project)
     config_body = {
@@ -350,6 +356,23 @@ def _versioned_deploy_command(profile, version_preview):
         "compose_project": profile.compose_project,
         "healthy_timeout_seconds": 300,
     }
+    if use_amaru_control:
+        cardano = next(
+            node for node in substrate["nodes"] if node["impl"] == "cardano-node"
+        )
+        amaru = next(node for node in substrate["nodes"] if node["impl"] == "amaru")
+        config_body.update(
+            {
+                "profile_id": profile.id,
+                "scope": substrate["scope"],
+                "lifecycle": "cardano_amaru_relay_bootstrap_control",
+                "supporting_cardano_version": cardano["version"],
+                "cardano_image": cardano["image"],
+                "amaru_version": amaru["version"],
+                "amaru_image": amaru["image"],
+                "healthy_timeout_seconds": 1800,
+            }
+        )
     config_json = json.dumps(config_body, indent=2, sort_keys=True)
     image_refs = sorted({node["image"] for node in substrate["nodes"]})
     pull_lines = "\n".join(f"docker pull {shlex.quote(image)}" for image in image_refs)
@@ -361,7 +384,7 @@ if [ -e "$runtime/env" ] || [ -e "$runtime/docker-compose.yml" ]; then
   exit 4
 fi
 dwarf_root="${{ADA2_DWARF_ROOT:-}}"
-if [ -z "$dwarf_root" ] || [ ! -f "$dwarf_root/scripts/runtime_compose_substrate.py" ]; then
+if [ -z "$dwarf_root" ] || [ ! -f "$dwarf_root/scripts/{adapter}" ]; then
   echo "ADA2_DWARF_ROOT must identify the installed DWARF source root" >&2
   exit 7
 fi
@@ -372,7 +395,7 @@ cat > "$config_path" <<'DWARF_VERSIONED_DEPLOYMENT'
 DWARF_VERSIONED_DEPLOYMENT
 {pull_lines}
 cd "$dwarf_root"
-PYTHONPATH="$dwarf_root" python3 scripts/runtime_compose_substrate.py --config "$config_path"
+PYTHONPATH="$dwarf_root" python3 scripts/{adapter} --config "$config_path"
 """
 
 

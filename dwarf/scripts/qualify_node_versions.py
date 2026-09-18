@@ -251,14 +251,17 @@ def transform_compose_model(
     project: str,
     cardano_image: str | None,
     amaru_image: str | None,
+    allowed_project_prefix: str = "dwarf-qual-",
 ) -> dict[str, Any]:
     """Namespace a rendered baseline and replace only candidate node images."""
     if scope not in SCOPES:
         raise QualificationError(f"unknown qualification scope: {scope}")
     if project in PROTECTED_PROJECTS:
         raise QualificationError(f"refusing to use protected project {project}")
-    if not project.startswith("dwarf-qual-"):
-        raise QualificationError("qualification project must use the dwarf-qual- prefix")
+    if not project.startswith(allowed_project_prefix):
+        raise QualificationError(
+            f"project must use the {allowed_project_prefix} prefix"
+        )
     transformed = copy.deepcopy(model)
     transformed.pop("name", None)
     services = transformed.get("services")
@@ -292,11 +295,13 @@ def transform_compose_model(
             environment = service.setdefault("environment", {})
             if not isinstance(environment, dict):
                 raise QualificationError(f"{name} has a non-mapping environment")
-            # Current Amaru releases explicitly require migration when opening
-            # an older bootstrap-producer ChainDB. Unknown environment keys are
-            # inert for releases that predate this migration switch.
-            environment["AMARU_MIGRATE_CHAIN_DB"] = "true"
             if _uses_modern_amaru_runtime_interface(amaru_image):
+                # Current official images require an explicit migration switch
+                # when opening an older bootstrap-producer ChainDB.  The
+                # retained 10.11.0 control must not receive this flag: it makes
+                # the proven schema-3 bundle migrate into a deliberately
+                # rejected, incomplete opcert state.
+                environment["AMARU_MIGRATE_CHAIN_DB"] = "true"
                 # The official image runs as an unprivileged user and exposes
                 # the current `amaru run` interface under /usr/local/bin.  The
                 # retained 10.11.0 control image instead exposes

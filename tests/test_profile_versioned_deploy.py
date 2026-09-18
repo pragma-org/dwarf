@@ -78,7 +78,7 @@ def test_amaru_target_profile_declares_its_required_cardano_bootstrap_source():
     assert provenance["nodes"][0]["supporting"] is True
 
 
-def test_versioned_deploy_uses_exact_images_and_runtime_compose_adapter():
+def test_versioned_cardano_deploy_uses_exact_images_and_runtime_compose_adapter():
     profile = _profile()
     preview = _preview(profile)
 
@@ -91,6 +91,44 @@ def test_versioned_deploy_uses_exact_images_and_runtime_compose_adapter():
     assert "/home/dwarf/.local/bin/cardano-node run" not in command
     assert "ADA2_DWARF_ROOT" in command
     assert json.dumps(preview["catalog_revision"]) in command
+
+
+def test_versioned_amaru_deploy_uses_live_producer_control_adapter():
+    profile = _profile(
+        node_type="amaru",
+        node_count=0,
+        amaru_node_count=1,
+        version_policy="exact",
+        amaru_version="10.11.20260730",
+    )
+    preview = _preview(profile)
+
+    command = deploy_command(profile, version_preview=preview)
+
+    assert "runtime_amaru_control_substrate.py" in command
+    assert "runtime_compose_substrate.py" not in command
+    assert '"lifecycle": "cardano_amaru_relay_bootstrap_control"' in command
+    assert '"scope": "amaru-only"' in command
+    assert '"profile_id": "versioned-local"' in command
+    assert '"supporting_cardano_version": "10.7.1"' in command
+    assert "docker pull" in command
+
+
+def test_versioned_mixed_deploy_uses_live_producer_control_adapter():
+    profile = _profile(
+        node_type="mixed",
+        node_count=2,
+        amaru_node_count=1,
+        version_policy="latest-confirmed",
+    )
+    preview = _preview(profile)
+
+    command = deploy_command(profile, version_preview=preview)
+
+    assert "runtime_amaru_control_substrate.py" in command
+    assert "runtime_compose_substrate.py" not in command
+    assert '"scope": "mixed"' in command
+    assert '"lifecycle": "cardano_amaru_relay_bootstrap_control"' in command
 
 
 def test_legacy_profile_preserves_existing_host_process_adapter():

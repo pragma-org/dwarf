@@ -213,6 +213,7 @@ def test_transform_retained_amaru_control_keeps_legacy_runtime_interface():
     assert "exec /bin/amaru node run" in relay["command"][1]
     assert "--peer-address p1.example:3001" in relay["command"][1]
     assert "relay1.example:3001" not in relay["command"][1]
+    assert "AMARU_MIGRATE_CHAIN_DB" not in relay["environment"]
     assert "setpriv" not in relay["command"][1]
     assert "/usr/local/bin/amaru" not in relay["command"][1]
 
