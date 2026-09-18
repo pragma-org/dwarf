@@ -48,6 +48,10 @@ class Profile:
     config_source_dir: str | None = None
     public_network: str | None = None
     testbed: str | None = None
+    version_policy: str = "legacy"
+    cardano_version: str | None = None
+    amaru_version: str | None = None
+    compatibility_pair: str | None = None
 
     @classmethod
     def from_dict(cls, data):
@@ -71,6 +75,10 @@ class Profile:
             config_source_dir=data.get("config_source_dir"),
             public_network=data.get("public_network"),
             testbed=data.get("testbed"),
+            version_policy=data.get("version_policy") or "legacy",
+            cardano_version=data.get("cardano_version"),
+            amaru_version=data.get("amaru_version"),
+            compatibility_pair=data.get("compatibility_pair"),
         )
 
 
@@ -120,6 +128,10 @@ def profile_diff_text(left_id, right_id):
         "config_source_dir",
         "public_network",
         "testbed",
+        "version_policy",
+        "cardano_version",
+        "amaru_version",
+        "compatibility_pair",
     )
     lines = [
         "Profile diff",

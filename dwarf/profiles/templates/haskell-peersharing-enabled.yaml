@@ -5,6 +5,7 @@
   "node_count": 3,
   "network_magic": 42,
   "peer_sharing": true,
+  "version_policy": "latest-stable",
   "remote_runtime_root": "{{REMOTE_RUNTIME_ROOT}}",
   "compose_project": "{{COMPOSE_PROJECT}}"
 }

@@ -206,6 +206,8 @@ def test_profile_schema_covers_every_bundled_profile_field():
         "remote_runtime_root", "compose_project", "topology_pattern",
         "shared_genesis", "amaru_network", "upstream_peer_address",
         "listen_address", "config_source_dir", "public_network", "testbed",
+        "version_policy", "cardano_version", "amaru_version",
+        "compatibility_pair",
     }
     assert set(schema["properties"]) == expected
     assert schema["properties"]["node_type"]["enum"] == ["cardano-node", "amaru", "mixed"]

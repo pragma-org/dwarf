@@ -211,3 +211,158 @@ def resolve_default(catalog: dict[str, Any], scope: str) -> dict[str, Any]:
         raise CatalogError(f"expected exactly one default for {scope}, found {len(matches)}")
     release, verification = matches[0]
     return {"kind": "release", "status": verification["status"], "release": release}
+
+
+def _profile_scope(data: dict[str, Any]) -> str:
+    haskell = int(data.get("haskell_count", data.get("node_count", 0)) or 0)
+    amaru = int(data.get("amaru_count", data.get("amaru_node_count", 0)) or 0)
+    if haskell > 0 and amaru > 0:
+        return "mixed"
+    if amaru > 0:
+        return "amaru-only"
+    if haskell > 0:
+        return "cardano-only"
+    raise CatalogError("profile must contain at least one Cardano-node or Amaru node")
+
+
+def _latest_stable(catalog: dict[str, Any], implementation: str) -> dict[str, Any]:
+    releases = [
+        release
+        for release in catalog.get("releases", [])
+        if release.get("implementation") == implementation and release.get("channel") == "stable"
+    ]
+    if not releases:
+        raise CatalogError(f"no stable {implementation} releases are present in the version catalog")
+    return max(releases, key=lambda release: (str(release.get("released_at") or ""), release["version"]))
+
+
+def _pair_by_id(catalog: dict[str, Any], pair_id: str) -> dict[str, Any]:
+    for pair in catalog.get("compatibility_pairs", []):
+        if pair.get("id") == pair_id:
+            return pair
+    raise CatalogError(f"unknown compatibility_pair {pair_id!r}")
+
+
+def _pair_by_versions(
+    catalog: dict[str, Any], cardano_version: str, amaru_version: str
+) -> dict[str, Any] | None:
+    for pair in catalog.get("compatibility_pairs", []):
+        if pair.get("cardano_version") == cardano_version and pair.get("amaru_version") == amaru_version:
+            return pair
+    return None
+
+
+def resolve_profile_versions(
+    data: dict[str, Any], catalog: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Freeze a profile's version policy into exact, evidence-labelled releases."""
+
+    checked_catalog = validate_version_catalog(catalog) if catalog is not None else load_version_catalog()
+    scope = _profile_scope(data)
+    policy = str(data.get("version_policy") or "legacy")
+    if policy == "legacy":
+        return {
+            "policy": "legacy",
+            "scope": scope,
+            "status": "unknown",
+            "resolved": {},
+            "pair": None,
+            "requires_acknowledgement": False,
+            "blocked": False,
+            "reason": "No version policy is declared; preserve existing deployment behavior without making a version claim.",
+        }
+    if policy not in {"latest-confirmed", "latest-stable", "exact"}:
+        raise CatalogError(
+            "profile.version_policy must be one of latest-confirmed, latest-stable, or exact"
+        )
+
+    pair: dict[str, Any] | None = None
+    resolved: dict[str, dict[str, Any]] = {}
+    verification: dict[str, Any]
+    if scope == "mixed":
+        if policy == "latest-confirmed":
+            default = resolve_default(checked_catalog, "mixed")
+            pair = default["pair"]
+            if pair["status"] != "confirmed":
+                raise CatalogError("the mixed default is not confirmed")
+        elif policy == "latest-stable":
+            cardano = _latest_stable(checked_catalog, "cardano-node")
+            amaru = _latest_stable(checked_catalog, "amaru")
+            pair = _pair_by_versions(checked_catalog, cardano["version"], amaru["version"])
+            if pair is None:
+                verification = {
+                    "status": "unknown",
+                    "default": False,
+                    "reason": "The newest stable release combination is not present in the compatibility matrix.",
+                    "evidence": [],
+                    "issues": [],
+                }
+                resolved = {"cardano-node": cardano, "amaru": amaru}
+        else:
+            pair_id = str(data.get("compatibility_pair") or "").strip()
+            if pair_id:
+                pair = _pair_by_id(checked_catalog, pair_id)
+            else:
+                cardano_version = str(data.get("cardano_version") or "").strip()
+                amaru_version = str(data.get("amaru_version") or "").strip()
+                if not cardano_version or not amaru_version:
+                    raise CatalogError(
+                        "an exact mixed profile requires compatibility_pair or both cardano_version and amaru_version"
+                    )
+                cardano = resolve_release(checked_catalog, "cardano-node", cardano_version)
+                amaru = resolve_release(checked_catalog, "amaru", amaru_version)
+                pair = _pair_by_versions(checked_catalog, cardano_version, amaru_version)
+                if pair is None:
+                    verification = {
+                        "status": "unknown",
+                        "default": False,
+                        "reason": "The exact release combination is not present in the compatibility matrix.",
+                        "evidence": [],
+                        "issues": [],
+                    }
+                    resolved = {"cardano-node": cardano, "amaru": amaru}
+        if pair is not None:
+            resolved = {
+                "cardano-node": resolve_release(
+                    checked_catalog, "cardano-node", pair["cardano_version"]
+                ),
+                "amaru": resolve_release(checked_catalog, "amaru", pair["amaru_version"]),
+            }
+            verification = pair
+    else:
+        implementation = "cardano-node" if scope == "cardano-only" else "amaru"
+        if policy == "latest-confirmed":
+            default = resolve_default(checked_catalog, scope)
+            release = default["release"]
+            verification = resolve_verification(
+                checked_catalog, implementation, release["version"], scope
+            )
+            if verification["status"] != "confirmed":
+                raise CatalogError(f"the {scope} default is not confirmed")
+        elif policy == "latest-stable":
+            release = _latest_stable(checked_catalog, implementation)
+            verification = resolve_verification(
+                checked_catalog, implementation, release["version"], scope
+            )
+        else:
+            field = "cardano_version" if implementation == "cardano-node" else "amaru_version"
+            version = str(data.get(field) or "").strip()
+            if not version:
+                raise CatalogError(f"an exact {scope} profile requires {field}")
+            release = resolve_release(checked_catalog, implementation, version)
+            verification = resolve_verification(checked_catalog, implementation, version, scope)
+        resolved = {implementation: release}
+
+    status = str(verification["status"])
+    return {
+        "policy": policy,
+        "scope": scope,
+        "status": status,
+        "resolved": resolved,
+        "pair": pair,
+        "requires_acknowledgement": status == "unknown",
+        "blocked": status in {"incompatible", "blocked"},
+        "reason": str(verification.get("reason") or ""),
+        "evidence": list(verification.get("evidence") or []),
+        "issues": list(verification.get("issues") or []),
+    }
