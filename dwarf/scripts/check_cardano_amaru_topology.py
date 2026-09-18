@@ -303,9 +303,17 @@ def collect_and_classify(
     sleeper: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
     started_at = _utc_now()
-    containers = container_reader(project)
-    samples = [sample_reader(containers)]
+    initial_containers = container_reader(project)
+    samples = [sample_reader(initial_containers)]
     sleeper(sample_seconds)
+    containers = container_reader(project)
+    for name, final in containers.items():
+        initial = initial_containers.get(name) or {}
+        before = initial.get("started_at")
+        after = final.get("started_at")
+        if before and after and before != after:
+            final["restart_count"] = max(1, int(final.get("restart_count") or 0))
+            final["restart_observed_during_sample"] = True
     samples.append(sample_reader(containers))
     observation = {
         "schema_version": 1,
