@@ -96,7 +96,10 @@ def _reject(conf: dict, original: str, reason: str) -> int:
 
 
 def _run_script(script: str, env: dict[str, str] | None = None) -> int:
-    proc = subprocess.run(["bash", "-c", script], text=True, env=env)
+    # Generated version-qualified deployments embed an immutable catalog
+    # snapshot for provenance.  Feed the script on stdin so its size is not
+    # constrained by the kernel's per-argument/argv limit (ARG_MAX).
+    proc = subprocess.run(["bash", "-s"], input=script, text=True, env=env)
     return proc.returncode
 
 
