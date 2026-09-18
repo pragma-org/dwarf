@@ -260,7 +260,7 @@ def bootstrap_producer_command(
         "-e",
         "AMARU_POLL_INTERVAL_SECONDS=1",
         "-v",
-        f"{layout['cardano_state_roots'][first_slot]}:/cardano/state:ro",
+        f"{layout['cardano_state_roots'][first_slot]}:/cardano/state",
         "-v",
         f"{layout['config_roots'][first_slot]}:/cardano/config:ro",
         "-v",
