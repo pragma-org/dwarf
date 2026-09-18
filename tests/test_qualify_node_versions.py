@@ -162,6 +162,14 @@ def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
     assert "[bootstrap] committed bundle to /srv/amaru" in transformed["services"]["amaru-relay-1"]["command"][1]
     assert "[bootstrap] exec'ing amaru run" in transformed["services"]["amaru-relay-1"]["command"][1]
     assert "exec chown" not in transformed["services"]["amaru-relay-1"]["command"][1]
+    gate = transformed["services"]["amaru-consumer-ready"]
+    assert gate["depends_on"]["amaru-relay-1"]["condition"] == "service_started"
+    assert gate["depends_on"]["amaru-relay-2"]["condition"] == "service_started"
+    assert "tip\\.slot" in gate["command"][0]
+    assert "1600" in gate["command"][0]
+    assert "$$i" in gate["command"][0]
+    assert "$$relay_one" in gate["command"][0]
+    assert transformed["services"]["amaru-consumer"]["depends_on"]["amaru-consumer-ready"]["condition"] == "service_completed_successfully"
     assert transformed["services"]["bootstrap-producer"]["image"] == "bootstrap"
     assert transformed["volumes"]["external"].get("external") is not True
 

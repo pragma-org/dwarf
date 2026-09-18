@@ -246,6 +246,73 @@ def transform_compose_model(
             environment["AMARU_MIGRATE_CHAIN_DB"] = "true"
             service["command"] = _replace_command(service.get("command"))
 
+    if scope in {"amaru-only", "mixed"}:
+        bootstrap = services.get("bootstrap-producer") or {}
+        gate_image = bootstrap.get("image")
+        consumer = services.get("amaru-consumer")
+        if not gate_image or not isinstance(consumer, dict):
+            raise QualificationError(
+                "baseline is missing the bootstrap image or isolated consumer"
+            )
+        services["amaru-consumer-ready"] = {
+            "image": gate_image,
+            "entrypoint": ["/bin/sh", "-ec"],
+            "command": [
+                "latest_slot() {\n"
+                "  awk '\n"
+                "    {\n"
+                "      previous = \"\"\n"
+                "      for (i = 1; i <= NF; i++) {\n"
+                "        token = $$i\n"
+                "        if (token ~ /^tip\\.slot=[0-9]+$/) {\n"
+                "          sub(/^tip\\.slot=/, \"\", token)\n"
+                "          if (token + 0 > maximum) maximum = token + 0\n"
+                "        } else if (previous == \"tip.adopt\" && token ~ /^slot=[0-9]+$/) {\n"
+                "          sub(/^slot=/, \"\", token)\n"
+                "          if (token + 0 > maximum) maximum = token + 0\n"
+                "        }\n"
+                "        previous = $$i\n"
+                "      }\n"
+                "    }\n"
+                "    END { print maximum + 0 }\n"
+                "  ' \"$$1\" 2>/dev/null || printf '0\\n'\n"
+                "}\n"
+                "while :; do\n"
+                "  relay_one=$$(latest_slot /logs/amaru-relay-1.log)\n"
+                "  relay_two=$$(latest_slot /logs/amaru-relay-2.log)\n"
+                "  if [ \"$$relay_one\" -ge 1600 ] && [ \"$$relay_two\" -ge 1600 ]; then\n"
+                "    printf 'Amaru relays ready for isolated consumer: %s %s\\n' \"$$relay_one\" \"$$relay_two\"\n"
+                "    exit 0\n"
+                "  fi\n"
+                "  sleep 5\n"
+                "done\n"
+            ],
+            "depends_on": {
+                "amaru-relay-1": {"condition": "service_started", "required": True},
+                "amaru-relay-2": {"condition": "service_started", "required": True},
+            },
+            "volumes": [
+                {
+                    "type": "volume",
+                    "source": "amaru-logs",
+                    "target": "/logs",
+                    "read_only": True,
+                }
+            ],
+            "labels": {
+                "com.dwarf.qualification": "true",
+                "com.dwarf.qualification.scope": scope,
+                "com.antithesis.exclude_from_faults": "network,kill,pause,stop",
+            },
+        }
+        depends_on = consumer.setdefault("depends_on", {})
+        if not isinstance(depends_on, dict):
+            raise QualificationError("amaru-consumer has invalid depends_on")
+        depends_on["amaru-consumer-ready"] = {
+            "condition": "service_completed_successfully",
+            "required": True,
+        }
+
     for volume in (transformed.get("volumes") or {}).values():
         if isinstance(volume, dict):
             volume.pop("external", None)
