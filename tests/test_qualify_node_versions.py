@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts import qualify_node_versions as qualification
 from scripts.qualify_node_versions import (
     PROTECTED_PROJECTS,
     QualificationError,
@@ -218,6 +219,37 @@ def test_terminal_store_and_cli_failures_are_classified_for_fast_stop():
         "error: unexpected argument '--migrate-chain-db' found"
     ) == "amaru-runtime-interface-incompatible"
     assert classify_terminal_runtime_failure("waiting for chain progress") is None
+
+
+def test_amaru_runtime_logs_fall_back_to_direct_service_logs(monkeypatch):
+    monkeypatch.setattr(
+        qualification,
+        "_project_containers",
+        lambda _project: {
+            "tracer-sidecar": "trace",
+            "amaru-relay-1": "relay-one",
+            "amaru-relay-2": "relay-two",
+        },
+    )
+
+    def fake_run(args, **_kwargs):
+        if args[:2] == ["docker", "exec"]:
+            return qualification.subprocess.CompletedProcess(args, 126, "", "no shell")
+        if args[:2] == ["docker", "logs"] and args[-1] == "relay-one":
+            return qualification.subprocess.CompletedProcess(
+                args,
+                0,
+                "chain database cannot be migrated to version 5 automatically\n",
+                "",
+            )
+        return qualification.subprocess.CompletedProcess(args, 0, "relay healthy\n", "")
+
+    monkeypatch.setattr(qualification, "_run", fake_run)
+
+    logs = qualification._amaru_log_text("candidate")
+
+    assert "cannot be migrated" in logs
+    assert classify_terminal_runtime_failure(logs) == "amaru-bootstrap-store-incompatible"
 
 
 def test_catalog_proposal_never_mutates_or_auto_confirms(tmp_path):

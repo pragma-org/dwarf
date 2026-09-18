@@ -364,18 +364,34 @@ def _project_is_fresh(project: str) -> bool:
 
 
 def _amaru_log_text(project: str) -> str:
-    container = _project_containers(project).get("tracer-sidecar")
-    if not container:
-        return ""
-    result = _run(
-        [
-            "docker", "exec", container, "/bin/sh", "-c",
-            "for file in /opt/amaru-logs/*.log; do "
-            "test -f \"$file\" || continue; echo \"[amaru-log:$file]\"; tail -n 400 \"$file\"; done",
-        ],
-        timeout=60,
-    )
-    return result.stdout + ("\n[stderr]\n" + result.stderr if result.stderr else "")
+    containers = _project_containers(project)
+    chunks: list[str] = []
+    tracer = containers.get("tracer-sidecar")
+    if tracer:
+        result = _run(
+            [
+                "docker", "exec", tracer, "/bin/sh", "-c",
+                "for file in /opt/amaru-logs/*.log; do "
+                "test -f \"$file\" || continue; echo \"[amaru-log:$file]\"; tail -n 400 \"$file\"; done",
+            ],
+            timeout=60,
+        )
+        if result.stdout:
+            chunks.append(result.stdout)
+        if result.stderr:
+            chunks.append(f"[tracer-sidecar-stderr]\n{result.stderr}")
+    # The upstream tracer-sidecar image may be distroless and therefore have
+    # no shell.  Candidate process stderr is authoritative for startup/migration
+    # failures, so retain direct Docker logs as a non-vacuous fallback and as a
+    # cross-check even when shared trace files are readable.
+    for service, container in sorted(containers.items()):
+        if not service.startswith("amaru-relay-"):
+            continue
+        result = _run(["docker", "logs", "--tail", "400", container], timeout=60)
+        body = result.stdout + ("\n[stderr]\n" + result.stderr if result.stderr else "")
+        if body:
+            chunks.append(f"[amaru-service:{service}]\n{body}")
+    return "\n".join(chunks)
 
 
 def identity_matches(
