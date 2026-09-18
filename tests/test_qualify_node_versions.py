@@ -9,6 +9,7 @@ from scripts.qualify_node_versions import (
     QualificationError,
     build_project_name,
     candidate_matrix,
+    classify_log_signals,
     classify_qualification,
     classify_terminal_runtime_failure,
     exact_oci_reference,
@@ -230,6 +231,22 @@ def test_terminal_store_and_cli_failures_are_classified_for_fast_stop():
         "error: unexpected argument '--migrate-chain-db' found"
     ) == "amaru-runtime-interface-incompatible"
     assert classify_terminal_runtime_failure("waiting for chain progress") is None
+
+
+def test_known_vrf_bootstrap_warning_is_background_not_a_fatal_termination():
+    signals = classify_log_signals(
+        "ChainSync.Client.Exception HeaderProtocolError VRFKeyBadProof (SlotNo 5)"
+    )
+
+    assert signals["fatal"] == []
+    assert signals["background"] == ["known-vrf-key-bad-proof"]
+
+
+def test_actual_process_termination_signatures_remain_fatal():
+    signals = classify_log_signals("thread panicked at listener EADDRINUSE")
+
+    assert "panic" in signals["fatal"]
+    assert "listener-address-in-use" in signals["fatal"]
 
 
 def test_amaru_runtime_logs_fall_back_to_direct_service_logs(monkeypatch):

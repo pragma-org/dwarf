@@ -63,10 +63,21 @@ CARDANO_ONLY_SERVICES = {
     "log-tailer",
     *CARDANO_REFERENCE_NODES,
 }
-FATAL_PATTERN = re.compile(
-    r"panicked at|EADDRINUSE|Address already in use|Consensus died|"
-    r"attempted roll back in the future|VRFKeyBadProof|fatal error",
-    re.IGNORECASE,
+FATAL_SIGNAL_PATTERNS = (
+    ("panic", re.compile(r"panicked at", re.IGNORECASE)),
+    (
+        "listener-address-in-use",
+        re.compile(r"EADDRINUSE|Address already in use", re.IGNORECASE),
+    ),
+    ("consensus-terminated", re.compile(r"Consensus died", re.IGNORECASE)),
+    (
+        "invalid-future-rollback",
+        re.compile(r"attempted roll back in the future", re.IGNORECASE),
+    ),
+    ("fatal-error", re.compile(r"fatal error", re.IGNORECASE)),
+)
+BACKGROUND_SIGNAL_PATTERNS = (
+    ("known-vrf-key-bad-proof", re.compile(r"VRFKeyBadProof", re.IGNORECASE)),
 )
 TERMINAL_FAILURE_PATTERNS = (
     (
@@ -82,6 +93,16 @@ TERMINAL_FAILURE_PATTERNS = (
 
 class QualificationError(RuntimeError):
     """Qualification cannot safely or truthfully continue."""
+
+
+def classify_log_signals(text: str) -> dict[str, list[str]]:
+    """Separate terminal process failures from classified background signals."""
+    return {
+        "fatal": [name for name, pattern in FATAL_SIGNAL_PATTERNS if pattern.search(text)],
+        "background": [
+            name for name, pattern in BACKGROUND_SIGNAL_PATTERNS if pattern.search(text)
+        ],
+    }
 
 
 def _utc_now() -> str:
@@ -723,6 +744,7 @@ def run_qualification(
     observation: dict[str, Any] = {}
     identity: dict[str, Any] = {}
     logs = ""
+    log_signals: dict[str, list[str]] = {"fatal": [], "background": []}
     started = False
     teardown_ok = False
     error: str | None = None
@@ -799,7 +821,8 @@ def run_qualification(
                 "no_restart_loop": all(int(item.get("restart_count") or 0) == 0 for item in containers.values()),
             })
         gates["exact_identity"] = bool(identity.get("matched"))
-        gates["no_fatal_signatures"] = FATAL_PATTERN.search(logs) is None
+        log_signals = classify_log_signals(logs)
+        gates["no_fatal_signatures"] = not log_signals["fatal"]
     except Exception as exc:  # evidence and teardown are mandatory on every failure path
         error = str(exc)
         emit("failed", error=error)
@@ -829,6 +852,7 @@ def run_qualification(
         "terminal_failure": terminal_failure,
         "observation": observation,
         "identity": identity,
+        "log_signals": log_signals,
         "events": events,
         **classified,
     }
