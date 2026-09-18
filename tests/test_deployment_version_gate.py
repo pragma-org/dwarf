@@ -142,6 +142,7 @@ def test_incompatible_and_blocked_are_hard_stops():
     with pytest.raises(DeploymentVersionGateError, match="not confirmed"):
         build_deployment_version_preview(profile, modified, catalog_revision="a" * 64)
 
+    pair["default"] = False
     profile["version_policy"] = "exact"
     profile["compatibility_pair"] = pair["id"]
     preview = build_deployment_version_preview(profile, modified, catalog_revision="a" * 64)

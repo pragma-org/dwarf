@@ -26,7 +26,9 @@ into every profile. The catalog records:
 - known blockers, incompatibilities, upstream issues, and the date each fact
   was checked.
 
-`default` is an explicit policy choice, not a synonym for `confirmed`.
+`default` is an explicit policy choice, not a synonym for `confirmed`: multiple
+releases may be confirmed, but only a confirmed release or pair may be selected
+as the out-of-box default.
 Verification status is one of `confirmed`, `unknown`, `incompatible`, or
 `blocked`, and is always scoped to a deployment type. A release confirmed for
 a Cardano-only devnet is not thereby confirmed for a mixed topology.

@@ -58,6 +58,8 @@ def _validate_verification(record: Any, context: str) -> dict[str, Any]:
         if not evidence:
             raise CatalogError(f"{context} is confirmed but has no evidence")
         _require_text(body, "checked_at", context)
+    if body.get("default") and status != "confirmed":
+        raise CatalogError(f"{context} is a default but is not confirmed")
     if status in {"incompatible", "blocked"}:
         _require_text(body, "reason", context)
     return body

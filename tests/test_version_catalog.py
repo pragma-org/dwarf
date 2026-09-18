@@ -38,11 +38,11 @@ def _catalog() -> dict:
                 ],
                 "verification": {
                     "cardano-only": {
-                        "status": "unknown",
+                        "status": "confirmed",
                         "default": True,
                         "checked_at": "2026-09-17T20:00:00Z",
-                        "reason": "Discovered but not yet qualified.",
-                        "evidence": [],
+                        "reason": "Passed the Cardano-only runtime contract.",
+                        "evidence": ["run:cardano-only"],
                         "issues": [],
                     }
                 },
@@ -105,19 +105,19 @@ def test_verification_status_is_scoped_and_defaults_to_unknown():
     cardano = resolve_verification(catalog, "cardano-node", "11.1.2", "cardano-only")
     mixed = resolve_verification(catalog, "cardano-node", "11.1.2", "mixed")
 
-    assert cardano["status"] == "unknown"
+    assert cardano["status"] == "confirmed"
     assert cardano["default"] is True
     assert mixed == {"status": "unknown", "default": False, "evidence": [], "issues": []}
 
 
-def test_default_is_independent_from_confirmation_status():
-    catalog = validate_version_catalog(_catalog())
+def test_default_requires_confirmation_status():
+    catalog = _catalog()
+    record = catalog["releases"][0]["verification"]["cardano-only"]
+    record["status"] = "unknown"
+    record["evidence"] = []
 
-    resolved = resolve_default(catalog, "cardano-only")
-
-    assert resolved["kind"] == "release"
-    assert resolved["status"] == "unknown"
-    assert resolved["release"]["version"] == "11.1.2"
+    with pytest.raises(CatalogError, match="default.*confirmed"):
+        validate_version_catalog(catalog)
 
 
 def test_validation_rejects_multiple_defaults_for_same_scope():

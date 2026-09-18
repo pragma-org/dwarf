@@ -11,7 +11,8 @@ the exact artifact passes the complete real-node contract for a named scope:
 - `unknown`: discovered or explicitly selected, but not yet qualified.
 - `incompatible`: an exercised pair violated a required compatibility gate.
 - `blocked`: a known prerequisite prevents a valid qualification.
-- `default`: an independent operator choice; it does not imply confirmation.
+- `default`: the operator-selected release or pair; only a `confirmed` record
+  may be the out-of-box default.
 
 Profiles choose one policy:
 
