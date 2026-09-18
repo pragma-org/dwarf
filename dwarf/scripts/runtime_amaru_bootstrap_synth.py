@@ -44,11 +44,6 @@ def _stage_loader_scripts(scripts_root: Path) -> None:
     # Dwarf composes smaller synthetic devnets, so patch the staged copy to use the
     # actual pool count while preserving the rest of the upstream loader flow.
     cardano_loader = cardano_loader.replace("[[ $i -ne 5 ]]", "[[ $i -ne $number_of_pools ]]")
-    cardano_loader = cardano_loader.replace(
-        "cp -fr /data/p${POOL_ID}-config/configs/* /configs/${POOL_ID}/\n",
-        "cp -fr /data/p${POOL_ID}-config/configs/* /configs/${POOL_ID}/\n"
-        "    cp -fr /data/p${POOL_ID}-config/keys/* /configs/${POOL_ID}/keys/\n",
-    )
     cardano_loader_path = scripts_root / "cardano-loader.sh"
     cardano_loader_path.write_text(cardano_loader, encoding="utf-8")
     amaru_loader_path = scripts_root / "amaru-loader.sh"

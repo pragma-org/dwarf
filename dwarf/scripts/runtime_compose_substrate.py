@@ -502,11 +502,19 @@ def _synthesize_amaru_bootstrap_for_custom_testnet(*, runtime_root: Path, plan: 
     # Bootstrap state is a support artifact, not the target under test.  The
     # immutable loader below retains the legacy conversion/import commands;
     # current target releases consume that state through their migration path.
-    return synthesize_amaru_bootstrap(
+    result = synthesize_amaru_bootstrap(
         runtime_root=runtime_root,
         plan=plan,
         loader_image=DEFAULT_LOADER_BASE_IMAGE,
     )
+    # The producer chain hard-forks at epoch zero and its immutable support
+    # bundle does not ship a Byron genesis delegation pair.  Supplying the
+    # unrelated fresh cardano-testnet Byron credentials makes cardano-node
+    # reject an otherwise coherent Shelley pool identity at startup.
+    for node in plan["nodes"]:
+        if node["impl"] == "cardano-node":
+            node["omit_byron_credentials"] = True
+    return result
 
 
 def _docker_project_name(compose_project: str) -> str:
@@ -567,6 +575,12 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
                     f"2>&1 | tee -a /logs/{node['id']}/stdout.log"
                 )]
             else:
+                byron_credentials = ""
+                if not node.get("omit_byron_credentials"):
+                    byron_credentials = (
+                        f"--byron-delegation-certificate /env/pools-keys/pool{node['host_slot_index']}/byron-delegation.cert "
+                        f"--byron-signing-key /env/pools-keys/pool{node['host_slot_index']}/byron-delegate.key "
+                    )
                 command = [(
                     "set -euo pipefail; "
                     f"mkdir -p /env/socket/{node['id']} /logs/{node['id']} && "
@@ -580,8 +594,7 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
                     f"--shelley-kes-key /env/pools-keys/pool{node['host_slot_index']}/kes.skey "
                     f"--shelley-vrf-key /env/pools-keys/pool{node['host_slot_index']}/vrf.skey "
                     f"--shelley-operational-certificate /env/pools-keys/pool{node['host_slot_index']}/opcert.cert "
-                    f"--byron-delegation-certificate /env/pools-keys/pool{node['host_slot_index']}/byron-delegation.cert "
-                    f"--byron-signing-key /env/pools-keys/pool{node['host_slot_index']}/byron-delegate.key "
+                    f"{byron_credentials}"
                     f"2>&1 | tee -a /logs/{node['id']}/stdout.log"
                 )]
         else:

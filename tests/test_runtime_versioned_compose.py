@@ -22,7 +22,7 @@ def test_staged_legacy_loader_keeps_its_supported_header_import_contract(tmp_pat
     assert "--header-file" not in body
 
     cardano_body = (scripts / "cardano-loader.sh").read_text(encoding="utf-8")
-    assert 'cp -fr /data/p${POOL_ID}-config/keys/* /configs/${POOL_ID}/keys/' in cardano_body
+    assert 'cp -fr /data/p${POOL_ID}-config/configs/* /configs/${POOL_ID}/' in cardano_body
 
 
 def test_versioned_compose_nodes_are_discoverable_as_dwarf_managed():
@@ -56,14 +56,45 @@ def test_custom_testnet_bootstrap_uses_immutable_support_tool_not_target_binary(
 
     monkeypatch.setattr(compose, "synthesize_amaru_bootstrap", fake_synthesize)
 
+    plan = {
+        "nodes": [
+            {"id": "bootstrap-cardano", "impl": "cardano-node"},
+            {"id": "amaru1", "impl": "amaru", "image": selected},
+        ]
+    }
     result = compose._synthesize_amaru_bootstrap_for_custom_testnet(
         runtime_root=tmp_path,
-        plan={"nodes": [{"id": "amaru1", "impl": "amaru", "image": selected}]},
+        plan=plan,
     )
 
     assert result == {"ok": True}
     assert calls[0]["loader_image"] == bootstrap.DEFAULT_LOADER_BASE_IMAGE
     assert "amaru_image" not in calls[0]
+    assert plan["nodes"][0]["omit_byron_credentials"] is True
+
+
+def test_synthetic_chain_cardano_service_omits_unrelated_byron_credentials():
+    node = {
+        "id": "bootstrap-cardano",
+        "impl": "cardano-node",
+        "listen_address": "127.0.0.1:37511",
+        "host_slot_index": 1,
+        "omit_byron_credentials": True,
+        "image": "ghcr.io/intersectmbo/cardano-node:10.7.1@sha256:" + "a" * 64,
+    }
+
+    service = compose._docker_compose_body(
+        compose_project="dwarf-profile-versioned-amaru",
+        nodes=[node],
+        network_name="testnet_42",
+    )["services"]["bootstrap-cardano"]
+    command = service["command"][0]
+
+    assert "--shelley-kes-key" in command
+    assert "--shelley-vrf-key" in command
+    assert "--shelley-operational-certificate" in command
+    assert "--byron-delegation-certificate" not in command
+    assert "--byron-signing-key" not in command
 
 
 def test_versioned_amaru_service_migrates_bootstrap_state_before_run():
