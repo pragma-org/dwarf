@@ -68,6 +68,11 @@ def ensure_loader_image(
     inspect = run_command(["docker", "image", "inspect", loader_image])
     if inspect.returncode == 0:
         return loader_image
+    if loader_image == DEFAULT_LOADER_BASE_IMAGE:
+        pull = run_command(["docker", "pull", loader_image])
+        if pull.returncode != 0:
+            raise RuntimeError(f"failed to pull immutable Amaru loader image: {pull.stderr or pull.stdout}")
+        return loader_image
     amaru_inspect = run_command(["docker", "image", "inspect", amaru_image])
     if amaru_inspect.returncode != 0:
         raise RuntimeError(f"amaru image {amaru_image} is not available to build loader override")

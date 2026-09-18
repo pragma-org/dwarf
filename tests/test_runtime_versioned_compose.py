@@ -29,7 +29,7 @@ def test_versioned_compose_nodes_are_discoverable_as_dwarf_managed():
     assert labels["ada2.service"] == "node1"
 
 
-def test_custom_testnet_bootstrap_uses_selected_amaru_artifact(monkeypatch, tmp_path):
+def test_custom_testnet_bootstrap_uses_immutable_support_tool_not_target_binary(monkeypatch, tmp_path):
     selected = "ghcr.io/pragma-org/amaru:v10.11.20260903@sha256:" + "b" * 64
     calls = []
 
@@ -45,8 +45,31 @@ def test_custom_testnet_bootstrap_uses_selected_amaru_artifact(monkeypatch, tmp_
     )
 
     assert result == {"ok": True}
-    assert calls[0]["amaru_image"] == selected
-    assert calls[0]["loader_image"].startswith("dwarf/amaru-loader:version-")
+    assert calls[0]["loader_image"] == bootstrap.DEFAULT_LOADER_BASE_IMAGE
+    assert "amaru_image" not in calls[0]
+
+
+def test_versioned_amaru_service_migrates_bootstrap_state_before_run():
+    node = {
+        "id": "amaru1",
+        "impl": "amaru",
+        "listen_address": "127.0.0.1:35001",
+        "host_slot_index": 2,
+        "chain_dir": "/tmp/chain.testnet_42.db",
+        "ledger_dir": "/tmp/ledger.testnet_42.db",
+        "container_peer_addresses": ["bootstrap-cardano:3001"],
+        "image": "ghcr.io/pragma-org/amaru:v10.11.20260730@sha256:" + "c" * 64,
+    }
+
+    body = compose._docker_compose_body(
+        compose_project="dwarf-profile-versioned-amaru",
+        nodes=[node],
+        network_name="testnet_42",
+    )
+
+    service = body["services"]["amaru1"]
+    assert service["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
+    assert "exec amaru run" in service["command"][0]
 
 
 def test_bootstrap_synthesis_builds_loader_from_selected_amaru_artifact(monkeypatch, tmp_path):

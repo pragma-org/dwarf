@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import shutil
@@ -27,7 +26,7 @@ from runtime_substrate_common import (
     wait_for_nodes_healthy,
     write_json,
 )
-from runtime_amaru_bootstrap_synth import synthesize_amaru_bootstrap
+from runtime_amaru_bootstrap_synth import DEFAULT_LOADER_BASE_IMAGE, synthesize_amaru_bootstrap
 from runtime_multi_node_observation import _query_tip_once, _resolve_socket_path
 
 
@@ -500,13 +499,13 @@ def _synthesize_amaru_bootstrap_for_custom_testnet(*, runtime_root: Path, plan: 
     selected_images = {str(node.get("image") or "").strip() for node in amaru_nodes}
     if len(selected_images) != 1 or not next(iter(selected_images)):
         raise RuntimeError("Amaru bootstrap synthesis requires one exact selected Amaru image")
-    amaru_image = next(iter(selected_images))
-    loader_suffix = hashlib.sha256(amaru_image.encode("utf-8")).hexdigest()[:16]
+    # Bootstrap state is a support artifact, not the target under test.  The
+    # immutable loader below retains the legacy conversion/import commands;
+    # current target releases consume that state through their migration path.
     return synthesize_amaru_bootstrap(
         runtime_root=runtime_root,
         plan=plan,
-        amaru_image=amaru_image,
-        loader_image=f"dwarf/amaru-loader:version-{loader_suffix}",
+        loader_image=DEFAULT_LOADER_BASE_IMAGE,
     )
 
 
@@ -647,6 +646,9 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
         }
         if node["impl"] == "amaru":
             services[node["id"]]["volumes"].append("./amaru:/amaru")
+            services[node["id"]]["environment"] = {
+                "AMARU_MIGRATE_CHAIN_DB": "true",
+            }
     return {
         "name": compose_project,
         "services": services,
