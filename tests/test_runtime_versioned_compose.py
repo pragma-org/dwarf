@@ -97,6 +97,40 @@ def test_synthetic_chain_cardano_service_omits_unrelated_byron_credentials():
     assert "--byron-signing-key" not in command
 
 
+def test_amaru_runtime_progress_requires_intersection_and_convergence():
+    text = """
+INFO build_ledger tip.hash=aaa tip.slot=259181
+INFO intersect found peer=bootstrap-cardano:3001 current=259181.aaa highest=345560.bbb
+INFO adopted tip tip.slot=259288 tip.hash=ccc tip.block_height=2636 max_block_height=2636
+INFO adopted tip tip.slot=345560 tip.hash=bbb tip.block_height=3500 max_block_height=3500
+"""
+
+    parsed = compose._parse_amaru_runtime_progress(text)
+
+    assert parsed["bootstrap_slot"] == 259181
+    assert parsed["highest_peer_slot"] == 345560
+    assert parsed["latest_adopted_slot"] == 345560
+    assert parsed["advanced"] is True
+    assert parsed["converged"] is True
+    assert parsed["ready"] is True
+
+
+def test_amaru_runtime_progress_rejects_one_block_then_vrf_failure():
+    text = """
+INFO build_ledger tip.hash=aaa tip.slot=259181
+INFO intersect found peer=bootstrap-cardano:3001 current=259181.aaa highest=345560.bbb
+INFO adopted tip tip.slot=259288 tip.hash=ccc tip.block_height=2636 max_block_height=2636
+ERROR Failed to validate header at 345740.ddd: Invalid VRF proof: VerificationFailed
+"""
+
+    parsed = compose._parse_amaru_runtime_progress(text)
+
+    assert parsed["advanced"] is True
+    assert parsed["converged"] is False
+    assert parsed["ready"] is False
+    assert parsed["blocking_signals"] == ["invalid-vrf-proof"]
+
+
 def test_versioned_amaru_service_migrates_bootstrap_state_before_run():
     node = {
         "id": "amaru1",

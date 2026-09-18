@@ -265,6 +265,123 @@ def _wait_for_cardano_node_block(
         time.sleep(sample_interval_seconds)
 
 
+def _parse_amaru_runtime_progress(text: str) -> dict:
+    bootstrap_slots = [
+        int(value)
+        for value in re.findall(r"\bbuild_ledger\b[^\n]*?\btip\.slot=([0-9]+)", text or "")
+    ]
+    highest_slots = [
+        int(value)
+        for value in re.findall(r"\bintersect found\b[^\n]*?\bhighest=([0-9]+)\.", text or "")
+    ]
+    adopted_slots = [
+        int(value)
+        for value in re.findall(r"\badopted tip\b[^\n]*?\btip\.slot=([0-9]+)", text or "")
+    ]
+    adopted_slots.extend(
+        int(value)
+        for value in re.findall(r"\btip\.adopt\b[^\n]*?\bslot=([0-9]+)", text or "")
+    )
+    blocking_patterns = {
+        "invalid-vrf-proof": r"Invalid VRF proof|VRFKeyBadProof",
+        "panic": r"\bpanicked at\b",
+        "consensus-terminated": r"\bConsensus died\b",
+        "future-rollback": r"attempted roll back in the future",
+    }
+    blocking_signals = [
+        name
+        for name, pattern in blocking_patterns.items()
+        if re.search(pattern, text or "", flags=re.IGNORECASE)
+    ]
+    bootstrap_slot = bootstrap_slots[-1] if bootstrap_slots else None
+    highest_peer_slot = max(highest_slots) if highest_slots else None
+    latest_adopted_slot = max(adopted_slots) if adopted_slots else None
+    advanced = bool(
+        bootstrap_slot is not None
+        and latest_adopted_slot is not None
+        and latest_adopted_slot > bootstrap_slot
+    )
+    converged = bool(
+        highest_peer_slot is not None
+        and latest_adopted_slot is not None
+        and latest_adopted_slot >= highest_peer_slot
+    )
+    return {
+        "bootstrap_slot": bootstrap_slot,
+        "highest_peer_slot": highest_peer_slot,
+        "latest_adopted_slot": latest_adopted_slot,
+        "intersection_found": bool(highest_slots),
+        "advanced": advanced,
+        "converged": converged,
+        "blocking_signals": blocking_signals,
+        "ready": bool(advanced and converged and not blocking_signals),
+    }
+
+
+def _wait_for_amaru_progress(
+    *,
+    nodes: list[dict],
+    timeout_seconds: float = 120.0,
+    sample_interval_seconds: float = 2.0,
+) -> dict:
+    deadline = time.monotonic() + timeout_seconds
+    attempts = 0
+    latest: dict[str, dict] = {}
+    while True:
+        attempts += 1
+        for node in nodes:
+            node_id = str(node.get("id") or node.get("name") or "")
+            log_path = Path(str(node.get("log_path") or ""))
+            try:
+                text = log_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                text = ""
+            latest[node_id] = _parse_amaru_runtime_progress(text)
+        ready_nodes = [node_id for node_id, item in latest.items() if item.get("ready")]
+        blocking = {
+            node_id: item["blocking_signals"]
+            for node_id, item in latest.items()
+            if item.get("blocking_signals")
+        }
+        if len(ready_nodes) == len(nodes):
+            return {
+                "ready": True,
+                "timed_out": False,
+                "timeout_seconds": timeout_seconds,
+                "sample_interval_seconds": sample_interval_seconds,
+                "attempt_count": attempts,
+                "ready_node_count": len(ready_nodes),
+                "ready_nodes": ready_nodes,
+                "nodes": latest,
+                "blocking_signals": {},
+            }
+        if blocking:
+            return {
+                "ready": False,
+                "timed_out": False,
+                "timeout_seconds": timeout_seconds,
+                "sample_interval_seconds": sample_interval_seconds,
+                "attempt_count": attempts,
+                "ready_node_count": len(ready_nodes),
+                "ready_nodes": ready_nodes,
+                "nodes": latest,
+                "blocking_signals": blocking,
+            }
+        if time.monotonic() >= deadline:
+            return {
+                "ready": False,
+                "timed_out": True,
+                "timeout_seconds": timeout_seconds,
+                "sample_interval_seconds": sample_interval_seconds,
+                "attempt_count": attempts,
+                "ready_node_count": len(ready_nodes),
+                "ready_nodes": ready_nodes,
+                "nodes": latest,
+                "blocking_signals": {},
+            }
+        time.sleep(sample_interval_seconds)
+
+
 def _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(*, genesis_path: Path, nodes: list[dict]) -> bool:
     if not any(
         node.get("impl") == "cardano-node"
@@ -894,6 +1011,18 @@ def _compose_substrate_docker(
             f"(ready_node_count={chain_progress_gate.get('ready_node_count', 0)})"
         )
 
+    amaru_nodes = [node for node in metadata_nodes if node["impl"] == "amaru"]
+    amaru_progress_gate = None
+    if amaru_nodes:
+        amaru_progress_gate = _wait_for_amaru_progress(nodes=amaru_nodes)
+        write_json(output_dir / "amaru-chain-progress-gate.json", amaru_progress_gate)
+        if not amaru_progress_gate.get("ready"):
+            raise RuntimeError(
+                "amaru compose substrate did not intersect, advance, and converge before the startup gate failed "
+                f"(ready_node_count={amaru_progress_gate.get('ready_node_count', 0)}, "
+                f"blocking_signals={amaru_progress_gate.get('blocking_signals', {})})"
+            )
+
     report = {
         "compose_mode": "docker",
         "healthy": all(node["healthy"] for node in report_nodes),
@@ -907,6 +1036,7 @@ def _compose_substrate_docker(
         "support_binaries": dict(support),
         "cardano_testnet_start_time_refresh": start_time_refresh,
         "cardano_chain_progress_gate": chain_progress_gate,
+        "amaru_chain_progress_gate": amaru_progress_gate,
         "public_network_assets": None,
         "nodes": report_nodes,
         "topology": plan["topology"],
