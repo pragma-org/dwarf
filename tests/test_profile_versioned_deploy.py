@@ -5,6 +5,7 @@ from profile_manager.deployment_versions import build_deployment_version_preview
 from profile_manager.profiles import (
     Profile,
     deploy_command,
+    remove_command,
     versioned_substrate_for_profile,
 )
 from scripts.runtime_substrate_common import build_version_provenance, normalize_substrate
@@ -99,3 +100,12 @@ def test_legacy_profile_preserves_existing_host_process_adapter():
 
     assert "/home/dwarf/.local/bin/cardano-node" in command
     assert "runtime_compose_substrate.py" not in command
+
+
+def test_remove_uses_retained_compose_file_and_archives_all_profile_roots():
+    command = remove_command("/opt/dwarf/cardano-profiles")
+
+    assert 'docker compose -f "$config_path" --project-name "$project" down' in command
+    assert "find \"$base_path\" -mindepth 1 -maxdepth 1 -type d" in command
+    assert "! -name archive" in command
+    assert "/profile-*" not in command

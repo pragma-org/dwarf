@@ -829,17 +829,23 @@ def remove_command(remote_base_path):
     base = shlex.quote(remote_base_path)
     return f"""set -e
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-archive_root={base}/archive
+base_path={base}
+archive_root="$base_path/archive"
 mkdir -p "$archive_root"
 # Stop and remove every Dwarf-managed compose project.
 docker ps --filter 'label=ada2.managed=dwarf' --format '{{{{.Label "com.docker.compose.project"}}}}' 2>/dev/null | sort -u | while read -r project; do
   [ -n "$project" ] || continue
-  proj_dir=$(docker compose ls --all --format json 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); import json as j
-for row in d:
-  if row.get('Name') == '$project':
-    print(row.get('ConfigFiles',''))
-    break" 2>/dev/null || true)
-  docker compose --project-name "$project" down --volumes --remove-orphans 2>/dev/null || true
+  container_id=$(docker ps -aq --filter "label=com.docker.compose.project=$project" | head -n 1)
+  config_path=""
+  if [ -n "$container_id" ]; then
+    config_path=$(docker inspect --format '{{{{ index .Config.Labels "com.docker.compose.project.config_files" }}}}' "$container_id" 2>/dev/null || true)
+    config_path=${{config_path%%,*}}
+  fi
+  if [ -n "$config_path" ] && [ -f "$config_path" ]; then
+    docker compose -f "$config_path" --project-name "$project" down --volumes --remove-orphans 2>/dev/null || true
+  else
+    docker compose --project-name "$project" down --volumes --remove-orphans 2>/dev/null || true
+  fi
 done
 # Kill stragglers (direct docker containers not in a compose project)
 docker ps --filter 'label=ada2.managed=dwarf' --format '{{{{.ID}}}}' 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
@@ -849,12 +855,10 @@ docker ps --filter 'label=ada2.managed=dwarf' --format '{{{{.ID}}}}' 2>/dev/null
 tmux ls 2>/dev/null | grep -oE '^dwarf-profile-[^:]+' | while read -r sess; do
   tmux kill-session -t "$sess" 2>/dev/null || true
 done
-# Archive runtime directories.
-for path in {base}/profile-*; do
-  if [ -e "$path" ]; then
-    name=$(basename "$path")
-    mv "$path" "$archive_root/${{name}}-$timestamp"
-  fi
+# Archive every profile runtime regardless of the operator-chosen profile id.
+find "$base_path" -mindepth 1 -maxdepth 1 -type d ! -name archive -print0 | while IFS= read -r -d '' path; do
+  name=$(basename "$path")
+  mv "$path" "$archive_root/${{name}}-$timestamp"
 done
 docker ps --filter 'label=ada2.managed=dwarf' --format 'table {{{{.Names}}}}' 2>/dev/null || true
 """
