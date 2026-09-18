@@ -43,17 +43,18 @@ def test_version_docs_include_refresh_examples_and_claim_boundaries():
     assert "Antithesis" in source
     assert "Check for new versions" in source
     assert "runtime-state overlay" in source
-    assert "10.11.20260730" in source
+    assert "10.11.20260912" in source
     assert "10.7.1" in source
 
 
 def test_qualification_status_records_bounded_search_and_resume_point():
     source = (ROOT / "dwarf/docs/version-qualification-status-2026-09-18.md").read_text(encoding="utf-8")
 
-    assert "paused" in source.lower()
+    assert "bounded newest-to-oldest search is complete" in source.lower()
     assert "20260918T032343Z-dwarf-qual-cardano-11-1-2-b1f28ed0" in source
-    assert "20260918T053321Z-dwarf-qual-amaru-10-7-1-10-11-20260730-b42c10e1" in source
-    assert "20260918T055108Z-dwarf-qual-mixed-11-1-2-10-11-20260730-aecab52f" in source
+    assert "20260918T091139Z-dwarf-qual-amaru-10-7-1-10-11-20260912-ae435ef5" in source
+    assert "20260918T085655Z-dwarf-qual-mixed-10-7-1-10-11-0-cffd4b7c" in source
+    assert "20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd" in source
     assert "resumption point" in source.lower()
 
 

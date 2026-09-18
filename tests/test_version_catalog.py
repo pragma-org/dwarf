@@ -83,6 +83,39 @@ def test_checked_in_catalog_is_valid_and_retains_current_candidates():
     assert resolve_release(catalog, "amaru", "10.11.20260912")["channel"] == "stable"
 
 
+def test_latest_confirmed_amaru_default_is_current_stable_with_disclosed_support():
+    catalog = load_version_catalog(CATALOG_PATH)
+
+    selected = resolve_default(catalog, "amaru-only")
+    verification = resolve_verification(
+        catalog, "amaru", selected["release"]["version"], "amaru-only"
+    )
+
+    assert selected["release"]["version"] == "10.11.20260912"
+    assert selected["release"]["channel"] == "stable"
+    assert verification["supporting_cardano_version"] == "10.7.1"
+    assert verification["evidence"] == [
+        "state:version-qualifications/"
+        "20260918T091139Z-dwarf-qual-amaru-10-7-1-10-11-20260912-ae435ef5"
+    ]
+
+
+def test_mixed_default_remains_reproduced_control_after_latest_pair_failure():
+    catalog = load_version_catalog(CATALOG_PATH)
+
+    selected = resolve_default(catalog, "mixed")
+    failed = next(
+        pair
+        for pair in catalog["compatibility_pairs"]
+        if pair["id"] == "cardano-11.1.2__amaru-10.11.20260912"
+    )
+
+    assert selected["pair"]["id"] == "cardano-10.7.1__amaru-10.11.0"
+    assert "20260918T085655Z" in selected["pair"]["evidence"][-1]
+    assert failed["status"] == "incompatible"
+    assert "20260918T092619Z" in failed["evidence"][0]
+
+
 def test_validation_rejects_duplicate_release_identity():
     catalog = _catalog()
     catalog["releases"].append(copy.deepcopy(catalog["releases"][0]))

@@ -40,17 +40,25 @@ releases are not assumed compatible.
 As of 2026-09-18, the checked-in defaults are:
 
 - Cardano-only: Cardano-node `11.1.2`.
-- Amaru target: Amaru `10.11.20260730`, with Cardano-node `10.7.1`
+- Amaru target: Amaru `10.11.20260912`, with Cardano-node `10.7.1`
   disclosed as the required honest bootstrap producer. This proves real Amaru
   relay/consumer behavior; it is not a claim of standalone Amaru forging.
 - Mixed: Cardano-node `10.7.1` with Amaru `10.11.0`, retained as the confirmed
-  fallback while newer exact pairs remain unconfirmed or incompatible.
+  fallback after the newest exact pair failed its isolated serve-through gate.
 
 The Amaru default is selected by retained runtime evidence, not merely by its
-upstream release channel. Newer Amaru releases `10.11.20260903` and
-`10.11.20260912` are incompatible with the retained bootstrap-store contract;
-that classification does not claim those releases are defective in every
-topology.
+upstream release channel. The current stable release passed only after DWARF
+reused the proven live-producer lifecycle: each Amaru relay bootstraps from a
+safe snapshot of the same coherent Cardano producer it subsequently follows.
+Earlier failures from a separately relaunched synthetic ChainDB are preserved
+as superseded harness evidence and are not compatibility findings.
+
+The bounded mixed check of Cardano-node `11.1.2` with Amaru
+`10.11.20260912` kept every exact process alive and both Amaru relays followed
+the chain, but the Cardano consumer fed only by those relays never advanced
+from its seeded tip during the full 30-minute recovery window. That exact pair
+is therefore incompatible with the tested serve-through contract. The result
+does not assign an unproven root cause to either node implementation.
 
 ## Refresh releases
 
@@ -85,7 +93,11 @@ records are preserved.
 
 ## Runtime proof
 
-Each qualification uses a unique project and fresh volumes and retains:
+Each qualification uses a unique project and fresh volumes. Cardano producers
+remain live with their coherent genesis, configuration, credentials, and
+ChainDB while each Amaru bootstrap wrapper works from a safe snapshot and then
+starts the exact selected Amaru binary against that same producer. DWARF
+retains:
 
 - DWARF, topology, and node source revisions;
 - requested policy and exact resolved releases;

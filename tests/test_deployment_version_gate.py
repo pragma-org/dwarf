@@ -77,6 +77,9 @@ def test_amaru_only_preview_discloses_the_required_cardano_support_node(tmp_path
 def test_amaru_preview_prefers_qualified_support_over_generic_cardano_default():
     catalog = load_version_catalog(CATALOG_PATH)
     modified = copy.deepcopy(catalog)
+    for item in modified["releases"]:
+        if item["implementation"] == "amaru" and "amaru-only" in item["verification"]:
+            item["verification"]["amaru-only"]["default"] = False
     release = next(
         item
         for item in modified["releases"]

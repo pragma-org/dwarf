@@ -76,6 +76,9 @@ def test_latest_confirmed_mixed_uses_exact_default_pair_and_artifacts():
 def test_confirmed_amaru_default_resolves_its_qualified_cardano_support():
     catalog = load_version_catalog(CATALOG_PATH)
     modified = copy.deepcopy(catalog)
+    for item in modified["releases"]:
+        if item["implementation"] == "amaru" and "amaru-only" in item["verification"]:
+            item["verification"]["amaru-only"]["default"] = False
     release = next(
         item
         for item in modified["releases"]
@@ -127,7 +130,7 @@ def test_exact_unlisted_pair_is_unknown_not_implicitly_compatible():
         node_count=1,
         amaru_node_count=1,
         version_policy="exact",
-        cardano_version="11.1.2",
+        cardano_version="11.1.1",
         amaru_version="10.11.20260912",
     )
 
@@ -145,7 +148,7 @@ def test_incompatible_pair_is_a_hard_block():
     incompatible["compatibility_pairs"].append(
         {
             "id": "incompatible-current",
-            "cardano_version": "11.1.2",
+            "cardano_version": "11.1.1",
             "amaru_version": "10.11.20260912",
             "status": "incompatible",
             "default": False,
@@ -196,7 +199,7 @@ def test_shipped_version_aware_defaults_resolve_exact_confirmed_contracts():
     profiles_root = CATALOG_PATH.parents[1] / "profiles"
     expected = {
         "profile-n-cardano-latest-confirmed": ("cardano-only", "11.1.2", None),
-        "profile-o-amaru-target-latest-confirmed": ("amaru-only", "10.11.20260730", "10.7.1"),
+        "profile-o-amaru-target-latest-confirmed": ("amaru-only", "10.11.20260912", "10.7.1"),
         "profile-p-mixed-latest-confirmed": ("mixed", "10.11.0", None),
     }
     for profile_id, (scope, target_version, support_version) in expected.items():

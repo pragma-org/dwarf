@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-18T06:35:04Z",
+  "updated_at": "2026-09-18T10:08:43Z",
   "sources": {
     "amaru": "https://github.com/pragma-org/amaru",
     "amaru_wiki_revision": "4ff6cd8d4f0e723bcf60976ea3b68259e48e932c",
@@ -39,10 +39,13 @@
         "mixed": {
           "status": "unknown",
           "default": false,
-          "checked_at": "2026-09-17T21:30:00Z",
-          "reason": "The successful upstream mixed topology intentionally pins Cardano-node 10.7.1; 11.1.2 is not yet qualified in that topology.",
-          "evidence": [],
+          "checked_at": "2026-09-18T10:08:43Z",
+          "reason": "Cardano-node 11.1.2 remains pair-specific for mixed use. Its exact pairing with Amaru 10.11.20260912 failed the isolated serve-through contract while both implementations stayed live and advanced; see the compatibility-pair record.",
+          "evidence": [
+            "state:version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd"
+          ],
           "issues": [
+            "https://github.com/cardano-foundation/cardano-node-antithesis/issues/182",
             "https://github.com/cardano-foundation/cardano-node-antithesis/issues/236"
           ]
         }
@@ -169,11 +172,12 @@
         "mixed": {
           "status": "confirmed",
           "default": false,
-          "checked_at": "2026-09-17T19:33:00Z",
-          "reason": "The retained pre-staged mixed topology passed all mixed readiness gates.",
+          "checked_at": "2026-09-18T09:11:11Z",
+          "reason": "The exact Cardano-node 10.7.1 and Amaru 10.11.0 control was reproduced from fresh volumes with the proven live-producer snapshot lifecycle and passed every mixed readiness, identity, convergence, fatal-signal, and teardown gate.",
           "evidence": [
             "workbench:dwarf-latest/obj_7b551786555142b78aecdcc5",
-            "state:topology-health/latest.json"
+            "state:topology-health/latest.json",
+            "state:version-qualifications/20260918T085655Z-dwarf-qual-mixed-10-7-1-10-11-0-cffd4b7c"
           ],
           "issues": []
         }
@@ -3381,24 +3385,31 @@
       ],
       "verification": {
         "amaru-only": {
-          "status": "incompatible",
-          "default": false,
-          "checked_at": "2026-09-18T04:06:43Z",
-          "reason": "The exact release cannot open the retained schema-3 bootstrap store: migration reaches schema 4 but refuses schema 5 because the snapshot lacks complete pool opcert sequence numbers. A newer bootstrap producer/snapshot contract is required.",
+          "status": "confirmed",
+          "default": true,
+          "checked_at": "2026-09-18T09:25:53Z",
+          "supporting_cardano_version": "10.7.1",
+          "reason": "Newest stable Amaru release passed the exact fresh-volume target contract using the proven live-producer snapshot lifecycle with Cardano-node 10.7.1 disclosed as support: both exact Amaru binaries advanced, served the isolated Amaru-fed consumer to zero-lag convergence, remained restart-free, emitted no fatal signal, and tore down cleanly.",
           "evidence": [
-            "state:version-qualifications/20260918T035418Z-dwarf-qual-amaru-10-7-1-10-11-20260912-0100e9d2"
+            "state:version-qualifications/20260918T091139Z-dwarf-qual-amaru-10-7-1-10-11-20260912-ae435ef5"
           ],
           "issues": [
-            "https://github.com/pragma-org/amaru/issues/999"
+            "https://github.com/pragma-org/amaru/issues/1152",
+            "https://github.com/pragma-org/amaru/pull/1153"
           ]
         },
         "mixed": {
           "status": "unknown",
           "default": false,
-          "checked_at": "2026-09-17T21:30:00Z",
-          "reason": "Not yet qualified with a released Cardano-node pair under the full mixed readiness contract.",
-          "evidence": [],
-          "issues": []
+          "checked_at": "2026-09-18T10:08:43Z",
+          "reason": "The release is confirmed for the Amaru-target scope with Cardano-node 10.7.1 support. Its exact pairing with Cardano-node 11.1.2 failed the mixed isolated-consumer serve-through contract; mixed compatibility remains pair-specific.",
+          "evidence": [
+            "state:version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd"
+          ],
+          "issues": [
+            "https://github.com/cardano-foundation/cardano-node-antithesis/issues/179",
+            "https://github.com/cardano-foundation/cardano-node-antithesis/issues/182"
+          ]
         }
       }
     },
@@ -3419,15 +3430,16 @@
       ],
       "verification": {
         "amaru-only": {
-          "status": "incompatible",
+          "status": "unknown",
           "default": false,
-          "checked_at": "2026-09-18T04:39:19Z",
-          "reason": "The exact released Amaru process reached startup against the retained fresh bootstrap contract, migrated schema 3 to 4, then refused schema 4 to 5 because the bootstrap snapshot has incomplete pool opcert sequence numbers.",
+          "checked_at": "2026-09-18T09:25:53Z",
+          "reason": "The prior incompatible result used the superseded one-shot synthetic bootstrap lifecycle. The corrected live-producer snapshot lifecycle disproved that blocker for the newer 20260912 release; this exact older release remains selectable but unqualified under the corrected contract.",
           "evidence": [
             "state:version-qualifications/20260918T042638Z-dwarf-qual-amaru-10-7-1-10-11-20260903-abae8d37"
           ],
           "issues": [
-            "https://github.com/pragma-org/amaru/issues/999"
+            "https://github.com/pragma-org/amaru/issues/1152",
+            "https://github.com/pragma-org/amaru/pull/1153"
           ]
         },
         "mixed": {
@@ -3560,10 +3572,10 @@
       "verification": {
         "amaru-only": {
           "status": "confirmed",
-          "default": true,
+          "default": false,
           "checked_at": "2026-09-18T05:47:21Z",
           "supporting_cardano_version": "10.7.1",
-          "reason": "Passed the exact fresh-volume Amaru target contract with Cardano 10.7.1 as the disclosed bootstrap producer: both Amaru relays reached the bootstrap marker, sustained chain progress, served an isolated Amaru-fed consumer to convergence, restarted without state loss, recovered, and completed with no fatal termination.",
+          "reason": "Passed the exact fresh-volume Amaru target contract with Cardano 10.7.1 as the disclosed bootstrap producer: both Amaru relays reached the bootstrap marker, sustained chain progress, served an isolated Amaru-fed consumer to convergence, remained restart-free, and completed with no fatal termination.",
           "evidence": [
             "state:version-qualifications/20260918T053321Z-dwarf-qual-amaru-10-7-1-10-11-20260730-b42c10e1"
           ],
@@ -3665,11 +3677,12 @@
         "mixed": {
           "status": "confirmed",
           "default": false,
-          "checked_at": "2026-09-17T19:33:00Z",
-          "reason": "The retained pre-staged mixed topology passed all mixed readiness gates.",
+          "checked_at": "2026-09-18T09:11:11Z",
+          "reason": "The exact Cardano-node 10.7.1 and Amaru 10.11.0 control was reproduced from fresh volumes with the proven live-producer snapshot lifecycle and passed every mixed readiness, identity, convergence, fatal-signal, and teardown gate.",
           "evidence": [
             "workbench:dwarf-latest/obj_7b551786555142b78aecdcc5",
-            "state:topology-health/latest.json"
+            "state:topology-health/latest.json",
+            "state:version-qualifications/20260918T085655Z-dwarf-qual-mixed-10-7-1-10-11-0-cffd4b7c"
           ],
           "issues": []
         }
@@ -3848,15 +3861,33 @@
   ],
   "compatibility_pairs": [
     {
+      "id": "cardano-11.1.2__amaru-10.11.20260912",
+      "cardano_version": "11.1.2",
+      "amaru_version": "10.11.20260912",
+      "status": "incompatible",
+      "default": false,
+      "checked_at": "2026-09-18T10:08:43Z",
+      "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
+      "dwarf_revision": "15aad96a348d57ae98f7c8037caddf8d327d0479",
+      "reason": "The exact fresh-volume pair failed DWARF's mixed serve-through contract after the full 30-minute recovery window. Cardano producers and both exact Amaru relays advanced to slot 5001 without fatal signals or restarts, while the isolated Cardano-node consumer whose only upstreams were Amaru remained at its seeded slot 1362 and ended 3639 slots behind. Exact identity, fresh state, path isolation, no-fatal, no-restart, and clean-teardown gates passed; consumer progress, convergence, peer formation, and required-service gates did not. This classifies the pair/topology contract without assigning an unproven root cause to either implementation.",
+      "evidence": [
+        "state:version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd"
+      ],
+      "issues": [
+        "https://github.com/cardano-foundation/cardano-node-antithesis/issues/179",
+        "https://github.com/cardano-foundation/cardano-node-antithesis/issues/182"
+      ]
+    },
+    {
       "id": "cardano-11.1.2__amaru-10.11.20260730",
       "cardano_version": "11.1.2",
       "amaru_version": "10.11.20260730",
-      "status": "incompatible",
+      "status": "unknown",
       "default": false,
-      "checked_at": "2026-09-18T06:35:04Z",
+      "checked_at": "2026-09-18T10:08:43Z",
       "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
       "dwarf_revision": "4b632d5e6864964dbc033a58fa7155352ba390ba",
-      "reason": "The exact fresh-volume pair failed DWARF's required serve-through mixed contract. Both Amaru relays followed the producers to slot 5193, but the isolated Cardano-node 11.1.2 consumer whose only upstreams were those Amaru relays remained at slot 1368 throughout the 30-minute observation and ended 3825 slots behind. Exact identities, no-fatal, no-restart, isolation, and clean-teardown gates passed; consumer progress, convergence, peer formation, and required-service gates did not. This classifies the pair/topology contract without assigning an unproven root cause to either implementation.",
+      "reason": "The retained failure used the superseded separately relaunched synthetic ChainDB lifecycle. It remains useful harness evidence but is not a current compatibility classification; this exact older pair is unqualified under the corrected live-producer snapshot contract.",
       "evidence": [
         "state:version-qualifications/20260918T055108Z-dwarf-qual-mixed-11-1-2-10-11-20260730-aecab52f"
       ],
@@ -3869,34 +3900,37 @@
       "id": "cardano-10.7.1__amaru-10.11.20260903",
       "cardano_version": "10.7.1",
       "amaru_version": "10.11.20260903",
-      "status": "incompatible",
+      "status": "unknown",
       "default": false,
-      "checked_at": "2026-09-18T04:39:19Z",
+      "checked_at": "2026-09-18T10:08:43Z",
       "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
       "dwarf_revision": "9c4839946b866a60261ac78661814f2e1cb8895c",
-      "reason": "The retained bootstrap producer emits a schema-3 Amaru ChainDB. Amaru 10.11.20260903 refuses the schema-4-to-5 migration because the snapshot lacks complete pool opcert sequence numbers.",
+      "reason": "The retained failure used the superseded separately relaunched synthetic ChainDB lifecycle. It remains useful harness evidence but is not a current compatibility classification; this exact older pair is unqualified under the corrected live-producer snapshot contract.",
       "evidence": [
         "state:version-qualifications/20260918T042638Z-dwarf-qual-amaru-10-7-1-10-11-20260903-abae8d37"
       ],
       "issues": [
-        "https://github.com/pragma-org/amaru/issues/999"
+        "https://github.com/pragma-org/amaru/issues/1152",
+        "https://github.com/pragma-org/amaru/pull/1153"
       ]
     },
     {
       "id": "cardano-10.7.1__amaru-10.11.20260912",
       "cardano_version": "10.7.1",
       "amaru_version": "10.11.20260912",
-      "status": "incompatible",
+      "status": "unknown",
       "default": false,
-      "checked_at": "2026-09-18T04:06:43Z",
+      "checked_at": "2026-09-18T10:08:43Z",
       "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
       "dwarf_revision": "2da8c3b73c26cd3027f3d7d09077fb808672d0d4",
-      "reason": "The retained bootstrap producer emits a schema-3 Amaru ChainDB. Amaru 10.11.20260912 requires schema 6 and refuses the schema-4-to-5 migration because the snapshot lacks complete pool opcert sequence numbers.",
+      "reason": "The prior incompatible result used the superseded separately relaunched synthetic ChainDB lifecycle. The corrected Amaru-target run proves this release can follow and serve through the live Cardano-node 10.7.1 producer path, but the bounded search did not promote that target-scope run into a separate mixed-pair claim.",
       "evidence": [
-        "state:version-qualifications/20260918T035418Z-dwarf-qual-amaru-10-7-1-10-11-20260912-0100e9d2"
+        "state:version-qualifications/20260918T035418Z-dwarf-qual-amaru-10-7-1-10-11-20260912-0100e9d2",
+        "state:version-qualifications/20260918T091139Z-dwarf-qual-amaru-10-7-1-10-11-20260912-ae435ef5"
       ],
       "issues": [
-        "https://github.com/pragma-org/amaru/issues/999"
+        "https://github.com/pragma-org/amaru/issues/1152",
+        "https://github.com/pragma-org/amaru/pull/1153"
       ]
     },
     {
@@ -3905,13 +3939,14 @@
       "amaru_version": "10.11.0",
       "status": "confirmed",
       "default": true,
-      "checked_at": "2026-09-17T19:33:00Z",
+      "checked_at": "2026-09-18T09:11:11Z",
       "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
-      "dwarf_revision": "ea4a59511a414b51f045f2253944a6896e8d52b6",
-      "reason": "Exact retained pre-staged pair passed the mixed readiness contract; retained as the known-good fallback while newer pairs are qualified.",
+      "dwarf_revision": "15aad96a348d57ae98f7c8037caddf8d327d0479",
+      "reason": "The exact pair was reproduced from fresh volumes with the proven live-producer snapshot lifecycle and passed every mixed readiness, exact-identity, convergence, fatal-signal, and clean-teardown gate. It remains the bounded-search fallback after the newest exact pair failed its isolated serve-through contract.",
       "evidence": [
         "workbench:dwarf-latest/obj_7b551786555142b78aecdcc5",
-        "state:topology-health/latest.json"
+        "state:topology-health/latest.json",
+        "state:version-qualifications/20260918T085655Z-dwarf-qual-mixed-10-7-1-10-11-0-cffd4b7c"
       ],
       "issues": []
     }

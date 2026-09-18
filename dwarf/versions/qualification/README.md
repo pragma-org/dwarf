@@ -1,9 +1,12 @@
 # Real-node version qualification
 
 `dwarf/scripts/qualify_node_versions.py` derives isolated candidate projects
-from the checked-in upstream mixed topology baseline. It never mutates the
-retained `cardano_amaru_relay_bootstrap_control` project and never promotes a
-catalog record automatically.
+from the checked-in, locally proven `cardano_amaru_relay_bootstrap_control`
+lifecycle. The Cardano producers stay running with coherent genesis,
+configuration, credentials, and ChainDB; each Amaru wrapper bootstraps from a
+safe snapshot of its paired producer and then follows that same live producer.
+It never mutates the retained control project and never promotes a catalog
+record automatically.
 
 Contracts:
 
