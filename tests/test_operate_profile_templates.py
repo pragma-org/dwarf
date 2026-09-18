@@ -36,8 +36,18 @@ def test_profile_template_catalog_lists_every_shipped_template():
     rows = module.profile_template_catalog_rows(templates_dir=TEMPLATES)
 
     assert {row["id"] for row in rows} == expected
-    assert len(rows) == 9
+    assert len(rows) == 10
     assert all(row["status"] == "valid" for row in rows)
+    defaults = {
+        row["id"]: row["rendered_data"].get("version_policy")
+        for row in rows
+        if row["id"] in {"generated-haskell", "generated-amaru", "generated-mixed"}
+    }
+    assert defaults == {
+        "generated-haskell": "latest-confirmed",
+        "generated-amaru": "latest-confirmed",
+        "generated-mixed": "latest-confirmed",
+    }
 
 
 def test_profile_template_detail_extracts_substitutions_node_mix_and_assumptions():
@@ -155,7 +165,7 @@ def test_profile_template_routes_render_read_only_detail_and_builder_link():
 def test_dashboard_dispatches_profile_template_routes_and_builder_preselection():
     dashboard = importlib.import_module("profile_manager.dashboard")
 
-    assert "9 templates" in dashboard.render_route_html("/operate/profile-templates")
+    assert "10 templates" in dashboard.render_route_html("/operate/profile-templates")
     assert "preview-mixed-minimal" in dashboard.render_route_html(
         "/operate/profile-templates/mixed-minimal"
     )
@@ -211,7 +221,7 @@ def test_profile_template_archive_and_source_download_are_exact_and_clean():
     with gzip.GzipFile(fileobj=io.BytesIO(first[2]), mode="rb") as zipped:
         with tarfile.open(fileobj=zipped, mode="r:") as archive:
             names = archive.getnames()
-    assert len(names) == 10
+        assert len(names) == 11
     assert "DWARF-EXPORT-MANIFEST.json" in names
     assert names == sorted(names)
     assert not any("._" in name or "__pycache__" in name for name in names)

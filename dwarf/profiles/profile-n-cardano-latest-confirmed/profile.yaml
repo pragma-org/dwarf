@@ -1,6 +1,6 @@
 {
-  "id": "{{PROFILE_ID}}",
-  "label": "{{PROFILE_LABEL}}",
+  "id": "profile-n-cardano-latest-confirmed",
+  "label": "Cardano devnet — latest confirmed",
   "haskell_count": 3,
   "amaru_count": 0,
   "network_magic": 42,

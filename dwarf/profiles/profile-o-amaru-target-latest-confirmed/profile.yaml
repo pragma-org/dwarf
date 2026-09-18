@@ -1,8 +1,8 @@
 {
-  "id": "{{PROFILE_ID}}",
-  "label": "{{PROFILE_LABEL}}",
-  "haskell_count": 3,
-  "amaru_count": 0,
+  "id": "profile-o-amaru-target-latest-confirmed",
+  "label": "Amaru target devnet — latest confirmed",
+  "haskell_count": 0,
+  "amaru_count": 1,
   "network_magic": 42,
   "peer_sharing": false,
   "version_policy": "latest-confirmed",

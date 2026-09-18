@@ -1,4 +1,5 @@
 import copy
+import json
 from pathlib import Path
 
 import pytest
@@ -188,3 +189,23 @@ def test_invalid_policy_fails_closed():
             _profile(version_policy="whatever-is-newest"),
             load_version_catalog(CATALOG_PATH),
         )
+
+
+def test_shipped_version_aware_defaults_resolve_exact_confirmed_contracts():
+    catalog = load_version_catalog(CATALOG_PATH)
+    profiles_root = CATALOG_PATH.parents[1] / "profiles"
+    expected = {
+        "profile-n-cardano-latest-confirmed": ("cardano-only", "11.1.2", None),
+        "profile-o-amaru-target-latest-confirmed": ("amaru-only", "10.11.20260730", "10.7.1"),
+        "profile-p-mixed-latest-confirmed": ("mixed", "10.11.0", None),
+    }
+    for profile_id, (scope, target_version, support_version) in expected.items():
+        body = json.loads((profiles_root / profile_id / "profile.yaml").read_text(encoding="utf-8"))
+        resolved = resolve_profile_versions(body, catalog)
+        assert body["version_policy"] == "latest-confirmed"
+        assert resolved["scope"] == scope
+        assert resolved["status"] == "confirmed"
+        implementation = "cardano-node" if scope == "cardano-only" else "amaru"
+        assert resolved["resolved"][implementation]["version"] == target_version
+        if support_version:
+            assert resolved["supporting"]["cardano-node"]["version"] == support_version

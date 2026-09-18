@@ -1,8 +1,8 @@
 {
-  "id": "{{PROFILE_ID}}",
-  "label": "{{PROFILE_LABEL}}",
-  "haskell_count": 3,
-  "amaru_count": 0,
+  "id": "profile-p-mixed-latest-confirmed",
+  "label": "Mixed devnet — latest confirmed pair",
+  "haskell_count": 2,
+  "amaru_count": 1,
   "network_magic": 42,
   "peer_sharing": false,
   "version_policy": "latest-confirmed",
