@@ -8,6 +8,7 @@ import json
 import subprocess
 import sys
 import urllib.request
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -143,6 +144,58 @@ def resolve_oci_artifacts(implementation: str, tag: str, release: dict[str, Any]
     return artifacts
 
 
+def resolve_oci_artifacts_http(
+    implementation: str, tag: str, release: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Resolve the public GHCR descriptor without a Docker client."""
+
+    repositories = {
+        "cardano-node": "intersectmbo/cardano-node",
+        "amaru": "pragma-org/amaru",
+    }
+    repository = repositories[implementation]
+    reference = f"ghcr.io/{repository}:{tag}"
+    artifact: dict[str, Any] = {
+        "kind": "oci",
+        "reference": reference,
+        "availability": "unknown",
+    }
+    try:
+        scope = urllib.parse.quote(f"repository:{repository}:pull", safe="")
+        token_request = urllib.request.Request(
+            f"https://ghcr.io/token?service=ghcr.io&scope={scope}",
+            headers={"User-Agent": "DWARF-version-catalog-refresh"},
+        )
+        with urllib.request.urlopen(token_request, timeout=20) as response:
+            token_body = json.loads(response.read())
+        token = str(token_body.get("token") or token_body.get("access_token") or "")
+        if not token:
+            return [artifact]
+        manifest_request = urllib.request.Request(
+            f"https://ghcr.io/v2/{repository}/manifests/{urllib.parse.quote(tag, safe='')}",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": ", ".join((
+                    "application/vnd.oci.image.index.v1+json",
+                    "application/vnd.oci.image.manifest.v1+json",
+                    "application/vnd.docker.distribution.manifest.list.v2+json",
+                    "application/vnd.docker.distribution.manifest.v2+json",
+                )),
+                "User-Agent": "DWARF-version-catalog-refresh",
+            },
+        )
+        with urllib.request.urlopen(manifest_request, timeout=20) as response:
+            digest = str(response.headers.get("Docker-Content-Digest") or "")
+        if digest.startswith("sha256:") and len(digest) == 71:
+            artifact["availability"] = "available"
+            artifact["digest"] = digest
+    except Exception:
+        # Discovery is advisory.  The caller exposes an unresolved artifact as
+        # unknown and does not merge it into exact selectors.
+        pass
+    return [artifact]
+
+
 def load_git_tag_revisions(repository: str) -> dict[str, str]:
     """Resolve every release tag in one public Git transport request."""
 
@@ -213,14 +266,20 @@ def refresh_version_catalog(
             if not tag or not published_at:
                 continue
             version = _version_text(implementation, tag)
+            key = (implementation, version)
+            prior = existing.get(key)
+            # Discovery is additive.  A retained entry may be bound to
+            # qualification evidence, so never re-resolve or replace any of
+            # its identity fields from a mutable upstream tag.
+            if prior is not None:
+                discovered[key] = copy.deepcopy(prior)
+                continue
             if tag_revision_resolver is None:
                 commit_url = f"https://api.github.com/repos/{repository}/commits/{tag}"
                 commit = fetch_json(commit_url)
                 source_revision = str((commit or {}).get("sha") or "")
             else:
                 source_revision = str(tag_revision_resolver(repository, tag) or "")
-            key = (implementation, version)
-            prior = existing.get(key, {})
             should_resolve_artifacts = (
                 artifact_limit_per_implementation is None
                 or artifact_lookups < artifact_limit_per_implementation
@@ -228,16 +287,6 @@ def refresh_version_catalog(
             artifacts = artifact_resolver(implementation, tag, release) if should_resolve_artifacts else []
             if should_resolve_artifacts:
                 artifact_lookups += 1
-            prior_is_confirmed = any(
-                isinstance(record, dict) and record.get("status") == "confirmed"
-                for record in (prior.get("verification") or {}).values()
-            )
-            # A confirmed record is evidence about an exact artifact, not the
-            # mutable release tag as it resolves today. Keep that binding.
-            if prior_is_confirmed and prior.get("artifacts"):
-                artifacts = copy.deepcopy(prior["artifacts"])
-            elif not artifacts and prior.get("artifacts"):
-                artifacts = copy.deepcopy(prior["artifacts"])
             discovered[key] = {
                 "implementation": implementation,
                 "version": version,
@@ -247,7 +296,7 @@ def refresh_version_catalog(
                 "release_url": str(release.get("html_url") or ""),
                 "artifacts": artifacts,
                 "verification": copy.deepcopy(
-                    prior.get("verification") or _unknown_verification(implementation, refreshed_at)
+                    _unknown_verification(implementation, refreshed_at)
                 ),
             }
 

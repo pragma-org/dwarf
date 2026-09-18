@@ -4,6 +4,7 @@ import json
 from scripts.refresh_version_catalog import (
     refresh_version_catalog,
     resolve_oci_artifacts,
+    resolve_oci_artifacts_http,
     write_catalog_candidate,
 )
 
@@ -250,6 +251,24 @@ def test_refresh_uses_batched_tag_revision_resolver_when_provided():
     assert len(newest["source_revision"]) == 40
 
 
+def test_refresh_does_not_reresolve_retained_release_identity():
+    commit_tags = []
+
+    def tracked_fetch(url):
+        if "/commits/" in url:
+            commit_tags.append(url.rsplit("/", 1)[-1])
+        return _fake_fetch(url)
+
+    refresh_version_catalog(
+        _existing_catalog(),
+        fetch_json=tracked_fetch,
+        artifact_resolver=_artifact_resolver,
+        checked_at="2026-09-17T22:00:00Z",
+    )
+
+    assert "11.1.1" not in commit_tags
+
+
 def test_amaru_artifact_resolution_preserves_the_official_v_prefixed_tag(monkeypatch):
     commands = []
 
@@ -272,6 +291,44 @@ def test_amaru_artifact_resolution_preserves_the_official_v_prefixed_tag(monkeyp
     assert commands[0][4] == "ghcr.io/pragma-org/amaru:v10.11.20260912"
     assert artifacts[0]["reference"] == "ghcr.io/pragma-org/amaru:v10.11.20260912"
     assert artifacts[0]["availability"] == "available"
+
+
+def test_http_artifact_resolution_needs_no_docker_cli(monkeypatch):
+    requests = []
+
+    class Response:
+        def __init__(self, body=b"{}", headers=None):
+            self._body = body
+            self.headers = headers or {}
+
+        def read(self):
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    def open_url(request, timeout):
+        requests.append(request)
+        if "ghcr.io/token" in request.full_url:
+            return Response(json.dumps({"token": "registry-token"}).encode())
+        return Response(headers={"Docker-Content-Digest": "sha256:" + "c" * 64})
+
+    monkeypatch.setattr("scripts.refresh_version_catalog.urllib.request.urlopen", open_url)
+
+    artifacts = resolve_oci_artifacts_http(
+        "amaru", "v10.11.20260912", {"tag_name": "v10.11.20260912"}
+    )
+
+    assert len(requests) == 2
+    assert artifacts == [{
+        "kind": "oci",
+        "reference": "ghcr.io/pragma-org/amaru:v10.11.20260912",
+        "availability": "available",
+        "digest": "sha256:" + "c" * 64,
+    }]
 
 
 def test_write_candidate_does_not_overwrite_source_catalog(tmp_path):

@@ -182,9 +182,8 @@ def perform_release_refresh(
     from scripts.refresh_version_catalog import (
         REPOSITORIES,
         fetch_json_url,
-        load_git_tag_revisions,
         refresh_version_catalog,
-        resolve_oci_artifacts,
+        resolve_oci_artifacts_http,
     )
 
     attempted_at = checked_at or _timestamp()
@@ -226,31 +225,14 @@ def perform_release_refresh(
         if implementation:
             source_status[implementation] = "ok"
         return result
-    resolve_artifact = artifact_resolver or resolve_oci_artifacts
+    resolve_artifact = artifact_resolver or resolve_oci_artifacts_http
     try:
-        if tag_revision_resolver is None:
-            revisions: dict[str, dict[str, str]] = {}
-            for implementation, repository in REPOSITORIES.items():
-                try:
-                    revisions[repository] = load_git_tag_revisions(repository)
-                except Exception:
-                    source_status[implementation] = "error"
-                    raise
-
-            def resolve_tag(repository: str, tag: str) -> str:
-                revision = revisions.get(repository, {}).get(tag)
-                if not revision:
-                    raise ValueError(f"official release tag {repository}@{tag} has no exact revision")
-                return revision
-        else:
-            resolve_tag = tag_revision_resolver
-
         candidate = refresh_version_catalog(
             source,
             fetch_json=tracked_fetch,
             artifact_resolver=resolve_artifact,
             artifact_limit_per_implementation=3,
-            tag_revision_resolver=resolve_tag,
+            tag_revision_resolver=tag_revision_resolver,
             checked_at=attempted_at,
         )
         _atomic_json(candidate_path(state_dir), candidate)
