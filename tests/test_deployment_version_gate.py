@@ -70,7 +70,7 @@ def test_amaru_only_preview_discloses_the_required_cardano_support_node(tmp_path
     preview = profile_deployment_version_preview(profile_id)
 
     assert preview["scope"] == "amaru-only"
-    assert preview["supporting"]["cardano-node"]["version"] == "11.1.2"
+    assert preview["supporting"]["cardano-node"]["version"] == "10.7.1"
 
 
 def test_amaru_preview_prefers_qualified_support_over_generic_cardano_default():

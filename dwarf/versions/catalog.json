@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-18T04:08:53.185701Z",
+  "updated_at": "2026-09-18T05:47:21Z",
   "sources": {
     "amaru": "https://github.com/pragma-org/amaru",
     "amaru_wiki_revision": "4ff6cd8d4f0e723bcf60976ea3b68259e48e932c",
@@ -3559,11 +3559,14 @@
       ],
       "verification": {
         "amaru-only": {
-          "status": "unknown",
-          "default": false,
-          "checked_at": "2026-09-18T04:08:53.185701Z",
-          "reason": "Discovered from the official release feed; real-node qualification is pending.",
-          "evidence": [],
+          "status": "confirmed",
+          "default": true,
+          "checked_at": "2026-09-18T05:47:21Z",
+          "supporting_cardano_version": "10.7.1",
+          "reason": "Passed the exact fresh-volume Amaru target contract with Cardano 10.7.1 as the disclosed bootstrap producer: both Amaru relays reached the bootstrap marker, sustained chain progress, served an isolated Amaru-fed consumer to convergence, restarted without state loss, recovered, and completed with no fatal termination.",
+          "evidence": [
+            "state:version-qualifications/20260918T053321Z-dwarf-qual-amaru-10-7-1-10-11-20260730-b42c10e1"
+          ],
           "issues": []
         },
         "mixed": {
