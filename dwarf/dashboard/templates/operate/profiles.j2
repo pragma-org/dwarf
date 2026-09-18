@@ -46,7 +46,8 @@ async function previewDeploy(btn){
     var preview=await resp.json();
     if(!resp.ok){out.textContent='Preview refused: '+(preview.message||preview.error||'unknown error');return;}
     var versions=Object.keys(preview.resolved||{}).map(function(key){return key+' '+preview.resolved[key].version;}).join(' + ')||'legacy runtime resolution';
-    out.textContent='Policy: '+preview.policy+'\nScope: '+preview.scope+'\nStatus: '+preview.status+'\nResolved: '+versions+'\nCatalog: '+preview.catalog_revision+'\n'+(preview.reason||'');
+    var support=Object.keys(preview.supporting||{}).map(function(key){return key+' '+preview.supporting[key].version;}).join(', ');
+    out.textContent='Policy: '+preview.policy+'\nScope: '+preview.scope+'\nStatus: '+preview.status+'\nResolved targets: '+versions+(support?'\nRequired support node: '+support:'')+'\nCatalog: '+preview.catalog_revision+'\n'+(preview.reason||'');
     actions.innerHTML='';
     if(preview.blocked){return;}
     var run=document.createElement('button'); run.type='button';

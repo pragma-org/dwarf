@@ -54,6 +54,25 @@ def test_preview_exposes_exact_release_status_digest_and_catalog_revision(tmp_pa
     assert len(preview["catalog_revision"]) == 64
 
 
+def test_amaru_only_preview_discloses_the_required_cardano_support_node(tmp_path, monkeypatch):
+    profile_id = _profile(tmp_path, monkeypatch)
+    path = tmp_path / "profiles" / profile_id / "profile.yaml"
+    body = json.loads(path.read_text(encoding="utf-8"))
+    body.update({
+        "node_type": "amaru",
+        "node_count": 0,
+        "amaru_node_count": 1,
+        "version_policy": "exact",
+        "amaru_version": "10.11.20260730",
+    })
+    path.write_text(json.dumps(body) + "\n", encoding="utf-8")
+
+    preview = profile_deployment_version_preview(profile_id)
+
+    assert preview["scope"] == "amaru-only"
+    assert preview["supporting"]["cardano-node"]["version"] == "11.1.2"
+
+
 def test_unknown_requires_one_run_acknowledgement(tmp_path, monkeypatch):
     profile_id = _profile(tmp_path, monkeypatch)
     preview = profile_deployment_version_preview(profile_id)
