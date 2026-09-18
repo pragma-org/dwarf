@@ -3419,12 +3419,16 @@
       ],
       "verification": {
         "amaru-only": {
-          "status": "unknown",
+          "status": "incompatible",
           "default": false,
-          "checked_at": "2026-09-18T04:08:53.185701Z",
-          "reason": "Discovered from the official release feed; real-node qualification is pending.",
-          "evidence": [],
-          "issues": []
+          "checked_at": "2026-09-18T04:39:19Z",
+          "reason": "The exact released Amaru process reached startup against the retained fresh bootstrap contract, migrated schema 3 to 4, then refused schema 4 to 5 because the bootstrap snapshot has incomplete pool opcert sequence numbers.",
+          "evidence": [
+            "state:version-qualifications/20260918T042638Z-dwarf-qual-amaru-10-7-1-10-11-20260903-abae8d37"
+          ],
+          "issues": [
+            "https://github.com/pragma-org/amaru/issues/999"
+          ]
         },
         "mixed": {
           "status": "unknown",
@@ -3840,6 +3844,23 @@
     }
   ],
   "compatibility_pairs": [
+    {
+      "id": "cardano-10.7.1__amaru-10.11.20260903",
+      "cardano_version": "10.7.1",
+      "amaru_version": "10.11.20260903",
+      "status": "incompatible",
+      "default": false,
+      "checked_at": "2026-09-18T04:39:19Z",
+      "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
+      "dwarf_revision": "9c4839946b866a60261ac78661814f2e1cb8895c",
+      "reason": "The retained bootstrap producer emits a schema-3 Amaru ChainDB. Amaru 10.11.20260903 refuses the schema-4-to-5 migration because the snapshot lacks complete pool opcert sequence numbers.",
+      "evidence": [
+        "state:version-qualifications/20260918T042638Z-dwarf-qual-amaru-10-7-1-10-11-20260903-abae8d37"
+      ],
+      "issues": [
+        "https://github.com/pragma-org/amaru/issues/999"
+      ]
+    },
     {
       "id": "cardano-10.7.1__amaru-10.11.20260912",
       "cardano_version": "10.7.1",
