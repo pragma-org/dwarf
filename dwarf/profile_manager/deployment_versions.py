@@ -36,19 +36,20 @@ def build_deployment_version_preview(
         resolution = resolve_profile_versions(profile_data, checked_catalog)
     except CatalogError as exc:
         raise DeploymentVersionGateError("version-resolution-failed", str(exc)) from exc
-    supporting: dict[str, Any] = {}
+    supporting: dict[str, Any] = dict(resolution.get("supporting") or {})
     if resolution.get("scope") == "amaru-only":
         # Amaru is presently a relay/consumer, not a standalone block producer.
         # Disclose the exact honest Cardano source required by this contract in
         # the same preview that gates the target release.
-        supporting["cardano-node"] = resolve_default(
-            checked_catalog, "cardano-only"
-        )["release"]
+        if "cardano-node" not in supporting:
+            supporting["cardano-node"] = resolve_default(
+                checked_catalog, "cardano-only"
+            )["release"]
     return {
+        **resolution,
         "profile_id": str(profile_data.get("id") or ""),
         "catalog_revision": catalog_revision or version_catalog_revision(),
         "supporting": supporting,
-        **resolution,
     }
 
 

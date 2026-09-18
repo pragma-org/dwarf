@@ -12,7 +12,7 @@ from profile_manager.deployment_versions import (
     enforce_deployment_version_gate,
     profile_deployment_version_preview,
 )
-from profile_manager.version_catalog import load_version_catalog
+from profile_manager.version_catalog import load_version_catalog, validate_version_catalog
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,6 +71,42 @@ def test_amaru_only_preview_discloses_the_required_cardano_support_node(tmp_path
 
     assert preview["scope"] == "amaru-only"
     assert preview["supporting"]["cardano-node"]["version"] == "11.1.2"
+
+
+def test_amaru_preview_prefers_qualified_support_over_generic_cardano_default():
+    catalog = load_version_catalog(CATALOG_PATH)
+    modified = copy.deepcopy(catalog)
+    release = next(
+        item
+        for item in modified["releases"]
+        if item["implementation"] == "amaru"
+        and item["version"] == "10.11.20260730"
+    )
+    release["verification"]["amaru-only"] = {
+        "status": "confirmed",
+        "default": True,
+        "checked_at": "2026-09-18T05:00:00Z",
+        "supporting_cardano_version": "10.7.1",
+        "reason": "Passed with the exact supporting Cardano release.",
+        "evidence": ["qualification:demo"],
+        "issues": [],
+    }
+    profile = {
+        "id": "amaru-qualified-support",
+        "node_type": "amaru",
+        "node_count": 0,
+        "amaru_node_count": 1,
+        "network_magic": 42,
+        "version_policy": "latest-confirmed",
+    }
+
+    preview = build_deployment_version_preview(
+        profile,
+        validate_version_catalog(modified),
+        catalog_revision="a" * 64,
+    )
+
+    assert preview["supporting"]["cardano-node"]["version"] == "10.7.1"
 
 
 def test_unknown_requires_one_run_acknowledgement(tmp_path, monkeypatch):

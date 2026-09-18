@@ -82,6 +82,7 @@ def validate_version_catalog(data: Any) -> dict[str, Any]:
         raise CatalogError("catalog.compatibility_pairs must be a list")
 
     release_keys: set[tuple[str, str]] = set()
+    supporting_cardano_references: list[tuple[str, str]] = []
     default_scopes: dict[str, list[str]] = {scope: [] for scope in SCOPES}
     for index, item in enumerate(releases):
         context = f"catalog.releases[{index}]"
@@ -122,6 +123,31 @@ def validate_version_catalog(data: Any) -> dict[str, Any]:
             if scope not in SCOPES:
                 raise CatalogError(f"{context}.verification has unknown scope {scope!r}")
             checked = _validate_verification(record, f"{context}.verification.{scope}")
+            supporting_cardano_version = checked.get("supporting_cardano_version")
+            if supporting_cardano_version is not None:
+                if (
+                    implementation != "amaru"
+                    or scope != "amaru-only"
+                    or not isinstance(supporting_cardano_version, str)
+                    or not supporting_cardano_version.strip()
+                ):
+                    raise CatalogError(
+                        f"{context}.verification.{scope}.supporting_cardano_version "
+                        "is only valid as a non-empty value for Amaru-only verification"
+                    )
+                supporting_cardano_references.append(
+                    (f"{context}.verification.{scope}", supporting_cardano_version)
+                )
+            if (
+                implementation == "amaru"
+                and scope == "amaru-only"
+                and checked.get("status") == "confirmed"
+                and supporting_cardano_version is None
+            ):
+                raise CatalogError(
+                    f"{context}.verification.{scope} is confirmed but has no "
+                    "supporting_cardano_version"
+                )
             if checked.get("default"):
                 expected_scope = "cardano-only" if implementation == "cardano-node" else "amaru-only"
                 if scope != expected_scope:
@@ -129,6 +155,13 @@ def validate_version_catalog(data: Any) -> dict[str, Any]:
                         f"{context}.verification.{scope} cannot be a release default; use a mixed compatibility pair"
                     )
                 default_scopes[scope].append(f"{implementation}:{version}")
+
+    for context, version in supporting_cardano_references:
+        if ("cardano-node", version) not in release_keys:
+            raise CatalogError(
+                f"{context}.supporting_cardano_version references unknown "
+                f"cardano-node {version}"
+            )
 
     pair_ids: set[str] = set()
     pair_keys: set[tuple[str, str]] = set()
@@ -266,6 +299,7 @@ def resolve_profile_versions(
             "scope": scope,
             "status": "unknown",
             "resolved": {},
+            "supporting": {},
             "pair": None,
             "requires_acknowledgement": False,
             "blocked": False,
@@ -353,12 +387,25 @@ def resolve_profile_versions(
             verification = resolve_verification(checked_catalog, implementation, version, scope)
         resolved = {implementation: release}
 
+    supporting: dict[str, dict[str, Any]] = {}
+    if scope == "amaru-only":
+        supporting_cardano_version = verification.get("supporting_cardano_version")
+        if supporting_cardano_version:
+            supporting["cardano-node"] = resolve_release(
+                checked_catalog, "cardano-node", str(supporting_cardano_version)
+            )
+        elif verification.get("status") == "confirmed":
+            raise CatalogError(
+                "confirmed Amaru-only verification has no supporting Cardano release"
+            )
+
     status = str(verification["status"])
     return {
         "policy": policy,
         "scope": scope,
         "status": status,
         "resolved": resolved,
+        "supporting": supporting,
         "pair": pair,
         "requires_acknowledgement": status == "unknown",
         "blocked": status in {"incompatible", "blocked"},

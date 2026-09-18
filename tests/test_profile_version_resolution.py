@@ -72,6 +72,39 @@ def test_latest_confirmed_mixed_uses_exact_default_pair_and_artifacts():
     assert resolved["requires_acknowledgement"] is False
 
 
+def test_confirmed_amaru_default_resolves_its_qualified_cardano_support():
+    catalog = load_version_catalog(CATALOG_PATH)
+    modified = copy.deepcopy(catalog)
+    release = next(
+        item
+        for item in modified["releases"]
+        if item["implementation"] == "amaru"
+        and item["version"] == "10.11.20260730"
+    )
+    release["verification"]["amaru-only"] = {
+        "status": "confirmed",
+        "default": True,
+        "checked_at": "2026-09-18T05:00:00Z",
+        "supporting_cardano_version": "10.7.1",
+        "reason": "Passed with the exact supporting Cardano release.",
+        "evidence": ["qualification:demo"],
+        "issues": [],
+    }
+
+    resolved = resolve_profile_versions(
+        _profile(
+            node_type="amaru",
+            node_count=0,
+            amaru_node_count=1,
+            version_policy="latest-confirmed",
+        ),
+        validate_version_catalog(modified),
+    )
+
+    assert resolved["resolved"]["amaru"]["version"] == "10.11.20260730"
+    assert resolved["supporting"]["cardano-node"]["version"] == "10.7.1"
+
+
 def test_exact_known_pair_resolves_by_catalog_id():
     data = _profile(
         node_type="mixed",
