@@ -15,6 +15,7 @@ def test_staged_legacy_loader_keeps_its_supported_header_import_contract(tmp_pat
 
     body = (scripts / "amaru-loader.sh").read_text(encoding="utf-8")
     assert "amaru import-headers --network ${NETWORK_NAME}" in body
+    assert "--config-dir ${BASEDIR}" in body
     assert "--header-file" not in body
 
 
