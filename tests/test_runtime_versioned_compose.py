@@ -8,6 +8,16 @@ def test_amaru_bootstrap_assets_are_bundled_and_loader_is_digest_pinned():
     assert "@sha256:" in bootstrap.DEFAULT_LOADER_BASE_IMAGE
 
 
+def test_staged_legacy_loader_keeps_its_supported_header_import_contract(tmp_path):
+    scripts = tmp_path / "scripts"
+
+    bootstrap._stage_loader_scripts(scripts)
+
+    body = (scripts / "amaru-loader.sh").read_text(encoding="utf-8")
+    assert "amaru import-headers --network ${NETWORK_NAME}" in body
+    assert "--header-file" not in body
+
+
 def test_versioned_compose_nodes_are_discoverable_as_dwarf_managed():
     node = {
         "id": "node1",

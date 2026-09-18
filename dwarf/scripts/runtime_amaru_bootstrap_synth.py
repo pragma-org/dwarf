@@ -44,15 +44,6 @@ def _stage_loader_scripts(scripts_root: Path) -> None:
     cardano_loader_path.write_text(cardano_loader, encoding="utf-8")
     amaru_loader_path = scripts_root / "amaru-loader.sh"
     amaru_loader = (AMARU_TESTNET_DIR / "amaru-loader.sh").read_text(encoding="utf-8")
-    amaru_loader = amaru_loader.replace(
-        "# import headers\namaru import-headers --network ${NETWORK_NAME} --chain-dir ${BASEDIR}/chain.${NETWORK_NAME}.db",
-        """# import headers
-header_args=()
-for header_file in ${BASEDIR}/${NETWORK_NAME}/headers/*.cbor; do
-    header_args+=(--header-file "$header_file")
-done
-amaru import-headers --network ${NETWORK_NAME} --chain-dir ${BASEDIR}/chain.${NETWORK_NAME}.db "${header_args[@]}" """,
-    )
     amaru_loader_path.write_text(amaru_loader, encoding="utf-8")
     cardano_loader_path.chmod(0o755)
     amaru_loader_path.chmod(0o755)
