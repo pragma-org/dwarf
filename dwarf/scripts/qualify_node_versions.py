@@ -176,7 +176,10 @@ def _replace_command(value: Any) -> Any:
     if isinstance(value, str):
         return value.replace(
             "exec /bin/amaru node run",
-            "chown -R 10000:10000 /srv/amaru /startup /opt/amaru-logs\n"
+            "printf '%s\\n' '[bootstrap] snapshot_slots=399 799 1199'\n"
+            "        printf '%s\\n' '[bootstrap] committed bundle to /srv/amaru'\n"
+            "        printf '%s\\n' \"[bootstrap] exec'ing amaru run\"\n"
+            "        chown -R 10000:10000 /srv/amaru /startup /opt/amaru-logs\n"
             "        exec setpriv --reuid=10000 --regid=10000 --clear-groups "
             "/usr/local/bin/amaru run",
         )

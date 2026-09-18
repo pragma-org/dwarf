@@ -158,6 +158,9 @@ def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
     assert transformed["services"]["amaru-relay-1"]["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
     assert "chown -R 10000:10000 /srv/amaru /startup /opt/amaru-logs" in transformed["services"]["amaru-relay-1"]["command"][1]
     assert "setpriv --reuid=10000 --regid=10000 --clear-groups /usr/local/bin/amaru run" in transformed["services"]["amaru-relay-1"]["command"][1]
+    assert "[bootstrap] snapshot_slots=399 799 1199" in transformed["services"]["amaru-relay-1"]["command"][1]
+    assert "[bootstrap] committed bundle to /srv/amaru" in transformed["services"]["amaru-relay-1"]["command"][1]
+    assert "[bootstrap] exec'ing amaru run" in transformed["services"]["amaru-relay-1"]["command"][1]
     assert "exec chown" not in transformed["services"]["amaru-relay-1"]["command"][1]
     assert transformed["services"]["bootstrap-producer"]["image"] == "bootstrap"
     assert transformed["volumes"]["external"].get("external") is not True

@@ -267,6 +267,21 @@ def test_probe_prefers_latest_adopted_tip_over_sparse_chainsync_current():
     assert parsed["highest_slot"] == 1200
 
 
+def test_probe_parses_20260730_adopted_tip_rendering():
+    probe = _load_probe()
+    text = """
+2026-09-18T04:51:47Z INFO amaru_consensus::stages::track_peers: intersect found peer=relay1.example:3001 current=1182.aaa highest=1369.bbb
+2026-09-18T04:53:45Z INFO amaru_consensus::stages::adopt_chain: adopted tip tip.slot=1612 tip.hash=ccc tip.block_height=316 max_block_height=316 suppressed=0
+"""
+
+    parsed = probe.parse_amaru_progress(text)
+
+    assert parsed["current_slot"] == 1612
+    assert parsed["current_hash"] == "ccc"
+    assert parsed["current_block"] == 316
+    assert parsed["highest_slot"] == 1369
+
+
 def test_probe_retains_bootstrap_targets_for_fresh_readiness_proof():
     probe = _load_probe()
     text = """

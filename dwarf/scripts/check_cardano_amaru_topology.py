@@ -85,11 +85,17 @@ def parse_amaru_progress(text: str) -> dict[str, Any]:
         r'\btip\.adopt\s+slot=([0-9]+)\s+header_hash="([^"]+)"'
         r'\s+block_height=([0-9]+)\b'
     )
+    adopted_tip_pattern = re.compile(
+        r'\badopted tip\s+tip\.slot=([0-9]+)\s+tip\.hash=([^\s]+)'
+        r'\s+tip\.block_height=([0-9]+)\b'
+    )
     current_point = None
     for line in text.splitlines():
         if match := current_pattern.search(line):
             current_point = match.groups()
         if match := adopted_pattern.search(line):
+            current_point = match.groups()
+        if match := adopted_tip_pattern.search(line):
             current_point = match.groups()
     highest = re.findall(
         r'highest="\[([0-9]+),\s*h\'([^\']+)\',\s*([0-9]+)\]"', text
@@ -101,6 +107,13 @@ def parse_amaru_progress(text: str) -> dict[str, Any]:
             for slot in re.findall(r"current=Point[^\n]*?slot:\s*Slot\(([0-9]+)\)", text)
         ]
         current_point = legacy_current[-1] if legacy_current else None
+    if not highest:
+        highest = [
+            (slot, hash_value, "0")
+            for slot, hash_value in re.findall(
+                r"\bhighest=([0-9]+)\.([0-9a-fA-F]+)\b", text
+            )
+        ]
     if not highest:
         highest = [
             (slot, "", "0")
