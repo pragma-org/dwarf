@@ -162,6 +162,7 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
         "scripts_root": str(scripts_root),
         "generated_root": str(generated_root),
         "config_roots": config_roots,
+        "target_config_root": str(env_root),
         "cardano_state_roots": cardano_state_roots,
         "target_cardano_state_roots": target_cardano_state_roots,
         "amaru_state_root": str(amaru_state_root),
@@ -294,6 +295,19 @@ def apply_producer_bundle(layout: dict) -> None:
         if target_db.exists():
             shutil.rmtree(target_db)
         shutil.copytree(source_db, target_db)
+    # The synthetic ChainDB was created and validated against the immutable
+    # producer image's pinned configuration.  Keep that configuration paired
+    # with the database when the supporting cardano-node is launched.  The
+    # generated runtime topology remains authoritative and must not be
+    # overwritten by the producer's pN.example topology.
+    first_slot = sorted(layout["config_roots"], key=int)[0]
+    producer_config_root = Path(str(layout["config_roots"][first_slot])) / "configs"
+    target_config_root = Path(str(layout["target_config_root"]))
+    for source in producer_config_root.iterdir():
+        if not source.is_file() or source.name in {"config.json", "configuration.yaml", "topology.json"}:
+            continue
+        shutil.copy2(source, target_config_root / source.name)
+    shutil.copy2(producer_config_root / "config.json", target_config_root / "configuration.yaml")
     for target_text in layout["target_amaru_state_roots"].values():
         target = Path(str(target_text))
         if target.exists():

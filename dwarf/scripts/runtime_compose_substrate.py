@@ -772,10 +772,14 @@ def _compose_substrate_docker(
                 if edge["from"] == node["id"]
             ]
 
-    if any(node["impl"] == "amaru" for node in plan["nodes"]) and plan["network"].startswith("testnet_"):
+    uses_synthetic_amaru_bootstrap = (
+        any(node["impl"] == "amaru" for node in plan["nodes"])
+        and plan["network"].startswith("testnet_")
+    )
+    if uses_synthetic_amaru_bootstrap:
         _synthesize_amaru_bootstrap_for_custom_testnet(runtime_root=runtime_root, plan=plan)
-
-    start_time_refresh = _refresh_cardano_testnet_start_times(env_root=runtime_root / "env")
+    else:
+        start_time_refresh = _refresh_cardano_testnet_start_times(env_root=runtime_root / "env")
 
     compose_body = _docker_compose_body(compose_project=docker_project, nodes=plan["nodes"], network_name=plan["network"])
     compose_path = runtime_root / "docker-compose.yml"

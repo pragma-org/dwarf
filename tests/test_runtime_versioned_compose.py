@@ -165,10 +165,32 @@ def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path)
     staged_cardano.mkdir(parents=True)
     (staged_cardano / "immutable").mkdir()
     (staged_cardano / "immutable" / "00000.chunk").write_text("chain", encoding="utf-8")
+    staged_config = tmp_path / "staged-config" / "1"
+    (staged_config / "configs").mkdir(parents=True)
+    (staged_config / "configs" / "config.json").write_text(
+        '{"Protocol": "Cardano", "RequiresNetworkMagic": "RequiresNoMagic"}\n',
+        encoding="utf-8",
+    )
+    (staged_config / "configs" / "shelley-genesis.json").write_text(
+        '{"systemStart": "2026-09-14T00:00:00Z"}\n', encoding="utf-8"
+    )
+    (staged_config / "configs" / "topology.json").write_text(
+        '{"localRoots": [{"accessPoints": [{"address": "p1.example"}]}]}\n',
+        encoding="utf-8",
+    )
     target_cardano = tmp_path / "target-cardano" / "node1" / "db"
+    target_config = tmp_path / "runtime-env"
+    target_config.mkdir()
+    (target_config / "configuration.yaml").write_text('{"Protocol": "Cardano"}\n', encoding="utf-8")
+    (target_config / "shelley-genesis.json").write_text(
+        '{"systemStart": "2026-09-18T00:00:00Z"}\n', encoding="utf-8"
+    )
+    (target_config / "topology.json").write_text('{"localRoots": []}\n', encoding="utf-8")
     layout = {
         "network_name": "testnet_42",
         "workspace_root": str(tmp_path / "workspace"),
+        "config_roots": {"1": str(staged_config)},
+        "target_config_root": str(target_config),
         "cardano_state_roots": {"1": str(staged_cardano)},
         "target_cardano_state_roots": {"1": str(target_cardano)},
         "target_amaru_state_roots": {"1": str(target)},
@@ -180,3 +202,6 @@ def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path)
     assert (target / "chain.db" / "chain").read_text(encoding="utf-8") == "ok"
     assert (target / "era-history.json").is_file()
     assert (target_cardano / "immutable" / "00000.chunk").read_text(encoding="utf-8") == "chain"
+    assert json.loads((target_config / "configuration.yaml").read_text(encoding="utf-8"))["RequiresNetworkMagic"] == "RequiresNoMagic"
+    assert json.loads((target_config / "shelley-genesis.json").read_text(encoding="utf-8"))["systemStart"] == "2026-09-14T00:00:00Z"
+    assert json.loads((target_config / "topology.json").read_text(encoding="utf-8"))["localRoots"] == []
