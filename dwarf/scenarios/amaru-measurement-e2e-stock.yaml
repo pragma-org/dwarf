@@ -40,7 +40,8 @@
   "assertions": [
     {
       "primitive": "load_events_are_ok",
-      "min_completed": 1
+      "min_completed": 1,
+      "min_event_count": 1
     }
   ],
   "teardown": []

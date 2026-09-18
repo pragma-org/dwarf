@@ -59,7 +59,11 @@ def test_amaru_measurement_e2e_uses_profile_resolution_and_non_vacuous_attempts(
     assert load["response_timeout_seconds"] > 0
     assert load["expected_helper_exit"] == 0
     assert document["assertions"] == [
-        {"primitive": "load_events_are_ok", "min_completed": 1}
+        {
+            "primitive": "load_events_are_ok",
+            "min_completed": 1,
+            "min_event_count": 1,
+        }
     ]
 
 
