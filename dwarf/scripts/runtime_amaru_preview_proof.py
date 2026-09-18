@@ -49,12 +49,47 @@ def load_snapshot_sources(manifest_path: Path) -> list[dict[str, object]]:
 
 def extract_latest_adopted_tip(log_text: str) -> dict[str, object] | None:
     latest = None
-    for match in ADOPTED_TIP_PATTERN.finditer(log_text):
-        latest = {
-            "slot": int(match.group("slot")),
-            "hash": match.group("hash"),
-            "block_height": int(match.group("block_height")),
-        }
+    for line in log_text.splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            record = None
+        if isinstance(record, dict):
+            fields = record.get("fields")
+            if isinstance(fields, dict) and fields.get("message") in {
+                "tip.update",
+                "tip.adopt",
+            }:
+                slot = fields.get("slot")
+                block_height = fields.get("block_height")
+                block_hash = fields.get("header_hash")
+                valid_hash = (
+                    isinstance(block_hash, str)
+                    and re.fullmatch(r"[0-9a-fA-F]{64}", block_hash) is not None
+                )
+                if (
+                    isinstance(slot, int)
+                    and not isinstance(slot, bool)
+                    and slot >= 0
+                    and isinstance(block_height, int)
+                    and not isinstance(block_height, bool)
+                    and block_height >= 0
+                    and valid_hash
+                ):
+                    latest = {
+                        "slot": slot,
+                        "hash": block_hash,
+                        "block_hash": block_hash,
+                        "block_height": block_height,
+                    }
+        for match in ADOPTED_TIP_PATTERN.finditer(line):
+            block_hash = match.group("hash")
+            latest = {
+                "slot": int(match.group("slot")),
+                "hash": block_hash,
+                "block_hash": block_hash,
+                "block_height": int(match.group("block_height")),
+            }
     return latest
 
 
