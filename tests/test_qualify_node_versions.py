@@ -142,19 +142,20 @@ def test_project_names_are_unique_safe_and_never_the_live_project():
 
 
 def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
+    modern_amaru = "ghcr.io/pragma-org/amaru@sha256:" + "9" * 64
     transformed = transform_compose_model(
         _compose_model(),
         scope="mixed",
         project="dwarf-qual-mixed-demo",
         cardano_image="new-cardano",
-        amaru_image="new-amaru",
+        amaru_image=modern_amaru,
     )
 
     assert all("container_name" not in service for service in transformed["services"].values())
     assert transformed["networks"]["default"]["name"] == "dwarf-qual-mixed-demo-default"
     assert transformed["services"]["p1"]["image"] == "new-cardano"
     assert transformed["services"]["amaru-consumer"]["image"] == "new-cardano"
-    assert transformed["services"]["amaru-relay-1"]["image"] == "new-amaru"
+    assert transformed["services"]["amaru-relay-1"]["image"] == modern_amaru
     assert transformed["services"]["amaru-relay-1"]["user"] == "0:0"
     assert transformed["services"]["amaru-relay-1"]["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
     assert "chown -R 10000:10000 /srv/amaru /startup /opt/amaru-logs" in transformed["services"]["amaru-relay-1"]["command"][1]
@@ -173,6 +174,26 @@ def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
     assert transformed["services"]["amaru-consumer"]["depends_on"]["amaru-consumer-ready"]["condition"] == "service_completed_successfully"
     assert transformed["services"]["bootstrap-producer"]["image"] == "bootstrap"
     assert transformed["volumes"]["external"].get("external") is not True
+
+
+def test_transform_retained_amaru_control_keeps_legacy_runtime_interface():
+    legacy_amaru = (
+        "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:" + "8" * 64
+    )
+
+    transformed = transform_compose_model(
+        _compose_model(),
+        scope="mixed",
+        project="dwarf-qual-mixed-control",
+        cardano_image="known-good-cardano",
+        amaru_image=legacy_amaru,
+    )
+
+    relay = transformed["services"]["amaru-relay-1"]
+    assert relay["image"] == legacy_amaru
+    assert "exec /bin/amaru node run" in relay["command"][1]
+    assert "setpriv" not in relay["command"][1]
+    assert "/usr/local/bin/amaru" not in relay["command"][1]
 
 
 def test_cardano_only_transform_removes_amaru_paths_but_keeps_real_producers():

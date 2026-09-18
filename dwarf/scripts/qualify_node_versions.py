@@ -209,6 +209,14 @@ def _replace_command(value: Any) -> Any:
     return value
 
 
+def _uses_modern_amaru_runtime_interface(image: str) -> bool:
+    repository = str(image or "").split("@", 1)[0]
+    last_slash = repository.rfind("/")
+    if repository.rfind(":") > last_slash:
+        repository = repository[: repository.rfind(":")]
+    return repository == "ghcr.io/pragma-org/amaru"
+
+
 def transform_compose_model(
     model: dict[str, Any],
     *,
@@ -254,10 +262,6 @@ def transform_compose_model(
             service["image"] = cardano_image
         if name in AMARU_RELAYS and amaru_image:
             service["image"] = amaru_image
-            # The upstream wrapper prepares fresh named volumes before exec.
-            # Run that preparation as root, then drop back to the UID/GID from
-            # the official Amaru image for the actual node process.
-            service["user"] = "0:0"
             environment = service.setdefault("environment", {})
             if not isinstance(environment, dict):
                 raise QualificationError(f"{name} has a non-mapping environment")
@@ -265,7 +269,14 @@ def transform_compose_model(
             # an older bootstrap-producer ChainDB. Unknown environment keys are
             # inert for releases that predate this migration switch.
             environment["AMARU_MIGRATE_CHAIN_DB"] = "true"
-            service["command"] = _replace_command(service.get("command"))
+            if _uses_modern_amaru_runtime_interface(amaru_image):
+                # The official image runs as an unprivileged user and exposes
+                # the current `amaru run` interface under /usr/local/bin.  The
+                # retained 10.11.0 control image instead exposes
+                # `/bin/amaru node run` and has no setpriv binary, so its
+                # already-proven command must remain byte-for-byte intact.
+                service["user"] = "0:0"
+                service["command"] = _replace_command(service.get("command"))
 
     if scope in {"amaru-only", "mixed"}:
         bootstrap = services.get("bootstrap-producer") or {}
