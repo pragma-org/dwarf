@@ -20,6 +20,8 @@ _REVISION = re.compile(r"^[0-9a-f]{40}$")
 _DEFAULT_PROFILES = {
     ("amaru", "stock"): "amaru-security-default",
     ("amaru", "patched"): "amaru-security-patched",
+    ("cardano-node", "stock"): "cardano-security-default",
+    ("cardano-node", "patched"): "cardano-security-patched",
 }
 
 
