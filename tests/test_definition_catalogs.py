@@ -344,11 +344,14 @@ def test_profile_builder_has_structured_version_authority_and_live_exact_preview
     assert "Experimental" in html and "latest-stable" in html
     assert 'data-profile-version-resolution' in html
     assert 'data-profile-version-descriptor' in html
+    assert 'data-profile-version-fields' in html
     assert 'href="/operate/versions"' in html
     assert 'href="/learn/versions"' in html
     assert 'data-version-field="cardano_version"' in html
     assert 'data-version-field="amaru_version"' in html
     assert 'data-version-field="compatibility_pair"' in html
+    script = Path("dwarf/dashboard/static/js/definition-editor.js").read_text(encoding="utf-8")
+    assert "versionFieldSlot.append(field)" in script
 
 
 def test_scenario_builder_discloses_profile_controlled_exact_runtime_versions(

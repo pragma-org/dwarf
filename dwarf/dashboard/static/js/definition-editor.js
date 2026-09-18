@@ -15,6 +15,11 @@
   let model = JSON.parse(root.querySelector('[data-editor-initial]').textContent || '{}');
   let dirty = false;
 
+  const versionFieldSlot = root.querySelector('[data-profile-version-fields]');
+  if (versionFieldSlot) {
+    root.querySelectorAll('[data-version-field]').forEach((field) => versionFieldSlot.append(field));
+  }
+
   function profileScope() {
     const haskell = Number(model.haskell_count ?? model.node_count ?? 0);
     const amaru = Number(model.amaru_count ?? model.amaru_node_count ?? 0);
@@ -83,10 +88,12 @@
     const provenance = selected.map((release) => `${release.source_revision?.slice(0, 12) || 'revision unavailable'} · ${exactArtifact(release)}`).join(' | ');
     const title = root.querySelector('[data-version-resolution-title]');
     const identityNode = root.querySelector('[data-version-resolution-identities]');
+    const reasonNode = root.querySelector('[data-version-resolution-reason]');
     const detail = root.querySelector('[data-version-resolution-detail]');
     if (title) title.textContent = `${scope} · ${policy} (${model.version_policy ? 'explicit' : 'safe implicit default'}) · ${status}`;
     if (identityNode) identityNode.textContent = identities || 'Choose the required exact selection.';
-    if (detail) detail.textContent = `${provenance || 'No artifact resolved.'}${reason ? ` · ${reason}` : ''} · catalog ${versionDescriptor.catalog_revision || 'unknown'}`;
+    if (reasonNode) reasonNode.textContent = reason || 'No qualification reason is available for this selection.';
+    if (detail) detail.textContent = `${provenance || 'No artifact resolved.'} · catalog ${versionDescriptor.catalog_revision || 'unknown'}`;
   }
 
   function ensureSelectedOptionTooltip(select, help) {

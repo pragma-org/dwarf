@@ -39,11 +39,13 @@
       <span><strong>Advanced</strong> exact</span>
       <span><strong>Experimental</strong> latest-stable</span>
     </div>
+    <div class="profile-version-panel__fields" data-profile-version-fields></div>
     <p>Profiles are the sole authority for deployed node artifacts. An omitted policy is safely resolved as <code>latest-confirmed</code>; scenarios inherit this exact identity.</p>
     <div class="profile-version-resolution" data-profile-version-resolution role="status" aria-live="polite">
       <strong data-version-resolution-title>Resolving selected artifacts…</strong>
       <span data-version-resolution-identities></span>
-      <span data-version-resolution-detail></span>
+      <span data-version-resolution-reason></span>
+      <details><summary>Immutable provenance</summary><span data-version-resolution-detail></span></details>
     </div>
   </section>
   {% elif catalog == 'targets' %}

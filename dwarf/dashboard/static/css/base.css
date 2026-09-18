@@ -4285,7 +4285,7 @@ body {
 .profile-catalog__head,
 .profile-catalog__row {
   display: grid;
-  grid-template-columns: minmax(190px, 1.4fr) minmax(90px, .65fr) minmax(120px, .8fr) minmax(75px, .5fr) minmax(95px, .6fr) minmax(170px, 1fr) minmax(190px, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, .65fr) minmax(0, .8fr) minmax(0, .5fr) minmax(0, .6fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3);
   align-items: start;
 }
@@ -4476,6 +4476,12 @@ body {
   font-family: var(--font-mono);
   font-size: var(--type-eyebrow);
 }
+.profile-version-panel__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
 .profile-version-resolution {
   display: grid;
   gap: var(--space-2);
@@ -4486,6 +4492,9 @@ body {
 }
 .profile-version-resolution strong { color: var(--cyan-glow); }
 .profile-version-resolution span { color: var(--ink-secondary); }
+.profile-version-resolution details { overflow-wrap: anywhere; }
+.profile-version-resolution summary { cursor: pointer; color: var(--cyan-glow); }
+.profile-version-resolution details span { display: block; margin-top: var(--space-2); }
 .version-authority-note p:last-child { margin-bottom: 0; }
 
 .definition-editor__template {
@@ -4852,6 +4861,7 @@ body {
   .profile-version-panel,
   .version-authority-note { padding: var(--space-4); }
   .profile-version-panel__head { display: grid; }
+  .profile-version-panel__fields { grid-template-columns: 1fr; }
 }
 
 /* Plugin inventory: card-based so long roots and diagnostics wrap on mobile. */
