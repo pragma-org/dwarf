@@ -15,6 +15,7 @@ from profile_manager.data.catalog_definitions import (
 
 
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_SHA64 = re.compile(r"^[0-9a-f]{64}$")
 _REVISION = re.compile(r"^[0-9a-f]{40}$")
 _DEFAULT_PROFILES = {
     ("amaru", "stock"): "amaru-security-default",
@@ -72,7 +73,7 @@ def _selection_dict(value: Any, *, source: str) -> dict[str, Any]:
 
 
 def _target_identity(identity: dict[str, Any]) -> dict[str, Any]:
-    required = {"implementation", "version", "source_revision", "mode", "image_digest"}
+    required = {"implementation", "version", "source_revision", "mode"}
     missing = sorted(required - set(identity))
     if missing:
         raise ValueError(f"target identity missing {', '.join(missing)}")
@@ -86,13 +87,28 @@ def _target_identity(identity: dict[str, Any]) -> dict[str, Any]:
         identity["source_revision"]
     ):
         raise ValueError("target source_revision is not an exact commit")
-    if not isinstance(identity["image_digest"], str) or not _DIGEST.fullmatch(
-        identity["image_digest"]
-    ):
-        raise ValueError("target image_digest must be immutable sha256")
+    if identity["mode"] in {"stock", "patched"}:
+        image_digest = identity.get("image_digest")
+        if not isinstance(image_digest, str) or not _DIGEST.fullmatch(image_digest):
+            raise ValueError("target image_digest must be immutable sha256")
     executable_digest = identity.get("executable_digest")
-    if executable_digest is not None and not _DIGEST.fullmatch(executable_digest):
+    if executable_digest is not None and not _DIGEST.fullmatch(str(executable_digest)):
         raise ValueError("target executable_digest must be immutable sha256")
+    if identity["mode"] == "coverage":
+        if not isinstance(executable_digest, str) or not _DIGEST.fullmatch(
+            executable_digest
+        ):
+            raise ValueError("coverage target executable_digest must be immutable sha256")
+        if not _DIGEST.fullmatch(str(identity.get("build_result_sha256") or "")):
+            raise ValueError("coverage target build_result_sha256 must be immutable sha256")
+        if not _SHA64.fullmatch(str(identity.get("coverage_harness_sha256") or "")):
+            raise ValueError("coverage target coverage_harness_sha256 must be immutable sha256")
+        if identity.get("engine") != "cargo-fuzz/libFuzzer":
+            raise ValueError("coverage target engine must be cargo-fuzz/libFuzzer")
+        if identity.get("performance_authority") != "non-authoritative":
+            raise ValueError("coverage target performance authority must be non-authoritative")
+        if identity.get("non_authoritative_performance") is not True:
+            raise ValueError("coverage target performance must be labelled non-authoritative")
     return dict(identity)
 
 

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -19,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from runtime_telemetry import emit_runtime_metric, emit_target_event, run_dir
 from profile_manager import testcase_lifecycle
+from profile_manager.measurement_targets import validate_coverage_amaru_target_record
 
 
 PRIMITIVE = "cargo_fuzz_campaign"
@@ -195,10 +197,10 @@ def merge_coverage_profiles(
     payload = json.loads(cov_proc.stdout)
     totals = ((payload.get("data") or [{}])[0]).get("totals") or {}
     summary = {
-        "target_binary": str(target_binary),
+        "target_binary": target_binary.name,
         "profraw_count": len(profraw_files),
-        "profraw_files": [str(path) for path in profraw_files],
-        "profdata_path": str(profdata_path),
+        "profraw_files": [path.relative_to(coverage_dir).as_posix() for path in profraw_files],
+        "profdata_path": profdata_path.relative_to(coverage_dir).as_posix(),
         "covered_functions": int((totals.get("functions") or {}).get("covered", 0)),
         "covered_lines": int((totals.get("lines") or {}).get("covered", 0)),
         "covered_regions": int((totals.get("regions") or {}).get("covered", 0)),
@@ -346,14 +348,131 @@ def build_triage_summary(summary: dict) -> dict:
     }
 
 
+def write_coverage_measurement_result(
+    *,
+    bundle_run_dir: Path,
+    coverage_identity: dict,
+    campaign_id: str,
+    scenario_id: str,
+    corpus_id: str,
+    corpus_digest: str,
+    target_name: str,
+    summary: dict,
+) -> Path:
+    """Write a path-coverage envelope without granting performance authority."""
+    coverage_identity = validate_coverage_amaru_target_record(coverage_identity)
+    if coverage_identity.get("mode") != "coverage":
+        raise ValueError("coverage measurement result requires target mode coverage")
+    if coverage_identity.get("performance_authority") != "non-authoritative":
+        raise ValueError("compiler coverage performance authority must be non-authoritative")
+    if coverage_identity.get("non_authoritative_performance") is not True:
+        raise ValueError("compiler coverage must set non_authoritative_performance")
+    if not campaign_id or "/" in campaign_id or ".." in campaign_id:
+        raise ValueError("coverage campaign id must be a bounded path segment")
+    if not corpus_id or not corpus_digest.startswith("sha256:"):
+        raise ValueError("coverage corpus id and immutable digest are required")
+
+    output_dir = bundle_run_dir / "outputs" / "coverage" / campaign_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    coverage = summary.get("coverage") if isinstance(summary.get("coverage"), dict) else {}
+    coverage_path = output_dir / "coverage.json"
+    coverage_path.write_text(
+        json.dumps(coverage, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    crash_entries = summary.get("crash_entries", [])
+    records = [
+        {
+            "input_id": f"sha256:{entry['sha256']}",
+            "relative_path": entry.get("relative_path"),
+            "size_bytes": entry.get("size_bytes"),
+            "terminal_class": (
+                "crash" if entry in crash_entries else "retained-corpus"
+            ),
+        }
+        for entry in summary.get("queue_entries", []) + crash_entries
+        if isinstance(entry, dict) and entry.get("sha256")
+    ]
+    inputs_path = output_dir / "inputs.ndjson"
+    inputs_path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in records),
+        encoding="utf-8",
+    )
+    relative_root = output_dir.relative_to(bundle_run_dir).as_posix()
+    artifacts = [
+        f"{relative_root}/result.json",
+        f"{relative_root}/coverage.json",
+        f"{relative_root}/inputs.ndjson",
+    ]
+    system = platform.uname()
+    result = {
+        "schema_version": "v1",
+        "measurement_id": "amaru-coverage-production-paths",
+        "run_id": bundle_run_dir.name,
+        "status": "collected" if coverage else "unavailable",
+        "result_kind": "coverage",
+        "target": coverage_identity,
+        "provenance": {
+            "scenario_id": scenario_id,
+            "collector_mode": "compiler-coverage",
+            "hardware": {
+                "system": system.system,
+                "kernel_release": system.release,
+                "architecture": system.machine,
+                "logical_cpu_count": os.cpu_count(),
+            },
+            "dataset": {
+                "corpus_id": corpus_id,
+                "corpus_digest": corpus_digest,
+            },
+            "observer_overhead": None,
+        },
+        "correlation": {
+            "coverage_campaign_id": campaign_id,
+            "corpus_id": corpus_id,
+            "target_name": target_name,
+        },
+        "performance_authority": "non-authoritative",
+        "non_authoritative_performance": True,
+        "coverage": coverage,
+        "campaign": {
+            "id": campaign_id,
+            "engine": "cargo-fuzz/libFuzzer",
+            "target_name": target_name,
+            "queue_count": int(summary.get("queue_count", 0)),
+            "crash_count": int(summary.get("crash_count", 0)),
+            "hang_count": int(summary.get("hang_count", 0)),
+        },
+        "records": records,
+        "artifacts": artifacts,
+        "warnings": (
+            []
+            if coverage
+            else [
+                "No compiler coverage profile was available; performance remains non-authoritative."
+            ]
+        ),
+    }
+    result_path = output_dir / "result.json"
+    result_path.write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return result_path
+
+
 def export_campaign_artifacts_with_metadata(
     *,
     output_dir: Path,
     bundle_run_dir: Path,
+    target_name: str | None = None,
     target_implementation: str,
     replay_harness: str,
     replay_target_id: str,
     replay_targets: list[str],
+    coverage_identity: dict | None = None,
+    coverage_campaign_id: str | None = None,
+    scenario_id: str | None = None,
+    corpus_id: str | None = None,
+    corpus_digest: str | None = None,
 ) -> Path:
     destination = bundle_run_dir / "outputs" / "cargo-fuzz"
     default_src = output_dir / "default"
@@ -415,6 +534,24 @@ def export_campaign_artifacts_with_metadata(
         records=testcase_records,
     )
     summary["lifecycle"] = lifecycle_paths
+    if coverage_identity is not None:
+        if not all((coverage_campaign_id, scenario_id, corpus_id, corpus_digest)):
+            raise ValueError(
+                "coverage identity requires campaign, scenario, corpus id, and corpus digest"
+            )
+        coverage_result = write_coverage_measurement_result(
+            bundle_run_dir=bundle_run_dir,
+            coverage_identity=coverage_identity,
+            campaign_id=str(coverage_campaign_id),
+            scenario_id=str(scenario_id),
+            corpus_id=str(corpus_id),
+            corpus_digest=str(corpus_digest),
+            target_name=str(target_name or summary.get("target_name") or replay_target_id),
+            summary=summary,
+        )
+        summary["coverage_result"] = coverage_result.relative_to(
+            bundle_run_dir
+        ).as_posix()
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return summary_path
 
@@ -434,6 +571,11 @@ def run_campaign_with_metadata(
     toolchain: str = DEFAULT_TOOLCHAIN,
     dict_path_override: Path | None = None,
     extra_libfuzzer_args: list[str] | None = None,
+    coverage_identity: dict | None = None,
+    coverage_campaign_id: str | None = None,
+    scenario_id: str | None = None,
+    corpus_id: str | None = None,
+    corpus_digest: str | None = None,
 ) -> int:
     if shutil.which("cargo") is None:
         raise SystemExit("cargo not found in PATH")
@@ -537,6 +679,9 @@ def run_campaign_with_metadata(
         except FileNotFoundError:
             coverage_summary = {}
     artifact_summary = summarize_campaign_output(normalized_dir)
+    artifact_summary["target_name"] = target_name
+    if coverage_summary:
+        artifact_summary["coverage"] = coverage_summary
     triage_summary = build_triage_summary(artifact_summary)
     for key, value in (
         ("queue_count", artifact_summary["queue_count"]),
@@ -563,10 +708,16 @@ def run_campaign_with_metadata(
         summary_path = export_campaign_artifacts_with_metadata(
             output_dir=normalized_dir,
             bundle_run_dir=bundle_run_dir,
+            target_name=target_name,
             target_implementation=target_implementation,
             replay_harness=replay_harness,
             replay_target_id=replay_target_id,
             replay_targets=replay_targets,
+            coverage_identity=coverage_identity,
+            coverage_campaign_id=coverage_campaign_id,
+            scenario_id=scenario_id,
+            corpus_id=corpus_id,
+            corpus_digest=corpus_digest,
         )
 
     emit_target_event(
@@ -607,7 +758,17 @@ def main(argv=None) -> int:
     parser.add_argument("--replay-harness", required=True)
     parser.add_argument("--replay-target-id", required=True)
     parser.add_argument("--replay-target", dest="replay_targets", action="append", required=True)
+    parser.add_argument("--coverage-identity")
+    parser.add_argument("--coverage-campaign-id")
+    parser.add_argument("--scenario-id")
+    parser.add_argument("--corpus-id")
+    parser.add_argument("--corpus-digest")
     args = parser.parse_args(argv)
+    coverage_identity = None
+    if args.coverage_identity:
+        coverage_identity = json.loads(
+            Path(args.coverage_identity).read_text(encoding="utf-8")
+        )
     return run_campaign_with_metadata(
         working_dir=Path(args.working_dir),
         fuzz_dir=Path(args.fuzz_dir),
@@ -622,6 +783,11 @@ def main(argv=None) -> int:
         toolchain=args.toolchain,
         dict_path_override=Path(args.dict_path) if args.dict_path else None,
         extra_libfuzzer_args=list(args.extra_libfuzzer_args),
+        coverage_identity=coverage_identity,
+        coverage_campaign_id=args.coverage_campaign_id,
+        scenario_id=args.scenario_id,
+        corpus_id=args.corpus_id,
+        corpus_digest=args.corpus_digest,
     )
 
 

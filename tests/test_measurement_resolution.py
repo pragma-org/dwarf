@@ -168,8 +168,14 @@ def test_launch_override_cannot_smuggle_an_implicit_or_unsupported_gate():
             _scenario(profile="none"),
             target_identity=_identity(
                 mode="coverage",
-                image_reference="local/amaru-coverage@sha256:" + "8" * 64,
-                image_digest="sha256:" + "8" * 64,
+                image_reference=None,
+                image_digest=None,
+                executable_digest="sha256:" + "8" * 64,
+                build_result_sha256="sha256:" + "7" * 64,
+                coverage_harness_sha256="6" * 64,
+                engine="cargo-fuzz/libFuzzer",
+                performance_authority="non-authoritative",
+                non_authoritative_performance=True,
             ),
             capabilities={"amaru-coverage-build", "dwarf-coverage-collector"},
             run_overrides=[{
@@ -215,5 +221,36 @@ def test_target_identity_requires_immutable_digest_before_resolution():
         resolve_measurements(
             _scenario(profile="none"),
             target_identity=_identity(image_digest="latest"),
+            capabilities=set(),
+        )
+
+
+def test_coverage_target_uses_immutable_executable_identity_without_fake_image():
+    identity = _identity(
+        mode="coverage",
+        image_reference=None,
+        image_digest=None,
+        executable_digest="sha256:" + "e" * 64,
+        build_result_sha256="sha256:" + "b" * 64,
+        coverage_harness_sha256="c" * 64,
+        engine="cargo-fuzz/libFuzzer",
+        performance_authority="non-authoritative",
+        non_authoritative_performance=True,
+    )
+
+    resolution = resolve_measurements(
+        _scenario(profile="none"),
+        target_identity=identity,
+        capabilities=set(),
+    )
+
+    assert resolution["target_identity"]["image_digest"] is None
+    assert resolution["target_identity"]["executable_digest"] == "sha256:" + "e" * 64
+
+    identity["executable_digest"] = None
+    with pytest.raises(MeasurementResolutionError, match="executable_digest"):
+        resolve_measurements(
+            _scenario(profile="none"),
+            target_identity=identity,
             capabilities=set(),
         )

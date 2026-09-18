@@ -29,7 +29,12 @@
 - Batch 5 — complete locally on 2026-09-18; the fail-closed revision-locked
   builder, audited decode/BlockFetch/TxSubmission2 probes, fresh stock and
   patched topologies, strict common-metric calibration, and bounded
-  outcome-independent transcripts are proven. Batch 6 is next.
+  outcome-independent transcripts are proven.
+- Batch 6 — complete locally on 2026-09-18; a distinct revision-locked
+  cargo-fuzz/libFuzzer coverage target, portable build/campaign/corpus/input
+  linkage, existing coverage aggregation, and the qualified Conway
+  `plutus_data` dataset boundary are proven. The established `tests/`
+  regression suite passes 770 tests. Batch 7 is next.
 - Internal push — queued because the rebooted host has no usable credential for
   the unrelated-history internal remote. No public push has been attempted.
 
@@ -457,6 +462,35 @@ fuzzer.
 
 Extend tests to refuse unqualified Cardano dataset rules and prove the pinned
 Conway `plutus_data` boundary remains intact.
+
+### Batch 6 retained evidence
+
+- Exact target: Amaru `10.11.20260912`, source
+  `b159172f25a9c389f82f20bca4f15e3032791638`, coverage harness
+  `b89d8eafc973e374d05811a71da5180974630fed5ada22199c4abe6dbe10f491`.
+- Build: `state:measurement-target-builds/amaru-b159172-batch6-coverage-plutus-data-v2`;
+  executable digest
+  `sha256:a99a6460793d756c35e04f685608f2ef0009e130171923705d2642b2edb81112`;
+  build-result digest
+  `sha256:eb5165feb138db330ef49b3def8811ce05075667894cbe595667755bb2eff803`.
+- Qualified corpus: `r2rationality/cardano-cbor-dataset` at
+  `a7561cd063550c2218898571520f14c3674efe91`, Conway `plutus_data` only,
+  400 files, aggregate digest
+  `sha256:f20f5aec2b62850f62089e125215cf282145146996dcfe549796ecf8938e10ca`.
+- Campaign: `state:measurement-coverage-proofs/20260918T220140Z-amaru-plutus-data-coverage-v2`.
+  It executed 79,749 units, retained 855 corpus cases plus one crash, and
+  recorded libFuzzer coverage 546/features 2,697 plus compiler coverage of 30
+  lines, 7 functions, and 48 regions for the intentionally narrow production
+  decoder target. The normalized result SHA-256 is
+  `921820a0f82d3683289a4cad3e4b66cca663dd0c8295f52375e710052c8e3705`.
+- The campaign discovered a repeatable recursive `PlutusData` decode stack
+  overflow and minimized its input from 6,917 to 4,419 bytes. This is retained
+  as an unclassified coverage-build security signal. It is **not** classified
+  as a stock Amaru or live-node vulnerability until reproduced on the exact
+  stock target and, where an ingress exists, the real node.
+- Coverage outputs are explicitly `non-authoritative` for performance. They
+  prove that the exact production-library paths executed; they do not prove
+  correctness, threat coverage, or live-node reachability.
 
 ## Batch 7 — five additive Amaru security examples
 

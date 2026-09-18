@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "target": "amaru-compiler-coverage",
+  "source": {
+    "repository": "https://github.com/pragma-org/amaru.git",
+    "release": "10.11.20260912",
+    "tag": "v10.11.20260912",
+    "revision": "b159172f25a9c389f82f20bca4f15e3032791638"
+  },
+  "toolchain": "nightly-2026-09-04",
+  "engine": "cargo-fuzz/libFuzzer",
+  "cargo_fuzz_version": "0.13.1",
+  "target_name": "plutus_data",
+  "production_entrypoint": "amaru_kernel::from_cbor_no_leftovers::<amaru_kernel::PlutusData>",
+  "performance_authority": "non-authoritative",
+  "non_authoritative_performance": true,
+  "build": {
+    "command": [
+      "cargo",
+      "+nightly-2026-09-04",
+      "fuzz",
+      "build",
+      "--fuzz-dir",
+      "dwarf-coverage-fuzz",
+      "plutus_data"
+    ],
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_TERM_COLOR": "never",
+      "RUSTFLAGS": "-Cinstrument-coverage"
+    }
+  },
+  "harness_files": [
+    {
+      "path": "Cargo.toml",
+      "sha256": "8c909c3bb09d0a47ed3563f8abcd71634068bd3f743c3734074ea6bca83b030c"
+    },
+    {
+      "path": "fuzz_targets/plutus_data.rs",
+      "sha256": "bec78dbe655e01ba05500f0354fff007055b3c001551ac90607f16294c99a7f1"
+    }
+  ],
+  "coverage_harness_sha256": "b89d8eafc973e374d05811a71da5180974630fed5ada22199c4abe6dbe10f491"
+}

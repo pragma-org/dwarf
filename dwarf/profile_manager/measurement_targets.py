@@ -38,6 +38,23 @@ def measurement_target_record_path(
     return root / implementation / source_revision / f"{patch_set_sha256}.json"
 
 
+def coverage_target_record_path(
+    implementation: str,
+    source_revision: str,
+    coverage_harness_sha256: str,
+    *,
+    registry_root: str | Path | None = None,
+) -> Path:
+    root = Path(registry_root) if registry_root is not None else measurement_target_registry_root()
+    return (
+        root
+        / implementation
+        / "coverage"
+        / source_revision
+        / f"{coverage_harness_sha256}.json"
+    )
+
+
 def _require(record: dict[str, Any], key: str, expected: Any) -> None:
     actual = record.get(key)
     if actual != expected:
@@ -91,3 +108,87 @@ def resolve_patched_amaru_target(profile, *, registry_root: str | Path | None = 
     if not DIGEST.fullmatch(str(record.get("runtime_probe_log_sha256") or "")):
         raise MeasurementTargetError("patched target runtime probe evidence is missing")
     return record
+
+
+def resolve_coverage_amaru_target(
+    *,
+    version: str,
+    source_revision: str,
+    coverage_harness_sha256: str,
+    registry_root: str | Path | None = None,
+) -> dict[str, Any]:
+    if not SHA40.fullmatch(source_revision):
+        raise MeasurementTargetError("coverage Amaru target requires an exact source revision")
+    if not SHA64.fullmatch(coverage_harness_sha256):
+        raise MeasurementTargetError("coverage Amaru target requires an exact harness sha256")
+    path = coverage_target_record_path(
+        "amaru",
+        source_revision,
+        coverage_harness_sha256,
+        registry_root=registry_root,
+    )
+    if not path.is_file():
+        raise MeasurementTargetError(
+            f"coverage Amaru target is not built for source {source_revision} "
+            f"and harness {coverage_harness_sha256}"
+        )
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise MeasurementTargetError(f"cannot read coverage target record {path}: {error}") from error
+    return validate_coverage_amaru_target_record(
+        record,
+        version=version,
+        source_revision=source_revision,
+        coverage_harness_sha256=coverage_harness_sha256,
+    )
+
+
+def validate_coverage_amaru_target_record(
+    record: dict[str, Any],
+    *,
+    version: str | None = None,
+    source_revision: str | None = None,
+    coverage_harness_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Validate a portable executable identity before it enters run evidence."""
+    if not isinstance(record, dict) or record.get("schema_version") != 1:
+        raise MeasurementTargetError("coverage target record is not schema version 1")
+    for key, expected in (
+        ("implementation", "amaru"),
+        ("mode", "coverage"),
+        ("engine", "cargo-fuzz/libFuzzer"),
+        ("performance_authority", "non-authoritative"),
+        ("non_authoritative_performance", True),
+    ):
+        _require(record, key, expected)
+    record_version = str(record.get("version") or "")
+    record_revision = str(record.get("source_revision") or "")
+    record_harness = str(record.get("coverage_harness_sha256") or "")
+    if not record_version:
+        raise MeasurementTargetError("coverage target version is not exact")
+    if not SHA40.fullmatch(record_revision):
+        raise MeasurementTargetError("coverage target source revision is not exact")
+    if not SHA64.fullmatch(record_harness):
+        raise MeasurementTargetError("coverage target harness digest is not immutable sha256")
+    for key, expected in (
+        ("version", version),
+        ("source_revision", source_revision),
+        ("coverage_harness_sha256", coverage_harness_sha256),
+    ):
+        if expected is not None:
+            _require(record, key, expected)
+    for key in ("executable_digest", "build_result_sha256"):
+        if not DIGEST.fullmatch(str(record.get(key) or "")):
+            raise MeasurementTargetError(f"coverage target {key} is not immutable sha256")
+    state_ref = str(record.get("coverage_target_ref") or "")
+    if not state_ref.startswith("state:measurement-target-builds/"):
+        raise MeasurementTargetError("coverage target reference is not a portable state reference")
+    for key in ("working_dir", "fuzz_dir", "binary"):
+        value = Path(str(record.get(key) or ""))
+        if value.is_absolute() or ".." in value.parts or not value.parts:
+            raise MeasurementTargetError(f"coverage target {key} is not a bounded relative path")
+    serialized = json.dumps(record, sort_keys=True)
+    if any(marker in serialized for marker in ("/home/", "/Users/", '"~')):
+        raise MeasurementTargetError("coverage target contains a machine-specific path")
+    return dict(record)

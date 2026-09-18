@@ -38,7 +38,19 @@
         "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
         "mode": {"type": "string", "enum": ["stock", "coverage", "patched"]},
         "image_digest": {"type": "string"},
-        "executable_digest": {"type": "string"}
+        "executable_digest": {"type": "string"},
+        "build_result_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "coverage_harness_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "target_name": {"type": "string"},
+        "engine": {"type": "string"},
+        "performance_authority": {"type": "string"},
+        "non_authoritative_performance": {"type": "boolean"},
+        "schema_version": {"const": 1},
+        "coverage_target_ref": {"type": "string", "pattern": "^state:measurement-target-builds/[A-Za-z0-9._-]+$"},
+        "working_dir": {"type": "string", "minLength": 1},
+        "fuzz_dir": {"type": "string", "minLength": 1},
+        "binary": {"type": "string", "minLength": 1},
+        "created_at": {"type": "string", "minLength": 1}
       },
       "additionalProperties": false
     },
@@ -55,6 +67,10 @@
       "additionalProperties": false
     },
     "correlation": {"type": "object", "additionalProperties": {"type": ["string", "number", "integer", "null"]}},
+    "performance_authority": {"type": "string", "enum": ["authoritative", "non-authoritative", "requires-paired-calibration", "common-metric-calibrated", "not-calibrated"]},
+    "non_authoritative_performance": {"type": "boolean"},
+    "coverage": {"type": "object", "additionalProperties": true},
+    "campaign": {"type": "object", "additionalProperties": true},
     "artifacts": {"type": "array", "items": {"type": "string"}},
     "warnings": {"type": "array", "items": {"type": "string"}},
     "unavailable_reason": {"type": "string"}
