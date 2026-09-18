@@ -117,6 +117,7 @@ def test_run_measurement_section_surfaces_identity_collectors_and_metrics(tmp_pa
                             "status": "available",
                             "unit": "us",
                             "sample_count": 40,
+                            "rejected_count": 0,
                             "median": 101000,
                             "p95": 102000,
                             "p99": 102400,
@@ -146,6 +147,7 @@ def test_run_measurement_section_surfaces_identity_collectors_and_metrics(tmp_pa
     assert offered["value"] == 9.4
     assert offered["count"] == 40
     assert latency["sample_count"] == 40
+    assert latency["count"] is None
     assert latency["median"] == 101000
     assert unavailable["reason"] == "controlled range was not observed"
 

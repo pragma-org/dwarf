@@ -737,9 +737,6 @@ def _measurement_metric_row(name: str, raw: Any) -> dict[str, Any]:
         count = primary.get("offered_count")
     elif primary.get("delta") is not None:
         value = primary.get("delta")
-    for key in ("offered_count", "accepted_count", "rejected_count"):
-        if count is None and primary.get(key) is not None:
-            count = primary.get(key)
     outcome_rows = []
     for outcome, distribution in sorted(outcomes.items()):
         if not isinstance(distribution, dict):
