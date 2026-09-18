@@ -1,4 +1,11 @@
 from scripts import runtime_compose_substrate as compose
+from scripts import runtime_amaru_bootstrap_synth as bootstrap
+
+
+def test_amaru_bootstrap_assets_are_bundled_and_loader_is_digest_pinned():
+    assert (bootstrap.AMARU_TESTNET_DIR / "cardano-loader.sh").is_file()
+    assert (bootstrap.AMARU_TESTNET_DIR / "amaru-loader.sh").is_file()
+    assert "@sha256:" in bootstrap.DEFAULT_LOADER_BASE_IMAGE
 
 
 def test_versioned_compose_nodes_are_discoverable_as_dwarf_managed():

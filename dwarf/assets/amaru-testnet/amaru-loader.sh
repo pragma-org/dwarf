@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+set -vx
+
+BASEDIR=${BASEDIR:-/data/generated}
+CONFIG_DIR=${CONFIG_DIR:-/cardano/config}
+CHAIN_DB_DIR=${CHAIN_DB_DIR:-/cardano/state}
+STATE_DIR=${STATE_DIR:-/state}
+NETWORK_NAME=${NETWORK_NAME:-testnet_42}
+
+write_file() {
+    local tmp_file="${1}_$(tr </dev/urandom -dc A-Za-z0-9 | head -c16)"
+    cat >"${tmp_file}"
+    mv --force "${tmp_file}" "${1}"
+}
+
+copy_databases() {
+    local target="${STATE_DIR}/$1"
+    mkdir -p "$target/ledger.db" "$target/chain.db"
+    (shopt -s dotglob nullglob; cp -a "${BASEDIR}/ledger.${NETWORK_NAME}.db/"* "$target/ledger.db/";)
+    (shopt -s dotglob nullglob; cp -a "${BASEDIR}/chain.${NETWORK_NAME}.db/"* "$target/chain.db/";)
+}
+
+for i in ${BASEDIR}/[0-9]*; do
+    amaru convert-ledger-state --network ${NETWORK_NAME} --snapshot $i --target-dir ${BASEDIR}/${NETWORK_NAME}/snapshots
+done
+
+last_snapshot=$(ls -1 ${BASEDIR}/ | awk -F '/' '/[0-9]+$/ { print $1 }' | sort -n | tail -1)
+cp ${BASEDIR}/${NETWORK_NAME}/snapshots/nonces.${last_snapshot}.* ${BASEDIR}/${NETWORK_NAME}/nonces.json
+second_to_last_snapshot=$(ls -1 ${BASEDIR}/ | awk -F '/' '/[0-9]+$/ { print $1 }' | sort -n | tail -2 | head -1)
+second_to_last_hash=$(ls -1 ${BASEDIR}/${NETWORK_NAME}/snapshots | awk -F '/' '/.*.cbor$/ { print $1 }' | sort -n | cut -d '.' -f 2 | tail -2 | head -1)
+jq ".tail = \"${second_to_last_hash}\"" ${BASEDIR}/${NETWORK_NAME}/nonces.json | write_file ${BASEDIR}/${NETWORK_NAME}/nonces.json
+
+db-server query --query list-blocks \
+          --config ${CONFIG_DIR}/configs/config.json \
+          --db ${CHAIN_DB_DIR} | jq -rc "[ .[] | select(.slot <= $last_snapshot) ] | .[0:2] | .[] | [.slot, .hash] | @csv" > ${BASEDIR}/${NETWORK_NAME}/headers.csv
+db-server query --query list-blocks \
+          --config ${CONFIG_DIR}/configs/config.json \
+          --db ${CHAIN_DB_DIR} | jq -rc "[ .[] | select(.slot <= $second_to_last_snapshot) ] | .[0:2] | .[] | [.slot, .hash] | @csv" >> ${BASEDIR}/${NETWORK_NAME}/headers.csv
+
+mkdir -p ${BASEDIR}/${NETWORK_NAME}/headers
+tr -d '"' < ${BASEDIR}/${NETWORK_NAME}/headers.csv | while IFS=, read -ra hdr; do
+    db-server query --query "get-header ${hdr[0]}.${hdr[1]}" \
+              --config ${CONFIG_DIR}/configs/config.json \
+              --db ${CHAIN_DB_DIR} > "${BASEDIR}/${NETWORK_NAME}/headers/header.${hdr[0]}.${hdr[1]}.cbor"
+done
+
+amaru import-ledger-state --network ${NETWORK_NAME} --ledger-dir ${BASEDIR}/ledger.${NETWORK_NAME}.db --snapshot-dir ${BASEDIR}/${NETWORK_NAME}/snapshots/
+
+# import headers
+amaru import-headers --network ${NETWORK_NAME} --chain-dir ${BASEDIR}/chain.${NETWORK_NAME}.db
+
+amaru import-nonces --nonces-file ${BASEDIR}/${NETWORK_NAME}/nonces.json --network ${NETWORK_NAME} --chain-dir ${BASEDIR}/chain.${NETWORK_NAME}.db/
+
+nodes=$(ls -d ${STATE_DIR}/*)
+number_of_nodes=$(ls -d ${STATE_DIR}/* | wc -l)
+echo "number_of_nodes: $number_of_nodes"
+for node in $nodes; do
+  node_ix=$(echo "$node" | awk -F '/' '{print $3}')
+  echo "configure node: $node ($node_ix)"
+  copy_databases "$node_ix"
+done

@@ -10,8 +10,11 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from runtime_substrate_common import run_command
-AMARU_TESTNET_DIR = SCRIPT_DIR.parents[1] / "codebases" / "amaru" / "docker" / "testnet"
-DEFAULT_LOADER_BASE_IMAGE = "ghcr.io/pragma-org/amaru/loader:main"
+AMARU_TESTNET_DIR = SCRIPT_DIR.parent / "assets" / "amaru-testnet"
+DEFAULT_LOADER_BASE_IMAGE = (
+    "ghcr.io/pragma-org/amaru/loader@"
+    "sha256:057ba262540cf0ecec837e054a38c2a5d3ec3aa13532d6be21eca937bcdf52cf"
+)
 DEFAULT_AMARU_IMAGE = "dwarf/amaru:0.1.2"
 DEFAULT_LOADER_IMAGE = "dwarf/amaru-loader:0.1.2"
 
