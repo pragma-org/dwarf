@@ -224,6 +224,13 @@ def transform_compose_model(
             # Run that preparation as root, then drop back to the UID/GID from
             # the official Amaru image for the actual node process.
             service["user"] = "0:0"
+            environment = service.setdefault("environment", {})
+            if not isinstance(environment, dict):
+                raise QualificationError(f"{name} has a non-mapping environment")
+            # Current Amaru releases explicitly require migration when opening
+            # an older bootstrap-producer ChainDB. Unknown environment keys are
+            # inert for releases that predate this migration switch.
+            environment["AMARU_MIGRATE_CHAIN_DB"] = "true"
             service["command"] = _replace_command(service.get("command"))
 
     for volume in (transformed.get("volumes") or {}).values():
@@ -339,12 +346,35 @@ def _project_is_fresh(project: str) -> bool:
     return True
 
 
+def identity_matches(
+    *,
+    expected_version: str,
+    reported_version: str,
+    expected_image_id: str,
+    running_image_id: str,
+) -> bool:
+    """Require process-level version proof and container artifact identity."""
+    return bool(
+        expected_version
+        and expected_version in reported_version
+        and expected_image_id
+        and running_image_id == expected_image_id
+    )
+
+
+def _image_id(reference: str) -> str:
+    result = _run(["docker", "image", "inspect", reference, "--format", "{{.Id}}"])
+    return _require(result, f"image inspection for {reference}").strip()
+
+
 def _identity_observation(
     project: str,
     *,
     scope: str,
     cardano_version: str,
     amaru_version: str | None,
+    cardano_image: str,
+    amaru_image: str | None,
 ) -> dict[str, Any]:
     containers = _project_containers(project)
     services = list(CARDANO_REFERENCE_NODES)
@@ -354,6 +384,18 @@ def _identity_observation(
     for service in services:
         container = containers.get(service)
         expected = amaru_version if service in AMARU_RELAYS else cardano_version
+        expected_image = amaru_image if service in AMARU_RELAYS else cardano_image
+        expected_image_id = _image_id(expected_image) if expected_image else ""
+        running_image_result = (
+            _run(["docker", "inspect", container, "--format", "{{.Image}}"])
+            if container
+            else None
+        )
+        running_image_id = (
+            running_image_result.stdout.strip()
+            if running_image_result is not None and running_image_result.returncode == 0
+            else ""
+        )
         commands = (
             [["docker", "exec", container, "/usr/local/bin/amaru", "--version"],
              ["docker", "exec", container, "/bin/amaru", "--version"]]
@@ -371,7 +413,19 @@ def _identity_observation(
             "container": container,
             "expected_version": expected,
             "reported": output,
-            "matched": bool(container and expected and result and expected in output),
+            "expected_image": expected_image,
+            "expected_image_id": expected_image_id,
+            "running_image_id": running_image_id,
+            "matched": bool(
+                container
+                and result
+                and identity_matches(
+                    expected_version=str(expected or ""),
+                    reported_version=output,
+                    expected_image_id=expected_image_id,
+                    running_image_id=running_image_id,
+                )
+            ),
         }
     return {"matched": bool(records) and all(item["matched"] for item in records.values()), "services": records}
 
@@ -577,6 +631,8 @@ def run_qualification(
             scope=scope,
             cardano_version=candidate["cardano_version"],
             amaru_version=candidate.get("amaru_version"),
+            cardano_image=cardano_image,
+            amaru_image=amaru_image,
         )
         (evidence_root / "identity.json").write_text(
             json.dumps(identity, indent=2, sort_keys=True) + "\n", encoding="utf-8"

@@ -10,6 +10,7 @@ from scripts.qualify_node_versions import (
     candidate_matrix,
     classify_qualification,
     exact_oci_reference,
+    identity_matches,
     propose_catalog_update,
     transform_compose_model,
 )
@@ -114,6 +115,21 @@ def test_exact_oci_reference_uses_digest_without_mutable_tag():
     )
 
 
+def test_identity_match_requires_both_node_version_and_exact_running_image():
+    assert identity_matches(
+        expected_version="11.1.2",
+        reported_version="cardano-node 11.1.2\ngit rev " + "a" * 40,
+        expected_image_id="sha256:" + "1" * 64,
+        running_image_id="sha256:" + "1" * 64,
+    ) is True
+    assert identity_matches(
+        expected_version="11.1.2",
+        reported_version="cardano-node 11.1.2",
+        expected_image_id="sha256:" + "1" * 64,
+        running_image_id="sha256:" + "2" * 64,
+    ) is False
+
+
 def test_project_names_are_unique_safe_and_never_the_live_project():
     first = build_project_name("mixed", "11.1.2", "10.11.20260912", token="abc123")
     second = build_project_name("mixed", "11.1.2", "10.11.20260912", token="def456")
@@ -137,6 +153,7 @@ def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
     assert transformed["services"]["amaru-consumer"]["image"] == "new-cardano"
     assert transformed["services"]["amaru-relay-1"]["image"] == "new-amaru"
     assert transformed["services"]["amaru-relay-1"]["user"] == "0:0"
+    assert transformed["services"]["amaru-relay-1"]["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
     assert "chown -R 10000:10000 /srv/amaru /startup /opt/amaru-logs" in transformed["services"]["amaru-relay-1"]["command"][1]
     assert "setpriv --reuid=10000 --regid=10000 --clear-groups /usr/local/bin/amaru run" in transformed["services"]["amaru-relay-1"]["command"][1]
     assert "exec chown" not in transformed["services"]["amaru-relay-1"]["command"][1]
