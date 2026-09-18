@@ -143,6 +143,7 @@ def test_bootstrap_producer_command_uses_synthesized_cardano_db_and_exact_image(
     command = bootstrap.bootstrap_producer_command(layout=layout)
 
     assert bootstrap.DEFAULT_BOOTSTRAP_PRODUCER_IMAGE in command
+    assert command[command.index("--user") + 1] == "1000:1000"
     assert f"{layout['cardano_state_roots']['1']}:/cardano/state:ro" in command
     assert f"{layout['config_roots']['1']}:/cardano/config:ro" in command
     assert "/cardano/state" in command
