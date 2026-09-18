@@ -237,11 +237,24 @@ def _replace_tree(target_root: Path, source_root: Path) -> None:
 
 
 def _apply_staged_state(layout: dict) -> None:
+    history_files = sorted(
+        (
+            Path(str(layout["generated_root"]))
+            / str(layout["network_name"])
+            / "snapshots"
+        ).glob("history.*.json")
+    )
+    if not history_files:
+        raise RuntimeError("Amaru bootstrap did not generate an era-history file")
+    history_body = history_files[0].read_bytes()
+    if any(path.read_bytes() != history_body for path in history_files[1:]):
+        raise RuntimeError("Amaru bootstrap generated inconsistent era-history files")
     for slot, staged_root in layout["amaru_state_roots"].items():
         target_root = Path(layout["target_amaru_state_roots"][slot])
         if target_root.exists():
             shutil.rmtree(target_root)
         shutil.copytree(Path(staged_root), target_root)
+        (target_root / "era-history.json").write_bytes(history_body)
 
 
 def synthesize_amaru_bootstrap(

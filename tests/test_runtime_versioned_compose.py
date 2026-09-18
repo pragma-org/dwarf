@@ -81,6 +81,28 @@ def test_versioned_amaru_service_migrates_bootstrap_state_before_run():
     service = body["services"]["amaru1"]
     assert service["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
     assert "exec amaru run" in service["command"][0]
+    assert '--era-history "/amaru/amaru1/era-history.json"' in service["command"][0]
+
+
+def test_bootstrap_state_copies_generated_era_history_to_each_amaru_target(tmp_path):
+    generated = tmp_path / "generated" / "testnet_42" / "snapshots"
+    generated.mkdir(parents=True)
+    (generated / "history.100.abc.json").write_text('{"eras": []}\n', encoding="utf-8")
+    staged = tmp_path / "staged" / "1"
+    staged.mkdir(parents=True)
+    (staged / "ledger.db").mkdir()
+    target = tmp_path / "target" / "amaru1"
+
+    bootstrap._apply_staged_state(
+        {
+            "network_name": "testnet_42",
+            "generated_root": str(tmp_path / "generated"),
+            "amaru_state_roots": {"1": str(staged)},
+            "target_amaru_state_roots": {"1": str(target)},
+        }
+    )
+
+    assert (target / "era-history.json").read_text(encoding="utf-8") == '{"eras": []}\n'
 
 
 def test_bootstrap_synthesis_builds_loader_from_selected_amaru_artifact(monkeypatch, tmp_path):

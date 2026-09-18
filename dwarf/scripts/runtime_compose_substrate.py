@@ -617,6 +617,12 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
                 "--listen-address 0.0.0.0:5001 "
                 f"--ledger-dir {json.dumps(f'{state_root}/{ledger_name}')} "
                 f"--chain-dir {json.dumps(f'{state_root}/{chain_name}')} "
+                + (
+                    f"--era-history {json.dumps(f'{state_root}/era-history.json')} "
+                    if not _amaru_bootstrap_required(network_name)
+                    else ""
+                )
+                +
                 f"--pid-file {json.dumps(f'{state_root}/amaru.pid')} "
                 f"2>&1 | tee -a /logs/{node['id']}/stdout.log"
             )
