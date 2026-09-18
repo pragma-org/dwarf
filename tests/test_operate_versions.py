@@ -51,7 +51,8 @@ def test_version_catalog_view_separates_releases_pairs_defaults_and_evidence():
     cardano = next(row for row in view["releases"] if row["implementation"] == "cardano-node" and row["version"] == "11.1.2")
     pair = next(row for row in view["pairs"] if row["id"] == "cardano-10.7.1__amaru-10.11.0")
     assert cardano["artifact_digest"].startswith("sha256:")
-    assert cardano["scope_statuses"]["cardano-only"]["status"] == "unknown"
+    assert cardano["scope_statuses"]["cardano-only"]["status"] == "confirmed"
+    assert cardano["scope_statuses"]["cardano-only"]["default"] is True
     assert pair["status"] == "confirmed"
     assert pair["default"] is True
     assert pair["evidence"]
@@ -91,7 +92,7 @@ def test_profile_catalog_shows_policy_status_exact_versions_and_preview_first(tm
     latest = next(entry for entry in entries if entry["id"] == "profile-latest")
     mixed = next(entry for entry in entries if entry["id"] == "profile-mixed")
 
-    assert latest["version_status"] == "unknown"
+    assert latest["version_status"] == "confirmed"
     assert latest["version_summary"] == "cardano-node 11.1.2"
     assert mixed["version_status"] == "confirmed"
     assert "10.7.1" in mixed["version_summary"] and "10.11.0" in mixed["version_summary"]
@@ -99,7 +100,7 @@ def test_profile_catalog_shows_policy_status_exact_versions_and_preview_first(tm
     assert "confirmed" in html
     assert "Preview deploy" in html
     assert "/api/deploy/preview" in html
-    assert "acknowledge_unknown_version" in html
+    assert "Deploy resolved version" in html
 
 
 def test_profile_detail_includes_version_intent(tmp_path, monkeypatch):

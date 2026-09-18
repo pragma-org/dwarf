@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from profile_manager import dashboard
+from profile_manager import deployment_versions
 from profile_manager.deployment_versions import (
     DeploymentVersionGateError,
     build_deployment_version_preview,
@@ -46,8 +47,8 @@ def test_preview_exposes_exact_release_status_digest_and_catalog_revision(tmp_pa
     assert preview["profile_id"] == profile_id
     assert preview["policy"] == "latest-stable"
     assert preview["scope"] == "cardano-only"
-    assert preview["status"] == "unknown"
-    assert preview["requires_acknowledgement"] is True
+    assert preview["status"] == "confirmed"
+    assert preview["requires_acknowledgement"] is False
     assert preview["resolved"]["cardano-node"]["version"] == "11.1.2"
     assert preview["resolved"]["cardano-node"]["artifacts"][0]["digest"].startswith("sha256:")
     assert len(preview["catalog_revision"]) == 64
@@ -56,6 +57,7 @@ def test_preview_exposes_exact_release_status_digest_and_catalog_revision(tmp_pa
 def test_unknown_requires_one_run_acknowledgement(tmp_path, monkeypatch):
     profile_id = _profile(tmp_path, monkeypatch)
     preview = profile_deployment_version_preview(profile_id)
+    preview = {**preview, "status": "unknown", "requires_acknowledgement": True}
 
     with pytest.raises(DeploymentVersionGateError, match="acknowledgement"):
         enforce_deployment_version_gate(preview, acknowledge_unknown=False)
@@ -108,6 +110,13 @@ def test_preview_endpoint_is_read_only_and_returns_json(tmp_path, monkeypatch):
 def test_dashboard_deploy_blocks_unknown_until_acknowledged(tmp_path, monkeypatch):
     profile_id = _profile(tmp_path, monkeypatch)
     built = []
+    preview = profile_deployment_version_preview(profile_id)
+    preview = {**preview, "status": "unknown", "requires_acknowledgement": True}
+    monkeypatch.setattr(
+        deployment_versions,
+        "profile_deployment_version_preview",
+        lambda _profile_id: preview,
+    )
 
     def builder(action, **kwargs):
         built.append((action, kwargs))

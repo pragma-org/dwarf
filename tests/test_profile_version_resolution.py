@@ -44,13 +44,13 @@ def test_legacy_profile_remains_loadable_without_silent_version_claim():
     assert profile.version_policy == "legacy"
 
 
-def test_latest_stable_cardano_resolves_newest_release_but_requires_acknowledgement():
+def test_latest_stable_cardano_resolves_newest_qualified_release():
     resolved = resolve_profile_versions(_profile(), load_version_catalog(CATALOG_PATH))
 
     assert resolved["scope"] == "cardano-only"
     assert resolved["resolved"]["cardano-node"]["version"] == "11.1.2"
-    assert resolved["status"] == "unknown"
-    assert resolved["requires_acknowledgement"] is True
+    assert resolved["status"] == "confirmed"
+    assert resolved["requires_acknowledgement"] is False
     assert resolved["blocked"] is False
 
 
