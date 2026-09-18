@@ -63,6 +63,35 @@ window for `amaru` and `mixed` profiles while retaining the 10-minute window
 for Cardano-only profiles. The earlier fixed 10-minute client timeout was a
 DWARF control-path defect, not a node compatibility result.
 
+## Omitted-policy safe-default proof
+
+DWARF also exercised profiles whose serialized YAML intentionally omitted
+`version_policy`. In every operator entry path, the omission resolved to
+`latest-confirmed` with `version_policy_source: implicit-default`; it did not
+fall back to an installed binary, mutable image tag, locally changing source
+tree, or pre-existing devnet. Version selection remained independent from the
+deployment adapter.
+
+| Scope | Preserved adapter | Resolved default | Runtime evidence |
+|---|---|---|---|
+| Cardano-only | `generated-cardano-local` | Cardano-node `11.1.2` at its catalog-pinned digest | `/opt/dwarf/cardano-profiles/archive/profile-runtime-proof-cardano-implicit-20260918T130234Z` |
+| Amaru target | `amaru-control` | Amaru `10.11.20260912` with supporting Cardano-node `10.7.1`, both digest-pinned | `/opt/dwarf/cardano-profiles/archive/profile-runtime-proof-amaru-implicit-20260918T131648Z` |
+| Mixed | `amaru-control` | Cardano-node `10.7.1` plus Amaru `10.11.0`, both digest-pinned | `/opt/dwarf/cardano-profiles/archive/profile-runtime-proof-mixed-implicit-20260918T133120Z` |
+
+The Cardano-only deployment advanced and was removed cleanly. The Amaru-target
+and mixed deployments each passed the complete nine-gate runtime contract:
+required services, exact identity, fresh state, peer formation, chain progress,
+Amaru-only consumer path, zero-lag consumer convergence, no fatal signatures,
+and no restart loop. Their final readiness reports are retained as
+`evidence/deployment-report.json`, with the final observation in
+`evidence/health-008.json`.
+
+Preview and dry-run checks separately proved that Preview, Preview2, and
+Preprod profiles retain their `cardano-public-peer` or `amaru-public-peer`
+adapter and exact immutable artifacts while remaining honestly `unknown` for
+the public-network-specific contract. No public-network launch was performed,
+and local-devnet qualification is not presented as proof of that contract.
+
 ## Superseded results
 
 The following retained runs used the discarded synthetic/relaunch lifecycle

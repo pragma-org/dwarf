@@ -265,14 +265,14 @@ services:
       relay2:
         condition: service_started
       # IMPORTANT (--seed): keep this as "random" for the Antithesis run — the
-  # Antithesis harness substitutes $(antithesis_random) for the literal "random"
-  # at run time (same convention as antithesis/cardano_node_dwarf). The adversary
-  # binary itself rejects "random" (wants a uint64: `option --seed: not a uint64`),
-  # so for a LOCAL `docker compose up` test you MUST override it with a concrete
-  # number (e.g. --seed 1234567). Do NOT commit a numeric seed — it breaks the
-  # per-run determinism Antithesis provides. amaru-relay-2 peers this adversary
-  # (its block decoder is fuzzed); amaru-relay-1 stays honest as the control.
-  dwarf-adversary:
+      # Antithesis harness substitutes $(antithesis_random) for the literal "random"
+      # at run time (same convention as antithesis/cardano_node_dwarf). The adversary
+      # binary itself rejects "random" (wants a uint64: `option --seed: not a uint64`),
+      # so for a LOCAL `docker compose up` test you MUST override it with a concrete
+      # number (e.g. --seed 1234567). Do NOT commit a numeric seed — it breaks the
+      # per-run determinism Antithesis provides. amaru-relay-2 peers this adversary
+      # (its block decoder is fuzzed); amaru-relay-1 stays honest as the control.
+      dwarf-adversary:
         condition: service_started
     container_name: amaru-relay-2
     hostname: amaru-relay-2.example

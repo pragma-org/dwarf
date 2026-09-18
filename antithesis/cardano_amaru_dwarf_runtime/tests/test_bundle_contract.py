@@ -7,7 +7,10 @@ from pathlib import Path
 
 
 BUNDLE = Path(__file__).resolve().parents[1]
-RUNTIME_IMAGE = "ghcr.io/j-gainsec/dwarf-amaru-807-runtime:0.1.0"
+RUNTIME_IMAGE = (
+    "ghcr.io/j-gainsec/dwarf-amaru-807-runtime@"
+    "sha256:7512e0cca44682ce5b6780c49c0e670d1befa85bfbc4e93abb8ba8001060e221"
+)
 
 
 class BundleContractTests(unittest.TestCase):
