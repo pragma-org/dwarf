@@ -14,7 +14,9 @@ from scripts.qualify_node_versions import (
     classify_terminal_runtime_failure,
     exact_oci_reference,
     identity_matches,
+    initial_start_services,
     propose_catalog_update,
+    service_state_completed_successfully,
     transform_compose_model,
 )
 
@@ -151,6 +153,31 @@ def test_project_names_are_unique_safe_and_never_the_live_project():
     assert first != second
     assert first.startswith("dwarf-qual-mixed-")
     assert first not in PROTECTED_PROJECTS
+
+
+def test_initial_amaru_start_excludes_only_the_gated_consumer():
+    model = _compose_model()
+    model["services"]["amaru-consumer-ready"] = {"image": "gate"}
+
+    services = initial_start_services(model, "mixed")
+
+    assert "amaru-consumer" not in services
+    assert "amaru-consumer-ready" in services
+    assert "bootstrap-producer" in services
+    assert "amaru-relay-1" in services
+    assert initial_start_services(model, "cardano-only") == []
+
+
+def test_completed_gate_accepts_zero_exit_code_without_truthiness_bug():
+    assert service_state_completed_successfully(
+        {"Status": "exited", "ExitCode": 0}
+    ) is True
+    assert service_state_completed_successfully(
+        {"Status": "exited", "ExitCode": 1}
+    ) is False
+    assert service_state_completed_successfully(
+        {"Status": "running", "ExitCode": 0}
+    ) is False
 
 
 def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():

@@ -484,6 +484,39 @@ def _compose(project: str, compose_file: Path, *arguments: str) -> list[str]:
     return ["docker", "compose", "-p", project, "-f", str(compose_file), *arguments]
 
 
+def initial_start_services(model: dict[str, Any], scope: str) -> list[str]:
+    """Start the control without blocking on its gated downstream consumer.
+
+    Compose waits for ``amaru-consumer-ready`` to complete before creating the
+    consumer.  Starting the other services explicitly lets DWARF observe and
+    classify an Amaru startup failure immediately; the consumer is started
+    after the gate exits successfully.
+    """
+    if scope == "cardano-only":
+        return []
+    services = model.get("services") or {}
+    return sorted(name for name in services if name != AMARU_CONSUMER)
+
+
+def service_state_completed_successfully(state: dict[str, Any]) -> bool:
+    exit_code = state.get("ExitCode", -1)
+    return state.get("Status") == "exited" and int(exit_code) == 0
+
+
+def _service_completed_successfully(project: str, service: str) -> bool:
+    container = _project_containers(project).get(service)
+    if not container:
+        return False
+    result = _run(["docker", "inspect", container, "--format", "{{json .State}}"])
+    if result.returncode != 0:
+        return False
+    try:
+        state = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return False
+    return service_state_completed_successfully(state)
+
+
 def _project_containers(project: str) -> dict[str, str]:
     result = _run([
         "docker", "ps", "-a",
@@ -800,11 +833,17 @@ def run_qualification(
     error: str | None = None
     terminal_failure: str | None = None
     try:
-        _require(_run(_compose(project, compose_file, "up", "-d"), timeout=max(900, timeout_seconds)), "qualification startup")
+        start_services = initial_start_services(model, scope)
+        start_command = _compose(project, compose_file, "up", "-d", *start_services)
+        _require(
+            _run(start_command, timeout=max(900, timeout_seconds)),
+            "qualification startup",
+        )
         started = True
         emit("started")
         deadline = time.monotonic() + max(1, timeout_seconds)
         bootstrap_evidence: dict[str, Any] = {}
+        consumer_started = scope == "cardano-only"
         attempt = 0
         while time.monotonic() <= deadline:
             attempt += 1
@@ -816,6 +855,18 @@ def run_qualification(
                     and observation.get("peer_formation")
                 )
             else:
+                if not consumer_started and _service_completed_successfully(
+                    project, "amaru-consumer-ready"
+                ):
+                    _require(
+                        _run(
+                            _compose(project, compose_file, "up", "-d", AMARU_CONSUMER),
+                            timeout=300,
+                        ),
+                        "isolated consumer startup",
+                    )
+                    consumer_started = True
+                    emit("consumer_started")
                 observation = collect_and_classify(
                     project=project,
                     output=evidence_root / f"health-{attempt:03d}.json",

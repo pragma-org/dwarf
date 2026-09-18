@@ -36,8 +36,10 @@ from qualify_node_versions import (  # noqa: E402
     _project_is_fresh,
     _render_baseline,
     _run,
+    _service_completed_successfully,
     classify_log_signals,
     classify_terminal_runtime_failure,
+    initial_start_services,
     transform_compose_model,
 )
 from redeploy_cardano_amaru_topology import (  # noqa: E402
@@ -225,7 +227,13 @@ def deploy(config: dict[str, Any], *, base_package: Path = BASE_PACKAGE) -> dict
     emit("prepared", project=project, runtime_root=str(runtime_root))
     try:
         up = _run(
-            _compose(project, compose_file, "up", "-d"),
+            _compose(
+                project,
+                compose_file,
+                "up",
+                "-d",
+                *initial_start_services(model, str(config["scope"])),
+            ),
             timeout=max(900, int(config.get("healthy_timeout_seconds") or 1800)),
         )
         if up.returncode != 0:
@@ -235,9 +243,23 @@ def deploy(config: dict[str, Any], *, base_package: Path = BASE_PACKAGE) -> dict
             1, int(config.get("healthy_timeout_seconds") or 1800)
         )
         bootstrap_evidence: dict[str, Any] = {}
+        consumer_started = False
         attempt = 0
         while time.monotonic() <= deadline:
             attempt += 1
+            if not consumer_started and _service_completed_successfully(
+                project, "amaru-consumer-ready"
+            ):
+                consumer = _run(
+                    _compose(project, compose_file, "up", "-d", "amaru-consumer"),
+                    timeout=300,
+                )
+                if consumer.returncode != 0:
+                    raise RuntimeControlError(
+                        (consumer.stderr or consumer.stdout or "consumer startup failed").strip()
+                    )
+                consumer_started = True
+                emit("consumer_started")
             observation = collect_and_classify(
                 project=project,
                 output=evidence_root / f"health-{attempt:03d}.json",
