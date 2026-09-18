@@ -223,6 +223,19 @@ def _annotate_legacy_amaru_command(value: Any) -> Any:
     return value
 
 
+def _peer_amaru_with_live_producer(value: Any, relay_name: str) -> Any:
+    peers = {
+        "amaru-relay-1": ("relay1.example:3001", "p1.example:3001"),
+        "amaru-relay-2": ("relay2.example:3001", "p2.example:3001"),
+    }
+    old_peer, producer_peer = peers[relay_name]
+    if isinstance(value, str):
+        return value.replace(old_peer, producer_peer)
+    if isinstance(value, list):
+        return [_peer_amaru_with_live_producer(item, relay_name) for item in value]
+    return value
+
+
 def _uses_modern_amaru_runtime_interface(image: str) -> bool:
     repository = str(image or "").split("@", 1)[0]
     last_slash = repository.rfind("/")
@@ -295,6 +308,9 @@ def transform_compose_model(
                 service["command"] = _annotate_legacy_amaru_command(
                     service.get("command")
                 )
+            service["command"] = _peer_amaru_with_live_producer(
+                service.get("command"), name
+            )
 
     if scope in {"amaru-only", "mixed"}:
         bootstrap = services.get("bootstrap-producer") or {}

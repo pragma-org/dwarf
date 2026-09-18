@@ -67,7 +67,11 @@ def _compose_model():
         "image": "old-amaru",
         "container_name": "amaru-relay-1",
         "entrypoint": ["/bin/sh"],
-        "command": ["-c", "exec /bin/amaru node run --network testnet_42"],
+        "command": [
+            "-c",
+            "exec /bin/amaru node run --network testnet_42 "
+            "--peer-address relay1.example:3001",
+        ],
         "networks": {"default": None, "amaru-consumer-net": None},
     }
     return {
@@ -86,7 +90,15 @@ def _compose_model():
             "bootstrap-producer": {"image": "bootstrap", "container_name": "bootstrap-producer"},
             "amaru-consumer-seed": {"image": "bootstrap", "container_name": "amaru-consumer-seed"},
             "amaru-relay-1": dict(amaru),
-            "amaru-relay-2": dict(amaru),
+            "amaru-relay-2": {
+                **amaru,
+                "container_name": "amaru-relay-2",
+                "command": [
+                    "-c",
+                    "exec /bin/amaru node run --network testnet_42 "
+                    "--peer-address relay2.example:3001",
+                ],
+            },
         },
         "volumes": {"p1-state": {}, "a1-state": {}, "external": {"external": True}},
         "networks": {
@@ -163,6 +175,10 @@ def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
     assert "[bootstrap] snapshot_slots=399 799 1199" in transformed["services"]["amaru-relay-1"]["command"][1]
     assert "[bootstrap] committed bundle to /srv/amaru" in transformed["services"]["amaru-relay-1"]["command"][1]
     assert "[bootstrap] exec'ing amaru run" in transformed["services"]["amaru-relay-1"]["command"][1]
+    assert "--peer-address p1.example:3001" in transformed["services"]["amaru-relay-1"]["command"][1]
+    assert "--peer-address p2.example:3001" in transformed["services"]["amaru-relay-2"]["command"][1]
+    assert "relay1.example:3001" not in transformed["services"]["amaru-relay-1"]["command"][1]
+    assert "relay2.example:3001" not in transformed["services"]["amaru-relay-2"]["command"][1]
     assert "exec chown" not in transformed["services"]["amaru-relay-1"]["command"][1]
     gate = transformed["services"]["amaru-consumer-ready"]
     assert gate["depends_on"]["amaru-relay-1"]["condition"] == "service_started"
@@ -195,6 +211,8 @@ def test_transform_retained_amaru_control_keeps_legacy_runtime_interface():
     assert "[bootstrap] committed bundle to /srv/amaru" in relay["command"][1]
     assert "[bootstrap] exec'ing amaru run" in relay["command"][1]
     assert "exec /bin/amaru node run" in relay["command"][1]
+    assert "--peer-address p1.example:3001" in relay["command"][1]
+    assert "relay1.example:3001" not in relay["command"][1]
     assert "setpriv" not in relay["command"][1]
     assert "/usr/local/bin/amaru" not in relay["command"][1]
 
