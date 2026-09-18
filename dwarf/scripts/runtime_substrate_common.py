@@ -11,6 +11,7 @@ from typing import Callable
 
 
 VALID_IMPLS = {"cardano-node", "amaru"}
+VERSION_STATUSES = {"confirmed", "unknown", "incompatible", "blocked"}
 VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 NODE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 NETWORK_PATTERN = re.compile(r"^(mainnet|preprod|preview|testnet_[1-9][0-9]*)$")
@@ -111,6 +112,14 @@ def normalize_substrate(substrate: dict) -> dict:
             raise ValueError(f"substrate.nodes[{index}].version must be a non-empty string")
         if not isinstance(role, str) or not role:
             raise ValueError(f"substrate.nodes[{index}].role must be a non-empty string")
+        image = node.get("image")
+        if image is not None and (not isinstance(image, str) or not image):
+            raise ValueError(f"substrate.nodes[{index}].image must be a non-empty string when present")
+        source_revision = node.get("source_revision")
+        if source_revision is not None and (not isinstance(source_revision, str) or not source_revision):
+            raise ValueError(
+                f"substrate.nodes[{index}].source_revision must be a non-empty string when present"
+            )
         host_id = node.get("host")
         if host_strategy == "explicit":
             if host_id not in host_ids:
@@ -124,6 +133,8 @@ def normalize_substrate(substrate: dict) -> dict:
                 "version": version,
                 "role": role,
                 "host": host_id,
+                "image": image,
+                "source_revision": source_revision,
             }
         )
     topology = substrate.get("topology") or {}
@@ -159,6 +170,18 @@ def normalize_substrate(substrate: dict) -> dict:
                 raise ValueError("substrate.network_magic must be omitted for mainnet, preprod, or preview")
         elif network.startswith("testnet_"):
             network_magic = int(network.split("_", 1)[1])
+    version_policy = substrate.get("version_policy")
+    version_status = substrate.get("version_status")
+    unknown_acknowledged = substrate.get("unknown_acknowledged", False)
+    catalog_revision = substrate.get("catalog_revision")
+    if version_policy is not None and not isinstance(version_policy, str):
+        raise ValueError("substrate.version_policy must be a string when present")
+    if version_status is not None and version_status not in VERSION_STATUSES:
+        raise ValueError(f"substrate.version_status must be one of {sorted(VERSION_STATUSES)}")
+    if not isinstance(unknown_acknowledged, bool):
+        raise ValueError("substrate.unknown_acknowledged must be a boolean")
+    if catalog_revision is not None and (not isinstance(catalog_revision, str) or not catalog_revision):
+        raise ValueError("substrate.catalog_revision must be a non-empty string when present")
     return {
         "host_strategy": host_strategy,
         "hosts": normalized_hosts,
@@ -166,6 +189,10 @@ def normalize_substrate(substrate: dict) -> dict:
         "network_magic": network_magic,
         "nodes": normalized_nodes,
         "topology": {"edges": normalized_edges},
+        "version_policy": version_policy,
+        "version_status": version_status,
+        "unknown_acknowledged": unknown_acknowledged,
+        "catalog_revision": catalog_revision,
     }
 
 
@@ -228,6 +255,135 @@ def resolve_binary_for_node(
         "resolved_binary": None,
         "resolved_version": None,
         "version_output": "",
+    }
+
+
+def _node_docker_image(node: dict) -> str:
+    configured = str(node.get("image") or "").strip()
+    if configured:
+        return configured
+    image_name = "cardano-node" if node["impl"] == "cardano-node" else "amaru"
+    return f"dwarf/{image_name}:{node['version']}"
+
+
+def resolve_docker_image_for_node(
+    node: dict,
+    *,
+    runner: Callable[..., CommandResult] = run_command,
+) -> dict:
+    """Inspect a real local image and retain its immutable identity."""
+
+    image_ref = _node_docker_image(node)
+    command = ["docker", "image", "inspect", image_ref]
+    try:
+        result = runner(command)
+    except FileNotFoundError:
+        result = CommandResult(command, 127, "", "docker not found")
+    base = {
+        "resolved_binary": f"docker-image:{image_ref}",
+        "resolved_version": node["version"],
+        "version_output": f"docker-image:{image_ref}",
+        "image_ref": image_ref,
+        "image_id": None,
+        "image_digest": None,
+        "repo_digests": [],
+        "requested_digest": image_ref.rsplit("@", 1)[1] if "@sha256:" in image_ref else None,
+        "source_revision": node.get("source_revision"),
+    }
+    if result.returncode != 0:
+        return {**base, "status": "image-missing", "satisfied": False, "error": result.stderr.strip()}
+    try:
+        decoded = json.loads(result.stdout)
+        body = decoded[0] if isinstance(decoded, list) else decoded
+        if not isinstance(body, dict):
+            raise ValueError("inspect response is not an object")
+    except (json.JSONDecodeError, IndexError, ValueError) as exc:
+        return {**base, "status": "image-inspect-invalid", "satisfied": False, "error": str(exc)}
+    repo_digests = [str(value) for value in (body.get("RepoDigests") or [])]
+    available_digests = [value.rsplit("@", 1)[1] for value in repo_digests if "@sha256:" in value]
+    requested_digest = base["requested_digest"]
+    image_digest = requested_digest if requested_digest in available_digests else (
+        available_digests[0] if available_digests else None
+    )
+    resolved = {
+        **base,
+        "image_id": str(body.get("Id") or "") or None,
+        "image_digest": image_digest,
+        "repo_digests": repo_digests,
+    }
+    if requested_digest and requested_digest not in available_digests:
+        return {**resolved, "status": "image-digest-mismatch", "satisfied": False}
+    return {**resolved, "status": "image-present", "satisfied": True}
+
+
+def verify_running_node_version(
+    container_name: str,
+    node: dict,
+    *,
+    runner: Callable[..., CommandResult] = run_command,
+) -> dict:
+    binary = "cardano-node" if node["impl"] == "cardano-node" else "amaru"
+    command = ["docker", "exec", container_name, binary, "--version"]
+    try:
+        result = runner(command)
+    except FileNotFoundError:
+        result = CommandResult(command, 127, "", "docker not found")
+    combined = f"{result.stdout}\n{result.stderr}".strip()
+    reported = _extract_version(combined)
+    requested = str(node["version"])
+    satisfied = result.returncode == 0 and reported is not None and (
+        requested == "any" or reported == requested
+    )
+    return {
+        "status": "running-version-verified" if satisfied else "running-version-mismatch",
+        "satisfied": satisfied,
+        "requested_version": requested,
+        "reported_version": reported,
+        "version_output": combined,
+        "command": command,
+    }
+
+
+def verify_running_container_artifact(container_image_id: str, node: dict) -> dict:
+    expected = str(node.get("image_id") or "")
+    actual = str(container_image_id or "")
+    satisfied = bool(expected and actual and expected == actual)
+    return {
+        "status": "running-image-verified" if satisfied else "running-image-mismatch",
+        "satisfied": satisfied,
+        "image_ref": node.get("image_ref") or node.get("image"),
+        "expected_image_id": expected or None,
+        "container_image_id": actual or None,
+        "image_digest": node.get("image_digest"),
+    }
+
+
+def build_version_provenance(substrate: dict, nodes: list[dict]) -> dict:
+    """Create the portable version record embedded in runtime and run evidence."""
+
+    node_records = []
+    for node in nodes:
+        identity = node.get("version_identity") or {}
+        node_records.append(
+            {
+                "id": node.get("id"),
+                "implementation": node.get("impl"),
+                "requested_version": node.get("version"),
+                "resolved_version": node.get("resolved_version"),
+                "reported_version": identity.get("reported_version"),
+                "source_revision": node.get("source_revision"),
+                "image_ref": node.get("image_ref") or node.get("image"),
+                "image_id": node.get("image_id"),
+                "image_digest": node.get("image_digest"),
+                "identity_status": identity.get("status"),
+            }
+        )
+    return {
+        "policy": substrate.get("version_policy"),
+        "status": substrate.get("version_status"),
+        "unknown_acknowledged": bool(substrate.get("unknown_acknowledged")),
+        "catalog_revision": substrate.get("catalog_revision"),
+        "nodes": node_records,
     }
 
 
@@ -351,6 +507,10 @@ def allocate_node_plan(
         "runtime_root": str(runtime_root),
         "nodes": nodes,
         "topology": normalized["topology"],
+        "version_policy": normalized.get("version_policy"),
+        "version_status": normalized.get("version_status"),
+        "unknown_acknowledged": bool(normalized.get("unknown_acknowledged")),
+        "catalog_revision": normalized.get("catalog_revision"),
     }
 
 

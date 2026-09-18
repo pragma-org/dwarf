@@ -16,9 +16,13 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from runtime_substrate_common import (
     allocate_node_plan,
+    build_version_provenance,
     normalize_substrate,
     resolve_binary_for_node,
+    resolve_docker_image_for_node,
     run_command,
+    verify_running_container_artifact,
+    verify_running_node_version,
     wait_for_nodes_healthy,
     write_json,
 )
@@ -470,6 +474,9 @@ def _emit_bundle_runtime_view(*, output_dir: Path, metadata_path: Path, metadata
 
 
 def _docker_image_ref(node: dict) -> str:
+    configured = str(node.get("image") or "").strip()
+    if configured:
+        return configured
     if node["impl"] == "cardano-node":
         return f"dwarf/cardano-node:{node['version']}"
     return f"dwarf/amaru:{node['version']}"
@@ -640,6 +647,7 @@ def _inspect_docker_node(*, compose_project: str, node: dict) -> dict:
     return {
         "container_name": container_name,
         "container_id": body.get("Id", ""),
+        "container_image_id": body.get("Image", ""),
         "container_network": network_name,
         "container_ip": container_ip,
         "container_listen_address": f"{node['id']}:{_docker_container_port(node)}",
@@ -659,6 +667,7 @@ def _inspect_docker_node_remote(*, compose_project: str, node: dict, host: dict)
     return {
         "container_name": container_name,
         "container_id": body.get("Id", ""),
+        "container_image_id": body.get("Image", ""),
         "container_network": network_name,
         "container_ip": container_ip,
         "container_listen_address": f"{node['id']}:{_docker_container_port(node)}",
@@ -753,6 +762,18 @@ def _compose_substrate_docker(
     metadata_nodes = []
     for node in plan["nodes"]:
         container = _inspect_docker_node(compose_project=docker_project, node=node)
+        artifact_identity = verify_running_container_artifact(container["container_image_id"], node)
+        version_identity = verify_running_node_version(container["container_name"], node)
+        if not artifact_identity["satisfied"]:
+            raise RuntimeError(
+                f"running image identity mismatch for {node['id']}: "
+                f"expected {artifact_identity['expected_image_id']}, got {artifact_identity['container_image_id']}"
+            )
+        if not version_identity["satisfied"]:
+            raise RuntimeError(
+                f"running version mismatch for {node['id']}: "
+                f"requested {version_identity['requested_version']}, reported {version_identity['reported_version']}"
+            )
         container_peer_addresses = [
             f"{edge['to']}:{_docker_container_port(next(peer for peer in plan['nodes'] if peer['id'] == edge['to']))}"
             for edge in plan["topology"]["edges"]
@@ -764,6 +785,8 @@ def _compose_substrate_docker(
             **container,
             "container_peer_addresses": container_peer_addresses,
             "image_ref": _docker_image_ref(node),
+            "artifact_identity": artifact_identity,
+            "version_identity": version_identity,
         }
         metadata_nodes.append(metadata_node)
         report_nodes.append(
@@ -782,6 +805,8 @@ def _compose_substrate_docker(
                 **container,
                 "container_peer_addresses": container_peer_addresses,
                 "image_ref": _docker_image_ref(node),
+                "artifact_identity": artifact_identity,
+                "version_identity": version_identity,
             }
         )
 
@@ -801,6 +826,7 @@ def _compose_substrate_docker(
         "aux_sessions": [],
         "faults": [],
         "era_transition": {},
+        "version_provenance": build_version_provenance(plan, metadata_nodes),
     }
     metadata_path = runtime_root / "runtime.json"
     write_json(metadata_path, metadata)
@@ -840,6 +866,7 @@ def _compose_substrate_docker(
         "public_network_assets": None,
         "nodes": report_nodes,
         "topology": plan["topology"],
+        "version_provenance": build_version_provenance(plan, metadata_nodes),
     }
     write_json(output_dir / "compose-report.json", report)
     return report
@@ -1074,6 +1101,18 @@ def _compose_substrate_docker_multihost(
         for node in host_nodes:
             node["health_probe"] = "port-only"
             container = _inspect_docker_node_remote(compose_project=docker_project, node=node, host=host)
+            artifact_identity = verify_running_container_artifact(container["container_image_id"], node)
+            version_identity = verify_running_node_version(
+                container["container_name"],
+                node,
+                runner=lambda command, _host=host, **_: _run_remote_command(
+                    _host, " ".join(json.dumps(str(part)) for part in command)
+                ),
+            )
+            if not artifact_identity["satisfied"]:
+                raise RuntimeError(f"running image identity mismatch for {node['id']} on {host['id']}")
+            if not version_identity["satisfied"]:
+                raise RuntimeError(f"running version mismatch for {node['id']} on {host['id']}")
             metadata_node = {
                 **node,
                 "compose_mode": "docker",
@@ -1084,6 +1123,8 @@ def _compose_substrate_docker_multihost(
                 **container,
                 "container_peer_addresses": node["container_peer_addresses"],
                 "image_ref": _docker_image_ref(node),
+                "artifact_identity": artifact_identity,
+                "version_identity": version_identity,
             }
             metadata_nodes.append(metadata_node)
             node_report = {
@@ -1105,6 +1146,8 @@ def _compose_substrate_docker_multihost(
                 **container,
                 "container_peer_addresses": node["container_peer_addresses"],
                 "image_ref": _docker_image_ref(node),
+                "artifact_identity": artifact_identity,
+                "version_identity": version_identity,
             }
             host_report_nodes.append(node_report)
             report_nodes.append(node_report)
@@ -1159,6 +1202,7 @@ def _compose_substrate_docker_multihost(
         "aux_sessions": [],
         "faults": [],
         "era_transition": {},
+        "version_provenance": build_version_provenance(plan, metadata_nodes),
     }
     metadata_path = runtime_root / "runtime.json"
     write_json(metadata_path, metadata)
@@ -1199,6 +1243,7 @@ def _compose_substrate_docker_multihost(
         "hosts": host_reports,
         "nodes": report_nodes,
         "topology": plan["topology"],
+        "version_provenance": build_version_provenance(plan, metadata_nodes),
     }
     write_json(output_dir / "compose-report.json", report)
     return report
@@ -1232,17 +1277,26 @@ def compose_substrate(
     for node in plan["nodes"]:
         if node["id"] not in resolved:
             if image_backed:
-                resolved[node["id"]] = {
-                    "status": "image-present",
-                    "satisfied": True,
-                    "resolved_binary": f"docker-image:{_docker_image_ref(node)}",
-                    "resolved_version": node["version"],
-                    "version_output": f"docker-image:{_docker_image_ref(node)}",
-                }
+                resolved[node["id"]] = resolve_docker_image_for_node(node)
             else:
                 resolved[node["id"]] = resolve_binary_for_node(node)
         node["resolved_binary"] = resolved[node["id"]]["resolved_binary"]
         node["resolved_version"] = resolved[node["id"]]["resolved_version"]
+        for provenance_key in (
+            "status",
+            "image_ref",
+            "image_id",
+            "image_digest",
+            "repo_digests",
+            "requested_digest",
+            "source_revision",
+        ):
+            if provenance_key in resolved[node["id"]]:
+                node[f"artifact_{provenance_key}" if provenance_key == "status" else provenance_key] = resolved[node["id"]][provenance_key]
+        if not resolved[node["id"]].get("satisfied"):
+            raise RuntimeError(
+                f"version artifact resolution failed for {node['id']}: {resolved[node['id']].get('status')}"
+            )
         if not node["resolved_binary"] and not image_backed:
             raise RuntimeError(f"missing resolved binary for {node['id']}")
 
@@ -1377,6 +1431,7 @@ def compose_substrate(
         "aux_sessions": [],
         "faults": [],
         "era_transition": {},
+        "version_provenance": build_version_provenance(plan, plan["nodes"]),
     }
     metadata_path = runtime_root / "runtime.json"
     write_json(metadata_path, metadata)
@@ -1430,6 +1485,7 @@ def compose_substrate(
         "public_network_assets": public_assets,
         "nodes": report_nodes,
         "topology": plan["topology"],
+        "version_provenance": build_version_provenance(plan, plan["nodes"]),
     }
     write_json(output_dir / "compose-report.json", report)
     return report

@@ -10,7 +10,14 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from runtime_substrate_common import CommandResult, normalize_substrate, resolve_binary_for_node, run_command, write_json
+from runtime_substrate_common import (
+    CommandResult,
+    normalize_substrate,
+    resolve_binary_for_node,
+    resolve_docker_image_for_node,
+    run_command,
+    write_json,
+)
 
 
 def resolve_requested_versions(
@@ -28,16 +35,7 @@ def resolve_requested_versions(
     compose_mode = str(substrate.get("compose_mode", "host"))
     for node in normalized["nodes"]:
         if compose_mode == "docker":
-            resolved = resolve_binary_for_node(node, runner=runner, which=which)
-            if not resolved["satisfied"]:
-                image_ref = f"docker-image:dwarf/{'cardano-node' if node['impl'] == 'cardano-node' else 'amaru'}:{node['version']}"
-                resolved = {
-                    "status": "image-present",
-                    "satisfied": True,
-                    "resolved_binary": image_ref,
-                    "resolved_version": node["version"],
-                    "version_output": image_ref,
-                }
+            resolved = resolve_docker_image_for_node(node, runner=runner)
         else:
             resolved = resolve_binary_for_node(node, runner=runner, which=which)
         nodes[node["id"]] = {
@@ -55,6 +53,10 @@ def resolve_requested_versions(
         "node_count": len(normalized["nodes"]),
         "network": normalized["network"],
         "network_magic": normalized["network_magic"],
+        "version_policy": normalized.get("version_policy"),
+        "version_status": normalized.get("version_status"),
+        "unknown_acknowledged": bool(normalized.get("unknown_acknowledged")),
+        "catalog_revision": normalized.get("catalog_revision"),
         "nodes": nodes,
     }
     write_json(output_dir / "install-report.json", report)
