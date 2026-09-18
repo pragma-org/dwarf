@@ -26,6 +26,22 @@ def _load_runtime_node(runtime_metadata_path: Path, target_node: str) -> dict:
             if isinstance(group, list):
                 nodes.extend(group)
     if not nodes:
+        services = ((body.get("identity") or {}).get("services") or {})
+        if isinstance(services, dict):
+            for name, service in services.items():
+                if not isinstance(service, dict) or not service.get("container"):
+                    continue
+                nodes.append(
+                    {
+                        "id": str(name),
+                        "name": str(name),
+                        "impl": (
+                            "amaru" if str(name).startswith("amaru-") else "cardano-node"
+                        ),
+                        "container_name": str(service["container"]),
+                    }
+                )
+    if not nodes:
         raise RuntimeError(
             f"runtime metadata does not contain nodes, haskell_nodes, or amaru_nodes: {runtime_metadata_path}"
         )

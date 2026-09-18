@@ -513,6 +513,7 @@ class AmaruStockCollector:
         json_trace_paths: Iterable[str | Path],
         otlp_trace_paths: Iterable[str | Path],
         include_existing: bool = False,
+        allow_missing_at_start: bool = False,
         max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
     ) -> None:
         self.entry = entry
@@ -524,6 +525,7 @@ class AmaruStockCollector:
         if max_source_bytes <= 0 or max_source_bytes > 64 * 1024 * 1024:
             raise ValueError("max_source_bytes must be within 1..67108864")
         self.include_existing = include_existing
+        self.allow_missing_at_start = allow_missing_at_start
         self.max_source_bytes = max_source_bytes
         self._offsets: dict[Path, int] = {}
         self._markers: list[dict[str, Any]] = []
@@ -531,7 +533,12 @@ class AmaruStockCollector:
     def prepare(self, context) -> None:
         for path in [*self.json_paths, *self.otlp_paths]:
             if not path.is_file():
-                raise FileNotFoundError(f"Amaru telemetry source is unavailable: {path}")
+                if not self.allow_missing_at_start:
+                    raise FileNotFoundError(
+                        f"Amaru telemetry source is unavailable: {path}"
+                    )
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
         context.collector_dir.mkdir(parents=True, exist_ok=True)
 
     def start(self, context) -> None:
@@ -614,6 +621,7 @@ def build_amaru_stock_factories(
     json_trace_paths: Iterable[str | Path],
     otlp_trace_paths: Iterable[str | Path],
     include_existing: bool = False,
+    allow_missing_at_start: bool = False,
     max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
 ) -> dict[str, Any]:
     """Bind trusted deployment-owned inputs to each stock collector factory."""
@@ -626,6 +634,7 @@ def build_amaru_stock_factories(
             json_trace_paths=json_paths,
             otlp_trace_paths=otlp_paths,
             include_existing=include_existing,
+            allow_missing_at_start=allow_missing_at_start,
             max_source_bytes=max_source_bytes,
         )
 

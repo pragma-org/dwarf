@@ -58,6 +58,53 @@ def test_docker_resolution_selects_actual_amaru_child_not_container_init(
     ) == 102
 
 
+def test_control_runtime_identity_services_are_valid_resource_targets(
+    monkeypatch, tmp_path
+):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text(
+        json.dumps(
+            {
+                "identity": {
+                    "services": {
+                        "amaru-relay-1": {
+                            "container": "dwarf-profile-r-amaru-relay-1",
+                            "matched": True,
+                        }
+                    }
+                }
+            }
+        )
+    )
+    proc_root = tmp_path / "proc"
+    _proc_status(proc_root, 110, name="tini")
+    _proc_status(proc_root, 112, name="amaru")
+
+    def fake_run(command, **_kwargs):
+        if command[:2] == ["docker", "inspect"]:
+            assert command[2] == "dwarf-profile-r-amaru-relay-1"
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps([{"State": {"Pid": 110}}]),
+            )
+        if command[:2] == ["docker", "top"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "PID COMMAND COMMAND\n"
+                    "110 tini /tini -- wrapper\n"
+                    "112 amaru /target/amaru node run\n"
+                ),
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(runtime_resource_profile.subprocess, "run", fake_run)
+
+    assert runtime_resource_profile.resolve_target_pid(
+        metadata, "amaru-relay-1", proc_root=proc_root
+    ) == 112
+
+
 def test_pid_file_resolution_supports_amaru_and_combined_metadata(tmp_path):
     proc_root = tmp_path / "proc"
     _proc_status(proc_root, 202, name="amaru")

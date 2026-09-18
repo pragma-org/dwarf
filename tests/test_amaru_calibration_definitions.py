@@ -96,5 +96,74 @@ def test_calibration_primitive_runs_retained_leg_with_exact_attempt_count(
     assert command[2:4] == ["leg", "--runtime-root"]
     assert command[command.index("--attempts") + 1] == "40"
     assert kwargs["cwd"] == ROOT / "dwarf"
-    assert handle.events[-1]["payload"]["outcome"] == "ok"
-    assert handle.events[-1]["payload"]["report"]["attempts"]["total"] == 40
+    completed = next(
+        event for event in handle.events if event["event"] == "completed"
+    )
+    assert completed["payload"]["outcome"] == "ok"
+    assert completed["payload"]["report"]["attempts"]["total"] == 40
+
+
+def test_calibration_primitive_emits_outcome_independent_workload_accounting(
+    tmp_path, monkeypatch
+):
+    class Handle:
+        run_dir = tmp_path
+
+        def __init__(self):
+            self.events = []
+
+        def log(self, **event):
+            self.events.append(event)
+
+    attempts = [
+        {
+            "attempt_id": "a",
+            "outcome": "rejected",
+            "elapsed_micros": 12,
+            "request_length": 8,
+        },
+        {
+            "attempt_id": "b",
+            "outcome": "timeout",
+            "elapsed_micros": 34,
+            "request_length": 8,
+        },
+    ]
+
+    def run(command, **kwargs):
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        (output_dir / "attempts.ndjson").write_text(
+            "".join(json.dumps(row) + "\n" for row in attempts),
+            encoding="utf-8",
+        )
+        (output_dir / "result.json").write_text(
+            json.dumps({
+                "attempts": {"total": 2, "outcomes": {"rejected": 1, "timeout": 1}},
+            }),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    handle = Handle()
+    primitive = RuntimeAmaruMeasurementCalibration(
+        params={"runtime_root": "/runtime", "attempts": 40}
+    )
+
+    primitive.run(handle, None)
+
+    accounting = next(
+        event for event in handle.events if event["event"] == "workload_accounting"
+    )
+    assert accounting["payload"] == {
+        "attempted": 2,
+        "successful": 0,
+        "rejected": 1,
+        "bytes": 16,
+        "batches": 2,
+        "backlog": None,
+        "attempts": [
+            {"input_id": "a", "outcome": "rejected", "elapsed_micros": 12},
+            {"input_id": "b", "outcome": "timeout", "elapsed_micros": 34},
+        ],
+    }

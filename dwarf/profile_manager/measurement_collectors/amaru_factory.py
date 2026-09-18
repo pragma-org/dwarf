@@ -31,6 +31,7 @@ def build_amaru_measurement_factories(
     resource_sample_reader: Callable[[int, int], dict[str, Any]] | None = None,
     resource_background: bool = True,
     target_identity: dict[str, Any] | None = None,
+    allow_missing_trace_sources: bool = False,
 ) -> dict[str, Callable[[dict[str, Any]], Any]]:
     """Bind deployment-owned paths and probes; scenario parameters cannot replace them."""
     metadata_path = Path(runtime_metadata_path)
@@ -39,6 +40,7 @@ def build_amaru_measurement_factories(
     factories = build_amaru_stock_factories(
         json_trace_paths=json_paths,
         otlp_trace_paths=otlp_paths,
+        allow_missing_at_start=allow_missing_trace_sources,
     )
     if target_identity is not None and target_identity.get("mode") == "patched":
         factories.update(

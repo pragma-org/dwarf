@@ -800,6 +800,20 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
 
     scen = load_scenario(path)
     registry = primitives.load_registry(registry_path or DEFAULT_REGISTRY_PATH)
+    prepared_measurements = None
+    if (
+        measurement_context is None
+        and (
+            scen.measurement_profile not in {None, "none"}
+            or bool(scen.measurements)
+        )
+    ):
+        from profile_manager.measurement_execution import (
+            prepare_scenario_measurements,
+        )
+
+        prepared_measurements = prepare_scenario_measurements(scen)
+        measurement_context = prepared_measurements.resolution
     seed = scen.seed if scen.seed is not None else 0
     # Derive an int seed for random.Random.
     if isinstance(seed, str) and seed.lower().startswith("0x"):
@@ -826,6 +840,13 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         measurement_context=measurement_context,
     )
     handle.set_start_resource_snapshot(forensic.capture_local_resource_snapshot(pid=os.getpid(), data_dir=handle.run_dir))
+    if (
+        prepared_measurements is not None
+        and measurement_collector_factories is None
+    ):
+        measurement_collector_factories = prepared_measurements.build_factories(
+            handle.run_dir
+        )
     topology_id = _attached_topology_id(scen)
     topology_lock = None
     if topology_id:

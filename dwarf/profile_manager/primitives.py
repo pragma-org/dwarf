@@ -13325,7 +13325,19 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
 
         helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
         python_bin = str(self.params.get("python_bin", "python3"))
-        runtime_root = str(self.params["runtime_root"])
+        profile_id = self.params.get("profile_id")
+        runtime_root_value = self.params.get("runtime_root")
+        if bool(profile_id) == bool(runtime_root_value):
+            raise ValueError(
+                "runtime_amaru_measurement_calibration requires exactly one of "
+                "profile_id or runtime_root"
+            )
+        if profile_id:
+            from profile_manager.profiles import remote_base
+
+            runtime_root = str(Path(remote_base()) / str(profile_id))
+        else:
+            runtime_root = str(runtime_root_value)
         attempts = int(self.params.get("attempts", 40))
         response_timeout_seconds = float(
             self.params.get("response_timeout_seconds", 2.0)
@@ -13363,6 +13375,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             level="info",
             event="started",
             payload={
+                "profile_id": profile_id,
                 "runtime_root": runtime_root,
                 "output_dir": str(output_dir),
                 "attempts": attempts,
@@ -13404,6 +13417,18 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             if report_path.is_file()
             else {}
         )
+        attempt_records = []
+        attempts_path = output_dir / "attempts.ndjson"
+        if attempts_path.is_file():
+            for line in attempts_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(record, dict):
+                    attempt_records.append(record)
         outcome = (
             "ok"
             if helper_exit_code == expected_helper_exit
@@ -13419,11 +13444,44 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "helper_exit_code": helper_exit_code,
                 "timed_out": timed_out,
                 "runtime_root": runtime_root,
+                "profile_id": profile_id,
                 "output_dir": str(output_dir),
                 "attempts": attempts,
                 "report": report,
                 "stdout": stdout[-4096:],
                 "stderr": stderr[-2048:],
+            },
+        )
+        successful_outcomes = {"accepted", "ok", "success", "successful"}
+        rejected_outcomes = {"rejected", "invalid", "duplicate"}
+        handle.log(
+            phase="load",
+            primitive="runtime_amaru_measurement_calibration",
+            level="info",
+            event="workload_accounting",
+            payload={
+                "attempted": len(attempt_records),
+                "successful": sum(
+                    str(row.get("outcome") or "").lower() in successful_outcomes
+                    for row in attempt_records
+                ),
+                "rejected": sum(
+                    str(row.get("outcome") or "").lower() in rejected_outcomes
+                    for row in attempt_records
+                ),
+                "bytes": sum(
+                    int(row.get("request_length") or 0) for row in attempt_records
+                ),
+                "batches": len(attempt_records),
+                "backlog": None,
+                "attempts": [
+                    {
+                        "input_id": str(row.get("attempt_id") or ""),
+                        "outcome": str(row.get("outcome") or "unclassified"),
+                        "elapsed_micros": int(row.get("elapsed_micros") or 0),
+                    }
+                    for row in attempt_records
+                ],
             },
         )
 
