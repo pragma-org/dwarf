@@ -1,0 +1,17 @@
+schema_version: v1
+id: amaru-stock-plutus-execution
+title: Amaru Plutus VM conformance and cost
+description: Records production Plutus acquire, decode, build, and evaluate timing with result and CPU and memory budget evidence by program, version, and cost model.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: amaru
+  versions: [{version: 10.11.20260912, source_revision: b159172f25a9c389f82f20bca4f15e3032791638}]
+  target_modes: [stock, patched]
+collection_mode: stock-telemetry
+required_capabilities: [amaru-plutus-execution-spans, amaru-json-traces]
+default_enabled: true
+overhead_class: low
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/amaru-stock-plutus-execution/result.json]
+correlation_identifiers: [run_id, workload_phase, input_id, transaction_id, trace_id, span_id]
+threshold_gate: {supported: true, default_enabled: false}

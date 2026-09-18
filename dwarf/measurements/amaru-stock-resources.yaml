@@ -1,0 +1,17 @@
+schema_version: v1
+id: amaru-stock-resources
+title: Amaru process resource cost
+description: Measures the actual Amaru process CPU, RSS, disk, network, open-file, and thread cost rather than only DWARF host usage.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: amaru
+  versions: [{version: 10.11.20260912, source_revision: b159172f25a9c389f82f20bca4f15e3032791638}]
+  target_modes: [stock, patched]
+collection_mode: stock-telemetry
+required_capabilities: [amaru-system-metrics, dwarf-container-metrics]
+default_enabled: true
+overhead_class: negligible
+collector: {lifecycle: run, start: before-target, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/amaru-stock-resources/result.json]
+correlation_identifiers: [run_id, workload_phase, fault_id, window]
+threshold_gate: {supported: true, default_enabled: false}

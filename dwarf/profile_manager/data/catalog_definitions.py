@@ -1,4 +1,4 @@
-"""Safe, shared access to DWARF's scenario, target, and profile definitions."""
+"""Safe, shared access to DWARF's first-class catalog definitions."""
 from __future__ import annotations
 
 import gzip
@@ -16,7 +16,13 @@ import yaml
 
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,127}$")
-_CATALOGS = {"scenarios", "targets", "profiles"}
+_CATALOGS = {
+    "scenarios",
+    "targets",
+    "profiles",
+    "measurements",
+    "measurement-profiles",
+}
 _TARGET_DECODER_TYPES = {
     "CBOR codec",
     "Mini-protocol decoder",
@@ -62,6 +68,10 @@ class DefinitionRecord:
             return f"dwarf/scenarios/{self.definition_id}.yaml"
         if self.catalog == "targets":
             return f"dwarf/targets/manifests/{self.definition_id}.yaml"
+        if self.catalog == "measurements":
+            return f"dwarf/measurements/{self.definition_id}.yaml"
+        if self.catalog == "measurement-profiles":
+            return f"dwarf/measurement-profiles/{self.definition_id}.yaml"
         return f"dwarf/profiles/{self.definition_id}/profile.yaml"
 
 
@@ -76,6 +86,16 @@ def catalog_root(catalog: str) -> Path:
         return Path(
             os.environ.get("ADA2_DWARF_MANIFESTS_DIR")
             or dwarf_root / "targets" / "manifests"
+        )
+    if catalog == "measurements":
+        return Path(
+            os.environ.get("ADA2_DWARF_MEASUREMENTS_DIR")
+            or dwarf_root / "measurements"
+        )
+    if catalog == "measurement-profiles":
+        return Path(
+            os.environ.get("ADA2_DWARF_MEASUREMENT_PROFILES_DIR")
+            or dwarf_root / "measurement-profiles"
         )
     return Path(os.environ.get("ADA2_DWARF_PROFILES_DIR") or dwarf_root / "profiles")
 
@@ -128,6 +148,14 @@ def _validate_loaded(catalog: str, definition_id: str, data: dict[str, Any]) -> 
                 raise InvalidDefinitionError(report.get("error") or "invalid scenario")
         elif catalog == "profiles":
             validate_profile_definition(data)
+        elif catalog == "measurements":
+            from profile_manager.measurements import validate_measurement_definition
+
+            validate_measurement_definition(data)
+        elif catalog == "measurement-profiles":
+            from profile_manager.measurements import validate_measurement_profile
+
+            validate_measurement_profile(data)
         else:
             validate_target_manifest(data)
     except InvalidDefinitionError:
@@ -336,4 +364,10 @@ def archive_filename(catalog: str) -> str:
 def catalog_label(catalog: str) -> str:
     if catalog not in _CATALOGS:
         raise UnknownCatalogError(catalog)
-    return {"scenarios": "Scenario", "targets": "Target", "profiles": "Profile"}[catalog]
+    return {
+        "scenarios": "Scenario",
+        "targets": "Target",
+        "profiles": "Profile",
+        "measurements": "Measurement",
+        "measurement-profiles": "Measurement profile",
+    }[catalog]

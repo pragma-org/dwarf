@@ -1,0 +1,18 @@
+schema_version: v1
+id: amaru-security-default
+title: Amaru security measurements — stock default
+description: Compatible passive stock and external taps for real Amaru security runs; missing or inapplicable measurements remain visible and non-gating.
+implementation: amaru
+target_modes: [stock]
+measurements:
+  - {id: amaru-stock-header-lifecycle, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-fork-switch, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-mempool, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-ledger-rules, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-plutus-execution, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-block-epoch, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-network, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-resources, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-external-restart-readiness, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-external-sync-speed, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-external-workload-accounting, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}

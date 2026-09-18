@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/measurement.schema.json",
+  "title": "DWARF measurement definition",
+  "description": "A reusable, version-qualified observation tap independent from scenario security semantics.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "title",
+    "description",
+    "output_schema",
+    "compatibility",
+    "collection_mode",
+    "required_capabilities",
+    "default_enabled",
+    "overhead_class",
+    "collector",
+    "emitted_artifacts",
+    "correlation_identifiers",
+    "threshold_gate"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "v1",
+      "description": "Version of the DWARF measurement definition contract."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$",
+      "description": "Immutable measurement catalog identifier."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Short human-readable measurement name."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What is measured, at which boundary, and what the value can legitimately establish."
+    },
+    "output_schema": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Repository-relative schema governing this tap's retained result."
+    },
+    "compatibility": {
+      "type": "object",
+      "required": ["implementation", "versions", "target_modes"],
+      "properties": {
+        "implementation": {
+          "type": "string",
+          "enum": ["amaru", "cardano-node"],
+          "description": "Real node implementation whose signals this tap understands."
+        },
+        "versions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Exact release and source revision pairs qualified for this tap.",
+          "items": {
+            "type": "object",
+            "required": ["version", "source_revision"],
+            "properties": {
+              "version": {"type": "string", "minLength": 1},
+              "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "target_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "enum": ["stock", "coverage", "patched"]},
+          "description": "Executable modes in which this tap is valid."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Exact implementation, source, and executable-mode compatibility."
+    },
+    "collection_mode": {
+      "type": "string",
+      "enum": ["external", "stock-telemetry", "compiler-coverage", "patched-node"],
+      "description": "Authority used to collect the value.",
+      "x-ui-option-descriptions": {
+        "external": "DWARF observes the real target from outside the node process.",
+        "stock-telemetry": "DWARF consumes telemetry or traces already emitted by unmodified production Amaru.",
+        "compiler-coverage": "A compiler-instrumented build records executed production paths; values are not performance authority.",
+        "patched-node": "A minimal revision-locked source patch exposes a genuine node-internal visibility gap."
+      }
+    },
+    "required_capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1},
+      "description": "Capabilities that must be proven before the collector may start."
+    },
+    "default_enabled": {
+      "type": "boolean",
+      "description": "Whether a compatible passive tap is selected when no explicit measurement profile is supplied."
+    },
+    "overhead_class": {
+      "type": "string",
+      "enum": ["negligible", "low", "moderate", "high"],
+      "description": "Expected observer overhead before per-build calibration.",
+      "x-ui-option-descriptions": {
+        "negligible": "No expected material target overhead, normally external bookkeeping.",
+        "low": "Bounded passive collection expected to have small overhead.",
+        "moderate": "Instrumentation or retention can measurably affect the target and requires calibration.",
+        "high": "Coverage or detailed capture is intrusive and is never performance authority."
+      }
+    },
+    "collector": {
+      "type": "object",
+      "required": ["lifecycle", "start", "stop", "failure_behavior"],
+      "properties": {
+        "lifecycle": {"type": "string", "enum": ["run", "phase", "process"]},
+        "start": {"type": "string", "enum": ["before-target", "before-workload", "on-demand"]},
+        "stop": {"type": "string", "enum": ["after-workload", "after-recovery", "target-exit"]},
+        "failure_behavior": {"type": "string", "enum": ["warn", "disable", "skip", "fail-run"]}
+      },
+      "additionalProperties": false,
+      "description": "Collector start/stop boundary and behavior when collection fails."
+    },
+    "emitted_artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$"},
+      "description": "Bounded repository-relative paths emitted inside the existing run bundle."
+    },
+    "correlation_identifiers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"},
+      "description": "Identifiers used to correlate samples with workloads, targets, traces, inputs, and faults."
+    },
+    "threshold_gate": {
+      "type": "object",
+      "required": ["supported", "default_enabled"],
+      "properties": {
+        "supported": {"type": "boolean"},
+        "default_enabled": {"const": false}
+      },
+      "additionalProperties": false,
+      "description": "Whether an explicitly requested threshold may gate a run; gating is always disabled by default."
+    }
+  },
+  "additionalProperties": false
+}

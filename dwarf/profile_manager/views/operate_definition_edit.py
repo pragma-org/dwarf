@@ -27,6 +27,8 @@ _AUTHORING_HELP = {
         "/learn/developer-onboarding#authoring-targets",
         "Target authoring guide",
     ),
+    "measurements": ("/learn/measurements#definitions", "Measurement authoring guide"),
+    "measurement-profiles": ("/learn/measurements#profiles", "Measurement profile guide"),
 }
 
 
@@ -35,6 +37,8 @@ def _schema(catalog: str) -> dict[str, Any]:
         "profiles": "profile.schema.json",
         "targets": "target-manifest.schema.json",
         "scenarios": "schema.json",
+        "measurements": "measurement.schema.json",
+        "measurement-profiles": "measurement-profile.schema.json",
     }.get(catalog)
     if filename is None:
         raise ValueError(f"editor descriptor is not implemented for {catalog}")
@@ -50,11 +54,14 @@ def _field_descriptors(
         option_help = details.get("x-ui-option-descriptions") or {}
         overridden = (option_overrides or {}).get(name)
         values = [option["value"] for option in overridden] if overridden is not None else list(details.get("enum") or [])
+        field_type = details.get("x-ui-type") or details.get("type", "string")
+        if field_type == "array" and (details.get("items") or {}).get("type") == "object":
+            field_type = "json-array"
         fields.append(
             {
                 "name": name,
                 "label": name.replace("_", " ").title(),
-                "type": details.get("x-ui-type") or details.get("type", "string"),
+                "type": field_type,
                 "enum": values,
                 "enum_options": overridden if overridden is not None else [
                     {
@@ -191,6 +198,54 @@ def _new_scenario(template: str | None) -> tuple[dict[str, Any], list[dict[str, 
     return data, options
 
 
+def _new_measurement() -> dict[str, Any]:
+    return {
+        "schema_version": "v1",
+        "id": "new-measurement",
+        "title": "New measurement",
+        "description": "Describe the exact boundary, authority, and legitimate claim.",
+        "output_schema": "dwarf/spec/v1/measurement-result.schema.json",
+        "compatibility": {
+            "implementation": "amaru",
+            "versions": [{
+                "version": "10.11.20260912",
+                "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+            }],
+            "target_modes": ["stock"],
+        },
+        "collection_mode": "external",
+        "required_capabilities": [],
+        "default_enabled": False,
+        "overhead_class": "low",
+        "collector": {
+            "lifecycle": "run",
+            "start": "before-workload",
+            "stop": "after-recovery",
+            "failure_behavior": "warn",
+        },
+        "emitted_artifacts": ["measurements/new-measurement/result.json"],
+        "correlation_identifiers": ["run_id", "workload_phase"],
+        "threshold_gate": {"supported": False, "default_enabled": False},
+    }
+
+
+def _new_measurement_profile() -> dict[str, Any]:
+    return {
+        "schema_version": "v1",
+        "id": "new-measurement-profile",
+        "title": "New measurement profile",
+        "description": "Select compatible independent taps; thresholds remain opt-in.",
+        "implementation": "amaru",
+        "target_modes": ["stock"],
+        "measurements": [{
+            "id": "amaru-external-workload-accounting",
+            "enabled": True,
+            "parameters": {},
+            "threshold_gate": {"enabled": False, "thresholds": []},
+        }],
+    }
+
+
 def render_operate_definition_edit(
     catalog: str,
     definition_id: str | None,
@@ -219,6 +274,10 @@ def render_operate_definition_edit(
             elif catalog == "scenarios":
                 data, scenario_templates = _new_scenario(template)
                 selected = template or ""
+            elif catalog == "measurements":
+                data = _new_measurement()
+            elif catalog == "measurement-profiles":
+                data = _new_measurement_profile()
             else:
                 data = dict(templates.get(selected, {}))
             source = json.dumps(data, indent=2, ensure_ascii=False) + "\n"

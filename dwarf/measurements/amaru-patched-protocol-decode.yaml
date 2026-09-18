@@ -1,0 +1,17 @@
+schema_version: v1
+id: amaru-patched-protocol-decode
+title: Amaru in-node protocol CBOR decode timing
+description: Uses the revision-locked minimally patched Amaru build to measure successful and failed live mini-protocol CBOR decode latency where stock traces have no uniform boundary.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: amaru
+  versions: [{version: 10.11.20260912, source_revision: b159172f25a9c389f82f20bca4f15e3032791638}]
+  target_modes: [patched]
+collection_mode: patched-node
+required_capabilities: [amaru-measurement-patch-protocol-decode, amaru-patch-identity]
+default_enabled: false
+overhead_class: moderate
+collector: {lifecycle: run, start: before-target, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/amaru-patched-protocol-decode/result.json]
+correlation_identifiers: [run_id, workload_phase, peer_id, connection_id, protocol, message_type, trace_id, span_id]
+threshold_gate: {supported: true, default_enabled: false}

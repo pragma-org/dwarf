@@ -1918,7 +1918,9 @@ def dispatch_api_request(path, *, runs_dir=None, bundles_dir=None):
             return (404, "text/plain; charset=utf-8", b"not found\n")
         except CatalogError:
             return (422, "text/plain; charset=utf-8", b"invalid definition\n")
-        if len(parts) >= 3 and parts[2] not in {"scenarios", "targets", "profiles"}:
+        if len(parts) >= 3 and parts[2] not in {
+            "scenarios", "targets", "profiles", "measurements", "measurement-profiles"
+        }:
             return (404, "text/plain; charset=utf-8", b"not found\n")
         return (400, "text/plain; charset=utf-8", b"invalid catalog request\n")
 
@@ -2697,7 +2699,13 @@ def render_route_html(route, *, token=None):
         right = (qs.get("right") or [""])[0]
         return render_operate_run_compare(left, right)
     path_only = route.split("?", 1)[0].rstrip("/")
-    if path_only in {"/operate/profiles/new", "/operate/targets/new", "/operate/scenarios/new"}:
+    if path_only in {
+        "/operate/profiles/new",
+        "/operate/targets/new",
+        "/operate/scenarios/new",
+        "/operate/measurements/new",
+        "/operate/measurement-profiles/new",
+    }:
         from urllib.parse import parse_qs, urlsplit
         from profile_manager.views.operate_definition_edit import render_operate_definition_edit
 
@@ -2710,7 +2718,9 @@ def render_route_html(route, *, token=None):
     if (
         len(edit_parts) == 4
         and edit_parts[0] == "operate"
-        and edit_parts[1] in {"scenarios", "targets", "profiles"}
+        and edit_parts[1] in {
+            "scenarios", "targets", "profiles", "measurements", "measurement-profiles"
+        }
         and edit_parts[3] == "edit"
     ):
         from profile_manager.views.operate_definition_edit import render_operate_definition_edit
@@ -2720,7 +2730,9 @@ def render_route_html(route, *, token=None):
     if (
         len(definition_parts) == 3
         and definition_parts[0] == "operate"
-        and definition_parts[1] in {"scenarios", "targets", "profiles"}
+        and definition_parts[1] in {
+            "scenarios", "targets", "profiles", "measurements", "measurement-profiles"
+        }
     ):
         from profile_manager.data.catalog_definitions import DefinitionNotFoundError
         from profile_manager.views.operate_definition import render_operate_definition
