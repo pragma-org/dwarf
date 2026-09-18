@@ -267,6 +267,21 @@ def test_probe_prefers_latest_adopted_tip_over_sparse_chainsync_current():
     assert parsed["highest_slot"] == 1200
 
 
+def test_probe_parses_20260730_adopted_tip_rendering():
+    probe = _load_probe()
+    text = """
+2026-09-18T04:51:47Z INFO amaru_consensus::stages::track_peers: intersect found peer=relay1.example:3001 current=1182.aaa highest=1369.bbb
+2026-09-18T04:53:45Z INFO amaru_consensus::stages::adopt_chain: adopted tip tip.slot=1612 tip.hash=ccc tip.block_height=316 max_block_height=316 suppressed=0
+"""
+
+    parsed = probe.parse_amaru_progress(text)
+
+    assert parsed["current_slot"] == 1612
+    assert parsed["current_hash"] == "ccc"
+    assert parsed["current_block"] == 316
+    assert parsed["highest_slot"] == 1369
+
+
 def test_probe_retains_bootstrap_targets_for_fresh_readiness_proof():
     probe = _load_probe()
     text = """
@@ -372,6 +387,51 @@ def test_probe_collects_two_samples_and_writes_classified_evidence(tmp_path):
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved["state"] == "healthy"
     assert saved["observation"]["containers"]["p1"]["image_digest"] == "sha256:p1"
+
+
+def test_probe_fails_if_container_restarts_between_samples(tmp_path):
+    probe = _load_probe()
+    reads = {"containers": 0, "sample": 0}
+
+    def container_reader(_project):
+        reads["containers"] += 1
+        containers = _containers()
+        for name, value in containers.items():
+            value["container_name"] = f"dwarf-control-{name}"
+            value["started_at"] = "2026-09-18T00:00:00Z"
+        if reads["containers"] > 1:
+            containers["amaru-consumer"]["started_at"] = "2026-09-18T00:00:05Z"
+        return containers
+
+    def sample_reader(_containers):
+        reads["sample"] += 1
+        slot = 1000 + reads["sample"]
+        tips = {
+            name: _tip(slot, hash_value=f"chain-{slot}")
+            for name in (*CARDANO_REFERENCE_NODES_FOR_TEST, "amaru-consumer")
+        }
+        return {
+            "tips": tips,
+            "amaru_relays": {
+                name: {"current_slot": slot, "fatal_signatures": []}
+                for name in ("amaru-relay-1", "amaru-relay-2")
+            },
+        }
+
+    result = probe.collect_and_classify(
+        project="cardano_amaru_relay_bootstrap_control",
+        output=tmp_path / "topology-health.json",
+        sample_seconds=0,
+        container_reader=container_reader,
+        sample_reader=sample_reader,
+        peer_contract_reader=lambda _containers: True,
+        sleeper=lambda _seconds: None,
+    )
+
+    assert reads["containers"] == 2
+    assert result["state"] == "unhealthy"
+    assert result["reason_code"] == "container_restarted"
+    assert result["affected"] == ["amaru-consumer"]
 
 
 def test_require_healthy_exit_code_fails_closed():

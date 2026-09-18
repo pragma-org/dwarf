@@ -63,9 +63,7 @@
       "primitive": "runtime_txsubmission_window_pressure",
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "node1",
-      "output_dir": "outputs/txsubmission-window-pressure",
-      "window_size": 10,
-      "overflow_count": 3
+      "output_dir": "outputs/txsubmission-window-pressure"
     },
     {
       "primitive": "runtime_snapshot_capture",

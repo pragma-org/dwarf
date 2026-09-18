@@ -48,10 +48,16 @@ class Profile:
     config_source_dir: str | None = None
     public_network: str | None = None
     testbed: str | None = None
+    version_policy: str = "latest-confirmed"
+    version_policy_source: str = "implicit-default"
+    cardano_version: str | None = None
+    amaru_version: str | None = None
+    compatibility_pair: str | None = None
 
     @classmethod
     def from_dict(cls, data):
         shape = shape_from_profile_dict(data)
+        declared_version_policy = str(data.get("version_policy") or "").strip()
         return cls(
             id=data["id"],
             label=data["label"],
@@ -71,6 +77,13 @@ class Profile:
             config_source_dir=data.get("config_source_dir"),
             public_network=data.get("public_network"),
             testbed=data.get("testbed"),
+            version_policy=declared_version_policy or "latest-confirmed",
+            version_policy_source=(
+                "explicit" if declared_version_policy else "implicit-default"
+            ),
+            cardano_version=data.get("cardano_version"),
+            amaru_version=data.get("amaru_version"),
+            compatibility_pair=data.get("compatibility_pair"),
         )
 
 
@@ -120,6 +133,11 @@ def profile_diff_text(left_id, right_id):
         "config_source_dir",
         "public_network",
         "testbed",
+        "version_policy",
+        "version_policy_source",
+        "cardano_version",
+        "amaru_version",
+        "compatibility_pair",
     )
     lines = [
         "Profile diff",
@@ -188,6 +206,27 @@ def _is_generated_haskell_local_profile(profile):
     )
 
 
+def deployment_adapter_for_profile(profile):
+    """Classify lifecycle/topology independently from node-version policy.
+
+    Version resolution supplies immutable artifacts to this adapter; it must
+    never decide which network, peer, genesis, or lifecycle the profile uses.
+    """
+
+    mode = _profile_deploy_mode(profile)
+    if mode == "mixed":
+        return "amaru-control"
+    if mode == "amaru-only":
+        if profile.upstream_peer_address or profile.public_network or profile.amaru_network:
+            return "amaru-public-peer"
+        return "amaru-control"
+    if profile.config_source_dir or profile.upstream_peer_address or profile.public_network:
+        return "cardano-public-peer"
+    if _is_generated_haskell_local_profile(profile):
+        return "generated-cardano-local"
+    return "cardano-compose-local"
+
+
 def _public_network(profile):
     return profile.public_network or profile.amaru_network or "preview"
 
@@ -233,6 +272,179 @@ def _profile_as_custom_bundle(profile):
     )
 
 
+def _exact_oci_reference(release):
+    for artifact in release.get("artifacts", []):
+        if artifact.get("kind") != "oci" or artifact.get("availability") != "available":
+            continue
+        reference = str(artifact.get("reference") or "").strip()
+        digest = str(artifact.get("digest") or "").strip()
+        if not reference or not digest:
+            continue
+        if "@sha256:" in reference:
+            return reference
+        return f"{reference}@{digest}"
+    raise ValueError(
+        f"{release.get('implementation')} {release.get('version')} has no available immutable OCI artifact"
+    )
+
+
+def _versioned_node(node_id, role, release, *, supporting=False):
+    return {
+        "id": node_id,
+        "impl": release["implementation"],
+        "version": release["version"],
+        "role": role,
+        "image": _exact_oci_reference(release),
+        "source_revision": release["source_revision"],
+        "supporting": supporting,
+    }
+
+
+def versioned_substrate_for_profile(profile, version_preview):
+    """Translate a frozen profile version preview into a real Docker substrate.
+
+    Amaru does not currently forge a standalone fresh devnet.  An
+    ``amaru-only`` profile therefore means that every *target* node is Amaru,
+    while one explicitly-labelled Cardano producer supplies the honest chain.
+    The support node is recorded separately so the topology cannot be
+    mistaken for an Amaru-only producer network.
+    """
+
+    from profile_manager.version_catalog import resolve_default
+    from profile_manager.version_discovery import load_effective_version_catalog
+
+    resolved = dict(version_preview.get("resolved") or {})
+    scope = str(version_preview.get("scope") or _profile_deploy_mode(profile))
+    deployment_adapter = deployment_adapter_for_profile(profile)
+    nodes = []
+    target_node_count = profile.node_count + profile.amaru_node_count
+    support_node_count = 0
+
+    if scope == "amaru-only" and deployment_adapter == "amaru-control":
+        support_release = (version_preview.get("supporting") or {}).get("cardano-node")
+        if support_release is None:
+            support_release = resolve_default(load_effective_version_catalog(), "cardano-only")["release"]
+        nodes.append(
+            _versioned_node(
+                "bootstrap-cardano", "bootstrap-producer", support_release, supporting=True
+            )
+        )
+        support_node_count = 1
+    elif scope != "amaru-only":
+        cardano_release = resolved.get("cardano-node")
+        if cardano_release is None:
+            raise ValueError("versioned Cardano or mixed profile did not resolve cardano-node")
+        for index in range(1, profile.node_count + 1):
+            nodes.append(_versioned_node(f"node{index}", "producer", cardano_release))
+
+    amaru_release = resolved.get("amaru")
+    if profile.amaru_node_count:
+        if amaru_release is None:
+            raise ValueError("versioned Amaru or mixed profile did not resolve Amaru")
+        for index in range(1, profile.amaru_node_count + 1):
+            nodes.append(_versioned_node(f"amaru{index}", "consumer", amaru_release))
+
+    edges = [
+        {"from": left["id"], "to": right["id"]}
+        for left in nodes
+        for right in nodes
+        if left["id"] != right["id"]
+    ]
+    return {
+        "compose_mode": "docker",
+        "scope": scope,
+        "target_node_count": target_node_count,
+        "support_node_count": support_node_count,
+        "deployment_adapter": deployment_adapter,
+        "network": (
+            _public_network(profile)
+            if deployment_adapter in {"cardano-public-peer", "amaru-public-peer"}
+            else f"testnet_{profile.network_magic}"
+        ),
+        "network_magic": (
+            None
+            if deployment_adapter in {"cardano-public-peer", "amaru-public-peer"}
+            else profile.network_magic
+        ),
+        "config_source_dir": profile.config_source_dir,
+        "upstream_peer_address": profile.upstream_peer_address,
+        "listen_address": profile.listen_address,
+        "version_policy": version_preview.get("policy"),
+        "version_policy_source": version_preview.get("policy_source"),
+        "version_status": version_preview.get("status"),
+        "unknown_acknowledged": bool(version_preview.get("unknown_acknowledged", False)),
+        "catalog_revision": version_preview.get("catalog_revision"),
+        "catalog_snapshot": version_preview.get("catalog_snapshot"),
+        "nodes": nodes,
+        "topology": {"edges": edges},
+    }
+
+
+def _versioned_deploy_command(profile, version_preview):
+    substrate = versioned_substrate_for_profile(profile, version_preview)
+    use_amaru_control = substrate["deployment_adapter"] == "amaru-control"
+    adapter = (
+        "runtime_amaru_control_substrate.py"
+        if use_amaru_control
+        else "runtime_compose_substrate.py"
+    )
+    runtime = shlex.quote(profile.remote_runtime_root)
+    project = shlex.quote(profile.compose_project)
+    config_body = {
+        "substrate": substrate,
+        "output_dir": f"{profile.remote_runtime_root}/evidence",
+        "runtime_root": profile.remote_runtime_root,
+        "compose_project": profile.compose_project,
+        "healthy_timeout_seconds": 300,
+        "deployment_adapter": substrate["deployment_adapter"],
+        "network": substrate["network"],
+        "config_source_dir": substrate.get("config_source_dir"),
+        "upstream_peer_address": substrate.get("upstream_peer_address"),
+        "listen_address": substrate.get("listen_address"),
+    }
+    if use_amaru_control:
+        cardano = next(
+            node for node in substrate["nodes"] if node["impl"] == "cardano-node"
+        )
+        amaru = next(node for node in substrate["nodes"] if node["impl"] == "amaru")
+        config_body.update(
+            {
+                "profile_id": profile.id,
+                "scope": substrate["scope"],
+                "lifecycle": "cardano_amaru_relay_bootstrap_control",
+                "supporting_cardano_version": cardano["version"],
+                "cardano_image": cardano["image"],
+                "amaru_version": amaru["version"],
+                "amaru_image": amaru["image"],
+                "healthy_timeout_seconds": 1800,
+            }
+        )
+    config_json = json.dumps(config_body, indent=2, sort_keys=True)
+    image_refs = sorted({node["image"] for node in substrate["nodes"]})
+    pull_lines = "\n".join(f"docker pull {shlex.quote(image)}" for image in image_refs)
+    return f"""set -e
+runtime={runtime}
+project={project}
+if [ -e "$runtime/env" ] || [ -e "$runtime/docker-compose.yml" ]; then
+  echo "Runtime assets already exist under: $runtime" >&2
+  exit 4
+fi
+dwarf_root="${{ADA2_DWARF_ROOT:-}}"
+if [ -z "$dwarf_root" ] || [ ! -f "$dwarf_root/scripts/{adapter}" ]; then
+  echo "ADA2_DWARF_ROOT must identify the installed DWARF source root" >&2
+  exit 7
+fi
+mkdir -p "$runtime"
+config_path="$runtime/versioned-deployment.json"
+cat > "$config_path" <<'DWARF_VERSIONED_DEPLOYMENT'
+{config_json}
+DWARF_VERSIONED_DEPLOYMENT
+{pull_lines}
+cd "$dwarf_root"
+PYTHONPATH="$dwarf_root" python3 scripts/{adapter} --config "$config_path"
+"""
+
+
 def compose_template(profile):
     """Render a docker-compose.yml for a profile.
 
@@ -276,6 +488,45 @@ def compose_template(profile):
 
 
 def deploy_dry_run_text(profile):
+    from dataclasses import asdict
+    from profile_manager.deployment_versions import build_deployment_version_preview
+
+    preview = build_deployment_version_preview(asdict(profile))
+    substrate = versioned_substrate_for_profile(profile, preview)
+    identities = ", ".join(
+        f"{node['id']}={node['impl']} {node['version']} ({node['image']})"
+        for node in substrate["nodes"]
+    )
+    return (
+        f"DRY RUN deploy for {profile.id}\n"
+        f"Version policy: {preview['policy']} ({preview['policy_source']}; {preview['status']}).\n"
+        f"Deployment adapter: {substrate['deployment_adapter']} ({preview['deployment_context']}).\n"
+        f"Exact real-node artifacts: {identities}.\n"
+        f"Would create a fresh runtime under {profile.remote_runtime_root} while preserving the profile's topology, network, peer, and configuration contract.\n"
+        "Would pull every digest-pinned image before launch and verify the running image and node-reported version.\n"
+        "No remote state changed.\n"
+    )
+
+    # The code below is retained temporarily while downstream importers move
+    # to the immutable adapter path above; it is unreachable by construction.
+    if profile.version_policy != "legacy":
+        from dataclasses import asdict
+        from profile_manager.deployment_versions import build_deployment_version_preview
+
+        preview = build_deployment_version_preview(asdict(profile))
+        substrate = versioned_substrate_for_profile(profile, preview)
+        identities = ", ".join(
+            f"{node['id']}={node['impl']} {node['version']} ({node['image']})"
+            for node in substrate["nodes"]
+        )
+        return (
+            f"DRY RUN deploy for {profile.id}\n"
+            f"Version policy: {preview['policy']} ({preview['status']}).\n"
+            f"Exact real-node artifacts: {identities}.\n"
+            f"Would create a fresh Docker substrate under {profile.remote_runtime_root}.\n"
+            "Would pull every digest-pinned image before launch and verify the running image and node-reported version.\n"
+            "No remote state changed.\n"
+        )
     if _profile_deploy_mode(profile) == "mixed":
         from profile_manager.custom_packages import package_deploy_dry_run_text
 
@@ -340,8 +591,23 @@ def remove_dry_run_text():
     )
 
 
-def deploy_command(profile):
+def deploy_command(profile, version_preview=None):
     """Build the image, generate the env via cardano-testnet, write compose, up -d."""
+    if version_preview is None:
+        from dataclasses import asdict
+        from profile_manager.deployment_versions import build_deployment_version_preview
+
+        version_preview = build_deployment_version_preview(asdict(profile))
+    return _versioned_deploy_command(profile, version_preview)
+
+    # No caller can reach the historical ambient-binary implementation below.
+    if profile.version_policy != "legacy":
+        if version_preview is None:
+            from dataclasses import asdict
+            from profile_manager.deployment_versions import build_deployment_version_preview
+
+            version_preview = build_deployment_version_preview(asdict(profile))
+        return _versioned_deploy_command(profile, version_preview)
     deploy_mode = _profile_deploy_mode(profile)
     if deploy_mode == "mixed":
         from profile_manager.custom_packages import package_deploy_command
@@ -663,17 +929,23 @@ def remove_command(remote_base_path):
     base = shlex.quote(remote_base_path)
     return f"""set -e
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-archive_root={base}/archive
+base_path={base}
+archive_root="$base_path/archive"
 mkdir -p "$archive_root"
 # Stop and remove every Dwarf-managed compose project.
 docker ps --filter 'label=ada2.managed=dwarf' --format '{{{{.Label "com.docker.compose.project"}}}}' 2>/dev/null | sort -u | while read -r project; do
   [ -n "$project" ] || continue
-  proj_dir=$(docker compose ls --all --format json 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); import json as j
-for row in d:
-  if row.get('Name') == '$project':
-    print(row.get('ConfigFiles',''))
-    break" 2>/dev/null || true)
-  docker compose --project-name "$project" down --volumes --remove-orphans 2>/dev/null || true
+  container_id=$(docker ps -aq --filter "label=com.docker.compose.project=$project" | head -n 1)
+  config_path=""
+  if [ -n "$container_id" ]; then
+    config_path=$(docker inspect --format '{{{{ index .Config.Labels "com.docker.compose.project.config_files" }}}}' "$container_id" 2>/dev/null || true)
+    config_path=${{config_path%%,*}}
+  fi
+  if [ -n "$config_path" ] && [ -f "$config_path" ]; then
+    docker compose -f "$config_path" --project-name "$project" down --volumes --remove-orphans 2>/dev/null || true
+  else
+    docker compose --project-name "$project" down --volumes --remove-orphans 2>/dev/null || true
+  fi
 done
 # Kill stragglers (direct docker containers not in a compose project)
 docker ps --filter 'label=ada2.managed=dwarf' --format '{{{{.ID}}}}' 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
@@ -683,12 +955,10 @@ docker ps --filter 'label=ada2.managed=dwarf' --format '{{{{.ID}}}}' 2>/dev/null
 tmux ls 2>/dev/null | grep -oE '^dwarf-profile-[^:]+' | while read -r sess; do
   tmux kill-session -t "$sess" 2>/dev/null || true
 done
-# Archive runtime directories.
-for path in {base}/profile-*; do
-  if [ -e "$path" ]; then
-    name=$(basename "$path")
-    mv "$path" "$archive_root/${{name}}-$timestamp"
-  fi
+# Archive every profile runtime regardless of the operator-chosen profile id.
+find "$base_path" -mindepth 1 -maxdepth 1 -type d ! -name archive -print0 | while IFS= read -r -d '' path; do
+  name=$(basename "$path")
+  mv "$path" "$archive_root/${{name}}-$timestamp"
 done
 docker ps --filter 'label=ada2.managed=dwarf' --format 'table {{{{.Names}}}}' 2>/dev/null || true
 """

@@ -1,0 +1,3954 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-18T10:08:43Z",
+  "sources": {
+    "amaru": "https://github.com/pragma-org/amaru",
+    "amaru_wiki_revision": "4ff6cd8d4f0e723bcf60976ea3b68259e48e932c",
+    "cardano_node": "https://github.com/IntersectMBO/cardano-node",
+    "mixed_topology": "https://github.com/cardano-foundation/cardano-node-antithesis/tree/main/testnets/cardano_amaru",
+    "mixed_topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
+    "release_refresh_at": "2026-09-18T04:08:53.185701Z"
+  },
+  "releases": [
+    {
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "channel": "stable",
+      "released_at": "2026-09-17T03:29:26Z",
+      "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/11.1.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:11.1.2",
+          "availability": "available",
+          "digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "confirmed",
+          "default": true,
+          "checked_at": "2026-09-18T03:24:23Z",
+          "reason": "Newest stable release passed the isolated fresh-volume Cardano devnet contract with five exact-version producers/relays, sustained block progress, converged tips, clean process health, and clean teardown.",
+          "evidence": [
+            "state:version-qualifications/20260918T032343Z-dwarf-qual-cardano-11-1-2-b1f28ed0"
+          ],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T10:08:43Z",
+          "reason": "Cardano-node 11.1.2 remains pair-specific for mixed use. Its exact pairing with Amaru 10.11.20260912 failed the isolated serve-through contract while both implementations stayed live and advanced; see the compatibility-pair record.",
+          "evidence": [
+            "state:version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd"
+          ],
+          "issues": [
+            "https://github.com/cardano-foundation/cardano-node-antithesis/issues/182",
+            "https://github.com/cardano-foundation/cardano-node-antithesis/issues/236"
+          ]
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "11.1.1",
+      "channel": "stable",
+      "released_at": "2026-09-08T19:13:04Z",
+      "source_revision": "c2ebdc87dfe07706a83e52f219e712c60d1b0a56",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/11.1.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:11.1.1",
+          "availability": "available",
+          "digest": "sha256:5975df9724bbe7f81f8fed14666fa8f7566b21580b5347c624b8170f41664992"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "11.1.0",
+      "channel": "prerelease",
+      "released_at": "2026-08-21T22:10:07Z",
+      "source_revision": "94ec4195f15f1fd290ab647be5e518b4e8b82e39",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/11.1.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:11.1.0",
+          "availability": "available",
+          "digest": "sha256:78a3a5113b5989115a21bba74b8a990799aa43e5f9165641b9f0c062c266b58a"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "11.0.1",
+      "channel": "stable",
+      "released_at": "2026-05-05T16:47:12Z",
+      "source_revision": "97036a66bcf8c89f687ae57a048eecc0389977ef",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/11.0.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:11.0.1",
+          "availability": "available",
+          "digest": "sha256:007da778998d0bdb043fb834c62b9da1c95e33610f31f6f9cccab29a945e2b99"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "channel": "stable",
+      "released_at": "2026-04-15T21:39:14Z",
+      "source_revision": "045bc187a36ef0cbd236db902b85dd8f202fb059",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.7.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node@sha256:3275d357053d21f3220f74b0854fd584e1fe322dfa1bbb78effd760c3191d14c",
+          "availability": "available",
+          "digest": "sha256:3275d357053d21f3220f74b0854fd584e1fe322dfa1bbb78effd760c3191d14c"
+        }
+      ],
+      "verification": {
+        "mixed": {
+          "status": "confirmed",
+          "default": false,
+          "checked_at": "2026-09-18T09:11:11Z",
+          "reason": "The exact Cardano-node 10.7.1 and Amaru 10.11.0 control was reproduced from fresh volumes with the proven live-producer snapshot lifecycle and passed every mixed readiness, identity, convergence, fatal-signal, and teardown gate.",
+          "evidence": [
+            "workbench:dwarf-latest/obj_7b551786555142b78aecdcc5",
+            "state:topology-health/latest.json",
+            "state:version-qualifications/20260918T085655Z-dwarf-qual-mixed-10-7-1-10-11-0-cffd4b7c"
+          ],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.7.0",
+      "channel": "prerelease",
+      "released_at": "2026-03-25T16:17:42Z",
+      "source_revision": "1e6d8228693ab2aa4e1d7305e7bdcc57cdd278e4",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.7.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.7.0",
+          "availability": "available",
+          "digest": "sha256:3cacc89667b12250b0fd41362ba4eaa137135afa838655a633c07b137c3af2b0"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.6.4",
+      "channel": "stable",
+      "released_at": "2026-04-14T18:21:55Z",
+      "source_revision": "5a4dcd1b410ba78f9faab7acd48f606496909935",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.6.4",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.6.4",
+          "availability": "available",
+          "digest": "sha256:f29c5a48475df1e1804fc7270cf1dc02a38f2d8f659f35781a73e38254fa9a5f"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.6.3",
+      "channel": "stable",
+      "released_at": "2026-04-01T19:10:14Z",
+      "source_revision": "e252edef4dfcd28ba8987e0c1368c6db0404beac",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.6.3",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.6.3",
+          "availability": "available",
+          "digest": "sha256:1f18943a0424633606bc3a4dee04f55e56ef3b1215dfba9b29cfb202e45c891a"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.6.2",
+      "channel": "stable",
+      "released_at": "2026-02-12T18:15:53Z",
+      "source_revision": "0d697f14ee10a775f08c60e3839becc9131dca75",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.6.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.6.2",
+          "availability": "available",
+          "digest": "sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.6.1",
+      "channel": "prerelease",
+      "released_at": "2025-12-02T10:01:42Z",
+      "source_revision": "0c220b27a9b612bb94b557017452be4a97b640d4",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.6.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.6.1",
+          "availability": "available",
+          "digest": "sha256:08058ea607aac494aa8945764405dff2c48a2398de87c25770b3977cf1ea613b"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.6.0",
+      "channel": "prerelease",
+      "released_at": "2025-11-18T17:56:02Z",
+      "source_revision": "f5ac0eb01b56af80e8d430828ff6000b6abb92e9",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.6.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.6.0",
+          "availability": "available",
+          "digest": "sha256:a28cfe7eda744a4bc637450af14d48fb7797ba22c7cbea439e29b0ece6d31dc8"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.5.4",
+      "channel": "stable",
+      "released_at": "2026-02-06T16:32:23Z",
+      "source_revision": "b0a12592c4e996b57edf5bc5b9109ecc88c2273f",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.5.4",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.5.4",
+          "availability": "available",
+          "digest": "sha256:191355360d2ff88f7c1829c0d0a1211653f7237dfbdb0240723804a877894f54"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.5.3",
+      "channel": "stable",
+      "released_at": "2025-11-21T16:08:51Z",
+      "source_revision": "6c034ec038d8d276a3595e10e2d38643f09bd1f2",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.5.3",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.5.3",
+          "availability": "available",
+          "digest": "sha256:5ae211f92eac18ed27b9e2f73c190b56bf4c1a7145d282e78ca58597a385d19f"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.5.2",
+      "channel": "stable",
+      "released_at": "2025-11-21T02:57:30Z",
+      "source_revision": "1ec98e952863fd836df8e7c3476fcce6cc019fce",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.5.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.5.2",
+          "availability": "available",
+          "digest": "sha256:ba4dc2f6c0002dc21e043c24cbcdcc9d0610f321c97b84e010a18ddc6a45bc0f"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.5.1",
+      "channel": "stable",
+      "released_at": "2025-07-22T16:35:11Z",
+      "source_revision": "ca1ec278070baf4481564a6ba7b4a5b9e3d9f366",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.5.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.5.1",
+          "availability": "available",
+          "digest": "sha256:d2b90c72922ee2b8f5cae55df5ecf37e4301ecb00ed9149a259a7db121b26561"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.5.0",
+      "channel": "prerelease",
+      "released_at": "2025-06-18T17:10:49Z",
+      "source_revision": "7e045ab501e99130a57f363f0964bb4f241c6550",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.5.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.5.0",
+          "availability": "available",
+          "digest": "sha256:8d8f4d8acf09bfca85b8ed63166395775ad019953c3cc4fff031bfbb8c1a6ee4"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.4.1",
+      "channel": "stable",
+      "released_at": "2025-04-30T16:52:36Z",
+      "source_revision": "420c94fbb075146c6ec7fba78c5b0482fafe72dd",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.4.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.4.1",
+          "availability": "available",
+          "digest": "sha256:e21e80c548469d83ac3a74ead81d3feff50a4031e57a3c01178c17c76634f451"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.3.1",
+      "channel": "stable",
+      "released_at": "2025-04-17T12:51:08Z",
+      "source_revision": "b3f237b75e64f4d8142af95b053e2828221d707f",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.3.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.3.1",
+          "availability": "available",
+          "digest": "sha256:d906d62cf120cb14e4c5b8ee2fd9076a69318439f176d6e6b407df7d65c725c2"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.2.1",
+      "channel": "stable",
+      "released_at": "2025-02-19T23:23:31Z",
+      "source_revision": "52b708f37cd3dc92a188717deae2a6a60117f696",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.2.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.2.1",
+          "availability": "available",
+          "digest": "sha256:aced94ffc594ed66728956569edf80ae52cd411285803a9a89a46c74a896a048"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.1.4",
+      "channel": "stable",
+      "released_at": "2025-01-07T21:32:15Z",
+      "source_revision": "1f63dbf2ab39e0b32bf6901dc203866d3e37de08",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.1.4",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.1.4",
+          "availability": "available",
+          "digest": "sha256:4da8b48ed1151efed027973196cc929cd8968816a76521a08e3b645e592396fe"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.1.3",
+      "channel": "stable",
+      "released_at": "2024-11-30T13:53:10Z",
+      "source_revision": "36871ba0cd3e86a5dbcfd6878cdb7168bb4e56a1",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.1.3",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.1.3",
+          "availability": "available",
+          "digest": "sha256:9d2c12e4973e718a5270aa1dfba6af2b328ceac6ad085179fdc00f8cbc3bd1fa"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.1.2",
+      "channel": "stable",
+      "released_at": "2024-11-04T11:57:36Z",
+      "source_revision": "01bda2e2cb0a70cd95067d696dbb44665f1d680a",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.1.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.1.2",
+          "availability": "available",
+          "digest": "sha256:eb780618142c4f4c4c90a68c153c1a4b1f0128a4c5a5672a7c7d1ba3bc624869"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.1.1-pre",
+      "channel": "prerelease",
+      "released_at": "2024-10-24T21:14:16Z",
+      "source_revision": "4184f9297bf7306713bfbb8f39eef61c056198cc",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.1.1-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.1.1-pre",
+          "availability": "available",
+          "digest": "sha256:9baef8d93eb348a9e28c334d0e1665b6220abd340347505b8989829565ef7193"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.1.1",
+      "channel": "stable",
+      "released_at": "2024-10-30T16:35:33Z",
+      "source_revision": "4184f9297bf7306713bfbb8f39eef61c056198cc",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.1.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.1.1",
+          "availability": "available",
+          "digest": "sha256:9baef8d93eb348a9e28c334d0e1665b6220abd340347505b8989829565ef7193"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.1.0-pre",
+      "channel": "prerelease",
+      "released_at": "2024-10-23T15:19:13Z",
+      "source_revision": "cf78673a13e736e1f70be6087a58daef9fb15f16",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.1.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.1.0-pre",
+          "availability": "available",
+          "digest": "sha256:2365b17c6df0f4bd3d42c6686495a5300e867b453111fb2f6fd61477a1e4cce6"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "10.0.0-pre",
+      "channel": "prerelease",
+      "released_at": "2024-10-19T00:13:21Z",
+      "source_revision": "cdb45dd5aa9b4cf43ef6a6c8ecd5b6afbef953e4",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/10.0.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:10.0.0-pre",
+          "availability": "available",
+          "digest": "sha256:79c8979af4fae843bd0ae543bbc42894a1a4a4cce654ef3c5d0b5afd2166a70f"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "9.2.1",
+      "channel": "stable",
+      "released_at": "2024-09-25T19:50:24Z",
+      "source_revision": "5d3da8ac771ee5ed424d6c78473c11deabb7a1f3",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/9.2.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:9.2.1",
+          "availability": "available",
+          "digest": "sha256:3a9a23278649550ce1ae7acd99dd22000958e792426053fa66af1adbde984366"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "9.2.0",
+      "channel": "stable",
+      "released_at": "2024-09-20T19:36:18Z",
+      "source_revision": "341ea87ba3b4936188f8c2d4f09bbf1976a7926e",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/9.2.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:9.2.0",
+          "availability": "available",
+          "digest": "sha256:eaef180e80e87b97a75aa9d0e7050f5c9a74f721497856c7fa4e6b584825d7d2"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "9.1.1",
+      "channel": "stable",
+      "released_at": "2024-09-02T17:08:08Z",
+      "source_revision": "efd560070aaf042d1eb4680ae37fc607c7742319",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/9.1.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:9.1.1",
+          "availability": "available",
+          "digest": "sha256:7a3113112d003cc9e0f1d6d34ad6dc94dc90fb4b1cd511a1a88fb012b0cc1880"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "9.1.0",
+      "channel": "stable",
+      "released_at": "2024-07-25T01:06:15Z",
+      "source_revision": "176f99e51155cb3eaa0711db1c3c969d67438958",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/9.1.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:9.1.0",
+          "availability": "available",
+          "digest": "sha256:965d7e0489ce455d00033c8eeab542d54cb856b8a33ab2387dd359b5b6984844"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "9.0.0",
+      "channel": "stable",
+      "released_at": "2024-07-08T18:47:18Z",
+      "source_revision": "2820a63dc934c6d5b5f450b6c2543b81c6476696",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/9.0.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:9.0.0",
+          "availability": "available",
+          "digest": "sha256:f502efb0d0a1c7ce19bc34a08b11caf7d1076e792622ac64ed84506f1e762e3e"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.12.2",
+      "channel": "stable",
+      "released_at": "2024-06-29T14:52:08Z",
+      "source_revision": "71f8c71fada068097dc4e62e2f94756576df8135",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.12.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.12.2",
+          "availability": "available",
+          "digest": "sha256:49a718ed7d9d66aa0968ed45103a469f69bc5cabb03466ae9c0dc09ad6e177ba"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.12.1",
+      "channel": "stable",
+      "released_at": "2024-06-27T14:42:28Z",
+      "source_revision": "06943b66e634fc9eb83ddb376ed3508003dbb607",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.12.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.12.1",
+          "availability": "available",
+          "digest": "sha256:708d972abef195f01a81e6db2e75da7f5bc25770812335dbe57ee5aa07a7985c"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.12.0-pre",
+      "channel": "prerelease",
+      "released_at": "2024-06-21T09:00:16Z",
+      "source_revision": "ae8bc933ee6b6366c04854c1e127fd8dfb29b556",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.12.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.12.0-pre",
+          "availability": "available",
+          "digest": "sha256:728c5b585ce24bc1212f8f711b1cbccff003872fb21426ee85a3e316937dd3f4"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.11.0-sancho",
+      "channel": "prerelease",
+      "released_at": "2024-05-17T02:29:42Z",
+      "source_revision": "235e34f6df9a1490190f6247b610b4e114ca3b96",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.11.0-sancho",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.11.0-sancho",
+          "availability": "available",
+          "digest": "sha256:dd2b01ccf4caf133369d7dc685c398e651520475e6a0df1fd904f703df2e3813"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.11.0-pre",
+      "channel": "prerelease",
+      "released_at": "2024-05-16T23:23:47Z",
+      "source_revision": "38c7f1cf2db12dff9c814ad10049f411a4b30448",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.11.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.11.0-pre",
+          "availability": "available",
+          "digest": "sha256:90e93ff1f3a211b5f22ca222eb8af94e27e166f6aa03aa93d4973d677d493d70"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.10.1-pre",
+      "channel": "prerelease",
+      "released_at": "2024-04-25T08:56:46Z",
+      "source_revision": "1ffe4a57137000b99ae2f148eaf763bc55f0ed89",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.10.1-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.10.1-pre",
+          "availability": "available",
+          "digest": "sha256:c1c6d18b9c970687622190f0009274e1b5d1fb49a732249d0b9f7a40e59c7220"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.10.0-pre",
+      "channel": "prerelease",
+      "released_at": "2024-04-09T20:10:29Z",
+      "source_revision": "04e060e6d86a5791c00aa518b2cee025384be28b",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.10.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.10.0-pre",
+          "availability": "available",
+          "digest": "sha256:a0305b94629f6794e954982cdcb66ca75f183b76dd5f22e0ab12bd5f67bdef60"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.9.4",
+      "channel": "stable",
+      "released_at": "2024-06-27T21:14:07Z",
+      "source_revision": "8ac5f75342fe3fec14ee410c4c73fd5e2381bb18",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.9.4",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.9.4",
+          "availability": "available",
+          "digest": "sha256:e711851013de01106f3cd7f3ba02a3ea9a438964983964e69680d34f3af01742"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.9.3",
+      "channel": "stable",
+      "released_at": "2024-05-28T18:07:02Z",
+      "source_revision": "e7f5f3ac9e031b8ea12a16aee0bb37d94b5e1d11",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.9.3",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.9.3",
+          "availability": "available",
+          "digest": "sha256:6f9b10d68752c18964150d598f5af9d47e4dc00149e4515631254613bf2f981b"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.9.2",
+      "channel": "stable",
+      "released_at": "2024-04-16T10:57:38Z",
+      "source_revision": "424983fa186786397f5a99539f51710abf62c37b",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.9.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.9.2",
+          "availability": "available",
+          "digest": "sha256:afa42f9ecdfe254b6ae8a999ce83912395caf83936adfa5e5589495a83e73022"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.9.1",
+      "channel": "stable",
+      "released_at": "2024-03-25T20:36:38Z",
+      "source_revision": "da945ea983d4722a9ffe54250edba9a193a57cf0",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.9.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.9.1",
+          "availability": "available",
+          "digest": "sha256:9be17ffaed01a1cacdf07b109f772ef2ecd3dab47268fe14ba5959c5b720d032"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.9.0",
+      "channel": "stable",
+      "released_at": "2024-03-12T15:07:12Z",
+      "source_revision": "0d98405a60d57e1c8e13406d51cce0e34356bd64",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.9.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.9.0",
+          "availability": "available",
+          "digest": "sha256:c69afa3a30c9f87b66a7f6720eeed3d3b3f713b00cdc36215e898accdae482ad"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.8.1-pre",
+      "channel": "prerelease",
+      "released_at": "2024-02-22T15:56:10Z",
+      "source_revision": "968432eff066bc59603a6f9e8c79cfe1735f1ae3",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.8.1-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.8.1-pre",
+          "availability": "available",
+          "digest": "sha256:72d2222b0b951fd5a023311cff956cd3f3a2b80e7ad6b1da4ebfb0615d94f47a"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.8.0-pre",
+      "channel": "prerelease",
+      "released_at": "2024-02-08T18:37:32Z",
+      "source_revision": "4bb2048db77d623ee6e3678618c2d8b6c4676333",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.8.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.8.0-pre",
+          "availability": "available",
+          "digest": "sha256:f5c5053441afa00d1f12e79a7d8da31eb9c4af072ae70f6a16198bf78cf63cca"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.7.3",
+      "channel": "stable",
+      "released_at": "2024-01-09T20:33:42Z",
+      "source_revision": "a4a8119b59b1fbb9a69c79e1e6900e91292161e7",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.7.3",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.7.3",
+          "availability": "available",
+          "digest": "sha256:d230f3bc6d596f7e7e3a8680e015d473ff83cdbf9f0a5dc9d71dba247082ccb7"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.7.2",
+      "channel": "stable",
+      "released_at": "2023-12-08T19:29:35Z",
+      "source_revision": "30b6e447c7e4586f43e30a68fe47c8481b0ba205",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.7.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.7.2",
+          "availability": "available",
+          "digest": "sha256:320403f375ddd37f96851d5942b558e9ec78689e50bbe7f2b831db9539d96409"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.7.1-pre",
+      "channel": "prerelease",
+      "released_at": "2023-12-01T15:57:24Z",
+      "source_revision": "7f7a93d248b380d3dbff8c003a3ad66b6d1c770f",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.7.1-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.7.1-pre",
+          "availability": "available",
+          "digest": "sha256:97d8b1dec9ba6779c0368029918ddb175c4519355bfad2a5f48bc55e8654c277"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.7.0-pre",
+      "channel": "prerelease",
+      "released_at": "2023-11-22T13:50:20Z",
+      "source_revision": "34d89af65439db92293b88967c299c20692abc1c",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.7.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.7.0-pre",
+          "availability": "available",
+          "digest": "sha256:f20212fa964177ce8850a591f63eb1fd8e456ded8b6dbc50876ab10085eb241d"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.6.0-pre",
+      "channel": "prerelease",
+      "released_at": "2023-11-01T11:32:21Z",
+      "source_revision": "735e6c97740c8def5d6e462bf5a29cbe6d323cfe",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.6.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.6.0-pre",
+          "availability": "available",
+          "digest": "sha256:f3f85fb13907246ecd7a58cb80bccc97f08886943b09ebad775dca832bab4f92"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.5.0-pre",
+      "channel": "prerelease",
+      "released_at": "2023-10-06T08:11:48Z",
+      "source_revision": "f1ce770834bf7150ca29cb647065c9e62d39be1a",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.5.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.5.0-pre",
+          "availability": "available",
+          "digest": "sha256:00c4ab733a1d1e4d78c99f40371f0ffac1458b03d1872c0ae5db61fde9203843"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.4.0-pre",
+      "channel": "prerelease",
+      "released_at": "2023-09-20T14:12:47Z",
+      "source_revision": "9a0898636a4ea13f720dc3c6c8789b27beeb37c9",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.4.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.4.0-pre",
+          "availability": "available",
+          "digest": "sha256:a2c39f0f4ad95b177c7a76ff467387f7182d7ce596e908c4d23e7e4f9f39c606"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.3.1-pre",
+      "channel": "prerelease",
+      "released_at": "2023-09-07T00:12:12Z",
+      "source_revision": "2f041a1b21233ced41e2f8a8bca20e97ed257f0d",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.3.1-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.3.1-pre",
+          "availability": "available",
+          "digest": "sha256:5d86555240c9fb8056d1a74e076156791866e521d60caa0e5be3e192c2f37c4e"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.3.0-pre",
+      "channel": "prerelease",
+      "released_at": "2023-09-05T15:03:56Z",
+      "source_revision": "6639b2e742f41ca04b04d8c2436beb86d4e5b770",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.3.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.3.0-pre",
+          "availability": "available",
+          "digest": "sha256:4f34f532afe4cddb11e69456ed6e2bc5a4c7834c479e9f970f1c02129803b1f3"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.2.1-pre",
+      "channel": "prerelease",
+      "released_at": "2023-08-08T16:41:30Z",
+      "source_revision": "a29ee68ba2c850cd50be39a3105ef191cfbc41d5",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.2.1-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.2.1-pre",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.2.0-pre",
+      "channel": "prerelease",
+      "released_at": "2023-07-28T11:25:17Z",
+      "source_revision": "408d8ae10a2792ace3a822e312433960e47de4e9",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.2.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.2.0-pre",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.1.2",
+      "channel": "stable",
+      "released_at": "2023-07-26T12:17:56Z",
+      "source_revision": "d2d90b48c5577b4412d5c9c9968b55f8ab4b9767",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.1.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.1.2",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.1.1",
+      "channel": "stable",
+      "released_at": "2023-06-19T17:55:45Z",
+      "source_revision": "6f79e5c3ea109a70cd01910368e011635767305a",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.1.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.1.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.1.0-pre",
+      "channel": "prerelease",
+      "released_at": "2023-06-08T12:11:03Z",
+      "source_revision": "93c0307b33d4105156924b03a2316bea38e6d358",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.1.0-pre",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.1.0-pre",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "8.0.0",
+      "channel": "stable",
+      "released_at": "2023-05-09T17:18:18Z",
+      "source_revision": "69a117b7be3db0f4ce6d9fc5cd4c16a2a409dcb8",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/8.0.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:8.0.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.35.7",
+      "channel": "stable",
+      "released_at": "2023-04-04T18:06:24Z",
+      "source_revision": "f0b4ac897dcbefba9fa0d247b204a24543cf55f6",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.35.7",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.35.7",
+          "availability": "available",
+          "digest": "sha256:9e3133f297c4689fec930a5216ee609788914d98ee61954711620457f5fcc014"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.35.6",
+      "channel": "stable",
+      "released_at": "2023-03-16T14:01:54Z",
+      "source_revision": "07b0c71d2e6662aec4389ec282a7e91f68c3d85f",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.35.6",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.35.6",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.35.5",
+      "channel": "stable",
+      "released_at": "2023-01-27T13:01:12Z",
+      "source_revision": "8762a10efe3f9f97939e3cb05edaf04250456702",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.35.5",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.35.5",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.35.4",
+      "channel": "stable",
+      "released_at": "2022-11-07T18:06:50Z",
+      "source_revision": "ebc7be471b30e5931b35f9bbc236d21c375b91bb",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.35.4",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.35.4",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.35.3",
+      "channel": "stable",
+      "released_at": "2022-08-11T17:12:39Z",
+      "source_revision": "950c4e222086fed5ca53564e642434ce9307b0b9",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.35.3",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.35.3",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.34.1",
+      "channel": "stable",
+      "released_at": "2022-03-07T15:40:47Z",
+      "source_revision": "73f9a746362695dc2cb63ba757fbcabb81733d23",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.34.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.34.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.34.0",
+      "channel": "stable",
+      "released_at": "2022-02-28T20:00:48Z",
+      "source_revision": "c23d5d319cd3276575c6ac32458516232e8d2c48",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.34.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.34.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.33.0",
+      "channel": "stable",
+      "released_at": "2022-01-07T15:48:39Z",
+      "source_revision": "814df2c146f5d56f8c35a681fe75e85b905aed5d",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.33.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.33.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.32.1",
+      "channel": "stable",
+      "released_at": "2021-12-13T16:18:38Z",
+      "source_revision": "4f65fb9a27aa7e3a1873ab4211e412af780a3648",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.32.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.32.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.31.0",
+      "channel": "stable",
+      "released_at": "2021-11-10T16:46:58Z",
+      "source_revision": "2cbe363874d0261bc62f52185cf23ed492cf4859",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.31.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.31.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.30.1",
+      "channel": "stable",
+      "released_at": "2021-09-28T14:12:52Z",
+      "source_revision": "0fb43f4e3da8b225f4f86557aed90a183981a64f",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.30.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.30.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.29.0",
+      "channel": "stable",
+      "released_at": "2021-08-27T19:20:06Z",
+      "source_revision": "4c59442958072657812c6c0bb8e0b4ab85ce1ba2",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.29.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.29.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.27.0",
+      "channel": "stable",
+      "released_at": "2021-05-13T09:11:31Z",
+      "source_revision": "8fe46140a52810b6ca456be01d652ca08fe730bf",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.27.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.27.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.26.2",
+      "channel": "stable",
+      "released_at": "2021-04-18T00:12:16Z",
+      "source_revision": "3531289c9f79eab7ac5d3272ce6e6821504fec4c",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.26.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.26.2",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.26.1",
+      "channel": "stable",
+      "released_at": "2021-04-07T08:26:50Z",
+      "source_revision": "62f38470098fc65e7de5a4b91e21e36ac30799f3",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.26.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.26.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.25.1",
+      "channel": "stable",
+      "released_at": "2021-01-28T15:36:34Z",
+      "source_revision": "9a7331cce5e8bc0ea9c6bfa1c28773f4c5a7000f",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.25.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.25.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.24.2",
+      "channel": "stable",
+      "released_at": "2020-12-09T09:09:33Z",
+      "source_revision": "400d18092ce604352cf36fe5f105b0d7c78be074",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.24.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.24.2",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.23.0",
+      "channel": "stable",
+      "released_at": "2020-11-27T17:19:07Z",
+      "source_revision": "eed250546fa9acec4c9de557b3e3551c1f682a30",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.23.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.23.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.21.1",
+      "channel": "stable",
+      "released_at": "2020-10-07T15:39:59Z",
+      "source_revision": "a819311473563cb2ab3cd91543cf0f63facdf43e",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.21.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.21.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.21.0",
+      "channel": "prerelease",
+      "released_at": "2020-10-07T14:15:56Z",
+      "source_revision": "6b94151686e47a7b07682b1cd017694bb0daeea6",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.21.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.21.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.20.0",
+      "channel": "stable",
+      "released_at": "2020-09-23T14:13:46Z",
+      "source_revision": "1f2f51164b53b9b775c03ac9f1e23e7b70c74b05",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.20.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.20.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.19.1",
+      "channel": "stable",
+      "released_at": "2020-09-04T20:29:21Z",
+      "source_revision": "497afd7dedc5d5b9bdcdb0e3cac6a50bd9f7dd54",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.19.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.19.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.19.0",
+      "channel": "stable",
+      "released_at": "2020-08-20T20:20:07Z",
+      "source_revision": "4814003f14340d5a1fc02f3ac15437387a7ada9f",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.19.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.19.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.18.0",
+      "channel": "stable",
+      "released_at": "2020-07-25T17:39:08Z",
+      "source_revision": "ba0f96b1a9fc9232ed211e57835fd5018093069d",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.18.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.18.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.14.2",
+      "channel": "stable",
+      "released_at": "2020-06-30T17:09:02Z",
+      "source_revision": "924a6f7d8c2bdb1bf525be8b0d5626e440697b01",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.14.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.14.2",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.14.1",
+      "channel": "stable",
+      "released_at": "2020-06-29T15:36:20Z",
+      "source_revision": "767d231f4be45cb4924d881dd6e7561bd1a1f25c",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.14.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.14.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.13.0",
+      "channel": "stable",
+      "released_at": "2020-06-09T15:46:54Z",
+      "source_revision": "9925ef37dccbe7f423f3ceb81a5e1da3d924393b",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.13.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.13.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.12.0",
+      "channel": "stable",
+      "released_at": "2020-05-28T13:56:50Z",
+      "source_revision": "f6ef186d1f7280585a245c8565d92117133cf359",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.12.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.12.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.11.0",
+      "channel": "stable",
+      "released_at": "2020-04-29T12:55:18Z",
+      "source_revision": "376562b0cb6dfde4b9f41e9f3ccea45cbfb41c22",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.11.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.11.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.10.1",
+      "channel": "stable",
+      "released_at": "2020-04-16T16:44:02Z",
+      "source_revision": "99e1a85b4a3f6d13ddf89e6ea471df18b65fd31a",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.10.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.10.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.10.0",
+      "channel": "stable",
+      "released_at": "2020-04-15T13:50:13Z",
+      "source_revision": "76d321b7cb217795e78620eede4ffc239727bcb1",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.10.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.10.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.9.3",
+      "channel": "stable",
+      "released_at": "2020-03-31T22:27:45Z",
+      "source_revision": "b0c7d4457704a46167687f519f2e0f315ab5abd4",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.9.3",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.9.3",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.9.2",
+      "channel": "stable",
+      "released_at": "2020-03-31T14:14:24Z",
+      "source_revision": "9f90387368864ee1d08083384728029ff650a563",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.9.2",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.9.2",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.9.1",
+      "channel": "stable",
+      "released_at": "2020-03-30T20:36:28Z",
+      "source_revision": "f9d541c51720811897310d09df8b8e43deae9570",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.9.1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.9.1",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.9.0",
+      "channel": "prerelease",
+      "released_at": "2020-03-30T17:44:16Z",
+      "source_revision": "81878d59801dc453e157cf6b0d8e29e3a98c2988",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.9.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.9.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.8.0",
+      "channel": "stable",
+      "released_at": "2020-03-23T18:37:02Z",
+      "source_revision": "64c2778c61245dcda13eaf16a2e0738dfacb7a16",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.8.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.8.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.6.0",
+      "channel": "stable",
+      "released_at": "2020-02-25T15:00:09Z",
+      "source_revision": "4a3029572a71a7123d508a9622101f9c9920b3d2",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.6.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.6.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.5.0",
+      "channel": "stable",
+      "released_at": "2020-02-12T16:57:50Z",
+      "source_revision": "b69430570ccb013c8ad01625483e275e9f8039b7",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.5.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.5.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.3.0",
+      "channel": "prerelease",
+      "released_at": "2020-01-23T11:09:49Z",
+      "source_revision": "d6010bf333da7270be353daa4b40ae26740dcb0c",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.3.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.3.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "cardano-node",
+      "version": "1.2.0",
+      "channel": "prerelease",
+      "released_at": "2020-01-20T19:16:28Z",
+      "source_revision": "15de948f8debb5402ec0e42e7fa1142c1187e298",
+      "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/1.2.0",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:1.2.0",
+          "availability": "unknown"
+        }
+      ],
+      "verification": {
+        "cardano-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.11.20260912",
+      "channel": "stable",
+      "released_at": "2026-09-12T15:30:25Z",
+      "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260912",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.11.20260912",
+          "availability": "available",
+          "digest": "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "confirmed",
+          "default": true,
+          "checked_at": "2026-09-18T09:25:53Z",
+          "supporting_cardano_version": "10.7.1",
+          "reason": "Newest stable Amaru release passed the exact fresh-volume target contract using the proven live-producer snapshot lifecycle with Cardano-node 10.7.1 disclosed as support: both exact Amaru binaries advanced, served the isolated Amaru-fed consumer to zero-lag convergence, remained restart-free, emitted no fatal signal, and tore down cleanly.",
+          "evidence": [
+            "state:version-qualifications/20260918T091139Z-dwarf-qual-amaru-10-7-1-10-11-20260912-ae435ef5"
+          ],
+          "issues": [
+            "https://github.com/pragma-org/amaru/issues/1152",
+            "https://github.com/pragma-org/amaru/pull/1153"
+          ]
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T10:08:43Z",
+          "reason": "The release is confirmed for the Amaru-target scope with Cardano-node 10.7.1 support. Its exact pairing with Cardano-node 11.1.2 failed the mixed isolated-consumer serve-through contract; mixed compatibility remains pair-specific.",
+          "evidence": [
+            "state:version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd"
+          ],
+          "issues": [
+            "https://github.com/cardano-foundation/cardano-node-antithesis/issues/179",
+            "https://github.com/cardano-foundation/cardano-node-antithesis/issues/182"
+          ]
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.11.20260903",
+      "channel": "stable",
+      "released_at": "2026-09-03T20:23:01Z",
+      "source_revision": "ea1f34e42c7a1806d8ee60b3f512e58daae7ccc1",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260903",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.11.20260903",
+          "availability": "available",
+          "digest": "sha256:df7eda777b075545d312255053697a1735c50b93115fa6887dd01dfe2240d1ee"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T09:25:53Z",
+          "reason": "The prior incompatible result used the superseded one-shot synthetic bootstrap lifecycle. The corrected live-producer snapshot lifecycle disproved that blocker for the newer 20260912 release; this exact older release remains selectable but unqualified under the corrected contract.",
+          "evidence": [
+            "state:version-qualifications/20260918T042638Z-dwarf-qual-amaru-10-7-1-10-11-20260903-abae8d37"
+          ],
+          "issues": [
+            "https://github.com/pragma-org/amaru/issues/1152",
+            "https://github.com/pragma-org/amaru/pull/1153"
+          ]
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.11.20260827",
+      "channel": "stable",
+      "released_at": "2026-08-27T20:47:25Z",
+      "source_revision": "63ae3977f04d8292e4dd9e43b3593242e39db920",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260827",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.11.20260827",
+          "availability": "available",
+          "digest": "sha256:ddce3753638471beae6d5ecebf1e639479701cd9c8faa1b504de8a9c3cbbf355"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.11.20260820",
+      "channel": "stable",
+      "released_at": "2026-08-20T19:57:45Z",
+      "source_revision": "c64b7e0444c96264e551e0abc9d1e45c4fb6a710",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260820",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.11.20260820",
+          "availability": "available",
+          "digest": "sha256:f6e6eebde3ea42592671d7f121a7485af42b9c4f457cc4f71a9bc92848fa2e24"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.11.20260807",
+      "channel": "prerelease",
+      "released_at": "2026-08-07T11:36:23Z",
+      "source_revision": "493bffba0cc4db2291643cdd6698197c374958b3",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260807",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.11.20260807",
+          "availability": "available",
+          "digest": "sha256:582dafdd16990ef16c54e5abb7f1f5f861847e5a1b6ea16f1ef975f74bfbb6f7"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.11.20260730",
+      "channel": "prerelease",
+      "released_at": "2026-07-30T20:45:40Z",
+      "source_revision": "b7b2c0a7402ba457f29d851ff365782e636c82f7",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260730",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.11.20260730",
+          "availability": "available",
+          "digest": "sha256:f297437cf339851ec25618d77a0f4a7cb1bb8206d1e30842a2130da6acaf3846"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "confirmed",
+          "default": false,
+          "checked_at": "2026-09-18T05:47:21Z",
+          "supporting_cardano_version": "10.7.1",
+          "reason": "Passed the exact fresh-volume Amaru target contract with Cardano 10.7.1 as the disclosed bootstrap producer: both Amaru relays reached the bootstrap marker, sustained chain progress, served an isolated Amaru-fed consumer to convergence, remained restart-free, and completed with no fatal termination.",
+          "evidence": [
+            "state:version-qualifications/20260918T053321Z-dwarf-qual-amaru-10-7-1-10-11-20260730-b42c10e1"
+          ],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.11.20260723",
+      "channel": "prerelease",
+      "released_at": "2026-07-23T15:18:53Z",
+      "source_revision": "8be10a21cea64dcbd625c7e5d1bfd8aff1aba838",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260723",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.11.20260723",
+          "availability": "available",
+          "digest": "sha256:e72a8fadd997a5173c4b094c86ac387ebcca74cba87605943e30058f88722522"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.11.20260716",
+      "channel": "prerelease",
+      "released_at": "2026-07-16T15:42:27Z",
+      "source_revision": "eb0828106acc4835aa3623f950e6374ebeffba54",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260716",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.11.20260716",
+          "availability": "available",
+          "digest": "sha256:202a396e48289b02eec0f818f99b1b105975f166a46f554c824e1086a2ea7430"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.11.0",
+      "channel": "main",
+      "released_at": "2026-09-03T10:21:42Z",
+      "source_revision": "ea1f34e42c7a1806d8ee60b3f512e58daae7ccc1",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/lambdasistemi/amaru-bootstrap-producer:6f641855baecbe9632eb10c14bd58c351ffc2a2c@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+          "availability": "available",
+          "digest": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36"
+        }
+      ],
+      "verification": {
+        "mixed": {
+          "status": "confirmed",
+          "default": false,
+          "checked_at": "2026-09-18T09:11:11Z",
+          "reason": "The exact Cardano-node 10.7.1 and Amaru 10.11.0 control was reproduced from fresh volumes with the proven live-producer snapshot lifecycle and passed every mixed readiness, identity, convergence, fatal-signal, and teardown gate.",
+          "evidence": [
+            "workbench:dwarf-latest/obj_7b551786555142b78aecdcc5",
+            "state:topology-health/latest.json",
+            "state:version-qualifications/20260918T085655Z-dwarf-qual-mixed-10-7-1-10-11-0-cffd4b7c"
+          ],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.10.20260709",
+      "channel": "prerelease",
+      "released_at": "2026-07-09T16:03:51Z",
+      "source_revision": "562371253a4e0685f0161b7bcd20bc4b4c44816f",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.10.20260709",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.10.20260709",
+          "availability": "available",
+          "digest": "sha256:3477c57d713ad903fbf918e247595baecd016cc436ff6e1e3d93524fb8e22132"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.10.20260702",
+      "channel": "prerelease",
+      "released_at": "2026-07-02T17:28:55Z",
+      "source_revision": "eb21a990440d90dd353f589710070b7467e44333",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.10.20260702",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.10.20260702",
+          "availability": "available",
+          "digest": "sha256:b8a4243e9d692f9dfba028f33c6d283d682e9432e4012a8d6df3fdbc709d2ee5"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.10.20260625",
+      "channel": "prerelease",
+      "released_at": "2026-06-25T15:13:38Z",
+      "source_revision": "7146ce6b0ee4a26a9343f810b52ad4ea6513ad83",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.10.20260625",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.10.20260625",
+          "availability": "available",
+          "digest": "sha256:fb7cf75d51364cf6f317873d15fdd60796cc7ed80a614c30457d281c6b35f1c0"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.10.20260618",
+      "channel": "prerelease",
+      "released_at": "2026-06-18T16:03:33Z",
+      "source_revision": "d9231fa14d19379c36924f45f21a2df4a56ab356",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.10.20260618",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.10.20260618",
+          "availability": "available",
+          "digest": "sha256:5d361118575baa6029a632d031b50eadb6dfe89e7dccf797a0e3d7eda4bc40e1"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.10.20260611",
+      "channel": "prerelease",
+      "released_at": "2026-06-11T15:48:50Z",
+      "source_revision": "351ecb61da2cc2e3973eeb7f6880e943495f714f",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.10.20260611",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.10.20260611",
+          "availability": "available",
+          "digest": "sha256:5048e82e217a6c9caf957996adfd67f4d3ec0a384263583dbb2e0d618a387180"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    }
+  ],
+  "compatibility_pairs": [
+    {
+      "id": "cardano-11.1.2__amaru-10.11.20260912",
+      "cardano_version": "11.1.2",
+      "amaru_version": "10.11.20260912",
+      "status": "incompatible",
+      "default": false,
+      "checked_at": "2026-09-18T10:08:43Z",
+      "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
+      "dwarf_revision": "15aad96a348d57ae98f7c8037caddf8d327d0479",
+      "reason": "The exact fresh-volume pair failed DWARF's mixed serve-through contract after the full 30-minute recovery window. Cardano producers and both exact Amaru relays advanced to slot 5001 without fatal signals or restarts, while the isolated Cardano-node consumer whose only upstreams were Amaru remained at its seeded slot 1362 and ended 3639 slots behind. Exact identity, fresh state, path isolation, no-fatal, no-restart, and clean-teardown gates passed; consumer progress, convergence, peer formation, and required-service gates did not. This classifies the pair/topology contract without assigning an unproven root cause to either implementation.",
+      "evidence": [
+        "state:version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd"
+      ],
+      "issues": [
+        "https://github.com/cardano-foundation/cardano-node-antithesis/issues/179",
+        "https://github.com/cardano-foundation/cardano-node-antithesis/issues/182"
+      ]
+    },
+    {
+      "id": "cardano-11.1.2__amaru-10.11.20260730",
+      "cardano_version": "11.1.2",
+      "amaru_version": "10.11.20260730",
+      "status": "unknown",
+      "default": false,
+      "checked_at": "2026-09-18T10:08:43Z",
+      "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
+      "dwarf_revision": "4b632d5e6864964dbc033a58fa7155352ba390ba",
+      "reason": "The retained failure used the superseded separately relaunched synthetic ChainDB lifecycle. It remains useful harness evidence but is not a current compatibility classification; this exact older pair is unqualified under the corrected live-producer snapshot contract.",
+      "evidence": [
+        "state:version-qualifications/20260918T055108Z-dwarf-qual-mixed-11-1-2-10-11-20260730-aecab52f"
+      ],
+      "issues": [
+        "https://github.com/cardano-foundation/cardano-node-antithesis/issues/179",
+        "https://github.com/cardano-foundation/cardano-node-antithesis/issues/182"
+      ]
+    },
+    {
+      "id": "cardano-10.7.1__amaru-10.11.20260903",
+      "cardano_version": "10.7.1",
+      "amaru_version": "10.11.20260903",
+      "status": "unknown",
+      "default": false,
+      "checked_at": "2026-09-18T10:08:43Z",
+      "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
+      "dwarf_revision": "9c4839946b866a60261ac78661814f2e1cb8895c",
+      "reason": "The retained failure used the superseded separately relaunched synthetic ChainDB lifecycle. It remains useful harness evidence but is not a current compatibility classification; this exact older pair is unqualified under the corrected live-producer snapshot contract.",
+      "evidence": [
+        "state:version-qualifications/20260918T042638Z-dwarf-qual-amaru-10-7-1-10-11-20260903-abae8d37"
+      ],
+      "issues": [
+        "https://github.com/pragma-org/amaru/issues/1152",
+        "https://github.com/pragma-org/amaru/pull/1153"
+      ]
+    },
+    {
+      "id": "cardano-10.7.1__amaru-10.11.20260912",
+      "cardano_version": "10.7.1",
+      "amaru_version": "10.11.20260912",
+      "status": "unknown",
+      "default": false,
+      "checked_at": "2026-09-18T10:08:43Z",
+      "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
+      "dwarf_revision": "2da8c3b73c26cd3027f3d7d09077fb808672d0d4",
+      "reason": "The prior incompatible result used the superseded separately relaunched synthetic ChainDB lifecycle. The corrected Amaru-target run proves this release can follow and serve through the live Cardano-node 10.7.1 producer path, but the bounded search did not promote that target-scope run into a separate mixed-pair claim.",
+      "evidence": [
+        "state:version-qualifications/20260918T035418Z-dwarf-qual-amaru-10-7-1-10-11-20260912-0100e9d2",
+        "state:version-qualifications/20260918T091139Z-dwarf-qual-amaru-10-7-1-10-11-20260912-ae435ef5"
+      ],
+      "issues": [
+        "https://github.com/pragma-org/amaru/issues/1152",
+        "https://github.com/pragma-org/amaru/pull/1153"
+      ]
+    },
+    {
+      "id": "cardano-10.7.1__amaru-10.11.0",
+      "cardano_version": "10.7.1",
+      "amaru_version": "10.11.0",
+      "status": "confirmed",
+      "default": true,
+      "checked_at": "2026-09-18T09:11:11Z",
+      "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
+      "dwarf_revision": "15aad96a348d57ae98f7c8037caddf8d327d0479",
+      "reason": "The exact pair was reproduced from fresh volumes with the proven live-producer snapshot lifecycle and passed every mixed readiness, exact-identity, convergence, fatal-signal, and clean-teardown gate. It remains the bounded-search fallback after the newest exact pair failed its isolated serve-through contract.",
+      "evidence": [
+        "workbench:dwarf-latest/obj_7b551786555142b78aecdcc5",
+        "state:topology-health/latest.json",
+        "state:version-qualifications/20260918T085655Z-dwarf-qual-mixed-10-7-1-10-11-0-cffd4b7c"
+      ],
+      "issues": []
+    }
+  ]
+}

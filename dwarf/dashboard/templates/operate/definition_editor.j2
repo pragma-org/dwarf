@@ -8,6 +8,7 @@
     <div><span class="eyebrow">Operate · {{ catalog_label }}</span><h1>{{ 'Create' if create else 'Edit' }} {{ catalog_label | lower }}</h1></div>
     <div class="definition-actions">
       <a class="cta cta--ghost definition-help-link" href="{{ help_href }}" target="_blank" rel="noopener noreferrer" aria-label="{{ help_aria_label }} (opens in a new tab)">Authoring guide <span aria-hidden="true">↗</span></a>
+      {% if secondary_help_href %}<a class="cta cta--ghost definition-help-link" href="{{ secondary_help_href }}" target="_blank" rel="noopener noreferrer">{{ secondary_help_label }} <span aria-hidden="true">↗</span></a>{% endif %}
       {% if not create %}<a class="cta cta--ghost" href="/operate/{{ catalog }}/{{ definition_id }}">Cancel</a>{% else %}<a class="cta cta--ghost" href="/operate/{{ catalog }}">Cancel</a>{% endif %}
       <button class="cta cta--ghost" type="button" data-editor-validate>Validate</button>
       <button class="cta" type="button" data-editor-save disabled>Save</button>
@@ -27,10 +28,38 @@
     <button type="button" role="tab" aria-selected="false" data-editor-tab="raw">Advanced raw JSON/YAML</button>
   </div>
 
+  {% if catalog == 'profiles' %}
+  <section class="profile-version-panel" data-profile-version-panel aria-labelledby="profile-version-heading">
+    <div class="profile-version-panel__head">
+      <div><span class="eyebrow">Runtime authority</span><h2 id="profile-version-heading">Node versions</h2></div>
+      <div class="profile-version-panel__links"><a href="/operate/versions" target="_blank" rel="noopener noreferrer">Inspect catalog ↗</a><a href="/learn/versions" target="_blank" rel="noopener noreferrer">Version guide ↗</a></div>
+    </div>
+    <div class="profile-version-panel__choices" aria-label="Version policy guidance">
+      <span><strong>Recommended</strong> latest-confirmed</span>
+      <span><strong>Advanced</strong> exact</span>
+      <span><strong>Experimental</strong> latest-stable</span>
+    </div>
+    <div class="profile-version-panel__fields" data-profile-version-fields></div>
+    <p>Profiles are the sole authority for deployed node artifacts. An omitted policy is safely resolved as <code>latest-confirmed</code>; scenarios inherit this exact identity.</p>
+    <div class="profile-version-resolution" data-profile-version-resolution role="status" aria-live="polite">
+      <strong data-version-resolution-title>Resolving selected artifacts…</strong>
+      <span data-version-resolution-identities></span>
+      <span data-version-resolution-reason></span>
+      <details><summary>Immutable provenance</summary><span data-version-resolution-detail></span></details>
+    </div>
+  </section>
+  {% elif catalog == 'targets' %}
+  <aside class="version-authority-note" data-target-version-boundary>
+    <strong>Target identity is not a deployment pin.</strong>
+    <p>Targets identify a test surface and implementation. Deployment profiles select the exact runtime node artifacts used by scenarios.</p>
+    <p><a href="/operate/profiles" target="_blank" rel="noopener noreferrer">Profiles ↗</a> · <a href="/operate/versions" target="_blank" rel="noopener noreferrer">Node versions ↗</a> · <a href="/learn/versions" target="_blank" rel="noopener noreferrer">Version guide ↗</a></p>
+  </aside>
+  {% endif %}
+
   <section data-editor-panel="structured" aria-label="Structured fields">
     <div class="definition-editor__fields">
       {% for field in fields %}
-      <label class="definition-field definition-field--{{ field.type }}">
+      <label class="definition-field definition-field--{{ field.type }}"{% if catalog == 'profiles' and field.name in ['version_policy', 'cardano_version', 'amaru_version', 'compatibility_pair'] %} data-version-field="{{ field.name }}"{% endif %}>
         <span class="definition-field__name" tabindex="0" data-field-help="{{ field.description }}">{{ field.label }}{% if field.required %} <span aria-hidden="true">*</span>{% endif %}</span>
         {% if field.enum %}
         <select name="{{ field.name }}" data-field="{{ field.name }}" data-field-type="{{ field.type }}" data-field-description="{{ field.description }}" aria-describedby="{{ catalog }}-{{ field.name }}-help"{% if field.name == 'id' and not create %} disabled{% endif %}>
@@ -62,6 +91,7 @@
   <pre class="definition-editor__report" data-editor-report role="status" aria-live="polite">Edit a field, then validate.</pre>
   <script type="application/json" data-editor-initial>{{ initial_data_json | safe }}</script>
   <script type="application/json" data-editor-templates>{{ templates_json | safe }}</script>
+  {% if catalog == 'profiles' %}<script type="application/json" data-profile-version-descriptor>{{ profile_version_descriptor_json | safe }}</script>{% endif %}
 </div>
 <script src="/static/js/definition-editor.js"></script>
 {% endblock %}

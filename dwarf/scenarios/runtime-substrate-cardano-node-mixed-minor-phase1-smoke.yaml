@@ -74,11 +74,7 @@
       "min_node_count": 2
     },
     {
-      "primitive": "all_nodes_responsive",
-      "responsive_node_ids": [
-        "node1",
-        "node2"
-      ]
+      "primitive": "all_nodes_responsive"
     },
     {
       "primitive": "peer_connectivity_observed",

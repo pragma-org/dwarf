@@ -1,0 +1,342 @@
+import json
+from pathlib import Path
+
+from scripts import runtime_compose_substrate as compose
+from scripts import runtime_amaru_bootstrap_synth as bootstrap
+
+
+def test_amaru_bootstrap_assets_are_bundled_and_loader_is_digest_pinned():
+    assert (bootstrap.AMARU_TESTNET_DIR / "cardano-loader.sh").is_file()
+    assert (bootstrap.AMARU_TESTNET_DIR / "amaru-loader.sh").is_file()
+    assert "@sha256:" in bootstrap.DEFAULT_LOADER_BASE_IMAGE
+    assert "@sha256:" in bootstrap.DEFAULT_BOOTSTRAP_PRODUCER_IMAGE
+
+
+def test_staged_legacy_loader_keeps_its_supported_header_import_contract(tmp_path):
+    scripts = tmp_path / "scripts"
+
+    bootstrap._stage_loader_scripts(scripts)
+
+    body = (scripts / "amaru-loader.sh").read_text(encoding="utf-8")
+    assert "amaru import-headers --network ${NETWORK_NAME}" in body
+    assert "--config-dir ${BASEDIR}" in body
+    assert "--header-file" not in body
+
+    cardano_body = (scripts / "cardano-loader.sh").read_text(encoding="utf-8")
+    assert 'cp -fr /data/p${POOL_ID}-config/configs/* /configs/${POOL_ID}/' in cardano_body
+
+
+def test_versioned_compose_nodes_are_discoverable_as_dwarf_managed():
+    node = {
+        "id": "node1",
+        "impl": "cardano-node",
+        "listen_address": "127.0.0.1:33001",
+        "host_slot_index": 1,
+        "image": "ghcr.io/intersectmbo/cardano-node:11.1.2@sha256:" + "a" * 64,
+    }
+
+    body = compose._docker_compose_body(
+        compose_project="dwarf-profile-versioned-local",
+        nodes=[node],
+        network_name="testnet_42",
+    )
+
+    labels = body["services"]["node1"]["labels"]
+    assert labels["ada2.managed"] == "dwarf"
+    assert labels["ada2.profile"] == "dwarf-profile-versioned-local"
+    assert labels["ada2.service"] == "node1"
+
+
+def test_custom_testnet_bootstrap_uses_immutable_support_tool_not_target_binary(monkeypatch, tmp_path):
+    selected = "ghcr.io/pragma-org/amaru:v10.11.20260903@sha256:" + "b" * 64
+    calls = []
+
+    def fake_synthesize(**kwargs):
+        calls.append(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(compose, "synthesize_amaru_bootstrap", fake_synthesize)
+
+    plan = {
+        "nodes": [
+            {"id": "bootstrap-cardano", "impl": "cardano-node"},
+            {"id": "amaru1", "impl": "amaru", "image": selected},
+        ]
+    }
+    result = compose._synthesize_amaru_bootstrap_for_custom_testnet(
+        runtime_root=tmp_path,
+        plan=plan,
+    )
+
+    assert result == {"ok": True}
+    assert calls[0]["loader_image"] == bootstrap.DEFAULT_LOADER_BASE_IMAGE
+    assert "amaru_image" not in calls[0]
+    assert plan["nodes"][0]["omit_byron_credentials"] is True
+
+
+def test_synthetic_chain_cardano_service_omits_unrelated_byron_credentials():
+    node = {
+        "id": "bootstrap-cardano",
+        "impl": "cardano-node",
+        "listen_address": "127.0.0.1:37511",
+        "host_slot_index": 1,
+        "omit_byron_credentials": True,
+        "image": "ghcr.io/intersectmbo/cardano-node:10.7.1@sha256:" + "a" * 64,
+    }
+
+    service = compose._docker_compose_body(
+        compose_project="dwarf-profile-versioned-amaru",
+        nodes=[node],
+        network_name="testnet_42",
+    )["services"]["bootstrap-cardano"]
+    command = service["command"][0]
+
+    assert "--shelley-kes-key" in command
+    assert "--shelley-vrf-key" in command
+    assert "--shelley-operational-certificate" in command
+    assert "--byron-delegation-certificate" not in command
+    assert "--byron-signing-key" not in command
+
+
+def test_amaru_runtime_progress_requires_intersection_and_convergence():
+    text = """
+INFO build_ledger tip.hash=aaa tip.slot=259181
+INFO intersect found peer=bootstrap-cardano:3001 current=259181.aaa highest=345560.bbb
+INFO adopted tip tip.slot=259288 tip.hash=ccc tip.block_height=2636 max_block_height=2636
+INFO adopted tip tip.slot=345560 tip.hash=bbb tip.block_height=3500 max_block_height=3500
+"""
+
+    parsed = compose._parse_amaru_runtime_progress(text)
+
+    assert parsed["bootstrap_slot"] == 259181
+    assert parsed["highest_peer_slot"] == 345560
+    assert parsed["latest_adopted_slot"] == 345560
+    assert parsed["advanced"] is True
+    assert parsed["converged"] is True
+    assert parsed["ready"] is True
+
+
+def test_amaru_runtime_progress_rejects_one_block_then_vrf_failure():
+    text = """
+INFO build_ledger tip.hash=aaa tip.slot=259181
+INFO intersect found peer=bootstrap-cardano:3001 current=259181.aaa highest=345560.bbb
+INFO adopted tip tip.slot=259288 tip.hash=ccc tip.block_height=2636 max_block_height=2636
+ERROR Failed to validate header at 345740.ddd: Invalid VRF proof: VerificationFailed
+"""
+
+    parsed = compose._parse_amaru_runtime_progress(text)
+
+    assert parsed["advanced"] is True
+    assert parsed["converged"] is False
+    assert parsed["ready"] is False
+    assert parsed["blocking_signals"] == ["invalid-vrf-proof"]
+
+
+def test_versioned_amaru_service_migrates_bootstrap_state_before_run():
+    node = {
+        "id": "amaru1",
+        "impl": "amaru",
+        "listen_address": "127.0.0.1:35001",
+        "host_slot_index": 2,
+        "chain_dir": "/tmp/chain.testnet_42.db",
+        "ledger_dir": "/tmp/ledger.testnet_42.db",
+        "container_peer_addresses": ["bootstrap-cardano:3001"],
+        "image": "ghcr.io/pragma-org/amaru:v10.11.20260730@sha256:" + "c" * 64,
+    }
+
+    body = compose._docker_compose_body(
+        compose_project="dwarf-profile-versioned-amaru",
+        nodes=[node],
+        network_name="testnet_42",
+    )
+
+    service = body["services"]["amaru1"]
+    assert service["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
+    assert "exec amaru run" in service["command"][0]
+    assert '--era-history "/amaru/amaru1/era-history.json"' in service["command"][0]
+
+
+def test_public_amaru_service_uses_declared_external_peer_and_bootstraps_real_network():
+    node = {
+        "id": "amaru1",
+        "impl": "amaru",
+        "listen_address": "127.0.0.1:39000",
+        "host_slot_index": 1,
+        "chain_dir": "/tmp/chain.preview.db",
+        "ledger_dir": "/tmp/ledger.preview.db",
+        "fallback_peer_addresses": ["preview-node.play.dev.cardano.org:3001"],
+        "image": "ghcr.io/pragma-org/amaru:v10.11.20260912@sha256:" + "c" * 64,
+    }
+
+    service = compose._docker_compose_body(
+        compose_project="dwarf-profile-public-amaru",
+        nodes=[node],
+        network_name="preview",
+    )["services"]["amaru1"]
+    command = service["command"][0]
+
+    assert "amaru bootstrap" in command
+    assert '--network "preview"' in command
+    assert '--peer-address "preview-node.play.dev.cardano.org:3001"' in command
+    assert service["image"].endswith("@sha256:" + "c" * 64)
+
+
+def test_public_assets_can_be_staged_from_preserved_profile_configuration(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    required = {
+        "config.json": '{"NetworkMagic": 2}\n',
+        "topology.json": '{"bootstrapPeers": []}\n',
+        "byron-genesis.json": "{}\n",
+        "shelley-genesis.json": "{}\n",
+        "alonzo-genesis.json": "{}\n",
+        "conway-genesis.json": "{}\n",
+    }
+    for name, body in required.items():
+        (source / name).write_text(body, encoding="utf-8")
+
+    assets = compose._stage_public_network_assets(
+        network_name="preview",
+        destination=tmp_path / "staged",
+        config_source_dir=str(source),
+    )
+
+    assert set(required).issubset(assets)
+    assert Path(assets["config.json"]).read_text(encoding="utf-8") == required["config.json"]
+    assert all(Path(path).parent == tmp_path / "staged" for path in assets.values())
+
+
+def test_bootstrap_state_copies_generated_era_history_to_each_amaru_target(tmp_path):
+    generated = tmp_path / "generated" / "testnet_42" / "snapshots"
+    generated.mkdir(parents=True)
+    legacy_history = {
+        "stability_window": 1200,
+        "eras": [
+            {
+                "start": {"time_ms": index * 1000, "slot": index, "epoch": index},
+                "end": None,
+                "params": {"epoch_size_slots": 400, "slot_length": 500},
+            }
+            for index in range(7)
+        ],
+    }
+    (generated / "history.100.abc.json").write_text(
+        json.dumps(legacy_history) + "\n", encoding="utf-8"
+    )
+    staged = tmp_path / "staged" / "1"
+    staged.mkdir(parents=True)
+    (staged / "ledger.db").mkdir()
+    target = tmp_path / "target" / "amaru1"
+
+    bootstrap._apply_staged_state(
+        {
+            "network_name": "testnet_42",
+            "generated_root": str(tmp_path / "generated"),
+            "amaru_state_roots": {"1": str(staged)},
+            "target_amaru_state_roots": {"1": str(target)},
+        }
+    )
+
+    upgraded = json.loads((target / "era-history.json").read_text(encoding="utf-8"))
+    assert [era["params"]["era_name"] for era in upgraded["eras"]] == [
+        "Byron",
+        "Shelley",
+        "Allegra",
+        "Mary",
+        "Alonzo",
+        "Babbage",
+        "Conway",
+    ]
+    assert upgraded["eras"][2]["start"]["time"] == 2
+    assert "time_ms" not in upgraded["eras"][2]["start"]
+
+
+def test_bootstrap_producer_command_uses_synthesized_cardano_db_and_exact_image(tmp_path):
+    layout = {
+        "network_name": "testnet_42",
+        "workspace_root": str(tmp_path / "workspace"),
+        "config_roots": {"1": str(tmp_path / "configs" / "1")},
+        "cardano_state_roots": {"1": str(tmp_path / "state" / "1")},
+    }
+
+    command = bootstrap.bootstrap_producer_command(layout=layout)
+
+    assert bootstrap.DEFAULT_BOOTSTRAP_PRODUCER_IMAGE in command
+    assert command[command.index("--user") + 1] == "1000:1000"
+    assert f"{layout['cardano_state_roots']['1']}:/cardano/state" in command
+    assert f"{layout['cardano_state_roots']['1']}:/cardano/state:ro" not in command
+    assert f"{layout['config_roots']['1']}:/cardano/config:ro" in command
+    assert "/cardano/state" in command
+    assert "/cardano/config/configs" in command
+    assert "/bundle" in command
+    assert "testnet_42" in command
+
+
+def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path):
+    bundle = tmp_path / "workspace" / "producer-bundle" / "testnet_42"
+    (bundle / "ledger.testnet_42.db").mkdir(parents=True)
+    (bundle / "chain.testnet_42.db").mkdir()
+    (bundle / "ledger.testnet_42.db" / "ledger").write_text("ok", encoding="utf-8")
+    (bundle / "chain.testnet_42.db" / "chain").write_text("ok", encoding="utf-8")
+    (bundle / "era-history.json").write_text('{"eras": []}\n', encoding="utf-8")
+    target = tmp_path / "target" / "amaru1"
+    staged_cardano = tmp_path / "staged-cardano" / "1"
+    staged_cardano.mkdir(parents=True)
+    (staged_cardano / "immutable").mkdir()
+    (staged_cardano / "immutable" / "00000.chunk").write_text("chain", encoding="utf-8")
+    staged_config = tmp_path / "staged-config" / "1"
+    (staged_config / "configs").mkdir(parents=True)
+    (staged_config / "configs" / "config.json").write_text(
+        '{"Protocol": "Cardano", "RequiresNetworkMagic": "RequiresNoMagic"}\n',
+        encoding="utf-8",
+    )
+    (staged_config / "configs" / "shelley-genesis.json").write_text(
+        '{"systemStart": "2026-09-14T00:00:00Z"}\n', encoding="utf-8"
+    )
+    (staged_config / "configs" / "dijkstra-genesis.json").write_text(
+        '{"constitution": {}}\n', encoding="utf-8"
+    )
+    (staged_config / "configs" / "topology.json").write_text(
+        '{"localRoots": [{"accessPoints": [{"address": "p1.example"}]}]}\n',
+        encoding="utf-8",
+    )
+    (staged_config / "keys").mkdir()
+    (staged_config / "keys" / "byron-delegation.cert").write_text(
+        "producer-credential\n", encoding="utf-8"
+    )
+    target_cardano = tmp_path / "target-cardano" / "node1" / "db"
+    target_config = tmp_path / "runtime-env"
+    target_config.mkdir()
+    (target_config / "configuration.yaml").write_text('{"Protocol": "Cardano"}\n', encoding="utf-8")
+    (target_config / "shelley-genesis.json").write_text(
+        '{"systemStart": "2026-09-18T00:00:00Z"}\n', encoding="utf-8"
+    )
+    (target_config / "topology.json").write_text('{"localRoots": []}\n', encoding="utf-8")
+    target_keys = target_config / "pools-keys" / "pool1"
+    target_keys.mkdir(parents=True)
+    (target_keys / "byron-delegation.cert").write_text("fresh-credential\n", encoding="utf-8")
+    layout = {
+        "network_name": "testnet_42",
+        "workspace_root": str(tmp_path / "workspace"),
+        "config_roots": {"1": str(staged_config)},
+        "target_config_root": str(target_config),
+        "target_cardano_key_roots": {"1": str(target_keys)},
+        "cardano_state_roots": {"1": str(staged_cardano)},
+        "target_cardano_state_roots": {"1": str(target_cardano)},
+        "target_amaru_state_roots": {"1": str(target)},
+    }
+
+    bootstrap.apply_producer_bundle(layout)
+
+    assert (target / "ledger.db" / "ledger").read_text(encoding="utf-8") == "ok"
+    assert (target / "chain.db" / "chain").read_text(encoding="utf-8") == "ok"
+    assert (target / "era-history.json").is_file()
+    assert (target_cardano / "immutable" / "00000.chunk").read_text(encoding="utf-8") == "chain"
+    runtime_configuration = json.loads(
+        (target_config / "configuration.yaml").read_text(encoding="utf-8")
+    )
+    assert runtime_configuration["RequiresNetworkMagic"] == "RequiresNoMagic"
+    assert runtime_configuration["DijkstraGenesisFile"] == "dijkstra-genesis.json"
+    assert json.loads((target_config / "shelley-genesis.json").read_text(encoding="utf-8"))["systemStart"] == "2026-09-14T00:00:00Z"
+    assert json.loads((target_config / "topology.json").read_text(encoding="utf-8"))["localRoots"] == []
+    assert (target_keys / "byron-delegation.cert").read_text(encoding="utf-8") == "producer-credential\n"

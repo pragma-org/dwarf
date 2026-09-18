@@ -1,0 +1,276 @@
+import json
+from dataclasses import replace
+
+import pytest
+
+from profile_manager.cli import deployment_timeout_seconds
+from profile_manager.deployment_versions import build_deployment_version_preview
+from profile_manager.profiles import (
+    Profile,
+    deployment_adapter_for_profile,
+    deploy_command,
+    remove_command,
+    versioned_substrate_for_profile,
+)
+from scripts.runtime_substrate_common import build_version_provenance, normalize_substrate
+
+
+def _profile(**changes):
+    base = Profile(
+        id="versioned-local",
+        label="Versioned local devnet",
+        node_type="cardano-node",
+        node_count=2,
+        amaru_node_count=0,
+        network_magic=42,
+        peer_sharing=False,
+        remote_runtime_root="/opt/dwarf/cardano-profiles/versioned-local",
+        compose_project="dwarf-profile-versioned-local",
+        topology_pattern="local-mesh",
+        shared_genesis=True,
+        version_policy="latest-confirmed",
+    )
+    return replace(base, **changes)
+
+
+def _preview(profile):
+    return build_deployment_version_preview(profile.__dict__)
+
+
+def test_confirmed_cardano_profile_freezes_every_node_to_exact_oci_artifact():
+    profile = _profile()
+
+    substrate = versioned_substrate_for_profile(profile, _preview(profile))
+
+    assert substrate["compose_mode"] == "docker"
+    assert substrate["version_policy"] == "latest-confirmed"
+    assert substrate["version_status"] == "confirmed"
+    assert len(substrate["nodes"]) == 2
+    assert {node["impl"] for node in substrate["nodes"]} == {"cardano-node"}
+    assert {node["version"] for node in substrate["nodes"]} == {"11.1.2"}
+    assert all("@sha256:" in node["image"] for node in substrate["nodes"])
+    assert all(len(node["source_revision"]) == 40 for node in substrate["nodes"])
+    assert len(substrate["topology"]["edges"]) == 2
+
+
+def test_amaru_target_profile_declares_its_required_cardano_bootstrap_source():
+    profile = _profile(
+        node_type="amaru",
+        node_count=0,
+        amaru_node_count=2,
+        version_policy="exact",
+        amaru_version="10.11.20260903",
+    )
+    preview = _preview(profile)
+
+    substrate = versioned_substrate_for_profile(profile, preview)
+
+    assert substrate["scope"] == "amaru-only"
+    assert substrate["target_node_count"] == 2
+    assert substrate["support_node_count"] == 1
+    assert substrate["nodes"][0]["id"] == "bootstrap-cardano"
+    assert substrate["nodes"][0]["impl"] == "cardano-node"
+    assert substrate["nodes"][0]["supporting"] is True
+    assert {node["version"] for node in substrate["nodes"][1:]} == {"10.11.20260903"}
+    assert all(node["impl"] == "amaru" for node in substrate["nodes"][1:])
+
+    normalized = normalize_substrate(substrate)
+    provenance = build_version_provenance(normalized, normalized["nodes"])
+    assert provenance["scope"] == "amaru-only"
+    assert provenance["target_node_count"] == 2
+    assert provenance["support_node_count"] == 1
+    assert provenance["nodes"][0]["supporting"] is True
+
+
+def test_versioned_cardano_deploy_uses_exact_images_and_runtime_compose_adapter():
+    profile = _profile()
+    preview = _preview(profile)
+
+    command = deploy_command(profile, version_preview=preview)
+
+    exact_image = preview["resolved"]["cardano-node"]["artifacts"][0]
+    assert exact_image["reference"] + "@" + exact_image["digest"] in command
+    assert "runtime_compose_substrate.py" in command
+    assert "docker pull" in command
+    assert "/home/dwarf/.local/bin/cardano-node run" not in command
+    assert "ADA2_DWARF_ROOT" in command
+    assert json.dumps(preview["catalog_revision"]) in command
+
+
+def test_versioned_amaru_deploy_uses_live_producer_control_adapter():
+    profile = _profile(
+        node_type="amaru",
+        node_count=0,
+        amaru_node_count=1,
+        version_policy="exact",
+        amaru_version="10.11.20260730",
+    )
+    preview = _preview(profile)
+
+    command = deploy_command(profile, version_preview=preview)
+
+    assert "runtime_amaru_control_substrate.py" in command
+    assert "runtime_compose_substrate.py" not in command
+    assert '"lifecycle": "cardano_amaru_relay_bootstrap_control"' in command
+    assert '"scope": "amaru-only"' in command
+    assert '"profile_id": "versioned-local"' in command
+    assert '"supporting_cardano_version": "10.7.1"' in command
+    assert "docker pull" in command
+
+
+def test_versioned_mixed_deploy_uses_live_producer_control_adapter():
+    profile = _profile(
+        node_type="mixed",
+        node_count=2,
+        amaru_node_count=1,
+        version_policy="latest-confirmed",
+    )
+    preview = _preview(profile)
+
+    command = deploy_command(profile, version_preview=preview)
+
+    assert "runtime_amaru_control_substrate.py" in command
+    assert "runtime_compose_substrate.py" not in command
+    assert '"scope": "mixed"' in command
+    assert '"lifecycle": "cardano_amaru_relay_bootstrap_control"' in command
+
+
+def test_version_policy_does_not_select_or_replace_deployment_adapter():
+    profiles = {
+        "generated-cardano": _profile(topology_pattern="local-mesh", shared_genesis=True),
+        "local-cardano": _profile(topology_pattern=None, shared_genesis=False),
+        "public-cardano": _profile(
+            node_count=1,
+            topology_pattern=None,
+            shared_genesis=False,
+            config_source_dir="/opt/dwarf/cardano-configs/preview",
+            upstream_peer_address="preview-node.play.dev.cardano.org:3001",
+            public_network="preview",
+        ),
+        "public-amaru": _profile(
+            node_type="amaru",
+            node_count=0,
+            amaru_node_count=1,
+            topology_pattern=None,
+            shared_genesis=False,
+            amaru_network="preview",
+            upstream_peer_address="preview-node.play.dev.cardano.org:3001",
+            public_network="preview",
+        ),
+        "closed-amaru": _profile(
+            node_type="amaru",
+            node_count=0,
+            amaru_node_count=1,
+            topology_pattern=None,
+            shared_genesis=False,
+            testbed="antithesis-closed",
+        ),
+        "mixed": _profile(node_type="mixed", node_count=2, amaru_node_count=1),
+    }
+    expected = {
+        "generated-cardano": "generated-cardano-local",
+        "local-cardano": "cardano-compose-local",
+        "public-cardano": "cardano-public-peer",
+        "public-amaru": "amaru-public-peer",
+        "closed-amaru": "amaru-control",
+        "mixed": "amaru-control",
+    }
+
+    for name, profile in profiles.items():
+        assert deployment_adapter_for_profile(profile) == expected[name]
+        assert deployment_adapter_for_profile(
+            replace(profile, version_policy="exact")
+        ) == expected[name]
+        assert deployment_adapter_for_profile(
+            replace(profile, version_policy="latest-stable")
+        ) == expected[name]
+
+
+def test_public_cardano_keeps_public_peer_configuration_with_exact_artifact():
+    profile = _profile(
+        node_count=1,
+        topology_pattern=None,
+        shared_genesis=False,
+        config_source_dir="/opt/dwarf/cardano-configs/preview",
+        upstream_peer_address="preview-node.play.dev.cardano.org:3001",
+        public_network="preview",
+        listen_address="127.0.0.1:39100",
+    )
+    preview = _preview(profile)
+
+    command = deploy_command(profile, version_preview=preview)
+
+    assert "runtime_compose_substrate.py" in command
+    assert '"deployment_adapter": "cardano-public-peer"' in command
+    assert '"network": "preview"' in command
+    assert '"config_source_dir": "/opt/dwarf/cardano-configs/preview"' in command
+    assert '"upstream_peer_address": "preview-node.play.dev.cardano.org:3001"' in command
+    assert '"listen_address": "127.0.0.1:39100"' in command
+    assert "/home/dwarf/.local/bin/cardano-node" not in command
+
+
+def test_public_amaru_keeps_external_peer_without_inventing_local_producer():
+    profile = _profile(
+        node_type="amaru",
+        node_count=0,
+        amaru_node_count=1,
+        topology_pattern=None,
+        shared_genesis=False,
+        amaru_network="preview",
+        upstream_peer_address="preview-node.play.dev.cardano.org:3001",
+        public_network="preview",
+        listen_address="127.0.0.1:39000",
+    )
+    preview = _preview(profile)
+
+    substrate = versioned_substrate_for_profile(profile, preview)
+    command = deploy_command(profile, version_preview=preview)
+
+    assert [node["impl"] for node in substrate["nodes"]] == ["amaru"]
+    assert substrate["support_node_count"] == 0
+    assert "runtime_compose_substrate.py" in command
+    assert "runtime_amaru_control_substrate.py" not in command
+    assert '"deployment_adapter": "amaru-public-peer"' in command
+    assert '"upstream_peer_address": "preview-node.play.dev.cardano.org:3001"' in command
+    assert "/home/dwarf/amaru-verification/target/debug/amaru" not in command
+
+
+def test_omitted_policy_profile_never_emits_ambient_or_mutable_node_execution():
+    profile = replace(
+        _profile(topology_pattern="local-mesh", shared_genesis=True),
+        version_policy="latest-confirmed",
+        version_policy_source="implicit-default",
+    )
+
+    command = deploy_command(profile)
+
+    assert "/home/dwarf/.local/bin/cardano-node" not in command
+    assert "/home/dwarf/amaru-verification/target/debug/amaru" not in command
+    assert "cardano-node:latest" not in command
+    assert "@sha256:" in command
+
+
+def test_removed_legacy_policy_cannot_reach_ambient_execution_path():
+    profile = _profile(version_policy="legacy")
+
+    with pytest.raises(Exception, match="version_policy"):
+        deploy_command(profile)
+
+
+def test_remove_uses_retained_compose_file_and_archives_all_profile_roots():
+    command = remove_command("/opt/dwarf/cardano-profiles")
+
+    assert 'docker compose -f "$config_path" --project-name "$project" down' in command
+    assert "find \"$base_path\" -mindepth 1 -maxdepth 1 -type d" in command
+    assert "! -name archive" in command
+    assert "/profile-*" not in command
+
+
+def test_amaru_backed_profiles_allow_the_live_chain_bootstrap_to_finish():
+    cardano = _profile(node_type="cardano-node", node_count=3, amaru_node_count=0)
+    amaru = _profile(node_type="amaru", node_count=0, amaru_node_count=2)
+    mixed = _profile(node_type="mixed", node_count=3, amaru_node_count=2)
+
+    assert deployment_timeout_seconds(cardano) == 600
+    assert deployment_timeout_seconds(amaru) == 1800
+    assert deployment_timeout_seconds(mixed) == 1800

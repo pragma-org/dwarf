@@ -14,7 +14,7 @@ def _summary_fields(catalog: str, data: dict) -> list[dict[str, str]]:
     preferred = {
         "scenarios": ("runtime", "target", "profile", "duration", "evidence_intent"),
         "targets": ("implementation", "language", "decoder_type", "input_format", "upstream_commit"),
-        "profiles": ("node_type", "node_count", "amaru_node_count", "network_magic", "peer_sharing"),
+        "profiles": ("node_type", "node_count", "amaru_node_count", "network_magic", "peer_sharing", "version_policy", "cardano_version", "amaru_version", "compatibility_pair"),
     }[catalog]
     fields = []
     for key in preferred:

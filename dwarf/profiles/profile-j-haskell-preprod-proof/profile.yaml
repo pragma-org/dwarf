@@ -6,6 +6,7 @@
   "amaru_node_count": 0,
   "network_magic": 1,
   "peer_sharing": true,
+  "version_policy": "latest-confirmed",
   "remote_runtime_root": "/opt/dwarf/cardano-profiles/profile-j-haskell-preprod-proof",
   "compose_project": "cardano-profile-j-haskell-preprod",
   "upstream_peer_address": "preprod-node.play.dev.cardano.org:3001",

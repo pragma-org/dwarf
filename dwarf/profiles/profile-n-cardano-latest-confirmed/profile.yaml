@@ -1,0 +1,11 @@
+{
+  "id": "profile-n-cardano-latest-confirmed",
+  "label": "Cardano devnet — latest confirmed",
+  "haskell_count": 3,
+  "amaru_count": 0,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "latest-confirmed",
+  "topology_pattern": "local-mesh",
+  "shared_genesis": true
+}

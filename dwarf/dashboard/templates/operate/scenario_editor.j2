@@ -43,14 +43,19 @@
         <label class="definition-field"><span>Id *</span><input type="text" data-scenario-field="id"{% if not create %} readonly aria-readonly="true"{% endif %}><small>Stable lowercase kebab-case identifier.</small></label>
         <label class="definition-field"><span>Title *</span><input type="text" data-scenario-field="title"></label>
         <label class="definition-field"><span>Target implementation *</span><select data-scenario-field="target.implementation"><option value="amaru">amaru</option><option value="cardano-node">cardano-node</option></select></label>
-        <label class="definition-field"><span>Target version *</span><input type="text" data-scenario-field="target.version"></label>
+        <label class="definition-field"><span>Target version *</span><input type="text" data-scenario-field="target.version"><small>Descriptive target metadata—not the deployment pin. The selected profile controls runtime artifacts.</small></label>
         <label class="definition-field"><span>Runtime *</span><select data-scenario-field="runtime"><option value="library">library</option><option value="single-node">single-node</option><option value="devnet">devnet</option></select><small>Primitive choices are filtered by runtime and implementation.</small></label>
-        <label class="definition-field"><span>Profile</span><select data-scenario-field="profile"><option value="">— inline substrate / attachment / none —</option>{% for item in profile_options %}<option value="{{ item.id }}">{{ item.id }} — {{ item.label }}</option>{% endfor %}</select><small>Devnet requires exactly one of profile, substrate, or attach.</small></label>
+        <label class="definition-field"><span>Profile</span><select data-scenario-field="profile"><option value="">— inline substrate / attachment / none —</option>{% for item in profile_options %}<option value="{{ item.id }}" data-version-summary="{{ item.summary }}" data-version-scope="{{ item.scope }}" data-version-status="{{ item.status }}" data-policy-source="{{ item.policy_source }}">{{ item.id }} — {{ item.label }} — {{ item.summary }}</option>{% endfor %}</select><small>Devnet requires exactly one of profile, substrate, or attach.</small></label>
         <label class="definition-field"><span>Duration</span><input type="text" data-scenario-field="duration" placeholder="30s, 10m, 2h"></label>
         <label class="definition-field"><span>Seed</span><input type="text" data-scenario-field="seed" placeholder="integer, hex, or token"></label>
         <label class="definition-field"><span>Iterations</span><input type="number" min="1" data-scenario-field="iterations"></label>
         <label class="definition-field definition-field--boolean"><span>Shrink failing FUZZ cases</span><select data-scenario-field="shrink"><option value="">default (true)</option><option value="true">true</option><option value="false">false</option></select></label>
       </div>
+      <aside class="version-authority-note" data-scenario-profile-resolution role="status" aria-live="polite">
+        <strong>Runtime versions come from the selected deployment profile.</strong>
+        <p data-scenario-profile-resolution-text>Select a profile to see its exact Cardano-node and/or Amaru artifacts. Scenario target.version remains descriptive target metadata—not the deployment pin.</p>
+        <p><a href="/operate/profiles" target="_blank" rel="noopener noreferrer">Profiles ↗</a> · <a href="/operate/versions" target="_blank" rel="noopener noreferrer">Node versions ↗</a> · <a href="/learn/versions" target="_blank" rel="noopener noreferrer">Version guide ↗</a></p>
+      </aside>
     </section>
 
     <section class="scenario-builder__section">

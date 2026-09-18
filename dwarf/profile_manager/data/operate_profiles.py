@@ -21,10 +21,13 @@ Deliberately omitted (anti-creep rail enforced by test):
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from profile_manager.profiles import PROFILE_ROOT, Profile
+from profile_manager.version_catalog import CatalogError, resolve_profile_versions
+from profile_manager.version_discovery import load_effective_version_catalog
 
 
 def _profile_url(profile_id: str) -> str:
@@ -58,6 +61,34 @@ def _enrich_profile(profile: Profile) -> dict[str, Any]:
         out["listen_address"] = profile.listen_address
     if profile.amaru_network is not None:
         out["amaru_network"] = profile.amaru_network
+    try:
+        resolution = resolve_profile_versions(asdict(profile), load_effective_version_catalog())
+        resolved = resolution.get("resolved") or {}
+        versions = [
+            f"{implementation} {release['version']}"
+            for implementation, release in resolved.items()
+        ]
+        out.update(
+            {
+                "version_policy": resolution["policy"],
+                "version_status": resolution["status"],
+                "version_summary": " + ".join(versions) if versions else "legacy / runtime-resolved",
+                "version_reason": resolution.get("reason") or "",
+                "version_requires_acknowledgement": bool(
+                    resolution.get("requires_acknowledgement")
+                ),
+            }
+        )
+    except CatalogError as exc:
+        out.update(
+            {
+                "version_policy": profile.version_policy,
+                "version_status": "blocked",
+                "version_summary": "unresolved",
+                "version_reason": str(exc),
+                "version_requires_acknowledgement": False,
+            }
+        )
     return out
 
 

@@ -92,6 +92,8 @@ def test_visual_audit_discovers_definition_detail_and_edit_routes():
     assert "definitionEdit" in source
     assert "scenarios|targets|profiles" in source
     assert "item !== `${source}/new`" in source
+    assert "'/operate/versions'" in source
+    assert "'/learn/versions'" in source
 
 
 def test_visual_audit_checks_component_geometry_and_mobile_touch_targets():
@@ -423,3 +425,11 @@ def test_browser_form_patterns_escape_hyphens_for_unicode_set_validation():
         source = template.read_text(encoding="utf-8")
         assert "._-" not in source, f"unescaped pattern hyphen in {template}"
         assert "._\\-" in source, f"escaped pattern hyphen missing in {template}"
+
+
+def test_run_banner_actions_stack_without_mobile_overflow():
+    css = CSS.read_text(encoding="utf-8")
+
+    assert ".run-status-banner__cta {" in css
+    assert ".run-status-banner__cta .cta {" in css
+    assert "overflow-wrap: anywhere" in css

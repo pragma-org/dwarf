@@ -6,6 +6,8 @@
   "amaru_node_count": 0,
   "network_magic": 2,
   "peer_sharing": true,
+  "version_policy": "latest-confirmed",
+  "public_network": "preview",
   "remote_runtime_root": "/opt/dwarf/cardano-profiles/profile-e-haskell-preview-proof",
   "compose_project": "cardano-profile-e-haskell-preview",
   "upstream_peer_address": "preview-node.play.dev.cardano.org:3001",

@@ -41,18 +41,22 @@ def _schema(catalog: str) -> dict[str, Any]:
     return json.loads((_SPEC_ROOT / filename).read_text(encoding="utf-8"))
 
 
-def _field_descriptors(schema: dict[str, Any]) -> list[dict[str, Any]]:
+def _field_descriptors(
+    schema: dict[str, Any], *, option_overrides: dict[str, list[dict[str, str]]] | None = None
+) -> list[dict[str, Any]]:
     required = set(schema.get("required") or [])
     fields = []
     for name, details in (schema.get("properties") or {}).items():
         option_help = details.get("x-ui-option-descriptions") or {}
+        overridden = (option_overrides or {}).get(name)
+        values = [option["value"] for option in overridden] if overridden is not None else list(details.get("enum") or [])
         fields.append(
             {
                 "name": name,
                 "label": name.replace("_", " ").title(),
                 "type": details.get("x-ui-type") or details.get("type", "string"),
-                "enum": details.get("enum") or [],
-                "enum_options": [
+                "enum": values,
+                "enum_options": overridden if overridden is not None else [
                     {
                         "value": value,
                         "description": option_help.get(str(value), ""),
@@ -66,6 +70,79 @@ def _field_descriptors(schema: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return fields
+
+
+def _profile_version_options() -> dict[str, list[dict[str, str]]]:
+    from profile_manager.version_discovery import load_effective_version_catalog
+
+    catalog = load_effective_version_catalog()
+    options: dict[str, list[dict[str, str]]] = {
+        "cardano_version": [],
+        "amaru_version": [],
+        "compatibility_pair": [],
+    }
+    for release in catalog["releases"]:
+        field = "cardano_version" if release["implementation"] == "cardano-node" else "amaru_version"
+        primary_scope = "cardano-only" if release["implementation"] == "cardano-node" else "amaru-only"
+        status = (release.get("verification") or {}).get(primary_scope, {}).get("status", "unknown")
+        options[field].append(
+            {
+                "value": release["version"],
+                "description": f"{release['channel']} · {status} for {primary_scope} · source {release['source_revision'][:12]}",
+            }
+        )
+    for pair in catalog["compatibility_pairs"]:
+        options["compatibility_pair"].append(
+            {
+                "value": pair["id"],
+                "description": f"{pair['status']} · Cardano-node {pair['cardano_version']} + Amaru {pair['amaru_version']}",
+            }
+        )
+    return options
+
+
+def _profile_version_descriptor() -> dict[str, Any]:
+    from profile_manager.deployment_versions import version_catalog_revision
+    from profile_manager.version_catalog import resolve_default
+    from profile_manager.version_discovery import load_effective_version_catalog
+
+    catalog = load_effective_version_catalog()
+    defaults = {
+        "cardano-only": resolve_default(catalog, "cardano-only"),
+        "amaru-only": resolve_default(catalog, "amaru-only"),
+        "mixed": resolve_default(catalog, "mixed"),
+    }
+    return {
+        "catalog_revision": version_catalog_revision(catalog=catalog),
+        "catalog": catalog,
+        "defaults": defaults,
+    }
+
+
+def _profile_resolution_options() -> list[dict[str, str]]:
+    from profile_manager.deployment_versions import build_deployment_version_preview
+
+    options = []
+    for record in list_definitions("profiles"):
+        preview = build_deployment_version_preview(record.data)
+        identities = []
+        if preview.get("resolved", {}).get("cardano-node"):
+            identities.append(
+                f"Cardano-node {preview['resolved']['cardano-node']['version']}"
+            )
+        if preview.get("resolved", {}).get("amaru"):
+            identities.append(f"Amaru {preview['resolved']['amaru']['version']}")
+        options.append(
+            {
+                "id": record.definition_id,
+                "label": str(record.data.get("label") or record.definition_id),
+                "summary": " · ".join(identities),
+                "scope": str(preview.get("scope") or "unknown"),
+                "status": str(preview.get("status") or "unknown"),
+                "policy_source": str(preview.get("policy_source") or "unknown"),
+            }
+        )
+    return options
 
 
 def _profile_templates() -> dict[str, dict[str, Any]]:
@@ -158,10 +235,7 @@ def render_operate_definition_edit(
         from profile_manager.data.definition_schemas import scenario_editor_descriptor
 
         descriptor = scenario_editor_descriptor()
-        profile_options = [
-            {"id": record.definition_id, "label": str(record.data.get("label") or record.definition_id)}
-            for record in list_definitions("profiles")
-        ]
+        profile_options = _profile_resolution_options()
         return render(
             "operate/scenario_editor.j2",
             page_title=f"{'New' if create else 'Edit'} scenario",
@@ -196,7 +270,10 @@ def render_operate_definition_edit(
         catalog_label=label,
         create=create,
         definition_id=definition_id or "",
-        fields=_field_descriptors(schema),
+        fields=_field_descriptors(
+            schema,
+            option_overrides=_profile_version_options() if catalog == "profiles" else None,
+        ),
         initial_data_json=json.dumps(data, ensure_ascii=False).replace("<", "\\u003c"),
         initial_source=source,
         templates=templates,
@@ -204,5 +281,12 @@ def render_operate_definition_edit(
         selected_template=template or "",
         help_href=help_href,
         help_aria_label=help_aria_label,
+        secondary_help_href="/operate/versions" if catalog == "profiles" else None,
+        secondary_help_label="Node version catalog" if catalog == "profiles" else None,
+        profile_version_descriptor_json=(
+            json.dumps(_profile_version_descriptor(), ensure_ascii=False).replace("<", "\\u003c")
+            if catalog == "profiles"
+            else "{}"
+        ),
         token=token or "dwarf",
     )

@@ -29,6 +29,7 @@ const ROUTES = [
   '/operate/config', '/operate/config/edit', '/operate/contract',
   '/operate/coverage', '/operate/crashes', '/operate/notifications', '/operate/plugins',
   '/operate/primitives', '/operate/primitives/new', '/operate/profiles', '/operate/profiles/new',
+  '/operate/versions',
   '/operate/profile-templates', '/operate/runs', '/operate/testcases', '/operate/testcase-buckets', '/operate/corpora', '/operate/grammars', '/operate/risk-packages',
   '/operate/scenarios', '/operate/scenarios/new', '/operate/schedule',
   '/operate/static-analysis', '/operate/status', '/operate/targets', '/operate/targets/new',
@@ -38,6 +39,7 @@ const ROUTES = [
   '/learn/examples', '/learn/faq', '/learn/getting-started', '/learn/glossary',
   '/learn/operator-runbook', '/learn/overview', '/learn/plugin-authoring', '/learn/primitives',
   '/learn/profile-templates', '/learn/status', '/learn/testcases', '/learn/corpora', '/learn/grammars', '/learn/risk-packages',
+  '/learn/versions',
   '/learn/threat-coverage', '/learn/troubleshooting', '/learn/walkthroughs',
 ];
 

@@ -200,14 +200,7 @@
       "min_completed": 1
     },
     {
-      "primitive": "all_nodes_responsive",
-      "responsive_node_ids": [
-        "node1",
-        "node2",
-        "node3",
-        "node4",
-        "node5"
-      ]
+      "primitive": "all_nodes_responsive"
     },
     {
       "primitive": "peer_connectivity_observed",

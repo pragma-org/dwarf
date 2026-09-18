@@ -345,6 +345,11 @@ def build_parser():
     deploy.add_argument("--replace", action="store_true")
     deploy.add_argument("--approve", action="store_true",
                         help="Skip the interactive y/N prompt. Required for non-interactive use (e.g. dashboard).")
+    deploy.add_argument(
+        "--acknowledge-unknown-version",
+        action="store_true",
+        help="Allow this one deployment to use a stable release that has not yet passed its scoped runtime contract.",
+    )
 
     remove = subcommands.add_parser("remove")
     remove.add_argument("--dry-run", action="store_true")
@@ -1313,9 +1318,35 @@ def cmd_antithesis(args):
     return 1
 
 
+def deployment_timeout_seconds(profile):
+    """Allow live-chain Amaru bootstrap profiles to cross their epoch gate."""
+
+    return 1800 if profile.node_type in {"amaru", "mixed"} else 600
+
+
 def cmd_deploy(args):
+    from dataclasses import asdict
+    from profile_manager.deployment_versions import (
+        DeploymentVersionGateError,
+        build_deployment_version_preview,
+        enforce_deployment_version_gate,
+    )
+
     config = _load_or_intake("deploy")
     profile = find_profile(args.profile_id)
+    try:
+        version_preview = build_deployment_version_preview(asdict(profile))
+        version_gate = (
+            {"allowed": True, "preview": version_preview, "acknowledgement": None}
+            if args.dry_run
+            else enforce_deployment_version_gate(
+                version_preview,
+                acknowledge_unknown=bool(args.acknowledge_unknown_version),
+            )
+        )
+    except DeploymentVersionGateError as exc:
+        print(f"Version selection refused ({exc.code}): {exc}", file=sys.stderr)
+        return 2
     active = ssh_command(config, active_profile_command(), timeout=30, dry_run=args.dry_run, verb=("active",))
     if args.dry_run:
         print(deploy_dry_run_text(profile), end="")
@@ -1331,6 +1362,7 @@ def cmd_deploy(args):
                 deploy_dry_run_text(profile).strip(),
                 "No remote state changed.",
             ],
+            metadata={"version_selection": version_preview, "version_gate": version_gate},
         )
         _record_forensic_for_legacy_run(
             args,
@@ -1338,6 +1370,8 @@ def cmd_deploy(args):
             scenario_yaml=_synthetic_scenario_yaml("deploy", profile.id, profile.label, {}, [active.rendered_command], profile.id, dry_run=True),
             profile_id=profile.id,
             command_result=active,
+            target={"implementation": profile.node_type, "version": "resolved"},
+            profile_resolved={"id": profile.id, "version_selection": version_preview},
         )
         return 0
     if active.stdout.strip() and not args.replace:
@@ -1373,7 +1407,19 @@ def cmd_deploy(args):
     if answer not in {"y", "yes"}:
         print("Deploy cancelled.")
         return 1
-    result = ssh_command(config, deploy_command(profile), timeout=300, verb=("deploy", profile.id))
+    deploy_preview = {
+        **version_preview,
+        "unknown_acknowledged": bool(version_gate.get("acknowledgement")),
+    }
+    deploy_verb = ["deploy", profile.id]
+    if args.acknowledge_unknown_version:
+        deploy_verb.append("--acknowledge-unknown-version")
+    result = ssh_command(
+        config,
+        deploy_command(profile, version_preview=deploy_preview),
+        timeout=deployment_timeout_seconds(profile),
+        verb=tuple(deploy_verb),
+    )
     path = write_evidence(
         profile.id,
         "deploy",
@@ -1381,6 +1427,7 @@ def cmd_deploy(args):
         config,
         [active, result],
         limitations=["Profile deployment command executed over SSH."],
+        metadata={"version_selection": version_preview, "version_gate": version_gate},
     )
     _record_forensic_for_legacy_run(
         args,
@@ -1388,6 +1435,8 @@ def cmd_deploy(args):
         scenario_yaml=_synthetic_scenario_yaml("deploy", profile.id, profile.label, {}, [result.rendered_command], profile.id),
         profile_id=profile.id,
         command_result=result,
+        target={"implementation": profile.node_type, "version": "resolved"},
+        profile_resolved={"id": profile.id, "version_selection": deploy_preview},
     )
     print(f"Wrote evidence: {path}")
     print(result.stdout, end="")
@@ -2329,14 +2378,27 @@ def _run_package_via_remote_scenario(args, config, package, profile, commands):
     return run_result
 
 
-def _record_forensic_for_legacy_run(args, *, scenario_id, scenario_yaml, profile_id, command_result):
+def _record_forensic_for_legacy_run(
+    args,
+    *,
+    scenario_id,
+    scenario_yaml,
+    profile_id,
+    command_result,
+    target=None,
+    profile_resolved=None,
+):
     forensic.record_remote_run(
         scenario_id=scenario_id,
         scenario_yaml=scenario_yaml,
-        target={"implementation": "cardano-node", "version": "any"},
+        target=target or {"implementation": "cardano-node", "version": "any"},
         runtime="devnet",
         profile_id=profile_id,
-        profile_resolved={"id": profile_id} if profile_id else None,
+        profile_resolved=(
+            profile_resolved
+            if profile_resolved is not None
+            else ({"id": profile_id} if profile_id else None)
+        ),
         command_result=command_result,
         runs_dir=_forensic_runs_dir(args),
         state_dir=_forensic_state_dir(args),

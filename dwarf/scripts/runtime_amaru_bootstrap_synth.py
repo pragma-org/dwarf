@@ -10,10 +10,17 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from runtime_substrate_common import run_command
-AMARU_TESTNET_DIR = SCRIPT_DIR.parents[1] / "codebases" / "amaru" / "docker" / "testnet"
-DEFAULT_LOADER_BASE_IMAGE = "ghcr.io/pragma-org/amaru/loader:main"
+AMARU_TESTNET_DIR = SCRIPT_DIR.parent / "assets" / "amaru-testnet"
+DEFAULT_LOADER_BASE_IMAGE = (
+    "ghcr.io/pragma-org/amaru/loader@"
+    "sha256:057ba262540cf0ecec837e054a38c2a5d3ec3aa13532d6be21eca937bcdf52cf"
+)
 DEFAULT_AMARU_IMAGE = "dwarf/amaru:0.1.2"
 DEFAULT_LOADER_IMAGE = "dwarf/amaru-loader:0.1.2"
+DEFAULT_BOOTSTRAP_PRODUCER_IMAGE = (
+    "ghcr.io/lambdasistemi/amaru-bootstrap-producer@"
+    "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36"
+)
 
 
 def _copy_tree_contents(source: Path, destination: Path) -> None:
@@ -42,13 +49,9 @@ def _stage_loader_scripts(scripts_root: Path) -> None:
     amaru_loader_path = scripts_root / "amaru-loader.sh"
     amaru_loader = (AMARU_TESTNET_DIR / "amaru-loader.sh").read_text(encoding="utf-8")
     amaru_loader = amaru_loader.replace(
-        "# import headers\namaru import-headers --network ${NETWORK_NAME} --chain-dir ${BASEDIR}/chain.${NETWORK_NAME}.db",
-        """# import headers
-header_args=()
-for header_file in ${BASEDIR}/${NETWORK_NAME}/headers/*.cbor; do
-    header_args+=(--header-file "$header_file")
-done
-amaru import-headers --network ${NETWORK_NAME} --chain-dir ${BASEDIR}/chain.${NETWORK_NAME}.db "${header_args[@]}" """,
+        "amaru import-headers --network ${NETWORK_NAME} --chain-dir ${BASEDIR}/chain.${NETWORK_NAME}.db",
+        "amaru import-headers --network ${NETWORK_NAME} --config-dir ${BASEDIR} "
+        "--chain-dir ${BASEDIR}/chain.${NETWORK_NAME}.db",
     )
     amaru_loader_path.write_text(amaru_loader, encoding="utf-8")
     cardano_loader_path.chmod(0o755)
@@ -64,6 +67,11 @@ def ensure_loader_image(
 ) -> str:
     inspect = run_command(["docker", "image", "inspect", loader_image])
     if inspect.returncode == 0:
+        return loader_image
+    if loader_image == DEFAULT_LOADER_BASE_IMAGE:
+        pull = run_command(["docker", "pull", loader_image])
+        if pull.returncode != 0:
+            raise RuntimeError(f"failed to pull immutable Amaru loader image: {pull.stderr or pull.stdout}")
         return loader_image
     amaru_inspect = run_command(["docker", "image", "inspect", amaru_image])
     if amaru_inspect.returncode != 0:
@@ -108,6 +116,7 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
     config_roots: dict[str, str] = {}
     cardano_state_roots: dict[str, str] = {}
     target_cardano_state_roots: dict[str, str] = {}
+    target_cardano_key_roots: dict[str, str] = {}
     for node in plan["nodes"]:
         if node["impl"] != "cardano-node":
             continue
@@ -131,6 +140,7 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
         config_roots[slot] = str(config_root)
         cardano_state_roots[slot] = str(staged_db_root)
         target_cardano_state_roots[slot] = str(target_db_root)
+        target_cardano_key_roots[slot] = str(pool_keys_root)
 
     amaru_slot_map: dict[str, int] = {}
     amaru_state_roots: dict[str, str] = {}
@@ -154,8 +164,10 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
         "scripts_root": str(scripts_root),
         "generated_root": str(generated_root),
         "config_roots": config_roots,
+        "target_config_root": str(env_root),
         "cardano_state_roots": cardano_state_roots,
         "target_cardano_state_roots": target_cardano_state_roots,
+        "target_cardano_key_roots": target_cardano_key_roots,
         "amaru_state_root": str(amaru_state_root),
         "amaru_state_roots": amaru_state_roots,
         "target_amaru_state_roots": target_amaru_state_roots,
@@ -226,39 +238,194 @@ def loader_commands(*, layout: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -
     return cardano_cmd, amaru_cmd
 
 
+def bootstrap_producer_command(
+    *, layout: dict, producer_image: str = DEFAULT_BOOTSTRAP_PRODUCER_IMAGE
+) -> list[str]:
+    first_slot = sorted(layout["config_roots"], key=int)[0]
+    bundle_root = Path(str(layout["workspace_root"])) / "producer-bundle"
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "--user",
+        "1000:1000",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--tmpfs",
+        "/tmp",
+        "--tmpfs",
+        "/run",
+        "-e",
+        "AMARU_WAIT_DEADLINE_SECONDS=30",
+        "-e",
+        "AMARU_CLUSTER_READY_DEADLINE_SECONDS=30",
+        "-e",
+        "AMARU_POLL_INTERVAL_SECONDS=1",
+        "-v",
+        f"{layout['cardano_state_roots'][first_slot]}:/cardano/state",
+        "-v",
+        f"{layout['config_roots'][first_slot]}:/cardano/config:ro",
+        "-v",
+        f"{bundle_root}:/bundle",
+        "--entrypoint",
+        "/bin/bootstrap-producer",
+        producer_image,
+        "/cardano/state",
+        "/cardano/config/configs",
+        "/bundle",
+        str(layout["network_name"]),
+    ]
+
+
+def apply_producer_bundle(layout: dict) -> None:
+    network_name = str(layout["network_name"])
+    source = Path(str(layout["workspace_root"])) / "producer-bundle" / network_name
+    ledger_source = source / f"ledger.{network_name}.db"
+    chain_source = source / f"chain.{network_name}.db"
+    history_source = source / "era-history.json"
+    for required in (ledger_source, chain_source, history_source):
+        if not required.exists():
+            raise RuntimeError(f"Amaru bootstrap producer omitted {required.name}")
+    staged_cardano = layout["cardano_state_roots"]
+    target_cardano = layout["target_cardano_state_roots"]
+    if set(staged_cardano) != set(target_cardano):
+        raise RuntimeError("Cardano bootstrap state mapping is incomplete")
+    for slot, source_text in staged_cardano.items():
+        source_db = Path(str(source_text))
+        target_db = Path(str(target_cardano[slot]))
+        if target_db.exists():
+            shutil.rmtree(target_db)
+        shutil.copytree(source_db, target_db)
+    staged_keys = layout["config_roots"]
+    target_keys = layout["target_cardano_key_roots"]
+    if set(staged_keys) != set(target_keys):
+        raise RuntimeError("Cardano bootstrap credential mapping is incomplete")
+    for slot, config_root_text in staged_keys.items():
+        source_keys = Path(str(config_root_text)) / "keys"
+        destination_keys = Path(str(target_keys[slot]))
+        if destination_keys.exists():
+            shutil.rmtree(destination_keys)
+        shutil.copytree(source_keys, destination_keys)
+    # The synthetic ChainDB was created and validated against the immutable
+    # producer image's pinned configuration.  Keep that configuration paired
+    # with the database when the supporting cardano-node is launched.  The
+    # generated runtime topology remains authoritative and must not be
+    # overwritten by the producer's pN.example topology.
+    first_slot = sorted(layout["config_roots"], key=int)[0]
+    producer_config_root = Path(str(layout["config_roots"][first_slot])) / "configs"
+    target_config_root = Path(str(layout["target_config_root"]))
+    for source in producer_config_root.iterdir():
+        if not source.is_file() or source.name in {"config.json", "configuration.yaml", "topology.json"}:
+            continue
+        shutil.copy2(source, target_config_root / source.name)
+    runtime_configuration = json.loads(
+        (producer_config_root / "config.json").read_text(encoding="utf-8")
+    )
+    if (producer_config_root / "dijkstra-genesis.json").is_file():
+        # cardano-node 10.7+ requires the field even when the Dijkstra hard
+        # fork is not activated.  Adding the dormant genesis reference does
+        # not change the producer's validated pre-Dijkstra chain history.
+        runtime_configuration.setdefault("DijkstraGenesisFile", "dijkstra-genesis.json")
+    (target_config_root / "configuration.yaml").write_text(
+        json.dumps(runtime_configuration, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    for target_text in layout["target_amaru_state_roots"].values():
+        target = Path(str(target_text))
+        if target.exists():
+            shutil.rmtree(target)
+        target.mkdir(parents=True)
+        shutil.copytree(ledger_source, target / "ledger.db")
+        shutil.copytree(chain_source, target / "chain.db")
+        shutil.copy2(history_source, target / "era-history.json")
+
+
 def _replace_tree(target_root: Path, source_root: Path) -> None:
     if target_root.exists():
         shutil.rmtree(target_root)
     shutil.copytree(source_root, target_root)
 
 
+def _upgrade_era_history_schema(body: bytes) -> bytes:
+    history = json.loads(body)
+    eras = history.get("eras")
+    era_names = ("Byron", "Shelley", "Allegra", "Mary", "Alonzo", "Babbage", "Conway")
+    if not isinstance(eras, list) or len(eras) != len(era_names):
+        raise RuntimeError("generated Amaru era history does not contain the seven Cardano eras")
+    for era, era_name in zip(eras, era_names, strict=True):
+        if not isinstance(era, dict) or not isinstance(era.get("params"), dict):
+            raise RuntimeError("generated Amaru era history contains a malformed era")
+        era["params"].setdefault("era_name", era_name)
+        for key in ("start", "end"):
+            bound = era.get(key)
+            if bound is None:
+                continue
+            if not isinstance(bound, dict):
+                raise RuntimeError("generated Amaru era history contains a malformed bound")
+            if "time" not in bound:
+                milliseconds = bound.pop("time_ms", None)
+                if not isinstance(milliseconds, int) or milliseconds < 0 or milliseconds % 1000:
+                    raise RuntimeError("generated Amaru era-history time is not whole seconds")
+                bound["time"] = milliseconds // 1000
+    return (json.dumps(history, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
 def _apply_staged_state(layout: dict) -> None:
+    history_files = sorted(
+        (
+            Path(str(layout["generated_root"]))
+            / str(layout["network_name"])
+            / "snapshots"
+        ).glob("history.*.json")
+    )
+    if not history_files:
+        raise RuntimeError("Amaru bootstrap did not generate an era-history file")
+    history_body = _upgrade_era_history_schema(history_files[0].read_bytes())
+    if any(_upgrade_era_history_schema(path.read_bytes()) != history_body for path in history_files[1:]):
+        raise RuntimeError("Amaru bootstrap generated inconsistent era-history files")
     for slot, staged_root in layout["amaru_state_roots"].items():
         target_root = Path(layout["target_amaru_state_roots"][slot])
         if target_root.exists():
             shutil.rmtree(target_root)
         shutil.copytree(Path(staged_root), target_root)
+        (target_root / "era-history.json").write_bytes(history_body)
 
 
-def synthesize_amaru_bootstrap(*, runtime_root: Path, plan: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -> dict:
-    loader_image = ensure_loader_image(runtime_root=runtime_root, loader_image=loader_image)
+def synthesize_amaru_bootstrap(
+    *,
+    runtime_root: Path,
+    plan: dict,
+    loader_image: str = DEFAULT_LOADER_IMAGE,
+    amaru_image: str = DEFAULT_AMARU_IMAGE,
+) -> dict:
+    producer_image = DEFAULT_BOOTSTRAP_PRODUCER_IMAGE
+    inspect = run_command(["docker", "image", "inspect", producer_image])
+    if inspect.returncode != 0:
+        pull = run_command(["docker", "pull", producer_image])
+        if pull.returncode != 0:
+            raise RuntimeError(f"failed to pull immutable Amaru bootstrap producer: {pull.stderr or pull.stdout}")
     layout = prepare_loader_workspace(runtime_root=runtime_root, plan=plan)
-    cardano_cmd, amaru_cmd = loader_commands(layout=layout, loader_image=loader_image)
+    Path(str(layout["workspace_root"]), "producer-bundle").mkdir(parents=True, exist_ok=True)
+    cardano_cmd, _legacy_amaru_cmd = loader_commands(layout=layout, loader_image=loader_image)
     cardano = run_command(cardano_cmd)
     if cardano.returncode != 0:
         raise RuntimeError(f"cardano loader failed: {cardano.stderr or cardano.stdout}")
-    amaru = run_command(amaru_cmd)
-    if amaru.returncode != 0:
-        raise RuntimeError(f"amaru loader failed: {amaru.stderr or amaru.stdout}")
-    _apply_staged_state(layout)
+    producer_cmd = bootstrap_producer_command(layout=layout, producer_image=producer_image)
+    producer = run_command(producer_cmd)
+    if producer.returncode != 0:
+        raise RuntimeError(f"Amaru bootstrap producer failed: {producer.stderr or producer.stdout}")
+    apply_producer_bundle(layout)
     report = {
         "network_name": layout["network_name"],
         "loader_image": loader_image,
+        "bootstrap_producer_image": producer_image,
         "workspace_root": layout["workspace_root"],
         "generated_root": layout["generated_root"],
         "amaru_slot_map": layout["amaru_slot_map"],
         "cardano_command": cardano_cmd,
-        "amaru_command": amaru_cmd,
+        "amaru_command": producer_cmd,
     }
     report_path = runtime_root / "amaru-bootstrap-loader" / "synth-report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

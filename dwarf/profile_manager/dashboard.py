@@ -89,6 +89,7 @@ from profile_manager.views.operate_audit import render_operate_audit
 from profile_manager.views.operate_timeline import render_operate_timeline
 from profile_manager.views.operate_static_analysis import render_operate_static_analysis
 from profile_manager.views.operate_profiles import render_operate_profiles
+from profile_manager.views.operate_versions import render_operate_versions
 from profile_manager.views.operate_bundles import render_operate_bundles
 from profile_manager.views.operate_plugins import dispatch_plugin_request
 from profile_manager.views.operate_primitives import (
@@ -132,6 +133,7 @@ from profile_manager.views.learn_consensus import render_learn_consensus
 from profile_manager.views.learn import render_learn_landing
 from profile_manager.views.learn_primitives import render_learn_primitives
 from profile_manager.views.learn_profile_templates import render_learn_profile_templates
+from profile_manager.views.learn_versions import render_learn_versions
 from profile_manager.views.learn_testcases import render_learn_testcases
 from profile_manager.views.learn_corpora import render_learn_corpora
 from profile_manager.views.learn_grammars import render_learn_grammars
@@ -1263,11 +1265,22 @@ def _cli_command(*args):
     return [sys.executable, str(DEFAULT_CLI_ENTRYPOINT), *args]
 
 
-def _default_cli_command_builder(action, *, profile=None, test_id=None, approve=False, scenario_path=None):
+def _default_cli_command_builder(
+    action,
+    *,
+    profile=None,
+    test_id=None,
+    approve=False,
+    scenario_path=None,
+    acknowledge_unknown_version=False,
+):
     if action == "deploy":
         if not profile:
             raise ValueError("deploy requires profile")
-        return _cli_command("deploy", profile, "--approve")
+        command = _cli_command("deploy", profile, "--approve")
+        if acknowledge_unknown_version:
+            command.append("--acknowledge-unknown-version")
+        return command
     if action == "remove":
         return _cli_command("remove", "--approve")
     if action == "fuzz":
@@ -1434,17 +1447,47 @@ def dispatch_mutating_request(*, method, path, expected_token, cli_command_build
     scenario_path = (qs.get("path") or [None])[0]
     approve_raw = (qs.get("approve") or [None])[0]
     approve = approve_raw in ("1", "true", "yes")
+    acknowledge_unknown_raw = (qs.get("acknowledge_unknown_version") or [None])[0]
+    acknowledge_unknown_version = acknowledge_unknown_raw in ("1", "true", "yes")
     if action == "deploy" and not profile:
         return (400, "text/plain; charset=utf-8", b"missing profile query parameter\n")
     if action in ("fuzz", "smoke", "coverage") and not test_id:
         return (400, "text/plain; charset=utf-8", b"missing id query parameter\n")
     if action in ("compare", "scenario_run") and not scenario_path:
         return (400, "text/plain; charset=utf-8", b"missing path query parameter\n")
+    if action == "deploy":
+        from profile_manager.deployment_versions import (
+            DeploymentVersionGateError,
+            enforce_deployment_version_gate,
+            profile_deployment_version_preview,
+        )
+
+        try:
+            preview = profile_deployment_version_preview(profile)
+            enforce_deployment_version_gate(
+                preview, acknowledge_unknown=acknowledge_unknown_version
+            )
+        except DeploymentVersionGateError as exc:
+            body = json.dumps({"ok": False, "error": exc.code, "message": str(exc)}).encode("utf-8")
+            return (409, "application/json; charset=utf-8", body)
+        except Exception as exc:
+            body = json.dumps(
+                {"ok": False, "error": "version-preview-failed", "message": str(exc)}
+            ).encode("utf-8")
+            return (400, "application/json; charset=utf-8", body)
     if not try_acquire_mutating_lock():
         return (409, "text/plain; charset=utf-8", b"another mutating action is already in progress\n")
     builder = cli_command_builder or _default_cli_command_builder
     try:
-        cmd = builder(action, profile=profile, test_id=test_id, approve=approve, scenario_path=scenario_path)
+        builder_kwargs = {
+            "profile": profile,
+            "test_id": test_id,
+            "approve": approve,
+            "scenario_path": scenario_path,
+        }
+        if action == "deploy":
+            builder_kwargs["acknowledge_unknown_version"] = acknowledge_unknown_version
+        cmd = builder(action, **builder_kwargs)
     except Exception as exc:
         release_mutating_lock()
         return (400, "text/plain; charset=utf-8", (f"bad request: {exc}\n").encode("utf-8"))
@@ -1455,6 +1498,56 @@ def dispatch_mutating_request(*, method, path, expected_token, cli_command_build
         finally:
             release_mutating_lock()
     return (200, "text/event-stream; charset=utf-8", _gen())
+
+
+def dispatch_deployment_preview_request(*, method, path):
+    from urllib.parse import parse_qs, urlsplit
+    from profile_manager.deployment_versions import (
+        DeploymentVersionGateError,
+        profile_deployment_version_preview,
+    )
+
+    parts = urlsplit(path)
+    if parts.path != "/api/deploy/preview":
+        return None
+    if method != "GET":
+        return (405, "text/plain; charset=utf-8", b"method not allowed\n")
+    profile_id = (parse_qs(parts.query).get("profile") or [""])[0]
+    if not profile_id:
+        return (400, "application/json; charset=utf-8", b'{"ok":false,"error":"missing-profile"}')
+    try:
+        preview = profile_deployment_version_preview(profile_id)
+    except DeploymentVersionGateError as exc:
+        body = json.dumps({"ok": False, "error": exc.code, "message": str(exc)}).encode("utf-8")
+        return (409, "application/json; charset=utf-8", body)
+    except Exception as exc:
+        body = json.dumps({"ok": False, "error": "preview-failed", "message": str(exc)}).encode("utf-8")
+        return (404, "application/json; charset=utf-8", body)
+    return (200, "application/json; charset=utf-8", json.dumps(preview).encode("utf-8"))
+
+
+def dispatch_version_refresh_request(*, method, path, expected_token):
+    """Start one authenticated, serialized official-release refresh."""
+    if urlsplit(path).path != "/api/versions/refresh":
+        return None
+    if method != "POST":
+        return (405, "application/json; charset=utf-8", b'{"ok":false,"error":"use POST"}')
+    ok, error = check_token(path, expected=expected_token)
+    if not ok:
+        return (
+            401,
+            "application/json; charset=utf-8",
+            json.dumps({"ok": False, "error": error}).encode("utf-8"),
+        )
+    from profile_manager.version_discovery import start_release_refresh
+
+    result = start_release_refresh(manual=True)
+    status = 202 if result.get("started") else 409
+    return (
+        status,
+        "application/json; charset=utf-8",
+        json.dumps({"ok": bool(result.get("started")), **result}).encode("utf-8"),
+    )
 
 
 def dispatch_topology_redeploy_request(
@@ -2661,6 +2754,8 @@ def render_route_html(route, *, token=None):
         if outcome not in ("", "pass", "fail", "error"):
             outcome = ""
         return render_operate_runs(outcome=outcome, q=q[:128])
+    if route.split("?", 1)[0] == "/operate/versions":
+        return render_operate_versions(token=token)
     profile_template_html = dispatch_profile_template_request(route)
     if profile_template_html is not None:
         return profile_template_html
@@ -2720,6 +2815,7 @@ def render_route_html(route, *, token=None):
         "/learn/api": render_learn_api,
         "/learn/primitives": render_learn_primitives,
         "/learn/profile-templates": render_learn_profile_templates,
+        "/learn/versions": render_learn_versions,
         "/learn/testcases": render_learn_testcases,
         "/learn/corpora": render_learn_corpora,
         "/learn/grammars": render_learn_grammars,
@@ -2871,6 +2967,13 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
             body_bytes = self.rfile.read(length) if length > 0 else b""
+            version_refresh = dispatch_version_refresh_request(
+                method="POST", path=self.path, expected_token=expected_token
+            )
+            if version_refresh is not None:
+                status, ctype, response_body = version_refresh
+                self._send(status, ctype, response_body)
+                return
             catalog_result = dispatch_catalog_mutating_request(
                 method="POST", path=self.path, body=body_bytes, expected_token=expected_token
             )
@@ -3046,9 +3149,17 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 "/api/scenario/paste", "/api/scenario/promote", "/api/scenario/compare",
                 "/api/scenario/run", "/api/backup/create", "/api/coverage/run",
                 "/api/topology/redeploy",
+                "/api/versions/refresh",
                 "/operate/config/save",
             }
             path_only = self.path.split("?", 1)[0]
+            deployment_preview = dispatch_deployment_preview_request(
+                method="GET", path=self.path
+            )
+            if deployment_preview is not None:
+                status, ctype, response_body = deployment_preview
+                self._send(status, ctype, response_body)
+                return
             if path_only.startswith("/api/corpora/") and path_only.endswith("/actions"):
                 self._send(405, "text/plain; charset=utf-8", b"use POST for mutating endpoints\n")
                 return
@@ -3058,6 +3169,14 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             if path_only in mutating_paths:
                 self._send(405, "text/plain; charset=utf-8", b"use POST for mutating endpoints\n")
                 return
+            if path_only == "/operate/versions":
+                try:
+                    from profile_manager.version_discovery import ensure_release_refresh
+                    ensure_release_refresh()
+                except Exception:
+                    # Cached catalog rendering remains available even when a
+                    # background refresh cannot be scheduled.
+                    pass
             target = REDIRECTS.get(path_only)
             if target is not None:
                 self._send_redirect(target)

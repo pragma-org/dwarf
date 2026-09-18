@@ -15,7 +15,12 @@ SARIF_SCHEMA = json.loads(
 RUN_TEMPLATE = ROOT / "dwarf/dashboard/templates/operate/run.j2"
 
 
-def _finished_run(tmp_path: Path, *, assertion_result: str | None = None):
+def _finished_run(
+    tmp_path: Path,
+    *,
+    assertion_result: str | None = None,
+    profile_resolved: dict | None = None,
+):
     runs_dir = tmp_path / "runs"
     state_dir = tmp_path / "state"
     scenario = b'{"spec_version":"v1","id":"evidence-default-test"}\n'
@@ -24,8 +29,8 @@ def _finished_run(tmp_path: Path, *, assertion_result: str | None = None):
         scenario_yaml=scenario,
         target={"implementation": "amaru", "version": "test"},
         runtime="library",
-        profile_id=None,
-        profile_resolved=None,
+        profile_id=(profile_resolved or {}).get("id"),
+        profile_resolved=profile_resolved,
         framework_version="test",
         framework_commit="test",
         seed=7,
@@ -124,6 +129,49 @@ def test_run_page_reports_sarif_generation_origin_truthfully():
 
     assert "run.export.generation == 'automatic-run-finalization'" in template
     assert "regenerated explicitly" in template
+
+
+def test_run_inspector_discloses_exact_deployment_version_provenance(tmp_path):
+    profile = {
+        "id": "profile-versioned",
+        "version_selection": {
+            "policy": "latest-confirmed",
+            "policy_source": "implicit-default",
+            "scope": "mixed",
+            "status": "confirmed",
+            "deployment_context": "local-devnet",
+            "deployment_adapter": "amaru-control",
+            "catalog_revision": "catalog-sha256",
+            "resolved": {
+                "cardano-node": {
+                    "version": "10.7.1",
+                    "source_revision": "cardano-revision",
+                    "artifacts": [{"digest": "sha256:cardano"}],
+                },
+                "amaru": {
+                    "version": "10.11.0",
+                    "source_revision": "amaru-revision",
+                    "artifacts": [{"digest": "sha256:amaru"}],
+                },
+            },
+            "supporting": {},
+        },
+    }
+    runs_dir, _state_dir, run_id = _finished_run(
+        tmp_path, profile_resolved=profile
+    )
+
+    detail = operate_run_detail(run_id, runs_dir=runs_dir)
+
+    assert detail["version_provenance"]["present"] is True
+    assert detail["version_provenance"]["catalog_revision"] == "catalog-sha256"
+    assert detail["version_provenance"]["policy_source"] == "implicit-default"
+    assert detail["version_provenance"]["deployment_adapter"] == "amaru-control"
+    assert [item["implementation"] for item in detail["version_provenance"]["targets"]] == [
+        "amaru",
+        "cardano-node",
+    ]
+    assert "Resolved node versions" in RUN_TEMPLATE.read_text(encoding="utf-8")
 
 
 def test_run_inspector_groups_exact_primitives_by_phase(tmp_path):

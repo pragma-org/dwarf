@@ -393,3 +393,37 @@ help on pointer hover and keyboard focus. Dropdowns expose a description of the
 currently selected supported value and update that description when selection
 changes. The visible helper text remains the accessible baseline for touch and
 assistive-technology users.
+
+## Node release and compatibility preflight
+
+The deployment profile is the sole runtime-version authority. Scenarios inherit
+its exact Cardano-node and Amaru artifacts; target versions describe the
+harnessed surface and do not override deployment. Version policy and deployment
+adapter are independent: selecting a release does not replace a profile's
+network, topology, genesis, configured peer, or lifecycle.
+
+Open `/operate/versions` before deploying a version-aware profile. It shows
+official release metadata, exact source revisions and OCI digests, scoped
+verification status, defaults, mixed compatibility pairs, retained evidence,
+and blockers. Use the profile's **Preview deploy** action to resolve policy into
+exact artifacts before the mutating request starts.
+
+`confirmed` is scope-specific. A Cardano-only pass does not establish mixed
+compatibility, and a mixed pass does not establish standalone Amaru block
+production. Local-devnet qualification also does not establish Preview,
+Preview2, or Preprod behavior; those public-network contexts remain `unknown`
+and require one-run acknowledgement. `incompatible` and `blocked` selections are hard stops. An
+`unknown` stable release requires an explicit one-run acknowledgement:
+
+```bash
+cardano-profile deploy PROFILE --dry-run
+cardano-profile deploy PROFILE --approve --acknowledge-unknown-version
+```
+
+The acknowledgement is retained in deployment evidence and does not promote
+the catalog. Refresh upstream release metadata into a reviewable candidate:
+
+```bash
+PYTHONPATH=dwarf python3 dwarf/scripts/refresh_version_catalog.py \
+  --output /tmp/dwarf-version-catalog-candidate.json
+```

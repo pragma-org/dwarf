@@ -15,7 +15,15 @@ def evidence_root():
     return DEFAULT_EVIDENCE_ROOT
 
 
-def write_evidence(profile_id, action, config_path, config, command_results, limitations=None):
+def write_evidence(
+    profile_id,
+    action,
+    config_path,
+    config,
+    command_results,
+    limitations=None,
+    metadata=None,
+):
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     directory = evidence_root() / profile_id
     directory.mkdir(parents=True, exist_ok=True)
@@ -62,6 +70,8 @@ def write_evidence(profile_id, action, config_path, config, command_results, lim
         lines.extend(["## Limitations", ""])
         for limitation in limitations:
             lines.append(f"- {limitation}")
+    if metadata:
+        lines.extend(["", "## Metadata", "", "```json", json.dumps(metadata, indent=2, sort_keys=True), "```"])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     sidecar = {
         "profile_id": profile_id,
@@ -72,6 +82,7 @@ def write_evidence(profile_id, action, config_path, config, command_results, lim
         "remote_host": f"{config.ssh_user}@{config.host}",
         "remote_base_path": config.remote_base_path,
         "limitations": limitations or [],
+        "metadata": metadata or {},
         "commands": [
             {
                 "rendered_command": result.rendered_command,

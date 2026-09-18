@@ -678,6 +678,51 @@ def _actions_section(run_id: str) -> dict[str, Any]:
     }
 
 
+def _version_provenance_section(run_dir: Path) -> dict[str, Any]:
+    """Read the immutable version snapshot retained with a deployment run."""
+
+    profile = _read_json(run_dir / "resolved-profile.json", {}) or {}
+    selection = profile.get("version_selection") if isinstance(profile, dict) else None
+    if not isinstance(selection, dict):
+        return {"present": False, "targets": [], "supporting": []}
+
+    def rows(group: Any, *, role: str) -> list[dict[str, Any]]:
+        if not isinstance(group, dict):
+            return []
+        result = []
+        for implementation, release in sorted(group.items()):
+            if not isinstance(release, dict):
+                continue
+            artifacts = release.get("artifacts") or []
+            artifact = next((item for item in artifacts if isinstance(item, dict)), {})
+            result.append(
+                {
+                    "implementation": implementation,
+                    "role": role,
+                    "version": release.get("version") or "",
+                    "channel": release.get("channel") or "",
+                    "source_revision": release.get("source_revision") or "",
+                    "digest": artifact.get("digest") or "",
+                    "reference": artifact.get("reference") or "",
+                }
+            )
+        return result
+
+    return {
+        "present": True,
+        "policy": selection.get("policy") or "",
+        "policy_source": selection.get("policy_source") or "",
+        "scope": selection.get("scope") or "",
+        "deployment_context": selection.get("deployment_context") or "",
+        "deployment_adapter": selection.get("deployment_adapter") or "",
+        "status": selection.get("status") or "",
+        "catalog_revision": selection.get("catalog_revision") or "",
+        "unknown_acknowledged": bool(selection.get("unknown_acknowledged")),
+        "targets": rows(selection.get("resolved"), role="target"),
+        "supporting": rows(selection.get("supporting"), role="support"),
+    }
+
+
 def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str, Any] | None:
     """Return a render-ready bundle inspector payload, or None if missing.
 
@@ -819,6 +864,7 @@ def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str
         "bundle_url": f"/runs/{run_id}/bundle",
         "precondition": _precondition_section(run_dir, manifest),
         "evidence_path": _safe_relative(run_dir, base.parent),
+        "version_provenance": _version_provenance_section(run_dir),
         # Slice 30 enrichments — three operator-facing sections that
         # surface ada3's bundle-workflow primitives without hiding the
         # absence-of-data state when those primitives have not been run

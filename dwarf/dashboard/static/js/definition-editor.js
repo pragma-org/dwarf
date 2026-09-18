@@ -10,8 +10,91 @@
   const report = root.querySelector('[data-editor-report]');
   const save = root.querySelector('[data-editor-save]');
   const templates = JSON.parse(root.querySelector('[data-editor-templates]').textContent || '{}');
+  const versionDescriptorNode = root.querySelector('[data-profile-version-descriptor]');
+  const versionDescriptor = versionDescriptorNode ? JSON.parse(versionDescriptorNode.textContent || '{}') : null;
   let model = JSON.parse(root.querySelector('[data-editor-initial]').textContent || '{}');
   let dirty = false;
+
+  const versionFieldSlot = root.querySelector('[data-profile-version-fields]');
+  if (versionFieldSlot) {
+    root.querySelectorAll('[data-version-field]').forEach((field) => versionFieldSlot.append(field));
+  }
+
+  function profileScope() {
+    const haskell = Number(model.haskell_count ?? model.node_count ?? 0);
+    const amaru = Number(model.amaru_count ?? model.amaru_node_count ?? 0);
+    if (haskell > 0 && amaru > 0) return 'mixed';
+    if (amaru > 0) return 'amaru-only';
+    return 'cardano-only';
+  }
+
+  function exactArtifact(release) {
+    const artifact = (release?.artifacts || []).find((item) => item.kind === 'oci' && item.availability === 'available');
+    if (!artifact) return 'no immutable OCI artifact';
+    return artifact.reference.includes('@sha256:') ? artifact.reference : `${artifact.reference}@${artifact.digest}`;
+  }
+
+  function updateProfileVersionResolution() {
+    if (!versionDescriptor) return;
+    const scope = profileScope();
+    const policy = model.version_policy || 'latest-confirmed';
+    const catalog = versionDescriptor.catalog || {};
+    const releases = catalog.releases || [];
+    const pairs = catalog.compatibility_pairs || [];
+    let selected = [];
+    let status = 'unknown';
+    let reason = '';
+    if (scope === 'mixed') {
+      let pair;
+      if (policy === 'latest-confirmed') pair = versionDescriptor.defaults?.mixed?.pair;
+      else if (policy === 'exact') pair = pairs.find((item) => item.id === model.compatibility_pair);
+      else {
+        const latest = (implementation) => releases.filter((item) => item.implementation === implementation && item.channel === 'stable').sort((a, b) => String(b.released_at).localeCompare(String(a.released_at)))[0];
+        const cardano = latest('cardano-node'); const amaru = latest('amaru');
+        pair = pairs.find((item) => item.cardano_version === cardano?.version && item.amaru_version === amaru?.version);
+        if (!pair && cardano && amaru) selected = [cardano, amaru];
+      }
+      if (pair) {
+        selected = [
+          releases.find((item) => item.implementation === 'cardano-node' && item.version === pair.cardano_version),
+          releases.find((item) => item.implementation === 'amaru' && item.version === pair.amaru_version),
+        ].filter(Boolean);
+        status = pair.status || 'unknown'; reason = pair.reason || '';
+      }
+    } else {
+      const implementation = scope === 'cardano-only' ? 'cardano-node' : 'amaru';
+      let release;
+      if (policy === 'latest-confirmed') release = versionDescriptor.defaults?.[scope]?.release;
+      else if (policy === 'exact') release = releases.find((item) => item.implementation === implementation && item.version === model[implementation === 'cardano-node' ? 'cardano_version' : 'amaru_version']);
+      else release = releases.filter((item) => item.implementation === implementation && item.channel === 'stable').sort((a, b) => String(b.released_at).localeCompare(String(a.released_at)))[0];
+      if (release) {
+        selected = [release];
+        const verification = release.verification?.[scope] || {};
+        status = verification.status || 'unknown'; reason = verification.reason || '';
+        if (scope === 'amaru-only' && verification.supporting_cardano_version) {
+          const support = releases.find((item) => item.implementation === 'cardano-node' && item.version === verification.supporting_cardano_version);
+          if (support) selected.push({...support, supporting: true});
+        }
+      }
+    }
+    const publicContext = model.public_network || model.amaru_network || model.upstream_peer_address;
+    if (publicContext) { status = 'unknown'; reason = 'Artifact qualification is local-devnet evidence; this public-network deployment context requires one-run acknowledgement.'; }
+    root.querySelectorAll('[data-version-field]').forEach((host) => {
+      const field = host.dataset.versionField;
+      const visible = policy === 'exact' && ((scope === 'cardano-only' && field === 'cardano_version') || (scope === 'amaru-only' && field === 'amaru_version') || (scope === 'mixed' && field === 'compatibility_pair'));
+      host.hidden = field !== 'version_policy' && !visible;
+    });
+    const identities = selected.map((release) => `${release.supporting ? 'Supporting ' : ''}${release.implementation === 'amaru' ? 'Amaru' : 'Cardano-node'} ${release.version}`).join(' · ');
+    const provenance = selected.map((release) => `${release.source_revision?.slice(0, 12) || 'revision unavailable'} · ${exactArtifact(release)}`).join(' | ');
+    const title = root.querySelector('[data-version-resolution-title]');
+    const identityNode = root.querySelector('[data-version-resolution-identities]');
+    const reasonNode = root.querySelector('[data-version-resolution-reason]');
+    const detail = root.querySelector('[data-version-resolution-detail]');
+    if (title) title.textContent = `${scope} · ${policy} (${model.version_policy ? 'explicit' : 'safe implicit default'}) · ${status}`;
+    if (identityNode) identityNode.textContent = identities || 'Choose the required exact selection.';
+    if (reasonNode) reasonNode.textContent = reason || 'No qualification reason is available for this selection.';
+    if (detail) detail.textContent = `${provenance || 'No artifact resolved.'} · catalog ${versionDescriptor.catalog_revision || 'unknown'}`;
+  }
 
   function ensureSelectedOptionTooltip(select, help) {
     const host = select.parentElement;
@@ -54,6 +137,7 @@
       updateSelectedOptionHelp(input);
     });
     raw.value = JSON.stringify(model, null, 2) + '\n';
+    updateProfileVersionResolution();
   }
 
   function captureStructured() {
@@ -89,6 +173,7 @@
     });
     if (!create) model.id = originalId;
     if (valid) raw.value = JSON.stringify(model, null, 2) + '\n';
+    if (valid) updateProfileVersionResolution();
     return valid;
   }
 

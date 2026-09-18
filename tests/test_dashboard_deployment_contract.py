@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -20,12 +21,29 @@ from profile_manager.smoke import find_smoke_test
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _load_control_shim():
+    path = ROOT / "delivery/control-plane/dwarf-deploy-shim.py"
+    spec = importlib.util.spec_from_file_location("dwarf_deploy_shim", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_default_ssh_key_matches_container_mount():
     config = DeploymentConfig.from_dict({})
     compose = (ROOT / "delivery/docker-compose.dwarf.yml").read_text(encoding="utf-8")
 
     assert config.ssh_key_path == "~/.ssh/cardano-box"
     assert ":/home/dwarf/.ssh/cardano-box:ro" in compose
+
+
+def test_control_shim_executes_large_generated_script_without_argv_limit():
+    shim = _load_control_shim()
+    payload = "x" * 300_000
+    script = ": <<'DWARF_LARGE_SCRIPT'\n" + payload + "\nDWARF_LARGE_SCRIPT\n"
+
+    assert shim._run_script(script) == 0
 
 
 def test_production_compose_never_overrides_packaged_source():

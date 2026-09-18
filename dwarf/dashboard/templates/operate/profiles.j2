@@ -10,7 +10,7 @@
     <a class="cta" href="/operate/profiles/new">+ New profile</a>
   </div>
 </div>
-<p>Runtime profiles describe how Cardano nodes are deployed for a scenario run — implementation, node count, peer-sharing setting, and network. Each entry corresponds to a <code>&lt;id&gt;/profile.yaml</code> on disk.</p>
+<p>Runtime profiles describe how Cardano nodes are deployed for a scenario run — implementation, node count, network, and node-version policy. Exact release and compatibility evidence comes from the <a href="/operate/versions">node version catalog</a>.</p>
 
 <hr class="hairline">
 
@@ -24,7 +24,7 @@
   <span class="empty-section-statement__cite">scanned <code>dwarf/profiles/</code>, 0 <code>profile.yaml</code> files</span>
 </p>
 {% else %}
-<div class="profile-catalog__head" aria-hidden="true"><span>Profile</span><span>Type</span><span>Node mix</span><span>Network</span><span>Peer sharing</span><span>Actions</span></div>
+<div class="profile-catalog__head" aria-hidden="true"><span>Profile</span><span>Type</span><span>Node mix</span><span>Network</span><span>Peer sharing</span><span>Version</span><span>Actions</span></div>
 <ul class="profile-catalog" data-profile-list>
   {% for entry in entries %}{% include "operate/_partials/_profile_entry.j2" %}{% endfor %}
 </ul>
@@ -38,12 +38,32 @@ function copyDeploy(btn){
   function fallback(){var t=document.createElement('textarea');t.value=cmd;t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);t.select();try{document.execCommand('copy');done();}catch(e){}document.body.removeChild(t);}
 }
 function pfToken(){return new URLSearchParams(location.search).get('token')||'dwarf';}
-async function runDeploy(btn){
+async function previewDeploy(btn){
   var id=btn.getAttribute('data-profile');
-  var out=document.getElementById('deploy-out-'+id); out.hidden=false; out.textContent='$ cardano-profile deploy '+id+'\n';
-  btn.disabled=true;
+  var out=document.getElementById('deploy-out-'+id), actions=document.getElementById('deploy-actions-'+id); out.hidden=false; out.textContent='Resolving exact node versions…\n'; btn.disabled=true;
   try{
-    var resp=await fetch('/api/deploy?token='+encodeURIComponent(pfToken())+'&profile='+encodeURIComponent(id),{method:'POST'});
+    var resp=await fetch('/api/deploy/preview?profile='+encodeURIComponent(id));
+    var preview=await resp.json();
+    if(!resp.ok){out.textContent='Preview refused: '+(preview.message||preview.error||'unknown error');return;}
+    var versions=Object.keys(preview.resolved||{}).map(function(key){return key+' '+preview.resolved[key].version;}).join(' + ')||'legacy runtime resolution';
+    var support=Object.keys(preview.supporting||{}).map(function(key){return key+' '+preview.supporting[key].version;}).join(', ');
+    var artifacts=Object.keys(preview.resolved||{}).map(function(key){var r=preview.resolved[key],a=(r.artifacts||[])[0]||{},ref=a.reference||'';if(a.digest&&ref.indexOf('@sha256:')<0)ref+='@'+a.digest;return key+' '+r.version+' · source '+r.source_revision+' · '+ref;}).join('\n');
+    var pair=preview.pair?preview.pair.id+' ('+preview.pair.status+')':'not applicable';
+    out.textContent='Policy: '+preview.policy+' ('+preview.policy_source+')\nDeployment context: '+preview.deployment_context+'\nAdapter: '+preview.deployment_adapter+'\nScope: '+preview.scope+'\nStatus: '+preview.status+'\nResolved targets: '+versions+(support?'\nRequired support node: '+support:'')+'\nCompatibility pair: '+pair+'\nArtifacts:\n'+artifacts+'\nCatalog: '+preview.catalog_revision+'\nAcknowledgement required: '+(preview.requires_acknowledgement?'yes':'no')+'\nBlocked: '+(preview.blocked?'yes':'no')+'\n'+(preview.reason||'')+'\nEvidence: '+(preview.evidence||[]).join(', ')+'\nRelated issues: '+(preview.issues||[]).join(', ');
+    actions.innerHTML='';
+    if(preview.blocked){return;}
+    var run=document.createElement('button'); run.type='button';
+    if(btn.getAttribute('data-copy-only')==='1'){run.textContent='Copy deploy command';run.setAttribute('data-cmd','cardano-profile deploy '+id+(preview.requires_acknowledgement?' --acknowledge-unknown-version':''));run.onclick=function(){copyDeploy(run);};}
+    else{run.textContent=preview.requires_acknowledgement?'Acknowledge unknown & deploy':'Deploy resolved version';run.onclick=function(){runDeploy(run,id,Boolean(preview.requires_acknowledgement));};}
+    actions.appendChild(run);
+  }catch(e){out.textContent='Preview failed: '+String(e);}
+  finally{btn.disabled=false;}
+}
+async function runDeploy(btn,id,acknowledged){
+  var out=document.getElementById('deploy-out-'+id); out.hidden=false; out.textContent+='\n\n$ cardano-profile deploy '+id+'\n'; btn.disabled=true;
+  try{
+    var url='/api/deploy?token='+encodeURIComponent(pfToken())+'&profile='+encodeURIComponent(id)+(acknowledged?'&acknowledge_unknown_version=1':'');
+    var resp=await fetch(url,{method:'POST'});
     if(!resp.ok){out.textContent+='HTTP '+resp.status+': '+(await resp.text());return;}
     var rd=resp.body.getReader(),dec=new TextDecoder(),buf='';
     while(true){var r=await rd.read();if(r.done)break;buf+=dec.decode(r.value,{stream:true});var parts=buf.split('\n\n');buf=parts.pop();
