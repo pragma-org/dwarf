@@ -170,6 +170,33 @@
 
 <hr class="hairline">
 
+{% if run.version_provenance.present %}
+<section aria-labelledby="version-provenance-heading">
+  <header><span class="eyebrow">Real-node provenance</span><h2 id="version-provenance-heading">Resolved node versions</h2></header>
+  <p class="page-subhero">This is the catalog and exact-artifact snapshot retained when DWARF launched the deployment; it is not recomputed from today's defaults.</p>
+  <dl class="status-tile__rows">
+    <div><dt>policy</dt><dd><code>{{ run.version_provenance.policy or '—' }}</code></dd></div>
+    <div><dt>scope</dt><dd><code>{{ run.version_provenance.scope or '—' }}</code></dd></div>
+    <div><dt>status at launch</dt><dd>{{ run.version_provenance.status or '—' }}{% if run.version_provenance.unknown_acknowledged %} · unknown acknowledged for this run{% endif %}</dd></div>
+    <div><dt>catalog revision</dt><dd><code class="run-chain-hash">{{ run.version_provenance.catalog_revision or '—' }}</code></dd></div>
+  </dl>
+  <div class="version-catalog run-version-catalog">
+    {% for item in run.version_provenance.targets + run.version_provenance.supporting %}
+    <article class="version-card">
+      <div class="version-card__head"><div><span class="eyebrow">{{ item.role }}</span><h3>{{ item.implementation }} {{ item.version or '—' }}</h3></div>{% if item.channel %}<span class="version-badge version-badge--unknown">{{ item.channel }}</span>{% endif %}</div>
+      <dl>
+        <div><dt>source revision</dt><dd><code class="run-chain-hash">{{ item.source_revision or '—' }}</code></dd></div>
+        <div><dt>immutable digest</dt><dd><code class="run-chain-hash">{{ item.digest or '—' }}</code></dd></div>
+        {% if item.reference %}<div><dt>artifact</dt><dd><code class="run-chain-hash">{{ item.reference }}</code></dd></div>{% endif %}
+      </dl>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<hr class="hairline">
+{% endif %}
+
 <section aria-labelledby="execution-definition-heading">
   <header><span class="eyebrow">Scenario snapshot</span><h2 id="execution-definition-heading">Execution definition</h2></header>
   <p class="page-subhero">

@@ -44,6 +44,25 @@ root cause to Cardano-node or Amaru. The upstream responder-path work remains
 tracked by `cardano-node-antithesis` issue 182; its completed child issue 179
 defines the isolated Amaru-fed consumer boundary used here.
 
+## Final defaults deployed through DWARF
+
+Each shipped `latest-confirmed` default was then deployed from fresh volumes
+through the installed DWARF CLI and removed through the same control path. This
+is separate from the qualification runner and proves the operator-facing
+deployment adapter resolves and launches the catalog defaults end to end.
+
+| Profile | Runtime result | DWARF evidence | Clean archive |
+|---|---|---|---|
+| `profile-n-cardano-latest-confirmed` | Cardano-node `11.1.2`; three exact digest-pinned nodes advanced and agreed on successive sampled tips, with no restart or fatal signal. | `/var/dwarf/state/evidence/profile-n-cardano-latest-confirmed/20260918T101505Z-deploy.md` | `/opt/dwarf/cardano-profiles/archive/profile-n-cardano-latest-confirmed-20260918T101552Z` |
+| `profile-o-amaru-target-latest-confirmed` | Amaru `10.11.20260912` with supporting Cardano-node `10.7.1`; every required gate passed, both Amaru relays advanced, and the isolated Amaru-fed consumer converged at zero lag. | `/var/dwarf/state/evidence/profile-o-amaru-target-latest-confirmed/20260918T104303Z-deploy.md` | `/opt/dwarf/cardano-profiles/archive/profile-o-amaru-target-latest-confirmed-20260918T104311Z` |
+| `profile-p-mixed-latest-confirmed` | Cardano-node `10.7.1` plus Amaru `10.11.0`; every required mixed gate passed across eight readiness observations, with zero consumer lag and no restart or fatal signal. | `/var/dwarf/state/evidence/profile-p-mixed-latest-confirmed/20260918T105730Z-deploy.md` | `/opt/dwarf/cardano-profiles/archive/profile-p-mixed-latest-confirmed-20260918T105739Z` |
+
+The Amaru-backed profiles need enough time for the live producer to cross its
+bootstrap epoch boundary. DWARF now permits a 30-minute remote deployment
+window for `amaru` and `mixed` profiles while retaining the 10-minute window
+for Cardano-only profiles. The earlier fixed 10-minute client timeout was a
+DWARF control-path defect, not a node compatibility result.
+
 ## Superseded results
 
 The following retained runs used the discarded synthetic/relaunch lifecycle

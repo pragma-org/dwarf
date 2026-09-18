@@ -2272,6 +2272,24 @@ hr.hairline { opacity: 0.7; }
   font-family: var(--font-mono); font-size: var(--type-small); color: var(--ink-secondary);
 }
 .run-status-banner__scenario code { font-size: inherit; background: transparent; color: var(--ink-primary); padding: 0; }
+.run-status-banner__cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.run-status-banner__cta .cta {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .run-status-banner { align-items: stretch; }
+  .run-status-banner__primary,
+  .run-status-banner__cta { width: 100%; }
+  .run-status-banner__cta .cta { flex: 1 1 100%; }
+}
 
 .run-precondition-warning {
   margin-block: var(--space-4);

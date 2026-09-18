@@ -1370,6 +1370,8 @@ def cmd_deploy(args):
             scenario_yaml=_synthetic_scenario_yaml("deploy", profile.id, profile.label, {}, [active.rendered_command], profile.id, dry_run=True),
             profile_id=profile.id,
             command_result=active,
+            target={"implementation": profile.node_type, "version": "resolved"},
+            profile_resolved={"id": profile.id, "version_selection": version_preview},
         )
         return 0
     if active.stdout.strip() and not args.replace:
@@ -1433,6 +1435,8 @@ def cmd_deploy(args):
         scenario_yaml=_synthetic_scenario_yaml("deploy", profile.id, profile.label, {}, [result.rendered_command], profile.id),
         profile_id=profile.id,
         command_result=result,
+        target={"implementation": profile.node_type, "version": "resolved"},
+        profile_resolved={"id": profile.id, "version_selection": deploy_preview},
     )
     print(f"Wrote evidence: {path}")
     print(result.stdout, end="")
@@ -2374,14 +2378,27 @@ def _run_package_via_remote_scenario(args, config, package, profile, commands):
     return run_result
 
 
-def _record_forensic_for_legacy_run(args, *, scenario_id, scenario_yaml, profile_id, command_result):
+def _record_forensic_for_legacy_run(
+    args,
+    *,
+    scenario_id,
+    scenario_yaml,
+    profile_id,
+    command_result,
+    target=None,
+    profile_resolved=None,
+):
     forensic.record_remote_run(
         scenario_id=scenario_id,
         scenario_yaml=scenario_yaml,
-        target={"implementation": "cardano-node", "version": "any"},
+        target=target or {"implementation": "cardano-node", "version": "any"},
         runtime="devnet",
         profile_id=profile_id,
-        profile_resolved={"id": profile_id} if profile_id else None,
+        profile_resolved=(
+            profile_resolved
+            if profile_resolved is not None
+            else ({"id": profile_id} if profile_id else None)
+        ),
         command_result=command_result,
         runs_dir=_forensic_runs_dir(args),
         state_dir=_forensic_state_dir(args),
