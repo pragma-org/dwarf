@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -9,10 +10,10 @@ from profile_manager.data.catalog_definitions import load_definition
 from profile_manager.version_catalog import (
     DEFAULT_CATALOG_PATH,
     CatalogError,
-    load_version_catalog,
     resolve_default,
     resolve_profile_versions,
 )
+from profile_manager.version_discovery import load_effective_version_catalog
 
 
 class DeploymentVersionGateError(ValueError):
@@ -21,8 +22,13 @@ class DeploymentVersionGateError(ValueError):
         self.code = code
 
 
-def version_catalog_revision(path: str | Path = DEFAULT_CATALOG_PATH) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def version_catalog_revision(
+    path: str | Path = DEFAULT_CATALOG_PATH, *, catalog: dict[str, Any] | None = None
+) -> str:
+    if catalog is None:
+        catalog = load_effective_version_catalog(path)
+    canonical = json.dumps(catalog, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def build_deployment_version_preview(
@@ -31,7 +37,7 @@ def build_deployment_version_preview(
     *,
     catalog_revision: str | None = None,
 ) -> dict[str, Any]:
-    checked_catalog = catalog if catalog is not None else load_version_catalog()
+    checked_catalog = catalog if catalog is not None else load_effective_version_catalog()
     try:
         resolution = resolve_profile_versions(profile_data, checked_catalog)
     except CatalogError as exc:
@@ -48,7 +54,8 @@ def build_deployment_version_preview(
     return {
         **resolution,
         "profile_id": str(profile_data.get("id") or ""),
-        "catalog_revision": catalog_revision or version_catalog_revision(),
+        "catalog_revision": catalog_revision or version_catalog_revision(catalog=checked_catalog),
+        "catalog_snapshot": checked_catalog,
         "supporting": supporting,
     }
 

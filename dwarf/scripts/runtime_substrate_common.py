@@ -175,6 +175,7 @@ def normalize_substrate(substrate: dict) -> dict:
     version_status = substrate.get("version_status")
     unknown_acknowledged = substrate.get("unknown_acknowledged", False)
     catalog_revision = substrate.get("catalog_revision")
+    catalog_snapshot = substrate.get("catalog_snapshot")
     if version_policy is not None and not isinstance(version_policy, str):
         raise ValueError("substrate.version_policy must be a string when present")
     if version_status is not None and version_status not in VERSION_STATUSES:
@@ -183,6 +184,8 @@ def normalize_substrate(substrate: dict) -> dict:
         raise ValueError("substrate.unknown_acknowledged must be a boolean")
     if catalog_revision is not None and (not isinstance(catalog_revision, str) or not catalog_revision):
         raise ValueError("substrate.catalog_revision must be a non-empty string when present")
+    if catalog_snapshot is not None and not isinstance(catalog_snapshot, dict):
+        raise ValueError("substrate.catalog_snapshot must be a mapping when present")
     scope = substrate.get("scope")
     if scope is not None and scope not in {"cardano-only", "amaru-only", "mixed"}:
         raise ValueError("substrate.scope must be cardano-only, amaru-only, or mixed when present")
@@ -206,6 +209,7 @@ def normalize_substrate(substrate: dict) -> dict:
         "version_status": version_status,
         "unknown_acknowledged": unknown_acknowledged,
         "catalog_revision": catalog_revision,
+        "catalog_snapshot": catalog_snapshot,
     }
 
 
@@ -397,6 +401,7 @@ def build_version_provenance(substrate: dict, nodes: list[dict]) -> dict:
         "status": substrate.get("version_status"),
         "unknown_acknowledged": bool(substrate.get("unknown_acknowledged")),
         "catalog_revision": substrate.get("catalog_revision"),
+        "catalog_snapshot": substrate.get("catalog_snapshot"),
         "scope": substrate.get("scope"),
         "target_node_count": substrate.get("target_node_count"),
         "support_node_count": substrate.get("support_node_count"),
@@ -528,6 +533,7 @@ def allocate_node_plan(
         "version_status": normalized.get("version_status"),
         "unknown_acknowledged": bool(normalized.get("unknown_acknowledged")),
         "catalog_revision": normalized.get("catalog_revision"),
+        "catalog_snapshot": normalized.get("catalog_snapshot"),
     }
 
 

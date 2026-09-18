@@ -1526,6 +1526,30 @@ def dispatch_deployment_preview_request(*, method, path):
     return (200, "application/json; charset=utf-8", json.dumps(preview).encode("utf-8"))
 
 
+def dispatch_version_refresh_request(*, method, path, expected_token):
+    """Start one authenticated, serialized official-release refresh."""
+    if urlsplit(path).path != "/api/versions/refresh":
+        return None
+    if method != "POST":
+        return (405, "application/json; charset=utf-8", b'{"ok":false,"error":"use POST"}')
+    ok, error = check_token(path, expected=expected_token)
+    if not ok:
+        return (
+            401,
+            "application/json; charset=utf-8",
+            json.dumps({"ok": False, "error": error}).encode("utf-8"),
+        )
+    from profile_manager.version_discovery import start_release_refresh
+
+    result = start_release_refresh(manual=True)
+    status = 202 if result.get("started") else 409
+    return (
+        status,
+        "application/json; charset=utf-8",
+        json.dumps({"ok": bool(result.get("started")), **result}).encode("utf-8"),
+    )
+
+
 def dispatch_topology_redeploy_request(
     *,
     method,
@@ -2730,6 +2754,8 @@ def render_route_html(route, *, token=None):
         if outcome not in ("", "pass", "fail", "error"):
             outcome = ""
         return render_operate_runs(outcome=outcome, q=q[:128])
+    if route.split("?", 1)[0] == "/operate/versions":
+        return render_operate_versions(token=token)
     profile_template_html = dispatch_profile_template_request(route)
     if profile_template_html is not None:
         return profile_template_html
@@ -2778,7 +2804,6 @@ def render_route_html(route, *, token=None):
         "/operate/compare": render_operate_compare,
         "/learn/architecture": render_learn_architecture,
         "/operate/profiles": render_operate_profiles,
-        "/operate/versions": render_operate_versions,
         "/operate/runs": render_operate_runs,
         "/operate/status": render_operate_status,
         "/operate/targets": render_operate_targets,
@@ -2942,6 +2967,13 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
             body_bytes = self.rfile.read(length) if length > 0 else b""
+            version_refresh = dispatch_version_refresh_request(
+                method="POST", path=self.path, expected_token=expected_token
+            )
+            if version_refresh is not None:
+                status, ctype, response_body = version_refresh
+                self._send(status, ctype, response_body)
+                return
             catalog_result = dispatch_catalog_mutating_request(
                 method="POST", path=self.path, body=body_bytes, expected_token=expected_token
             )
@@ -3117,6 +3149,7 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 "/api/scenario/paste", "/api/scenario/promote", "/api/scenario/compare",
                 "/api/scenario/run", "/api/backup/create", "/api/coverage/run",
                 "/api/topology/redeploy",
+                "/api/versions/refresh",
                 "/operate/config/save",
             }
             path_only = self.path.split("?", 1)[0]
@@ -3136,6 +3169,14 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             if path_only in mutating_paths:
                 self._send(405, "text/plain; charset=utf-8", b"use POST for mutating endpoints\n")
                 return
+            if path_only == "/operate/versions":
+                try:
+                    from profile_manager.version_discovery import ensure_release_refresh
+                    ensure_release_refresh()
+                except Exception:
+                    # Cached catalog rendering remains available even when a
+                    # background refresh cannot be scheduled.
+                    pass
             target = REDIRECTS.get(path_only)
             if target is not None:
                 self._send_redirect(target)

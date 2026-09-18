@@ -283,7 +283,8 @@ def versioned_substrate_for_profile(profile, version_preview):
     mistaken for an Amaru-only producer network.
     """
 
-    from profile_manager.version_catalog import load_version_catalog, resolve_default
+    from profile_manager.version_catalog import resolve_default
+    from profile_manager.version_discovery import load_effective_version_catalog
 
     resolved = dict(version_preview.get("resolved") or {})
     scope = str(version_preview.get("scope") or _profile_deploy_mode(profile))
@@ -294,7 +295,7 @@ def versioned_substrate_for_profile(profile, version_preview):
     if scope == "amaru-only":
         support_release = (version_preview.get("supporting") or {}).get("cardano-node")
         if support_release is None:
-            support_release = resolve_default(load_version_catalog(), "cardano-only")["release"]
+            support_release = resolve_default(load_effective_version_catalog(), "cardano-only")["release"]
         nodes.append(
             _versioned_node(
                 "bootstrap-cardano", "bootstrap-producer", support_release, supporting=True
@@ -332,6 +333,7 @@ def versioned_substrate_for_profile(profile, version_preview):
         "version_status": version_preview.get("status"),
         "unknown_acknowledged": bool(version_preview.get("unknown_acknowledged", False)),
         "catalog_revision": version_preview.get("catalog_revision"),
+        "catalog_snapshot": version_preview.get("catalog_snapshot"),
         "nodes": nodes,
         "topology": {"edges": edges},
     }

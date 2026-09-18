@@ -69,6 +69,35 @@ def test_versions_route_is_filterable_and_explains_claim_boundaries():
     assert "cardano-10.7.1__amaru-10.11.0" in html
     assert "stable is not the same as confirmed" in html.lower()
     assert "sha256:6365403f" in html
+    assert "Check for new versions" in html
+    assert "Last successful check" in html
+    assert "Amaru target" in html
+    assert "supporting Cardano-node" in html
+    assert "Qualification reason" in html
+    assert "Evidence" in html
+    assert "Related issues" in html
+
+
+def test_manual_version_refresh_is_token_gated_and_serialized(monkeypatch):
+    calls = []
+
+    def start(*, manual):
+        calls.append(manual)
+        return {"started": True, "state": "running"}
+
+    monkeypatch.setattr("profile_manager.version_discovery.start_release_refresh", start)
+
+    denied = dashboard.dispatch_version_refresh_request(
+        method="POST", path="/api/versions/refresh?token=wrong", expected_token="right"
+    )
+    accepted = dashboard.dispatch_version_refresh_request(
+        method="POST", path="/api/versions/refresh?token=right", expected_token="right"
+    )
+
+    assert denied[0] == 401
+    assert accepted[0] == 202
+    assert json.loads(accepted[2])["state"] == "running"
+    assert calls == [True]
 
 
 def test_profile_builder_uses_catalog_backed_release_and_pair_selectors():
@@ -118,4 +147,6 @@ def test_versions_navigation_and_responsive_contract_are_present():
     css = (ROOT / "dwarf/dashboard/static/css/base.css").read_text(encoding="utf-8")
     assert any(item["url"] == "/operate/versions" for item in OPERATE_SUB_NAV)
     assert ".version-catalog" in css
+    assert ".version-refresh" in css
+    assert ".version-card__evidence" in css
     assert "@media (max-width: 700px)" in css or "@media (max-width: 640px)" in css

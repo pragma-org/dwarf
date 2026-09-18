@@ -4,11 +4,15 @@ from __future__ import annotations
 from typing import Any
 
 from profile_manager.deployment_versions import version_catalog_revision
-from profile_manager.version_catalog import load_version_catalog, resolve_verification
+from profile_manager.version_catalog import resolve_verification
+from profile_manager.version_discovery import (
+    load_effective_version_catalog,
+    read_refresh_status,
+)
 
 
 def version_catalog_view() -> dict[str, Any]:
-    catalog = load_version_catalog()
+    catalog = load_effective_version_catalog()
     releases = []
     for release in catalog["releases"]:
         artifact = next(
@@ -41,8 +45,9 @@ def version_catalog_view() -> dict[str, Any]:
         )
     return {
         "updated_at": catalog["updated_at"],
-        "catalog_revision": version_catalog_revision(),
+        "catalog_revision": version_catalog_revision(catalog=catalog),
         "releases": releases,
         "pairs": [dict(pair) for pair in catalog["compatibility_pairs"]],
         "sources": dict(catalog.get("sources") or {}),
+        "refresh": read_refresh_status(),
     }

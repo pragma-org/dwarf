@@ -73,9 +73,9 @@ def _field_descriptors(
 
 
 def _profile_version_options() -> dict[str, list[dict[str, str]]]:
-    from profile_manager.version_catalog import load_version_catalog
+    from profile_manager.version_discovery import load_effective_version_catalog
 
-    catalog = load_version_catalog()
+    catalog = load_effective_version_catalog()
     options: dict[str, list[dict[str, str]]] = {
         "cardano_version": [],
         "amaru_version": [],

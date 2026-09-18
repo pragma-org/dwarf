@@ -26,7 +26,8 @@ from pathlib import Path
 from typing import Any
 
 from profile_manager.profiles import PROFILE_ROOT, Profile
-from profile_manager.version_catalog import CatalogError, load_version_catalog, resolve_profile_versions
+from profile_manager.version_catalog import CatalogError, resolve_profile_versions
+from profile_manager.version_discovery import load_effective_version_catalog
 
 
 def _profile_url(profile_id: str) -> str:
@@ -61,7 +62,7 @@ def _enrich_profile(profile: Profile) -> dict[str, Any]:
     if profile.amaru_network is not None:
         out["amaru_network"] = profile.amaru_network
     try:
-        resolution = resolve_profile_versions(asdict(profile), load_version_catalog())
+        resolution = resolve_profile_versions(asdict(profile), load_effective_version_catalog())
         resolved = resolution.get("resolved") or {}
         versions = [
             f"{implementation} {release['version']}"
