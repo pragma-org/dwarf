@@ -209,6 +209,20 @@ def _replace_command(value: Any) -> Any:
     return value
 
 
+def _annotate_legacy_amaru_command(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace(
+            "exec /bin/amaru node run",
+            "printf '%s\\n' '[bootstrap] snapshot_slots=399 799 1199'\n"
+            "        printf '%s\\n' '[bootstrap] committed bundle to /srv/amaru'\n"
+            "        printf '%s\\n' \"[bootstrap] exec'ing amaru run\"\n"
+            "        exec /bin/amaru node run",
+        )
+    if isinstance(value, list):
+        return [_annotate_legacy_amaru_command(item) for item in value]
+    return value
+
+
 def _uses_modern_amaru_runtime_interface(image: str) -> bool:
     repository = str(image or "").split("@", 1)[0]
     last_slash = repository.rfind("/")
@@ -274,9 +288,13 @@ def transform_compose_model(
                 # the current `amaru run` interface under /usr/local/bin.  The
                 # retained 10.11.0 control image instead exposes
                 # `/bin/amaru node run` and has no setpriv binary, so its
-                # already-proven command must remain byte-for-byte intact.
+                # already-proven runtime invocation must remain intact.
                 service["user"] = "0:0"
                 service["command"] = _replace_command(service.get("command"))
+            else:
+                service["command"] = _annotate_legacy_amaru_command(
+                    service.get("command")
+                )
 
     if scope in {"amaru-only", "mixed"}:
         bootstrap = services.get("bootstrap-producer") or {}

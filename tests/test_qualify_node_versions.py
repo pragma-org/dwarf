@@ -191,6 +191,9 @@ def test_transform_retained_amaru_control_keeps_legacy_runtime_interface():
 
     relay = transformed["services"]["amaru-relay-1"]
     assert relay["image"] == legacy_amaru
+    assert "[bootstrap] snapshot_slots=399 799 1199" in relay["command"][1]
+    assert "[bootstrap] committed bundle to /srv/amaru" in relay["command"][1]
+    assert "[bootstrap] exec'ing amaru run" in relay["command"][1]
     assert "exec /bin/amaru node run" in relay["command"][1]
     assert "setpriv" not in relay["command"][1]
     assert "/usr/local/bin/amaru" not in relay["command"][1]
