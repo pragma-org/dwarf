@@ -9,6 +9,7 @@ from scripts.qualify_node_versions import (
     build_project_name,
     candidate_matrix,
     classify_qualification,
+    classify_terminal_runtime_failure,
     exact_oci_reference,
     identity_matches,
     propose_catalog_update,
@@ -207,6 +208,16 @@ def test_classification_requires_every_non_vacuous_runtime_gate():
     result = classify_qualification("mixed", gates)
     assert result["passed"] is False
     assert "consumer_amaru_only_path" in result["failed_gates"]
+
+
+def test_terminal_store_and_cli_failures_are_classified_for_fast_stop():
+    assert classify_terminal_runtime_failure(
+        "chain database cannot be migrated to version 5 automatically"
+    ) == "amaru-bootstrap-store-incompatible"
+    assert classify_terminal_runtime_failure(
+        "error: unexpected argument '--migrate-chain-db' found"
+    ) == "amaru-runtime-interface-incompatible"
+    assert classify_terminal_runtime_failure("waiting for chain progress") is None
 
 
 def test_catalog_proposal_never_mutates_or_auto_confirms(tmp_path):

@@ -68,6 +68,16 @@ FATAL_PATTERN = re.compile(
     r"attempted roll back in the future|VRFKeyBadProof|fatal error",
     re.IGNORECASE,
 )
+TERMINAL_FAILURE_PATTERNS = (
+    (
+        "amaru-bootstrap-store-incompatible",
+        re.compile(r"chain database cannot be migrated .* automatically", re.IGNORECASE | re.DOTALL),
+    ),
+    (
+        "amaru-runtime-interface-incompatible",
+        re.compile(r"unexpected argument .*migrate-chain-db|unknown (?:option|argument).*migrate", re.IGNORECASE),
+    ),
+)
 
 
 class QualificationError(RuntimeError):
@@ -273,6 +283,13 @@ def classify_qualification(scope: str, gates: dict[str, bool]) -> dict[str, Any]
     }
 
 
+def classify_terminal_runtime_failure(logs: str) -> str | None:
+    for code, pattern in TERMINAL_FAILURE_PATTERNS:
+        if pattern.search(logs or ""):
+            return code
+    return None
+
+
 def propose_catalog_update(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -344,6 +361,21 @@ def _project_is_fresh(project: str) -> bool:
         if result.returncode != 0 or result.stdout.strip():
             return False
     return True
+
+
+def _amaru_log_text(project: str) -> str:
+    container = _project_containers(project).get("tracer-sidecar")
+    if not container:
+        return ""
+    result = _run(
+        [
+            "docker", "exec", container, "/bin/sh", "-c",
+            "for file in /opt/amaru-logs/*.log; do "
+            "test -f \"$file\" || continue; echo \"[amaru-log:$file]\"; tail -n 400 \"$file\"; done",
+        ],
+        timeout=60,
+    )
+    return result.stdout + ("\n[stderr]\n" + result.stderr if result.stderr else "")
 
 
 def identity_matches(
@@ -597,6 +629,7 @@ def run_qualification(
     started = False
     teardown_ok = False
     error: str | None = None
+    terminal_failure: str | None = None
     try:
         _require(_run(_compose(project, compose_file, "up", "-d"), timeout=max(900, timeout_seconds)), "qualification startup")
         started = True
@@ -624,6 +657,12 @@ def run_qualification(
             emit("readiness", attempt=attempt, ready=ready, state=observation.get("state"))
             if ready:
                 break
+            if scope in {"amaru-only", "mixed"} and observation.get("state") == "unhealthy":
+                terminal_failure = classify_terminal_runtime_failure(_amaru_log_text(project))
+                if terminal_failure:
+                    error = terminal_failure
+                    emit("terminal_failure", code=terminal_failure)
+                    break
             time.sleep(max(1.0, sample_seconds))
 
         identity = _identity_observation(
@@ -639,6 +678,7 @@ def run_qualification(
         )
         logs_result = _run(_compose(project, compose_file, "logs", "--no-color", "--timestamps"), timeout=300)
         logs = logs_result.stdout + ("\n[stderr]\n" + logs_result.stderr if logs_result.stderr else "")
+        logs += "\n" + _amaru_log_text(project)
         (evidence_root / "compose-logs.txt").write_text(logs, encoding="utf-8")
         ps = _run(_compose(project, compose_file, "ps", "--all"), timeout=60)
         (evidence_root / "compose-ps.txt").write_text(ps.stdout + ps.stderr, encoding="utf-8")
@@ -689,6 +729,7 @@ def run_qualification(
         "completed_at": completed_at,
         "evidence_root": str(evidence_root),
         "error": error,
+        "terminal_failure": terminal_failure,
         "observation": observation,
         "identity": identity,
         "events": events,
