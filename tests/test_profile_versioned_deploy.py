@@ -1,6 +1,7 @@
 import json
 from dataclasses import replace
 
+from profile_manager.cli import deployment_timeout_seconds
 from profile_manager.deployment_versions import build_deployment_version_preview
 from profile_manager.profiles import (
     Profile,
@@ -147,3 +148,13 @@ def test_remove_uses_retained_compose_file_and_archives_all_profile_roots():
     assert "find \"$base_path\" -mindepth 1 -maxdepth 1 -type d" in command
     assert "! -name archive" in command
     assert "/profile-*" not in command
+
+
+def test_amaru_backed_profiles_allow_the_live_chain_bootstrap_to_finish():
+    cardano = _profile(node_type="cardano-node", node_count=3, amaru_node_count=0)
+    amaru = _profile(node_type="amaru", node_count=0, amaru_node_count=2)
+    mixed = _profile(node_type="mixed", node_count=3, amaru_node_count=2)
+
+    assert deployment_timeout_seconds(cardano) == 600
+    assert deployment_timeout_seconds(amaru) == 1800
+    assert deployment_timeout_seconds(mixed) == 1800

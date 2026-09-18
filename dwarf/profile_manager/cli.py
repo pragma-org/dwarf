@@ -1318,6 +1318,12 @@ def cmd_antithesis(args):
     return 1
 
 
+def deployment_timeout_seconds(profile):
+    """Allow live-chain Amaru bootstrap profiles to cross their epoch gate."""
+
+    return 1800 if profile.node_type in {"amaru", "mixed"} else 600
+
+
 def cmd_deploy(args):
     from dataclasses import asdict
     from profile_manager.deployment_versions import (
@@ -1409,7 +1415,7 @@ def cmd_deploy(args):
     result = ssh_command(
         config,
         deploy_command(profile, version_preview=deploy_preview),
-        timeout=600,
+        timeout=deployment_timeout_seconds(profile),
         verb=tuple(deploy_verb),
     )
     path = write_evidence(
