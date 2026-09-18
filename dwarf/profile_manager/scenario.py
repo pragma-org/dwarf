@@ -785,10 +785,32 @@ def _auto_redeploy_configured(explicit):
         return False
 
 
+def _git_framework_commit():
+    repository = Path(__file__).resolve().parents[2]
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repository), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    revision = completed.stdout.strip().lower()
+    if completed.returncode != 0 or re.fullmatch(r"[0-9a-f]{40,64}", revision) is None:
+        return None
+    return revision
+
+
 def _resolve_framework_commit(explicit):
     if explicit is not None and str(explicit).strip():
         return str(explicit).strip()
-    return os.environ.get("DWARF_SOURCE_REVISION", "").strip() or "unknown"
+    return (
+        os.environ.get("DWARF_SOURCE_REVISION", "").strip()
+        or _git_framework_commit()
+        or "unknown"
+    )
 
 
 def run_scenario(path, *, runs_dir, state_dir, registry_path=None,

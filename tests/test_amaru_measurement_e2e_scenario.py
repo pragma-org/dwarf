@@ -55,7 +55,9 @@ def test_amaru_measurement_e2e_uses_profile_resolution_and_non_vacuous_attempts(
     assert load["primitive"] == "runtime_amaru_measurement_calibration"
     assert load["profile_id"] == "profile-r-amaru-measurement-stock-control"
     assert "runtime_root" not in load
-    assert load["attempts"] >= 30
+    # The live devnet forges probabilistically.  Keep the calibration window
+    # long enough to observe honest node progress as well as hostile attempts.
+    assert load["attempts"] >= 100
     assert load["response_timeout_seconds"] > 0
     assert load["expected_helper_exit"] == 0
     assert document["assertions"] == [

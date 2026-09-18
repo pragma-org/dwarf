@@ -29,7 +29,7 @@
     {
       "primitive": "runtime_amaru_measurement_calibration",
       "profile_id": "profile-r-amaru-measurement-stock-control",
-      "attempts": 40,
+      "attempts": 100,
       "response_timeout_seconds": 2,
       "timeout_seconds": 180,
       "expected_helper_exit": 0
