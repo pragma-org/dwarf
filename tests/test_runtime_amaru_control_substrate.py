@@ -13,10 +13,8 @@ def _baseline():
     amaru = {
         "image": "old-amaru",
         "container_name": "amaru",
-        "command": [
-            "-c",
-            "exec /bin/amaru node run --peer-address relay1.example:3001",
-        ],
+        "entrypoint": "amaru-relay-bootstrap",
+        "environment": {"AMARU_PEER": "p1.example:3001"},
     }
     return {
         "services": {
@@ -31,15 +29,11 @@ def _baseline():
             "relay1": dict(cardano),
             "relay2": dict(cardano),
             "amaru-consumer": dict(cardano),
-            "bootstrap-producer": {"image": "bootstrap"},
             "amaru-consumer-seed": {"image": "bootstrap"},
             "amaru-relay-1": dict(amaru),
             "amaru-relay-2": {
                 **amaru,
-                "command": [
-                    "-c",
-                    "exec /bin/amaru node run --peer-address relay2.example:3001",
-                ],
+                "environment": {"AMARU_PEER": "p2.example:3001"},
             },
         },
         "volumes": {"p1-state": {}, "amaru-state": {}},
@@ -88,9 +82,8 @@ def test_prepare_runtime_model_is_private_managed_and_keeps_live_producer_path()
         assert service["labels"]["ada2.managed"] == "dwarf"
         assert service["labels"]["ada2.profile"] == config["profile_id"]
     relay = model["services"]["amaru-relay-1"]
-    assert "p1.example:3001" in relay["command"][1]
-    assert "relay1.example:3001" not in relay["command"][1]
-    assert "exec /bin/amaru node run" in relay["command"][1]
+    assert relay["environment"]["AMARU_PEER"] == "p1.example:3001"
+    assert relay["entrypoint"] == "amaru-relay-bootstrap"
     assert model["x-dwarf-retained-runtime"]["lifecycle"] == config["lifecycle"]
     assert model["x-dwarf-retained-runtime"]["fresh_state_required"] is True
 
@@ -113,5 +106,13 @@ def test_runtime_metadata_discloses_logical_targets_and_actual_support_topology(
     assert metadata["actual_topology"]["amaru_services"] == [
         "amaru-relay-1", "amaru-relay-2"
     ]
+    assert metadata["actual_topology"]["bootstrap_strategy"] == (
+        "per-relay-safe-snapshot-of-live-producer"
+    )
+    assert metadata["actual_topology"]["bootstrap_sources"] == {
+        "amaru-relay-1": "p1",
+        "amaru-relay-2": "p2",
+    }
+    assert "bootstrap_service" not in metadata["actual_topology"]
     assert metadata["compose_file"].endswith("docker-compose.json")
     assert metadata["identity"]["matched"] is True

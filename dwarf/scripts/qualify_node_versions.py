@@ -54,7 +54,12 @@ PROTECTED_PROJECTS = {
     "cardano_amaru_relay_bootstrap_control",
     "dwarf",
 }
-BASE_PACKAGE = REPOSITORY_ROOT / "antithesis" / "upstream_amaru_control"
+BASE_PACKAGE = REPOSITORY_ROOT / "antithesis" / "cardano_amaru_relay_bootstrap_control"
+CONTROL_AMARU_IMAGE = (
+    "ghcr.io/lambdasistemi/amaru-bootstrap-producer@"
+    "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36"
+)
+AMARU_TARGET_EXTRACT = "amaru-target-extract"
 CARDANO_SERVICES = (*CARDANO_REFERENCE_NODES, AMARU_CONSUMER)
 CARDANO_ONLY_SERVICES = {
     "configurator",
@@ -193,55 +198,33 @@ def build_project_name(
     return project
 
 
-def _replace_command(value: Any) -> Any:
-    if isinstance(value, str):
-        return value.replace(
-            "exec /bin/amaru node run",
-            "printf '%s\\n' '[bootstrap] snapshot_slots=399 799 1199'\n"
-            "        printf '%s\\n' '[bootstrap] committed bundle to /srv/amaru'\n"
-            "        printf '%s\\n' \"[bootstrap] exec'ing amaru run\"\n"
-            "        chown -R 10000:10000 /srv/amaru /startup /opt/amaru-logs\n"
-            "        exec setpriv --reuid=10000 --regid=10000 --clear-groups "
-            "/usr/local/bin/amaru run",
-        )
-    if isinstance(value, list):
-        return [_replace_command(item) for item in value]
-    return value
-
-
-def _annotate_legacy_amaru_command(value: Any) -> Any:
-    if isinstance(value, str):
-        return value.replace(
-            "exec /bin/amaru node run",
-            "printf '%s\\n' '[bootstrap] snapshot_slots=399 799 1199'\n"
-            "        printf '%s\\n' '[bootstrap] committed bundle to /srv/amaru'\n"
-            "        printf '%s\\n' \"[bootstrap] exec'ing amaru run\"\n"
-            "        exec /bin/amaru node run",
-        )
-    if isinstance(value, list):
-        return [_annotate_legacy_amaru_command(item) for item in value]
-    return value
-
-
-def _peer_amaru_with_live_producer(value: Any, relay_name: str) -> Any:
-    peers = {
-        "amaru-relay-1": ("relay1.example:3001", "p1.example:3001"),
-        "amaru-relay-2": ("relay2.example:3001", "p2.example:3001"),
-    }
-    old_peer, producer_peer = peers[relay_name]
-    if isinstance(value, str):
-        return value.replace(old_peer, producer_peer)
-    if isinstance(value, list):
-        return [_peer_amaru_with_live_producer(item, relay_name) for item in value]
-    return value
-
-
 def _uses_modern_amaru_runtime_interface(image: str) -> bool:
     repository = str(image or "").split("@", 1)[0]
     last_slash = repository.rfind("/")
     if repository.rfind(":") > last_slash:
         repository = repository[: repository.rfind(":")]
     return repository == "ghcr.io/pragma-org/amaru"
+
+
+def _append_volume(service: dict[str, Any], source: str, target: str) -> None:
+    volumes = service.setdefault("volumes", [])
+    if not isinstance(volumes, list):
+        raise QualificationError("service volumes must be a list")
+    if any(
+        isinstance(item, dict)
+        and item.get("source") == source
+        and item.get("target") == target
+        for item in volumes
+    ):
+        return
+    volumes.append(
+        {
+            "type": "volume",
+            "source": source,
+            "target": target,
+            "read_only": True,
+        }
+    )
 
 
 def transform_compose_model(
@@ -280,7 +263,8 @@ def transform_compose_model(
     if scope in {"amaru-only", "mixed"} and not set(AMARU_RELAYS).issubset(services):
         raise QualificationError("baseline is missing Amaru relay services")
 
-    for name, service in services.items():
+    modern_amaru = bool(amaru_image and _uses_modern_amaru_runtime_interface(amaru_image))
+    for name, service in list(services.items()):
         if not isinstance(service, dict):
             continue
         service.pop("container_name", None)
@@ -291,84 +275,43 @@ def transform_compose_model(
         if name in CARDANO_SERVICES and cardano_image:
             service["image"] = cardano_image
         if name in AMARU_RELAYS and amaru_image:
-            service["image"] = amaru_image
             environment = service.setdefault("environment", {})
             if not isinstance(environment, dict):
                 raise QualificationError(f"{name} has a non-mapping environment")
-            if _uses_modern_amaru_runtime_interface(amaru_image):
-                # Current official images require an explicit migration switch
-                # when opening an older bootstrap-producer ChainDB.  The
-                # retained 10.11.0 control must not receive this flag: it makes
-                # the proven schema-3 bundle migrate into a deliberately
-                # rejected, incomplete opcert state.
+            environment["AMARU_PEER"] = (
+                "p1.example:3001" if name == "amaru-relay-1" else "p2.example:3001"
+            )
+            if modern_amaru:
+                # Preserve the proven self-bootstrap wrapper and substitute
+                # only the exact target Amaru executable.  The official image
+                # is retained as an exited extraction service, so its immutable
+                # artifact identity remains mechanically observable.
+                service["image"] = CONTROL_AMARU_IMAGE
+                environment["AMARU_BIN"] = "/target/amaru"
                 environment["AMARU_MIGRATE_CHAIN_DB"] = "true"
-                # The official image runs as an unprivileged user and exposes
-                # the current `amaru run` interface under /usr/local/bin.  The
-                # retained 10.11.0 control image instead exposes
-                # `/bin/amaru node run` and has no setpriv binary, so its
-                # already-proven runtime invocation must remain intact.
-                service["user"] = "0:0"
-                service["command"] = _replace_command(service.get("command"))
+                _append_volume(service, "amaru-target-bin", "/target")
+                dependencies = service.setdefault("depends_on", {})
+                if not isinstance(dependencies, dict):
+                    raise QualificationError(f"{name} has invalid depends_on")
+                dependencies[AMARU_TARGET_EXTRACT] = {
+                    "condition": "service_completed_successfully",
+                    "required": True,
+                }
             else:
-                service["command"] = _annotate_legacy_amaru_command(
-                    service.get("command")
-                )
-            service["command"] = _peer_amaru_with_live_producer(
-                service.get("command"), name
-            )
+                service["image"] = amaru_image
+                environment.pop("AMARU_BIN", None)
+                environment.pop("AMARU_MIGRATE_CHAIN_DB", None)
 
-    if scope in {"amaru-only", "mixed"}:
-        bootstrap = services.get("bootstrap-producer") or {}
-        gate_image = bootstrap.get("image")
-        consumer = services.get("amaru-consumer")
-        if not gate_image or not isinstance(consumer, dict):
-            raise QualificationError(
-                "baseline is missing the bootstrap image or isolated consumer"
-            )
-        services["amaru-consumer-ready"] = {
-            "image": gate_image,
+    if modern_amaru and amaru_image:
+        services[AMARU_TARGET_EXTRACT] = {
+            "image": amaru_image,
+            "user": "0:0",
             "entrypoint": ["/bin/sh", "-ec"],
             "command": [
-                "latest_slot() {\n"
-                "  awk '\n"
-                "    {\n"
-                "      previous = \"\"\n"
-                "      for (i = 1; i <= NF; i++) {\n"
-                "        token = $$i\n"
-                "        if (token ~ /^tip\\.slot=[0-9]+$/) {\n"
-                "          sub(/^tip\\.slot=/, \"\", token)\n"
-                "          if (token + 0 > maximum) maximum = token + 0\n"
-                "        } else if (previous == \"tip.adopt\" && token ~ /^slot=[0-9]+$/) {\n"
-                "          sub(/^slot=/, \"\", token)\n"
-                "          if (token + 0 > maximum) maximum = token + 0\n"
-                "        }\n"
-                "        previous = $$i\n"
-                "      }\n"
-                "    }\n"
-                "    END { print maximum + 0 }\n"
-                "  ' \"$$1\" 2>/dev/null || printf '0\\n'\n"
-                "}\n"
-                "while :; do\n"
-                "  relay_one=$$(latest_slot /logs/amaru-relay-1.log)\n"
-                "  relay_two=$$(latest_slot /logs/amaru-relay-2.log)\n"
-                "  if [ \"$$relay_one\" -ge 1600 ] && [ \"$$relay_two\" -ge 1600 ]; then\n"
-                "    printf 'Amaru relays ready for isolated consumer: %s %s\\n' \"$$relay_one\" \"$$relay_two\"\n"
-                "    exit 0\n"
-                "  fi\n"
-                "  sleep 5\n"
-                "done\n"
+                "cp /usr/local/bin/amaru /target/amaru && chmod 0755 /target/amaru"
             ],
-            "depends_on": {
-                "amaru-relay-1": {"condition": "service_started", "required": True},
-                "amaru-relay-2": {"condition": "service_started", "required": True},
-            },
             "volumes": [
-                {
-                    "type": "volume",
-                    "source": "amaru-logs",
-                    "target": "/logs",
-                    "read_only": True,
-                }
+                {"type": "volume", "source": "amaru-target-bin", "target": "/target"}
             ],
             "labels": {
                 "com.dwarf.qualification": "true",
@@ -376,13 +319,15 @@ def transform_compose_model(
                 "com.antithesis.exclude_from_faults": "network,kill,pause,stop",
             },
         }
-        depends_on = consumer.setdefault("depends_on", {})
-        if not isinstance(depends_on, dict):
-            raise QualificationError("amaru-consumer has invalid depends_on")
-        depends_on["amaru-consumer-ready"] = {
-            "condition": "service_completed_successfully",
-            "required": True,
-        }
+        transformed.setdefault("volumes", {})["amaru-target-bin"] = {}
+
+    if scope in {"amaru-only", "mixed"}:
+        consumer = services.get("amaru-consumer")
+        seed = services.get("amaru-consumer-seed")
+        if not isinstance(seed, dict) or not isinstance(consumer, dict):
+            raise QualificationError(
+                "baseline is missing the live-bootstrap seed or isolated consumer"
+            )
 
     for volume in (transformed.get("volumes") or {}).values():
         if isinstance(volume, dict):
@@ -484,39 +429,6 @@ def _compose(project: str, compose_file: Path, *arguments: str) -> list[str]:
     return ["docker", "compose", "-p", project, "-f", str(compose_file), *arguments]
 
 
-def initial_start_services(model: dict[str, Any], scope: str) -> list[str]:
-    """Start the control without blocking on its gated downstream consumer.
-
-    Compose waits for ``amaru-consumer-ready`` to complete before creating the
-    consumer.  Starting the other services explicitly lets DWARF observe and
-    classify an Amaru startup failure immediately; the consumer is started
-    after the gate exits successfully.
-    """
-    if scope == "cardano-only":
-        return []
-    services = model.get("services") or {}
-    return sorted(name for name in services if name != AMARU_CONSUMER)
-
-
-def service_state_completed_successfully(state: dict[str, Any]) -> bool:
-    exit_code = state.get("ExitCode", -1)
-    return state.get("Status") == "exited" and int(exit_code) == 0
-
-
-def _service_completed_successfully(project: str, service: str) -> bool:
-    container = _project_containers(project).get(service)
-    if not container:
-        return False
-    result = _run(["docker", "inspect", container, "--format", "{{json .State}}"])
-    if result.returncode != 0:
-        return False
-    try:
-        state = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return False
-    return service_state_completed_successfully(state)
-
-
 def _project_containers(project: str) -> dict[str, str]:
     result = _run([
         "docker", "ps", "-a",
@@ -610,6 +522,18 @@ def _identity_observation(
     amaru_image: str | None,
 ) -> dict[str, Any]:
     containers = _project_containers(project)
+    modern_amaru = bool(
+        amaru_image and _uses_modern_amaru_runtime_interface(amaru_image)
+    )
+    extractor_container = containers.get(AMARU_TARGET_EXTRACT) if modern_amaru else None
+    extractor_image_id = ""
+    if extractor_container:
+        extractor_inspect = _run(
+            ["docker", "inspect", extractor_container, "--format", "{{.Image}}"]
+        )
+        if extractor_inspect.returncode == 0:
+            extractor_image_id = extractor_inspect.stdout.strip()
+    wrapper_image_id = _image_id(CONTROL_AMARU_IMAGE) if modern_amaru else ""
     services = list(CARDANO_REFERENCE_NODES)
     if scope in {"amaru-only", "mixed"}:
         services.extend([AMARU_CONSUMER, *AMARU_RELAYS])
@@ -629,35 +553,66 @@ def _identity_observation(
             if running_image_result is not None and running_image_result.returncode == 0
             else ""
         )
+        artifact_container = (
+            extractor_container if service in AMARU_RELAYS and modern_amaru else container
+        )
+        artifact_image_id = (
+            extractor_image_id
+            if service in AMARU_RELAYS and modern_amaru
+            else running_image_id
+        )
         commands = (
-            [["docker", "exec", container, "/usr/local/bin/amaru", "--version"],
+            [["docker", "exec", container, "/target/amaru", "--version"],
+             ["docker", "exec", container, "/usr/local/bin/amaru", "--version"],
              ["docker", "exec", container, "/bin/amaru", "--version"]]
             if service in AMARU_RELAYS
             else [["docker", "exec", container, "cardano-node", "--version"]]
         ) if container else []
         result = None
+        version_command: list[str] = []
         for command in commands:
             attempt = _run(command, timeout=30)
             if attempt.returncode == 0:
                 result = attempt
+                version_command = command
                 break
         output = ((result.stdout + result.stderr) if result else "").strip()
+        artifact_match = identity_matches(
+            expected_version=str(expected or ""),
+            reported_version=output,
+            expected_image_id=expected_image_id,
+            running_image_id=artifact_image_id,
+        )
+        wrapper_match = not (
+            service in AMARU_RELAYS and modern_amaru
+        ) or running_image_id == wrapper_image_id
         records[service] = {
             "container": container,
+            "artifact_container": artifact_container,
             "expected_version": expected,
             "reported": output,
+            "version_command": version_command,
             "expected_image": expected_image,
             "expected_image_id": expected_image_id,
             "running_image_id": running_image_id,
+            "artifact_image_id": artifact_image_id,
+            "wrapper_expected_image": (
+                CONTROL_AMARU_IMAGE
+                if service in AMARU_RELAYS and modern_amaru
+                else None
+            ),
+            "wrapper_expected_image_id": (
+                wrapper_image_id
+                if service in AMARU_RELAYS and modern_amaru
+                else None
+            ),
+            "wrapper_matched": wrapper_match,
             "matched": bool(
                 container
                 and result
-                and identity_matches(
-                    expected_version=str(expected or ""),
-                    reported_version=output,
-                    expected_image_id=expected_image_id,
-                    running_image_id=running_image_id,
-                )
+                and artifact_container
+                and artifact_match
+                and wrapper_match
             ),
         }
     return {"matched": bool(records) and all(item["matched"] for item in records.values()), "services": records}
@@ -833,17 +788,17 @@ def run_qualification(
     error: str | None = None
     terminal_failure: str | None = None
     try:
-        start_services = initial_start_services(model, scope)
-        start_command = _compose(project, compose_file, "up", "-d", *start_services)
         _require(
-            _run(start_command, timeout=max(900, timeout_seconds)),
+            _run(
+                _compose(project, compose_file, "up", "-d"),
+                timeout=max(900, timeout_seconds),
+            ),
             "qualification startup",
         )
         started = True
         emit("started")
         deadline = time.monotonic() + max(1, timeout_seconds)
         bootstrap_evidence: dict[str, Any] = {}
-        consumer_started = scope == "cardano-only"
         attempt = 0
         while time.monotonic() <= deadline:
             attempt += 1
@@ -855,18 +810,6 @@ def run_qualification(
                     and observation.get("peer_formation")
                 )
             else:
-                if not consumer_started and _service_completed_successfully(
-                    project, "amaru-consumer-ready"
-                ):
-                    _require(
-                        _run(
-                            _compose(project, compose_file, "up", "-d", AMARU_CONSUMER),
-                            timeout=300,
-                        ),
-                        "isolated consumer startup",
-                    )
-                    consumer_started = True
-                    emit("consumer_started")
                 observation = collect_and_classify(
                     project=project,
                     output=evidence_root / f"health-{attempt:03d}.json",

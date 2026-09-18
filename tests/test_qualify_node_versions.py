@@ -5,6 +5,7 @@ import pytest
 
 from scripts import qualify_node_versions as qualification
 from scripts.qualify_node_versions import (
+    CONTROL_AMARU_IMAGE,
     PROTECTED_PROJECTS,
     QualificationError,
     build_project_name,
@@ -14,9 +15,7 @@ from scripts.qualify_node_versions import (
     classify_terminal_runtime_failure,
     exact_oci_reference,
     identity_matches,
-    initial_start_services,
     propose_catalog_update,
-    service_state_completed_successfully,
     transform_compose_model,
 )
 
@@ -66,13 +65,17 @@ def _compose_model():
         "networks": {"default": None},
     }
     amaru = {
-        "image": "old-amaru",
+        "image": CONTROL_AMARU_IMAGE,
         "container_name": "amaru-relay-1",
-        "entrypoint": ["/bin/sh"],
-        "command": [
-            "-c",
-            "exec /bin/amaru node run --network testnet_42 "
-            "--peer-address relay1.example:3001",
+        "entrypoint": "amaru-relay-bootstrap",
+        "environment": {
+            "RELAY_NAME": "amaru-relay-1",
+            "AMARU_PEER": "p1.example:3001",
+            "AMARU_NETWORK": "testnet_42",
+        },
+        "volumes": [
+            {"type": "volume", "source": "p1-state", "target": "/live", "read_only": True},
+            {"type": "volume", "source": "a1-state", "target": "/srv/amaru"},
         ],
         "networks": {"default": None, "amaru-consumer-net": None},
     }
@@ -88,18 +91,24 @@ def _compose_model():
             "p3": dict(cardano),
             "relay1": dict(cardano),
             "relay2": dict(cardano),
-            "amaru-consumer": dict(cardano),
-            "bootstrap-producer": {"image": "bootstrap", "container_name": "bootstrap-producer"},
-            "amaru-consumer-seed": {"image": "bootstrap", "container_name": "amaru-consumer-seed"},
+            "amaru-consumer": {
+                **cardano,
+                "depends_on": {
+                    "amaru-consumer-seed": {
+                        "condition": "service_completed_successfully"
+                    }
+                },
+            },
+            "amaru-consumer-seed": {"image": CONTROL_AMARU_IMAGE, "container_name": "amaru-consumer-seed"},
             "amaru-relay-1": dict(amaru),
             "amaru-relay-2": {
                 **amaru,
                 "container_name": "amaru-relay-2",
-                "command": [
-                    "-c",
-                    "exec /bin/amaru node run --network testnet_42 "
-                    "--peer-address relay2.example:3001",
-                ],
+                "environment": {
+                    "RELAY_NAME": "amaru-relay-2",
+                    "AMARU_PEER": "p2.example:3001",
+                    "AMARU_NETWORK": "testnet_42",
+                },
             },
         },
         "volumes": {"p1-state": {}, "a1-state": {}, "external": {"external": True}},
@@ -147,37 +156,83 @@ def test_identity_match_requires_both_node_version_and_exact_running_image():
     ) is False
 
 
+def test_modern_amaru_identity_uses_extractor_artifact_and_target_binary(monkeypatch):
+    target_image = "ghcr.io/pragma-org/amaru@sha256:" + "9" * 64
+    target_image_id = "sha256:" + "a" * 64
+    wrapper_image_id = "sha256:" + "b" * 64
+    cardano_image_id = "sha256:" + "c" * 64
+    containers = {
+        "p1": "p1-container",
+        "p2": "p2-container",
+        "p3": "p3-container",
+        "relay1": "relay1-container",
+        "relay2": "relay2-container",
+        "amaru-consumer": "consumer-container",
+        "amaru-relay-1": "amaru-one",
+        "amaru-relay-2": "amaru-two",
+        "amaru-target-extract": "amaru-extractor",
+    }
+    monkeypatch.setattr(qualification, "_project_containers", lambda _project: containers)
+    monkeypatch.setattr(
+        qualification,
+        "_image_id",
+        lambda image: (
+            target_image_id
+            if image == target_image
+            else wrapper_image_id
+            if image == CONTROL_AMARU_IMAGE
+            else cardano_image_id
+        ),
+    )
+
+    def fake_run(args, **_kwargs):
+        if args[:2] == ["docker", "inspect"]:
+            container = args[2]
+            image_id = (
+                target_image_id
+                if container == "amaru-extractor"
+                else wrapper_image_id
+                if container.startswith("amaru-")
+                else cardano_image_id
+            )
+            return qualification.subprocess.CompletedProcess(args, 0, image_id + "\n", "")
+        if args[:3] == ["docker", "exec", "amaru-one"] or args[:3] == ["docker", "exec", "amaru-two"]:
+            if args[3] == "/target/amaru":
+                return qualification.subprocess.CompletedProcess(
+                    args, 0, "Amaru 10.11.20260912 (b159172)\n", ""
+                )
+            return qualification.subprocess.CompletedProcess(args, 127, "", "missing")
+        if args[:2] == ["docker", "exec"]:
+            return qualification.subprocess.CompletedProcess(
+                args, 0, "cardano-node 10.7.1\n", ""
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setattr(qualification, "_run", fake_run)
+
+    observation = qualification._identity_observation(
+        "candidate",
+        scope="mixed",
+        cardano_version="10.7.1",
+        amaru_version="10.11.20260912",
+        cardano_image="cardano-image",
+        amaru_image=target_image,
+    )
+
+    assert observation["matched"] is True
+    amaru = observation["services"]["amaru-relay-1"]
+    assert amaru["running_image_id"] == wrapper_image_id
+    assert amaru["artifact_image_id"] == target_image_id
+    assert amaru["artifact_container"] == "amaru-extractor"
+    assert "/target/amaru" in amaru["version_command"]
+
+
 def test_project_names_are_unique_safe_and_never_the_live_project():
     first = build_project_name("mixed", "11.1.2", "10.11.20260912", token="abc123")
     second = build_project_name("mixed", "11.1.2", "10.11.20260912", token="def456")
     assert first != second
     assert first.startswith("dwarf-qual-mixed-")
     assert first not in PROTECTED_PROJECTS
-
-
-def test_initial_amaru_start_excludes_only_the_gated_consumer():
-    model = _compose_model()
-    model["services"]["amaru-consumer-ready"] = {"image": "gate"}
-
-    services = initial_start_services(model, "mixed")
-
-    assert "amaru-consumer" not in services
-    assert "amaru-consumer-ready" in services
-    assert "bootstrap-producer" in services
-    assert "amaru-relay-1" in services
-    assert initial_start_services(model, "cardano-only") == []
-
-
-def test_completed_gate_accepts_zero_exit_code_without_truthiness_bug():
-    assert service_state_completed_successfully(
-        {"Status": "exited", "ExitCode": 0}
-    ) is True
-    assert service_state_completed_successfully(
-        {"Status": "exited", "ExitCode": 1}
-    ) is False
-    assert service_state_completed_successfully(
-        {"Status": "running", "ExitCode": 0}
-    ) is False
 
 
 def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
@@ -194,28 +249,24 @@ def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
     assert transformed["networks"]["default"]["name"] == "dwarf-qual-mixed-demo-default"
     assert transformed["services"]["p1"]["image"] == "new-cardano"
     assert transformed["services"]["amaru-consumer"]["image"] == "new-cardano"
-    assert transformed["services"]["amaru-relay-1"]["image"] == modern_amaru
-    assert transformed["services"]["amaru-relay-1"]["user"] == "0:0"
-    assert transformed["services"]["amaru-relay-1"]["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
-    assert "chown -R 10000:10000 /srv/amaru /startup /opt/amaru-logs" in transformed["services"]["amaru-relay-1"]["command"][1]
-    assert "setpriv --reuid=10000 --regid=10000 --clear-groups /usr/local/bin/amaru run" in transformed["services"]["amaru-relay-1"]["command"][1]
-    assert "[bootstrap] snapshot_slots=399 799 1199" in transformed["services"]["amaru-relay-1"]["command"][1]
-    assert "[bootstrap] committed bundle to /srv/amaru" in transformed["services"]["amaru-relay-1"]["command"][1]
-    assert "[bootstrap] exec'ing amaru run" in transformed["services"]["amaru-relay-1"]["command"][1]
-    assert "--peer-address p1.example:3001" in transformed["services"]["amaru-relay-1"]["command"][1]
-    assert "--peer-address p2.example:3001" in transformed["services"]["amaru-relay-2"]["command"][1]
-    assert "relay1.example:3001" not in transformed["services"]["amaru-relay-1"]["command"][1]
-    assert "relay2.example:3001" not in transformed["services"]["amaru-relay-2"]["command"][1]
-    assert "exec chown" not in transformed["services"]["amaru-relay-1"]["command"][1]
-    gate = transformed["services"]["amaru-consumer-ready"]
-    assert gate["depends_on"]["amaru-relay-1"]["condition"] == "service_started"
-    assert gate["depends_on"]["amaru-relay-2"]["condition"] == "service_started"
-    assert "tip\\.slot" in gate["command"][0]
-    assert "1600" in gate["command"][0]
-    assert "$$i" in gate["command"][0]
-    assert "$$relay_one" in gate["command"][0]
-    assert transformed["services"]["amaru-consumer"]["depends_on"]["amaru-consumer-ready"]["condition"] == "service_completed_successfully"
-    assert transformed["services"]["bootstrap-producer"]["image"] == "bootstrap"
+    relay = transformed["services"]["amaru-relay-1"]
+    assert relay["image"] == CONTROL_AMARU_IMAGE
+    assert relay["entrypoint"] == "amaru-relay-bootstrap"
+    assert relay["environment"]["AMARU_BIN"] == "/target/amaru"
+    assert relay["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
+    assert relay["environment"]["AMARU_PEER"] == "p1.example:3001"
+    assert transformed["services"]["amaru-relay-2"]["environment"]["AMARU_PEER"] == "p2.example:3001"
+    assert any(item.get("target") == "/target" for item in relay["volumes"])
+    extractor = transformed["services"]["amaru-target-extract"]
+    assert extractor["image"] == modern_amaru
+    assert "cp /usr/local/bin/amaru /target/amaru" in extractor["command"][0]
+    assert extractor["user"] == "0:0"
+    assert "amaru-target-bin" in transformed["volumes"]
+    assert "amaru-consumer-ready" not in transformed["services"]
+    assert transformed["services"]["amaru-consumer"]["depends_on"][
+        "amaru-consumer-seed"
+    ]["condition"] == "service_completed_successfully"
+    assert transformed["services"]["amaru-consumer-seed"]["image"] == CONTROL_AMARU_IMAGE
     assert transformed["volumes"]["external"].get("external") is not True
 
 
@@ -234,15 +285,11 @@ def test_transform_retained_amaru_control_keeps_legacy_runtime_interface():
 
     relay = transformed["services"]["amaru-relay-1"]
     assert relay["image"] == legacy_amaru
-    assert "[bootstrap] snapshot_slots=399 799 1199" in relay["command"][1]
-    assert "[bootstrap] committed bundle to /srv/amaru" in relay["command"][1]
-    assert "[bootstrap] exec'ing amaru run" in relay["command"][1]
-    assert "exec /bin/amaru node run" in relay["command"][1]
-    assert "--peer-address p1.example:3001" in relay["command"][1]
-    assert "relay1.example:3001" not in relay["command"][1]
+    assert relay["entrypoint"] == "amaru-relay-bootstrap"
+    assert relay["environment"]["AMARU_PEER"] == "p1.example:3001"
     assert "AMARU_MIGRATE_CHAIN_DB" not in relay["environment"]
-    assert "setpriv" not in relay["command"][1]
-    assert "/usr/local/bin/amaru" not in relay["command"][1]
+    assert "AMARU_BIN" not in relay["environment"]
+    assert "amaru-target-extract" not in transformed["services"]
 
 
 def test_cardano_only_transform_removes_amaru_paths_but_keeps_real_producers():
@@ -266,10 +313,13 @@ def test_amaru_only_contract_keeps_fixed_honest_source_and_marks_target_scope():
         scope="amaru-only",
         project="dwarf-qual-amaru-demo",
         cardano_image="known-good-cardano",
-        amaru_image="candidate-amaru",
+        amaru_image="ghcr.io/pragma-org/amaru@sha256:" + "9" * 64,
     )
     assert transformed["services"]["p1"]["image"] == "known-good-cardano"
-    assert transformed["services"]["amaru-relay-2"]["image"] == "candidate-amaru"
+    assert transformed["services"]["amaru-relay-2"]["image"] == CONTROL_AMARU_IMAGE
+    assert transformed["services"]["amaru-target-extract"]["image"].startswith(
+        "ghcr.io/pragma-org/amaru@sha256:"
+    )
     assert transformed["x-dwarf-qualification"]["contract"] == "amaru-relay-consumer"
 
 
