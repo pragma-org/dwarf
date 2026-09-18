@@ -47,3 +47,34 @@ def test_custom_testnet_bootstrap_uses_selected_amaru_artifact(monkeypatch, tmp_
     assert result == {"ok": True}
     assert calls[0]["amaru_image"] == selected
     assert calls[0]["loader_image"].startswith("dwarf/amaru-loader:version-")
+
+
+def test_bootstrap_synthesis_builds_loader_from_selected_amaru_artifact(monkeypatch, tmp_path):
+    selected = "ghcr.io/pragma-org/amaru:v10.11.20260730@sha256:" + "c" * 64
+    observed = {}
+    (tmp_path / "amaru-bootstrap-loader").mkdir()
+
+    def fake_ensure_loader_image(**kwargs):
+        observed.update(kwargs)
+        return kwargs["loader_image"]
+
+    layout = {
+        "network_name": "testnet_42",
+        "workspace_root": str(tmp_path / "workspace"),
+        "generated_root": str(tmp_path / "generated"),
+        "amaru_slot_map": {},
+    }
+    monkeypatch.setattr(bootstrap, "ensure_loader_image", fake_ensure_loader_image)
+    monkeypatch.setattr(bootstrap, "prepare_loader_workspace", lambda **_kwargs: layout)
+    monkeypatch.setattr(bootstrap, "loader_commands", lambda **_kwargs: (["true"], ["true"]))
+    monkeypatch.setattr(bootstrap, "run_command", lambda _command: type("Result", (), {"returncode": 0})())
+    monkeypatch.setattr(bootstrap, "_apply_staged_state", lambda _layout: None)
+
+    bootstrap.synthesize_amaru_bootstrap(
+        runtime_root=tmp_path,
+        plan={"nodes": []},
+        loader_image="dwarf/amaru-loader:selected",
+        amaru_image=selected,
+    )
+
+    assert observed["amaru_image"] == selected

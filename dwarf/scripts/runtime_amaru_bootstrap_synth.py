@@ -243,8 +243,18 @@ def _apply_staged_state(layout: dict) -> None:
         shutil.copytree(Path(staged_root), target_root)
 
 
-def synthesize_amaru_bootstrap(*, runtime_root: Path, plan: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -> dict:
-    loader_image = ensure_loader_image(runtime_root=runtime_root, loader_image=loader_image)
+def synthesize_amaru_bootstrap(
+    *,
+    runtime_root: Path,
+    plan: dict,
+    loader_image: str = DEFAULT_LOADER_IMAGE,
+    amaru_image: str = DEFAULT_AMARU_IMAGE,
+) -> dict:
+    loader_image = ensure_loader_image(
+        runtime_root=runtime_root,
+        loader_image=loader_image,
+        amaru_image=amaru_image,
+    )
     layout = prepare_loader_workspace(runtime_root=runtime_root, plan=plan)
     cardano_cmd, amaru_cmd = loader_commands(layout=layout, loader_image=loader_image)
     cardano = run_command(cardano_cmd)
