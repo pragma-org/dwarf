@@ -44,6 +44,11 @@ def _stage_loader_scripts(scripts_root: Path) -> None:
     # Dwarf composes smaller synthetic devnets, so patch the staged copy to use the
     # actual pool count while preserving the rest of the upstream loader flow.
     cardano_loader = cardano_loader.replace("[[ $i -ne 5 ]]", "[[ $i -ne $number_of_pools ]]")
+    cardano_loader = cardano_loader.replace(
+        "cp -fr /data/p${POOL_ID}-config/configs/* /configs/${POOL_ID}/\n",
+        "cp -fr /data/p${POOL_ID}-config/configs/* /configs/${POOL_ID}/\n"
+        "    cp -fr /data/p${POOL_ID}-config/keys/* /configs/${POOL_ID}/keys/\n",
+    )
     cardano_loader_path = scripts_root / "cardano-loader.sh"
     cardano_loader_path.write_text(cardano_loader, encoding="utf-8")
     amaru_loader_path = scripts_root / "amaru-loader.sh"
@@ -116,6 +121,7 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
     config_roots: dict[str, str] = {}
     cardano_state_roots: dict[str, str] = {}
     target_cardano_state_roots: dict[str, str] = {}
+    target_cardano_key_roots: dict[str, str] = {}
     for node in plan["nodes"]:
         if node["impl"] != "cardano-node":
             continue
@@ -139,6 +145,7 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
         config_roots[slot] = str(config_root)
         cardano_state_roots[slot] = str(staged_db_root)
         target_cardano_state_roots[slot] = str(target_db_root)
+        target_cardano_key_roots[slot] = str(pool_keys_root)
 
     amaru_slot_map: dict[str, int] = {}
     amaru_state_roots: dict[str, str] = {}
@@ -165,6 +172,7 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
         "target_config_root": str(env_root),
         "cardano_state_roots": cardano_state_roots,
         "target_cardano_state_roots": target_cardano_state_roots,
+        "target_cardano_key_roots": target_cardano_key_roots,
         "amaru_state_root": str(amaru_state_root),
         "amaru_state_roots": amaru_state_roots,
         "target_amaru_state_roots": target_amaru_state_roots,
@@ -295,6 +303,16 @@ def apply_producer_bundle(layout: dict) -> None:
         if target_db.exists():
             shutil.rmtree(target_db)
         shutil.copytree(source_db, target_db)
+    staged_keys = layout["config_roots"]
+    target_keys = layout["target_cardano_key_roots"]
+    if set(staged_keys) != set(target_keys):
+        raise RuntimeError("Cardano bootstrap credential mapping is incomplete")
+    for slot, config_root_text in staged_keys.items():
+        source_keys = Path(str(config_root_text)) / "keys"
+        destination_keys = Path(str(target_keys[slot]))
+        if destination_keys.exists():
+            shutil.rmtree(destination_keys)
+        shutil.copytree(source_keys, destination_keys)
     # The synthetic ChainDB was created and validated against the immutable
     # producer image's pinned configuration.  Keep that configuration paired
     # with the database when the supporting cardano-node is launched.  The

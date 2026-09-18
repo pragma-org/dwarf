@@ -21,6 +21,9 @@ def test_staged_legacy_loader_keeps_its_supported_header_import_contract(tmp_pat
     assert "--config-dir ${BASEDIR}" in body
     assert "--header-file" not in body
 
+    cardano_body = (scripts / "cardano-loader.sh").read_text(encoding="utf-8")
+    assert 'cp -fr /data/p${POOL_ID}-config/keys/* /configs/${POOL_ID}/keys/' in cardano_body
+
 
 def test_versioned_compose_nodes_are_discoverable_as_dwarf_managed():
     node = {
@@ -181,6 +184,10 @@ def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path)
         '{"localRoots": [{"accessPoints": [{"address": "p1.example"}]}]}\n',
         encoding="utf-8",
     )
+    (staged_config / "keys").mkdir()
+    (staged_config / "keys" / "byron-delegation.cert").write_text(
+        "producer-credential\n", encoding="utf-8"
+    )
     target_cardano = tmp_path / "target-cardano" / "node1" / "db"
     target_config = tmp_path / "runtime-env"
     target_config.mkdir()
@@ -189,11 +196,15 @@ def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path)
         '{"systemStart": "2026-09-18T00:00:00Z"}\n', encoding="utf-8"
     )
     (target_config / "topology.json").write_text('{"localRoots": []}\n', encoding="utf-8")
+    target_keys = target_config / "pools-keys" / "pool1"
+    target_keys.mkdir(parents=True)
+    (target_keys / "byron-delegation.cert").write_text("fresh-credential\n", encoding="utf-8")
     layout = {
         "network_name": "testnet_42",
         "workspace_root": str(tmp_path / "workspace"),
         "config_roots": {"1": str(staged_config)},
         "target_config_root": str(target_config),
+        "target_cardano_key_roots": {"1": str(target_keys)},
         "cardano_state_roots": {"1": str(staged_cardano)},
         "target_cardano_state_roots": {"1": str(target_cardano)},
         "target_amaru_state_roots": {"1": str(target)},
@@ -212,3 +223,4 @@ def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path)
     assert runtime_configuration["DijkstraGenesisFile"] == "dijkstra-genesis.json"
     assert json.loads((target_config / "shelley-genesis.json").read_text(encoding="utf-8"))["systemStart"] == "2026-09-14T00:00:00Z"
     assert json.loads((target_config / "topology.json").read_text(encoding="utf-8"))["localRoots"] == []
+    assert (target_keys / "byron-delegation.cert").read_text(encoding="utf-8") == "producer-credential\n"
