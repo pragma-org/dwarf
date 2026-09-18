@@ -36,8 +36,7 @@
       "primitive": "runtime_force_epoch_boundary",
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "node1",
-      "expected_boundary_slot": 1000,
-      "window_tolerance_slots": 5,
+      "target_slot": 1000,
       "output_dir": "outputs/epoch-boundary"
     },
     {

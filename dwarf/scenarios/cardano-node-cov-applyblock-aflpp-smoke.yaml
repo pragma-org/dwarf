@@ -52,7 +52,7 @@
       "primitive": "aflpp_smoke_exit_clean",
       "min_execs_done": 1000,
       "min_queue_count": 12,
-      "min_cycles_done": 0,
+      "min_cycles_done": 1,
       "min_bitmap_cvg": 0.0
     }
   ],
