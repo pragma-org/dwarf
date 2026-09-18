@@ -127,6 +127,7 @@ def main() -> int:
         os.environ["ADA2_DWARF_REMOTE_BASE"] = conf["REMOTE_BASE_PATH"]
     if conf.get("CONFIG_PATH"):
         os.environ["ADA2_PROFILE_MANAGER_CONFIG"] = conf["CONFIG_PATH"]
+    os.environ["ADA2_DWARF_ROOT"] = str(dwarf_root)
     for env_name, conf_name in (
         ("ADA2_DWARF_RUNS_DIR", "RUNS_DIR"),
         ("ADA2_DWARF_STATE_DIR", "STATE_DIR"),
@@ -182,13 +183,19 @@ def main() -> int:
         rest = []
         arg = None
     else:
-        if len(tokens) > 3:
+        if len(tokens) > 4:
             return _reject(conf, original, "bad-token-count")
         rest = tokens[1:]
-        dry_run = False
-        if "--dry-run" in rest:
-            dry_run = True
-            rest = [t for t in rest if t != "--dry-run"]
+        dry_run = "--dry-run" in rest
+        acknowledge_unknown_version = "--acknowledge-unknown-version" in rest
+        supported_flags = {"--dry-run", "--acknowledge-unknown-version"}
+        if any(token.startswith("--") and token not in supported_flags for token in rest):
+            return _reject(conf, original, "unsupported-flag")
+        if acknowledge_unknown_version and verb != "deploy":
+            return _reject(conf, original, "acknowledgement-only-valid-for-deploy")
+        rest = [token for token in rest if token not in supported_flags]
+        if len(rest) > 1:
+            return _reject(conf, original, "bad-token-count")
         arg = rest[0] if rest else None
 
     if verb not in ALLOWED_VERBS:
@@ -295,7 +302,29 @@ def main() -> int:
             profile = find_profile(arg)
         except KeyError:
             return _reject(conf, original, "unknown-profile")
-        script = deploy_command(profile)
+        try:
+            from dataclasses import asdict
+            from profile_manager.deployment_versions import (
+                build_deployment_version_preview,
+                enforce_deployment_version_gate,
+            )
+
+            preview = build_deployment_version_preview(asdict(profile))
+            gate = (
+                {"acknowledgement": None}
+                if dry_run
+                else enforce_deployment_version_gate(
+                    preview,
+                    acknowledge_unknown=acknowledge_unknown_version,
+                )
+            )
+            preview = {
+                **preview,
+                "unknown_acknowledged": bool(gate.get("acknowledgement")),
+            }
+            script = deploy_command(profile, version_preview=preview)
+        except Exception as exc:
+            return _reject(conf, original, f"deploy-version-gate-failed:{type(exc).__name__}")
     elif verb == "remove":
         base = conf.get("REMOTE_BASE_PATH")
         if not base:

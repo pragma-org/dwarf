@@ -245,6 +245,135 @@ def _profile_as_custom_bundle(profile):
     )
 
 
+def _exact_oci_reference(release):
+    for artifact in release.get("artifacts", []):
+        if artifact.get("kind") != "oci" or artifact.get("availability") != "available":
+            continue
+        reference = str(artifact.get("reference") or "").strip()
+        digest = str(artifact.get("digest") or "").strip()
+        if not reference or not digest:
+            continue
+        if "@sha256:" in reference:
+            return reference
+        return f"{reference}@{digest}"
+    raise ValueError(
+        f"{release.get('implementation')} {release.get('version')} has no available immutable OCI artifact"
+    )
+
+
+def _versioned_node(node_id, role, release, *, supporting=False):
+    return {
+        "id": node_id,
+        "impl": release["implementation"],
+        "version": release["version"],
+        "role": role,
+        "image": _exact_oci_reference(release),
+        "source_revision": release["source_revision"],
+        "supporting": supporting,
+    }
+
+
+def versioned_substrate_for_profile(profile, version_preview):
+    """Translate a frozen profile version preview into a real Docker substrate.
+
+    Amaru does not currently forge a standalone fresh devnet.  An
+    ``amaru-only`` profile therefore means that every *target* node is Amaru,
+    while one explicitly-labelled Cardano producer supplies the honest chain.
+    The support node is recorded separately so the topology cannot be
+    mistaken for an Amaru-only producer network.
+    """
+
+    from profile_manager.version_catalog import load_version_catalog, resolve_default
+
+    resolved = dict(version_preview.get("resolved") or {})
+    scope = str(version_preview.get("scope") or _profile_deploy_mode(profile))
+    nodes = []
+    target_node_count = profile.node_count + profile.amaru_node_count
+    support_node_count = 0
+
+    if scope == "amaru-only":
+        support_release = (version_preview.get("supporting") or {}).get("cardano-node")
+        if support_release is None:
+            support_release = resolve_default(load_version_catalog(), "cardano-only")["release"]
+        nodes.append(
+            _versioned_node(
+                "bootstrap-cardano", "bootstrap-producer", support_release, supporting=True
+            )
+        )
+        support_node_count = 1
+    else:
+        cardano_release = resolved.get("cardano-node")
+        if cardano_release is None:
+            raise ValueError("versioned Cardano or mixed profile did not resolve cardano-node")
+        for index in range(1, profile.node_count + 1):
+            nodes.append(_versioned_node(f"node{index}", "producer", cardano_release))
+
+    amaru_release = resolved.get("amaru")
+    if profile.amaru_node_count:
+        if amaru_release is None:
+            raise ValueError("versioned Amaru or mixed profile did not resolve Amaru")
+        for index in range(1, profile.amaru_node_count + 1):
+            nodes.append(_versioned_node(f"amaru{index}", "consumer", amaru_release))
+
+    edges = [
+        {"from": left["id"], "to": right["id"]}
+        for left in nodes
+        for right in nodes
+        if left["id"] != right["id"]
+    ]
+    return {
+        "compose_mode": "docker",
+        "scope": scope,
+        "target_node_count": target_node_count,
+        "support_node_count": support_node_count,
+        "network": f"testnet_{profile.network_magic}",
+        "network_magic": profile.network_magic,
+        "version_policy": version_preview.get("policy"),
+        "version_status": version_preview.get("status"),
+        "unknown_acknowledged": bool(version_preview.get("unknown_acknowledged", False)),
+        "catalog_revision": version_preview.get("catalog_revision"),
+        "nodes": nodes,
+        "topology": {"edges": edges},
+    }
+
+
+def _versioned_deploy_command(profile, version_preview):
+    substrate = versioned_substrate_for_profile(profile, version_preview)
+    runtime = shlex.quote(profile.remote_runtime_root)
+    project = shlex.quote(profile.compose_project)
+    config_body = {
+        "substrate": substrate,
+        "output_dir": f"{profile.remote_runtime_root}/evidence",
+        "runtime_root": profile.remote_runtime_root,
+        "compose_project": profile.compose_project,
+        "healthy_timeout_seconds": 300,
+    }
+    config_json = json.dumps(config_body, indent=2, sort_keys=True)
+    image_refs = sorted({node["image"] for node in substrate["nodes"]})
+    pull_lines = "\n".join(f"docker pull {shlex.quote(image)}" for image in image_refs)
+    return f"""set -e
+runtime={runtime}
+project={project}
+if [ -e "$runtime/env" ] || [ -e "$runtime/docker-compose.yml" ]; then
+  echo "Runtime assets already exist under: $runtime" >&2
+  exit 4
+fi
+dwarf_root="${{ADA2_DWARF_ROOT:-}}"
+if [ -z "$dwarf_root" ] || [ ! -f "$dwarf_root/scripts/runtime_compose_substrate.py" ]; then
+  echo "ADA2_DWARF_ROOT must identify the installed DWARF source root" >&2
+  exit 7
+fi
+mkdir -p "$runtime"
+config_path="$runtime/versioned-deployment.json"
+cat > "$config_path" <<'DWARF_VERSIONED_DEPLOYMENT'
+{config_json}
+DWARF_VERSIONED_DEPLOYMENT
+{pull_lines}
+cd "$dwarf_root"
+PYTHONPATH="$dwarf_root" python3 scripts/runtime_compose_substrate.py --config "$config_path"
+"""
+
+
 def compose_template(profile):
     """Render a docker-compose.yml for a profile.
 
@@ -288,6 +417,24 @@ def compose_template(profile):
 
 
 def deploy_dry_run_text(profile):
+    if profile.version_policy != "legacy":
+        from dataclasses import asdict
+        from profile_manager.deployment_versions import build_deployment_version_preview
+
+        preview = build_deployment_version_preview(asdict(profile))
+        substrate = versioned_substrate_for_profile(profile, preview)
+        identities = ", ".join(
+            f"{node['id']}={node['impl']} {node['version']} ({node['image']})"
+            for node in substrate["nodes"]
+        )
+        return (
+            f"DRY RUN deploy for {profile.id}\n"
+            f"Version policy: {preview['policy']} ({preview['status']}).\n"
+            f"Exact real-node artifacts: {identities}.\n"
+            f"Would create a fresh Docker substrate under {profile.remote_runtime_root}.\n"
+            "Would pull every digest-pinned image before launch and verify the running image and node-reported version.\n"
+            "No remote state changed.\n"
+        )
     if _profile_deploy_mode(profile) == "mixed":
         from profile_manager.custom_packages import package_deploy_dry_run_text
 
@@ -352,8 +499,15 @@ def remove_dry_run_text():
     )
 
 
-def deploy_command(profile):
+def deploy_command(profile, version_preview=None):
     """Build the image, generate the env via cardano-testnet, write compose, up -d."""
+    if profile.version_policy != "legacy":
+        if version_preview is None:
+            from dataclasses import asdict
+            from profile_manager.deployment_versions import build_deployment_version_preview
+
+            version_preview = build_deployment_version_preview(asdict(profile))
+        return _versioned_deploy_command(profile, version_preview)
     deploy_mode = _profile_deploy_mode(profile)
     if deploy_mode == "mixed":
         from profile_manager.custom_packages import package_deploy_command

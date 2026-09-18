@@ -135,6 +135,7 @@ def normalize_substrate(substrate: dict) -> dict:
                 "host": host_id,
                 "image": image,
                 "source_revision": source_revision,
+                "supporting": bool(node.get("supporting", False)),
             }
         )
     topology = substrate.get("topology") or {}
@@ -182,11 +183,23 @@ def normalize_substrate(substrate: dict) -> dict:
         raise ValueError("substrate.unknown_acknowledged must be a boolean")
     if catalog_revision is not None and (not isinstance(catalog_revision, str) or not catalog_revision):
         raise ValueError("substrate.catalog_revision must be a non-empty string when present")
+    scope = substrate.get("scope")
+    if scope is not None and scope not in {"cardano-only", "amaru-only", "mixed"}:
+        raise ValueError("substrate.scope must be cardano-only, amaru-only, or mixed when present")
+    target_node_count = substrate.get("target_node_count")
+    support_node_count = substrate.get("support_node_count")
+    if target_node_count is not None:
+        target_node_count = int(target_node_count)
+    if support_node_count is not None:
+        support_node_count = int(support_node_count)
     return {
         "host_strategy": host_strategy,
         "hosts": normalized_hosts,
         "network": network,
         "network_magic": network_magic,
+        "scope": scope,
+        "target_node_count": target_node_count,
+        "support_node_count": support_node_count,
         "nodes": normalized_nodes,
         "topology": {"edges": normalized_edges},
         "version_policy": version_policy,
@@ -376,6 +389,7 @@ def build_version_provenance(substrate: dict, nodes: list[dict]) -> dict:
                 "image_id": node.get("image_id"),
                 "image_digest": node.get("image_digest"),
                 "identity_status": identity.get("status"),
+                "supporting": bool(node.get("supporting", False)),
             }
         )
     return {
@@ -383,6 +397,9 @@ def build_version_provenance(substrate: dict, nodes: list[dict]) -> dict:
         "status": substrate.get("version_status"),
         "unknown_acknowledged": bool(substrate.get("unknown_acknowledged")),
         "catalog_revision": substrate.get("catalog_revision"),
+        "scope": substrate.get("scope"),
+        "target_node_count": substrate.get("target_node_count"),
+        "support_node_count": substrate.get("support_node_count"),
         "nodes": node_records,
     }
 

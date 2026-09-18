@@ -1,0 +1,42 @@
+from scripts import runtime_compose_substrate as compose
+
+
+def test_versioned_compose_nodes_are_discoverable_as_dwarf_managed():
+    node = {
+        "id": "node1",
+        "impl": "cardano-node",
+        "listen_address": "127.0.0.1:33001",
+        "host_slot_index": 1,
+        "image": "ghcr.io/intersectmbo/cardano-node:11.1.2@sha256:" + "a" * 64,
+    }
+
+    body = compose._docker_compose_body(
+        compose_project="dwarf-profile-versioned-local",
+        nodes=[node],
+        network_name="testnet_42",
+    )
+
+    labels = body["services"]["node1"]["labels"]
+    assert labels["ada2.managed"] == "dwarf"
+    assert labels["ada2.profile"] == "dwarf-profile-versioned-local"
+    assert labels["ada2.service"] == "node1"
+
+
+def test_custom_testnet_bootstrap_uses_selected_amaru_artifact(monkeypatch, tmp_path):
+    selected = "ghcr.io/pragma-org/amaru:v10.11.20260903@sha256:" + "b" * 64
+    calls = []
+
+    def fake_synthesize(**kwargs):
+        calls.append(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(compose, "synthesize_amaru_bootstrap", fake_synthesize)
+
+    result = compose._synthesize_amaru_bootstrap_for_custom_testnet(
+        runtime_root=tmp_path,
+        plan={"nodes": [{"id": "amaru1", "impl": "amaru", "image": selected}]},
+    )
+
+    assert result == {"ok": True}
+    assert calls[0]["amaru_image"] == selected
+    assert calls[0]["loader_image"].startswith("dwarf/amaru-loader:version-")

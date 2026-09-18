@@ -71,7 +71,7 @@ def test_unknown_requires_one_run_acknowledgement(tmp_path, monkeypatch):
 def test_incompatible_and_blocked_are_hard_stops():
     catalog = load_version_catalog(CATALOG_PATH)
     modified = copy.deepcopy(catalog)
-    pair = modified["compatibility_pairs"][0]
+    pair = next(item for item in modified["compatibility_pairs"] if item.get("default"))
     pair["status"] = "incompatible"
     pair["reason"] = "Genesis contract mismatch."
     profile = {

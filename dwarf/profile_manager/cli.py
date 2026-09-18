@@ -1399,7 +1399,19 @@ def cmd_deploy(args):
     if answer not in {"y", "yes"}:
         print("Deploy cancelled.")
         return 1
-    result = ssh_command(config, deploy_command(profile), timeout=300, verb=("deploy", profile.id))
+    deploy_preview = {
+        **version_preview,
+        "unknown_acknowledged": bool(version_gate.get("acknowledgement")),
+    }
+    deploy_verb = ["deploy", profile.id]
+    if args.acknowledge_unknown_version:
+        deploy_verb.append("--acknowledge-unknown-version")
+    result = ssh_command(
+        config,
+        deploy_command(profile, version_preview=deploy_preview),
+        timeout=600,
+        verb=tuple(deploy_verb),
+    )
     path = write_evidence(
         profile.id,
         "deploy",
