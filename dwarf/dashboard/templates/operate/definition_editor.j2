@@ -8,6 +8,7 @@
     <div><span class="eyebrow">Operate · {{ catalog_label }}</span><h1>{{ 'Create' if create else 'Edit' }} {{ catalog_label | lower }}</h1></div>
     <div class="definition-actions">
       <a class="cta cta--ghost definition-help-link" href="{{ help_href }}" target="_blank" rel="noopener noreferrer" aria-label="{{ help_aria_label }} (opens in a new tab)">Authoring guide <span aria-hidden="true">↗</span></a>
+      {% if secondary_help_href %}<a class="cta cta--ghost definition-help-link" href="{{ secondary_help_href }}" target="_blank" rel="noopener noreferrer">{{ secondary_help_label }} <span aria-hidden="true">↗</span></a>{% endif %}
       {% if not create %}<a class="cta cta--ghost" href="/operate/{{ catalog }}/{{ definition_id }}">Cancel</a>{% else %}<a class="cta cta--ghost" href="/operate/{{ catalog }}">Cancel</a>{% endif %}
       <button class="cta cta--ghost" type="button" data-editor-validate>Validate</button>
       <button class="cta" type="button" data-editor-save disabled>Save</button>

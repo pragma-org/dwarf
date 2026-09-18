@@ -89,6 +89,7 @@ from profile_manager.views.operate_audit import render_operate_audit
 from profile_manager.views.operate_timeline import render_operate_timeline
 from profile_manager.views.operate_static_analysis import render_operate_static_analysis
 from profile_manager.views.operate_profiles import render_operate_profiles
+from profile_manager.views.operate_versions import render_operate_versions
 from profile_manager.views.operate_bundles import render_operate_bundles
 from profile_manager.views.operate_plugins import dispatch_plugin_request
 from profile_manager.views.operate_primitives import (
@@ -2776,6 +2777,7 @@ def render_route_html(route, *, token=None):
         "/operate/compare": render_operate_compare,
         "/learn/architecture": render_learn_architecture,
         "/operate/profiles": render_operate_profiles,
+        "/operate/versions": render_operate_versions,
         "/operate/runs": render_operate_runs,
         "/operate/status": render_operate_status,
         "/operate/targets": render_operate_targets,

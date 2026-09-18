@@ -1,0 +1,50 @@
+{% extends "_base.j2" %}
+{% block main %}
+<header class="definition-header">
+  <div><span class="eyebrow">Operate</span><h1>Node versions</h1><p class="page-subhero">Released implementations, exact artifacts, scoped runtime status, and mixed compatibility evidence.</p></div>
+  <div class="definition-actions"><a class="cta cta--ghost" href="/learn/versions">How qualification works</a><a class="cta" href="/operate/profiles/new">Create profile</a></div>
+</header>
+
+<aside class="catalog-callout"><strong>Stable is not the same as confirmed.</strong> Stable comes from the upstream release feed. Confirmed means this exact release or pair passed DWARF's real-node runtime contract for the named deployment scope.</aside>
+
+<dl class="definition-summary">
+  <div><dt>Catalog updated</dt><dd><code>{{ updated_at }}</code></dd></div>
+  <div><dt>Catalog revision</dt><dd><code>{{ catalog_revision }}</code></dd></div>
+  <div><dt>Releases</dt><dd>{{ releases|length }}</dd></div>
+  <div><dt>Mixed pairs</dt><dd>{{ pairs|length }}</dd></div>
+</dl>
+
+<label class="profile-catalog__search">Search releases and compatibility pairs
+  <input type="search" data-version-filter placeholder="Version, implementation, status, digest…">
+</label>
+
+<section aria-labelledby="release-heading"><span class="eyebrow">Implementations</span><h2 id="release-heading">Released versions</h2>
+  <div class="version-catalog" data-version-list>
+  {% for release in releases %}
+    <article class="version-card" data-version-search="{{ release.implementation }} {{ release.version }} {{ release.channel }} {{ release.source_revision }} {{ release.artifact_digest }}">
+      <div class="version-card__head"><div><strong>{{ release.implementation }} {{ release.version }}</strong><span>{{ release.channel }} · {{ release.released_at }}</span></div><code>{{ release.source_revision[:12] }}</code></div>
+      <div class="version-card__statuses">
+      {% for scope, record in release.scope_statuses.items() %}<span class="version-badge version-badge--{{ record.status }}">{{ scope }} · {{ record.status }}{% if record.default %} · default{% endif %}</span>{% endfor %}
+      </div>
+      <dl><div><dt>Artifact</dt><dd>{% if release.artifact_reference %}<code>{{ release.artifact_reference }}</code>{% else %}No reviewed artifact recorded{% endif %}</dd></div><div><dt>Digest</dt><dd>{% if release.artifact_digest %}<code>{{ release.artifact_digest }}</code>{% else %}{{ release.artifact_availability }}{% endif %}</dd></div></dl>
+    </article>
+  {% endfor %}
+  </div>
+</section>
+
+<section aria-labelledby="pair-heading"><span class="eyebrow">Mixed topology</span><h2 id="pair-heading">Compatibility pairs</h2>
+  <div class="version-catalog version-catalog--pairs" data-version-list>
+  {% for pair in pairs %}
+    <article class="version-card" data-version-search="{{ pair.id }} {{ pair.cardano_version }} {{ pair.amaru_version }} {{ pair.status }}">
+      <div class="version-card__head"><div><strong>{{ pair.id }}</strong><span>Cardano-node {{ pair.cardano_version }} · Amaru {{ pair.amaru_version }}</span></div><span class="version-badge version-badge--{{ pair.status }}">{{ pair.status }}{% if pair.default %} · default{% endif %}</span></div>
+      <p>{{ pair.reason }}</p>
+      <dl><div><dt>Topology</dt><dd><code>{{ pair.topology_revision }}</code></dd></div><div><dt>DWARF</dt><dd><code>{{ pair.dwarf_revision }}</code></dd></div><div><dt>Evidence</dt><dd>{% for item in pair.evidence %}<code>{{ item }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}</dd></div></dl>
+    </article>
+  {% else %}<p class="empty-section-statement">No mixed compatibility evidence has been recorded.</p>{% endfor %}
+  </div>
+</section>
+<script>
+var vf=document.querySelector('[data-version-filter]');
+if(vf){vf.addEventListener('input',function(){var q=this.value.trim().toLowerCase();document.querySelectorAll('[data-version-search]').forEach(function(row){row.hidden=Boolean(q&&!row.dataset.versionSearch.toLowerCase().includes(q));});});}
+</script>
+{% endblock %}

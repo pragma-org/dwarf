@@ -1,4 +1,4 @@
-<li class="profile-catalog__row" id="{{ entry.id }}" data-profile-search="{{ entry.id }} {{ entry.label }} {{ entry.node_type }} {{ entry.node_mix }} {{ entry.network_label }}">
+<li class="profile-catalog__row" id="{{ entry.id }}" data-profile-search="{{ entry.id }} {{ entry.label }} {{ entry.node_type }} {{ entry.node_mix }} {{ entry.network_label }} {{ entry.version_policy }} {{ entry.version_status }} {{ entry.version_summary }}">
   <div class="profile-catalog__identity">
     <strong>{{ entry.label }}</strong>
     <code>{{ entry.id }}</code>
@@ -7,15 +7,17 @@
   <span><span class="profile-catalog__mobile-label">Nodes </span>{{ entry.node_mix }}</span>
   <span><span class="profile-catalog__mobile-label">Network </span><code>{{ entry.network_label }}</code></span>
   <span><span class="profile-catalog__mobile-label">Peer sharing </span>{{ 'enabled' if entry.peer_sharing else 'disabled' }}</span>
+  <span class="profile-catalog__version"><span class="profile-catalog__mobile-label">Version </span><span class="version-badge version-badge--{{ entry.version_status }}">{{ entry.version_status }}</span><code>{{ entry.version_policy }}</code><small>{{ entry.version_summary }}</small></span>
   <div class="catalog-row-actions">
     <a href="{{ entry.url }}">View</a>
     <a href="{{ entry.edit_url }}">Edit</a>
     <a href="{{ entry.download_url }}" download>Download</a>
     {% if shim_enabled %}
-    <button type="button" data-profile="{{ entry.id }}" onclick="runDeploy(this)">Deploy</button>
+    <button type="button" data-profile="{{ entry.id }}" onclick="previewDeploy(this)">Preview deploy</button>
     {% else %}
-    <button type="button" data-cmd="cardano-profile deploy {{ entry.id }}" onclick="copyDeploy(this)">Copy deploy</button>
+    <button type="button" data-profile="{{ entry.id }}" data-copy-only="1" onclick="previewDeploy(this)">Preview deploy</button>
     {% endif %}
   </div>
+  <div class="profile-deploy-actions" id="deploy-actions-{{ entry.id }}"></div>
   <pre class="profile-catalog__output" id="deploy-out-{{ entry.id }}" hidden></pre>
 </li>
