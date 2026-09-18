@@ -1,0 +1,436 @@
+# Amaru and Cardano-node Measurements End-to-End Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Prove the existing Amaru measurement system through the deployed DWARF GUI, implement equivalent version-pinned Cardano-node 11.1.2 measurements, prove Cardano through the same GUI/evidence path, and stop before mixed-node work.
+
+**Architecture:** Reuse DWARF's implementation-neutral Measurement catalogs, lifecycle, correlation, report, evidence, and frontend. Repair shared gaps discovered by one real Amaru proof, then add Cardano-specific stock/external/resource/coverage/patched collectors and one representative Cardano proof. Optional measurements remain non-gating; every timed attempt is retained regardless of outcome.
+
+**Tech Stack:** Python 3, pytest, YAML/JSON catalogs, Jinja/vanilla JavaScript dashboard, Docker Compose, Cardano-node 11.1.2 new tracing and Prometheus/EKG, Haskell source patches/build tooling, DWARF NDJSON/evidence/bundle pipeline, Playwright/browser screenshots.
+
+---
+
+## Constraints
+
+- Work directly in `/home/nigel/dwarf-pragma` on `cardano-box`; no worktree.
+- Use test-driven development and inspect each red failure before implementation.
+- Do not modify existing scenarios destructively; add new scenarios/profiles/targets.
+- Do not disturb retained mixed/control topologies.
+- Do not launch Antithesis/Moog or push publicly.
+- Do not add secrets, machine-specific paths, caches, build outputs, `._*`, or `.DS_Store`.
+- Do not stage `dwarf/state/chain-head.json` unless its runtime-only change becomes an explicitly required source change.
+- Push only fully verified batches to the internal remote; if credentials remain unavailable, record one failed attempt and queue the exact commit.
+- Stop after Cardano-node proof. Do not implement mixed-node measurements.
+
+## Batch 0: Exact Cardano-node 11.1.2 source and visibility audit
+
+### Task 0.1: Write the failing source-contract test
+
+**Files:**
+
+- Create: `tests/test_cardano_measurement_source_contract.py`
+- Create: `dwarf/measurements/audit/cardano-node-11.1.2.json`
+- Modify: `docs/plans/2026-09-18-amaru-cardano-measurements-e2e-design.md`
+
+**Step 1: Write the failing test**
+
+Require an audit record that matches `dwarf/versions/catalog.json` for version,
+source revision, OCI reference/digest, and Cardano-only qualification. Require
+exact source files/constructors/namespaces/fields/units for every claimed stock
+signal and explicit source-backed gaps for each proposed patch. Require records
+for ChainSync, BlockFetch, TxSubmission2, KeepAlive, mempool, ChainDB, ledger,
+Plutus, epoch, restart/sync, resources, and coverage.
+
+**Step 2: Verify RED**
+
+Run:
+
+```bash
+/home/nigel/.venvs/dwarf-moog-fix/bin/python -m pytest -q tests/test_cardano_measurement_source_contract.py
+```
+
+Expected: fail because the audit record does not exist.
+
+**Step 3: Perform the read-only exact-source audit**
+
+Use a disposable checkout of official `IntersectMBO/cardano-node` at
+`fef83fed01d7926f3de83b3b917be5a4a48768b5`, including the pinned network,
+consensus, ledger, and Plutus dependencies named by `cabal.project.freeze` or
+project files. Inspect new tracing configuration and generated trace docs.
+Record only source-supported boundaries; classify missing boundaries instead
+of inferring them from metric names.
+
+**Step 4: Add the minimal audit record and design addendum**
+
+Include exact upstream paths, trace constructors, emitted fields, units,
+configuration prerequisites, correlation keys, and visibility gaps. Separate
+node-process, container/namespace, and DWARF-controller metrics.
+
+**Step 5: Verify GREEN and commit**
+
+Run focused tests, version catalog tests, `git diff --check`, JSON validation,
+and a secret/path scan. Commit the audited source contract.
+
+## Batch 1: Prove and repair the Amaru end-to-end workflow
+
+### Task 1.1: Define one self-contained Amaru proof contract
+
+**Files:**
+
+- Create: `tests/test_amaru_measurement_e2e_scenario.py`
+- Create: `dwarf/scenarios/amaru-measurement-e2e-stock.yaml`
+- Modify only if required: `dwarf/scripts/runtime_amaru_measurement_calibration.py`
+- Modify only if required: `dwarf/profile_manager/primitives.py`
+
+**Step 1: Write failing tests**
+
+Require an additive real-node scenario pinned to Amaru `10.11.20260912`, exact
+stock profile, `amaru-security-default`, a non-vacuous fixed-seed workload,
+fresh-runtime setup, teardown, outcome-independent timed attempts, and no
+machine-specific path. Require at least one accepted/rejected/timeout-capable
+terminal classification without requiring a particular hostile outcome.
+
+**Step 2: Verify RED**
+
+Run the focused test and confirm failure is the missing scenario/runtime
+contract.
+
+**Step 3: Implement the smallest portable scenario/helper repair**
+
+Prefer existing version-qualified profile deployment and calibration helpers.
+If the existing scenario runner cannot materialize the exact runtime, add one
+bounded setup adapter rather than a second deployment engine. Do not change
+existing calibration scenarios.
+
+**Step 4: Verify GREEN**
+
+Run the focused scenario, measurement selection, resolver, runtime, report,
+forensic, bundle, and dashboard contract tests.
+
+### Task 1.2: Launch through deployed DWARF and repair shared defects
+
+**Files:**
+
+- Test first for each defect in the relevant existing test module.
+- Possible modifications: `dwarf/profile_manager/scenario.py`
+- Possible modifications: `dwarf/profile_manager/measurement_runtime.py`
+- Possible modifications: `dwarf/profile_manager/measurement_report.py`
+- Possible modifications: `dwarf/profile_manager/data/operate_run.py`
+- Possible modifications: `dwarf/dashboard/templates/operate/run.j2`
+
+**Step 1: Deploy the exact committed image**
+
+Rebuild/redeploy DWARF from the authoritative checkout and record image/source
+identity. Preserve state and retained evidence.
+
+**Step 2: Launch from the GUI with fresh runtime state**
+
+Use the actual `/operate` scenario workflow. Do not substitute a direct script
+run for proof.
+
+**Step 3: For every failure, use a red-green repair cycle**
+
+Add a failing regression test reproducing the observed defect, verify it fails,
+implement the minimal fix, rerun focused tests, rebuild/redeploy, and repeat the
+same GUI action.
+
+**Step 4: Verify the proof artifacts**
+
+Require exact target identity, real target reachability, non-zero attempts,
+elapsed time for every attempt, collector states, normalized distributions,
+compact-table values or honest unavailable reasons, transcript/provenance,
+manifest hashes, SARIF/attestation presence according to existing policy, and
+a portable bundle downloadable through the GUI.
+
+**Step 5: Commit the verified Amaru E2E batch**
+
+Record run ID, artifact digests, sample counts, claims/non-claims, and teardown
+evidence in the plan and workbench.
+
+## Batch 2: Cardano Measurement and Measurement Profile catalogs
+
+### Task 2.1: Add Cardano definitions
+
+**Files:**
+
+- Create: `tests/test_cardano_measurement_catalog.py`
+- Create: `dwarf/measurement-profiles/cardano-security-default.yaml`
+- Create: `dwarf/measurement-profiles/cardano-security-patched.yaml`
+- Create additive definitions under: `dwarf/measurements/`
+
+**Step 1: Write failing catalog tests**
+
+Require definitions pinned to Cardano-node `11.1.2` / `fef83fed...`, with
+implementation `cardano-node`, exact supported target modes, existing output
+schema, explicit capabilities, overhead, lifecycle, failure behavior,
+artifacts, correlation IDs, and non-gating defaults.
+
+Initial definitions:
+
+- `cardano-stock-chain-lifecycle`
+- `cardano-stock-blockfetch`
+- `cardano-stock-txsubmission-mempool`
+- `cardano-stock-ledger-block-epoch`
+- `cardano-stock-plutus-execution`
+- `cardano-stock-network`
+- `cardano-stock-resources`
+- `cardano-external-restart-readiness`
+- `cardano-external-sync-speed`
+- `cardano-external-workload-accounting`
+- `cardano-coverage-production-paths`
+- only source-audited patched definitions, expected to include protocol decode,
+  BlockFetch queue/handler, TxSubmission2 residence, and missing ledger/Plutus
+  stage timing where stock traces lack the requested boundary
+
+**Step 2: Verify RED, add definitions, verify GREEN**
+
+Use existing catalog validators. Do not add a Cardano-specific catalog loader.
+Run generic catalog/editor/import/export regressions and commit.
+
+### Task 2.2: Resolve Cardano target modes and exact identities
+
+**Files:**
+
+- Modify: `dwarf/profile_manager/deployment_versions.py`
+- Modify: `dwarf/profile_manager/measurement_resolution.py`
+- Modify: `dwarf/profile_manager/measurement_targets.py`
+- Create: `tests/test_cardano_measurement_resolution.py`
+
+Write failing tests for stock, coverage, and patched Cardano identity; explicit
+incompatibility; skipped passive defaults; exact image/build digest; and no
+Amaru regression. Implement only generic branches required for a second
+implementation.
+
+## Batch 3: Cardano stock telemetry collectors
+
+### Task 3.1: Normalize exact Cardano traces and metrics
+
+**Files:**
+
+- Create: `dwarf/profile_manager/measurement_collectors/cardano_stock.py`
+- Create: `dwarf/profile_manager/measurement_collectors/cardano_factory.py`
+- Create: `dwarf/scripts/runtime_cardano_measurement_collector.py`
+- Create: `dwarf/assets/measurements/cardano-stock-fef83fed.json`
+- Create: `tests/test_cardano_stock_collector.py`
+
+**Step 1: Write source-derived fixtures and failing tests**
+
+Fixtures must use exact 11.1.2 machine-formatted trace shapes. Test terminal
+outcomes, units, peer/header/block/transaction correlation, incomplete streams,
+unknown constructors, malformed lines, and deduplication. Test combined and
+per-outcome timing so rejected or invalid operations are not discarded.
+
+**Step 2: Verify RED**
+
+Confirm missing collector/factory failures rather than fixture errors.
+
+**Step 3: Implement minimal parsers and collectors**
+
+Consume existing node output/Prometheus or forwarded traces and write bounded
+raw/normalized artifacts into the run bundle. Do not introduce a monitoring
+stack or parallel database.
+
+**Step 4: Verify GREEN**
+
+Run focused collector tests plus shared correlation/report/runtime tests.
+
+## Batch 4: Cardano external and real-resource measurements
+
+### Task 4.1: Generalize workload, restart, sync, and resource collectors
+
+**Files:**
+
+- Create or modify: `dwarf/profile_manager/measurement_collectors/cardano_external.py`
+- Create or modify: `dwarf/profile_manager/measurement_collectors/cardano_resources.py`
+- Modify: `dwarf/scripts/runtime_resource_profile.py`
+- Create: `tests/test_cardano_external_measurements.py`
+- Create: `tests/test_runtime_resource_profile_cardano.py`
+
+**Step 1: Write failing tests**
+
+Cover Cardano container/PID resolution, CPU, RSS, disk IO, FD, threads,
+container/cgroup and namespace RX/TX labeling, restart readiness gates, sync
+start/end points, workload rates, backlog, and every attempt's time/outcome.
+
+**Step 2: Implement shared adapters**
+
+Reuse generic workload accounting and distribution helpers. Keep target process
+identity explicit so controller metrics cannot be mislabeled as node metrics.
+
+**Step 3: Component proof**
+
+Run a short exact stock 11.1.2 topology outside the GUI only as a component
+gate. Prove the real target PID/container was sampled and retain exact evidence.
+This does not satisfy final E2E proof.
+
+## Batch 5: Cardano compiler-coverage target
+
+### Task 5.1: Register existing production harnesses without performance claims
+
+**Files:**
+
+- Create: `tests/test_cardano_coverage_target.py`
+- Create: `dwarf/scripts/build_cardano_coverage_target.py` only if the existing
+  build path cannot produce the required registry record
+- Create additive registry manifest under:
+  `dwarf/targets/cardano-node/coverage-targets/fef83fed01d7926f3de83b3b917be5a4a48768b5/`
+- Modify only if generic support is missing: `dwarf/scripts/runtime_cargo_fuzz_campaign.py`
+  or the existing Cardano AFL++ campaign adapter
+
+**Step 1: Write failing identity/linkage tests**
+
+Require exact source revision, harness source and digest, toolchain/build flags,
+executable/image digest, campaign/corpus/input linkage, portable paths, and
+explicit non-authoritative performance labeling.
+
+**Step 2: Build and run one bounded real campaign**
+
+Use a production-library entry point already supported by DWARF. Retain exact
+coverage output and verify the measurement result schema. Do not claim security
+or performance from coverage alone.
+
+## Batch 6: Revision-locked Cardano patched measurement target
+
+### Task 6.1: Add a fail-closed patch builder
+
+**Files:**
+
+- Create: `tests/test_cardano_measurement_patch.py`
+- Create: `dwarf/scripts/build_cardano_measurement_target.py`
+- Create: `dwarf/targets/cardano-node/measurement-patches/fef83fed01d7926f3de83b3b917be5a4a48768b5/manifest.json`
+- Create bounded patch files in the same directory
+
+**Step 1: Write failing builder tests**
+
+Require exact clean source revision, zero-offset patch application, expected
+patch digest, toolchain/build flags, build-log digest, executable/image digest,
+and refusal of dirty/wrong source.
+
+**Step 2: Add only audited instrumentation gaps**
+
+Use Cardano's existing tracing abstractions. Emit bounded machine-formatted
+events with monotonic duration, terminal outcome, and available correlation IDs.
+Do not duplicate stock traces or add broad debug logging.
+
+**Step 3: Build from a disposable exact checkout and smoke the real node**
+
+Retain build provenance and prove the built node starts and advances in a fresh
+Cardano-only topology.
+
+### Task 6.2: Add patched collectors
+
+**Files:**
+
+- Create: `dwarf/profile_manager/measurement_collectors/cardano_patched.py`
+- Create: `tests/test_cardano_patched_collector.py`
+
+Write failing tests from exact emitted records, then implement normalization,
+correlation, unavailable states, and outcome-independent distributions.
+
+## Batch 7: Cardano stock-versus-patched overhead calibration
+
+### Task 7.1: Create equivalent stock and patched calibration legs
+
+**Files:**
+
+- Create: `tests/test_cardano_measurement_calibration.py`
+- Create: `dwarf/scripts/runtime_cardano_measurement_calibration.py`
+- Create: `dwarf/profiles/profile-s-cardano-measurement-stock-control/profile.yaml`
+- Create: `dwarf/profiles/profile-t-cardano-measurement-patched/profile.yaml`
+- Create: `dwarf/scenarios/cardano-measurement-overhead-calibration-stock.yaml`
+- Create: `dwarf/scenarios/cardano-measurement-overhead-calibration-patched.yaml`
+
+**Step 1: Write failing parity tests**
+
+Require identical workload identity, seed, hardware, source revision, warm-up,
+attempt count, timeout, outcomes, units, and runner digest. Require at least 30
+common samples and fail closed on mismatches.
+
+**Step 2: Implement and run both real legs**
+
+Retain every attempt and its outcome/time. Report median/p95/p99 deltas and
+mark patched performance unavailable where a common comparable metric does not
+exist.
+
+## Batch 8: Cardano end-to-end GUI proof
+
+### Task 8.1: Add one representative self-contained scenario
+
+**Files:**
+
+- Create: `tests/test_cardano_measurement_e2e_scenario.py`
+- Create: `dwarf/scenarios/cardano-measurement-e2e-stock.yaml`
+
+Write a failing contract test requiring exact Cardano 11.1.2, the stock
+measurement profile, fresh version-qualified substrate, non-vacuous workload,
+outcome-independent timings, real-node assertions, and teardown. Implement the
+smallest additive scenario that exercises stock/external/resource measurements
+and links available coverage/calibration evidence.
+
+### Task 8.2: Launch and verify through the deployed GUI
+
+Repeat the Amaru E2E procedure with Cardano-node. Require actual image/source
+identity, real target reachability, non-zero timed attempts, selected tap data,
+report rendering, non-gating collector behavior, portable bundle, and clean
+teardown. Repair each discovered defect via its own red-green cycle.
+
+## Batch 9: Frontend and Learn parity
+
+### Task 9.1: Prove Cardano catalog, compatibility, and result rendering
+
+**Files:**
+
+- Modify tests first in dashboard/route/definition/run-result modules.
+- Modify as required: `dwarf/profile_manager/data/operate_measurements.py`
+- Modify as required: `dwarf/dashboard/templates/operate/measurements*.j2`
+- Modify as required: `dwarf/dashboard/templates/operate/run.j2`
+- Modify as required: `dwarf/profile_manager/data/learn_docs.py`
+- Modify as required: `dwarf/dashboard/templates/learn/measurements*.j2`
+
+Write failing tests for Cardano filters, mode/version compatibility, unavailable
+reasons, provenance, overhead warnings, distributions, throughput, resources,
+transcripts, coverage linkage, and export controls. Reuse existing components;
+do not add implementation-specific pages.
+
+### Task 9.2: Update technical documentation
+
+Document stock/coverage/patched Cardano modes, exact supported revision,
+measurement selection, interpretation, troubleshooting, claims/non-claims,
+and the explicit absence of mixed comparison in this scope.
+
+## Batch 10: Browser QA, regression proof, workbench, and delivery status
+
+### Task 10.1: Run full verification
+
+Run:
+
+- every new focused test;
+- the established complete `tests/` suite;
+- representative existing Amaru, Cardano, scenario, target, profile, bundle,
+  SARIF, attestation, and dashboard tests;
+- compile/import and JSON/YAML validation;
+- `git diff --check`;
+- a secret scan and forbidden-file/path scan; and
+- clean-tree review excluding the known runtime-only chain-head file.
+
+### Task 10.2: Perform two browser-review cycles
+
+Use Playwright/screenshots against the deployed site at desktop and mobile
+sizes. Review measurement catalog/detail/editor, scenario selection, launch,
+live status, Amaru result, Cardano result, charts/tables, long identifiers,
+unavailable/error states, evidence links, and exports. Fix each defect test-first
+and repeat the complete cycle.
+
+### Task 10.3: Update workbench and internal status
+
+Update `dwarf-latest` overview and persistent runbook with exact commits, target
+identities, GUI run IDs, sample counts, artifact hashes, calibration deltas,
+browser evidence, claims/non-claims, and the explicit stop before mixed work.
+Push verified commits to internal Git if credentials work; otherwise record the
+queued commits and one precise credential failure.
+
+### Task 10.4: Stop at the approved boundary
+
+Report whether Amaru and Cardano-node measurement workflows are each proven end
+to end. List any honest unavailable values and deferred five-example coverage.
+Do not start Cardano/Amaru mixed measurements.
