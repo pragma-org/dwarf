@@ -1,0 +1,22 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Learn · deployment</span><h1>Version-qualified devnets</h1>
+<p class="lede">DWARF separates what upstream has released from what an exact real-node deployment has proved. Stable does not mean confirmed, and a release confirmed in one topology is not automatically confirmed in another.</p>
+<div class="definition-actions"><a class="cta" href="/operate/versions">Open node version catalog</a><a class="cta cta--ghost" href="/operate/profiles/new">Create a profile</a></div>
+
+<section><span class="eyebrow">Selection</span><h2>Profile policies</h2><div class="definition-summary"><div><dt><code>latest-confirmed</code></dt><dd>Use the explicit catalog default that passed the complete runtime contract for this deployment scope.</dd></div><div><dt><code>latest-stable</code></dt><dd>Use the newest official stable release. If its scoped status is unknown, deployment requires a one-run acknowledgement.</dd></div><div><dt><code>exact</code></dt><dd>Pin one Cardano-node or Amaru release, or one exact mixed compatibility pair.</dd></div></div><p><strong>Default</strong> is an operator policy choice. It is stored separately from verification status and cannot manufacture confirmation.</p></section>
+
+<section><span class="eyebrow">Evidence</span><h2>Status meanings</h2><div class="definition-summary"><div><dt>confirmed</dt><dd>The exact release or pair passed every required real-node gate for the named scope.</dd></div><div><dt>unknown</dt><dd>Selectable but not yet proven for that scope. A stable release may still be unknown.</dd></div><div><dt>incompatible</dt><dd>The exact pair was exercised and violated a required compatibility contract.</dd></div><div><dt>blocked</dt><dd>A known prerequisite or upstream limitation prevents a valid qualification.</dd></div></div></section>
+
+<section><span class="eyebrow">Scopes</span><h2>Three independent claims</h2><ul><li><strong>Cardano-only</strong>: a fresh Cardano-node devnet starts, forms expected peers, makes sustained chain progress, remains healthy, and tears down cleanly.</li><li><strong>Amaru-only</strong>: the strongest honest Amaru contract supported by the release. If Amaru needs an external honest source, this is labelled a relay/consumer qualification—not standalone block production.</li><li><strong>Mixed</strong>: Cardano-node and Amaru share the intended genesis, network, era history, topology, and bootstrap contract; the isolated Amaru-fed consumer must advance through Amaru's path and converge.</li></ul></section>
+
+<section><span class="eyebrow">Runtime gate</span><h2>What confirmation requires</h2><ol><li>Use a unique project and fresh volumes without replacing the retained known-good topology.</li><li>Capture exact source revisions, image references, immutable digests, configuration hashes, and catalog revision.</li><li>Verify every real process/container starts and the container uses the resolved image ID.</li><li>Read the node-reported version and require it to match the request.</li><li>Prove genesis/network consistency, peer formation, sustained chain progress, and the scope-specific data path.</li><li>Complete an observation interval without panic, fatal exit, or restart loop, then tear down cleanly.</li></ol><p>Compose rendering, image build, container startup, open ports, or schema validation alone do not establish confirmation.</p></section>
+
+<section><span class="eyebrow">Operations</span><h2>Refresh and qualification</h2><p>The release refresh command writes a candidate catalog for review; discovery never sets <code>confirmed</code>. Qualification moves newest-to-oldest and records every exact failure or pass with evidence. Unknown acknowledgement applies to one deployment only and never changes the catalog.</p><pre><code>PYTHONPATH=dwarf python3 dwarf/scripts/refresh_version_catalog.py \
+  --output /tmp/dwarf-version-catalog-candidate.json
+
+cardano-profile deploy &lt;profile-id&gt; --dry-run
+cardano-profile deploy &lt;profile-id&gt; --approve --acknowledge-unknown-version</code></pre></section>
+
+<section><span class="eyebrow">Claim boundary</span><h2>What this does not prove</h2><p>A confirmed local devnet does not prove compatibility on public networks, correctness under every adversarial scenario, or Antithesis readiness. Antithesis submission remains a separate preflight and approval gate. Historical runs retain their exact resolved identities even after defaults change.</p></section>
+{% endblock %}

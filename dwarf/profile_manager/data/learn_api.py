@@ -281,6 +281,18 @@ ENDPOINTS: list[dict[str, Any]] = [
         "example": '{"ok":true,"id":"my-scenario","url":"/operate/scenarios/my-scenario"}',
     },
     {
+        "path": "/api/deploy/preview",
+        "aliases": [],
+        "method": "GET",
+        "kind": "json",
+        "description": "Resolve a profile's node-version policy into exact releases, artifacts, scoped status, compatibility evidence, and acknowledgement/block state without changing runtime state.",
+        "parameters": [
+            {"name": "profile", "kind": "query", "required": True, "type": "profile id", "default": ""},
+        ],
+        "response_schema": {"profile_id": "string", "policy": "string", "scope": "string", "status": "confirmed|unknown|incompatible|blocked", "resolved": "implementation-to-release map", "catalog_revision": "sha256"},
+        "example": '{"profile_id":"mixed","policy":"latest-confirmed","status":"confirmed","resolved":{"cardano-node":{"version":"10.7.1"},"amaru":{"version":"10.11.0"}}}',
+    },
+    {
         "path": "/api/deploy /api/remove /api/fuzz/run /api/test/smoke/run /api/scenario/run /api/scenario/compare /api/scenario/paste /api/scenario/promote",
         "aliases": [],
         "method": "POST",
@@ -306,7 +318,7 @@ def html_route_groups() -> list[dict[str, Any]]:
         "/operate/scenarios/<id>/edit",
         "/operate/compare", "/operate/compare/runs",
         "/operate/profiles", "/operate/profiles/new", "/operate/profiles/<id>",
-        "/operate/profiles/<id>/edit",
+        "/operate/profiles/<id>/edit", "/operate/versions",
         "/operate/profile-templates", "/operate/profile-templates/<id>",
         "/operate/testcases", "/operate/testcases/<id>",
         "/operate/testcase-buckets", "/operate/testcase-buckets/<id>",
@@ -325,7 +337,7 @@ def html_route_groups() -> list[dict[str, Any]]:
     ]
     learn = [
         "/learn", "/learn/getting-started", "/learn/examples", "/learn/primitives",
-        "/learn/profile-templates",
+        "/learn/profile-templates", "/learn/versions",
         "/learn/testcases",
         "/learn/corpora",
         "/learn/grammars",

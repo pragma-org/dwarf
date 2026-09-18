@@ -48,6 +48,7 @@ LEARN_SUB_NAV: list[dict[str, str]] = [
     {"slug": "examples", "label": "Examples", "url": "/learn/examples"},
     {"slug": "primitives", "label": "Primitives", "url": "/learn/primitives"},
     {"slug": "profile-templates", "label": "Profile templates", "url": "/learn/profile-templates"},
+    {"slug": "versions", "label": "Node versions", "url": "/learn/versions"},
     {"slug": "corpora", "label": "Corpora", "url": "/learn/corpora"},
     {"slug": "grammars", "label": "Generation grammars", "url": "/learn/grammars"},
     {"slug": "risk-packages", "label": "Risk work packages", "url": "/learn/risk-packages"},

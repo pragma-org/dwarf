@@ -278,6 +278,17 @@ docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile moog readiness -
 docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile moog preflight --asset-dir <dir> --repo <org/repo> --github-user <user> --directory <path> --commit <sha> --json
 ```
 
+## Node-version policy
+
+New deployment profiles can select `latest-confirmed`, `latest-stable`, or an
+exact release/compatibility pair. The packaged release catalog is visible at
+`/operate/versions`. `latest-confirmed` is the safest unattended choice because
+it resolves only the explicit scoped default backed by retained runtime
+evidence. Release discovery never creates confirmation.
+
+Existing profiles that omit `version_policy` retain legacy runtime resolution;
+they are not silently relabelled as confirmed.
+
 ## SSH Keys
 
 The V3 delivery stack does not mount SSH keys by default. That is deliberate.
