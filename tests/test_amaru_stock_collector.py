@@ -166,7 +166,7 @@ def test_stock_collectors_produce_client_scoreboard_rows_and_security_signals(tm
     assert network["measurements"]["mux_failed"]["value"] == 1
 
 
-def test_missing_completed_otlp_spans_are_unavailable_not_zero(tmp_path):
+def test_missing_completed_stock_spans_are_unavailable_not_zero(tmp_path):
     result = _collect(
         tmp_path,
         "amaru-stock-block-epoch",
@@ -175,7 +175,47 @@ def test_missing_completed_otlp_spans_are_unavailable_not_zero(tmp_path):
 
     assert result["measurements"]["block_application"]["status"] == "unavailable"
     assert result["measurements"]["block_application"]["mean"] is None
-    assert "completed OTLP span" in result["measurements"]["block_application"]["reason"]
+    assert "completed stock telemetry span" in result["measurements"]["block_application"]["reason"]
+
+
+def test_exact_runtime_json_shape_normalizes_events_and_completed_node_spans(tmp_path):
+    """Exercise the format emitted by the pinned binary, not only logical-schema fixtures."""
+    trace = FIXTURES / "amaru-b159-runtime-json-traces.ndjson"
+    loaded = load_amaru_telemetry(json_trace_paths=[trace])
+
+    assert loaded["source_record_count"] == 8
+    assert loaded["normalized_record_count"] == 5
+    assert loaded["ignored_record_count"] == 1
+    assert loaded["ignored_reasons"] == {"unsupported-json-event": 1}
+    assert loaded["rejected_record_count"] == 0
+    assert loaded["rejection_reasons"] == {}
+    assert {event["kind"] for event in loaded["events"]} == {
+        "block-prepare",
+        "block-apply",
+        "chain-tip",
+        "header-lifecycle",
+        "mux-failed",
+    }
+    block_apply = next(
+        event for event in loaded["events"] if event["kind"] == "block-apply"
+    )
+    assert block_apply["duration_micros"] == 112.0
+    assert block_apply["timing_source"] == "paired-node-json-span-events"
+    assert block_apply["fields"]["point_slot"] == 2410
+
+    result = _collect_from_paths(
+        tmp_path,
+        "amaru-stock-block-epoch",
+        json_paths=[trace],
+        otlp_paths=[],
+    )
+    assert result["measurements"]["block_prepare"]["mean"] == 5.0
+    assert result["measurements"]["block_application"]["mean"] == 112.0
+    assert result["measurements"]["block_application"]["timing_sources"] == [
+        "paired-node-json-span-events"
+    ]
+    assert result["export"]["incomplete"] is False
+    assert result["export"]["ignored_record_count"] == 1
 
 
 def test_collector_retains_bounded_raw_normalized_correlation_and_result_artifacts(tmp_path):

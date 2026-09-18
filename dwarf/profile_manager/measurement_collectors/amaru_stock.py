@@ -1,9 +1,9 @@
 """Collectors for stock Amaru b159172 telemetry exports.
 
-The collector consumes bounded Amaru JSON traces and OTLP JSON exports. It does
-not infer node-internal timings from host timestamps: completed-span durations
-come only from OTLP start/end times, while point-event durations come only from
-fields emitted by Amaru itself.
+The collector consumes bounded Amaru JSON traces and OTLP JSON exports. Point
+event durations come from fields emitted by Amaru. Completed span durations
+come from either OTLP start/end times or matching enter/exit records emitted by
+Amaru's own JSON tracing layer; host-side log arrival time is never used.
 """
 from __future__ import annotations
 
@@ -36,6 +36,32 @@ _JSON_EVENT_KINDS = {
     ("amaru::protocols::manager::peer", "connected"): "peer-connected",
     ("amaru::protocols::mux", "failed"): "mux-failed",
     ("amaru::ledger::tip", "update"): "chain-tip",
+}
+
+# The pinned binary's JSON formatter retains the Rust module as ``target`` and
+# places the logical schema path in ``fields.message``.  Keep this separate
+# from the logical target/name representation used by trace fixtures and OTLP.
+_JSON_MESSAGE_KINDS = {
+    ("amaru::consensus", "perf.header.lifecycle"): "header-lifecycle",
+    ("amaru::consensus", "perf.fork.switch"): "fork-switch",
+    ("amaru::consensus", "mempool.transaction.received"): "mempool-received",
+    ("amaru::consensus", "mempool.transaction.accepted"): "mempool-accepted",
+    ("amaru::consensus", "mempool.transaction.rejected"): "mempool-rejected",
+    ("amaru::consensus", "mempool.transaction.evicted"): "mempool-evicted",
+    ("amaru::consensus", "mempool.state.update"): "mempool-state",
+    ("amaru::ledger", "rules.phase_one"): "ledger-phase-one",
+    ("amaru::ledger", "transaction.script.execute"): "plutus-execution",
+    ("amaru::protocols", "keepalive.peer.round_trip"): "keepalive-round-trip",
+    ("amaru::protocols", "manager.peer.connected"): "peer-connected",
+    ("amaru::protocols", "mux.failed"): "mux-failed",
+    ("amaru::ledger", "tip.update"): "chain-tip",
+}
+
+_JSON_SPAN_KINDS = {
+    ("amaru::ledger", "block.prepare"): "block-prepare",
+    ("amaru::ledger", "block.apply"): "block-apply",
+    ("amaru::ledger", "epoch_transition.apply"): "epoch-transition",
+    ("amaru::ledger", "transaction.validate"): "transaction-validation",
 }
 
 _OTLP_SPAN_KINDS = {
@@ -83,7 +109,12 @@ def _normalize_json_event(record: dict[str, Any]) -> dict[str, Any] | None:
     name = _event_name(record)
     if not isinstance(target, str) or not isinstance(fields, dict) or name is None:
         return None
-    kind = _JSON_EVENT_KINDS.get((target, name))
+    message = fields.get("message")
+    kind = (
+        _JSON_MESSAGE_KINDS.get((target, message))
+        if isinstance(message, str)
+        else None
+    ) or _JSON_EVENT_KINDS.get((target, name))
     if kind is None:
         return None
     event: dict[str, Any] = {
@@ -103,6 +134,74 @@ def _normalize_json_event(record: dict[str, Any]) -> dict[str, Any] | None:
     transaction_id = fields.get("id") or fields.get("tx_id") or fields.get("transaction_id")
     if transaction_id is not None:
         event["tx_id"] = str(transaction_id)
+    if fields.get("header_hash") is not None:
+        event["header_hash"] = str(fields["header_hash"])
+    if fields.get("block_hash") is not None:
+        event["block_hash"] = str(fields["block_hash"])
+    if fields.get("peer") is not None:
+        event["peer_id"] = str(fields["peer"])
+    return event
+
+
+def _json_span_kind(record: dict[str, Any]) -> str | None:
+    target = record.get("target")
+    span = record.get("span")
+    if not isinstance(target, str) or not isinstance(span, dict):
+        return None
+    name = span.get("name")
+    if not isinstance(name, str):
+        return None
+    return _JSON_SPAN_KINDS.get((target, name.lower()))
+
+
+def _json_span_key(record: dict[str, Any]) -> tuple[str, str, str, str]:
+    span = record.get("span") or {}
+    return (
+        str(record.get("target") or ""),
+        str(span.get("name") or "").lower(),
+        str(record.get("id") or ""),
+        str(record.get("parent_id") or ""),
+    )
+
+
+def _normalize_json_span(
+    start: dict[str, Any], end: dict[str, Any], *, kind: str
+) -> dict[str, Any] | None:
+    started_at = _timestamp_datetime(start.get("timestamp"))
+    ended_at = _timestamp_datetime(end.get("timestamp"))
+    if started_at is None or ended_at is None or ended_at < started_at:
+        return None
+    elapsed = ended_at - started_at
+    duration_micros = float(
+        elapsed.days * 86_400_000_000
+        + elapsed.seconds * 1_000_000
+        + elapsed.microseconds
+    )
+    start_fields = start.get("fields") if isinstance(start.get("fields"), dict) else {}
+    end_fields = end.get("fields") if isinstance(end.get("fields"), dict) else {}
+    fields = {
+        key: value
+        for key, value in {**start_fields, **end_fields}.items()
+        if key != "message"
+    }
+    span = start.get("span") or {}
+    event: dict[str, Any] = {
+        "kind": kind,
+        "target": start.get("target"),
+        "name": str(span.get("name") or "").lower(),
+        "timestamp": end.get("timestamp"),
+        "start_timestamp": start.get("timestamp"),
+        "end_timestamp": end.get("timestamp"),
+        "duration_micros": duration_micros,
+        "timing_source": "paired-node-json-span-events",
+        "fields": fields,
+    }
+    if start.get("id") is not None:
+        event["span_id"] = str(start["id"])
+    if start.get("parent_id") is not None:
+        event["parent_span_id"] = str(start["parent_id"])
+    if fields.get("id") is not None:
+        event["tx_id"] = str(fields["id"])
     if fields.get("header_hash") is not None:
         event["header_hash"] = str(fields["header_hash"])
     if fields.get("block_hash") is not None:
@@ -163,6 +262,7 @@ def _normalize_otlp_span(
         "end_time_unix_nano": end,
         "fields": attributes,
         "resource": resource,
+        "timing_source": "otlp-completed-span",
     }
     for source, destination in (
         ("traceId", "trace_id"),
@@ -204,9 +304,13 @@ def _load_amaru_telemetry_bytes(
 ) -> dict[str, Any]:
     events = []
     rejected = Counter()
+    ignored = Counter()
     source_count = 0
     truncated_sources = []
     raw_sources: dict[str, list[tuple[str, bytes]]] = {"json": [], "otlp": []}
+    pending_json_spans: dict[
+        tuple[str, str, str, str], list[tuple[str, dict[str, Any]]]
+    ] = {}
     for name, raw, truncated in json_sources:
         raw_sources["json"].append((name, raw))
         if truncated:
@@ -220,11 +324,38 @@ def _load_amaru_telemetry_bytes(
             except (UnicodeDecodeError, json.JSONDecodeError):
                 rejected["invalid-json"] += 1
                 continue
+            if isinstance(record, dict):
+                span_kind = _json_span_kind(record)
+                fields = record.get("fields")
+                marker = fields.get("message") if isinstance(fields, dict) else None
+                if span_kind is not None and marker in {"enter", "exit"}:
+                    key = _json_span_key(record)
+                    if marker == "enter":
+                        pending_json_spans.setdefault(key, []).append((span_kind, record))
+                    else:
+                        starts = pending_json_spans.get(key) or []
+                        if not starts:
+                            rejected["unmatched-json-span-exit"] += 1
+                        else:
+                            started_kind, start = starts.pop()
+                            if not starts:
+                                pending_json_spans.pop(key, None)
+                            normalized_span = _normalize_json_span(
+                                start, record, kind=started_kind
+                            )
+                            if normalized_span is None:
+                                rejected["invalid-json-span-timing"] += 1
+                            else:
+                                events.append(normalized_span)
+                    continue
             normalized = _normalize_json_event(record) if isinstance(record, dict) else None
             if normalized is None:
-                rejected["unsupported-json-event"] += 1
+                ignored["unsupported-json-event"] += 1
             else:
                 events.append(normalized)
+    incomplete_spans = sum(len(starts) for starts in pending_json_spans.values())
+    if incomplete_spans:
+        rejected["incomplete-json-span"] += incomplete_spans
     for name, raw, truncated in otlp_sources:
         raw_sources["otlp"].append((name, raw))
         if truncated:
@@ -251,6 +382,8 @@ def _load_amaru_telemetry_bytes(
         "source_revision": AMARU_SOURCE_REVISION,
         "source_record_count": source_count,
         "normalized_record_count": len(events),
+        "ignored_record_count": sum(ignored.values()),
+        "ignored_reasons": dict(sorted(ignored.items())),
         "rejected_record_count": sum(rejected.values()),
         "rejection_reasons": dict(sorted(rejected.items())),
         "truncated_sources": sorted(truncated_sources),
@@ -323,14 +456,28 @@ def _samples_by_outcome(
 
 
 def _span_samples(events: Iterable[dict[str, Any]], kind: str) -> dict[str, Any]:
-    return distribution_summary(
+    matching = [
+        event
+        for event in events
+        if event["kind"] == kind and event.get("duration_micros") is not None
+    ]
+    summary = distribution_summary(
         [
             {"value": event.get("duration_micros"), "unit": "us"}
-            for event in events
-            if event["kind"] == kind and event.get("duration_micros") is not None
+            for event in matching
         ],
         unit="us",
     )
+    timing_sources = sorted(
+        {
+            str(event["timing_source"])
+            for event in matching
+            if event.get("timing_source")
+        }
+    )
+    if timing_sources:
+        summary["timing_sources"] = timing_sources
+    return summary
 
 
 def _unavailable_span(kind: str, summary: dict[str, Any]) -> dict[str, Any]:
@@ -338,7 +485,7 @@ def _unavailable_span(kind: str, summary: dict[str, Any]) -> dict[str, Any]:
         return summary
     return {
         **summary,
-        "reason": f"no completed OTLP span was exported for {kind}",
+        "reason": f"no completed stock telemetry span was exported for {kind}",
     }
 
 
@@ -597,6 +744,8 @@ class AmaruStockCollector:
             "export": {
                 "source_record_count": loaded["source_record_count"],
                 "normalized_record_count": loaded["normalized_record_count"],
+                "ignored_record_count": loaded["ignored_record_count"],
+                "ignored_reasons": loaded["ignored_reasons"],
                 "rejected_record_count": loaded["rejected_record_count"],
                 "rejection_reasons": loaded["rejection_reasons"],
                 "truncated_sources": loaded["truncated_sources"],

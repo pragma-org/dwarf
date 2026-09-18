@@ -723,6 +723,100 @@ def _version_provenance_section(run_dir: Path) -> dict[str, Any]:
     }
 
 
+def _measurement_metric_row(name: str, raw: Any) -> dict[str, Any]:
+    """Normalize distribution, point, counter, and per-outcome result shapes."""
+    metric = raw if isinstance(raw, dict) else {}
+    outcomes = metric.get("by_outcome") if isinstance(metric.get("by_outcome"), dict) else {}
+    primary = metric.get("all") if isinstance(metric.get("all"), dict) else metric
+    if primary is not metric and not outcomes:
+        outcomes = metric.get("by_outcome") or {}
+    value = primary.get("value")
+    count = None
+    if value is None and primary.get("offered_rate") is not None:
+        value = primary.get("offered_rate")
+        count = primary.get("offered_count")
+    elif primary.get("delta") is not None:
+        value = primary.get("delta")
+    for key in ("offered_count", "accepted_count", "rejected_count"):
+        if count is None and primary.get(key) is not None:
+            count = primary.get(key)
+    outcome_rows = []
+    for outcome, distribution in sorted(outcomes.items()):
+        if not isinstance(distribution, dict):
+            continue
+        outcome_rows.append(
+            {
+                "outcome": outcome,
+                "status": distribution.get("status") or "unavailable",
+                "sample_count": distribution.get("sample_count", 0),
+                "median": distribution.get("median"),
+                "p95": distribution.get("p95"),
+                "p99": distribution.get("p99"),
+                "unit": distribution.get("unit") or primary.get("unit") or "",
+            }
+        )
+    return {
+        "name": name,
+        "status": primary.get("status") or "unavailable",
+        "value": value,
+        "count": count,
+        "sample_count": primary.get("sample_count", 0),
+        "mean": primary.get("mean"),
+        "median": primary.get("median"),
+        "p95": primary.get("p95"),
+        "p99": primary.get("p99"),
+        "unit": primary.get("unit") or "",
+        "reason": primary.get("reason") or metric.get("reason") or "",
+        "outcomes": outcome_rows,
+    }
+
+
+def _measurement_section(run_dir: Path) -> dict[str, Any]:
+    """Read retained first-class measurement artifacts without inventing values."""
+    measurement_dir = run_dir / "measurements"
+    summary = _read_json(measurement_dir / "summary.json", {}) or {}
+    report = _read_json(measurement_dir / "report.json", {}) or {}
+    selection = _read_json(measurement_dir / "selection.json", {}) or {}
+    runtime = _read_json(measurement_dir / "runtime.json", {}) or {}
+    present = bool(summary or report or selection or runtime)
+    if not present:
+        return {
+            "present": False,
+            "metrics": [],
+            "errors": [],
+            "collector_states": [],
+            "collector_counts": {},
+            "target_identity": {},
+            "profile_id": None,
+        }
+    states = selection.get("collector_states") or {}
+    collector_counts: dict[str, int] = {}
+    collector_states = []
+    for measurement_id, state in sorted(states.items()):
+        state = str(state or "unknown")
+        collector_counts[state] = collector_counts.get(state, 0) + 1
+        collector_states.append({"id": measurement_id, "state": state})
+    resolution = selection.get("resolution") or {}
+    profile = resolution.get("profile") or {}
+    metrics = [
+        _measurement_metric_row(name, raw)
+        for name, raw in (report.get("measurements") or {}).items()
+    ]
+    return {
+        "present": True,
+        "summary": summary,
+        "duration_seconds": summary.get("duration_seconds", report.get("duration_seconds")),
+        "profile_id": profile.get("id"),
+        "target_identity": resolution.get("target_identity") or {},
+        "collector_states": collector_states,
+        "collector_counts": collector_counts,
+        "errors": runtime.get("collector_errors") or [],
+        "metrics": metrics,
+        "report_json_url": "measurements/report.json",
+        "report_markdown_url": "measurements/report.md",
+    }
+
+
 def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str, Any] | None:
     """Return a render-ready bundle inspector payload, or None if missing.
 
@@ -865,6 +959,7 @@ def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str
         "precondition": _precondition_section(run_dir, manifest),
         "evidence_path": _safe_relative(run_dir, base.parent),
         "version_provenance": _version_provenance_section(run_dir),
+        "measurements": _measurement_section(run_dir),
         # Slice 30 enrichments — three operator-facing sections that
         # surface ada3's bundle-workflow primitives without hiding the
         # absence-of-data state when those primitives have not been run

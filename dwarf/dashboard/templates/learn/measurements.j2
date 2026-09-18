@@ -1,0 +1,67 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Learn · Real-node observability</span>
+<h1>Measurements</h1>
+<p class="lede">Measurements are reusable taps that attach to a version-pinned real-node scenario. They explain node and protocol behavior without replacing the security workload or turning DWARF into a simulator.</p>
+
+<p class="definition-actions"><a class="cta cta--primary" href="/operate/measurements">Browse measurements</a><a class="cta cta--ghost" href="/operate/measurement-profiles">Browse profiles</a></p>
+
+<hr class="hairline">
+
+<section id="definitions">
+  <span class="eyebrow">Model</span>
+  <h2>Tap, profile, scenario, evidence</h2>
+  <div class="tile-grid">
+    <article class="tile"><span class="tile__eyebrow">Measurement</span><span class="tile__metric tile__metric--label">one named signal</span><span class="tile__sub">Defines compatibility, source, collector lifecycle, units, correlation IDs, artifacts, and optional threshold behavior.</span></article>
+    <article class="tile"><span class="tile__eyebrow">Measurement profile</span><span class="tile__metric tile__metric--label">reusable selection</span><span class="tile__sub">Groups compatible taps for one implementation and target mode. Scenarios may override or explicitly disable them.</span></article>
+    <article class="tile"><span class="tile__eyebrow">Run evidence</span><span class="tile__metric tile__metric--label">retained, not inferred</span><span class="tile__sub">Collector state, raw input, normalized events, distributions, reasons for unavailable data, target identity, and reports stay in the run bundle.</span></article>
+  </div>
+</section>
+
+<hr class="hairline">
+
+<section id="modes">
+  <span class="eyebrow">Target modes</span>
+  <h2>Use the least intrusive truthful source</h2>
+  <div class="version-catalog">
+    <article class="version-card"><div class="version-card__head"><h3>stock</h3><span class="version-badge version-badge--confirmed">preferred</span></div><p>Existing node traces, metrics, real wire observations, and external process/container counters. No node source modification.</p></article>
+    <article class="version-card"><div class="version-card__head"><h3>coverage</h3><span class="version-badge version-badge--unknown">execution proof</span></div><p>Revision-qualified compiler coverage proves production code paths were reached. Coverage is not a latency source and does not itself prove a security property.</p></article>
+    <article class="version-card"><div class="version-card__head"><h3>patched</h3><span class="version-badge version-badge--unknown">selective</span></div><p>Revision-locked node instrumentation supplies internal boundaries stock telemetry cannot expose. Claims require exact build provenance plus a matching stock control and overhead calibration.</p></article>
+  </div>
+</section>
+
+<hr class="hairline">
+
+<section id="interpretation">
+  <span class="eyebrow">Interpretation</span>
+  <h2>Every terminal outcome keeps its time</h2>
+  <p>Accepted, rejected, invalid, duplicate, timed-out, disconnected, and unclassified attempts remain in the combined timing population and in per-outcome distributions. A missing boundary is <code>unavailable</code>, never zero. Resource counters identify whether they describe the node process, its network namespace/container, or the DWARF controller.</p>
+  <p>Measurements do not change the security verdict by default. A scenario fails because its security assertion failed; a collector error is shown separately. Threshold gating is available only when explicitly enabled.</p>
+</section>
+
+<hr class="hairline">
+
+<section id="reports">
+  <span class="eyebrow">Run result</span>
+  <h2>What the browser and bundle retain</h2>
+  <ul>
+    <li><code>measurements/selection.json</code> — exact profile, tap definitions, compatibility, target identity, collector states, and gate policy.</li>
+    <li><code>measurements/report.json</code> and <code>report.md</code> — point values, counts, distributions, throughput, resource cost, and unavailable reasons.</li>
+    <li><code>measurements/collectors/&lt;id&gt;/</code> — collector-specific normalized data, samples, correlations, and raw evidence.</li>
+    <li>The run inspector — compact status, exact node identity, collector errors, searchable metrics, per-outcome distributions, and downloads.</li>
+  </ul>
+</section>
+
+<hr class="hairline">
+
+<section id="troubleshooting">
+  <span class="eyebrow">Troubleshooting</span>
+  <h2>Read absence honestly</h2>
+  <dl class="definition-summary">
+    <div><dt>incompatible</dt><dd>The tap does not support the resolved implementation, version, mode, or capability set. Explicit incompatible selections stop before workload execution.</dd></div>
+    <div><dt>unavailable</dt><dd>The collector ran but the bounded workload did not expose enough evidence for that boundary. Inspect the retained reason and source artifact.</dd></div>
+    <div><dt>collector error</dt><dd>The optional tap failed to prepare, start, stop, or finalize. The error remains visible and non-gating unless an explicit threshold gate says otherwise.</dd></div>
+    <div><dt>patched-only value</dt><dd>Do not treat it as a production-node performance claim until the paired stock workload and observer-overhead calibration are retained.</dd></div>
+  </dl>
+</section>
+{% endblock %}

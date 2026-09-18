@@ -89,6 +89,10 @@ from profile_manager.views.operate_audit import render_operate_audit
 from profile_manager.views.operate_timeline import render_operate_timeline
 from profile_manager.views.operate_static_analysis import render_operate_static_analysis
 from profile_manager.views.operate_profiles import render_operate_profiles
+from profile_manager.views.operate_measurements import (
+    render_operate_measurement_profiles,
+    render_operate_measurements,
+)
 from profile_manager.views.operate_versions import render_operate_versions
 from profile_manager.views.operate_bundles import render_operate_bundles
 from profile_manager.views.operate_plugins import dispatch_plugin_request
@@ -134,6 +138,7 @@ from profile_manager.views.learn import render_learn_landing
 from profile_manager.views.learn_primitives import render_learn_primitives
 from profile_manager.views.learn_profile_templates import render_learn_profile_templates
 from profile_manager.views.learn_versions import render_learn_versions
+from profile_manager.views.learn_measurements import render_learn_measurements
 from profile_manager.views.learn_testcases import render_learn_testcases
 from profile_manager.views.learn_corpora import render_learn_corpora
 from profile_manager.views.learn_grammars import render_learn_grammars
@@ -2816,6 +2821,8 @@ def render_route_html(route, *, token=None):
         "/operate/compare": render_operate_compare,
         "/learn/architecture": render_learn_architecture,
         "/operate/profiles": render_operate_profiles,
+        "/operate/measurements": render_operate_measurements,
+        "/operate/measurement-profiles": render_operate_measurement_profiles,
         "/operate/runs": render_operate_runs,
         "/operate/status": render_operate_status,
         "/operate/targets": render_operate_targets,
@@ -2828,6 +2835,7 @@ def render_route_html(route, *, token=None):
         "/learn/primitives": render_learn_primitives,
         "/learn/profile-templates": render_learn_profile_templates,
         "/learn/versions": render_learn_versions,
+        "/learn/measurements": render_learn_measurements,
         "/learn/testcases": render_learn_testcases,
         "/learn/corpora": render_learn_corpora,
         "/learn/grammars": render_learn_grammars,
