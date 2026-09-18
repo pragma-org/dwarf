@@ -41,6 +41,20 @@ def test_version_docs_include_refresh_examples_and_claim_boundaries():
     assert "relay/consumer" in source
     assert "does not prove" in source
     assert "Antithesis" in source
+    assert "Check for new versions" in source
+    assert "runtime-state overlay" in source
+    assert "10.11.20260730" in source
+    assert "10.7.1" in source
+
+
+def test_qualification_status_records_bounded_search_and_resume_point():
+    source = (ROOT / "dwarf/docs/version-qualification-status-2026-09-18.md").read_text(encoding="utf-8")
+
+    assert "paused" in source.lower()
+    assert "20260918T032343Z-dwarf-qual-cardano-11-1-2-b1f28ed0" in source
+    assert "20260918T053321Z-dwarf-qual-amaru-10-7-1-10-11-20260730-b42c10e1" in source
+    assert "20260918T055108Z-dwarf-qual-mixed-11-1-2-10-11-20260730-aecab52f" in source
+    assert "resumption point" in source.lower()
 
 
 def test_versions_route_is_in_navigation_and_api_reference():

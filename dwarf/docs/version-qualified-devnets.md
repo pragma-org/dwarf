@@ -35,7 +35,39 @@ A single-implementation exact profile uses `cardano_version` or
 `amaru_version`. An unlisted mixed pair remains `unknown`; independently valid
 releases are not assumed compatible.
 
+## Current evidence-backed defaults
+
+As of 2026-09-18, the checked-in defaults are:
+
+- Cardano-only: Cardano-node `11.1.2`.
+- Amaru target: Amaru `10.11.20260730`, with Cardano-node `10.7.1`
+  disclosed as the required honest bootstrap producer. This proves real Amaru
+  relay/consumer behavior; it is not a claim of standalone Amaru forging.
+- Mixed: Cardano-node `10.7.1` with Amaru `10.11.0`, retained as the confirmed
+  fallback while newer exact pairs remain unconfirmed or incompatible.
+
+The Amaru default is selected by retained runtime evidence, not merely by its
+upstream release channel. Newer Amaru releases `10.11.20260903` and
+`10.11.20260912` are incompatible with the retained bootstrap-store contract;
+that classification does not claim those releases are defective in every
+topology.
+
 ## Refresh releases
+
+Opening `/operate/versions` performs a staleness-limited background check of
+the official Cardano-node and Amaru sources. The page remains available from
+cached data while the check runs. **Check for new versions** starts the same
+authenticated, serialized check manually and reports the last attempt, last
+success, per-source status, newly discovered releases, and any rate-limit or
+registry failure.
+
+Discovery is written to a runtime-state overlay under
+`$ADA2_DWARF_STATE_DIR/version-catalog/`; it never rewrites the checked-in
+catalog. A new release enters the effective operator view and exact selectors
+only after DWARF has its exact source revision and an immutable OCI digest. It
+enters as `unknown`; discovery cannot change confirmation, incompatibility,
+mixed compatibility, or any default. A one-run unknown acknowledgement embeds
+the effective catalog snapshot in deployment evidence.
 
 Release discovery writes a separate candidate file for review and never
 promotes runtime status:
