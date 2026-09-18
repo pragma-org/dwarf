@@ -1,3 +1,5 @@
+import json
+
 from scripts import runtime_compose_substrate as compose
 from scripts import runtime_amaru_bootstrap_synth as bootstrap
 
@@ -87,7 +89,20 @@ def test_versioned_amaru_service_migrates_bootstrap_state_before_run():
 def test_bootstrap_state_copies_generated_era_history_to_each_amaru_target(tmp_path):
     generated = tmp_path / "generated" / "testnet_42" / "snapshots"
     generated.mkdir(parents=True)
-    (generated / "history.100.abc.json").write_text('{"eras": []}\n', encoding="utf-8")
+    legacy_history = {
+        "stability_window": 1200,
+        "eras": [
+            {
+                "start": {"time_ms": index * 1000, "slot": index, "epoch": index},
+                "end": None,
+                "params": {"epoch_size_slots": 400, "slot_length": 500},
+            }
+            for index in range(7)
+        ],
+    }
+    (generated / "history.100.abc.json").write_text(
+        json.dumps(legacy_history) + "\n", encoding="utf-8"
+    )
     staged = tmp_path / "staged" / "1"
     staged.mkdir(parents=True)
     (staged / "ledger.db").mkdir()
@@ -102,7 +117,18 @@ def test_bootstrap_state_copies_generated_era_history_to_each_amaru_target(tmp_p
         }
     )
 
-    assert (target / "era-history.json").read_text(encoding="utf-8") == '{"eras": []}\n'
+    upgraded = json.loads((target / "era-history.json").read_text(encoding="utf-8"))
+    assert [era["params"]["era_name"] for era in upgraded["eras"]] == [
+        "Byron",
+        "Shelley",
+        "Allegra",
+        "Mary",
+        "Alonzo",
+        "Babbage",
+        "Conway",
+    ]
+    assert upgraded["eras"][2]["start"]["time"] == 2
+    assert "time_ms" not in upgraded["eras"][2]["start"]
 
 
 def test_bootstrap_synthesis_builds_loader_from_selected_amaru_artifact(monkeypatch, tmp_path):

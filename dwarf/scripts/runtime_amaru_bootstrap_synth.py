@@ -236,6 +236,30 @@ def _replace_tree(target_root: Path, source_root: Path) -> None:
     shutil.copytree(source_root, target_root)
 
 
+def _upgrade_era_history_schema(body: bytes) -> bytes:
+    history = json.loads(body)
+    eras = history.get("eras")
+    era_names = ("Byron", "Shelley", "Allegra", "Mary", "Alonzo", "Babbage", "Conway")
+    if not isinstance(eras, list) or len(eras) != len(era_names):
+        raise RuntimeError("generated Amaru era history does not contain the seven Cardano eras")
+    for era, era_name in zip(eras, era_names, strict=True):
+        if not isinstance(era, dict) or not isinstance(era.get("params"), dict):
+            raise RuntimeError("generated Amaru era history contains a malformed era")
+        era["params"].setdefault("era_name", era_name)
+        for key in ("start", "end"):
+            bound = era.get(key)
+            if bound is None:
+                continue
+            if not isinstance(bound, dict):
+                raise RuntimeError("generated Amaru era history contains a malformed bound")
+            if "time" not in bound:
+                milliseconds = bound.pop("time_ms", None)
+                if not isinstance(milliseconds, int) or milliseconds < 0 or milliseconds % 1000:
+                    raise RuntimeError("generated Amaru era-history time is not whole seconds")
+                bound["time"] = milliseconds // 1000
+    return (json.dumps(history, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
 def _apply_staged_state(layout: dict) -> None:
     history_files = sorted(
         (
@@ -246,8 +270,8 @@ def _apply_staged_state(layout: dict) -> None:
     )
     if not history_files:
         raise RuntimeError("Amaru bootstrap did not generate an era-history file")
-    history_body = history_files[0].read_bytes()
-    if any(path.read_bytes() != history_body for path in history_files[1:]):
+    history_body = _upgrade_era_history_schema(history_files[0].read_bytes())
+    if any(_upgrade_era_history_schema(path.read_bytes()) != history_body for path in history_files[1:]):
         raise RuntimeError("Amaru bootstrap generated inconsistent era-history files")
     for slot, staged_root in layout["amaru_state_roots"].items():
         target_root = Path(layout["target_amaru_state_roots"][slot])
