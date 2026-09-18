@@ -1,7 +1,11 @@
 import copy
 import json
 
-from scripts.refresh_version_catalog import refresh_version_catalog, write_catalog_candidate
+from scripts.refresh_version_catalog import (
+    refresh_version_catalog,
+    resolve_oci_artifacts,
+    write_catalog_candidate,
+)
 
 
 def _existing_catalog() -> dict:
@@ -211,6 +215,30 @@ def test_refresh_uses_batched_tag_revision_resolver_when_provided():
         if release["implementation"] == "cardano-node" and release["version"] == "11.1.2"
     )
     assert len(newest["source_revision"]) == 40
+
+
+def test_amaru_artifact_resolution_preserves_the_official_v_prefixed_tag(monkeypatch):
+    commands = []
+
+    class Result:
+        returncode = 0
+        stdout = json.dumps({"digest": "sha256:" + "b" * 64})
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return Result()
+
+    monkeypatch.setattr("scripts.refresh_version_catalog.subprocess.run", run)
+
+    artifacts = resolve_oci_artifacts(
+        "amaru",
+        "v10.11.20260912",
+        {"tag_name": "v10.11.20260912"},
+    )
+
+    assert commands[0][4] == "ghcr.io/pragma-org/amaru:v10.11.20260912"
+    assert artifacts[0]["reference"] == "ghcr.io/pragma-org/amaru:v10.11.20260912"
+    assert artifacts[0]["availability"] == "available"
 
 
 def test_write_candidate_does_not_overwrite_source_catalog(tmp_path):

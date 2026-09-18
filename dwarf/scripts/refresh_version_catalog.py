@@ -93,7 +93,10 @@ def resolve_oci_artifacts(implementation: str, tag: str, release: dict[str, Any]
 
     references = {
         "cardano-node": [f"ghcr.io/intersectmbo/cardano-node:{tag}"],
-        "amaru": [f"ghcr.io/pragma-org/amaru:{tag.lstrip('v')}"],
+        # Amaru release tags and GHCR tags are both ``v``-prefixed.  The
+        # catalog normalizes the user-facing version separately; registry
+        # lookup must retain the exact upstream tag.
+        "amaru": [f"ghcr.io/pragma-org/amaru:{tag}"],
     }[implementation]
     artifacts: list[dict[str, Any]] = []
     for reference in references:

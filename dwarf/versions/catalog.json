@@ -76,9 +76,17 @@
       "implementation": "amaru",
       "version": "10.11.20260912",
       "channel": "stable",
-      "released_at": "2026-09-12T00:00:00Z",
+      "released_at": "2026-09-12T15:30:25Z",
       "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
-      "artifacts": [],
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260912",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.11.20260912",
+          "availability": "available",
+          "digest": "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e"
+        }
+      ],
       "verification": {
         "amaru-only": {
           "status": "unknown",
