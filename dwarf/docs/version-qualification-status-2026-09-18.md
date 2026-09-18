@@ -5,6 +5,21 @@ deployment work. The bounded newest-to-oldest search is complete for this goal;
 no additional release or pair was tested after the newest exact mixed pair
 failed the required serve-through contract.
 
+## Published source state
+
+The reviewed and deployed source revision is
+`229febb51472c4827a8ed706f0272776b4dab3f7`. PRAGMA's public source-parity
+revision is `ced47b89eb6a1e20bcf04842ab1d3019854aa502`; its complete Git tree
+(`5d848a86d3973fa1f834438e94bdbc57dee10fe6`) is identical to the reviewed and
+deployed source tree. The public follow-up commit restores executable modes on
+11 Antithesis workload scripts that lost their mode bits during the Windows
+archive import. It changes no file content.
+
+The public commit identifies the published distribution, while `229febb`
+remains the exact revision reported by the running DWARF container and its OCI
+revision label. Source parity does not by itself constitute a new deployment
+or runtime qualification.
+
 ## Corrected lifecycle
 
 The authoritative lifecycle is the proven
