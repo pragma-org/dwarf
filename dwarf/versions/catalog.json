@@ -15,7 +15,14 @@
       "channel": "stable",
       "released_at": "2026-09-17T00:00:00Z",
       "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
-      "artifacts": [],
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/intersectmbo/cardano-node:11.1.2",
+          "availability": "available",
+          "digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f"
+        }
+      ],
       "verification": {
         "cardano-only": {
           "status": "unknown",
