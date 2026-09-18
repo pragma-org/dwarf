@@ -228,7 +228,15 @@ def refresh_version_catalog(
             artifacts = artifact_resolver(implementation, tag, release) if should_resolve_artifacts else []
             if should_resolve_artifacts:
                 artifact_lookups += 1
-            if not artifacts and prior.get("artifacts"):
+            prior_is_confirmed = any(
+                isinstance(record, dict) and record.get("status") == "confirmed"
+                for record in (prior.get("verification") or {}).values()
+            )
+            # A confirmed record is evidence about an exact artifact, not the
+            # mutable release tag as it resolves today. Keep that binding.
+            if prior_is_confirmed and prior.get("artifacts"):
+                artifacts = copy.deepcopy(prior["artifacts"])
+            elif not artifacts and prior.get("artifacts"):
                 artifacts = copy.deepcopy(prior["artifacts"])
             discovered[key] = {
                 "implementation": implementation,

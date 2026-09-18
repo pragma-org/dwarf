@@ -154,6 +154,38 @@ def test_refresh_preserves_human_verification_and_default_records():
     assert amaru_prior["verification"]["amaru-only"]["issues"] == ["https://example.test/issue/1"]
 
 
+def test_refresh_preserves_artifact_bound_to_confirmed_runtime_evidence():
+    catalog = _existing_catalog()
+    prior = catalog["releases"][0]
+    prior["artifacts"] = [{
+        "kind": "oci",
+        "reference": "ghcr.io/example/cardano-node@sha256:" + "1" * 64,
+        "availability": "available",
+        "digest": "sha256:" + "1" * 64,
+    }]
+
+    def changed_registry_artifact(implementation, tag, release):
+        return [{
+            "kind": "oci",
+            "reference": f"ghcr.io/example/{implementation}:{tag}",
+            "availability": "available",
+            "digest": "sha256:" + "9" * 64,
+        }]
+
+    refreshed = refresh_version_catalog(
+        catalog,
+        fetch_json=_fake_fetch,
+        artifact_resolver=changed_registry_artifact,
+        checked_at="2026-09-17T22:00:00Z",
+    )
+
+    retained = next(
+        release for release in refreshed["releases"]
+        if release["implementation"] == "cardano-node" and release["version"] == "11.1.1"
+    )
+    assert retained["artifacts"] == prior["artifacts"]
+
+
 def test_refresh_is_deterministic_for_the_same_inputs():
     kwargs = {
         "fetch_json": _fake_fetch,
