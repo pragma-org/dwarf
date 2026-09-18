@@ -307,7 +307,18 @@ def apply_producer_bundle(layout: dict) -> None:
         if not source.is_file() or source.name in {"config.json", "configuration.yaml", "topology.json"}:
             continue
         shutil.copy2(source, target_config_root / source.name)
-    shutil.copy2(producer_config_root / "config.json", target_config_root / "configuration.yaml")
+    runtime_configuration = json.loads(
+        (producer_config_root / "config.json").read_text(encoding="utf-8")
+    )
+    if (producer_config_root / "dijkstra-genesis.json").is_file():
+        # cardano-node 10.7+ requires the field even when the Dijkstra hard
+        # fork is not activated.  Adding the dormant genesis reference does
+        # not change the producer's validated pre-Dijkstra chain history.
+        runtime_configuration.setdefault("DijkstraGenesisFile", "dijkstra-genesis.json")
+    (target_config_root / "configuration.yaml").write_text(
+        json.dumps(runtime_configuration, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     for target_text in layout["target_amaru_state_roots"].values():
         target = Path(str(target_text))
         if target.exists():

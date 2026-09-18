@@ -174,6 +174,9 @@ def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path)
     (staged_config / "configs" / "shelley-genesis.json").write_text(
         '{"systemStart": "2026-09-14T00:00:00Z"}\n', encoding="utf-8"
     )
+    (staged_config / "configs" / "dijkstra-genesis.json").write_text(
+        '{"constitution": {}}\n', encoding="utf-8"
+    )
     (staged_config / "configs" / "topology.json").write_text(
         '{"localRoots": [{"accessPoints": [{"address": "p1.example"}]}]}\n',
         encoding="utf-8",
@@ -202,6 +205,10 @@ def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path)
     assert (target / "chain.db" / "chain").read_text(encoding="utf-8") == "ok"
     assert (target / "era-history.json").is_file()
     assert (target_cardano / "immutable" / "00000.chunk").read_text(encoding="utf-8") == "chain"
-    assert json.loads((target_config / "configuration.yaml").read_text(encoding="utf-8"))["RequiresNetworkMagic"] == "RequiresNoMagic"
+    runtime_configuration = json.loads(
+        (target_config / "configuration.yaml").read_text(encoding="utf-8")
+    )
+    assert runtime_configuration["RequiresNetworkMagic"] == "RequiresNoMagic"
+    assert runtime_configuration["DijkstraGenesisFile"] == "dijkstra-genesis.json"
     assert json.loads((target_config / "shelley-genesis.json").read_text(encoding="utf-8"))["systemStart"] == "2026-09-14T00:00:00Z"
     assert json.loads((target_config / "topology.json").read_text(encoding="utf-8"))["localRoots"] == []
