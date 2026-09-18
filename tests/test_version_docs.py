@@ -45,6 +45,10 @@ def test_version_docs_include_refresh_examples_and_claim_boundaries():
     assert "runtime-state overlay" in source
     assert "10.11.20260912" in source
     assert "10.7.1" in source
+    assert "omitted" in source.lower() and "safe implicit default" in source.lower()
+    assert "topology" in source.lower() and "independent" in source.lower()
+    assert "profile is the sole" in source.lower()
+    assert "public-network" in source.lower() and "acknowledgement" in source.lower()
 
 
 def test_qualification_status_records_bounded_search_and_resume_point():
@@ -74,3 +78,5 @@ def test_operator_docs_point_to_version_preflight_and_unknown_acknowledgement():
     assert "/operate/versions" in operations
     assert "--acknowledge-unknown-version" in operations
     assert "latest-confirmed" in install
+    assert "safe implicit default" in " ".join(install.lower().split())
+    assert "profile is the sole" in operations.lower()

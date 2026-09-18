@@ -48,7 +48,8 @@ class Profile:
     config_source_dir: str | None = None
     public_network: str | None = None
     testbed: str | None = None
-    version_policy: str = "legacy"
+    version_policy: str = "latest-confirmed"
+    version_policy_source: str = "implicit-default"
     cardano_version: str | None = None
     amaru_version: str | None = None
     compatibility_pair: str | None = None
@@ -56,6 +57,7 @@ class Profile:
     @classmethod
     def from_dict(cls, data):
         shape = shape_from_profile_dict(data)
+        declared_version_policy = str(data.get("version_policy") or "").strip()
         return cls(
             id=data["id"],
             label=data["label"],
@@ -75,7 +77,10 @@ class Profile:
             config_source_dir=data.get("config_source_dir"),
             public_network=data.get("public_network"),
             testbed=data.get("testbed"),
-            version_policy=data.get("version_policy") or "legacy",
+            version_policy=declared_version_policy or "latest-confirmed",
+            version_policy_source=(
+                "explicit" if declared_version_policy else "implicit-default"
+            ),
             cardano_version=data.get("cardano_version"),
             amaru_version=data.get("amaru_version"),
             compatibility_pair=data.get("compatibility_pair"),
@@ -129,6 +134,7 @@ def profile_diff_text(left_id, right_id):
         "public_network",
         "testbed",
         "version_policy",
+        "version_policy_source",
         "cardano_version",
         "amaru_version",
         "compatibility_pair",
@@ -198,6 +204,27 @@ def _is_generated_haskell_local_profile(profile):
         and profile.topology_pattern == "local-mesh"
         and profile.node_count > 1
     )
+
+
+def deployment_adapter_for_profile(profile):
+    """Classify lifecycle/topology independently from node-version policy.
+
+    Version resolution supplies immutable artifacts to this adapter; it must
+    never decide which network, peer, genesis, or lifecycle the profile uses.
+    """
+
+    mode = _profile_deploy_mode(profile)
+    if mode == "mixed":
+        return "amaru-control"
+    if mode == "amaru-only":
+        if profile.upstream_peer_address or profile.public_network or profile.amaru_network:
+            return "amaru-public-peer"
+        return "amaru-control"
+    if profile.config_source_dir or profile.upstream_peer_address or profile.public_network:
+        return "cardano-public-peer"
+    if _is_generated_haskell_local_profile(profile):
+        return "generated-cardano-local"
+    return "cardano-compose-local"
 
 
 def _public_network(profile):
@@ -288,11 +315,12 @@ def versioned_substrate_for_profile(profile, version_preview):
 
     resolved = dict(version_preview.get("resolved") or {})
     scope = str(version_preview.get("scope") or _profile_deploy_mode(profile))
+    deployment_adapter = deployment_adapter_for_profile(profile)
     nodes = []
     target_node_count = profile.node_count + profile.amaru_node_count
     support_node_count = 0
 
-    if scope == "amaru-only":
+    if scope == "amaru-only" and deployment_adapter == "amaru-control":
         support_release = (version_preview.get("supporting") or {}).get("cardano-node")
         if support_release is None:
             support_release = resolve_default(load_effective_version_catalog(), "cardano-only")["release"]
@@ -302,7 +330,7 @@ def versioned_substrate_for_profile(profile, version_preview):
             )
         )
         support_node_count = 1
-    else:
+    elif scope != "amaru-only":
         cardano_release = resolved.get("cardano-node")
         if cardano_release is None:
             raise ValueError("versioned Cardano or mixed profile did not resolve cardano-node")
@@ -327,9 +355,22 @@ def versioned_substrate_for_profile(profile, version_preview):
         "scope": scope,
         "target_node_count": target_node_count,
         "support_node_count": support_node_count,
-        "network": f"testnet_{profile.network_magic}",
-        "network_magic": profile.network_magic,
+        "deployment_adapter": deployment_adapter,
+        "network": (
+            _public_network(profile)
+            if deployment_adapter in {"cardano-public-peer", "amaru-public-peer"}
+            else f"testnet_{profile.network_magic}"
+        ),
+        "network_magic": (
+            None
+            if deployment_adapter in {"cardano-public-peer", "amaru-public-peer"}
+            else profile.network_magic
+        ),
+        "config_source_dir": profile.config_source_dir,
+        "upstream_peer_address": profile.upstream_peer_address,
+        "listen_address": profile.listen_address,
         "version_policy": version_preview.get("policy"),
+        "version_policy_source": version_preview.get("policy_source"),
         "version_status": version_preview.get("status"),
         "unknown_acknowledged": bool(version_preview.get("unknown_acknowledged", False)),
         "catalog_revision": version_preview.get("catalog_revision"),
@@ -341,7 +382,7 @@ def versioned_substrate_for_profile(profile, version_preview):
 
 def _versioned_deploy_command(profile, version_preview):
     substrate = versioned_substrate_for_profile(profile, version_preview)
-    use_amaru_control = substrate["scope"] in {"amaru-only", "mixed"}
+    use_amaru_control = substrate["deployment_adapter"] == "amaru-control"
     adapter = (
         "runtime_amaru_control_substrate.py"
         if use_amaru_control
@@ -355,6 +396,11 @@ def _versioned_deploy_command(profile, version_preview):
         "runtime_root": profile.remote_runtime_root,
         "compose_project": profile.compose_project,
         "healthy_timeout_seconds": 300,
+        "deployment_adapter": substrate["deployment_adapter"],
+        "network": substrate["network"],
+        "config_source_dir": substrate.get("config_source_dir"),
+        "upstream_peer_address": substrate.get("upstream_peer_address"),
+        "listen_address": substrate.get("listen_address"),
     }
     if use_amaru_control:
         cardano = next(
@@ -442,6 +488,27 @@ def compose_template(profile):
 
 
 def deploy_dry_run_text(profile):
+    from dataclasses import asdict
+    from profile_manager.deployment_versions import build_deployment_version_preview
+
+    preview = build_deployment_version_preview(asdict(profile))
+    substrate = versioned_substrate_for_profile(profile, preview)
+    identities = ", ".join(
+        f"{node['id']}={node['impl']} {node['version']} ({node['image']})"
+        for node in substrate["nodes"]
+    )
+    return (
+        f"DRY RUN deploy for {profile.id}\n"
+        f"Version policy: {preview['policy']} ({preview['policy_source']}; {preview['status']}).\n"
+        f"Deployment adapter: {substrate['deployment_adapter']} ({preview['deployment_context']}).\n"
+        f"Exact real-node artifacts: {identities}.\n"
+        f"Would create a fresh runtime under {profile.remote_runtime_root} while preserving the profile's topology, network, peer, and configuration contract.\n"
+        "Would pull every digest-pinned image before launch and verify the running image and node-reported version.\n"
+        "No remote state changed.\n"
+    )
+
+    # The code below is retained temporarily while downstream importers move
+    # to the immutable adapter path above; it is unreachable by construction.
     if profile.version_policy != "legacy":
         from dataclasses import asdict
         from profile_manager.deployment_versions import build_deployment_version_preview
@@ -526,6 +593,14 @@ def remove_dry_run_text():
 
 def deploy_command(profile, version_preview=None):
     """Build the image, generate the env via cardano-testnet, write compose, up -d."""
+    if version_preview is None:
+        from dataclasses import asdict
+        from profile_manager.deployment_versions import build_deployment_version_preview
+
+        version_preview = build_deployment_version_preview(asdict(profile))
+    return _versioned_deploy_command(profile, version_preview)
+
+    # No caller can reach the historical ambient-binary implementation below.
     if profile.version_policy != "legacy":
         if version_preview is None:
             from dataclasses import asdict

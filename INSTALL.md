@@ -286,8 +286,11 @@ exact release/compatibility pair. The packaged release catalog is visible at
 it resolves only the explicit scoped default backed by retained runtime
 evidence. Release discovery never creates confirmation.
 
-Existing profiles that omit `version_policy` retain legacy runtime resolution;
-they are not silently relabelled as confirmed.
+An omitted or blank `version_policy` uses `latest-confirmed` as DWARF's safe
+implicit default. The resolved evidence records that the policy was implicit,
+but the node artifacts are still exact and digest-pinned. No omitted-policy
+path may fall through to an installed host node, a changing source tree, or a
+mutable image tag.
 
 ## SSH Keys
 

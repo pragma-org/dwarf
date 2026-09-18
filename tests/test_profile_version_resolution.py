@@ -1,10 +1,12 @@
 import copy
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
-from profile_manager.profiles import Profile
+from profile_manager.deployment_versions import build_deployment_version_preview
+from profile_manager.profiles import Profile, deployment_adapter_for_profile, load_profiles
 from profile_manager.version_catalog import (
     CatalogError,
     load_version_catalog,
@@ -31,23 +33,82 @@ def _profile(**updates):
     return data
 
 
-def test_legacy_profile_remains_loadable_without_silent_version_claim():
+@pytest.mark.parametrize("missing_value", [None, ""])
+def test_omitted_or_blank_policy_uses_safe_confirmed_default(missing_value):
     data = _profile()
-    del data["version_policy"]
+    if missing_value is None:
+        del data["version_policy"]
+    else:
+        data["version_policy"] = missing_value
 
     resolved = resolve_profile_versions(data, load_version_catalog(CATALOG_PATH))
     profile = Profile.from_dict(data)
 
-    assert resolved["policy"] == "legacy"
-    assert resolved["status"] == "unknown"
-    assert resolved["resolved"] == {}
-    assert "existing deployment behavior" in resolved["reason"]
-    assert profile.version_policy == "legacy"
+    assert resolved["policy"] == "latest-confirmed"
+    assert resolved["policy_source"] == "implicit-default"
+    assert resolved["status"] == "confirmed"
+    assert resolved["resolved"]["cardano-node"]["version"] == "11.1.2"
+    assert resolved["resolved"]["cardano-node"]["artifacts"][0]["digest"].startswith(
+        "sha256:"
+    )
+    assert profile.version_policy == "latest-confirmed"
+    assert profile.version_policy_source == "implicit-default"
+
+
+def test_loaded_implicit_default_remains_implicit_through_cli_preview_serialization():
+    data = _profile()
+    del data["version_policy"]
+    profile = Profile.from_dict(data)
+
+    preview = build_deployment_version_preview(asdict(profile))
+
+    assert preview["policy"] == "latest-confirmed"
+    assert preview["policy_source"] == "implicit-default"
+
+
+def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class():
+    expected_adapters = {
+        "profile-a-haskell-peersharing-disabled": "generated-cardano-local",
+        "profile-b-haskell-peersharing-enabled": "generated-cardano-local",
+        "profile-c-mixed-haskell-amaru-minimal": "amaru-control",
+        "profile-d-amaru-preview-proof": "amaru-public-peer",
+        "profile-e-haskell-preview-proof": "cardano-public-peer",
+        "profile-f-amaru-preview2-proof": "amaru-public-peer",
+        "profile-g-haskell-preview2-proof": "cardano-public-peer",
+        "profile-h-generated-mixed-haskell2-amaru1": "amaru-control",
+        "profile-i-generated-haskell3": "generated-cardano-local",
+        "profile-j-haskell-preprod-proof": "cardano-public-peer",
+        "profile-k-amaru-preprod-proof": "amaru-public-peer",
+        "profile-l-amaru-closed-devnet": "amaru-control",
+        "profile-m-consensus-threshold": "generated-cardano-local",
+        "profile-n-cardano-latest-confirmed": "generated-cardano-local",
+        "profile-o-amaru-target-latest-confirmed": "amaru-control",
+        "profile-p-mixed-latest-confirmed": "amaru-control",
+    }
+    profiles = load_profiles()
+
+    assert len(profiles) == 16
+    assert {profile.id for profile in profiles} == set(expected_adapters)
+    for profile in profiles:
+        source = next(
+            CATALOG_PATH.parents[1].glob(f"profiles/{profile.id}/profile.yaml")
+        )
+        raw = json.loads(source.read_text(encoding="utf-8"))
+        assert raw["version_policy"] == "latest-confirmed"
+        assert profile.version_policy_source == "explicit"
+        assert deployment_adapter_for_profile(profile) == expected_adapters[profile.id]
+        preview = build_deployment_version_preview(raw)
+        if expected_adapters[profile.id] in {"cardano-public-peer", "amaru-public-peer"}:
+            assert preview["status"] == "unknown"
+            assert preview["requires_acknowledgement"] is True
+        else:
+            assert preview["status"] == "confirmed"
 
 
 def test_latest_stable_cardano_resolves_newest_qualified_release():
     resolved = resolve_profile_versions(_profile(), load_version_catalog(CATALOG_PATH))
 
+    assert resolved["policy_source"] == "explicit"
     assert resolved["scope"] == "cardano-only"
     assert resolved["resolved"]["cardano-node"]["version"] == "11.1.2"
     assert resolved["status"] == "confirmed"

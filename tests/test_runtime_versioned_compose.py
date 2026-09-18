@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from scripts import runtime_compose_substrate as compose
 from scripts import runtime_amaru_bootstrap_synth as bootstrap
@@ -153,6 +154,56 @@ def test_versioned_amaru_service_migrates_bootstrap_state_before_run():
     assert service["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
     assert "exec amaru run" in service["command"][0]
     assert '--era-history "/amaru/amaru1/era-history.json"' in service["command"][0]
+
+
+def test_public_amaru_service_uses_declared_external_peer_and_bootstraps_real_network():
+    node = {
+        "id": "amaru1",
+        "impl": "amaru",
+        "listen_address": "127.0.0.1:39000",
+        "host_slot_index": 1,
+        "chain_dir": "/tmp/chain.preview.db",
+        "ledger_dir": "/tmp/ledger.preview.db",
+        "fallback_peer_addresses": ["preview-node.play.dev.cardano.org:3001"],
+        "image": "ghcr.io/pragma-org/amaru:v10.11.20260912@sha256:" + "c" * 64,
+    }
+
+    service = compose._docker_compose_body(
+        compose_project="dwarf-profile-public-amaru",
+        nodes=[node],
+        network_name="preview",
+    )["services"]["amaru1"]
+    command = service["command"][0]
+
+    assert "amaru bootstrap" in command
+    assert '--network "preview"' in command
+    assert '--peer-address "preview-node.play.dev.cardano.org:3001"' in command
+    assert service["image"].endswith("@sha256:" + "c" * 64)
+
+
+def test_public_assets_can_be_staged_from_preserved_profile_configuration(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    required = {
+        "config.json": '{"NetworkMagic": 2}\n',
+        "topology.json": '{"bootstrapPeers": []}\n',
+        "byron-genesis.json": "{}\n",
+        "shelley-genesis.json": "{}\n",
+        "alonzo-genesis.json": "{}\n",
+        "conway-genesis.json": "{}\n",
+    }
+    for name, body in required.items():
+        (source / name).write_text(body, encoding="utf-8")
+
+    assets = compose._stage_public_network_assets(
+        network_name="preview",
+        destination=tmp_path / "staged",
+        config_source_dir=str(source),
+    )
+
+    assert set(required).issubset(assets)
+    assert Path(assets["config.json"]).read_text(encoding="utf-8") == required["config.json"]
+    assert all(Path(path).parent == tmp_path / "staged" for path in assets.values())
 
 
 def test_bootstrap_state_copies_generated_era_history_to_each_amaru_target(tmp_path):

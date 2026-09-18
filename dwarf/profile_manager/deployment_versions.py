@@ -51,9 +51,43 @@ def build_deployment_version_preview(
             supporting["cardano-node"] = resolve_default(
                 checked_catalog, "cardano-only"
             )["release"]
+    public_network = str(
+        profile_data.get("public_network") or profile_data.get("amaru_network") or ""
+    ).strip()
+    upstream_peer = str(profile_data.get("upstream_peer_address") or "").strip()
+    if not public_network and upstream_peer:
+        public_network = "preprod" if "preprod" in upstream_peer else "preview"
+    release_status = str(resolution.get("status") or "unknown")
+    if public_network:
+        resolution = {
+            **resolution,
+            "status": "unknown",
+            "requires_acknowledgement": True,
+            "blocked": False,
+            "reason": (
+                f"The selected artifact is {release_status} for its catalogued local-devnet "
+                f"contract, but DWARF has not qualified that evidence as a public-{public_network} "
+                "deployment contract. One-run acknowledgement is required."
+            ),
+        }
+    from profile_manager.profiles import Profile, deployment_adapter_for_profile
+
+    adapter_profile_data = {
+        "id": str(profile_data.get("id") or "version-preview"),
+        "label": str(profile_data.get("label") or profile_data.get("id") or "Version preview"),
+        "network_magic": int(profile_data.get("network_magic", 42)),
+        "peer_sharing": bool(profile_data.get("peer_sharing", False)),
+        **profile_data,
+    }
+    deployment_adapter = deployment_adapter_for_profile(
+        Profile.from_dict(adapter_profile_data)
+    )
     return {
         **resolution,
         "profile_id": str(profile_data.get("id") or ""),
+        "release_status": release_status,
+        "deployment_context": f"public-{public_network}" if public_network else "local-devnet",
+        "deployment_adapter": deployment_adapter,
         "catalog_revision": catalog_revision or version_catalog_revision(catalog=checked_catalog),
         "catalog_snapshot": checked_catalog,
         "supporting": supporting,

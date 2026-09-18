@@ -1,7 +1,9 @@
 import json
+from pathlib import Path
 
 from scripts.runtime_install_version import resolve_requested_versions
 from scripts.runtime_substrate_common import (
+    allocate_node_plan,
     build_version_provenance,
     CommandResult,
     normalize_substrate,
@@ -20,6 +22,7 @@ def _substrate(image=f"ghcr.io/example/cardano-node:11.1.2@{DIGEST}"):
         "compose_mode": "docker",
         "network_magic": 42,
         "version_policy": "latest-stable",
+        "version_policy_source": "explicit",
         "version_status": "unknown",
         "unknown_acknowledged": True,
         "catalog_revision": "c" * 64,
@@ -45,11 +48,42 @@ def test_normalize_substrate_preserves_exact_version_provenance():
     normalized = normalize_substrate(_substrate())
 
     assert normalized["version_policy"] == "latest-stable"
+    assert normalized["version_policy_source"] == "explicit"
     assert normalized["version_status"] == "unknown"
     assert normalized["unknown_acknowledged"] is True
     assert normalized["catalog_revision"] == "c" * 64
     assert normalized["nodes"][0]["image"].endswith("@" + DIGEST)
     assert normalized["nodes"][0]["source_revision"] == "d" * 40
+
+
+def test_normalize_substrate_preserves_adapter_and_public_peer_contract():
+    substrate = {
+        **_substrate(),
+        "deployment_adapter": "cardano-public-peer",
+        "network": "preview",
+        "network_magic": None,
+        "version_policy_source": "implicit-default",
+        "config_source_dir": "/opt/dwarf/cardano-configs/preview",
+        "upstream_peer_address": "preview-node.play.dev.cardano.org:3001",
+        "listen_address": "127.0.0.1:39100",
+    }
+
+    normalized = normalize_substrate(substrate)
+
+    assert normalized["deployment_adapter"] == "cardano-public-peer"
+    assert normalized["network"] == "preview"
+    assert normalized["version_policy_source"] == "implicit-default"
+    assert normalized["config_source_dir"] == "/opt/dwarf/cardano-configs/preview"
+    assert normalized["upstream_peer_address"] == "preview-node.play.dev.cardano.org:3001"
+    assert normalized["listen_address"] == "127.0.0.1:39100"
+
+    plan = allocate_node_plan(
+        normalized,
+        runtime_root=Path("/tmp/dwarf-public-profile"),
+        compose_project="dwarf-public-profile",
+    )
+    assert plan["nodes"][0]["listen_address"] == "127.0.0.1:39100"
+    assert plan["upstream_peer_address"] == "preview-node.play.dev.cardano.org:3001"
 
 
 def test_missing_docker_image_is_not_reported_as_present(tmp_path):
@@ -159,6 +193,7 @@ def test_version_provenance_is_bundle_safe_and_exact():
     provenance = build_version_provenance(normalized, [node])
 
     assert provenance["policy"] == "latest-stable"
+    assert provenance["policy_source"] == "explicit"
     assert provenance["status"] == "unknown"
     assert provenance["unknown_acknowledged"] is True
     assert provenance["catalog_revision"] == "c" * 64

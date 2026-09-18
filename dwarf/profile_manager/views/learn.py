@@ -24,6 +24,7 @@ from profile_manager.data.operate_corpora import corpus_catalog_rows
 from profile_manager.data.operate_grammars import grammar_catalog_rows
 from profile_manager.data.operate_risk_packages import risk_package_catalog_rows
 from profile_manager.data.operate_plugins import plugin_catalog_payload
+from profile_manager.data.operate_versions import version_default_summary
 from profile_manager.data.scenarios import _list_scenarios_for_compare
 from profile_manager.data.status import deployed_source_summary
 from profile_manager.data.walkthroughs import walkthrough_entries
@@ -65,4 +66,5 @@ def render_learn_landing() -> str:
         walkthrough_count=len(walkthrough_entries()),
         runs_total=len(runs),
         pass_rate_pct=pass_rate_pct,
+        version_defaults=version_default_summary(),
     )

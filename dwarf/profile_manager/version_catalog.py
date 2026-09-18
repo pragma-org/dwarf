@@ -294,19 +294,14 @@ def resolve_profile_versions(
 
     checked_catalog = validate_version_catalog(catalog) if catalog is not None else load_version_catalog()
     scope = _profile_scope(data)
-    policy = str(data.get("version_policy") or "legacy")
-    if policy == "legacy":
-        return {
-            "policy": "legacy",
-            "scope": scope,
-            "status": "unknown",
-            "resolved": {},
-            "supporting": {},
-            "pair": None,
-            "requires_acknowledgement": False,
-            "blocked": False,
-            "reason": "No version policy is declared; preserve existing deployment behavior without making a version claim.",
-        }
+    declared_policy = str(data.get("version_policy") or "").strip()
+    policy = declared_policy or "latest-confirmed"
+    supplied_source = str(data.get("version_policy_source") or "").strip()
+    policy_source = (
+        supplied_source
+        if supplied_source in {"explicit", "implicit-default"}
+        else ("explicit" if declared_policy else "implicit-default")
+    )
     if policy not in {"latest-confirmed", "latest-stable", "exact"}:
         raise CatalogError(
             "profile.version_policy must be one of latest-confirmed, latest-stable, or exact"
@@ -404,6 +399,7 @@ def resolve_profile_versions(
     status = str(verification["status"])
     return {
         "policy": policy,
+        "policy_source": policy_source,
         "scope": scope,
         "status": status,
         "resolved": resolved,

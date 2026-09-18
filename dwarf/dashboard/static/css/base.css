@@ -4444,6 +4444,50 @@ body {
 .version-badge--incompatible,
 .version-badge--blocked { border-color: var(--crimson); color: var(--crimson-glow); }
 
+.profile-version-panel,
+.version-authority-note {
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--cyan-primary) 52%, var(--rule));
+  border-radius: var(--radius-md);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--cyan-primary) 8%, var(--obsidian-2)), var(--obsidian-1));
+}
+.profile-version-panel__head {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.profile-version-panel__head h2 { margin: var(--space-1) 0 0; }
+.profile-version-panel__links { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.profile-version-panel__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.profile-version-panel__choices span {
+  display: inline-flex;
+  gap: var(--space-2);
+  padding: 5px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--ink-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--type-eyebrow);
+}
+.profile-version-resolution {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--rule);
+  overflow-wrap: anywhere;
+}
+.profile-version-resolution strong { color: var(--cyan-glow); }
+.profile-version-resolution span { color: var(--ink-secondary); }
+.version-authority-note p:last-child { margin-bottom: 0; }
+
 .definition-editor__template {
   display: grid;
   max-width: 520px;
@@ -4805,6 +4849,9 @@ body {
   }
   .scenario-builder__section { padding: var(--space-3); }
   .scenario-param--extras { grid-column: 1; }
+  .profile-version-panel,
+  .version-authority-note { padding: var(--space-4); }
+  .profile-version-panel__head { display: grid; }
 }
 
 /* Plugin inventory: card-based so long roots and diagnostics wrap on mobile. */

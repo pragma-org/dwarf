@@ -38,16 +38,9 @@ def test_profile_template_catalog_lists_every_shipped_template():
     assert {row["id"] for row in rows} == expected
     assert len(rows) == 10
     assert all(row["status"] == "valid" for row in rows)
-    defaults = {
-        row["id"]: row["rendered_data"].get("version_policy")
-        for row in rows
-        if row["id"] in {"generated-haskell", "generated-amaru", "generated-mixed"}
-    }
-    assert defaults == {
-        "generated-haskell": "latest-confirmed",
-        "generated-amaru": "latest-confirmed",
-        "generated-mixed": "latest-confirmed",
-    }
+    assert {
+        row["rendered_data"].get("version_policy") for row in rows
+    } == {"latest-confirmed"}
 
 
 def test_profile_template_detail_extracts_substitutions_node_mix_and_assumptions():

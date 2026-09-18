@@ -711,7 +711,10 @@ def _version_provenance_section(run_dir: Path) -> dict[str, Any]:
     return {
         "present": True,
         "policy": selection.get("policy") or "",
+        "policy_source": selection.get("policy_source") or "",
         "scope": selection.get("scope") or "",
+        "deployment_context": selection.get("deployment_context") or "",
+        "deployment_adapter": selection.get("deployment_adapter") or "",
         "status": selection.get("status") or "",
         "catalog_revision": selection.get("catalog_revision") or "",
         "unknown_acknowledged": bool(selection.get("unknown_acknowledged")),

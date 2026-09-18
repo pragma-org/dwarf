@@ -5,6 +5,7 @@ from typing import Any
 
 from profile_manager.deployment_versions import version_catalog_revision
 from profile_manager.version_catalog import resolve_verification
+from profile_manager.version_catalog import resolve_default
 from profile_manager.version_discovery import (
     load_effective_version_catalog,
     read_refresh_status,
@@ -50,4 +51,24 @@ def version_catalog_view() -> dict[str, Any]:
         "pairs": [dict(pair) for pair in catalog["compatibility_pairs"]],
         "sources": dict(catalog.get("sources") or {}),
         "refresh": read_refresh_status(),
+    }
+
+
+def version_default_summary() -> dict[str, str]:
+    """Return the three evidence-backed defaults used by landing-page links."""
+
+    catalog = load_effective_version_catalog()
+    cardano = resolve_default(catalog, "cardano-only")["release"]
+    amaru_default = resolve_default(catalog, "amaru-only")
+    amaru = amaru_default["release"]
+    amaru_verification = resolve_verification(
+        catalog, "amaru", amaru["version"], "amaru-only"
+    )
+    mixed = resolve_default(catalog, "mixed")["pair"]
+    return {
+        "cardano": cardano["version"],
+        "amaru": amaru["version"],
+        "amaru_support": str(amaru_verification["supporting_cardano_version"]),
+        "mixed_cardano": mixed["cardano_version"],
+        "mixed_amaru": mixed["amaru_version"],
     }

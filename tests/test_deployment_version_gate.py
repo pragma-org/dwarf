@@ -74,6 +74,33 @@ def test_amaru_only_preview_discloses_the_required_cardano_support_node(tmp_path
     assert preview["catalog_snapshot"]["releases"]
 
 
+@pytest.mark.parametrize("implementation", ["cardano-node", "amaru"])
+def test_public_network_context_is_not_falsely_labelled_confirmed(implementation):
+    profile = {
+        "id": f"public-{implementation}",
+        "label": "Public-network proof",
+        "node_type": implementation,
+        "node_count": 1 if implementation == "cardano-node" else 0,
+        "amaru_node_count": 1 if implementation == "amaru" else 0,
+        "network_magic": 2,
+        "peer_sharing": False,
+        "version_policy": "latest-confirmed",
+        "public_network": "preview",
+        "upstream_peer_address": "preview-node.play.dev.cardano.org:3001",
+    }
+    if implementation == "amaru":
+        profile["amaru_network"] = "preview"
+
+    preview = build_deployment_version_preview(profile)
+
+    assert preview["release_status"] == "confirmed"
+    assert preview["status"] == "unknown"
+    assert preview["deployment_context"] == "public-preview"
+    assert preview["requires_acknowledgement"] is True
+    assert preview["blocked"] is False
+    assert "local-devnet" in preview["reason"]
+
+
 def test_amaru_preview_prefers_qualified_support_over_generic_cardano_default():
     catalog = load_version_catalog(CATALOG_PATH)
     modified = copy.deepcopy(catalog)

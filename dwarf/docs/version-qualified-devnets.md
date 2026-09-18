@@ -35,6 +35,18 @@ A single-implementation exact profile uses `cardano_version` or
 `amaru_version`. An unlisted mixed pair remains `unknown`; independently valid
 releases are not assumed compatible.
 
+If `version_policy` is omitted or blank, DWARF applies `latest-confirmed` as a
+safe implicit default and records `policy_source: implicit-default`. It never
+uses an ambient node binary, a locally changing source tree, or a mutable
+`latest` image in that path. `latest-confirmed` remains fixed to checked-in
+qualification evidence even when discovery finds a newer stable release.
+
+The profile is the sole authority for runtime node versions. Scenarios inherit
+its exact resolution, while target version metadata describes the harnessed
+surface. Version selection and topology selection are independent: changing a
+policy or exact release does not replace the profile's generated/local,
+public-peer, closed-devnet, consensus-threshold, or mixed lifecycle adapter.
+
 ## Current evidence-backed defaults
 
 As of 2026-09-18, the checked-in defaults are:
@@ -116,7 +128,10 @@ cannot make the check vacuous.
 An image build, Compose render, container start, open port, or validation-only
 result does not prove the runtime contract. A local confirmation also does not
 prove public-network compatibility, full security coverage, or Antithesis
-readiness. Paid/live Antithesis submission remains a separate approval gate.
+readiness. Preview, Preview2, and Preprod profiles therefore retain exact
+artifacts while their public-network context remains `unknown` and requires a
+one-run acknowledgement. Paid/live Antithesis submission remains a separate
+approval gate.
 
 ## Unknown and rejected selections
 
@@ -127,6 +142,4 @@ cardano-profile deploy PROFILE --approve --acknowledge-unknown-version
 ```
 
 That acknowledgement is retained with deployment evidence and does not alter
-the catalog. `incompatible` and `blocked` selections cannot deploy. Legacy
-profiles without a version policy keep their previous behavior and are labelled
-as runtime-resolved rather than receiving a fabricated version claim.
+the catalog. `incompatible` and `blocked` selections cannot deploy.

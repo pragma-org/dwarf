@@ -136,8 +136,11 @@ def test_run_inspector_discloses_exact_deployment_version_provenance(tmp_path):
         "id": "profile-versioned",
         "version_selection": {
             "policy": "latest-confirmed",
+            "policy_source": "implicit-default",
             "scope": "mixed",
             "status": "confirmed",
+            "deployment_context": "local-devnet",
+            "deployment_adapter": "amaru-control",
             "catalog_revision": "catalog-sha256",
             "resolved": {
                 "cardano-node": {
@@ -162,6 +165,8 @@ def test_run_inspector_discloses_exact_deployment_version_provenance(tmp_path):
 
     assert detail["version_provenance"]["present"] is True
     assert detail["version_provenance"]["catalog_revision"] == "catalog-sha256"
+    assert detail["version_provenance"]["policy_source"] == "implicit-default"
+    assert detail["version_provenance"]["deployment_adapter"] == "amaru-control"
     assert [item["implementation"] for item in detail["version_provenance"]["targets"]] == [
         "amaru",
         "cardano-node",

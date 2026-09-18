@@ -27,6 +27,7 @@ from profile_manager.data.operate_profile_templates import profile_template_cata
 from profile_manager.data.operate_corpora import corpus_catalog_rows
 from profile_manager.data.operate_grammars import grammar_catalog_rows
 from profile_manager.data.operate_risk_packages import risk_package_catalog_rows
+from profile_manager.data.operate_versions import version_default_summary
 from profile_manager.data.scenarios import _list_scenarios_for_compare
 from profile_manager.templating import render
 
@@ -84,4 +85,5 @@ def render_operate_landing() -> str:
         risk_candidate_count=len({candidate for row in risk_packages for candidate in row["candidate_ids"]}),
         comparisons_count=len(comparisons),
         divergent_count=len(divergent),
+        version_defaults=version_default_summary(),
     )

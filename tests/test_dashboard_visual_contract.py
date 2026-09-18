@@ -92,6 +92,8 @@ def test_visual_audit_discovers_definition_detail_and_edit_routes():
     assert "definitionEdit" in source
     assert "scenarios|targets|profiles" in source
     assert "item !== `${source}/new`" in source
+    assert "'/operate/versions'" in source
+    assert "'/learn/versions'" in source
 
 
 def test_visual_audit_checks_component_geometry_and_mobile_touch_targets():

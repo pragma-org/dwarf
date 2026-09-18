@@ -175,8 +175,10 @@
   <header><span class="eyebrow">Real-node provenance</span><h2 id="version-provenance-heading">Resolved node versions</h2></header>
   <p class="page-subhero">This is the catalog and exact-artifact snapshot retained when DWARF launched the deployment; it is not recomputed from today's defaults.</p>
   <dl class="status-tile__rows">
-    <div><dt>policy</dt><dd><code>{{ run.version_provenance.policy or '—' }}</code></dd></div>
+    <div><dt>policy</dt><dd><code>{{ run.version_provenance.policy or '—' }}</code>{% if run.version_provenance.policy_source %} · {{ run.version_provenance.policy_source }}{% endif %}</dd></div>
     <div><dt>scope</dt><dd><code>{{ run.version_provenance.scope or '—' }}</code></dd></div>
+    <div><dt>deployment context</dt><dd><code>{{ run.version_provenance.deployment_context or '—' }}</code></dd></div>
+    <div><dt>deployment adapter</dt><dd><code>{{ run.version_provenance.deployment_adapter or '—' }}</code></dd></div>
     <div><dt>status at launch</dt><dd>{{ run.version_provenance.status or '—' }}{% if run.version_provenance.unknown_acknowledged %} · unknown acknowledged for this run{% endif %}</dd></div>
     <div><dt>catalog revision</dt><dd><code class="run-chain-hash">{{ run.version_provenance.catalog_revision or '—' }}</code></dd></div>
   </dl>

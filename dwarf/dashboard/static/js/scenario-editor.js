@@ -150,6 +150,17 @@
 
   function currentRuntime() { return root.querySelector('[data-scenario-field="runtime"]').value; }
   function currentImplementation() { return root.querySelector('[data-scenario-field="target.implementation"]').value; }
+  function updateProfileResolution() {
+    const select = root.querySelector('[data-scenario-field="profile"]');
+    const output = root.querySelector('[data-scenario-profile-resolution-text]');
+    if (!select || !output) return;
+    const option = select.selectedOptions[0];
+    if (!option?.value) {
+      output.textContent = 'Select a profile to see its exact Cardano-node and/or Amaru artifacts. Scenario target.version remains descriptive target metadata—not the deployment pin.';
+      return;
+    }
+    output.textContent = `${option.dataset.versionSummary || 'No resolved artifacts'} · ${option.dataset.versionScope || 'unknown scope'} · ${option.dataset.versionStatus || 'unknown'} · policy ${option.dataset.policySource || 'unknown'}.`;
+  }
   function eligible(name, family) {
     const entry = registry[name];
     return entry && entry.family === family && entry.runtimes.includes(currentRuntime()) && entry.supports.includes(currentImplementation());
@@ -420,6 +431,7 @@
       });
     }
     updateSelectedOptionHelp(input, schemaForPath(input.dataset.scenarioField));
+    if (input.dataset.scenarioField === 'profile') updateProfileResolution();
     markDirty();
   }));
   phaseSections.forEach((section) => section.querySelector('[data-phase-add]').addEventListener('click', () => {
@@ -479,5 +491,6 @@
 
   decorateScenarioFields();
   populateStructured();
+  updateProfileResolution();
   root.querySelectorAll('select').forEach(select => updateSelectedOptionHelp(select));
 })();

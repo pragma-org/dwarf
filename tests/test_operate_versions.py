@@ -78,6 +78,23 @@ def test_versions_route_is_filterable_and_explains_claim_boundaries():
     assert "Related issues" in html
 
 
+def test_operate_and_learn_landings_link_to_version_qualification():
+    operate = dashboard.render_route_html("/operate")
+    learn = dashboard.render_route_html("/learn")
+
+    assert operate is not None
+    assert 'href="/operate/versions"' in operate
+    assert "Node versions" in operate
+    assert "Cardano-node 11.1.2" in operate
+    assert "Amaru 10.11.20260912" in operate
+    assert "Mixed 10.7.1 + 10.11.0" in operate
+
+    assert learn is not None
+    assert 'href="/learn/versions"' in learn
+    assert "Version-qualified devnets" in learn
+    assert "latest-confirmed" in learn
+
+
 def test_manual_version_refresh_is_token_gated_and_serialized(monkeypatch):
     calls = []
 

@@ -57,7 +57,9 @@ def _config():
             "target_node_count": 3,
             "support_node_count": 0,
             "version_policy": "latest-confirmed",
+            "version_policy_source": "implicit-default",
             "version_status": "confirmed",
+            "deployment_adapter": "amaru-control",
             "catalog_revision": "catalog-sha",
             "catalog_snapshot": {"captured_at": "2026-09-18T00:00:00Z"},
         },
@@ -116,3 +118,5 @@ def test_runtime_metadata_discloses_logical_targets_and_actual_support_topology(
     assert "bootstrap_service" not in metadata["actual_topology"]
     assert metadata["compose_file"].endswith("docker-compose.json")
     assert metadata["identity"]["matched"] is True
+    assert metadata["versions"]["policy_source"] == "implicit-default"
+    assert metadata["versions"]["deployment_adapter"] == "amaru-control"

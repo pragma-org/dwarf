@@ -5,6 +5,7 @@
   "node_count": 3,
   "network_magic": 42,
   "peer_sharing": true,
+  "version_policy": "latest-confirmed",
   "remote_runtime_root": "/opt/dwarf/cardano-profiles/profile-b-haskell-peersharing-enabled",
   "compose_project": "dwarf-profile-b-haskell-peersharing-enabled"
 }

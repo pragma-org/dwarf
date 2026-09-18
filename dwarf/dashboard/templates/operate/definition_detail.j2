@@ -18,6 +18,14 @@
   </div>
 </header>
 
+{% if catalog == 'targets' %}
+<aside class="version-authority-note" data-target-version-boundary>
+  <strong>Target identity is not a deployment pin.</strong>
+  <p>Targets identify a test surface and implementation. Deployment profiles select the exact runtime node artifacts used by scenarios.</p>
+  <p><a href="/operate/profiles">Profiles</a> · <a href="/operate/versions">Node versions</a> · <a href="/learn/versions">Version guide</a></p>
+</aside>
+{% endif %}
+
 {% if summary_fields %}
 <dl class="definition-summary">
   {% for field in summary_fields %}

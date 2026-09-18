@@ -555,6 +555,41 @@ def _download_public_network_assets(*, network_name: str, destination: Path) -> 
     return assets
 
 
+def _stage_public_network_assets(
+    *, network_name: str, destination: Path, config_source_dir: str | None
+) -> dict:
+    """Stage the profile's public-network config without changing its source contract."""
+
+    if not config_source_dir:
+        return _download_public_network_assets(
+            network_name=network_name, destination=destination
+        )
+    source = Path(config_source_dir)
+    required = {
+        "config.json",
+        "topology.json",
+        "byron-genesis.json",
+        "shelley-genesis.json",
+        "alonzo-genesis.json",
+        "conway-genesis.json",
+    }
+    missing = sorted(name for name in required if not (source / name).is_file())
+    if missing:
+        raise RuntimeError(
+            f"public-network config source {source} is missing: {', '.join(missing)}"
+        )
+    destination.mkdir(parents=True, exist_ok=True)
+    assets = {}
+    for asset_name in PUBLIC_NETWORK_ASSET_FILES:
+        source_path = source / asset_name
+        if not source_path.is_file():
+            continue
+        target = destination / asset_name
+        shutil.copy2(source_path, target)
+        assets[asset_name] = str(target)
+    return assets
+
+
 def _resolve_public_network_magic(*, network_name: str, config_path: Path) -> int | None:
     body = json.loads(config_path.read_text(encoding="utf-8"))
     for key in ("networkMagic", "NetworkMagic", "TestnetMagic", "testnetMagic"):
@@ -844,54 +879,96 @@ def _compose_substrate_docker(
     docker_project = _docker_project_name(compose_project)
     start_time_refresh = None
     haskell_nodes = [node for node in plan["nodes"] if node["impl"] == "cardano-node"]
-    if not haskell_nodes:
-        raise RuntimeError("docker compose mode requires at least one cardano-node")
-    host_cardano_node_binary = None
-    for node in haskell_nodes:
-        candidate = str(node.get("resolved_binary") or "").strip()
-        if candidate and not candidate.startswith("docker-image:"):
-            host_cardano_node_binary = candidate
-            break
-    if host_cardano_node_binary is None:
-        host_cardano_node_binary = _resolve_support_binary("cardano-node")
-
-    create_env = run_command(
-        [
-            support["cardano-testnet"],
-            "create-env",
-            "--output",
-            str(runtime_root / "env"),
-            "--num-pool-nodes",
-            str(len(haskell_nodes)),
-            "--testnet-magic",
-            str(plan["network_magic"]),
-            "--node-logging-format",
-            "json",
-        ],
-        env=_cardano_testnet_env(
-            cardano_node_binary=host_cardano_node_binary,
-            cardano_cli_binary=support["cardano-cli"],
-        ),
-    )
-    if create_env.returncode != 0:
-        raise RuntimeError(f"cardano-testnet create-env failed: {create_env.stderr or create_env.stdout}")
-    _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(
-        genesis_path=runtime_root / "env" / "shelley-genesis.json",
-        nodes=haskell_nodes,
-    )
-    for node in haskell_nodes:
-        node["socket_path"] = str(runtime_root / "env" / "socket" / node["id"] / "sock")
-        node["db_dir"] = str(runtime_root / "env" / "node-data" / f"node{node['slot_index']}" / "db")
-        topo_path = runtime_root / "env" / "node-data" / f"node{node['slot_index']}" / "topology.json"
-        node["topology_path"] = str(topo_path)
-        node["config_path"] = str(runtime_root / "env" / "configuration.yaml")
-        container_access_points = [
-            {"address": edge["to"], "port": _docker_container_port(next(peer for peer in plan["nodes"] if peer["id"] == edge["to"]))}
-            for edge in plan["topology"]["edges"]
-            if edge["from"] == node["id"]
-        ]
-        template = json.loads(topo_path.read_text(encoding="utf-8"))
-        _rewrite_haskell_topology(node, topo_path=topo_path, template=template, access_points=container_access_points)
+    public_network = _is_public_network(plan["network"])
+    public_assets = None
+    resolved_public_network_magic = None
+    env_root = runtime_root / "env"
+    if haskell_nodes and public_network:
+        public_assets = _stage_public_network_assets(
+            network_name=plan["network"],
+            destination=runtime_root / "public-network" / plan["network"],
+            config_source_dir=plan.get("config_source_dir"),
+        )
+        env_root.mkdir(parents=True, exist_ok=True)
+        for asset_name, asset_path in public_assets.items():
+            destination_name = "configuration.yaml" if asset_name == "config.json" else asset_name
+            shutil.copy2(asset_path, env_root / destination_name)
+        config_path = env_root / "configuration.yaml"
+        topology_template = json.loads(Path(public_assets["topology.json"]).read_text(encoding="utf-8"))
+        upstream_peer = str(plan.get("upstream_peer_address") or "").strip()
+        if upstream_peer:
+            peer_host, peer_port_text = upstream_peer.rsplit(":", 1)
+            topology_template["bootstrapPeers"] = [
+                {"address": peer_host, "port": int(peer_port_text)}
+            ]
+        resolved_public_network_magic = _resolve_public_network_magic(
+            network_name=plan["network"], config_path=config_path
+        )
+        for node in haskell_nodes:
+            node["public_network"] = True
+            node["socket_path"] = str(env_root / "socket" / node["id"] / "sock")
+            node["db_dir"] = str(env_root / "node-data" / f"node{node['slot_index']}" / "db")
+            topo_path = env_root / "node-data" / f"node{node['slot_index']}" / "topology.json"
+            node["topology_path"] = str(topo_path)
+            node["config_path"] = str(config_path)
+            _rewrite_haskell_topology(
+                node,
+                topo_path=topo_path,
+                template=topology_template,
+                peer_snapshot_path=(
+                    Path("/env/peer-snapshot.json")
+                    if public_assets.get("peer-snapshot.json")
+                    else None
+                ),
+            )
+    elif haskell_nodes:
+        host_cardano_node_binary = None
+        for node in haskell_nodes:
+            candidate = str(node.get("resolved_binary") or "").strip()
+            if candidate and not candidate.startswith("docker-image:"):
+                host_cardano_node_binary = candidate
+                break
+        if host_cardano_node_binary is None:
+            host_cardano_node_binary = _resolve_support_binary("cardano-node")
+        create_env = run_command(
+            [
+                support["cardano-testnet"],
+                "create-env",
+                "--output",
+                str(env_root),
+                "--num-pool-nodes",
+                str(len(haskell_nodes)),
+                "--testnet-magic",
+                str(plan["network_magic"]),
+                "--node-logging-format",
+                "json",
+            ],
+            env=_cardano_testnet_env(
+                cardano_node_binary=host_cardano_node_binary,
+                cardano_cli_binary=support["cardano-cli"],
+            ),
+        )
+        if create_env.returncode != 0:
+            raise RuntimeError(f"cardano-testnet create-env failed: {create_env.stderr or create_env.stdout}")
+        _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(
+            genesis_path=env_root / "shelley-genesis.json",
+            nodes=haskell_nodes,
+        )
+        for node in haskell_nodes:
+            node["socket_path"] = str(env_root / "socket" / node["id"] / "sock")
+            node["db_dir"] = str(env_root / "node-data" / f"node{node['slot_index']}" / "db")
+            topo_path = env_root / "node-data" / f"node{node['slot_index']}" / "topology.json"
+            node["topology_path"] = str(topo_path)
+            node["config_path"] = str(env_root / "configuration.yaml")
+            container_access_points = [
+                {"address": edge["to"], "port": _docker_container_port(next(peer for peer in plan["nodes"] if peer["id"] == edge["to"]))}
+                for edge in plan["topology"]["edges"]
+                if edge["from"] == node["id"]
+            ]
+            template = json.loads(topo_path.read_text(encoding="utf-8"))
+            _rewrite_haskell_topology(node, topo_path=topo_path, template=template, access_points=container_access_points)
+    elif not public_network:
+        raise RuntimeError("docker compose custom devnet requires at least one cardano-node")
 
     for node in plan["nodes"]:
         if node["impl"] == "amaru":
@@ -901,6 +978,9 @@ def _compose_substrate_docker(
                 for edge in plan["topology"]["edges"]
                 if edge["from"] == node["id"]
             ]
+            upstream_peer = str(plan.get("upstream_peer_address") or "").strip()
+            if upstream_peer:
+                node["fallback_peer_addresses"] = [upstream_peer]
 
     uses_synthetic_amaru_bootstrap = (
         any(node["impl"] == "amaru" for node in plan["nodes"])
@@ -908,7 +988,7 @@ def _compose_substrate_docker(
     )
     if uses_synthetic_amaru_bootstrap:
         _synthesize_amaru_bootstrap_for_custom_testnet(runtime_root=runtime_root, plan=plan)
-    else:
+    elif not public_network:
         start_time_refresh = _refresh_cardano_testnet_start_times(env_root=runtime_root / "env")
 
     compose_body = _docker_compose_body(compose_project=docker_project, nodes=plan["nodes"], network_name=plan["network"])
@@ -977,7 +1057,7 @@ def _compose_substrate_docker(
         "runtime_root": str(runtime_root),
         "compose_project": docker_project,
         "network": plan["network"],
-        "network_magic": plan["network_magic"],
+        "network_magic": resolved_public_network_magic if public_network else plan["network_magic"],
         "support_binaries": dict(support),
         "cardano_testnet_start_time_refresh": start_time_refresh,
         "nodes": metadata_nodes,
@@ -998,18 +1078,20 @@ def _compose_substrate_docker(
     for node in report_nodes:
         node["healthy"] = bool(health_by_id.get(node["id"], False))
 
-    chain_progress_gate = _wait_for_cardano_node_block(
-        runtime_metadata_path=bundle_metadata_path,
-        nodes=[node for node in metadata_nodes if node["impl"] == "cardano-node"],
-        network_magic=int(plan["network_magic"]),
-        cardano_cli=support["cardano-cli"],
-    )
-    write_json(output_dir / "cardano-chain-progress-gate.json", chain_progress_gate)
-    if not chain_progress_gate.get("ready"):
-        raise RuntimeError(
-            "cardano compose substrate did not produce a real block before the startup gate timed out "
-            f"(ready_node_count={chain_progress_gate.get('ready_node_count', 0)})"
+    chain_progress_gate = None
+    if haskell_nodes and not public_network:
+        chain_progress_gate = _wait_for_cardano_node_block(
+            runtime_metadata_path=bundle_metadata_path,
+            nodes=[node for node in metadata_nodes if node["impl"] == "cardano-node"],
+            network_magic=int(plan["network_magic"]),
+            cardano_cli=support["cardano-cli"],
         )
+        write_json(output_dir / "cardano-chain-progress-gate.json", chain_progress_gate)
+        if not chain_progress_gate.get("ready"):
+            raise RuntimeError(
+                "cardano compose substrate did not produce a real block before the startup gate timed out "
+                f"(ready_node_count={chain_progress_gate.get('ready_node_count', 0)})"
+            )
 
     amaru_nodes = [node for node in metadata_nodes if node["impl"] == "amaru"]
     amaru_progress_gate = None
@@ -1032,12 +1114,12 @@ def _compose_substrate_docker(
         "bundle_runtime_metadata_path": str(bundle_metadata_path),
         "compose_project": docker_project,
         "network": plan["network"],
-        "network_magic": plan["network_magic"],
+        "network_magic": resolved_public_network_magic if public_network else plan["network_magic"],
         "support_binaries": dict(support),
         "cardano_testnet_start_time_refresh": start_time_refresh,
         "cardano_chain_progress_gate": chain_progress_gate,
         "amaru_chain_progress_gate": amaru_progress_gate,
-        "public_network_assets": None,
+        "public_network_assets": public_assets,
         "nodes": report_nodes,
         "topology": plan["topology"],
         "version_provenance": build_version_provenance(plan, metadata_nodes),
@@ -1484,10 +1566,12 @@ def compose_substrate(
                 healthy_timeout_seconds=healthy_timeout_seconds,
                 support={},
             )
-        support = {
-            "cardano-testnet": _resolve_support_binary("cardano-testnet"),
-            "cardano-cli": _resolve_support_binary("cardano-cli"),
-        }
+        support = {}
+        if not _is_public_network(plan["network"]):
+            support = {
+                "cardano-testnet": _resolve_support_binary("cardano-testnet"),
+                "cardano-cli": _resolve_support_binary("cardano-cli"),
+            }
         return _compose_substrate_docker(
             plan=plan,
             output_dir=output_dir,

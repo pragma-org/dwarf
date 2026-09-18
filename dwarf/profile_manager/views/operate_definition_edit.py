@@ -101,6 +101,50 @@ def _profile_version_options() -> dict[str, list[dict[str, str]]]:
     return options
 
 
+def _profile_version_descriptor() -> dict[str, Any]:
+    from profile_manager.deployment_versions import version_catalog_revision
+    from profile_manager.version_catalog import resolve_default
+    from profile_manager.version_discovery import load_effective_version_catalog
+
+    catalog = load_effective_version_catalog()
+    defaults = {
+        "cardano-only": resolve_default(catalog, "cardano-only"),
+        "amaru-only": resolve_default(catalog, "amaru-only"),
+        "mixed": resolve_default(catalog, "mixed"),
+    }
+    return {
+        "catalog_revision": version_catalog_revision(catalog=catalog),
+        "catalog": catalog,
+        "defaults": defaults,
+    }
+
+
+def _profile_resolution_options() -> list[dict[str, str]]:
+    from profile_manager.deployment_versions import build_deployment_version_preview
+
+    options = []
+    for record in list_definitions("profiles"):
+        preview = build_deployment_version_preview(record.data)
+        identities = []
+        if preview.get("resolved", {}).get("cardano-node"):
+            identities.append(
+                f"Cardano-node {preview['resolved']['cardano-node']['version']}"
+            )
+        if preview.get("resolved", {}).get("amaru"):
+            identities.append(f"Amaru {preview['resolved']['amaru']['version']}")
+        options.append(
+            {
+                "id": record.definition_id,
+                "label": str(record.data.get("label") or record.definition_id),
+                "summary": " · ".join(identities),
+                "scope": str(preview.get("scope") or "unknown"),
+                "status": str(preview.get("status") or "unknown"),
+                "policy_source": str(preview.get("policy_source") or "unknown"),
+            }
+        )
+    return options
+
+
 def _profile_templates() -> dict[str, dict[str, Any]]:
     from profile_manager.profile_templates import list_templates, render_template_source
 
@@ -191,10 +235,7 @@ def render_operate_definition_edit(
         from profile_manager.data.definition_schemas import scenario_editor_descriptor
 
         descriptor = scenario_editor_descriptor()
-        profile_options = [
-            {"id": record.definition_id, "label": str(record.data.get("label") or record.definition_id)}
-            for record in list_definitions("profiles")
-        ]
+        profile_options = _profile_resolution_options()
         return render(
             "operate/scenario_editor.j2",
             page_title=f"{'New' if create else 'Edit'} scenario",
@@ -242,5 +283,10 @@ def render_operate_definition_edit(
         help_aria_label=help_aria_label,
         secondary_help_href="/operate/versions" if catalog == "profiles" else None,
         secondary_help_label="Node version catalog" if catalog == "profiles" else None,
+        profile_version_descriptor_json=(
+            json.dumps(_profile_version_descriptor(), ensure_ascii=False).replace("<", "\\u003c")
+            if catalog == "profiles"
+            else "{}"
+        ),
         token=token or "dwarf",
     )

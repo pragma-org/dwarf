@@ -12,6 +12,13 @@ from typing import Callable
 
 VALID_IMPLS = {"cardano-node", "amaru"}
 VERSION_STATUSES = {"confirmed", "unknown", "incompatible", "blocked"}
+DEPLOYMENT_ADAPTERS = {
+    "generated-cardano-local",
+    "cardano-compose-local",
+    "cardano-public-peer",
+    "amaru-public-peer",
+    "amaru-control",
+}
 VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 NODE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 NETWORK_PATTERN = re.compile(r"^(mainnet|preprod|preview|testnet_[1-9][0-9]*)$")
@@ -172,12 +179,15 @@ def normalize_substrate(substrate: dict) -> dict:
         elif network.startswith("testnet_"):
             network_magic = int(network.split("_", 1)[1])
     version_policy = substrate.get("version_policy")
+    version_policy_source = substrate.get("version_policy_source")
     version_status = substrate.get("version_status")
     unknown_acknowledged = substrate.get("unknown_acknowledged", False)
     catalog_revision = substrate.get("catalog_revision")
     catalog_snapshot = substrate.get("catalog_snapshot")
     if version_policy is not None and not isinstance(version_policy, str):
         raise ValueError("substrate.version_policy must be a string when present")
+    if version_policy_source is not None and version_policy_source not in {"explicit", "implicit-default"}:
+        raise ValueError("substrate.version_policy_source must be explicit or implicit-default")
     if version_status is not None and version_status not in VERSION_STATUSES:
         raise ValueError(f"substrate.version_status must be one of {sorted(VERSION_STATUSES)}")
     if not isinstance(unknown_acknowledged, bool):
@@ -195,6 +205,17 @@ def normalize_substrate(substrate: dict) -> dict:
         target_node_count = int(target_node_count)
     if support_node_count is not None:
         support_node_count = int(support_node_count)
+    deployment_adapter = substrate.get("deployment_adapter")
+    if deployment_adapter is not None and deployment_adapter not in DEPLOYMENT_ADAPTERS:
+        raise ValueError(
+            f"substrate.deployment_adapter must be one of {sorted(DEPLOYMENT_ADAPTERS)}"
+        )
+    text_fields = {}
+    for field in ("config_source_dir", "upstream_peer_address", "listen_address"):
+        value = substrate.get(field)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ValueError(f"substrate.{field} must be a non-empty string when present")
+        text_fields[field] = value
     return {
         "host_strategy": host_strategy,
         "hosts": normalized_hosts,
@@ -203,9 +224,12 @@ def normalize_substrate(substrate: dict) -> dict:
         "scope": scope,
         "target_node_count": target_node_count,
         "support_node_count": support_node_count,
+        "deployment_adapter": deployment_adapter,
+        **text_fields,
         "nodes": normalized_nodes,
         "topology": {"edges": normalized_edges},
         "version_policy": version_policy,
+        "version_policy_source": version_policy_source,
         "version_status": version_status,
         "unknown_acknowledged": unknown_acknowledged,
         "catalog_revision": catalog_revision,
@@ -398,6 +422,7 @@ def build_version_provenance(substrate: dict, nodes: list[dict]) -> dict:
         )
     return {
         "policy": substrate.get("version_policy"),
+        "policy_source": substrate.get("version_policy_source"),
         "status": substrate.get("version_status"),
         "unknown_acknowledged": bool(substrate.get("unknown_acknowledged")),
         "catalog_revision": substrate.get("catalog_revision"),
@@ -405,6 +430,7 @@ def build_version_provenance(substrate: dict, nodes: list[dict]) -> dict:
         "scope": substrate.get("scope"),
         "target_node_count": substrate.get("target_node_count"),
         "support_node_count": substrate.get("support_node_count"),
+        "deployment_adapter": substrate.get("deployment_adapter"),
         "nodes": node_records,
     }
 
@@ -490,6 +516,13 @@ def allocate_node_plan(
                     "bootstrap_stderr": str(runtime_root / "logs" / node["id"] / "bootstrap.stderr.log"),
                 }
             )
+    declared_listen = str(normalized.get("listen_address") or "").strip()
+    if declared_listen:
+        if len(nodes) != 1:
+            raise ValueError("substrate.listen_address is supported only for a single-node adapter")
+        _listen_host, listen_port_text = declared_listen.rsplit(":", 1)
+        nodes[0]["listen_address"] = declared_listen
+        nodes[0]["port"] = int(listen_port_text)
     by_id = {node["id"]: node for node in nodes}
     first_haskell = next((node["listen_address"] for node in nodes if node["impl"] == "cardano-node"), None)
     for node in nodes:
@@ -530,10 +563,15 @@ def allocate_node_plan(
         "nodes": nodes,
         "topology": normalized["topology"],
         "version_policy": normalized.get("version_policy"),
+        "version_policy_source": normalized.get("version_policy_source"),
         "version_status": normalized.get("version_status"),
         "unknown_acknowledged": bool(normalized.get("unknown_acknowledged")),
         "catalog_revision": normalized.get("catalog_revision"),
         "catalog_snapshot": normalized.get("catalog_snapshot"),
+        "deployment_adapter": normalized.get("deployment_adapter"),
+        "config_source_dir": normalized.get("config_source_dir"),
+        "upstream_peer_address": normalized.get("upstream_peer_address"),
+        "listen_address": normalized.get("listen_address"),
     }
 
 

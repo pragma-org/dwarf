@@ -333,6 +333,52 @@ def test_new_profile_opens_builder_with_templates():
     assert 'data-editor-save disabled' in html
 
 
+def test_profile_builder_has_structured_version_authority_and_live_exact_preview():
+    html = dashboard.render_route_html("/operate/profiles/new")
+
+    assert html is not None
+    assert 'data-profile-version-panel' in html
+    assert "Node versions" in html
+    assert "Recommended" in html and "latest-confirmed" in html
+    assert "Advanced" in html and "exact" in html
+    assert "Experimental" in html and "latest-stable" in html
+    assert 'data-profile-version-resolution' in html
+    assert 'data-profile-version-descriptor' in html
+    assert 'href="/operate/versions"' in html
+    assert 'href="/learn/versions"' in html
+    assert 'data-version-field="cardano_version"' in html
+    assert 'data-version-field="amaru_version"' in html
+    assert 'data-version-field="compatibility_pair"' in html
+
+
+def test_scenario_builder_discloses_profile_controlled_exact_runtime_versions(
+    tmp_path, monkeypatch
+):
+    _write_catalog_fixture(tmp_path, monkeypatch)
+
+    html = dashboard.render_route_html("/operate/scenarios/new")
+
+    assert html is not None
+    assert 'data-scenario-profile-resolution' in html
+    assert "Cardano-node 10.7.1" in html
+    assert "Amaru 10.11.0" in html
+    assert "Runtime versions come from the selected deployment profile" in html
+    assert "descriptive target metadata—not the deployment pin" in html
+    assert 'href="/operate/profiles"' in html
+    assert 'href="/operate/versions"' in html
+
+
+def test_target_builder_explains_profile_version_authority():
+    html = dashboard.render_route_html("/operate/targets/new")
+
+    assert html is not None
+    assert 'data-target-version-boundary' in html
+    assert "Targets identify a test surface" in html
+    assert "Deployment profiles select the exact runtime node artifacts" in html
+    assert 'href="/operate/profiles"' in html
+    assert 'href="/learn/versions"' in html
+
+
 def test_profile_validation_accepts_yaml_and_returns_normalized_data(tmp_path, monkeypatch):
     _write_catalog_fixture(tmp_path, monkeypatch)
     body = b"""id: profile-yaml\nlabel: YAML profile\nhaskell_count: 1\namaru_count: 1\nnetwork_magic: 42\npeer_sharing: false\ncustom_extension:\n  retained: true\n"""
