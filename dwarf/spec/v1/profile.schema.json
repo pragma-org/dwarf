@@ -27,7 +27,11 @@
     "version_policy": {"type": "string", "enum": ["latest-confirmed", "latest-stable", "exact"], "description": "How DWARF resolves real node releases before deployment. Omitted or blank values use latest-confirmed as a recorded safe implicit default; they never select an ambient node binary or mutable image.", "x-ui-option-descriptions": {"latest-confirmed": "Use the catalog default that passed the complete runtime contract for this deployment type.", "latest-stable": "Use the newest stable release; an unqualified selection requires explicit acknowledgement.", "exact": "Pin an exact implementation release or mixed compatibility pair."}},
     "cardano_version": {"type": "string", "minLength": 1, "description": "Exact Cardano-node release used when version_policy is exact. Mixed profiles may instead select compatibility_pair."},
     "amaru_version": {"type": "string", "minLength": 1, "description": "Exact Amaru release used when version_policy is exact. Mixed profiles may instead select compatibility_pair."},
-    "compatibility_pair": {"type": "string", "minLength": 1, "description": "Catalog id for an exact Cardano-node and Amaru pair whose mixed-topology status and evidence are tracked together."}
+    "compatibility_pair": {"type": "string", "minLength": 1, "description": "Catalog id for an exact Cardano-node and Amaru pair whose mixed-topology status and evidence are tracked together."},
+    "measurement_target_mode": {"type": "string", "enum": ["stock", "patched"], "default": "stock", "description": "Select the stock release image or a locally built, revision-locked DWARF measurement target. Patched mode fails closed unless its audited build record exists.", "x-ui-option-descriptions": {"stock": "Run the immutable upstream release image.", "patched": "Run the exact upstream revision plus DWARF's audited measurement-only patch set."}},
+    "measurement_patch_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$", "description": "Exact upstream Amaru source revision required by a patched measurement target."},
+    "measurement_patch_set_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Exact audited DWARF measurement patch-set digest required by patched mode."},
+    "amaru_json_traces": {"type": "boolean", "default": false, "description": "Enable Amaru's native structured JSON trace output so stock and patched measurement collectors can retain typed node events. Intended for additive measurement profiles; existing profiles default to false."}
   },
   "additionalProperties": true
 }

@@ -13187,7 +13187,11 @@ class RuntimePreviewUpstreamLoss(LoadPrimitive):
 class RuntimeLiveImplementationBaseline(LoadPrimitive):
     """Run the existing live implementation baseline helper as a declarative primitive."""
 
-    _DEFAULT_HELPER = "/home/dwarf/dwarf-fw/scripts/runtime_live_implementation_check.py"
+    _DEFAULT_HELPER = str(
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "runtime_live_implementation_check.py"
+    )
 
     def run(self, handle, rng):
         import os
@@ -13303,6 +13307,124 @@ class RuntimeLiveImplementationBaseline(LoadPrimitive):
             level="info" if outcome == "ok" else "error",
             event="completed",
             payload=payload,
+        )
+
+
+class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
+    """Run one retained real-node leg of the stock/patched Amaru calibration."""
+
+    _DEFAULT_HELPER = str(
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "runtime_amaru_measurement_calibration.py"
+    )
+
+    def run(self, handle, rng):
+        import os
+        import subprocess
+
+        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        python_bin = str(self.params.get("python_bin", "python3"))
+        runtime_root = str(self.params["runtime_root"])
+        attempts = int(self.params.get("attempts", 40))
+        response_timeout_seconds = float(
+            self.params.get("response_timeout_seconds", 2.0)
+        )
+        timeout_seconds = float(self.params.get("timeout_seconds", 180))
+        expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
+        run_dir = getattr(handle, "run_dir", None)
+        if run_dir is None and "output_dir" not in self.params:
+            raise ValueError(
+                "runtime_amaru_measurement_calibration requires a run directory or output_dir"
+            )
+        output_dir = Path(
+            self.params.get(
+                "output_dir",
+                Path(run_dir) / "outputs" / "amaru-measurement-calibration",
+            )
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        command = [
+            python_bin,
+            helper_script,
+            "leg",
+            "--runtime-root",
+            runtime_root,
+            "--output-dir",
+            str(output_dir),
+            "--attempts",
+            str(attempts),
+            "--timeout-seconds",
+            str(response_timeout_seconds),
+        ]
+        handle.log(
+            phase="load",
+            primitive="runtime_amaru_measurement_calibration",
+            level="info",
+            event="started",
+            payload={
+                "runtime_root": runtime_root,
+                "output_dir": str(output_dir),
+                "attempts": attempts,
+                "response_timeout_seconds": response_timeout_seconds,
+            },
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(
+            value
+            for value in (str(DWARF_ROOT), env.get("PYTHONPATH"))
+            if value
+        )
+        timed_out = False
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=DWARF_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+                env=env,
+            )
+            helper_exit_code = int(proc.returncode)
+            stdout = proc.stdout or ""
+            stderr = proc.stderr or ""
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            helper_exit_code = -1
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+        report_path = output_dir / "result.json"
+        report = (
+            json.loads(report_path.read_text(encoding="utf-8"))
+            if report_path.is_file()
+            else {}
+        )
+        outcome = (
+            "ok"
+            if helper_exit_code == expected_helper_exit
+            else ("timeout" if timed_out else "unexpected_exit")
+        )
+        handle.log(
+            phase="load",
+            primitive="runtime_amaru_measurement_calibration",
+            level="info" if outcome == "ok" else "error",
+            event="completed",
+            payload={
+                "outcome": outcome,
+                "helper_exit_code": helper_exit_code,
+                "timed_out": timed_out,
+                "runtime_root": runtime_root,
+                "output_dir": str(output_dir),
+                "attempts": attempts,
+                "report": report,
+                "stdout": stdout[-4096:],
+                "stderr": stderr[-2048:],
+            },
         )
 
 

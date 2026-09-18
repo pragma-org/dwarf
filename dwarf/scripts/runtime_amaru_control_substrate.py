@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -58,6 +59,9 @@ REQUIRED_GATES = {
     "no_fatal_signatures",
     "no_restart_loop",
 }
+SHA40 = re.compile(r"^[0-9a-f]{40}$")
+SHA64 = re.compile(r"^[0-9a-f]{64}$")
+DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 class RuntimeControlError(RuntimeError):
@@ -91,6 +95,42 @@ def validate_runtime_request(config: dict[str, Any]) -> None:
     for key in ("supporting_cardano_version", "amaru_version"):
         if not str(config.get(key) or "").strip():
             raise RuntimeControlError(f"{key} is required")
+    mode = str(config.get("measurement_target_mode") or "stock")
+    if mode not in {"stock", "patched"}:
+        raise RuntimeControlError("measurement_target_mode must be stock or patched")
+    if mode == "patched":
+        if config.get("amaru_runtime_interface") != "extracted-binary":
+            raise RuntimeControlError(
+                "patched target requires the extracted-binary Amaru runtime interface"
+            )
+        identity = config.get("measurement_target_identity")
+        if not isinstance(identity, dict) or not identity:
+            raise RuntimeControlError(
+                "patched target requires measurement_target_identity"
+            )
+        if identity.get("target_mode") != "patched":
+            raise RuntimeControlError("measurement_target_identity mode is not patched")
+        if identity.get("image") != config.get("amaru_image"):
+            raise RuntimeControlError(
+                "measurement_target_identity image does not match amaru_image"
+            )
+        if identity.get("version") != config.get("amaru_version"):
+            raise RuntimeControlError(
+                "measurement_target_identity version does not match amaru_version"
+            )
+        if not SHA40.fullmatch(str(identity.get("source_revision") or "")):
+            raise RuntimeControlError(
+                "measurement_target_identity requires an exact source revision"
+            )
+        if not SHA64.fullmatch(str(identity.get("patch_set_sha256") or "")):
+            raise RuntimeControlError(
+                "measurement_target_identity requires an exact patch-set sha256"
+            )
+        for key in ("image_digest", "executable_digest", "build_result_sha256"):
+            if not DIGEST.fullmatch(str(identity.get(key) or "")):
+                raise RuntimeControlError(
+                    f"measurement_target_identity requires immutable {key}"
+                )
 
 
 def prepare_runtime_model(
@@ -104,6 +144,8 @@ def prepare_runtime_model(
         cardano_image=str(config["cardano_image"]),
         amaru_image=str(config["amaru_image"]),
         allowed_project_prefix="dwarf-profile-",
+        amaru_runtime_interface=config.get("amaru_runtime_interface"),
+        amaru_json_traces=bool(config.get("amaru_json_traces", False)),
     )
     for service_name, service in model["services"].items():
         labels = service.setdefault("labels", {})
@@ -171,6 +213,7 @@ def build_runtime_metadata(
             "amaru": config["amaru_image"],
         },
         "identity": identity,
+        "measurement_target": config.get("measurement_target_identity"),
         "readiness": observation,
     }
 
@@ -276,6 +319,8 @@ def deploy(config: dict[str, Any], *, base_package: Path = BASE_PACKAGE) -> dict
             amaru_version=str(config["amaru_version"]),
             cardano_image=str(config["cardano_image"]),
             amaru_image=str(config["amaru_image"]),
+            amaru_runtime_interface=config.get("amaru_runtime_interface"),
+            measurement_target_identity=config.get("measurement_target_identity"),
         )
         _write_json(evidence_root / "identity.json", identity)
         logs = _compose_logs(project, compose_file) + "\n" + _amaru_log_text(project)

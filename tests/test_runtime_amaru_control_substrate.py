@@ -90,6 +90,77 @@ def test_prepare_runtime_model_is_private_managed_and_keeps_live_producer_path()
     assert model["x-dwarf-retained-runtime"]["fresh_state_required"] is True
 
 
+def test_patched_binary_artifact_keeps_proven_wrapper_and_uses_extractor():
+    config = {
+        **_config(),
+        "amaru_image": "dwarf/amaru-measurement@sha256:" + "9" * 64,
+        "measurement_target_mode": "patched",
+        "amaru_runtime_interface": "extracted-binary",
+        "amaru_json_traces": True,
+        "measurement_target_identity": {
+            "version": "10.11.0",
+            "source_revision": "b" * 40,
+            "target_mode": "patched",
+            "image": "dwarf/amaru-measurement@sha256:" + "9" * 64,
+            "image_digest": "sha256:" + "9" * 64,
+            "executable_digest": "sha256:" + "e" * 64,
+            "patch_set_sha256": "7" * 64,
+            "build_result_sha256": "sha256:" + "a" * 64,
+        },
+    }
+
+    model = prepare_runtime_model(_baseline(), config)
+
+    relay = model["services"]["amaru-relay-1"]
+    assert relay["entrypoint"] == "amaru-relay-bootstrap"
+    assert relay["environment"]["AMARU_BIN"] == "/target/amaru"
+    assert relay["environment"]["AMARU_WITH_JSON_TRACES"] == "true"
+    assert relay["image"].startswith("ghcr.io/lambdasistemi/amaru-bootstrap-producer@")
+    assert model["services"]["amaru-target-extract"]["image"] == config["amaru_image"]
+
+
+def test_patched_request_requires_coherent_measurement_identity_and_metadata_retains_it():
+    identity = {
+        "version": "10.11.0",
+        "source_revision": "b" * 40,
+        "target_mode": "patched",
+        "image": "dwarf/amaru-measurement@sha256:" + "9" * 64,
+        "image_digest": "sha256:" + "9" * 64,
+        "executable_digest": "sha256:" + "e" * 64,
+        "patch_set_sha256": "7" * 64,
+        "build_result_sha256": "sha256:" + "a" * 64,
+    }
+    config = {
+        **_config(),
+        "amaru_image": identity["image"],
+        "measurement_target_mode": "patched",
+        "amaru_runtime_interface": "extracted-binary",
+        "measurement_target_identity": identity,
+    }
+    validate_runtime_request(config)
+
+    metadata = build_runtime_metadata(
+        config,
+        identity={"matched": True},
+        observation={"state": "healthy"},
+        compose_file="/runtime/docker-compose.json",
+    )
+    assert metadata["measurement_target"] == identity
+
+    with pytest.raises(RuntimeControlError, match="measurement_target_identity"):
+        validate_runtime_request({**config, "measurement_target_identity": {}})
+    with pytest.raises(RuntimeControlError, match="does not match amaru_image"):
+        validate_runtime_request(
+            {
+                **config,
+                "measurement_target_identity": {
+                    **identity,
+                    "image": "dwarf/other@sha256:" + "8" * 64,
+                },
+            }
+        )
+
+
 def test_runtime_metadata_discloses_logical_targets_and_actual_support_topology():
     config = _config()
     metadata = build_runtime_metadata(

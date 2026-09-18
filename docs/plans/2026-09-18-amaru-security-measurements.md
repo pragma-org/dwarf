@@ -26,8 +26,10 @@
   `10.11.20260912` / `b159172...` topology passed all qualification gates, and
   the component proof sampled the real `/target/amaru` PID with no collector
   errors. The established `tests/` regression suite passes 715 tests.
-- Batch 5 — next; add the fail-closed revision-locked patch builder and only
-  the audited decode, BlockFetch, and TxSubmission2 internal probes.
+- Batch 5 — complete locally on 2026-09-18; the fail-closed revision-locked
+  builder, audited decode/BlockFetch/TxSubmission2 probes, fresh stock and
+  patched topologies, strict common-metric calibration, and bounded
+  outcome-independent transcripts are proven. Batch 6 is next.
 - Internal push — queued because the rebooted host has no usable credential for
   the unrelated-history internal remote. No public push has been attempted.
 
@@ -317,7 +319,7 @@ GUI only as a component gate. This is not yet end-to-end completion.
 **Evidence — 2026-09-18**
 
 - Exact qualification:
-  `/home/nigel/.local/share/dwarf/state/version-qualifications/20260918T165505Z-dwarf-qual-amaru-10-7-1-10-11-20260912-33ba7660`
+  `state:version-qualifications/20260918T165505Z-dwarf-qual-amaru-10-7-1-10-11-20260912-33ba7660`
 - Result SHA-256:
   `35a80a758c8147ec5e3b5412ff6a5286b91dc62e0a66cdf5da6afe11e7a493c9`
 - Classification: `passed-all-gates`; all ten required gates passed, including
@@ -325,7 +327,7 @@ GUI only as a component gate. This is not yet end-to-end completion.
   convergence, Amaru-only consumer path, no fatal signatures/restart loop, and
   clean teardown.
 - Real-process component proof:
-  `/home/nigel/.local/share/dwarf/state/measurement-component-proofs/20260918T172100Z-amaru-10.11.20260912-resources-success`
+  `state:measurement-component-proofs/20260918T172100Z-amaru-10.11.20260912-resources-success`
 - Collector result SHA-256:
   `5fba3d094f3736bc2e7f14a324500d5e077383715fa3a730178e3b3aa2280b06`
 - Six samples targeted host PID `3425210`, verified as `/target/amaru run ...`.
@@ -385,6 +387,56 @@ unavailable if sample count or identity parity fails.
 Run source-contract tests, builder failure tests, patch unit/integration tests,
 real build, target smoke, and paired calibration. Review every patch hunk
 against the exact upstream source before commit/push.
+
+**Evidence — 2026-09-18**
+
+- Exact source: Amaru `10.11.20260912` at
+  `b159172f25a9c389f82f20bca4f15e3032791638`; patch set
+  `7ce3356d53535b22b82abf10166f9fa8ccfcd40b49bd8e298895ba1c027c0532`.
+- Retained build:
+  `state:measurement-target-builds/amaru-b159172-batch5-musl`; build-result
+  SHA-256 `8de9ee83493e30c57293cbee06e6defb7c195f37479eed3938a03d95530be600`.
+  The static executable SHA-256 is
+  `f70cf6be3be754a51fda53b101c4e4e4ab07c4b0ff28f8034ba335d58b744caa`;
+  the local immutable image ID is
+  `sha256:680ae0df46b0081c2477b9f76cd7c1d89f1e8e08ff781cd6037a2f8218a83d1b`.
+  Image smoke and exact bootstrap-wrapper compatibility probes passed.
+- Both fresh deployments passed every required runtime gate: exact identity,
+  fresh state, required services, peer formation, chain progress, isolated
+  Amaru-fed consumer convergence, no restart loop, and no fatal signal.
+  Deployment evidence SHA-256 values are
+  `8bd21708caf172a4c76201f0b07de1bd01a49ac76f58900a27214380fba24051`
+  (patched) and
+  `7c8c7f22c24379847f06b97872ff4df0b47ec590fd948a97c20e1abb91917a18`
+  (stock).
+- Patched leg:
+  `state:measurement-calibrations/20260918T211600Z-patched-final-v3`;
+  result SHA-256
+  `a7862d545fd16a33de4dd597fa962d3ef02215935fd62ed5d26ac3e957362e89`.
+- Stock leg:
+  `state:measurement-calibrations/20260918T213100Z-stock-final-v3`;
+  result SHA-256
+  `bbedba85aa78efd31979dbdb89d3654a0063b7419082aa4827984a7f24cec6c6`.
+- Strict pair:
+  `state:measurement-calibrations/20260918T213200Z-paired-final-v3`;
+  result SHA-256
+  `08db82be0965fd83ea1fa3efb7d0a39aca72b51a1b9ca159b776fb33d5326639`.
+  Source/version, workload digest, runner SHA-256, timing policy, hardware,
+  units, sample minimum, and terminal outcome counts all matched. Each side
+  retained 40/40 timed rejection outcomes and 40 bounded wire transcripts.
+  The common handshake-refusal metric reported patched deltas of +0.1504%
+  mean, +0.2200% median, +0.1353% p95, and -0.0185% p99.
+- Claim boundary: this calibrates only the named common external handshake
+  metric. Protocol-decode, BlockFetch, and TxSubmission2 internal timings
+  remain `requires-paired-calibration` until their own stock/patched surface
+  workloads run in the corresponding security examples. A deliberately paired
+  earlier stock artifact was rejected with exit 2 for workload and runner
+  mismatch, proving the gate fails closed.
+- The exact patch compiled, passed 137 upstream tests with five upstream
+  ignores, passed Rust formatting, ran in the proven wrapper, and emitted real
+  `amaru::protocols/measurement.*` events. No protected control service was
+  stopped; the retained control remained at 12 running services after both
+  exact teardowns.
 
 ## Batch 6 — compiler coverage linkage
 

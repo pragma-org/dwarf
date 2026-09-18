@@ -10,6 +10,9 @@ from profile_manager.measurement_collectors.amaru_external import (
     WorkloadAccountingCollector,
 )
 from profile_manager.measurement_collectors.amaru_resources import AmaruResourceCollector
+from profile_manager.measurement_collectors.amaru_patched import (
+    build_amaru_patched_factories,
+)
 from profile_manager.measurement_collectors.amaru_stock import build_amaru_stock_factories
 
 
@@ -27,13 +30,23 @@ def build_amaru_measurement_factories(
     resource_resolve_pid: Callable[[Path, str], int] | None = None,
     resource_sample_reader: Callable[[int, int], dict[str, Any]] | None = None,
     resource_background: bool = True,
+    target_identity: dict[str, Any] | None = None,
 ) -> dict[str, Callable[[dict[str, Any]], Any]]:
     """Bind deployment-owned paths and probes; scenario parameters cannot replace them."""
     metadata_path = Path(runtime_metadata_path)
+    json_paths = tuple(Path(path) for path in json_trace_paths)
+    otlp_paths = tuple(Path(path) for path in otlp_trace_paths)
     factories = build_amaru_stock_factories(
-        json_trace_paths=json_trace_paths,
-        otlp_trace_paths=otlp_trace_paths,
+        json_trace_paths=json_paths,
+        otlp_trace_paths=otlp_paths,
     )
+    if target_identity is not None and target_identity.get("mode") == "patched":
+        factories.update(
+            build_amaru_patched_factories(
+                json_trace_paths=json_paths,
+                target_identity=target_identity,
+            )
+        )
 
     resource_options: dict[str, Any] = {
         "runtime_metadata_path": metadata_path,

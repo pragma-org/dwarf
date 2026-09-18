@@ -1416,7 +1416,11 @@ def cmd_deploy(args):
         deploy_verb.append("--acknowledge-unknown-version")
     result = ssh_command(
         config,
-        deploy_command(profile, version_preview=deploy_preview),
+        deploy_command(
+            profile,
+            version_preview=deploy_preview,
+            remote_dwarf_root=config.remote_dwarf_root,
+        ),
         timeout=deployment_timeout_seconds(profile),
         verb=tuple(deploy_verb),
     )

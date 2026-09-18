@@ -227,6 +227,108 @@ def test_modern_amaru_identity_uses_extractor_artifact_and_target_binary(monkeyp
     assert "/target/amaru" in amaru["version_command"]
 
 
+def test_patched_amaru_identity_uses_source_patch_and_executable_not_release_text(monkeypatch):
+    target_image = "dwarf/amaru-measurement@sha256:" + "9" * 64
+    target_image_id = "sha256:" + "a" * 64
+    wrapper_image_id = "sha256:" + "b" * 64
+    cardano_image_id = "sha256:" + "c" * 64
+    source_revision = "b159172f25a9c389f82f20bca4f15e3032791638"
+    patch_set = "7" * 64
+    executable_digest = "sha256:" + "e" * 64
+    containers = {
+        "p1": "p1-container",
+        "p2": "p2-container",
+        "p3": "p3-container",
+        "relay1": "relay1-container",
+        "relay2": "relay2-container",
+        "amaru-consumer": "consumer-container",
+        "amaru-relay-1": "amaru-one",
+        "amaru-relay-2": "amaru-two",
+        "amaru-target-extract": "amaru-extractor",
+    }
+    monkeypatch.setattr(qualification, "_project_containers", lambda _project: containers)
+    monkeypatch.setattr(
+        qualification,
+        "_image_id",
+        lambda image: (
+            target_image_id
+            if image == target_image
+            else wrapper_image_id
+            if image == CONTROL_AMARU_IMAGE
+            else cardano_image_id
+        ),
+    )
+
+    def fake_run(args, **_kwargs):
+        if args[:3] == ["docker", "image", "inspect"]:
+            return qualification.subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps(
+                    {
+                        "org.opencontainers.image.revision": source_revision,
+                        "org.dwarf.measurement.patch-sha256": patch_set,
+                    }
+                )
+                + "\n",
+                "",
+            )
+        if args[:2] == ["docker", "inspect"]:
+            container = args[2]
+            image_id = (
+                target_image_id
+                if container == "amaru-extractor"
+                else wrapper_image_id
+                if container.startswith("amaru-")
+                else cardano_image_id
+            )
+            return qualification.subprocess.CompletedProcess(args, 0, image_id + "\n", "")
+        if args[:3] in (["docker", "exec", "amaru-one"], ["docker", "exec", "amaru-two"]):
+            if args[3:5] == ["/target/amaru", "--version"]:
+                return qualification.subprocess.CompletedProcess(
+                    args, 0, "Amaru 10.11.0 (b159172f+dirty)\n", ""
+                )
+            if args[3:5] == ["sha256sum", "/target/amaru"]:
+                return qualification.subprocess.CompletedProcess(
+                    args, 0, "e" * 64 + "  /target/amaru\n", ""
+                )
+            return qualification.subprocess.CompletedProcess(args, 127, "", "missing")
+        if args[:2] == ["docker", "exec"]:
+            return qualification.subprocess.CompletedProcess(
+                args, 0, "cardano-node 10.7.1\n", ""
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setattr(qualification, "_run", fake_run)
+    measurement_identity = {
+        "version": "10.11.20260912",
+        "source_revision": source_revision,
+        "patch_set_sha256": patch_set,
+        "executable_digest": executable_digest,
+        "image": target_image,
+        "image_digest": target_image_id,
+        "target_mode": "patched",
+    }
+
+    observation = qualification._identity_observation(
+        "candidate",
+        scope="amaru-only",
+        cardano_version="10.7.1",
+        amaru_version="10.11.20260912",
+        cardano_image="cardano-image",
+        amaru_image=target_image,
+        amaru_runtime_interface="extracted-binary",
+        measurement_target_identity=measurement_identity,
+    )
+
+    assert observation["matched"] is True
+    assert observation["patched_target"]["labels_matched"] is True
+    assert observation["services"]["amaru-relay-1"]["reported_source_matched"] is True
+    assert observation["services"]["amaru-relay-1"]["executable_digest_matched"] is True
+    assert observation["services"]["amaru-relay-1"]["expected_version"] == "10.11.20260912"
+    assert "10.11.20260912" not in observation["services"]["amaru-relay-1"]["reported"]
+
+
 def test_project_names_are_unique_safe_and_never_the_live_project():
     first = build_project_name("mixed", "11.1.2", "10.11.20260912", token="abc123")
     second = build_project_name("mixed", "11.1.2", "10.11.20260912", token="def456")
@@ -350,6 +452,9 @@ def test_terminal_store_and_cli_failures_are_classified_for_fast_stop():
     assert classify_terminal_runtime_failure(
         "error: unexpected argument '--migrate-chain-db' found"
     ) == "amaru-runtime-interface-incompatible"
+    assert classify_terminal_runtime_failure(
+        "/target/amaru: cannot execute: required file not found"
+    ) == "amaru-runtime-executable-incompatible"
     assert classify_terminal_runtime_failure("waiting for chain progress") is None
 
 

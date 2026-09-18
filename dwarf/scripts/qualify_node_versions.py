@@ -93,6 +93,10 @@ TERMINAL_FAILURE_PATTERNS = (
         "amaru-runtime-interface-incompatible",
         re.compile(r"unexpected argument .*migrate-chain-db|unknown (?:option|argument).*migrate", re.IGNORECASE),
     ),
+    (
+        "amaru-runtime-executable-incompatible",
+        re.compile(r"amaru: cannot execute: required file not found", re.IGNORECASE),
+    ),
 )
 
 
@@ -198,7 +202,15 @@ def build_project_name(
     return project
 
 
-def _uses_modern_amaru_runtime_interface(image: str) -> bool:
+def _uses_modern_amaru_runtime_interface(
+    image: str, runtime_interface: str | None = None
+) -> bool:
+    if runtime_interface is not None:
+        if runtime_interface not in {"extracted-binary", "legacy-wrapper"}:
+            raise QualificationError(
+                "amaru_runtime_interface must be extracted-binary or legacy-wrapper"
+            )
+        return runtime_interface == "extracted-binary"
     repository = str(image or "").split("@", 1)[0]
     last_slash = repository.rfind("/")
     if repository.rfind(":") > last_slash:
@@ -235,6 +247,8 @@ def transform_compose_model(
     cardano_image: str | None,
     amaru_image: str | None,
     allowed_project_prefix: str = "dwarf-qual-",
+    amaru_runtime_interface: str | None = None,
+    amaru_json_traces: bool = False,
 ) -> dict[str, Any]:
     """Namespace a rendered baseline and replace only candidate node images."""
     if scope not in SCOPES:
@@ -263,7 +277,12 @@ def transform_compose_model(
     if scope in {"amaru-only", "mixed"} and not set(AMARU_RELAYS).issubset(services):
         raise QualificationError("baseline is missing Amaru relay services")
 
-    modern_amaru = bool(amaru_image and _uses_modern_amaru_runtime_interface(amaru_image))
+    modern_amaru = bool(
+        amaru_image
+        and _uses_modern_amaru_runtime_interface(
+            amaru_image, runtime_interface=amaru_runtime_interface
+        )
+    )
     for name, service in list(services.items()):
         if not isinstance(service, dict):
             continue
@@ -281,6 +300,8 @@ def transform_compose_model(
             environment["AMARU_PEER"] = (
                 "p1.example:3001" if name == "amaru-relay-1" else "p2.example:3001"
             )
+            if amaru_json_traces:
+                environment["AMARU_WITH_JSON_TRACES"] = "true"
             if modern_amaru:
                 # Preserve the proven self-bootstrap wrapper and substitute
                 # only the exact target Amaru executable.  The official image
@@ -520,10 +541,15 @@ def _identity_observation(
     amaru_version: str | None,
     cardano_image: str,
     amaru_image: str | None,
+    amaru_runtime_interface: str | None = None,
+    measurement_target_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     containers = _project_containers(project)
     modern_amaru = bool(
-        amaru_image and _uses_modern_amaru_runtime_interface(amaru_image)
+        amaru_image
+        and _uses_modern_amaru_runtime_interface(
+            amaru_image, runtime_interface=amaru_runtime_interface
+        )
     )
     extractor_container = containers.get(AMARU_TARGET_EXTRACT) if modern_amaru else None
     extractor_image_id = ""
@@ -534,6 +560,46 @@ def _identity_observation(
         if extractor_inspect.returncode == 0:
             extractor_image_id = extractor_inspect.stdout.strip()
     wrapper_image_id = _image_id(CONTROL_AMARU_IMAGE) if modern_amaru else ""
+    patched_target = bool(
+        measurement_target_identity
+        and measurement_target_identity.get("target_mode") == "patched"
+    )
+    patched_target_record: dict[str, Any] | None = None
+    if patched_target:
+        label_result = _run(
+            [
+                "docker",
+                "image",
+                "inspect",
+                str(amaru_image),
+                "--format",
+                "{{json .Config.Labels}}",
+            ],
+            timeout=30,
+        )
+        try:
+            image_labels = json.loads(label_result.stdout) if label_result.returncode == 0 else {}
+        except (TypeError, json.JSONDecodeError):
+            image_labels = {}
+        expected_source = str(measurement_target_identity.get("source_revision") or "")
+        expected_patch = str(measurement_target_identity.get("patch_set_sha256") or "")
+        labels_matched = bool(
+            image_labels.get("org.opencontainers.image.revision") == expected_source
+            and image_labels.get("org.dwarf.measurement.patch-sha256") == expected_patch
+        )
+        patched_target_record = {
+            "source_revision": expected_source,
+            "patch_set_sha256": expected_patch,
+            "executable_digest": measurement_target_identity.get("executable_digest"),
+            "image": measurement_target_identity.get("image"),
+            "image_digest": measurement_target_identity.get("image_digest"),
+            "image_labels": image_labels,
+            "labels_matched": labels_matched,
+            "identity_record_matched": bool(
+                measurement_target_identity.get("image") == amaru_image
+                and measurement_target_identity.get("image_digest") == _image_id(str(amaru_image))
+            ),
+        }
     services = list(CARDANO_REFERENCE_NODES)
     if scope in {"amaru-only", "mixed"}:
         services.extend([AMARU_CONSUMER, *AMARU_RELAYS])
@@ -577,12 +643,40 @@ def _identity_observation(
                 version_command = command
                 break
         output = ((result.stdout + result.stderr) if result else "").strip()
-        artifact_match = identity_matches(
-            expected_version=str(expected or ""),
-            reported_version=output,
-            expected_image_id=expected_image_id,
-            running_image_id=artifact_image_id,
-        )
+        reported_source_matched = None
+        executable_digest_matched = None
+        executable_digest_reported = None
+        if service in AMARU_RELAYS and patched_target:
+            expected_source = str(measurement_target_identity.get("source_revision") or "")
+            reported_source_matched = bool(
+                len(expected_source) == 40 and expected_source[:8] in output
+            )
+            executable_result = _run(
+                ["docker", "exec", container, "sha256sum", "/target/amaru"],
+                timeout=30,
+            )
+            if executable_result.returncode == 0:
+                executable_digest_reported = "sha256:" + executable_result.stdout.split()[0]
+            executable_digest_matched = bool(
+                executable_digest_reported
+                == measurement_target_identity.get("executable_digest")
+            )
+            artifact_match = bool(
+                expected_image_id
+                and artifact_image_id == expected_image_id
+                and patched_target_record
+                and patched_target_record["labels_matched"]
+                and patched_target_record["identity_record_matched"]
+                and reported_source_matched
+                and executable_digest_matched
+            )
+        else:
+            artifact_match = identity_matches(
+                expected_version=str(expected or ""),
+                reported_version=output,
+                expected_image_id=expected_image_id,
+                running_image_id=artifact_image_id,
+            )
         wrapper_match = not (
             service in AMARU_RELAYS and modern_amaru
         ) or running_image_id == wrapper_image_id
@@ -607,6 +701,9 @@ def _identity_observation(
                 else None
             ),
             "wrapper_matched": wrapper_match,
+            "reported_source_matched": reported_source_matched,
+            "executable_digest_reported": executable_digest_reported,
+            "executable_digest_matched": executable_digest_matched,
             "matched": bool(
                 container
                 and result
@@ -615,7 +712,13 @@ def _identity_observation(
                 and wrapper_match
             ),
         }
-    return {"matched": bool(records) and all(item["matched"] for item in records.values()), "services": records}
+    result = {
+        "matched": bool(records) and all(item["matched"] for item in records.values()),
+        "services": records,
+    }
+    if patched_target_record is not None:
+        result["patched_target"] = patched_target_record
+    return result
 
 
 def _observe_cardano(project: str, sample_seconds: float) -> dict[str, Any]:

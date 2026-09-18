@@ -1,0 +1,29 @@
+{
+  "spec_version": "v1",
+  "id": "amaru-measurement-overhead-calibration-patched",
+  "title": "Amaru measurement overhead calibration — patched target",
+  "authors": ["dwarf"],
+  "tags": ["amaru", "measurement", "calibration", "patched", "real-node"],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This is an observer-overhead calibration leg, not a security finding scenario.",
+    "Performance authority requires the paired stock leg, identical workload identity, and at least 30 common samples."
+  ],
+  "target": {"implementation": "amaru", "version": "10.11.20260912"},
+  "runtime": "devnet",
+  "profile": "profile-q-amaru-measurement-patched",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0xA11CE501",
+  "load": [
+    {
+      "primitive": "runtime_amaru_measurement_calibration",
+      "runtime_root": "/opt/dwarf/cardano-profiles/profile-q-amaru-measurement-patched",
+      "attempts": 40,
+      "timeout_seconds": 180,
+      "expected_helper_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [{"primitive": "load_events_are_ok", "min_completed": 1}],
+  "teardown": []
+}

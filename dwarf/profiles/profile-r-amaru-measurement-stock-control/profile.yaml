@@ -1,0 +1,14 @@
+{
+  "id": "profile-r-amaru-measurement-stock-control",
+  "label": "Amaru 10.11.20260912 — stock measurement control",
+  "haskell_count": 0,
+  "amaru_count": 1,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "exact",
+  "amaru_version": "10.11.20260912",
+  "topology_pattern": "local-mesh",
+  "shared_genesis": true,
+  "measurement_target_mode": "stock",
+  "amaru_json_traces": true
+}

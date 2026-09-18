@@ -207,7 +207,9 @@ def test_profile_schema_covers_every_bundled_profile_field():
         "shared_genesis", "amaru_network", "upstream_peer_address",
         "listen_address", "config_source_dir", "public_network", "testbed",
         "version_policy", "cardano_version", "amaru_version",
-        "compatibility_pair",
+            "compatibility_pair",
+            "measurement_target_mode", "measurement_patch_revision",
+            "measurement_patch_set_sha256", "amaru_json_traces",
     }
     assert set(schema["properties"]) == expected
     assert schema["properties"]["node_type"]["enum"] == ["cardano-node", "amaru", "mixed"]
@@ -677,7 +679,7 @@ def test_scenario_editor_descriptor_covers_every_registered_primitive_schema():
     assert descriptor["primitive_count"] == len(registry)
     assert descriptor["family_counts"] == {
         "setup": 4,
-            "load": 120,
+            "load": 121,
         "fault": 5,
         "probe": 1,
             "assertion": 77,

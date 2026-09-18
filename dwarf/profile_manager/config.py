@@ -14,6 +14,7 @@ CONFIG_FIELDS = {
     "ssh_user": {"type": "string", "default": "dwarf", "description": "Remote SSH username."},
     "ssh_key_path": {"type": "string", "default": "~/.ssh/cardano-box", "description": "SSH private-key path used for remote commands."},
     "remote_base_path": {"type": "string", "default": "/opt/dwarf/cardano-profiles", "description": "Remote base directory for deployment artifacts."},
+    "remote_dwarf_root": {"type": "string", "default": "", "description": "Installed DWARF Python source root on the deployment host (the directory containing scripts/)."},
     "allow_prereq_install": {"type": "boolean", "default": False, "description": "Allow prerequisite installation via CLI."},
     "allow_sudo": {"type": "boolean", "default": False, "description": "Allow sudo-backed remote commands."},
     "log_level": {"type": "string", "default": "info", "description": "Operator-facing CLI log level."},
@@ -35,6 +36,7 @@ class DeploymentConfig:
     ssh_user: str
     ssh_key_path: str
     remote_base_path: str
+    remote_dwarf_root: str = ""
     allow_prereq_install: bool = False
     allow_sudo: bool = False
     log_level: str = "info"
@@ -58,6 +60,7 @@ class DeploymentConfig:
             ssh_user=normalized["ssh_user"],
             ssh_key_path=normalized["ssh_key_path"],
             remote_base_path=normalized["remote_base_path"],
+            remote_dwarf_root=str(normalized["remote_dwarf_root"]),
             allow_prereq_install=bool(normalized["allow_prereq_install"]),
             allow_sudo=bool(normalized["allow_sudo"]),
             log_level=str(normalized["log_level"]),
@@ -80,6 +83,7 @@ class DeploymentConfig:
             "ssh_user": self.ssh_user,
             "ssh_key_path": self.ssh_key_path,
             "remote_base_path": self.remote_base_path,
+            "remote_dwarf_root": self.remote_dwarf_root,
             "allow_prereq_install": self.allow_prereq_install,
             "allow_sudo": self.allow_sudo,
             "log_level": self.log_level,

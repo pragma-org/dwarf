@@ -339,6 +339,14 @@ Each patched performance workload runs against stock and patched builds from
 the same source revision. Observer overhead is reported per metric. A behavior
 seen only in the patched build cannot be classified as an Amaru vulnerability.
 
+The target-level control uses a fixed unsupported-handshake refusal to compare
+one externally observable path without depending on patched telemetry. It
+calibrates only that named common metric. It does **not** authorize performance
+claims for protocol-decode, BlockFetch, or TxSubmission2 internals; each of
+those requires its own stock/patched surface workload in the corresponding
+security example. Pairing fails closed when runner, timing, hardware, workload,
+outcome-count, unit, identity, or sample-count parity is absent.
+
 ## Five security examples
 
 All five are additive definitions and preserve existing scenarios.

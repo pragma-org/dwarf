@@ -282,6 +282,23 @@ def test_probe_parses_20260730_adopted_tip_rendering():
     assert parsed["highest_slot"] == 1369
 
 
+def test_probe_parses_live_amaru_json_progress_rendering():
+    probe = _load_probe()
+    text = """
+{"timestamp":"2026-09-18T20:20:17.411630Z","level":"INFO","fields":{"current":[1199,"f11f",213],"highest":[1297,"a1f1",236],"message":"chainsync.intersect_found"},"target":"amaru::consensus"}
+{"timestamp":"2026-09-18T20:22:55.507756Z","level":"INFO","fields":{"block_height":309,"header_hash":"a7ad","max_block_height":309,"message":"tip.adopt","slot":1615},"target":"amaru::consensus"}
+"""
+
+    parsed = probe.parse_amaru_progress(text)
+
+    assert parsed["current_slot"] == 1615
+    assert parsed["current_hash"] == "a7ad"
+    assert parsed["current_block"] == 309
+    assert parsed["highest_slot"] == 1297
+    assert parsed["highest_hash"] == "a1f1"
+    assert parsed["highest_block"] == 236
+
+
 def test_probe_retains_bootstrap_targets_for_fresh_readiness_proof():
     probe = _load_probe()
     text = """
