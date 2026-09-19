@@ -16,6 +16,4 @@ measurements:
   - {id: cardano-external-sync-speed, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
   - {id: cardano-external-workload-accounting, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
   - {id: cardano-patched-protocol-decode, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
-  - {id: cardano-patched-blockfetch-handler-queue, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
-  - {id: cardano-patched-txsubmission-residence, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
   - {id: cardano-patched-ledger-plutus-stages, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}

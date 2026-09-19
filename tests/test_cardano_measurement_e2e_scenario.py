@@ -132,6 +132,42 @@ def test_cardano_runtime_identity_fails_closed_on_digest_mismatch():
         calibration._target(body)
 
 
+def test_cardano_runtime_identity_accepts_exact_patched_target():
+    body = _runtime_body()
+    node = body["nodes"][0]
+    patched_digest = "sha256:" + "a" * 64
+    node.update({
+        "target_mode": "patched",
+        "patch_set_sha256": calibration.CARDANO_MEASUREMENT_PATCH_SHA256,
+        "image_digest": patched_digest,
+        "image_ref": "dwarf/cardano-measurement@" + patched_digest,
+        "executable_digest": "sha256:" + "b" * 64,
+        "build_result_sha256": "sha256:" + "c" * 64,
+        "runtime_probe_log_sha256": "sha256:" + "d" * 64,
+        "artifact_identity": {"satisfied": True, "image_digest": patched_digest},
+    })
+
+    target, _node = calibration._target(body)
+
+    assert target["mode"] == "patched"
+    assert target["image_digest"] == patched_digest
+    assert target["patch_set_sha256"] == calibration.CARDANO_MEASUREMENT_PATCH_SHA256
+
+
+def test_cardano_runtime_identity_rejects_wrong_patched_target():
+    body = _runtime_body()
+    node = body["nodes"][0]
+    node.update({
+        "target_mode": "patched",
+        "patch_set_sha256": "9" * 64,
+        "image_digest": "sha256:" + "a" * 64,
+        "image_ref": "dwarf/cardano-measurement@sha256:" + "a" * 64,
+        "artifact_identity": {"satisfied": True, "image_digest": "sha256:" + "a" * 64},
+    })
+    with pytest.raises(RuntimeError, match="patch-set"):
+        calibration._target(body)
+
+
 def test_cardano_runtime_cli_fails_closed_when_node_trace_is_empty(
     monkeypatch, tmp_path
 ):
@@ -160,3 +196,45 @@ def test_cardano_runtime_cli_fails_closed_when_node_trace_is_empty(
     )
 
     assert exit_code == 2
+
+
+def test_cardano_paired_calibration_requires_exact_identity_and_common_samples():
+    common = {
+        "schema_version": 1,
+        "runner": {"script": "runtime_cardano_measurement_calibration.py", "script_sha256": "sha256:" + "1" * 64},
+        "timing_policy": {"clock": "monotonic-perf-counter-ns"},
+        "hardware": {"architecture": "x86_64", "logical_cpu_count": 16},
+        "workload_identity": calibration.build_workload_identity(attempt_count=30),
+        "attempts": {"total": 30, "outcomes": {"rejected": 30}},
+        "measurements": {
+            "handshake_rejection_roundtrip": {
+                "sample_count": 30,
+                "unit": "us",
+                "mean": 10,
+                "median": 10,
+                "p95": 12,
+                "p99": 13,
+            }
+        },
+    }
+    stock = {
+        **common,
+        "target": {
+            "implementation": "cardano-node", "version": "11.1.2",
+            "source_revision": calibration.CARDANO_SOURCE_REVISION, "mode": "stock",
+        },
+    }
+    patched = json.loads(json.dumps(common))
+    patched["target"] = {
+        "implementation": "cardano-node", "version": "11.1.2",
+        "source_revision": calibration.CARDANO_SOURCE_REVISION, "mode": "patched",
+        "patch_set_sha256": calibration.CARDANO_MEASUREMENT_PATCH_SHA256,
+    }
+    patched["measurements"]["handshake_rejection_roundtrip"].update({
+        "mean": 11, "median": 11, "p95": 13, "p99": 14,
+    })
+
+    result = calibration.paired_cardano_overhead_calibration(stock, patched)
+
+    assert result["status"] == "available"
+    assert result["metrics"]["handshake_rejection_roundtrip"]["median_percent_delta"] == 10.0

@@ -750,10 +750,17 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
     for node in nodes:
         host, port_text = node["listen_address"].rsplit(":", 1)
         if node["impl"] == "cardano-node":
+            patched_measurement_trace_setup = ""
+            if node.get("target_mode") == "patched":
+                patched_measurement_trace_setup = (
+                    f"touch /logs/{node['id']}/cardano-measurement.ndjson "
+                    f"/logs/{node['id']}/cardano-plutus.ndjson && "
+                )
             if node.get("public_network"):
                 command = [(
                     "set -euo pipefail; "
                     f"mkdir -p /env/socket/{node['id']} /logs/{node['id']} /env/node-data/node{node['host_slot_index']} && "
+                    f"{patched_measurement_trace_setup}"
                     "exec cardano-node run "
                     f"--config /env/configuration.yaml "
                     f"--topology /env/node-data/node{node['host_slot_index']}/topology.json "
@@ -773,6 +780,7 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
                 command = [(
                     "set -euo pipefail; "
                     f"mkdir -p /env/socket/{node['id']} /logs/{node['id']} && "
+                    f"{patched_measurement_trace_setup}"
                     "exec cardano-node run "
                     f"--config /env/configuration.yaml "
                     f"--topology /env/node-data/node{node['host_slot_index']}/topology.json "
@@ -856,6 +864,15 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
             services[node["id"]]["volumes"].append("./amaru:/amaru")
             services[node["id"]]["environment"] = {
                 "AMARU_MIGRATE_CHAIN_DB": "true",
+            }
+        elif node.get("target_mode") == "patched":
+            services[node["id"]]["environment"] = {
+                "DWARF_CARDANO_MEASUREMENT_TRACE": (
+                    f"/logs/{node['id']}/cardano-measurement.ndjson"
+                ),
+                "DWARF_CARDANO_PLUTUS_TRACE": (
+                    f"/logs/{node['id']}/cardano-plutus.ndjson"
+                ),
             }
     return {
         "name": compose_project,

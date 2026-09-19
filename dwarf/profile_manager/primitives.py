@@ -13321,6 +13321,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
     _PRIMITIVE_NAME = "runtime_amaru_measurement_calibration"
     _OUTPUT_SUBDIR = "amaru-measurement-calibration"
     _OBSERVATION_WINDOW = False
+    _CARDANO_NODE_WORKLOAD = False
 
     def run(self, handle, rng):
         import os
@@ -13355,6 +13356,16 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             if self._OBSERVATION_WINDOW
             else None
         )
+        plutus_transactions = (
+            int(self.params.get("plutus_transactions", 0))
+            if self._CARDANO_NODE_WORKLOAD
+            else 0
+        )
+        epoch_observation_seconds = (
+            float(self.params.get("epoch_observation_seconds", 0))
+            if self._CARDANO_NODE_WORKLOAD
+            else 0
+        )
         timeout_seconds = float(self.params.get("timeout_seconds", 180))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
         run_dir = getattr(handle, "run_dir", None)
@@ -13386,6 +13397,11 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             command.extend(["--observation-seconds", str(observation_seconds)])
         if trace_timeout_seconds is not None:
             command.extend(["--trace-timeout-seconds", str(trace_timeout_seconds)])
+        if self._CARDANO_NODE_WORKLOAD:
+            command.extend([
+                "--plutus-transactions", str(plutus_transactions),
+                "--epoch-observation-seconds", str(epoch_observation_seconds),
+            ])
         handle.log(
             phase="load",
             primitive=self._PRIMITIVE_NAME,
@@ -13399,6 +13415,8 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "response_timeout_seconds": response_timeout_seconds,
                 "observation_seconds": observation_seconds,
                 "trace_timeout_seconds": trace_timeout_seconds,
+                "plutus_transactions": plutus_transactions,
+                "epoch_observation_seconds": epoch_observation_seconds,
             },
         )
         env = os.environ.copy()
@@ -13466,6 +13484,8 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "profile_id": profile_id,
                 "output_dir": str(output_dir),
                 "attempts": attempts,
+                "plutus_transactions": plutus_transactions,
+                "epoch_observation_seconds": epoch_observation_seconds,
                 "report": report,
                 "stdout": stdout[-4096:],
                 "stderr": stderr[-2048:],
@@ -13516,6 +13536,7 @@ class RuntimeCardanoMeasurementCalibration(RuntimeAmaruMeasurementCalibration):
     _PRIMITIVE_NAME = "runtime_cardano_measurement_calibration"
     _OUTPUT_SUBDIR = "cardano-measurement-calibration"
     _OBSERVATION_WINDOW = True
+    _CARDANO_NODE_WORKLOAD = True
 
 
 class RuntimePartitionRejoin(LoadPrimitive):

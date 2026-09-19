@@ -31,6 +31,10 @@ PATCHED = {
     "cardano-patched-txsubmission-residence",
     "cardano-patched-ledger-plutus-stages",
 }
+IMPLEMENTED_PATCHED = {
+    "cardano-patched-protocol-decode",
+    "cardano-patched-ledger-plutus-stages",
+}
 ALL = STOCK | EXTERNAL | COVERAGE | PATCHED
 
 
@@ -80,7 +84,12 @@ def test_cardano_measurement_profiles_select_the_complete_compatible_sets() -> N
     assert default["target_modes"] == ["stock"]
     assert patched["target_modes"] == ["patched"]
     assert {item["id"] for item in default["measurements"] if item["enabled"]} == STOCK | EXTERNAL
-    assert {item["id"] for item in patched["measurements"] if item["enabled"]} == STOCK | EXTERNAL | PATCHED
+    assert {item["id"] for item in patched["measurements"] if item["enabled"]} == (
+        STOCK | EXTERNAL | IMPLEMENTED_PATCHED
+    )
+    assert not (
+        PATCHED - IMPLEMENTED_PATCHED
+    ) & {item["id"] for item in patched["measurements"] if item["enabled"]}
     for profile in (default, patched):
         assert all(item["threshold_gate"] == {"enabled": False, "thresholds": []} for item in profile["measurements"])
 

@@ -88,18 +88,26 @@
       "source_paths": [
         "cardano-node/src/Cardano/Node/Tracing/Tracers.hs",
         "cardano-node/src/Cardano/Node/Tracing/Consistency.hs",
-        "bench/locli/src/Cardano/Unlog/LogObject.hs"
+        "bench/locli/src/Cardano/Unlog/LogObject.hs",
+        "ouroboros-network-1.2.0.0/lib/Ouroboros/Network/TxSubmission/Inbound/V2/Types.hs",
+        "ouroboros-network-1.2.0.0/tracing/Ouroboros/Network/Tracing/TxSubmission.hs",
+        "ouroboros-network-1.2.0.0/tracing/Ouroboros/Network/Tracing/TxSubmission/Inbound.hs"
       ],
       "constructors_or_metrics": [
         "TraceTxSubmissionInbound",
         "TraceTxSubmissionOutbound",
         "TraceTxSubmissionCollected",
         "TraceTxSubmissionProcessed",
-        "TxSubmissionCounters"
+        "TxSubmissionCounters",
+        "TraceTxInboundAddedToMempool",
+        "TraceTxInboundRejectedFromMempool",
+        "txIdBlockingWaitMs",
+        "txPipelineWaitMs",
+        "txSubmissionWaitMs"
       ],
-      "fields": ["kind", "peer", "txIds", "accepted", "rejected", "collected", "processed"],
-      "units": ["transaction count", "event count"],
-      "claim": "The stock tracing graph wires inbound/outbound TxSubmission2 events and aggregate counters, while locli recognizes collected/processed events. Continuous request-to-body-to-admission residence is not emitted as one authoritative interval."
+      "fields": ["kind", "peer", "txIds", "accepted", "rejected", "collected", "processed", "dt", "txIdBlockingWaitMs", "txPipelineWaitMs", "txSubmissionWaitMs"],
+      "units": ["transaction count", "event count", "milliseconds", "DiffTime seconds"],
+      "claim": "The stock TxSubmission2 tracer exports request/reply/accept/reject counters, cumulative blocking/pipeline/mempool-submit wait in milliseconds, and accepted/rejected mempool-add durations. It does not join those phases into one authoritative per-transaction residence interval."
     },
     {
       "id": "mempool",
@@ -181,12 +189,13 @@
         "bench/tx-generator/src/Cardano/Benchmarking/LogTypes.hs",
         "bench/tx-generator/src/Cardano/Benchmarking/Tracer.hs",
         "bench/tx-generator/src/Cardano/TxGenerator/PlutusContext.hs",
-        "cardano-node/src/Cardano/Node/Tracing/Tracers/Consensus.hs"
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/Consensus.hs",
+        "cardano-ledger-alonzo-1.16.0.0/src/Cardano/Ledger/Alonzo/Plutus/Evaluate.hs"
       ],
-      "constructors_or_metrics": ["TraceBenchPlutusBudgetSummary", "PlutusBudgetSummary", "TraceMempoolAddedTx", "TraceMempoolRejectedTx"],
-      "fields": ["budgetPerBlock", "budgetPerTx", "budgetPerTxInput", "budgetUsedPerTxInput", "tx", "err"],
-      "units": ["execution memory units", "execution CPU steps", "transaction outcome"],
-      "claim": "The shipped workload generator records Plutus execution budgets and the node records transaction outcomes, but the stock node does not expose authoritative VM wall-clock stage duration."
+      "constructors_or_metrics": ["TraceBenchPlutusBudgetSummary", "PlutusBudgetSummary", "TraceMempoolAddedTx", "TraceMempoolRejectedTx", "[LEDGER][PLUTUS_SCRIPT],BEGIN", "[LEDGER][PLUTUS_SCRIPT],END"],
+      "fields": ["budgetPerBlock", "budgetPerTx", "budgetPerTxInput", "budgetUsedPerTxInput", "tx", "err", "eventlog timestamp"],
+      "units": ["execution memory units", "execution CPU steps", "transaction outcome", "RTS eventlog time"],
+      "claim": "The shipped workload generator records Plutus execution budgets and the node records transaction outcomes. The pinned ledger dependency brackets actual VM execution with RTS eventlog BEGIN/END markers, but those markers lack transaction/script identity and outcome; the revision-locked patch adds a directly ingestible duration and accepted/rejected outcome without claiming that stock has no timing signal."
     },
     {
       "id": "process-rts-resources",
@@ -236,8 +245,8 @@
     },
     {
       "id": "txsubmission-inflight-residence",
-      "missing_boundary": "Stock TxSubmission2 events and counters do not provide continuous per-transaction request-to-body-to-mempool residence with pending and in-flight depth.",
-      "source_paths": ["cardano-node/src/Cardano/Node/Tracing/Tracers.hs", "cardano-node/src/Cardano/Node/Tracing/Consistency.hs"],
+      "missing_boundary": "Stock TxSubmission2 already provides phase counters, cumulative blocking/pipeline/mempool-submit wait, and accepted/rejected mempool-add duration; it does not provide one continuous per-transaction request-to-body-to-mempool interval with pending and in-flight depth.",
+      "source_paths": ["cardano-node/src/Cardano/Node/Tracing/Tracers.hs", "cardano-node/src/Cardano/Node/Tracing/Consistency.hs", "ouroboros-network-1.2.0.0/tracing/Ouroboros/Network/Tracing/TxSubmission.hs", "ouroboros-network-1.2.0.0/tracing/Ouroboros/Network/Tracing/TxSubmission/Inbound.hs"],
       "patch_mode": "patched-node",
       "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
       "stock_overlap_reviewed": ["txsubmission", "mempool"],
@@ -245,8 +254,8 @@
     },
     {
       "id": "ledger-plutus-stage-boundaries",
-      "missing_boundary": "Stock node traces do not expose authoritative wall-clock decode, ledger-rule, script-context construction, UPLC evaluation, block selection, and epoch-transition stage durations with stable correlation IDs.",
-      "source_paths": ["cardano-node/src/Cardano/Node/Tracing/Tracers/ChainDB.hs", "cardano-node/src/Cardano/Node/Tracing/Tracers/Consensus.hs"],
+      "missing_boundary": "Stock traces do not expose exact block-application and new-epoch-transition wall-clock duration as stable structured events. Stock RTS eventlog markers bracket actual Plutus VM execution but lack identity and outcome. The current revision-locked patch adds exact block-application, new-epoch-transition, and Plutus VM duration plus accepted/rejected outcome; it does not claim decode, script-context construction, or block-selection timing.",
+      "source_paths": ["ouroboros-consensus-4.2.1.0/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs", "cardano-ledger-alonzo-1.16.0.0/src/Cardano/Ledger/Alonzo/Plutus/Evaluate.hs"],
       "patch_mode": "patched-node",
       "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
       "stock_overlap_reviewed": ["mempool", "chaindb-selection-adoption", "ledger-block-epoch", "plutus-execution"],

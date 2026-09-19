@@ -24,6 +24,8 @@ NODE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 NETWORK_PATTERN = re.compile(r"^(mainnet|preprod|preview|testnet_[1-9][0-9]*)$")
 HOST_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,80}$")
+SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+SHA64_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class CommandResult:
@@ -141,6 +143,36 @@ def normalize_substrate(substrate: dict) -> dict:
             raise ValueError(
                 f"substrate.nodes[{index}].source_revision must be a non-empty string when present"
             )
+        target_mode = str(node.get("target_mode") or "stock")
+        if target_mode not in {"stock", "patched"}:
+            raise ValueError(
+                f"substrate.nodes[{index}].target_mode must be stock or patched"
+            )
+        measurement_identity: dict[str, str] = {"target_mode": target_mode}
+        if target_mode == "patched":
+            patch_set = str(node.get("patch_set_sha256") or "")
+            if not SHA64_PATTERN.fullmatch(patch_set):
+                raise ValueError(
+                    f"substrate.nodes[{index}].patch_set_sha256 must be an exact sha256"
+                )
+            measurement_identity["patch_set_sha256"] = patch_set
+            for field in (
+                "image_digest", "executable_digest", "build_result_sha256",
+                "runtime_probe_log_sha256",
+            ):
+                value = str(node.get(field) or "")
+                if not SHA256_PATTERN.fullmatch(value):
+                    raise ValueError(
+                        f"substrate.nodes[{index}].{field} must be an immutable sha256"
+                    )
+                measurement_identity[field] = value
+            runtime_probe_image = node.get("runtime_probe_image")
+            if runtime_probe_image is not None:
+                if not isinstance(runtime_probe_image, str) or "@sha256:" not in runtime_probe_image:
+                    raise ValueError(
+                        f"substrate.nodes[{index}].runtime_probe_image must be immutable"
+                    )
+                measurement_identity["runtime_probe_image"] = runtime_probe_image
         host_id = node.get("host")
         if host_strategy == "explicit":
             if host_id not in host_ids:
@@ -157,6 +189,7 @@ def normalize_substrate(substrate: dict) -> dict:
                 "image": image,
                 "source_revision": source_revision,
                 "supporting": bool(node.get("supporting", False)),
+                **measurement_identity,
             }
         )
     topology = substrate.get("topology") or {}
@@ -360,16 +393,24 @@ def resolve_docker_image_for_node(
     repo_digests = [str(value) for value in (body.get("RepoDigests") or [])]
     available_digests = [value.rsplit("@", 1)[1] for value in repo_digests if "@sha256:" in value]
     requested_digest = base["requested_digest"]
-    image_digest = requested_digest if requested_digest in available_digests else (
+    image_id = str(body.get("Id") or "") or None
+    local_image_id_match = bool(requested_digest and requested_digest == image_id)
+    image_digest = requested_digest if (
+        requested_digest in available_digests or local_image_id_match
+    ) else (
         available_digests[0] if available_digests else None
     )
     resolved = {
         **base,
-        "image_id": str(body.get("Id") or "") or None,
+        "image_id": image_id,
         "image_digest": image_digest,
         "repo_digests": repo_digests,
     }
-    if requested_digest and requested_digest not in available_digests:
+    if (
+        requested_digest
+        and requested_digest not in available_digests
+        and not local_image_id_match
+    ):
         return {**resolved, "status": "image-digest-mismatch", "satisfied": False}
     return {**resolved, "status": "image-present", "satisfied": True}
 

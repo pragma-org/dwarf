@@ -144,6 +144,25 @@ def test_pinned_digest_mismatch_fails_closed():
     assert result["requested_digest"] == DIGEST
 
 
+def test_locally_built_image_may_be_pinned_by_its_inspected_image_id():
+    node = dict(_substrate()["nodes"][0])
+    node["image"] = f"dwarf/cardano-measurement:local@{IMAGE_ID}"
+
+    def runner(command, **kwargs):
+        return _result(
+            command,
+            stdout=json.dumps([{"Id": IMAGE_ID, "RepoDigests": []}]),
+        )
+
+    result = resolve_docker_image_for_node(node, runner=runner)
+
+    assert result["satisfied"] is True
+    assert result["status"] == "image-present"
+    assert result["requested_digest"] == IMAGE_ID
+    assert result["image_id"] == IMAGE_ID
+    assert result["image_digest"] == IMAGE_ID
+
+
 def test_running_container_must_report_requested_node_version():
     node = _substrate()["nodes"][0]
 

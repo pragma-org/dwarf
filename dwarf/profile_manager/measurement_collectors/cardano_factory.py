@@ -10,6 +10,9 @@ from profile_manager.measurement_collectors.amaru_external import (
     WorkloadAccountingCollector,
 )
 from profile_manager.measurement_collectors.cardano_resources import CardanoResourceCollector
+from profile_manager.measurement_collectors.cardano_patched import (
+    build_cardano_patched_factories,
+)
 from profile_manager.measurement_collectors.cardano_stock import build_cardano_stock_factories
 
 
@@ -18,6 +21,7 @@ def build_cardano_measurement_factories(
     runtime_metadata_path: str | Path,
     target_node: str,
     trace_paths: Iterable[str | Path],
+    patched_trace_paths: Iterable[str | Path] = (),
     tip_probe: Callable[[], dict[str, Any]] | None,
     expected_start_height: int | None = None,
     expected_end_height: int | None = None,
@@ -27,6 +31,7 @@ def build_cardano_measurement_factories(
     resource_sample_reader: Callable[[int, int], dict[str, Any]] | None = None,
     resource_background: bool = True,
     allow_missing_trace_sources: bool = False,
+    target_identity: dict[str, Any] | None = None,
 ) -> dict[str, Callable[[dict[str, Any]], Any]]:
     metadata_path = Path(runtime_metadata_path)
     paths = tuple(Path(path) for path in trace_paths)
@@ -59,5 +64,12 @@ def build_cardano_measurement_factories(
             expected_start_height=expected_start_height,
             expected_end_height=expected_end_height,
             peer_policy=peer_policy,
+        )
+    if target_identity is not None and target_identity.get("mode") == "patched":
+        factories.update(
+            build_cardano_patched_factories(
+                json_trace_paths=patched_trace_paths,
+                target_identity=target_identity,
+            )
         )
     return factories

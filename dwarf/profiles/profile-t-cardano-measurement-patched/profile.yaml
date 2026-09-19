@@ -1,0 +1,16 @@
+{
+  "id": "profile-t-cardano-measurement-patched",
+  "label": "Cardano-node 11.1.2 — patched measurement target",
+  "haskell_count": 3,
+  "amaru_count": 0,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "exact",
+  "cardano_version": "11.1.2",
+  "topology_pattern": "local-mesh",
+  "shared_genesis": true,
+  "measurement_target_mode": "patched",
+  "measurement_patch_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+  "measurement_patch_set_sha256": "7a948067c6b957b277400675cf95e32864ed8d92cd130fbadb673775249b5cc1",
+  "cardano_measurement_traces": true
+}

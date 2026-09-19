@@ -13,6 +13,10 @@ from profile_manager.measurement_collectors.amaru_factory import (
 from profile_manager.measurement_collectors.cardano_factory import (
     build_cardano_measurement_factories,
 )
+from profile_manager.measurement_collectors.cardano_patched import (
+    CARDANO_MEASUREMENT_PATCH_SHA256,
+    CARDANO_SOURCE_REVISION,
+)
 from profile_manager.measurement_resolution import resolve_measurements
 from scripts.runtime_amaru_preview_proof import extract_latest_adopted_tip
 
@@ -53,6 +57,10 @@ CARDANO_STOCK_CAPABILITIES = {
     "cardano-readiness-probe",
     "dwarf-chain-tip-probe",
     "dwarf-workload-events",
+}
+CARDANO_PATCHED_CAPABILITIES = CARDANO_STOCK_CAPABILITIES | {
+    "cardano-patched-protocol-decode",
+    "cardano-patched-ledger-plutus-stages",
 }
 
 
@@ -164,11 +172,48 @@ def _stock_cardano_identity(runtime: dict[str, Any], scenario) -> tuple[dict[str
         or node.get("image_digest")
         or ""
     )
-    if observed_digest != digest:
-        raise MeasurementExecutionError("deployed Cardano-node image digest does not match catalog")
     if str(node.get("source_revision") or "") != source_revision:
         raise MeasurementExecutionError("deployed Cardano-node source revision does not match catalog")
     image_reference = str(node.get("image_ref") or node.get("image") or "")
+    mode = str(node.get("target_mode") or "stock")
+    if mode == "patched":
+        if source_revision != CARDANO_SOURCE_REVISION:
+            raise MeasurementExecutionError("patched Cardano-node source revision does not match collector")
+        if node.get("patch_set_sha256") != CARDANO_MEASUREMENT_PATCH_SHA256:
+            raise MeasurementExecutionError("patched Cardano-node patch-set identity does not match collector")
+        digest = str(node.get("image_digest") or observed_digest)
+        if observed_digest != digest:
+            raise MeasurementExecutionError("deployed patched Cardano-node image digest does not match runtime")
+        for field in (
+            "image_digest", "executable_digest", "build_result_sha256",
+            "runtime_probe_log_sha256",
+        ):
+            value = str(node.get(field) or "")
+            if not value.startswith("sha256:") or len(value) != 71:
+                raise MeasurementExecutionError(
+                    f"deployed patched Cardano-node {field} is not immutable"
+                )
+        if not image_reference.endswith("@" + digest):
+            raise MeasurementExecutionError(
+                "runtime patched Cardano-node image reference is not digest-pinned"
+            )
+        return ({
+            "implementation": "cardano-node",
+            "version": version,
+            "source_revision": source_revision,
+            "mode": "patched",
+            "patch_set_sha256": node["patch_set_sha256"],
+            "image_reference": image_reference,
+            "image_digest": digest,
+            "executable_digest": node["executable_digest"],
+            "build_result_sha256": node["build_result_sha256"],
+            "runtime_probe_log_sha256": node["runtime_probe_log_sha256"],
+            "version_catalog_revision": _catalog_revision(runtime),
+        }, node)
+    if mode != "stock":
+        raise MeasurementExecutionError(f"unsupported Cardano-node target mode: {mode}")
+    if observed_digest != digest:
+        raise MeasurementExecutionError("deployed Cardano-node image digest does not match catalog")
     if not image_reference.endswith("@" + digest):
         raise MeasurementExecutionError("runtime Cardano-node image reference is not digest-pinned")
     return ({
@@ -245,6 +290,7 @@ class PreparedScenarioMeasurements:
     target_node: str
     tip_probe: Callable[[], dict[str, Any]]
     implementation: str = "amaru"
+    patched_trace_paths: tuple[Path, ...] = ()
 
     def build_factories(self, run_dir: str | Path) -> dict[str, Any]:
         run_path = Path(run_dir)
@@ -263,6 +309,8 @@ class PreparedScenarioMeasurements:
                 tip_probe=self.tip_probe,
                 peer_policy="three-node-controlled-local-mesh",
                 allow_missing_trace_sources=True,
+                patched_trace_paths=self.patched_trace_paths,
+                target_identity=self.resolution["target_identity"],
             )
         trace = (
             run_path
@@ -317,7 +365,22 @@ def prepare_scenario_measurements(
         identity, node = _stock_cardano_identity(runtime, scenario)
         target_node = str(node.get("id") or "node1")
         resolved_tip_probe = tip_probe or _docker_cardano_tip_probe(runtime, node)
-        capabilities = CARDANO_STOCK_CAPABILITIES
+        capabilities = (
+            CARDANO_PATCHED_CAPABILITIES
+            if identity["mode"] == "patched"
+            else CARDANO_STOCK_CAPABILITIES
+        )
+        patched_trace_paths: tuple[Path, ...] = ()
+        if identity["mode"] == "patched":
+            runtime_root = Path(str(runtime.get("runtime_root") or ""))
+            if not runtime_root.is_absolute():
+                raise MeasurementExecutionError(
+                    "patched Cardano-node runtime root is not an absolute retained path"
+                )
+            patched_trace_paths = (
+                runtime_root / "logs" / target_node / "cardano-measurement.ndjson",
+                runtime_root / "logs" / target_node / "cardano-plutus.ndjson",
+            )
     resolution = resolve_measurements(
         scenario,
         target_identity=identity,
@@ -329,4 +392,7 @@ def prepare_scenario_measurements(
         target_node=target_node,
         tip_probe=resolved_tip_probe,
         implementation=implementation,
+        patched_trace_paths=(
+            patched_trace_paths if implementation == "cardano-node" else ()
+        ),
     )

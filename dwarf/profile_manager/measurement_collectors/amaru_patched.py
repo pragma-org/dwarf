@@ -428,6 +428,9 @@ def paired_overhead_calibration(
     patched: Mapping[str, Any],
     *,
     minimum_samples: int = 30,
+    expected_implementation: str = "amaru",
+    expected_source_revision: str = AMARU_SOURCE_REVISION,
+    expected_patch_set_sha256: str = AMARU_MEASUREMENT_PATCH_SHA256,
 ) -> dict[str, Any]:
     """Compare common real-node metrics only after strict paired-run parity gates."""
     reasons: list[str] = []
@@ -438,9 +441,11 @@ def paired_overhead_calibration(
     identity_fields = ("implementation", "version", "source_revision")
     if any(stock_target.get(field) != patched_target.get(field) for field in identity_fields):
         reasons.append("stock and patched source identity must match")
-    if patched_target.get("source_revision") != AMARU_SOURCE_REVISION:
+    if patched_target.get("implementation") != expected_implementation:
+        reasons.append("patched implementation is not the audited implementation")
+    if patched_target.get("source_revision") != expected_source_revision:
         reasons.append("patched source revision is not the audited revision")
-    if patched_target.get("patch_set_sha256") != AMARU_MEASUREMENT_PATCH_SHA256:
+    if patched_target.get("patch_set_sha256") != expected_patch_set_sha256:
         reasons.append("patched patch-set identity is not the audited patch")
     if stock.get("workload_identity") != patched.get("workload_identity"):
         reasons.append("paired workload identity must match exactly")

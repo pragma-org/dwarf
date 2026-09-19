@@ -1,7 +1,7 @@
 schema_version: v1
 id: cardano-patched-ledger-plutus-stages
 title: Cardano ledger and Plutus stage timing
-description: Consumes revision-locked node events for decode, ledger-rule, script-context, UPLC evaluation, block-selection, and epoch-transition stage timing.
+description: Consumes revision-locked node events for exact Shelley block application, new-epoch transition, and Plutus VM execution wall-clock timing, including accepted and rejected outcomes.
 output_schema: dwarf/spec/v1/measurement-result.schema.json
 compatibility:
   implementation: cardano-node

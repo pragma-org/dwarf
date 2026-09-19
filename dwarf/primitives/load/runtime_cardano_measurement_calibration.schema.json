@@ -17,6 +17,8 @@
     "response_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
     "observation_seconds": {"type": "number", "minimum": 0.5, "maximum": 30},
     "trace_timeout_seconds": {"type": "number", "minimum": 0.5, "maximum": 120},
+    "plutus_transactions": {"type": "integer", "minimum": 0, "maximum": 100},
+    "epoch_observation_seconds": {"type": "number", "minimum": 0, "maximum": 120},
     "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
     "expected_helper_exit": {"type": "integer"}
   }

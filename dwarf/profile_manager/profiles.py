@@ -365,28 +365,35 @@ def versioned_substrate_for_profile(profile, version_preview):
     if profile.measurement_target_mode not in {"stock", "patched"}:
         raise ValueError("measurement_target_mode must be stock or patched")
     if profile.measurement_target_mode == "patched":
-        if profile.amaru_node_count < 1:
-            raise ValueError("patched Amaru measurement target requires at least one Amaru node")
-        from profile_manager.measurement_targets import resolve_patched_amaru_target
+        if profile.amaru_node_count:
+            implementation = "amaru"
+            from profile_manager.measurement_targets import resolve_patched_amaru_target
 
-        target = resolve_patched_amaru_target(profile)
+            target = resolve_patched_amaru_target(profile)
+        elif profile.node_count:
+            implementation = "cardano-node"
+            from profile_manager.measurement_targets import resolve_patched_cardano_target
+
+            target = resolve_patched_cardano_target(profile)
+        else:
+            raise ValueError("patched measurement target requires at least one target node")
         for node in nodes:
-            if node["impl"] != "amaru":
+            if node["impl"] != implementation:
                 continue
-            node.update(
-                {
-                    "image": target["image_reference"],
-                    "image_digest": target["image_digest"],
-                    "executable_digest": target["executable_digest"],
-                    "target_mode": "patched",
-                    "patch_set_sha256": target["patch_set_sha256"],
-                    "build_result_sha256": target["build_result_sha256"],
-                    "runtime_probe_image": target["runtime_probe_image"],
-                    "runtime_probe_log_sha256": target[
-                        "runtime_probe_log_sha256"
-                    ],
-                }
-            )
+            patched_identity = {
+                "image": target["image_reference"],
+                "image_digest": target["image_digest"],
+                "executable_digest": target["executable_digest"],
+                "target_mode": "patched",
+                "patch_set_sha256": target["patch_set_sha256"],
+                "build_result_sha256": target["build_result_sha256"],
+                "runtime_probe_log_sha256": target["runtime_probe_log_sha256"],
+            }
+            if target.get("runtime_probe_image"):
+                patched_identity["runtime_probe_image"] = target[
+                    "runtime_probe_image"
+                ]
+            node.update(patched_identity)
 
     edges = [
         {"from": left["id"], "to": right["id"]}
@@ -520,7 +527,7 @@ def _versioned_deploy_command(profile, version_preview, remote_dwarf_root=None):
     image_refs.extend(
         node["runtime_probe_image"]
         for node in substrate["nodes"]
-        if node["target_mode"] == "patched"
+        if node["target_mode"] == "patched" and node.get("runtime_probe_image")
     )
     image_refs = sorted(set(image_refs))
     pull_lines = "\n".join(f"docker pull {shlex.quote(image)}" for image in image_refs)
@@ -532,20 +539,26 @@ def _versioned_deploy_command(profile, version_preview, remote_dwarf_root=None):
         expected_id = shlex.quote(node["image_digest"])
         revision = shlex.quote(node["source_revision"])
         patch_set = shlex.quote(node["patch_set_sha256"])
-        probe_image = shlex.quote(node["runtime_probe_image"])
-        local_image_checks.append(
-            f'''actual_id=$(docker image inspect --format '{{{{.Id}}}}' {image} 2>/dev/null || true)
+        implementation_label = (
+            "Cardano-node" if node["impl"] == "cardano-node" else "Amaru"
+        )
+        identity_check = f'''actual_id=$(docker image inspect --format '{{{{.Id}}}}' {image} 2>/dev/null || true)
 if [ "$actual_id" != {expected_id} ]; then
-  echo "Patched Amaru image is missing or has the wrong image id: {node['image']}" >&2
+  echo "Patched {implementation_label} image is missing or has the wrong image id: {node['image']}" >&2
   exit 8
 fi
 actual_revision=$(docker image inspect --format '{{{{index .Config.Labels "org.opencontainers.image.revision"}}}}' {image})
 actual_patch=$(docker image inspect --format '{{{{index .Config.Labels "org.dwarf.measurement.patch-sha256"}}}}' {image})
 if [ "$actual_revision" != {revision} ] || [ "$actual_patch" != {patch_set} ]; then
-  echo "Patched Amaru image labels do not match the audited target identity" >&2
+  echo "Patched {implementation_label} image labels do not match the audited target identity" >&2
   exit 9
-fi
-probe_dir=$(mktemp -d)
+fi'''
+        if node["impl"] == "cardano-node":
+            compatibility_probe = f'''echo "DWARF patched-target Cardano-node compatibility probe"
+docker run --rm --entrypoint /usr/local/bin/cardano-node {image} --version'''
+        else:
+            probe_image = shlex.quote(node["runtime_probe_image"])
+            compatibility_probe = f'''probe_dir=$(mktemp -d)
 probe_container=""
 cleanup_dwarf_probe() {{
   [ -z "$probe_container" ] || docker rm -f "$probe_container" >/dev/null 2>&1 || true
@@ -561,7 +574,7 @@ echo "DWARF patched-target wrapper compatibility probe"
 docker run --rm --entrypoint /bin/bash --volume "$probe_dir/amaru:/target/amaru:ro" {probe_image} -lc '/target/amaru --version'
 cleanup_dwarf_probe
 trap - EXIT'''
-        )
+        local_image_checks.append(identity_check + "\n" + compatibility_probe)
     image_check_lines = "\n".join(local_image_checks)
     dwarf_root_assignment = (
         f"dwarf_root={shlex.quote(remote_dwarf_root)}"

@@ -1,7 +1,7 @@
 schema_version: v1
 id: cardano-patched-txsubmission-residence
 title: Cardano TxSubmission2 residence
-description: Consumes revision-locked node events for TxSubmission2 request, body, pending/in-flight, and mempool residence.
+description: Reserved capability definition for a future continuous per-transaction TxSubmission2 residence patch; it is not enabled by the current patched profile because stock tracing already exposes substantial phase timings and counters.
 output_schema: dwarf/spec/v1/measurement-result.schema.json
 compatibility:
   implementation: cardano-node

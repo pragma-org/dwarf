@@ -1,7 +1,7 @@
 schema_version: v1
 id: cardano-patched-blockfetch-handler-queue
 title: Cardano BlockFetch handler queues
-description: Consumes revision-locked node events for BlockFetch handler queue depth and queue-entry-to-service residence.
+description: Reserved capability definition for a future revision-locked BlockFetch handler queue-depth and queue-residence patch; it is not enabled by the current patched profile.
 output_schema: dwarf/spec/v1/measurement-result.schema.json
 compatibility:
   implementation: cardano-node
