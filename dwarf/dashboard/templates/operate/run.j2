@@ -151,8 +151,9 @@
 
 <hr class="hairline">
 
-<section aria-labelledby="manifest-heading">
-  <header><span class="eyebrow">Manifest</span><h2 id="manifest-heading">Bundle manifest</h2></header>
+<details class="run-disclosure" data-run-section="manifest">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Manifest</span><span class="run-disclosure__title">Bundle manifest</span></span><span class="run-disclosure__meta">Run identity and inputs</span></summary>
+  <div class="run-disclosure__body">
   <table class="config-table run-manifest-table">
     <tbody>
       <tr><th scope="row" title="{{ run.explanation.field_help['scenario'] }}">scenario</th><td><code>{{ run.scenario_id or '—' }}</code></td></tr>
@@ -166,13 +167,15 @@
       <tr><th scope="row" title="{{ run.explanation.field_help['evidence path'] }}">evidence path</th><td><code>{{ run.evidence_path or '—' }}</code></td></tr>
     </tbody>
   </table>
-</section>
+  </div>
+</details>
 
 <hr class="hairline">
 
 {% if run.version_provenance.present %}
-<section aria-labelledby="version-provenance-heading">
-  <header><span class="eyebrow">Real-node provenance</span><h2 id="version-provenance-heading">Resolved node versions</h2></header>
+<details class="run-disclosure" data-run-section="version-provenance">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Real-node provenance</span><span class="run-disclosure__title">Resolved node versions</span></span><span class="run-disclosure__meta">{{ (run.version_provenance.targets + run.version_provenance.supporting)|length }} artifact{{ '' if (run.version_provenance.targets + run.version_provenance.supporting)|length == 1 else 's' }}</span></summary>
+  <div class="run-disclosure__body">
   <p class="page-subhero">This is the catalog and exact-artifact snapshot retained when DWARF launched the deployment; it is not recomputed from today's defaults.</p>
   <dl class="status-tile__rows">
     <div><dt>policy</dt><dd><code>{{ run.version_provenance.policy or '—' }}</code>{% if run.version_provenance.policy_source %} · {{ run.version_provenance.policy_source }}{% endif %}</dd></div>
@@ -194,7 +197,8 @@
     </article>
     {% endfor %}
   </div>
-</section>
+  </div>
+</details>
 
 <hr class="hairline">
 {% endif %}
@@ -205,8 +209,9 @@
 <hr class="hairline">
 {% endif %}
 
-<section aria-labelledby="execution-definition-heading">
-  <header><span class="eyebrow">Scenario snapshot</span><h2 id="execution-definition-heading">Execution definition</h2></header>
+<details class="run-disclosure" data-run-section="execution-definition">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Scenario snapshot</span><span class="run-disclosure__title">Execution definition</span></span><span class="run-disclosure__meta">{{ run.phase_inventory|length }} phase{{ '' if run.phase_inventory|length == 1 else 's' }}</span></summary>
+  <div class="run-disclosure__body">
   <p class="page-subhero">
     Bound through <strong>{{ run.execution.label }}</strong>{% if run.execution.value %} · <code>{{ run.execution.value }}</code>{% endif %}.
     The phase inventory below comes from the exact <code>scenario.yaml</code> retained with this run.
@@ -227,13 +232,15 @@
   {% else %}
   <p class="page-subhero">No primitive inventory is available in the retained scenario snapshot.</p>
   {% endif %}
-</section>
+  </div>
+</details>
 
 <hr class="hairline">
 
 {% if run.interesting_evidence %}
-<section aria-labelledby="interesting-evidence-heading">
-  <header><span class="eyebrow">Run evidence</span><h2 id="interesting-evidence-heading">Interesting evidence</h2></header>
+<details class="run-disclosure" data-run-section="interesting-evidence">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Run evidence</span><span class="run-disclosure__title">Interesting evidence</span></span><span class="run-disclosure__meta">{{ run.interesting_evidence|length }} retained item{{ '' if run.interesting_evidence|length == 1 else 's' }}</span></summary>
+  <div class="run-disclosure__body">
   <p class="page-subhero">Inputs or runtime anomalies retained from this run for triage, replay, minimization, comparison, or promotion.</p>
   {% for evidence in run.interesting_evidence %}
   <article class="run-action">
@@ -256,13 +263,15 @@
     </p>
   </article>
   {% endfor %}
-</section>
+  </div>
+</details>
 
 <hr class="hairline">
 {% endif %}
 
-<section aria-labelledby="chain-heading">
-  <header><span class="eyebrow">Hash chain</span><h2 id="chain-heading">Tamper chain</h2></header>
+<details class="run-disclosure" data-run-section="chain">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Hash chain</span><span class="run-disclosure__title">Tamper chain</span></span><span class="run-disclosure__meta">{{ run.chain.continuity }}</span></summary>
+  <div class="run-disclosure__body">
   <table class="config-table run-chain-table">
     <tbody>
       <tr><th scope="row" title="{{ run.explanation.field_help['manifest hash'] }}">manifest hash</th><td><code class="run-chain-hash">{{ run.chain.manifest_hash or '—' }}</code></td></tr>
@@ -272,12 +281,14 @@
       {% if run.chain.previous_head_run_id %}<tr><th scope="row">previous retained head</th><td><code>{{ run.chain.previous_head_run_id }}</code></td></tr>{% endif %}
     </tbody>
   </table>
-</section>
+  </div>
+</details>
 
 <hr class="hairline">
 
-<section aria-labelledby="provenance-heading">
-  <header><span class="eyebrow">Provenance</span><h2 id="provenance-heading">Attestation chain</h2></header>
+<details class="run-disclosure" data-run-section="provenance">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Provenance</span><span class="run-disclosure__title">Attestation chain</span></span><span class="run-disclosure__meta">{{ run.provenance.verdict if run.provenance.present else 'Not requested' }}</span></summary>
+  <div class="run-disclosure__body">
   {% if run.provenance.present %}
   <p class="run-cross-impl__summary">
     Verdict: <span class="result-pill {{ 'result-pill--pass' if run.provenance.verdict == 'verified' else 'result-pill--fail' }}">{{ run.provenance.verdict or '—' }}</span>
@@ -316,12 +327,14 @@
   against this bundle when signed provenance is required — see the
   <a href="/learn/cli#cli-primitive">CLI reference</a>.</p>
   {% endif %}
-</section>
+  </div>
+</details>
 
 <hr class="hairline">
 
-<section aria-labelledby="export-heading">
-  <header><span class="eyebrow">Export</span><h2 id="export-heading" title="{{ run.explanation.control_help['sarif export'] }}">SARIF export</h2></header>
+<details class="run-disclosure" data-run-section="export">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Export</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['sarif export'] }}">SARIF export</span></span><span class="run-disclosure__meta">{{ 'Available' if run.export.sarif_present else 'Unavailable' }}</span></summary>
+  <div class="run-disclosure__body">
   {% if run.export.sarif_present %}
   <p class="run-cross-impl__summary">
     <a class="cta cta--primary" href="{{ run.export.sarif_download_url }}" title="{{ run.explanation.control_help['download sarif'] }}">Download dwarf-export.sarif ({{ run.export.sarif_size_bytes }} B)</a>
@@ -331,13 +344,15 @@
   <p class="page-subhero" title="{{ run.explanation.control_help['sarif export'] }}">Automatic SARIF generation did not produce an artifact for this run{% if run.export.generation_error %}: <code>{{ run.export.generation_error }}</code>{% endif %}. Regenerate it with:</p>
   <pre class="cli-example__pre" title="{{ run.explanation.control_help['generate sarif'] }}">{{ run.export.generate_command }}</pre>
   {% endif %}
-</section>
+  </div>
+</details>
 
 {% if run.replay_artifact %}
 <hr class="hairline">
 
-<section aria-labelledby="replay-heading">
-  <header><span class="eyebrow">Replay</span><h2 id="replay-heading">Replay verdict</h2></header>
+<details class="run-disclosure" data-run-section="replay">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Replay</span><span class="run-disclosure__title">Replay verdict</span></span><span class="run-disclosure__meta">{{ run.replay_artifact.verdict or 'Unknown' }}</span></summary>
+  <div class="run-disclosure__body">
   <p class="run-cross-impl__summary">
     Verdict: <span class="result-pill {{ 'result-pill--pass' if run.replay_artifact.verdict == 'match' else 'result-pill--fail' }}">{{ run.replay_artifact.verdict or '—' }}</span>
     {% if run.replay_artifact.replayed_at_utc %} · replayed at <code>{{ run.replay_artifact.replayed_at_utc }}</code>{% endif %}
@@ -353,14 +368,16 @@
       </td></tr>
     </tbody>
   </table>
-</section>
+  </div>
+</details>
 {% endif %}
 
 {% if run.diff_artifact %}
 <hr class="hairline">
 
-<section aria-labelledby="diff-heading">
-  <header><span class="eyebrow">Diff</span><h2 id="diff-heading">Bundle diff verdict</h2></header>
+<details class="run-disclosure" data-run-section="diff">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Diff</span><span class="run-disclosure__title">Bundle diff verdict</span></span><span class="run-disclosure__meta">{{ run.diff_artifact.verdict or 'Unknown' }}</span></summary>
+  <div class="run-disclosure__body">
   <p class="run-cross-impl__summary">
     Verdict: <span class="result-pill {{ 'result-pill--pass' if run.diff_artifact.verdict == 'match' else 'result-pill--fail' }}">{{ run.diff_artifact.verdict or '—' }}</span>
   </p>
@@ -375,13 +392,15 @@
       </td></tr>
     </tbody>
   </table>
-</section>
+  </div>
+</details>
 {% endif %}
 
 <hr class="hairline">
 
-<section aria-labelledby="actions-heading" class="run-actions">
-  <header><span class="eyebrow">Actions</span><h2 id="actions-heading" title="{{ run.explanation.control_help['operator actions'] }}">Operator actions</h2></header>
+<details class="run-disclosure run-actions" data-run-section="actions">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Actions</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['operator actions'] }}">Operator actions</span></span><span class="run-disclosure__meta">4 bundle workflows</span></summary>
+  <div class="run-disclosure__body">
   <p class="page-subhero">Each card surfaces the CLI invocation for one of ada3's bundle-workflow primitives, with this run-id substituted. Copy the command and run it from a terminal where <code>cardano-profile</code> is on PATH.</p>
   {% for slug in ['replay', 'diff', 'export_sarif', 'verify_chain'] %}
   {% set action = run.actions[slug] %}
@@ -394,13 +413,15 @@
     <pre class="cli-example__pre" title="{{ run.explanation.control_help['action command'] }}">{{ action.command if action.command else action.command_template }}</pre>
   </article>
   {% endfor %}
-</section>
+  </div>
+</details>
 
 {% if run.cross_impl.markdown %}
 <hr class="hairline">
 
-<section aria-labelledby="cross-impl-heading">
-  <header><span class="eyebrow">Cross-impl</span><h2 id="cross-impl-heading">Cross-impl comparison</h2></header>
+<details class="run-disclosure" data-run-section="cross-impl">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Cross-impl</span><span class="run-disclosure__title">Cross-impl comparison</span></span><span class="run-disclosure__meta">{{ run.cross_impl.result or 'Unknown' }}</span></summary>
+  <div class="run-disclosure__body">
   <p class="run-cross-impl__summary">
     Result: <span class="result-pill {{ 'result-pill--pass' if run.cross_impl.result == 'AGREED' else 'result-pill--fail' }}">{{ run.cross_impl.result or '—' }}</span>
   </p>
@@ -408,14 +429,16 @@
     <summary>Show full report</summary>
     <pre class="run-cross-impl__pre">{{ run.cross_impl.markdown }}</pre>
   </details>
-</section>
+  </div>
+</details>
 {% endif %}
 
 {% if run.substrate_evidence.present %}
 <hr class="hairline">
 
-<section class="substrate-evidence" aria-labelledby="substrate-evidence-heading">
-  <header><span class="eyebrow">Substrate evidence</span><h2 id="substrate-evidence-heading" title="{{ run.explanation.control_help['substrate evidence section'] }}">Composed-substrate observations</h2></header>
+<details class="run-disclosure substrate-evidence" data-run-section="substrate-evidence">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Substrate evidence</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['substrate evidence section'] }}">Composed-substrate observations</span></span><span class="run-disclosure__meta">{{ run.substrate_evidence.tiles|length }} observation{{ '' if run.substrate_evidence.tiles|length == 1 else 's' }}</span></summary>
+  <div class="run-disclosure__body">
   <div class="substrate-evidence__grid">
     {% if 'topology' in run.substrate_evidence.tiles %}
     {% set t = run.substrate_evidence.tiles.topology %}
@@ -540,16 +563,17 @@
     </article>
     {% endif %}
   </div>
-</section>
+  </div>
+</details>
 {% endif %}
 
 {% if run.floor_preview and run.floor_preview.rows %}
 <hr class="hairline">
 
-<section aria-labelledby="floor-preview-heading" class="floor-preview floor-preview--{{ 'gap' if run.floor_preview.summary.any_gap else 'match' }}">
+<details class="run-disclosure floor-preview floor-preview--{{ 'gap' if run.floor_preview.summary.any_gap else 'match' }}" data-run-section="floor-preview">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Floor preview · live re-evaluation</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['floor preview section'] }}">Recorded vs floor-preview</span></span><span class="run-disclosure__meta">{{ run.floor_preview.summary.gap }} gap{{ '' if run.floor_preview.summary.gap == 1 else 's' }} · {{ run.floor_preview.summary.match }} match{{ '' if run.floor_preview.summary.match == 1 else 'es' }}</span></summary>
+  <div class="run-disclosure__body">
   <header class="floor-preview__head">
-    <span class="eyebrow">Floor preview · live re-evaluation</span>
-    <h2 id="floor-preview-heading" title="{{ run.explanation.control_help['floor preview section'] }}">Recorded vs floor-preview</h2>
     <p class="floor-preview__sub">For every recorded assertion, the production evaluator from <code>profile_manager/primitives.py</code> is re-run against this bundle's preserved telemetry. Gaps mean the bundle's recorded result and the current floor disagree — a candidate for re-run under the tightened floor.</p>
   </header>
   <div class="floor-preview__counts">
@@ -603,14 +627,16 @@
       {% endfor %}
     </tbody>
   </table>
-</section>
+  </div>
+</details>
 {% endif %}
 
 {% if run.assertions %}
 <hr class="hairline">
 
-<section aria-labelledby="assertions-heading">
-  <header><span class="eyebrow">Assertions</span><h2 id="assertions-heading" title="{{ run.explanation.control_help['assertions section'] }}">Recorded assertions</h2></header>
+<details class="run-disclosure" data-run-section="assertions">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Assertions</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['assertions section'] }}">Recorded assertions</span></span><span class="run-disclosure__meta">{{ run.assertions|length }} assertion{{ '' if run.assertions|length == 1 else 's' }}</span></summary>
+  <div class="run-disclosure__body">
   <table class="config-table run-assertions-table">
     <thead><tr><th title="{{ run.explanation.field_help['primitive'] }}">Primitive</th><th title="{{ run.explanation.field_help['params'] }}">Params</th><th title="{{ run.explanation.field_help['evaluated'] }}">Evaluated</th><th title="{{ run.explanation.field_help['result'] }}">Result</th></tr></thead>
     <tbody>
@@ -633,27 +659,31 @@
       {% endfor %}
     </tbody>
   </table>
-</section>
+  </div>
+</details>
 {% endif %}
 
 {% if run.probes %}
 <hr class="hairline">
 
-<section aria-labelledby="probes-heading">
-  <header><span class="eyebrow">Probes</span><h2 id="probes-heading" title="{{ run.explanation.control_help['probes section'] }}">Time-series probes</h2></header>
+<details class="run-disclosure" data-run-section="probes">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Probes</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['probes section'] }}">Time-series probes</span></span><span class="run-disclosure__meta">{{ run.probes|length }} probe{{ '' if run.probes|length == 1 else 's' }}</span></summary>
+  <div class="run-disclosure__body">
   <ul class="run-probe-list">
     {% for p in run.probes %}
     <li title="{{ run.explanation.field_help['probe'] }}"><code>{{ p.name }}</code> — <span title="{{ run.explanation.field_help['samples'] }}">{{ p.samples }} samples</span></li>
     {% endfor %}
   </ul>
-</section>
+  </div>
+</details>
 {% endif %}
 
 {% if run.log_tail %}
 <hr class="hairline">
 
-<section aria-labelledby="log-heading">
-  <header><span class="eyebrow">Log tail</span><h2 id="log-heading" title="{{ run.explanation.control_help['log tail section'] }}">Last {{ run.log_tail|length }} log events</h2></header>
+<details class="run-disclosure" data-run-section="log-tail">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Log tail</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['log tail section'] }}">Last {{ run.log_tail|length }} log events</span></span><span class="run-disclosure__meta">Most recent events</span></summary>
+  <div class="run-disclosure__body">
   <table class="config-table run-log-table">
     <thead><tr><th title="{{ run.explanation.field_help['ts'] }}">ts</th><th title="{{ run.explanation.field_help['phase'] }}">phase</th><th title="{{ run.explanation.field_help['primitive'] }}">primitive</th><th title="{{ run.explanation.field_help['event'] }}">event</th><th title="{{ run.explanation.field_help['payload'] }}">payload</th></tr></thead>
     <tbody>
@@ -677,6 +707,7 @@
       {% endfor %}
     </tbody>
   </table>
-</section>
+  </div>
+</details>
 {% endif %}
 {% endblock %}

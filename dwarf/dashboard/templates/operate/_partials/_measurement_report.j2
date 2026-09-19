@@ -73,6 +73,10 @@
     <label class="measurement-controls__search">Search measurements
       <input type="search" data-measurement-search placeholder="Block application, mempool, CPU…" autocomplete="off">
     </label>
+    <div class="measurement-controls__disclosures" aria-label="Measurement section controls">
+      <button type="button" class="measurement-filter" data-measurement-expand-all>Expand all</button>
+      <button type="button" class="measurement-filter" data-measurement-collapse-all>Collapse all</button>
+    </div>
     <div class="measurement-controls__categories" aria-label="Filter by category">
       <button type="button" class="measurement-filter is-active" data-measurement-category="all" aria-pressed="true">All</button>
       {% for category in run.measurements.presentation.categories %}
@@ -85,14 +89,14 @@
 
   <div class="measurement-groups">
     {% for group in run.measurements.presentation.groups %}
-    <section class="measurement-group" data-measurement-group="{{ group.id }}" aria-labelledby="measurement-group-{{ group.id }}">
-      <header class="measurement-group__header">
+    <details class="measurement-group" data-measurement-group="{{ group.id }}">
+      <summary class="measurement-group__summary" aria-labelledby="measurement-group-{{ group.id }}">
         <div>
           <span class="eyebrow">{{ group.count }} concept{{ '' if group.count == 1 else 's' }}</span>
           <h3 id="measurement-group-{{ group.id }}">{{ group.label }}</h3>
         </div>
         <p>{{ group.description }}</p>
-      </header>
+      </summary>
       <div class="measurement-card-grid">
         {% for metric in group.cards %}
         <article class="measurement-card measurement-card--{{ metric.status }}" data-measurement-card data-measurement-category-id="{{ group.id }}" data-measurement-search-text="{{ metric.title }} {{ metric.description }} {{ metric.source_label }} {{ metric.raw_metric_ids|join(' ') }} {{ metric.reason }}">
@@ -150,7 +154,7 @@
         </article>
         {% endfor %}
       </div>
-    </section>
+    </details>
     {% endfor %}
   </div>
 

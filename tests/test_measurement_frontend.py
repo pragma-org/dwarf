@@ -308,6 +308,19 @@ def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
     assert "Reserved / not implemented" in html
     assert 'data-measurement-card' in html
     assert 'data-measurement-category="all"' in html
+    measurement_groups = re.findall(
+        r'<details class="measurement-group"[^>]*data-measurement-group="[^"]+"[^>]*>',
+        html,
+    )
+    category_filters = re.findall(
+        r'data-measurement-category="(?!all")[^"]+"',
+        html,
+    )
+    assert len(measurement_groups) == len(category_filters)
+    assert measurement_groups
+    assert all(" open" not in group for group in measurement_groups)
+    assert 'data-measurement-expand-all' in html
+    assert 'data-measurement-collapse-all' in html
     assert '/static/js/measurement-report.js' in html
     assert f'/operate/runs/{run_id}/measurements/raw' in html
     assert '<table class="config-table measurement-table">' not in html
@@ -322,3 +335,43 @@ def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
     assert "ledger_samples" in raw_html
     assert "measurements/report.json" in raw_html
     assert "measurements/report.md" in raw_html
+
+
+def test_run_report_secondary_evidence_uses_closed_native_disclosures():
+    template = (
+        Path(__file__).parents[1]
+        / "dwarf"
+        / "dashboard"
+        / "templates"
+        / "operate"
+        / "run.j2"
+    ).read_text(encoding="utf-8")
+
+    section_ids = {
+        "manifest",
+        "version-provenance",
+        "execution-definition",
+        "interesting-evidence",
+        "chain",
+        "provenance",
+        "export",
+        "replay",
+        "diff",
+        "actions",
+        "cross-impl",
+        "substrate-evidence",
+        "floor-preview",
+        "assertions",
+        "probes",
+        "log-tail",
+    }
+    for section_id in section_ids:
+        opening = re.search(
+            rf'<details class="run-disclosure[^"]*" data-run-section="{section_id}"[^>]*>',
+            template,
+        )
+        assert opening is not None, section_id
+        assert " open" not in opening.group(0), section_id
+
+    assert '<summary class="run-disclosure__summary">' in template
+    assert '<div class="run-disclosure__body">' in template

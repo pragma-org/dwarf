@@ -6,6 +6,8 @@ if (report) {
   const cards = [...report.querySelectorAll('[data-measurement-card]')];
   const groups = [...report.querySelectorAll('[data-measurement-group]')];
   const empty = report.querySelector('[data-measurement-empty]');
+  const expandAll = report.querySelector('[data-measurement-expand-all]');
+  const collapseAll = report.querySelector('[data-measurement-collapse-all]');
   let category = 'all';
 
   const apply = () => {
@@ -18,7 +20,9 @@ if (report) {
       if (!card.hidden) visible += 1;
     });
     groups.forEach((group) => {
-      group.hidden = ![...group.querySelectorAll('[data-measurement-card]')].some((card) => !card.hidden);
+      const hasMatch = [...group.querySelectorAll('[data-measurement-card]')].some((card) => !card.hidden);
+      group.hidden = !hasMatch;
+      if (hasMatch && (query || category !== 'all')) group.open = true;
     });
     if (empty) empty.hidden = visible !== 0;
   };
@@ -34,6 +38,12 @@ if (report) {
       });
       apply();
     });
+  });
+  expandAll?.addEventListener('click', () => {
+    groups.filter((group) => !group.hidden).forEach((group) => { group.open = true; });
+  });
+  collapseAll?.addEventListener('click', () => {
+    groups.forEach((group) => { group.open = false; });
   });
 }
 
