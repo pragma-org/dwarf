@@ -6,6 +6,7 @@ client vocabulary and display shape without changing any retained value.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +95,24 @@ def _evidence_label(sample_count: int | None) -> tuple[str, str]:
     if sample_count < 30:
         return "Small sample", "limited"
     return "Useful sample", "useful"
+
+
+def _display_value(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return "—" if value is None else str(value)
+    number = float(value)
+    if not math.isfinite(number):
+        return "—"
+    magnitude = abs(number)
+    if magnitude >= 1_000_000_000_000:
+        return f"{number:.3g}"
+    if number.is_integer():
+        return f"{int(number):,}"
+    if magnitude >= 1_000:
+        return f"{number:,.2f}".rstrip("0").rstrip(".")
+    if magnitude >= 1:
+        return f"{number:.3f}".rstrip("0").rstrip(".")
+    return f"{number:.3g}"
 
 
 def _outcomes(raw: Any, unit: str) -> list[dict[str, Any]]:
@@ -189,6 +208,7 @@ def _card(
             "status": "reserved",
             "primary_label": "Implementation status",
             "primary_value": None,
+            "primary_display": "—",
             "primary_unit": "",
             "primary_support": reason,
             "sample_count": None,
@@ -236,6 +256,7 @@ def _card(
         "status": status,
         "primary_label": primary_label,
         "primary_value": primary_value,
+        "primary_display": _display_value(primary_value),
         "primary_unit": unit,
         "primary_support": reason if metric_type == "unavailable" else _primary_support(metric_type, primary, derivation),
         "sample_count": sample_count,
@@ -287,6 +308,7 @@ def _fallback_card(metric_id: str, raw_value: Any, target: dict[str, Any]) -> di
         "status": status,
         "primary_label": primary_label,
         "primary_value": primary_value,
+        "primary_display": _display_value(primary_value),
         "primary_unit": unit,
         "primary_support": reason,
         "sample_count": sample_count,

@@ -114,7 +114,7 @@
           </div>
           {% else %}
           <div class="measurement-card__result">
-            <strong>{{ metric.primary_value }}</strong>
+            <strong>{{ metric.primary_display }}</strong>
             {% if metric.primary_unit %}<span>{{ metric.primary_unit }}</span>{% endif %}
           </div>
           <p class="measurement-card__support">{{ metric.primary_support }}</p>

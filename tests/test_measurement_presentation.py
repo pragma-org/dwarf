@@ -128,11 +128,13 @@ def test_scalar_and_count_never_show_false_zero_samples():
     ledger = _card(result, "ledger-events")
     assert sync["metric_type"] == "scalar"
     assert sync["primary_value"] == 0.5627
+    assert sync["primary_display"] == "0.563"
     assert sync["sample_count"] is None
     assert "10.66" in sync["primary_support"]
     assert ledger["metric_type"] == "count"
     assert ledger["primary_label"] == "Event count"
     assert ledger["primary_value"] == 110
+    assert ledger["primary_display"] == "110"
     assert ledger["sample_count"] is None
 
 
@@ -154,6 +156,7 @@ def test_scalar_uses_the_catalog_primary_statistic_instead_of_assuming_value():
 
     cpu = _card(result, "cpu-time")
     assert cpu["primary_value"] == 1.7
+    assert cpu["primary_display"] == "1.7"
     assert cpu["primary_label"] == "Change"
     assert cpu["sample_count"] is None
 
@@ -180,6 +183,7 @@ def test_scalar_technical_details_keep_derivation_inputs_and_outcomes():
     offered = _card(result, "offered-operation-rate")
     details = {item["key"]: item["value"] for item in offered["technical_values"]}
     assert offered["primary_value"] == 10.0
+    assert offered["primary_display"] == "10"
     assert details["offered_count"] == 100
     assert details["accepted_count"] == 4
     assert details["rejected_count"] == 96
