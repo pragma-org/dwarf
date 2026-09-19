@@ -29,6 +29,9 @@ from profile_manager.profiles import find_profile, versioned_substrate_for_profi
 
 _ID = re.compile(r"^[a-z][a-z0-9-]{0,127}$")
 _VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$")
+_DECIMAL_SEED = re.compile(r"^(0|[1-9][0-9]{0,19})$")
+_HEX_SEED = re.compile(r"^0[xX][0-9a-fA-F]{1,16}$")
+_MAX_SEED = (1 << 64) - 1
 _ALLOWED_FIELDS = {
     "scenario_id",
     "profile_id",
@@ -39,6 +42,8 @@ _ALLOWED_FIELDS = {
     "compatibility_pair",
     "measurement_profile",
     "acknowledge_unknown_versions",
+    "execution",
+    "seed",
 }
 
 
@@ -68,6 +73,25 @@ def _optional_version(value: Any, *, field: str) -> str | None:
     return value
 
 
+def _optional_seed(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise RunPlanError(
+            "seed must be an unsigned decimal integer or 0x hexadecimal value",
+            field="seed",
+        )
+    text = str(value)
+    if not (_DECIMAL_SEED.fullmatch(text) or _HEX_SEED.fullmatch(text)):
+        raise RunPlanError(
+            "seed must be an unsigned decimal integer or 0x hexadecimal value",
+            field="seed",
+        )
+    if int(text, 0) > _MAX_SEED:
+        raise RunPlanError("seed must fit in an unsigned 64-bit integer", field="seed")
+    return text
+
+
 @dataclass(frozen=True)
 class RunPlanRequest:
     scenario_id: str
@@ -79,6 +103,8 @@ class RunPlanRequest:
     compatibility_pair: str | None = None
     measurement_profile: str | None = None
     acknowledge_unknown_versions: bool = False
+    execution: str = "local"
+    seed: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.scenario_id, str) or not _ID.fullmatch(self.scenario_id):
@@ -113,6 +139,14 @@ class RunPlanRequest:
                 "acknowledge_unknown_versions must be boolean",
                 field="acknowledge_unknown_versions",
             )
+        if self.execution not in {"local", "github-actions", "antithesis"}:
+            raise RunPlanError(
+                "execution must be local, github-actions, or antithesis",
+                field="execution",
+            )
+        normalized_seed = _optional_seed(self.seed)
+        if normalized_seed != self.seed:
+            object.__setattr__(self, "seed", normalized_seed)
 
     @classmethod
     def from_mapping(cls, value: Any) -> "RunPlanRequest":
@@ -152,6 +186,8 @@ class RunPlanRequest:
             acknowledge_unknown_versions=value.get(
                 "acknowledge_unknown_versions", False
             ),
+            execution=value.get("execution", "local"),
+            seed=_optional_seed(value.get("seed")),
         )
 
 
@@ -331,6 +367,7 @@ def resolve_run_plan(request: RunPlanRequest | dict[str, Any]) -> dict[str, Any]
         scenario,
         target=effective_target,
         profile=selected_profile_id,
+        seed=request.seed if request.seed is not None else scenario.seed,
         measurement_profile=(
             request.measurement_profile
             if request.measurement_profile is not None
@@ -376,8 +413,16 @@ def resolve_run_plan(request: RunPlanRequest | dict[str, Any]) -> dict[str, Any]
             "runtime": scenario.runtime,
             "target": effective_target,
             "digest": "sha256:" + hashlib.sha256(scenario.raw_bytes).hexdigest(),
-            "seed": scenario.seed,
+            "seed": effective_scenario.seed,
+            "seed_source": (
+                "operator-override" if request.seed is not None else "scenario-default"
+            ),
             "iterations": scenario.iterations,
+            "iterations_editable": False,
+            "iterations_reason": (
+                "The scenario-level iterations field is recorded but not consumed "
+                "by the current execution engine."
+            ),
         },
         "profile": (
             {

@@ -63,6 +63,7 @@ def _materialized_scenario(plan: dict[str, Any]) -> bytes:
     if value.get("id") != scenario_id:
         raise LaunchStoreError("scenario source identifier changed")
     value["target"] = dict(plan["scenario"]["target"])
+    value["seed"] = plan["scenario"].get("seed")
     profile = plan.get("profile")
     if profile:
         value["profile"] = profile["id"]

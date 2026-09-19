@@ -306,3 +306,84 @@ def test_launch_preflight_is_retained_with_run_inputs(tmp_path):
     )
 
     assert json.loads((retained / "preflight.json").read_text())["state"] == "ready"
+
+
+def test_request_accepts_bounded_execution_and_seed_override():
+    request = RunPlanRequest.from_mapping(
+        {
+            "scenario_id": "edge-cases-cbor-tx-body-amaru",
+            "execution": "local",
+            "seed": "0xC0DE5002",
+        }
+    )
+
+    assert request.execution == "local"
+    assert request.seed == "0xC0DE5002"
+
+
+@pytest.mark.parametrize(
+    "seed",
+    ["-1", "0x", "0xGG", "18446744073709551616"],
+)
+def test_request_rejects_invalid_seed_override(seed):
+    with pytest.raises(RunPlanError) as raised:
+        RunPlanRequest.from_mapping(
+            {
+                "scenario_id": "edge-cases-cbor-tx-body-amaru",
+                "seed": seed,
+            }
+        )
+
+    assert raised.value.field == "seed"
+
+
+def test_request_rejects_unknown_execution_and_inert_iterations_override():
+    with pytest.raises(RunPlanError) as raised_execution:
+        RunPlanRequest.from_mapping(
+            {
+                "scenario_id": "edge-cases-cbor-tx-body-amaru",
+                "execution": "simulator",
+            }
+        )
+    assert raised_execution.value.field == "execution"
+
+    with pytest.raises(RunPlanError) as raised_iterations:
+        RunPlanRequest.from_mapping(
+            {
+                "scenario_id": "edge-cases-cbor-tx-body-amaru",
+                "iterations": 10,
+            }
+        )
+    assert raised_iterations.value.field == "request"
+
+
+def test_plan_records_effective_seed_source_and_inert_iteration_contract():
+    plan = resolve_run_plan(
+        RunPlanRequest(
+            scenario_id="m3-runtime-blockfetch-multi-peer-historical-range",
+            seed="42",
+        )
+    )
+
+    assert plan["scenario"]["seed"] == "42"
+    assert plan["scenario"]["seed_source"] == "operator-override"
+    assert plan["scenario"]["iterations_editable"] is False
+    assert "not consumed" in plan["scenario"]["iterations_reason"]
+
+
+def test_launch_materializes_seed_override(tmp_path):
+    plan = resolve_run_plan(
+        RunPlanRequest(
+            scenario_id="edge-cases-cbor-tx-body-amaru",
+            seed="0xC0DE5002",
+        )
+    )
+
+    stored = create_launch(plan, root=tmp_path)
+    scenario = json.loads(
+        load_launch(stored["launch_id"], root=tmp_path)[
+            "scenario_path"
+        ].read_text(encoding="utf-8")
+    )
+
+    assert scenario["seed"] == "0xC0DE5002"
