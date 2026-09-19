@@ -23,10 +23,11 @@ from profile_manager.measurement_report import distribution_summary
 from profile_manager.measurement_runtime import CollectorContext
 from scripts.qualify_node_versions import classify_log_signals
 from scripts.runtime_amaru_preview_proof import extract_latest_adopted_tip
-from scripts.runtime_txsubmission_probe import HANDSHAKE_PROPOSE_HEX, _encode_mux_sdu
+from scripts.runtime_txsubmission_probe import _encode_mux_sdu
 
 
 SEED = "0xA11CE501"
+HANDSHAKE_SUPPORTED_VERSION_HEX = "8200a10f84182af400f4"
 HANDSHAKE_UNSUPPORTED_VERSION_HEX = "8200a11903e782182af4"
 HANDSHAKE_MALFORMED_HEX = "ff"
 DEFAULT_CASE_SET = "unsupported-version-only-v1"
@@ -45,7 +46,7 @@ _CASE_SETS = {
     ACCEPTANCE_CASE_SET: (
         {
             "name": "supported-version-acceptance",
-            "payload_hex": HANDSHAKE_PROPOSE_HEX,
+            "payload_hex": HANDSHAKE_SUPPORTED_VERSION_HEX,
             "expected_external_outcome": "accepted",
             "expected_decode_outcome": "decoded",
         },

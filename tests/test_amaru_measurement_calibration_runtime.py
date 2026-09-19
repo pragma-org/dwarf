@@ -136,6 +136,18 @@ def test_acceptance_case_plan_is_balanced_and_reaches_all_decode_outcomes():
     }
 
 
+def test_supported_case_uses_source_exact_v15_four_field_offer():
+    plan = build_case_plan(attempt_count=3, case_set=ACCEPTANCE_CASE_SET)
+    supported = next(
+        row for row in plan if row["name"] == "supported-version-acceptance"
+    )
+
+    assert supported["payload_hex"] == "8200a10f84182af400f4"
+    assert build_handshake_frame(supported["payload_hex"])[8:] == bytes.fromhex(
+        "8200a10f84182af400f4"
+    )
+
+
 def test_acceptance_workload_identity_pins_every_case_and_wire_payload():
     identity = build_workload_identity(
         attempt_count=120,

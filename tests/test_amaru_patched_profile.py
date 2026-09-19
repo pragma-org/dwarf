@@ -17,7 +17,7 @@ from profile_manager.profiles import (
 
 
 REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
-PATCH_SET = "7ce3356d53535b22b82abf10166f9fa8ccfcd40b49bd8e298895ba1c027c0532"
+PATCH_SET = "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af"
 IMAGE_ID = "sha256:" + "f" * 64
 EXECUTABLE = "sha256:" + "e" * 64
 

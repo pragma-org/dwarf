@@ -1,20 +1,40 @@
 diff --git a/crates/amaru-observability/src/schemas.rs b/crates/amaru-observability/src/schemas.rs
-index 53716cde..298142ec 100644
+index 53716cde..1d6c2c61 100644
 --- a/crates/amaru-observability/src/schemas.rs
 +++ b/crates/amaru-observability/src/schemas.rs
-@@ -1855,6 +1855,70 @@ define_schemas! {
+@@ -1855,6 +1855,90 @@ define_schemas! {
              }
          }
          protocols {
 +            measurement {
-+                /// Exact live mini-protocol CBOR decode and state-classification timing.
++                /// Mux CBOR-item extraction for a live mini-protocol input.
++                public PROTOCOL_INGRESS {
++                    required protocol_id: String
++                    required role: String
++                    required boundary: String
++                    required bytes: usize
++                    required outcome: String
++                    required elapsed_micros: u64
++                }
++                /// Exact live mini-protocol CBOR decode and state-admission timing.
 +                public PROTOCOL_DECODE {
++                    optional protocol_id: String
++                    optional role: String
++                    optional boundary: String
 +                    required message_type: String
 +                    required bytes: usize
 +                    required decode_outcome: String
 +                    required state_outcome: String
 +                    required decode_micros: u64
 +                    required total_micros: u64
++                }
++                /// Responder-side Handshake negotiation after decode and state admission.
++                public HANDSHAKE_NEGOTIATION {
++                    required protocol_id: String
++                    required role: String
++                    required boundary: String
++                    required outcome: String
++                    required elapsed_micros: u64
 +                }
 +                /// BlockFetch handler cost and queue state for every handled input.
 +                public BLOCKFETCH_HANDLER {
@@ -269,8 +289,158 @@ index dd84ba0d..deacc99f 100644
  async fn invalid(peer: Peer, state: &str, input: impl std::fmt::Debug, eff: Effects<Mail>) -> Instance {
      error!(
          protocols::INVALID_INPUT,
+diff --git a/crates/amaru-protocols/src/handshake/responder.rs b/crates/amaru-protocols/src/handshake/responder.rs
+index 103308c5..89973fab 100644
+--- a/crates/amaru-protocols/src/handshake/responder.rs
++++ b/crates/amaru-protocols/src/handshake/responder.rs
+@@ -12,7 +12,9 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
+-use amaru_observability::{Instrument, debug_span};
++use std::time::Instant;
++
++use amaru_observability::{Instrument, debug, debug_span};
+ use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
+ 
+ use crate::{
+@@ -78,7 +80,21 @@ impl StageState<State, Responder> for HandshakeResponder {
+         let version_table = input.0.to_string();
+ 
+         async move {
++            let started = Instant::now();
+             let result = crate::handshake::compute_negotiation_result(&self.our_versions, &input.0);
++            let outcome = match &result {
++                HandshakeResult::Accepted(..) => "accepted",
++                HandshakeResult::Refused(..) => "refused",
++                HandshakeResult::Query(..) => "query",
++            };
++            debug!(
++                protocols::measurement::HANDSHAKE_NEGOTIATION,
++                protocol_id = "0",
++                role = "responder",
++                boundary = "handshake-negotiation",
++                outcome,
++                elapsed_micros = started.elapsed().as_micros() as u64
++            );
+             eff.send(&self.connection, result.clone()).await;
+             Ok((Some(result.into()), self))
+         }
+diff --git a/crates/amaru-protocols/src/mux.rs b/crates/amaru-protocols/src/mux.rs
+index 77ea86aa..95a40ded 100644
+--- a/crates/amaru-protocols/src/mux.rs
++++ b/crates/amaru-protocols/src/mux.rs
+@@ -18,7 +18,7 @@ use std::{
+     cell::RefCell,
+     collections::{VecDeque, hash_map::Entry},
+     num::{NonZeroU16, NonZeroUsize},
+-    time::{Duration, SystemTime},
++    time::{Duration, Instant as WallInstant, SystemTime},
+ };
+ 
+ use amaru_kernel::{NonEmptyBytes, Peer};
+@@ -622,7 +622,7 @@ impl Muxer {
+         let byte_len = bytes.len() as u64;
+         async {
+             if let Some(proto) = self.protocols.get_mut(&proto_id) {
+-                proto.received(timestamp, bytes, eff).await
++                proto.received(timestamp, proto_id, bytes, eff).await
+             } else {
+                 anyhow::bail!("received data for unknown protocol {}", proto_id)
+             }
+@@ -638,7 +638,7 @@ impl Muxer {
+                 .get_mut(&proto_id)
+                 .ok_or_else(|| anyhow::anyhow!("protocol {} not registered", proto_id))
+                 .expect("internal error")
+-                .want_next(eff)
++                .want_next(proto_id, eff)
+                 .await?;
+             Ok(())
+         }
+@@ -688,7 +688,13 @@ impl PerProto {
+         }
+     }
+ 
+-    pub async fn received<M>(&mut self, _timestamp: Timestamp, bytes: Bytes, eff: &Effects<M>) -> anyhow::Result<()> {
++    pub async fn received<M>(
++        &mut self,
++        _timestamp: Timestamp,
++        proto_id: ProtocolId<Erased>,
++        bytes: Bytes,
++        eff: &Effects<M>,
++    ) -> anyhow::Result<()> {
+         if self.max_buffer == 0 {
+             debug!(protocols::mux::protocol::IGNORING_BYTES, bytes = bytes.len());
+             return Ok(());
+@@ -709,7 +715,7 @@ impl PerProto {
+         }
+         self.incoming.extend(&bytes);
+         while self.wanted > 0
+-            && let Some(bytes) = self.frame.try_consume(&mut self.incoming)?
++            && let Some(bytes) = self.try_consume(proto_id)?
+         {
+             trace!(protocols::mux::protocol::MESSAGE_EXTRACTED, bytes = bytes.len().get());
+             eff.send(&self.handler, HandlerMessage::FromNetwork(bytes)).await;
+@@ -718,10 +724,10 @@ impl PerProto {
+         Ok(())
+     }
+ 
+-    pub async fn want_next<M>(&mut self, eff: &Effects<M>) -> anyhow::Result<()> {
++    pub async fn want_next<M>(&mut self, proto_id: ProtocolId<Erased>, eff: &Effects<M>) -> anyhow::Result<()> {
+         trace!(protocols::mux::protocol::BYTES_RECEIVED, wanted = self.wanted);
+         if !self.incoming.is_empty()
+-            && let Some(bytes) = self.frame.try_consume(&mut self.incoming)?
++            && let Some(bytes) = self.try_consume(proto_id)?
+         {
+             trace!(protocols::mux::protocol::MESSAGE_EXTRACTED, bytes = bytes.len().get());
+             eff.send(&self.handler, HandlerMessage::FromNetwork(bytes)).await;
+@@ -732,6 +738,44 @@ impl PerProto {
+         Ok(())
+     }
+ 
++    fn try_consume(&mut self, proto_id: ProtocolId<Erased>) -> anyhow::Result<Option<NonEmptyBytes>> {
++        let started = WallInstant::now();
++        let buffered_bytes = self.incoming.len();
++        let protocol_id = if proto_id.is_responder() { proto_id.opposite().to_string() } else { proto_id.to_string() };
++        let role = proto_id.role().to_string();
++        match self.frame.try_consume(&mut self.incoming) {
++            Ok(Some(bytes)) => {
++                if self.frame == Frame::OneCborItem {
++                    debug!(
++                        protocols::measurement::PROTOCOL_INGRESS,
++                        protocol_id,
++                        role,
++                        boundary = "mux-cbor-item",
++                        bytes = bytes.len().get(),
++                        outcome = "framed",
++                        elapsed_micros = started.elapsed().as_micros() as u64
++                    );
++                }
++                Ok(Some(bytes))
++            }
++            Ok(None) => Ok(None),
++            Err(error) => {
++                if self.frame == Frame::OneCborItem {
++                    debug!(
++                        protocols::measurement::PROTOCOL_INGRESS,
++                        protocol_id,
++                        role,
++                        boundary = "mux-cbor-item",
++                        bytes = buffered_bytes,
++                        outcome = "malformed",
++                        elapsed_micros = started.elapsed().as_micros() as u64
++                    );
++                }
++                Err(error.into())
++            }
++        }
++    }
++
+     pub fn enqueue_send(&mut self, bytes: Bytes, sent: StageRef<Sent>) {
+         self.outgoing.extend(&bytes);
+         self.notifiers.push_back((sent, self.sent_bytes + self.outgoing.len()));
 diff --git a/crates/amaru-protocols/src/protocol/miniprotocol.rs b/crates/amaru-protocols/src/protocol/miniprotocol.rs
-index 0abc323f..9bd13b6d 100644
+index 0abc323f..6dc91078 100644
 --- a/crates/amaru-protocols/src/protocol/miniprotocol.rs
 +++ b/crates/amaru-protocols/src/protocol/miniprotocol.rs
 @@ -12,9 +12,10 @@
@@ -341,6 +511,78 @@ index 0abc323f..9bd13b6d 100644
          }
          other => Err(other),
      }
+@@ -202,10 +245,67 @@ where
+             let local_or_network = match input {
+                 Inputs::Network(wire_msg) => {
+                     let (outcome, s) = if let HandlerMessage::FromNetwork(wire_msg) = wire_msg {
+-                        let wire_msg: Proto::WireMsg = cbor::decode(&wire_msg)
+-                            .or_terminate(&eff, err("failed to decode message from network"))
+-                            .await;
+-                        proto.network(wire_msg).or_terminate(&eff, err("failed to step protocol state (network)")).await
++                        let started = Instant::now();
++                        let byte_count = wire_msg.len().get();
++                        let message_type = type_name::<Proto::WireMsg>().to_string();
++                        let protocol_id = if proto_id.is_responder() {
++                            proto_id.opposite().to_string()
++                        } else {
++                            proto_id.to_string()
++                        };
++                        let role = proto_id.role().to_string();
++                        let wire_msg: Proto::WireMsg = match cbor::decode(&wire_msg) {
++                            Ok(message) => message,
++                            Err(error) => {
++                                let decode_micros = started.elapsed().as_micros() as u64;
++                                debug!(
++                                    protocols::measurement::PROTOCOL_DECODE,
++                                    protocol_id,
++                                    role,
++                                    boundary = "mini-protocol-decode",
++                                    message_type,
++                                    bytes = byte_count,
++                                    decode_outcome = "malformed",
++                                    state_outcome = "not_attempted",
++                                    decode_micros,
++                                    total_micros = decode_micros
++                                );
++                                Err(error).or_terminate(&eff, err("failed to decode message from network")).await
++                            }
++                        };
++                        let decode_micros = started.elapsed().as_micros() as u64;
++                        match proto.network(wire_msg) {
++                            Ok(result) => {
++                                debug!(
++                                    protocols::measurement::PROTOCOL_DECODE,
++                                    protocol_id,
++                                    role,
++                                    boundary = "mini-protocol-decode",
++                                    message_type,
++                                    bytes = byte_count,
++                                    decode_outcome = "decoded",
++                                    state_outcome = "accepted",
++                                    decode_micros,
++                                    total_micros = started.elapsed().as_micros() as u64
++                                );
++                                result
++                            }
++                            Err(error) => {
++                                debug!(
++                                    protocols::measurement::PROTOCOL_DECODE,
++                                    protocol_id,
++                                    role,
++                                    boundary = "mini-protocol-decode",
++                                    message_type,
++                                    bytes = byte_count,
++                                    decode_outcome = "decoded",
++                                    state_outcome = "rejected",
++                                    decode_micros,
++                                    total_micros = started.elapsed().as_micros() as u64
++                                );
++                                Err(error).or_terminate(&eff, err("failed to step protocol state (network)")).await
++                            }
++                        }
+                     } else {
+                         proto.init().or_terminate(&eff, err("failed to initialize protocol state")).await
+                     };
 diff --git a/crates/amaru-protocols/src/tx_submission/initiator.rs b/crates/amaru-protocols/src/tx_submission/initiator.rs
 index 7d739fa4..7416839d 100644
 --- a/crates/amaru-protocols/src/tx_submission/initiator.rs

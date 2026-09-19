@@ -292,6 +292,18 @@ def test_seed_catalog_is_exactly_version_pinned_and_modes_are_not_conflated():
     )
 
 
+def test_amaru_patched_protocol_measurement_names_all_live_handshake_boundaries():
+    definition = load_definition(
+        "measurements", "amaru-patched-protocol-decode"
+    ).data
+
+    assert all(boundary in definition["description"] for boundary in [
+        "mux-cbor-item",
+        "mini-protocol-decode",
+        "handshake-negotiation",
+    ])
+
+
 @pytest.mark.parametrize(
     ("catalog", "definition_id", "expected_text"),
     [

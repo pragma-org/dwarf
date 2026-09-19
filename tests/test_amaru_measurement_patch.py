@@ -88,6 +88,35 @@ def test_checked_in_manifest_is_exact_bounded_and_self_consistent():
     assert "~" not in serialized
 
 
+def test_patch_instruments_the_live_handshake_boundaries_not_only_from_wire():
+    patch_text = (PATCH_ROOT / "0001-dwarf-measurement-instrumentation.patch").read_text(
+        encoding="utf-8"
+    )
+    manifest = builder.load_manifest(PATCH_ROOT / "manifest.json")
+
+    assert "diff --git a/crates/amaru-protocols/src/mux.rs" in patch_text
+    assert "diff --git a/crates/amaru-protocols/src/handshake/responder.rs" in patch_text
+    assert 'boundary = "mux-cbor-item"' in patch_text
+    assert 'boundary = "mini-protocol-decode"' in patch_text
+    assert "protocols::measurement::HANDSHAKE_NEGOTIATION" in patch_text
+    assert "proto_id.opposite().to_string()" in patch_text
+    assert "proto_id.to_string()" in patch_text
+
+    changed = set(manifest["changed_paths"])
+    assert "crates/amaru-protocols/src/mux.rs" in changed
+    assert "crates/amaru-protocols/src/handshake/responder.rs" in changed
+    protocol_capability = next(
+        row
+        for row in manifest["instrumentation"]
+        if row["capability"] == "live-protocol-cbor-decode"
+    )
+    assert protocol_capability["events"] == [
+        "amaru::protocols/measurement.protocol_ingress",
+        "amaru::protocols/measurement.protocol_decode",
+        "amaru::protocols/measurement.handshake_negotiation",
+    ]
+
+
 def test_source_validation_refuses_wrong_revision_and_dirty_tree(tmp_path):
     source, revision = _repository(tmp_path)
     assert builder.validate_clean_source(source, revision) == revision
@@ -172,7 +201,7 @@ def test_artifact_record_requires_real_file_and_retains_digest(tmp_path):
 def test_target_registry_record_is_portable_and_exact(tmp_path):
     result = {
         "source": {"release": "10.11.20260912", "revision": REVISION},
-        "patch_set_sha256": "7ce3356d53535b22b82abf10166f9fa8ccfcd40b49bd8e298895ba1c027c0532",
+        "patch_set_sha256": "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af",
         "executable": {"sha256": "e" * 64},
         "image": {
             "status": "built",
@@ -207,7 +236,7 @@ def test_target_registry_record_is_portable_and_exact(tmp_path):
 def test_target_registry_refuses_unbuilt_or_unsmoked_image(tmp_path):
     base = {
         "source": {"release": "10.11.20260912", "revision": REVISION},
-        "patch_set_sha256": "7ce3356d53535b22b82abf10166f9fa8ccfcd40b49bd8e298895ba1c027c0532",
+        "patch_set_sha256": "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af",
         "executable": {"sha256": "e" * 64},
         "image": {"status": "not-built"},
         "result_sha256": "b" * 64,

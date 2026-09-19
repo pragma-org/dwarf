@@ -22,7 +22,7 @@ EXPECTED_TARGETS = {
         "version": "10.11.20260912",
         "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
         "stock_image_digest": "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
-        "patched_image_digest": "sha256:680ae0df46b0081c2477b9f76cd7c1d89f1e8e08ff781cd6037a2f8218a83d1b",
+        "patched_image_digest": "sha256:dacb2351e69ab1d0bbfbc569b222d1bde40d9a158e79c556b30df554375addcc",
     },
     "cardano-node": {
         "version": "11.1.2",
@@ -100,3 +100,21 @@ def test_cards_pin_workload_identity_and_stop_conditions():
         assert workload["duration_seconds"] > 0
         assert workload["stop_conditions"]
         assert card["environment"]["hardware_fingerprint"] == "cardano-box-2026-09-19"
+
+
+def test_invalid_protocol_card_names_the_three_exact_live_amaru_boundaries():
+    card = next(
+        item
+        for item in _cards()
+        if item["id"] == "client-example-03-invalid-mini-protocol"
+    )
+
+    assert {
+        metric["boundary"]
+        for metric in card["measurements"]
+        if metric["name"].startswith("handshake_")
+    } == {
+        "mux-cbor-item",
+        "mini-protocol-decode",
+        "handshake-negotiation",
+    }

@@ -54,9 +54,9 @@ targets:
     stock_image_digest: sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e
     patched_mode: patched
     patched_image_reference: dwarf/amaru-measurement:10.11.20260912-b159172
-    patched_image_digest: sha256:680ae0df46b0081c2477b9f76cd7c1d89f1e8e08ff781cd6037a2f8218a83d1b
-    patched_executable_digest: sha256:f70cf6be3be754a51fda53b101c4e4e4ab07c4b0ff28f8034ba335d58b744caa
-    patch_set_sha256: 7ce3356d53535b22b82abf10166f9fa8ccfcd40b49bd8e298895ba1c027c0532
+    patched_image_digest: sha256:dacb2351e69ab1d0bbfbc569b222d1bde40d9a158e79c556b30df554375addcc
+    patched_executable_digest: sha256:b0cebe917e092c3d4e47ac4841de7a49338dca1e586616803fe17e92d0d93425
+    patch_set_sha256: f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af
   cardano-node:
     version: 11.1.2
     source_repository: https://github.com/IntersectMBO/cardano-node.git

@@ -137,6 +137,47 @@ def test_protocol_decode_keeps_malformed_rejected_and_accepted_timing(tmp_path):
     assert measurements["protocol_decode_by_decode_outcome"]["malformed"]["mean"] == 8.0
 
 
+def test_handshake_measurements_exclude_unrelated_protocol_samples(tmp_path):
+    trace = tmp_path / "handshake.ndjson"
+    trace.write_text(
+        '\n'.join(
+            [
+                '{"timestamp":"2026-09-19T12:00:00.000Z","fields":{"message":"measurement.protocol_ingress","protocol_id":"0","role":"responder","boundary":"mux-cbor-item","bytes":10,"outcome":"framed","elapsed_micros":2},"target":"amaru::protocols"}',
+                '{"timestamp":"2026-09-19T12:00:00.001Z","fields":{"message":"measurement.protocol_ingress","protocol_id":"0","role":"responder","boundary":"mux-cbor-item","bytes":10,"outcome":"framed","elapsed_micros":3},"target":"amaru::protocols"}',
+                '{"timestamp":"2026-09-19T12:00:00.002Z","fields":{"message":"measurement.protocol_ingress","protocol_id":"0","role":"responder","boundary":"mux-cbor-item","bytes":1,"outcome":"malformed","elapsed_micros":4},"target":"amaru::protocols"}',
+                '{"timestamp":"2026-09-19T12:00:00.003Z","fields":{"message":"measurement.protocol_decode","protocol_id":"0","role":"responder","boundary":"mini-protocol-decode","message_type":"Handshake","bytes":10,"decode_outcome":"decoded","state_outcome":"accepted","decode_micros":5,"total_micros":8},"target":"amaru::protocols"}',
+                '{"timestamp":"2026-09-19T12:00:00.004Z","fields":{"message":"measurement.protocol_decode","protocol_id":"0","role":"responder","boundary":"mini-protocol-decode","message_type":"Handshake","bytes":10,"decode_outcome":"decoded","state_outcome":"accepted","decode_micros":6,"total_micros":9},"target":"amaru::protocols"}',
+                '{"timestamp":"2026-09-19T12:00:00.005Z","fields":{"message":"measurement.handshake_negotiation","protocol_id":"0","role":"responder","boundary":"handshake-negotiation","outcome":"accepted","elapsed_micros":7},"target":"amaru::protocols"}',
+                '{"timestamp":"2026-09-19T12:00:00.006Z","fields":{"message":"measurement.handshake_negotiation","protocol_id":"0","role":"responder","boundary":"handshake-negotiation","outcome":"refused","elapsed_micros":11},"target":"amaru::protocols"}',
+                '{"timestamp":"2026-09-19T12:00:00.007Z","fields":{"message":"measurement.protocol_decode","protocol_id":"3","role":"initiator","boundary":"mini-protocol-decode","message_type":"BlockFetch","bytes":800,"decode_outcome":"decoded","state_outcome":"accepted","decode_micros":99,"total_micros":101},"target":"amaru::protocols"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    collector = AmaruPatchedCollector(
+        {"id": "amaru-patched-protocol-decode"},
+        json_trace_paths=[trace],
+        target_identity=_identity(),
+        include_existing=True,
+    )
+    context = _context(tmp_path, "amaru-patched-protocol-decode")
+    collector.prepare(context)
+    collector.start(context)
+    result = collector.finalize(context)
+    measurements = result["measurements"]
+
+    assert measurements["handshake_ingress"]["sample_count"] == 3
+    assert measurements["handshake_ingress_by_outcome"]["framed"]["sample_count"] == 2
+    assert measurements["handshake_ingress_by_outcome"]["malformed"]["sample_count"] == 1
+    assert measurements["handshake_decode"]["sample_count"] == 2
+    assert measurements["handshake_state_by_outcome"]["accepted"]["sample_count"] == 2
+    assert measurements["handshake_negotiation"]["sample_count"] == 2
+    assert measurements["handshake_negotiation_by_outcome"]["accepted"]["sample_count"] == 1
+    assert measurements["handshake_negotiation_by_outcome"]["refused"]["sample_count"] == 1
+    assert measurements["handshake_decode"]["maximum"] == 6.0
+
+
 def test_blockfetch_and_txsubmission_reports_include_depths_and_all_terminal_outcomes(tmp_path):
     blockfetch = _collect(tmp_path / "bf", "amaru-patched-blockfetch-queues")
     tx = _collect(tmp_path / "tx", "amaru-patched-txsubmission-residence")

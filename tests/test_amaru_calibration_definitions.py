@@ -112,7 +112,7 @@ def test_patched_boundary_proof_and_stock_control_are_additive_and_identical():
 
 
 def _boundary_result(
-    tmp_path, *, malformed_samples=40, progressed=True, include_state_outcomes=True
+    tmp_path, *, malformed_samples=40, progressed=True, include_handshake_outcomes=True
 ):
     path = tmp_path / "outputs" / "amaru-measurement-calibration" / "result.json"
     path.parent.mkdir(parents=True)
@@ -158,17 +158,26 @@ def _boundary_result(
                     "amaru-patched-protocol-decode": {
                         "export": {"incomplete": False},
                         "measurements": {
-                            "protocol_decode_by_decode_outcome": {
-                                "decoded": {"sample_count": 80},
+                            "handshake_ingress_by_outcome": {
+                                "framed": {"sample_count": 80},
                                 "malformed": {"sample_count": malformed_samples},
                             },
-                            "protocol_total_by_state_outcome": (
+                            "handshake_decode_by_decode_outcome": {
+                                "decoded": {"sample_count": 80},
+                            },
+                            "handshake_state_by_outcome": (
+                                {
+                                    "accepted": {"sample_count": 80},
+                                }
+                                if include_handshake_outcomes
+                                else {}
+                            ),
+                            "handshake_negotiation_by_outcome": (
                                 {
                                     "accepted": {"sample_count": 40},
-                                    "rejected": {"sample_count": 40},
-                                    "not_attempted": {"sample_count": malformed_samples},
+                                    "refused": {"sample_count": 40},
                                 }
-                                if include_state_outcomes
+                                if include_handshake_outcomes
                                 else {}
                             ),
                         },
@@ -196,10 +205,12 @@ def test_boundary_assertion_requires_external_health_and_internal_outcome_sample
     assert result["evaluated_value"]["external_attempts"] == 120
     assert result["evaluated_value"]["internal_decoded_samples"] == 80
     assert result["evaluated_value"]["internal_malformed_samples"] == 40
+    assert result["evaluated_value"]["internal_negotiation_accepted_samples"] == 40
+    assert result["evaluated_value"]["internal_negotiation_refused_samples"] == 40
 
 
 def test_boundary_assertion_fails_when_internal_state_outcomes_are_absent(tmp_path):
-    _boundary_result(tmp_path, include_state_outcomes=False)
+    _boundary_result(tmp_path, include_handshake_outcomes=False)
     handle = type("Handle", (), {"run_dir": tmp_path})()
 
     result = AmaruMeasurementBoundaryProven(
@@ -211,9 +222,44 @@ def test_boundary_assertion_fails_when_internal_state_outcomes_are_absent(tmp_pa
     ).evaluate(handle)
 
     assert result["result"] == "fail"
-    assert result["evaluated_value"]["internal_accepted_samples"] == 0
-    assert result["evaluated_value"]["internal_rejected_samples"] == 0
-    assert result["evaluated_value"]["internal_not_attempted_samples"] == 0
+    assert result["evaluated_value"]["internal_state_admitted_samples"] == 0
+    assert result["evaluated_value"]["internal_negotiation_accepted_samples"] == 0
+    assert result["evaluated_value"]["internal_negotiation_refused_samples"] == 0
+
+
+def test_boundary_assertion_does_not_accept_unrelated_generic_protocol_samples(tmp_path):
+    _boundary_result(tmp_path, include_handshake_outcomes=False)
+    report = (
+        tmp_path / "outputs" / "amaru-measurement-calibration" / "result.json"
+    )
+    body = json.loads(report.read_text(encoding="utf-8"))
+    body["node_measurements"]["amaru-patched-protocol-decode"]["measurements"].update(
+        {
+            "protocol_decode_by_decode_outcome": {
+                "decoded": {"sample_count": 1000},
+                "malformed": {"sample_count": 1000},
+            },
+            "protocol_total_by_state_outcome": {
+                "accepted": {"sample_count": 1000},
+                "rejected": {"sample_count": 1000},
+                "not_attempted": {"sample_count": 1000},
+            },
+        }
+    )
+    report.write_text(json.dumps(body), encoding="utf-8")
+    handle = type("Handle", (), {"run_dir": tmp_path})()
+
+    result = AmaruMeasurementBoundaryProven(
+        params={
+            "expected_mode": "patched",
+            "min_attempts_per_case": 40,
+            "min_internal_samples_per_outcome": 30,
+        }
+    ).evaluate(handle)
+
+    assert result["result"] == "fail"
+    assert result["evaluated_value"]["internal_decoded_samples"] == 80
+    assert result["evaluated_value"]["internal_negotiation_accepted_samples"] == 0
 
 
 def test_boundary_assertion_fails_on_under_sample_or_lost_progress(tmp_path):

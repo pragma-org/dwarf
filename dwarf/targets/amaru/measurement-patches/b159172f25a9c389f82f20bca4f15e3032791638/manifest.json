@@ -32,13 +32,14 @@
     "binary": "target/x86_64-unknown-linux-musl/release/amaru",
     "environment": {
       "CARGO_INCREMENTAL": "0",
-      "CARGO_TERM_COLOR": "never"
+      "CARGO_TERM_COLOR": "never",
+      "CARGO_ZIGBUILD_ZIG_COMMAND": "python-zig"
     }
   },
   "patches": [
     {
       "path": "0001-dwarf-measurement-instrumentation.patch",
-      "sha256": "bb822d1d92ee3f2d0049736d319084119e2e0fe8ee6dc927a6adb4bfac781f16",
+      "sha256": "639a49b5e7702d3b805e719287b18f8ca0c60a03bc5ca6e367548fbf373bb06d",
       "preimages": [
         {
           "path": "crates/amaru-observability/src/schemas.rs",
@@ -47,6 +48,14 @@
         {
           "path": "crates/amaru-protocols/src/blockfetch/initiator.rs",
           "sha256": "e5f223f0e255101eff648660b44afb67d69fce460b7856af42be75c3b36c890e"
+        },
+        {
+          "path": "crates/amaru-protocols/src/handshake/responder.rs",
+          "sha256": "44af5a64ec777c116dcceb53800b9478f5ca37c0785e0bf1486ed9cd2e08e48a"
+        },
+        {
+          "path": "crates/amaru-protocols/src/mux.rs",
+          "sha256": "996b5deff1d263ee235a9f2efb6a77bba3d6f19cb4f5e77b7ae96950ae2079f3"
         },
         {
           "path": "crates/amaru-protocols/src/protocol/miniprotocol.rs",
@@ -63,13 +72,31 @@
       ]
     }
   ],
-  "patch_set_sha256": "7ce3356d53535b22b82abf10166f9fa8ccfcd40b49bd8e298895ba1c027c0532",
+  "patch_set_sha256": "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af",
   "instrumentation": [
     {
       "capability": "live-protocol-cbor-decode",
-      "events": ["amaru::protocols/measurement.protocol_decode"],
+      "events": [
+        "amaru::protocols/measurement.protocol_ingress",
+        "amaru::protocols/measurement.protocol_decode",
+        "amaru::protocols/measurement.handshake_negotiation"
+      ],
       "all_outcomes_timed": true,
-      "outcomes": ["accepted", "state_rejected", "malformed"]
+      "outcomes": [
+        "framed",
+        "malformed",
+        "decoded",
+        "accepted",
+        "rejected",
+        "not_attempted",
+        "refused",
+        "query"
+      ],
+      "boundaries": [
+        "mux-cbor-item",
+        "mini-protocol-decode",
+        "handshake-negotiation"
+      ]
     },
     {
       "capability": "blockfetch-handler-queue",
@@ -109,6 +136,8 @@
   "changed_paths": [
     "crates/amaru-observability/src/schemas.rs",
     "crates/amaru-protocols/src/blockfetch/initiator.rs",
+    "crates/amaru-protocols/src/handshake/responder.rs",
+    "crates/amaru-protocols/src/mux.rs",
     "crates/amaru-protocols/src/protocol/miniprotocol.rs",
     "crates/amaru-protocols/src/tx_submission/initiator.rs",
     "crates/amaru-protocols/src/tx_submission/responder.rs"

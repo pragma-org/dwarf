@@ -14287,41 +14287,72 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
             )
             or {}
         )
+        ingress_outcomes = (
+            (patched.get("measurements") or {}).get(
+                "handshake_ingress_by_outcome"
+            )
+            or {}
+        )
+        framed_samples = int(
+            (ingress_outcomes.get("framed") or {}).get("sample_count") or 0
+        )
+        malformed_samples = int(
+            (ingress_outcomes.get("malformed") or {}).get("sample_count") or 0
+        )
         decode_outcomes = (
             (patched.get("measurements") or {}).get(
-                "protocol_decode_by_decode_outcome"
+                "handshake_decode_by_decode_outcome"
             )
             or {}
         )
         decoded_samples = int(
             (decode_outcomes.get("decoded") or {}).get("sample_count") or 0
         )
-        malformed_samples = int(
-            (decode_outcomes.get("malformed") or {}).get("sample_count") or 0
-        )
         state_outcomes = (
             (patched.get("measurements") or {}).get(
-                "protocol_total_by_state_outcome"
+                "handshake_state_by_outcome"
             )
             or {}
         )
-        accepted_samples = int(
+        state_admitted_samples = int(
             (state_outcomes.get("accepted") or {}).get("sample_count") or 0
         )
-        rejected_samples = int(
-            (state_outcomes.get("rejected") or {}).get("sample_count") or 0
+        negotiation_outcomes = (
+            (patched.get("measurements") or {}).get(
+                "handshake_negotiation_by_outcome"
+            )
+            or {}
         )
-        not_attempted_samples = int(
-            (state_outcomes.get("not_attempted") or {}).get("sample_count") or 0
+        negotiation_accepted_samples = int(
+            (negotiation_outcomes.get("accepted") or {}).get("sample_count") or 0
         )
+        negotiation_refused_samples = int(
+            (negotiation_outcomes.get("refused") or {}).get("sample_count") or 0
+        )
+        supported_attempts = int(
+            (by_case.get("supported-version-acceptance") or {}).get("total") or 0
+        )
+        unsupported_attempts = int(
+            (by_case.get("unsupported-version-refusal") or {}).get("total") or 0
+        )
+        malformed_attempts = int(
+            (by_case.get("malformed-cbor-rejection") or {}).get("total") or 0
+        )
+        decoded_attempts = supported_attempts + unsupported_attempts
         internal_complete = (
             min_internal == 0
             or (
                 decoded_samples >= min_internal
                 and malformed_samples >= min_internal
-                and accepted_samples >= min_internal
-                and rejected_samples >= min_internal
-                and not_attempted_samples >= min_internal
+                and state_admitted_samples >= min_internal
+                and negotiation_accepted_samples >= min_internal
+                and negotiation_refused_samples >= min_internal
+                and framed_samples == decoded_attempts
+                and decoded_samples == decoded_attempts
+                and state_admitted_samples == decoded_attempts
+                and negotiation_accepted_samples == supported_attempts
+                and negotiation_refused_samples == unsupported_attempts
+                and malformed_samples == malformed_attempts
                 and (patched.get("export") or {}).get("incomplete") is False
             )
         )
@@ -14344,11 +14375,15 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
             "external_attempts": int(attempts.get("total") or 0),
             "case_failures": case_failures,
             "failed_checks": failed_checks,
+            "internal_framed_samples": framed_samples,
             "internal_decoded_samples": decoded_samples,
             "internal_malformed_samples": malformed_samples,
-            "internal_accepted_samples": accepted_samples,
-            "internal_rejected_samples": rejected_samples,
-            "internal_not_attempted_samples": not_attempted_samples,
+            "internal_state_admitted_samples": state_admitted_samples,
+            "internal_negotiation_accepted_samples": negotiation_accepted_samples,
+            "internal_negotiation_refused_samples": negotiation_refused_samples,
+            "internal_accepted_samples": negotiation_accepted_samples,
+            "internal_rejected_samples": negotiation_refused_samples,
+            "internal_not_attempted_samples": malformed_samples,
             "min_internal_samples_per_outcome": min_internal,
             "workload_digest": workload.get("workload_digest"),
         }

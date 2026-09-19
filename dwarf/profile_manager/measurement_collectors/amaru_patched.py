@@ -13,7 +13,7 @@ from profile_manager.measurement_report import distribution_summary
 
 AMARU_SOURCE_REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
 AMARU_MEASUREMENT_PATCH_SHA256 = (
-    "7ce3356d53535b22b82abf10166f9fa8ccfcd40b49bd8e298895ba1c027c0532"
+    "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af"
 )
 DEFAULT_MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_PATHS = 16
@@ -24,7 +24,9 @@ PATCHED_MEASUREMENT_IDS = (
 )
 
 _EVENT_KINDS = {
+    "protocol_ingress": "protocol-ingress",
     "protocol_decode": "protocol-decode",
+    "handshake_negotiation": "handshake-negotiation",
     "blockfetch_handler": "blockfetch-handler",
     "blockfetch_block_decode": "blockfetch-block-decode",
     "blockfetch_queue_residence": "blockfetch-queue-residence",
@@ -207,6 +209,12 @@ def _build_measurements(
     measurement_id: str, events: list[dict[str, Any]]
 ) -> dict[str, Any]:
     if measurement_id == "amaru-patched-protocol-decode":
+        handshake_events = [
+            event
+            for event in events
+            if event["fields"].get("protocol_id") == "0"
+            and event["fields"].get("role") == "responder"
+        ]
         return {
             "protocol_decode": _samples(events, "protocol-decode", "decode_micros"),
             "protocol_decode_by_decode_outcome": _by_outcome(
@@ -215,6 +223,33 @@ def _build_measurements(
             "protocol_total": _samples(events, "protocol-decode", "total_micros"),
             "protocol_total_by_state_outcome": _by_outcome(
                 events, "protocol-decode", "total_micros", "state_outcome"
+            ),
+            "handshake_ingress": _samples(
+                handshake_events, "protocol-ingress", "elapsed_micros"
+            ),
+            "handshake_ingress_by_outcome": _by_outcome(
+                handshake_events, "protocol-ingress", "elapsed_micros"
+            ),
+            "handshake_decode": _samples(
+                handshake_events, "protocol-decode", "decode_micros"
+            ),
+            "handshake_decode_by_decode_outcome": _by_outcome(
+                handshake_events,
+                "protocol-decode",
+                "decode_micros",
+                "decode_outcome",
+            ),
+            "handshake_state_by_outcome": _by_outcome(
+                handshake_events,
+                "protocol-decode",
+                "total_micros",
+                "state_outcome",
+            ),
+            "handshake_negotiation": _samples(
+                handshake_events, "handshake-negotiation", "elapsed_micros"
+            ),
+            "handshake_negotiation_by_outcome": _by_outcome(
+                handshake_events, "handshake-negotiation", "elapsed_micros"
             ),
         }
     if measurement_id == "amaru-patched-blockfetch-queues":
