@@ -14,8 +14,11 @@ The first page shows the DWARF flask, four small status lights, and one Enter bu
 
 - animated `DWARF` text;
 - the flask image;
+- an `Owned by PRAGMA` link to `https://pragma.io/` directly below the flask;
 - Framework, Control channel, Active topology, and Node versions status pills;
 - one `Enter` button that opens `/run`.
+
+The page footer contains `Created by Jon "GainSec" Gaines`, linked to `https://gainsec.com`, followed by `Open Source`, linked to `https://github.com/pragma-org/dwarf`. External links open in a new tab with `noopener noreferrer` protection.
 
 The animated word uses the interaction observed in the Battle Ready Armor header: characters appear at 80 ms intervals, the complete word holds, the non-accent state dims over 600 ms, the word fades over 400 ms, and the cycle restarts. The implementation uses the existing DWARF font and color tokens. `prefers-reduced-motion: reduce` displays the complete static word.
 
