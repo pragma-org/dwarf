@@ -96,6 +96,34 @@ def test_run_route_exposes_server_catalog_and_default_selection():
     assert "Primitives" in html
 
 
+def test_run_catalog_profile_options_expose_evidence_qualification(monkeypatch):
+    from profile_manager.data import operate_run_wizard
+
+    monkeypatch.setattr(
+        operate_run_wizard,
+        "profile_deployment_version_preview",
+        lambda profile_id: {
+            "status": "confirmed" if profile_id.endswith("latest-confirmed") else "unknown",
+            "reason": "retained proof" if profile_id.endswith("latest-confirmed") else "not run",
+        },
+    )
+
+    catalog = operate_run_wizard.run_wizard_catalog()
+    confirmed = next(
+        item for item in catalog["profiles"]
+        if item["id"] == "profile-n-cardano-latest-confirmed"
+    )
+    unmarked = next(
+        item for item in catalog["profiles"]
+        if item["id"] != "profile-n-cardano-latest-confirmed"
+    )
+
+    assert confirmed["qualification"] == "confirmed"
+    assert confirmed["status_label"] == "CONFIRMED"
+    assert unmarked["qualification"] == "unmarked"
+    assert unmarked["status_label"] == ""
+
+
 def test_start_run_is_a_primary_and_operate_navigation_destination():
     operate_html = dashboard.render_route_html("/operate")
     run_html = dashboard.render_route_html("/run")

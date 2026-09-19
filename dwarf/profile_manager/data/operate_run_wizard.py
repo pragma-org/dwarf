@@ -9,7 +9,9 @@ from urllib.parse import urlsplit
 
 from profile_manager.data.catalog_definitions import list_definitions
 from profile_manager.data.scenarios import _list_scenarios_for_compare
+from profile_manager.deployment_versions import profile_deployment_version_preview
 from profile_manager.profiles import load_profiles
+from profile_manager.run_presentation import profile_qualification
 from profile_manager.run_plan import (
     RunPlanError,
     RunPlanRequest,
@@ -32,17 +34,23 @@ def run_wizard_catalog() -> dict[str, Any]:
         if _PREFERRED_DEFAULT in scenario_ids
         else (scenarios[0]["id"] if scenarios else None)
     )
-    profiles = [
-        {
+    profiles = []
+    for profile in load_profiles():
+        try:
+            qualification = profile_qualification(
+                profile_deployment_version_preview(profile.id)
+            )
+        except Exception:
+            qualification = profile_qualification(None)
+        profiles.append({
             "id": profile.id,
             "label": profile.label,
             "haskell_count": profile.node_count,
             "amaru_count": profile.amaru_node_count,
             "version_policy": profile.version_policy,
             "measurement_target_mode": profile.measurement_target_mode,
-        }
-        for profile in load_profiles()
-    ]
+            **qualification,
+        })
     measurement_profiles = [
         {
             "id": record.definition_id,

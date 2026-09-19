@@ -15,6 +15,10 @@ from profile_manager.run_plan import (
     RunPlanRequest,
     resolve_run_plan,
 )
+from profile_manager.run_presentation import (
+    historical_runtime_estimate,
+    profile_qualification,
+)
 
 
 def test_measurement_scenario_resolves_exact_profile_versions_and_taps():
@@ -387,3 +391,108 @@ def test_launch_materializes_seed_override(tmp_path):
     )
 
     assert scenario["seed"] == "0xC0DE5002"
+
+
+def test_profile_qualification_uses_resolved_evidence_status():
+    assert profile_qualification({"status": "confirmed"}) == {
+        "qualification": "confirmed",
+        "status_label": "CONFIRMED",
+        "status_reason": "This profile resolves to a confirmed version claim.",
+    }
+    assert profile_qualification({"status": "unknown", "reason": "not run"}) == {
+        "qualification": "unmarked",
+        "status_label": "",
+        "status_reason": "not run",
+    }
+    assert profile_qualification(None) == {
+        "qualification": "unmarked",
+        "status_label": "",
+        "status_reason": "Qualification could not be resolved.",
+    }
+
+
+def _write_runtime_manifest(
+    root, run_id, *, scenario_id, profile_id, version, duration, exit_status="pass"
+):
+    run_dir = root / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "scenario": {"id": scenario_id},
+                "profile": {"id": profile_id},
+                "target": {"implementation": "cardano-node", "version": version},
+                "resource_snapshot": {"wall_time_seconds": duration},
+                "exit_status": exit_status,
+                "ended_at": f"2026-09-19T00:00:{run_id[-2:]}Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_historical_runtime_estimate_uses_only_matching_successful_runs(tmp_path):
+    plan = {
+        "scenario": {
+            "id": "example-scenario",
+            "target": {"implementation": "cardano-node", "version": "10.7.1"},
+        },
+        "profile": {"id": "example-profile"},
+    }
+    for suffix, duration in (("10", 10), ("11", 12), ("12", 14)):
+        _write_runtime_manifest(
+            tmp_path,
+            f"run-{suffix}",
+            scenario_id="example-scenario",
+            profile_id="example-profile",
+            version="10.7.1",
+            duration=duration,
+        )
+    _write_runtime_manifest(
+        tmp_path,
+        "run-13",
+        scenario_id="other-scenario",
+        profile_id="example-profile",
+        version="10.7.1",
+        duration=100,
+    )
+    _write_runtime_manifest(
+        tmp_path,
+        "run-14",
+        scenario_id="example-scenario",
+        profile_id="example-profile",
+        version="10.7.1",
+        duration=200,
+        exit_status="error",
+    )
+
+    estimate = historical_runtime_estimate(plan, runs_dir=tmp_path)
+
+    assert estimate == {
+        "available": True,
+        "median_seconds": 12.0,
+        "minimum_seconds": 10.0,
+        "maximum_seconds": 14.0,
+        "sample_count": 3,
+        "basis": "matching-retained-runs",
+    }
+
+
+def test_historical_runtime_estimate_does_not_invent_a_value(tmp_path):
+    estimate = historical_runtime_estimate(
+        {
+            "scenario": {
+                "id": "missing",
+                "target": {"implementation": "amaru", "version": "10.11.0"},
+            },
+            "profile": None,
+        },
+        runs_dir=tmp_path,
+    )
+
+    assert estimate == {
+        "available": False,
+        "sample_count": 0,
+        "basis": "no-matching-retained-runs",
+    }
