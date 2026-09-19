@@ -3288,6 +3288,157 @@ body.product-landing {
   .product-landing__wordmark [data-phase] { transition: none; opacity: 1; }
 }
 
+/* Guided local-run planner. */
+.run-wizard { overflow-x: clip; }
+.run-wizard__plain {
+  color: var(--ink-secondary);
+  font-size: var(--type-small);
+}
+.run-wizard__progress {
+  margin: var(--space-8) 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.run-wizard__progress ol {
+  min-width: 760px;
+  margin: 0;
+  padding: 0 0 var(--space-2);
+  display: grid;
+  grid-template-columns: repeat(10, minmax(68px, 1fr));
+  gap: 2px;
+  list-style: none;
+}
+.run-wizard__progress a {
+  min-height: 54px;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  color: var(--ink-tertiary);
+  background: var(--obsidian-2);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+.run-wizard__progress a span { color: var(--cyan-primary); }
+.run-wizard__progress a[aria-current="step"] {
+  color: var(--ink-primary);
+  background: var(--obsidian-3);
+  box-shadow: inset 0 -2px var(--cyan-primary);
+}
+.run-wizard__layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+  align-items: start;
+}
+.run-wizard__step {
+  min-width: 0;
+  padding: clamp(18px, 2.5vw, 28px);
+  background: linear-gradient(145deg, rgba(19, 26, 34, 0.96), rgba(11, 15, 20, 0.94));
+  border-top: 2px solid var(--cyan-deep);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+.run-wizard__step--wide { grid-column: 1 / -1; }
+.run-wizard__step > header {
+  margin-bottom: var(--space-4);
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+.run-wizard__step > header > span {
+  color: var(--cyan-primary);
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+}
+.run-wizard__step h2 { margin: 0; }
+.run-wizard__step header small {
+  color: var(--ink-tertiary);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.run-wizard__step label:not(.run-wizard__check) {
+  margin-top: var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+  color: var(--ink-secondary);
+  font-size: var(--type-small);
+}
+.run-wizard__step input:not([type="checkbox"]),
+.run-wizard__step select {
+  width: 100%;
+  min-width: 0;
+}
+.field-required { color: var(--crimson-glow); }
+.field-optional { color: var(--ink-tertiary); font-weight: 400; }
+.run-wizard__version-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.run-wizard__check {
+  margin-top: var(--space-4);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  color: var(--ink-secondary);
+}
+.run-wizard__selection,
+.run-wizard__list,
+.run-wizard__review,
+.run-wizard__launch-status {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  background: var(--obsidian-1);
+  border-radius: var(--radius-md);
+  color: var(--ink-secondary);
+  overflow-wrap: anywhere;
+}
+.run-wizard__list ul { margin: 0; padding-left: var(--space-5); }
+.run-wizard__facts { margin: var(--space-4) 0 0; }
+.run-wizard__facts div {
+  padding: var(--space-2) 0;
+  display: grid;
+  grid-template-columns: minmax(110px, 0.45fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  border-bottom: var(--rule-1);
+}
+.run-wizard__facts dt { color: var(--ink-tertiary); }
+.run-wizard__facts dd { margin: 0; overflow-wrap: anywhere; }
+.run-wizard__errors {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  color: var(--ink-primary);
+  background: rgba(192, 48, 48, 0.16);
+  border-left: 3px solid var(--crimson-glow);
+}
+.run-wizard details { margin-top: var(--space-4); }
+.run-wizard details pre,
+.run-wizard [data-run-launch-log] {
+  max-width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.run-wizard [data-run-action="start"] { margin-top: var(--space-4); min-width: 180px; }
+
+@media (max-width: 800px) {
+  .run-wizard__layout { grid-template-columns: 1fr; }
+  .run-wizard__step--wide { grid-column: auto; }
+}
+@media (max-width: 640px) {
+  .run-wizard__step { padding: var(--space-4); }
+  .run-wizard__version-grid { grid-template-columns: 1fr; }
+  .run-wizard__facts div { grid-template-columns: 1fr; gap: var(--space-1); }
+  .run-wizard [data-run-action="start"] { width: 100%; min-height: 48px; }
+}
+
 /* ---- Slice 28: /operate/status polish on top of slice 27 ----
  * Targeted overrides — keep the metaphor, address operator-readable
  * issues from the live deployment: flask too small, conduits invisible,

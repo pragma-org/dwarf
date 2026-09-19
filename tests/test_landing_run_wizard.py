@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LANDING_TEMPLATE = ROOT / "dwarf/dashboard/templates/landing.j2"
 STATUS_TEMPLATE = ROOT / "dwarf/dashboard/templates/operate/status.j2"
 LANDING_SCRIPT = ROOT / "dwarf/dashboard/static/js/landing.js"
+RUN_WIZARD_TEMPLATE = ROOT / "dwarf/dashboard/templates/operate/run_wizard.j2"
+RUN_WIZARD_SCRIPT = ROOT / "dwarf/dashboard/static/js/run-wizard.js"
 CSS = ROOT / "dwarf/dashboard/static/css/base.css"
 
 
@@ -121,3 +123,52 @@ def test_run_resolve_api_returns_structured_field_errors():
     assert status == 400
     assert payload["ok"] is False
     assert payload["error"]["field"] == "scenario_id"
+
+
+def test_run_wizard_has_ten_ordered_accessible_stages():
+    html = dashboard.render_route_html("/run", token="test-token")
+
+    expected = (
+        "scenario",
+        "target",
+        "profile",
+        "versions",
+        "measurements",
+        "primitives",
+        "settings",
+        "readiness",
+        "review",
+        "launch",
+    )
+    positions = [html.index(f'data-run-step="{step}"') for step in expected]
+    assert positions == sorted(positions)
+    assert len(positions) == 10
+    assert 'aria-label="Run stages"' in html
+    assert 'aria-live="polite"' in html
+    assert 'aria-live="assertive"' in html
+    assert "Required" in html
+    assert "Optional" in html
+    assert "Scenario default" in html
+    assert "Customize as a new scenario" in html
+    assert 'target="_blank" rel="noreferrer"' in html
+
+
+def test_run_wizard_resolves_changes_without_embedding_catalog_logic_in_javascript():
+    template = RUN_WIZARD_TEMPLATE.read_text(encoding="utf-8")
+    script = RUN_WIZARD_SCRIPT.read_text(encoding="utf-8")
+    css = CSS.read_text(encoding="utf-8")
+
+    assert 'src="/static/js/run-wizard.js"' in template
+    assert "run-wizard-bootstrap" in template
+    assert "fetch(resolveUrl" in script
+    assert "textContent" in script
+    assert "replaceChildren" in script
+    assert "innerHTML" not in script
+    assert ".focus(" in script
+    assert "aria-current" in script
+    assert "runtime-substrate-honest-baseline" not in script
+    assert "cardano-security-default" not in script
+    assert ".run-wizard__layout" in css
+    assert "grid-template-columns" in css
+    assert "minmax(0" in css
+    assert "overflow-x: clip" in css

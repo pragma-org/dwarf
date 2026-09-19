@@ -4,57 +4,107 @@
   <span class="eyebrow">Local real-node execution</span>
   <h1>Start a DWARF run</h1>
   <p class="page-hero">Choose a scenario. DWARF checks the profile, exact node versions, measurements, primitives, and required runtime before it can start.</p>
+  <p class="run-wizard__plain"><strong>Plain meaning:</strong> Choose the test. DWARF fills in the safe defaults and tells you what must be ready.</p>
 
-  <form data-run-wizard-form novalidate>
-    <section data-run-step="scenario" aria-labelledby="run-step-scenario">
-      <h2 id="run-step-scenario">Scenario</h2>
-      <label for="run-scenario">Scenario <span aria-hidden="true">*</span></label>
+  <nav class="run-wizard__progress" aria-label="Run stages"><ol>
+    {% for key, label in [('scenario', 'Scenario'), ('target', 'Target'), ('profile', 'Profile'), ('versions', 'Versions'), ('measurements', 'Measurements'), ('primitives', 'Primitives'), ('settings', 'Settings'), ('readiness', 'Readiness'), ('review', 'Review'), ('launch', 'Run')] %}
+    <li><a href="#run-stage-{{ key }}" data-run-progress="{{ key }}"{% if loop.first %} aria-current="step"{% endif %}><span>{{ loop.index }}</span>{{ label }}</a></li>
+    {% endfor %}
+  </ol></nav>
+
+  <form data-run-wizard-form novalidate><div class="run-wizard__layout">
+    <section id="run-stage-scenario" class="run-wizard__step" data-run-step="scenario" aria-labelledby="run-step-scenario">
+      <header><span>01</span><div><h2 id="run-step-scenario">Scenario</h2><small>Required</small></div></header>
+      <p>Select the test recipe. This choice controls all later options.</p>
+      <p class="run-wizard__plain"><strong>Plain meaning:</strong> Pick what DWARF will do.</p>
+      <label for="run-scenario-search">Find a scenario <span class="field-optional">Optional</span></label>
+      <input id="run-scenario-search" type="search" autocomplete="off" placeholder="Search by name, target, or runtime">
+      <label for="run-scenario">Scenario <span class="field-required">Required</span></label>
       <select id="run-scenario" name="scenario_id" required>
-        {% for scenario in wizard.scenarios %}
-        <option value="{{ scenario.id }}"{% if scenario.id == wizard.default_scenario_id %} selected{% endif %}>{{ scenario.title }} · {{ scenario.runtime }}</option>
-        {% endfor %}
+        {% for scenario in wizard.scenarios %}<option value="{{ scenario.id }}" data-search="{{ scenario.id }} {{ scenario.title }} {{ scenario.runtime }} {{ scenario.target_impl or '' }}"{% if scenario.id == wizard.default_scenario_id %} selected{% endif %}>{{ scenario.title }} · {{ scenario.runtime }}</option>{% endfor %}
       </select>
     </section>
 
-    <section data-run-step="profile" aria-labelledby="run-step-profile">
-      <h2 id="run-step-profile">Profile</h2>
-      <p>The scenario default is selected unless you choose another compatible profile.</p>
-      <select id="run-profile" name="profile_id">
-        <option value="">Scenario default</option>
-        {% for profile in wizard.profiles %}<option value="{{ profile.id }}">{{ profile.label }}</option>{% endfor %}
-      </select>
+    <section id="run-stage-target" class="run-wizard__step" data-run-step="target" aria-labelledby="run-step-target">
+      <header><span>02</span><div><h2 id="run-step-target">Target and runtime</h2><small>Derived</small></div></header>
+      <p>DWARF derives the real implementation and execution runtime from the scenario.</p>
+      <p class="run-wizard__plain"><strong>Plain meaning:</strong> This shows which real node the test touches and where it runs.</p>
+      <dl class="run-wizard__facts" data-run-summary="target"><div><dt>Target</dt><dd>Resolving…</dd></div></dl>
     </section>
 
-    <section data-run-step="versions" aria-labelledby="run-step-versions">
-      <h2 id="run-step-versions">Node versions</h2>
-      <select id="run-version-policy" name="version_policy">
-        <option value="">Profile default</option>
-        {% for policy in wizard.version_policies %}<option value="{{ policy }}">{{ policy }}</option>{% endfor %}
-      </select>
+    <section id="run-stage-profile" class="run-wizard__step" data-run-step="profile" aria-labelledby="run-step-profile">
+      <header><span>03</span><div><h2 id="run-step-profile">Profile</h2><small>Conditional</small></div></header>
+      <p>A profile defines the real-node deployment shape. Library and attached-topology scenarios do not need one.</p>
+      <p class="run-wizard__plain"><strong>Plain meaning:</strong> This is the group of nodes the test uses.</p>
+      <label for="run-profile">Deployment profile <span class="field-optional">Optional override</span></label>
+      <select id="run-profile" name="profile_id"><option value="">Scenario default</option>{% for profile in wizard.profiles %}<option value="{{ profile.id }}">{{ profile.label }} · {{ profile.haskell_count }} Cardano / {{ profile.amaru_count }} Amaru</option>{% endfor %}</select>
+      <div class="run-wizard__selection" data-run-summary="profile">Scenario default</div>
     </section>
 
-    <section data-run-step="measurements" aria-labelledby="run-step-measurements">
-      <h2 id="run-step-measurements">Measurements</h2>
-      <select id="run-measurements" name="measurement_profile">
-        <option value="">Scenario or compatible default</option>
-        <option value="none">No measurements</option>
-        {% for profile in wizard.measurement_profiles %}<option value="{{ profile.id }}">{{ profile.title }}</option>{% endfor %}
-      </select>
+    <section id="run-stage-versions" class="run-wizard__step" data-run-step="versions" aria-labelledby="run-step-versions">
+      <header><span>04</span><div><h2 id="run-step-versions">Node versions</h2><small>Default selected</small></div></header>
+      <p><code>latest-confirmed</code> is the normal default. Exact versions remain available when the profile supports them.</p>
+      <p class="run-wizard__plain"><strong>Plain meaning:</strong> Use the newest node versions that DWARF has proved work, unless you choose another one.</p>
+      <label for="run-version-policy">Version policy</label>
+      <select id="run-version-policy" name="version_policy"><option value="">Profile default</option>{% for policy in wizard.version_policies %}<option value="{{ policy }}">{{ policy }}</option>{% endfor %}</select>
+      <div class="run-wizard__version-grid">
+        <label for="run-cardano-version">Cardano-node version <span class="field-optional">Exact only</span><input id="run-cardano-version" name="cardano_version" autocomplete="off"></label>
+        <label for="run-amaru-version">Amaru version <span class="field-optional">Exact only</span><input id="run-amaru-version" name="amaru_version" autocomplete="off"></label>
+      </div>
+      <label class="run-wizard__check"><input type="checkbox" name="acknowledge_unknown_versions"> Allow this one run to use a catalogued but unconfirmed version</label>
+      <div class="run-wizard__selection" data-run-summary="versions">Resolving exact versions…</div>
     </section>
 
-    <section data-run-step="primitives" aria-labelledby="run-step-primitives">
-      <h2 id="run-step-primitives">Primitives</h2>
-      <p>Primitives come from the selected scenario and are read-only here. <a href="/operate/scenarios/new" target="_blank">Customize as a new scenario</a>.</p>
-      <div data-run-summary="primitives"></div>
+    <section id="run-stage-measurements" class="run-wizard__step" data-run-step="measurements" aria-labelledby="run-step-measurements">
+      <header><span>05</span><div><h2 id="run-step-measurements">Measurements</h2><small>Optional override</small></div></header>
+      <p>Measurements observe the run. They do not change scenario pass or fail unless a threshold gate is explicitly enabled.</p>
+      <p class="run-wizard__plain"><strong>Plain meaning:</strong> These are extra rulers and stopwatches.</p>
+      <label for="run-measurements">Measurement profile</label>
+      <select id="run-measurements" name="measurement_profile"><option value="">Scenario or compatible default</option><option value="none">No measurements</option>{% for profile in wizard.measurement_profiles %}<option value="{{ profile.id }}">{{ profile.title }} · {{ profile.measurement_count }} taps</option>{% endfor %}</select>
+      <div data-run-summary="measurements" class="run-wizard__list"></div>
     </section>
 
-    <section data-run-step="review" aria-labelledby="run-step-review">
-      <h2 id="run-step-review">Review</h2>
-      <div data-run-errors role="alert" aria-live="assertive" hidden></div>
-      <pre data-run-summary="plan"></pre>
-      <button class="cta" type="submit" disabled>Start local run</button>
+    <section id="run-stage-primitives" class="run-wizard__step" data-run-step="primitives" aria-labelledby="run-step-primitives">
+      <header><span>06</span><div><h2 id="run-step-primitives">Primitives</h2><small>Read-only</small></div></header>
+      <p>Primitives are the scenario operations and assertions. Changing them creates a different scenario.</p>
+      <p class="run-wizard__plain"><strong>Plain meaning:</strong> These are the exact actions in the test.</p>
+      <div data-run-summary="primitives" class="run-wizard__list"></div>
+      <a href="/operate/scenarios/new" target="_blank" rel="noreferrer">Customize as a new scenario</a>
     </section>
-  </form>
+
+    <section id="run-stage-settings" class="run-wizard__step" data-run-step="settings" aria-labelledby="run-step-settings">
+      <header><span>07</span><div><h2 id="run-step-settings">Run settings</h2><small>Scenario controlled</small></div></header>
+      <p>The scenario retains its seed, iteration count, and local runtime semantics.</p>
+      <p class="run-wizard__plain"><strong>Plain meaning:</strong> DWARF keeps the recipe repeatable.</p>
+      <dl class="run-wizard__facts" data-run-summary="settings"><div><dt>Seed</dt><dd>Resolving…</dd></div></dl>
+    </section>
+
+    <section id="run-stage-readiness" class="run-wizard__step" data-run-step="readiness" aria-labelledby="run-step-readiness">
+      <header><span>08</span><div><h2 id="run-step-readiness">Readiness</h2><small>Required before start</small></div></header>
+      <p>DWARF checks only the runtime surfaces required by this scenario. Mixed health is not required for unrelated tests.</p>
+      <p class="run-wizard__plain"><strong>Plain meaning:</strong> DWARF checks the needed parts before it starts.</p>
+      <div data-run-summary="readiness" class="run-wizard__list" aria-live="polite">Resolving checks…</div>
+      <a href="/operate/status" target="_blank" rel="noreferrer">Open detailed deployment status</a>
+    </section>
+
+    <section id="run-stage-review" class="run-wizard__step run-wizard__step--wide" data-run-step="review" aria-labelledby="run-step-review">
+      <header><span>09</span><div><h2 id="run-step-review">Review</h2><small>Required</small></div></header>
+      <p>Review the resolved target, exact versions, measurements, and readiness contract.</p>
+      <div data-run-errors class="run-wizard__errors" role="alert" aria-live="assertive" tabindex="-1" hidden></div>
+      <div data-run-summary="review" class="run-wizard__review">Resolving plan…</div>
+      <details><summary>Technical plan</summary><pre data-run-summary="plan"></pre></details>
+    </section>
+
+    <section id="run-stage-launch" class="run-wizard__step run-wizard__step--wide" data-run-step="launch" aria-labelledby="run-step-launch">
+      <header><span>10</span><div><h2 id="run-step-launch">Run</h2><small>Mutating action</small></div></header>
+      <p>Starting a run requires the dashboard token. Output streams here and the completed run opens in the normal evidence viewer.</p>
+      <p class="run-wizard__plain"><strong>Plain meaning:</strong> Press Start when every check is ready.</p>
+      <button class="cta" type="submit" data-run-action="start" disabled>Start local run</button>
+      <div class="run-wizard__launch-status" data-run-launch-status aria-live="polite">Resolve a valid plan to continue.</div>
+      <pre data-run-launch-log tabindex="0" hidden></pre>
+    </section>
+  </div></form>
   <script type="application/json" id="run-wizard-bootstrap">{{ wizard|tojson }}</script>
 </section>
+<script type="module" src="/static/js/run-wizard.js"></script>
 {% endblock %}
