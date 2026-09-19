@@ -187,3 +187,45 @@ def test_report_writer_emits_normalized_readable_and_compact_artifacts(tmp_path)
     assert compact["rows"][1]["mean"] is None
     assert "unavailable" in readable
     assert "trace capability was not exposed" in readable
+
+
+def test_compact_row_uses_all_bucket_for_outcome_partitioned_metrics(tmp_path):
+    report = {
+        "schema_version": "v1",
+        "scenario": "amaru-measurement-e2e-stock",
+        "duration_seconds": 10.7,
+        "measurements": {
+            "attempt_latency": {
+                "all": {
+                    "status": "available",
+                    "unit": "us",
+                    "sample_count": 100,
+                    "mean": 100238.11,
+                    "median": 101108.0,
+                    "p95": 102037.0,
+                    "p99": 102166.0,
+                },
+                "by_outcome": {
+                    "rejected": {
+                        "status": "available",
+                        "unit": "us",
+                        "sample_count": 100,
+                        "median": 101108.0,
+                    }
+                },
+            }
+        },
+    }
+
+    artifacts = write_measurement_reports(tmp_path, report)
+
+    compact = json.loads((tmp_path / artifacts["compact_table"]).read_text())
+    row = next(r for r in compact["rows"] if r["metric"] == "attempt_latency")
+    assert row["status"] == "available"
+    assert row["sample_count"] == 100
+    assert row["median"] == 101108.0
+    assert row["unit"] == "us"
+
+    summary = json.loads((tmp_path / artifacts["summary"]).read_text())
+    assert summary["available_count"] == 1
+    assert summary["unavailable_count"] == 0

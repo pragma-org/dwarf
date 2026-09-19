@@ -803,6 +803,59 @@ def _git_framework_commit():
     return revision
 
 
+MEASUREMENT_AUTO_ATTACH_IMPLEMENTATIONS = ("amaru", "cardano-node")
+MEASUREMENT_DISABLED_VALUES = frozenset({"off", "0", "false", "no"})
+
+
+def measurement_explicitly_requested(scen) -> bool:
+    """True when the scenario names a real measurement profile or overrides taps."""
+    return scen.measurement_profile not in (None, "none") or bool(scen.measurements)
+
+
+def measurement_auto_attach_target(scen, *, env=None) -> bool:
+    """True when the scenario should receive its implicit-default profile.
+
+    Auto-attachment covers deployed local devnets only. The resolver binds the
+    default profile against the deployed profile's runtime.json, so a substrate
+    or attached topology - which carries no profile id - has nothing to bind to.
+    """
+    if env is None:
+        env = os.environ
+    if str(env.get("DWARF_MEASUREMENTS", "")).strip().lower() in MEASUREMENT_DISABLED_VALUES:
+        return False
+    if scen.measurement_profile == "none":
+        return False
+    if measurement_explicitly_requested(scen):
+        return False
+    if scen.runtime != "devnet" or not scen.profile:
+        return False
+    return scen.target.get("implementation") in MEASUREMENT_AUTO_ATTACH_IMPLEMENTATIONS
+
+
+def prepare_auto_measurements(scen):
+    """Prepare scenario measurements, returning ``(prepared, skip_reason)``.
+
+    Explicit intent fails loud: a scenario that asked to be measured must not
+    run unmeasured. An implicit default degrades to a recorded skip reason, so
+    auto-attachment never turns a working scenario into a failing one.
+    """
+    from profile_manager.measurement_execution import (
+        MeasurementExecutionError,
+        prepare_scenario_measurements,
+    )
+    from profile_manager.measurement_resolution import MeasurementResolutionError
+
+    explicit = measurement_explicitly_requested(scen)
+    if not explicit and not measurement_auto_attach_target(scen):
+        return None, None
+    try:
+        return prepare_scenario_measurements(scen), None
+    except (MeasurementExecutionError, MeasurementResolutionError) as exc:
+        if explicit:
+            raise
+        return None, str(exc)
+
+
 def _resolve_framework_commit(explicit):
     if explicit is not None and str(explicit).strip():
         return str(explicit).strip()
@@ -829,19 +882,11 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     scen = load_scenario(path)
     registry = primitives.load_registry(registry_path or DEFAULT_REGISTRY_PATH)
     prepared_measurements = None
-    if (
-        measurement_context is None
-        and (
-            scen.measurement_profile not in {None, "none"}
-            or bool(scen.measurements)
-        )
-    ):
-        from profile_manager.measurement_execution import (
-            prepare_scenario_measurements,
-        )
-
-        prepared_measurements = prepare_scenario_measurements(scen)
-        measurement_context = prepared_measurements.resolution
+    measurement_auto_skip = None
+    if measurement_context is None:
+        prepared_measurements, measurement_auto_skip = prepare_auto_measurements(scen)
+        if prepared_measurements is not None:
+            measurement_context = prepared_measurements.resolution
     seed = scen.seed if scen.seed is not None else 0
     # Derive an int seed for random.Random.
     if isinstance(seed, str) and seed.lower().startswith("0x"):
@@ -871,6 +916,14 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     from profile_manager.launch_store import retain_launch_inputs_from_environment
 
     retain_launch_inputs_from_environment(handle.run_dir)
+    if measurement_auto_skip:
+        handle.log(
+            phase="setup",
+            primitive="measurement-auto-attach",
+            level="info",
+            event="measurement_auto_attach_skipped",
+            payload={"reason": measurement_auto_skip},
+        )
     handle.set_start_resource_snapshot(forensic.capture_local_resource_snapshot(pid=os.getpid(), data_dir=handle.run_dir))
     if (
         prepared_measurements is not None

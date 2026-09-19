@@ -224,9 +224,22 @@ def degradation_summary(
     }
 
 
+def _compact_summary(metric: dict[str, Any]) -> dict[str, Any]:
+    """Return the row-level summary for a metric.
+
+    Outcome-partitioned metrics carry their aggregate under ``all`` and hold no
+    top-level ``status``. Reading the outer dict directly would score them as
+    unavailable with zero samples even when the aggregate has data.
+    """
+    if "status" not in metric and isinstance(metric.get("all"), dict):
+        return metric["all"]
+    return metric
+
+
 def _compact_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
-    for name, metric in (report.get("measurements") or {}).items():
+    for name, raw in (report.get("measurements") or {}).items():
+        metric = _compact_summary(raw) if isinstance(raw, dict) else {}
         rows.append(
             {
                 "metric": name,
