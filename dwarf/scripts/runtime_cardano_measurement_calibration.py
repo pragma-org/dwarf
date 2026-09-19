@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -134,15 +135,41 @@ def _target(runtime: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     }, node)
 
 
-def _capture_logs(container: str, *, since: str, destination: Path) -> None:
+def _capture_logs(container: str, *, since: str, destination: Path) -> dict[str, Any]:
     result = _run(["docker", "logs", "--since", since, container], timeout=120)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(result.stdout + ("\n" + result.stderr if result.stderr else ""), encoding="utf-8")
+    body = result.stdout + ("\n" + result.stderr if result.stderr else "")
+    destination.write_text(body, encoding="utf-8")
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"cannot capture logs from {container}")
+    record_count = 0
+    namespaces: set[str] = set()
+    for line in body.splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        record_count += 1
+        namespace = record.get("ns")
+        if isinstance(namespace, str):
+            namespaces.add(namespace)
+    return {
+        "record_count": record_count,
+        "byte_count": len(body.encode("utf-8")),
+        "namespaces": sorted(namespaces),
+    }
 
 
-def run_leg(*, runtime_root: Path, output_dir: Path, attempt_count: int, timeout_seconds: float) -> dict[str, Any]:
+def run_leg(
+    *,
+    runtime_root: Path,
+    output_dir: Path,
+    attempt_count: int,
+    timeout_seconds: float,
+    observation_seconds: float = 2.0,
+) -> dict[str, Any]:
     runtime = json.loads((runtime_root / "runtime.json").read_text(encoding="utf-8"))
     target, node = _target(runtime)
     container = str(node.get("container_name") or "")
@@ -156,13 +183,14 @@ def run_leg(*, runtime_root: Path, output_dir: Path, attempt_count: int, timeout
         attempt_count=attempt_count,
         timeout_seconds=timeout_seconds,
     )
-    trace_path = output_dir / "raw" / "node1.ndjson"
-    _capture_logs(container, since=started_at, destination=trace_path)
     attempts_path = output_dir / "attempts.ndjson"
     attempts_path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in attempts),
         encoding="utf-8",
     )
+    time.sleep(observation_seconds)
+    trace_path = output_dir / "raw" / "node1.ndjson"
+    trace_evidence = _capture_logs(container, since=started_at, destination=trace_path)
     summarized = summarize_attempts(attempts)
     result = {
         "schema_version": 1,
@@ -181,6 +209,10 @@ def run_leg(*, runtime_root: Path, output_dir: Path, attempt_count: int, timeout
             "artifact": "attempts.ndjson",
         },
         "raw_trace": "raw/node1.ndjson",
+        "node_trace": {
+            **trace_evidence,
+            "observation_seconds": observation_seconds,
+        },
     }
     (output_dir / "result.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return result
@@ -193,17 +225,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--attempts", type=int, default=100)
     parser.add_argument("--timeout-seconds", type=float, default=2.0)
+    parser.add_argument("--observation-seconds", type=float, default=2.0)
     args = parser.parse_args(argv)
     if args.attempts < 30 or args.attempts > 10_000:
         raise SystemExit("--attempts must be within 30..10000")
+    if args.observation_seconds < 0.5 or args.observation_seconds > 30:
+        raise SystemExit("--observation-seconds must be within 0.5..30")
     result = run_leg(
         runtime_root=args.runtime_root,
         output_dir=args.output_dir,
         attempt_count=args.attempts,
         timeout_seconds=args.timeout_seconds,
+        observation_seconds=args.observation_seconds,
     )
     print(json.dumps(result, sort_keys=True))
-    return 0
+    return 0 if result["node_trace"]["record_count"] > 0 else 2
 
 
 if __name__ == "__main__":

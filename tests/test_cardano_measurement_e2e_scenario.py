@@ -24,6 +24,7 @@ def test_cardano_measurement_scenario_is_exact_non_vacuous_and_portable():
     load = body["load"][0]
     assert load["primitive"] == "runtime_cardano_measurement_calibration"
     assert load["attempts"] >= 100
+    assert load["observation_seconds"] >= 2
     assert load["profile_id"] == scenario.profile
     assert "runtime_root" not in load
     text = SCENARIO.read_text()
@@ -86,10 +87,16 @@ def test_cardano_runtime_leg_retains_every_timed_outcome_and_exact_identity(
     ]
     monkeypatch.setattr(calibration, "_container_ip", lambda container: "172.20.0.2")
     monkeypatch.setattr(calibration, "run_attempts", lambda **kwargs: attempts)
+    monkeypatch.setattr(calibration.time, "sleep", lambda _seconds: None)
 
     def capture(container, *, since, destination):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text('{"ns":"Net.Handshake.Remote","data":{"kind":"Handshake"}}\n')
+        return {
+            "record_count": 1,
+            "byte_count": destination.stat().st_size,
+            "namespaces": ["Net.Handshake.Remote"],
+        }
 
     monkeypatch.setattr(calibration, "_capture_logs", capture)
     result = calibration.run_leg(
@@ -97,6 +104,7 @@ def test_cardano_runtime_leg_retains_every_timed_outcome_and_exact_identity(
         output_dir=output_dir,
         attempt_count=3,
         timeout_seconds=2,
+        observation_seconds=2,
     )
 
     assert result["target"]["version"] == "11.1.2"
@@ -109,6 +117,8 @@ def test_cardano_runtime_leg_retains_every_timed_outcome_and_exact_identity(
     assert result["measurements"]["handshake_rejection_roundtrip"]["sample_count"] == 3
     assert len(output_dir.joinpath("attempts.ndjson").read_text().splitlines()) == 3
     assert output_dir.joinpath("raw/node1.ndjson").is_file()
+    assert result["node_trace"]["record_count"] == 1
+    assert result["node_trace"]["observation_seconds"] == 2
 
 
 def test_cardano_runtime_identity_fails_closed_on_digest_mismatch():
@@ -116,3 +126,29 @@ def test_cardano_runtime_identity_fails_closed_on_digest_mismatch():
     body["nodes"][0]["artifact_identity"]["image_digest"] = "sha256:" + "9" * 64
     with pytest.raises(RuntimeError, match="does not match the catalog"):
         calibration._target(body)
+
+
+def test_cardano_runtime_cli_fails_closed_when_node_trace_is_empty(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        calibration,
+        "run_leg",
+        lambda **_kwargs: {"node_trace": {"record_count": 0}},
+    )
+
+    exit_code = calibration.main(
+        [
+            "leg",
+            "--runtime-root",
+            str(tmp_path / "runtime"),
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--attempts",
+            "100",
+            "--observation-seconds",
+            "2",
+        ]
+    )
+
+    assert exit_code == 2

@@ -21,6 +21,7 @@
       "profile_id": "profile-s-cardano-measurement-stock-control",
       "attempts": 100,
       "response_timeout_seconds": 2,
+      "observation_seconds": 2,
       "timeout_seconds": 180,
       "expected_helper_exit": 0
     }

@@ -13320,6 +13320,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
     )
     _PRIMITIVE_NAME = "runtime_amaru_measurement_calibration"
     _OUTPUT_SUBDIR = "amaru-measurement-calibration"
+    _OBSERVATION_WINDOW = False
 
     def run(self, handle, rng):
         import os
@@ -13343,6 +13344,11 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         attempts = int(self.params.get("attempts", 40))
         response_timeout_seconds = float(
             self.params.get("response_timeout_seconds", 2.0)
+        )
+        observation_seconds = (
+            float(self.params.get("observation_seconds", 2.0))
+            if self._OBSERVATION_WINDOW
+            else None
         )
         timeout_seconds = float(self.params.get("timeout_seconds", 180))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -13371,6 +13377,8 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             "--timeout-seconds",
             str(response_timeout_seconds),
         ]
+        if observation_seconds is not None:
+            command.extend(["--observation-seconds", str(observation_seconds)])
         handle.log(
             phase="load",
             primitive=self._PRIMITIVE_NAME,
@@ -13382,6 +13390,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "output_dir": str(output_dir),
                 "attempts": attempts,
                 "response_timeout_seconds": response_timeout_seconds,
+                "observation_seconds": observation_seconds,
             },
         )
         env = os.environ.copy()
@@ -13498,6 +13507,7 @@ class RuntimeCardanoMeasurementCalibration(RuntimeAmaruMeasurementCalibration):
     )
     _PRIMITIVE_NAME = "runtime_cardano_measurement_calibration"
     _OUTPUT_SUBDIR = "cardano-measurement-calibration"
+    _OBSERVATION_WINDOW = True
 
 
 class RuntimePartitionRejoin(LoadPrimitive):
