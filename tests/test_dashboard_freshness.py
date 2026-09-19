@@ -180,6 +180,46 @@ def test_topology_health_service_shares_one_inflight_probe():
     assert calls == ["probe"]
 
 
+def test_topology_health_result_survives_dashboard_restart(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path))
+    operate_topology_health.reset_topology_health_state()
+
+    operate_topology_health.request_topology_health_check(
+        probe=lambda: {
+            "state": "healthy",
+            "checked_at": "2026-09-19T12:00:00Z",
+            "reason_code": "all_mixed_readiness_gates_passed",
+        }
+    )
+    completed = operate_topology_health.wait_for_topology_health(timeout=2)
+
+    assert completed["state"] == "healthy"
+    evidence_path = tmp_path / "topology-health" / "dashboard-latest.json"
+    assert json.loads(evidence_path.read_text(encoding="utf-8"))["state"] == "healthy"
+
+    # Simulate a process restart by clearing only process-local state.
+    operate_topology_health.reset_topology_health_state()
+    restored = operate_topology_health.topology_health_snapshot()
+
+    assert restored["state"] == "healthy"
+    assert restored["observation_source"] == "persisted"
+    assert restored["cached"] is True
+    assert restored["age_seconds"] >= 0
+
+
+def test_topology_health_ignores_invalid_persisted_result(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path))
+    evidence_path = tmp_path / "topology-health" / "dashboard-latest.json"
+    evidence_path.parent.mkdir(parents=True)
+    evidence_path.write_text("not json", encoding="utf-8")
+    operate_topology_health.reset_topology_health_state()
+
+    restored = operate_topology_health.topology_health_snapshot()
+
+    assert restored["state"] == "idle"
+    assert restored["previous"] is None
+
+
 def test_topology_health_timeout_is_unknown_not_cached_success():
     operate_topology_health.reset_topology_health_state()
 
