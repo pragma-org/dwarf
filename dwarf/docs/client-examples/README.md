@@ -47,3 +47,22 @@ vulnerability unless it reproduces against stock Amaru.
 
 Child explanation: the normal node and the node with measuring marks got the same messages. Their outside response time
 was almost the same. This does not tell us the exact cost of each measuring mark inside the node.
+
+## Gate 3 gap matrix
+
+The evidence-cited Gate 3 matrix is in `GATE-3-FIVE-CARD-GAP-MATRIX.md`.
+
+The matrix audits every frozen scenario, primitive, assertion, measurement, and collector. It classifies each required
+item as `proven`, `reusable`, `missing`, or `accepted unavailable`. It does not treat a definition, a similar primitive,
+or a finalized zero-sample collector as final runtime proof.
+
+The first implementation batch is G3-A: shared exact-target verification, baseline/hostile/recovery windows, target
+health and progress, peer-session evidence, fatal-signal checks, window-scoped resource evidence, and the two additive
+invalid-mini-protocol scenarios. This batch has the highest cross-card reuse and finishes the card closest to
+acceptance. Existing calibration scenarios remain unchanged.
+
+Technical boundary: no Gate 3 implementation is complete merely because the matrix exists. The exact final scenarios
+must still pass through deployed DWARF with the frozen workloads and sample floors.
+
+Child explanation: the checklist now says exactly which parts exist and which parts DWARF must still build. The next job
+adds the shared safety checks and finishes the bad-Handshake-message example first.
