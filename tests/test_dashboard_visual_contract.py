@@ -4,6 +4,8 @@ import threading
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
+from PIL import Image
+
 from profile_manager.data import schedule_store
 from profile_manager import dashboard
 from profile_manager.views import operate_schedule
@@ -41,6 +43,26 @@ DEFINITION_DETAIL_VIEW = (
 )
 OPERATIONS = ROOT / "OPERATIONS.md"
 LEARN_DOCS = ROOT / "dwarf" / "profile_manager" / "data" / "learn_docs.py"
+DWARF_LOGO = ROOT / "dwarf" / "dashboard" / "static" / "dwarf-logo.png"
+
+
+def test_dwarf_logo_contains_only_the_flask_monster_artwork():
+    """The product mark must not include the retired outlined wordmark."""
+
+    with Image.open(DWARF_LOGO) as image:
+        assert image.mode == "RGBA"
+        assert image.width >= 1000
+        assert image.height >= 700
+
+        alpha = image.getchannel("A")
+        opaque_bounds = alpha.getbbox()
+        visible_floor = alpha.point(lambda value: 255 if value >= 32 else 0)
+        lower_seven_percent = visible_floor.crop(
+            (0, int(image.height * 0.93), image.width, image.height)
+        )
+
+    assert opaque_bounds is not None
+    assert lower_seven_percent.getbbox() is None
 
 
 def test_author_styles_preserve_hidden_attribute_semantics():
