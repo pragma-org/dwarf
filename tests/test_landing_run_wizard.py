@@ -110,6 +110,7 @@ def test_run_resolve_api_returns_normalized_plan_without_a_token():
     assert payload["ok"] is True
     assert payload["plan"]["scenario"]["runtime"] == "library"
     assert payload["plan"]["readiness"]["mixed_topology_required"] is False
+    assert payload["plan_digest"].startswith("sha256:")
 
 
 def test_run_resolve_api_returns_structured_field_errors():
@@ -172,3 +173,113 @@ def test_run_wizard_resolves_changes_without_embedding_catalog_logic_in_javascri
     assert "grid-template-columns" in css
     assert "minmax(0" in css
     assert "overflow-x: clip" in css
+
+
+def test_run_start_rejects_missing_token_before_creating_a_launch(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADA2_DWARF_LAUNCH_ROOT", str(tmp_path))
+
+    status, content_type, body = dashboard.dispatch_run_start_request(
+        method="POST",
+        path="/api/run/start",
+        body=b"{}",
+        expected_token="secret",
+    )
+
+    assert status == 401
+    assert content_type.startswith("application/json")
+    assert not list(tmp_path.iterdir())
+
+
+def test_run_start_rejects_a_stale_resolved_plan(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADA2_DWARF_LAUNCH_ROOT", str(tmp_path))
+    body = json.dumps(
+        {
+            "request": {"scenario_id": "edge-cases-cbor-tx-body-amaru"},
+            "plan_digest": "sha256:" + "0" * 64,
+        }
+    ).encode("utf-8")
+
+    status, _content_type, response = dashboard.dispatch_run_start_request(
+        method="POST",
+        path="/api/run/start?token=secret",
+        body=body,
+        expected_token="secret",
+    )
+
+    assert status == 409
+    assert json.loads(response)["error"]["field"] == "plan_digest"
+
+
+def test_library_run_start_streams_existing_engine_without_mixed_health(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ADA2_DWARF_LAUNCH_ROOT", str(tmp_path))
+    request = {"scenario_id": "edge-cases-cbor-tx-body-amaru"}
+    plan = __import__("profile_manager.run_plan", fromlist=["resolve_run_plan"]).resolve_run_plan(request)
+    digest = __import__("profile_manager.run_plan", fromlist=["digest_run_plan"]).digest_run_plan(plan)
+    calls = []
+
+    status, content_type, stream = dashboard.dispatch_run_start_request(
+        method="POST",
+        path="/api/run/start?token=secret",
+        body=json.dumps({"request": request, "plan_digest": digest}).encode("utf-8"),
+        expected_token="secret",
+        preflight_runner=lambda launch_id, resolved: calls.append((launch_id, resolved["readiness"])) or {"state": "ready", "checks": []},
+        command_builder=lambda launch_id: ["dwarf-launch", launch_id],
+        streamer=lambda command: iter([b"data: run_id: test-run\n\n", b'event: done\ndata: {"exit_code": 0}\n\n']),
+    )
+
+    output = b"".join(stream)
+    assert status == 200
+    assert content_type.startswith("text/event-stream")
+    assert calls[0][1]["mixed_topology_required"] is False
+    assert b"run_id: test-run" in output
+
+
+def test_failed_mixed_readiness_stops_before_execution(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADA2_DWARF_LAUNCH_ROOT", str(tmp_path))
+    request = {"scenario_id": "consensus-chainhold-upstream-differential"}
+    run_plan = __import__("profile_manager.run_plan", fromlist=["resolve_run_plan", "digest_run_plan"])
+    plan = run_plan.resolve_run_plan(request)
+    digest = run_plan.digest_run_plan(plan)
+    commands = []
+
+    status, _content_type, stream = dashboard.dispatch_run_start_request(
+        method="POST",
+        path="/api/run/start?token=secret",
+        body=json.dumps({"request": request, "plan_digest": digest}).encode("utf-8"),
+        expected_token="secret",
+        preflight_runner=lambda _launch_id, _plan: {
+            "state": "blocked",
+            "checks": [{"id": "topology:cardano_amaru", "passed": False}],
+        },
+        command_builder=lambda launch_id: commands.append(launch_id) or ["never"],
+    )
+
+    output = b"".join(stream)
+    assert status == 200
+    assert b"preflight_failed" in output
+    assert b'"exit_code": 78' in output
+    assert commands == []
+    assert list(tmp_path.glob("launch-*/preflight.json"))
+
+
+def test_run_start_rejects_concurrent_mutation(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADA2_DWARF_LAUNCH_ROOT", str(tmp_path))
+    request = {"scenario_id": "edge-cases-cbor-tx-body-amaru"}
+    run_plan = __import__("profile_manager.run_plan", fromlist=["resolve_run_plan", "digest_run_plan"])
+    plan = run_plan.resolve_run_plan(request)
+    digest = run_plan.digest_run_plan(plan)
+    assert dashboard.try_acquire_mutating_lock()
+    try:
+        status, _content_type, body = dashboard.dispatch_run_start_request(
+            method="POST",
+            path="/api/run/start?token=secret",
+            body=json.dumps({"request": request, "plan_digest": digest}).encode("utf-8"),
+            expected_token="secret",
+        )
+    finally:
+        dashboard.release_mutating_lock()
+
+    assert status == 409
+    assert "another mutating action" in json.loads(body)["error"]["message"]

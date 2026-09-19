@@ -15,6 +15,7 @@ from profile_manager import cli
 from profile_manager.remote import (
     CommandResult,
     render_launch_command,
+    render_launch_preflight_command,
     render_topology_health_command,
     render_topology_redeploy_command,
 )
@@ -208,6 +209,11 @@ def test_control_shim_launch_command_accepts_only_strict_launch_ids(tmp_path):
     with pytest.raises(ValueError):
         render_launch_command(config, "../scenario.yaml")
 
+    preflight = render_launch_preflight_command(
+        config, "launch-0123456789abcdef01234567"
+    )
+    assert preflight[-1] == "launch-preflight launch-0123456789abcdef01234567"
+
 
 def test_control_channel_provisions_restricted_launch_root():
     shim = (ROOT / "delivery/control-plane/dwarf-deploy-shim.py").read_text(
@@ -218,6 +224,7 @@ def test_control_channel_provisions_restricted_launch_root():
     ).read_text(encoding="utf-8")
 
     assert '"launch"' in shim
+    assert '"launch-preflight"' in shim
     assert "_LAUNCH_ID_RE" in shim
     assert "LAUNCH_ROOT" in shim
     assert "load_launch" in shim

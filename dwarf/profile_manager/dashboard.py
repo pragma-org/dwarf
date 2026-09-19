@@ -1508,6 +1508,166 @@ def dispatch_mutating_request(*, method, path, expected_token, cli_command_build
     return (200, "text/event-stream; charset=utf-8", _gen())
 
 
+def _sse_event(event: str, payload) -> bytes:
+    body = payload if isinstance(payload, str) else json.dumps(payload, sort_keys=True)
+    return f"event: {event}\ndata: {body}\n\n".encode("utf-8")
+
+
+def _default_run_preflight(launch_id: str, plan: dict) -> dict:
+    readiness = plan["readiness"]
+    if readiness.get("topology_id"):
+        from profile_manager.data.operate_topology_health import (
+            request_topology_health_check,
+            wait_for_topology_health,
+        )
+
+        request_topology_health_check()
+        health = wait_for_topology_health(timeout=120)
+        return {
+            "state": "ready" if health.get("state") == "healthy" else "blocked",
+            "kind": "topology",
+            "topology_id": readiness["topology_id"],
+            "health": health,
+            "checks": [
+                {
+                    "id": f"topology:{readiness['topology_id']}",
+                    "passed": health.get("state") == "healthy",
+                    "reason": health.get("reason_code"),
+                }
+            ],
+        }
+    if plan.get("profile"):
+        import subprocess as _subprocess
+
+        from profile_manager.remote import render_launch_preflight_command
+
+        command = render_launch_preflight_command(load_config(), launch_id)
+        completed = _subprocess.run(
+            command, text=True, capture_output=True, check=False, timeout=90
+        )
+        for line in reversed((completed.stdout or "").splitlines()):
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and payload.get("state") in {"ready", "blocked"}:
+                return payload
+        return {
+            "state": "blocked",
+            "kind": "profile",
+            "checks": [],
+            "detail": (completed.stderr or completed.stdout or "profile preflight returned no result").strip(),
+        }
+    return {
+        "state": "ready",
+        "kind": "self-contained",
+        "checks": [{"id": "framework", "passed": True}],
+    }
+
+
+def dispatch_run_start_request(
+    *,
+    method,
+    path,
+    body,
+    expected_token,
+    preflight_runner=None,
+    command_builder=None,
+    streamer=None,
+):
+    """Re-resolve, preflight, and stream one identifier-only local launch."""
+    if urlsplit(path).path != "/api/run/start":
+        return None
+    if method != "POST":
+        return (405, "application/json; charset=utf-8", b'{"ok":false,"error":{"message":"use POST"}}')
+    ok, error = check_token(path, expected=expected_token)
+    if not ok:
+        payload = {"ok": False, "error": {"field": "token", "message": error}}
+        return (401, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    if len(body) > 8192:
+        payload = {"ok": False, "error": {"field": "request", "message": "request body is too large"}}
+        return (413, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    try:
+        value = json.loads(body.decode("utf-8"))
+        if not isinstance(value, dict) or set(value) - {"request", "plan_digest"}:
+            raise ValueError("start body must contain request and plan_digest only")
+        from profile_manager.run_plan import (
+            RunPlanRequest,
+            digest_run_plan,
+            resolve_run_plan,
+        )
+
+        request = RunPlanRequest.from_mapping(value.get("request"))
+        plan = resolve_run_plan(request)
+        current_digest = digest_run_plan(plan)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        field = getattr(exc, "field", "request")
+        payload = {"ok": False, "error": {"field": field, "message": str(exc)}}
+        return (400, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    if value.get("plan_digest") != current_digest:
+        payload = {
+            "ok": False,
+            "error": {
+                "field": "plan_digest",
+                "message": "The catalog or selection changed. Resolve the plan again before launch.",
+            },
+        }
+        return (409, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    if not try_acquire_mutating_lock():
+        payload = {"ok": False, "error": {"field": "launch", "message": "another mutating action is already in progress"}}
+        return (409, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    try:
+        from profile_manager.launch_store import create_launch
+
+        launch = create_launch(plan)
+    except Exception as exc:
+        release_mutating_lock()
+        payload = {"ok": False, "error": {"field": "launch", "message": str(exc)}}
+        return (400, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+
+    selected_preflight = preflight_runner or _default_run_preflight
+    selected_streamer = streamer or stream_subprocess_sse
+
+    def default_command(launch_id):
+        from profile_manager.remote import render_launch_command
+
+        if not control_shim_enabled():
+            raise RuntimeError("the restricted DWARF control channel is not enabled")
+        return render_launch_command(load_config(), launch_id)
+
+    selected_command = command_builder or default_command
+
+    def generate():
+        try:
+            yield _sse_event(
+                "plan",
+                {"launch_id": launch["launch_id"], "plan_digest": current_digest},
+            )
+            try:
+                preflight = selected_preflight(launch["launch_id"], plan)
+            except Exception as exc:  # noqa: BLE001 - retain failed readiness as evidence
+                preflight = {
+                    "state": "blocked",
+                    "checks": [],
+                    "detail": f"{type(exc).__name__}: {exc}",
+                }
+            from profile_manager.launch_store import record_launch_preflight
+
+            record_launch_preflight(launch["launch_id"], preflight)
+            yield _sse_event("preflight", preflight)
+            if preflight.get("state") != "ready":
+                yield _sse_event("error", {"error": "preflight_failed", "preflight": preflight})
+                yield _sse_event("done", {"exit_code": 78})
+                return
+            command = selected_command(launch["launch_id"])
+            yield _sse_event("launch", {"launch_id": launch["launch_id"]})
+            yield from selected_streamer(command)
+        finally:
+            release_mutating_lock()
+
+    return (200, "text/event-stream; charset=utf-8", generate())
+
+
 def dispatch_deployment_preview_request(*, method, path):
     from urllib.parse import parse_qs, urlsplit
     from profile_manager.deployment_versions import (
@@ -3008,6 +3168,19 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 status, ctype, response_body = run_resolve
                 self._send(status, ctype, response_body)
                 return
+            run_start = dispatch_run_start_request(
+                method="POST",
+                path=self.path,
+                body=body_bytes,
+                expected_token=expected_token,
+            )
+            if run_start is not None:
+                status, ctype, response_body = run_start
+                if status == 200 and "event-stream" in ctype:
+                    self._send_stream(status, ctype, response_body)
+                else:
+                    self._send(status, ctype, response_body)
+                return
             version_refresh = dispatch_version_refresh_request(
                 method="POST", path=self.path, expected_token=expected_token
             )
@@ -3190,6 +3363,7 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 "/api/scenario/paste", "/api/scenario/promote", "/api/scenario/compare",
                 "/api/scenario/run", "/api/backup/create", "/api/coverage/run",
                 "/api/topology/redeploy",
+                "/api/run/resolve", "/api/run/start",
                 "/api/versions/refresh",
                 "/operate/config/save",
             }

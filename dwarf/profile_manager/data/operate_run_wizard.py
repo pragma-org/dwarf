@@ -10,7 +10,12 @@ from urllib.parse import urlsplit
 from profile_manager.data.catalog_definitions import list_definitions
 from profile_manager.data.scenarios import _list_scenarios_for_compare
 from profile_manager.profiles import load_profiles
-from profile_manager.run_plan import RunPlanError, RunPlanRequest, resolve_run_plan
+from profile_manager.run_plan import (
+    RunPlanError,
+    RunPlanRequest,
+    digest_run_plan,
+    resolve_run_plan,
+)
 
 
 _PREFERRED_DEFAULT = "runtime-substrate-honest-baseline-docker-mode-example-smoke"
@@ -65,6 +70,7 @@ def run_wizard_catalog() -> dict[str, Any]:
         "measurement_profiles": measurement_profiles,
         "version_policies": ["latest-confirmed", "latest-stable", "exact"],
         "default_plan": default_plan,
+        "default_plan_digest": digest_run_plan(default_plan) if default_plan else None,
         "default_error": default_error,
     }
 
@@ -89,5 +95,5 @@ def dispatch_run_resolve_request(*, method: str, path: str, body: bytes):
     except RunPlanError as exc:
         response = {"ok": False, "error": exc.as_dict()}
         return (400, "application/json; charset=utf-8", json.dumps(response).encode("utf-8"))
-    response = {"ok": True, "plan": plan}
+    response = {"ok": True, "plan": plan, "plan_digest": digest_run_plan(plan)}
     return (200, "application/json; charset=utf-8", json.dumps(response).encode("utf-8"))

@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -179,10 +180,12 @@ def retain_launch_inputs(
     launch = load_launch(launch_id, root=root)
     destination = Path(run_dir) / "launch"
     destination.mkdir(mode=0o700, exist_ok=False)
+    preflight_path = launch["directory"] / "preflight.json"
     for source in (
         launch["plan_path"],
         launch["scenario_path"],
         launch["profile_path"],
+        preflight_path if preflight_path.is_file() else None,
     ):
         if source is None:
             continue
@@ -192,9 +195,166 @@ def retain_launch_inputs(
     return destination
 
 
+def record_launch_preflight(
+    launch_id: str,
+    result: dict[str, Any],
+    *,
+    root: str | Path | None = None,
+) -> Path:
+    if not isinstance(result, dict) or result.get("state") not in {"ready", "blocked"}:
+        raise LaunchStoreError("launch preflight result is invalid")
+    launch = load_launch(launch_id, root=root)
+    path = launch["directory"] / "preflight.json"
+    temporary = launch["directory"] / ".preflight.json.tmp"
+    _write_private(temporary, _canonical_bytes(result))
+    os.replace(temporary, path)
+    return path
+
+
+def _default_process_checker(node: dict[str, Any]) -> bool:
+    container = str(node.get("container_name") or "").strip()
+    if container:
+        completed = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Running}}", container],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        return completed.returncode == 0 and completed.stdout.strip() == "true"
+    pid_file = str(node.get("pid_file") or "").strip()
+    if pid_file:
+        try:
+            pid = int(Path(pid_file).read_text(encoding="utf-8").strip())
+            os.kill(pid, 0)
+        except (OSError, ValueError):
+            return False
+        return True
+    return False
+
+
+def check_launch_readiness(
+    launch_id: str,
+    *,
+    root: str | Path | None = None,
+    process_checker=None,
+) -> dict[str, Any]:
+    """Check a profile-bound launch against current host runtime evidence."""
+    launch = load_launch(launch_id, root=root)
+    plan = launch["plan"]
+    profile = plan.get("profile")
+    checks: list[dict[str, Any]] = []
+    if not profile:
+        return {
+            "state": "ready",
+            "launch_id": launch_id,
+            "checks": [{"id": "profile-not-required", "passed": True}],
+        }
+
+    runtime_root = Path(str((profile.get("snapshot") or {}).get("remote_runtime_root") or ""))
+    runtime_path = runtime_root / "runtime.json"
+    try:
+        runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+        metadata_ok = isinstance(runtime, dict)
+    except (OSError, json.JSONDecodeError):
+        runtime = {}
+        metadata_ok = False
+    checks.append(
+        {
+            "id": "runtime-metadata",
+            "passed": metadata_ok,
+            "detail": str(runtime_path),
+        }
+    )
+    profile_ok = metadata_ok and runtime.get("profile_id") == profile.get("id")
+    checks.append(
+        {
+            "id": "profile-identity",
+            "passed": profile_ok,
+            "expected": profile.get("id"),
+            "observed": runtime.get("profile_id"),
+        }
+    )
+
+    observed_nodes = ((runtime.get("version_provenance") or {}).get("nodes") or [])
+    identity_failures = []
+    for implementation, expected in ((plan.get("versions") or {}).get("resolved") or {}).items():
+        matches = [
+            node
+            for node in observed_nodes
+            if node.get("implementation") == implementation and not node.get("supporting")
+        ]
+        if not matches:
+            identity_failures.append(f"{implementation}: no proven runtime node")
+            continue
+        for node in matches:
+            observed = {
+                "version": node.get("resolved_version") or node.get("requested_version"),
+                "source_revision": node.get("source_revision"),
+                "image_digest": node.get("image_digest"),
+            }
+            for key in ("version", "source_revision", "image_digest"):
+                if expected.get(key) and observed.get(key) != expected.get(key):
+                    identity_failures.append(
+                        f"{node.get('id') or implementation}: {key} is {observed.get(key)!r}, expected {expected.get(key)!r}"
+                    )
+            if node.get("identity_status") not in {
+                "running-version-verified",
+                "running-image-verified",
+            }:
+                identity_failures.append(
+                    f"{node.get('id') or implementation}: runtime identity is not verified"
+                )
+    checks.append(
+        {
+            "id": "exact-version-identity",
+            "passed": not identity_failures and metadata_ok,
+            "detail": identity_failures,
+        }
+    )
+
+    checker = process_checker or _default_process_checker
+    target_implementations = set(((plan.get("versions") or {}).get("resolved") or {}))
+    runtime_nodes = [
+        node
+        for node in runtime.get("nodes") or []
+        if node.get("impl") in target_implementations and not node.get("supporting")
+    ]
+    dead = [str(node.get("id") or "unknown") for node in runtime_nodes if not checker(node)]
+    checks.append(
+        {
+            "id": "target-process-liveness",
+            "passed": bool(runtime_nodes) and not dead,
+            "detail": dead,
+        }
+    )
+    return {
+        "state": "ready" if all(check["passed"] for check in checks) else "blocked",
+        "launch_id": launch_id,
+        "profile_id": profile.get("id"),
+        "checks": checks,
+    }
+
+
 def retain_launch_inputs_from_environment(run_dir: str | Path) -> Path | None:
     launch_id = os.environ.get("ADA2_DWARF_LAUNCH_ID", "").strip()
     if not launch_id:
         return None
     root = os.environ.get("ADA2_DWARF_LAUNCH_ROOT", "").strip() or None
     return retain_launch_inputs(launch_id, run_dir=run_dir, root=root)
+
+
+def _main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=("preflight",))
+    parser.add_argument("launch_id")
+    args = parser.parse_args(argv)
+    result = check_launch_readiness(args.launch_id)
+    print(json.dumps(result, sort_keys=True))
+    return 0 if result["state"] == "ready" else 78
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

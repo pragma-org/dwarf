@@ -80,6 +80,18 @@ def render_launch_command(config, launch_id: str) -> list[str]:
     )
 
 
+def render_launch_preflight_command(config, launch_id: str) -> list[str]:
+    """Render the read-only exact-runtime check for one stored launch."""
+    from profile_manager.launch_store import validate_launch_id
+
+    checked = validate_launch_id(launch_id)
+    return render_ssh_command(
+        config,
+        f"launch-preflight {checked}",
+        verb=("launch-preflight", checked),
+    )
+
+
 def resolve_ssh_key_path(config) -> str:
     configured = Path(config.ssh_key_path).expanduser()
     if configured.exists():

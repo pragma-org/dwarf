@@ -43,6 +43,7 @@ READ_VERBS = {
     "moog-health",
     "moog-facts",
     "topology-health",
+    "launch-preflight",
 }
 WRITE_VERBS = {
     "deploy",
@@ -300,6 +301,18 @@ def main() -> int:
             f"ADA2_DWARF_TOPOLOGY_PACKAGE_DIR={shlex.quote(package_dir)} "
             f"PYTHONPATH=. python3 {shlex.quote(str(repair))} "
             "--topology cardano_amaru --confirm"
+        )
+    elif verb == "launch-preflight":
+        if not arg or not _LAUNCH_ID_RE.fullmatch(arg):
+            return _reject(conf, original, "invalid-launch-id")
+        launch_root = conf.get("LAUNCH_ROOT")
+        if not launch_root:
+            return _reject(conf, original, "missing-launch-root")
+        script = (
+            f"cd {shlex.quote(str(dwarf_root))} && "
+            f"ADA2_DWARF_LAUNCH_ROOT={shlex.quote(str(launch_root))} "
+            "PYTHONPATH=. python3 -m profile_manager.launch_store preflight "
+            f"{shlex.quote(arg)}"
         )
     elif verb == "launch":
         if not arg or not _LAUNCH_ID_RE.fullmatch(arg):

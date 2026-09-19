@@ -4,8 +4,10 @@ import pytest
 
 from profile_manager.launch_store import (
     LaunchStoreError,
+    check_launch_readiness,
     create_launch,
     load_launch,
+    record_launch_preflight,
     retain_launch_inputs,
 )
 from profile_manager.run_plan import (
@@ -201,3 +203,106 @@ def test_launch_inputs_are_retained_in_run_evidence(tmp_path):
     assert retained == run_dir / "launch"
     assert (retained / "plan.json").is_file()
     assert (retained / "scenario.yaml").is_file()
+
+
+def test_profile_launch_readiness_checks_live_exact_runtime_identity(tmp_path):
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    plan = resolve_run_plan(
+        RunPlanRequest(scenario_id="cardano-measurement-e2e-stock")
+    )
+    plan["profile"]["snapshot"]["remote_runtime_root"] = str(runtime_root)
+    expected = plan["versions"]["resolved"]["cardano-node"]
+    (runtime_root / "runtime.json").write_text(
+        json.dumps(
+            {
+                "profile_id": plan["profile"]["id"],
+                "nodes": [{"id": "node1", "impl": "cardano-node", "container_name": "node1"}],
+                "version_provenance": {
+                    "nodes": [
+                        {
+                            "id": "node1",
+                            "implementation": "cardano-node",
+                            "resolved_version": expected["version"],
+                            "source_revision": expected["source_revision"],
+                            "image_digest": expected["image_digest"],
+                            "identity_status": "running-version-verified",
+                            "supporting": False,
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    stored = create_launch(plan, root=tmp_path / "launches")
+
+    ready = check_launch_readiness(
+        stored["launch_id"],
+        root=tmp_path / "launches",
+        process_checker=lambda _node: True,
+    )
+
+    assert ready["state"] == "ready"
+    assert all(check["passed"] for check in ready["checks"])
+
+
+def test_profile_launch_readiness_blocks_version_mismatch(tmp_path):
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    plan = resolve_run_plan(
+        RunPlanRequest(scenario_id="cardano-measurement-e2e-stock")
+    )
+    plan["profile"]["snapshot"]["remote_runtime_root"] = str(runtime_root)
+    (runtime_root / "runtime.json").write_text(
+        json.dumps(
+            {
+                "profile_id": plan["profile"]["id"],
+                "nodes": [{"id": "node1", "impl": "cardano-node", "container_name": "node1"}],
+                "version_provenance": {
+                    "nodes": [
+                        {
+                            "id": "node1",
+                            "implementation": "cardano-node",
+                            "resolved_version": "0.0.0",
+                            "source_revision": "0" * 40,
+                            "image_digest": "sha256:" + "0" * 64,
+                            "identity_status": "running-version-verified",
+                            "supporting": False,
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    stored = create_launch(plan, root=tmp_path / "launches")
+
+    blocked = check_launch_readiness(
+        stored["launch_id"],
+        root=tmp_path / "launches",
+        process_checker=lambda _node: True,
+    )
+
+    assert blocked["state"] == "blocked"
+    assert any(check["id"] == "exact-version-identity" and not check["passed"] for check in blocked["checks"])
+
+
+def test_launch_preflight_is_retained_with_run_inputs(tmp_path):
+    stored = create_launch(
+        resolve_run_plan(RunPlanRequest(scenario_id="edge-cases-cbor-tx-body-amaru")),
+        root=tmp_path / "launches",
+    )
+    record_launch_preflight(
+        stored["launch_id"],
+        {"state": "ready", "checks": [{"id": "framework", "passed": True}]},
+        root=tmp_path / "launches",
+    )
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    retained = retain_launch_inputs(
+        stored["launch_id"], run_dir=run_dir, root=tmp_path / "launches"
+    )
+
+    assert json.loads((retained / "preflight.json").read_text())["state"] == "ready"

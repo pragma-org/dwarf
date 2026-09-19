@@ -2,8 +2,11 @@ const wizard = document.getElementById('run-wizard');
 const form = wizard?.querySelector('[data-run-wizard-form]');
 const bootstrapNode = document.getElementById('run-wizard-bootstrap');
 const resolveUrl = wizard?.dataset.resolveUrl;
+const startUrl = wizard?.dataset.startUrl;
+const dashboardToken = wizard?.dataset.dashboardToken || '';
 let bootstrap = {};
 let resolvedPlan = null;
+let resolvedPlanDigest = null;
 let resolveSequence = 0;
 
 try { bootstrap = JSON.parse(bootstrapNode?.textContent || '{}'); } catch (_error) { bootstrap = {}; }
@@ -54,8 +57,9 @@ function setConditionalState(plan) {
   wizard.querySelector('[data-run-step="versions"]').hidden = !plan.profile;
   wizard.querySelector('[data-run-step="measurements"]').hidden = !plan.profile;
 }
-function renderPlan(plan) {
+function renderPlan(plan, planDigest) {
   resolvedPlan = plan;
+  resolvedPlanDigest = planDigest;
   setConditionalState(plan);
   replaceWithRows(summary('target'), [['Implementation', plan.scenario.target.implementation], ['Runtime', plan.scenario.runtime], ['Scenario version', plan.scenario.target.version]]);
   const profile = summary('profile');
@@ -86,6 +90,7 @@ function focusError(field) {
 }
 function renderError(error, shouldFocus) {
   resolvedPlan = null;
+  resolvedPlanDigest = null;
   const errors = wizard.querySelector('[data-run-errors]');
   errors.hidden = false;
   errors.textContent = error.message || 'The run plan is invalid.';
@@ -101,7 +106,7 @@ async function resolvePlan({focusOnError = false} = {}) {
     const payload = await response.json();
     if (sequence !== resolveSequence) return;
     if (!response.ok || !payload.ok) { renderError(payload.error || {message: `Resolution failed: HTTP ${response.status}`}, focusOnError); return; }
-    renderPlan(payload.plan);
+    renderPlan(payload.plan, payload.plan_digest);
   } catch (error) {
     if (sequence === resolveSequence) renderError({field: 'request', message: `Resolution failed: ${String(error)}`}, focusOnError);
   }
@@ -110,11 +115,74 @@ function filterScenarios() {
   const query = String(wizard.querySelector('#run-scenario-search')?.value || '').trim().toLowerCase();
   wizard.querySelectorAll('#run-scenario option').forEach((option) => { option.hidden = Boolean(query) && !String(option.dataset.search || '').toLowerCase().includes(query); });
 }
+function appendLaunchLog(text) {
+  const log = wizard.querySelector('[data-run-launch-log]');
+  log.hidden = false;
+  log.textContent += `${text}\n`;
+  log.scrollTop = log.scrollHeight;
+}
+function addRunLink(runId) {
+  const status = wizard.querySelector('[data-run-launch-status]');
+  const link = make('a', `Open run ${runId}`);
+  link.href = `/operate/runs/${encodeURIComponent(runId)}`;
+  status.replaceChildren(link);
+}
+async function startRun() {
+  if (!resolvedPlan || !resolvedPlanDigest) { await resolvePlan({focusOnError: true}); return; }
+  const start = wizard.querySelector('[data-run-action="start"]');
+  const log = wizard.querySelector('[data-run-launch-log]');
+  start.disabled = true;
+  log.textContent = '';
+  log.hidden = false;
+  wizard.querySelector('[data-run-launch-status]').textContent = 'Running final readiness checks…';
+  markProgress('launch');
+  let runId = null;
+  try {
+    const response = await fetch(`${startUrl}?token=${encodeURIComponent(dashboardToken)}`, {
+      method: 'POST',
+      headers: {'Accept': 'text/event-stream', 'Content-Type': 'application/json'},
+      body: JSON.stringify({request: requestBody(), plan_digest: resolvedPlanDigest}),
+    });
+    if (!response.ok || !response.body) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error?.message || `Start failed: HTTP ${response.status}`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let exitCode = null;
+    while (true) {
+      const {value, done} = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), {stream: !done});
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop() || '';
+      for (const frame of frames) {
+        const eventName = frame.split('\n').find((line) => line.startsWith('event:'))?.slice(6).trim() || 'message';
+        const data = frame.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n');
+        if (!data) continue;
+        appendLaunchLog(data);
+        const match = data.match(/\brun_id:\s*([A-Za-z0-9._-]+)/);
+        if (match) runId = match[1];
+        if (eventName === 'done') {
+          try { exitCode = JSON.parse(data).exit_code; } catch (_error) { exitCode = -1; }
+        }
+      }
+      if (done) break;
+    }
+    if (exitCode !== 0) throw new Error(`Run did not complete successfully (exit ${exitCode ?? 'unknown'}).`);
+    if (runId) addRunLink(runId);
+    else wizard.querySelector('[data-run-launch-status]').textContent = 'Run completed. Open Recent runs to view its evidence.';
+  } catch (error) {
+    appendLaunchLog(`ERROR: ${String(error)}`);
+    wizard.querySelector('[data-run-launch-status]').textContent = 'The run did not start or complete. The log above contains the reason.';
+    start.disabled = false;
+  }
+}
 if (wizard && form) {
   wizard.querySelector('#run-scenario-search')?.addEventListener('input', filterScenarios);
   form.addEventListener('change', () => resolvePlan());
-  form.addEventListener('submit', (event) => { event.preventDefault(); if (!resolvedPlan) resolvePlan({focusOnError: true}); });
-  if (bootstrap.defaultPlan) renderPlan(bootstrap.defaultPlan);
-  else if (bootstrap.defaultError) renderError(bootstrap.defaultError, false);
+  form.addEventListener('submit', (event) => { event.preventDefault(); startRun(); });
+  if (bootstrap.default_plan) renderPlan(bootstrap.default_plan, bootstrap.default_plan_digest);
+  else if (bootstrap.default_error) renderError(bootstrap.default_error, false);
   else resolvePlan();
 }

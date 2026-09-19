@@ -406,3 +406,9 @@ def resolve_run_plan(request: RunPlanRequest | dict[str, Any]) -> dict[str, Any]
         },
         "warnings": list(warnings),
     }
+
+
+def digest_run_plan(plan: dict[str, Any]) -> str:
+    """Return the stable digest used to detect a changed catalog selection."""
+    body = json.dumps(plan, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(body).hexdigest()
