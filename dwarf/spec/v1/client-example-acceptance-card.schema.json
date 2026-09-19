@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pragma.org/dwarf/spec/v1/client-example-acceptance-card.schema.json",
+  "title": "DWARF client example acceptance card",
+  "type": "object",
+  "required": [
+    "schema_version", "id", "title", "status", "purpose", "scope",
+    "controlling_sources", "security_mapping", "scenario_legs", "targets",
+    "workload", "environment", "functional_requirement", "measurements",
+    "evidence_quality_rules", "required_collectors", "acceptable_unavailable",
+    "security_assertions", "retained_artifacts", "report_routes",
+    "legitimate_claims", "explicit_non_claims", "verdict_policy",
+    "implementation_gaps", "deferred_scope"
+  ],
+  "properties": {
+    "schema_version": {"const": "v1"},
+    "id": {"type": "string", "pattern": "^client-example-0[1-5]-[a-z0-9-]+$"},
+    "title": {"type": "string", "minLength": 1},
+    "status": {"enum": ["frozen", "implemented", "rehearsed", "accepted"]},
+    "purpose": {"$ref": "#/$defs/explanation"},
+    "scope": {
+      "type": "object",
+      "required": ["real_node_required", "simulation_allowed", "comparison_model"],
+      "properties": {
+        "real_node_required": {"const": true},
+        "simulation_allowed": {"const": false},
+        "comparison_model": {"const": "separate-implementation-executions-not-mixed-node"}
+      },
+      "additionalProperties": false
+    },
+    "controlling_sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}},
+    "security_mapping": {
+      "type": "object",
+      "required": ["threat_model", "risk_register"],
+      "properties": {
+        "threat_model": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/mapping"}},
+        "risk_register": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/risk"}}
+      },
+      "additionalProperties": false
+    },
+    "scenario_legs": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/leg"}},
+    "targets": {
+      "type": "object",
+      "required": ["amaru", "cardano-node"],
+      "properties": {
+        "amaru": {"$ref": "#/$defs/target"},
+        "cardano-node": {"$ref": "#/$defs/target"}
+      },
+      "additionalProperties": false
+    },
+    "workload": {
+      "type": "object",
+      "required": ["identity", "seed", "digest", "dataset_or_corpus", "warm_up_seconds", "duration_seconds", "stop_conditions"],
+      "properties": {
+        "identity": {"type": "string", "minLength": 1},
+        "seed": {"type": "string", "pattern": "^0x[0-9A-Fa-f]+$"},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "dataset_or_corpus": {"type": "object"},
+        "warm_up_seconds": {"type": "number", "minimum": 0},
+        "duration_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "stop_conditions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": true
+    },
+    "environment": {
+      "type": "object",
+      "required": ["hardware_fingerprint", "hardware", "amaru_topology", "cardano_topology"],
+      "properties": {
+        "hardware_fingerprint": {"const": "cardano-box-2026-09-19"},
+        "hardware": {"type": "object"},
+        "amaru_topology": {"type": "string", "minLength": 1},
+        "cardano_topology": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "functional_requirement": {
+      "type": "object",
+      "required": ["id", "statement", "expected_result"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "statement": {"type": "string", "minLength": 1},
+        "expected_result": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "measurements": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/measurement"}},
+    "evidence_quality_rules": {
+      "type": "object",
+      "required": ["very_small_sample", "small_sample", "useful_sample", "authority_rule"],
+      "properties": {
+        "very_small_sample": {"const": "n < 5"},
+        "small_sample": {"const": "5 <= n < 30"},
+        "useful_sample": {"const": "n >= 30"},
+        "authority_rule": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "required_collectors": {"type": "object", "required": ["amaru", "cardano-node"], "additionalProperties": {"type": "array", "minItems": 1, "items": {"type": "string"}}},
+    "acceptable_unavailable": {"type": "array", "items": {"type": "string"}},
+    "security_assertions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/assertion"}},
+    "retained_artifacts": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "report_routes": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "legitimate_claims": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "explicit_non_claims": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "verdict_policy": {
+      "type": "object",
+      "required": ["security_assertions_authoritative", "measurements_gate_by_default", "threshold_gate"],
+      "properties": {
+        "security_assertions_authoritative": {"const": true},
+        "measurements_gate_by_default": {"const": false},
+        "threshold_gate": {"const": "explicit-opt-in-only"}
+      },
+      "additionalProperties": false
+    },
+    "implementation_gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+    "deferred_scope": {
+      "type": "object",
+      "required": ["presentation_walkthrough", "mixed_node_comparison", "weekly_automation", "stable_release_thresholds"],
+      "properties": {
+        "presentation_walkthrough": {"const": true},
+        "mixed_node_comparison": {"const": true},
+        "weekly_automation": {"const": true},
+        "stable_release_thresholds": {"const": true}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "explanation": {
+      "type": "object",
+      "required": ["technical", "child"],
+      "properties": {"technical": {"type": "string", "minLength": 1}, "child": {"type": "string", "minLength": 1}},
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["name", "location", "sha256_or_revision"],
+      "properties": {"name": {"type": "string"}, "location": {"type": "string"}, "sha256_or_revision": {"type": "string"}},
+      "additionalProperties": false
+    },
+    "mapping": {
+      "type": "object",
+      "required": ["id", "title", "reason"],
+      "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "reason": {"type": "string"}},
+      "additionalProperties": false
+    },
+    "risk": {
+      "type": "object",
+      "required": ["id", "title", "reason", "severity", "boundaries", "interfaces"],
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "reason": {"type": "string"},
+        "severity": {"type": "string"},
+        "boundaries": {"type": "array", "items": {"type": "string"}},
+        "interfaces": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "leg": {
+      "type": "object",
+      "required": ["scenario_id", "implementation", "status", "profile", "measurement_profile", "primitives"],
+      "properties": {
+        "scenario_id": {"type": "string"},
+        "implementation": {"enum": ["amaru", "cardano-node", "differential"]},
+        "status": {"enum": ["existing", "additive-required"]},
+        "profile": {"type": "string"},
+        "measurement_profile": {"type": "string"},
+        "primitives": {"type": "object", "required": ["load", "assertions"], "properties": {"setup": {"type": "array", "items": {"type": "string"}}, "load": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "probes": {"type": "array", "items": {"type": "string"}}, "assertions": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "teardown": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false}
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "required": ["version", "source_repository", "source_revision", "stock_mode", "stock_image_reference", "stock_image_digest", "patched_mode", "patched_image_reference", "patched_image_digest", "patched_executable_digest", "patch_set_sha256"],
+      "properties": {
+        "version": {"type": "string"}, "source_repository": {"type": "string"}, "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "stock_mode": {"const": "stock"}, "stock_image_reference": {"type": "string"}, "stock_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "patched_mode": {"const": "patched"}, "patched_image_reference": {"type": "string"}, "patched_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "patched_executable_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "patch_set_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "supporting_cardano_version": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "measurement": {
+      "type": "object",
+      "required": ["name", "boundary", "unit", "minimum_sample_floor", "evidence_role"],
+      "properties": {"name": {"type": "string"}, "boundary": {"type": "string", "minLength": 1}, "unit": {"type": "string"}, "minimum_sample_floor": {"type": "integer", "minimum": 1}, "evidence_role": {"enum": ["collection-proof", "useful-distribution", "functional-correlation"]}},
+      "additionalProperties": false
+    },
+    "assertion": {
+      "type": "object",
+      "required": ["id", "statement"],
+      "properties": {"id": {"type": "string"}, "statement": {"type": "string"}},
+      "additionalProperties": false
+    },
+    "gap": {
+      "type": "object",
+      "required": ["id", "status", "required_change"],
+      "properties": {"id": {"type": "string"}, "status": {"enum": ["open", "closed"]}, "required_change": {"type": "string"}},
+      "additionalProperties": false
+    }
+  }
+}
