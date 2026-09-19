@@ -148,6 +148,18 @@ def test_supported_case_uses_source_exact_v15_four_field_offer():
     )
 
 
+def test_unsupported_case_uses_source_exact_v15_four_field_offer():
+    plan = build_case_plan(attempt_count=3, case_set=ACCEPTANCE_CASE_SET)
+    unsupported = next(
+        row for row in plan if row["name"] == "unsupported-version-refusal"
+    )
+
+    assert unsupported["payload_hex"] == "8200a11903e784182af400f4"
+    assert build_handshake_frame(unsupported["payload_hex"])[8:] == bytes.fromhex(
+        "8200a11903e784182af400f4"
+    )
+
+
 def test_acceptance_workload_identity_pins_every_case_and_wire_payload():
     identity = build_workload_identity(
         attempt_count=120,

@@ -48,12 +48,12 @@ targets:
 workload:
   identity: fixed-handshake-invalid-cases-v1
   seed: "0xBAD0C003"
-  digest: sha256:37cd69c0adbac375296c2899e779f678df34e37870d03dc29372f815ba5e26cc
+  digest: sha256:1ab6db08d45f22f42b1333c255ed07ac9dc57ecacb69ee7c645ecfd451c4225e
   dataset_or_corpus:
     mini_protocol: handshake
     attempts_per_case: 100
     cases:
-      - {name: unsupported-version-refusal, payload_hex: 8200a11903e782182af4, mux_frame_hex: 000000000000000a8200a11903e782182af4}
+      - {name: unsupported-version-refusal, payload_hex: 8200a11903e784182af400f4, mux_frame_hex: 000000000000000c8200a11903e784182af400f4}
       - {name: malformed-cbor, payload_hex: ff, mux_frame_hex: 0000000000000001ff}
   warm_up_seconds: 30
   duration_seconds: 240
