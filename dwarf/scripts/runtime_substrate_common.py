@@ -571,6 +571,11 @@ def allocate_node_plan(
         host["nodes"] = [node["id"] for node in host_nodes]
         host["runtime_root"] = str(runtime_root / "hosts" / host["id"])
     return {
+        "profile_id": normalized.get("profile_id"),
+        "cardano_measurement_traces": bool(
+            normalized.get("cardano_measurement_traces")
+        ),
+        "amaru_json_traces": bool(normalized.get("amaru_json_traces")),
         "host_strategy": host_strategy,
         "hosts": hosts,
         "network": normalized["network"],
