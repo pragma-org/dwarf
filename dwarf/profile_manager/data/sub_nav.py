@@ -17,6 +17,7 @@ from typing import Any
 
 OPERATE_SUB_NAV: list[dict[str, str]] = [
     {"slug": "overview", "label": "Overview", "url": "/operate"},
+    {"slug": "run", "label": "Start run", "url": "/run"},
     {"slug": "runs", "label": "Runs", "url": "/operate/runs"},
     {"slug": "scenarios", "label": "Scenarios", "url": "/operate/scenarios"},
     {"slug": "primitives", "label": "Primitives", "url": "/operate/primitives"},

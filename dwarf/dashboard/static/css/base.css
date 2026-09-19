@@ -351,6 +351,18 @@ code, pre {
   color: var(--cyan-glow);
   border-bottom-color: var(--cyan-glow);
 }
+.shell-nav a.shell-nav__start {
+  border: 1px solid var(--cyan-trace);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  color: var(--cyan-primary);
+}
+.shell-nav a.shell-nav__start:hover,
+.shell-nav a.shell-nav__start.active {
+  border-color: var(--cyan-primary);
+  background: var(--cyan-tint);
+  color: var(--cyan-glow);
+}
 
 /* Page main area. */
 .shell-main {
@@ -5455,6 +5467,10 @@ body {
 
 @media (max-width: 720px) {
   .shell-header { padding-inline: var(--space-5); }
+  .shell-header .brand img { height: 44px; }
+  .shell-nav { gap: var(--space-3); }
+  .shell-nav a { letter-spacing: 0.04em; }
+  .shell-nav a.shell-nav__start { padding-inline: var(--space-2); }
   .shell-main {
     padding: var(--space-8) var(--space-5) var(--space-16);
   }

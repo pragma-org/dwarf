@@ -3,6 +3,7 @@ import json
 
 from profile_manager import dashboard
 from profile_manager.data.operate_run_wizard import dispatch_run_resolve_request
+from profile_manager.data.sub_nav import OPERATE_SUB_NAV
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,6 +94,32 @@ def test_run_route_exposes_server_catalog_and_default_selection():
     assert "Node versions" in html
     assert "Measurements" in html
     assert "Primitives" in html
+
+
+def test_start_run_is_a_primary_and_operate_navigation_destination():
+    html = dashboard.render_route_html("/operate")
+
+    assert any(
+        item == {"slug": "run", "label": "Start run", "url": "/run"}
+        for item in OPERATE_SUB_NAV
+    )
+    assert 'href="/run"' in html
+    assert ">Start run<" in html
+
+
+def test_operator_runbook_explains_wizard_defaults_and_claim_boundary():
+    html = dashboard.render_route_html("/learn/operator-runbook")
+
+    for text in (
+        "Start a local run",
+        "latest-confirmed",
+        "does not prove that a process is live",
+        "Measurements observe the run",
+        "Customize as a new scenario",
+        "Exact command-line equivalent",
+        "Plain meaning:",
+    ):
+        assert text in html
 
 
 def test_run_resolve_api_returns_normalized_plan_without_a_token():
