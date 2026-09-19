@@ -418,6 +418,60 @@ identity, real target reachability, non-zero timed attempts, selected tap data,
 report rendering, non-gating collector behavior, portable bundle, and clean
 teardown. Repair each discovered defect via its own red-green cycle.
 
+#### Cardano-node gate evidence — complete 2026-09-19
+
+- Exact target: Cardano-node `11.1.2`, source
+  `fef83fed01d7926f3de83b3b917be5a4a48768b5`, patched OCI digest
+  `sha256:c74c3deafac54ed4d30da21952fce579c3293919993d31081e18787605757b8c`,
+  executable digest
+  `sha256:2777c36dbfdc4b8e57b9c839f055a65709e3049800030817a97a3943c712f738`,
+  build-result digest
+  `sha256:528f665ef18f4af7c74c3216511cbe4aebb2aa5f0615ee4896868daeb975e269`,
+  and patch-set digest
+  `7a948067c6b957b277400675cf95e32864ed8d92cd130fbadb673775249b5cc1`.
+- A fresh three-node canonical runtime reached healthy/converged state using
+  that exact image. The retained stock control topology was not replaced or
+  disturbed.
+- GUI-launched run `20260919T032200Z-59f94558` passed with seed
+  `0xCA4DA001`; one of one assertion passed and the tamper chain verified.
+- The workload retained all 100 unsupported-version handshake attempts and
+  their terminal rejected outcomes. Attempt latency was median 181 us, p95
+  250 us, and p99 302 us.
+- The same run submitted real accepted and rejected Plutus scripts. The
+  accepted transaction was included valid and the rejected script transaction
+  was included invalid; both submission and inclusion intervals remain in the
+  retained workload artifact.
+- Node instrumentation produced 493 protocol receive/decode samples (median
+  300 us), 29 block-application samples (median 36 us), four Plutus VM samples
+  (median 52 us, retained by accepted/rejected outcome), and two epoch-transition
+  samples (median 168 us).
+- Independent tip probes observed block height 165 to 194 over 77.582 seconds
+  (0.3738 blocks/s). Stock traces retained BlockFetch, ChainDB, network,
+  mempool, and transaction lifecycle evidence alongside the patched events.
+- Actual target-process/namespace sampling retained 78 CPU percentage samples,
+  79 RSS/FD/thread samples, CPU-time and disk deltas, and network RX/TX deltas
+  explicitly scoped to the process network namespace.
+- All 12 selected collectors finalized with zero collector errors. The compact
+  report rendered 35 of 48 rows available and left 13 honestly unavailable.
+- A GUI-downloadable portable bundle passed gzip and forbidden-file inspection.
+  Archive SHA-256:
+  `f8f278b3b64aaf872af3cb8d59e52c6a23b9df57c98797f8d82419d111555448`.
+- Core artifact SHA-256 values: manifest
+  `1988ebdc9c04f7e9abc48e4921e75e8d0b0027d58ee147507841b4984c4ddd50`,
+  report `187313d215384a866525ddf12955b94bb9ddef5bd160f639f5ef6af587000473`,
+  runtime `e335c219a3dfd02635fb92e617237015f0f7a9444b322fea9cb01c53bfbecc35`,
+  selection `24dfa90029996686d582503e6d3c3592b16156068c80459785acc12175de7184`,
+  and calibration result
+  `b5d5b684a21bee42a23fca1f6ab0190138b87bab51c718fff314c68a04385355`.
+- The paired stock/patched calibration retained 100 common handshake samples
+  per leg. Stock/patched median was 164.5/159.0 us (-3.343%); p95 was 248/249
+  us (+0.403%). This authorizes only the common external handshake comparison;
+  patched internal stage values remain revision-specific.
+- The first GUI pass exposed one optional resource-collector error caused by
+  the explicit packaged ELF loader. A red regression test was added, the PID
+  resolver was repaired to select the actual loader-wrapped cardano-node child,
+  and the exact GUI scenario was repeated to obtain the clean run above.
+
 ## Batch 9: Frontend and Learn parity
 
 ### Task 9.1: Prove Cardano catalog, compatibility, and result rendering

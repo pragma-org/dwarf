@@ -51,7 +51,8 @@ def test_measurement_learn_route_explains_modes_outcomes_and_claim_boundary():
     assert "do not change the security verdict by default" in html
     assert "/operate/measurements" in html
     assert "20260918T234213Z-64959688" in html
-    assert "Cardano-node parity is the active next phase" in html
+    assert "20260919T032200Z-59f94558" in html
+    assert "all 12 collectors finalized" in html
     assert "Mixed-node measurement comparison has not started" in html
 
 

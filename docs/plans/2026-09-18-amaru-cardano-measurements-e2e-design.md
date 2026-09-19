@@ -1,6 +1,6 @@
 # Amaru and Cardano-node measurements: end-to-end design
 
-**Status:** approved
+**Status:** Amaru and Cardano-node independently proven; stopped before mixed
 **Date:** 2026-09-18
 **Authoritative checkout:** `/home/nigel/dwarf-pragma` on `cardano-box`
 **Starting commit:** `347c99bf4d9f729f7e29f2c1fe9ed10b7f443b23`
@@ -205,3 +205,28 @@ secret checks, and a reviewed commit. Completion additionally requires:
    status updated with exact evidence.
 
 After these gates pass, report completion and stop before mixed-node work.
+
+## Independent Cardano-node proof — 2026-09-19
+
+Cardano-node `11.1.2` is proven through the same deployed DWARF GUI and retained
+evidence path as Amaru. The exact target used source revision
+`fef83fed01d7926f3de83b3b917be5a4a48768b5`, patched image digest
+`sha256:c74c3deafac54ed4d30da21952fce579c3293919993d31081e18787605757b8c`,
+and patch-set digest
+`7a948067c6b957b277400675cf95e32864ed8d92cd130fbadb673775249b5cc1`.
+
+GUI run `20260919T032200Z-59f94558` passed and retained all 100 hostile
+handshake outcomes, accepted and rejected Plutus transactions, Cardano stock
+traces, patched protocol/decode, block-application, epoch-transition and
+Plutus-stage samples, sync progress, and actual node-process/namespace resource
+samples. All 12 collectors finalized with zero collector errors. The report
+rendered 35 of 48 metric rows as available and left 13 honestly unavailable.
+
+The paired stock/patched calibration used the same fixed workload and 100
+common handshake samples per leg. Stock median was 164.5 us and patched median
+was 159.0 us; stock p95 was 248 us and patched p95 was 249 us. This calibration
+authorizes only the common external handshake metric. Internal patched timings
+remain revision-specific and require surface-matched controls before broader
+performance claims.
+
+Mixed-node measurement comparison has not started.

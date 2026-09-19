@@ -1,7 +1,7 @@
 {
   "title": "DWARF real-node measurements — Amaru proof and Cardano parity",
-  "description": "Persistent implementation tracker. Amaru is proven end to end through the deployed GUI; Cardano-node 11.1.2 is the active phase. Mixed-node measurements remain explicitly out of scope until both independent workflows pass.",
-  "updated_at": "2026-09-18T23:45:00Z",
+  "description": "Persistent implementation tracker. Amaru and Cardano-node 11.1.2 are independently proven end to end through the deployed GUI. Mixed-node measurements have not started and remain outside this completed phase.",
+  "updated_at": "2026-09-19T03:24:00Z",
   "baseline": {
     "dwarf_commit": "df255de7775f070465dbbc6e1ae3cb3358cf5a4a",
     "amaru_version": "10.11.20260912",
@@ -10,7 +10,10 @@
     "amaru_gui_run": "20260918T234213Z-64959688",
     "cardano_version": "11.1.2",
     "cardano_source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
-    "cardano_image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+    "cardano_stock_image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+    "cardano_patched_image_digest": "sha256:c74c3deafac54ed4d30da21952fce579c3293919993d31081e18787605757b8c",
+    "cardano_patch_set_sha256": "7a948067c6b957b277400675cf95e32864ed8d92cd130fbadb673775249b5cc1",
+    "cardano_gui_run": "20260919T032200Z-59f94558",
     "scope_boundary": "Stop after independent Cardano-node proof; do not start mixed-node measurement comparison."
   },
   "steps": [
@@ -47,43 +50,50 @@
     {
       "id": "cardano-source-audit",
       "title": "Audit exact Cardano-node 11.1.2 stock visibility and patch gaps",
-      "status": "in-progress",
-      "evidence": "Failing source-contract test is preserved. Audit must cover ChainSync, BlockFetch, TxSubmission2, KeepAlive, mempool, ChainDB, ledger, Plutus, epoch, restart/sync, resources, and coverage without inferring absent boundaries."
+      "status": "done",
+      "evidence": "Exact upstream source and pinned network, consensus, ledger, and Plutus dependencies were audited. Stock visibility and honest gaps are recorded for ChainSync, BlockFetch, TxSubmission2, KeepAlive, mempool, ChainDB, ledger, Plutus, epoch, restart/sync, resources, and coverage."
     },
     {
       "id": "cardano-catalog-resolution",
       "title": "Add Cardano measurements, profiles, target modes, and exact identity resolution",
-      "status": "todo"
+      "status": "done",
+      "evidence": "Stock, external, resource, coverage, and patched definitions resolve only against exact Cardano-node 11.1.2 identities. The patched target is pinned by source, patch-set, executable, build-result, runtime-probe, and OCI digests."
     },
     {
       "id": "cardano-stock-external",
       "title": "Implement Cardano stock telemetry, workload, sync, restart, and real-resource collectors",
-      "status": "todo"
+      "status": "done",
+      "evidence": "Cardano stock trace normalization, workload accounting, sync/restart, and actual node-process/namespace resources are integrated. The loader-wrapped packaged process is resolved to the real cardano-node child and regression-tested."
     },
     {
       "id": "cardano-coverage-patched",
       "title": "Register coverage and build only source-audited patched boundaries",
-      "status": "todo"
+      "status": "done",
+      "evidence": "The existing production coverage target is revision-qualified. The additive patched target emits only audited protocol/decode and ledger/Plutus gaps and passed fresh-build/runtime qualification."
     },
     {
       "id": "cardano-calibration",
       "title": "Prove paired stock/patched observer overhead",
-      "status": "todo"
+      "status": "done",
+      "evidence": "Identical 100-attempt stock and patched legs completed. Stock/patched handshake median: 164.5/159.0 us (-3.343%); p95: 248/249 us (+0.403%). Authority is limited to this common external metric."
     },
     {
       "id": "cardano-gui-proof",
       "title": "Run the representative Cardano-node scenario through the deployed GUI",
-      "status": "todo"
+      "status": "done",
+      "evidence": "GUI run 20260919T032200Z-59f94558 passed. It retained 100 timed hostile attempts, accepted/rejected Plutus paths, 35 available and 13 honestly unavailable metric rows, 12 finalized collectors, zero collector errors, exact target provenance, and a clean portable bundle."
     },
     {
       "id": "final-qa",
       "title": "Run full regression, browser, export, forbidden-file, and secret checks",
-      "status": "todo"
+      "status": "in-progress",
+      "evidence": "Portable bundle SHA-256 f8f278b3b64aaf872af3cb8d59e52c6a23b9df57c98797f8d82419d111555448 passed gzip and forbidden-file inspection. Full regression and final two-cycle browser review remain to be recorded."
     },
     {
       "id": "stop-before-mixed",
       "title": "Report independent Amaru and Cardano status and stop before mixed",
-      "status": "todo"
+      "status": "done",
+      "evidence": "Both independent workflows are proven. No mixed-node measurement implementation or run was started."
     }
   ]
 }

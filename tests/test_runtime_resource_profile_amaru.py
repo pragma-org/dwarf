@@ -58,6 +58,55 @@ def test_docker_resolution_selects_actual_amaru_child_not_container_init(
     ) == 102
 
 
+def test_docker_resolution_selects_loader_wrapped_cardano_child(
+    monkeypatch, tmp_path
+):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {
+                        "id": "node1",
+                        "impl": "cardano-node",
+                        "container_name": "cardano-node1",
+                    }
+                ]
+            }
+        )
+    )
+    proc_root = tmp_path / "proc"
+    _proc_status(proc_root, 120, name="bash")
+    _proc_status(proc_root, 121, name="ld-linux-x86-64")
+    _proc_status(proc_root, 122, name="tee")
+
+    def fake_run(command, **_kwargs):
+        if command[:2] == ["docker", "inspect"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps([{"State": {"Pid": 120}}]),
+            )
+        if command[:2] == ["docker", "top"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "PID COMMAND COMMAND\n"
+                    "120 bash bash -lc exec cardano-node run | tee stdout.log\n"
+                    "121 ld-linux-x86-64 /opt/runtime/ld-linux-x86-64.so.2 "
+                    "--library-path /opt/runtime/lib /opt/runtime/bin/cardano-node "
+                    "run --database-path /env/node-data/node1/db\n"
+                    "122 tee tee stdout.log\n"
+                ),
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(runtime_resource_profile.subprocess, "run", fake_run)
+
+    assert runtime_resource_profile.resolve_target_pid(
+        metadata, "node1", proc_root=proc_root
+    ) == 121
+
+
 def test_control_runtime_identity_services_are_valid_resource_targets(
     monkeypatch, tmp_path
 ):

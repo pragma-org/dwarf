@@ -10,13 +10,13 @@
 </style>
 </head>
 <body><main>
-<span class="eyebrow">DWARF · implementation status · 2026-09-18</span>
-<h1>Real-node measurements: Amaru proven, Cardano next</h1>
+<span class="eyebrow">DWARF · implementation status · 2026-09-19</span>
+<h1>Real-node measurements: Amaru and Cardano-node proven independently</h1>
 <p class="lede">Measurements remain reusable taps, separate from scenario semantics. They attach to exact version-pinned real nodes, keep every terminal outcome and its time, and retain raw plus normalized evidence without becoming a simulator or a second runner.</p>
 
 <div class="grid">
   <article class="card"><span class="pill ok">proven end to end</span><strong>Amaru 10.11.20260912</strong><p>Exact source <code>b159172f…</code> and OCI digest. Stock, external, workload, resource, coverage, and revision-locked patched modes are wired.</p></article>
-  <article class="card"><span class="pill next">active next phase</span><strong>Cardano-node 11.1.2</strong><p>Exact-source visibility audit first; then stock/external taps, minimal audited patches, overhead calibration, and the same GUI proof.</p></article>
+  <article class="card"><span class="pill ok">proven end to end</span><strong>Cardano-node 11.1.2</strong><p>Exact source <code>fef83fed…</code>, stock plus revision-locked patched taps, real process resources, calibration, GUI evidence, and portable export are wired.</p></article>
   <article class="card"><span class="pill off">not started</span><strong>Mixed comparison</strong><p>Intentionally blocked until both independent implementations pass. No mixed measurement claim exists yet.</p></article>
 </div>
 
@@ -36,13 +36,29 @@
   </div>
 </section>
 
+<section class="card" style="margin-top:14px">
+  <span class="eyebrow">Decisive Cardano-node evidence</span>
+  <h2><code>20260919T032200Z-59f94558</code></h2>
+  <p>Launched through the deployed DWARF GUI against three healthy Cardano-node 11.1.2 containers using patched image <code>sha256:c74c3dea…</code>. The run passed, the target identity was exact, and every selected collector finalized.</p>
+  <div class="metrics">
+    <div class="metric"><b>100 / 100</b><span>hostile attempts timed and classified</span></div>
+    <div class="metric"><b>12 / 12</b><span>collectors finalized; zero errors</span></div>
+    <div class="metric"><b>35 / 48</b><span>metrics available; 13 honest absences</span></div>
+    <div class="metric"><b>493</b><span>protocol receive/decode samples</span></div>
+    <div class="metric"><b>36 µs</b><span>block application median, n=29</span></div>
+    <div class="metric"><b>52 µs</b><span>Plutus VM median, n=4</span></div>
+    <div class="metric"><b>168 µs</b><span>epoch transition median, n=2</span></div>
+    <div class="metric"><b>79</b><span>real node RSS/FD/thread samples</span></div>
+  </div>
+</section>
+
 <div class="flow">
   <article class="card"><span class="pill ok">done</span><h2>Amaru proof</h2><p>Exact identity, real hostile workload, real node progress, report, browser, SARIF state, and clean portable bundle.</p></article>
   <div class="arrow">→</div>
-  <article class="card"><span class="pill next">now</span><h2>Cardano parity</h2><p>Audit stock visibility before code; patch only true gaps; calibrate observer overhead.</p></article>
+  <article class="card"><span class="pill ok">done</span><h2>Cardano proof</h2><p>Exact identity, stock and patched signals, paired calibration, real resources, GUI report, and clean portable bundle.</p></article>
   <div class="arrow">→</div>
-  <article class="card"><span class="pill off">stop gate</span><h2>Independent proof</h2><p>Report both implementations and stop. Mixed-node measurement work requires a later explicit decision.</p></article>
+  <article class="card"><span class="pill off">stopped</span><h2>Mixed comparison</h2><p>Not started. Mixed-node measurement work requires a later explicit decision.</p></article>
 </div>
 
-<aside class="note"><strong>Claim boundary.</strong> This Amaru run proves the collection, correlation, reporting, and export workflow. It does not establish a release threshold or vulnerability. The retained devnet uses <code>system_start: 0</code>; raw slot-start age is retained but excluded from comparable propagation-latency claims. Missing epoch, VM, mempool, and restart samples remain unavailable rather than zero.</aside>
+<aside class="note"><strong>Claim boundary.</strong> These runs prove the independent collection, correlation, reporting, and export workflows. They do not establish a release threshold or vulnerability. Amaru's synthetic slot-start age is excluded from comparable propagation claims. Cardano patched timings are revision-specific; the paired calibration authorizes only its common external handshake comparison. Missing values remain unavailable rather than zero.</aside>
 </main></body></html>

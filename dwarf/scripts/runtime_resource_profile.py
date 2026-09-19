@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -61,6 +62,23 @@ def _expected_process_names(node: dict) -> set[str]:
     return {"cardano-node"}
 
 
+def _is_expected_process(node: dict, comm: str, args: str) -> bool:
+    expected_names = _expected_process_names(node)
+    if comm in expected_names:
+        return True
+    # Patched Cardano images invoke the packaged dynamic loader explicitly so
+    # their private libraries do not leak through a container-wide
+    # LD_LIBRARY_PATH.  In that mode Linux reports the loader as ``comm`` even
+    # though the real argv contains the exact cardano-node executable.
+    if not comm.startswith("ld-linux"):
+        return False
+    try:
+        argv = shlex.split(args)
+    except ValueError:
+        argv = args.split()
+    return any(Path(token).name in expected_names for token in argv)
+
+
 def _scan_for_runtime_pid(node: dict, *, proc_root: Path = Path("/proc")) -> int:
     result = subprocess.run(
         ["ps", "-eo", "pid=,comm=,args="],
@@ -71,10 +89,9 @@ def _scan_for_runtime_pid(node: dict, *, proc_root: Path = Path("/proc")) -> int
     )
     if result.returncode != 0:
         raise RuntimeError("runtime_resource_profile could not inspect process table")
-    name = str(node.get("name") or "")
+    name = str(node.get("name") or node.get("id") or "")
     socket_hint = f"socket/{name}/sock" if name else ""
     db_hint = f"node-data/{name}/db" if name else ""
-    expected_names = _expected_process_names(node)
     for line in result.stdout.splitlines():
         line = line.strip()
         if not line:
@@ -83,7 +100,7 @@ def _scan_for_runtime_pid(node: dict, *, proc_root: Path = Path("/proc")) -> int
         if len(parts) < 3:
             continue
         pid_text, comm, args = parts
-        if comm not in expected_names:
+        if not _is_expected_process(node, comm, args):
             continue
         if (
             (socket_hint and socket_hint in args)
@@ -123,7 +140,6 @@ def _resolve_docker_pid(node: dict, *, proc_root: Path = Path("/proc")) -> int |
         root_pid = int(((body.get("State") or {}).get("Pid")) or 0)
     except (IndexError, ValueError, TypeError, json.JSONDecodeError):
         return None
-    expected_names = _expected_process_names(node)
     top = subprocess.run(
         ["docker", "top", container_name, "-eo", "pid,comm,args"],
         capture_output=True,
@@ -140,12 +156,13 @@ def _resolve_docker_pid(node: dict, *, proc_root: Path = Path("/proc")) -> int |
                 pid = int(parts[0])
             except ValueError:
                 continue
-            if parts[1] in expected_names and _proc_exists(pid, proc_root):
+            args = parts[2] if len(parts) > 2 else ""
+            if _is_expected_process(node, parts[1], args) and _proc_exists(pid, proc_root):
                 return pid
     if (
         root_pid
         and _proc_exists(root_pid, proc_root)
-        and _process_name(root_pid, proc_root) in expected_names
+        and _process_name(root_pid, proc_root) in _expected_process_names(node)
     ):
         return root_pid
     return None
