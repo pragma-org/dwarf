@@ -144,6 +144,7 @@ from profile_manager.views.learn_testcases import render_learn_testcases
 from profile_manager.views.learn_corpora import render_learn_corpora
 from profile_manager.views.learn_grammars import render_learn_grammars
 from profile_manager.views.learn_risk_packages import render_learn_risk_packages
+from profile_manager.views.landing import render_landing
 from profile_manager.views.operate import render_operate_landing
 from profile_manager.views.scenarios import render_operate_scenarios
 
@@ -2805,7 +2806,7 @@ def render_route_html(route, *, token=None):
     # Strip query string before lookup; routes are paths only.
     route = route.split("?", 1)[0]
     routes = {
-        "/": render_command_center_html,
+        "/": render_landing,
         "/index.html": render_command_center_html,
         "/tests": render_tests_html,
         "/scenarios": render_scenarios_html,

@@ -183,24 +183,23 @@ def test_mixed_topology_is_the_authoritative_substrate_health_surface():
     template = (
         ROOT / "dwarf/dashboard/templates/operate/status.j2"
     ).read_text(encoding="utf-8")
-    script = (
-        ROOT / "dwarf/dashboard/static/js/topology-health.js"
+    landing = (
+        ROOT / "dwarf/dashboard/templates/landing.j2"
     ).read_text(encoding="utf-8")
 
-    flask = template.index('<section class="flask-stage"')
     mixed_health = template.index('id="topology-health-panel"')
     summary = template.index('<section class="status-summary"')
     recovery_action = template.index('data-topology-action="redeploy"')
     diagnostics = template.index('class="topology-health__grid"')
     legacy_substrate = template.index('<span class="eyebrow">Substrate</span>')
 
-    assert flask < mixed_health < summary
+    assert mixed_health < summary
     assert recovery_action < diagnostics
     assert "Active substrate · Cardano + Amaru" in template
     assert "Mixed topology health" in template
     assert ">Fresh redeploy&hellip;</button>" in template
-    assert "flask-logo-img{% if _no_substrate and not shim_enabled %}" in template
-    assert "flask.dataset.state = effectiveState;" in script
+    assert 'src="/static/dwarf-logo.png"' in landing
+    assert '<section class="flask-stage"' not in template
     assert "{% if not shim_enabled %}" in template[summary:legacy_substrate]
 
 

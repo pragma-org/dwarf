@@ -6,54 +6,7 @@
 
 <hr class="hairline">
 
-{# When source is "missing" (no live poll AND no cached evidence) the
-   substrate isn't broken — it just hasn't been composed yet. Render a
-   neutral "no substrate composed" surface, NOT the alarming error red. #}
 {% set _no_substrate = (substrate.source == 'missing' or (substrate.source != 'live' and substrate.source != 'cached')) %}
-
-<section class="flask-stage" aria-labelledby="flask-heading"
-         data-state="{{ topology_health.state if shim_enabled else ('idle' if _no_substrate else substrate.state) }}"
-         data-source="{{ substrate.source }}"
-         data-transport="{{ substrate.transport or 'unknown' }}">
-  <h2 id="flask-heading" class="visually-hidden">Live substrate flask</h2>
-
-  <img class="flask-logo-img{% if _no_substrate and not shim_enabled %} flask-logo-img--idle{% endif %}" src="/static/dwarf-logo.png"
-       alt="Dwarf in the three-cork flask: crimson eye, grin, ouroboros, cyan circuits"/>
-
-  <p class="flask-caption">
-    {% if shim_enabled %}
-    <span class="data-source">active substrate · Cardano + Amaru</span>
-    {% elif _no_substrate %}
-    <span class="data-source data-source--idle">no substrate composed yet</span>
-    {% else %}
-    <span class="data-source data-source--{{ substrate.source }}">{% if substrate.source == 'live' %}live · {{ substrate.transport or 'transport unknown' }}{% elif substrate.source == 'cached' %}cached evidence{% endif %}</span>
-    {% endif %}
-    {% if substrate.evidence_path %} · <code>{{ substrate.evidence_path }}</code>{% endif %}
-  </p>
-
-  {% if _no_substrate and not shim_enabled %}
-  <p class="flask-caption flask-caption--hint">
-    Compose a substrate by running a scenario from <a href="/operate/scenarios">/operate/scenarios</a>.
-  </p>
-  {% endif %}
-
-  <script type="application/json" id="flask-bootstrap">{{ {
-    "state": substrate.state,
-    "source": substrate.source,
-    "transport": substrate.transport,
-    "expected_nodes": substrate.expected_nodes,
-    "node_processes": substrate.node_processes,
-    "socket_count": substrate.socket_count,
-    "listener_count": substrate.listener_count,
-    "loopback_only": substrate.loopback_only,
-    "tip_block": substrate.tip_block,
-    "sync_progress": substrate.sync_progress,
-    "evidence_path": substrate.evidence_path,
-    "node_pills": substrate.node_pills
-  } | tojson }}</script>
-</section>
-
-<hr class="hairline">
 
 <section id="topology-health-panel" class="topology-health"
          data-health-url="/api/topology/health"

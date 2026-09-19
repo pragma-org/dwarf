@@ -3148,6 +3148,146 @@ hr.hairline { opacity: 0.7; }
 
 /* End slice-27 flask primitives. */
 
+/* Product entrance: one action, four honest readiness signals. */
+body.product-landing {
+  min-height: 100svh;
+  overflow-x: clip;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  background:
+    radial-gradient(circle at 50% 34%, rgba(43, 224, 224, 0.08), transparent 38rem),
+    var(--obsidian-0);
+}
+
+.product-landing__main {
+  width: min(100% - 32px, 980px);
+  margin-inline: auto;
+  padding: clamp(32px, 6vh, 72px) 0 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.product-landing__wordmark {
+  min-height: 1.2em;
+  margin: 0 0 var(--space-3);
+  color: var(--ink-primary);
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 7vw, 5.5rem);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-indent: 0.18em;
+}
+
+.product-landing__wordmark [data-phase="dim"] {
+  color: var(--cyan-primary);
+  opacity: 0.55;
+  transition: color 600ms ease, opacity 600ms ease;
+}
+
+.product-landing__wordmark [data-phase="fade"] {
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+
+.product-landing__logo {
+  display: block;
+  width: min(100%, 520px);
+  height: auto;
+  max-height: min(50svh, 560px);
+  object-fit: contain;
+  filter: drop-shadow(0 18px 44px rgba(43, 224, 224, 0.09));
+}
+
+.product-landing__owner {
+  margin-top: var(--space-2);
+  color: var(--ink-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.product-landing__status {
+  width: 100%;
+  margin-top: var(--space-8);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.landing-status-pill {
+  min-width: 0;
+  padding: var(--space-4);
+  text-align: left;
+  background: rgba(19, 26, 34, 0.82);
+  border-top: 2px solid var(--ink-tertiary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.landing-status-pill > span,
+.landing-status-pill > strong,
+.landing-status-pill > small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.landing-status-pill > span {
+  color: var(--ink-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--type-eyebrow);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.landing-status-pill > strong { margin-top: var(--space-2); color: var(--ink-primary); }
+.landing-status-pill > small { margin-top: var(--space-1); color: var(--ink-secondary); }
+.landing-status-pill[data-state="ready"],
+.landing-status-pill[data-state="healthy"] { border-top-color: var(--cyan-primary); }
+.landing-status-pill[data-state="unhealthy"],
+.landing-status-pill[data-state="unknown"],
+.landing-status-pill[data-state="unavailable"] { border-top-color: var(--crimson); }
+.landing-status-pill[data-state="checking"],
+.landing-status-pill[data-state="idle"] { border-top-color: var(--cork); }
+
+.product-landing__enter {
+  min-width: 160px;
+  margin-top: var(--space-8);
+  text-align: center;
+}
+
+.product-landing__footer {
+  padding: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--ink-tertiary);
+  font-size: var(--type-small);
+  text-align: center;
+}
+
+.product-landing__footer a { color: var(--ink-secondary); }
+
+@media (max-width: 760px) {
+  .product-landing__status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .product-landing__main { width: min(100% - 24px, 520px); padding-top: 28px; }
+  .product-landing__logo { width: min(100%, 360px); max-height: 43svh; }
+  .product-landing__status { grid-template-columns: 1fr; gap: var(--space-2); }
+  .landing-status-pill { padding: var(--space-3) var(--space-4); }
+  .product-landing__enter { width: 100%; min-height: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-landing__wordmark [data-phase] { transition: none; opacity: 1; }
+}
+
 /* ---- Slice 28: /operate/status polish on top of slice 27 ----
  * Targeted overrides — keep the metaphor, address operator-readable
  * issues from the live deployment: flask too small, conduits invisible,
