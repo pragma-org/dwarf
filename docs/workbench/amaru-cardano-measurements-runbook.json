@@ -1,7 +1,7 @@
 {
   "title": "DWARF real-node measurements — Amaru proof and Cardano parity",
   "description": "Persistent implementation tracker. Amaru and Cardano-node 11.1.2 are independently proven end to end through the deployed GUI. Mixed-node measurements have not started and remain outside this completed phase.",
-  "updated_at": "2026-09-19T03:24:00Z",
+  "updated_at": "2026-09-19T03:35:00Z",
   "baseline": {
     "dwarf_commit": "df255de7775f070465dbbc6e1ae3cb3358cf5a4a",
     "amaru_version": "10.11.20260912",
@@ -14,6 +14,8 @@
     "cardano_patched_image_digest": "sha256:c74c3deafac54ed4d30da21952fce579c3293919993d31081e18787605757b8c",
     "cardano_patch_set_sha256": "7a948067c6b957b277400675cf95e32864ed8d92cd130fbadb673775249b5cc1",
     "cardano_gui_run": "20260919T032200Z-59f94558",
+    "cardano_implementation_commit": "807990282e8a18313bf7d0cff6f94f3e354e2bc6",
+    "deployed_dashboard_image": "sha256:791f671edb25f2d9a1cb90c51b4409d36af827532700e43d60630d681d816b1e",
     "scope_boundary": "Stop after independent Cardano-node proof; do not start mixed-node measurement comparison."
   },
   "steps": [
@@ -86,8 +88,8 @@
     {
       "id": "final-qa",
       "title": "Run full regression, browser, export, forbidden-file, and secret checks",
-      "status": "in-progress",
-      "evidence": "Portable bundle SHA-256 f8f278b3b64aaf872af3cb8d59e52c6a23b9df57c98797f8d82419d111555448 passed gzip and forbidden-file inspection. Full regression and final two-cycle browser review remain to be recorded."
+      "status": "done",
+      "evidence": "The established suite passed 860 tests. Portable bundle SHA-256 f8f278b3b64aaf872af3cb8d59e52c6a23b9df57c98797f8d82419d111555448 passed gzip and forbidden-file inspection. Two responsive browser cycles covered the measurement catalog, exact Cardano profile, retained run report, and measurement guidance at 1440x1000, 1280x800, 390x844, and 412x915; every route returned 200, all required evidence rendered, and no page-level horizontal overflow was present. Deployment image sha256:791f671edb25f2d9a1cb90c51b4409d36af827532700e43d60630d681d816b1e carries implementation revision 807990282e8a18313bf7d0cff6f94f3e354e2bc6."
     },
     {
       "id": "stop-before-mixed",
