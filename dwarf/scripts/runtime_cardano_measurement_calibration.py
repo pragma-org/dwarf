@@ -143,6 +143,7 @@ def _capture_logs(container: str, *, since: str, destination: Path) -> dict[str,
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"cannot capture logs from {container}")
     record_count = 0
+    protocol_record_count = 0
     namespaces: set[str] = set()
     for line in body.splitlines():
         try:
@@ -155,8 +156,13 @@ def _capture_logs(container: str, *, since: str, destination: Path) -> dict[str,
         namespace = record.get("ns")
         if isinstance(namespace, str):
             namespaces.add(namespace)
+            if namespace.startswith(
+                ("Net.Handshake.", "ChainSync.", "BlockFetch.", "TxSubmission.", "Mempool")
+            ) or namespace.startswith("ChainDB."):
+                protocol_record_count += 1
     return {
         "record_count": record_count,
+        "protocol_record_count": protocol_record_count,
         "byte_count": len(body.encode("utf-8")),
         "namespaces": sorted(namespaces),
     }
@@ -169,6 +175,7 @@ def run_leg(
     attempt_count: int,
     timeout_seconds: float,
     observation_seconds: float = 2.0,
+    trace_timeout_seconds: float = 20.0,
 ) -> dict[str, Any]:
     runtime = json.loads((runtime_root / "runtime.json").read_text(encoding="utf-8"))
     target, node = _target(runtime)
@@ -188,9 +195,20 @@ def run_leg(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in attempts),
         encoding="utf-8",
     )
-    time.sleep(observation_seconds)
     trace_path = output_dir / "raw" / "node1.ndjson"
-    trace_evidence = _capture_logs(container, since=started_at, destination=trace_path)
+    observation_started = time.monotonic()
+    time.sleep(observation_seconds)
+    while True:
+        trace_evidence = _capture_logs(
+            container, since=started_at, destination=trace_path
+        )
+        if trace_evidence["protocol_record_count"] > 0:
+            break
+        elapsed = time.monotonic() - observation_started
+        if elapsed >= trace_timeout_seconds:
+            break
+        time.sleep(min(1.0, trace_timeout_seconds - elapsed))
+    observed_seconds = time.monotonic() - observation_started
     summarized = summarize_attempts(attempts)
     result = {
         "schema_version": 1,
@@ -211,7 +229,9 @@ def run_leg(
         "raw_trace": "raw/node1.ndjson",
         "node_trace": {
             **trace_evidence,
-            "observation_seconds": observation_seconds,
+            "minimum_observation_seconds": observation_seconds,
+            "observation_timeout_seconds": trace_timeout_seconds,
+            "observed_seconds": observed_seconds,
         },
     }
     (output_dir / "result.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -226,20 +246,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--attempts", type=int, default=100)
     parser.add_argument("--timeout-seconds", type=float, default=2.0)
     parser.add_argument("--observation-seconds", type=float, default=2.0)
+    parser.add_argument("--trace-timeout-seconds", type=float, default=20.0)
     args = parser.parse_args(argv)
     if args.attempts < 30 or args.attempts > 10_000:
         raise SystemExit("--attempts must be within 30..10000")
     if args.observation_seconds < 0.5 or args.observation_seconds > 30:
         raise SystemExit("--observation-seconds must be within 0.5..30")
+    if (
+        args.trace_timeout_seconds < args.observation_seconds
+        or args.trace_timeout_seconds > 120
+    ):
+        raise SystemExit(
+            "--trace-timeout-seconds must be at least observation-seconds and at most 120"
+        )
     result = run_leg(
         runtime_root=args.runtime_root,
         output_dir=args.output_dir,
         attempt_count=args.attempts,
         timeout_seconds=args.timeout_seconds,
         observation_seconds=args.observation_seconds,
+        trace_timeout_seconds=args.trace_timeout_seconds,
     )
     print(json.dumps(result, sort_keys=True))
-    return 0 if result["node_trace"]["record_count"] > 0 else 2
+    trace = result["node_trace"]
+    return 0 if trace["record_count"] > 0 and trace["protocol_record_count"] > 0 else 2
 
 
 if __name__ == "__main__":

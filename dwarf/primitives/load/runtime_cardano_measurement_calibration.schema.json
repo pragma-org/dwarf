@@ -16,6 +16,7 @@
     "attempts": {"type": "integer", "minimum": 30, "maximum": 10000},
     "response_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
     "observation_seconds": {"type": "number", "minimum": 0.5, "maximum": 30},
+    "trace_timeout_seconds": {"type": "number", "minimum": 0.5, "maximum": 120},
     "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
     "expected_helper_exit": {"type": "integer"}
   }

@@ -13350,6 +13350,11 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             if self._OBSERVATION_WINDOW
             else None
         )
+        trace_timeout_seconds = (
+            float(self.params.get("trace_timeout_seconds", 20.0))
+            if self._OBSERVATION_WINDOW
+            else None
+        )
         timeout_seconds = float(self.params.get("timeout_seconds", 180))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
         run_dir = getattr(handle, "run_dir", None)
@@ -13379,6 +13384,8 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         ]
         if observation_seconds is not None:
             command.extend(["--observation-seconds", str(observation_seconds)])
+        if trace_timeout_seconds is not None:
+            command.extend(["--trace-timeout-seconds", str(trace_timeout_seconds)])
         handle.log(
             phase="load",
             primitive=self._PRIMITIVE_NAME,
@@ -13391,6 +13398,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "attempts": attempts,
                 "response_timeout_seconds": response_timeout_seconds,
                 "observation_seconds": observation_seconds,
+                "trace_timeout_seconds": trace_timeout_seconds,
             },
         )
         env = os.environ.copy()

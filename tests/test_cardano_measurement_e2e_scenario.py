@@ -25,6 +25,7 @@ def test_cardano_measurement_scenario_is_exact_non_vacuous_and_portable():
     assert load["primitive"] == "runtime_cardano_measurement_calibration"
     assert load["attempts"] >= 100
     assert load["observation_seconds"] >= 2
+    assert load["trace_timeout_seconds"] >= load["observation_seconds"]
     assert load["profile_id"] == scenario.profile
     assert "runtime_root" not in load
     text = SCENARIO.read_text()
@@ -94,6 +95,7 @@ def test_cardano_runtime_leg_retains_every_timed_outcome_and_exact_identity(
         destination.write_text('{"ns":"Net.Handshake.Remote","data":{"kind":"Handshake"}}\n')
         return {
             "record_count": 1,
+            "protocol_record_count": 1,
             "byte_count": destination.stat().st_size,
             "namespaces": ["Net.Handshake.Remote"],
         }
@@ -105,6 +107,7 @@ def test_cardano_runtime_leg_retains_every_timed_outcome_and_exact_identity(
         attempt_count=3,
         timeout_seconds=2,
         observation_seconds=2,
+        trace_timeout_seconds=20,
     )
 
     assert result["target"]["version"] == "11.1.2"
@@ -118,7 +121,8 @@ def test_cardano_runtime_leg_retains_every_timed_outcome_and_exact_identity(
     assert len(output_dir.joinpath("attempts.ndjson").read_text().splitlines()) == 3
     assert output_dir.joinpath("raw/node1.ndjson").is_file()
     assert result["node_trace"]["record_count"] == 1
-    assert result["node_trace"]["observation_seconds"] == 2
+    assert result["node_trace"]["protocol_record_count"] == 1
+    assert result["node_trace"]["minimum_observation_seconds"] == 2
 
 
 def test_cardano_runtime_identity_fails_closed_on_digest_mismatch():
@@ -134,7 +138,9 @@ def test_cardano_runtime_cli_fails_closed_when_node_trace_is_empty(
     monkeypatch.setattr(
         calibration,
         "run_leg",
-        lambda **_kwargs: {"node_trace": {"record_count": 0}},
+        lambda **_kwargs: {
+            "node_trace": {"record_count": 1, "protocol_record_count": 0}
+        },
     )
 
     exit_code = calibration.main(
@@ -148,6 +154,8 @@ def test_cardano_runtime_cli_fails_closed_when_node_trace_is_empty(
             "100",
             "--observation-seconds",
             "2",
+            "--trace-timeout-seconds",
+            "20",
         ]
     )
 
