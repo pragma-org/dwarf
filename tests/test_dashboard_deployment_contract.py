@@ -7,11 +7,14 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from profile_manager.config import DeploymentConfig
 from profile_manager import dashboard
 from profile_manager import cli
 from profile_manager.remote import (
     CommandResult,
+    render_launch_command,
     render_topology_health_command,
     render_topology_redeploy_command,
 )
@@ -185,6 +188,42 @@ def test_control_shim_routes_catalog_scenario_run_to_host(monkeypatch, tmp_path)
 
     assert command[-2:] == ["nigel@127.0.0.1", "scenario mixed-demo"]
     assert command[:4] == ["ssh", "-n", "-o", "BatchMode=yes"]
+
+
+def test_control_shim_launch_command_accepts_only_strict_launch_ids(tmp_path):
+    config = DeploymentConfig.from_dict(
+        {
+            "host": "127.0.0.1",
+            "ssh_user": "nigel",
+            "ssh_key_path": str(tmp_path / "key"),
+        }
+    )
+
+    command = render_launch_command(config, "launch-0123456789abcdef01234567")
+
+    assert command[-2:] == [
+        "nigel@127.0.0.1",
+        "launch launch-0123456789abcdef01234567",
+    ]
+    with pytest.raises(ValueError):
+        render_launch_command(config, "../scenario.yaml")
+
+
+def test_control_channel_provisions_restricted_launch_root():
+    shim = (ROOT / "delivery/control-plane/dwarf-deploy-shim.py").read_text(
+        encoding="utf-8"
+    )
+    provision = (
+        ROOT / "delivery/control-plane/provision-control-channel.sh"
+    ).read_text(encoding="utf-8")
+
+    assert '"launch"' in shim
+    assert "_LAUNCH_ID_RE" in shim
+    assert "LAUNCH_ROOT" in shim
+    assert "load_launch" in shim
+    assert "ADA2_DWARF_LAUNCH_ID" in shim
+    assert "LAUNCH_ROOT=${LAUNCH_ROOT:-$STATE_DIR/launches}" in provision
+    assert "LAUNCH_ROOT=$LAUNCH_ROOT" in provision
 
 
 def test_control_shim_rejects_scenario_outside_catalog(monkeypatch, tmp_path):

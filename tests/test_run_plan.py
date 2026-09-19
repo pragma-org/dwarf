@@ -2,6 +2,12 @@ import json
 
 import pytest
 
+from profile_manager.launch_store import (
+    LaunchStoreError,
+    create_launch,
+    load_launch,
+    retain_launch_inputs,
+)
 from profile_manager.run_plan import (
     RunPlanError,
     RunPlanRequest,
@@ -141,3 +147,57 @@ def test_semantically_invalid_scenarios_fail_before_launch(
         resolve_run_plan(RunPlanRequest(scenario_id=scenario_body["id"]))
 
     assert expected in str(raised.value)
+
+
+def test_launch_store_writes_immutable_materialized_inputs(tmp_path):
+    plan = resolve_run_plan(
+        RunPlanRequest(scenario_id="m3-runtime-blockfetch-multi-peer-historical-range")
+    )
+
+    stored = create_launch(plan, root=tmp_path)
+    loaded = load_launch(stored["launch_id"], root=tmp_path)
+
+    assert stored["launch_id"].startswith("launch-")
+    assert len(stored["launch_id"]) == len("launch-") + 24
+    assert loaded["plan"]["scenario"]["id"] == plan["scenario"]["id"]
+    scenario = json.loads(loaded["scenario_path"].read_text(encoding="utf-8"))
+    assert scenario["profile"] == plan["profile"]["id"]
+    assert scenario["target"] == plan["scenario"]["target"]
+    assert scenario["measurement_profile"] == "cardano-security-default"
+    assert loaded["plan_path"].stat().st_mode & 0o777 == 0o600
+    assert loaded["scenario_path"].stat().st_mode & 0o777 == 0o600
+
+
+def test_launch_store_rejects_traversal_and_tampering(tmp_path):
+    plan = resolve_run_plan(
+        RunPlanRequest(scenario_id="edge-cases-cbor-tx-body-amaru")
+    )
+    stored = create_launch(plan, root=tmp_path)
+
+    with pytest.raises(LaunchStoreError):
+        load_launch("../" + stored["launch_id"], root=tmp_path)
+
+    scenario_path = tmp_path / stored["launch_id"] / "scenario.yaml"
+    scenario_path.write_text("{}", encoding="utf-8")
+    with pytest.raises(LaunchStoreError, match="digest"):
+        load_launch(stored["launch_id"], root=tmp_path)
+
+
+def test_launch_inputs_are_retained_in_run_evidence(tmp_path):
+    launch_root = tmp_path / "launches"
+    run_dir = tmp_path / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    stored = create_launch(
+        resolve_run_plan(
+            RunPlanRequest(scenario_id="edge-cases-cbor-tx-body-amaru")
+        ),
+        root=launch_root,
+    )
+
+    retained = retain_launch_inputs(
+        stored["launch_id"], run_dir=run_dir, root=launch_root
+    )
+
+    assert retained == run_dir / "launch"
+    assert (retained / "plan.json").is_file()
+    assert (retained / "scenario.yaml").is_file()

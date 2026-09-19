@@ -68,6 +68,18 @@ def render_topology_redeploy_command(
     )
 
 
+def render_launch_command(config, launch_id: str) -> list[str]:
+    """Render the identifier-only command accepted by the forced-command shim."""
+    from profile_manager.launch_store import validate_launch_id
+
+    checked = validate_launch_id(launch_id)
+    return render_ssh_command(
+        config,
+        f"launch {checked}",
+        verb=("launch", checked),
+    )
+
+
 def resolve_ssh_key_path(config) -> str:
     configured = Path(config.ssh_key_path).expanduser()
     if configured.exists():

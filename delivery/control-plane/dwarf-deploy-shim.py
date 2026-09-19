@@ -50,6 +50,7 @@ WRITE_VERBS = {
     "coverage",
     "smoke",
     "scenario",
+    "launch",
     "moog-create-test",
     "topology-redeploy",
 }
@@ -62,6 +63,7 @@ _GITHUB_USER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _DIRECTORY_RE = re.compile(r"^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$")
 _COMMIT_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _POSITIVE_INT_RE = re.compile(r"^[1-9][0-9]*$")
+_LAUNCH_ID_RE = re.compile(r"^launch-[0-9a-f]{24}$")
 
 
 def _load_conf() -> dict:
@@ -136,6 +138,7 @@ def main() -> int:
         ("ADA2_DWARF_STATE_DIR", "STATE_DIR"),
         ("ADA2_DWARF_BUNDLES_DIR", "BUNDLES_DIR"),
         ("ADA2_DWARF_SCENARIOS_DIR", "SCENARIOS_DIR"),
+        ("ADA2_DWARF_LAUNCH_ROOT", "LAUNCH_ROOT"),
     ):
         if conf.get(conf_name):
             os.environ[env_name] = conf[conf_name]
@@ -297,6 +300,39 @@ def main() -> int:
             f"ADA2_DWARF_TOPOLOGY_PACKAGE_DIR={shlex.quote(package_dir)} "
             f"PYTHONPATH=. python3 {shlex.quote(str(repair))} "
             "--topology cardano_amaru --confirm"
+        )
+    elif verb == "launch":
+        if not arg or not _LAUNCH_ID_RE.fullmatch(arg):
+            return _reject(conf, original, "invalid-launch-id")
+        launch_root = conf.get("LAUNCH_ROOT")
+        if not launch_root:
+            return _reject(conf, original, "missing-launch-root")
+        try:
+            from profile_manager.launch_store import load_launch
+
+            stored = load_launch(arg, root=launch_root)
+        except Exception as exc:
+            return _reject(conf, original, f"launch-load-failed:{type(exc).__name__}")
+        required_runtime_paths = {
+            "ADA2_DWARF_RUNS_DIR": conf.get("RUNS_DIR"),
+            "ADA2_DWARF_STATE_DIR": conf.get("STATE_DIR"),
+            "ADA2_DWARF_BUNDLES_DIR": conf.get("BUNDLES_DIR"),
+            "ADA2_DWARF_SCENARIOS_DIR": conf.get("SCENARIOS_DIR"),
+            "ADA2_DWARF_LAUNCH_ROOT": launch_root,
+            "ADA2_DWARF_LAUNCH_ID": arg,
+        }
+        missing = [name for name, value in required_runtime_paths.items() if not value]
+        if missing:
+            return _reject(conf, original, f"missing-runtime-path:{missing[0]}")
+        runtime_env = " ".join(
+            f"{name}={shlex.quote(str(value))}"
+            for name, value in required_runtime_paths.items()
+        )
+        script = (
+            f"cd {shlex.quote(str(dwarf_root))} && "
+            f"{runtime_env} PYTHONPATH=. "
+            "python3 cardano-profile scenario run "
+            f"{shlex.quote(str(stored['scenario_path']))}"
         )
     elif verb == "deploy":
         if not arg:

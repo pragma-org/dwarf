@@ -868,6 +868,9 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         state_dir=state_dir,
         measurement_context=measurement_context,
     )
+    from profile_manager.launch_store import retain_launch_inputs_from_environment
+
+    retain_launch_inputs_from_environment(handle.run_dir)
     handle.set_start_resource_snapshot(forensic.capture_local_resource_snapshot(pid=os.getpid(), data_dir=handle.run_dir))
     if (
         prepared_measurements is not None

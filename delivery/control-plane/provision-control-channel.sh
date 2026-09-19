@@ -43,6 +43,7 @@ PROFILES_DIR=${PROFILES_DIR:-$STATE_DIR/profiles}
 # Scenario overlay (same bind-mount the container uses) + AFL coverage harness,
 # so the `coverage` verb can run aflpp scenarios on the host where AFL works.
 SCENARIOS_DIR=${SCENARIOS_DIR:-$STATE_DIR/scenarios}
+LAUNCH_ROOT=${LAUNCH_ROOT:-$STATE_DIR/launches}
 CONFIG_PATH=${CONFIG_PATH:-$STATE_DIR/config.yaml}
 AFL_HARNESS=${AFL_HARNESS:-/opt/dwarf/afl-harness/dwarf-decode-any}
 AFL_FUZZ=${AFL_FUZZ:-/opt/dwarf/afl-harness/afl-fuzz}
@@ -79,6 +80,8 @@ chmod 700 "$INSTALL_DIR"
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
 mkdir -p "$STATE_DIR"
+mkdir -p "$LAUNCH_ROOT"
+chmod 700 "$LAUNCH_ROOT"
 
 # 1. Keypair (generate once; never overwrite an existing one).
 if [ ! -f "$KEY_PATH" ]; then
@@ -100,6 +103,7 @@ DWARF_ROOT=$DWARF_ROOT
 REMOTE_BASE_PATH=$REMOTE_BASE_PATH
 PROFILES_DIR=$PROFILES_DIR
 SCENARIOS_DIR=$SCENARIOS_DIR
+LAUNCH_ROOT=$LAUNCH_ROOT
 STATE_DIR=$STATE_DIR
 RUNS_DIR=$RUNS_DIR
 BUNDLES_DIR=$BUNDLES_DIR
