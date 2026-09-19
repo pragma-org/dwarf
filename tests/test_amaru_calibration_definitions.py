@@ -2,7 +2,10 @@ import json
 import subprocess
 from pathlib import Path
 
-from profile_manager.primitives import RuntimeAmaruMeasurementCalibration
+from profile_manager.primitives import (
+    AmaruMeasurementBoundaryProven,
+    RuntimeAmaruMeasurementCalibration,
+)
 from profile_manager.scenario import scenario_from_body
 
 
@@ -60,6 +63,174 @@ def test_calibration_helper_default_is_installed_source_relative():
 
     assert helper == ROOT / "dwarf" / "scripts" / "runtime_amaru_measurement_calibration.py"
     assert helper.is_file()
+
+
+def test_patched_boundary_proof_and_stock_control_are_additive_and_identical():
+    patched = _document("amaru-measurement-boundary-proof-patched")
+    stock = _document("amaru-measurement-boundary-control-stock")
+
+    for document, profile, measurement_profile in (
+        (
+            patched,
+            "profile-q-amaru-measurement-patched",
+            "amaru-security-patched",
+        ),
+        (
+            stock,
+            "profile-r-amaru-measurement-stock-control",
+            "amaru-security-default",
+        ),
+    ):
+        parsed = scenario_from_body((json.dumps(document) + "\n").encode())
+        assert parsed.profile == profile
+        assert parsed.measurement_profile == measurement_profile
+        assert document["seed"] == "0xA11CE502"
+        assert document["load"] == [
+            {
+                "primitive": "runtime_amaru_measurement_calibration",
+                "profile_id": profile,
+                "attempts": 120,
+                "case_set": "accepted-and-rejected-v1",
+                "response_timeout_seconds": 2,
+                "progress_timeout_seconds": 120,
+                "timeout_seconds": 300,
+                "expected_helper_exit": 0,
+            }
+        ]
+        assert document["assertions"] == [
+            {
+                "primitive": "amaru_measurement_boundary_proven",
+                "expected_mode": "patched" if "patched" in profile else "stock",
+                "min_attempts_per_case": 40,
+                "min_internal_samples_per_outcome": 30 if "patched" in profile else 0,
+            }
+        ]
+
+    patched_load = {**patched["load"][0], "profile_id": "<paired>"}
+    stock_load = {**stock["load"][0], "profile_id": "<paired>"}
+    assert patched_load == stock_load
+
+
+def _boundary_result(
+    tmp_path, *, malformed_samples=40, progressed=True, include_state_outcomes=True
+):
+    path = tmp_path / "outputs" / "amaru-measurement-calibration" / "result.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "status": "available",
+                "target": {"mode": "patched", "source_revision": "b159172f"},
+                "workload_identity": {
+                    "case_set": "accepted-and-rejected-v1",
+                    "workload_digest": "sha256:" + "a" * 64,
+                },
+                "attempts": {
+                    "total": 120,
+                    "unexpected_count": 0,
+                    "by_case": {
+                        "supported-version-acceptance": {
+                            "total": 40,
+                            "outcomes": {"accepted": 40},
+                        },
+                        "unsupported-version-refusal": {
+                            "total": 40,
+                            "outcomes": {"rejected": 40},
+                        },
+                        "malformed-cbor-rejection": {
+                            "total": 40,
+                            "outcomes": {"rejected": 40},
+                        },
+                    },
+                },
+                "target_health": {
+                    "checks": {
+                        "all_attempts_classified_as_expected": True,
+                        "target_running_before": True,
+                        "target_running_after": True,
+                        "target_not_oom_killed": True,
+                        "target_restart_count_unchanged": True,
+                        "honest_chain_progressed": progressed,
+                        "no_fatal_signals": True,
+                    }
+                },
+                "node_measurements": {
+                    "amaru-patched-protocol-decode": {
+                        "export": {"incomplete": False},
+                        "measurements": {
+                            "protocol_decode_by_decode_outcome": {
+                                "decoded": {"sample_count": 80},
+                                "malformed": {"sample_count": malformed_samples},
+                            },
+                            "protocol_total_by_state_outcome": (
+                                {
+                                    "accepted": {"sample_count": 40},
+                                    "rejected": {"sample_count": 40},
+                                    "not_attempted": {"sample_count": malformed_samples},
+                                }
+                                if include_state_outcomes
+                                else {}
+                            ),
+                        },
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_boundary_assertion_requires_external_health_and_internal_outcome_samples(tmp_path):
+    _boundary_result(tmp_path)
+    handle = type("Handle", (), {"run_dir": tmp_path})()
+
+    result = AmaruMeasurementBoundaryProven(
+        params={
+            "expected_mode": "patched",
+            "min_attempts_per_case": 40,
+            "min_internal_samples_per_outcome": 30,
+        }
+    ).evaluate(handle)
+
+    assert result["result"] == "pass"
+    assert result["evaluated_value"]["external_attempts"] == 120
+    assert result["evaluated_value"]["internal_decoded_samples"] == 80
+    assert result["evaluated_value"]["internal_malformed_samples"] == 40
+
+
+def test_boundary_assertion_fails_when_internal_state_outcomes_are_absent(tmp_path):
+    _boundary_result(tmp_path, include_state_outcomes=False)
+    handle = type("Handle", (), {"run_dir": tmp_path})()
+
+    result = AmaruMeasurementBoundaryProven(
+        params={
+            "expected_mode": "patched",
+            "min_attempts_per_case": 40,
+            "min_internal_samples_per_outcome": 30,
+        }
+    ).evaluate(handle)
+
+    assert result["result"] == "fail"
+    assert result["evaluated_value"]["internal_accepted_samples"] == 0
+    assert result["evaluated_value"]["internal_rejected_samples"] == 0
+    assert result["evaluated_value"]["internal_not_attempted_samples"] == 0
+
+
+def test_boundary_assertion_fails_on_under_sample_or_lost_progress(tmp_path):
+    _boundary_result(tmp_path, malformed_samples=4, progressed=False)
+    handle = type("Handle", (), {"run_dir": tmp_path})()
+
+    result = AmaruMeasurementBoundaryProven(
+        params={
+            "expected_mode": "patched",
+            "min_attempts_per_case": 40,
+            "min_internal_samples_per_outcome": 30,
+        }
+    ).evaluate(handle)
+
+    assert result["result"] == "fail"
+    assert "honest_chain_progressed" in result["evaluated_value"]["failed_checks"]
+    assert result["evaluated_value"]["internal_malformed_samples"] == 4
 
 
 def test_calibration_primitive_runs_retained_leg_with_exact_attempt_count(

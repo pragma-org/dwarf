@@ -1,0 +1,39 @@
+{
+  "spec_version": "v1",
+  "id": "amaru-measurement-boundary-proof-patched",
+  "title": "Amaru patched measurement boundary proof",
+  "authors": ["dwarf"],
+  "tags": ["amaru", "measurement", "patched", "real-node", "security", "boundary-proof"],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This proves collection for the exact target and workload; it does not establish a stable performance threshold.",
+    "Patched-only behavior is not an Amaru vulnerability unless it reproduces against stock Amaru."
+  ],
+  "target": {"implementation": "amaru", "version": "10.11.20260912"},
+  "runtime": "devnet",
+  "profile": "profile-q-amaru-measurement-patched",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0xA11CE502",
+  "load": [
+    {
+      "primitive": "runtime_amaru_measurement_calibration",
+      "profile_id": "profile-q-amaru-measurement-patched",
+      "attempts": 120,
+      "case_set": "accepted-and-rejected-v1",
+      "response_timeout_seconds": 2,
+      "progress_timeout_seconds": 120,
+      "timeout_seconds": 300,
+      "expected_helper_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "amaru_measurement_boundary_proven",
+      "expected_mode": "patched",
+      "min_attempts_per_case": 40,
+      "min_internal_samples_per_outcome": 30
+    }
+  ],
+  "teardown": []
+}

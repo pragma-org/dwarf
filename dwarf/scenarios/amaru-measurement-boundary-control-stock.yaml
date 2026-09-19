@@ -1,0 +1,39 @@
+{
+  "spec_version": "v1",
+  "id": "amaru-measurement-boundary-control-stock",
+  "title": "Amaru stock control for patched measurement boundary proof",
+  "authors": ["dwarf"],
+  "tags": ["amaru", "measurement", "stock", "real-node", "security", "boundary-control"],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This is the exact external-workload control for the paired patched proof.",
+    "Stock mode cannot provide the patched internal decode boundary."
+  ],
+  "target": {"implementation": "amaru", "version": "10.11.20260912"},
+  "runtime": "devnet",
+  "profile": "profile-r-amaru-measurement-stock-control",
+  "measurement_profile": "amaru-security-default",
+  "seed": "0xA11CE502",
+  "load": [
+    {
+      "primitive": "runtime_amaru_measurement_calibration",
+      "profile_id": "profile-r-amaru-measurement-stock-control",
+      "attempts": 120,
+      "case_set": "accepted-and-rejected-v1",
+      "response_timeout_seconds": 2,
+      "progress_timeout_seconds": 120,
+      "timeout_seconds": 300,
+      "expected_helper_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "amaru_measurement_boundary_proven",
+      "expected_mode": "stock",
+      "min_attempts_per_case": 40,
+      "min_internal_samples_per_outcome": 0
+    }
+  ],
+  "teardown": []
+}

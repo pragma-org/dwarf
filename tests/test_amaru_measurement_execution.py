@@ -14,6 +14,9 @@ from profile_manager import scenario as scenario_module
 AMARU_VERSION = "10.11.20260912"
 AMARU_REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
 AMARU_DIGEST = "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e"
+AMARU_PATCHED_DIGEST = "sha256:680ae0df46b0081c2477b9f76cd7c1d89f1e8e08ff781cd6037a2f8218a83d1b"
+AMARU_PATCHED_EXECUTABLE = "sha256:f70cf6be3be754a51fda53b101c4e4e4ab07c4b0ff28f8034ba335d58b744caa"
+AMARU_PATCH_SET = "7ce3356d53535b22b82abf10166f9fa8ccfcd40b49bd8e298895ba1c027c0532"
 
 
 def _runtime(path: Path, *, matched=True, digest=AMARU_DIGEST):
@@ -64,6 +67,66 @@ def _runtime(path: Path, *, matched=True, digest=AMARU_DIGEST):
     return path
 
 
+def _patched_runtime(path: Path, **overrides):
+    measurement_target = {
+        "implementation": "amaru",
+        "target_mode": "patched",
+        "version": AMARU_VERSION,
+        "source_revision": AMARU_REVISION,
+        "patch_set_sha256": AMARU_PATCH_SET,
+        "image": f"dwarf/amaru-measurement@{AMARU_PATCHED_DIGEST}",
+        "image_digest": AMARU_PATCHED_DIGEST,
+        "executable_digest": AMARU_PATCHED_EXECUTABLE,
+        "build_result_sha256": "sha256:" + "b" * 64,
+        "runtime_probe_log_sha256": "sha256:" + "c" * 64,
+    }
+    measurement_target.update(overrides)
+    body = {
+        "schema_version": 1,
+        "profile_id": "profile-q-amaru-measurement-patched",
+        "compose_project": "dwarf-profile-q-amaru-measurement-patched",
+        "runtime_root": str(path.parent),
+        "versions": {
+            "amaru": AMARU_VERSION,
+            "catalog_revision": "a" * 64,
+            "catalog_snapshot": {
+                "catalog_revision": "a" * 64,
+                "selected_releases": [
+                    {
+                        "implementation": "amaru",
+                        "version": AMARU_VERSION,
+                        "source_revision": AMARU_REVISION,
+                        "artifacts": [
+                            {
+                                "kind": "oci",
+                                "availability": "available",
+                                "reference": "ghcr.io/pragma-org/amaru:v10.11.20260912",
+                                "digest": AMARU_DIGEST,
+                            }
+                        ],
+                    }
+                ],
+            },
+        },
+        "identity": {
+            "matched": True,
+            "services": {
+                "amaru-relay-1": {
+                    "container": "dwarf-profile-q-amaru-measurement-patched-amaru-relay-1-1",
+                    "matched": True,
+                    "artifact_image_id": AMARU_PATCHED_DIGEST,
+                    "executable_digest_reported": AMARU_PATCHED_EXECUTABLE,
+                    "executable_digest_matched": True,
+                }
+            },
+        },
+        "measurement_target": measurement_target,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(body), encoding="utf-8")
+    return path
+
+
 def test_prepare_scenario_measurements_resolves_exact_live_stock_runtime(tmp_path):
     scenario = load_scenario("dwarf/scenarios/amaru-measurement-e2e-stock.yaml")
     runtime_path = _runtime(tmp_path / "runtime.json")
@@ -98,6 +161,72 @@ def test_prepare_scenario_measurements_fails_closed_on_unproven_runtime(tmp_path
     runtime_path = _runtime(tmp_path / "runtime.json", digest="sha256:" + "9" * 64)
     with pytest.raises(MeasurementExecutionError, match="image digest"):
         prepare_scenario_measurements(scenario, runtime_metadata_path=runtime_path)
+
+
+def test_prepare_scenario_measurements_resolves_exact_live_patched_runtime(tmp_path):
+    scenario = load_scenario(
+        "dwarf/scenarios/amaru-measurement-overhead-calibration-patched.yaml"
+    )
+    runtime_path = _patched_runtime(tmp_path / "runtime.json")
+
+    prepared = prepare_scenario_measurements(
+        scenario,
+        runtime_metadata_path=runtime_path,
+        tip_probe=lambda: {"block_height": 1, "block_hash": "a" * 64},
+    )
+
+    identity = prepared.resolution["target_identity"]
+    assert identity == {
+        "implementation": "amaru",
+        "version": AMARU_VERSION,
+        "source_revision": AMARU_REVISION,
+        "mode": "patched",
+        "patch_set_sha256": AMARU_PATCH_SET,
+        "image_reference": f"dwarf/amaru-measurement@{AMARU_PATCHED_DIGEST}",
+        "image_digest": AMARU_PATCHED_DIGEST,
+        "executable_digest": AMARU_PATCHED_EXECUTABLE,
+        "build_result_sha256": "sha256:" + "b" * 64,
+        "runtime_probe_log_sha256": "sha256:" + "c" * 64,
+        "version_catalog_revision": "a" * 64,
+    }
+    assert prepared.resolution["incompatible"] == []
+    assert prepared.resolution["skipped"] == []
+    assert len(prepared.resolution["resolved"]) == 14
+
+    factories = prepared.build_factories(tmp_path / "run")
+    collector = factories["amaru-patched-protocol-decode"](
+        next(
+            entry
+            for entry in prepared.resolution["resolved"]
+            if entry["id"] == "amaru-patched-protocol-decode"
+        )
+    )
+    assert collector.target_identity == identity
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"source_revision": "0" * 40}, "source revision"),
+        ({"patch_set_sha256": "0" * 64}, "patch-set"),
+        ({"image_digest": "sha256:" + "0" * 64}, "image"),
+        ({"executable_digest": "sha256:" + "0" * 64}, "executable"),
+    ],
+)
+def test_prepare_scenario_measurements_fails_closed_on_patched_identity_mismatch(
+    tmp_path, override, message
+):
+    scenario = load_scenario(
+        "dwarf/scenarios/amaru-measurement-overhead-calibration-patched.yaml"
+    )
+    runtime_path = _patched_runtime(tmp_path / "runtime.json", **override)
+
+    with pytest.raises(MeasurementExecutionError, match=message):
+        prepare_scenario_measurements(
+            scenario,
+            runtime_metadata_path=runtime_path,
+            tip_probe=lambda: {"block_height": 1, "block_hash": "a" * 64},
+        )
 
 
 def test_run_factory_uses_run_relative_trace_and_registers_every_resolved_tap(tmp_path):

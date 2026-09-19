@@ -13343,8 +13343,14 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         else:
             runtime_root = str(runtime_root_value)
         attempts = int(self.params.get("attempts", 40))
+        case_set = str(
+            self.params.get("case_set", "unsupported-version-only-v1")
+        )
         response_timeout_seconds = float(
             self.params.get("response_timeout_seconds", 2.0)
+        )
+        progress_timeout_seconds = float(
+            self.params.get("progress_timeout_seconds", 120.0)
         )
         observation_seconds = (
             float(self.params.get("observation_seconds", 2.0))
@@ -13392,6 +13398,10 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             str(attempts),
             "--timeout-seconds",
             str(response_timeout_seconds),
+            "--case-set",
+            case_set,
+            "--progress-timeout-seconds",
+            str(progress_timeout_seconds),
         ]
         if observation_seconds is not None:
             command.extend(["--observation-seconds", str(observation_seconds)])
@@ -13412,7 +13422,9 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "runtime_root": runtime_root,
                 "output_dir": str(output_dir),
                 "attempts": attempts,
+                "case_set": case_set,
                 "response_timeout_seconds": response_timeout_seconds,
+                "progress_timeout_seconds": progress_timeout_seconds,
                 "observation_seconds": observation_seconds,
                 "trace_timeout_seconds": trace_timeout_seconds,
                 "plutus_transactions": plutus_transactions,
@@ -14212,6 +14224,147 @@ class LoadEventsAreOk(AssertionPrimitive):
             ],
             "result": result,
             "note": note,
+        }
+
+
+class AmaruMeasurementBoundaryProven(AssertionPrimitive):
+    """Pass only when the retained real-node boundary proof is non-vacuous."""
+
+    _CASES = {
+        "supported-version-acceptance": "accepted",
+        "unsupported-version-refusal": "rejected",
+        "malformed-cbor-rejection": "rejected",
+    }
+
+    def evaluate(self, handle):
+        report_path = (
+            Path(handle.run_dir)
+            / "outputs"
+            / "amaru-measurement-calibration"
+            / "result.json"
+        )
+        expected_mode = str(self.params.get("expected_mode", "patched"))
+        min_per_case = int(self.params.get("min_attempts_per_case", 40))
+        min_internal = int(
+            self.params.get("min_internal_samples_per_outcome", 30)
+        )
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            return {
+                "primitive": "amaru_measurement_boundary_proven",
+                "params": dict(self.params),
+                "evaluated_value": {"report": str(report_path), "error": str(exc)},
+                "data_points_used": [],
+                "result": "fail",
+                "note": "the retained Amaru boundary report is unavailable or invalid",
+            }
+
+        attempts = report.get("attempts") or {}
+        by_case = attempts.get("by_case") or {}
+        health_checks = ((report.get("target_health") or {}).get("checks") or {})
+        failed_checks = sorted(
+            name for name, passed in health_checks.items() if passed is not True
+        )
+        case_failures = []
+        for case, expected_outcome in self._CASES.items():
+            row = by_case.get(case) or {}
+            total = int(row.get("total") or 0)
+            matching = int((row.get("outcomes") or {}).get(expected_outcome) or 0)
+            if total < min_per_case or matching != total:
+                case_failures.append(
+                    {
+                        "case": case,
+                        "total": total,
+                        "expected_outcome": expected_outcome,
+                        "matching": matching,
+                    }
+                )
+
+        patched = (
+            (report.get("node_measurements") or {}).get(
+                "amaru-patched-protocol-decode"
+            )
+            or {}
+        )
+        decode_outcomes = (
+            (patched.get("measurements") or {}).get(
+                "protocol_decode_by_decode_outcome"
+            )
+            or {}
+        )
+        decoded_samples = int(
+            (decode_outcomes.get("decoded") or {}).get("sample_count") or 0
+        )
+        malformed_samples = int(
+            (decode_outcomes.get("malformed") or {}).get("sample_count") or 0
+        )
+        state_outcomes = (
+            (patched.get("measurements") or {}).get(
+                "protocol_total_by_state_outcome"
+            )
+            or {}
+        )
+        accepted_samples = int(
+            (state_outcomes.get("accepted") or {}).get("sample_count") or 0
+        )
+        rejected_samples = int(
+            (state_outcomes.get("rejected") or {}).get("sample_count") or 0
+        )
+        not_attempted_samples = int(
+            (state_outcomes.get("not_attempted") or {}).get("sample_count") or 0
+        )
+        internal_complete = (
+            min_internal == 0
+            or (
+                decoded_samples >= min_internal
+                and malformed_samples >= min_internal
+                and accepted_samples >= min_internal
+                and rejected_samples >= min_internal
+                and not_attempted_samples >= min_internal
+                and (patched.get("export") or {}).get("incomplete") is False
+            )
+        )
+        workload = report.get("workload_identity") or {}
+        target = report.get("target") or {}
+        passed = (
+            report.get("status") == "available"
+            and target.get("mode") == expected_mode
+            and workload.get("case_set") == "accepted-and-rejected-v1"
+            and str(workload.get("workload_digest") or "").startswith("sha256:")
+            and int(attempts.get("unexpected_count") or 0) == 0
+            and not case_failures
+            and bool(health_checks)
+            and not failed_checks
+            and internal_complete
+        )
+        evaluated = {
+            "expected_mode": expected_mode,
+            "observed_mode": target.get("mode"),
+            "external_attempts": int(attempts.get("total") or 0),
+            "case_failures": case_failures,
+            "failed_checks": failed_checks,
+            "internal_decoded_samples": decoded_samples,
+            "internal_malformed_samples": malformed_samples,
+            "internal_accepted_samples": accepted_samples,
+            "internal_rejected_samples": rejected_samples,
+            "internal_not_attempted_samples": not_attempted_samples,
+            "min_internal_samples_per_outcome": min_internal,
+            "workload_digest": workload.get("workload_digest"),
+        }
+        return {
+            "primitive": "amaru_measurement_boundary_proven",
+            "params": dict(self.params),
+            "evaluated_value": evaluated,
+            "data_points_used": [
+                {
+                    "report": report_path.relative_to(handle.run_dir).as_posix(),
+                    "target": target,
+                    "workload_identity": workload,
+                }
+            ],
+            "result": "pass" if passed else "fail",
+            "note": None if passed else "the real-node boundary proof did not satisfy every required gate",
         }
 
 

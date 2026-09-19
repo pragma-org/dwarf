@@ -682,7 +682,7 @@ def test_scenario_editor_descriptor_covers_every_registered_primitive_schema():
         "load": 122,
         "fault": 5,
         "probe": 1,
-        "assertion": 77,
+        "assertion": 78,
         "teardown": 1,
     }
     for name, entry in primitives.items():

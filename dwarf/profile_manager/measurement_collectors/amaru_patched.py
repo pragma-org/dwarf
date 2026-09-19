@@ -299,6 +299,7 @@ class AmaruPatchedCollector:
         json_trace_paths: Iterable[str | Path],
         target_identity: Mapping[str, Any],
         include_existing: bool = False,
+        allow_missing_at_start: bool = False,
         max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
     ) -> None:
         self.entry = entry
@@ -306,6 +307,7 @@ class AmaruPatchedCollector:
         self.json_paths = [Path(path) for path in json_trace_paths]
         self.target_identity = json.loads(json.dumps(target_identity))
         self.include_existing = include_existing
+        self.allow_missing_at_start = allow_missing_at_start
         self.max_source_bytes = max_source_bytes
         self._offsets: dict[Path, int] = {}
         self._markers: list[dict[str, Any]] = []
@@ -319,13 +321,17 @@ class AmaruPatchedCollector:
             raise ValueError("max_source_bytes must be within 1..67108864")
         _validate_identity(self.target_identity)
         for path in self.json_paths:
-            if not path.is_file():
+            if not path.is_file() and not self.allow_missing_at_start:
                 raise FileNotFoundError(f"Amaru patched telemetry source is unavailable: {path}")
         context.collector_dir.mkdir(parents=True, exist_ok=True)
 
     def start(self, context) -> None:
         self._offsets = {
-            path: 0 if self.include_existing else path.stat().st_size
+            path: (
+                0
+                if self.include_existing or not path.exists()
+                else path.stat().st_size
+            )
             for path in self.json_paths
         }
 
@@ -399,6 +405,7 @@ def build_amaru_patched_factories(
     json_trace_paths: Iterable[str | Path],
     target_identity: Mapping[str, Any],
     include_existing: bool = False,
+    allow_missing_at_start: bool = False,
     max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
 ) -> dict[str, Any]:
     paths = tuple(Path(path) for path in json_trace_paths)
@@ -410,6 +417,7 @@ def build_amaru_patched_factories(
             json_trace_paths=paths,
             target_identity=identity,
             include_existing=include_existing,
+            allow_missing_at_start=allow_missing_at_start,
             max_source_bytes=max_source_bytes,
         )
 

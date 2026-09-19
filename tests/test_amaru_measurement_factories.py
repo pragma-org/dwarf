@@ -17,6 +17,7 @@ from profile_manager.measurement_collectors.amaru_stock import (
     STOCK_MEASUREMENT_IDS,
     AmaruStockCollector,
 )
+from profile_manager.measurement_runtime import CollectorContext
 
 
 def _entry(measurement_id):
@@ -120,3 +121,48 @@ def test_factory_registry_adds_patched_collectors_only_for_exact_patched_identit
         ),
         AmaruPatchedCollector,
     )
+
+
+def test_patched_factory_allows_run_owned_trace_to_appear_after_start(tmp_path):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text('{"amaru_nodes":[{"name":"amaru-1","impl":"amaru"}]}\n')
+    trace = tmp_path / "run" / "outputs" / "amaru-measurement-calibration" / "raw" / "amaru-relay-1.ndjson"
+    identity = {
+        "implementation": "amaru",
+        "version": "10.11.20260912",
+        "source_revision": AMARU_SOURCE_REVISION,
+        "mode": "patched",
+        "image_digest": "sha256:" + "a" * 64,
+        "patch_set_sha256": AMARU_MEASUREMENT_PATCH_SHA256,
+    }
+    factories = build_amaru_measurement_factories(
+        runtime_metadata_path=metadata,
+        target_node="amaru-1",
+        json_trace_paths=[trace],
+        otlp_trace_paths=[],
+        tip_probe=None,
+        target_identity=identity,
+        allow_missing_trace_sources=True,
+    )
+    entry = _entry("amaru-patched-protocol-decode")
+    collector = factories[entry["id"]](entry)
+    run_dir = tmp_path / "run"
+    context = CollectorContext(
+        measurement_id=entry["id"],
+        definition=entry["definition"],
+        parameters=entry["parameters"],
+        run_dir=run_dir,
+        collector_dir=run_dir / "measurements" / "collectors" / entry["id"],
+    )
+
+    collector.prepare(context)
+    collector.start(context)
+    trace.parent.mkdir(parents=True)
+    trace.write_text(
+        '{"target":"amaru::protocols","fields":{"message":"measurement.protocol_decode","message_type":"Handshake","bytes":1,"decode_outcome":"malformed","state_outcome":"not_attempted","decode_micros":3,"total_micros":3}}\n',
+        encoding="utf-8",
+    )
+    result = collector.finalize(context)
+
+    assert result["export"]["normalized_record_count"] == 1
+    assert result["measurements"]["protocol_decode"]["sample_count"] == 1

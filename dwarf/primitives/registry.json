@@ -53,6 +53,19 @@
       ],
       "version": "0.1.0"
     },
+    "amaru_measurement_boundary_proven": {
+      "class": "AmaruMeasurementBoundaryProven",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/amaru_measurement_boundary_proven.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "big_ledger_peer_quorum_intact": {
       "class": "BigLedgerPeerQuorumIntact",
       "family": "assertion",

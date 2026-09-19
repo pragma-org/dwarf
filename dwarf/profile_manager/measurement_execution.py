@@ -10,6 +10,10 @@ from typing import Any, Callable
 from profile_manager.measurement_collectors.amaru_factory import (
     build_amaru_measurement_factories,
 )
+from profile_manager.measurement_collectors.amaru_patched import (
+    AMARU_MEASUREMENT_PATCH_SHA256,
+    AMARU_SOURCE_REVISION,
+)
 from profile_manager.measurement_collectors.cardano_factory import (
     build_cardano_measurement_factories,
 )
@@ -39,6 +43,12 @@ AMARU_STOCK_CAPABILITIES = {
     "dwarf-chain-tip-probe",
     "amaru-chain-tip",
     "dwarf-workload-events",
+}
+AMARU_PATCHED_CAPABILITIES = AMARU_STOCK_CAPABILITIES | {
+    "amaru-measurement-patch-protocol-decode",
+    "amaru-measurement-patch-blockfetch",
+    "amaru-measurement-patch-txsubmission2",
+    "amaru-patch-identity",
 }
 
 CARDANO_STOCK_CAPABILITIES = {
@@ -128,6 +138,88 @@ def _stock_amaru_identity(runtime: dict[str, Any], scenario) -> dict[str, Any]:
         "image_reference": image_reference,
         "image_digest": digest,
         "executable_digest": None,
+        "version_catalog_revision": _catalog_revision(runtime),
+    }
+
+
+def _immutable_sha256(value: Any, field: str) -> str:
+    text = str(value or "")
+    if not text.startswith("sha256:") or len(text) != 71:
+        raise MeasurementExecutionError(
+            f"deployed patched Amaru {field} is not immutable"
+        )
+    return text
+
+
+def _patched_amaru_identity(runtime: dict[str, Any], scenario) -> dict[str, Any]:
+    if runtime.get("profile_id") != scenario.profile:
+        raise MeasurementExecutionError("runtime profile does not match scenario profile")
+    runtime_identity = runtime.get("identity") or {}
+    if runtime_identity.get("matched") is not True:
+        raise MeasurementExecutionError("deployed Amaru identity is not proven")
+    release = _selected_release(runtime, "amaru")
+    target = runtime.get("measurement_target") or {}
+    if target.get("target_mode") != "patched":
+        raise MeasurementExecutionError("runtime is not a patched Amaru target")
+    version = str(target.get("version") or "")
+    if version != scenario.target.get("version") or version != str(release.get("version") or ""):
+        raise MeasurementExecutionError(
+            f"deployed patched Amaru version {version or 'unknown'} does not match scenario"
+        )
+    source_revision = str(target.get("source_revision") or "")
+    if (
+        source_revision != AMARU_SOURCE_REVISION
+        or source_revision != str(release.get("source_revision") or "")
+    ):
+        raise MeasurementExecutionError(
+            "deployed patched Amaru source revision does not match collector"
+        )
+    patch_set = str(target.get("patch_set_sha256") or "")
+    if patch_set != AMARU_MEASUREMENT_PATCH_SHA256:
+        raise MeasurementExecutionError(
+            "deployed patched Amaru patch-set identity does not match collector"
+        )
+    image_digest = _immutable_sha256(target.get("image_digest"), "image digest")
+    executable_digest = _immutable_sha256(
+        target.get("executable_digest"), "executable digest"
+    )
+    build_result_sha256 = _immutable_sha256(
+        target.get("build_result_sha256"), "build result"
+    )
+    runtime_probe_log_sha256 = _immutable_sha256(
+        target.get("runtime_probe_log_sha256"), "runtime probe log"
+    )
+    image_reference = str(target.get("image") or target.get("image_reference") or "")
+    if not image_reference.endswith("@" + image_digest):
+        raise MeasurementExecutionError(
+            "runtime patched Amaru image reference is not digest-pinned"
+        )
+    service = ((runtime_identity.get("services") or {}).get("amaru-relay-1") or {})
+    if service.get("matched") is not True:
+        raise MeasurementExecutionError("patched Amaru relay identity is not proven")
+    if str(service.get("artifact_image_id") or "") != image_digest:
+        raise MeasurementExecutionError(
+            "deployed patched Amaru image digest does not match runtime"
+        )
+    if service.get("executable_digest_matched") is not True:
+        raise MeasurementExecutionError(
+            "deployed patched Amaru executable identity is not proven"
+        )
+    if str(service.get("executable_digest_reported") or "") != executable_digest:
+        raise MeasurementExecutionError(
+            "deployed patched Amaru executable digest does not match runtime"
+        )
+    return {
+        "implementation": "amaru",
+        "version": version,
+        "source_revision": source_revision,
+        "mode": "patched",
+        "patch_set_sha256": patch_set,
+        "image_reference": image_reference,
+        "image_digest": image_digest,
+        "executable_digest": executable_digest,
+        "build_result_sha256": build_result_sha256,
+        "runtime_probe_log_sha256": runtime_probe_log_sha256,
         "version_catalog_revision": _catalog_revision(runtime),
     }
 
@@ -357,10 +449,21 @@ def prepare_scenario_measurements(
     except json.JSONDecodeError as exc:
         raise MeasurementExecutionError(f"runtime metadata is invalid: {path}") from exc
     if implementation == "amaru":
-        identity = _stock_amaru_identity(runtime, scenario)
+        target_mode = str(
+            (runtime.get("measurement_target") or {}).get("target_mode") or "stock"
+        )
+        if target_mode == "patched":
+            identity = _patched_amaru_identity(runtime, scenario)
+            capabilities = AMARU_PATCHED_CAPABILITIES
+        elif target_mode == "stock":
+            identity = _stock_amaru_identity(runtime, scenario)
+            capabilities = AMARU_STOCK_CAPABILITIES
+        else:
+            raise MeasurementExecutionError(
+                f"unsupported Amaru target mode: {target_mode}"
+            )
         target_node = "amaru-relay-1"
         resolved_tip_probe = tip_probe or _docker_tip_probe(runtime)
-        capabilities = AMARU_STOCK_CAPABILITIES
     else:
         identity, node = _stock_cardano_identity(runtime, scenario)
         target_node = str(node.get("id") or "node1")

@@ -47,6 +47,7 @@ def build_amaru_measurement_factories(
             build_amaru_patched_factories(
                 json_trace_paths=json_paths,
                 target_identity=target_identity,
+                allow_missing_at_start=allow_missing_trace_sources,
             )
         )
 
