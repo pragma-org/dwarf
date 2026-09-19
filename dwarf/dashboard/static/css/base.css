@@ -3440,7 +3440,7 @@ body.product-landing {
 }
 .run-wizard [data-run-action="start"] { margin-top: var(--space-4); min-width: 180px; }
 
-@media (max-width: 800px) {
+@media (max-width: 900px) {
   .run-wizard__layout { grid-template-columns: 1fr; }
   .run-wizard__step--wide { grid-column: auto; }
 }

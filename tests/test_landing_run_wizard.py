@@ -97,14 +97,17 @@ def test_run_route_exposes_server_catalog_and_default_selection():
 
 
 def test_start_run_is_a_primary_and_operate_navigation_destination():
-    html = dashboard.render_route_html("/operate")
+    operate_html = dashboard.render_route_html("/operate")
+    run_html = dashboard.render_route_html("/run")
 
     assert any(
         item == {"slug": "run", "label": "Start run", "url": "/run"}
         for item in OPERATE_SUB_NAV
     )
-    assert 'href="/run"' in html
-    assert ">Start run<" in html
+    assert 'href="/run"' in operate_html
+    assert ">Start run<" in operate_html
+    assert 'href="/run" class="shell-nav__start active"' in run_html
+    assert 'href="/operate" class="active"' not in run_html
 
 
 def test_operator_runbook_explains_wizard_defaults_and_claim_boundary():
@@ -200,6 +203,7 @@ def test_run_wizard_resolves_changes_without_embedding_catalog_logic_in_javascri
     assert "grid-template-columns" in css
     assert "minmax(0" in css
     assert "overflow-x: clip" in css
+    assert "@media (max-width: 900px) {\n  .run-wizard__layout" in css
 
 
 def test_run_start_rejects_missing_token_before_creating_a_launch(tmp_path, monkeypatch):

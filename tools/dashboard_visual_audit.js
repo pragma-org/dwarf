@@ -19,11 +19,12 @@ const screenshotDir = process.argv[3] || '';
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
+  { name: 'tablet', width: 820, height: 1180 },
   { name: 'mobile', width: 390, height: 844 },
 ];
 
 const ROUTES = [
-  '/', '/tests', '/scenarios',
+  '/', '/run', '/tests', '/scenarios',
   '/operate', '/operate/audit', '/operate/bundles',
   '/operate/antithesis', '/operate/compare', '/operate/compare/runs',
   '/operate/config', '/operate/config/edit', '/operate/contract',
