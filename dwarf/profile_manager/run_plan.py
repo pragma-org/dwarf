@@ -376,6 +376,9 @@ def resolve_run_plan(request: RunPlanRequest | dict[str, Any]) -> dict[str, Any]
     )
     measurements = _measurement_context(effective_scenario, profile, preview)
     cells, primitive_names = _primitive_inventory(effective_scenario)
+    from profile_manager.run_backends import classify_run_backends
+
+    backends = classify_run_backends(effective_scenario)
 
     versions = None
     if preview is not None:
@@ -439,6 +442,7 @@ def resolve_run_plan(request: RunPlanRequest | dict[str, Any]) -> dict[str, Any]
         ),
         "versions": versions,
         "measurements": measurements,
+        "backends": backends,
         "primitive_cells": cells,
         "primitive_names": primitive_names,
         "readiness": {
