@@ -86,10 +86,11 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
         "profile-p-mixed-latest-confirmed": "amaru-control",
         "profile-q-amaru-measurement-patched": "amaru-control",
         "profile-r-amaru-measurement-stock-control": "amaru-control",
+        "profile-s-cardano-measurement-stock-control": "generated-cardano-local",
     }
     profiles = load_profiles()
 
-    assert len(profiles) == 18
+    assert len(profiles) == 19
     assert {profile.id for profile in profiles} == set(expected_adapters)
     for profile in profiles:
         source = next(
@@ -99,8 +100,9 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
         expected_policy = (
             "exact"
             if profile.id in {
-                "profile-q-amaru-measurement-patched",
-                "profile-r-amaru-measurement-stock-control",
+                    "profile-q-amaru-measurement-patched",
+                    "profile-r-amaru-measurement-stock-control",
+                    "profile-s-cardano-measurement-stock-control",
             }
             else "latest-confirmed"
         )

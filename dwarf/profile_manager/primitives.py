@@ -13318,6 +13318,8 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         / "scripts"
         / "runtime_amaru_measurement_calibration.py"
     )
+    _PRIMITIVE_NAME = "runtime_amaru_measurement_calibration"
+    _OUTPUT_SUBDIR = "amaru-measurement-calibration"
 
     def run(self, handle, rng):
         import os
@@ -13329,7 +13331,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         runtime_root_value = self.params.get("runtime_root")
         if bool(profile_id) == bool(runtime_root_value):
             raise ValueError(
-                "runtime_amaru_measurement_calibration requires exactly one of "
+                f"{self._PRIMITIVE_NAME} requires exactly one of "
                 "profile_id or runtime_root"
             )
         if profile_id:
@@ -13347,12 +13349,12 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         run_dir = getattr(handle, "run_dir", None)
         if run_dir is None and "output_dir" not in self.params:
             raise ValueError(
-                "runtime_amaru_measurement_calibration requires a run directory or output_dir"
+                f"{self._PRIMITIVE_NAME} requires a run directory or output_dir"
             )
         output_dir = Path(
             self.params.get(
                 "output_dir",
-                Path(run_dir) / "outputs" / "amaru-measurement-calibration",
+                Path(run_dir) / "outputs" / self._OUTPUT_SUBDIR,
             )
         )
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -13371,7 +13373,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         ]
         handle.log(
             phase="load",
-            primitive="runtime_amaru_measurement_calibration",
+            primitive=self._PRIMITIVE_NAME,
             level="info",
             event="started",
             payload={
@@ -13436,7 +13438,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         )
         handle.log(
             phase="load",
-            primitive="runtime_amaru_measurement_calibration",
+            primitive=self._PRIMITIVE_NAME,
             level="info" if outcome == "ok" else "error",
             event="completed",
             payload={
@@ -13456,7 +13458,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         rejected_outcomes = {"rejected", "invalid", "duplicate"}
         handle.log(
             phase="load",
-            primitive="runtime_amaru_measurement_calibration",
+            primitive=self._PRIMITIVE_NAME,
             level="info",
             event="workload_accounting",
             payload={
@@ -13484,6 +13486,18 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 ],
             },
         )
+
+
+class RuntimeCardanoMeasurementCalibration(RuntimeAmaruMeasurementCalibration):
+    """Run one retained real-node Cardano-node measurement workload leg."""
+
+    _DEFAULT_HELPER = str(
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "runtime_cardano_measurement_calibration.py"
+    )
+    _PRIMITIVE_NAME = "runtime_cardano_measurement_calibration"
+    _OUTPUT_SUBDIR = "cardano-measurement-calibration"
 
 
 class RuntimePartitionRejoin(LoadPrimitive):

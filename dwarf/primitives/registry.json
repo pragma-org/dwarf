@@ -1885,6 +1885,19 @@
       ],
       "version": "0.1.0"
     },
+    "runtime_cardano_measurement_calibration": {
+      "class": "RuntimeCardanoMeasurementCalibration",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_cardano_measurement_calibration.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node"
+      ],
+      "version": "0.1.0"
+    },
     "runtime_local_query_stress": {
       "class": "RuntimeLocalQueryStress",
       "family": "load",

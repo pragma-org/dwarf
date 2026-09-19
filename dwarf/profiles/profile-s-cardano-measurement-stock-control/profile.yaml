@@ -1,0 +1,14 @@
+{
+  "id": "profile-s-cardano-measurement-stock-control",
+  "label": "Cardano-node 11.1.2 — stock measurement control",
+  "haskell_count": 3,
+  "amaru_count": 0,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "exact",
+  "cardano_version": "11.1.2",
+  "topology_pattern": "local-mesh",
+  "shared_genesis": true,
+  "measurement_target_mode": "stock",
+  "cardano_measurement_traces": true
+}

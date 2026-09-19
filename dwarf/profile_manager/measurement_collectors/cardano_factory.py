@@ -1,0 +1,63 @@
+"""Trusted runtime bindings for exact Cardano-node measurement collectors."""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Callable, Iterable
+
+from profile_manager.measurement_collectors.amaru_external import (
+    RestartReadinessCollector,
+    SyncSpeedCollector,
+    WorkloadAccountingCollector,
+)
+from profile_manager.measurement_collectors.cardano_resources import CardanoResourceCollector
+from profile_manager.measurement_collectors.cardano_stock import build_cardano_stock_factories
+
+
+def build_cardano_measurement_factories(
+    *,
+    runtime_metadata_path: str | Path,
+    target_node: str,
+    trace_paths: Iterable[str | Path],
+    tip_probe: Callable[[], dict[str, Any]] | None,
+    expected_start_height: int | None = None,
+    expected_end_height: int | None = None,
+    peer_policy: str = "unspecified",
+    resource_sample_interval_seconds: float = 1.0,
+    resource_resolve_pid: Callable[[Path, str], int] | None = None,
+    resource_sample_reader: Callable[[int, int], dict[str, Any]] | None = None,
+    resource_background: bool = True,
+    allow_missing_trace_sources: bool = False,
+) -> dict[str, Callable[[dict[str, Any]], Any]]:
+    metadata_path = Path(runtime_metadata_path)
+    paths = tuple(Path(path) for path in trace_paths)
+    factories = build_cardano_stock_factories(
+        trace_paths=paths,
+        allow_missing_at_start=allow_missing_trace_sources,
+    )
+    resource_options: dict[str, Any] = {
+        "runtime_metadata_path": metadata_path,
+        "target_node": target_node,
+        "sample_interval_seconds": resource_sample_interval_seconds,
+        "sample_reader": resource_sample_reader,
+        "background": resource_background,
+    }
+    if resource_resolve_pid is not None:
+        resource_options["resolve_pid"] = resource_resolve_pid
+    factories["cardano-stock-resources"] = lambda entry: CardanoResourceCollector(
+        entry, **resource_options
+    )
+    factories["cardano-external-workload-accounting"] = (
+        lambda entry: WorkloadAccountingCollector(entry)
+    )
+    factories["cardano-external-restart-readiness"] = (
+        lambda entry: RestartReadinessCollector(entry, target_node=target_node)
+    )
+    if tip_probe is not None:
+        factories["cardano-external-sync-speed"] = lambda entry: SyncSpeedCollector(
+            entry,
+            tip_probe=tip_probe,
+            expected_start_height=expected_start_height,
+            expected_end_height=expected_end_height,
+            peer_policy=peer_policy,
+        )
+    return factories

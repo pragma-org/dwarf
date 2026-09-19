@@ -57,6 +57,7 @@ class Profile:
     measurement_patch_revision: str | None = None
     measurement_patch_set_sha256: str | None = None
     amaru_json_traces: bool = False
+    cardano_measurement_traces: bool = False
 
     @classmethod
     def from_dict(cls, data):
@@ -92,6 +93,9 @@ class Profile:
             measurement_patch_revision=data.get("measurement_patch_revision"),
             measurement_patch_set_sha256=data.get("measurement_patch_set_sha256"),
             amaru_json_traces=bool(data.get("amaru_json_traces", False)),
+            cardano_measurement_traces=bool(
+                data.get("cardano_measurement_traces", False)
+            ),
         )
 
 
@@ -150,6 +154,7 @@ def profile_diff_text(left_id, right_id):
         "measurement_patch_revision",
         "measurement_patch_set_sha256",
         "amaru_json_traces",
+        "cardano_measurement_traces",
     )
     lines = [
         "Profile diff",
@@ -413,6 +418,7 @@ def versioned_substrate_for_profile(profile, version_preview):
         "selected_releases": selected_releases,
     }
     return {
+        "profile_id": profile.id,
         "compose_mode": "docker",
         "scope": scope,
         "target_node_count": target_node_count,
@@ -439,6 +445,7 @@ def versioned_substrate_for_profile(profile, version_preview):
         "catalog_snapshot": selected_catalog_snapshot,
         "measurement_target_mode": profile.measurement_target_mode,
         "amaru_json_traces": profile.amaru_json_traces,
+        "cardano_measurement_traces": profile.cardano_measurement_traces,
         "nodes": nodes,
         "topology": {"edges": edges},
     }

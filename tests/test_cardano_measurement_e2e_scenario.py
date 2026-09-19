@@ -1,0 +1,118 @@
+import json
+from pathlib import Path
+
+import pytest
+
+from profile_manager.primitives import load_registry
+from profile_manager.scenario import scenario_from_body
+import scripts.runtime_cardano_measurement_calibration as calibration
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCENARIO = ROOT / "dwarf" / "scenarios" / "cardano-measurement-e2e-stock.yaml"
+SCHEMA = ROOT / "dwarf" / "primitives" / "load" / "runtime_cardano_measurement_calibration.schema.json"
+
+
+def test_cardano_measurement_scenario_is_exact_non_vacuous_and_portable():
+    body = json.loads(SCENARIO.read_text())
+    scenario = scenario_from_body((json.dumps(body) + "\n").encode())
+    assert scenario.target == {"implementation": "cardano-node", "version": "11.1.2"}
+    assert scenario.profile == "profile-s-cardano-measurement-stock-control"
+    assert scenario.measurement_profile == "cardano-security-default"
+    assert scenario.seed == "0xCA4DA001"
+    assert len(body["load"]) == 1
+    load = body["load"][0]
+    assert load["primitive"] == "runtime_cardano_measurement_calibration"
+    assert load["attempts"] >= 100
+    assert load["profile_id"] == scenario.profile
+    assert "runtime_root" not in load
+    text = SCENARIO.read_text()
+    assert "/home/" not in text and "/Users/" not in text
+
+
+def test_cardano_calibration_is_registered_and_schema_is_portable():
+    registry = load_registry(ROOT / "dwarf" / "primitives" / "registry.json")
+    spec = registry["runtime_cardano_measurement_calibration"]
+    assert spec.supports == ["cardano-node"]
+    schema = json.loads(SCHEMA.read_text())
+    assert schema["oneOf"] == [
+        {"required": ["profile_id"], "not": {"required": ["runtime_root"]}},
+        {"required": ["runtime_root"], "not": {"required": ["profile_id"]}},
+    ]
+
+
+def test_cardano_workload_identity_is_exact_and_targets_real_n2n_listener():
+    identity = calibration.build_workload_identity(attempt_count=100)
+    assert identity["implementation"] == "cardano-node"
+    assert identity["target_port"] == 3001
+    assert identity["mini_protocol"] == "handshake"
+    assert identity["case"] == "unsupported-version-refusal"
+    assert identity["workload_digest"].startswith("sha256:")
+
+
+def _runtime_body(*, digest: str = "sha256:" + "6" * 64):
+    revision = "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+    release = {
+        "implementation": "cardano-node",
+        "version": "11.1.2",
+        "source_revision": revision,
+        "artifacts": [{"kind": "oci", "availability": "available", "digest": digest}],
+    }
+    return {
+        "version_provenance": {"catalog_snapshot": {"selected_releases": [release]}},
+        "nodes": [{
+            "id": "node1",
+            "impl": "cardano-node",
+            "source_revision": revision,
+            "container_name": "dwarf-cardano-node1",
+            "image_ref": f"ghcr.io/intersectmbo/cardano-node:11.1.2@{digest}",
+            "artifact_identity": {"satisfied": True, "image_digest": digest},
+            "version_identity": {"satisfied": True},
+        }],
+    }
+
+
+def test_cardano_runtime_leg_retains_every_timed_outcome_and_exact_identity(
+    monkeypatch, tmp_path
+):
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    runtime_root.joinpath("runtime.json").write_text(json.dumps(_runtime_body()))
+    output_dir = tmp_path / "run" / "outputs" / "cardano-measurement-calibration"
+    attempts = [
+        {"attempt_id": "handshake-0000", "outcome": "rejected", "elapsed_micros": 11},
+        {"attempt_id": "handshake-0001", "outcome": "timeout", "elapsed_micros": 23},
+        {"attempt_id": "handshake-0002", "outcome": "disconnected", "elapsed_micros": 17},
+    ]
+    monkeypatch.setattr(calibration, "_container_ip", lambda container: "172.20.0.2")
+    monkeypatch.setattr(calibration, "run_attempts", lambda **kwargs: attempts)
+
+    def capture(container, *, since, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text('{"ns":"Net.Handshake.Remote","data":{"kind":"Handshake"}}\n')
+
+    monkeypatch.setattr(calibration, "_capture_logs", capture)
+    result = calibration.run_leg(
+        runtime_root=runtime_root,
+        output_dir=output_dir,
+        attempt_count=3,
+        timeout_seconds=2,
+    )
+
+    assert result["target"]["version"] == "11.1.2"
+    assert result["target"]["source_revision"] == "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+    assert result["attempts"] == {
+        "total": 3,
+        "outcomes": {"disconnected": 1, "rejected": 1, "timeout": 1},
+        "artifact": "attempts.ndjson",
+    }
+    assert result["measurements"]["handshake_rejection_roundtrip"]["sample_count"] == 3
+    assert len(output_dir.joinpath("attempts.ndjson").read_text().splitlines()) == 3
+    assert output_dir.joinpath("raw/node1.ndjson").is_file()
+
+
+def test_cardano_runtime_identity_fails_closed_on_digest_mismatch():
+    body = _runtime_body()
+    body["nodes"][0]["artifact_identity"]["image_digest"] = "sha256:" + "9" * 64
+    with pytest.raises(RuntimeError, match="does not match the catalog"):
+        calibration._target(body)
