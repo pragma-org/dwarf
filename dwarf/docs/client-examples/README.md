@@ -24,3 +24,26 @@ The existing retained Amaru stock run `20260918T234213Z-64959688` and Cardano pa
 `20260919T032200Z-59f94558` are framework evidence. They are not final evidence for these cards. The Amaru run has no
 patched target proof. The Cardano run has only four Plutus VM samples, 29 block-application samples, no rejected
 protocol-decode samples, and no restart readiness result.
+
+## Gate 2 calibration status
+
+Gate 2 now has a retained, matched Amaru stock/patched calibration pair. This pair proves the patched measurement path;
+it does not complete contract 03 or any other final client example.
+
+- Patched run: `20260919T135417Z-cca4cc8d`.
+- Stock run: `20260919T142302Z-f856f303`.
+- Workload digest: `sha256:cb649d0b4f89d338615371178cff9676684c9b41a5c8a9fdce34bdc04846c5a9`.
+- Outcomes per leg: 40 accepted, 40 refused, 40 malformed, and 0 unexpected.
+- Pair evidence: `state/evidence/measurement-pairs/20260919T142302Z-amaru-stock-patched-handshake/result.json`.
+- Pair evidence SHA-256: `sha256:a1096645186f25b5c6cca2f8a53b0efdcf98296b2f5b98527192b5a738ba5d69`.
+- External-roundtrip envelope: maximum 5% absolute delta across mean, median, p95, and p99; minimum 30 samples per leg;
+  exact source, runner, timing, hardware, workload, and terminal-outcome parity.
+- Observed maximum absolute delta: `0.059686888%` from 120 samples per leg.
+- Gate behavior: informational and non-gating.
+
+Technical claim boundary: this pair calibrates the common externally observed Handshake round trip only. It does not
+bound internal hook cost, throughput, saturation behavior, or another workload. Patched-only behavior is not an Amaru
+vulnerability unless it reproduces against stock Amaru.
+
+Child explanation: the normal node and the node with measuring marks got the same messages. Their outside response time
+was almost the same. This does not tell us the exact cost of each measuring mark inside the node.

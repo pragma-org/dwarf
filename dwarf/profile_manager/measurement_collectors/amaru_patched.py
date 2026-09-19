@@ -471,11 +471,16 @@ def paired_overhead_calibration(
     patched: Mapping[str, Any],
     *,
     minimum_samples: int = 30,
+    maximum_absolute_percent_delta: float = 5.0,
     expected_implementation: str = "amaru",
     expected_source_revision: str = AMARU_SOURCE_REVISION,
     expected_patch_set_sha256: str = AMARU_MEASUREMENT_PATCH_SHA256,
 ) -> dict[str, Any]:
     """Compare common real-node metrics only after strict paired-run parity gates."""
+    overhead_limit = _finite_number(maximum_absolute_percent_delta)
+    if overhead_limit is None or overhead_limit < 0:
+        raise ValueError("maximum_absolute_percent_delta must be finite and non-negative")
+    statistic_scope = ("mean", "median", "p95", "p99")
     reasons: list[str] = []
     stock_target = stock.get("target") if isinstance(stock.get("target"), dict) else {}
     patched_target = patched.get("target") if isinstance(patched.get("target"), dict) else {}
@@ -551,7 +556,7 @@ def paired_overhead_calibration(
             "patched_sample_count": right_count,
         }
         valid = True
-        for statistic in ("mean", "median", "p95", "p99"):
+        for statistic in statistic_scope:
             baseline = _finite_number(left.get(statistic))
             instrumented = _finite_number(right.get(statistic))
             if baseline is None or instrumented is None or baseline == 0:
@@ -567,6 +572,14 @@ def paired_overhead_calibration(
             metrics[name] = row
 
     available = not reasons and bool(metrics)
+    observed_deltas = [
+        abs(float(row[f"{statistic}_percent_delta"]))
+        for row in metrics.values()
+        for statistic in statistic_scope
+    ]
+    maximum_observed_delta = (
+        round(max(observed_deltas), 9) if observed_deltas else None
+    )
     return {
         "schema_version": "v1",
         "status": "available" if available else "unavailable",
@@ -585,5 +598,18 @@ def paired_overhead_calibration(
         "attempts": stock.get("attempts") if available else None,
         "workload_identity": stock.get("workload_identity") if available else None,
         "metrics": metrics if available else {},
+        "observer_overhead": {
+            "acceptance_limit_absolute_percent_delta": overhead_limit,
+            "gate_behavior": "informational-non-gating",
+            "maximum_observed_absolute_percent_delta": (
+                maximum_observed_delta if available else None
+            ),
+            "statistic_scope": list(statistic_scope),
+            "within_limit": (
+                maximum_observed_delta <= overhead_limit
+                if available and maximum_observed_delta is not None
+                else None
+            ),
+        },
         "reasons": reasons,
     }

@@ -71,6 +71,12 @@ def test_measurement_learn_route_explains_modes_outcomes_and_claim_boundary():
     assert "/operate/measurements" in html
     assert "20260918T234213Z-64959688" in html
     assert "20260919T032200Z-59f94558" in html
+    assert "20260919T135417Z-cca4cc8d" in html
+    assert "20260919T142302Z-f856f303" in html
+    assert "5%" in html
+    assert "0.059686888%" in html
+    assert "common externally observed Handshake round trip" in html
+    assert "does not bound internal hook cost" in html
     assert "all 12 collectors finalized" in html
     assert "Mixed-node measurement comparison has not started" in html
 

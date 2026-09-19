@@ -265,6 +265,13 @@ def test_paired_calibration_requires_identity_workload_and_sample_parity():
     assert result["metrics"]["block_application"]["mean_percent_delta"] == 3.0
     assert result["metrics"]["block_application"]["stock_sample_count"] == 40
     assert result["metrics"]["block_application"]["patched_sample_count"] == 40
+    assert result["observer_overhead"] == {
+        "acceptance_limit_absolute_percent_delta": 5.0,
+        "gate_behavior": "informational-non-gating",
+        "maximum_observed_absolute_percent_delta": 3.03030303,
+        "statistic_scope": ["mean", "median", "p95", "p99"],
+        "within_limit": True,
+    }
 
     insufficient = paired_overhead_calibration(
         _calibration_run("stock", 29, 100.0),
@@ -307,6 +314,21 @@ def test_paired_calibration_requires_identity_workload_and_sample_parity():
     )
     assert outcome_mismatch["status"] == "unavailable"
     assert any("terminal outcome counts" in reason for reason in outcome_mismatch["reasons"])
+
+
+def test_paired_calibration_reports_over_limit_without_hiding_measurements():
+    result = paired_overhead_calibration(
+        _calibration_run("stock", 40, 100.0),
+        _calibration_run("patched", 40, 110.0),
+        minimum_samples=30,
+        maximum_absolute_percent_delta=5.0,
+    )
+
+    assert result["status"] == "available"
+    assert result["performance_authority"] == "common-metric-calibrated"
+    assert result["observer_overhead"]["within_limit"] is False
+    assert result["observer_overhead"]["maximum_observed_absolute_percent_delta"] > 5.0
+    assert result["observer_overhead"]["gate_behavior"] == "informational-non-gating"
 
 
 def test_patched_factories_bind_runtime_owned_paths_and_identity():
