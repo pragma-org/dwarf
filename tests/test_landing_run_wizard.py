@@ -1,6 +1,8 @@
 from pathlib import Path
+import json
 
 from profile_manager import dashboard
+from profile_manager.data.operate_run_wizard import dispatch_run_resolve_request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,3 +78,46 @@ def test_status_keeps_diagnostics_but_no_longer_duplicates_landing_artwork():
     assert 'id="topology-health-panel"' in template
     assert 'data-topology-action="redeploy"' in template
 
+
+def test_run_route_exposes_server_catalog_and_default_selection():
+    html = dashboard.render_route_html("/run", token="test-token")
+
+    assert html is not None
+    assert 'id="run-wizard"' in html
+    assert 'id="run-wizard-bootstrap"' in html
+    assert "runtime-substrate-honest-baseline-docker-mode-example-smoke" in html
+    assert "Scenario" in html
+    assert "Profile" in html
+    assert "Node versions" in html
+    assert "Measurements" in html
+    assert "Primitives" in html
+
+
+def test_run_resolve_api_returns_normalized_plan_without_a_token():
+    status, content_type, body = dispatch_run_resolve_request(
+        method="POST",
+        path="/api/run/resolve",
+        body=json.dumps(
+            {"scenario_id": "edge-cases-cbor-tx-body-amaru"}
+        ).encode("utf-8"),
+    )
+
+    payload = json.loads(body)
+    assert status == 200
+    assert content_type.startswith("application/json")
+    assert payload["ok"] is True
+    assert payload["plan"]["scenario"]["runtime"] == "library"
+    assert payload["plan"]["readiness"]["mixed_topology_required"] is False
+
+
+def test_run_resolve_api_returns_structured_field_errors():
+    status, _content_type, body = dispatch_run_resolve_request(
+        method="POST",
+        path="/api/run/resolve",
+        body=b'{"scenario_id":"../escape"}',
+    )
+
+    payload = json.loads(body)
+    assert status == 400
+    assert payload["ok"] is False
+    assert payload["error"]["field"] == "scenario_id"

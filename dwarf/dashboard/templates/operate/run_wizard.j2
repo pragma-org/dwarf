@@ -1,0 +1,60 @@
+{% extends "_base.j2" %}
+{% block main %}
+<section id="run-wizard" class="run-wizard" data-resolve-url="/api/run/resolve" data-start-url="/api/run/start" data-dashboard-token="{{ token }}">
+  <span class="eyebrow">Local real-node execution</span>
+  <h1>Start a DWARF run</h1>
+  <p class="page-hero">Choose a scenario. DWARF checks the profile, exact node versions, measurements, primitives, and required runtime before it can start.</p>
+
+  <form data-run-wizard-form novalidate>
+    <section data-run-step="scenario" aria-labelledby="run-step-scenario">
+      <h2 id="run-step-scenario">Scenario</h2>
+      <label for="run-scenario">Scenario <span aria-hidden="true">*</span></label>
+      <select id="run-scenario" name="scenario_id" required>
+        {% for scenario in wizard.scenarios %}
+        <option value="{{ scenario.id }}"{% if scenario.id == wizard.default_scenario_id %} selected{% endif %}>{{ scenario.title }} · {{ scenario.runtime }}</option>
+        {% endfor %}
+      </select>
+    </section>
+
+    <section data-run-step="profile" aria-labelledby="run-step-profile">
+      <h2 id="run-step-profile">Profile</h2>
+      <p>The scenario default is selected unless you choose another compatible profile.</p>
+      <select id="run-profile" name="profile_id">
+        <option value="">Scenario default</option>
+        {% for profile in wizard.profiles %}<option value="{{ profile.id }}">{{ profile.label }}</option>{% endfor %}
+      </select>
+    </section>
+
+    <section data-run-step="versions" aria-labelledby="run-step-versions">
+      <h2 id="run-step-versions">Node versions</h2>
+      <select id="run-version-policy" name="version_policy">
+        <option value="">Profile default</option>
+        {% for policy in wizard.version_policies %}<option value="{{ policy }}">{{ policy }}</option>{% endfor %}
+      </select>
+    </section>
+
+    <section data-run-step="measurements" aria-labelledby="run-step-measurements">
+      <h2 id="run-step-measurements">Measurements</h2>
+      <select id="run-measurements" name="measurement_profile">
+        <option value="">Scenario or compatible default</option>
+        <option value="none">No measurements</option>
+        {% for profile in wizard.measurement_profiles %}<option value="{{ profile.id }}">{{ profile.title }}</option>{% endfor %}
+      </select>
+    </section>
+
+    <section data-run-step="primitives" aria-labelledby="run-step-primitives">
+      <h2 id="run-step-primitives">Primitives</h2>
+      <p>Primitives come from the selected scenario and are read-only here. <a href="/operate/scenarios/new" target="_blank">Customize as a new scenario</a>.</p>
+      <div data-run-summary="primitives"></div>
+    </section>
+
+    <section data-run-step="review" aria-labelledby="run-step-review">
+      <h2 id="run-step-review">Review</h2>
+      <div data-run-errors role="alert" aria-live="assertive" hidden></div>
+      <pre data-run-summary="plan"></pre>
+      <button class="cta" type="submit" disabled>Start local run</button>
+    </section>
+  </form>
+  <script type="application/json" id="run-wizard-bootstrap">{{ wizard|tojson }}</script>
+</section>
+{% endblock %}

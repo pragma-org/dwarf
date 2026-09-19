@@ -128,6 +128,7 @@ from profile_manager.views.operate_run import (
     render_operate_run_not_found,
 )
 from profile_manager.views.operate_runs import render_operate_runs
+from profile_manager.views.operate_run_wizard import render_operate_run_wizard
 from profile_manager.views.operate_status import render_operate_status
 from profile_manager.views.operate_targets import render_operate_targets
 from profile_manager.views.status import render_learn_status
@@ -2661,7 +2662,6 @@ def _md_to_html(md_text):
 # all redirects. Keys are paths (post query-string strip); values are
 # Location header values.
 REDIRECTS = {
-    "/": "/operate",
     "/index.html": "/operate",
     "/compare": "/operate/compare",
     # Slice 25: legacy /architecture targeted /operate/status (substrate
@@ -2807,6 +2807,7 @@ def render_route_html(route, *, token=None):
     route = route.split("?", 1)[0]
     routes = {
         "/": render_landing,
+        "/run": lambda: render_operate_run_wizard(token=token),
         "/index.html": render_command_center_html,
         "/tests": render_tests_html,
         "/scenarios": render_scenarios_html,
@@ -2996,6 +2997,17 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
             body_bytes = self.rfile.read(length) if length > 0 else b""
+            from profile_manager.data.operate_run_wizard import (
+                dispatch_run_resolve_request,
+            )
+
+            run_resolve = dispatch_run_resolve_request(
+                method="POST", path=self.path, body=body_bytes
+            )
+            if run_resolve is not None:
+                status, ctype, response_body = run_resolve
+                self._send(status, ctype, response_body)
+                return
             version_refresh = dispatch_version_refresh_request(
                 method="POST", path=self.path, expected_token=expected_token
             )
