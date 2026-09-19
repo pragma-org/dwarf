@@ -4,6 +4,7 @@ from dataclasses import asdict
 from profile_manager.deployment_versions import build_deployment_version_preview
 from profile_manager.profiles import find_profile, versioned_substrate_for_profile
 from scripts.runtime_compose_substrate import _enable_cardano_measurement_traces
+from scripts.runtime_substrate_common import normalize_substrate
 
 
 def test_cardano_measurement_profile_is_exact_opt_in_and_preserves_profile_identity():
@@ -51,3 +52,15 @@ def test_measurement_trace_config_enables_only_audited_machine_namespaces(tmp_pa
     assert all(options[name]["severity"] == "Info" for name in required)
     assert all(options[name]["detail"] == "DDetailed" for name in required)
     assert result["namespaces"] == sorted(required)
+
+
+def test_runtime_normalization_preserves_profile_and_opt_in_measurement_traces():
+    profile = find_profile("profile-s-cardano-measurement-stock-control")
+    preview = build_deployment_version_preview(profile.__dict__)
+    substrate = versioned_substrate_for_profile(profile, preview)
+
+    normalized = normalize_substrate(substrate)
+
+    assert normalized["profile_id"] == profile.id
+    assert normalized["cardano_measurement_traces"] is True
+    assert normalized["amaru_json_traces"] is False

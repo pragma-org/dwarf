@@ -23,6 +23,7 @@ VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 NODE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 NETWORK_PATTERN = re.compile(r"^(mainnet|preprod|preview|testnet_[1-9][0-9]*)$")
 HOST_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,80}$")
 
 
 class CommandResult:
@@ -55,6 +56,19 @@ def run_command(
 def normalize_substrate(substrate: dict) -> dict:
     if not isinstance(substrate, dict):
         raise ValueError("substrate must be a mapping")
+    profile_id = substrate.get("profile_id")
+    if profile_id is not None and (
+        not isinstance(profile_id, str) or not PROFILE_ID_PATTERN.fullmatch(profile_id)
+    ):
+        raise ValueError(
+            f"substrate.profile_id must match {PROFILE_ID_PATTERN.pattern} when present"
+        )
+    cardano_measurement_traces = substrate.get("cardano_measurement_traces", False)
+    if not isinstance(cardano_measurement_traces, bool):
+        raise ValueError("substrate.cardano_measurement_traces must be a boolean")
+    amaru_json_traces = substrate.get("amaru_json_traces", False)
+    if not isinstance(amaru_json_traces, bool):
+        raise ValueError("substrate.amaru_json_traces must be a boolean")
     host_strategy = str(substrate.get("host_strategy", "single-host"))
     if host_strategy not in {"single-host", "explicit"}:
         raise ValueError("substrate.host_strategy must be 'single-host' or 'explicit'")
@@ -217,6 +231,9 @@ def normalize_substrate(substrate: dict) -> dict:
             raise ValueError(f"substrate.{field} must be a non-empty string when present")
         text_fields[field] = value
     return {
+        "profile_id": profile_id,
+        "cardano_measurement_traces": cardano_measurement_traces,
+        "amaru_json_traces": amaru_json_traces,
         "host_strategy": host_strategy,
         "hosts": normalized_hosts,
         "network": network,
