@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from profile_manager.dashboard import render_route_html
@@ -35,6 +36,24 @@ def test_measurement_catalog_routes_are_wired():
     landing = render_route_html("/operate")
     assert 'href="/operate/measurements"' in landing
     assert "Independent measurements" in landing
+    profile_card = re.search(
+        r'<a class="tile" href="/operate/measurement-profiles">(.*?)</a>',
+        landing,
+        re.DOTALL,
+    )
+    assert profile_card is not None
+    assert "Measurement profiles" in profile_card.group(1)
+    assert '<span class="tile__metric">4</span>' in profile_card.group(1)
+    assert "reusable stock and patched selections" in profile_card.group(1)
+
+    measurement_card = re.search(
+        r'<a class="tile" href="/operate/measurements">(.*?)</a>',
+        landing,
+        re.DOTALL,
+    )
+    assert measurement_card is not None
+    assert "real-node taps · retained reports · honest unavailable values" in measurement_card.group(1)
+    assert "reusable profiles" not in measurement_card.group(1)
 
 
 def test_measurement_learn_route_explains_modes_outcomes_and_claim_boundary():

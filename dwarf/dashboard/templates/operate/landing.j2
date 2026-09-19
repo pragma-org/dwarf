@@ -104,7 +104,13 @@
     <a class="tile" href="/operate/measurements">
       <span class="tile__eyebrow">Independent measurements</span>
       <span class="tile__metric">{{ measurement_count }}</span>
-      <span class="tile__sub">{{ measurement_profile_count }} reusable profiles · real-node taps + retained reports</span>
+      <span class="tile__sub">real-node taps · retained reports · honest unavailable values</span>
+    </a>
+
+    <a class="tile" href="/operate/measurement-profiles">
+      <span class="tile__eyebrow">Measurement profiles</span>
+      <span class="tile__metric">{{ measurement_profile_count }}</span>
+      <span class="tile__sub">reusable stock and patched selections</span>
     </a>
 
     <a class="tile" href="/operate/profile-templates">
