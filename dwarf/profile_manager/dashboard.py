@@ -124,6 +124,7 @@ from profile_manager.views.learn_runbooks import (
 from profile_manager.views.operate_contract import render_operate_contract
 from profile_manager.views.operate_run import (
     render_operate_run,
+    render_operate_run_measurements_raw,
     render_operate_run_not_found,
 )
 from profile_manager.views.operate_runs import render_operate_runs
@@ -2858,6 +2859,13 @@ def render_route_html(route, *, token=None):
     renderer = routes.get(route)
     if renderer is not None:
         return renderer()
+    if route.startswith("/operate/runs/") and route.endswith("/measurements/raw"):
+        rid = route[len("/operate/runs/"):-len("/measurements/raw")]
+        if rid and "/" not in rid and ".." not in rid:
+            html = render_operate_run_measurements_raw(rid)
+            if html is not None:
+                return html
+            return render_operate_run_not_found(rid)
     # Slice 47 — /operate/runs/<id>/live serves the streaming HTML view.
     # The /tail SSE endpoint is dispatched from do_GET (needs streaming),
     # not from this HTML-only route function.

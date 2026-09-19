@@ -200,77 +200,9 @@
 {% endif %}
 
 {% if run.measurements.present %}
-<section aria-labelledby="measurement-report-heading" class="measurement-report">
-  <header>
-    <span class="eyebrow">Independent taps</span>
-    <h2 id="measurement-report-heading">Measurement report</h2>
-  </header>
-  <p class="page-subhero">Optional measurements are reported separately from the security verdict. Missing boundaries remain unavailable; they are never displayed as zero.</p>
-  <div class="run-tile-grid">
-    <article class="status-tile">
-      <span class="eyebrow">Measurement profile</span>
-      <span class="status-tile__metric status-tile__metric--code"><code>{{ run.measurements.profile_id or '—' }}</code></span>
-      <p class="status-tile__sub">{{ run.measurements.target_identity.implementation or 'unknown' }} {{ run.measurements.target_identity.version or '' }} · {{ run.measurements.target_identity.mode or 'unknown' }}</p>
-    </article>
-    <article class="status-tile">
-      <span class="eyebrow">Metric availability</span>
-      <span class="status-tile__metric">{{ run.measurements.summary.available_count or 0 }} / {{ run.measurements.summary.metric_count or 0 }}</span>
-      <p class="status-tile__sub">{{ run.measurements.summary.unavailable_count or 0 }} honestly unavailable</p>
-    </article>
-    <article class="status-tile">
-      <span class="eyebrow">Collectors</span>
-      <span class="status-tile__metric">{{ run.measurements.collector_counts.finalized or 0 }} finalized</span>
-      <p class="status-tile__sub">{{ run.measurements.collector_counts.error or 0 }} error · non-gating by default</p>
-    </article>
-  </div>
-  <dl class="status-tile__rows measurement-identity">
-    <div><dt>source revision</dt><dd><code class="run-chain-hash">{{ run.measurements.target_identity.source_revision or '—' }}</code></dd></div>
-    <div><dt>image digest</dt><dd><code class="run-chain-hash">{{ run.measurements.target_identity.image_digest or '—' }}</code></dd></div>
-    <div><dt>duration</dt><dd>{% if run.measurements.duration_seconds is not none %}{{ '%.3f'|format(run.measurements.duration_seconds) }}s{% else %}—{% endif %}</dd></div>
-  </dl>
-  {% if run.measurements.errors %}
-  <details class="run-cross-impl__details">
-    <summary>{{ run.measurements.errors|length }} optional collector error{{ '' if run.measurements.errors|length == 1 else 's' }}</summary>
-    <ul class="status-tile__errors">
-      {% for error in run.measurements.errors %}<li><code>{{ error.measurement_id }}</code> · {{ error.phase }} · {{ error.type }}: {{ error.message }}</li>{% endfor %}
-    </ul>
-  </details>
-  {% endif %}
-  <label class="profile-catalog__search">Filter metrics
-    <input type="search" data-metric-filter placeholder="Latency, throughput, resources, unavailable reason…">
-  </label>
-  <div class="responsive-table" role="region" aria-label="Measurement results" tabindex="0">
-    <table class="config-table measurement-table">
-      <thead><tr><th>Metric</th><th>Status</th><th>Value / count</th><th>Samples</th><th>Median</th><th>p95</th><th>p99</th><th>Unit / reason</th></tr></thead>
-      <tbody>
-      {% for metric in run.measurements.metrics %}
-        <tr data-metric-search="{{ metric.name }} {{ metric.status }} {{ metric.reason }}">
-          <th scope="row"><code>{{ metric.name }}</code>{% if metric.outcomes %}<details><summary>By outcome</summary><ul>{% for outcome in metric.outcomes %}<li><code>{{ outcome.outcome }}</code>: n={{ outcome.sample_count }}, median={{ outcome.median if outcome.median is not none else '—' }}, p95={{ outcome.p95 if outcome.p95 is not none else '—' }} {{ outcome.unit }}</li>{% endfor %}</ul></details>{% endif %}</th>
-          <td><span class="result-pill result-pill--{{ 'pass' if metric.status == 'available' else 'error' }}">{{ metric.status }}</span></td>
-          <td>{% if metric.value is not none %}{{ metric.value }}{% else %}—{% endif %}{% if metric.count is not none %} <small>(n={{ metric.count }})</small>{% endif %}</td>
-          <td>{{ metric.sample_count }}</td>
-          <td>{{ metric.median if metric.median is not none else '—' }}</td>
-          <td>{{ metric.p95 if metric.p95 is not none else '—' }}</td>
-          <td>{{ metric.p99 if metric.p99 is not none else '—' }}</td>
-          <td>{% if metric.reason %}{{ metric.reason }}{% else %}<code>{{ metric.unit or '—' }}</code>{% endif %}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <p class="definition-actions">
-    <a class="cta cta--primary" href="/runs/{{ run.run_id }}/output?path={{ run.measurements.report_json_url }}" download>Download report.json</a>
-    <a class="cta cta--ghost" href="/runs/{{ run.run_id }}/output?path={{ run.measurements.report_markdown_url }}" download>Download report.md</a>
-    <a class="cta cta--ghost" href="/operate/measurements">Browse taps</a>
-  </p>
-</section>
+{% include "operate/_partials/_measurement_report.j2" %}
 
 <hr class="hairline">
-
-<script>
-var metricFilter=document.querySelector('[data-metric-filter]');
-if(metricFilter){metricFilter.addEventListener('input',function(){var q=this.value.trim().toLowerCase();document.querySelectorAll('[data-metric-search]').forEach(function(row){row.hidden=Boolean(q&&!row.dataset.metricSearch.toLowerCase().includes(q));});});}
-</script>
 {% endif %}
 
 <section aria-labelledby="execution-definition-heading">

@@ -1,0 +1,51 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Operate · Run · Measurements</span>
+<h1>Raw measurement data</h1>
+<p class="page-hero">Exact retained metric identifiers and statistics for <code>{{ run.run_id }}</code>. This operator view preserves the source report shape; use the concept report for the plain-English interpretation.</p>
+
+<p class="definition-actions">
+  <a class="cta cta--primary" href="/operate/runs/{{ run.run_id }}">Back to concept report</a>
+  <a class="cta cta--ghost" href="/runs/{{ run.run_id }}/output?path={{ run.measurements.report_json_url }}" download>Download report.json</a>
+  <a class="cta cta--ghost" href="/runs/{{ run.run_id }}/output?path={{ run.measurements.report_markdown_url }}" download>Download report.md</a>
+</p>
+
+<aside class="measurement-claim-boundary" aria-label="Raw data claim boundary">
+  <span class="eyebrow">Operator view</span>
+  <p>Raw identifiers and values are retained exactly for inspection. Availability is not a functional pass result or an automatic cross-implementation benchmark.</p>
+</aside>
+
+<section data-measurement-raw aria-labelledby="raw-measurements-heading">
+  <header>
+    <span class="eyebrow">{{ run.measurements.metrics|length }} retained rows</span>
+    <h2 id="raw-measurements-heading">Metric ledger</h2>
+  </header>
+  <label class="measurement-controls__search">Search raw metrics
+    <input type="search" data-raw-metric-search placeholder="Raw ID, status, unit, reason…" autocomplete="off">
+  </label>
+  <p class="measurement-empty" data-raw-metric-empty hidden>No raw metrics match this search.</p>
+  <div class="responsive-table" role="region" aria-label="Raw measurement results" tabindex="0">
+    <table class="config-table measurement-table">
+      <thead><tr><th>Raw metric ID</th><th>Status</th><th>Value / count</th><th>Samples</th><th>Mean</th><th>Median</th><th>Minimum</th><th>Maximum</th><th>p95</th><th>p99</th><th>Unit / reason</th></tr></thead>
+      <tbody>
+      {% for metric in run.measurements.metrics %}
+        <tr data-raw-metric-row data-raw-metric-search-text="{{ metric.name }} {{ metric.status }} {{ metric.unit }} {{ metric.reason }}">
+          <th scope="row"><code>{{ metric.name }}</code></th>
+          <td><span class="result-pill result-pill--{{ 'pass' if metric.status == 'available' else 'error' }}">{{ metric.status }}</span></td>
+          <td>{% if metric.value is not none %}{{ metric.value }}{% else %}—{% endif %}{% if metric.count is not none %} <small>(count={{ metric.count }})</small>{% endif %}</td>
+          <td>{{ metric.sample_count if metric.sample_count is not none else '—' }}</td>
+          <td>{{ metric.mean if metric.mean is not none else '—' }}</td>
+          <td>{{ metric.median if metric.median is not none else '—' }}</td>
+          <td>{{ metric.minimum if metric.minimum is not none else '—' }}</td>
+          <td>{{ metric.maximum if metric.maximum is not none else '—' }}</td>
+          <td>{{ metric.p95 if metric.p95 is not none else '—' }}</td>
+          <td>{{ metric.p99 if metric.p99 is not none else '—' }}</td>
+          <td>{% if metric.reason %}{{ metric.reason }}{% else %}<code>{{ metric.unit or '—' }}</code>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<script type="module" src="/static/js/measurement-report.js"></script>
+{% endblock %}

@@ -1,0 +1,164 @@
+<section aria-labelledby="measurement-report-heading" class="measurement-report" data-measurement-report>
+  <header>
+    <span class="eyebrow">Independent taps</span>
+    <h2 id="measurement-report-heading">Measurement report</h2>
+  </header>
+  <p class="page-subhero">Measurements describe what was observed during this run. They are separate from the scenario's functional security assertions.</p>
+
+  <aside class="measurement-claim-boundary" aria-label="Measurement claim boundary">
+    <span class="eyebrow">Claim boundary</span>
+    <p><strong>This run proves collection for this exact target and workload.</strong> It is not automatically an Amaru-versus-Cardano benchmark.</p>
+  </aside>
+
+  <div class="measurement-summary" aria-label="Measurement report summary">
+    <article class="measurement-summary__item">
+      <span class="eyebrow">Functional assertions passed</span>
+      <strong>{{ run.assertion_summary.pass }} / {{ run.assertion_summary.total }}</strong>
+      <p>Scenario checks, not metric availability.</p>
+    </article>
+    <article class="measurement-summary__item">
+      <span class="eyebrow">Available report metrics</span>
+      <strong>{{ run.measurements.summary.available_count or 0 }}</strong>
+      <p>Raw report metrics with a retained value.</p>
+    </article>
+    <article class="measurement-summary__item">
+      <span class="eyebrow">Unavailable report metrics</span>
+      <strong>{{ run.measurements.summary.unavailable_count or 0 }}</strong>
+      <p>Expected measurements without evidence in this run.</p>
+    </article>
+    <article class="measurement-summary__item">
+      <span class="eyebrow">Collectors finalized</span>
+      <strong>{{ run.measurements.collector_counts.finalized or 0 }}</strong>
+      <p>Collection processes that completed their lifecycle.</p>
+    </article>
+    <article class="measurement-summary__item">
+      <span class="eyebrow">Collector errors</span>
+      <strong>{{ run.measurements.collector_counts.error or 0 }}</strong>
+      <p>Tap failures; non-gating unless explicitly configured.</p>
+    </article>
+  </div>
+
+  <details class="measurement-glossary">
+    <summary>How to read this report</summary>
+    <dl>
+      <div><dt>Metric</dt><dd>One named property observed during the run.</dd></div>
+      <div><dt>Value</dt><dd>The primary result selected for the metric's measurement type.</dd></div>
+      <div><dt>Sample</dt><dd>One accepted observation used in a distribution; event counts and scalar values are not sample distributions.</dd></div>
+      <div><dt>Median</dt><dd>The middle observed value after ordering the samples.</dd></div>
+      <div><dt>p95</dt><dd>A value at or above 95% of the observed samples in this run.</dd></div>
+      <div><dt>p99</dt><dd>A value at or above 99% of the observed samples in this run.</dd></div>
+      <div><dt>Collector</dt><dd>The DWARF component that starts, observes, finalizes, and retains one measurement source.</dd></div>
+      <div><dt>Unavailable</dt><dd>A collector exists, but this exact run did not produce enough evidence for a value.</dd></div>
+    </dl>
+  </details>
+
+  <dl class="status-tile__rows measurement-identity">
+    <div><dt>measurement profile</dt><dd><code>{{ run.measurements.profile_id or '—' }}</code></dd></div>
+    <div><dt>exact target</dt><dd>{{ run.measurements.target_identity.implementation or 'unknown' }} {{ run.measurements.target_identity.version or '' }} · {{ run.measurements.target_identity.mode or 'unknown' }}</dd></div>
+    <div><dt>source revision</dt><dd><code class="run-chain-hash">{{ run.measurements.target_identity.source_revision or '—' }}</code></dd></div>
+    <div><dt>image digest</dt><dd><code class="run-chain-hash">{{ run.measurements.target_identity.image_digest or '—' }}</code></dd></div>
+    <div><dt>duration</dt><dd>{% if run.measurements.duration_seconds is not none %}{{ '%.3f'|format(run.measurements.duration_seconds) }}s{% else %}—{% endif %}</dd></div>
+  </dl>
+
+  {% if run.measurements.errors %}
+  <details class="run-cross-impl__details">
+    <summary>{{ run.measurements.errors|length }} optional collector error{{ '' if run.measurements.errors|length == 1 else 's' }}</summary>
+    <ul class="status-tile__errors">
+      {% for error in run.measurements.errors %}<li><code>{{ error.measurement_id }}</code> · {{ error.phase }} · {{ error.type }}: {{ error.message }}</li>{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  <div class="measurement-controls" aria-label="Measurement filters">
+    <label class="measurement-controls__search">Search measurements
+      <input type="search" data-measurement-search placeholder="Block application, mempool, CPU…" autocomplete="off">
+    </label>
+    <div class="measurement-controls__categories" aria-label="Filter by category">
+      <button type="button" class="measurement-filter is-active" data-measurement-category="all" aria-pressed="true">All</button>
+      {% for category in run.measurements.presentation.categories %}
+      <button type="button" class="measurement-filter" data-measurement-category="{{ category.id }}" aria-pressed="false">{{ category.label }} <span>{{ category.count }}</span></button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <p class="measurement-empty" data-measurement-empty hidden>No measurements match this search and category.</p>
+
+  <div class="measurement-groups">
+    {% for group in run.measurements.presentation.groups %}
+    <section class="measurement-group" data-measurement-group="{{ group.id }}" aria-labelledby="measurement-group-{{ group.id }}">
+      <header class="measurement-group__header">
+        <div>
+          <span class="eyebrow">{{ group.count }} concept{{ '' if group.count == 1 else 's' }}</span>
+          <h3 id="measurement-group-{{ group.id }}">{{ group.label }}</h3>
+        </div>
+        <p>{{ group.description }}</p>
+      </header>
+      <div class="measurement-card-grid">
+        {% for metric in group.cards %}
+        <article class="measurement-card measurement-card--{{ metric.status }}" data-measurement-card data-measurement-category-id="{{ group.id }}" data-measurement-search-text="{{ metric.title }} {{ metric.description }} {{ metric.source_label }} {{ metric.raw_metric_ids|join(' ') }} {{ metric.reason }}">
+          <header class="measurement-card__header">
+            <div>
+              <span class="eyebrow">{{ metric.primary_label }}</span>
+              <h4>{{ metric.title }}</h4>
+            </div>
+            <div class="measurement-card__badges">
+              <span class="measurement-badge measurement-badge--{{ metric.source }}">{{ metric.source_label }}</span>
+              <span class="measurement-badge">{{ metric.metric_type }}</span>
+            </div>
+          </header>
+          <p class="measurement-card__description">{{ metric.description }}</p>
+          {% if metric.status in ['unavailable', 'reserved'] %}
+          <div class="measurement-card__unavailable">
+            <strong>{{ 'Not implemented' if metric.status == 'reserved' else 'Unavailable in this run' }}</strong>
+            <p>{{ metric.reason or metric.primary_support }}</p>
+          </div>
+          {% else %}
+          <div class="measurement-card__result">
+            <strong>{{ metric.primary_value }}</strong>
+            {% if metric.primary_unit %}<span>{{ metric.primary_unit }}</span>{% endif %}
+          </div>
+          <p class="measurement-card__support">{{ metric.primary_support }}</p>
+          {% endif %}
+          <div class="measurement-card__meta">
+            <span class="measurement-evidence measurement-evidence--{{ metric.evidence_tone }}">Evidence: {{ metric.evidence_label }}</span>
+            <span>{{ metric.target.implementation or 'unknown' }} {{ metric.target.version or '' }}</span>
+          </div>
+          <details class="measurement-card__details">
+            <summary>Technical details</summary>
+            <dl>
+              <div><dt>Source</dt><dd>{{ metric.source_label }}</dd></div>
+              <div><dt>Target mode</dt><dd>{{ metric.target.mode or 'unknown' }}</dd></div>
+              {% if metric.derivation %}<div><dt>Derivation</dt><dd>{{ metric.derivation }}</dd></div>{% endif %}
+              {% if metric.statistics.sample_count is not none %}<div><dt>Samples</dt><dd>{{ metric.statistics.sample_count }}</dd></div>{% endif %}
+              {% if metric.statistics.mean is not none %}<div><dt>Mean</dt><dd>{{ metric.statistics.mean }} {{ metric.primary_unit }}</dd></div>{% endif %}
+              {% if metric.statistics.minimum is not none %}<div><dt>Minimum</dt><dd>{{ metric.statistics.minimum }} {{ metric.primary_unit }}</dd></div>{% endif %}
+              {% if metric.statistics.maximum is not none %}<div><dt>Maximum</dt><dd>{{ metric.statistics.maximum }} {{ metric.primary_unit }}</dd></div>{% endif %}
+              {% if metric.statistics.p95 is not none %}<div><dt>p95</dt><dd>{{ metric.statistics.p95 }} {{ metric.primary_unit }}</dd></div>{% endif %}
+              {% if metric.statistics.p99 is not none %}<div><dt>p99</dt><dd>{{ metric.statistics.p99 }} {{ metric.primary_unit }}</dd></div>{% endif %}
+              {% for detail in metric.technical_values %}<div><dt>{{ detail.label }}</dt><dd>{{ detail.value }}</dd></div>{% endfor %}
+              {% if metric.target.source_revision %}<div><dt>Source revision</dt><dd><code>{{ metric.target.source_revision }}</code></dd></div>{% endif %}
+              {% if metric.target.image_digest %}<div><dt>Image digest</dt><dd><code>{{ metric.target.image_digest }}</code></dd></div>{% endif %}
+              <div><dt>Raw metric ID{{ '' if metric.raw_metric_ids|length == 1 else 's' }}</dt><dd>{% if metric.raw_metric_ids %}{% for raw_id in metric.raw_metric_ids %}<code>{{ raw_id }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}—{% endif %}</dd></div>
+            </dl>
+            {% if metric.outcomes %}
+            <div class="measurement-outcomes">
+              <h5>Outcome breakdown</h5>
+              <ul>{% for outcome in metric.outcomes %}<li><strong>{{ outcome.outcome }}</strong> · n={{ outcome.sample_count if outcome.sample_count is not none else '—' }} · median={{ outcome.median if outcome.median is not none else '—' }} {{ outcome.unit }} · p95={{ outcome.p95 if outcome.p95 is not none else '—' }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+          </details>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+
+  <p class="definition-actions measurement-actions">
+    <a class="cta cta--primary" href="{{ run.measurements.raw_url }}">Raw measurement data</a>
+    <a class="cta cta--ghost" href="/runs/{{ run.run_id }}/output?path={{ run.measurements.report_json_url }}" download>Download report.json</a>
+    <a class="cta cta--ghost" href="/runs/{{ run.run_id }}/output?path={{ run.measurements.report_markdown_url }}" download>Download report.md</a>
+    <a class="cta cta--ghost" href="/operate/measurements">Browse taps</a>
+  </p>
+</section>
+<script type="module" src="/static/js/measurement-report.js"></script>

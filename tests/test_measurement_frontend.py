@@ -169,10 +169,19 @@ def test_run_measurement_section_surfaces_identity_collectors_and_metrics(tmp_pa
     unavailable = next(row for row in section["metrics"] if row["name"] == "sync_speed")
     assert offered["value"] == 9.4
     assert offered["count"] == 40
+    assert offered["sample_count"] is None
     assert latency["sample_count"] == 40
     assert latency["count"] is None
     assert latency["median"] == 101000
     assert unavailable["reason"] == "controlled range was not observed"
+    cards = {card["concept_id"]: card for card in section["presentation"]["cards"]}
+    assert cards["offered-operation-rate"]["title"] == "Offered operation rate"
+    assert cards["offered-operation-rate"]["source_label"] == "External"
+    assert cards["workload-attempt-latency"]["primary_label"] == "Median"
+    assert cards["workload-attempt-latency"]["sample_count"] == 40
+    assert cards["chain-sync-speed"]["sample_count"] is None
+    assert cards["chain-sync-speed"]["status"] == "unavailable"
+    assert section["raw_url"].endswith("/measurements/raw")
 
 
 def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
@@ -182,8 +191,8 @@ def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
     (run_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "scenario": {"id": "amaru-measurement-e2e-stock"},
-                "target": {"implementation": "amaru", "version": "10.11.20260912"},
+                "scenario": {"id": "cardano-measurement-e2e-patched"},
+                "target": {"implementation": "cardano-node", "version": "11.1.2"},
                 "runtime": "devnet",
                 "exit_status": "pass",
                 "assertion_summary": {"total": 1, "pass": 1, "fail": 0},
@@ -196,22 +205,22 @@ def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
         json.dumps(
             {
                 "duration_seconds": 4.25,
-                "metric_count": 1,
-                "available_count": 1,
-                "unavailable_count": 0,
+                "metric_count": 6,
+                "available_count": 5,
+                "unavailable_count": 1,
             }
         )
     )
     (run_dir / "measurements" / "selection.json").write_text(
         json.dumps(
             {
-                "collector_states": {"amaru-stock-resources": "finalized"},
+                "collector_states": {"cardano-stock-resources": "finalized"},
                 "resolution": {
-                    "profile": {"id": "amaru-security-default"},
+                    "profile": {"id": "cardano-security-patched"},
                     "target_identity": {
-                        "implementation": "amaru",
-                        "version": "10.11.20260912",
-                        "mode": "stock",
+                        "implementation": "cardano-node",
+                        "version": "11.1.2",
+                        "mode": "patched",
                     },
                 },
             }
@@ -234,6 +243,39 @@ def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
                             "p99": 102400,
                         },
                         "by_outcome": {},
+                    },
+                    "offered_operations": {
+                        "status": "available",
+                        "unit": "operations/s",
+                        "offered_count": 100,
+                        "offered_rate": 9.52,
+                        "duration_seconds": 10.5
+                    },
+                    "sync_speed": {
+                        "status": "available",
+                        "unit": "blocks/s",
+                        "value": 0.56,
+                        "duration_seconds": 10.5,
+                        "start_block_height": 100,
+                        "end_block_height": 106
+                    },
+                    "ledger_samples": {
+                        "status": "available",
+                        "unit": "events",
+                        "value": 110
+                    },
+                    "epoch_transition": {
+                        "status": "available",
+                        "unit": "us",
+                        "sample_count": 2,
+                        "median": 168,
+                        "p95": 169,
+                        "p99": 169
+                    },
+                    "restart_readiness": {
+                        "status": "unavailable",
+                        "unit": "s",
+                        "reason": "the scenario did not request a restart"
                     }
                 }
             }
@@ -244,7 +286,39 @@ def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
     html = render_route_html(f"/operate/runs/{run_id}")
 
     assert "Measurement report" in html
-    assert "amaru-security-default" in html
+    assert "cardano-security-patched" in html
     assert "attempt_latency" in html
     assert "102000" in html
     assert "measurements/report.json" in html
+    assert "This run proves collection for this exact target and workload." in html
+    assert "It is not automatically an Amaru-versus-Cardano benchmark." in html
+    assert "Functional assertions passed" in html
+    assert "Available report metrics" in html
+    assert "Unavailable report metrics" in html
+    assert "Collectors finalized" in html
+    assert "Collector errors" in html
+    assert "Workload and outcomes" in html
+    assert "Latency and processing time" in html
+    assert "Throughput and chain progress" in html
+    assert "Unavailable measurements" in html
+    assert "Workload attempt latency" in html
+    assert "Chain sync speed" in html
+    assert "Ledger events observed" in html
+    assert "Evidence: Very small sample" in html
+    assert "Reserved / not implemented" in html
+    assert 'data-measurement-card' in html
+    assert 'data-measurement-category="all"' in html
+    assert '/static/js/measurement-report.js' in html
+    assert f'/operate/runs/{run_id}/measurements/raw' in html
+    assert '<table class="config-table measurement-table">' not in html
+    assert "0 samples" not in html
+
+    raw_html = render_route_html(f"/operate/runs/{run_id}/measurements/raw")
+    assert "Raw measurement data" in raw_html
+    assert f'href="/operate/runs/{run_id}"' in raw_html
+    assert '<table class="config-table measurement-table">' in raw_html
+    assert "attempt_latency" in raw_html
+    assert "sync_speed" in raw_html
+    assert "ledger_samples" in raw_html
+    assert "measurements/report.json" in raw_html
+    assert "measurements/report.md" in raw_html

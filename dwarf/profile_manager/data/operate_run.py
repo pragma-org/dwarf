@@ -757,8 +757,10 @@ def _measurement_metric_row(name: str, raw: Any) -> dict[str, Any]:
         "status": primary.get("status") or "unavailable",
         "value": value,
         "count": count,
-        "sample_count": primary.get("sample_count", 0),
+        "sample_count": primary.get("sample_count"),
         "mean": primary.get("mean"),
+        "minimum": primary.get("minimum"),
+        "maximum": primary.get("maximum"),
         "median": primary.get("median"),
         "p95": primary.get("p95"),
         "p99": primary.get("p99"),
@@ -795,22 +797,29 @@ def _measurement_section(run_dir: Path) -> dict[str, Any]:
         collector_states.append({"id": measurement_id, "state": state})
     resolution = selection.get("resolution") or {}
     profile = resolution.get("profile") or {}
+    metrics_raw = report.get("measurements") or {}
     metrics = [
         _measurement_metric_row(name, raw)
-        for name, raw in (report.get("measurements") or {}).items()
+        for name, raw in metrics_raw.items()
     ]
+    from profile_manager.measurement_presentation import build_measurement_presentation
+
+    target_identity = resolution.get("target_identity") or {}
+    presentation = build_measurement_presentation(metrics_raw, target_identity)
     return {
         "present": True,
         "summary": summary,
         "duration_seconds": summary.get("duration_seconds", report.get("duration_seconds")),
         "profile_id": profile.get("id"),
-        "target_identity": resolution.get("target_identity") or {},
+        "target_identity": target_identity,
         "collector_states": collector_states,
         "collector_counts": collector_counts,
         "errors": runtime.get("collector_errors") or [],
         "metrics": metrics,
+        "presentation": presentation,
         "report_json_url": "measurements/report.json",
         "report_markdown_url": "measurements/report.md",
+        "raw_url": f"/operate/runs/{run_dir.name}/measurements/raw",
     }
 
 

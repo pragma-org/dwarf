@@ -2445,6 +2445,253 @@ hr.hairline { opacity: 0.7; }
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
 }
 
+/* Measurement report — shared client concepts over exact retained evidence. */
+.measurement-report { min-width: 0; }
+.measurement-claim-boundary {
+  margin: var(--space-3) 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--cyan-trace);
+  border-left: 3px solid var(--cyan-glow);
+  border-radius: var(--radius-sm);
+  background: var(--cyan-tint);
+}
+.measurement-claim-boundary .eyebrow { margin: 0; }
+.measurement-claim-boundary p { margin: var(--space-1) 0 0; color: var(--ink-secondary); }
+.measurement-claim-boundary strong { color: var(--ink-primary); }
+.measurement-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-block: var(--space-4);
+}
+.measurement-summary__item {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-sm);
+  background: var(--obsidian-2);
+}
+.measurement-summary__item .eyebrow { display: block; margin: 0 0 var(--space-2); }
+.measurement-summary__item strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-weight: 500;
+  color: var(--ink-primary);
+}
+.measurement-summary__item p { margin: var(--space-1) 0 0; color: var(--ink-tertiary); font-size: var(--type-small); }
+.measurement-glossary {
+  margin-block: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-sm);
+  background: var(--obsidian-1);
+}
+.measurement-glossary summary,
+.measurement-card__details summary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--type-eyebrow);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cyan-glow);
+}
+.measurement-glossary summary:focus-visible,
+.measurement-card__details summary:focus-visible,
+.measurement-filter:focus-visible,
+.measurement-controls input:focus-visible {
+  outline: 2px solid var(--cyan-glow);
+  outline-offset: 3px;
+}
+.measurement-glossary dl,
+.measurement-card__details dl {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3) 0 0;
+}
+.measurement-glossary dl > div,
+.measurement-card__details dl > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.35fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  padding-block: var(--space-1);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.measurement-glossary dt,
+.measurement-card__details dt {
+  font-family: var(--font-mono);
+  font-size: var(--type-eyebrow);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-tertiary);
+}
+.measurement-glossary dd,
+.measurement-card__details dd { margin: 0; color: var(--ink-secondary); overflow-wrap: anywhere; }
+.measurement-identity { margin-block: var(--space-4); }
+.measurement-controls {
+  display: grid;
+  gap: var(--space-3);
+  margin-block: var(--space-5);
+}
+.measurement-controls__search {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 640px;
+  color: var(--ink-secondary);
+}
+.measurement-controls__search input {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
+  background: var(--obsidian-0);
+  color: var(--ink-primary);
+  font: inherit;
+}
+.measurement-controls__categories { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.measurement-filter {
+  appearance: none;
+  padding: 7px 11px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: var(--obsidian-2);
+  color: var(--ink-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--type-eyebrow);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.measurement-filter span { color: var(--ink-tertiary); }
+.measurement-filter:hover,
+.measurement-filter.is-active {
+  border-color: var(--cyan-glow);
+  color: var(--cyan-glow);
+  background: var(--cyan-tint);
+}
+.measurement-empty {
+  padding: var(--space-4);
+  border: 1px dashed var(--rule-strong);
+  color: var(--ink-secondary);
+}
+.measurement-groups { display: grid; gap: var(--space-6); }
+.measurement-group { min-width: 0; }
+.measurement-group__header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.measurement-group__header h3 { margin: var(--space-1) 0 0; }
+.measurement-group__header p { max-width: 560px; margin: 0; color: var(--ink-tertiary); }
+.measurement-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.measurement-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  border: 1px solid var(--rule-soft);
+  border-left: 3px solid var(--cyan-trace);
+  border-radius: var(--radius-md);
+  background: var(--obsidian-2);
+}
+.measurement-card--unavailable,
+.measurement-card--reserved { border-left-color: var(--cork); }
+.measurement-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.measurement-card__header .eyebrow { margin: 0; }
+.measurement-card__header h4 { margin: var(--space-1) 0 0; font-size: 1.15rem; }
+.measurement-card__badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.measurement-badge,
+.measurement-evidence {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+}
+.measurement-badge--stock { border-color: var(--cyan-trace); color: var(--cyan-glow); }
+.measurement-badge--external { border-color: rgba(120, 174, 225, 0.45); color: #8fc5f4; }
+.measurement-badge--patched { border-color: rgba(181, 138, 79, 0.55); color: var(--cork); }
+.measurement-badge--reserved { border-color: rgba(192, 48, 48, 0.40); color: var(--crimson-glow); }
+.measurement-card__description { margin: var(--space-3) 0; color: var(--ink-secondary); }
+.measurement-card__result { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.measurement-card__result strong {
+  font-family: var(--font-mono);
+  font-size: clamp(1.75rem, 4vw, 2.35rem);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ink-primary);
+  overflow-wrap: anywhere;
+}
+.measurement-card__result span { font-family: var(--font-mono); color: var(--ink-tertiary); }
+.measurement-card__support { margin: var(--space-2) 0 0; color: var(--ink-tertiary); font-size: var(--type-small); }
+.measurement-card__unavailable {
+  padding: var(--space-3);
+  border: 1px solid rgba(181, 138, 79, 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(181, 138, 79, 0.07);
+}
+.measurement-card__unavailable strong { color: var(--cork); }
+.measurement-card__unavailable p { margin: var(--space-1) 0 0; color: var(--ink-secondary); }
+.measurement-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-4);
+  color: var(--ink-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--type-eyebrow);
+}
+.measurement-evidence--weak { border-color: rgba(192, 48, 48, 0.45); color: var(--crimson-glow); }
+.measurement-evidence--limited { border-color: rgba(181, 138, 79, 0.55); color: var(--cork); }
+.measurement-evidence--useful { border-color: var(--cyan-trace); color: var(--cyan-glow); }
+.measurement-card__details { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--rule-soft); }
+.measurement-card__details code { overflow-wrap: anywhere; word-break: break-word; }
+.measurement-outcomes h5 { margin: var(--space-3) 0 var(--space-2); }
+.measurement-outcomes ul { margin: 0; padding-left: var(--space-4); color: var(--ink-secondary); }
+.measurement-actions { margin-top: var(--space-5); }
+
+@media (max-width: 980px) {
+  .measurement-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .measurement-card-grid { grid-template-columns: minmax(0, 1fr); }
+  .measurement-group__header { align-items: flex-start; flex-direction: column; }
+  .measurement-card__header { flex-direction: column; }
+  .measurement-card__badges { justify-content: flex-start; }
+}
+@media (max-width: 520px) {
+  .measurement-summary { grid-template-columns: minmax(0, 1fr); }
+  .measurement-claim-boundary,
+  .measurement-card,
+  .measurement-glossary { padding: var(--space-3); }
+  .measurement-glossary dl > div,
+  .measurement-card__details dl > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .measurement-controls__categories { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .measurement-filter { width: 100%; text-align: left; }
+}
+
 /* Slice 41 — substrate evidence tiles. Composed-substrate / byzantine /
    hf-boundary / era-transition / genesis-mode outputs surface as a tile
    grid above the assertions table. Verdict drives a left-edge accent
