@@ -4,13 +4,19 @@ This directory freezes the five smallest security-centered examples required by 
 The machine-readable cards are in `contracts/` and validate against
 `dwarf/spec/v1/client-example-acceptance-card.schema.json`.
 
-Technical status: the contracts are frozen. No card is implemented, rehearsed, or accepted merely because this
-document exists. Each card lists its exact open implementation gaps and its claim limits. The program uses separate
-Amaru and Cardano-node executions. It does not start mixed-node comparison, weekly automation, stable thresholds,
-Antithesis, Moog, or presentation walkthrough work.
+Technical status on 2026-09-20: all five contracts remain frozen. G3-A through G3-C are implemented. Card 03 has accepted evidence for both implementations on `whole-microseconds-v1`. Card 05 has accepted evidence for both implementations on `nanoseconds-v2`. Card 02 and Card 04 have accepted Cardano-node legs. Card 01, the Amaru Card 02 leg, and the Amaru Card 04 leg have retained blockers. Gates 4 and 5 are not complete.
 
-Child explanation: these are five exact recipes. Writing a recipe does not mean that the test passed. DWARF must still
-build the missing tools, run each recipe, and keep the proof.
+Child explanation: DWARF finished many parts of the five recipes. Three real Amaru limits stop the remaining parts. The finished proof stays valid, and DWARF does not hide the blocked results.
+
+| Card | Exact current state | Measurement revision |
+|---|---|---|
+| 01 | blocked by the frozen Amaru byte-string bound; see `findings/01-frozen-amaru-cbor-byte-string-bound.md` | `nanoseconds-v2` |
+| 02 | Cardano-node candidate accepted as run `20260920T110302Z-9df1686f`; Amaru blocked because the frozen chain has no Plutus V2 cost model | `nanoseconds-v2` |
+| 03 | both legs accepted: Amaru `20260920T072858Z-2cc3bb0c`, Cardano-node `20260920T073447Z-ab81bfb7` | `whole-microseconds-v1` |
+| 04 | Cardano-node accepted as run `20260920T125840Z-778a7cf7`; Amaru retained a real same-height fork finding | `nanoseconds-v2` |
+| 05 | both legs accepted: Amaru `20260920T122606Z-32c0e998`, Cardano-node `20260920T130232Z-2c68fb83` | `nanoseconds-v2` |
+
+The accepted labels are `framework proven` and `collection proven`. The full five-card client requirement remains partial because the retained blockers prevent ten accepted legs.
 
 | Card | Functional focus | Non-functional focus | Gate 1 state |
 |---|---|---|---|
@@ -56,13 +62,12 @@ The matrix audits every frozen scenario, primitive, assertion, measurement, and 
 item as `proven`, `reusable`, `missing`, or `accepted unavailable`. It does not treat a definition, a similar primitive,
 or a finalized zero-sample collector as final runtime proof.
 
-The first implementation batch is G3-A: shared exact-target verification, baseline/hostile/recovery windows, target
-health and progress, peer-session evidence, fatal-signal checks, window-scoped resource evidence, and the two additive
-invalid-mini-protocol scenarios. This batch has the highest cross-card reuse and finishes the card closest to
-acceptance. Existing calibration scenarios remain unchanged.
+G3-A through G3-C are implemented and tested. The accepted Card 03 evidence remains unchanged. The additive
+`nanoseconds-v2` targets supply finer timing for Cards 01, 02, 04, and 05. The three retained findings state why the
+remaining Amaru legs cannot satisfy their frozen contracts.
 
-Technical boundary: no Gate 3 implementation is complete merely because the matrix exists. The exact final scenarios
-must still pass through deployed DWARF with the frozen workloads and sample floors.
+Technical boundary: Gates 4 and 5 remain incomplete. Do not mark the five-card requirement complete while Card 01 and
+the Amaru legs for Cards 02 and 04 remain blocked.
 
-Child explanation: the checklist now says exactly which parts exist and which parts DWARF must still build. The next job
-adds the shared safety checks and finishes the bad-Handshake-message example first.
+Child explanation: the tools are built. Some recipes passed. Three Amaru checks reached real limits, so the complete
+five-card promise is still not finished.
