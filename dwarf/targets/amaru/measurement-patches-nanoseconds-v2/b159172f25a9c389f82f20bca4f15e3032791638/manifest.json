@@ -1,0 +1,168 @@
+{
+  "base_image": "ghcr.io/pragma-org/amaru@sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
+  "build": {
+    "binary": "target/x86_64-unknown-linux-musl/release/amaru",
+    "command": [
+      "cargo",
+      "+nightly-2026-09-04",
+      "zigbuild",
+      "--locked",
+      "--release",
+      "-p",
+      "amaru",
+      "--bin",
+      "amaru",
+      "--target",
+      "x86_64-unknown-linux-musl"
+    ],
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_TERM_COLOR": "never",
+      "CARGO_ZIGBUILD_ZIG_COMMAND": "python-zig"
+    }
+  },
+  "build_tools": {
+    "cargo-zigbuild": "0.23.4",
+    "target": "x86_64-unknown-linux-musl",
+    "zig": "0.15.2"
+  },
+  "changed_paths": [
+    "crates/amaru-observability/src/schemas.rs",
+    "crates/amaru-protocols/src/blockfetch/initiator.rs",
+    "crates/amaru-protocols/src/handshake/responder.rs",
+    "crates/amaru-protocols/src/mux.rs",
+    "crates/amaru-protocols/src/protocol/miniprotocol.rs",
+    "crates/amaru-protocols/src/tx_submission/initiator.rs",
+    "crates/amaru-protocols/src/tx_submission/responder.rs"
+  ],
+  "instrumentation": [
+    {
+      "all_outcomes_timed": true,
+      "boundaries": [
+        "mux-cbor-item",
+        "mini-protocol-decode",
+        "handshake-negotiation"
+      ],
+      "capability": "live-protocol-cbor-decode",
+      "events": [
+        "amaru::protocols/measurement.protocol_ingress",
+        "amaru::protocols/measurement.protocol_decode",
+        "amaru::protocols/measurement.handshake_negotiation"
+      ],
+      "outcomes": [
+        "framed",
+        "malformed",
+        "decoded",
+        "accepted",
+        "rejected",
+        "not_attempted",
+        "refused",
+        "query"
+      ],
+      "timing_precision": {
+        "authoritative_field_unit": "nanoseconds",
+        "compatibility_field_unit": "whole-microseconds",
+        "derivation": "same monotonic duration; compatibility value is integer nanoseconds divided by 1000"
+      }
+    },
+    {
+      "all_outcomes_timed": true,
+      "capability": "blockfetch-handler-queue",
+      "events": [
+        "amaru::protocols/measurement.blockfetch_handler",
+        "amaru::protocols/measurement.blockfetch_block_decode",
+        "amaru::protocols/measurement.blockfetch_queue_residence"
+      ],
+      "outcomes": [
+        "accepted",
+        "rejected",
+        "completed",
+        "dequeued",
+        "replaced",
+        "cancelled"
+      ],
+      "timing_precision": {
+        "authoritative_field_unit": "nanoseconds",
+        "compatibility_field_unit": "whole-microseconds",
+        "derivation": "same monotonic duration; compatibility value is integer nanoseconds divided by 1000"
+      }
+    },
+    {
+      "all_outcomes_timed": true,
+      "capability": "txsubmission2-residence",
+      "events": [
+        "amaru::protocols/measurement.txsubmission_depth",
+        "amaru::protocols/measurement.txsubmission_residence",
+        "amaru::protocols/measurement.txsubmission_blocking_residence"
+      ],
+      "outcomes": [
+        "accepted",
+        "rejected_invalid",
+        "rejected_mempool_full",
+        "rejected_duplicate",
+        "protocol_rejected",
+        "mempool_timeout",
+        "body_timeout",
+        "omitted",
+        "already_present",
+        "fulfilled",
+        "cancelled",
+        "mempool_error",
+        "rejected"
+      ],
+      "timing_precision": {
+        "authoritative_field_unit": "nanoseconds",
+        "compatibility_field_unit": "whole-microseconds",
+        "derivation": "same monotonic duration; compatibility value is integer nanoseconds divided by 1000"
+      }
+    }
+  ],
+  "measurement_revision": "nanoseconds-v2",
+  "patch_set_sha256": "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0",
+  "patches": [
+    {
+      "path": "0001-dwarf-measurement-nanoseconds-v2.patch",
+      "preimages": [
+        {
+          "path": "crates/amaru-observability/src/schemas.rs",
+          "sha256": "bfa19011c5d3c5867236ed3207f01b153933648fc93e3bc21a80a83361c99553"
+        },
+        {
+          "path": "crates/amaru-protocols/src/blockfetch/initiator.rs",
+          "sha256": "e5f223f0e255101eff648660b44afb67d69fce460b7856af42be75c3b36c890e"
+        },
+        {
+          "path": "crates/amaru-protocols/src/handshake/responder.rs",
+          "sha256": "44af5a64ec777c116dcceb53800b9478f5ca37c0785e0bf1486ed9cd2e08e48a"
+        },
+        {
+          "path": "crates/amaru-protocols/src/mux.rs",
+          "sha256": "996b5deff1d263ee235a9f2efb6a77bba3d6f19cb4f5e77b7ae96950ae2079f3"
+        },
+        {
+          "path": "crates/amaru-protocols/src/protocol/miniprotocol.rs",
+          "sha256": "b74d9ee9f0c6bc5b5b9e7eafbfde27330a2cb708747eae8336da1c03df7880d8"
+        },
+        {
+          "path": "crates/amaru-protocols/src/tx_submission/initiator.rs",
+          "sha256": "9fb5884416bc816c8871d2abebe2520ba0e816a0961dbc38615dafaf472689b3"
+        },
+        {
+          "path": "crates/amaru-protocols/src/tx_submission/responder.rs",
+          "sha256": "7d35a5b472ffe36268cf3bafdc61223055a751631865e57391025ab58d36428d"
+        }
+      ],
+      "sha256": "fbc41302f7c577324c3fe8ea9ff9391a040e255194732d7c5c63b5bcc862fa3a"
+    }
+  ],
+  "runtime_probe_image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+  "schema_version": 1,
+  "source": {
+    "release": "10.11.20260912",
+    "repository": "https://github.com/pragma-org/amaru.git",
+    "revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+    "tag": "v10.11.20260912"
+  },
+  "target": "amaru-measurement-nanoseconds-v2",
+  "toolchain": "nightly-2026-09-04"
+}

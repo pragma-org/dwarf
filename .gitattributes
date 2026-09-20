@@ -1,1 +1,3 @@
 dwarf/targets/amaru/measurement-patches/**/*.patch -whitespace
+dwarf/targets/amaru/measurement-patches-nanoseconds-v2/**/*.patch -whitespace
+dwarf/targets/cardano-node/measurement-patches-nanoseconds-v2/**/*.patch -whitespace

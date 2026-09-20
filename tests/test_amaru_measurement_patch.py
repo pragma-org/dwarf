@@ -270,3 +270,45 @@ def test_static_binary_contract_rejects_dynamic_elf(tmp_path, monkeypatch):
     monkeypatch.setattr(builder.subprocess, "run", fake_run)
     with pytest.raises(builder.BuildContractError, match="statically linked"):
         builder.verify_static_binary(binary)
+
+
+NANOSECOND_PATCH_ROOT = (
+    Path("dwarf/targets/amaru/measurement-patches-nanoseconds-v2") / REVISION
+)
+
+
+def test_nanosecond_v2_manifest_is_additive_and_v1_stays_byte_exact():
+    assert builder.sha256_file(PATCH_ROOT / "manifest.json") == (
+        "586d21a0ed7c6b4cb4d62e5a3b109c1f51f3d6d1ebb96cec7db1247cecf928b1"
+    )
+    assert builder.sha256_file(
+        PATCH_ROOT / "0001-dwarf-measurement-instrumentation.patch"
+    ) == "639a49b5e7702d3b805e719287b18f8ca0c60a03bc5ca6e367548fbf373bb06d"
+
+    manifest = builder.load_manifest(NANOSECOND_PATCH_ROOT / "manifest.json")
+    assert manifest["measurement_revision"] == "nanoseconds-v2"
+    assert manifest["source"]["revision"] == REVISION
+    verified = builder.verify_patch_set(NANOSECOND_PATCH_ROOT, manifest)
+    assert verified["patch_set_sha256"] == manifest["patch_set_sha256"]
+
+
+def test_nanosecond_v2_patch_emits_precise_and_compatibility_fields():
+    manifest = builder.load_manifest(NANOSECOND_PATCH_ROOT / "manifest.json")
+    patch_text = "\n".join(
+        (NANOSECOND_PATCH_ROOT / item["path"]).read_text(encoding="utf-8")
+        for item in manifest["patches"]
+    )
+
+    for nanos_field, micros_field in (
+        ("elapsed_nanos", "elapsed_micros"),
+        ("decode_nanos", "decode_micros"),
+        ("total_nanos", "total_micros"),
+        ("handler_nanos", "handler_micros"),
+        ("advertised_to_terminal_nanos", "advertised_to_terminal_micros"),
+        ("advertised_to_body_nanos", "advertised_to_body_micros"),
+        ("body_to_terminal_nanos", "body_to_terminal_micros"),
+    ):
+        assert nanos_field in patch_text
+        assert micros_field in patch_text
+    assert ".as_nanos()" in patch_text
+    assert " / 1_000" in patch_text
