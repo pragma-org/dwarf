@@ -4,6 +4,7 @@ import pytest
 
 from profile_manager.measurement_collectors.amaru_patched import (
     AMARU_MEASUREMENT_PATCH_SHA256,
+    AMARU_NANOSECOND_PATCH_SHA256,
     AMARU_SOURCE_REVISION,
     AmaruPatchedCollector,
     build_amaru_patched_factories,
@@ -14,6 +15,25 @@ from profile_manager.measurement_runtime import CollectorContext
 
 
 FIXTURE = Path(__file__).parent / "fixtures/amaru-b159-patched-traces.ndjson"
+
+
+def test_nanosecond_target_identity_is_accepted_and_reported(tmp_path):
+    identity = _identity()
+    identity["patch_set_sha256"] = AMARU_NANOSECOND_PATCH_SHA256
+    collector = AmaruPatchedCollector(
+        {"id": "amaru-patched-protocol-decode"},
+        json_trace_paths=[FIXTURE],
+        target_identity=identity,
+        include_existing=True,
+    )
+    context = _context(tmp_path, "amaru-patched-protocol-decode")
+
+    collector.prepare(context)
+    collector.start(context)
+    result = collector.finalize(context)
+
+    assert result["patch_set_sha256"] == AMARU_NANOSECOND_PATCH_SHA256
+    assert result["measurement_revision"] == "nanoseconds-v2"
 
 
 def _identity(mode="patched"):

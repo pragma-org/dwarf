@@ -16,6 +16,13 @@ AMARU_SOURCE_REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
 AMARU_MEASUREMENT_PATCH_SHA256 = (
     "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af"
 )
+AMARU_NANOSECOND_PATCH_SHA256 = (
+    "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0"
+)
+AMARU_MEASUREMENT_REVISIONS = {
+    AMARU_MEASUREMENT_PATCH_SHA256: "whole-microseconds-v1",
+    AMARU_NANOSECOND_PATCH_SHA256: "nanoseconds-v2",
+}
 DEFAULT_MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_PATHS = 16
 PATCHED_MEASUREMENT_IDS = (
@@ -338,18 +345,22 @@ def _build_measurements(
     return {}
 
 
-def _validate_identity(identity: Mapping[str, Any]) -> None:
+def _validate_identity(identity: Mapping[str, Any]) -> str:
     if identity.get("implementation") != "amaru" or identity.get("mode") != "patched":
         raise ValueError("patched collector requires an Amaru target in patched mode")
     if identity.get("source_revision") != AMARU_SOURCE_REVISION:
         raise ValueError(
             "patched collector source revision does not match the exact audited Amaru source revision"
         )
-    if identity.get("patch_set_sha256") != AMARU_MEASUREMENT_PATCH_SHA256:
+    measurement_revision = AMARU_MEASUREMENT_REVISIONS.get(
+        identity.get("patch_set_sha256")
+    )
+    if measurement_revision is None:
         raise ValueError("patched collector patch-set identity does not match")
     digest = identity.get("image_digest")
     if not isinstance(digest, str) or not digest.startswith("sha256:"):
         raise ValueError("patched collector requires an immutable image digest")
+    return measurement_revision
 
 
 class AmaruPatchedCollector:
@@ -382,7 +393,7 @@ class AmaruPatchedCollector:
             raise ValueError(f"between 1 and {MAX_SOURCE_PATHS} trace paths are required")
         if self.max_source_bytes <= 0 or self.max_source_bytes > 64 * 1024 * 1024:
             raise ValueError("max_source_bytes must be within 1..67108864")
-        _validate_identity(self.target_identity)
+        self.measurement_revision = _validate_identity(self.target_identity)
         for path in self.json_paths:
             if not path.is_file() and not self.allow_missing_at_start:
                 raise FileNotFoundError(f"Amaru patched telemetry source is unavailable: {path}")
@@ -430,7 +441,8 @@ class AmaruPatchedCollector:
             "schema_version": "v1",
             "measurement_id": self.measurement_id,
             "source_revision": AMARU_SOURCE_REVISION,
-            "patch_set_sha256": AMARU_MEASUREMENT_PATCH_SHA256,
+            "patch_set_sha256": self.target_identity["patch_set_sha256"],
+            "measurement_revision": self.measurement_revision,
             "target": self.target_identity,
             "evidence_class": "patched-node",
             "performance_authority": "requires-paired-calibration",

@@ -4,12 +4,37 @@ import pytest
 
 from profile_manager.measurement_collectors.cardano_patched import (
     CARDANO_MEASUREMENT_PATCH_SHA256,
+    CARDANO_NANOSECOND_PATCH_SHA256,
     CARDANO_SOURCE_REVISION,
     CardanoPatchedCollector,
     build_cardano_patched_factories,
     load_cardano_patched_telemetry,
 )
 from profile_manager.measurement_runtime import CollectorContext
+
+
+def test_nanosecond_target_identity_is_accepted_and_reported(tmp_path):
+    trace = tmp_path / "cardano-measurement.ndjson"
+    trace.write_text(
+        '{"target":"cardano-node::measurement","event":"ledger_stage",'
+        '"stage":"block-application","outcome":"accepted",'
+        '"ended_monotonic_ns":3000,"elapsed_nanos":2184,"duration_us":2}\n',
+        encoding="utf-8",
+    )
+    identity = _identity(patch_set_sha256=CARDANO_NANOSECOND_PATCH_SHA256)
+    collector = CardanoPatchedCollector(
+        {"id": "cardano-patched-ledger-plutus-stages"},
+        json_trace_paths=[trace], target_identity=identity, include_existing=True,
+    )
+    context = _context(tmp_path, "cardano-patched-ledger-plutus-stages")
+
+    collector.prepare(context)
+    collector.start(context)
+    result = collector.finalize(context)
+
+    assert result["patch_set_sha256"] == CARDANO_NANOSECOND_PATCH_SHA256
+    assert result["measurement_revision"] == "nanoseconds-v2"
+    assert result["measurements"]["block_application"]["mean"] == 2.184
 
 
 def _identity(**overrides):

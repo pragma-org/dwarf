@@ -54,6 +54,7 @@ class Profile:
     amaru_version: str | None = None
     compatibility_pair: str | None = None
     measurement_target_mode: str = "stock"
+    measurement_revision: str | None = None
     measurement_patch_revision: str | None = None
     measurement_patch_set_sha256: str | None = None
     amaru_json_traces: bool = False
@@ -90,6 +91,7 @@ class Profile:
             amaru_version=data.get("amaru_version"),
             compatibility_pair=data.get("compatibility_pair"),
             measurement_target_mode=str(data.get("measurement_target_mode") or "stock"),
+            measurement_revision=data.get("measurement_revision"),
             measurement_patch_revision=data.get("measurement_patch_revision"),
             measurement_patch_set_sha256=data.get("measurement_patch_set_sha256"),
             amaru_json_traces=bool(data.get("amaru_json_traces", False)),
@@ -151,6 +153,7 @@ def profile_diff_text(left_id, right_id):
         "amaru_version",
         "compatibility_pair",
         "measurement_target_mode",
+        "measurement_revision",
         "measurement_patch_revision",
         "measurement_patch_set_sha256",
         "amaru_json_traces",

@@ -24,7 +24,7 @@ scenario_legs:
   - scenario_id: client-example-cbor-decoding-amaru-patched
     implementation: amaru
     status: additive-required
-    profile: profile-q-amaru-measurement-patched
+    profile: profile-u-amaru-measurement-nanoseconds-v2
     measurement_profile: amaru-security-patched
     primitives:
       setup: [runtime_verify_exact_target]
@@ -35,7 +35,7 @@ scenario_legs:
   - scenario_id: client-example-cbor-decoding-cardano-patched
     implementation: cardano-node
     status: additive-required
-    profile: profile-t-cardano-measurement-patched
+    profile: profile-v-cardano-measurement-nanoseconds-v2
     measurement_profile: cardano-security-patched
     primitives:
       setup: [runtime_verify_exact_target]
@@ -53,10 +53,13 @@ targets:
     stock_image_reference: ghcr.io/pragma-org/amaru:v10.11.20260912
     stock_image_digest: sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e
     patched_mode: patched
-    patched_image_reference: dwarf/amaru-measurement:10.11.20260912-b159172
-    patched_image_digest: sha256:dacb2351e69ab1d0bbfbc569b222d1bde40d9a158e79c556b30df554375addcc
-    patched_executable_digest: sha256:b0cebe917e092c3d4e47ac4841de7a49338dca1e586616803fe17e92d0d93425
-    patch_set_sha256: f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af
+    measurement_revision: nanoseconds-v2
+    patch_manifest_sha256: sha256:1012e64ad3a3f5a9abd1aea061d5036fcc8e936392f82d5829e3df7733ab6b99
+    build_result_sha256: sha256:6fb4c905c299b1f4ee8066bde8bf8182d63c770edd6412568d265af873176b70
+    patched_image_reference: dwarf/amaru-measurement@sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862
+    patched_image_digest: sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862
+    patched_executable_digest: sha256:05233bac96c1914a232a2d9c5a704f08401aff0b20356c015e848f295b919b78
+    patch_set_sha256: 4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0
   cardano-node:
     version: 11.1.2
     source_repository: https://github.com/IntersectMBO/cardano-node.git
@@ -65,10 +68,13 @@ targets:
     stock_image_reference: ghcr.io/intersectmbo/cardano-node:11.1.2
     stock_image_digest: sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f
     patched_mode: patched
-    patched_image_reference: dwarf/cardano-measurement:11.1.2-fef83fed
-    patched_image_digest: sha256:c74c3deafac54ed4d30da21952fce579c3293919993d31081e18787605757b8c
-    patched_executable_digest: sha256:2777c36dbfdc4b8e57b9c839f055a65709e3049800030817a97a3943c712f738
-    patch_set_sha256: 7a948067c6b957b277400675cf95e32864ed8d92cd130fbadb673775249b5cc1
+    measurement_revision: nanoseconds-v2
+    patch_manifest_sha256: sha256:06405007512eb8040898fbe53984b43bb5419100e5c7c64954588ee618ad7071
+    build_result_sha256: sha256:f8f94f4068483e1f3a099b25b8bb534a691fcc402711a5fedc103a0ad5b9f524
+    patched_image_reference: dwarf/cardano-measurement@sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370
+    patched_image_digest: sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370
+    patched_executable_digest: sha256:3fb83f12ac1152e96c884c756a505484a39d9200da6c59b24678ac61218220eb
+    patch_set_sha256: 1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c
 workload:
   identity: conway-plutus-data-100-plus-live-handshake-decode-cases-v1
   seed: "0xA7561CD0"

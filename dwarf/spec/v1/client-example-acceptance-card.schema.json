@@ -179,6 +179,9 @@
         "stock_mode": {"const": "stock"}, "stock_image_reference": {"type": "string"}, "stock_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "patched_mode": {"const": "patched"}, "patched_image_reference": {"type": "string"}, "patched_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "patched_executable_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "patch_set_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "measurement_revision": {"enum": ["whole-microseconds-v1", "nanoseconds-v2"]},
+        "patch_manifest_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "build_result_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "supporting_cardano_version": {"type": "string"}
       },
       "additionalProperties": false

@@ -30,6 +30,21 @@ Child explanation: `proven` means that DWARF did it and saved the proof. `reusab
 | Contract-named scenario legs | missing | No `client-example-*` scenario file exists in `dwarf/scenarios/`. All ten legs remain marked `additive-required` in the cards. |
 | Contract-named primitives and assertions | missing | None of the 26 names used by the five cards exists in `dwarf/primitives/registry.json`. Existing similar primitives are listed below as reusable where applicable. |
 
+## Measurement revisions
+
+Card 03 stays on the accepted `whole-microseconds-v1` targets. Its scenarios, runs, bundles, claims, profiles, target digests, and patch digests do not change. Cards 01, 02, 04, and 05 use the additive `nanoseconds-v2` targets.
+
+Child explanation: Card 03 keeps its old ruler. The next cards use a finer ruler that can show part of one microsecond.
+
+| Target | Profile | Patch set | Executable | Image | Manifest | Build result |
+|---|---|---|---|---|---|---|
+| Amaru `nanoseconds-v2` | `profile-u-amaru-measurement-nanoseconds-v2` | `4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0` | `sha256:05233bac96c1914a232a2d9c5a704f08401aff0b20356c015e848f295b919b78` | `sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862` | `sha256:1012e64ad3a3f5a9abd1aea061d5036fcc8e936392f82d5829e3df7733ab6b99` | `sha256:6fb4c905c299b1f4ee8066bde8bf8182d63c770edd6412568d265af873176b70` |
+| Cardano-node `nanoseconds-v2` | `profile-v-cardano-measurement-nanoseconds-v2` | `1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c` | `sha256:3fb83f12ac1152e96c884c756a505484a39d9200da6c59b24678ac61218220eb` | `sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370` | `sha256:06405007512eb8040898fbe53984b43bb5419100e5c7c64954588ee618ad7071` | `sha256:f8f94f4068483e1f3a099b25b8bb534a691fcc402711a5fedc103a0ad5b9f524` |
+
+The v2 event keeps integer `elapsed_nanos` as the authoritative raw value. It also keeps the existing whole-microsecond field for compatibility. Reports derive fractional microseconds from the raw nanoseconds and do not round away the sub-microsecond part.
+
+The accepted Card 03 runs are `20260920T072858Z-2cc3bb0c` for Amaru and `20260920T073447Z-ab81bfb7` for Cardano-node. Their retained manifests remain the authority for the complete bundle and claim digests. This revision change does not rerun or replace them.
+
 ## Card 01 — CBOR decoding conformance and decode cost
 
 | Required item | Status | Exact existing evidence | Missing piece |

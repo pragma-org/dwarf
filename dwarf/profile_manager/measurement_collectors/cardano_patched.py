@@ -18,6 +18,13 @@ CARDANO_SOURCE_REVISION = "fef83fed01d7926f3de83b3b917be5a4a48768b5"
 CARDANO_MEASUREMENT_PATCH_SHA256 = (
     "7a948067c6b957b277400675cf95e32864ed8d92cd130fbadb673775249b5cc1"
 )
+CARDANO_NANOSECOND_PATCH_SHA256 = (
+    "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c"
+)
+CARDANO_MEASUREMENT_REVISIONS = {
+    CARDANO_MEASUREMENT_PATCH_SHA256: "whole-microseconds-v1",
+    CARDANO_NANOSECOND_PATCH_SHA256: "nanoseconds-v2",
+}
 PATCHED_MEASUREMENT_IDS = (
     "cardano-patched-protocol-decode",
     "cardano-patched-ledger-plutus-stages",
@@ -209,16 +216,20 @@ def _measurements(
     return result
 
 
-def _validate_identity(identity: Mapping[str, Any]) -> None:
+def _validate_identity(identity: Mapping[str, Any]) -> str:
     if identity.get("implementation") != "cardano-node" or identity.get("mode") != "patched":
         raise ValueError("patched collector requires a Cardano-node target in patched mode")
     if identity.get("source_revision") != CARDANO_SOURCE_REVISION:
         raise ValueError("patched collector source revision does not match")
-    if identity.get("patch_set_sha256") != CARDANO_MEASUREMENT_PATCH_SHA256:
+    measurement_revision = CARDANO_MEASUREMENT_REVISIONS.get(
+        identity.get("patch_set_sha256")
+    )
+    if measurement_revision is None:
         raise ValueError("patched collector patch-set identity does not match")
     digest = identity.get("image_digest")
     if not isinstance(digest, str) or not digest.startswith("sha256:"):
         raise ValueError("patched collector requires an immutable image digest")
+    return measurement_revision
 
 
 class CardanoPatchedCollector:
@@ -242,7 +253,7 @@ class CardanoPatchedCollector:
     def prepare(self, context) -> None:
         if self.measurement_id not in PATCHED_MEASUREMENT_IDS:
             raise ValueError(f"unsupported patched measurement: {self.measurement_id}")
-        _validate_identity(self.target_identity)
+        self.measurement_revision = _validate_identity(self.target_identity)
         if not self.json_paths or len(self.json_paths) > MAX_SOURCE_PATHS:
             raise ValueError(f"between 1 and {MAX_SOURCE_PATHS} trace paths are required")
         for path in self.json_paths:
@@ -289,7 +300,8 @@ class CardanoPatchedCollector:
             "schema_version": "v1",
             "measurement_id": self.measurement_id,
             "source_revision": CARDANO_SOURCE_REVISION,
-            "patch_set_sha256": CARDANO_MEASUREMENT_PATCH_SHA256,
+            "patch_set_sha256": self.target_identity["patch_set_sha256"],
+            "measurement_revision": self.measurement_revision,
             "target": self.target_identity,
             "evidence_class": "patched-node",
             "performance_authority": "requires-paired-calibration",

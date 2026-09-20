@@ -17,6 +17,32 @@ EXPECTED_IDS = {
     "client-example-05-restart-recovery-sync",
 }
 
+V1_CARD_ID = "client-example-03-invalid-mini-protocol"
+V1_PROFILES = {
+    "amaru": "profile-q-amaru-measurement-patched",
+    "cardano-node": "profile-t-cardano-measurement-patched",
+}
+V2_PROFILES = {
+    "amaru": "profile-u-amaru-measurement-nanoseconds-v2",
+    "cardano-node": "profile-v-cardano-measurement-nanoseconds-v2",
+}
+V2_TARGETS = {
+    "amaru": {
+        "measurement_revision": "nanoseconds-v2",
+        "patch_set_sha256": "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0",
+        "patched_executable_digest": "sha256:05233bac96c1914a232a2d9c5a704f08401aff0b20356c015e848f295b919b78",
+        "patched_image_digest": "sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862",
+        "patch_manifest_sha256": "sha256:1012e64ad3a3f5a9abd1aea061d5036fcc8e936392f82d5829e3df7733ab6b99",
+    },
+    "cardano-node": {
+        "measurement_revision": "nanoseconds-v2",
+        "patch_set_sha256": "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c",
+        "patched_executable_digest": "sha256:3fb83f12ac1152e96c884c756a505484a39d9200da6c59b24678ac61218220eb",
+        "patched_image_digest": "sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370",
+        "patch_manifest_sha256": "sha256:06405007512eb8040898fbe53984b43bb5419100e5c7c64954588ee618ad7071",
+    },
+}
+
 EXPECTED_TARGETS = {
     "amaru": {
         "version": "10.11.20260912",
@@ -58,9 +84,29 @@ def test_every_card_pins_both_real_node_targets_and_modes():
         for implementation, expected in EXPECTED_TARGETS.items():
             target = card["targets"][implementation]
             for key, value in expected.items():
-                assert target[key] == value
+                if key != "patched_image_digest" or card["id"] == V1_CARD_ID:
+                    assert target[key] == value
             assert target["stock_mode"] == "stock"
             assert target["patched_mode"] == "patched"
+
+
+def test_card03_keeps_v1_while_future_cards_pin_nanoseconds_v2():
+    for card in _cards():
+        profiles = {
+            leg["implementation"]: leg["profile"]
+            for leg in card["scenario_legs"]
+        }
+        if card["id"] == V1_CARD_ID:
+            assert profiles == V1_PROFILES
+            assert all(
+                "measurement_revision" not in target
+                for target in card["targets"].values()
+            )
+            continue
+        assert profiles == V2_PROFILES
+        for implementation, expected in V2_TARGETS.items():
+            for key, value in expected.items():
+                assert card["targets"][implementation][key] == value
 
 
 def test_every_card_defines_non_vacuous_security_and_measurement_gates():
