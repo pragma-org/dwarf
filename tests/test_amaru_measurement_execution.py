@@ -249,7 +249,8 @@ def test_run_factory_uses_run_relative_trace_and_registers_every_resolved_tap(tm
     )
     collector = factories["amaru-stock-network"](entry)
     assert collector.json_paths == [
-        run_dir / "outputs" / "amaru-measurement-calibration" / "raw" / "amaru-relay-1.ndjson"
+        run_dir / "outputs" / "amaru-measurement-calibration" / "raw" / "amaru-relay-1.ndjson",
+        run_dir / "outputs" / "protocol-decode-cases" / "raw" / "amaru-relay-1.ndjson",
     ]
     assert collector.allow_missing_at_start is True
 

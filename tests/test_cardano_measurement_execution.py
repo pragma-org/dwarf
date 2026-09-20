@@ -63,6 +63,16 @@ def test_prepare_cardano_measurements_resolves_exact_live_stock_runtime(tmp_path
     assert len(prepared.resolution["resolved"]) == 10
     factories = prepared.build_factories(tmp_path / "run")
     assert set(factories) == {row["id"] for row in prepared.resolution["resolved"]}
+    entry = next(
+        row
+        for row in prepared.resolution["resolved"]
+        if row["id"] == "cardano-stock-network"
+    )
+    collector = factories["cardano-stock-network"](entry)
+    assert collector.trace_paths == [
+        tmp_path / "run" / "outputs" / "cardano-measurement-calibration" / "raw" / "node1.ndjson",
+        tmp_path / "run" / "outputs" / "protocol-decode-cases" / "raw" / "node1.ndjson",
+    ]
 
 
 def test_prepare_cardano_measurements_fails_closed_on_unproven_runtime(tmp_path):

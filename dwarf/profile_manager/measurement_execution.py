@@ -387,34 +387,44 @@ class PreparedScenarioMeasurements:
     def build_factories(self, run_dir: str | Path) -> dict[str, Any]:
         run_path = Path(run_dir)
         if self.implementation == "cardano-node":
-            trace = (
+            traces = (
                 run_path
                 / "outputs"
                 / "cardano-measurement-calibration"
                 / "raw"
-                / "node1.ndjson"
+                / "node1.ndjson",
+                run_path
+                / "outputs"
+                / "protocol-decode-cases"
+                / "raw"
+                / "node1.ndjson",
             )
             return build_cardano_measurement_factories(
                 runtime_metadata_path=self.runtime_metadata_path,
                 target_node=self.target_node,
-                trace_paths=[trace],
+                trace_paths=traces,
                 tip_probe=self.tip_probe,
                 peer_policy="three-node-controlled-local-mesh",
                 allow_missing_trace_sources=True,
                 patched_trace_paths=self.patched_trace_paths,
                 target_identity=self.resolution["target_identity"],
             )
-        trace = (
+        traces = (
             run_path
             / "outputs"
             / "amaru-measurement-calibration"
             / "raw"
-            / "amaru-relay-1.ndjson"
+            / "amaru-relay-1.ndjson",
+            run_path
+            / "outputs"
+            / "protocol-decode-cases"
+            / "raw"
+            / "amaru-relay-1.ndjson",
         )
         return build_amaru_measurement_factories(
             runtime_metadata_path=self.runtime_metadata_path,
             target_node=self.target_node,
-            json_trace_paths=[trace],
+            json_trace_paths=traces,
             otlp_trace_paths=[],
             tip_probe=self.tip_probe,
             peer_policy="single-controlled-producer",
