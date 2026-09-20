@@ -50,6 +50,19 @@
   </div>
 </div>
 
+{% if run.security_execution.classification == 'completed_with_security_finding' %}
+<section class="run-precondition-warning" aria-labelledby="run-security-finding-heading">
+  <span class="eyebrow">Completed evidence</span>
+  <h2 id="run-security-finding-heading">Completed run with security finding</h2>
+  <p>This run finished and produced usable evidence. The security verdict remains <code>{{ run.security_execution.security_verdict }}</code> because <code>{{ run.security_execution.failed_assertion }}</code> failed. Completed means that the run finished; it does not mean that the target passed.</p>
+  <dl class="status-tile__rows">
+    <div><dt>finding</dt><dd><code>{{ run.security_execution.finding_id }}</code></dd></div>
+    <div><dt>target revision</dt><dd><code class="run-chain-hash">{{ run.security_execution.target_source_revision }}</code></dd></div>
+    <div><dt>classification source</dt><dd><code>{{ run.security_execution.classification_source or 'recorded-run-manifest' }}</code></dd></div>
+  </dl>
+</section>
+{% endif %}
+
 {% if run.exit_status == 'precondition_failed' and run.precondition.present %}
 <section class="run-precondition-warning" aria-labelledby="run-precondition-heading">
   <span class="eyebrow">Topology gate</span>

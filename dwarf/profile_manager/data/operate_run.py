@@ -17,6 +17,7 @@ on missing files yield an empty `errors` list and `ok=False`.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -35,6 +36,84 @@ _PREV_HASH_MISMATCH_RE = re.compile(
 _MANIFEST_HASH_MISMATCH_RE = re.compile(
     r"^manifest_hash mismatch for\s+(?P<run_id>\S+):\s+expected\s+(?P<expected>[0-9a-f]{64}),\s+got\s+(?P<actual>[0-9a-f]{64})$"
 )
+
+_HISTORICAL_RUN_CLASSIFICATIONS = (
+    Path(__file__).resolve().parents[2]
+    / "docs/client-examples/findings/run-classifications.json"
+)
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _security_execution_section(
+    run_dir: Path,
+    manifest: dict[str, Any],
+    assertions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Return additive execution meaning without changing assertion evidence."""
+    recorded = manifest.get("execution")
+    if isinstance(recorded, dict):
+        return dict(recorded)
+
+    failed = [item for item in assertions if item.get("result") == "fail"]
+    section = {
+        "state": "completed",
+        "classification": "completed",
+        "security_verdict": (
+            "pass"
+            if manifest.get("exit_status") == "pass" and not failed
+            else "fail"
+        ),
+    }
+    registry = _read_json(_HISTORICAL_RUN_CLASSIFICATIONS, {}) or {}
+    record = next(
+        (
+            item
+            for item in registry.get("classifications", [])
+            if isinstance(item, dict) and item.get("run_id") == run_dir.name
+        ),
+        None,
+    )
+    if record is None:
+        return section
+
+    manifest_path = run_dir / "manifest.json"
+    assertions_path = run_dir / "assertions.json"
+    exact_target_path = run_dir / str(record.get("exact_target_path") or "")
+    if not all(path.is_file() for path in (manifest_path, assertions_path, exact_target_path)):
+        return section
+    if _sha256_file(manifest_path) != record.get("manifest_sha256"):
+        return section
+    if _sha256_file(assertions_path) != record.get("assertions_sha256"):
+        return section
+    if _sha256_file(exact_target_path) != record.get("exact_target_sha256"):
+        return section
+
+    target_identity = (manifest.get("measurements") or {}).get("target_identity") or {}
+    source_revision = record.get("target_source_revision")
+    exact_target = _read_json(exact_target_path, {}) or {}
+    failed_primitives = [item.get("primitive") for item in failed]
+    if (
+        manifest.get("exit_status") != "fail"
+        or failed_primitives != [record.get("failed_assertion")]
+        or target_identity.get("source_revision") != source_revision
+        or exact_target.get("matched") is not True
+        or (exact_target.get("observed") or {}).get("source_revision") != source_revision
+    ):
+        return section
+
+    section.update(
+        {
+            "classification": "completed_with_security_finding",
+            "finding_id": record["finding_id"],
+            "failed_assertion": record["failed_assertion"],
+            "target_source_revision": source_revision,
+            "classification_source": "digest-locked-historical-run",
+        }
+    )
+    return section
 
 
 def _structure_verify_error(message: str) -> dict[str, Any]:
@@ -876,6 +955,7 @@ def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str
     target = manifest.get("target") or {}
     scenario = manifest.get("scenario") or {}
     ass_summary = manifest.get("assertion_summary") or {}
+    security_execution = _security_execution_section(run_dir, manifest, assertions)
     profile = manifest.get("profile") or {}
     profile_id = profile.get("id") if isinstance(profile, dict) else None
     scenario_metadata = _scenario_execution_metadata(
@@ -903,6 +983,7 @@ def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str
         "target_version": target.get("version") or "",
         "runtime": manifest.get("runtime") or "",
         "exit_status": manifest.get("exit_status") or "",
+        "security_execution": security_execution,
         "started_at": manifest.get("started_at") or "",
         "ended_at": manifest.get("ended_at") or "",
         "actor": manifest.get("actor") or "",

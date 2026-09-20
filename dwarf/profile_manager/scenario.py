@@ -199,6 +199,7 @@ class Scenario:
     related_milestones: List[str]
     m1_trace: Dict[str, List[str]]
     evidence_intent: Optional[str]
+    expected_security_finding: Optional[Dict[str, str]]
     promotion_blockers: List[str]
     testcase_candidate: Optional[Dict[str, str]]
     measurement_profile: Optional[str]
@@ -491,6 +492,45 @@ def _validate_evidence_intent(body):
             f"evidence_intent must be one of {VALID_EVIDENCE_INTENTS}, got {value!r}"
         )
     return value
+
+
+def _validate_expected_security_finding(body):
+    value = body.get("expected_security_finding")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ScenarioValidationError("expected_security_finding must be a mapping")
+    required = {"finding_id", "failed_assertion", "target_source_revision"}
+    if set(value) != required:
+        raise ScenarioValidationError(
+            "expected_security_finding must contain exactly finding_id, "
+            "failed_assertion, and target_source_revision"
+        )
+    finding_id = value["finding_id"]
+    failed_assertion = value["failed_assertion"]
+    target_source_revision = value["target_source_revision"]
+    if not isinstance(finding_id, str) or not ID_PATTERN.match(finding_id):
+        raise ScenarioValidationError(
+            "expected_security_finding.finding_id must be lowercase kebab-case"
+        )
+    if not isinstance(failed_assertion, str) or not re.match(
+        r"^[a-z][a-z0-9_]*$", failed_assertion
+    ):
+        raise ScenarioValidationError(
+            "expected_security_finding.failed_assertion must be lowercase snake-case"
+        )
+    if not isinstance(target_source_revision, str) or not re.fullmatch(
+        r"[0-9a-f]{40}", target_source_revision
+    ):
+        raise ScenarioValidationError(
+            "expected_security_finding.target_source_revision must be a 40-character lowercase Git revision"
+        )
+    target = body.get("target") or {}
+    if target.get("source_revision") != target_source_revision:
+        raise ScenarioValidationError(
+            "expected_security_finding.target_source_revision must equal target.source_revision"
+        )
+    return dict(value)
 
 
 def _validate_schedule(body):
@@ -914,6 +954,7 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         runs_dir=runs_dir,
         state_dir=state_dir,
         measurement_context=measurement_context,
+        expected_security_finding=scen.expected_security_finding,
     )
     from profile_manager.launch_store import retain_launch_inputs_from_environment
 
@@ -1842,6 +1883,7 @@ def validate_scenario_body(body_bytes):
         related_milestones = _optional_string_list(body, "related_milestones")
         m1_trace = _validate_m1_trace(body)
         evidence_intent = _validate_evidence_intent(body)
+        _validate_expected_security_finding(body)
         schedule = _validate_schedule(body)
         promotion_blockers = _optional_string_list(body, "promotion_blockers")
         testcase_candidate = _validate_testcase_candidate(body)
@@ -1963,6 +2005,7 @@ def _scenario_from_data(body, *, raw, path):
     related_milestones = _optional_string_list(body, "related_milestones")
     m1_trace = _validate_m1_trace(body)
     evidence_intent = _validate_evidence_intent(body)
+    expected_security_finding = _validate_expected_security_finding(body)
     schedule = _validate_schedule(body)
     promotion_blockers = _optional_string_list(body, "promotion_blockers")
     testcase_candidate = _validate_testcase_candidate(body)
@@ -1998,6 +2041,7 @@ def _scenario_from_data(body, *, raw, path):
         related_milestones=related_milestones,
         m1_trace=m1_trace,
         evidence_intent=evidence_intent,
+        expected_security_finding=expected_security_finding,
         promotion_blockers=promotion_blockers,
         testcase_candidate=testcase_candidate,
         measurement_profile=measurement_profile,

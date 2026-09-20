@@ -144,7 +144,8 @@ def compute_run_id(*, timestamp, scenario_bytes, profile_bytes, env_bytes, seed)
 class RunHandle:
     def __init__(self, *, run_id, run_dir, state_dir, scenario_id, scenario_sha256, scenario_path,
                  target, runtime, profile_id, profile_sha256, env_sha256, seed, framework_version,
-                 framework_commit, actor, started_at, measurement_context=None):
+                 framework_commit, actor, started_at, measurement_context=None,
+                 expected_security_finding=None):
         self.run_id = run_id
         self.run_dir = run_dir
         self._state_dir = state_dir
@@ -180,6 +181,11 @@ class RunHandle:
         self._telemetry_summary = None
         self._precondition = None
         self._measurement_context = None
+        self._expected_security_finding = (
+            dict(expected_security_finding)
+            if expected_security_finding is not None
+            else None
+        )
         if measurement_context is not None:
             self.set_measurement_context(measurement_context)
 
@@ -273,6 +279,12 @@ class RunHandle:
             "actor": self._actor,
             "resource_snapshot": _build_resource_snapshot(self._start_resource_snapshot, self._end_resource_snapshot, self._started_at, ended_at),
             "telemetry": telemetry_summary,
+            "execution": _classify_execution(
+                exit_status=exit_status,
+                assertions=self._assertions,
+                target=self._target,
+                expected_security_finding=self._expected_security_finding,
+            ),
         }
         if measurement_manifest is not None:
             manifest["measurements"] = measurement_manifest
@@ -430,10 +442,35 @@ def _build_resource_snapshot(start, end, started_at, ended_at):
     return snap
 
 
+def _classify_execution(*, exit_status, assertions, target, expected_security_finding):
+    failed = [item for item in assertions if item.get("result") == "fail"]
+    execution = {
+        "state": "completed",
+        "classification": "completed",
+        "security_verdict": "pass" if exit_status == "pass" and not failed else "fail",
+    }
+    expectation = expected_security_finding
+    if not expectation or exit_status != "fail" or not failed:
+        return execution
+    if target.get("source_revision") != expectation.get("target_source_revision"):
+        return execution
+    if any(item.get("primitive") != expectation.get("failed_assertion") for item in failed):
+        return execution
+    execution.update(
+        {
+            "classification": "completed_with_security_finding",
+            "finding_id": expectation["finding_id"],
+            "failed_assertion": expectation["failed_assertion"],
+            "target_source_revision": expectation["target_source_revision"],
+        }
+    )
+    return execution
+
+
 def start_run(*, scenario_id, scenario_yaml, target, runtime, profile_id, profile_resolved,
               framework_version, framework_commit, seed, actor=DEFAULT_ACTOR,
               runs_dir, state_dir, start_resource_snapshot=None,
-              measurement_context=None):
+              measurement_context=None, expected_security_finding=None):
     if seed is None:
         seed = 0
     runs_dir = Path(runs_dir)
@@ -494,6 +531,7 @@ def start_run(*, scenario_id, scenario_yaml, target, runtime, profile_id, profil
         actor=actor,
         started_at=_utc_now_iso(),
         measurement_context=measurement_context,
+        expected_security_finding=expected_security_finding,
     )
     if start_resource_snapshot is not None:
         handle.set_start_resource_snapshot(start_resource_snapshot)

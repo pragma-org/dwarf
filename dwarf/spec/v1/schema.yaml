@@ -19,6 +19,10 @@ m1_trace:                       # optional Milestone 1 provenance linkage
   architecture_ids: [B-006, IF-008]
   risk_candidate_ids: [CR-M1-001]
 evidence_intent: candidate      # optional: candidate | regression | finding-validation | risk-support
+expected_security_finding:      # optional exact classification for a completed failed run
+  finding_id: example-security-finding
+  failed_assertion: example_security_assertion
+  target_source_revision: 0123456789abcdef0123456789abcdef01234567
 promotion_blockers: []          # optional human/code/test gates before finding/risk promotion
 testcase_candidate:             # optional auto-ingest into testcase lifecycle state
   classification: runtime_anomaly
@@ -29,6 +33,7 @@ testcase_candidate:             # optional auto-ingest into testcase lifecycle s
 target:                         # required
   implementation: cardano-node  # required: cardano-node | amaru
   version: any                  # required: "any" | semver | branch | commit hash
+  source_revision: 0123456789abcdef0123456789abcdef01234567 # required when expected_security_finding is set
 
 runtime: library                # required: library | single-node | devnet
                                 # library    -> drive a library/binary harness; no node, no devnet

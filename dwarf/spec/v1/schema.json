@@ -79,6 +79,30 @@
         "risk-support"
       ]
     },
+    "expected_security_finding": {
+      "description": "Optional exact finding expectation. It classifies a completed failed run without changing the failed assertion or security verdict.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "failed_assertion",
+        "target_source_revision"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+        },
+        "failed_assertion": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "target_source_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
     "promotion_blockers": {
       "description": "Human/code/test gates that must be closed before this scenario supports a promoted finding or risk decision.",
       "type": "array",

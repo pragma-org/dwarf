@@ -4,12 +4,21 @@
   "title": "Client example 01 — CBOR decoding conformance — Amaru",
   "authors": ["dwarf"],
   "tags": ["client-example", "amaru", "measurement", "cbor", "security"],
-  "evidence_intent": "candidate",
+  "evidence_intent": "finding-validation",
   "promotion_blockers": [
-    "The frozen security assertions must pass before this execution can be accepted.",
-    "The production-codec and live-node measurements have separate boundaries."
+    "Keep the failed conformance assertion visible in every report.",
+    "Use the version-pinned fixed revision for the passing regression leg."
   ],
-  "target": {"implementation": "amaru", "version": "10.11.20260912"},
+  "expected_security_finding": {
+    "finding_id": "amaru-plutus-data-byte-string-bound",
+    "failed_assertion": "cbor_conformance_clean",
+    "target_source_revision": "b159172f25a9c389f82f20bca4f15e3032791638"
+  },
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260912",
+    "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638"
+  },
   "runtime": "devnet",
   "profile": "profile-u-amaru-measurement-nanoseconds-v2",
   "measurement_profile": "amaru-security-patched",

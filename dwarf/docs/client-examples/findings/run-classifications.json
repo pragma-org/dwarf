@@ -1,0 +1,15 @@
+{
+  "schema_version": "v1",
+  "classifications": [
+    {
+      "run_id": "20260920T135054Z-28289dcd",
+      "manifest_sha256": "e8c1f6d79f81f5e9882bd43dabe0feb681d2df061c464e072a294af7838b0a38",
+      "assertions_sha256": "67519fd6f93f81b6ce83ba2aee99846eb0be463bb6847eaeafea9c48309566f2",
+      "exact_target_path": "outputs/client-example-proof/exact-target.json",
+      "exact_target_sha256": "41d12cdad5531cb10a20cacc215b2e4330b611d3e4f01955b1cf7f372978624f",
+      "finding_id": "amaru-plutus-data-byte-string-bound",
+      "failed_assertion": "cbor_conformance_clean",
+      "target_source_revision": "b159172f25a9c389f82f20bca4f15e3032791638"
+    }
+  ]
+}

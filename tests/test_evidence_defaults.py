@@ -20,6 +20,9 @@ def _finished_run(
     *,
     assertion_result: str | None = None,
     profile_resolved: dict | None = None,
+    finding_expectation: dict | None = None,
+    assertion_primitive: str = "example_assertion",
+    target_source_revision: str | None = None,
 ):
     runs_dir = tmp_path / "runs"
     state_dir = tmp_path / "state"
@@ -27,7 +30,15 @@ def _finished_run(
     handle = forensic.start_run(
         scenario_id="evidence-default-test",
         scenario_yaml=scenario,
-        target={"implementation": "amaru", "version": "test"},
+        target={
+            "implementation": "amaru",
+            "version": "test",
+            **(
+                {"source_revision": target_source_revision}
+                if target_source_revision is not None
+                else {}
+            ),
+        },
         runtime="library",
         profile_id=(profile_resolved or {}).get("id"),
         profile_resolved=profile_resolved,
@@ -36,10 +47,11 @@ def _finished_run(
         seed=7,
         runs_dir=runs_dir,
         state_dir=state_dir,
+        expected_security_finding=finding_expectation,
     )
     if assertion_result is not None:
         handle.assertion_result(
-            primitive="example_assertion",
+            primitive=assertion_primitive,
             params={"minimum": 1},
             evaluated_value={"actual": 0},
             data_points_used=1,
@@ -129,6 +141,142 @@ def test_run_page_reports_sarif_generation_origin_truthfully():
 
     assert "run.export.generation == 'automatic-run-finalization'" in template
     assert "regenerated explicitly" in template
+
+
+def test_completed_failed_run_retains_failed_verdict_and_gets_finding_classification(tmp_path):
+    revision = "b159172f25a9c389f82f20bca4f15e3032791638"
+    expectation = {
+        "finding_id": "amaru-plutus-data-byte-string-bound",
+        "failed_assertion": "cbor_conformance_clean",
+        "target_source_revision": revision,
+    }
+    runs_dir, _state_dir, run_id = _finished_run(
+        tmp_path,
+        assertion_result="fail",
+        assertion_primitive="cbor_conformance_clean",
+        target_source_revision=revision,
+        finding_expectation=expectation,
+    )
+
+    manifest = json.loads((runs_dir / run_id / "manifest.json").read_text())
+    sarif = json.loads(
+        (runs_dir / run_id / "outputs/sarif-export/dwarf-export.sarif").read_text()
+    )
+
+    assert manifest["exit_status"] == "fail"
+    assert manifest["assertion_summary"] == {"total": 1, "pass": 0, "fail": 1}
+    assert manifest["execution"] == {
+        "state": "completed",
+        "classification": "completed_with_security_finding",
+        "security_verdict": "fail",
+        "finding_id": "amaru-plutus-data-byte-string-bound",
+        "failed_assertion": "cbor_conformance_clean",
+        "target_source_revision": revision,
+    }
+    assert sarif["runs"][0]["results"][0]["level"] == "error"
+    detail = operate_run_detail(run_id, runs_dir=runs_dir)
+    assert detail["security_execution"] == manifest["execution"]
+
+
+def test_accepted_historical_card_01_run_gets_digest_locked_finding_classification():
+    run_id = "20260920T135054Z-28289dcd"
+    detail = operate_run_detail(run_id, runs_dir=ROOT / "dwarf/runs")
+
+    assert detail is not None
+    assert detail["exit_status"] == "fail"
+    assert detail["assertion_summary"] == {"total": 4, "pass": 3, "fail": 1}
+    assert detail["security_execution"] == {
+        "state": "completed",
+        "classification": "completed_with_security_finding",
+        "security_verdict": "fail",
+        "finding_id": "amaru-plutus-data-byte-string-bound",
+        "failed_assertion": "cbor_conformance_clean",
+        "target_source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+        "classification_source": "digest-locked-historical-run",
+    }
+    html = render(
+        "operate/run.j2",
+        page_title=f"Run · {run_id}",
+        density="reading",
+        active="operate",
+        active_sub="runs",
+        run=detail,
+    )
+    assert "Completed run with security finding" in html
+    assert "The security verdict remains" in html
+    assert "b159172f25a9c389f82f20bca4f15e3032791638" in html
+
+
+def test_historical_finding_classification_refuses_digest_mismatch(tmp_path):
+    run_id = "20260920T135054Z-28289dcd"
+    source = ROOT / "dwarf/runs" / run_id
+    target = tmp_path / run_id
+    target.mkdir()
+    for name in ("manifest.json", "assertions.json", "chain.json", "scenario.yaml"):
+        (target / name).write_bytes((source / name).read_bytes())
+    assertions = json.loads((target / "assertions.json").read_text())
+    assertions[0]["note"] = "changed after acceptance"
+    (target / "assertions.json").write_text(json.dumps(assertions))
+
+    detail = operate_run_detail(run_id, runs_dir=tmp_path)
+
+    assert detail is not None
+    assert detail["security_execution"]["classification"] == "completed"
+    assert "finding_id" not in detail["security_execution"]
+
+
+def test_finding_classification_rejects_wrong_assertion(tmp_path):
+    revision = "b159172f25a9c389f82f20bca4f15e3032791638"
+    runs_dir, _state_dir, run_id = _finished_run(
+        tmp_path,
+        assertion_result="fail",
+        assertion_primitive="different_assertion",
+        target_source_revision=revision,
+        finding_expectation={
+            "finding_id": "amaru-plutus-data-byte-string-bound",
+            "failed_assertion": "cbor_conformance_clean",
+            "target_source_revision": revision,
+        },
+    )
+
+    manifest = json.loads((runs_dir / run_id / "manifest.json").read_text())
+
+    assert manifest["execution"]["classification"] == "completed"
+    assert manifest["execution"]["security_verdict"] == "fail"
+    assert "finding_id" not in manifest["execution"]
+
+
+def test_finding_classification_rejects_target_revision_mismatch(tmp_path):
+    runs_dir, _state_dir, run_id = _finished_run(
+        tmp_path,
+        assertion_result="fail",
+        assertion_primitive="cbor_conformance_clean",
+        target_source_revision="a" * 40,
+        finding_expectation={
+            "finding_id": "amaru-plutus-data-byte-string-bound",
+            "failed_assertion": "cbor_conformance_clean",
+            "target_source_revision": "b" * 40,
+        },
+    )
+
+    manifest = json.loads((runs_dir / run_id / "manifest.json").read_text())
+
+    assert manifest["execution"]["classification"] == "completed"
+    assert "finding_id" not in manifest["execution"]
+
+
+def test_ordinary_failed_run_is_not_a_completed_security_finding(tmp_path):
+    runs_dir, _state_dir, run_id = _finished_run(
+        tmp_path, assertion_result="fail"
+    )
+
+    manifest = json.loads((runs_dir / run_id / "manifest.json").read_text())
+
+    assert manifest["execution"] == {
+        "state": "completed",
+        "classification": "completed",
+        "security_verdict": "fail",
+    }
 
 
 def test_run_inspector_discloses_exact_deployment_version_provenance(tmp_path):

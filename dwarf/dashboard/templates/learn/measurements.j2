@@ -37,6 +37,7 @@
   <h2>Every terminal outcome keeps its time</h2>
   <p>Accepted, rejected, invalid, duplicate, timed-out, disconnected, and unclassified attempts remain in the combined timing population and in per-outcome distributions. A missing boundary is <code>unavailable</code>, never zero. Resource counters identify whether they describe the node process, its network namespace/container, or the DWARF controller.</p>
   <p>Measurements do not change the security verdict by default. A scenario fails because its security assertion failed; a collector error is shown separately. Threshold gating is available only when explicitly enabled.</p>
+  <p>A completed run can contain a security finding. Completed means that DWARF finished the run and retained the evidence. It does not mean that the target passed. The failed assertion and its <code>fail</code> verdict remain visible.</p>
 </section>
 
 <hr class="hairline">
