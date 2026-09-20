@@ -678,11 +678,11 @@ def test_scenario_editor_descriptor_covers_every_registered_primitive_schema():
     assert set(primitives) == set(registry)
     assert descriptor["primitive_count"] == len(registry)
     assert descriptor["family_counts"] == {
-        "setup": 4,
-        "load": 122,
+        "setup": 6,
+        "load": 125,
         "fault": 5,
-        "probe": 1,
-        "assertion": 78,
+        "probe": 3,
+        "assertion": 82,
         "teardown": 1,
     }
     for name, entry in primitives.items():

@@ -15,9 +15,12 @@ from pathlib import Path
 from typing import Any
 
 from scripts.runtime_amaru_measurement_calibration import (
+    CLIENT_INVALID_CASE_SET,
+    DEFAULT_CASE_SET,
     HANDSHAKE_UNSUPPORTED_VERSION_HEX,
     RESPONSE_CAP_BYTES,
     build_attempt_record,
+    build_case_plan,
     run_attempts,
     summarize_attempts,
 )
@@ -26,6 +29,7 @@ from profile_manager.measurement_collectors.cardano_patched import (
     CARDANO_SOURCE_REVISION,
     paired_cardano_overhead_calibration,
 )
+from scripts.qualify_node_versions import classify_log_signals
 
 
 SEED = "0xCA4DA001"
@@ -55,8 +59,20 @@ def _physical_memory_bytes() -> int | None:
 
 def build_workload_identity(
     *, attempt_count: int, seed: str = SEED,
+    case_set: str = DEFAULT_CASE_SET,
     plutus_transactions: int = 0, epoch_observation_seconds: float = 0,
 ) -> dict[str, Any]:
+    plan = build_case_plan(attempt_count=attempt_count, case_set=case_set)
+    cases = []
+    for name in dict.fromkeys(row["name"] for row in plan):
+        row = next(item for item in plan if item["name"] == name)
+        cases.append(
+            {
+                "name": name,
+                "payload_hex": row["payload_hex"],
+                "attempt_count": sum(item["name"] == name for item in plan),
+            }
+        )
     body = {
         "scenario_id": "cardano-measurement-calibration",
         "implementation": "cardano-node",
@@ -64,6 +80,8 @@ def build_workload_identity(
         "attempt_count": int(attempt_count),
         "mini_protocol": "handshake",
         "case": "unsupported-version-refusal",
+        "case_set": case_set,
+        "cases": cases,
         "payload_hex": HANDSHAKE_UNSUPPORTED_VERSION_HEX,
         "network_magic": 42,
         "transport": "tcp",
@@ -468,16 +486,89 @@ def _capture_logs(container: str, *, since: str, destination: Path) -> dict[str,
     }
 
 
+def _container_state(container: str) -> dict[str, Any]:
+    result = _run(["docker", "inspect", container])
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"cannot inspect {container}")
+    body = json.loads(result.stdout)[0]
+    state = body.get("State") or {}
+    return {
+        "running": state.get("Running") is True,
+        "status": state.get("Status"),
+        "exit_code": state.get("ExitCode"),
+        "oom_killed": state.get("OOMKilled") is True,
+        "restart_count": int(body.get("RestartCount") or 0),
+    }
+
+
+def _query_cardano_tip(
+    container: str, *, socket_path: str = "/state/node.socket", network_magic: int = 42
+) -> dict[str, Any] | None:
+    result = _run(
+        [
+            "docker", "exec", container, "cardano-cli", "query", "tip",
+            "--socket-path", socket_path, "--testnet-magic", str(network_magic),
+        ],
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        body = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    height = body.get("block")
+    if isinstance(height, bool) or not isinstance(height, int) or not body.get("hash"):
+        return None
+    return {"block_height": height, "hash": body.get("hash"), "slot": body.get("slot")}
+
+
+def _independent_peer(
+    runtime: dict[str, Any], target_node: dict[str, Any]
+) -> tuple[str, str, str]:
+    target_id = str(target_node.get("id") or target_node.get("name") or "")
+    for node in runtime.get("nodes") or []:
+        node_id = str(node.get("id") or node.get("name") or "")
+        container = str(node.get("container_name") or "")
+        if node_id and node_id != target_id and container:
+            socket_path = str(
+                node.get("container_socket_path") or f"/env/socket/{node_id}/sock"
+            )
+            return node_id, container, socket_path
+    raise RuntimeError("Cardano runtime has no independent honest peer")
+
+
+def _peer_observation(
+    peer_id: str,
+    container: str,
+    network_magic: int,
+    *,
+    socket_path: str = "/state/node.socket",
+) -> dict[str, Any]:
+    tip = _query_cardano_tip(
+        container, socket_path=socket_path, network_magic=network_magic
+    )
+    return {
+        "observed_at_epoch_seconds": time.time(),
+        "peer_id": peer_id,
+        "container": container,
+        "usable": tip is not None,
+        "tip": tip,
+    }
+
+
 def run_leg(
     *,
     runtime_root: Path,
     output_dir: Path,
     attempt_count: int,
     timeout_seconds: float,
+    case_set: str = DEFAULT_CASE_SET,
     observation_seconds: float = 2.0,
     trace_timeout_seconds: float = 20.0,
     plutus_transactions: int = 0,
     epoch_observation_seconds: float = 0,
+    attempt_interval_seconds: float = 0.0,
 ) -> dict[str, Any]:
     runtime = json.loads((runtime_root / "runtime.json").read_text(encoding="utf-8"))
     target, node = _target(runtime)
@@ -485,12 +576,51 @@ def run_leg(
     if not container:
         raise RuntimeError("Cardano-node target has no container identity")
     output_dir.mkdir(parents=True, exist_ok=True)
+    client_case = case_set == CLIENT_INVALID_CASE_SET
+    state_before = _container_state(container) if client_case else None
+    target_socket = str(node.get("container_socket_path") or "/state/node.socket")
+    network_magic = int(runtime.get("network_magic", 42))
+    tip_before = (
+        _query_cardano_tip(
+            container, socket_path=target_socket, network_magic=network_magic
+        )
+        if client_case
+        else None
+    )
+    peer_id = None
+    peer_container = None
+    peer_socket = None
+    peer_before = None
+    peer_during = None
+    if client_case:
+        peer_id, peer_container, peer_socket = _independent_peer(runtime, node)
+        peer_before = _peer_observation(
+            peer_id, peer_container, network_magic, socket_path=peer_socket
+        )
+
+    def observe_midpoint() -> None:
+        nonlocal peer_during
+        if peer_id is not None and peer_container is not None:
+            peer_during = _peer_observation(
+                peer_id, peer_container, network_magic, socket_path=peer_socket
+            )
+
     started_at = _utc_now()
     attempts = run_attempts(
         host=_container_ip(container),
         port=3001,
         attempt_count=attempt_count,
         timeout_seconds=timeout_seconds,
+        case_set=case_set,
+        midpoint_callback=(observe_midpoint if client_case else None),
+        attempt_interval_seconds=attempt_interval_seconds,
+    )
+    peer_after = (
+        _peer_observation(
+            peer_id, peer_container, network_magic, socket_path=peer_socket
+        )
+        if client_case and peer_id is not None and peer_container is not None
+        else None
     )
     attempts_path = output_dir / "attempts.ndjson"
     attempts_path.write_text(
@@ -524,6 +654,40 @@ def run_leg(
             break
         time.sleep(min(1.0, trace_timeout_seconds - elapsed))
     observed_seconds = time.monotonic() - observation_started
+    state_after = _container_state(container) if client_case else None
+    tip_after = (
+        _query_cardano_tip(
+            container, socket_path=target_socket, network_magic=network_magic
+        )
+        if client_case
+        else None
+    )
+    trace_text = trace_path.read_text(encoding="utf-8")
+    log_signals = classify_log_signals(trace_text) if client_case else None
+    health_checks = (
+        {
+            "all_attempts_classified_as_expected": all(
+                row.get("outcome") == row.get("expected_external_outcome")
+                for row in attempts
+            ),
+            "target_running_before": (state_before or {}).get("running") is True,
+            "target_running_after": (state_after or {}).get("running") is True,
+            "target_not_oom_killed": (state_after or {}).get("oom_killed") is False,
+            "target_restart_count_unchanged": (
+                (state_before or {}).get("restart_count") is not None
+                and (state_before or {}).get("restart_count")
+                == (state_after or {}).get("restart_count")
+            ),
+            "honest_chain_progressed": (
+                isinstance((tip_before or {}).get("block_height"), int)
+                and isinstance((tip_after or {}).get("block_height"), int)
+                and tip_after["block_height"] > tip_before["block_height"]
+            ),
+            "no_fatal_signals": not bool((log_signals or {}).get("fatal")),
+        }
+        if client_case
+        else None
+    )
     summarized = summarize_attempts(attempts)
     result = {
         "schema_version": 1,
@@ -532,6 +696,7 @@ def run_leg(
         "target": target,
         "workload_identity": build_workload_identity(
             attempt_count=attempt_count,
+            case_set=case_set,
             plutus_transactions=plutus_transactions,
             epoch_observation_seconds=epoch_observation_seconds,
         ),
@@ -544,6 +709,35 @@ def run_leg(
                 for outcome in sorted({row["outcome"] for row in attempts})
             },
             "artifact": "attempts.ndjson",
+            **(
+                {
+                    "unexpected_count": sum(
+                        row.get("outcome") != row.get("expected_external_outcome")
+                        for row in attempts
+                    ),
+                    "by_case": {
+                        case: {
+                            "total": sum(row.get("case") == case for row in attempts),
+                            "outcomes": {
+                                outcome: sum(
+                                    row.get("case") == case and row.get("outcome") == outcome
+                                    for row in attempts
+                                )
+                                for outcome in sorted(
+                                    {
+                                        str(row.get("outcome"))
+                                        for row in attempts
+                                        if row.get("case") == case
+                                    }
+                                )
+                            },
+                        }
+                        for case in dict.fromkeys(row.get("case") for row in attempts)
+                    },
+                }
+                if case_set == CLIENT_INVALID_CASE_SET
+                else {}
+            ),
         },
         "raw_trace": "raw/node1.ndjson",
         "plutus_workload": plutus_workload,
@@ -553,6 +747,53 @@ def run_leg(
             "observation_timeout_seconds": trace_timeout_seconds,
             "observed_seconds": observed_seconds,
         },
+        **(
+            {
+                "status": "available" if all((health_checks or {}).values()) else "unavailable",
+                "target_health": {
+                    "before": state_before,
+                    "after": state_after,
+                    "tip_before": tip_before,
+                    "tip_after": tip_after,
+                    "log_signals": log_signals,
+                    "checks": health_checks,
+                    "observer": {
+                        "implementation": "cardano-node",
+                        "container": container,
+                        "started_at": started_at,
+                        "network_magic": network_magic,
+                        "socket_path": target_socket,
+                    },
+                },
+                "peer_session": {
+                    "peer_id": peer_id,
+                    "before": peer_before,
+                    "during": peer_during,
+                    "after": peer_after,
+                    "recovered_within_seconds": (
+                        0.0
+                        if (peer_during or {}).get("usable") is True
+                        else (
+                            max(
+                                0.0,
+                                float((peer_after or {}).get("observed_at_epoch_seconds") or 0)
+                                - float((peer_during or {}).get("observed_at_epoch_seconds") or 0),
+                            )
+                            if (peer_after or {}).get("usable") is True and peer_during
+                            else None
+                        )
+                    ),
+                    "observer": {
+                        "peer_id": peer_id,
+                        "container": peer_container,
+                        "network_magic": network_magic,
+                        "socket_path": peer_socket,
+                    },
+                },
+            }
+            if client_case
+            else {}
+        ),
     }
     (output_dir / "result.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return result
@@ -566,10 +807,12 @@ def main(argv: list[str] | None = None) -> int:
     leg.add_argument("--output-dir", type=Path, required=True)
     leg.add_argument("--attempts", type=int, default=100)
     leg.add_argument("--timeout-seconds", type=float, default=2.0)
+    leg.add_argument("--case-set", choices=[DEFAULT_CASE_SET, CLIENT_INVALID_CASE_SET], default=DEFAULT_CASE_SET)
     leg.add_argument("--observation-seconds", type=float, default=2.0)
     leg.add_argument("--trace-timeout-seconds", type=float, default=20.0)
     leg.add_argument("--plutus-transactions", type=int, default=0)
     leg.add_argument("--epoch-observation-seconds", type=float, default=0)
+    leg.add_argument("--attempt-interval-seconds", type=float, default=0.0)
     pair = sub.add_parser("pair")
     pair.add_argument("--stock", type=Path, required=True)
     pair.add_argument("--patched", type=Path, required=True)
@@ -596,10 +839,12 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             attempt_count=args.attempts,
             timeout_seconds=args.timeout_seconds,
+            case_set=args.case_set,
             observation_seconds=args.observation_seconds,
             trace_timeout_seconds=args.trace_timeout_seconds,
             plutus_transactions=args.plutus_transactions,
             epoch_observation_seconds=args.epoch_observation_seconds,
+            attempt_interval_seconds=args.attempt_interval_seconds,
         )
         trace = result["node_trace"]
         status = trace["record_count"] > 0 and trace["protocol_record_count"] > 0

@@ -12,7 +12,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from profile_manager.measurement_collectors.amaru_patched import (
     PATCHED_MEASUREMENT_IDS,
@@ -32,6 +32,7 @@ HANDSHAKE_UNSUPPORTED_VERSION_HEX = "8200a11903e784182af400f4"
 HANDSHAKE_MALFORMED_HEX = "ff"
 DEFAULT_CASE_SET = "unsupported-version-only-v1"
 ACCEPTANCE_CASE_SET = "accepted-and-rejected-v1"
+CLIENT_INVALID_CASE_SET = "fixed-handshake-invalid-cases-v1"
 RESPONSE_CAP_BYTES = 256
 
 _CASE_SETS = {
@@ -58,6 +59,20 @@ _CASE_SETS = {
         },
         {
             "name": "malformed-cbor-rejection",
+            "payload_hex": HANDSHAKE_MALFORMED_HEX,
+            "expected_external_outcome": "rejected",
+            "expected_decode_outcome": "malformed",
+        },
+    ),
+    CLIENT_INVALID_CASE_SET: (
+        {
+            "name": "unsupported-version-refusal",
+            "payload_hex": HANDSHAKE_UNSUPPORTED_VERSION_HEX,
+            "expected_external_outcome": "rejected",
+            "expected_decode_outcome": "decoded",
+        },
+        {
+            "name": "malformed-cbor",
             "payload_hex": HANDSHAKE_MALFORMED_HEX,
             "expected_external_outcome": "rejected",
             "expected_decode_outcome": "malformed",
@@ -310,18 +325,32 @@ def run_attempts(
     attempt_count: int,
     timeout_seconds: float,
     case_set: str = DEFAULT_CASE_SET,
+    midpoint_callback: Callable[[], None] | None = None,
+    attempt_interval_seconds: float = 0.0,
 ) -> list[dict[str, Any]]:
+    if attempt_interval_seconds < 0:
+        raise ValueError("attempt_interval_seconds must be non-negative")
     records = []
-    for index, case in enumerate(
-        build_case_plan(attempt_count=attempt_count, case_set=case_set)
-    ):
+    plan = build_case_plan(attempt_count=attempt_count, case_set=case_set)
+    schedule_started = time.monotonic()
+    for index, case in enumerate(plan):
+        if index and attempt_interval_seconds:
+            scheduled = schedule_started + (index * attempt_interval_seconds)
+            remaining = scheduled - time.monotonic()
+            if remaining > 0:
+                time.sleep(remaining)
+        if midpoint_callback is not None and index == len(plan) // 2:
+            midpoint_callback()
         frame = build_handshake_frame(case["payload_hex"])
+        started_at = _utc_now()
         started = time.perf_counter_ns()
         outcome = "unclassified"
         detail = None
         response = b""
+        listener_reached = False
         try:
             with socket.create_connection((host, port), timeout=timeout_seconds) as sock:
+                listener_reached = True
                 sock.settimeout(timeout_seconds)
                 sock.sendall(frame)
                 try:
@@ -340,6 +369,7 @@ def run_attempts(
             outcome = "disconnected"
             detail = type(exc).__name__
         elapsed_micros = max(0, (time.perf_counter_ns() - started) // 1000)
+        completed_at = _utc_now()
         records.append(
             {
                 **build_attempt_record(
@@ -351,7 +381,11 @@ def run_attempts(
                 response=response,
                 ),
                 "case": case["name"],
+                "started_at": started_at,
+                "completed_at": completed_at,
                 "payload_hex": case["payload_hex"],
+                "target_endpoint": f"{host}:{port}",
+                "listener_reached": listener_reached,
                 "expected_external_outcome": case["expected_external_outcome"],
                 "expected_decode_outcome": case["expected_decode_outcome"],
             }
@@ -418,6 +452,52 @@ def _container_state(container: str) -> dict[str, Any]:
     }
 
 
+def _independent_peer(runtime: dict[str, Any]) -> tuple[str, str]:
+    peer_id = str((runtime.get("actual_topology") or {}).get("isolated_consumer") or "")
+    service = ((runtime.get("identity") or {}).get("services") or {}).get(peer_id) or {}
+    container = str(service.get("container") or "")
+    if not peer_id or not container:
+        raise RuntimeError("Amaru runtime has no controlled independent consumer peer")
+    return peer_id, container
+
+
+def _query_cardano_tip(
+    container: str, *, socket_path: str = "/state/node.socket", network_magic: int = 42
+) -> dict[str, Any] | None:
+    result = _run(
+        [
+            "docker", "exec", container, "cardano-cli", "query", "tip",
+            "--socket-path", socket_path, "--testnet-magic", str(network_magic),
+        ],
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        body = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    height = body.get("block")
+    if isinstance(height, bool) or not isinstance(height, int) or not body.get("hash"):
+        return None
+    return {
+        "block_height": height,
+        "hash": body.get("hash"),
+        "slot": body.get("slot"),
+    }
+
+
+def _peer_observation(peer_id: str, container: str, network_magic: int) -> dict[str, Any]:
+    tip = _query_cardano_tip(container, network_magic=network_magic)
+    return {
+        "observed_at_epoch_seconds": time.time(),
+        "peer_id": peer_id,
+        "container": container,
+        "usable": tip is not None,
+        "tip": tip,
+    }
+
+
 def _latest_tip(container: str) -> dict[str, Any] | None:
     result = _run(["docker", "logs", "--tail", "8000", container], timeout=60)
     if result.returncode != 0:
@@ -471,6 +551,7 @@ def run_leg(
     timeout_seconds: float,
     case_set: str = DEFAULT_CASE_SET,
     progress_timeout_seconds: float = 120.0,
+    attempt_interval_seconds: float = 0.0,
 ) -> dict[str, Any]:
     runtime_path = runtime_root / "runtime.json"
     runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
@@ -485,12 +566,33 @@ def run_leg(
     if tip_before is None:
         raise RuntimeError("Amaru target logs contain no adopted pre-workload tip")
     started_at = _utc_now()
+    peer_id = None
+    peer_container = None
+    peer_before = None
+    peer_during = None
+    network_magic = int(runtime.get("network_magic") or 42)
+    if case_set == CLIENT_INVALID_CASE_SET:
+        peer_id, peer_container = _independent_peer(runtime)
+        peer_before = _peer_observation(peer_id, peer_container, network_magic)
+
+    def observe_midpoint() -> None:
+        nonlocal peer_during
+        if peer_id is not None and peer_container is not None:
+            peer_during = _peer_observation(peer_id, peer_container, network_magic)
+
     attempts = run_attempts(
         host=host,
         port=3000,
         attempt_count=attempt_count,
         timeout_seconds=timeout_seconds,
         case_set=case_set,
+        midpoint_callback=(observe_midpoint if case_set == CLIENT_INVALID_CASE_SET else None),
+        attempt_interval_seconds=attempt_interval_seconds,
+    )
+    peer_after = (
+        _peer_observation(peer_id, peer_container, network_magic)
+        if peer_id is not None and peer_container is not None
+        else None
     )
     tip_after = _wait_for_progress(
         container,
@@ -571,7 +673,43 @@ def run_leg(
             "tip_after": tip_after,
             "log_signals": log_signals,
             "checks": security_checks,
+            "observer": {
+                "implementation": "amaru",
+                "container": container,
+                "started_at": started_at,
+            },
         },
+        **(
+            {
+                "peer_session": {
+                    "peer_id": peer_id,
+                    "before": peer_before,
+                    "during": peer_during,
+                    "after": peer_after,
+                    "recovered_within_seconds": (
+                        0.0
+                        if (peer_during or {}).get("usable") is True
+                        else (
+                            max(
+                                0.0,
+                                float((peer_after or {}).get("observed_at_epoch_seconds") or 0)
+                                - float((peer_during or {}).get("observed_at_epoch_seconds") or 0),
+                            )
+                            if (peer_after or {}).get("usable") is True and peer_during
+                            else None
+                        )
+                    ),
+                    "observer": {
+                        "peer_id": peer_id,
+                        "container": peer_container,
+                        "network_magic": network_magic,
+                        "socket_path": "/state/node.socket",
+                    },
+                }
+            }
+            if case_set == CLIENT_INVALID_CASE_SET
+            else {}
+        ),
         "raw_trace": "raw/amaru-relay-1.ndjson",
         "node_measurements": (
             _patched_measurements(output_dir=output_dir, trace_path=trace_path, target=target)
@@ -595,6 +733,7 @@ def _parser() -> argparse.ArgumentParser:
     leg.add_argument("--timeout-seconds", type=float, default=2.0)
     leg.add_argument("--case-set", choices=sorted(_CASE_SETS), default=DEFAULT_CASE_SET)
     leg.add_argument("--progress-timeout-seconds", type=float, default=120.0)
+    leg.add_argument("--attempt-interval-seconds", type=float, default=0.0)
     pair = sub.add_parser("pair")
     pair.add_argument("--stock", type=Path, required=True)
     pair.add_argument("--patched", type=Path, required=True)
@@ -614,6 +753,7 @@ def main(argv: list[str] | None = None) -> int:
             timeout_seconds=args.timeout_seconds,
             case_set=args.case_set,
             progress_timeout_seconds=args.progress_timeout_seconds,
+            attempt_interval_seconds=args.attempt_interval_seconds,
         )
     else:
         stock = json.loads(args.stock.read_text(encoding="utf-8"))

@@ -13551,6 +13551,798 @@ class RuntimeCardanoMeasurementCalibration(RuntimeAmaruMeasurementCalibration):
     _CARDANO_NODE_WORKLOAD = True
 
 
+def _client_example_proof_path(handle, relative_path: str) -> Path:
+    run_dir = Path(handle.run_dir).resolve()
+    candidate = (run_dir / relative_path).resolve()
+    try:
+        candidate.relative_to(run_dir)
+    except ValueError as exc:
+        raise ValueError("client example evidence path escapes the run directory") from exc
+    return candidate
+
+
+def _write_client_example_proof(handle, filename: str, payload: dict[str, Any]) -> Path:
+    destination = _client_example_proof_path(
+        handle, f"outputs/client-example-proof/{filename}"
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return destination
+
+
+def _measurement_target_identity(handle) -> dict[str, Any]:
+    context = getattr(handle, "_measurement_context", None) or {}
+    resolution = context.get("resolution") if isinstance(context, dict) else None
+    if not isinstance(resolution, dict):
+        resolution = context
+    identity = (resolution or {}).get("target_identity")
+    if not isinstance(identity, dict) or not identity:
+        raise RuntimeError("resolved measurement target identity is unavailable")
+    return dict(identity)
+
+
+class RuntimeVerifyExactTarget(LoadPrimitive):
+    """Fail closed unless the deployed measurement target matches every frozen field."""
+
+    _FIELDS = (
+        "implementation",
+        "version",
+        "source_revision",
+        "mode",
+        "image_digest",
+        "executable_digest",
+        "patch_set_sha256",
+    )
+
+    def run(self, handle, rng):
+        observed = _measurement_target_identity(handle)
+        expected = {
+            field: self.params[field]
+            for field in self._FIELDS
+            if field in self.params
+        }
+        missing = [field for field in expected if observed.get(field) in (None, "")]
+        mismatches = {
+            field: {"expected": value, "observed": observed.get(field)}
+            for field, value in expected.items()
+            if observed.get(field) != value
+        }
+        proof = {
+            "schema_version": "v1",
+            "matched": not missing and not mismatches,
+            "expected": expected,
+            "observed": observed,
+            "missing_fields": missing,
+            "mismatches": mismatches,
+        }
+        _write_client_example_proof(handle, "exact-target.json", proof)
+        handle.log(
+            phase="setup",
+            primitive="runtime_verify_exact_target",
+            level="info" if proof["matched"] else "error",
+            event="completed",
+            payload={"outcome": "ok" if proof["matched"] else "mismatch", **proof},
+        )
+        if not proof["matched"]:
+            fields = sorted(set(missing).union(mismatches))
+            raise RuntimeError(
+                "exact target identity mismatch: " + ", ".join(fields)
+            )
+
+
+def _protocol_decode_report(handle, params: dict[str, Any]) -> dict[str, Any]:
+    relative = str(
+        params.get("report_path", "outputs/protocol-decode-cases/result.json")
+    )
+    path = _client_example_proof_path(handle, relative)
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"protocol-decode evidence is unavailable: {path}") from exc
+    if not isinstance(report, dict):
+        raise RuntimeError("protocol-decode evidence must be a JSON object")
+    return report
+
+
+def _tip_position(tip: dict[str, Any]) -> int | None:
+    for field in ("block_height", "block", "slot"):
+        try:
+            if tip.get(field) is not None:
+                return int(tip[field])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _protocol_docker_result(command: list[str], *, timeout: float = 60.0):
+    return subprocess.run(
+        ["docker", *command],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _protocol_container_state(container: str) -> dict[str, Any]:
+    result = _protocol_docker_result(["inspect", container])
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"cannot inspect {container}")
+    body = json.loads(result.stdout)[0]
+    state = body.get("State") or {}
+    return {
+        "running": state.get("Running") is True,
+        "status": state.get("Status"),
+        "exit_code": state.get("ExitCode"),
+        "oom_killed": state.get("OOMKilled") is True,
+        "restart_count": int(body.get("RestartCount") or 0),
+    }
+
+
+def _observe_protocol_peer(observer: dict[str, Any]) -> dict[str, Any]:
+    container = str(observer.get("container") or "")
+    if not container:
+        raise RuntimeError("peer observer has no container identity")
+    socket_path = str(observer.get("socket_path") or "/state/node.socket")
+    network_magic = int(observer.get("network_magic", 42))
+    result = _protocol_docker_result(
+        [
+            "exec", container, "cardano-cli", "query", "tip",
+            "--socket-path", socket_path,
+            "--testnet-magic", str(network_magic),
+        ],
+        timeout=30,
+    )
+    tip = None
+    if result.returncode == 0:
+        try:
+            candidate = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            candidate = {}
+        height = candidate.get("block")
+        if isinstance(height, int) and not isinstance(height, bool) and candidate.get("hash"):
+            tip = {
+                "block_height": height,
+                "hash": candidate.get("hash"),
+                "slot": candidate.get("slot"),
+            }
+    return {
+        "observed_at_epoch_seconds": datetime.now(timezone.utc).timestamp(),
+        "peer_id": observer.get("peer_id"),
+        "container": container,
+        "usable": tip is not None,
+        "tip": tip,
+    }
+
+
+def _observe_protocol_target(observer: dict[str, Any]) -> dict[str, Any]:
+    implementation = str(observer.get("implementation") or "")
+    container = str(observer.get("container") or "")
+    if implementation not in {"amaru", "cardano-node"} or not container:
+        raise RuntimeError("target observer has no supported implementation and container")
+    state = _protocol_container_state(container)
+    since = str(observer.get("started_at") or "0")
+    logs = _protocol_docker_result(["logs", "--since", since, container], timeout=120)
+    if logs.returncode != 0:
+        raise RuntimeError(logs.stderr.strip() or f"cannot read logs from {container}")
+    log_text = logs.stdout + ("\n" + logs.stderr if logs.stderr else "")
+    if implementation == "amaru":
+        from scripts.runtime_amaru_measurement_calibration import (
+            classify_log_signals,
+            extract_latest_adopted_tip,
+        )
+
+        tip = extract_latest_adopted_tip(log_text)
+    else:
+        from scripts.runtime_cardano_measurement_calibration import classify_log_signals
+
+        peer = _observe_protocol_peer(observer)
+        tip = peer.get("tip")
+    return {
+        "state": state,
+        "tip": tip,
+        "log_signals": classify_log_signals(log_text),
+    }
+
+
+class RuntimeTargetHealthAndProgress(ProbePrimitive):
+    """Retain target process health and honest progress from the real workload leg."""
+
+    def sample(self, handle):
+        report = _protocol_decode_report(handle, self.params)
+        health = report.get("target_health") or {}
+        before = health.get("before") or {}
+        tip_before = health.get("tip_before") or {}
+        observation = (
+            _observe_protocol_target(health["observer"])
+            if isinstance(health.get("observer"), dict)
+            else {}
+        )
+        after = observation.get("state") or health.get("after") or {}
+        tip_after = observation.get("tip") or health.get("tip_after") or {}
+        tip_initial = health.get("tip_before") or {}
+        tip_hostile_end = health.get("tip_after") or {}
+        tip_before = tip_hostile_end if observation else tip_initial
+        log_signals = observation.get("log_signals") or health.get("log_signals") or {}
+        before_position = _tip_position(tip_before)
+        after_position = _tip_position(tip_after)
+        if before_position is None or after_position is None:
+            raise RuntimeError("target health evidence has no comparable chain positions")
+        checks = {
+            "no_fatal_signals": not bool(log_signals.get("fatal")),
+            "target_not_oom_killed": after.get("oom_killed") is False,
+            "target_restart_count_unchanged": (
+                before.get("restart_count") is not None
+                and after.get("restart_count") == before.get("restart_count")
+            ),
+            "target_running_after": after.get("running") is True,
+            "target_running_before": before.get("running") is True,
+            "target_progressed": after_position > before_position,
+        }
+        evidence = {
+            "before": before,
+            "after": after,
+            "tip_initial": tip_initial,
+            "tip_hostile_end": tip_hostile_end,
+            "tip_before": tip_before,
+            "tip_after": tip_after,
+            "log_signals": log_signals,
+            "checks": checks,
+        }
+        _write_client_example_proof(handle, "target-health-and-progress.json", evidence)
+        handle.probe_sample(
+            "runtime_target_health_and_progress",
+            value=evidence,
+            meta={"source": self.params.get("report_path", "outputs/protocol-decode-cases/result.json")},
+        )
+
+
+class RuntimePeerSessionHealth(ProbePrimitive):
+    """Retain one independent honest peer session before, during, and after load."""
+
+    def sample(self, handle):
+        report = _protocol_decode_report(handle, self.params)
+        peer = report.get("peer_session") or {}
+        peer_id = str(peer.get("peer_id") or "")
+        phases = {name: peer.get(name) for name in ("before", "during", "after")}
+        if isinstance(peer.get("observer"), dict):
+            phases["after"] = _observe_protocol_peer(peer["observer"])
+        if not peer_id or any(not isinstance(value, dict) for value in phases.values()):
+            raise RuntimeError(
+                "peer-session evidence requires peer_id and before/during/after observations"
+            )
+        checks = {
+            f"peer_usable_{name}": phases[name].get("usable") is True
+            for name in ("after", "before", "during")
+        }
+        recovered = peer.get("recovered_within_seconds")
+        if phases["after"].get("usable") is True and phases["during"].get("usable") is not True:
+            during_at = phases["during"].get("observed_at_epoch_seconds")
+            after_at = phases["after"].get("observed_at_epoch_seconds")
+            if isinstance(during_at, (int, float)) and isinstance(after_at, (int, float)):
+                recovered = max(0.0, float(after_at) - float(during_at))
+        evidence = {
+            "peer_id": peer_id,
+            **phases,
+            "recovered_within_seconds": recovered,
+            "checks": checks,
+        }
+        _write_client_example_proof(handle, "peer-session-health.json", evidence)
+        handle.probe_sample(
+            "runtime_peer_session_health",
+            value=evidence,
+            meta={"source": self.params.get("report_path", "outputs/protocol-decode-cases/result.json")},
+        )
+
+
+def _active_measurement_runtime(handle):
+    runtime = getattr(handle, "_measurement_runtime", None)
+    if runtime is None or not callable(getattr(runtime, "mark_phase", None)):
+        raise RuntimeError("active measurement runtime is unavailable")
+    return runtime
+
+
+class _RuntimeTimedMeasurementWindow(LoadPrimitive):
+    _WINDOW_NAME = ""
+
+    def run(self, handle, rng):
+        import time
+
+        duration = float(self.params.get("duration_seconds", 35.0))
+        if duration < 0:
+            raise ValueError("duration_seconds must be non-negative")
+        runtime = _active_measurement_runtime(handle)
+        start_marker = runtime.mark_phase(self._WINDOW_NAME, "start")
+        try:
+            time.sleep(duration)
+        finally:
+            end_marker = runtime.mark_phase(self._WINDOW_NAME, "end")
+        handle.log(
+            phase="setup" if self._WINDOW_NAME == "baseline" else "load",
+            primitive=f"runtime_mark_{self._WINDOW_NAME}_window",
+            level="info",
+            event="completed",
+            payload={
+                "outcome": "ok",
+                "window": self._WINDOW_NAME,
+                "duration_seconds": duration,
+                "start_marker": start_marker,
+                "end_marker": end_marker,
+            },
+        )
+
+
+class RuntimeMarkBaselineWindow(_RuntimeTimedMeasurementWindow):
+    """Create the resource-measurement baseline window before hostile load."""
+
+    _WINDOW_NAME = "baseline"
+
+
+class RuntimeMarkRecoveryWindow(_RuntimeTimedMeasurementWindow):
+    """Create the resource-measurement recovery window after hostile load."""
+
+    _WINDOW_NAME = "recovery"
+
+
+class RuntimeMarkHostileWindow(LoadPrimitive):
+    """Verify the complete hostile window written around the protocol workload."""
+
+    def run(self, handle, rng):
+        import math
+
+        path = _client_example_proof_path(handle, "measurements/windows.ndjson")
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise RuntimeError(f"hostile measurement window is unavailable: {path}") from exc
+
+        markers = {"start": [], "end": []}
+        for line_number, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            try:
+                marker = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    f"malformed measurement window marker at line {line_number}"
+                ) from exc
+            if not isinstance(marker, dict) or marker.get("phase_id") != "hostile":
+                continue
+            state = marker.get("state")
+            epoch = marker.get("epoch_seconds")
+            if state not in markers or not isinstance(epoch, (int, float)) or not math.isfinite(float(epoch)):
+                raise RuntimeError(
+                    f"malformed hostile measurement window marker at line {line_number}"
+                )
+            markers[state].append({**marker, "epoch_seconds": float(epoch)})
+
+        if len(markers["start"]) != 1 or len(markers["end"]) != 1:
+            raise RuntimeError(
+                "hostile measurement window requires exactly one start and one end marker"
+            )
+        start_marker = markers["start"][0]
+        end_marker = markers["end"][0]
+        start = start_marker["epoch_seconds"]
+        end = end_marker["epoch_seconds"]
+        if end < start:
+            raise RuntimeError("hostile measurement window is reversed")
+        handle.log(
+            phase="load",
+            primitive="runtime_mark_hostile_window",
+            level="info",
+            event="completed",
+            payload={
+                "outcome": "ok",
+                "window": "hostile",
+                "duration_seconds": end - start,
+                "start_marker": start_marker,
+                "end_marker": end_marker,
+            },
+        )
+
+
+_CLIENT_PROTOCOL_WORKLOAD_ID = "fixed-handshake-invalid-cases-v1"
+_CLIENT_PROTOCOL_SEED = "0xBAD0C003"
+_CLIENT_PROTOCOL_DIGEST = (
+    "sha256:1ab6db08d45f22f42b1333c255ed07ac9dc57ecacb69ee7c645ecfd451c4225e"
+)
+
+
+class RuntimeProtocolDecodeCases(LoadPrimitive):
+    """Run the frozen invalid Handshake cases against one exact real listener."""
+
+    _HELPERS = {
+        "amaru": "runtime_amaru_measurement_calibration.py",
+        "cardano-node": "runtime_cardano_measurement_calibration.py",
+    }
+
+    def run(self, handle, rng):
+        import os
+        import subprocess
+        import time
+
+        target = _measurement_target_identity(handle)
+        implementation = str(target.get("implementation") or "")
+        if implementation not in self._HELPERS:
+            raise ValueError(f"unsupported protocol-decode target: {implementation}")
+        profile_id = self.params.get("profile_id")
+        runtime_root_value = self.params.get("runtime_root")
+        if bool(profile_id) == bool(runtime_root_value):
+            raise ValueError(
+                "runtime_protocol_decode_cases requires exactly one of profile_id or runtime_root"
+            )
+        if profile_id:
+            from profile_manager.profiles import remote_base
+
+            runtime_root = Path(remote_base()) / str(profile_id)
+        else:
+            runtime_root = Path(str(runtime_root_value))
+        attempts_per_case = int(self.params.get("attempts_per_case", 100))
+        if attempts_per_case <= 0:
+            raise ValueError("attempts_per_case must be positive")
+        duration = float(self.params.get("duration_seconds", 240.0))
+        if duration < 0:
+            raise ValueError("duration_seconds must be non-negative")
+        expected_digest = str(
+            self.params.get("workload_digest", _CLIENT_PROTOCOL_DIGEST)
+        )
+        if expected_digest != _CLIENT_PROTOCOL_DIGEST:
+            raise ValueError("runtime_protocol_decode_cases workload digest is not frozen")
+        output_dir = _client_example_proof_path(
+            handle,
+            str(self.params.get("output_dir", "outputs/protocol-decode-cases")),
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        helper = DWARF_ROOT / "scripts" / self._HELPERS[implementation]
+        command = [
+            str(self.params.get("python_bin", "python3")),
+            str(self.params.get("helper_script", helper)),
+            "leg",
+            "--runtime-root",
+            str(runtime_root),
+            "--output-dir",
+            str(output_dir),
+            "--attempts",
+            str(attempts_per_case * 2),
+            "--timeout-seconds",
+            str(float(self.params.get("response_timeout_seconds", 2.0))),
+            "--case-set",
+            _CLIENT_PROTOCOL_WORKLOAD_ID,
+            "--attempt-interval-seconds",
+            str(duration / max(attempts_per_case * 2, 1)),
+        ]
+        if implementation == "amaru":
+            command.extend(
+                [
+                    "--progress-timeout-seconds",
+                    str(float(self.params.get("progress_timeout_seconds", 120.0))),
+                ]
+            )
+        else:
+            command.extend(
+                [
+                    "--observation-seconds",
+                    str(float(self.params.get("observation_seconds", 2.0))),
+                    "--trace-timeout-seconds",
+                    str(float(self.params.get("trace_timeout_seconds", 20.0))),
+                ]
+            )
+
+        runtime = _active_measurement_runtime(handle)
+        handle.log(
+            phase="load",
+            primitive="runtime_protocol_decode_cases",
+            level="info",
+            event="started",
+            payload={
+                "implementation": implementation,
+                "runtime_root": str(runtime_root),
+                "attempts_per_case": attempts_per_case,
+                "duration_seconds": duration,
+                "workload_digest": _CLIENT_PROTOCOL_DIGEST,
+            },
+        )
+        start_marker = runtime.mark_phase("hostile", "start")
+        started = time.monotonic()
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(
+            value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value
+        )
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=DWARF_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=float(self.params.get("timeout_seconds", max(300.0, duration + 60.0))),
+                check=False,
+                env=env,
+            )
+            remaining = duration - (time.monotonic() - started)
+            if remaining > 0:
+                time.sleep(remaining)
+        finally:
+            end_marker = runtime.mark_phase("hostile", "end")
+
+        report_path = output_dir / "result.json"
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            raise RuntimeError("protocol-decode helper did not retain a valid result") from exc
+        attempts = []
+        attempts_path = output_dir / "attempts.ndjson"
+        if attempts_path.is_file():
+            for line in attempts_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError("protocol-decode attempt evidence is malformed") from exc
+                if not isinstance(row, dict):
+                    raise RuntimeError("protocol-decode attempt evidence must contain objects")
+                attempts.append(row)
+        elif isinstance(report.get("attempt_records"), list):
+            attempts = list(report["attempt_records"])
+        report.update(
+            {
+                "workload_identity": {
+                    "identity": _CLIENT_PROTOCOL_WORKLOAD_ID,
+                    "seed": _CLIENT_PROTOCOL_SEED,
+                    "digest": _CLIENT_PROTOCOL_DIGEST,
+                    "attempts_per_case": attempts_per_case,
+                    "attempt_count": attempts_per_case * 2,
+                    "cases": [
+                        {
+                            "name": "unsupported-version-refusal",
+                            "payload_hex": "8200a11903e784182af400f4",
+                            "mux_frame_hex": "000000000000000c8200a11903e784182af400f4",
+                            "attempt_count": attempts_per_case,
+                        },
+                        {
+                            "name": "malformed-cbor",
+                            "payload_hex": "ff",
+                            "mux_frame_hex": "0000000000000001ff",
+                            "attempt_count": attempts_per_case,
+                        },
+                    ],
+                },
+                "attempt_records": attempts,
+                "hostile_window": {
+                    "start_marker": start_marker,
+                    "end_marker": end_marker,
+                    "marker_artifact": "measurements/windows.ndjson",
+                },
+            }
+        )
+        report_path.write_text(
+            json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        outcome = "ok" if proc.returncode == int(self.params.get("expected_helper_exit", 0)) else "unexpected_exit"
+        handle.log(
+            phase="load",
+            primitive="runtime_protocol_decode_cases",
+            level="info" if outcome == "ok" else "error",
+            event="completed",
+            payload={
+                "outcome": outcome,
+                "helper_exit_code": proc.returncode,
+                "attempt_count": len(attempts),
+                "output_dir": str(output_dir),
+                "stdout": (proc.stdout or "")[-4096:],
+                "stderr": (proc.stderr or "")[-2048:],
+            },
+        )
+        if outcome != "ok":
+            raise RuntimeError(
+                f"protocol-decode helper exited with {proc.returncode}: {(proc.stderr or '').strip()}"
+            )
+
+
+def _client_assertion_result(
+    name: str,
+    params: dict[str, Any],
+    *,
+    passed: bool,
+    evaluated: dict[str, Any],
+    data_points: list[dict[str, Any]],
+    note: str,
+) -> dict[str, Any]:
+    return {
+        "primitive": name,
+        "params": dict(params),
+        "evaluated_value": evaluated,
+        "data_points_used": data_points,
+        "result": "pass" if passed else "fail",
+        "note": None if passed else note,
+    }
+
+
+def _read_client_proof(handle, relative_path: str) -> tuple[Path, dict[str, Any]]:
+    path = _client_example_proof_path(handle, relative_path)
+    try:
+        body = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"client example proof is unavailable: {path}") from exc
+    if not isinstance(body, dict):
+        raise RuntimeError(f"client example proof must be an object: {path}")
+    return path, body
+
+
+class InvalidProtocolCasesContained(AssertionPrimitive):
+    _FRAMES = {
+        "unsupported-version-refusal": "000000000000000c8200a11903e784182af400f4",
+        "malformed-cbor": "0000000000000001ff",
+    }
+
+    def evaluate(self, handle):
+        name = "invalid_protocol_cases_contained"
+        try:
+            path, report = _read_client_proof(
+                handle, "outputs/protocol-decode-cases/result.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name,
+                self.params,
+                passed=False,
+                evaluated={"error": str(exc)},
+                data_points=[],
+                note="the retained protocol-decode proof is unavailable",
+            )
+        workload = report.get("workload_identity") or {}
+        attempts = report.get("attempt_records") or []
+        failures = []
+        counts = {}
+        for case, frame in self._FRAMES.items():
+            rows = [row for row in attempts if row.get("case") == case]
+            counts[case] = len(rows)
+            if len(rows) != 100:
+                failures.append(f"{case}:count")
+            for row in rows:
+                if row.get("request_hex") != frame:
+                    failures.append(f"{case}:request")
+                if row.get("listener_reached") is not True:
+                    failures.append(f"{case}:listener")
+                if not row.get("target_endpoint"):
+                    failures.append(f"{case}:endpoint")
+                if row.get("outcome") not in {"rejected", "disconnected"}:
+                    failures.append(f"{case}:outcome")
+                elapsed = row.get("elapsed_micros")
+                if (
+                    isinstance(elapsed, bool)
+                    or not isinstance(elapsed, int)
+                    or elapsed < 0
+                    or elapsed > 2_000_000
+                ):
+                    failures.append(f"{case}:duration")
+                if (
+                    not row.get("attempt_id")
+                    or not row.get("started_at")
+                    or not row.get("completed_at")
+                ):
+                    failures.append(f"{case}:identity")
+        identity_ok = all(
+            workload.get(field) == expected
+            for field, expected in {
+                "identity": _CLIENT_PROTOCOL_WORKLOAD_ID,
+                "seed": _CLIENT_PROTOCOL_SEED,
+                "digest": _CLIENT_PROTOCOL_DIGEST,
+                "attempts_per_case": 100,
+            }.items()
+        )
+        passed = identity_ok and len(attempts) == 200 and not failures
+        return _client_assertion_result(
+            name,
+            self.params,
+            passed=passed,
+            evaluated={
+                "attempt_count": len(attempts),
+                "counts": counts,
+                "target_endpoints": sorted(
+                    {
+                        str(row.get("target_endpoint"))
+                        for row in attempts
+                        if row.get("target_endpoint")
+                    }
+                ),
+                "workload_identity_matches": identity_ok,
+                "failures": sorted(set(failures)),
+            },
+            data_points=[{"report": path.relative_to(handle.run_dir).as_posix()}],
+            note="the frozen invalid protocol attempts were incomplete, unbounded, or unproven",
+        )
+
+
+class TargetProgressContinues(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "target_progress_continues"
+        try:
+            path, proof = _read_client_proof(
+                handle, "outputs/client-example-proof/target-health-and-progress.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="target progress proof is unavailable"
+            )
+        checks = proof.get("checks") or {}
+        passed = checks.get("target_progressed") is True
+        return _client_assertion_result(
+            name, self.params, passed=passed, evaluated={"checks": checks},
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="the retained target did not prove positive post-workload progress"
+        )
+
+
+class UnrelatedPeerSessionUsable(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "unrelated_peer_session_usable"
+        try:
+            path, proof = _read_client_proof(
+                handle, "outputs/client-example-proof/peer-session-health.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="independent peer-session proof is unavailable"
+            )
+        maximum = float(self.params.get("max_recovery_seconds", 35.0))
+        recovered = proof.get("recovered_within_seconds")
+        before = (proof.get("before") or {}).get("usable") is True
+        during = (proof.get("during") or {}).get("usable") is True
+        after = (proof.get("after") or {}).get("usable") is True
+        recovery_ok = during or (
+            isinstance(recovered, (int, float)) and 0 <= float(recovered) <= maximum
+        )
+        passed = bool(proof.get("peer_id")) and before and after and recovery_ok
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={
+                "peer_id": proof.get("peer_id"), "before_usable": before,
+                "during_usable": during, "after_usable": after,
+                "recovered_within_seconds": recovered,
+                "max_recovery_seconds": maximum,
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="the independent honest peer was not usable within the recovery bound"
+        )
+
+
+class NoTargetFatalSignal(AssertionPrimitive):
+    _REQUIRED = (
+        "no_fatal_signals",
+        "target_not_oom_killed",
+        "target_restart_count_unchanged",
+        "target_running_after",
+        "target_running_before",
+    )
+
+    def evaluate(self, handle):
+        name = "no_target_fatal_signal"
+        try:
+            path, proof = _read_client_proof(
+                handle, "outputs/client-example-proof/target-health-and-progress.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="target fatal-signal proof is unavailable"
+            )
+        checks = proof.get("checks") or {}
+        failed = [key for key in self._REQUIRED if checks.get(key) is not True]
+        return _client_assertion_result(
+            name, self.params, passed=not failed,
+            evaluated={"checks": checks, "failed_checks": failed},
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="the target has an unclassified fatal, exit, restart, or OOM signal"
+        )
+
+
 class RuntimePartitionRejoin(LoadPrimitive):
     """Run the existing partition/rejoin helper as a declarative primitive."""
 

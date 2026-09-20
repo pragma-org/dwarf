@@ -1,6 +1,8 @@
 """Run-scoped resource measurements for the actual Amaru process."""
 from __future__ import annotations
 
+import json
+import math
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -71,6 +73,135 @@ def _cpu_percent_samples(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 values.append({"value": cpu_delta / elapsed * 100, "unit": "%"})
         previous = point
     return values
+
+
+def _network_scope(samples: list[dict[str, Any]]) -> str:
+    scopes = sorted(
+        {
+            str(sample["network_scope"])
+            for sample in samples
+            if sample.get("network_scope") not in {None, "unavailable"}
+        }
+    )
+    return scopes[0] if len(scopes) == 1 else ("mixed" if scopes else "unavailable")
+
+
+def _resource_measurements(samples: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    network_scope = _network_scope(samples)
+    return {
+        "cpu_percent": distribution_summary(_cpu_percent_samples(samples), unit="%"),
+        "cpu_time_seconds": _counter_delta(samples, "cpu_time_seconds", "s"),
+        "rss_bytes": _distribution(samples, "rss_bytes", "bytes"),
+        "network_rx_bytes": _counter_delta(
+            samples, "network_rx_bytes", "bytes", scope=network_scope
+        ),
+        "network_tx_bytes": _counter_delta(
+            samples, "network_tx_bytes", "bytes", scope=network_scope
+        ),
+        "disk_read_bytes": _counter_delta(samples, "disk_read_bytes", "bytes"),
+        "disk_write_bytes": _counter_delta(samples, "disk_write_bytes", "bytes"),
+        "fd_count": _distribution(samples, "fd_count", "fds"),
+        "threads": _distribution(samples, "threads", "threads"),
+    }
+
+
+_RESOURCE_WINDOW_NAMES = ("baseline", "hostile", "recovery")
+
+
+def _read_resource_windows(path: Path) -> dict[str, tuple[float, float]]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise ValueError(f"measurement window markers are unavailable: {path}") from exc
+
+    markers = {
+        name: {"start": [], "end": []} for name in _RESOURCE_WINDOW_NAMES
+    }
+    for line_number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            marker = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"malformed measurement window marker at line {line_number}"
+            ) from exc
+        if not isinstance(marker, dict):
+            raise ValueError(f"malformed measurement window marker at line {line_number}")
+        name = marker.get("phase_id")
+        if name not in markers:
+            continue
+        state = marker.get("state")
+        epoch = marker.get("epoch_seconds")
+        if (
+            state not in {"start", "end"}
+            or not isinstance(epoch, (int, float))
+            or not math.isfinite(float(epoch))
+        ):
+            raise ValueError(
+                f"malformed {name} measurement window marker at line {line_number}"
+            )
+        markers[name][state].append(float(epoch))
+
+    windows = {}
+    for name in _RESOURCE_WINDOW_NAMES:
+        starts = markers[name]["start"]
+        ends = markers[name]["end"]
+        if len(starts) != 1 or len(ends) != 1:
+            raise ValueError(
+                f"{name} measurement window requires exactly one start and one end marker"
+            )
+        start, end = starts[0], ends[0]
+        if end < start:
+            raise ValueError(f"{name} measurement window is reversed")
+        windows[name] = (start, end)
+
+    ordered = sorted((start, end, name) for name, (start, end) in windows.items())
+    for previous, current in zip(ordered, ordered[1:]):
+        if current[0] <= previous[1]:
+            raise ValueError(
+                f"measurement windows overlap: {previous[2]} and {current[2]}"
+            )
+    return windows
+
+
+def _attribute_resource_windows(
+    samples: list[dict[str, Any]], path: Path
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    try:
+        ranges = _read_resource_windows(path)
+    except ValueError as exc:
+        reason = str(exc)
+        unavailable = {
+            name: {
+                "status": "unavailable",
+                "reason": reason,
+                "sample_count": 0,
+                "measurements": _resource_measurements([]),
+            }
+            for name in _RESOURCE_WINDOW_NAMES
+        }
+        return unavailable, {"status": "unavailable", "reason": reason}
+
+    attributed = {}
+    for name in _RESOURCE_WINDOW_NAMES:
+        start, end = ranges[name]
+        selected = [
+            sample
+            for sample in samples
+            if isinstance(sample.get("ts_epoch_s"), (int, float))
+            and start <= float(sample["ts_epoch_s"]) <= end
+        ]
+        attributed[name] = {
+            "status": "available" if selected else "unavailable",
+            **({} if selected else {"reason": "no resource samples fall inside the window"}),
+            "start_epoch_seconds": start,
+            "end_epoch_seconds": end,
+            "duration_seconds": end - start,
+            "sample_count": len(selected),
+            "measurements": _resource_measurements(selected),
+        }
+    return attributed, {"status": "available"}
 
 
 class AmaruResourceCollector:
@@ -163,36 +294,17 @@ class AmaruResourceCollector:
         with self._lock:
             samples = list(self._samples)
             sample_errors = list(self._sample_errors)
-        network_scopes = sorted(
-            {
-                str(sample["network_scope"])
-                for sample in samples
-                if sample.get("network_scope") not in {None, "unavailable"}
-            }
+        measurements = _resource_measurements(samples)
+        windows, window_attribution = _attribute_resource_windows(
+            samples, context.run_dir / "measurements" / "windows.ndjson"
         )
-        network_scope = network_scopes[0] if len(network_scopes) == 1 else (
-            "mixed" if network_scopes else "unavailable"
-        )
-        measurements = {
-            "cpu_percent": distribution_summary(_cpu_percent_samples(samples), unit="%"),
-            "cpu_time_seconds": _counter_delta(samples, "cpu_time_seconds", "s"),
-            "rss_bytes": _distribution(samples, "rss_bytes", "bytes"),
-            "network_rx_bytes": _counter_delta(
-                samples, "network_rx_bytes", "bytes", scope=network_scope
-            ),
-            "network_tx_bytes": _counter_delta(
-                samples, "network_tx_bytes", "bytes", scope=network_scope
-            ),
-            "disk_read_bytes": _counter_delta(samples, "disk_read_bytes", "bytes"),
-            "disk_write_bytes": _counter_delta(samples, "disk_write_bytes", "bytes"),
-            "fd_count": _distribution(samples, "fd_count", "fds"),
-            "threads": _distribution(samples, "threads", "threads"),
-        }
         result = {
             "schema_version": "v1",
             "measurement_id": self.entry["id"],
             "target": {"node": self.target_node, "pid": self._pid},
             "measurements": measurements,
+            "windows": windows,
+            "window_attribution": window_attribution,
             "source": {
                 "kind": "linux-proc",
                 "sample_count": len(samples),

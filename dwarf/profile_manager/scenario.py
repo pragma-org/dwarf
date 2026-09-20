@@ -1094,6 +1094,7 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         )
         measurement_runtime.prepare()
         measurement_runtime.start()
+        handle._measurement_runtime = measurement_runtime
         handle.set_measurement_context(measurement_runtime.snapshot())
 
     observer = telemetry.ObserverCollector(metrics_dir=handle.run_dir / "metrics", pid=os.getpid())
@@ -1222,6 +1223,11 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                                 prim.sample_for_input(handle, input_id=outcome.get("i"), outcome=outcome)
                             except NotImplementedError:
                                 break
+                    if hasattr(prim, "sample"):
+                        try:
+                            prim.sample(handle)
+                        except NotImplementedError:
+                            pass
 
                 _run_phase_assertions(phase_obj, outcomes)
                 phase_ok = True

@@ -1,0 +1,57 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-invalid-mini-protocol-amaru",
+  "title": "Client example 03 — invalid Handshake containment — Amaru",
+  "authors": ["dwarf"],
+  "tags": ["client-example", "amaru", "measurement", "handshake", "security"],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This separate Amaru execution is not a mixed-node comparison.",
+    "Security assertions are authoritative; measurements do not gate by default."
+  ],
+  "target": {"implementation": "amaru", "version": "10.11.20260912"},
+  "runtime": "devnet",
+  "profile": "profile-q-amaru-measurement-patched",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0xBAD0C003",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "amaru",
+      "version": "10.11.20260912",
+      "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+      "mode": "patched",
+      "image_digest": "sha256:dacb2351e69ab1d0bbfbc569b222d1bde40d9a158e79c556b30df554375addcc",
+      "executable_digest": "sha256:b0cebe917e092c3d4e47ac4841de7a49338dca1e586616803fe17e92d0d93425",
+      "patch_set_sha256": "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af"
+    },
+    {"primitive": "runtime_mark_baseline_window", "duration_seconds": 35}
+  ],
+  "load": [
+    {
+      "primitive": "runtime_protocol_decode_cases",
+      "profile_id": "profile-q-amaru-measurement-patched",
+      "attempts_per_case": 100,
+      "duration_seconds": 240,
+      "workload_digest": "sha256:1ab6db08d45f22f42b1333c255ed07ac9dc57ecacb69ee7c645ecfd451c4225e",
+      "response_timeout_seconds": 2,
+      "progress_timeout_seconds": 120,
+      "timeout_seconds": 360,
+      "expected_helper_exit": 0
+    },
+    {"primitive": "runtime_mark_hostile_window"},
+    {"primitive": "runtime_mark_recovery_window", "duration_seconds": 35}
+  ],
+  "faults": [],
+  "probes": [
+    {"primitive": "runtime_target_health_and_progress"},
+    {"primitive": "runtime_peer_session_health"}
+  ],
+  "assertions": [
+    {"primitive": "invalid_protocol_cases_contained"},
+    {"primitive": "target_progress_continues"},
+    {"primitive": "unrelated_peer_session_usable", "max_recovery_seconds": 35},
+    {"primitive": "no_target_fatal_signal"}
+  ],
+  "teardown": []
+}
