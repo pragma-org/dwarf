@@ -1,0 +1,227 @@
+diff --git a/api/lib/Ouroboros/Network/DwarfMeasurement.hs b/api/lib/Ouroboros/Network/DwarfMeasurement.hs
+new file mode 100644
+index 0000000..aa59a2f
+--- /dev/null
++++ b/api/lib/Ouroboros/Network/DwarfMeasurement.hs
+@@ -0,0 +1,104 @@
++{-# LANGUAGE OverloadedStrings #-}
++
++-- | Opt-in, bounded NDJSON sink for the DWARF measurement build.
++--
++-- The stock node never imports this module. The exact measurement target
++-- enables it only when DWARF_CARDANO_MEASUREMENT_TRACE names a file.
++module Ouroboros.Network.DwarfMeasurement
++  ( emitDwarfProtocolMeasurement
++  , measureDwarfEither
++  , measureDwarfPure
++  ) where
++
++import Control.Concurrent.MVar (MVar, newMVar, withMVar)
++import Control.Exception (evaluate)
++import Data.Aeson (encode, object, (.=))
++import qualified Data.ByteString.Lazy.Char8 as LBS
++import Data.Word (Word64)
++import GHC.Clock (getMonotonicTimeNSec)
++import System.Environment (lookupEnv)
++import System.IO (BufferMode (LineBuffering), Handle, IOMode (AppendMode),
++                  hSetBuffering, openFile)
++import System.IO.Unsafe (unsafePerformIO)
++
++
++{-# NOINLINE measurementHandle #-}
++measurementHandle :: Maybe (MVar Handle)
++measurementHandle = unsafePerformIO $ do
++  path <- lookupEnv "DWARF_CARDANO_MEASUREMENT_TRACE"
++  case path of
++    Nothing -> pure Nothing
++    Just "" -> pure Nothing
++    Just output -> do
++      handle <- openFile output AppendMode
++      hSetBuffering handle LineBuffering
++      Just <$> newMVar handle
++
++
++-- | Emit after the measured boundary has ended. File-lock and JSON encoding
++-- overhead therefore do not contribute to @elapsed_nanos@ or @duration_us@. The boundary covers
++-- receive plus incremental decode, not pure CBOR decode alone.
++{-# NOINLINE emitDwarfProtocolMeasurement #-}
++emitDwarfProtocolMeasurement
++  :: String
++  -> String
++  -> String
++  -> Word64
++  -> Word64
++  -> Word64
++  -> ()
++emitDwarfProtocolMeasurement protocol state outcome endedNs elapsedNs durationUs =
++  case measurementHandle of
++    Nothing -> ()
++    Just lock -> unsafePerformIO $ withMVar lock $ \handle -> do
++      LBS.hPutStrLn handle $ encode $ object
++        [ "schema_version" .= ("v1" :: String)
++        , "target" .= ("cardano-node::measurement" :: String)
++        , "event" .= ("protocol_receive_decode" :: String)
++        , "boundary" .= ("receive-plus-incremental-decode" :: String)
++        , "protocol" .= protocol
++        , "state" .= state
++        , "outcome" .= outcome
++        , "ended_monotonic_ns" .= endedNs
++        , "elapsed_nanos" .= elapsedNs
++        , "duration_us" .= durationUs
++        ]
++
++
++emitDwarfStageMeasurementIO :: String -> String -> Word64 -> Word64 -> Word64 -> IO ()
++emitDwarfStageMeasurementIO stage outcome endedNs elapsedNs durationUs =
++  case measurementHandle of
++    Nothing -> pure ()
++    Just lock -> withMVar lock $ \handle ->
++      LBS.hPutStrLn handle $ encode $ object
++        [ "schema_version" .= ("v1" :: String)
++        , "target" .= ("cardano-node::measurement" :: String)
++        , "event" .= ("ledger_stage" :: String)
++        , "stage" .= stage
++        , "outcome" .= outcome
++        , "ended_monotonic_ns" .= endedNs
++        , "elapsed_nanos" .= elapsedNs
++        , "duration_us" .= durationUs
++        ]
++
++
++{-# NOINLINE measureDwarfPure #-}
++measureDwarfPure :: String -> a -> a
++measureDwarfPure stage value = unsafePerformIO $ do
++  startedNs <- getMonotonicTimeNSec
++  result <- evaluate value
++  endedNs <- getMonotonicTimeNSec
++  emitDwarfStageMeasurementIO stage "completed" endedNs
++    (endedNs - startedNs)
++    ((endedNs - startedNs) `div` 1000)
++  pure result
++
++
++{-# NOINLINE measureDwarfEither #-}
++measureDwarfEither :: String -> Either e a -> Either e a
++measureDwarfEither stage value = unsafePerformIO $ do
++  startedNs <- getMonotonicTimeNSec
++  result <- evaluate value
++  outcome <- case result of
++    Left _ -> pure "rejected"
++    Right payload -> evaluate payload >> pure "accepted"
++  endedNs <- getMonotonicTimeNSec
++  emitDwarfStageMeasurementIO stage outcome endedNs
++    (endedNs - startedNs)
++    ((endedNs - startedNs) `div` 1000)
++  pure result
+diff --git a/framework/lib/Ouroboros/Network/Driver/Limits.hs b/framework/lib/Ouroboros/Network/Driver/Limits.hs
+index 12a197d..7980923 100644
+--- a/framework/lib/Ouroboros/Network/Driver/Limits.hs
++++ b/framework/lib/Ouroboros/Network/Driver/Limits.hs
+@@ -53,6 +53,7 @@ import Control.DeepSeq (NFData, force)
+ import Control.Monad.Class.MonadAsync
+ import Control.Monad.Class.MonadFork
+ import Control.Monad.Class.MonadSTM
++import Control.Monad.Class.MonadTime (MonadMonotonicTimeNSec, getMonotonicTimeNSec)
+ import Control.Monad.Class.MonadThrow
+ import Control.Monad.Class.MonadTimer.SI
+ import Control.Tracer (Tracer (..), contramap, traceWith)
+@@ -65,6 +66,7 @@ import Network.TypedProtocol.Peer
+ 
+ import Ouroboros.Network.Channel
+ import Ouroboros.Network.Driver.Simple
++import Ouroboros.Network.DwarfMeasurement (emitDwarfProtocolMeasurement)
+ import Ouroboros.Network.Protocol.Limits
+ import Ouroboros.Network.Util.ShowProxy
+ 
+@@ -72,6 +74,7 @@ import Ouroboros.Network.Util.ShowProxy
+ mkDriverWithLimits
+   :: forall ps (pr :: PeerRole) failure bytes m f annotator.
+      ( MonadThrow m
++     , MonadMonotonicTimeNSec m
+      , ShowProxy ps
+      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+      , Show failure
+@@ -128,9 +131,19 @@ mkDriverWithLimits runDecodeStep nat tracer
+       decoder <- decode tok
+       let sizeLimit = sizeLimitForState @st stateToken
+           timeLimit = fromMaybe (-1) (timeLimitForState @st stateToken)
++      startedNs <- getMonotonicTimeNSec
+       result  <- timeoutFn timeLimit $
+                    runDecodeStep sizeLimit dataSize
+                                  channel trailing (nat <$> decoder)
++      endedNs <- getMonotonicTimeNSec
++      let outcome = case result of
++            Just (Right _)         -> "accepted"
++            Just (Left (Just _))   -> "decode_failure"
++            Just (Left Nothing)    -> "size_limit"
++            Nothing                -> "timeout"
++      emitDwarfProtocolMeasurement
++        (showProxy (Proxy :: Proxy ps)) (show tok) outcome
++        endedNs (endedNs - startedNs) ((endedNs - startedNs) `div` 1000) `seq` pure ()
+ 
+       case result of
+         Just (Right x@(SomeMessage msg, _trailing')) -> do
+@@ -145,6 +158,7 @@ driverWithLimits
+   :: forall ps (pr :: PeerRole) failure bytes m.
+      ( MonadEvaluate m
+      , MonadThrow m
++     , MonadMonotonicTimeNSec m
+      , ShowProxy ps
+      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+      , NFData failure
+@@ -164,6 +178,7 @@ annotatedDriverWithLimits
+   :: forall ps (pr :: PeerRole) failure bytes m.
+      ( MonadEvaluate m
+      , MonadThrow m
++     , MonadMonotonicTimeNSec m
+      , Monoid bytes
+      , ShowProxy ps
+      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+@@ -183,6 +198,7 @@ annotatedDriverWithLimits = mkDriverWithLimits runAnnotatedDecoderWithLimit runA
+ mkDriverWithLimitsRnd
+   :: forall ps (pr :: PeerRole) failure bytes m f annotator.
+      ( MonadThrow m
++     , MonadMonotonicTimeNSec m
+      , ShowProxy ps
+      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+      , Show failure
+@@ -242,9 +258,19 @@ mkDriverWithLimitsRnd runDecodeStep nat tracer timeoutFn rnd0
+       let sizeLimit = sizeLimitForState @st stateToken
+           (timeLimit, rnd') = first (fromMaybe (-1))
+                             $ timeLimitForStateWithRnd @st stateToken rnd
++      startedNs <- getMonotonicTimeNSec
+       result  <- timeoutFn timeLimit $
+                    runDecodeStep sizeLimit dataSize
+                                  channel trailing (nat <$> decoder)
++      endedNs <- getMonotonicTimeNSec
++      let outcome = case result of
++            Just (Right _)         -> "accepted"
++            Just (Left (Just _))   -> "decode_failure"
++            Just (Left Nothing)    -> "size_limit"
++            Nothing                -> "timeout"
++      emitDwarfProtocolMeasurement
++        (showProxy (Proxy :: Proxy ps)) (show tok) outcome
++        endedNs (endedNs - startedNs) ((endedNs - startedNs) `div` 1000) `seq` pure ()
+ 
+       case result of
+         Just (Right (x@(SomeMessage msg), trailing')) -> do
+@@ -261,6 +287,7 @@ mkDriverWithLimitsRnd runDecodeStep nat tracer timeoutFn rnd0
+ driverWithLimitsRnd :: forall ps (pr :: PeerRole) failure bytes m.
+                        ( MonadEvaluate m
+                        , MonadThrow m
++                       , MonadMonotonicTimeNSec m
+                        , ShowProxy ps
+                        , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+                        , Show failure
+diff --git a/ouroboros-network.cabal b/ouroboros-network.cabal
+index 40c057d..5567e18 100644
+--- a/ouroboros-network.cabal
++++ b/ouroboros-network.cabal
+@@ -88,6 +88,7 @@ library api
+     Ouroboros.Network.BlockFetch.ConsensusInterface
+     Ouroboros.Network.CodecCBORTerm
+     Ouroboros.Network.ControlMessage
++    Ouroboros.Network.DwarfMeasurement
+     Ouroboros.Network.DiffusionMode
+     Ouroboros.Network.Handshake
+     Ouroboros.Network.Handshake.Acceptable

@@ -247,3 +247,44 @@ def test_cardano_target_resolver_requires_exact_profile_and_runtime_probe(tmp_pa
     path.write_text(json.dumps(record))
     with pytest.raises(MeasurementTargetError, match="runtime probe"):
         resolve_patched_cardano_target(profile, registry_root=tmp_path)
+
+
+NANOSECOND_PATCH_ROOT = (
+    Path("dwarf/targets/cardano-node/measurement-patches-nanoseconds-v2") / REVISION
+)
+
+
+def test_nanosecond_v2_manifest_is_additive_and_v1_stays_byte_exact():
+    assert builder.sha256_file(PATCH_ROOT / "manifest.json") == (
+        "6ec8329317dec47205504d8511e9a3584f5a1fcd0bf826f59165af7f9c669aa9"
+    )
+    expected_v1_patches = {
+        "0001-network-protocol-and-ledger-measurements.patch": "14e912d63297a4ffc429cac3295d90655a12330a6ee7a294823b2a8c67715069",
+        "0002-consensus-block-epoch-measurements.patch": "cc05a427560af75479ca9c0ba923b8698c1b09e6bef5ddf4ab68bf33eaac52b4",
+        "0003-plutus-vm-measurement.patch": "aec5bbc3a4de61b059f86d99dad207746f67f8c4fdffe1c74623c4dfa2507289",
+    }
+    for name, digest in expected_v1_patches.items():
+        assert builder.sha256_file(PATCH_ROOT / name) == digest
+
+    manifest = builder.load_manifest(NANOSECOND_PATCH_ROOT / "manifest.json")
+    assert manifest["measurement_revision"] == "nanoseconds-v2"
+    assert manifest["source"]["revision"] == REVISION
+    verified = builder.verify_patch_set(NANOSECOND_PATCH_ROOT, manifest)
+    assert verified["patch_set_sha256"] == manifest["patch_set_sha256"]
+    assert len(verified["patches"]) == 3
+
+
+def test_nanosecond_v2_patches_keep_duration_us_and_add_elapsed_nanos():
+    manifest = builder.load_manifest(NANOSECOND_PATCH_ROOT / "manifest.json")
+    patch_text = "\n".join(
+        (NANOSECOND_PATCH_ROOT / item["path"]).read_text(encoding="utf-8")
+        for item in manifest["patches"]
+    )
+
+    assert patch_text.count('"elapsed_nanos" .=') >= 3
+    assert patch_text.count('"duration_us" .=') >= 3
+    assert "emitDwarfProtocolMeasurement" in patch_text
+    assert 'measureDwarfEither "block-application"' in patch_text
+    assert 'measureDwarfPure "epoch-transition"' in patch_text
+    assert 'stage" .= ("plutus-vm"' in patch_text
+    assert "`div` 1000" in patch_text
