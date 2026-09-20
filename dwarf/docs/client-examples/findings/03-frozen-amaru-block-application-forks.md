@@ -32,6 +32,19 @@ The frozen contract says to stop with failure on a non-monotonic target height. 
 - Controlled proof SHA-256: `e86ecb56d637bc2e8ffeb5c99b90863e64c18779ffa84fb70638017f4fa2df7b`
 - Measurement report SHA-256: `69e6cac76311f1102568008d86c8f4757ca6107e9277b2d5d31cbf5eaf66f7ec`
 
+## Exact reproduction
+
+Run `20260920T143735Z-69f67c6a` repeated the exact frozen scenario on a fresh, healthy deployment. It retained 60
+adopted-block records, 73 application samples, and 60 correlations. Height 413 and slot 1837 changed from block
+`cc8ee5aa924313f61b9ca8e56c1a74b4d93634934efdb4a0a9d38920f67da421` to block
+`220f8f4b318dd9fb3f8fa4e2b7c840d5fb881e5406bda855c90aa65c1838d294`. The run again failed the frozen strict
+monotonic-height check before assertions.
+
+- Manifest SHA-256: `0fbdf1afe72ad86d7e80d6b656ebcd4336610605ae8230779835e47b613da792`
+- Controlled proof SHA-256: `baefccabd04c45c9877d7f5a7b8a44667d5a31da2020df0da00827dee64527f6`
+- Measurement report SHA-256: `1e0c2da207f79f1322802138631a7f5b6fb415a41278882906d0931fb62db7e1`
+- Verified 79-file bundle SHA-256: `44ac2202e507fe4a28c1f853197c20a7b13751c2f748bc9eba7069bd9d419b28`
+
 ## Required decision
 
 Card 04 remains incomplete for Amaru. An authorized contract decision must define whether a canonical-chain-only sequence can replace the current adopted-event sequence. This finding does not change the frozen monotonic assertion.

@@ -6,6 +6,8 @@ Child explanation: The Cardano node added and measured enough real blocks. The A
 
 The accepted Cardano-node run is `20260920T125840Z-778a7cf7` on `nanoseconds-v2`. It passed 4/4 assertions, retained 80 adopted block identities, correlated 80 exact application timings, and retained 180 resource samples in the controlled window. Its exported bundle SHA-256 is `1e03242b941f000db4487ba36566d890202e4eee5758abacd9d58daad38701d2`.
 
-The Amaru rehearsal `20260920T114304Z-a8ac5c5e` reached the exact production topology but observed real same-height fork switches. The frozen monotonic-height requirement cannot accept that behavior without a contract or topology decision. See `findings/03-frozen-amaru-block-application-forks.md`.
+Amaru rehearsals `20260920T114304Z-a8ac5c5e` and `20260920T143735Z-69f67c6a` reached the exact production topology but observed real same-height fork switches. The second run retained 60 adopted-block records, 73 application samples, and 60 correlations. Its verified 79-file bundle SHA-256 is `44ac2202e507fe4a28c1f853197c20a7b13751c2f748bc9eba7069bd9d419b28`.
+
+The frozen monotonic-height requirement cannot accept that behavior without a contract or topology decision. See `findings/03-frozen-amaru-block-application-forks.md`.
 
 Exact Cardano evidence and claim limits are in `04-CARDANO-BLOCK-APPLICATION-PROOF.md`. This card remains a partial client requirement. It is not an implementation performance comparison.
