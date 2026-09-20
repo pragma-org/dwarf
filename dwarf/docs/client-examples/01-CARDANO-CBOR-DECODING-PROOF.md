@@ -4,6 +4,8 @@ Status: The Cardano-node leg has one accepted collection-proof run. The complete
 
 Child explanation: The Cardano node got 100 saved messages and gave the expected answer for every message. It also stayed awake after 200 bad hello messages. The Amaru half cannot pass because that old Amaru version accepts 30 messages that it must reject.
 
+The exact Amaru rehearsal is retained as failed run `20260920T135054Z-28289dcd`. It passed containment, progress, and round-trip assertions, but it failed outcome parity for the same 30 over-limit inputs.
+
 ## Exact run
 
 - Run ID: `20260920T132629Z-ea000d37`

@@ -37,3 +37,17 @@ The Amaru change that introduced the affected decoder is an ancestor of the froz
 - Cardano `report.md` SHA-256: `b164007b641eae4a8b1af8696f7ade2e78500e60d7b60fea54f8fbd200ada5eb`
 
 These artifacts are diagnostic evidence. They are not accepted Gate 5 evidence. Card 01 remains incomplete. The frozen contract and Card 03 evidence are unchanged.
+
+## Formal DWARF rehearsal
+
+Run `20260920T135054Z-28289dcd` executed the complete frozen Amaru scenario against framework commit `cd6b925af431f70f314d59f9266e48e34e0e6388` and the exact `nanoseconds-v2` target. Three of four assertions passed. The only failed assertion was `cbor_conformance_clean`, with the same 30 expected-outcome mismatches.
+
+The real node contained all 200 live attempts, advanced from block 316 to block 423, stayed running, did not restart, did not report an out-of-memory condition, and retained no fatal signal. The run retained 241 CPU samples and 242 resident-memory samples. Thus, the failure is not an unavailable target, a vacuous workload, or a liveness failure.
+
+- Manifest SHA-256: `e8c1f6d79f81f5e9882bd43dabe0feb681d2df061c464e072a294af7838b0a38`
+- Assertions SHA-256: `67519fd6f93f81b6ce83ba2aee99846eb0be463bb6847eaeafea9c48309566f2`
+- Codec result SHA-256: `e71b06330e8217975276ad183bc1891745bcccd4559ffe1305adf6c7f4bd5e24`
+- Live protocol result SHA-256: `06d5e46e7e9dbdff8cd2685178c472d79038444d6543b8cf3b869efdea71bd0f`
+- Exported failed-evidence bundle SHA-256: `aaef5dabea72cab7d8c6d6f23133753f11b86ce41de1ba56bb32e2c456f94a8c`
+
+`cardano-profile verify 20260920T135054Z-28289dcd` returned `OK`. This verifies evidence integrity; it does not change the failed security verdict.
