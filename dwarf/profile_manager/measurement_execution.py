@@ -11,18 +11,28 @@ from profile_manager.measurement_collectors.amaru_factory import (
     build_amaru_measurement_factories,
 )
 from profile_manager.measurement_collectors.amaru_patched import (
-    AMARU_MEASUREMENT_PATCH_SHA256,
+    AMARU_MEASUREMENT_REVISIONS,
     AMARU_SOURCE_REVISION,
 )
 from profile_manager.measurement_collectors.cardano_factory import (
     build_cardano_measurement_factories,
 )
 from profile_manager.measurement_collectors.cardano_patched import (
-    CARDANO_MEASUREMENT_PATCH_SHA256,
+    CARDANO_MEASUREMENT_REVISIONS,
     CARDANO_SOURCE_REVISION,
 )
 from profile_manager.measurement_resolution import resolve_measurements
 from scripts.runtime_amaru_preview_proof import extract_latest_adopted_tip
+
+
+def _measurement_revision_for_patch(
+    implementation: str, patch_set_sha256: str
+) -> str | None:
+    revisions = {
+        "amaru": AMARU_MEASUREMENT_REVISIONS,
+        "cardano-node": CARDANO_MEASUREMENT_REVISIONS,
+    }
+    return revisions.get(implementation, {}).get(patch_set_sha256)
 
 
 AMARU_STOCK_CAPABILITIES = {
@@ -175,7 +185,8 @@ def _patched_amaru_identity(runtime: dict[str, Any], scenario) -> dict[str, Any]
             "deployed patched Amaru source revision does not match collector"
         )
     patch_set = str(target.get("patch_set_sha256") or "")
-    if patch_set != AMARU_MEASUREMENT_PATCH_SHA256:
+    measurement_revision = _measurement_revision_for_patch("amaru", patch_set)
+    if measurement_revision is None:
         raise MeasurementExecutionError(
             "deployed patched Amaru patch-set identity does not match collector"
         )
@@ -215,6 +226,7 @@ def _patched_amaru_identity(runtime: dict[str, Any], scenario) -> dict[str, Any]
         "source_revision": source_revision,
         "mode": "patched",
         "patch_set_sha256": patch_set,
+        "measurement_revision": measurement_revision,
         "image_reference": image_reference,
         "image_digest": image_digest,
         "executable_digest": executable_digest,
@@ -271,7 +283,10 @@ def _stock_cardano_identity(runtime: dict[str, Any], scenario) -> tuple[dict[str
     if mode == "patched":
         if source_revision != CARDANO_SOURCE_REVISION:
             raise MeasurementExecutionError("patched Cardano-node source revision does not match collector")
-        if node.get("patch_set_sha256") != CARDANO_MEASUREMENT_PATCH_SHA256:
+        measurement_revision = _measurement_revision_for_patch(
+            "cardano-node", str(node.get("patch_set_sha256") or "")
+        )
+        if measurement_revision is None:
             raise MeasurementExecutionError("patched Cardano-node patch-set identity does not match collector")
         digest = str(node.get("image_digest") or observed_digest)
         if observed_digest != digest:
@@ -295,6 +310,7 @@ def _stock_cardano_identity(runtime: dict[str, Any], scenario) -> tuple[dict[str
             "source_revision": source_revision,
             "mode": "patched",
             "patch_set_sha256": node["patch_set_sha256"],
+            "measurement_revision": measurement_revision,
             "image_reference": image_reference,
             "image_digest": digest,
             "executable_digest": node["executable_digest"],

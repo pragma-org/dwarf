@@ -36,3 +36,19 @@ def test_profile_model_retains_measurement_revision():
     profile = Profile.from_dict(body)
 
     assert profile.measurement_revision == "nanoseconds-v2"
+
+def test_auto_measurement_identity_accepts_both_additive_patch_revisions():
+    from profile_manager.measurement_execution import _measurement_revision_for_patch
+
+    assert _measurement_revision_for_patch(
+        "amaru", "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af"
+    ) == "whole-microseconds-v1"
+    assert _measurement_revision_for_patch(
+        "amaru", "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0"
+    ) == "nanoseconds-v2"
+    assert _measurement_revision_for_patch(
+        "cardano-node", "7a948067c6b957b277400675cf95e32864ed8d92cd130fbadb673775249b5cc1"
+    ) == "whole-microseconds-v1"
+    assert _measurement_revision_for_patch(
+        "cardano-node", "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c"
+    ) == "nanoseconds-v2"

@@ -332,6 +332,24 @@
       ],
       "version": "0.1.0"
     },
+    "plutus_result_and_budget_match": {
+      "class": "PlutusResultAndBudgetMatch",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/plutus_result_and_budget_match.schema.json",
+      "runtimes": ["single-node", "devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
+    "plutus_live_outcomes_observed": {
+      "class": "PlutusLiveOutcomesObserved",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/plutus_live_outcomes_observed.schema.json",
+      "runtimes": ["single-node", "devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
     "cbor_edge_cases": {
       "class": "CborEdgeCases",
       "family": "load",
@@ -1488,6 +1506,15 @@
       ],
       "version": "0.1.0"
     },
+    "runtime_version_pinned_plutus_conformance": {
+      "class": "RuntimeVersionPinnedPlutusConformance",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_version_pinned_plutus_conformance.schema.json",
+      "runtimes": ["single-node", "devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
     "runtime_version_pinned_cbor_conformance": {
       "class": "RuntimeVersionPinnedCborConformance",
       "family": "load",
@@ -1954,6 +1981,15 @@
       "supports": [
         "cardano-node"
       ],
+      "version": "0.1.0"
+    },
+    "runtime_controlled_plutus_transactions": {
+      "class": "RuntimeControlledPlutusTransactions",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_controlled_plutus_transactions.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
       "version": "0.1.0"
     },
     "runtime_local_query_stress": {

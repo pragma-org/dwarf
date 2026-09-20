@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "kind": "production-plutus-v2-conformance",
+  "implementation": "cardano-node",
+  "source": {
+    "repository": "https://github.com/IntersectMBO/cardano-node.git",
+    "release": "11.1.2",
+    "revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+  },
+  "measurement_boundary": "production-plutus-v2-vm-only",
+  "production_entrypoint": "PlutusLedgerApi.V2 deserialiseScript and production counting evaluator",
+  "toolchain": {"ghc": "9.6.7", "cabal": "3.16.0.0"},
+  "adapter_set_sha256": "0d73dc998d695bd557be97e24bce10f5b25066a8620e77578be6081f4f38fc6e",
+  "build": {
+    "command": ["cabal-3.16.0.0", "build", "-w", "ghc-9.6.7", "--project-file=dwarf-conformance-adapters/cardano-plutus/cabal.project", "exe:dwarf-cardano-plutus-conformance"],
+    "binary_query": ["cabal-3.16.0.0", "list-bin", "-w", "ghc-9.6.7", "--project-file=dwarf-conformance-adapters/cardano-plutus/cabal.project", "exe:dwarf-cardano-plutus-conformance"],
+    "environment": {"LANG": "C.UTF-8"}
+  },
+  "adapter_files": [
+    {"path": "plutus/cabal.project", "sha256": "5fe78f1194deca3a07fdcb6fb2849a81bb7f04e99292a6b9365c4e548c1b84b0"},
+    {"path": "plutus/dwarf-cardano-plutus-conformance.cabal", "sha256": "98c4eb912a1b2ceab77406fc3fd350606521195cc607a820c7a8d1d773a8267b"},
+    {"path": "plutus/src/Main.hs", "sha256": "3ae8733999fe1bf946a59aaaf06e4218562b829cd07db3a76eeba56cb3d4b951"}
+  ]
+}

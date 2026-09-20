@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime_version_pinned_plutus_conformance params",
+  "type": "object",
+  "required": ["cost_model", "output_dir", "adapters"],
+  "properties": {
+    "cost_model": {"type": "string", "minLength": 1},
+    "output_dir": {"type": "string", "minLength": 1},
+    "executions_per_script": {"const": 30},
+    "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "expect_exit": {"type": "integer"},
+    "adapters": {
+      "type": "object",
+      "required": ["amaru", "cardano-node"],
+      "additionalProperties": false,
+      "properties": {
+        "amaru": {"$ref": "#/$defs/adapter"},
+        "cardano-node": {"$ref": "#/$defs/adapter"}
+      }
+    }
+  },
+  "$defs": {
+    "adapter": {
+      "type": "object",
+      "required": ["record", "source_revision"],
+      "properties": {
+        "record": {"type": "string", "minLength": 1},
+        "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

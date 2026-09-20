@@ -182,6 +182,7 @@ def test_prepare_scenario_measurements_resolves_exact_live_patched_runtime(tmp_p
         "source_revision": AMARU_REVISION,
         "mode": "patched",
         "patch_set_sha256": AMARU_PATCH_SET,
+        "measurement_revision": "whole-microseconds-v1",
         "image_reference": f"dwarf/amaru-measurement@{AMARU_PATCHED_DIGEST}",
         "image_digest": AMARU_PATCHED_DIGEST,
         "executable_digest": AMARU_PATCHED_EXECUTABLE,

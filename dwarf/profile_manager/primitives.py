@@ -1066,6 +1066,15 @@ def build_runtime_version_pinned_cbor_conformance_command(*, config_path: Path) 
     ]
 
 
+def build_runtime_version_pinned_plutus_conformance_command(*, config_path: Path) -> list[str]:
+    return [
+        "python3",
+        str(DWARF_ROOT / "scripts" / "runtime_version_pinned_plutus_conformance.py"),
+        "--config",
+        str(config_path),
+    ]
+
+
 def build_runtime_crash_triage_command(
     *,
     bundle_dir: Path,
@@ -4037,6 +4046,48 @@ class RuntimeVersionPinnedCborConformance(LoadPrimitive):
                 "stderr": _decode_process_output(proc.stderr)[-4096:],
             },
         )
+
+
+class RuntimeVersionPinnedPlutusConformance(LoadPrimitive):
+    """Run both exact production Plutus V2 evaluators with one cost model."""
+
+    def run(self, handle, rng):
+        output_dir = _resolve_output_path(handle, self.params["output_dir"])
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        config = {
+            "cost_model": str(_resolve_runtime_path(self.params["cost_model"])),
+            "output_dir": str(output_dir),
+            "executions_per_script": int(self.params.get("executions_per_script", 30)),
+            "adapters": {
+                implementation: {
+                    "record": str(_resolve_runtime_path(item["record"])),
+                    "source_revision": str(item["source_revision"]),
+                }
+                for implementation, item in self.params["adapters"].items()
+            },
+        }
+        config_path = output_dir.parent / f"{output_dir.name}-config.json"
+        config_path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        command = build_runtime_version_pinned_plutus_conformance_command(config_path=config_path)
+        handle.log(phase="load", primitive="runtime_version_pinned_plutus_conformance",
+                   level="info", event="started", payload={"output_dir": str(output_dir), "command": command})
+        proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True,
+                              timeout=float(self.params.get("timeout_seconds", 1200)),
+                              check=False, env=_build_dwarf_telemetry_env(handle))
+        report_path = output_dir / "report.json"
+        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
+        artifacts = {
+            "has_report_json": report_path.is_file(),
+            "has_raw_evaluations": (output_dir / "raw-evaluations.ndjson").is_file(),
+            "has_report_markdown": (output_dir / "report.md").is_file(),
+        }
+        outcome = "ok" if proc.returncode == int(self.params.get("expect_exit", 0)) else "unexpected_exit"
+        handle.log(phase="load", primitive="runtime_version_pinned_plutus_conformance",
+                   level="info" if outcome == "ok" else "error", event="completed",
+                   payload={"outcome": outcome, "exit_code": proc.returncode,
+                            "artifact_summary": artifacts, "report": report,
+                            "stdout": _decode_process_output(proc.stdout)[-4096:],
+                            "stderr": _decode_process_output(proc.stderr)[-4096:]})
 
 
 class RuntimeAflNetCampaign(LoadPrimitive):
@@ -13669,6 +13720,45 @@ def _measurement_target_identity(handle) -> dict[str, Any]:
     return dict(identity)
 
 
+class RuntimeControlledPlutusTransactions(LoadPrimitive):
+    """Submit exactly 30 valid and 30 invalid frozen Plutus transactions."""
+
+    def run(self, handle, rng):
+        import os
+        from profile_manager.profiles import remote_base
+
+        profile_id = self.params.get("profile_id")
+        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        output_dir = _resolve_output_path(
+            handle, self.params.get("output_dir", "outputs/controlled-plutus-transactions")
+        )
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            str(self.params.get("python_bin", "python3")),
+            str(DWARF_ROOT / "scripts" / "runtime_controlled_plutus_transactions.py"),
+            "--measurement-implementation",
+            str(self.params["measurement_implementation"]),
+            "--runtime-root", str(runtime_root),
+            "--output-dir", str(output_dir),
+            "--transaction-count", "60",
+        ]
+        handle.log(phase="load", primitive="runtime_controlled_plutus_transactions",
+                   level="info", event="started",
+                   payload={"profile_id": profile_id, "runtime_root": str(runtime_root), "command": command})
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value)
+        proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True, text=True,
+                              timeout=float(self.params.get("timeout_seconds", 3600)),
+                              check=False, env=env)
+        report_path = output_dir / "result.json"
+        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
+        outcome = "ok" if proc.returncode == int(self.params.get("expect_exit", 0)) else "unexpected_exit"
+        handle.log(phase="load", primitive="runtime_controlled_plutus_transactions",
+                   level="info" if outcome == "ok" else "error", event="completed",
+                   payload={"outcome": outcome, "exit_code": proc.returncode,
+                            "report": report, "output_dir": str(output_dir),
+                            "stdout": (proc.stdout or "")[-4096:], "stderr": (proc.stderr or "")[-4096:]})
+
 class RuntimeVerifyExactTarget(LoadPrimitive):
     """Fail closed unless the deployed measurement target matches every frozen field."""
 
@@ -16967,6 +17057,64 @@ class ExecutionTraceAmaruCardanoNodeEquivalent(AssertionPrimitive):
             "note": note,
         }
 
+
+class PlutusResultAndBudgetMatch(AssertionPrimitive):
+    """Require exact result and CPU/memory agreement for both frozen programs."""
+
+    def evaluate(self, handle):
+        completed = _events_from_handle(
+            handle, phase="load", event="completed",
+            primitive="runtime_version_pinned_plutus_conformance",
+        )
+        minimum = int(self.params.get("executions_per_outcome", 30))
+        non_ok = []
+        for event in completed:
+            payload = event.get("payload") or {}
+            report = payload.get("report") or {}
+            distributions = report.get("distributions") or {}
+            enough = all(
+                int(((distributions.get(implementation) or {}).get(outcome) or {}).get("sample_count") or 0) >= minimum
+                for implementation in ("amaru", "cardano-node")
+                for outcome in ("accepted", "rejected")
+            )
+            if (payload.get("outcome") != "ok"
+                    or (report.get("checks") or {}).get("plutus_result_and_budget_match") is not True
+                    or bool(report.get("mismatches"))
+                    or not enough):
+                non_ok.append(payload)
+        passed = len(completed) >= 1 and not non_ok
+        return {"primitive": "plutus_result_and_budget_match", "params": dict(self.params),
+                "evaluated_value": {"completed": len(completed), "non_ok": len(non_ok)},
+                "data_points_used": [event.get("payload") or {} for event in completed],
+                "result": "pass" if passed else "fail",
+                "note": None if passed else "Plutus result or budget evidence did not match"}
+
+
+class PlutusLiveOutcomesObserved(AssertionPrimitive):
+    """Require 30 included valid and 30 included invalid live transactions."""
+
+    def evaluate(self, handle):
+        completed = _events_from_handle(
+            handle, phase="load", event="completed",
+            primitive="runtime_controlled_plutus_transactions",
+        )
+        minimum = int(self.params.get("minimum_per_outcome", 30))
+        non_ok = []
+        for event in completed:
+            payload = event.get("payload") or {}
+            report = payload.get("report") or {}
+            counts = report.get("outcome_counts") or {}
+            if (payload.get("outcome") != "ok"
+                    or (report.get("checks") or {}).get("plutus_live_outcomes_observed") is not True
+                    or int(counts.get("accepted") or 0) < minimum
+                    or int(counts.get("rejected") or 0) < minimum):
+                non_ok.append(payload)
+        passed = len(completed) >= 1 and not non_ok
+        return {"primitive": "plutus_live_outcomes_observed", "params": dict(self.params),
+                "evaluated_value": {"completed": len(completed), "non_ok": len(non_ok)},
+                "data_points_used": [event.get("payload") or {} for event in completed],
+                "result": "pass" if passed else "fail",
+                "note": None if passed else "Live Plutus outcomes were incomplete"}
 
 def _evaluate_version_pinned_cbor_check(handle, params, *, check_name, failure_key):
     completed = _events_from_handle(

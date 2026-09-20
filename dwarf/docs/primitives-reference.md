@@ -1,8 +1,8 @@
 # DWARF Primitives Reference
 
-The complete catalogue of the **233** primitives a scenario can reference — every *strategy* (what a scenario can do) and every *oracle* (what it can assert). Generated from `primitives/registry.json`; purposes/pass-conditions are curated. A scenario may only reference names listed here. Many primitives operate on CBOR (Concise Binary Object Representation), Cardano's binary wire and ledger encoding. The **Antithesis** column marks the primitives the DWARF&rarr;Antithesis generator can carry onto the Antithesis backend (CBOR-only by design &mdash; `cbor_fuzz_*` strategies, the `runtime_aflpp_campaign` coverage surface, and the assertions mapped to native SDK checks); everything else runs on the local backend only.
+The complete catalogue of the **237** primitives a scenario can reference — every *strategy* (what a scenario can do) and every *oracle* (what it can assert). Generated from `primitives/registry.json`; purposes/pass-conditions are curated. A scenario may only reference names listed here. Many primitives operate on CBOR (Concise Binary Object Representation), Cardano's binary wire and ledger encoding. The **Antithesis** column marks the primitives the DWARF&rarr;Antithesis generator can carry onto the Antithesis backend (CBOR-only by design &mdash; `cbor_fuzz_*` strategies, the `runtime_aflpp_campaign` coverage surface, and the assertions mapped to native SDK checks); everything else runs on the local backend only.
 
-> Coverage: 206/233 primitives carry a curated description (88%). Any without one is still listed with its registry metadata. Regenerate with `scripts/gen_reference.py`.
+> Coverage: 206/237 primitives carry a curated description (87%). Any without one is still listed with its registry metadata. Regenerate with `scripts/gen_reference.py`.
 
 The browser catalog at `/operate/primitives` is the source-backed inventory for registry metadata, parameter schemas, executor provenance, scenario references, and deterministic source export. `/learn/primitives` documents the code-change lifecycle. A primitive is executable code; it is not a corpus, generation grammar, target, profile, or scenario.
 
@@ -11,7 +11,7 @@ The browser catalog at `/operate/primitives` is the source-backed inventory for 
 Every primitive lists which **runtimes** it works in (`library` / `single-node` / `devnet`) and its **verified** status &mdash; the depth and target it has actually been exercised against (see the legend below). Common plumbing params (`timeout_seconds`, `output_dir`, `runtime_metadata_path`, `helper_script`) are omitted from the notes below; see each primitive's `params_schema` for the full list.
 
 
-## Load primitives — strategies (129)
+## Load primitives — strategies (131)
 
 What a scenario *does*. These run in the `load` phase.
 
@@ -153,6 +153,7 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_cardano_measurement_calibration` | *(runtime cardano measurement calibration)* | dev | full · cn | — |
 | `runtime_chain_switch_inject` | Inject a chain switch and observe honest-node convergence to the new tip. | dev | smoke · cn | — |
 | `runtime_controlled_chain_progress_window` | *(runtime controlled chain progress window)* | dev | full · cn+amaru | — |
+| `runtime_controlled_plutus_transactions` | *(runtime controlled plutus transactions)* | dev | full · cn+amaru | — |
 | `runtime_controlled_sync_range` | *(runtime controlled sync range)* | dev | full · cn+amaru | — |
 | `runtime_duplex_promotion_pressure` | Apply duplex-promotion pressure to test the hard slot limit. | dev | smoke · cn | — |
 | `runtime_handshake_version_negotiation_pressure` | Pressure handshake version negotiation to probe downgrade handling. | dev | smoke · cn | — |
@@ -179,6 +180,7 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_tracer_capture` | Capture structured tracer output (cardano-tracer FileMode JSON / Prometheus) from the observed nodes over a window as evidence. | dev | full · cn | — |
 | `runtime_validation_path_differential` | Compare validation-path behaviour across implementations (differential). | dev | smoke · cn | — |
 | `runtime_version_pinned_cbor_conformance` | *(runtime version pinned cbor conformance)* | sin·dev | full · cn+amaru | — |
+| `runtime_version_pinned_plutus_conformance` | *(runtime version pinned plutus conformance)* | sin·dev | full · cn+amaru | — |
 
 
 ### Node lifecycle
@@ -259,7 +261,7 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_txsubmission_window_pressure` | Push the TxSubmission txid inflight window past its negotiated bound. | dev | smoke · cn | — |
 
 
-## Assertion primitives — oracles (88)
+## Assertion primitives — oracles (90)
 
 What a scenario *proves*. Each is evaluated after load; the **pass condition** is the expected outcome. Thresholds shown are the tunable params.
 
@@ -400,10 +402,12 @@ What a scenario *proves*. Each is evaluated after load; the **pass condition** i
 
 | primitive | purpose / pass-condition | runtimes | verified | Antithesis |
 |---|---|---|---|---|
+| `plutus_live_outcomes_observed` | *(plutus live outcomes observed)* | sin·dev | full · cn+amaru | — |
 | `plutus_phase2_differential_equivalent` | PASS iff Amaru and cardano-node agree on phase-2 Plutus admission behaviour. | dev·lib | smoke · cn | — |
 | `plutus_phase2_donotintervene_retry_clean` | PASS iff DoNotIntervene retry behaviour stays within the configured budget. | dev·lib | smoke · cn | — |
 | `plutus_phase2_exunits_overrun_rejected` | PASS iff a phase-2 ExUnits overrun is rejected on mempool admission. | dev·lib | smoke · cn | — |
 | `plutus_phase2_isvalid_mismatch_rejected` | PASS iff a phase-2 IsValid mismatch is rejected with ValidationTagMismatch. | dev·lib | smoke · cn | — |
+| `plutus_result_and_budget_match` | *(plutus result and budget match)* | sin·dev | full · cn+amaru | — |
 
 
 ## Setup primitives (7)
@@ -448,4 +452,4 @@ What a scenario *proves*. Each is evaluated after load; the **pass condition** i
 
 ## Primitives awaiting a curated description
 
-These are registered but not yet hand-described (listed above with a fallback). Add them to `DESC` in the generator: `amaru_measurement_boundary_proven`, `block_application_samples_correlated`, `cardano_cbor_dataset_differential_clean`, `cbor_conformance_clean`, `cbor_roundtrip_consistent`, `controlled_sync_range_complete`, `invalid_protocol_cases_contained`, `minimum_adopted_block_range_observed`, `no_target_fatal_signal`, `restart_readiness_complete`, `runtime_amaru_measurement_calibration`, `runtime_cardano_cbor_dataset_differential`, `runtime_cardano_measurement_calibration`, `runtime_controlled_chain_progress_window`, `runtime_controlled_sync_range`, `runtime_mark_baseline_window`, `runtime_mark_hostile_window`, `runtime_mark_recovery_window`, `runtime_peer_session_health`, `runtime_protocol_decode_cases`, `runtime_real_target_restart_and_readiness`, `runtime_target_health_and_progress`, `runtime_verify_exact_target`, `runtime_version_pinned_cbor_conformance`, `runtime_wait_for_chain_progress`, `target_progress_continues`, `unrelated_peer_session_usable`
+These are registered but not yet hand-described (listed above with a fallback). Add them to `DESC` in the generator: `amaru_measurement_boundary_proven`, `block_application_samples_correlated`, `cardano_cbor_dataset_differential_clean`, `cbor_conformance_clean`, `cbor_roundtrip_consistent`, `controlled_sync_range_complete`, `invalid_protocol_cases_contained`, `minimum_adopted_block_range_observed`, `no_target_fatal_signal`, `plutus_live_outcomes_observed`, `plutus_result_and_budget_match`, `restart_readiness_complete`, `runtime_amaru_measurement_calibration`, `runtime_cardano_cbor_dataset_differential`, `runtime_cardano_measurement_calibration`, `runtime_controlled_chain_progress_window`, `runtime_controlled_plutus_transactions`, `runtime_controlled_sync_range`, `runtime_mark_baseline_window`, `runtime_mark_hostile_window`, `runtime_mark_recovery_window`, `runtime_peer_session_health`, `runtime_protocol_decode_cases`, `runtime_real_target_restart_and_readiness`, `runtime_target_health_and_progress`, `runtime_verify_exact_target`, `runtime_version_pinned_cbor_conformance`, `runtime_version_pinned_plutus_conformance`, `runtime_wait_for_chain_progress`, `target_progress_continues`, `unrelated_peer_session_usable`

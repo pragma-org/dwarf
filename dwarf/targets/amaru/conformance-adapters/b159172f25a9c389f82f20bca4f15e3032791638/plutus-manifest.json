@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "kind": "production-plutus-v2-conformance",
+  "implementation": "amaru",
+  "source": {
+    "repository": "https://github.com/pragma-org/amaru.git",
+    "release": "10.11.20260912",
+    "revision": "b159172f25a9c389f82f20bca4f15e3032791638"
+  },
+  "measurement_boundary": "production-plutus-v2-vm-only",
+  "production_entrypoint": "amaru_uplc::Program::eval with the exact Plutus V2 protocol cost model",
+  "toolchain": "nightly-2026-09-04",
+  "adapter_set_sha256": "ee3574789aa18e73f78117a8639ff4fb6833b2c37fb8a95918f09cb285394d0b",
+  "build": {
+    "command": ["cargo", "+nightly-2026-09-04", "build", "--release", "--manifest-path", "dwarf-conformance-adapters/amaru-plutus/Cargo.toml"],
+    "environment": {"CARGO_INCREMENTAL": "0", "CARGO_TERM_COLOR": "never"}
+  },
+  "adapter_files": [
+    {"path": "plutus/Cargo.toml", "sha256": "c7708fe439e71a74d05d5ad0041b6077a29f86658e0bc0adf1aca644ea08fac2"},
+    {"path": "plutus/src/main.rs", "sha256": "b1668336acf745f78071e98f47cfbae02e6b451eee3ccdb666ed1984e9afa425"}
+  ]
+}

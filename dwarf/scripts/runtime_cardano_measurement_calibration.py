@@ -26,6 +26,7 @@ from scripts.runtime_amaru_measurement_calibration import (
 )
 from profile_manager.measurement_collectors.cardano_patched import (
     CARDANO_MEASUREMENT_PATCH_SHA256,
+    CARDANO_MEASUREMENT_REVISIONS,
     CARDANO_SOURCE_REVISION,
     paired_cardano_overhead_calibration,
 )
@@ -215,11 +216,14 @@ def run_plutus_workload(
     cli = str((runtime.get("support_binaries") or {}).get("cardano-cli") or "cardano-cli")
     socket_path = str(node.get("socket_path") or "")
     network_magic = int(runtime.get("network_magic", 42))
-    if not socket_path or not Path(socket_path).exists():
+    if not socket_path or (
+        runtime.get("workload_socket_remote") is not True
+        and not Path(socket_path).exists()
+    ):
         raise RuntimeError("Cardano-node measurement workload has no live host socket")
-    key_root = runtime_root / "env" / "utxo-keys" / "utxo1"
-    verification_key = key_root / "utxo.vkey"
-    signing_key = key_root / "utxo.skey"
+    key_root = Path(runtime.get("workload_key_root") or runtime_root / "env" / "utxo-keys" / "utxo1")
+    verification_key = key_root / str(runtime.get("workload_vkey_name") or "utxo.vkey")
+    signing_key = key_root / str(runtime.get("workload_skey_name") or "utxo.skey")
     if not verification_key.is_file() or not signing_key.is_file():
         raise RuntimeError("Cardano-node measurement workload has no genesis UTxO keys")
     work = output_dir / "plutus-workload"
@@ -414,7 +418,7 @@ def _target(runtime: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     if mode == "patched":
         if release.get("source_revision") != CARDANO_SOURCE_REVISION:
             raise RuntimeError("Cardano-node patched source revision does not match")
-        if node.get("patch_set_sha256") != CARDANO_MEASUREMENT_PATCH_SHA256:
+        if str(node.get("patch_set_sha256") or "") not in CARDANO_MEASUREMENT_REVISIONS:
             raise RuntimeError("Cardano-node patched patch-set identity does not match")
         patched_digest = str(node.get("image_digest") or observed_digest or "")
         if observed_digest != patched_digest:
