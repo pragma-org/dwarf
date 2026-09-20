@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from profile_manager.measurement_correlation import correlate_measurement_events
+from profile_manager.measurement_precision import precise_microseconds
 from profile_manager.measurement_report import distribution_summary
 
 
@@ -34,6 +35,16 @@ _EVENT_KINDS = {
     "txsubmission_residence": "txsubmission-residence",
     "txsubmission_blocking_residence": "txsubmission-blocking-residence",
 }
+_TIMING_FIELDS = (
+    ("elapsed_nanos", "elapsed_micros"),
+    ("decode_nanos", "decode_micros"),
+    ("total_nanos", "total_micros"),
+    ("handler_nanos", "handler_micros"),
+    ("advertised_to_terminal_nanos", "advertised_to_terminal_micros"),
+    ("advertised_to_body_nanos", "advertised_to_body_micros"),
+    ("body_to_terminal_nanos", "body_to_terminal_micros"),
+)
+
 
 
 def _bounded_read(path: Path, *, max_bytes: int, start: int = 0) -> tuple[bytes, bool]:
@@ -76,12 +87,25 @@ def _normalize_event(record: dict[str, Any]) -> dict[str, Any] | None:
     name = _event_name(record)
     if name not in _EVENT_KINDS or not isinstance(fields, dict):
         return None
+    normalized_fields = dict(fields)
+    for nanos_field, micros_field in _TIMING_FIELDS:
+        if nanos_field not in fields and micros_field not in fields:
+            continue
+        nanos, micros = precise_microseconds(
+            fields,
+            nanos_field=nanos_field,
+            micros_field=micros_field,
+        )
+        if nanos is not None:
+            normalized_fields[nanos_field] = nanos
+        if micros is not None:
+            normalized_fields[micros_field] = micros
     event: dict[str, Any] = {
         "kind": _EVENT_KINDS[name],
         "timestamp": record.get("timestamp"),
         "target": target,
         "name": name,
-        "fields": fields,
+        "fields": normalized_fields,
     }
     for source, destination in (
         ("peer", "peer_id"),
@@ -120,7 +144,11 @@ def _load_sources(
             except (UnicodeDecodeError, json.JSONDecodeError):
                 rejected["invalid-json"] += 1
                 continue
-            normalized = _normalize_event(record) if isinstance(record, dict) else None
+            try:
+                normalized = _normalize_event(record) if isinstance(record, dict) else None
+            except ValueError as error:
+                rejected[str(error)] += 1
+                continue
             if normalized is None:
                 if isinstance(record, dict) and _is_measurement_record(record):
                     rejected["unsupported-event"] += 1

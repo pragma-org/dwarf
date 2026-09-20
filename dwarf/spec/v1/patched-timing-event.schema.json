@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/patched-timing-event.schema.json",
+  "title": "DWARF patched-node timing event compatibility envelope",
+  "description": "Accepts retained whole-microsecond v1 events and additive nanosecond-v2 events.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["target", "fields"],
+      "properties": {
+        "target": {
+          "enum": ["amaru::protocols", "amaru::protocols::measurement"]
+        },
+        "fields": {
+          "type": "object",
+          "properties": {
+            "elapsed_nanos": {"type": "integer", "minimum": 0},
+            "elapsed_micros": {"type": "number", "minimum": 0},
+            "decode_nanos": {"type": "integer", "minimum": 0},
+            "decode_micros": {"type": "number", "minimum": 0},
+            "total_nanos": {"type": "integer", "minimum": 0},
+            "total_micros": {"type": "number", "minimum": 0},
+            "handler_nanos": {"type": "integer", "minimum": 0},
+            "handler_micros": {"type": "number", "minimum": 0},
+            "advertised_to_terminal_nanos": {"type": "integer", "minimum": 0},
+            "advertised_to_terminal_micros": {"type": "number", "minimum": 0},
+            "advertised_to_body_nanos": {"type": "integer", "minimum": 0},
+            "advertised_to_body_micros": {"type": "number", "minimum": 0},
+            "body_to_terminal_nanos": {"type": "integer", "minimum": 0},
+            "body_to_terminal_micros": {"type": "number", "minimum": 0}
+          },
+          "dependentRequired": {
+            "elapsed_nanos": ["elapsed_micros"],
+            "decode_nanos": ["decode_micros"],
+            "total_nanos": ["total_micros"],
+            "handler_nanos": ["handler_micros"],
+            "advertised_to_terminal_nanos": ["advertised_to_terminal_micros"],
+            "advertised_to_body_nanos": ["advertised_to_body_micros"],
+            "body_to_terminal_nanos": ["body_to_terminal_micros"]
+          },
+          "anyOf": [
+            {"required": ["elapsed_micros"]},
+            {"required": ["decode_micros"]},
+            {"required": ["total_micros"]},
+            {"required": ["handler_micros"]},
+            {"required": ["advertised_to_terminal_micros"]},
+            {"required": ["advertised_to_body_micros"]},
+            {"required": ["body_to_terminal_micros"]}
+          ],
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "required": ["schema_version", "target", "event", "duration_us"],
+      "properties": {
+        "schema_version": {"enum": ["v1", "v2"]},
+        "target": {"const": "cardano-node::measurement"},
+        "event": {"enum": ["protocol_receive_decode", "ledger_stage"]},
+        "elapsed_nanos": {"type": "integer", "minimum": 0},
+        "duration_us": {"type": "number", "minimum": 0}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"schema_version": {"const": "v2"}},
+            "required": ["schema_version"]
+          },
+          "then": {"required": ["elapsed_nanos"]}
+        }
+      ],
+      "additionalProperties": true
+    }
+  ]
+}

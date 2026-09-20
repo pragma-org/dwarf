@@ -229,3 +229,18 @@ def test_compact_row_uses_all_bucket_for_outcome_partitioned_metrics(tmp_path):
     summary = json.loads((tmp_path / artifacts["summary"]).read_text())
     assert summary["available_count"] == 1
     assert summary["unavailable_count"] == 0
+
+
+def test_distribution_preserves_sub_microsecond_precision():
+    result = distribution_summary(
+        [
+            {"value": 2.184, "unit": "us"},
+            {"value": 0.999, "unit": "us"},
+            {"value": 3.001, "unit": "us"},
+        ],
+        unit="us",
+    )
+
+    assert result["minimum"] == 0.999
+    assert result["median"] == 2.184
+    assert result["maximum"] == 3.001

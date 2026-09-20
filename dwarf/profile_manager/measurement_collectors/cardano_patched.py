@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from profile_manager.measurement_correlation import correlate_measurement_events
+from profile_manager.measurement_precision import precise_microseconds
 from profile_manager.measurement_report import distribution_summary
 from profile_manager.measurement_collectors.amaru_patched import (
     paired_overhead_calibration,
@@ -66,13 +67,15 @@ def _normalize(record: Mapping[str, Any]) -> dict[str, Any] | None:
         and record.get("boundary") != "receive-plus-incremental-decode"
     ):
         return None
-    duration = record.get("duration_us")
+    elapsed_nanos, duration = precise_microseconds(
+        record,
+        nanos_field="elapsed_nanos",
+        micros_field="duration_us",
+    )
     ended = record.get("ended_monotonic_ns")
     outcome = record.get("outcome")
     if (
-        isinstance(duration, bool)
-        or not isinstance(duration, (int, float))
-        or duration < 0
+        duration is None
         or isinstance(ended, bool)
         or not isinstance(ended, int)
         or ended < 0
@@ -90,6 +93,8 @@ def _normalize(record: Mapping[str, Any]) -> dict[str, Any] | None:
         "duration_us": duration,
         "ended_monotonic_ns": ended,
     }
+    if elapsed_nanos is not None:
+        event["elapsed_nanos"] = elapsed_nanos
     if event_name == "protocol_receive_decode":
         event.update({
             "protocol": str(record.get("protocol") or "unknown"),

@@ -356,3 +356,26 @@ def test_acceptance_run_metric_inventory_has_canonical_client_metadata():
             card["description"].startswith("A retained DWARF measurement")
             for card in result["cards"]
         )
+
+
+def test_fractional_microseconds_are_not_rounded_to_whole_microseconds():
+    result = build_measurement_presentation(
+        {
+            "epoch_transition": {
+                "status": "available",
+                "unit": "us",
+                "sample_count": 1,
+                "mean": 2.184,
+                "median": 2.184,
+                "minimum": 2.184,
+                "maximum": 2.184,
+                "p95": 2.184,
+                "p99": 2.184,
+            }
+        },
+        _target("cardano-node", "patched"),
+    )
+
+    card = _card(result, "epoch-transition-time")
+    assert card["primary_value"] == 2.184
+    assert card["primary_display"] == "2.184"

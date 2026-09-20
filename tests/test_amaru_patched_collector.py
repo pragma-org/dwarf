@@ -348,3 +348,73 @@ def test_patched_factories_bind_runtime_owned_paths_and_identity():
     )
     assert collector.json_paths == [FIXTURE]
     assert collector.target_identity["patch_set_sha256"] == AMARU_MEASUREMENT_PATCH_SHA256
+
+
+def test_nanosecond_timing_wins_and_raw_evidence_keeps_exact_integer(tmp_path):
+    trace = tmp_path / "nanoseconds.ndjson"
+    raw_line = (
+        '{"timestamp":"2026-09-20T12:00:00Z","fields":'
+        '{"message":"measurement.protocol_ingress","protocol_id":"0",'
+        '"role":"responder","boundary":"mux-cbor-item","bytes":10,'
+        '"outcome":"framed","elapsed_nanos":2184,"elapsed_micros":2},'
+        '"target":"amaru::protocols"}\n'
+    )
+    trace.write_text(raw_line, encoding="utf-8")
+
+    loaded = load_amaru_patched_telemetry([trace])
+
+    fields = loaded["events"][0]["fields"]
+    assert fields["elapsed_nanos"] == 2184
+    assert fields["elapsed_micros"] == 2.184
+
+    measurement_id = "amaru-patched-protocol-decode"
+    collector = AmaruPatchedCollector(
+        {"id": measurement_id},
+        json_trace_paths=[trace],
+        target_identity=_identity(),
+        include_existing=True,
+    )
+    context = _context(tmp_path, measurement_id)
+    collector.prepare(context)
+    collector.start(context)
+    result = collector.finalize(context)
+
+    ingress = result["measurements"]["handshake_ingress"]
+    assert ingress["sample_count"] == 1
+    assert ingress["mean"] == 2.184
+    raw_path = context.run_dir / result["artifacts"]["raw_json"]
+    assert raw_path.read_text(encoding="utf-8") == raw_line
+    normalized_path = context.run_dir / result["artifacts"]["normalized"]
+    normalized = normalized_path.read_text(encoding="utf-8")
+    assert '"elapsed_nanos": 2184' in normalized
+    assert '"elapsed_micros": 2.184' in normalized
+
+
+def test_legacy_microsecond_timing_remains_valid_without_invented_nanos(tmp_path):
+    trace = tmp_path / "legacy.ndjson"
+    trace.write_text(
+        '{"timestamp":"2026-09-20T12:00:00Z","fields":'
+        '{"message":"measurement.protocol_ingress","protocol_id":"0",'
+        '"role":"responder","boundary":"mux-cbor-item","bytes":10,'
+        '"outcome":"framed","elapsed_micros":7},'
+        '"target":"amaru::protocols"}\n',
+        encoding="utf-8",
+    )
+
+    loaded = load_amaru_patched_telemetry([trace])
+
+    fields = loaded["events"][0]["fields"]
+    assert fields["elapsed_micros"] == 7
+    assert "elapsed_nanos" not in fields
+    measurement_id = "amaru-patched-protocol-decode"
+    collector = AmaruPatchedCollector(
+        {"id": measurement_id},
+        json_trace_paths=[trace],
+        target_identity=_identity(),
+        include_existing=True,
+    )
+    context = _context(tmp_path, measurement_id)
+    collector.prepare(context)
+    collector.start(context)
+    result = collector.finalize(context)
+    assert result["measurements"]["handshake_ingress"]["mean"] == 7.0
