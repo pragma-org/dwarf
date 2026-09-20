@@ -6,11 +6,11 @@ The machine-readable cards are in `contracts/` and validate against
 
 Technical status on 2026-09-20: all five contracts remain frozen. G3-A through G3-C are implemented. Card 03 has accepted evidence for both implementations on `whole-microseconds-v1`. Card 05 has accepted evidence for both implementations on `nanoseconds-v2`. Card 02 and Card 04 have accepted Cardano-node legs. Card 01, the Amaru Card 02 leg, and the Amaru Card 04 leg have retained blockers. Gates 4 and 5 are not complete.
 
-Child explanation: DWARF finished many parts of the five recipes. Three real Amaru limits stop the remaining parts. The finished proof stays valid, and DWARF does not hide the blocked results.
+Child explanation: DWARF finished many parts of the five recipes. Three real Amaru limits stop the remaining parts. The proof that passed stays valid, and DWARF does not hide the blocked results.
 
 | Card | Exact current state | Measurement revision |
 |---|---|---|
-| 01 | blocked by the frozen Amaru byte-string bound; see `findings/01-frozen-amaru-cbor-byte-string-bound.md` | `nanoseconds-v2` |
+| 01 | Cardano-node accepted as run `20260920T132629Z-ea000d37`; Amaru blocked by the frozen byte-string bound | `nanoseconds-v2` |
 | 02 | Cardano-node candidate accepted as run `20260920T110302Z-9df1686f`; Amaru blocked because the frozen chain has no Plutus V2 cost model | `nanoseconds-v2` |
 | 03 | both legs accepted: Amaru `20260920T072858Z-2cc3bb0c`, Cardano-node `20260920T073447Z-ab81bfb7` | `whole-microseconds-v1` |
 | 04 | Cardano-node accepted as run `20260920T125840Z-778a7cf7`; Amaru retained a real same-height fork finding | `nanoseconds-v2` |
