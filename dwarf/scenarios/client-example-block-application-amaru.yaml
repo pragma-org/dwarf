@@ -57,7 +57,8 @@
   "probes": [
     {
       "primitive": "runtime_target_health_and_progress",
-      "report_path": "outputs/client-example-proof/controlled-chain-progress.json"
+      "report_path": "outputs/client-example-proof/controlled-chain-progress.json",
+      "progress_reference": "load-start"
     }
   ],
   "assertions": [

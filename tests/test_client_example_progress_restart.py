@@ -109,7 +109,7 @@ def test_controlled_chain_window_correlates_exact_adopted_blocks_and_application
     monkeypatch.setattr(primitive_module, "_resolve_client_runtime_target", lambda *_: {"id": "node1"})
     monkeypatch.setattr(primitive_module, "_protocol_container_state", lambda *_: observed_health["before"])
     monkeypatch.setattr(primitive_module, "_observe_client_target_tip", lambda *_: _tip(132))
-    monkeypatch.setattr(primitive_module, "_collect_controlled_block_evidence", lambda *_args, **_kwargs: (adopted, applications))
+    monkeypatch.setattr(primitive_module, "_collect_controlled_block_evidence", lambda *_args, **_kwargs: (adopted, applications, []))
     observed_health = {
         "before": {"running": True, "restart_count": 7, "oom_killed": False},
         "after": {"running": True, "restart_count": 7, "oom_killed": False},
@@ -126,6 +126,7 @@ def test_controlled_chain_window_correlates_exact_adopted_blocks_and_application
     assert proof["checks"] == {
         "application_samples_correlated": True,
         "all_application_samples_correlated": True,
+        "candidate_application_alignment": True,
         "minimum_adopted_block_range_observed": True,
         "monotonic_height": True,
     }
@@ -182,7 +183,7 @@ def test_cardano_block_evidence_excludes_rejected_applications_and_keeps_nanosec
         + "\n"
     )
 
-    adopted, applications = primitive_module._collect_controlled_block_evidence(
+    adopted, applications, excluded = primitive_module._collect_controlled_block_evidence(
         {
             "implementation": "cardano-node",
             "log_path": str(log_path),
@@ -202,6 +203,98 @@ def test_cardano_block_evidence_excludes_rejected_applications_and_keeps_nanosec
             "elapsed_nanos": 2184,
         }
     ]
+    assert excluded == []
+
+
+def test_cardano_block_evidence_keeps_only_exact_adopted_candidate_timings(tmp_path):
+    log_path = tmp_path / "node.json"
+    measurement_path = tmp_path / "measurement.ndjson"
+    adopted_hashes = ["a" * 64, "c" * 64]
+    log_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "at": "2026-09-20T00:00:01Z",
+                        "ns": "ChainDB.AddBlockEvent.AddBlockValidation.ValidCandidate",
+                        "data": {"block": f"{'a' * 64}@201"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "at": "2026-09-20T00:00:02Z",
+                        "ns": "ChainDB.AddBlockEvent.AddBlockValidation.ValidCandidate",
+                        "data": {"block": f"{'b' * 64}@202"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "at": "2026-09-20T00:00:03Z",
+                        "ns": "ChainDB.AddBlockEvent.AddBlockValidation.ValidCandidate",
+                        "data": {"block": f"{'c' * 64}@203"},
+                    }
+                ),
+                *[
+                    json.dumps(
+                        {
+                            "at": f"2026-09-20T00:00:0{index + 4}Z",
+                            "ns": "ChainDB.AddBlockEvent.AddedToCurrentChain",
+                            "data": {
+                                "headers": [
+                                    {
+                                        "blockNo": 101 + index,
+                                        "hash": block_hash,
+                                        "slotNo": 201 + (index * 2),
+                                    }
+                                ]
+                            },
+                        }
+                    )
+                    for index, block_hash in enumerate(adopted_hashes)
+                ],
+            ]
+        )
+        + "\n"
+    )
+    measurement_path.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "event": "ledger_stage",
+                    "stage": "block-application",
+                    "outcome": "accepted",
+                    "elapsed_nanos": elapsed,
+                    "duration_us": elapsed // 1000,
+                }
+            )
+            for elapsed in (2184, 3300, 4701)
+        )
+        + "\n"
+    )
+
+    adopted, applications, excluded = primitive_module._collect_controlled_block_evidence(
+        {
+            "implementation": "cardano-node",
+            "log_path": str(log_path),
+            "measurement_log_path": str(measurement_path),
+        },
+        log_offset=0,
+        measurement_offset=0,
+    )
+
+    assert [row["hash"] for row in adopted] == adopted_hashes
+    assert [row["block_hash"] for row in applications] == adopted_hashes
+    assert [row["duration_micros"] for row in applications] == [2.184, 4.701]
+    assert excluded == [
+        {
+            "sample_id": "apply-0001",
+            "block_hash": "b" * 64,
+            "block_slot": 202,
+            "duration_micros": 3.3,
+            "elapsed_nanos": 3300,
+            "reason": "valid-candidate-not-adopted-in-controlled-window",
+        }
+    ]
 
 
 def test_controlled_chain_window_fails_when_an_application_is_unpaired(monkeypatch, tmp_path):
@@ -214,7 +307,7 @@ def test_controlled_chain_window_fails_when_an_application_is_unpaired(monkeypat
     monkeypatch.setattr(primitive_module, "_resolve_client_runtime_target", lambda *_: {"id": "node1"})
     monkeypatch.setattr(primitive_module, "_protocol_container_state", lambda *_: {"running": True})
     monkeypatch.setattr(primitive_module, "_observe_client_target_tip", lambda *_: _tip(131))
-    monkeypatch.setattr(primitive_module, "_collect_controlled_block_evidence", lambda *_args, **_kwargs: (adopted, applications))
+    monkeypatch.setattr(primitive_module, "_collect_controlled_block_evidence", lambda *_args, **_kwargs: (adopted, applications, []))
     monkeypatch.setattr(primitive_module, "_observe_client_window_health", lambda *_args, **_kwargs: {})
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
 
@@ -331,12 +424,12 @@ def test_g3b_final_scenarios_match_frozen_legs():
         }
         assert body["setup"][0]["image_digest"] == exact[implementation][0]
         assert body["setup"][0]["patch_set_sha256"] == exact[implementation][1]
+        health_probe = next(
+            item for item in body["probes"]
+            if item["primitive"] == "runtime_target_health_and_progress"
+        )
+        assert health_probe["progress_reference"] == "load-start"
         if "restart-recovery-sync" in scenario_id:
-            health_probe = next(
-                item for item in body["probes"]
-                if item["primitive"] == "runtime_target_health_and_progress"
-            )
-            assert health_probe["progress_reference"] == "load-start"
             resource_id = f"{implementation.split('-')[0]}-stock-resources"
             resource_override = next(
                 item for item in body["measurements"]

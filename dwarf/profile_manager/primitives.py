@@ -14517,13 +14517,26 @@ def _collect_controlled_block_evidence(
     *,
     log_offset: int,
     measurement_offset: int,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     implementation = target.get("implementation")
     adopted = []
     applications = []
+    excluded_applications = []
     if implementation == "cardano-node":
+        candidates = []
         for row in _json_lines_between(Path(str(target.get("log_path"))), log_offset):
-            if row.get("ns") != "ChainDB.AddBlockEvent.AddedToCurrentChain":
+            namespace = row.get("ns")
+            if namespace == "ChainDB.AddBlockEvent.AddBlockValidation.ValidCandidate":
+                block = str((row.get("data") or {}).get("block") or "")
+                block_hash, separator, slot = block.partition("@")
+                if separator and block_hash and slot.isdigit():
+                    candidates.append({
+                        "hash": block_hash,
+                        "slot": int(slot),
+                        "observed_at": row.get("at"),
+                    })
+                continue
+            if namespace != "ChainDB.AddBlockEvent.AddedToCurrentChain":
                 continue
             for header in ((row.get("data") or {}).get("headers") or []):
                 try:
@@ -14558,6 +14571,41 @@ def _collect_controlled_block_evidence(
                 if elapsed_nanos is not None:
                     application["elapsed_nanos"] = elapsed_nanos
                 applications.append(application)
+        if candidates:
+            if len(candidates) != len(applications):
+                excluded_applications.append({
+                    "candidate_count": len(candidates),
+                    "application_sample_count": len(applications),
+                    "reason": "candidate-application-cardinality-mismatch",
+                })
+                for candidate, application in zip(candidates, applications):
+                    application["block_hash"] = candidate["hash"]
+                    application["block_slot"] = candidate["slot"]
+                    application["candidate_observed_at"] = candidate.get("observed_at")
+            else:
+                adopted_by_hash = {row["hash"]: row for row in adopted}
+                retained_applications = []
+                for candidate, application in zip(candidates, applications):
+                    block_hash = candidate["hash"]
+                    application["block_hash"] = block_hash
+                    application["block_slot"] = candidate["slot"]
+                    application["candidate_observed_at"] = candidate.get("observed_at")
+                    adopted_block = adopted_by_hash.get(block_hash)
+                    if adopted_block is not None:
+                        application["block_height"] = adopted_block["block_height"]
+                        retained_applications.append(application)
+                        continue
+                    excluded = {
+                        "sample_id": application["sample_id"],
+                        "block_hash": block_hash,
+                        "block_slot": candidate["slot"],
+                        "duration_micros": application["duration_micros"],
+                        "reason": "valid-candidate-not-adopted-in-controlled-window",
+                    }
+                    if "elapsed_nanos" in application:
+                        excluded["elapsed_nanos"] = application["elapsed_nanos"]
+                    excluded_applications.append(excluded)
+                applications = retained_applications
     elif implementation == "amaru":
         result = _protocol_docker_result(
             ["logs", "--since", str(target.get("window_started_at")), str(target.get("container"))],
@@ -14595,7 +14643,7 @@ def _collect_controlled_block_evidence(
                         "observed_at": row.get("timestamp"),
                         "point_slot": fields.get("point_slot"),
                     })
-    return adopted, applications
+    return adopted, applications, excluded_applications
 
 
 def _monotonic_adopted(adopted: list[dict[str, Any]]) -> bool:
@@ -14665,7 +14713,7 @@ class RuntimeControlledChainProgressWindow(LoadPrimitive):
         finally:
             end_marker = runtime.mark_phase("controlled-chain-progress", "end")
         end_tip = _observe_client_target_tip(target)
-        adopted, applications = _collect_controlled_block_evidence(
+        adopted, applications, excluded_applications = _collect_controlled_block_evidence(
             target, log_offset=log_offset, measurement_offset=measurement_offset
         )
         target_health = _observe_client_window_health(
@@ -14675,20 +14723,32 @@ class RuntimeControlledChainProgressWindow(LoadPrimitive):
             tip_before=start_tip,
         )
 
-        pair_count = min(len(adopted), len(applications))
-        correlations = [
-            {
-                "block_height": adopted[index]["block_height"],
-                "block_hash": adopted[index]["hash"],
-                "application_sample_id": applications[index]["sample_id"],
-                "duration_micros": applications[index].get("duration_micros"),
-                "correlation_basis": "same-target-temporal-order-within-controlled-window",
-            }
-            for index in range(pair_count)
-        ]
+        correlations = []
+        for index, application in enumerate(applications):
+            block_hash = application.get("block_hash")
+            block_height = application.get("block_height")
+            correlation_basis = "exact-valid-candidate-and-adopted-hash-within-controlled-window"
+            if not block_hash and index < len(adopted):
+                block_hash = adopted[index]["hash"]
+                block_height = adopted[index]["block_height"]
+                correlation_basis = "same-target-temporal-order-within-controlled-window"
+            if not block_hash:
+                continue
+            correlations.append({
+                "block_height": block_height,
+                "block_hash": block_hash,
+                "application_sample_id": application["sample_id"],
+                "duration_micros": application.get("duration_micros"),
+                "correlation_basis": correlation_basis,
+            })
+        candidate_alignment = not any(
+            row.get("reason") == "candidate-application-cardinality-mismatch"
+            for row in excluded_applications
+        )
         checks = {
             "application_samples_correlated": len(correlations) >= minimum,
             "all_application_samples_correlated": len(correlations) == len(applications),
+            "candidate_application_alignment": candidate_alignment,
             "minimum_adopted_block_range_observed": len(adopted) >= minimum,
             "monotonic_height": _monotonic_adopted(adopted),
         }
@@ -14701,7 +14761,12 @@ class RuntimeControlledChainProgressWindow(LoadPrimitive):
             "start_marker": start_marker,
             "end_marker": end_marker,
             "adopted_blocks": adopted,
+            "raw_application_sample_count": len(applications) + sum(
+                1 for row in excluded_applications
+                if row.get("sample_id") is not None
+            ),
             "application_samples": applications,
+            "excluded_application_samples": excluded_applications,
             "correlations": correlations,
             "checks": checks,
             "target_health": target_health,
