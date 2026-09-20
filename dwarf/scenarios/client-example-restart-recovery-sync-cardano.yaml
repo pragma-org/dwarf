@@ -25,6 +25,14 @@
   "runtime": "devnet",
   "profile": "profile-v-cardano-measurement-nanoseconds-v2",
   "measurement_profile": "cardano-security-patched",
+  "measurements": [
+    {
+      "id": "cardano-stock-resources",
+      "enabled": true,
+      "parameters": {"sample_interval_seconds": 0.25},
+      "threshold_gate": {"enabled": false, "thresholds": []}
+    }
+  ],
   "seed": "0x5E570005",
   "setup": [
     {
@@ -65,7 +73,8 @@
   "probes": [
     {
       "primitive": "runtime_target_health_and_progress",
-      "report_path": "outputs/client-example-proof/controlled-sync-range.json"
+      "report_path": "outputs/client-example-proof/controlled-sync-range.json",
+      "progress_reference": "load-start"
     },
     {
       "primitive": "runtime_peer_session_health",

@@ -166,3 +166,24 @@ def test_patched_factory_allows_run_owned_trace_to_appear_after_start(tmp_path):
 
     assert result["export"]["normalized_record_count"] == 1
     assert result["measurements"]["protocol_decode"]["sample_count"] == 1
+
+
+def test_resource_factory_honors_bounded_scenario_sample_interval(tmp_path):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text('{"amaru_nodes":[{"name":"amaru-1","impl":"amaru"}]}\n')
+    factories = build_amaru_measurement_factories(
+        runtime_metadata_path=metadata,
+        target_node="amaru-1",
+        json_trace_paths=[],
+        otlp_trace_paths=[],
+        tip_probe=None,
+        resource_resolve_pid=lambda _path, _node: 123,
+        resource_sample_reader=lambda _pid, _index: {},
+        resource_background=False,
+    )
+    entry = _entry("amaru-stock-resources")
+    entry["parameters"] = {"sample_interval_seconds": 0.25}
+
+    collector = factories[entry["id"]](entry)
+
+    assert collector.sample_interval_seconds == 0.25

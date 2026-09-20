@@ -395,3 +395,32 @@ def test_window_marker_primitives_are_registered_with_schemas():
         assert name in registry
         assert registry[name].family == family
         assert (root / "dwarf" / registry[name].params_schema).is_file()
+
+
+def test_target_health_probe_can_bind_progress_to_load_start(monkeypatch, tmp_path):
+    handle = _Handle(tmp_path / "run")
+    report_path = _write_protocol_report(handle.run_dir)
+    report = json.loads(report_path.read_text())
+    report["target_health"]["tip_before"] = {"block_height": 100, "hash": "aa"}
+    report["target_health"]["tip_after"] = {"block_height": 105, "hash": "bb"}
+    report["target_health"]["observer"] = {"implementation": "amaru"}
+    report_path.write_text(json.dumps(report))
+    monkeypatch.setattr(
+        primitive_module,
+        "_observe_protocol_target",
+        lambda _observer: {
+            "state": {"running": True, "restart_count": 2, "oom_killed": False},
+            "tip": {"block_height": 105, "hash": "bb"},
+            "log_signals": {"fatal": [], "background": []},
+        },
+    )
+
+    _primitive(
+        "RuntimeTargetHealthAndProgress",
+        {"progress_reference": "load-start"},
+    ).sample(handle)
+
+    evidence = handle.samples[-1]["value"]
+    assert evidence["progress_reference"] == "load-start"
+    assert evidence["tip_before"]["block_height"] == 100
+    assert evidence["checks"]["target_progressed"] is True

@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from scripts import runtime_resource_profile
 
 
@@ -292,3 +294,16 @@ def test_permission_restricted_optional_proc_fields_do_not_discard_the_sample(
     assert sample["fd_count"] is None
     assert sample["disk_read_bytes"] is None
     assert sample["disk_write_bytes"] is None
+
+
+def test_missing_proc_status_reports_process_exit(tmp_path):
+    proc_root = tmp_path / "proc"
+    proc_root.mkdir()
+
+    with pytest.raises(ProcessLookupError, match="missing proc status for pid 777"):
+        runtime_resource_profile.collect_samples(
+            pid=777,
+            sample_count=1,
+            sample_interval_seconds=0,
+            proc_root=proc_root,
+        )

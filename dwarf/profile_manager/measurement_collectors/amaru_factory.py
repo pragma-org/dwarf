@@ -61,9 +61,16 @@ def build_amaru_measurement_factories(
     if resource_resolve_pid is not None:
         resource_options["resolve_pid"] = resource_resolve_pid
 
-    factories["amaru-stock-resources"] = lambda entry: AmaruResourceCollector(
-        entry, **resource_options
-    )
+    def build_resource_collector(entry):
+        options = dict(resource_options)
+        options["sample_interval_seconds"] = float(
+            (entry.get("parameters") or {}).get(
+                "sample_interval_seconds", resource_sample_interval_seconds
+            )
+        )
+        return AmaruResourceCollector(entry, **options)
+
+    factories["amaru-stock-resources"] = build_resource_collector
     factories["amaru-external-workload-accounting"] = (
         lambda entry: WorkloadAccountingCollector(entry)
     )

@@ -36,6 +36,54 @@ def _tip(height):
     return {"block_height": height, "hash": f"{height:064x}", "slot": height * 2}
 
 
+def test_amaru_runtime_target_uses_the_consumer_node_socket(monkeypatch, tmp_path):
+    metadata_path = tmp_path / "runtime.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "identity": {
+                    "services": {
+                        "amaru-relay-1": {"container": "amaru-target"},
+                        "amaru-consumer": {"container": "amaru-consumer"},
+                    }
+                }
+            }
+        )
+    )
+    handle = _Handle(tmp_path / "run")
+    monkeypatch.setattr(
+        primitive_module,
+        "_measurement_target_identity",
+        lambda _handle: {"implementation": "amaru"},
+    )
+    monkeypatch.setattr(
+        primitive_module,
+        "_protocol_docker_result",
+        lambda *_args, **_kwargs: type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": json.dumps(
+                    [
+                        {
+                            "NetworkSettings": {
+                                "Networks": {"profile": {"IPAddress": "10.0.0.2"}}
+                            }
+                        }
+                    ]
+                ),
+            },
+        )(),
+    )
+
+    target = primitive_module._resolve_client_runtime_target(
+        handle, {"runtime_metadata_path": str(metadata_path)}
+    )
+
+    assert target["peer"]["socket_path"] == "/state/node.socket"
+
+
 def test_wait_for_chain_progress_retains_observed_positive_delta(monkeypatch, tmp_path):
     handle = _Handle(tmp_path / "run")
     tips = iter([_tip(100), _tip(101), _tip(105)])
@@ -283,6 +331,18 @@ def test_g3b_final_scenarios_match_frozen_legs():
         }
         assert body["setup"][0]["image_digest"] == exact[implementation][0]
         assert body["setup"][0]["patch_set_sha256"] == exact[implementation][1]
+        if "restart-recovery-sync" in scenario_id:
+            health_probe = next(
+                item for item in body["probes"]
+                if item["primitive"] == "runtime_target_health_and_progress"
+            )
+            assert health_probe["progress_reference"] == "load-start"
+            resource_id = f"{implementation.split('-')[0]}-stock-resources"
+            resource_override = next(
+                item for item in body["measurements"]
+                if item["id"] == resource_id
+            )
+            assert resource_override["parameters"]["sample_interval_seconds"] == 0.25
 
 
 def test_block_application_assertion_rejects_unpaired_retained_sample(tmp_path):

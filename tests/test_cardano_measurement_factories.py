@@ -88,3 +88,23 @@ def test_cardano_factory_adds_patched_collectors_only_for_exact_identity(tmp_pat
         ),
         CardanoPatchedCollector,
     )
+
+
+def test_cardano_resource_factory_honors_bounded_scenario_sample_interval(tmp_path):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text('{"nodes":[{"id":"node1","impl":"cardano-node"}]}\n')
+    factories = build_cardano_measurement_factories(
+        runtime_metadata_path=metadata,
+        target_node="node1",
+        trace_paths=[],
+        tip_probe=None,
+        resource_resolve_pid=lambda _path, _node: 123,
+        resource_sample_reader=lambda _pid, _index: {},
+        resource_background=False,
+    )
+    entry = _entry("cardano-stock-resources")
+    entry["parameters"] = {"sample_interval_seconds": 0.25}
+
+    collector = factories[entry["id"]](entry)
+
+    assert collector.sample_interval_seconds == 0.25

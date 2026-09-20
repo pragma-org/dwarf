@@ -13940,7 +13940,16 @@ class RuntimeTargetHealthAndProgress(ProbePrimitive):
         tip_after = observation.get("tip") or health.get("tip_after") or {}
         tip_initial = health.get("tip_before") or {}
         tip_hostile_end = health.get("tip_after") or {}
-        tip_before = tip_hostile_end if observation else tip_initial
+        progress_reference = str(self.params.get("progress_reference") or "post-load")
+        if progress_reference not in {"load-start", "post-load"}:
+            raise ValueError(
+                "progress_reference must be load-start or post-load"
+            )
+        tip_before = (
+            tip_initial
+            if progress_reference == "load-start" or not observation
+            else tip_hostile_end
+        )
         log_signals = observation.get("log_signals") or health.get("log_signals") or {}
         before_position = _tip_position(tip_before)
         after_position = _tip_position(tip_after)
@@ -13960,6 +13969,7 @@ class RuntimeTargetHealthAndProgress(ProbePrimitive):
         evidence = {
             "before": before,
             "after": after,
+            "progress_reference": progress_reference,
             "tip_initial": tip_initial,
             "tip_hostile_end": tip_hostile_end,
             "tip_before": tip_before,
@@ -14388,7 +14398,7 @@ def _resolve_client_runtime_target(handle, params: dict[str, Any]) -> dict[str, 
             "peer": {
                 "id": "amaru-consumer",
                 "container": peer.get("container"),
-                "socket_path": "/env/socket/amaru-consumer/sock",
+                "socket_path": "/state/node.socket",
             },
             "network_magic": 42,
             "runtime_metadata_path": str(metadata_path),

@@ -301,7 +301,7 @@ def collect_samples(
         status_path = proc_root / str(pid) / "status"
         fd_path = proc_root / str(pid) / "fd"
         if not status_path.exists():
-            raise RuntimeError(f"missing proc status for pid {pid}: {status_path}")
+            raise ProcessLookupError(f"missing proc status for pid {pid}: {status_path}")
         status = _parse_status(status_path.read_text(encoding="utf-8"))
         fd_count = _read_fd_count(fd_path)
         cpu_time = _read_cpu_time(proc_root / str(pid) / "stat", ticks)
