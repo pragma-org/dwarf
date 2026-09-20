@@ -1,8 +1,8 @@
 # DWARF Primitives Reference
 
-The complete catalogue of the **206** primitives a scenario can reference — every *strategy* (what a scenario can do) and every *oracle* (what it can assert). Generated from `primitives/registry.json`; purposes/pass-conditions are curated. A scenario may only reference names listed here. Many primitives operate on CBOR (Concise Binary Object Representation), Cardano's binary wire and ledger encoding. The **Antithesis** column marks the primitives the DWARF&rarr;Antithesis generator can carry onto the Antithesis backend (CBOR-only by design &mdash; `cbor_fuzz_*` strategies, the `runtime_aflpp_campaign` coverage surface, and the assertions mapped to native SDK checks); everything else runs on the local backend only.
+The complete catalogue of the **233** primitives a scenario can reference — every *strategy* (what a scenario can do) and every *oracle* (what it can assert). Generated from `primitives/registry.json`; purposes/pass-conditions are curated. A scenario may only reference names listed here. Many primitives operate on CBOR (Concise Binary Object Representation), Cardano's binary wire and ledger encoding. The **Antithesis** column marks the primitives the DWARF&rarr;Antithesis generator can carry onto the Antithesis backend (CBOR-only by design &mdash; `cbor_fuzz_*` strategies, the `runtime_aflpp_campaign` coverage surface, and the assertions mapped to native SDK checks); everything else runs on the local backend only.
 
-> Coverage: 206/206 primitives carry a curated description (100%). Any without one is still listed with its registry metadata. Regenerate with `scripts/gen_reference.py`.
+> Coverage: 206/233 primitives carry a curated description (88%). Any without one is still listed with its registry metadata. Regenerate with `scripts/gen_reference.py`.
 
 The browser catalog at `/operate/primitives` is the source-backed inventory for registry metadata, parameter schemas, executor provenance, scenario references, and deterministic source export. `/learn/primitives` documents the code-change lifecycle. A primitive is executable code; it is not a corpus, generation grammar, target, profile, or scenario.
 
@@ -11,7 +11,7 @@ The browser catalog at `/operate/primitives` is the source-backed inventory for 
 Every primitive lists which **runtimes** it works in (`library` / `single-node` / `devnet`) and its **verified** status &mdash; the depth and target it has actually been exercised against (see the legend below). Common plumbing params (`timeout_seconds`, `output_dir`, `runtime_metadata_path`, `helper_script`) are omitted from the notes below; see each primitive's `params_schema` for the full list.
 
 
-## Load primitives — strategies (119)
+## Load primitives — strategies (129)
 
 What a scenario *does*. These run in the `load` phase.
 
@@ -145,10 +145,15 @@ What a scenario *does*. These run in the `load` phase.
 
 | primitive | purpose / pass-condition | runtimes | verified | Antithesis |
 |---|---|---|---|---|
+| `runtime_amaru_measurement_calibration` | *(runtime amaru measurement calibration)* | dev | full · amaru | — |
 | `runtime_bandwidth_throttle` | Throttle a node's bandwidth to probe sync behaviour under a slow link. | dev | smoke · cn | — |
 | `runtime_blocking_work_starvation` | Inject blocking work to probe runtime-liveness starvation bounds. | dev | smoke · cn | — |
 | `runtime_bootstrap_topology_concentration` | Probe bootstrap-topology concentration vs the honest-diversity floor. | dev | smoke · cn | — |
+| `runtime_cardano_cbor_dataset_differential` | *(runtime cardano cbor dataset differential)* | lib | full · amaru | — |
+| `runtime_cardano_measurement_calibration` | *(runtime cardano measurement calibration)* | dev | full · cn | — |
 | `runtime_chain_switch_inject` | Inject a chain switch and observe honest-node convergence to the new tip. | dev | smoke · cn | — |
+| `runtime_controlled_chain_progress_window` | *(runtime controlled chain progress window)* | dev | full · cn+amaru | — |
+| `runtime_controlled_sync_range` | *(runtime controlled sync range)* | dev | full · cn+amaru | — |
 | `runtime_duplex_promotion_pressure` | Apply duplex-promotion pressure to test the hard slot limit. | dev | smoke · cn | — |
 | `runtime_handshake_version_negotiation_pressure` | Pressure handshake version negotiation to probe downgrade handling. | dev | smoke · cn | — |
 | `runtime_inject_hot_warm_churn` | Inject hot/warm peer churn to probe governor churn bounds. | dev | smoke · cn | — |
@@ -157,6 +162,8 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_local_submit_stress` | Stress LocalTxSubmission to probe availability and queue limits. | dev | smoke · cn | — |
 | `runtime_localtxmonitor_fault` | Inject a LocalTxMonitor fault against the mempool-inspection protocol. | dev | smoke · cn | — |
 | `runtime_malformed_input_differential` | Feed malformed input to Amaru and cardano-node and compare handling (differential). | dev | smoke · cn | — |
+| `runtime_mark_hostile_window` | *(runtime mark hostile window)* | dev | full · cn+amaru | — |
+| `runtime_mark_recovery_window` | *(runtime mark recovery window)* | dev | full · cn+amaru | — |
 | `runtime_mempool_relay_pressure` | Apply mempool-relay pressure to probe budget and memory ceiling. | dev | smoke · cn | — |
 | `runtime_mux_ingress_overrun` | Overrun a mux bearer's ingress to test per-bearer scoping. | dev | smoke · cn | — |
 | `runtime_network_impairment` | Impair the link between two nodes (latency/jitter/loss/partition). | dev | full · cn | — |
@@ -164,11 +171,14 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_partition_rejoin` | Partition then rejoin nodes to test convergence/recovery. | dev | full · cn | — |
 | `runtime_peersharing_fault` | Inject a PeerSharing fault (adversarial address exchange). | dev | smoke · cn | — |
 | `runtime_perturb_ledger_peer_weights` | Perturb ledger-peer stake weights to probe peer-selection stability. | dev | smoke · cn | — |
+| `runtime_protocol_decode_cases` | *(runtime protocol decode cases)* | dev | full · cn+amaru | — |
+| `runtime_real_target_restart_and_readiness` | *(runtime real target restart and readiness)* | dev | full · cn+amaru | — |
 | `runtime_slow_loris_chainsync` | Slow-loris (byte-drip) a ChainSync connection to hold resources. | dev | smoke · cn | — |
 | `runtime_substitute_big_ledger_peers` | Substitute the big-ledger-peer set to probe Sybil/quorum resistance. | dev | smoke · cn | — |
 | `runtime_time_skew` | Skew a node's clock (libfaketime) for a duration to test time sensitivity. | dev | smoke · cn | — |
 | `runtime_tracer_capture` | Capture structured tracer output (cardano-tracer FileMode JSON / Prometheus) from the observed nodes over a window as evidence. | dev | full · cn | — |
 | `runtime_validation_path_differential` | Compare validation-path behaviour across implementations (differential). | dev | smoke · cn | — |
+| `runtime_version_pinned_cbor_conformance` | *(runtime version pinned cbor conformance)* | sin·dev | full · cn+amaru | — |
 
 
 ### Node lifecycle
@@ -249,7 +259,7 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_txsubmission_window_pressure` | Push the TxSubmission txid inflight window past its negotiated bound. | dev | smoke · cn | — |
 
 
-## Assertion primitives — oracles (76)
+## Assertion primitives — oracles (88)
 
 What a scenario *proves*. Each is evaluated after load; the **pass condition** is the expected outcome. Thresholds shown are the tunable params.
 
@@ -353,8 +363,26 @@ What a scenario *proves*. Each is evaluated after load; the **pass condition** i
 | `honest_peer_set_uncompromised` | PASS iff each honest node retains >= minimum_honest_peers honest peers without capture. | dev·lib | smoke · cn | — |
 | `honest_quorum_preserved` | PASS iff the honest-node quorum fraction >= minimum_fraction on an ok run. | dev·lib | smoke · cn | — |
 | `hot_warm_churn_within_bounds` | PASS iff observed hot/warm peer churn <= maximum_events_per_hour. | dev·lib | smoke · cn | — |
-| `load_events_are_ok` | PASS iff >= min_event_count outcome-bearing load events are present and none are non-ok. | lib·sin·dev | full · cn | — |
+| `load_events_are_ok` | PASS iff >= min_event_count outcome-bearing load events are present and none are non-ok. | lib·sin·dev | full · cn+amaru | — |
 | `substrate_quorum_observed` | PASS iff a quorum (>= minimum_fraction) of nodes agrees on one real, non-zero tip group. | dev·lib | smoke · cn | — |
+
+
+### Other
+
+| primitive | purpose / pass-condition | runtimes | verified | Antithesis |
+|---|---|---|---|---|
+| `amaru_measurement_boundary_proven` | *(amaru measurement boundary proven)* | dev | full · amaru | — |
+| `block_application_samples_correlated` | *(block application samples correlated)* | dev | full · cn+amaru | — |
+| `cardano_cbor_dataset_differential_clean` | *(cardano cbor dataset differential clean)* | lib | full · amaru | — |
+| `cbor_conformance_clean` | *(cbor conformance clean)* | sin·dev | full · cn+amaru | — |
+| `cbor_roundtrip_consistent` | *(cbor roundtrip consistent)* | sin·dev | full · cn+amaru | — |
+| `controlled_sync_range_complete` | *(controlled sync range complete)* | dev | full · cn+amaru | — |
+| `invalid_protocol_cases_contained` | *(invalid protocol cases contained)* | dev | full · cn+amaru | — |
+| `minimum_adopted_block_range_observed` | *(minimum adopted block range observed)* | dev | full · cn+amaru | — |
+| `no_target_fatal_signal` | *(no target fatal signal)* | dev | full · cn+amaru | — |
+| `restart_readiness_complete` | *(restart readiness complete)* | dev | full · cn+amaru | — |
+| `target_progress_continues` | *(target progress continues)* | dev | full · cn+amaru | — |
+| `unrelated_peer_session_usable` | *(unrelated peer session usable)* | dev | full · cn+amaru | — |
 
 
 ### Parser / CBOR / input correctness
@@ -378,21 +406,26 @@ What a scenario *proves*. Each is evaluated after load; the **pass condition** i
 | `plutus_phase2_isvalid_mismatch_rejected` | PASS iff a phase-2 IsValid mismatch is rejected with ValidationTagMismatch. | dev·lib | smoke · cn | — |
 
 
-## Setup primitives (4)
+## Setup primitives (7)
 
 | primitive | purpose / pass-condition | runtimes | verified | Antithesis |
 |---|---|---|---|---|
 | `runtime_attach_topology` | Attach to an already-running external topology (e.g. the upstream cardano_amaru mesh) as the runtime substrate, instead of provisioning a fresh one. | dev | full · cn | — |
 | `runtime_compose_substrate` | Bring up the docker-compose substrate and wait for health. | dev | full · cn+amaru | — |
 | `runtime_install_version` | Install/pin a specific node/implementation version into the runtime. | dev | full · cn+amaru | — |
+| `runtime_mark_baseline_window` | *(runtime mark baseline window)* | dev | full · cn+amaru | — |
 | `runtime_substrate_tip_warmup` | Warm a freshly-composed substrate until nodes reach a minimum tip/slot. | dev | full · cn+amaru | — |
+| `runtime_verify_exact_target` | *(runtime verify exact target)* | dev | full · cn+amaru | — |
+| `runtime_wait_for_chain_progress` | *(runtime wait for chain progress)* | dev | full · cn+amaru | — |
 
 
-## Probe primitives (1)
+## Probe primitives (3)
 
 | primitive | purpose / pass-condition | runtimes | verified | Antithesis |
 |---|---|---|---|---|
 | `parser_exit_status` | Per-input probe: record each iteration's outcome to probes/parser_exit_status.ndjson (newline-delimited JavaScript Object Notation). | lib | full · cn+amaru | ✓ |
+| `runtime_peer_session_health` | *(runtime peer session health)* | dev | full · cn+amaru | — |
+| `runtime_target_health_and_progress` | *(runtime target health and progress)* | dev | full · cn+amaru | — |
 
 
 ## Fault primitives (5)
@@ -411,3 +444,8 @@ What a scenario *proves*. Each is evaluated after load; the **pass condition** i
 | primitive | purpose / pass-condition | runtimes | verified | Antithesis |
 |---|---|---|---|---|
 | `runtime_teardown_substrate` | Tear down the substrate and record the outcome (runs regardless of pass/fail). | dev | full · cn+amaru | — |
+
+
+## Primitives awaiting a curated description
+
+These are registered but not yet hand-described (listed above with a fallback). Add them to `DESC` in the generator: `amaru_measurement_boundary_proven`, `block_application_samples_correlated`, `cardano_cbor_dataset_differential_clean`, `cbor_conformance_clean`, `cbor_roundtrip_consistent`, `controlled_sync_range_complete`, `invalid_protocol_cases_contained`, `minimum_adopted_block_range_observed`, `no_target_fatal_signal`, `restart_readiness_complete`, `runtime_amaru_measurement_calibration`, `runtime_cardano_cbor_dataset_differential`, `runtime_cardano_measurement_calibration`, `runtime_controlled_chain_progress_window`, `runtime_controlled_sync_range`, `runtime_mark_baseline_window`, `runtime_mark_hostile_window`, `runtime_mark_recovery_window`, `runtime_peer_session_health`, `runtime_protocol_decode_cases`, `runtime_real_target_restart_and_readiness`, `runtime_target_health_and_progress`, `runtime_verify_exact_target`, `runtime_version_pinned_cbor_conformance`, `runtime_wait_for_chain_progress`, `target_progress_continues`, `unrelated_peer_session_usable`

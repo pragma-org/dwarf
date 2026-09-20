@@ -1,0 +1,11 @@
+[package]
+name = "dwarf-amaru-cbor-conformance"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+amaru-kernel = { path = "../../crates/amaru-kernel" }
+serde_json = "1.0.145"

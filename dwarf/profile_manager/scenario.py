@@ -122,6 +122,8 @@ ASSERTION_PRODUCER_MAP = {
     "chainsync_responder_rollback_then_forward_clean": {"runtime_chainsync_responder_fork_switch"},
     "execution_trace_amaru_cardano_node_equivalent": {"runtime_execution_trace_differential"},
     "cardano_cbor_dataset_differential_clean": {"runtime_cardano_cbor_dataset_differential"},
+    "cbor_conformance_clean": {"runtime_version_pinned_cbor_conformance"},
+    "cbor_roundtrip_consistent": {"runtime_version_pinned_cbor_conformance"},
     "credential_ceremony_recorded_clean": {"runtime_credential_ceremony"},
     "amaru_proptest_oracle_recorded_clean": {"runtime_amaru_proptest_oracle"},
 }

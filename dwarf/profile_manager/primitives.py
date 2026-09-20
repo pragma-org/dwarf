@@ -1057,6 +1057,15 @@ def build_runtime_cardano_cbor_dataset_differential_command(*, config_path: Path
     ]
 
 
+def build_runtime_version_pinned_cbor_conformance_command(*, config_path: Path) -> list[str]:
+    return [
+        "python3",
+        str(DWARF_ROOT / "scripts" / "runtime_version_pinned_cbor_conformance.py"),
+        "--config",
+        str(config_path),
+    ]
+
+
 def build_runtime_crash_triage_command(
     *,
     bundle_dir: Path,
@@ -3951,6 +3960,81 @@ class RuntimeCardanoCborDatasetDifferential(LoadPrimitive):
                 "report": report,
                 "stdout": stdout[-4096:],
                 "stderr": stderr[-4096:],
+            },
+        )
+
+
+class RuntimeVersionPinnedCborConformance(LoadPrimitive):
+    """Run the frozen corpus through one exact production codec adapter."""
+
+    def run(self, handle, rng):
+        output_dir = _resolve_output_path(handle, self.params["output_dir"])
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        config = {
+            "source_repository": str(self.params["source_repository"]),
+            "dataset_revision": str(self.params["dataset_revision"]),
+            "dataset_repo_dir": str(_resolve_runtime_path(self.params["dataset_repo_dir"])),
+            "dataset_dir": str(_resolve_runtime_path(self.params["dataset_dir"])),
+            "implementation": str(self.params["implementation"]),
+            "source_revision": str(self.params["source_revision"]),
+            "adapter_record": str(_resolve_runtime_path(self.params["adapter_record"])),
+            "output_dir": str(output_dir),
+            "per_input_timeout_seconds": float(
+                self.params.get("per_input_timeout_seconds", 5)
+            ),
+        }
+        config_path = output_dir.parent / f"{output_dir.name}-config.json"
+        config_path.write_text(
+            json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        command = build_runtime_version_pinned_cbor_conformance_command(
+            config_path=config_path
+        )
+        timeout_seconds = float(self.params.get("timeout_seconds", 1200))
+        expect_exit = int(self.params.get("expect_exit", 0))
+        handle.log(
+            phase="load",
+            primitive="runtime_version_pinned_cbor_conformance",
+            level="info",
+            event="started",
+            payload={
+                "implementation": config["implementation"],
+                "source_revision": config["source_revision"],
+                "dataset_revision": config["dataset_revision"],
+                "output_dir": str(output_dir),
+                "command": command,
+            },
+        )
+        proc = subprocess.run(
+            command,
+            cwd=DWARF_ROOT,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+            env=_build_dwarf_telemetry_env(handle),
+        )
+        report = {}
+        report_path = output_dir / "result.json"
+        if report_path.is_file():
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        artifacts = {
+            "has_result_json": report_path.is_file(),
+            "has_inputs_ndjson": (output_dir / "inputs.ndjson").is_file(),
+            "has_report_markdown": (output_dir / "report.md").is_file(),
+        }
+        outcome = "ok" if proc.returncode == expect_exit else "unexpected_exit"
+        handle.log(
+            phase="load",
+            primitive="runtime_version_pinned_cbor_conformance",
+            level="info" if outcome == "ok" else "error",
+            event="completed",
+            payload={
+                "exit_code": proc.returncode,
+                "outcome": outcome,
+                "artifact_summary": artifacts,
+                "report": report,
+                "stdout": _decode_process_output(proc.stdout)[-4096:],
+                "stderr": _decode_process_output(proc.stderr)[-4096:],
             },
         )
 
@@ -16882,6 +16966,70 @@ class ExecutionTraceAmaruCardanoNodeEquivalent(AssertionPrimitive):
             "result": result,
             "note": note,
         }
+
+
+def _evaluate_version_pinned_cbor_check(handle, params, *, check_name, failure_key):
+    completed = _events_from_handle(
+        handle,
+        phase="load",
+        event="completed",
+        primitive="runtime_version_pinned_cbor_conformance",
+    )
+    minimum = int(params.get("min_inputs_processed", 100))
+    non_ok = []
+    for event in completed:
+        payload = event.get("payload") or {}
+        artifacts = payload.get("artifact_summary") or {}
+        report = payload.get("report") or {}
+        failures = report.get(failure_key)
+        if (
+            payload.get("outcome") != "ok"
+            or not artifacts.get("has_result_json", False)
+            or not artifacts.get("has_inputs_ndjson", False)
+            or not artifacts.get("has_report_markdown", False)
+            or int(report.get("input_count", 0) or 0) < minimum
+            or not isinstance(failures, list)
+            or bool(failures)
+            or (report.get("checks") or {}).get(check_name) is not True
+        ):
+            non_ok.append(payload)
+    passed = len(completed) >= int(params.get("min_completed", 1)) and not non_ok
+    return {
+        "evaluated_value": {
+            "completed": len(completed),
+            "non_ok": len(non_ok),
+            "minimum_inputs": minimum,
+        },
+        "data_points_used": [event.get("payload") or {} for event in completed],
+        "result": "pass" if passed else "fail",
+        "note": None if passed else f"{check_name} did not pass with complete evidence",
+    }
+
+
+class CborConformanceClean(AssertionPrimitive):
+    """Require all frozen CBOR inputs to have the expected terminal outcome."""
+
+    def evaluate(self, handle):
+        result = _evaluate_version_pinned_cbor_check(
+            handle,
+            self.params,
+            check_name="cbor_conformance_clean",
+            failure_key="outcome_mismatches",
+        )
+        return {"primitive": "cbor_conformance_clean", "params": dict(self.params), **result}
+
+
+class CborRoundtripConsistent(AssertionPrimitive):
+    """Require every accepted CBOR value to have stable canonical bytes."""
+
+    def evaluate(self, handle):
+        result = _evaluate_version_pinned_cbor_check(
+            handle,
+            self.params,
+            check_name="cbor_roundtrip_consistent",
+            failure_key="roundtrip_failures",
+        )
+        return {"primitive": "cbor_roundtrip_consistent", "params": dict(self.params), **result}
 
 
 class CardanoCborDatasetDifferentialClean(AssertionPrimitive):

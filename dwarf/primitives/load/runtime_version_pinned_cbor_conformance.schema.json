@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime_version_pinned_cbor_conformance params",
+  "type": "object",
+  "required": [
+    "source_repository",
+    "dataset_revision",
+    "dataset_repo_dir",
+    "dataset_dir",
+    "implementation",
+    "source_revision",
+    "adapter_record",
+    "output_dir"
+  ],
+  "properties": {
+    "source_repository": {"const": "https://github.com/r2rationality/cardano-cbor-dataset.git"},
+    "dataset_revision": {"const": "a7561cd063550c2218898571520f14c3674efe91"},
+    "dataset_repo_dir": {"type": "string", "minLength": 1},
+    "dataset_dir": {"type": "string", "minLength": 1},
+    "implementation": {"enum": ["amaru", "cardano-node"]},
+    "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "adapter_record": {"type": "string", "minLength": 1},
+    "output_dir": {"type": "string", "minLength": 1},
+    "per_input_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "expect_exit": {"type": "integer"}
+  },
+  "additionalProperties": false
+}

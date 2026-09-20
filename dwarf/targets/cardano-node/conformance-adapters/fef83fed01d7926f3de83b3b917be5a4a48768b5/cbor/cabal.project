@@ -1,0 +1,2 @@
+import: ../../cabal.project
+packages: dwarf-conformance-adapters/cardano-cbor

@@ -302,6 +302,36 @@
       ],
       "version": "0.1.0"
     },
+    "cbor_conformance_clean": {
+      "class": "CborConformanceClean",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/cbor_conformance_clean.schema.json",
+      "runtimes": [
+        "single-node",
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "cbor_roundtrip_consistent": {
+      "class": "CborRoundtripConsistent",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/cbor_roundtrip_consistent.schema.json",
+      "runtimes": [
+        "single-node",
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "cbor_edge_cases": {
       "class": "CborEdgeCases",
       "family": "load",
@@ -1451,6 +1481,21 @@
       "params_schema": "primitives/load/runtime_cardano_cbor_dataset_differential.schema.json",
       "runtimes": [
         "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_version_pinned_cbor_conformance": {
+      "class": "RuntimeVersionPinnedCborConformance",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_version_pinned_cbor_conformance.schema.json",
+      "runtimes": [
+        "single-node",
+        "devnet"
       ],
       "supports": [
         "cardano-node",
