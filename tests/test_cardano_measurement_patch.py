@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -288,3 +289,46 @@ def test_nanosecond_v2_patches_keep_duration_us_and_add_elapsed_nanos():
     assert 'measureDwarfPure "epoch-transition"' in patch_text
     assert 'stage" .= ("plutus-vm"' in patch_text
     assert "`div` 1000" in patch_text
+
+
+def test_nanosecond_v2_patch_hunk_counts_are_exact():
+    hunk_header = re.compile(
+        r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@"
+    )
+
+    for patch_path in sorted(NANOSECOND_PATCH_ROOT.glob("*.patch")):
+        lines = patch_path.read_text(encoding="utf-8").splitlines()
+        index = 0
+        while index < len(lines):
+            match = hunk_header.match(lines[index])
+            if match is None:
+                index += 1
+                continue
+            expected_old = int(match.group(2) or 1)
+            expected_new = int(match.group(4) or 1)
+            actual_old = 0
+            actual_new = 0
+            index += 1
+            while index < len(lines):
+                line = lines[index]
+                if line.startswith("@@ ") or line.startswith("diff --git "):
+                    break
+                if line.startswith("\\ No newline at end of file"):
+                    index += 1
+                    continue
+                if line.startswith((" ", "-")):
+                    actual_old += 1
+                if line.startswith((" ", "+")):
+                    actual_new += 1
+                index += 1
+            assert (actual_old, actual_new) == (expected_old, expected_new), (
+                patch_path, match.group(0), (actual_old, actual_new)
+            )
+
+
+def test_builder_records_absolute_wrapper_runtime_probe_before_publication():
+    source = Path(builder.__file__).read_text(encoding="utf-8")
+
+    assert '"/usr/local/bin/cardano-node"' in source
+    assert '"runtime_probe": {' in source
+    assert 'logs / "runtime-probe.log"' in source

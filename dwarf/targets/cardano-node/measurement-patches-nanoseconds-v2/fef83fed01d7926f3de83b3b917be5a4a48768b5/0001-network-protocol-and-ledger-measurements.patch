@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..aa59a2f
 --- /dev/null
 +++ b/api/lib/Ouroboros/Network/DwarfMeasurement.hs
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,109 @@
 +{-# LANGUAGE OverloadedStrings #-}
 +
 +-- | Opt-in, bounded NDJSON sink for the DWARF measurement build.

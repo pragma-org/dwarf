@@ -481,6 +481,16 @@ def build_target(
     )
     if REVISION not in smoke_log.read_text(encoding="utf-8"):
         raise BuildContractError("patched node smoke did not report the exact source revision")
+    runtime_probe_log = logs / "runtime-probe.log"
+    run_logged(
+        [
+            "docker", "run", "--rm", "--entrypoint",
+            "/usr/local/bin/cardano-node", tag, "--version",
+        ],
+        cwd=output_dir, log_path=runtime_probe_log
+    )
+    if REVISION not in runtime_probe_log.read_text(encoding="utf-8"):
+        raise BuildContractError("patched node runtime probe did not report the exact source revision")
 
     body: dict[str, Any] = {
         "schema_version": 1,
@@ -498,6 +508,10 @@ def build_target(
             "status": "built", "reference": tag, "image_id": image_id,
             "repo_digests": repo_digests,
             "smoke": {"status": "passed", "log": _artifact(smoke_log, root=output_dir)},
+            "runtime_probe": {
+                "status": "passed",
+                "log": _artifact(runtime_probe_log, root=output_dir),
+            },
         },
     }
     result_path = output_dir / "evidence" / "build-result.json"

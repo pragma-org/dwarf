@@ -116,7 +116,7 @@
     }
   ],
   "measurement_revision": "nanoseconds-v2",
-  "patch_set_sha256": "23adb17dc78a4efdd829684a1542669eac647cee202641578256d769a01d18c4",
+  "patch_set_sha256": "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c",
   "patches": [
     {
       "path": "0001-network-protocol-and-ledger-measurements.patch",
@@ -131,7 +131,7 @@
         }
       ],
       "root": "dependency:ouroboros-network-1.2.0.0",
-      "sha256": "e333a0b081476bd51ce7859539c2350d20626434ad2a14b36315e0f21a468e93"
+      "sha256": "8e09179477fa2bd66570d7083c13440cf4bcc648b3fd2e2ce45c77664a989ce1"
     },
     {
       "path": "0002-consensus-block-epoch-measurements.patch",
@@ -157,7 +157,7 @@
         }
       ],
       "root": "dependency:cardano-ledger-alonzo-1.16.0.0",
-      "sha256": "ab5bdf22e199ccb7b44a7227a63120aa3b586d6840e75d6627992c21ccfc150f"
+      "sha256": "a550de91c57fd19b36729a8d367d69669da341a7e1a09427a08b5190d04dc72d"
     }
   ],
   "schema_version": 1,
