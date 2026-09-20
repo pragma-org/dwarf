@@ -27,6 +27,10 @@ def _digest_rows(rows: list[tuple[str, str]]) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+def _manifest_revision(manifest_path: Path, manifest: dict[str, Any]) -> str:
+    return exact_builder.manifest_revision(manifest_path, manifest)
+
+
 def _verify_files(manifest_path: Path, manifest: dict[str, Any]) -> tuple[list[dict[str, str]], str]:
     verified = []
     rows = []
@@ -67,14 +71,13 @@ def build_adapter(
     manifest = exact_builder.load_manifest(manifest_path)
     if manifest.get("kind") != "production-cbor-conformance":
         raise BuildContractError("manifest kind is not production CBOR conformance")
-    if (manifest.get("source") or {}).get("revision") != REVISION:
-        raise BuildContractError("manifest source revision is not the audited Amaru revision")
+    revision = _manifest_revision(manifest_path, manifest)
     files, adapter_set_sha256 = _verify_files(manifest_path, manifest)
     if adapter_set_sha256 != manifest.get("adapter_set_sha256"):
         raise BuildContractError("adapter-set digest mismatch")
     output_dir.mkdir(parents=True)
     source = exact_builder.clone_exact_source(
-        source_repository, output_dir / "work" / "source", REVISION
+        source_repository, output_dir / "work" / "source", revision
     )
     stage = source / "dwarf-conformance-adapters" / "amaru-cbor"
     for item in files:
@@ -96,7 +99,7 @@ def build_adapter(
         "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "kind": manifest["kind"],
         "implementation": "amaru",
-        "source_revision": REVISION,
+        "source_revision": revision,
         "source_release": manifest["source"]["release"],
         "measurement_boundary": manifest["measurement_boundary"],
         "production_entrypoint": manifest["production_entrypoint"],
@@ -117,7 +120,7 @@ def build_adapter(
     evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
     build_result_sha256 = exact_builder.sha256_file(evidence_path)
     record = {**evidence, "build_result_sha256": build_result_sha256}
-    record_path = registry_root / "amaru" / "conformance" / REVISION / f"{adapter_set_sha256}.json"
+    record_path = registry_root / "amaru" / "conformance" / revision / f"{adapter_set_sha256}.json"
     record_path.parent.mkdir(parents=True, exist_ok=True)
     record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
     return {**record, "record_path": str(record_path)}

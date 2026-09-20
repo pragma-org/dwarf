@@ -275,6 +275,10 @@ def test_static_binary_contract_rejects_dynamic_elf(tmp_path, monkeypatch):
 NANOSECOND_PATCH_ROOT = (
     Path("dwarf/targets/amaru/measurement-patches-nanoseconds-v2") / REVISION
 )
+FIXED_REVISION = "d3a6dafcced78f5809a96619e883cf04911d2bdc"
+FIXED_NANOSECOND_PATCH_ROOT = (
+    Path("dwarf/targets/amaru/measurement-patches-nanoseconds-v2") / FIXED_REVISION
+)
 
 
 def test_nanosecond_v2_manifest_is_additive_and_v1_stays_byte_exact():
@@ -312,3 +316,39 @@ def test_nanosecond_v2_patch_emits_precise_and_compatibility_fields():
         assert micros_field in patch_text
     assert ".as_nanos()" in patch_text
     assert " / 1_000" in patch_text
+
+
+def test_fixed_revision_nanosecond_manifest_is_exact_and_self_consistent():
+    manifest_path = FIXED_NANOSECOND_PATCH_ROOT / "manifest.json"
+    manifest = builder.load_manifest(manifest_path)
+
+    assert builder.manifest_revision(manifest_path, manifest) == FIXED_REVISION
+    assert manifest["measurement_revision"] == "nanoseconds-v2"
+    assert manifest["source"]["revision"] == FIXED_REVISION
+    assert manifest["upstream_fix"] == FIXED_REVISION
+    verified = builder.verify_patch_set(FIXED_NANOSECOND_PATCH_ROOT, manifest)
+    assert verified["patch_set_sha256"] == manifest["patch_set_sha256"]
+
+
+def test_measurement_manifest_revision_must_match_its_revision_directory(tmp_path):
+    manifest_path = tmp_path / ("a" * 40) / "manifest.json"
+    manifest_path.parent.mkdir()
+    manifest = {"source": {"revision": FIXED_REVISION}}
+
+    with pytest.raises(builder.BuildContractError, match="revision directory"):
+        builder.manifest_revision(manifest_path, manifest)
+
+
+def test_fixed_revision_build_evidence_retains_exact_artifact_digests():
+    evidence = builder.load_manifest(FIXED_NANOSECOND_PATCH_ROOT / "build-evidence.json")
+
+    assert evidence["source_revision"] == FIXED_REVISION
+    assert evidence["measurement_revision"] == "nanoseconds-v2"
+    assert evidence["manifest_sha256"] == "45ae00451871355b26df3f067d672c2589ffcd159e16cc8b9cd837827582ac53"
+    assert evidence["patch_set_sha256"] == "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0"
+    assert evidence["executable_digest"] == "sha256:2970fa583d53967c72fdacb7e61d2954e1fb8d1b56fc7a34590018551085184e"
+    assert evidence["image_digest"] == "sha256:c890ee54aad19fe36aa80efbdee2f8a155dd80b2207970e844c836d37d8c5932"
+    assert evidence["build_result_sha256"] == "sha256:2ea77ff8e03c29e44a8f506542d55bde89c6ffa0119817757480d062200d639a"
+    assert evidence["static_linkage"] is True
+    assert evidence["image_smoke"] == "passed"
+    assert evidence["runtime_probe_smoke"] == "passed"

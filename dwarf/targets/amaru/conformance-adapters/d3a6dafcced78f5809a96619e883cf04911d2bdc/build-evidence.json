@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-20T23:10:16Z",
+  "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+  "source_release": "v10.11.20260912-30-gd3a6dafc",
+  "upstream_fix": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+  "manifest_sha256": "8877a4ae7f46521ae1a8bf6584e4092b39ef3f0f8acf93bbcc4e0bd551f1f685",
+  "adapter_set_sha256": "1fe5ef1eba105e88c781a9692bc44887f94431f580d1150c328b33cd91bb1561",
+  "build_log_sha256": "850f796a4b30e81964f2356097e942504730f9e6e411cfa5698fbf636603b0ef",
+  "build_result_sha256": "063e9e373e0486d12d2198c5346980cd469809d4d2e3cce1f712e5947630a951",
+  "registry_record_sha256": "8e71ef9782012b67b38485e4c9f9257441bb4a63c1172082e6afe8bb1b5b0c4e",
+  "executable_sha256": "dcc7936b562ef93b10a38aa366adaeeb7dfea05e826030075100316d07e3370d",
+  "toolchain": {
+    "requested": "nightly-2026-09-04",
+    "rustc": "rustc 1.100.0-nightly (a69a63265 2026-09-03)",
+    "cargo": "cargo 1.100.0-nightly (b2e9d5f9d 2026-09-02)"
+  },
+  "corpus": {
+    "workload_identity": "conway-plutus-data-100-v1",
+    "dataset_revision": "a7561cd063550c2218898571520f14c3674efe91",
+    "selection_sha256": "3ed74e02f2f2be02ad942d26c193a125a34a0828373aac11cbf5efe082fdd467",
+    "input_count": 100,
+    "outcome_mismatch_count": 0,
+    "roundtrip_failure_count": 0,
+    "result_sha256": "40a19c4cb78cee3d6ddc8e1b037b6d05d65dabe0ebacd374b982c25b8297b02f",
+    "inputs_sha256": "bda4f884359fa461290b398ec3f1ae9d896c3817a488c8706a8001a123a838ba",
+    "report_sha256": "cae0e7cb5b83e7eb819cfaa81df295d0e1a8c786c51377d9354841525e543069"
+  }
+}

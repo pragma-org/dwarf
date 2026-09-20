@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "kind": "production-cbor-conformance",
+  "implementation": "amaru",
+  "source": {
+    "repository": "https://github.com/pragma-org/amaru.git",
+    "release": "v10.11.20260912-30-gd3a6dafc",
+    "revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc"
+  },
+  "upstream_fix": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+  "measurement_boundary": "production-codec-only",
+  "production_entrypoint": "amaru_kernel::from_cbor_no_leftovers::<amaru_kernel::PlutusData>",
+  "toolchain": "nightly-2026-09-04",
+  "adapter_set_sha256": "1fe5ef1eba105e88c781a9692bc44887f94431f580d1150c328b33cd91bb1561",
+  "build": {
+    "command": [
+      "cargo",
+      "+nightly-2026-09-04",
+      "build",
+      "--release",
+      "--manifest-path",
+      "dwarf-conformance-adapters/amaru-cbor/Cargo.toml"
+    ],
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_TERM_COLOR": "never"
+    }
+  },
+  "adapter_files": [
+    {
+      "path": "cbor/Cargo.toml",
+      "sha256": "b4d6577dcc582c847d838d5532b57a4eaf57f3c37f2f502cb0b3610a9c4a3ba0"
+    },
+    {
+      "path": "cbor/src/main.rs",
+      "sha256": "a88e5754d6a23deeb057d116ac4c2d20633fce82c50b5136394de49685141a19"
+    }
+  ]
+}

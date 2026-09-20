@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -71,6 +72,18 @@ def load_manifest(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise BuildContractError("patch manifest must be a JSON object")
     return value
+
+
+def manifest_revision(manifest_path: Path, manifest: Mapping[str, Any]) -> str:
+    source = manifest.get("source")
+    revision = source.get("revision") if isinstance(source, Mapping) else None
+    if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise BuildContractError("manifest source revision must be a 40-character lowercase Git revision")
+    if manifest_path.parent.name != revision:
+        raise BuildContractError(
+            "manifest source revision does not match its revision directory"
+        )
+    return revision
 
 
 def _safe_relative_path(value: str, *, field: str) -> Path:
@@ -397,9 +410,9 @@ def build_target(
     evidence.mkdir()
 
     manifest = load_manifest(manifest_path)
+    revision = manifest_revision(manifest_path, manifest)
     patch_root = manifest_path.parent
     patch_identity = verify_patch_set(patch_root, manifest)
-    revision = str(manifest["source"]["revision"])
     source = clone_exact_source(source_repository, output_dir / "work" / "source", revision)
     _verify_toolchain(source, str(manifest["toolchain"]))
     build_tools = verify_build_tools(manifest)
