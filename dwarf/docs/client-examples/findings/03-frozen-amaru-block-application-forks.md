@@ -48,3 +48,11 @@ monotonic-height check before assertions.
 ## Required decision
 
 Card 04 remains incomplete for Amaru. An authorized contract decision must define whether a canonical-chain-only sequence can replace the current adopted-event sequence. This finding does not change the frozen monotonic assertion.
+
+## Approved resolution
+
+The strict monotonic check over raw adoption events is replaced by `canonical-progress-v2`. DWARF must keep every adoption, same-height hash switch, rollback or fork event, and application timing. It derives a separate canonical-progress proof and requires bounded progress, final convergence, complete required correlations, and healthy target state.
+
+A bounded same-height fork switch alone does not fail. No progress, non-convergence, excessive or continuing oscillation, missing correlations, panic, fatal exit, OOM, or unexpected restart fails. The old v1 runs and their verdicts remain unchanged.
+
+Child explanation: Keep every turn the chain takes. Judge whether it settles on one path and keeps moving, not whether it ever took a short detour.

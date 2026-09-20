@@ -112,6 +112,7 @@
       },
       "additionalProperties": false
     },
+    "approved_resolution": {"$ref": "#/$defs/approvedResolution"},
     "implementation_gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
     "deferred_scope": {
       "type": "object",
@@ -202,6 +203,32 @@
       "type": "object",
       "required": ["id", "status", "required_change"],
       "properties": {"id": {"type": "string"}, "status": {"enum": ["open", "closed"]}, "required_change": {"type": "string"}},
+      "additionalProperties": false
+    },
+    "approvedResolution": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "completed-security-finding-and-regression",
+            "on-chain-plutus-v2-topology",
+            "canonical-progress-v2"
+          ]
+        },
+        "historical_finding": {"type": "object"},
+        "regression": {"type": "object"},
+        "scenario_id": {"type": "string", "minLength": 1},
+        "profile": {"type": "string", "minLength": 1},
+        "preserve_existing_topologies": {"type": "boolean"},
+        "requirements": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "preserve_v1_runs": {"type": "boolean"},
+        "scenario_ids": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+        "raw_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "pass_conditions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "fail_conditions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "same_height_switch_alone_fails": {"type": "boolean"}
+      },
       "additionalProperties": false
     }
   }

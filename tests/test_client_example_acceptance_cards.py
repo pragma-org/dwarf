@@ -164,3 +164,79 @@ def test_invalid_protocol_card_names_the_three_exact_live_amaru_boundaries():
         "mini-protocol-decode",
         "handshake-negotiation",
     }
+
+
+def _card(card_id):
+    return next(item for item in _cards() if item["id"] == card_id)
+
+
+def test_card01_records_completed_finding_and_exact_fixed_revision_regression():
+    resolution = _card("client-example-01-cbor-decoding")["approved_resolution"]
+
+    assert resolution["kind"] == "completed-security-finding-and-regression"
+    assert resolution["historical_finding"] == {
+        "run_id": "20260920T135054Z-28289dcd",
+        "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+        "failed_assertion": "cbor_conformance_clean",
+        "finding_id": "amaru-plutus-data-byte-string-bound",
+        "execution_classification": "completed_with_security_finding",
+        "security_verdict": "fail",
+    }
+    assert resolution["regression"] == {
+        "scenario_id": "client-example-cbor-decoding-amaru-d3a6dafc-regression",
+        "profile": "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
+        "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+        "upstream_fix_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+        "measurement_revision": "nanoseconds-v2",
+        "corpus_digest": "sha256:8f5b409f5c2b25b31e392365bab0e9a703a526e776a4f34dfbc3204f9b022dd9",
+        "required_result": "pass",
+    }
+
+
+def test_card02_requires_additive_topology_with_live_on_chain_plutus_v2():
+    resolution = _card("client-example-02-plutus-vm")["approved_resolution"]
+
+    assert resolution["kind"] == "on-chain-plutus-v2-topology"
+    assert resolution["scenario_id"] == "client-example-plutus-vm-amaru-onchain-v2"
+    assert resolution["profile"] == "profile-w-amaru-measurement-plutus-v2"
+    assert resolution["preserve_existing_topologies"] is True
+    assert resolution["requirements"] == [
+        "generated-genesis-digests-retained",
+        "live-protocol-parameters-digest-retained",
+        "live-plutus-v2-cost-model-matches-pinned-model",
+        "30-valid-transactions-included",
+        "30-expected-invalid-transactions-included",
+        "transaction-hashes-and-identifiers-retained",
+        "continued-amaru-chain-progress",
+    ]
+
+
+def test_card04_replaces_raw_monotonicity_with_canonical_progress_v2():
+    resolution = _card("client-example-04-block-application")["approved_resolution"]
+
+    assert resolution["kind"] == "canonical-progress-v2"
+    assert resolution["preserve_v1_runs"] is True
+    assert resolution["scenario_ids"] == {
+        "amaru": "client-example-block-application-amaru-canonical-v2",
+        "cardano-node": "client-example-block-application-cardano-canonical-v2",
+    }
+    assert resolution["raw_evidence"] == [
+        "adopted-block-events",
+        "same-height-hash-switches",
+        "rollback-and-fork-events",
+        "application-timings",
+    ]
+    assert resolution["pass_conditions"] == [
+        "bounded-canonical-progress",
+        "final-convergence",
+        "complete-required-correlations",
+        "no-fatal-health-signal",
+    ]
+    assert resolution["fail_conditions"] == [
+        "no-progress",
+        "non-convergence",
+        "excessive-or-continuing-oscillation",
+        "missing-correlations",
+        "fatal-health-signal",
+    ]
+    assert resolution["same_height_switch_alone_fails"] is False

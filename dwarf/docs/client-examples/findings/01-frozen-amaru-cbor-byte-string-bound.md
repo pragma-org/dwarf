@@ -51,3 +51,11 @@ The real node contained all 200 live attempts, advanced from block 316 to block 
 - Exported failed-evidence bundle SHA-256: `aaef5dabea72cab7d8c6d6f23133753f11b86ce41de1ba56bb32e2c456f94a8c`
 
 `cardano-profile verify 20260920T135054Z-28289dcd` returned `OK`. This verifies evidence integrity; it does not change the failed security verdict.
+
+## Approved resolution
+
+This run is a completed execution with a node conformance finding. Its `cbor_conformance_clean` assertion remains failed. DWARF must not classify the security verdict as a pass.
+
+The regression target is exact Amaru revision `d3a6dafcced78f5809a96619e883cf04911d2bdc`, which contains the upstream fix at the same revision. The regression uses the unchanged frozen corpus and `nanoseconds-v2`. Its evidence must link back to this finding and identify both revisions.
+
+Child explanation: The old node finished the test and showed a real bug. A newer exact node must receive the same messages and show that the bug is fixed.

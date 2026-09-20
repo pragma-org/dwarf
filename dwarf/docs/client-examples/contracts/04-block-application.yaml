@@ -52,7 +52,7 @@ workload:
   stop_conditions:
     - Stop with failure if fewer than 30 new adopted blocks are observed.
     - Stop with failure if an application sample cannot be correlated to the exact target and measurement window.
-    - Stop with failure on non-monotonic target height, panic, fatal exit, restart, or collector error.
+    - Stop with failure on no canonical progress, non-convergence, excessive or continuing oscillation, missing correlations, panic, fatal exit, unexpected restart, or collector error.
 environment:
   hardware_fingerprint: cardano-box-2026-09-19
   hardware: {cpu: AMD Ryzen 7 6800U, physical_cores: 8, logical_cpus: 16, memory_bytes: 29193207808, kernel: 6.8.0-138-generic, docker: 29.6.0, storage_driver: overlayfs}
@@ -60,11 +60,11 @@ environment:
   cardano_topology: Three exact Cardano-node 11.1.2 nodes in the qualified local forging mesh.
 functional_requirement:
   id: FR-BLOCK-001
-  statement: The exact target must adopt at least 30 new blocks with monotonic height and without panic, fatal termination, or restart.
-  expected_result: At least 30 adopted block identities and at least 30 corresponding application timings are retained for each implementation.
+  statement: The exact target must retain every raw chain-selection event, make bounded canonical progress of at least 30 blocks, converge, and have no panic, fatal termination, or unexpected restart.
+  expected_result: Every raw adoption, fork, and rollback event is retained; the final canonical path advances by at least 30 blocks and converges; and at least 30 application timings correlate to retained identities for each implementation.
 measurements:
   - {name: block_application, boundary: Exact production ledger block-application boundary; networking delay is excluded, unit: us, minimum_sample_floor: 30, evidence_role: useful-distribution}
-  - {name: adopted_blocks, boundary: Target-local selected and adopted chain height delta in the controlled window, unit: blocks, minimum_sample_floor: 30, evidence_role: functional-correlation}
+  - {name: adopted_blocks, boundary: Target-local raw chain-selection events and derived final canonical height delta in the controlled window, unit: blocks, minimum_sample_floor: 30, evidence_role: functional-correlation}
   - {name: target_resources, boundary: Exact target process or container during the same block range, unit: samples, minimum_sample_floor: 30, evidence_role: useful-distribution}
 evidence_quality_rules: {very_small_sample: "n < 5", small_sample: "5 <= n < 30", useful_sample: "n >= 30", authority_rule: No block-application distribution is accepted below 30 correlated application events.}
 required_collectors:
@@ -73,10 +73,10 @@ required_collectors:
 acceptable_unavailable:
   - Plutus, restart-readiness, protocol queue, and epoch-transition metrics can remain unavailable when the workload does not reach those boundaries.
 security_assertions:
-  - {id: minimum_adopted_block_range_observed, statement: At least 30 exact adopted block identities occur after warm-up.}
+  - {id: canonical_chain_progress_complete, statement: The retained raw chain-selection events derive a bounded canonical path that advances by at least 30 blocks and converges without excessive or continuing oscillation.}
   - {id: block_application_samples_correlated, statement: At least 30 application timings belong to the measured target and controlled window.}
   - {id: no_target_fatal_signal, statement: "The target has no panic, fatal exit, OOM, or restart."}
-  - {id: target_progress_continues, statement: The final chain height is greater than the start height and remains monotonic.}
+  - {id: target_progress_continues, statement: The final canonical chain height is greater than the start height after bounded fork handling.}
 retained_artifacts: [manifest.json, scenario.yaml, resolved-profile.json, target identity, warm-up and measurement markers, start and end tips, adopted block identities, raw application trace, target resource samples, measurements/report.json, assertions.json, SARIF and attestation state, evidence bundle and digest]
 report_routes: ["/operate/runs/{run_id}", "/operate/scenarios/client-example-block-application-{implementation}", "/operate/measurement-profiles/{measurement_profile}"]
 legitimate_claims:
@@ -86,6 +86,29 @@ explicit_non_claims:
   - The metric excludes network diffusion and does not establish a stable release threshold.
   - Separate runs are not an automatic Amaru-versus-Cardano benchmark.
 verdict_policy: {security_assertions_authoritative: true, measurements_gate_by_default: false, threshold_gate: explicit-opt-in-only}
+approved_resolution:
+  kind: canonical-progress-v2
+  preserve_v1_runs: true
+  scenario_ids:
+    amaru: client-example-block-application-amaru-canonical-v2
+    cardano-node: client-example-block-application-cardano-canonical-v2
+  raw_evidence:
+    - adopted-block-events
+    - same-height-hash-switches
+    - rollback-and-fork-events
+    - application-timings
+  pass_conditions:
+    - bounded-canonical-progress
+    - final-convergence
+    - complete-required-correlations
+    - no-fatal-health-signal
+  fail_conditions:
+    - no-progress
+    - non-convergence
+    - excessive-or-continuing-oscillation
+    - missing-correlations
+    - fatal-health-signal
+  same_height_switch_alone_fails: false
 implementation_gaps:
   - {id: GAP-BLOCK-SAMPLE-FLOOR, status: open, required_change: Add a controlled progress-window primitive and assertions that bind at least 30 application events to adopted block progress.}
 deferred_scope: {presentation_walkthrough: true, mixed_node_comparison: true, weekly_automation: true, stable_release_thresholds: true}

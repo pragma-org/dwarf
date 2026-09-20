@@ -38,3 +38,11 @@ The two Amaru runs are diagnostic evidence. They are not accepted Gate 5 evidenc
 ## Required decision
 
 Card 02 remains incomplete until an authorized frozen-topology change supplies a qualified Amaru test chain with active Plutus V2 protocol parameters, or the controlling card changes its real-node requirement. This finding does not change the Card 02 security assertions, the Card 03 accepted evidence, or the Card 03 whole-microsecond measurement revision.
+
+## Approved resolution
+
+Add a separate measurement-specific Amaru topology. Preserve all existing topologies. The new topology must use the proven Cardano-producer and Amaru-consumer lifecycle and must activate the pinned Plutus V2 cost model in the generated on-chain genesis before producers start. It must retain generated genesis digests, live protocol parameters, the exact cost-model digest, revisions, images, and real transaction identities.
+
+An off-chain cost-model file is not sufficient. The live queried protocol parameters must contain the same Plutus V2 model.
+
+Child explanation: Make a new test chain whose real rule book contains the missing Plutus V2 rules. Do not pretend that a separate file changes the chain.

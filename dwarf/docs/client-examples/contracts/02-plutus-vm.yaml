@@ -91,6 +91,19 @@ explicit_non_claims:
   - Wall-clock values do not include transaction context fetch or full ledger-state application.
   - Separate runs do not automatically establish a cross-implementation performance ranking.
 verdict_policy: {security_assertions_authoritative: true, measurements_gate_by_default: false, threshold_gate: explicit-opt-in-only}
+approved_resolution:
+  kind: on-chain-plutus-v2-topology
+  scenario_id: client-example-plutus-vm-amaru-onchain-v2
+  profile: profile-w-amaru-measurement-plutus-v2
+  preserve_existing_topologies: true
+  requirements:
+    - generated-genesis-digests-retained
+    - live-protocol-parameters-digest-retained
+    - live-plutus-v2-cost-model-matches-pinned-model
+    - 30-valid-transactions-included
+    - 30-expected-invalid-transactions-included
+    - transaction-hashes-and-identifiers-retained
+    - continued-amaru-chain-progress
 implementation_gaps:
   - {id: GAP-PLUTUS-CONFORMANCE-ADAPTER, status: open, required_change: "Add exact-revision evaluator adapters that retain result, CPU budget, memory budget, Plutus version, and cost-model digest."}
   - {id: GAP-PLUTUS-AMARU-LIVE-WORKLOAD, status: open, required_change: Drive the controlled valid and invalid Plutus transactions through the exact Amaru target and correlate its stock VM spans.}

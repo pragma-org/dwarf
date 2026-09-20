@@ -128,6 +128,23 @@ explicit_non_claims:
   - The production-library conformance leg and live-node ingress leg are separate boundaries.
   - The run is not automatically an Amaru-versus-Cardano performance benchmark.
 verdict_policy: {security_assertions_authoritative: true, measurements_gate_by_default: false, threshold_gate: explicit-opt-in-only}
+approved_resolution:
+  kind: completed-security-finding-and-regression
+  historical_finding:
+    run_id: 20260920T135054Z-28289dcd
+    source_revision: b159172f25a9c389f82f20bca4f15e3032791638
+    failed_assertion: cbor_conformance_clean
+    finding_id: amaru-plutus-data-byte-string-bound
+    execution_classification: completed_with_security_finding
+    security_verdict: fail
+  regression:
+    scenario_id: client-example-cbor-decoding-amaru-d3a6dafc-regression
+    profile: profile-x-amaru-cbor-fix-regression-nanoseconds-v2
+    source_revision: d3a6dafcced78f5809a96619e883cf04911d2bdc
+    upstream_fix_revision: d3a6dafcced78f5809a96619e883cf04911d2bdc
+    measurement_revision: nanoseconds-v2
+    corpus_digest: sha256:8f5b409f5c2b25b31e392365bab0e9a703a526e776a4f34dfbc3204f9b022dd9
+    required_result: pass
 implementation_gaps:
   - {id: GAP-CBOR-PINNED-ADAPTERS, status: open, required_change: Build revision-locked production codec adapters with decode and canonical round-trip output; do not reuse the older bbce/CHaP shims as exact-release proof.}
   - {id: GAP-CBOR-LIVE-CASES, status: open, required_change: Add one bounded real-node workload that sends the exact unsupported and malformed handshake cases and correlates the hostile window.}
