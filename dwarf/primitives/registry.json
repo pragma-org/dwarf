@@ -2120,6 +2120,78 @@
       ],
       "version": "0.1.0"
     },
+    "runtime_wait_for_chain_progress": {
+      "class": "RuntimeWaitForChainProgress",
+      "family": "setup",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/setup/runtime_wait_for_chain_progress.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
+    "runtime_controlled_chain_progress_window": {
+      "class": "RuntimeControlledChainProgressWindow",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_controlled_chain_progress_window.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
+    "runtime_real_target_restart_and_readiness": {
+      "class": "RuntimeRealTargetRestartAndReadiness",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_real_target_restart_and_readiness.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
+    "runtime_controlled_sync_range": {
+      "class": "RuntimeControlledSyncRange",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_controlled_sync_range.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
+    "minimum_adopted_block_range_observed": {
+      "class": "MinimumAdoptedBlockRangeObserved",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/minimum_adopted_block_range_observed.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
+    "block_application_samples_correlated": {
+      "class": "BlockApplicationSamplesCorrelated",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/block_application_samples_correlated.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
+    "restart_readiness_complete": {
+      "class": "RestartReadinessComplete",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/restart_readiness_complete.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
+    "controlled_sync_range_complete": {
+      "class": "ControlledSyncRangeComplete",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/controlled_sync_range_complete.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
     "runtime_verify_exact_target": {
       "class": "RuntimeVerifyExactTarget",
       "family": "setup",

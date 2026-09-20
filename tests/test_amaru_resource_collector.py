@@ -188,3 +188,117 @@ def test_resource_collector_explains_missing_window_markers(tmp_path):
     assert result["window_attribution"]["status"] == "unavailable"
     assert "windows.ndjson" in result["window_attribution"]["reason"]
     assert all(window["status"] == "unavailable" for window in result["windows"].values())
+
+
+def test_resource_collector_attributes_single_controlled_chain_window(tmp_path):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text('{"amaru_nodes":[{"name":"amaru-1","impl":"amaru"}]}\n')
+    windows = tmp_path / "measurements" / "windows.ndjson"
+    windows.parent.mkdir(parents=True)
+    windows.write_text(
+        '{"phase_id":"controlled-chain-progress","state":"start","epoch_seconds":10}\n'
+        '{"phase_id":"controlled-chain-progress","state":"end","epoch_seconds":50}\n'
+    )
+    samples = [
+        {
+            "pid": 4242, "ts_epoch_s": float(epoch), "monotonic_seconds": float(epoch),
+            "cpu_time_seconds": float(index), "rss_bytes": 100 + index,
+        }
+        for index, epoch in enumerate((11, 20, 30, 40, 49))
+    ]
+    collector = AmaruResourceCollector(
+        {"id": "amaru-stock-resources", "parameters": {}},
+        runtime_metadata_path=metadata,
+        target_node="amaru-1",
+        resolve_pid=lambda _path, _node: 4242,
+        sample_reader=lambda _pid, index: samples[index],
+        background=False,
+    )
+    context = _context(tmp_path)
+    collector.prepare(context)
+    collector.start(context)
+    for _ in range(3):
+        collector._capture()
+    collector.stop(context)
+    result = collector.finalize(context)
+
+    assert set(result["windows"]) == {"controlled-chain-progress"}
+    assert result["windows"]["controlled-chain-progress"]["sample_count"] == 5
+    assert result["window_attribution"]["status"] == "available"
+
+
+def test_resource_collector_attributes_nested_recovery_and_sync_windows(tmp_path):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text('{"amaru_nodes":[{"name":"amaru-1","impl":"amaru"}]}\n')
+    windows = tmp_path / "measurements" / "windows.ndjson"
+    windows.parent.mkdir(parents=True)
+    windows.write_text(
+        '{"phase_id":"restart-recovery","state":"start","epoch_seconds":10}\n'
+        '{"phase_id":"controlled-sync-range","state":"start","epoch_seconds":20}\n'
+        '{"phase_id":"controlled-sync-range","state":"end","epoch_seconds":40}\n'
+        '{"phase_id":"restart-recovery","state":"end","epoch_seconds":50}\n'
+    )
+    samples = [
+        {
+            "pid": 4242, "ts_epoch_s": float(epoch),
+            "monotonic_seconds": float(epoch),
+            "cpu_time_seconds": float(index), "rss_bytes": 100 + index,
+        }
+        for index, epoch in enumerate((11, 20, 30, 40, 49))
+    ]
+    collector = AmaruResourceCollector(
+        {"id": "amaru-stock-resources", "parameters": {}},
+        runtime_metadata_path=metadata,
+        target_node="amaru-1",
+        resolve_pid=lambda _path, _node: 4242,
+        sample_reader=lambda _pid, index: samples[index],
+        background=False,
+    )
+    context = _context(tmp_path)
+    collector.prepare(context)
+    collector.start(context)
+    for _ in range(3):
+        collector._capture()
+    collector.stop(context)
+    result = collector.finalize(context)
+
+    assert result["windows"]["restart-recovery"]["sample_count"] == 5
+    assert result["windows"]["controlled-sync-range"]["sample_count"] == 3
+    assert result["window_attribution"]["status"] == "available"
+
+
+def test_resource_collector_re_resolves_pid_after_real_restart(tmp_path):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text('{"amaru_nodes":[{"name":"amaru-1","impl":"amaru"}]}\n')
+    pids = iter([100, 200])
+    calls = []
+
+    def reader(pid, index):
+        calls.append((pid, index))
+        if pid == 100 and index == 1:
+            raise ProcessLookupError("old process exited")
+        return {
+            "pid": pid,
+            "ts_epoch_s": float(index),
+            "monotonic_seconds": float(index),
+            "cpu_time_seconds": float(index),
+            "rss_bytes": 100,
+        }
+
+    collector = AmaruResourceCollector(
+        {"id": "amaru-stock-resources", "parameters": {}},
+        runtime_metadata_path=metadata,
+        target_node="amaru-1",
+        resolve_pid=lambda _path, _node: next(pids),
+        sample_reader=reader,
+        background=False,
+    )
+    context = _context(tmp_path)
+    collector.prepare(context)
+    collector.start(context)
+    collector._capture()
+    collector.stop(context)
+
+    assert calls == [(100, 0), (100, 1), (200, 1), (200, 2)]
+    assert collector._pid == 200
+    assert len(collector._samples) == 3

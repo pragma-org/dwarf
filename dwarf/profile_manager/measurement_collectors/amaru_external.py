@@ -391,6 +391,7 @@ class SyncSpeedCollector:
         expected_start_height: int | None = None,
         expected_end_height: int | None = None,
         peer_policy: str,
+        target_node: str | None = None,
     ) -> None:
         self.entry = entry
         self.tip_probe = tip_probe
@@ -398,6 +399,7 @@ class SyncSpeedCollector:
         self.expected_start_height = expected_start_height
         self.expected_end_height = expected_end_height
         self.peer_policy = peer_policy
+        self.target_node = target_node
         self.samples = []
 
     def prepare(self, context) -> None:
@@ -426,9 +428,64 @@ class SyncSpeedCollector:
     def stop(self, context) -> None:
         self.sample()
 
+    def _controlled_range(self, context):
+        path = context.run_dir / "events" / "target-hooks.ndjson"
+        records, _rejected = _read_ndjson(path)
+        selected = []
+        found = False
+        for record in records:
+            if record.get("event") not in {
+                "sync_range_started", "sync_range_completed"
+            }:
+                continue
+            payload = record.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            event_target = payload.get("target_node")
+            if self.target_node is not None and event_target not in {None, self.target_node}:
+                continue
+            found = True
+            if self.target_node is not None and event_target != self.target_node:
+                continue
+            tip = payload.get("tip")
+            elapsed = record.get("elapsed_seconds", payload.get("elapsed_seconds"))
+            if not isinstance(tip, dict) or isinstance(elapsed, bool) or not isinstance(elapsed, (int, float)):
+                continue
+            height = tip.get("block_height")
+            if isinstance(height, bool) or not isinstance(height, int) or height < 0:
+                continue
+            selected.append((record["event"], {
+                "monotonic_seconds": float(elapsed),
+                "block_height": height,
+                "block_hash": tip.get("block_hash", tip.get("hash")),
+                "peer_policy": payload.get("peer_policy"),
+            }))
+        starts = [sample for event, sample in selected if event == "sync_range_started"]
+        ends = [sample for event, sample in selected if event == "sync_range_completed"]
+        if not found:
+            return None
+        if len(starts) != 1 or len(ends) != 1:
+            return None, None
+        return starts[0], ends[0]
+
     def finalize(self, context) -> dict[str, Any]:
-        start = self.samples[0] if self.samples else None
-        end = self.samples[-1] if len(self.samples) >= 2 else None
+        controlled = self._controlled_range(context)
+        if controlled is None:
+            start = self.samples[0] if self.samples else None
+            end = self.samples[-1] if len(self.samples) >= 2 else None
+            peer_policy = self.peer_policy
+            source = "collector-tip-observations"
+        else:
+            start, end = controlled
+            if start is None or end is None:
+                start = end = None
+                peer_policy = self.peer_policy
+            else:
+                peer_policy = start.get("peer_policy")
+                if peer_policy is None or peer_policy != end.get("peer_policy"):
+                    start = end = None
+                    peer_policy = self.peer_policy
+            source = "controlled-sync-range-events"
         duration = (
             end["monotonic_seconds"] - start["monotonic_seconds"]
             if start is not None and end is not None
@@ -458,8 +515,9 @@ class SyncSpeedCollector:
             "controlled_range_match": range_match,
             "expected_start_height": self.expected_start_height,
             "expected_end_height": self.expected_end_height,
-            "peer_policy": self.peer_policy,
+            "peer_policy": peer_policy,
             "clock": "monotonic",
+            "source": source,
         }
         if not valid:
             speed["reason"] = "two monotonic tip observations and the configured controlled range are required"

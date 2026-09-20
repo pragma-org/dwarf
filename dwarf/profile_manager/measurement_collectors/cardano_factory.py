@@ -64,6 +64,7 @@ def build_cardano_measurement_factories(
             expected_start_height=expected_start_height,
             expected_end_height=expected_end_height,
             peer_policy=peer_policy,
+            target_node=target_node,
         )
     if target_identity is not None and target_identity.get("mode") == "patched":
         factories.update(

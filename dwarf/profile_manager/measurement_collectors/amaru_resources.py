@@ -105,7 +105,13 @@ def _resource_measurements(samples: list[dict[str, Any]]) -> dict[str, dict[str,
     }
 
 
-_RESOURCE_WINDOW_NAMES = ("baseline", "hostile", "recovery")
+_LEGACY_RESOURCE_WINDOW_NAMES = ("baseline", "hostile", "recovery")
+_CONTROLLED_RESOURCE_WINDOW_NAMES = (
+    "controlled-chain-progress",
+    "controlled-sync-range",
+    "restart-recovery",
+)
+_RESOURCE_WINDOW_NAMES = _LEGACY_RESOURCE_WINDOW_NAMES + _CONTROLLED_RESOURCE_WINDOW_NAMES
 
 
 def _read_resource_windows(path: Path) -> dict[str, tuple[float, float]]:
@@ -143,8 +149,15 @@ def _read_resource_windows(path: Path) -> dict[str, tuple[float, float]]:
             )
         markers[name][state].append(float(epoch))
 
+    observed = tuple(
+        name
+        for name in _RESOURCE_WINDOW_NAMES
+        if markers[name]["start"] or markers[name]["end"]
+    )
+    controlled = tuple(name for name in observed if name in _CONTROLLED_RESOURCE_WINDOW_NAMES)
+    required_names = controlled or _LEGACY_RESOURCE_WINDOW_NAMES
     windows = {}
-    for name in _RESOURCE_WINDOW_NAMES:
+    for name in required_names:
         starts = markers[name]["start"]
         ends = markers[name]["end"]
         if len(starts) != 1 or len(ends) != 1:
@@ -158,7 +171,11 @@ def _read_resource_windows(path: Path) -> dict[str, tuple[float, float]]:
 
     ordered = sorted((start, end, name) for name, (start, end) in windows.items())
     for previous, current in zip(ordered, ordered[1:]):
-        if current[0] <= previous[1]:
+        if (
+            current[0] <= previous[1]
+            and current[2] in _LEGACY_RESOURCE_WINDOW_NAMES
+            and previous[2] in _LEGACY_RESOURCE_WINDOW_NAMES
+        ):
             raise ValueError(
                 f"measurement windows overlap: {previous[2]} and {current[2]}"
             )
@@ -179,12 +196,12 @@ def _attribute_resource_windows(
                 "sample_count": 0,
                 "measurements": _resource_measurements([]),
             }
-            for name in _RESOURCE_WINDOW_NAMES
+            for name in _LEGACY_RESOURCE_WINDOW_NAMES
         }
         return unavailable, {"status": "unavailable", "reason": reason}
 
     attributed = {}
-    for name in _RESOURCE_WINDOW_NAMES:
+    for name in ranges:
         start, end = ranges[name]
         selected = [
             sample
@@ -260,6 +277,19 @@ class AmaruResourceCollector:
             index = len(self._samples)
         try:
             sample = self._read_sample(index)
+        except (FileNotFoundError, ProcessLookupError):
+            try:
+                previous_pid = self._pid
+                self._pid = int(
+                    self._resolve_pid(self.runtime_metadata_path, self.target_node)
+                )
+                if self._pid == previous_pid:
+                    raise ProcessLookupError("target PID did not change after process exit")
+                sample = self._read_sample(index)
+            except Exception as exc:
+                with self._lock:
+                    self._sample_errors.append(f"{type(exc).__name__}: {exc}")
+                return
         except Exception as exc:  # optional telemetry must not stop the scenario
             with self._lock:
                 self._sample_errors.append(f"{type(exc).__name__}: {exc}")

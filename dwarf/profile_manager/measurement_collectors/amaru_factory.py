@@ -77,5 +77,6 @@ def build_amaru_measurement_factories(
             expected_start_height=expected_start_height,
             expected_end_height=expected_end_height,
             peer_policy=peer_policy,
+            target_node=target_node,
         )
     return factories

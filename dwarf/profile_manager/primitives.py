@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from profile_manager import plugin_loader
+from profile_manager.measurement_precision import precise_microseconds
 
 FAMILIES = frozenset({"setup", "load", "probe", "assertion", "fault", "teardown"})
 RUNTIMES = frozenset({"library", "single-node", "devnet"})
@@ -14143,6 +14144,585 @@ class RuntimeProtocolDecodeCases(LoadPrimitive):
             )
 
 
+def _client_epoch() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
+def _resolve_client_runtime_target(handle, params: dict[str, Any]) -> dict[str, Any]:
+    profile_id = str(params.get("profile_id") or "")
+    metadata_value = params.get("runtime_metadata_path")
+    if metadata_value:
+        metadata_path = Path(str(metadata_value))
+    elif profile_id:
+        metadata_path = Path("/opt/dwarf/cardano-profiles") / profile_id / "runtime.json"
+    else:
+        raise RuntimeError("profile_id or runtime_metadata_path is required")
+    try:
+        runtime = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"runtime metadata is unavailable: {metadata_path}") from exc
+
+    implementation = str((_measurement_target_identity(handle) or {}).get("implementation") or "")
+    if implementation == "cardano-node":
+        nodes = runtime.get("haskell_nodes") or []
+        node = next((item for item in nodes if item.get("id") == "node1"), None)
+        if not isinstance(node, dict):
+            raise RuntimeError("Cardano runtime has no node1 target")
+        peers = [item for item in nodes if item.get("id") != "node1"]
+        return {
+            "id": "node1",
+            "implementation": implementation,
+            "container": node.get("container_name"),
+            "listen_host": node.get("container_ip") or "node1",
+            "listen_port": 3001,
+            "socket_path": node.get("container_socket_path"),
+            "network_magic": runtime.get("network_magic", 42),
+            "log_path": node.get("log_path"),
+            "measurement_log_path": str(metadata_path.parent / "logs/node1/cardano-measurement.ndjson"),
+            "peer": {
+                "id": (peers[0].get("id") if peers else None),
+                "container": (peers[0].get("container_name") if peers else None),
+                "socket_path": (peers[0].get("container_socket_path") if peers else None),
+            },
+            "runtime_metadata_path": str(metadata_path),
+        }
+
+    if implementation == "amaru":
+        services = ((runtime.get("identity") or {}).get("services") or {})
+        target = services.get("amaru-relay-1") or {}
+        peer = services.get("amaru-consumer") or {}
+        container = target.get("container")
+        if not container:
+            raise RuntimeError("Amaru runtime has no amaru-relay-1 target")
+        inspect = _protocol_docker_result(["inspect", str(container)])
+        ip_address = None
+        if inspect.returncode == 0:
+            try:
+                networks = json.loads(inspect.stdout)[0]["NetworkSettings"]["Networks"]
+                ip_address = next(
+                    (item.get("IPAddress") for item in networks.values() if item.get("IPAddress")),
+                    None,
+                )
+            except (KeyError, IndexError, json.JSONDecodeError, StopIteration):
+                ip_address = None
+        return {
+            "id": "amaru-relay-1",
+            "implementation": implementation,
+            "container": container,
+            "listen_host": ip_address or str(container),
+            "listen_port": 3000,
+            "peer": {
+                "id": "amaru-consumer",
+                "container": peer.get("container"),
+                "socket_path": "/env/socket/amaru-consumer/sock",
+            },
+            "network_magic": 42,
+            "runtime_metadata_path": str(metadata_path),
+        }
+    raise RuntimeError(f"unsupported client target implementation: {implementation}")
+
+
+def _observe_client_target_tip(target: dict[str, Any]) -> dict[str, Any]:
+    implementation = target.get("implementation")
+    if implementation == "cardano-node":
+        observer = {
+            "container": target.get("container"),
+            "socket_path": target.get("socket_path"),
+            "network_magic": target.get("network_magic", 42),
+            "peer_id": target.get("id"),
+        }
+        result = _observe_protocol_peer(observer)
+        if not result.get("usable"):
+            raise RuntimeError("Cardano target tip is unavailable")
+        return dict(result["tip"])
+    if implementation == "amaru":
+        result = _protocol_docker_result(
+            ["logs", "--tail", "12000", str(target.get("container"))], timeout=120
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "cannot read Amaru target logs")
+        from scripts.runtime_amaru_measurement_calibration import extract_latest_adopted_tip
+
+        tip = extract_latest_adopted_tip(result.stdout + "\n" + result.stderr)
+        if not isinstance(tip, dict):
+            raise RuntimeError("Amaru target tip is unavailable")
+        return dict(tip)
+    raise RuntimeError("target implementation is unavailable")
+
+
+def _tip_height(tip: dict[str, Any]) -> int:
+    position = _tip_position(tip)
+    if position is None:
+        raise RuntimeError("tip has no numeric block height")
+    return position
+
+
+def _wait_for_tip_delta(
+    target: dict[str, Any],
+    start_tip: dict[str, Any],
+    *,
+    minimum_blocks: int,
+    timeout_seconds: float,
+    poll_interval_seconds: float,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    import time
+
+    start_height = _tip_height(start_tip)
+    deadline = time.monotonic() + timeout_seconds
+    observations = []
+    while True:
+        tip = _observe_client_target_tip(target)
+        observations.append({"observed_at_epoch_seconds": _client_epoch(), **tip})
+        if _tip_height(tip) >= start_height + minimum_blocks:
+            return tip, observations
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"target did not advance by {minimum_blocks} blocks within {timeout_seconds}s"
+            )
+        time.sleep(poll_interval_seconds)
+
+
+class RuntimeWaitForChainProgress(LoadPrimitive):
+    """Require positive real-node progress before a controlled measurement."""
+
+    def run(self, handle, rng):
+        target = _resolve_client_runtime_target(handle, self.params)
+        minimum = int(self.params.get("minimum_blocks", 5))
+        start = _observe_client_target_tip(target)
+        end, observations = _wait_for_tip_delta(
+            target,
+            start,
+            minimum_blocks=minimum,
+            timeout_seconds=float(self.params.get("timeout_seconds", 120)),
+            poll_interval_seconds=float(self.params.get("poll_interval_seconds", 1)),
+        )
+        proof = {
+            "schema_version": "v1",
+            "target_node": target.get("id"),
+            "minimum_blocks": minimum,
+            "start_tip": start,
+            "end_tip": end,
+            "observations": observations,
+            "checks": {"minimum_progress_observed": _tip_height(end) >= _tip_height(start) + minimum},
+        }
+        _write_client_example_proof(handle, "chain-progress-readiness.json", proof)
+        handle.log(
+            phase="setup", primitive="runtime_wait_for_chain_progress", level="info",
+            event="completed", payload={"outcome": "ok", **proof},
+        )
+
+
+def _json_lines_between(path: Path, offset: int) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    records = []
+    with path.open("rb") as stream:
+        stream.seek(offset)
+        for raw in stream:
+            try:
+                value = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if isinstance(value, dict):
+                records.append(value)
+    return records
+
+
+def _collect_controlled_block_evidence(
+    target: dict[str, Any],
+    *,
+    log_offset: int,
+    measurement_offset: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    implementation = target.get("implementation")
+    adopted = []
+    applications = []
+    if implementation == "cardano-node":
+        for row in _json_lines_between(Path(str(target.get("log_path"))), log_offset):
+            if row.get("ns") != "ChainDB.AddBlockEvent.AddedToCurrentChain":
+                continue
+            for header in ((row.get("data") or {}).get("headers") or []):
+                try:
+                    height = int(header.get("blockNo"))
+                except (TypeError, ValueError):
+                    continue
+                block_hash = str(header.get("hash") or "").strip('"')
+                if block_hash:
+                    adopted.append({
+                        "block_height": height,
+                        "hash": block_hash,
+                        "slot": int(header.get("slotNo")),
+                        "observed_at": row.get("at"),
+                    })
+        for index, row in enumerate(
+            _json_lines_between(Path(str(target.get("measurement_log_path"))), measurement_offset)
+        ):
+            if (
+                row.get("event") == "ledger_stage"
+                and row.get("stage") == "block-application"
+                and row.get("outcome") == "accepted"
+            ):
+                elapsed_nanos, duration_micros = precise_microseconds(
+                    row, nanos_field="elapsed_nanos", micros_field="duration_us"
+                )
+                application = {
+                    "sample_id": f"apply-{index:04d}",
+                    "duration_micros": duration_micros,
+                    "ended_monotonic_ns": row.get("ended_monotonic_ns"),
+                    "outcome": row.get("outcome"),
+                }
+                if elapsed_nanos is not None:
+                    application["elapsed_nanos"] = elapsed_nanos
+                applications.append(application)
+    elif implementation == "amaru":
+        result = _protocol_docker_result(
+            ["logs", "--since", str(target.get("window_started_at")), str(target.get("container"))],
+            timeout=120,
+        )
+        rows = []
+        for line in (result.stdout + "\n" + result.stderr).splitlines():
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                rows.append(value)
+        enters = {}
+        for row in rows:
+            fields = row.get("fields") or {}
+            span = row.get("span") or {}
+            if fields.get("message") == "tip.update" and fields.get("header_hash"):
+                adopted.append({
+                    "block_height": int(fields["block_height"]),
+                    "hash": fields["header_hash"],
+                    "slot": fields.get("slot"),
+                    "observed_at": row.get("timestamp"),
+                })
+            if span.get("name") == "block.apply" and fields.get("message") == "enter":
+                enters[row.get("id")] = row
+            if span.get("name") == "block.apply" and fields.get("message") == "exit":
+                start = enters.get(row.get("id"))
+                if start and start.get("timestamp") and row.get("timestamp"):
+                    begin = datetime.fromisoformat(start["timestamp"].replace("Z", "+00:00"))
+                    end = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+                    applications.append({
+                        "sample_id": f"apply-{len(applications):04d}",
+                        "duration_micros": (end - begin).total_seconds() * 1_000_000,
+                        "observed_at": row.get("timestamp"),
+                        "point_slot": fields.get("point_slot"),
+                    })
+    return adopted, applications
+
+
+def _monotonic_adopted(adopted: list[dict[str, Any]]) -> bool:
+    heights = [_tip_height(row) for row in adopted]
+    return bool(heights) and all(right > left for left, right in zip(heights, heights[1:]))
+
+
+def _observe_client_window_health(
+    target: dict[str, Any],
+    *,
+    started_at: str,
+    before: dict[str, Any],
+    tip_before: dict[str, Any],
+) -> dict[str, Any]:
+    observer = {
+        "implementation": target.get("implementation"),
+        "container": target.get("container"),
+        "socket_path": target.get("socket_path"),
+        "network_magic": target.get("network_magic", 42),
+        "peer_id": target.get("id"),
+        "started_at": started_at,
+    }
+    observed = _observe_protocol_target(observer)
+    after = observed.get("state")
+    tip_after = observed.get("tip")
+    signals = observed.get("log_signals")
+    if not isinstance(after, dict) or not isinstance(tip_after, dict):
+        raise RuntimeError("observed target health is incomplete")
+    if not isinstance(signals, dict):
+        raise RuntimeError("observed target log classification is unavailable")
+    return {
+        "before": before,
+        "after": after,
+        "tip_before": tip_before,
+        "tip_after": tip_after,
+        "log_signals": signals,
+        "observer": observer,
+    }
+
+
+class RuntimeControlledChainProgressWindow(LoadPrimitive):
+    """Retain a bounded real adopted-block range and application correlations."""
+
+    def run(self, handle, rng):
+        import time
+
+        target = _resolve_client_runtime_target(handle, self.params)
+        warm_up = float(self.params.get("warm_up_seconds", 30))
+        duration = float(self.params.get("duration_seconds", 180))
+        minimum = int(self.params.get("minimum_adopted_blocks", 30))
+        if warm_up < 0 or duration < 0 or minimum < 1:
+            raise ValueError("controlled chain progress parameters are invalid")
+        if warm_up:
+            time.sleep(warm_up)
+        start_tip = _observe_client_target_tip(target)
+        before_state = _protocol_container_state(str(target.get("container") or ""))
+        window_started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        log_path = Path(str(target.get("log_path") or ""))
+        measurement_path = Path(str(target.get("measurement_log_path") or ""))
+        log_offset = log_path.stat().st_size if log_path.is_file() else 0
+        measurement_offset = measurement_path.stat().st_size if measurement_path.is_file() else 0
+        runtime = _active_measurement_runtime(handle)
+        target["window_started_at"] = window_started_at
+        start_marker = runtime.mark_phase("controlled-chain-progress", "start")
+        try:
+            time.sleep(duration)
+        finally:
+            end_marker = runtime.mark_phase("controlled-chain-progress", "end")
+        end_tip = _observe_client_target_tip(target)
+        adopted, applications = _collect_controlled_block_evidence(
+            target, log_offset=log_offset, measurement_offset=measurement_offset
+        )
+        target_health = _observe_client_window_health(
+            target,
+            started_at=window_started_at,
+            before=before_state,
+            tip_before=start_tip,
+        )
+
+        pair_count = min(len(adopted), len(applications))
+        correlations = [
+            {
+                "block_height": adopted[index]["block_height"],
+                "block_hash": adopted[index]["hash"],
+                "application_sample_id": applications[index]["sample_id"],
+                "duration_micros": applications[index].get("duration_micros"),
+                "correlation_basis": "same-target-temporal-order-within-controlled-window",
+            }
+            for index in range(pair_count)
+        ]
+        checks = {
+            "application_samples_correlated": len(correlations) >= minimum,
+            "all_application_samples_correlated": len(correlations) == len(applications),
+            "minimum_adopted_block_range_observed": len(adopted) >= minimum,
+            "monotonic_height": _monotonic_adopted(adopted),
+        }
+        proof = {
+            "schema_version": "v1",
+            "target_node": target.get("id"),
+            "minimum_adopted_blocks": minimum,
+            "start_tip": start_tip,
+            "end_tip": end_tip,
+            "start_marker": start_marker,
+            "end_marker": end_marker,
+            "adopted_blocks": adopted,
+            "application_samples": applications,
+            "correlations": correlations,
+            "checks": checks,
+            "target_health": target_health,
+        }
+        _write_client_example_proof(handle, "controlled-chain-progress.json", proof)
+        if not all(checks.values()):
+            raise RuntimeError(f"controlled chain progress proof failed: {checks}")
+        handle.log(
+            phase="load", primitive="runtime_controlled_chain_progress_window",
+            level="info", event="completed", payload={"outcome": "ok", **proof},
+        )
+
+
+def _restart_client_runtime_target(target: dict[str, Any]) -> dict[str, Any]:
+    container = str(target.get("container") or "")
+    if not container:
+        raise RuntimeError("restart target container is unavailable")
+    result = _protocol_docker_result(["restart", "--time", "30", container], timeout=90)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"cannot restart {container}")
+    return {"command": f"docker restart --time 30 {container}", "exit_code": result.returncode}
+
+
+def _client_listener_ready(target: dict[str, Any]) -> bool:
+    import socket
+
+    try:
+        with socket.create_connection(
+            (str(target.get("listen_host")), int(target.get("listen_port"))), timeout=2
+        ):
+            return True
+    except OSError:
+        return False
+
+
+def _client_peer_role_ready(target: dict[str, Any]) -> dict[str, Any]:
+    peer = target.get("peer") or {}
+    observer = {
+        "container": peer.get("container"),
+        "socket_path": peer.get("socket_path"),
+        "network_magic": target.get("network_magic", 42),
+        "peer_id": peer.get("id"),
+    }
+    try:
+        evidence = _observe_protocol_peer(observer)
+    except RuntimeError:
+        evidence = {"usable": False, "peer_id": peer.get("id")}
+    return {"ready": evidence.get("usable") is True, **evidence}
+
+
+def _emit_readiness_gate(handle, target_node: str, event: str, payload: dict[str, Any]) -> dict[str, Any]:
+    import time
+
+    observed_at = _client_epoch()
+    monotonic_seconds = time.monotonic()
+    body = {"target_node": target_node, "elapsed_seconds": monotonic_seconds, "observed_at_epoch_seconds": observed_at, **payload}
+    _append_target_hook_event(
+        handle, primitive="runtime_real_target_restart_and_readiness", event=event, payload=body
+    )
+    return {"event": event, **body}
+
+
+class RuntimeRealTargetRestartAndReadiness(LoadPrimitive):
+    """Restart the real target and retain listener, progress, and peer gates."""
+
+    def run(self, handle, rng):
+        import time
+
+        target = _resolve_client_runtime_target(handle, self.params)
+        timeout = float(self.params.get("timeout_seconds", 240))
+        interval = float(self.params.get("poll_interval_seconds", 1))
+        before = _observe_client_target_tip(target)
+        runtime = _active_measurement_runtime(handle)
+        recovery_start_marker = runtime.mark_phase("restart-recovery", "start")
+        restart = _emit_readiness_gate(handle, str(target["id"]), "restart_started", {"tip": before})
+        restart_command = _restart_client_runtime_target(target)
+        deadline = time.monotonic() + timeout
+        gates = []
+        while not _client_listener_ready(target):
+            if time.monotonic() >= deadline:
+                raise TimeoutError("target listener did not return after restart")
+            time.sleep(interval)
+        gates.append(_emit_readiness_gate(handle, str(target["id"]), "listener_ready", {}))
+        while True:
+            try:
+                after = _observe_client_target_tip(target)
+            except RuntimeError:
+                after = None
+            if after is not None and _tip_height(after) > _tip_height(before):
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError("target chain progress did not return after restart")
+            time.sleep(interval)
+        gates.append(_emit_readiness_gate(handle, str(target["id"]), "chain_progress_ready", {"tip": after}))
+        while True:
+            peer = _client_peer_role_ready(target)
+            if peer.get("ready") is True:
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError("required peer role did not return after restart")
+            time.sleep(interval)
+        gates.append(_emit_readiness_gate(handle, str(target["id"]), "peer_role_ready", peer))
+        times = [restart["elapsed_seconds"], *[row["elapsed_seconds"] for row in gates]]
+        checks = {
+            "all_readiness_gates_observed": len(gates) == 3,
+            "readiness_gates_ordered": times == sorted(times),
+            "target_progressed_after_restart": _tip_height(after) > _tip_height(before),
+        }
+        proof = {
+            "schema_version": "v1", "target_node": target["id"],
+            "tip_before_restart": before, "tip_after_readiness": after,
+            "restart": restart, "restart_command": restart_command,
+            "recovery_start_marker": recovery_start_marker,
+            "gates": gates, "peer_role": peer, "checks": checks,
+        }
+        _write_client_example_proof(handle, "restart-readiness.json", proof)
+        handle.log(
+            phase="load", primitive="runtime_real_target_restart_and_readiness",
+            level="info", event="completed", payload={"outcome": "ok", **proof},
+        )
+
+
+class RuntimeControlledSyncRange(LoadPrimitive):
+    """Retain exact post-restart sync start/end identities and peer policy."""
+
+    def run(self, handle, rng):
+        import time
+
+        target = _resolve_client_runtime_target(handle, self.params)
+        minimum = int(self.params.get("minimum_blocks", 5))
+        policy = str(self.params.get("peer_policy") or (
+            "single-controlled-producer" if target.get("implementation") == "amaru"
+            else "three-node-controlled-local-mesh"
+        ))
+        start = _observe_client_target_tip(target)
+        before_state = _protocol_container_state(str(target.get("container") or ""))
+        window_started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        peer_before = _client_peer_role_ready(target)
+        runtime = _active_measurement_runtime(handle)
+        sync_start_marker = runtime.mark_phase("controlled-sync-range", "start")
+        started_event = {
+            "event": "sync_range_started",
+            "target_node": target["id"],
+            "elapsed_seconds": time.monotonic(),
+            "observed_at_epoch_seconds": _client_epoch(),
+            "tip": start,
+            "peer_policy": policy,
+        }
+        _append_target_hook_event(
+            handle, primitive="runtime_controlled_sync_range", event="sync_range_started",
+            payload={key: value for key, value in started_event.items() if key != "event"},
+        )
+        peer_during = _client_peer_role_ready(target)
+        try:
+            end, observations = _wait_for_tip_delta(
+                target, start, minimum_blocks=minimum,
+                timeout_seconds=float(self.params.get("timeout_seconds", 180)),
+                poll_interval_seconds=float(self.params.get("poll_interval_seconds", 1)),
+            )
+        finally:
+            sync_end_marker = runtime.mark_phase("controlled-sync-range", "end")
+        completed_event = {
+            "event": "sync_range_completed",
+            "target_node": target["id"],
+            "elapsed_seconds": time.monotonic(),
+            "observed_at_epoch_seconds": _client_epoch(),
+            "tip": end,
+            "peer_policy": policy,
+        }
+        _append_target_hook_event(
+            handle, primitive="runtime_controlled_sync_range", event="sync_range_completed",
+            payload={key: value for key, value in completed_event.items() if key != "event"},
+        )
+        recovery_end_marker = runtime.mark_phase("restart-recovery", "end")
+        peer_after = _client_peer_role_ready(target)
+        target_health = _observe_client_window_health(
+            target,
+            started_at=window_started_at,
+            before=before_state,
+            tip_before=start,
+        )
+        proof = {
+            "schema_version": "v1", "target_node": target["id"],
+            "minimum_blocks": minimum, "peer_policy": policy,
+            "start": start, "end": end, "observations": observations,
+            "sync_start_marker": sync_start_marker,
+            "sync_end_marker": sync_end_marker,
+            "range_events": [started_event, completed_event],
+            "recovery_end_marker": recovery_end_marker,
+            "checks": {"controlled_sync_range_complete": _tip_height(end) >= _tip_height(start) + minimum},
+            "target_health": target_health,
+            "peer_session": {
+                "peer_id": peer_before.get("peer_id"),
+                "before": peer_before,
+                "during": peer_during,
+                "after": peer_after,
+            },
+        }
+        _write_client_example_proof(handle, "controlled-sync-range.json", proof)
+        handle.log(
+            phase="load", primitive="runtime_controlled_sync_range", level="info",
+            event="completed", payload={"outcome": "ok", **proof},
+        )
+
+
 def _client_assertion_result(
     name: str,
     params: dict[str, Any],
@@ -14340,6 +14920,218 @@ class NoTargetFatalSignal(AssertionPrimitive):
             evaluated={"checks": checks, "failed_checks": failed},
             data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
             note="the target has an unclassified fatal, exit, restart, or OOM signal"
+        )
+
+
+class MinimumAdoptedBlockRangeObserved(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "minimum_adopted_block_range_observed"
+        relative = str(self.params.get(
+            "report_path", "outputs/client-example-proof/controlled-chain-progress.json"
+        ))
+        try:
+            path, proof = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="controlled adopted-block proof is unavailable",
+            )
+        minimum = int(self.params.get("minimum_adopted_blocks", 30))
+        blocks = proof.get("adopted_blocks") or []
+        heights = [_tip_position(row) for row in blocks]
+        monotonic = bool(heights) and None not in heights and all(
+            right > left for left, right in zip(heights, heights[1:])
+        )
+        identities = all(row.get("hash") for row in blocks)
+        passed = len(blocks) >= minimum and monotonic and identities
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={
+                "adopted_block_count": len(blocks), "minimum": minimum,
+                "monotonic_height": monotonic, "all_hashes_present": identities,
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="fewer than the required exact monotonic adopted block identities were retained",
+        )
+
+
+class BlockApplicationSamplesCorrelated(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "block_application_samples_correlated"
+        relative = str(self.params.get(
+            "report_path", "outputs/client-example-proof/controlled-chain-progress.json"
+        ))
+        try:
+            path, proof = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="block-application correlation proof is unavailable",
+            )
+        minimum = int(self.params.get("minimum_samples", 30))
+        correlations = proof.get("correlations") or []
+        applications = proof.get("application_samples") or []
+        complete = all(
+            row.get("block_hash") and row.get("application_sample_id")
+            and isinstance(row.get("duration_micros"), (int, float))
+            and not isinstance(row.get("duration_micros"), bool)
+            for row in correlations
+        )
+        application_ids = [row.get("sample_id") for row in applications]
+        correlated_ids = [row.get("application_sample_id") for row in correlations]
+        all_correlated = (
+            len(correlations) == len(applications)
+            and len(set(application_ids)) == len(application_ids)
+            and len(set(correlated_ids)) == len(correlated_ids)
+            and set(correlated_ids) == set(application_ids)
+        )
+        start_marker = proof.get("start_marker") or {}
+        end_marker = proof.get("end_marker") or {}
+        exact_window = (
+            bool(proof.get("target_node"))
+            and start_marker.get("phase_id") == "controlled-chain-progress"
+            and start_marker.get("state") == "start"
+            and end_marker.get("phase_id") == "controlled-chain-progress"
+            and end_marker.get("state") == "end"
+        )
+        passed = (
+            len(correlations) >= minimum
+            and complete
+            and all_correlated
+            and exact_window
+        )
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={
+                "correlated_sample_count": len(correlations),
+                "minimum": minimum,
+                "complete": complete,
+                "all_application_samples_correlated": all_correlated,
+                "exact_target_window_evidence": exact_window,
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="the required application samples were not correlated to retained blocks",
+        )
+
+
+class RestartReadinessComplete(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "restart_readiness_complete"
+        try:
+            path, proof = _read_client_proof(
+                handle, "outputs/client-example-proof/restart-readiness.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="restart readiness proof is unavailable",
+            )
+        checks = proof.get("checks") or {}
+        required = (
+            "all_readiness_gates_observed",
+            "readiness_gates_ordered",
+            "target_progressed_after_restart",
+        )
+        failed = [item for item in required if checks.get(item) is not True]
+        restart = proof.get("restart") or {}
+        gates = proof.get("gates") or []
+        events = [restart, *gates]
+        expected_events = [
+            "restart_started",
+            "listener_ready",
+            "chain_progress_ready",
+            "peer_role_ready",
+        ]
+        elapsed = [row.get("elapsed_seconds") for row in events]
+        target_node = proof.get("target_node")
+        raw_complete = (
+            len(events) == 4
+            and [row.get("event") for row in events] == expected_events
+            and bool(target_node)
+            and all(row.get("target_node") == target_node for row in events)
+            and all(
+                isinstance(value, (int, float)) and not isinstance(value, bool)
+                for value in elapsed
+            )
+            and elapsed == sorted(elapsed)
+        )
+        return _client_assertion_result(
+            name, self.params, passed=not failed and raw_complete,
+            evaluated={
+                "checks": checks,
+                "failed_checks": failed,
+                "observed_readiness_gates_complete": raw_complete,
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="restart readiness gates are missing, out of order, or did not prove progress",
+        )
+
+
+class ControlledSyncRangeComplete(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "controlled_sync_range_complete"
+        try:
+            path, proof = _read_client_proof(
+                handle, "outputs/client-example-proof/controlled-sync-range.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="controlled sync-range proof is unavailable",
+            )
+        start = proof.get("start") or {}
+        end = proof.get("end") or {}
+        minimum = int(proof.get("minimum_blocks") or self.params.get("minimum_blocks", 5))
+        try:
+            delta = _tip_height(end) - _tip_height(start)
+        except RuntimeError:
+            delta = None
+        events = proof.get("range_events") or []
+        timed_events = False
+        if len(events) == 2:
+            started, completed = events
+            started_time = started.get("elapsed_seconds")
+            completed_time = completed.get("elapsed_seconds")
+            target_node = proof.get("target_node")
+            peer_policy = proof.get("peer_policy")
+            started_tip = started.get("tip") or {}
+            completed_tip = completed.get("tip") or {}
+            timed_events = (
+                started.get("event") == "sync_range_started"
+                and completed.get("event") == "sync_range_completed"
+                and bool(target_node)
+                and started.get("target_node") == target_node
+                and completed.get("target_node") == target_node
+                and started.get("peer_policy") == peer_policy
+                and completed.get("peer_policy") == peer_policy
+                and isinstance(started_time, (int, float))
+                and not isinstance(started_time, bool)
+                and isinstance(completed_time, (int, float))
+                and not isinstance(completed_time, bool)
+                and completed_time > started_time
+                and _tip_position(started_tip) == _tip_position(start)
+                and _tip_position(completed_tip) == _tip_position(end)
+                and started_tip.get("hash") == start.get("hash")
+                and completed_tip.get("hash") == end.get("hash")
+            )
+        passed = (
+            delta is not None
+            and delta >= minimum
+            and bool(start.get("hash"))
+            and bool(end.get("hash"))
+            and bool(proof.get("peer_policy"))
+            and timed_events
+        )
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={
+                "height_delta": delta,
+                "minimum": minimum,
+                "peer_policy": proof.get("peer_policy"),
+                "timed_range_events_complete": timed_events,
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="the target did not complete the exact retained controlled sync range",
         )
 
 

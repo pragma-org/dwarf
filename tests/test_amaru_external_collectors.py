@@ -301,3 +301,88 @@ def test_sync_speed_is_unavailable_when_controlled_range_does_not_match(tmp_path
     assert speed["status"] == "unavailable"
     assert speed["value"] is None
     assert speed["controlled_range_match"] is False
+
+
+def test_sync_speed_prefers_exact_controlled_range_events(tmp_path):
+    events_dir = tmp_path / "events"
+    events_dir.mkdir()
+    (events_dir / "target-hooks.ndjson").write_text(
+        "\n".join(
+            json.dumps(event)
+            for event in [
+                {
+                    "event": "sync_range_started", "elapsed_seconds": 20,
+                    "payload": {"target_node": "node1", "peer_policy": "mesh", "tip": {"block_height": 200, "hash": "a" * 64}},
+                },
+                {
+                    "event": "sync_range_completed", "elapsed_seconds": 30,
+                    "payload": {"target_node": "node1", "peer_policy": "mesh", "tip": {"block_height": 205, "hash": "b" * 64}},
+                },
+            ]
+        ) + "\n"
+    )
+    tips = iter([
+        {"block_height": 10, "block_hash": "c" * 64},
+        {"block_height": 999, "block_hash": "d" * 64},
+    ])
+    collector = SyncSpeedCollector(
+        _entry("amaru-external-sync-speed"),
+        tip_probe=lambda: next(tips),
+        monotonic_clock=iter([1.0, 100.0]).__next__,
+        peer_policy="whole-run-policy",
+        target_node="node1",
+    )
+    context = _context(tmp_path, "amaru-external-sync-speed")
+    collector.prepare(context)
+    collector.start(context)
+    collector.stop(context)
+    result = collector.finalize(context)
+
+    speed = result["measurements"]["sync_speed"]
+    assert speed["status"] == "available"
+    assert speed["start_block_height"] == 200
+    assert speed["end_block_height"] == 205
+    assert speed["duration_seconds"] == 10.0
+    assert speed["value"] == 0.5
+    assert speed["peer_policy"] == "mesh"
+    assert speed["source"] == "controlled-sync-range-events"
+
+
+def test_sync_speed_does_not_fall_back_when_controlled_range_events_are_incomplete(tmp_path):
+    events_dir = tmp_path / "events"
+    events_dir.mkdir()
+    (events_dir / "target-hooks.ndjson").write_text(
+        json.dumps(
+            {
+                "event": "sync_range_started",
+                "payload": {
+                    "target_node": "node1",
+                    "elapsed_seconds": 20,
+                    "peer_policy": "mesh",
+                    "tip": {"block_height": 200, "hash": "a" * 64},
+                },
+            }
+        )
+        + "\n"
+    )
+    tips = iter(
+        [
+            {"block_height": 200, "block_hash": "a" * 64},
+            {"block_height": 205, "block_hash": "b" * 64},
+        ]
+    )
+    collector = SyncSpeedCollector(
+        _entry("amaru-external-sync-speed"),
+        tip_probe=lambda: next(tips),
+        monotonic_clock=iter([1.0, 11.0]).__next__,
+        peer_policy="mesh",
+        target_node="node1",
+    )
+    context = _context(tmp_path, "amaru-external-sync-speed")
+    collector.prepare(context)
+    collector.start(context)
+    collector.stop(context)
+
+    speed = collector.finalize(context)["measurements"]["sync_speed"]
+    assert speed["status"] == "unavailable"
+    assert speed["source"] == "controlled-sync-range-events"

@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RuntimeControlledChainProgressWindow",
+  "type": "object",
+  "additionalProperties": false,
+  "oneOf": [
+    {"required": ["profile_id"], "not": {"required": ["runtime_metadata_path"]}},
+    {"required": ["runtime_metadata_path"], "not": {"required": ["profile_id"]}}
+  ],
+  "properties": {
+    "profile_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,80}$"},
+    "runtime_metadata_path": {"type": "string", "minLength": 1},
+    "minimum_blocks": {"type": "integer", "minimum": 1},
+    "minimum_adopted_blocks": {"type": "integer", "minimum": 1},
+    "warm_up_seconds": {"type": "number", "minimum": 0},
+    "duration_seconds": {"type": "number", "minimum": 0},
+    "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "poll_interval_seconds": {"type": "number", "minimum": 0},
+    "peer_policy": {"type": "string", "minLength": 1}
+  }
+}
