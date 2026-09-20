@@ -71,3 +71,18 @@ the Amaru legs for Cards 02 and 04 remain blocked.
 
 Child explanation: the tools are built. Some recipes passed. Three Amaru checks reached real limits, so the complete
 five-card promise is still not finished.
+
+## Dashboard inspection check
+
+The deployed dashboard was rebuilt from framework commit
+`0b4158da3034087d8f3b287a0b3aff1374751524` as image
+`sha256:743fae4ea816062059d4ae6887827692c8bfc9f9efc28488635f7c3443413599`.
+On 2026-09-20, the live check returned HTTP 200 for all ten frozen scenario pages, both measurement-profile pages,
+and all ten retained accepted-or-blocked run pages. Each run export returned a non-empty gzip archive.
+
+The ten run pages were also rendered in Chromium at 1440 by 900 pixels and 390 by 844 pixels. All 20 renders had
+zero page overflow, broken images, browser errors, missing headings, missing run identifiers, or undersized mobile
+form controls.
+
+Child explanation: A person can open every final proof or blocker in the DWARF screen on a large or small device and
+download its evidence package. This display check does not change a failed security result into a pass.
