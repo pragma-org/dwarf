@@ -11,7 +11,7 @@ Child explanation: DWARF finished many parts of the five recipes. Three real Ama
 | Card | Exact current state | Measurement revision |
 |---|---|---|
 | 01 | Cardano-node accepted as run `20260920T132629Z-ea000d37`; Amaru rehearsal `20260920T135054Z-28289dcd` retained the frozen byte-string-bound failure | `nanoseconds-v2` |
-| 02 | Cardano-node candidate accepted as run `20260920T110302Z-9df1686f`; Amaru blocked because the frozen chain has no Plutus V2 cost model | `nanoseconds-v2` |
+| 02 | Cardano-node accepted as final run `20260920T135958Z-362eedc7`; Amaru blocked because the frozen chain has no Plutus V2 cost model | `nanoseconds-v2` |
 | 03 | both legs accepted: Amaru `20260920T072858Z-2cc3bb0c`, Cardano-node `20260920T073447Z-ab81bfb7` | `whole-microseconds-v1` |
 | 04 | Cardano-node accepted as run `20260920T125840Z-778a7cf7`; Amaru retained a real same-height fork finding | `nanoseconds-v2` |
 | 05 | both legs accepted: Amaru `20260920T122606Z-32c0e998`, Cardano-node `20260920T130232Z-2c68fb83` | `nanoseconds-v2` |
