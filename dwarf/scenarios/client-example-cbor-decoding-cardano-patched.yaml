@@ -55,7 +55,7 @@
   ],
   "faults": [],
   "probes": [
-    {"primitive": "runtime_target_health_and_progress"}
+    {"primitive": "runtime_target_health_and_progress", "progress_reference": "load-start"}
   ],
   "assertions": [
     {"primitive": "cbor_conformance_clean", "min_inputs_processed": 100},

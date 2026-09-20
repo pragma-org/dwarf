@@ -253,6 +253,9 @@ def _build_dwarf_telemetry_env(handle):
     metrics_dir = run_dir / "metrics"
     runtime_metrics_dir = metrics_dir / "runtime"
     target_event_log = events_dir / "target-hooks.ndjson"
+    env["PYTHONPATH"] = os.pathsep.join(
+        value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value
+    )
     env.update({
         "ADA2_DWARF_RUN_DIR": str(run_dir),
         "ADA2_DWARF_EVENTS_DIR": str(events_dir),

@@ -1,7 +1,9 @@
+import os
 from pathlib import Path
 
 from profile_manager.scenario import semantic_validate_scenario
 from profile_manager.primitives import (
+    _build_dwarf_telemetry_env,
     build_runtime_version_pinned_cbor_conformance_command,
     load_registry,
 )
@@ -57,6 +59,16 @@ def test_command_and_registry_are_wired():
     assert registry["cbor_conformance_clean"].family == "assertion"
     assert registry["cbor_roundtrip_consistent"].family == "assertion"
 
+def test_child_script_environment_uses_absolute_dwarf_pythonpath(monkeypatch, tmp_path):
+    class Handle:
+        run_dir = tmp_path / "run"
+
+    monkeypatch.setenv("PYTHONPATH", "dwarf")
+
+    env = _build_dwarf_telemetry_env(Handle())
+
+    assert env["PYTHONPATH"].split(os.pathsep)[0] == str(ROOT / "dwarf")
+
 
 def test_conformance_assertion_fails_closed_on_expected_outcome_mismatch():
     assertion = _assertion("cbor_conformance_clean")
@@ -101,6 +113,7 @@ def test_frozen_card_01_scenarios_are_semantically_valid():
         assert body["load"][0]["dataset_revision"] == "a7561cd063550c2218898571520f14c3674efe91"
         assert body["load"][0]["source_revision"] == revision
         assert body["load"][1]["primitive"] == "runtime_protocol_decode_cases"
+        assert body["probes"][0]["progress_reference"] == "load-start"
         assert [row["primitive"] for row in body["assertions"]] == [
             "cbor_conformance_clean",
             "cbor_roundtrip_consistent",
