@@ -152,9 +152,22 @@ separately for Amaru and Cardano-node:
 All five frozen cards have accepted evidence for both implementations. This is
 not a mixed-node benchmark, a production-performance claim, or proof that one
 scenario exercises every implemented metric. Read the
-[five-card index](dwarf/docs/client-examples/README.md) for run identities and
+[client-card evidence index](dwarf/docs/client-examples/README.md) for run identities and
 measurement revisions, and the [compatibility audit](docs/measurement-full-metrics-compatibility-audit.md)
 for the exact missing metric cells.
+
+The separate additive Card 06 sends simple signed payments to each real-node
+implementation. Each retained run has 35 attempts: 30 accepted payments, 5
+expected duplicate-payment rejections, and 0 timeouts. It keeps every outcome
+duration, offered transaction and byte rates, target correlations, progress,
+and resource samples. It is not an Amaru-versus-Cardano benchmark.
+
+Fresh Card 02 evidence also completes Plutus workload accounting for each
+implementation. Each separate run retains 60 attempts: 30 accepted, 30
+expected-invalid, and 0 timed out, with offered bytes, terminal outcomes, and
+duration evidence. Open `/learn/measurements` for the evidence identities and
+`/learn/measurement-coverage` for the threat, risk, scenario, surface, and tap
+joins.
 
 ## Results and evidence
 
@@ -271,5 +284,5 @@ Authoritative guides:
 - [Version-qualified real-node devnets](dwarf/docs/version-qualified-devnets.md)
 - [Primitive reference](dwarf/docs/primitives-reference.md)
 - [Forensic bundle format](dwarf/docs/forensic-bundle-format.md)
-- [Five-card acceptance program](dwarf/docs/client-examples/README.md)
+- [Client-card evidence program](dwarf/docs/client-examples/README.md)
 - [Full-metrics compatibility and `/run` recipes](docs/measurement-full-metrics-compatibility-audit.md)

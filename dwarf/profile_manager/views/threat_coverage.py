@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 import re
 
-from profile_manager.data.client_example_evidence import five_card_evidence
+from profile_manager.data.client_example_evidence import client_card_evidence
 from profile_manager.data.coverage import _cbor_shapes_in_text, _protocols_in_text
 from profile_manager.data.scenarios import _list_scenarios_for_compare
 
@@ -72,7 +72,7 @@ def _reconcile_mapped_scenarios(data: dict, scenarios: list[dict]) -> None:
                 if item.get("id") in scenario_by_id
             ]
 
-    evidence = five_card_evidence()
+    evidence = client_card_evidence()
     for card in evidence:
         for section, ids_key in (("threats", "threat_ids"), ("risks", "risk_ids")):
             row_by_id = {row["id"]: row for row in data.get(section) or []}
@@ -87,7 +87,7 @@ def _reconcile_mapped_scenarios(data: dict, scenarios: list[dict]) -> None:
                     if scenario is not None and scenario["id"] not in attached_ids:
                         attached.append(scenario)
                         attached_ids.add(scenario["id"])
-    data["five_card_evidence"] = evidence
+    data["client_card_evidence"] = evidence
 
 
 def current_threat_coverage_data() -> dict:

@@ -39,6 +39,10 @@ def test_measurement_guide_defines_sources_types_and_claim_boundaries():
     assert "20260921T195334Z-e713d0de" in html
     assert "not an automatic Amaru-versus-Cardano benchmark" not in html
     assert "did not turn the two runs into a race" in html
+    assert "60 attempted" in html
+    assert "30 accepted" in html
+    assert "30 expected-invalid" in html
+    assert "0 timed out" in html
 
 
 def test_operate_has_one_clear_measurements_hub_with_existing_destinations():
@@ -80,6 +84,8 @@ def test_coverage_separates_inventory_from_accepted_runtime_evidence():
     assert "Accepted client-card runtime evidence" in html
     assert "all collectors configured" in html
     assert "all metrics exercised" in html
+    assert "five frozen cards" in html
+    assert "additive Card 06" in html
     for card_id in ("01", "02", "03", "04", "05", "06"):
         assert f'data-evidence-card="{card_id}"' in html
     for run_id in (
@@ -107,9 +113,10 @@ def test_threat_coverage_labels_mapping_and_runtime_evidence_separately():
     assert "Accepted client-card runtime evidence" in html
     assert "Threats mapped" in html
     assert "Risks mapped" in html
-    assert len(data["five_card_evidence"]) == 6
-    assert {card["state"] for card in data["five_card_evidence"]} == {"accepted"}
-    card_three = next(card for card in data["five_card_evidence"] if card["id"] == "03")
+    assert "five_card_evidence" not in data
+    assert len(data["client_card_evidence"]) == 6
+    assert {card["state"] for card in data["client_card_evidence"]} == {"accepted"}
+    card_three = next(card for card in data["client_card_evidence"] if card["id"] == "03")
     assert all(leg["run_url"] is None for leg in card_three["legs"])
     assert ".legend .pill{white-space:normal;max-width:100%}" in html
     assert data["meta"]["tm_covered"] == len(
@@ -118,6 +125,15 @@ def test_threat_coverage_labels_mapping_and_runtime_evidence_separately():
     assert data["meta"]["rr_covered"] == len(
         [row for row in data["risks"] if row.get("scenarios")]
     )
+    assert data["meta"]["n_scen"] == len(data["scenarios"]) == 268
+    assert data["meta"]["tm_gaps"] == ["TM-030", "TM-031"]
+    assert data["meta"]["rr_gaps"] == ["RR-027"]
+
+
+def test_learn_landing_describes_original_and_additive_evidence_without_stale_copy():
+    html = render_route_html("/learn")
+    assert "five frozen cards plus additive Card 06 evidence" in html
+    assert "exact five-card evidence" not in html
 
 def test_measurement_destinations_are_in_the_existing_route_inventory():
     routes = {route for group in html_route_groups() for route in group["routes"]}

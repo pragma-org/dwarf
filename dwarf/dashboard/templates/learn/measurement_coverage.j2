@@ -67,7 +67,7 @@
       <template class="measurement-coverage__more-items">{% for item in row.evidence[3:] %}<article class="measurement-coverage__evidence-card" data-list-item="true"><h4>Card {{ item.card_id }} · {{ item.implementation }}</h4><p><a href="{{ item.url }}">Open retained run evidence</a> · {{ item.measurement_count }} measurements</p>{{ technical_id('Run and scenario identifiers', item.run_id ~ ' · ' ~ item.scenario_id) }}</article>{% endfor %}</template>
       <button type="button" class="measurement-coverage__show-all" data-action="show-all">Show all {{ row.evidence|length }} evidence records</button>
       {% endif %}
-      {% else %}<p>No retained non-vacuous five-card evidence maps to this entry.</p>{% endif %}
+      {% else %}<p>No retained non-vacuous client-card evidence maps to this entry.</p>{% endif %}
     </details>
 
     <details class="measurement-coverage__detail-section" data-detail="workload">

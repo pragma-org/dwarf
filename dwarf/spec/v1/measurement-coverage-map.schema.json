@@ -4,7 +4,7 @@
   "title": "DWARF measurement coverage applicability map",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "id", "provenance", "surface_rules", "family_rules", "evidence_rules"],
+  "required": ["schema_version", "id", "provenance", "surface_rules", "family_rules", "entry_rules", "evidence_rules"],
   "properties": {
     "schema_version": {"const": "v1"},
     "id": {"const": "measurement-coverage-v1"},
@@ -15,6 +15,18 @@
     },
     "surface_rules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rule"}},
     "family_rules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rule"}},
+    "entry_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "measurements"],
+        "properties": {
+          "id": {"pattern": "^(TM|RR)-[0-9]{3}$"},
+          "measurements": {"$ref": "#/$defs/measurementIds"}
+        }
+      }
+    },
     "evidence_rules": {
       "type": "array",
       "items": {

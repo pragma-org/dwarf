@@ -83,6 +83,25 @@ def test_readme_explains_catalogs_sources_and_evidence_boundaries():
         assert term in text
 
 
+def test_readme_separates_frozen_program_from_additive_transfer_and_plutus_accounting():
+    text = _text()
+    compact = " ".join(text.split())
+    assert "five frozen cards" in compact
+    assert "additive Card 06" in compact
+    assert "35 attempts" in compact
+    assert "30 accepted" in compact
+    assert "5 expected" in compact
+    assert "Plutus workload accounting" in compact
+    assert "60 attempts" in compact
+    assert "30 expected-invalid" in compact
+    assert "0 timed out" in compact
+    assert "not an Amaru-versus-Cardano benchmark" in compact
+    assert "/learn/measurement-coverage" in compact
+    assert "five-card index" not in compact
+    assert "Five-card acceptance program" not in compact
+    assert "Client-card evidence program" in compact
+
+
 def test_readme_drops_stale_scope_and_volatile_counts():
     text = _text()
     stale = (

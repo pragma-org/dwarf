@@ -44,8 +44,8 @@ _CARDS = (
 )
 
 
-def five_card_evidence() -> list[dict]:
-    """Return the ledger, checking its scenarios, contracts, and run manifests."""
+def client_card_evidence() -> list[dict]:
+    """Return all accepted client-card evidence, including additive cards."""
     rows = []
     for definition in _CARDS:
         contract_path = DWARF_ROOT / "docs/client-examples/contracts" / f"{definition['id']}-{_contract_slug(definition['id'])}.yaml"

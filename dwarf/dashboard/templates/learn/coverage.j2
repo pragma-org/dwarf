@@ -17,9 +17,9 @@
 <section id="client-card-runtime-evidence">
   <span class="eyebrow">Retained executions</span>
   <h2>Accepted client-card runtime evidence</h2>
-  <p>These rows are verified against current scenario files and either retained run manifests or the accepted historical proof record. They prove only each frozen card's stated workload and assertions. They do not turn another catalog cell into runtime coverage.</p>
+  <p>The five frozen cards are Cards 01–05. The additive Card 06 is a separate measurement card. These rows are verified against current scenario files and either retained run manifests or the accepted historical proof record. They prove only each card's stated workload and assertions. They do not turn another catalog cell into runtime coverage.</p>
   <div class="version-catalog">
-    {% for card in five_card_evidence %}
+    {% for card in client_card_evidence %}
     <article class="version-card" data-evidence-card="{{ card.id }}">
       <div class="version-card__head"><h3>{{ card.id }} · {{ card.title }}</h3><span class="version-badge {% if card.state == 'accepted' %}version-badge--confirmed{% else %}version-badge--unknown{% endif %}">{{ card.state }}</span></div>
       <p>Measurement revision: <code>{{ card.measurement_revision }}</code>.</p>
