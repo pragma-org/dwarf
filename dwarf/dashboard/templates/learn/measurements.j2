@@ -21,13 +21,18 @@
 <hr class="hairline">
 
 <section id="modes">
-  <span class="eyebrow">Target modes</span>
-  <h2>Use the least intrusive truthful source</h2>
+  <span class="eyebrow">Tap sources</span>
+  <h2>Use the least intrusive truthful measurement source</h2>
   <div class="version-catalog">
-    <article class="version-card"><div class="version-card__head"><h3>stock</h3><span class="version-badge version-badge--confirmed">preferred</span></div><p>Existing node traces, metrics, real wire observations, and external process/container counters. No node source modification.</p></article>
-    <article class="version-card"><div class="version-card__head"><h3>coverage</h3><span class="version-badge version-badge--unknown">execution proof</span></div><p>Revision-qualified compiler coverage proves production code paths were reached. Coverage is not a latency source and does not itself prove a security property.</p></article>
-    <article class="version-card"><div class="version-card__head"><h3>patched</h3><span class="version-badge version-badge--unknown">selective</span></div><p>Revision-locked node instrumentation supplies internal boundaries stock telemetry cannot expose. Claims require exact build provenance plus a matching stock control and overhead calibration.</p></article>
+    <article class="version-card"><div class="version-card__head"><h3>Stock</h3><span class="version-badge version-badge--confirmed">preferred</span></div><p>Use signals that the unmodified node already emits, such as traces and metrics.</p></article>
+    <article class="version-card"><div class="version-card__head"><h3>External</h3><span class="version-badge version-badge--confirmed">independent</span></div><p>Observe the wire, process, container, or controller without changing node source.</p></article>
+    <article class="version-card"><div class="version-card__head"><h3>Patched</h3><span class="version-badge version-badge--unknown">selective</span></div><p>Use revision-locked node instrumentation for internal boundaries. Claims require exact build provenance and the required stock control.</p></article>
+    <article class="version-card"><div class="version-card__head"><h3>Reserved</h3><span class="version-badge version-badge--unknown">not evidence</span></div><p>Keep a catalog slot for a future source that is not implemented or selected. Reserved never means available or exercised.</p></article>
   </div>
+  <p><strong>Target/build modes are separate:</strong> stock and patched identify target builds. Coverage mode proves revision-qualified code-path execution; it is not a timing source and does not prove a security property by itself.</p>
+  <p>Metric definitions can produce a <strong>counter</strong>, <strong>gauge</strong>, <strong>histogram</strong>, or retained timing <strong>distribution</strong>. The report must keep the unit, sample population, correlation boundary, and unavailable reason.</p>
+  <p><strong>Catalogued is not exercised.</strong> A definition in the catalog says that DWARF knows how to collect a signal. Only correlated, non-vacuous retained evidence shows that a workload exercised it. See the separate <a href="/learn/coverage">coverage inventory and runtime ledger</a>.</p>
+  <p><strong>Child explanation:</strong> A ruler in the toolbox is not a measurement. A saved reading from a real test is a measurement.</p>
 </section>
 
 <hr class="hairline">
@@ -78,7 +83,7 @@
   <div class="version-catalog">
     <article class="version-card"><div class="version-card__head"><h3>01 · CBOR decoding</h3><span class="version-badge version-badge--confirmed">complete</span></div><p>Fixed Amaru revision <code>d3a6dafcced78f5809a96619e883cf04911d2bdc</code> run <a href="/operate/runs/20260920T235440Z-050046a4"><code>20260920T235440Z-050046a4</code></a> and Cardano-node run <a href="/operate/runs/20260920T132629Z-ea000d37"><code>20260920T132629Z-ea000d37</code></a> pass the frozen corpus. The old Amaru failure remains a completed security finding.</p></article>
     <article class="version-card"><div class="version-card__head"><h3>02 · Plutus VM</h3><span class="version-badge version-badge--confirmed">complete</span></div><p>Additive on-chain Plutus V2 Amaru run <a href="/operate/runs/20260921T013953Z-565b77c3"><code>20260921T013953Z-565b77c3</code></a> and Cardano-node run <a href="/operate/runs/20260920T135958Z-362eedc7"><code>20260920T135958Z-362eedc7</code></a> retain evaluator results, budgets, real transaction outcomes, and chain progress.</p></article>
-    <article class="version-card"><div class="version-card__head"><h3>03 · Invalid mini-protocol</h3><span class="version-badge version-badge--confirmed">complete</span></div><p>Amaru run <a href="/operate/runs/20260920T072858Z-2cc3bb0c"><code>20260920T072858Z-2cc3bb0c</code></a> and Cardano-node run <a href="/operate/runs/20260920T073447Z-ab81bfb7"><code>20260920T073447Z-ab81bfb7</code></a> preserve the accepted <code>whole-microseconds-v1</code> evidence.</p></article>
+    <article class="version-card"><div class="version-card__head"><h3>03 · Invalid mini-protocol</h3><span class="version-badge version-badge--confirmed">complete</span></div><p>Amaru run <code>20260920T072858Z-2cc3bb0c</code> and Cardano-node run <code>20260920T073447Z-ab81bfb7</code> preserve the accepted <code>whole-microseconds-v1</code> evidence and digests. These historical run directories are not present in this checkout, so DWARF does not create dead run links.</p></article>
     <article class="version-card"><div class="version-card__head"><h3>04 · Block application</h3><span class="version-badge version-badge--confirmed">complete</span></div><p>Amaru canonical-progress run <a href="/operate/runs/20260921T035546Z-9747122c"><code>20260921T035546Z-9747122c</code></a> and Cardano-node run <a href="/operate/runs/20260921T021935Z-3b58eafc"><code>20260921T021935Z-3b58eafc</code></a> retain canonical progress, raw fork evidence, correlations, and exact timing.</p></article>
     <article class="version-card"><div class="version-card__head"><h3>05 · Restart and sync</h3><span class="version-badge version-badge--confirmed">complete</span></div><p>Amaru run <a href="/operate/runs/20260921T045619Z-15e864a0"><code>20260921T045619Z-15e864a0</code></a> and Cardano-node run <a href="/operate/runs/20260921T045807Z-8e2bbb0e"><code>20260921T045807Z-8e2bbb0e</code></a> retain ordered readiness gates, controlled sync ranges, health, and restart-window resources.</p></article>
   </div>

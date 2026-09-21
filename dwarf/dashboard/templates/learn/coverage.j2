@@ -2,11 +2,31 @@
 {% block main %}
 <span class="eyebrow">Learn</span>
 <h1>Coverage</h1>
-<p>What Dwarf actually supports today, derived from current repo state at request time. Each matrix below is auto-populated from real artifacts — scenarios, target manifests, primitive schemas, campaign scripts. Empty cells mean no artifact backs that combination yet; <span class="caveat-label">needs source</span> appears where the right answer can't be determined from disk.</p>
+<p><strong>Catalog inventory is not runtime proof.</strong> The matrices below are derived from current scenarios, target manifests, primitive schemas, campaign scripts, and retained coverage reports. A catalog count means that a test definition exists. Only a cell explicitly backed by a retained report describes observed execution.</p>
 <p><strong>Scenario census</strong> accounts for every scenario exactly once — its Total column reconciles to the full catalog. The matrices below it are <em>overlapping technical slices</em> of the same catalog (a scenario can exercise a mini-protocol <em>and</em> a CBOR surface, or neither), so their counts intentionally do not sum to the catalog total.</p>
+<p>The mini-protocol matrix can show retained report states such as ran with zero or observed coverage. The CBOR, fault-family, and fuzzer-backend matrices are catalog inventory. The phrase <strong>all collectors configured</strong> is not the same claim as <strong>all metrics exercised</strong>.</p>
+<p><strong>Child explanation:</strong> This page first counts the recipes on the shelf. The evidence list below shows recipes that were really cooked and saved.</p>
 <hr class="hairline">
 
 {% for matrix in matrices %}
 {% include "learn/_partials/_coverage_matrix.j2" %}
 {% endfor %}
+
+<hr class="hairline">
+<section id="five-card-runtime-evidence">
+  <span class="eyebrow">Retained executions</span>
+  <h2>Five-card accepted runtime evidence</h2>
+  <p>These rows are verified against current scenario files and either retained run manifests or the accepted historical proof record. They prove only each frozen card's stated workload and assertions. They do not turn another catalog cell into runtime coverage.</p>
+  <div class="version-catalog">
+    {% for card in five_card_evidence %}
+    <article class="version-card" data-evidence-card="{{ card.id }}">
+      <div class="version-card__head"><h3>{{ card.id }} · {{ card.title }}</h3><span class="version-badge {% if card.state == 'accepted' %}version-badge--confirmed{% else %}version-badge--unknown{% endif %}">{{ card.state }}</span></div>
+      <p>Measurement revision: <code>{{ card.measurement_revision }}</code>.</p>
+      <ul>{% for leg in card.legs %}<li>{{ leg.implementation }} · <code>{{ leg.scenario_id }}</code> · {% if leg.run_available %}<a href="{{ leg.run_url }}"><code>{{ leg.run_id }}</code></a>{% else %}<code>{{ leg.run_id }}</code> · <a href="{{ leg.evidence_url }}">accepted historical proof</a>{% endif %}{% if not leg.verified %} · retained artifact unavailable{% endif %}</li>{% endfor %}</ul>
+      <p>Mapped contract IDs: {% for item in card.threat_ids %}<code>{{ item }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if card.threat_ids and card.risk_ids %} · {% endif %}{% for item in card.risk_ids %}<code>{{ item }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+    </article>
+    {% endfor %}
+  </div>
+  <p><strong>Child explanation:</strong> These ten links open the saved proof for five tests on two kinds of node.</p>
+</section>
 {% endblock %}

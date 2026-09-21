@@ -8,6 +8,7 @@ from profile_manager.data.coverage import (
     mini_protocol_coverage,
     scenario_census,
 )
+from profile_manager.data.client_example_evidence import five_card_evidence
 from profile_manager.templating import render
 
 
@@ -27,4 +28,5 @@ def render_learn_coverage() -> str:
         layout="wide",        active="learn",
         active_sub="coverage",
         matrices=matrices,
+        five_card_evidence=five_card_evidence(),
     )

@@ -51,16 +51,9 @@ function markProgress(step) {
     else link.removeAttribute('aria-current');
   });
 }
-function setConditionalState(plan) {
-  const profileRelevant = plan.scenario.runtime === 'devnet' && !plan.readiness.topology_id;
-  wizard.querySelector('[data-run-step="profile"]').hidden = !profileRelevant;
-  wizard.querySelector('[data-run-step="versions"]').hidden = !plan.profile;
-  wizard.querySelector('[data-run-step="measurements"]').hidden = !plan.profile;
-}
 function renderPlan(plan, planDigest) {
   resolvedPlan = plan;
   resolvedPlanDigest = planDigest;
-  setConditionalState(plan);
   replaceWithRows(summary('target'), [['Implementation', plan.scenario.target.implementation], ['Runtime', plan.scenario.runtime], ['Scenario version', plan.scenario.target.version]]);
   const profile = summary('profile');
   if (profile) profile.textContent = plan.profile ? `${plan.profile.label} (${plan.profile.id})` : 'No profile required';

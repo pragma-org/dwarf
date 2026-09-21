@@ -101,17 +101,16 @@
       <span class="tile__sub">Cardano-node {{ version_defaults.cardano }} · Amaru {{ version_defaults.amaru }} · Mixed {{ version_defaults.mixed_cardano }} + {{ version_defaults.mixed_amaru }}</span>
     </a>
 
-    <a class="tile" href="/operate/measurements">
-      <span class="tile__eyebrow">Independent measurements</span>
-      <span class="tile__metric">{{ measurement_count }}</span>
-      <span class="tile__sub">real-node taps · retained reports · honest unavailable values</span>
-    </a>
-
-    <a class="tile" href="/operate/measurement-profiles">
-      <span class="tile__eyebrow">Measurement profiles</span>
-      <span class="tile__metric">{{ measurement_profile_count }}</span>
-      <span class="tile__sub">reusable stock and patched selections</span>
-    </a>
+    <article class="tile tile--data" data-measurements-hub>
+      <span class="tile__eyebrow">Measurements</span>
+      <span class="tile__metric">{{ measurement_count }} <small>taps</small> · {{ measurement_profile_count }} <small>profiles</small></span>
+      <span class="tile__sub">Profiles select taps; run reports contain results.</span>
+      <span class="tile__sub">
+        <a href="/operate/measurements">Definitions</a> ·
+        <a href="/operate/measurement-profiles">Profiles</a> ·
+        <a href="/operate/runs">Run results</a>
+      </span>
+    </article>
 
     <a class="tile" href="/operate/profile-templates">
       <span class="tile__eyebrow">Profile templates</span>

@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 import re
 
+from profile_manager.data.client_example_evidence import five_card_evidence
 from profile_manager.data.coverage import _cbor_shapes_in_text, _protocols_in_text
 from profile_manager.data.scenarios import _list_scenarios_for_compare
 
@@ -58,6 +59,35 @@ def _merge_additional_coverage(data: dict, scenarios: list[dict]) -> None:
                 attached = row.setdefault("scenarios", [])
                 if all(item.get("id") != scenario_id for item in attached):
                     attached.append(scenario)
+
+
+def _reconcile_mapped_scenarios(data: dict, scenarios: list[dict]) -> None:
+    """Refresh mapped scenario rows and add mappings from frozen contracts."""
+    scenario_by_id = {item["id"]: item for item in scenarios}
+    for section in ("threats", "risks"):
+        for row in data.get(section) or []:
+            row["scenarios"] = [
+                scenario_by_id[item["id"]]
+                for item in row.get("scenarios") or []
+                if item.get("id") in scenario_by_id
+            ]
+
+    evidence = five_card_evidence()
+    for card in evidence:
+        for section, ids_key in (("threats", "threat_ids"), ("risks", "risk_ids")):
+            row_by_id = {row["id"]: row for row in data.get(section) or []}
+            for row_id in card[ids_key]:
+                row = row_by_id.get(row_id)
+                if row is None:
+                    continue
+                attached = row.setdefault("scenarios", [])
+                attached_ids = {item["id"] for item in attached}
+                for leg in card["legs"]:
+                    scenario = scenario_by_id.get(leg["scenario_id"])
+                    if scenario is not None and scenario["id"] not in attached_ids:
+                        attached.append(scenario)
+                        attached_ids.add(scenario["id"])
+    data["five_card_evidence"] = evidence
 
 
 def render_learn_threat_coverage() -> str:
@@ -108,8 +138,15 @@ def render_learn_threat_coverage() -> str:
             "m1": row.get("m1_trace") or {},
         })
     data["scenarios"] = current
+    _reconcile_mapped_scenarios(data, current)
     _merge_additional_coverage(data, current)
-    data["meta"]["n_scen"] = len(current)
-    data["meta"]["types"] = dict(Counter(item["type"] for item in current))
+    meta = data["meta"]
+    meta["n_scen"] = len(current)
+    meta["types"] = dict(Counter(item["type"] for item in current))
+    for prefix, section in (("tm", "threats"), ("rr", "risks")):
+        rows = data.get(section) or []
+        gaps = [row["id"] for row in rows if not row.get("scenarios")]
+        meta[f"{prefix}_covered"] = len(rows) - len(gaps)
+        meta[f"{prefix}_gaps"] = gaps
     encoded = json.dumps(data, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/")
     return html[:match.start(1)] + encoded + html[match.end(1):]
