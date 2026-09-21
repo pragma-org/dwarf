@@ -142,5 +142,8 @@ def test_readme_shell_blocks_parse_and_public_safety_holds():
     )
     for value in forbidden:
         assert value not in lowered
-    assert "dwarf/dashboard/static/dwarf-logo.png" in text
+    assert (
+        '<img src="dwarf/dashboard/static/dwarf-logo.png" '
+        'alt="DWARF logo" width="20%">'
+    ) in text
     assert "PRAGMA" in text
