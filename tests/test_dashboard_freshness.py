@@ -11,6 +11,10 @@ from profile_manager.data.health import active_profile_ids
 from profile_manager.profiles import active_profile_command
 from profile_manager.inspect import inspect_health_command
 from profile_manager.data.operate_status import active_profile
+from profile_manager.data.scenarios import (
+    _list_packaged_scenarios_for_compare,
+    invalidate_scenario_cache,
+)
 from profile_manager.fuzz import fuzz_evidence_root
 from profile_manager.smoke import smoke_evidence_root
 from profile_manager.views.learn_overview import render_learn_overview
@@ -444,6 +448,33 @@ def test_learn_landing_uses_runtime_primitive_count():
 
     assert f"the {expected}-primitive catalogue" in html
     assert "the 206-primitive catalogue" not in source
+
+
+def test_learn_separates_shipped_scenarios_from_runtime_extensions(tmp_path, monkeypatch):
+    runtime = tmp_path / "scenarios"
+    runtime.mkdir()
+    packaged = _list_packaged_scenarios_for_compare()
+    assert len(packaged) == 268
+
+    source = ROOT / "dwarf/scenarios" / "client-example-simple-transfer-amaru.yaml"
+    (runtime / source.name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    (runtime / "operator-proof.yaml").write_text(
+        source.read_text(encoding="utf-8").replace(
+            "client-example-simple-transfer-amaru", "operator-proof"
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ADA2_DWARF_SCENARIOS_DIR", str(runtime))
+    invalidate_scenario_cache()
+
+    landing = render_learn_landing()
+    census = scenario_census()
+
+    assert "268 shipped" in landing
+    assert "2 active" in landing
+    assert "All 2 scenarios are in the active scenario catalog" in census["caption"]
+    assert "The shipped repository catalog has 268 scenarios" in census["caption"]
+    assert "All 2 scenarios in <code>dwarf/scenarios/</code>" not in census["caption"]
 
 
 def test_public_runbook_contains_portable_moog_paths():

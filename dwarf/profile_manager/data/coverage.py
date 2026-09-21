@@ -453,8 +453,12 @@ def scenario_census() -> dict:
     view that shows nothing is dropped.
     """
     from collections import Counter
-    from profile_manager.data.scenarios import _list_scenarios_for_compare
+    from profile_manager.data.scenarios import (
+        _list_packaged_scenarios_for_compare,
+        _list_scenarios_for_compare,
+    )
     scenarios = _list_scenarios_for_compare()
+    packaged_total = len(_list_packaged_scenarios_for_compare())
     impl_cols = implementation_axis()
     columns = impl_cols + [{"slug": "__total", "label": "Total"}]
 
@@ -484,11 +488,21 @@ def scenario_census() -> dict:
                 _supported_cell(count, "scenario") if count > 0 else _empty_cell()
             )
     total = sum(cat_total.values())
+    if total == packaged_total:
+        catalog_text = (
+            f"All {total} scenarios are in the shipped repository catalog. Each "
+        )
+    else:
+        catalog_text = (
+            f"All {total} scenarios are in the active scenario catalog. "
+            f"The shipped repository catalog has {packaged_total} "
+            "scenarios; the difference is operator-created runtime content. Each "
+        )
     return {
         "title": "Scenario census",
         "caption": (
-            f"All {total} scenarios in <code>dwarf/scenarios/</code>, each "
-            "counted once by primary category (priority-ordered) and by "
+            catalog_text
+            + "is counted by primary category (priority-ordered) and by "
             "declared <code>target.implementation</code>. The Total column "
             "reconciles to the full catalog. Amaru additionally participates "
             "in differential runtime scenarios whose declared target is "

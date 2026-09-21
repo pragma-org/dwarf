@@ -196,7 +196,7 @@
     </li>
     <li class="data-proof-row">
       <span class="label">Scenarios available</span>
-      <span class="value">{{ scenario_count }}</span>
+      <span class="value">{% if scenario_count == packaged_scenario_count %}{{ scenario_count }} shipped{% else %}{{ packaged_scenario_count }} shipped · {{ scenario_count }} active{% endif %}</span>
     </li>
     <li class="data-proof-row">
       <span class="label">Fuzz targets</span>
