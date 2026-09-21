@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+import re
 from typing import Any
 
 import jsonschema
@@ -26,6 +27,36 @@ STATE_DEFINITIONS = {
     "Unavailable": "The current catalog has no mapped scenario or the required evidence boundary is absent. DWARF does not substitute zero.",
     "Reserved": "The catalog keeps this future source slot, but it is not implemented evidence.",
 }
+TAP_GROUPS = (
+    ("workload-outcomes", "Workload and outcomes"),
+    ("latency-processing", "Latency and processing"),
+    ("throughput-chain", "Throughput and chain"),
+    ("resources", "Resources"),
+    ("protocol-ledger", "Protocol and ledger"),
+    ("unavailable-reserved", "Unavailable and reserved"),
+)
+
+
+def _first_sentence(value: str) -> str:
+    """Return a compact human-first summary without changing source text."""
+    text = " ".join(str(value or "").split())
+    match = re.match(r"(.+?[.!?])(?:\s|$)", text)
+    return match.group(1) if match else text
+
+
+def _tap_group(tap: dict[str, Any]) -> str:
+    if tap["source"] == "Reserved" or tap["status"] in {"Unavailable", "Reserved"}:
+        return "unavailable-reserved"
+    text = f"{tap['id']} {tap['title']}".lower()
+    if any(term in text for term in ("cpu", "memory", "rss", "resource", "disk", "i/o", "network")):
+        return "resources"
+    if any(term in text for term in ("latency", "duration", "elapsed", "processing", "decode", "encode")):
+        return "latency-processing"
+    if any(term in text for term in ("throughput", "rate", "chain head", "chain-head", "block adoption", "slot")):
+        return "throughput-chain"
+    if any(term in text for term in ("protocol", "ledger", "plutus", "cbor", "fork", "rollback", "chain selection")):
+        return "protocol-ledger"
+    return "workload-outcomes"
 
 
 def _load_mapping() -> dict[str, Any]:
@@ -103,8 +134,7 @@ def _row(
     force_unavailable: bool = False,
 ) -> dict[str, Any]:
     scenario_ids = {item["id"] for item in scenarios}
-    evidence = []
-    seen_evidence = set()
+    evidence_by_run: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     tap_rows = []
     for measurement_id in measurement_ids:
         definition = measurement_defs[measurement_id]
@@ -114,10 +144,12 @@ def _row(
             if scenario_id in scenario_ids and tap_id == measurement_id
         ]
         for item in tap_evidence:
-            key = (item["run_id"], measurement_id)
-            if key not in seen_evidence:
-                evidence.append({**item, "measurement_id": measurement_id})
-                seen_evidence.add(key)
+            key = (item["run_id"], item["scenario_id"], item["implementation"], item["url"])
+            grouped = evidence_by_run.setdefault(key, {**item, "measurements": []})
+            grouped["measurements"].append({
+                "id": measurement_id,
+                "title": definition.get("title") or measurement_id,
+            })
         if source == "Reserved":
             status = "Reserved"
         elif any(item["verified"] for item in tap_evidence):
@@ -136,6 +168,12 @@ def _row(
             "url": f"/operate/measurements/{measurement_id}",
         })
 
+    evidence = []
+    for item in evidence_by_run.values():
+        item["measurements"] = sorted(item["measurements"], key=lambda value: value["title"])
+        item["measurement_count"] = len(item["measurements"])
+        evidence.append(item)
+
     implementations = set()
     for scenario in scenarios:
         implementations.update(_implementation(scenario.get("target")))
@@ -153,6 +191,11 @@ def _row(
         evidence = []
     families = sorted({_scenario_category(item["id"])[1] for item in scenarios})
     linked_scenarios = [_scenario_link(item) for item in scenarios]
+    tap_groups = []
+    for group_id, group_title in TAP_GROUPS:
+        grouped_taps = [tap for tap in tap_rows if _tap_group(tap) == group_id]
+        if grouped_taps:
+            tap_groups.append({"id": group_id, "title": group_title, "taps": grouped_taps})
     search_text = " ".join([
         identity, title, description, rule["prerequisite"], rule["can_prove"], rule["non_claims"],
         *families, *implementations,
@@ -165,16 +208,23 @@ def _row(
         "id": identity,
         "title": title,
         "description": description,
+        "meaning": _first_sentence(description),
         "scenario_families": families,
         "scenarios": linked_scenarios,
         "scenario_count": len(scenarios),
         "implementations": sorted(implementations) or ["Amaru", "Cardano-node"],
         "measurements": tap_rows,
+        "tap_groups": tap_groups,
+        "tap_summary": {
+            "applicable": len(tap_rows),
+            "verified": sum(tap["status"] == "Verified" for tap in tap_rows),
+        },
         "sources": sorted({tap["source"] for tap in tap_rows}),
         "prerequisite": rule["prerequisite"],
         "status": status,
-        "evidence": sorted(evidence, key=lambda item: (item["card_id"], item["implementation"], item["measurement_id"])),
+        "evidence": sorted(evidence, key=lambda item: (item["card_id"], item["implementation"], item["run_id"])),
         "can_prove": rule["can_prove"],
+        "coverage_statement": _first_sentence(rule["can_prove"]),
         "non_claims": rule["non_claims"],
         "search_text": search_text,
     }
@@ -253,10 +303,28 @@ def measurement_coverage_payload() -> dict[str, Any]:
             measurement_defs=measurement_defs, configured=configured, evidence_index=evidence_index,
         ))
 
+    labels = {
+        "threats": "Threats",
+        "risks": "Risks",
+        "scenario_families": "Scenario families",
+        "surfaces": "Node/protocol surfaces",
+    }
+    overview = []
+    for view_id, label in labels.items():
+        rows = views[view_id]
+        overview.append({
+            "id": view_id,
+            "label": label,
+            "mapped": sum(row["scenario_count"] > 0 for row in rows),
+            "verified": sum(row["status"] == "Verified" for row in rows),
+            "gaps": sum(row["status"] == "Unavailable" for row in rows),
+        })
+
     return {
         "mapping_id": mapping["id"],
         "catalog_scenario_count": len(scenario_by_id),
         "views": views,
+        "overview": overview,
         "statuses": list(STATUSES),
         "sources": list(SOURCES),
         "state_definitions": STATE_DEFINITIONS,
