@@ -4,19 +4,21 @@ This directory freezes the five smallest security-centered examples required by 
 The machine-readable cards are in `contracts/` and validate against
 `dwarf/spec/v1/client-example-acceptance-card.schema.json`.
 
-Technical status on 2026-09-21: all five contracts remain frozen. G3-A through G3-C are implemented. Cards 01, 02, and 05 have accepted evidence for both implementations on `nanoseconds-v2`. Card 03 has accepted evidence for both implementations on `whole-microseconds-v1`. Card 04 has an accepted Cardano-node leg and retained Amaru work. Gates 4 and 5 are not complete.
+Technical status on 2026-09-21: all five contracts remain frozen. G3-A through G3-C are implemented. All five cards have accepted evidence for both implementations. Card 03 keeps its accepted `whole-microseconds-v1` evidence. Cards 01, 02, and 05 use `nanoseconds-v2`. Card 04 uses `nanoseconds-v3` for Amaru and `nanoseconds-v2` for Cardano-node. Gates 4 and 5 are complete.
 
-Child explanation: DWARF finished four of the five recipes for both nodes. One Amaru part still needs work. The old Amaru limits stay visible beside the newer runs that resolve them.
+Child explanation: DWARF finished all five recipes for both nodes. The old findings stay visible beside the newer runs that resolve them.
 
 | Card | Exact current state | Measurement revision |
 |---|---|---|
 | 01 | Cardano-node accepted as run `20260920T132629Z-ea000d37`; fixed Amaru accepted as run `20260920T235440Z-050046a4`; old Amaru run `20260920T135054Z-28289dcd` remains a completed finding | `nanoseconds-v2` |
 | 02 | both legs accepted: Cardano-node `20260920T135958Z-362eedc7`, Amaru additive on-chain V2 topology `20260921T013953Z-565b77c3`; the old topology finding remains retained | `nanoseconds-v2` |
 | 03 | both legs accepted: Amaru `20260920T072858Z-2cc3bb0c`, Cardano-node `20260920T073447Z-ab81bfb7` | `whole-microseconds-v1` |
-| 04 | Cardano-node accepted as run `20260920T125840Z-778a7cf7`; Amaru retained a real same-height fork finding | `nanoseconds-v2` |
-| 05 | both legs accepted: Amaru `20260920T122606Z-32c0e998`, Cardano-node `20260920T130232Z-2c68fb83` | `nanoseconds-v2` |
+| 04 | both canonical-progress legs accepted: Amaru `20260921T035546Z-9747122c`, Cardano-node `20260921T021935Z-3b58eafc`; the earlier same-height fork finding remains retained | Amaru `nanoseconds-v3`; Cardano-node `nanoseconds-v2` |
+| 05 | both run-relative restart and controlled-sync legs accepted: Amaru `20260921T045619Z-15e864a0`, Cardano-node `20260921T045807Z-8e2bbb0e` | `nanoseconds-v2` |
 
-The accepted labels are `framework proven` and `collection proven`. The full five-card client requirement remains partial because Card 04 does not yet have an accepted Amaru leg.
+The accepted labels are `framework proven`, `collection proven`, and `client requirement complete`. Use `client requirement partial` only for retained historical runs that did not satisfy a frozen card.
+
+The client requirement is complete for these five frozen cards. It does not authorize a mixed-node comparison, stable benchmark thresholds, weekly automation, a presentation, or an Antithesis or Moog run.
 
 | Card | Functional focus | Non-functional focus | Gate 1 state |
 |---|---|---|---|
@@ -64,25 +66,22 @@ or a finalized zero-sample collector as final runtime proof.
 
 G3-A through G3-C are implemented and tested. The accepted Card 03 evidence remains unchanged. The additive
 `nanoseconds-v2` targets supply finer timing for Cards 01, 02, 04, and 05. The retained findings preserve the exact
-historical limits. Card 02 now has accepted evidence from its additive on-chain Plutus V2 topology.
+historical limits. Card 04 uses the additive Amaru `nanoseconds-v3` target for its canonical-progress evidence.
 
-Technical boundary: Gates 4 and 5 remain incomplete. Do not mark the five-card requirement complete while the Amaru
-leg for Card 04 remains unresolved.
+Gate 4 completed the reviewed real-node execution sequence. Gate 5 retained one accepted Amaru run and one accepted Cardano-node run for each card. The card contracts and proof pages record the exact target revisions, images, workloads, seeds, hardware, samples, logs, reports, and accepted bundle digests.
 
-Child explanation: the tools are built. Four recipes passed for both nodes. One Amaru recipe still needs final proof,
-so the complete five-card promise is not finished.
+Child explanation: the tools and all ten final node runs passed their frozen checks. Each recipe has proof that a person can inspect and export.
 
 ## Dashboard inspection check
 
 The deployed dashboard was rebuilt from framework commit
-`0b4158da3034087d8f3b287a0b3aff1374751524` as image
-`sha256:743fae4ea816062059d4ae6887827692c8bfc9f9efc28488635f7c3443413599`.
-On 2026-09-20, the live check returned HTTP 200 for all ten frozen scenario pages, both measurement-profile pages,
-and all ten retained accepted-or-blocked run pages. Each run export returned a non-empty gzip archive.
+`c1808d0263c52bb32e21ca00af64766143d49d30` as image
+`sha256:9da02bd5844a42b94a84d0e761d5f3aa673b5c19468786439766c0f95b7e15fe`.
+On 2026-09-21, the live health path reported the three expected Cardano-node processes. The route check returned HTTP 200 and the correct object identity for all ten frozen scenario pages, both measurement-profile pages, and all ten accepted run pages.
 
-The ten run pages were also rendered in Chromium at 1440 by 900 pixels and 390 by 844 pixels. All 20 renders had
-zero page overflow, broken images, browser errors, missing headings, missing run identifiers, or undersized mobile
-form controls.
+The full Chromium audit checked 88 routes at desktop, tablet, and mobile sizes. It completed 264 page checks, 19 interaction checks, 40 download checks, and 3 token-gate checks with no failures.
+The exact-card audit checked the final scenario, profile, and run routes at 1440 by 900 pixels and 390 by 844 pixels. It completed 90 page checks, 19 interaction checks, 40 download checks, and 3 token-gate checks with no failures.
 
-Child explanation: A person can open every final proof or blocker in the DWARF screen on a large or small device and
-download its evidence package. This display check does not change a failed security result into a pass.
+Each of the ten final run exports was non-empty, passed gzip integrity, passed the signed DWARF bundle verifier, imported into an isolated run directory, and retained the source manifest SHA-256 digest. The export check did not change the accepted evidence or rerun Card 03.
+
+Child explanation: A person can open every final proof in the DWARF screen on a large or small device and download its evidence package. DWARF also checked that each downloaded package opens and keeps the same signed proof list.

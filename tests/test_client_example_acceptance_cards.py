@@ -376,3 +376,27 @@ def test_card05_accepts_both_run_relative_restart_and_sync_legs():
             "required_change": "The controlled range binds exact start and end heights, hashes, run-relative timestamps, and the implementation-specific peer policy.",
         },
     ]
+
+
+def test_aggregate_status_records_all_final_examples_and_gate5_completion():
+    source = (ROOT / "dwarf/docs/client-examples/README.md").read_text(
+        encoding="utf-8"
+    )
+
+    final_run_ids = {
+        "20260920T235440Z-050046a4",
+        "20260920T132629Z-ea000d37",
+        "20260921T013953Z-565b77c3",
+        "20260920T135958Z-362eedc7",
+        "20260920T072858Z-2cc3bb0c",
+        "20260920T073447Z-ab81bfb7",
+        "20260921T035546Z-9747122c",
+        "20260921T021935Z-3b58eafc",
+        "20260921T045619Z-15e864a0",
+        "20260921T045807Z-8e2bbb0e",
+    }
+    assert final_run_ids <= set(source.split("`")[1::2])
+    assert "client requirement complete" in source
+    assert "Gates 4 and 5 are complete" in source
+    assert "all five cards have accepted evidence for both implementations" in source.lower()
+    assert "same-height fork finding remains retained" in source
