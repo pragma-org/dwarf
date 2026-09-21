@@ -92,10 +92,11 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
         "profile-v-cardano-measurement-nanoseconds-v2": "generated-cardano-local",
         "profile-w-amaru-measurement-plutus-v2": "amaru-control",
         "profile-x-amaru-cbor-fix-regression-nanoseconds-v2": "amaru-control",
+        "profile-y-amaru-block-application-nanoseconds-v3": "amaru-control",
     }
     profiles = load_profiles()
 
-    assert len(profiles) == 24
+    assert len(profiles) == 25
     assert {profile.id for profile in profiles} == set(expected_adapters)
     for profile in profiles:
         source = next(
@@ -113,6 +114,7 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
                 "profile-v-cardano-measurement-nanoseconds-v2",
                 "profile-w-amaru-measurement-plutus-v2",
                 "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
+                "profile-y-amaru-block-application-nanoseconds-v3",
             }
             else "latest-confirmed"
         )
@@ -324,3 +326,23 @@ def test_fixed_amaru_regression_profile_resolves_exact_confirmed_commit():
     verification = resolved["resolved"]["amaru"]["verification"]["amaru-only"]
     assert "run:20260920T235440Z-050046a4" in verification["evidence"]
     assert verification["default"] is False
+
+
+def test_amaru_block_application_v3_profile_pins_new_exact_artifact():
+    body = json.loads(
+        (
+            CATALOG_PATH.parents[1]
+            / "profiles/profile-y-amaru-block-application-nanoseconds-v3/profile.yaml"
+        ).read_text()
+    )
+
+    resolved = resolve_profile_versions(body, load_version_catalog(CATALOG_PATH))
+
+    assert resolved["status"] == "confirmed"
+    assert body["measurement_revision"] == "nanoseconds-v3"
+    assert body["measurement_patch_revision"] == (
+        "b159172f25a9c389f82f20bca4f15e3032791638"
+    )
+    assert body["measurement_patch_set_sha256"] == (
+        "042f6b1840bc6a30e65d77ce702e1be9967b77564ecfb9c77c1e5c25520aad00"
+    )

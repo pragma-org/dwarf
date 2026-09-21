@@ -279,6 +279,9 @@ FIXED_REVISION = "d3a6dafcced78f5809a96619e883cf04911d2bdc"
 FIXED_NANOSECOND_PATCH_ROOT = (
     Path("dwarf/targets/amaru/measurement-patches-nanoseconds-v2") / FIXED_REVISION
 )
+BLOCK_APPLICATION_NANOSECOND_PATCH_ROOT = (
+    Path("dwarf/targets/amaru/measurement-patches-nanoseconds-v3") / REVISION
+)
 
 
 def test_nanosecond_v2_manifest_is_additive_and_v1_stays_byte_exact():
@@ -316,6 +319,48 @@ def test_nanosecond_v2_patch_emits_precise_and_compatibility_fields():
         assert micros_field in patch_text
     assert ".as_nanos()" in patch_text
     assert " / 1_000" in patch_text
+
+
+def test_nanosecond_v3_adds_exact_block_application_timing_additively():
+    manifest = builder.load_manifest(
+        BLOCK_APPLICATION_NANOSECOND_PATCH_ROOT / "manifest.json"
+    )
+    assert manifest["measurement_revision"] == "nanoseconds-v3"
+    assert manifest["source"]["revision"] == REVISION
+    assert manifest["supersedes_measurement_revision"] == "nanoseconds-v2"
+    assert manifest["target"] == "amaru-measurement-nanoseconds-v3"
+    assert "crates/amaru-ledger/src/state.rs" in manifest["changed_paths"]
+    verified = builder.verify_patch_set(BLOCK_APPLICATION_NANOSECOND_PATCH_ROOT, manifest)
+    assert verified["patch_set_sha256"] == manifest["patch_set_sha256"]
+
+    patch_text = "\n".join(
+        (BLOCK_APPLICATION_NANOSECOND_PATCH_ROOT / item["path"]).read_text(
+            encoding="utf-8"
+        )
+        for item in manifest["patches"]
+    )
+    assert "measurement.block_apply" in json.dumps(manifest)
+    assert "elapsed_nanos" in patch_text
+    assert "elapsed_micros" in patch_text
+    assert "apply_started.elapsed().as_nanos()" in patch_text
+    assert "elapsed_nanos / 1_000" in patch_text
+
+    evidence = builder.load_manifest(
+        BLOCK_APPLICATION_NANOSECOND_PATCH_ROOT / "build-evidence.json"
+    )
+    assert evidence["manifest_sha256"] == (
+        "05f4baf227395c75467d716fb6f59a8344d3ebbae726011e19173cbd74385fe9"
+    )
+    assert evidence["patch_set_sha256"] == manifest["patch_set_sha256"]
+    assert evidence["executable_digest"] == (
+        "sha256:6c33df932f50601166a0107ed9a47742ebc501218be5bc59f99a69f5fcddc94c"
+    )
+    assert evidence["image_digest"] == (
+        "sha256:d120f9515d5bcc6aa68629e0370fa7bdf5a5612e5d35005aa231d32ab2b7169a"
+    )
+    assert evidence["build_result_sha256"] == (
+        "sha256:b9442b76fa7e23cab1155a72651ca6a5cae64aeed619f7395da4fa759c9c79b3"
+    )
 
 
 def test_fixed_revision_nanosecond_manifest_is_exact_and_self_consistent():

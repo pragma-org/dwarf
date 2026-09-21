@@ -84,7 +84,13 @@ dashboard inspection + export/import verification
 
 ## Compatibility and migration
 
-All schema changes are additive. Old manifests, scenarios, profiles, runs, and bundles remain valid. Old Card 04 runs keep the v1 strict-monotonic verdict. New Card 04 scenarios use canonical-progress-v2 identifiers. Card 03 remains on whole-microseconds-v1. New Card 01, Card 02, and Card 04 measurement objects use nanoseconds-v2 and preserve integer `elapsed_nanos`, legacy integer microseconds, and fractional human-facing microseconds.
+All schema changes are additive. Old manifests, scenarios, profiles, runs, and bundles remain valid. Old Card 04 runs keep the v1 strict-monotonic verdict. New Card 04 scenarios use canonical-progress-v2 identifiers. Card 03 remains on whole-microseconds-v1. Card 01 and Card 02 use nanoseconds-v2. Cardano Card 04 uses nanoseconds-v2. Amaru Card 04 uses nanoseconds-v3 because that additive revision extends v2 with the previously missing stable-ledger block-application tap. Both nanosecond revisions preserve integer `elapsed_nanos`, legacy integer microseconds, and fractional human-facing microseconds.
+
+## Card 04 precision amendment
+
+The first canonical Amaru run exposed a precise implementation gap before evidence promotion. Its v2 target emitted nanoseconds for protocol, BlockFetch, and TxSubmission taps, but the Card 04 collector still measured `block.apply` from paired wall-clock span timestamps. The run remains retained as a successful canonical-progress rehearsal, but it is not the accepted precision revision.
+
+The additive nanoseconds-v3 target keeps every v2 tap and adds `amaru::ledger/measurement.block_apply`. It measures the existing stable-ledger application body with `std::time::Instant`, emits integer `elapsed_nanos`, and derives the compatibility `elapsed_micros` with integer division. The collector prefers this event, preserves raw nanoseconds, reports fractional microseconds, and keeps the paired-span path only as a legacy fallback. The v2 target, profile, scenario, run, and digests remain unchanged and reproducible.
 
 ## Error handling
 

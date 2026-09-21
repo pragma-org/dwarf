@@ -14711,6 +14711,8 @@ def _collect_controlled_block_evidence(
             if isinstance(value, dict):
                 rows.append(value)
         enters = {}
+        patched_applications = []
+        legacy_applications = []
         for row in rows:
             fields = row.get("fields") or {}
             span = row.get("span") or {}
@@ -14721,6 +14723,23 @@ def _collect_controlled_block_evidence(
                     "slot": fields.get("slot"),
                     "observed_at": row.get("timestamp"),
                 })
+            if fields.get("message") == "measurement.block_apply":
+                elapsed_nanos, duration_micros = precise_microseconds(
+                    fields,
+                    nanos_field="elapsed_nanos",
+                    micros_field="elapsed_micros",
+                )
+                application = {
+                    "sample_id": f"apply-{len(patched_applications):04d}",
+                    "duration_micros": duration_micros,
+                    "observed_at": row.get("timestamp"),
+                    "point_slot": fields.get("point_slot"),
+                    "outcome": fields.get("outcome"),
+                    "timing_source": "patched-monotonic-nanoseconds",
+                }
+                if elapsed_nanos is not None:
+                    application["elapsed_nanos"] = elapsed_nanos
+                patched_applications.append(application)
             if span.get("name") == "block.apply" and fields.get("message") == "enter":
                 enters[row.get("id")] = row
             if span.get("name") == "block.apply" and fields.get("message") == "exit":
@@ -14728,12 +14747,15 @@ def _collect_controlled_block_evidence(
                 if start and start.get("timestamp") and row.get("timestamp"):
                     begin = datetime.fromisoformat(start["timestamp"].replace("Z", "+00:00"))
                     end = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
-                    applications.append({
-                        "sample_id": f"apply-{len(applications):04d}",
+                    legacy_applications.append({
+                        "sample_id": f"apply-{len(legacy_applications):04d}",
                         "duration_micros": (end - begin).total_seconds() * 1_000_000,
                         "observed_at": row.get("timestamp"),
                         "point_slot": fields.get("point_slot"),
+                        "outcome": "completed",
+                        "timing_source": "legacy-paired-wall-clock-span",
                     })
+        applications.extend(patched_applications or legacy_applications)
     return adopted, applications, excluded_applications
 
 

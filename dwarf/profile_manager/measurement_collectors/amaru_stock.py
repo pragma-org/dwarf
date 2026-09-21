@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from profile_manager.measurement_correlation import correlate_measurement_events
+from profile_manager.measurement_precision import precise_microseconds
 from profile_manager.measurement_report import distribution_summary
 
 
@@ -55,6 +56,7 @@ _JSON_MESSAGE_KINDS = {
     ("amaru::protocols", "manager.peer.connected"): "peer-connected",
     ("amaru::protocols", "mux.failed"): "mux-failed",
     ("amaru::ledger", "tip.update"): "chain-tip",
+    ("amaru::ledger", "measurement.block_apply"): "block-apply",
 }
 
 _JSON_SPAN_KINDS = {
@@ -124,6 +126,16 @@ def _normalize_json_event(record: dict[str, Any]) -> dict[str, Any] | None:
         "name": name,
         "fields": fields,
     }
+    if message == "measurement.block_apply":
+        elapsed_nanos, duration_micros = precise_microseconds(
+            fields,
+            nanos_field="elapsed_nanos",
+            micros_field="elapsed_micros",
+        )
+        event["duration_micros"] = duration_micros
+        event["timing_source"] = "patched-monotonic-nanoseconds"
+        if elapsed_nanos is not None:
+            event["elapsed_nanos"] = elapsed_nanos
     span = record.get("span")
     if isinstance(span, dict):
         event["span_name"] = span.get("name")
@@ -461,6 +473,13 @@ def _span_samples(events: Iterable[dict[str, Any]], kind: str) -> dict[str, Any]
         for event in events
         if event["kind"] == kind and event.get("duration_micros") is not None
     ]
+    precise = [
+        event
+        for event in matching
+        if event.get("timing_source") == "patched-monotonic-nanoseconds"
+    ]
+    if precise:
+        matching = precise
     summary = distribution_summary(
         [
             {"value": event.get("duration_micros"), "unit": "us"}

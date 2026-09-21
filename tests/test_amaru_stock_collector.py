@@ -218,6 +218,59 @@ def test_exact_runtime_json_shape_normalizes_events_and_completed_node_spans(tmp
     assert result["export"]["ignored_record_count"] == 1
 
 
+def test_block_application_distribution_prefers_monotonic_nanoseconds(tmp_path):
+    trace = tmp_path / "amaru.ndjson"
+    rows = [
+        {
+            "timestamp": "2026-09-21T03:00:00.000001Z",
+            "target": "amaru::ledger",
+            "fields": {"message": "enter", "point_slot": 501},
+            "span": {"name": "block.apply"},
+            "id": 9,
+        },
+        {
+            "timestamp": "2026-09-21T03:00:00.000004Z",
+            "target": "amaru::ledger",
+            "fields": {"message": "exit", "point_slot": 501},
+            "span": {"name": "block.apply"},
+            "id": 9,
+        },
+        {
+            "timestamp": "2026-09-21T03:00:00.000005Z",
+            "target": "amaru::ledger",
+            "fields": {
+                "message": "measurement.block_apply",
+                "point_slot": 501,
+                "outcome": "completed",
+                "elapsed_micros": 2,
+                "elapsed_nanos": 2184,
+            },
+        },
+    ]
+    trace.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
+    loaded = load_amaru_telemetry(json_trace_paths=[trace])
+    precise = next(
+        event
+        for event in loaded["events"]
+        if event.get("timing_source") == "patched-monotonic-nanoseconds"
+    )
+    assert precise["elapsed_nanos"] == 2184
+    assert precise["duration_micros"] == 2.184
+
+    result = _collect_from_paths(
+        tmp_path,
+        "amaru-stock-block-epoch",
+        json_paths=[trace],
+        otlp_paths=[],
+    )
+    distribution = result["measurements"]["block_application"]
+    assert distribution["sample_count"] == 1
+    assert distribution["minimum"] == 2.184
+    assert distribution["maximum"] == 2.184
+    assert distribution["timing_sources"] == ["patched-monotonic-nanoseconds"]
+
+
 def test_collector_retains_bounded_raw_normalized_correlation_and_result_artifacts(tmp_path):
     result = _collect(tmp_path, "amaru-stock-mempool", max_source_bytes=1024)
 

@@ -128,6 +128,8 @@ Completion evidence: all three security assertions passed; the 60-transaction li
 
 ### Task 7: Run both Card 04 implementations
 
+Precision amendment: the Cardano canonical-v2 run is retained on nanoseconds-v2. The first Amaru canonical-v2 run is a retained canonical-progress rehearsal only because it exposed that the stock `block.apply` span lacked monotonic nanoseconds. Add the revision-locked nanoseconds-v3 Amaru target, profile, scenario, collector preference, exact conversion tests, and artifact digests. Then rerun only the Amaru leg and require raw `elapsed_nanos` in every accepted application sample before promotion.
+
 **Files:**
 - Modify: `dwarf/docs/client-examples/04-BLOCK-APPLICATION-STATUS.md`
 - Modify: `dwarf/docs/client-examples/04-CARDANO-BLOCK-APPLICATION-PROOF.md`

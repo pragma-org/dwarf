@@ -403,6 +403,7 @@ def test_g3b_final_scenarios_match_frozen_legs():
         "client-example-block-application-amaru": "amaru",
         "client-example-block-application-cardano": "cardano-node",
         "client-example-block-application-amaru-canonical-v2": "amaru",
+        "client-example-block-application-amaru-canonical-v3": "amaru",
         "client-example-block-application-cardano-canonical-v2": "cardano-node",
         "client-example-restart-recovery-sync-amaru": "amaru",
         "client-example-restart-recovery-sync-cardano": "cardano-node",
@@ -425,6 +426,11 @@ def test_g3b_final_scenarios_match_frozen_legs():
                 "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c",
             ),
         }
+        if scenario_id == "client-example-block-application-amaru-canonical-v3":
+            exact["amaru"] = (
+                "sha256:d120f9515d5bcc6aa68629e0370fa7bdf5a5612e5d35005aa231d32ab2b7169a",
+                "042f6b1840bc6a30e65d77ce702e1be9967b77564ecfb9c77c1e5c25520aad00",
+            )
         assert body["setup"][0]["image_digest"] == exact[implementation][0]
         assert body["setup"][0]["patch_set_sha256"] == exact[implementation][1]
         health_probe = next(
@@ -439,7 +445,7 @@ def test_g3b_final_scenarios_match_frozen_legs():
                 if item["id"] == resource_id
             )
             assert resource_override["parameters"]["sample_interval_seconds"] == 0.25
-        if "canonical-v2" in scenario_id:
+        if "canonical-v2" in scenario_id or "canonical-v3" in scenario_id:
             window = next(
                 item for item in body["load"]
                 if item["primitive"] == "runtime_controlled_chain_progress_window"
@@ -814,6 +820,118 @@ def test_amaru_raw_chain_events_keep_fork_and_rollback_fields(monkeypatch):
             "event_id": 8,
             "parent_event_id": 7,
         },
+    ]
+
+
+def test_amaru_controlled_window_prefers_raw_block_apply_nanoseconds(monkeypatch):
+    rows = [
+        {
+            "timestamp": "2026-09-21T03:00:00Z",
+            "fields": {
+                "message": "tip.update",
+                "block_height": 101,
+                "header_hash": "a" * 64,
+                "slot": 501,
+            },
+        },
+        {
+            "timestamp": "2026-09-21T03:00:00.1Z",
+            "fields": {
+                "message": "measurement.block_apply",
+                "point_slot": 501,
+                "outcome": "completed",
+                "elapsed_micros": 2,
+                "elapsed_nanos": 2184,
+            },
+        },
+        {
+            "timestamp": "2026-09-21T03:00:00.2Z",
+            "fields": {"message": "enter", "point_slot": 501},
+            "span": {"name": "block.apply"},
+            "id": 9,
+        },
+        {
+            "timestamp": "2026-09-21T03:00:00.3Z",
+            "fields": {"message": "exit", "point_slot": 501},
+            "span": {"name": "block.apply"},
+            "id": 9,
+        },
+    ]
+    monkeypatch.setattr(
+        primitive_module,
+        "_protocol_docker_result",
+        lambda *_args, **_kwargs: type(
+            "Result", (), {"stdout": "\n".join(json.dumps(row) for row in rows), "stderr": ""}
+        )(),
+    )
+
+    adopted, applications, excluded = primitive_module._collect_controlled_block_evidence(
+        {
+            "implementation": "amaru",
+            "container": "amaru",
+            "window_started_at": "2026-09-21T03:00:00Z",
+        },
+        log_offset=0,
+        measurement_offset=0,
+    )
+
+    assert len(adopted) == 1
+    assert excluded == []
+    assert applications == [
+        {
+            "sample_id": "apply-0000",
+            "elapsed_nanos": 2184,
+            "duration_micros": 2.184,
+            "observed_at": "2026-09-21T03:00:00.1Z",
+            "point_slot": 501,
+            "outcome": "completed",
+            "timing_source": "patched-monotonic-nanoseconds",
+        }
+    ]
+
+
+def test_amaru_controlled_window_keeps_legacy_span_fallback(monkeypatch):
+    rows = [
+        {
+            "timestamp": "2026-09-21T03:00:00.000001Z",
+            "fields": {"message": "enter", "point_slot": 501},
+            "span": {"name": "block.apply"},
+            "id": 9,
+        },
+        {
+            "timestamp": "2026-09-21T03:00:00.000004Z",
+            "fields": {"message": "exit", "point_slot": 501},
+            "span": {"name": "block.apply"},
+            "id": 9,
+        },
+    ]
+    monkeypatch.setattr(
+        primitive_module,
+        "_protocol_docker_result",
+        lambda *_args, **_kwargs: type(
+            "Result", (), {"stdout": "\n".join(json.dumps(row) for row in rows), "stderr": ""}
+        )(),
+    )
+
+    _adopted, applications, _excluded = primitive_module._collect_controlled_block_evidence(
+        {
+            "implementation": "amaru",
+            "container": "amaru",
+            "window_started_at": "2026-09-21T03:00:00Z",
+        },
+        log_offset=0,
+        measurement_offset=0,
+    )
+
+    assert applications == [
+        {
+            "sample_id": "apply-0000",
+            "duration_micros": 3.0,
+            "observed_at": "2026-09-21T03:00:00.000004Z",
+            "point_slot": 501,
+            "outcome": "completed",
+            "timing_source": "legacy-paired-wall-clock-span",
+        }
     ]
 
 

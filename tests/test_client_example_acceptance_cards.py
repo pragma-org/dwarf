@@ -42,6 +42,13 @@ V2_TARGETS = {
         "patch_manifest_sha256": "sha256:06405007512eb8040898fbe53984b43bb5419100e5c7c64954588ee618ad7071",
     },
 }
+V3_AMARU_BLOCK_TARGET = {
+    "measurement_revision": "nanoseconds-v3",
+    "patch_set_sha256": "042f6b1840bc6a30e65d77ce702e1be9967b77564ecfb9c77c1e5c25520aad00",
+    "patched_executable_digest": "sha256:6c33df932f50601166a0107ed9a47742ebc501218be5bc59f99a69f5fcddc94c",
+    "patched_image_digest": "sha256:d120f9515d5bcc6aa68629e0370fa7bdf5a5612e5d35005aa231d32ab2b7169a",
+    "patch_manifest_sha256": "sha256:05f4baf227395c75467d716fb6f59a8344d3ebbae726011e19173cbd74385fe9",
+}
 
 EXPECTED_TARGETS = {
     "amaru": {
@@ -103,8 +110,19 @@ def test_card03_keeps_v1_while_future_cards_pin_nanoseconds_v2():
                 for target in card["targets"].values()
             )
             continue
-        assert profiles == V2_PROFILES
+        if card["id"] == "client-example-04-block-application":
+            assert profiles == {
+                "amaru": "profile-y-amaru-block-application-nanoseconds-v3",
+                "cardano-node": "profile-v-cardano-measurement-nanoseconds-v2",
+            }
+        else:
+            assert profiles == V2_PROFILES
         for implementation, expected in V2_TARGETS.items():
+            if (
+                card["id"] == "client-example-04-block-application"
+                and implementation == "amaru"
+            ):
+                expected = V3_AMARU_BLOCK_TARGET
             for key, value in expected.items():
                 assert card["targets"][implementation][key] == value
 
@@ -255,8 +273,12 @@ def test_card04_replaces_raw_monotonicity_with_canonical_progress_v2():
     assert resolution["kind"] == "canonical-progress-v2"
     assert resolution["preserve_v1_runs"] is True
     assert resolution["scenario_ids"] == {
-        "amaru": "client-example-block-application-amaru-canonical-v2",
+        "amaru": "client-example-block-application-amaru-canonical-v3",
         "cardano-node": "client-example-block-application-cardano-canonical-v2",
+    }
+    assert resolution["measurement_revisions"] == {
+        "amaru": "nanoseconds-v3",
+        "cardano-node": "nanoseconds-v2",
     }
     assert resolution["raw_evidence"] == [
         "adopted-block-events",
