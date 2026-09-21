@@ -14529,6 +14529,29 @@ def _json_lines_between(path: Path, offset: int) -> list[dict[str, Any]]:
     return records
 
 
+def _timestamp_in_controlled_window(
+    value: Any, target: dict[str, Any]
+) -> bool:
+    """Accept timestamped evidence only inside the retained marker interval."""
+
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        observed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        started = datetime.fromisoformat(
+            str(target.get("window_started_at")).replace("Z", "+00:00")
+        )
+        ended_value = target.get("window_ended_at")
+        ended = (
+            datetime.fromisoformat(str(ended_value).replace("Z", "+00:00"))
+            if ended_value
+            else None
+        )
+    except (TypeError, ValueError):
+        return False
+    return observed >= started and (ended is None or observed <= ended)
+
+
 def _collect_raw_chain_events(
     target: dict[str, Any], *, log_offset: int
 ) -> list[dict[str, Any]]:
@@ -14572,6 +14595,8 @@ def _collect_raw_chain_events(
             except json.JSONDecodeError:
                 continue
             if not isinstance(row, dict):
+                continue
+            if not _timestamp_in_controlled_window(row.get("timestamp"), target):
                 continue
             fields = row.get("fields") or {}
             span = row.get("span") or {}
@@ -14709,7 +14734,8 @@ def _collect_controlled_block_evidence(
             except json.JSONDecodeError:
                 continue
             if isinstance(value, dict):
-                rows.append(value)
+                if _timestamp_in_controlled_window(value.get("timestamp"), target):
+                    rows.append(value)
         enters = {}
         patched_applications = []
         legacy_applications = []
@@ -15096,6 +15122,9 @@ class RuntimeControlledChainProgressWindow(LoadPrimitive):
             time.sleep(duration)
         finally:
             end_marker = runtime.mark_phase("controlled-chain-progress", "end")
+            target["window_ended_at"] = datetime.fromtimestamp(
+                float(end_marker["epoch_seconds"]), timezone.utc
+            ).isoformat().replace("+00:00", "Z")
         end_tip = _observe_client_target_tip(target)
         adopted, applications, excluded_applications = _collect_controlled_block_evidence(
             target, log_offset=log_offset, measurement_offset=measurement_offset

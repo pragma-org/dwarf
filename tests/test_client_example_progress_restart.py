@@ -890,6 +890,85 @@ def test_amaru_controlled_window_prefers_raw_block_apply_nanoseconds(monkeypatch
     ]
 
 
+def test_amaru_controlled_window_excludes_events_after_end_marker(monkeypatch):
+    before_end = {
+        "timestamp": "2026-09-21T03:00:00.999999Z",
+        "fields": {
+            "message": "tip.update",
+            "block_height": 101,
+            "header_hash": "a" * 64,
+            "slot": 501,
+        },
+    }
+    precise_before_end = {
+        "timestamp": "2026-09-21T03:00:00.999999Z",
+        "fields": {
+            "message": "measurement.block_apply",
+            "point_slot": 501,
+            "outcome": "completed",
+            "elapsed_micros": 2,
+            "elapsed_nanos": 2184,
+        },
+    }
+    after_end = {
+        "timestamp": "2026-09-21T03:00:01.000001Z",
+        "fields": {
+            "message": "tip.update",
+            "block_height": 101,
+            "header_hash": "b" * 64,
+            "slot": 501,
+        },
+    }
+    precise_after_end = {
+        "timestamp": "2026-09-21T03:00:01.000001Z",
+        "fields": {
+            "message": "measurement.block_apply",
+            "point_slot": 502,
+            "outcome": "completed",
+            "elapsed_micros": 3,
+            "elapsed_nanos": 3456,
+        },
+    }
+    fork_after_end = {
+        "timestamp": "2026-09-21T03:00:01.000001Z",
+        "fields": {"message": "enter", "fork_length": 1},
+        "span": {"name": "state.switch_to_fork"},
+        "id": 12,
+    }
+    rows = [
+        before_end,
+        precise_before_end,
+        after_end,
+        precise_after_end,
+        fork_after_end,
+    ]
+    monkeypatch.setattr(
+        primitive_module,
+        "_protocol_docker_result",
+        lambda *_args, **_kwargs: type(
+            "Result", (), {"stdout": "\n".join(json.dumps(row) for row in rows), "stderr": ""}
+        )(),
+    )
+    target = {
+        "implementation": "amaru",
+        "container": "amaru",
+        "window_started_at": "2026-09-21T03:00:00Z",
+        "window_ended_at": "2026-09-21T03:00:01Z",
+    }
+
+    adopted, applications, excluded = primitive_module._collect_controlled_block_evidence(
+        target,
+        log_offset=0,
+        measurement_offset=0,
+    )
+    raw_chain_events = primitive_module._collect_raw_chain_events(target, log_offset=0)
+
+    assert [row["hash"] for row in adopted] == ["a" * 64]
+    assert [row["elapsed_nanos"] for row in applications] == [2184]
+    assert excluded == []
+    assert raw_chain_events == []
+
+
 def test_amaru_controlled_window_keeps_legacy_span_fallback(monkeypatch):
     rows = [
         {
