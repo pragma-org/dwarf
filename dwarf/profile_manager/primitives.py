@@ -14869,11 +14869,19 @@ def _derive_canonical_progress(
         previous = event
 
     last = adopted[-1] if adopted else start_tip
-    terminal_matches = (
-        _tip_position(last) == end_height
-        and bool(_tip_hash(last))
-        and _tip_hash(last) == _tip_hash(end_tip)
-    )
+    last_height = _tip_position(last)
+    if last_height is not None and end_height > last_height:
+        terminal_tip_relation = "ahead"
+        terminal_matches = bool(_tip_hash(last))
+    elif last_height == end_height and _tip_hash(last) == _tip_hash(end_tip):
+        terminal_tip_relation = "exact"
+        terminal_matches = bool(_tip_hash(last))
+    elif last_height == end_height:
+        terminal_tip_relation = "same-height-mismatch"
+        terminal_matches = False
+    else:
+        terminal_tip_relation = "behind"
+        terminal_matches = False
     trailing_advances = 0
     for event in reversed(raw_selection):
         if event["transition"] != "advance":
@@ -14903,6 +14911,7 @@ def _derive_canonical_progress(
         "oscillation_episodes": episodes,
         "oscillation_transition_count": oscillation_count,
         "trailing_advance_count": trailing_advances,
+        "terminal_tip_relation": terminal_tip_relation,
         "bounds": {
             "max_oscillation_episodes": max_oscillation_episodes,
             "max_oscillation_transitions": max_oscillation_transitions,

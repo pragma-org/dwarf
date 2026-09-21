@@ -592,6 +592,16 @@ def test_canonical_progress_v2_accepts_straight_progress():
     assert progress["oscillation_episodes"] == []
 
 
+def test_canonical_progress_v2_accepts_end_tip_ahead_of_last_window_event():
+    events = [_tip(height) for height in range(101, 135)]
+
+    progress = _canonical(events, end=_tip(135))
+
+    assert progress["terminal_tip_relation"] == "ahead"
+    assert progress["checks"]["terminal_identity_matches"] is True
+    assert progress["checks"]["final_convergence"] is True
+
+
 def test_canonical_progress_v2_keeps_and_accepts_bounded_same_height_switch():
     events = [_tip(height) for height in range(101, 111)]
     events.append({**_tip(110), "hash": "f" * 64})
@@ -655,6 +665,16 @@ def test_canonical_progress_v2_rejects_non_converged_terminal_identity():
 
     progress = _canonical(events, end=end)
 
+    assert progress["checks"]["terminal_identity_matches"] is False
+    assert progress["checks"]["final_convergence"] is False
+
+
+def test_canonical_progress_v2_rejects_end_tip_behind_window_selection():
+    events = [_tip(height) for height in range(101, 136)]
+
+    progress = _canonical(events, end=_tip(134))
+
+    assert progress["terminal_tip_relation"] == "behind"
     assert progress["checks"]["terminal_identity_matches"] is False
     assert progress["checks"]["final_convergence"] is False
 
