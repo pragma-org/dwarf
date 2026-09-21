@@ -75,12 +75,13 @@ Child explanation: the tools and all ten final node runs passed their frozen che
 ## Dashboard inspection check
 
 The deployed dashboard was rebuilt from framework commit
-`c1808d0263c52bb32e21ca00af64766143d49d30` as image
-`sha256:9da02bd5844a42b94a84d0e761d5f3aa673b5c19468786439766c0f95b7e15fe`.
+`0dc7cedaeb358760020680c57b6112827862630b` as image
+`sha256:5091cad75242a0dcbb00537b9688e496f8bfbe3142c189994685c8f7029d1117`.
 On 2026-09-21, the live health path reported the three expected Cardano-node processes. The route check returned HTTP 200 and the correct object identity for all ten frozen scenario pages, both measurement-profile pages, and all ten accepted run pages.
 
 The full Chromium audit checked 88 routes at desktop, tablet, and mobile sizes. It completed 264 page checks, 19 interaction checks, 40 download checks, and 3 token-gate checks with no failures.
 The exact-card audit checked the final scenario, profile, and run routes at 1440 by 900 pixels and 390 by 844 pixels. It completed 90 page checks, 19 interaction checks, 40 download checks, and 3 token-gate checks with no failures.
+The deployed `/learn/measurements` route and representative navigation completed 50 page checks at desktop and mobile sizes, 19 interaction checks, 40 download checks, and 3 token-gate checks with no failures.
 
 Each of the ten final run exports was non-empty, passed gzip integrity, passed the signed DWARF bundle verifier, imported into an isolated run directory, and retained the source manifest SHA-256 digest. The export check did not change the accepted evidence or rerun Card 03.
 

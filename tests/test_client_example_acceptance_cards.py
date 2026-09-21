@@ -400,3 +400,7 @@ def test_aggregate_status_records_all_final_examples_and_gate5_completion():
     assert "Gates 4 and 5 are complete" in source
     assert "all five cards have accepted evidence for both implementations" in source.lower()
     assert "same-height fork finding remains retained" in source
+    assert "0dc7cedaeb358760020680c57b6112827862630b" in source
+    assert "sha256:5091cad75242a0dcbb00537b9688e496f8bfbe3142c189994685c8f7029d1117" in source
+    assert "The deployed `/learn/measurements` route" in source
+    assert "50 page checks" in source
