@@ -187,8 +187,8 @@
 
   <section>
     <h2>Accepted client-card runtime evidence</h2>
-    <p class="muted">This ledger is separate from the mapped catalog totals. Each entry is checked against current scenario files and either retained run manifests or the accepted historical proof record. It proves only the frozen card workload and assertions.</p>
-    <div class="cards" id="five-card-evidence"></div>
+    <p class="muted">This ledger is separate from the mapped catalog totals. The five frozen cards are Cards 01–05. The additive Card 06 is a separate measurement card. Each entry is checked against current scenario files and either retained run manifests or the accepted historical proof record. It proves only the named card workload and assertions.</p>
+    <div class="cards" id="client-card-evidence"></div>
     <p class="muted"><b>Child explanation:</b> A map shows where a test can go. A saved run shows where it really went.</p>
   </section>
 
@@ -268,8 +268,8 @@ const active = new Set(TYPES);
   c.insertAdjacentHTML('beforeend',`<div class="card"><div class="n" style="color:var(--hot)">${m.tm_gaps.length+m.rr_gaps.length}</div><div class="l">gaps (no scenario)</div></div>`);
   TYPES.forEach(t=>{const n=m.types[t]||0;c.insertAdjacentHTML('beforeend',
     `<div class="card"><div class="n" style="color:var(--${t})">${n}</div><div class="l"><span class="pill t-${t}"><span class="dot t-${t}"></span>${t}</span></div></div>`)});
-  const evidence=document.getElementById('five-card-evidence');
-  DATA.five_card_evidence.forEach(card=>{
+  const evidence=document.getElementById('client-card-evidence');
+  DATA.client_card_evidence.forEach(card=>{
     const links=card.legs.map(leg=>leg.run_available?`<a href="${leg.run_url}">${leg.implementation} ${leg.run_id}</a>`:`${leg.implementation} ${leg.run_id} · <a href="${leg.evidence_url}">historical proof</a>`).join('<br>');
     evidence.insertAdjacentHTML('beforeend',
       `<article class="card"><div class="l">Card ${card.id} · ${card.state}</div><div><b>${card.title}</b></div>

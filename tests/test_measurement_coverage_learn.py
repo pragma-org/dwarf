@@ -8,6 +8,7 @@ import yaml
 from profile_manager.dashboard import render_route_html
 from profile_manager.data.measurement_coverage import measurement_coverage_payload
 from profile_manager.data import client_example_evidence
+from profile_manager.views.threat_coverage import current_threat_coverage_data
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,10 +18,17 @@ SCRIPT = ROOT / "dwarf/dashboard/static/js/measurement-coverage.js"
 CSS = ROOT / "dwarf/dashboard/static/css/base.css"
 
 
-def test_five_card_evidence_uses_the_authoritative_runtime_runs_root(monkeypatch, tmp_path):
+def test_client_card_evidence_uses_the_authoritative_runtime_runs_root(monkeypatch, tmp_path):
     monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(tmp_path))
     run_id = "20260920T235440Z-050046a4"
     assert client_example_evidence._run_manifest_path(run_id) == tmp_path / run_id / "manifest.json"
+
+
+def test_general_evidence_ledger_names_all_six_cards_without_five_card_alias():
+    assert hasattr(client_example_evidence, "client_card_evidence")
+    assert not hasattr(client_example_evidence, "five_card_evidence")
+    cards = client_example_evidence.client_card_evidence()
+    assert [card["id"] for card in cards] == ["01", "02", "03", "04", "05", "06"]
 
 
 def test_versioned_mapping_is_schema_valid_and_references_current_measurements():
@@ -102,6 +110,76 @@ def test_retained_evidence_is_grouped_once_per_run_not_repeated_per_tap():
     assert all(item["measurements"] for item in verified["evidence"])
 
 
+def test_plutus_accounting_runs_join_only_contract_backed_measurements():
+    payload = measurement_coverage_payload()
+    rows = {
+        row["id"]: row
+        for view in ("threats", "risks")
+        for row in payload["views"][view]
+    }
+    expected_runs = {
+        "20260921T204537Z-ff5a800a",
+        "20260921T202611Z-27eeadb5",
+    }
+    expected_taps = {
+        "amaru": {
+            "amaru-external-workload-accounting",
+            "amaru-stock-plutus-execution",
+            "amaru-stock-resources",
+        },
+        "cardano-node": {
+            "cardano-external-workload-accounting",
+            "cardano-patched-ledger-plutus-stages",
+            "cardano-stock-resources",
+        },
+    }
+
+    evidence = [item for item in rows["RR-031"]["evidence"] if item["card_id"] == "02"]
+    assert {item["run_id"] for item in evidence} == expected_runs
+    assert {
+        item["implementation"]: {tap["id"] for tap in item["measurements"]}
+        for item in evidence
+    } == expected_taps
+
+
+def test_card06_uses_only_its_contract_threat_and_risk_mappings():
+    data = current_threat_coverage_data()
+    scenario_ids = {
+        "client-example-simple-transfer-amaru",
+        "client-example-simple-transfer-cardano",
+    }
+    mapped = {
+        section: {
+            row["id"]
+            for row in data[section]
+            if scenario_ids <= {scenario["id"] for scenario in row.get("scenarios") or []}
+        }
+        for section in ("threats", "risks")
+    }
+    assert mapped == {
+        "threats": {"TM-012", "TM-024"},
+        "risks": {"RR-012", "RR-019"},
+    }
+
+    payload = measurement_coverage_payload()
+    rows = {
+        row["id"]: row
+        for view in ("threats", "risks")
+        for row in payload["views"][view]
+    }
+    for row_id in ("TM-012", "RR-012"):
+        card06_taps = {
+            tap["id"]
+            for item in rows[row_id]["evidence"]
+            if item["card_id"] == "06"
+            for tap in item["measurements"]
+        }
+        assert card06_taps == {
+            "amaru-external-workload-accounting",
+            "cardano-external-workload-accounting",
+        }
+
+
 def test_evidence_states_do_not_convert_gaps_or_zeroes_into_proof():
     payload = measurement_coverage_payload()
     by_id = {
@@ -167,6 +245,8 @@ def test_route_has_compact_overview_filters_and_progressive_disclosure():
     assert "/learn/coverage" in html
     assert "/learn/threat-coverage" in html
     assert "/learn/measurements" in html
+    assert "client-card evidence" in html
+    assert "five-card evidence" not in html
 
 
 def test_collapsed_summaries_are_human_first_and_do_not_leak_raw_ids():

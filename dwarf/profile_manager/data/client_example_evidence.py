@@ -44,8 +44,8 @@ _CARDS = (
 )
 
 
-def five_card_evidence() -> list[dict]:
-    """Return the public ledger without requiring private retained run data."""
+def client_card_evidence() -> list[dict]:
+    """Return the public card ledger without requiring private retained run data."""
     rows = []
     accepted_ledger_path = DWARF_ROOT / "docs/client-examples/README.md"
     accepted_ledger = accepted_ledger_path.read_text(encoding="utf-8")

@@ -245,9 +245,10 @@ def measurement_coverage_payload() -> dict[str, Any]:
         for selection in profile.data.get("measurements") or []
         if selection.get("enabled")
     }
-    evidence_index = _evidence_index(mapping, threat_data["five_card_evidence"])
+    evidence_index = _evidence_index(mapping, threat_data["client_card_evidence"])
     surface_rules = {item["id"]: item for item in mapping["surface_rules"]}
     family_rules = {item["id"]: item for item in mapping["family_rules"]}
+    entry_rules = {item["id"]: item for item in mapping["entry_rules"]}
 
     def rules_for_surfaces(surface_ids: set[str]) -> tuple[list[str], dict[str, str]]:
         selected = [surface_rules[item] for item in sorted(surface_ids) if item in surface_rules]
@@ -268,6 +269,10 @@ def measurement_coverage_payload() -> dict[str, Any]:
             for scenario in row_scenarios:
                 row_surfaces.update(scenario.get("surfaces") or [])
             measurement_ids, rule = rules_for_surfaces(row_surfaces or {"other"})
+            measurement_ids = sorted(
+                set(measurement_ids)
+                | set((entry_rules.get(source_row["id"]) or {}).get("measurements") or [])
+            )
             views[section].append(_row(
                 identity=source_row["id"],
                 title=source_row.get("title") or source_row.get("vector") or source_row["id"],

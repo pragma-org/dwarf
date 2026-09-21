@@ -180,7 +180,19 @@ family_rules:
     can_prove: Evidence can show generic workload and resource observations only.
     non_claims: It does not prove a technical boundary that the catalog has not named.
 
+entry_rules:
+  - id: TM-036
+    measurements: [amaru-stock-plutus-execution, amaru-external-workload-accounting, amaru-stock-resources, cardano-patched-ledger-plutus-stages, cardano-external-workload-accounting, cardano-stock-resources]
+  - id: RR-031
+    measurements: [amaru-stock-plutus-execution, amaru-external-workload-accounting, amaru-stock-resources, cardano-patched-ledger-plutus-stages, cardano-external-workload-accounting, cardano-stock-resources]
+
 evidence_rules:
+  - card_id: "02"
+    implementation: amaru
+    measurements: [amaru-external-workload-accounting, amaru-stock-plutus-execution, amaru-stock-resources]
+  - card_id: "02"
+    implementation: cardano-node
+    measurements: [cardano-external-workload-accounting, cardano-patched-ledger-plutus-stages, cardano-stock-resources]
   - card_id: "06"
     implementation: amaru
     measurements: [amaru-external-workload-accounting, amaru-external-sync-speed, amaru-stock-resources]

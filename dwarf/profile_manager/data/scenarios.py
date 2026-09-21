@@ -18,12 +18,16 @@ _SCENARIO_FILE_CACHE: dict[str, tuple[int, dict[str, Any]]] = {}
 _SCENARIO_LIST_CACHE: dict[str, tuple[int, list[dict[str, Any]]]] = {}
 
 
+def _packaged_scenarios_dir() -> Path:
+    # data/scenarios.py -> data/ -> profile_manager/ -> dwarf/
+    return Path(__file__).resolve().parents[2] / "scenarios"
+
+
 def _scenarios_dir():
     env = os.environ.get("ADA2_DWARF_SCENARIOS_DIR")
     if env:
         return Path(env)
-    # data/scenarios.py -> data/ -> profile_manager/ -> dwarf/
-    return Path(__file__).resolve().parents[2] / "scenarios"
+    return _packaged_scenarios_dir()
 
 
 def _humanize_scenario_id(scenario_id):
@@ -87,7 +91,7 @@ def invalidate_scenario_cache() -> None:
         _SCENARIO_LIST_CACHE.clear()
 
 
-def _list_scenarios_for_compare():
+def _list_scenarios_for_compare(scenarios_dir: Path | None = None):
     """Return scenario rows from dwarf/scenarios/.
 
     Slice 45 — hot reload via per-file mtime cache. The directory's
@@ -97,7 +101,7 @@ def _list_scenarios_for_compare():
     unchanged files keep their cached parse output. Removing a file
     drops its cache entry on the next call.
     """
-    scenarios_dir = _scenarios_dir()
+    scenarios_dir = scenarios_dir or _scenarios_dir()
     if not scenarios_dir.is_dir():
         return []
     dir_key = str(scenarios_dir)
@@ -142,3 +146,12 @@ def _list_scenarios_for_compare():
         _SCENARIO_DIR_MTIME[dir_key] = dir_mtime
         _SCENARIO_LIST_CACHE[dir_key] = (sum(m for _, m in file_mtimes), list(out))
         return out
+
+
+def _list_packaged_scenarios_for_compare() -> list[dict[str, Any]]:
+    """Return only the version-controlled scenario catalog.
+
+    A deployed writable catalog can contain operator-created scenarios. Learn
+    pages use this helper when they must state the shipped, validated count.
+    """
+    return _list_scenarios_for_compare(_packaged_scenarios_dir())

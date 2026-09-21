@@ -26,7 +26,10 @@ from profile_manager.data.operate_grammars import grammar_catalog_rows
 from profile_manager.data.operate_risk_packages import risk_package_catalog_rows
 from profile_manager.data.operate_plugins import plugin_catalog_payload
 from profile_manager.data.operate_versions import version_default_summary
-from profile_manager.data.scenarios import _list_scenarios_for_compare
+from profile_manager.data.scenarios import (
+    _list_packaged_scenarios_for_compare,
+    _list_scenarios_for_compare,
+)
 from profile_manager.data.status import deployed_source_summary
 from profile_manager.data.walkthroughs import walkthrough_entries
 from profile_manager.templating import render
@@ -50,6 +53,7 @@ def render_learn_landing() -> str:
         active_sub="overview",
         implementations=impls,
         scenario_count=len(_list_scenarios_for_compare()),
+        packaged_scenario_count=len(_list_packaged_scenarios_for_compare()),
         measurement_count=len(list_definitions("measurements")),
         measurement_profile_count=len(list_definitions("measurement-profiles")),
         primitive_count=deployed_source_summary()["primitive_count"],
