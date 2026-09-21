@@ -127,7 +127,12 @@ class WorkloadAccountingCollector:
                 for attempt in payload.get("attempts") or []:
                     if not isinstance(attempt, dict):
                         continue
-                    elapsed_micros = _number(attempt.get("elapsed_micros"))
+                    elapsed_nanos = _number(attempt.get("elapsed_nanos"))
+                    elapsed_micros = (
+                        elapsed_nanos / 1_000
+                        if elapsed_nanos is not None
+                        else _number(attempt.get("elapsed_micros"))
+                    )
                     outcome = attempt.get("outcome")
                     if (
                         elapsed_micros is None
@@ -140,8 +145,30 @@ class WorkloadAccountingCollector:
                         "outcome": outcome,
                         "elapsed_micros": elapsed_micros,
                     }
+                    if elapsed_nanos is not None:
+                        normalized_attempt["elapsed_nanos"] = int(elapsed_nanos)
                     if attempt.get("input_id") is not None:
                         normalized_attempt["input_id"] = str(attempt["input_id"])
+                    if attempt.get("tx_id") is not None:
+                        normalized_attempt["tx_id"] = str(attempt["tx_id"])
+                    if (attempt_bytes := _number(attempt.get("bytes"))) is not None:
+                        normalized_attempt["bytes"] = attempt_bytes
+                    for stage in (
+                        "submit_to_protocol_response",
+                        "submit_to_mempool_visibility",
+                        "submit_to_block_inclusion",
+                        "submit_to_chain_adoption",
+                    ):
+                        stage_nanos = _number(attempt.get(f"{stage}_nanos"))
+                        stage_micros = (
+                            stage_nanos / 1_000
+                            if stage_nanos is not None
+                            else _number(attempt.get(f"{stage}_micros"))
+                        )
+                        if stage_nanos is not None:
+                            normalized_attempt[f"{stage}_nanos"] = int(stage_nanos)
+                        if stage_micros is not None and stage_micros >= 0:
+                            normalized_attempt[f"{stage}_micros"] = stage_micros
                     attempt_rows.append(normalized_attempt)
                 accounting.append(
                     {
@@ -149,6 +176,7 @@ class WorkloadAccountingCollector:
                         "attempted": _number(payload.get("attempted")) or 0.0,
                         "successful": _number(payload.get("successful")) or 0.0,
                         "rejected": _number(payload.get("rejected")) or 0.0,
+                        "timed_out": _number(payload.get("timed_out")) or 0.0,
                         "bytes": _number(payload.get("bytes")) or 0.0,
                         "batches": _number(payload.get("batches")) or 0.0,
                         "backlog": _number(payload.get("backlog")),
@@ -172,6 +200,7 @@ class WorkloadAccountingCollector:
                         "attempted": 1.0,
                         "successful": 1.0 if successful else 0.0,
                         "rejected": 0.0 if successful else 1.0,
+                        "timed_out": 0.0,
                         "bytes": size,
                         "batches": 1.0,
                         "backlog": None,
@@ -195,8 +224,9 @@ class WorkloadAccountingCollector:
         attempted = sum(item["attempted"] for item in accounting)
         successful = sum(item["successful"] for item in accounting)
         rejected = sum(item["rejected"] for item in accounting)
-        unclassified = max(0.0, attempted - successful - rejected)
-        inconsistent = successful + rejected > attempted
+        timed_out = sum(item["timed_out"] for item in accounting)
+        unclassified = max(0.0, attempted - successful - rejected - timed_out)
+        inconsistent = successful + rejected + timed_out > attempted
         if duration is not None and duration > 0:
             offered = {
                 "status": "partial" if inconsistent else "available",
@@ -205,10 +235,12 @@ class WorkloadAccountingCollector:
                 "offered_count": attempted,
                 "accepted_count": successful,
                 "rejected_count": rejected,
+                "timed_out_count": timed_out,
                 "unclassified_count": unclassified,
                 "offered_rate": attempted / duration,
                 "accepted_rate": successful / duration,
                 "rejected_rate": rejected / duration,
+                "timed_out_rate": timed_out / duration,
                 "unclassified_rate": unclassified / duration,
                 "rejection_reasons": (
                     {"workload-rejected": rejected} if rejected else {}
@@ -224,6 +256,7 @@ class WorkloadAccountingCollector:
                 "offered_count": attempted,
                 "accepted_count": successful,
                 "rejected_count": rejected,
+                "timed_out_count": timed_out,
                 "unclassified_count": unclassified,
                 "reason": "positive run duration was unavailable",
             }
@@ -251,6 +284,24 @@ class WorkloadAccountingCollector:
                 for outcome in attempt_outcomes
             },
         }
+        stage_distributions = {}
+        for stage in (
+            "submit_to_protocol_response",
+            "submit_to_mempool_visibility",
+            "submit_to_block_inclusion",
+            "submit_to_chain_adoption",
+        ):
+            values = [
+                {"value": attempt[f"{stage}_micros"], "unit": "us"}
+                for attempt in attempts
+                if attempt.get(f"{stage}_micros") is not None
+            ]
+            distribution = distribution_summary(values, unit="us")
+            if not values:
+                distribution["reason"] = (
+                    "no authoritative correlated boundary was retained for this stage"
+                )
+            stage_distributions[stage] = distribution
         origin = min(
             (item["time"] for item in accounting if item["time"] is not None),
             default=0,
@@ -270,6 +321,8 @@ class WorkloadAccountingCollector:
             "offered_operations": offered,
             "successful_operations": _value_metric(successful, "operations"),
             "rejected_operations": _value_metric(rejected, "operations"),
+            "timed_out_operations": _value_metric(timed_out, "operations"),
+            "offered_bytes": _value_metric(byte_count, "bytes"),
             "successful_operations_per_second": _value_metric(
                 successful / duration if duration else None,
                 "operations/s",
@@ -292,6 +345,7 @@ class WorkloadAccountingCollector:
             ),
             "backlog": backlog,
             "attempt_latency": attempt_latency,
+            **stage_distributions,
         }
         result = {
             "schema_version": "v1",

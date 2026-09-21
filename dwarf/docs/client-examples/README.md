@@ -1,4 +1,4 @@
-# Five-example client acceptance program
+# Client acceptance examples
 
 This directory freezes the five smallest security-centered examples required by the current client acceptance goal.
 The machine-readable cards are in `contracts/` and validate against
@@ -8,6 +8,8 @@ Technical status on 2026-09-21: all five contracts remain frozen. G3-A through G
 
 Child explanation: DWARF finished all five recipes for both nodes. The old findings stay visible beside the newer runs that resolve them.
 
+An additive sixth card measures simple signed payments without changing the accepted five-card evidence. Its separate Amaru and Cardano-node runs each retain 35 attempts: 30 accepted, 5 expected duplicate-payment rejections, and 0 timeouts. The runs prove collection for their exact target, version, workload, and environment. They are not an automatic comparison.
+
 | Card | Exact current state | Measurement revision |
 |---|---|---|
 | 01 | Cardano-node accepted as run `20260920T132629Z-ea000d37`; fixed Amaru accepted as run `20260920T235440Z-050046a4`; old Amaru run `20260920T135054Z-28289dcd` remains a completed finding | `nanoseconds-v2` |
@@ -15,6 +17,7 @@ Child explanation: DWARF finished all five recipes for both nodes. The old findi
 | 03 | both legs accepted: Amaru `20260920T072858Z-2cc3bb0c`, Cardano-node `20260920T073447Z-ab81bfb7` | `whole-microseconds-v1` |
 | 04 | both canonical-progress legs accepted: Amaru `20260921T035546Z-9747122c`, Cardano-node `20260921T021935Z-3b58eafc`; the earlier same-height fork finding remains retained | Amaru `nanoseconds-v3`; Cardano-node `nanoseconds-v2` |
 | 05 | both run-relative restart and controlled-sync legs accepted: Amaru `20260921T045619Z-15e864a0`, Cardano-node `20260921T045807Z-8e2bbb0e` | `nanoseconds-v2` |
+| 06 | both simple-transfer legs accepted: Amaru `20260921T192922Z-6cb70c72`, Cardano-node `20260921T191220Z-72151616`; each retains 35 attempts and 35 duration samples | `nanoseconds-v2` |
 
 The accepted labels are `framework proven`, `collection proven`, and `client requirement complete`. Use `client requirement partial` only for retained historical runs that did not satisfy a frozen card.
 
@@ -27,6 +30,7 @@ The client requirement is complete for these five frozen cards. It does not auth
 | 03 | invalid Handshake containment and liveness | decode and target resource cost | frozen; malformed case and containment assertions required |
 | 04 | adopted chain progress | block-application and resource distributions | frozen; controlled 30-block window required |
 | 05 | real restart recovery | readiness, sync speed, recovery resources | frozen; real restart gates and controlled sync range required |
+| 06 | real signed simple payments | outcome duration, offered rates, target resources, and available protocol stages | accepted; exact separate targets and complete attempt accounting required |
 
 The existing retained Amaru stock run `20260918T234213Z-64959688` and Cardano patched run
 `20260919T032200Z-59f94558` are framework evidence. They are not final evidence for these cards. The Amaru run has no

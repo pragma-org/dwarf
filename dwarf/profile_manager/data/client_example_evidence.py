@@ -1,4 +1,4 @@
-"""Verified retained evidence for the frozen five-card client program."""
+"""Verified retained evidence for accepted client-example cards."""
 from __future__ import annotations
 
 import json
@@ -36,6 +36,10 @@ _CARDS = (
     {"id": "05", "title": "Restart, recovery, and synchronization", "measurement_revision": "nanoseconds-v2", "legs": (
         ("amaru", "client-example-restart-recovery-sync-amaru", "20260921T045619Z-15e864a0"),
         ("cardano-node", "client-example-restart-recovery-sync-cardano", "20260921T045807Z-8e2bbb0e"),
+    )},
+    {"id": "06", "title": "Simple transfer measurement", "measurement_revision": "nanoseconds-v2", "legs": (
+        ("amaru", "client-example-simple-transfer-amaru", "20260921T192922Z-6cb70c72"),
+        ("cardano-node", "client-example-simple-transfer-cardano", "20260921T191220Z-72151616"),
     )},
 )
 
@@ -87,4 +91,4 @@ def five_card_evidence() -> list[dict]:
 
 
 def _contract_slug(card_id: str) -> str:
-    return {"01": "cbor-decoding", "02": "plutus-vm", "03": "invalid-mini-protocol", "04": "block-application", "05": "restart-recovery-sync"}[card_id]
+    return {"01": "cbor-decoding", "02": "plutus-vm", "03": "invalid-mini-protocol", "04": "block-application", "05": "restart-recovery-sync", "06": "simple-transfer"}[card_id]

@@ -1,0 +1,16 @@
+{
+  "schema_version": "v1",
+  "id": "simple-transfer-v1",
+  "transaction_kind": "signed-simple-payment",
+  "attempt_count": 35,
+  "amount_lovelace": 2000000,
+  "network_magic": 42,
+  "seed": "0x51A9E001",
+  "simulation_allowed": false,
+  "expected_outcomes": {
+    "accepted_minimum": 30,
+    "rejected_minimum": 5,
+    "timed_out_maximum": 0
+  },
+  "dataset_sha256": "sha256:3c8caa794626594a54d6adc0b8f7c1c7fbf85e5e9054c3e17f47301108bbdaa7"
+}

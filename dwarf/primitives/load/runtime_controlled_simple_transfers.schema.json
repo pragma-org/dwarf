@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime_controlled_simple_transfers params",
+  "type": "object",
+  "required": ["measurement_implementation", "attempt_count"],
+  "oneOf": [
+    {"required": ["profile_id"], "not": {"required": ["runtime_root"]}},
+    {"required": ["runtime_root"], "not": {"required": ["profile_id"]}}
+  ],
+  "properties": {
+    "profile_id": {"type": "string", "minLength": 1},
+    "runtime_root": {"type": "string", "minLength": 1},
+    "output_dir": {"type": "string", "minLength": 1},
+    "python_bin": {"type": "string", "minLength": 1},
+    "measurement_implementation": {"enum": ["amaru", "cardano-node"]},
+    "attempt_count": {"type": "integer", "minimum": 30, "maximum": 100},
+    "outcome_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "expect_exit": {"type": "integer"}
+  },
+  "additionalProperties": false
+}
