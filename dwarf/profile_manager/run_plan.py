@@ -16,6 +16,7 @@ from profile_manager.deployment_versions import (
     enforce_deployment_version_gate,
 )
 from profile_manager.measurement_execution import (
+    AMARU_PATCHED_CAPABILITIES,
     AMARU_STOCK_CAPABILITIES,
     CARDANO_PATCHED_CAPABILITIES,
     CARDANO_STOCK_CAPABILITIES,
@@ -294,7 +295,9 @@ def _measurement_context(scenario, profile, preview) -> dict[str, Any]:
             image_digest=image_digest,
             executable_digest=executable_digest,
         )
-        if implementation == "amaru":
+        if implementation == "amaru" and mode == "patched":
+            capabilities = AMARU_PATCHED_CAPABILITIES
+        elif implementation == "amaru":
             capabilities = AMARU_STOCK_CAPABILITIES
         elif mode == "patched":
             capabilities = CARDANO_PATCHED_CAPABILITIES

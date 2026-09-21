@@ -28,7 +28,7 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <aside class="rail" aria-label="Debrief navigation">
 <div class="brand">DWARF / measurement evidence</div>
 <nav>
-<a href="#summary">Executive summary</a><a href="#traceability">Traceability</a><a href="#architecture">Tap architecture</a><a href="#cards">Five cards</a><a href="#findings">Findings</a><a href="#usage">Use DWARF</a><a href="#inventory">Inventory</a><a href="#coverage">Coverage</a><a href="#reproducibility">Reproducibility</a><a href="#next-work">Next work</a>
+<a href="#summary">Executive summary</a><a href="#traceability">Traceability</a><a href="#architecture">Tap architecture</a><a href="#cards">Five cards</a><a href="#findings">Findings</a><a href="#usage">Use DWARF</a><a href="#inventory">Inventory</a><a href="#coverage">Coverage</a><a href="#reproducibility">Reproducibility</a><a href="#health-repair">Health repair</a><a href="#full-metrics">Full metrics</a><a href="#run-recipes">Run recipes</a><a href="#next-work">Next work</a>
 </nav>
 <small>Internal implementation debrief<br>Evidence cut: 2026-09-21<br>ASD-STE100 style</small>
 </aside>
@@ -199,8 +199,61 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 </section>
 <aside class="child-explanation"><b>Child-friendly explanation</b>A version name is like “blue toy.” A digest is the toy’s unique fingerprint. DWARF saves fingerprints, dice seeds, and the table where the test ran so another person can rebuild the same setup.</aside>
 
+<section class="tech search-unit" id="health-repair" data-status="proven">
+<div class="eyebrow">10 / current topology health</div><h2>The dashboard now checks the active managed topology, not a retired stack.</h2>
+<div class="grid">
+<div class="card"><h3>Observed root cause</h3><p>The old probe used fixed command <code>topology-health</code> for retired project <code>cardano_amaru_relay_bootstrap_control</code>. Its Amaru relays were genuinely stalled at slot 7755 and block 1471 while Cardano continued, so retained reason <code>amaru_relay_stalled</code> was correct for that old stack. Status also defaulted to retired <code>profile-a-haskell-peersharing-disabled</code>. A fresh probe proved that caching was not the cause.</p></div>
+<div class="card"><h3>Smallest correct repair</h3><p>DWARF discovers the exact active <code>ada2.profile</code> label and runs restricted <code>profile-health &lt;id&gt;</code>. Landing and <code>/operate/status</code> use the same API snapshot. It checks exact process, socket, listener, loopback, sync, tip-progress, and profile identity conditions. Docker execution is tried before a host socket path.</p></div>
+<div class="card"><h3>Current proof</h3><p>Active <code>profile-v-cardano-measurement-nanoseconds-v2</code> has three of three processes, sockets, and listeners, loopback-only listeners, 100% sync, and advancing tips. Deployed image: <code>sha256:b2bceb0d07683fdd927def372bff4ba357b9862935324871139fa1ff2e838a53</code>. Internal commit: <code>62f43bbd6655af423323e03cb487be38496028bf</code>.</p></div>
+<div class="card"><h3>Honest states remain</h3><p>Real failures show <code>unhealthy</code>. No active managed profile shows <code>no_active</code>. Deployment can show <code>catching_up</code> or an unknown/profile-change result. Redeploy controls appear only when the health contract says redeploy is supported.</p></div>
+</div>
+<p><strong>Claim limit:</strong> this proves the current profile-v health contract. It does not repair or erase the retired Amaru relay evidence.</p>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>The screen was checking an old group of machines. That old group really was sick. DWARF now reads the current group’s name tag and checks that exact group with one shared result.</aside>
+
+<section class="tech search-unit" id="full-metrics" data-status="partial">
+<div class="eyebrow">11 / full-metrics compatibility audit</div><h2>Configured collectors and exercised metrics are different facts.</h2>
+<p><strong>Definition.</strong> “Full metrics” means that one run retains workload-attributable raw or normalized evidence, correlations, and a meaningful positive sample, event, delta, readiness result, or timing distribution for every implemented definition. A finalized state, availability flag, zero value, or configured collector is not exercise.</p>
+<div class="grid">
+<div class="card"><h3>Amaru highest coverage</h3><p><code>client-example-block-application-amaru-canonical-v3</code>, profile-y, and <code>amaru-security-patched</code> are the broadest single path. Run <a href="http://127.0.0.1:8787/operate/runs/20260921T035546Z-9747122c"><code>20260921T035546Z-9747122c</code></a> exercised <strong>8 of 14 configured collectors</strong>, or 8 of 15 implemented definitions with unprofiled coverage. Missing: restart readiness, workload accounting, mempool, ledger rules, TxSubmission residence, and Plutus execution.</p></div>
+<div class="card"><h3>Cardano-node highest coverage</h3><p><code>client-example-cbor-decoding-cardano-patched</code>, profile-v, and <code>cardano-security-patched</code> are the broadest single path. Run <a href="http://127.0.0.1:8787/operate/runs/20260920T132629Z-ea000d37"><code>20260920T132629Z-ea000d37</code></a> exercised <strong>8 of 12 configured collectors</strong>, or 8 of 15 implemented definitions with reserved/unprofiled definitions. Missing: restart readiness, workload accounting, Plutus execution, and TxSubmission/mempool.</p></div>
+</div>
+<p>No one scenario exercises every implemented metric. A report can say <strong>all collectors configured</strong> or all configured collectors finalized. It cannot say <strong>all metrics exercised</strong>. The complete 30-definition matrix is in <a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/docs/measurement-full-metrics-compatibility-audit.md"><code>docs/measurement-full-metrics-compatibility-audit.md</code></a>.</p>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>A box of fourteen rulers can be ready, but one test may touch only eight. DWARF says which eight moved and which six did not.</aside>
+
+<section class="tech search-unit" id="run-recipes" data-status="partial">
+<div class="eyebrow">12 / exact /run recipes</div><h2>Use the broadest supported local paths without starting an external run.</h2>
+<details open><summary>Amaru — canonical block progress, nanoseconds v3</summary><div class="detail-body"><ol class="steps">
+<li><strong>Scenario:</strong> search <code>client-example-block-application-amaru-canonical-v3</code>; select <strong>Client example 04 — canonical block progress — Amaru nanoseconds v3 · devnet</strong>.</li>
+<li><strong>Target and runtime:</strong> confirm Amaru 10.11.20260912 and devnet.</li>
+<li><strong>Profile:</strong> keep <strong>Scenario default</strong>; confirm profile-y.</li>
+<li><strong>Node versions:</strong> keep <strong>Profile default</strong>; leave exact entries empty and the unconfirmed-version box clear.</li>
+<li><strong>Measurements:</strong> keep <strong>Scenario or compatible default</strong>; confirm <code>amaru-security-patched</code> and 14 taps.</li>
+<li><strong>Primitives:</strong> confirm target identity, chain-progress wait/window/probe, canonical-progress and correlation assertions, continued progress, and no fatal signal.</li>
+<li><strong>Run settings:</strong> seed <code>0xB10C0004</code>; iterations <strong>scenario default</strong>; <strong>Local real-node DWARF engine</strong>; allow about four minutes after readiness.</li>
+<li><strong>Readiness:</strong> require framework, profile-y, and deployed-version identity. Profile-y is not current; deploy it through the supported lifecycle before a real run.</li>
+<li><strong>Review:</strong> verify the plan. The Local backend currently says <code>supported-unconfirmed</code> despite the retained accepted run.</li>
+<li><strong>Run:</strong> the action is <strong>Start local run</strong>. Do not press it for browser verification. A later authorized run opens at <code>/operate/runs/&lt;run_id&gt;</code>.</li>
+</ol></div></details>
+<details><summary>Cardano-node — CBOR decoding, nanoseconds v2</summary><div class="detail-body"><ol class="steps">
+<li><strong>Scenario:</strong> search <code>client-example-cbor-decoding-cardano-patched</code>; select <strong>Client example 01 — CBOR decoding conformance — Cardano-node · devnet</strong>.</li>
+<li><strong>Target and runtime:</strong> confirm Cardano-node 11.1.2 and devnet.</li>
+<li><strong>Profile:</strong> keep <strong>Scenario default</strong>; confirm profile-v.</li>
+<li><strong>Node versions:</strong> keep <strong>Profile default</strong>; leave exact entries empty and the unconfirmed-version box clear.</li>
+<li><strong>Measurements:</strong> keep <strong>Scenario or compatible default</strong>; confirm <code>cardano-security-patched</code> and 12 taps.</li>
+<li><strong>Primitives:</strong> confirm exact target, pinned CBOR corpus, live protocol cases, health probe, clean corpus, round-trip, containment, and progress assertions.</li>
+<li><strong>Run settings:</strong> seed <code>0xA7561CD0</code>; iterations <strong>scenario default</strong>; <strong>Local real-node DWARF engine</strong>; allow about four to five minutes while profile-v is ready.</li>
+<li><strong>Readiness:</strong> require framework, profile-v, and deployed-version identity. Read the fresh status before start.</li>
+<li><strong>Review:</strong> verify the plan and note the current <code>supported-unconfirmed</code> confirmation-matching limit.</li>
+<li><strong>Run:</strong> use <strong>Start local run</strong> only for an authorized run; evidence opens at <code>/operate/runs/&lt;run_id&gt;</code>.</li>
+</ol></div></details>
+<p><strong>Backend limit:</strong> both recipes use Local. GitHub Actions and Antithesis are unsupported for these exact plans. <strong>Do not launch Antithesis.</strong> Browser verification does not launch a paid run.</p>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>Choose the named recipe, keep its saved choices, check the matching machines, and read the review. The final button starts a real test, so a practice check stops before that button.</aside>
+
 <section class="tech search-unit" id="next-work" data-status="deferred">
-<div class="eyebrow">10 / next work</div><h2>Expand only after a new decision and a new frozen contract.</h2>
+<div class="eyebrow">13 / next work</div><h2>Expand only after a new decision and a new frozen contract.</h2>
 <ul>
 <li>Choose whether to authorize a mixed-node comparison. If authorized, freeze common boundaries and do not reuse independent-run numbers as a benchmark.</li>
 <li>Define stable thresholds only after enough qualified distributions exist across hardware and revisions.</li>

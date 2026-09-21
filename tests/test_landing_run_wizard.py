@@ -171,6 +171,24 @@ def test_run_resolve_api_returns_normalized_plan_without_a_token():
     assert payload["plan_digest"].startswith("sha256:")
 
 
+def test_run_resolve_accepts_patched_amaru_nanosecond_v3_capabilities():
+    status, content_type, body = dispatch_run_resolve_request(
+        method="POST",
+        path="/api/run/resolve",
+        body=json.dumps(
+            {"scenario_id": "client-example-block-application-amaru-canonical-v3"}
+        ).encode("utf-8"),
+    )
+
+    payload = json.loads(body)
+    assert status == 200
+    assert content_type.startswith("application/json")
+    assert payload["ok"] is True
+    assert payload["plan"]["profile"]["id"] == "profile-y-amaru-block-application-nanoseconds-v3"
+    assert payload["plan"]["measurements"]["profile"]["id"] == "amaru-security-patched"
+    assert len(payload["plan"]["measurements"]["resolved"]) == 14
+
+
 def test_run_resolve_api_returns_structured_field_errors():
     status, _content_type, body = dispatch_run_resolve_request(
         method="POST",

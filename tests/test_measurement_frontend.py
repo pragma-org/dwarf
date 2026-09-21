@@ -61,6 +61,11 @@ def test_measurement_learn_route_explains_modes_outcomes_and_claim_boundary():
     lower = html.lower()
 
     assert "Measurements" in html
+    assert "Full metrics and recommended client paths" in html
+    assert "Configured is not exercised" in html
+    assert "client-example-block-application-amaru-canonical-v3" in html
+    assert "client-example-cbor-decoding-cardano-patched" in html
+    assert "Plain meaning:" in html
     assert "stock" in lower
     assert "coverage" in lower
     assert "patched" in lower

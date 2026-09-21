@@ -87,6 +87,40 @@
 
 <hr class="hairline">
 
+<section id="full-metrics-paths">
+  <span class="eyebrow">Compatibility audit</span>
+  <h2>Full metrics and recommended client paths</h2>
+  <p><strong>Configured is not exercised.</strong> A collector counts as exercised only when the bounded workload retains correlated raw or normalized records and a meaningful positive sample, event, delta, readiness result, or timing distribution. A finalized collector, an availability flag, or a zero does not meet this rule.</p>
+  <p><strong>Plain meaning:</strong> Putting every ruler beside the machine does not mean that the test touched every ruler.</p>
+  <div class="version-catalog">
+    <article class="version-card">
+      <div class="version-card__head"><h3>Amaru broadest single run</h3><span class="version-badge version-badge--unknown">8 / 14 configured</span></div>
+      <p>Use <code>client-example-block-application-amaru-canonical-v3</code>, scenario-default <code>profile-y-amaru-block-application-nanoseconds-v3</code>, and <code>amaru-security-patched</code>. Retained run <a href="/operate/runs/20260921T035546Z-9747122c"><code>20260921T035546Z-9747122c</code></a> exercised eight configured collectors. The separate unprofiled coverage definition makes this 8 of 15 implemented definitions.</p>
+    </article>
+    <article class="version-card">
+      <div class="version-card__head"><h3>Cardano-node broadest single run</h3><span class="version-badge version-badge--unknown">8 / 12 configured</span></div>
+      <p>Use <code>client-example-cbor-decoding-cardano-patched</code>, scenario-default <code>profile-v-cardano-measurement-nanoseconds-v2</code>, and <code>cardano-security-patched</code>. Retained run <a href="/operate/runs/20260920T132629Z-ea000d37"><code>20260920T132629Z-ea000d37</code></a> exercised eight configured collectors. Three reserved or unprofiled definitions make this 8 of 15 implemented definitions.</p>
+    </article>
+  </div>
+  <p>No one scenario exercises all implemented metrics. Restart scenarios add restart-readiness evidence. Transaction scenarios are prerequisites for transaction and Plutus collectors, but the retained client runs do not contain non-vacuous evidence for every such collector. See the internal technical debrief for the complete 30-definition matrix.</p>
+  <p><strong>Plain meaning:</strong> These two recipes fill the most boxes in one run. Some empty boxes need a different test event.</p>
+
+  <details><summary>Exact Amaru /run selections</summary><div class="definition-summary">
+    <p>1 <strong>Scenario:</strong> select <code>Client example 04 — canonical block progress — Amaru nanoseconds v3 · devnet</code>. 2 <strong>Target and runtime:</strong> confirm Amaru 10.11.20260912 and devnet. 3 <strong>Profile:</strong> keep <code>Scenario default</code>. 4 <strong>Node versions:</strong> keep <code>Profile default</code>, leave exact-version fields empty, and leave the unconfirmed-version box clear. 5 <strong>Measurements:</strong> keep <code>Scenario or compatible default</code>; confirm 14 <code>amaru-security-patched</code> taps.</p>
+    <p>6 <strong>Primitives:</strong> read the fixed canonical-progress operations and assertions. 7 <strong>Run settings:</strong> confirm seed <code>0xB10C0004</code>, iterations <code>scenario default</code>, and <code>Local real-node DWARF engine</code>; allow about four minutes after deployment is ready. 8 <strong>Readiness:</strong> require framework, profile-y, and deployed-version identity. Profile-y is not the current profile. Deploy it through the supported lifecycle before a real run. 9 <strong>Review:</strong> note the current <code>supported-unconfirmed</code> backend label. 10 <strong>Run:</strong> use <code>Start local run</code> only after authorization and readiness.</p>
+    <p><strong>Plain meaning:</strong> Keep the recipe defaults, but do not start until the matching Amaru nodes are ready.</p>
+  </div></details>
+
+  <details><summary>Exact Cardano-node /run selections</summary><div class="definition-summary">
+    <p>1 <strong>Scenario:</strong> select <code>Client example 01 — CBOR decoding conformance — Cardano-node · devnet</code>. 2 <strong>Target and runtime:</strong> confirm Cardano-node 11.1.2 and devnet. 3 <strong>Profile:</strong> keep <code>Scenario default</code>. 4 <strong>Node versions:</strong> keep <code>Profile default</code>, leave exact-version fields empty, and leave the unconfirmed-version box clear. 5 <strong>Measurements:</strong> keep <code>Scenario or compatible default</code>; confirm 12 <code>cardano-security-patched</code> taps.</p>
+    <p>6 <strong>Primitives:</strong> read the fixed CBOR and live protocol operations and assertions. 7 <strong>Run settings:</strong> confirm seed <code>0xA7561CD0</code>, iterations <code>scenario default</code>, and <code>Local real-node DWARF engine</code>; allow about four to five minutes when profile-v is ready. 8 <strong>Readiness:</strong> require framework, profile-v, and deployed-version identity. 9 <strong>Review:</strong> note the current <code>supported-unconfirmed</code> label. 10 <strong>Run:</strong> use <code>Start local run</code> only for an authorized real run.</p>
+    <p><strong>Plain meaning:</strong> The current healthy Cardano group matches this recipe, but check the fresh readiness result before starting.</p>
+  </div></details>
+  <p>These recipes use the local backend. Do not use Antithesis or GitHub Actions for these exact plans. Browser review does not start a run.</p>
+</section>
+
+<hr class="hairline">
+
 <section id="troubleshooting">
   <span class="eyebrow">Troubleshooting</span>
   <h2>Read absence honestly</h2>

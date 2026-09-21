@@ -12,7 +12,8 @@ RUN_IDS = {
 }
 SECTION_IDS = {
     "summary", "traceability", "architecture", "cards", "findings",
-    "usage", "inventory", "coverage", "reproducibility", "next-work",
+    "usage", "inventory", "coverage", "reproducibility", "health-repair",
+    "full-metrics", "run-recipes", "next-work",
 }
 
 
@@ -91,3 +92,43 @@ def test_debrief_has_accessible_dependency_free_interactions():
     assert "overflow-x:clip" in html.replace(" ", "")
     assert "overflow-x:auto" in html.replace(" ", "")
     assert "details[open]" in html
+
+
+def test_debrief_documents_health_repair_metric_limits_and_exact_recipes():
+    html = source()
+    for value in (
+        "amaru_relay_stalled",
+        "profile-v-cardano-measurement-nanoseconds-v2",
+        "8 of 14 configured collectors",
+        "8 of 12 configured collectors",
+        "all collectors configured",
+        "all metrics exercised",
+        "client-example-block-application-amaru-canonical-v3",
+        "client-example-cbor-decoding-cardano-patched",
+        "Start local run",
+        "supported-unconfirmed",
+        "Do not launch Antithesis",
+    ):
+        assert value in html
+
+
+def test_full_metrics_audit_maps_every_implemented_measurement():
+    audit = Path("docs/measurement-full-metrics-compatibility-audit.md").read_text(
+        encoding="utf-8"
+    )
+    measurement_ids = {
+        path.stem
+        for path in Path("dwarf/measurements").glob("*.yaml")
+    }
+    assert len(measurement_ids) == 30
+    for measurement_id in measurement_ids:
+        assert f"`{measurement_id}`" in audit
+    for value in (
+        "Non-vacuous exercise rule",
+        "Configured is not exercised",
+        "20260921T035546Z-9747122c",
+        "20260920T132629Z-ea000d37",
+        "Step 1 — Scenario",
+        "Step 10 — Run",
+    ):
+        assert value in audit
