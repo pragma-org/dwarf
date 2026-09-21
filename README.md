@@ -1,6 +1,6 @@
 # DWARF
 
-<img src="dwarf/dashboard/static/dwarf-logo.png" alt="DWARF logo" width="20%">
+<img src="dwarf/dashboard/static/dwarf-logo.png" alt="DWARF logo" width="35%">
 
 DWARF is a security and adversarial-testing framework for Cardano node
 implementations. It runs controlled workloads against real `cardano-node` and Amaru processes,
