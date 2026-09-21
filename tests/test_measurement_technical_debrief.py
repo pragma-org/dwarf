@@ -99,6 +99,8 @@ def test_debrief_documents_health_repair_metric_limits_and_exact_recipes():
     html = source()
     for value in (
         "amaru_relay_stalled",
+        "c19ea75954f5e48206e49caec948c8dc6f1416e6",
+        "sha256:929406cf125af6174022a90d0372b3a485d0eee74890f0aa00b404d24f469495",
         "profile-v-cardano-measurement-nanoseconds-v2",
         "8 of 14 configured collectors",
         "8 of 12 configured collectors",
