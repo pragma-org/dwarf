@@ -350,6 +350,15 @@
       "supports": ["cardano-node", "amaru"],
       "version": "0.1.0"
     },
+    "simple_transfers_observed": {
+      "class": "SimpleTransfersObserved",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/simple_transfers_observed.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
     "cbor_edge_cases": {
       "class": "CborEdgeCases",
       "family": "load",
@@ -1988,6 +1997,15 @@
       "family": "load",
       "module": "profile_manager.primitives",
       "params_schema": "primitives/load/runtime_controlled_plutus_transactions.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
+    "runtime_controlled_simple_transfers": {
+      "class": "RuntimeControlledSimpleTransfers",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_controlled_simple_transfers.schema.json",
       "runtimes": ["devnet"],
       "supports": ["cardano-node", "amaru"],
       "version": "0.1.0"

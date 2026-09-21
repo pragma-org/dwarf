@@ -181,6 +181,12 @@ family_rules:
     non_claims: It does not prove a technical boundary that the catalog has not named.
 
 evidence_rules:
+  - card_id: "06"
+    implementation: amaru
+    measurements: [amaru-external-workload-accounting, amaru-external-sync-speed, amaru-stock-resources]
+  - card_id: "06"
+    implementation: cardano-node
+    measurements: [cardano-external-workload-accounting, cardano-external-sync-speed, cardano-stock-resources]
   - card_id: "04"
     implementation: amaru
     measurements: [amaru-stock-header-lifecycle, amaru-stock-fork-switch, amaru-stock-block-epoch, amaru-stock-network, amaru-stock-resources, amaru-external-sync-speed, amaru-patched-protocol-decode, amaru-patched-blockfetch-queues]

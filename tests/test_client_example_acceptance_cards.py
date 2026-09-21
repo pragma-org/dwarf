@@ -15,6 +15,7 @@ EXPECTED_IDS = {
     "client-example-03-invalid-mini-protocol",
     "client-example-04-block-application",
     "client-example-05-restart-recovery-sync",
+    "client-example-06-simple-transfer",
 }
 
 V1_CARD_ID = "client-example-03-invalid-mini-protocol"
@@ -73,7 +74,7 @@ def _cards():
     ]
 
 
-def test_exactly_five_cards_validate_against_the_contract_schema():
+def test_all_client_cards_validate_against_the_contract_schema():
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     jsonschema.Draft202012Validator.check_schema(schema)
     cards = _cards()
@@ -90,6 +91,11 @@ def test_every_card_pins_both_real_node_targets_and_modes():
         assert set(card["targets"]) == set(EXPECTED_TARGETS)
         for implementation, expected in EXPECTED_TARGETS.items():
             target = card["targets"][implementation]
+            if card["id"] == "client-example-06-simple-transfer" and implementation == "amaru":
+                expected = {
+                    "version": "v10.11.20260912-30-gd3a6dafc",
+                    "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+                }
             for key, value in expected.items():
                 if key != "patched_image_digest" or card["id"] == V1_CARD_ID:
                     assert target[key] == value
@@ -97,7 +103,7 @@ def test_every_card_pins_both_real_node_targets_and_modes():
             assert target["patched_mode"] == "patched"
 
 
-def test_card03_keeps_v1_while_future_cards_pin_nanoseconds_v2():
+def test_card03_keeps_v1_while_later_cards_pin_their_additive_measurement_revision():
     for card in _cards():
         profiles = {
             leg["implementation"]: leg["profile"]
@@ -115,6 +121,11 @@ def test_card03_keeps_v1_while_future_cards_pin_nanoseconds_v2():
                 "amaru": "profile-y-amaru-block-application-nanoseconds-v3",
                 "cardano-node": "profile-v-cardano-measurement-nanoseconds-v2",
             }
+        elif card["id"] == "client-example-06-simple-transfer":
+            assert profiles == {
+                "amaru": "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
+                "cardano-node": "profile-v-cardano-measurement-nanoseconds-v2",
+            }
         else:
             assert profiles == V2_PROFILES
         for implementation, expected in V2_TARGETS.items():
@@ -123,6 +134,17 @@ def test_card03_keeps_v1_while_future_cards_pin_nanoseconds_v2():
                 and implementation == "amaru"
             ):
                 expected = V3_AMARU_BLOCK_TARGET
+            if (
+                card["id"] == "client-example-06-simple-transfer"
+                and implementation == "amaru"
+            ):
+                expected = {
+                    "measurement_revision": "nanoseconds-v2",
+                    "patch_set_sha256": "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0",
+                    "patched_executable_digest": "sha256:2970fa583d53967c72fdacb7e61d2954e1fb8d1b56fc7a34590018551085184e",
+                    "patched_image_digest": "sha256:c890ee54aad19fe36aa80efbdee2f8a155dd80b2207970e844c836d37d8c5932",
+                    "patch_manifest_sha256": "sha256:45ae00451871355b26df3f067d672c2589ffcd159e16cc8b9cd837827582ac53",
+                }
             for key, value in expected.items():
                 assert card["targets"][implementation][key] == value
 
@@ -164,6 +186,27 @@ def test_cards_pin_workload_identity_and_stop_conditions():
         assert workload["duration_seconds"] > 0
         assert workload["stop_conditions"]
         assert card["environment"]["hardware_fingerprint"] == "cardano-box-2026-09-19"
+
+
+def test_card06_retains_both_real_simple_transfer_runs_and_complete_attempts():
+    card = _card("client-example-06-simple-transfer")
+    evidence = card["approved_resolution"]["accepted_evidence"]
+
+    assert card["status"] == "accepted"
+    assert {leg["status"] for leg in card["scenario_legs"]} == {"accepted"}
+    assert card["approved_resolution"]["kind"] == "simple-transfer-measurement-v1"
+    assert {row["run_id"] for row in evidence.values()} == {
+        "20260921T192922Z-6cb70c72",
+        "20260921T191220Z-72151616",
+    }
+    for row in evidence.values():
+        assert row["attempted"] == 35
+        assert row["accepted"] == 30
+        assert row["rejected"] == 5
+        assert row["timed_out"] == 0
+        assert row["duration_sample_count"] == 35
+        assert row["target_transaction_correlations"] == 30
+        assert row["bundle_sha256"]
 
 
 def test_invalid_protocol_card_names_the_three_exact_live_amaru_boundaries():

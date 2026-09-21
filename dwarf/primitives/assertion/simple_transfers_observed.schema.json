@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "simple_transfers_observed params",
+  "type": "object",
+  "properties": {
+    "minimum_attempts": {"type": "integer", "minimum": 30}
+  },
+  "additionalProperties": false
+}

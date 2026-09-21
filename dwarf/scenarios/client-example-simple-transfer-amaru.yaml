@@ -1,0 +1,60 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-simple-transfer-amaru",
+  "title": "Client example 06 — simple transfer measurement — Amaru",
+  "authors": ["dwarf"],
+  "tags": ["client-example", "amaru", "measurement", "simple-transfer", "txsubmission"],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This run measures only the exact Amaru target. Its qualified Cardano producer is transaction-delivery infrastructure.",
+    "This separate execution is not an automatic Amaru-versus-Cardano benchmark.",
+    "Measurements do not gate by default."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "v10.11.20260912-30-gd3a6dafc",
+    "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc"
+  },
+  "runtime": "devnet",
+  "profile": "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
+  "measurement_profile": "amaru-security-patched",
+  "measurements": [{
+    "id": "amaru-stock-resources",
+    "enabled": true,
+    "parameters": {"sample_interval_seconds": 0.25},
+    "threshold_gate": {"enabled": false, "thresholds": []}
+  }],
+  "seed": "0x51A9E001",
+  "setup": [{
+    "primitive": "runtime_verify_exact_target",
+    "implementation": "amaru",
+    "version": "v10.11.20260912-30-gd3a6dafc",
+    "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+    "mode": "patched",
+    "image_digest": "sha256:c890ee54aad19fe36aa80efbdee2f8a155dd80b2207970e844c836d37d8c5932",
+    "executable_digest": "sha256:2970fa583d53967c72fdacb7e61d2954e1fb8d1b56fc7a34590018551085184e",
+    "patch_set_sha256": "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0"
+  }],
+  "load": [{
+    "primitive": "runtime_controlled_simple_transfers",
+    "profile_id": "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
+    "measurement_implementation": "amaru",
+    "attempt_count": 35,
+    "outcome_timeout_seconds": 90,
+    "output_dir": "outputs/controlled-simple-transfers",
+    "timeout_seconds": 3600,
+    "expect_exit": 0
+  }],
+  "faults": [],
+  "probes": [{
+    "primitive": "runtime_target_health_and_progress",
+    "report_path": "outputs/controlled-simple-transfers/result.json",
+    "progress_reference": "load-start"
+  }],
+  "assertions": [
+    {"primitive": "simple_transfers_observed", "minimum_attempts": 30},
+    {"primitive": "target_progress_continues"},
+    {"primitive": "no_target_fatal_signal"}
+  ],
+  "teardown": []
+}

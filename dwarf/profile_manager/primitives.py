@@ -13776,6 +13776,60 @@ class RuntimeControlledPlutusTransactions(LoadPrimitive):
                             "report": report, "output_dir": str(output_dir),
                             "stdout": (proc.stdout or "")[-4096:], "stderr": (proc.stderr or "")[-4096:]})
 
+
+class RuntimeControlledSimpleTransfers(LoadPrimitive):
+    """Submit the frozen signed simple-payment workload to one real target."""
+
+    def run(self, handle, rng):
+        import os
+        from profile_manager.profiles import remote_base
+
+        profile_id = self.params.get("profile_id")
+        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        output_dir = _resolve_output_path(
+            handle, self.params.get("output_dir", "outputs/controlled-simple-transfers")
+        )
+        command = [
+            str(self.params.get("python_bin", "python3")),
+            str(DWARF_ROOT / "scripts" / "runtime_controlled_simple_transfers.py"),
+            "--measurement-implementation", str(self.params["measurement_implementation"]),
+            "--runtime-root", str(runtime_root),
+            "--output-dir", str(output_dir),
+            "--attempt-count", str(int(self.params.get("attempt_count", 30))),
+            "--outcome-timeout-seconds", str(float(self.params.get("outcome_timeout_seconds", 90))),
+        ]
+        handle.log(
+            phase="load", primitive="runtime_controlled_simple_transfers",
+            level="info", event="started",
+            payload={"profile_id": profile_id, "runtime_root": str(runtime_root), "command": command},
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(
+            value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value
+        )
+        proc = subprocess.run(
+            command, cwd=DWARF_ROOT, capture_output=True, text=True,
+            timeout=float(self.params.get("timeout_seconds", 3600)), check=False, env=env,
+        )
+        report_path = output_dir / "result.json"
+        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
+        outcome = "ok" if proc.returncode == int(self.params.get("expect_exit", 0)) else "unexpected_exit"
+        accounting = report.get("accounting")
+        if isinstance(accounting, dict):
+            handle.log(
+                phase="load", primitive="runtime_controlled_simple_transfers",
+                level="info", event="workload_accounting", payload=accounting,
+            )
+        handle.log(
+            phase="load", primitive="runtime_controlled_simple_transfers",
+            level="info" if outcome == "ok" else "error", event="completed",
+            payload={
+                "outcome": outcome, "exit_code": proc.returncode,
+                "report": report, "output_dir": str(output_dir),
+                "stdout": (proc.stdout or "")[-4096:], "stderr": (proc.stderr or "")[-4096:],
+            },
+        )
+
 class RuntimeVerifyExactTarget(LoadPrimitive):
     """Fail closed unless the deployed measurement target matches every frozen field."""
 
@@ -17739,6 +17793,38 @@ class PlutusLiveOutcomesObserved(AssertionPrimitive):
                 "data_points_used": [event.get("payload") or {} for event in completed],
                 "result": "pass" if passed else "fail",
                 "note": None if passed else "Live Plutus outcomes were incomplete"}
+
+
+class SimpleTransfersObserved(AssertionPrimitive):
+    """Require all frozen real simple-transfer attempts and target correlation."""
+
+    def evaluate(self, handle):
+        completed = _events_from_handle(
+            handle, phase="load", event="completed",
+            primitive="runtime_controlled_simple_transfers",
+        )
+        minimum = int(self.params.get("minimum_attempts", 30))
+        non_ok = []
+        for event in completed:
+            payload = event.get("payload") or {}
+            report = payload.get("report") or {}
+            counts = report.get("outcome_counts") or {}
+            checks = report.get("checks") or {}
+            if (
+                payload.get("outcome") != "ok"
+                or int(counts.get("attempted") or 0) < minimum
+                or int(counts.get("accepted") or 0) < minimum
+                or not all(checks.values())
+            ):
+                non_ok.append(payload)
+        passed = len(completed) >= 1 and not non_ok
+        return {
+            "primitive": "simple_transfers_observed", "params": dict(self.params),
+            "evaluated_value": {"completed": len(completed), "non_ok": len(non_ok)},
+            "data_points_used": [event.get("payload") or {} for event in completed],
+            "result": "pass" if passed else "fail",
+            "note": None if passed else "Real simple-transfer evidence was incomplete",
+        }
 
 def _evaluate_version_pinned_cbor_check(handle, params, *, check_name, failure_key):
     completed = _events_from_handle(

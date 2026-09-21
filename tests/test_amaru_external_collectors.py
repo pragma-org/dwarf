@@ -188,6 +188,62 @@ def test_workload_attempt_latency_includes_accepted_rejected_and_timeout(tmp_pat
     ]
 
 
+def test_workload_accounting_preserves_timeout_byte_totals_and_nanosecond_precision(tmp_path):
+    (tmp_path / "log.ndjson").write_text(
+        json.dumps(
+            {
+                "ts": "2026-09-21T12:00:00.000Z",
+                "phase": "load",
+                "event": "workload_accounting",
+                "payload": {
+                    "attempted": 2,
+                    "successful": 1,
+                    "rejected": 0,
+                    "timed_out": 1,
+                    "bytes": 620,
+                    "batches": 1,
+                    "backlog": 0,
+                    "attempts": [
+                        {"input_id": "a", "tx_id": "tx-a", "outcome": "accepted", "bytes": 300, "elapsed_nanos": 2184, "elapsed_micros": 2.184, "submit_to_protocol_response_nanos": 1100, "submit_to_block_inclusion_nanos": 2000, "submit_to_chain_adoption_nanos": 2100},
+                        {"input_id": "b", "outcome": "timeout", "bytes": 320, "elapsed_nanos": 5500, "elapsed_micros": 5.5},
+                    ],
+                },
+            }
+        ) + "\n"
+    )
+    collector = WorkloadAccountingCollector(_entry("amaru-external-workload-accounting"))
+    context = _context(tmp_path, "amaru-external-workload-accounting")
+    collector.prepare(context)
+    collector.start(context)
+    collector.on_marker({"phase_id": "run", "state": "start", "elapsed_seconds": 0}, context)
+    collector.on_marker({"phase_id": "run", "state": "end", "elapsed_seconds": 1}, context)
+    collector.stop(context)
+
+    result = collector.finalize(context)
+
+    assert result["measurements"]["timed_out_operations"]["value"] == 1
+    assert result["measurements"]["offered_bytes"]["value"] == 620
+    assert result["measurements"]["attempt_latency"]["all"]["minimum"] == 2.184
+    assert result["measurements"]["submit_to_protocol_response"]["sample_count"] == 1
+    assert result["measurements"]["submit_to_protocol_response"]["minimum"] == 1.1
+    assert result["measurements"]["submit_to_block_inclusion"]["minimum"] == 2.0
+    assert result["measurements"]["submit_to_chain_adoption"]["minimum"] == 2.1
+    assert result["attempts"][0] == {
+        "bytes": 300.0,
+        "elapsed_micros": 2.184,
+        "elapsed_nanos": 2184,
+        "input_id": "a",
+        "outcome": "accepted",
+        "submit_to_block_inclusion_micros": 2.0,
+        "submit_to_block_inclusion_nanos": 2000,
+        "submit_to_chain_adoption_micros": 2.1,
+        "submit_to_chain_adoption_nanos": 2100,
+        "submit_to_protocol_response_micros": 1.1,
+        "submit_to_protocol_response_nanos": 1100,
+        "tx_id": "tx-a",
+    }
+
+
 def test_restart_readiness_requires_listener_progress_and_peer_role(tmp_path):
     events_dir = tmp_path / "events"
     events_dir.mkdir()

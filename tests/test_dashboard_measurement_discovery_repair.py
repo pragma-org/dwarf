@@ -34,6 +34,11 @@ def test_measurement_guide_defines_sources_types_and_claim_boundaries():
     assert "Catalogued is not exercised" in html
     assert "The five frozen cards are complete" in html
     assert "/learn/coverage" in html
+    assert "06 · Dedicated simple transfers" in html
+    assert "20260921T192922Z-6cb70c72" in html
+    assert "20260921T191220Z-72151616" in html
+    assert "not an automatic Amaru-versus-Cardano benchmark" not in html
+    assert "did not turn the two runs into a race" in html
 
 
 def test_operate_has_one_clear_measurements_hub_with_existing_destinations():
@@ -72,10 +77,10 @@ def test_coverage_separates_inventory_from_accepted_runtime_evidence():
     html = render_route_html("/learn/coverage")
 
     assert "Catalog inventory is not runtime proof" in html
-    assert "Five-card accepted runtime evidence" in html
+    assert "Accepted client-card runtime evidence" in html
     assert "all collectors configured" in html
     assert "all metrics exercised" in html
-    for card_id in ("01", "02", "03", "04", "05"):
+    for card_id in ("01", "02", "03", "04", "05", "06"):
         assert f'data-evidence-card="{card_id}"' in html
     for run_id in (
         "20260920T235440Z-050046a4",
@@ -88,6 +93,8 @@ def test_coverage_separates_inventory_from_accepted_runtime_evidence():
         "20260921T021935Z-3b58eafc",
         "20260921T045619Z-15e864a0",
         "20260921T045807Z-8e2bbb0e",
+        "20260921T192922Z-6cb70c72",
+        "20260921T191220Z-72151616",
     ):
         assert run_id in html
 
@@ -97,10 +104,10 @@ def test_threat_coverage_labels_mapping_and_runtime_evidence_separately():
     data = json.loads(re.search(r"const DATA = (\{.*\});\nconst TYPES", html).group(1))
 
     assert "Mapped catalog coverage is not runtime proof" in html
-    assert "Five-card accepted runtime evidence" in html
+    assert "Accepted client-card runtime evidence" in html
     assert "Threats mapped" in html
     assert "Risks mapped" in html
-    assert len(data["five_card_evidence"]) == 5
+    assert len(data["five_card_evidence"]) == 6
     assert {card["state"] for card in data["five_card_evidence"]} == {"accepted"}
     assert all(
         leg["evidence_basis"] == "documented-accepted-result"
