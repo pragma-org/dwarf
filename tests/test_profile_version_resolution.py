@@ -90,11 +90,12 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
         "profile-t-cardano-measurement-patched": "generated-cardano-local",
         "profile-u-amaru-measurement-nanoseconds-v2": "amaru-control",
         "profile-v-cardano-measurement-nanoseconds-v2": "generated-cardano-local",
+        "profile-w-amaru-measurement-plutus-v2": "amaru-control",
         "profile-x-amaru-cbor-fix-regression-nanoseconds-v2": "amaru-control",
     }
     profiles = load_profiles()
 
-    assert len(profiles) == 23
+    assert len(profiles) == 24
     assert {profile.id for profile in profiles} == set(expected_adapters)
     for profile in profiles:
         source = next(
@@ -110,6 +111,7 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
                 "profile-t-cardano-measurement-patched",
                 "profile-u-amaru-measurement-nanoseconds-v2",
                 "profile-v-cardano-measurement-nanoseconds-v2",
+                "profile-w-amaru-measurement-plutus-v2",
                 "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
             }
             else "latest-confirmed"

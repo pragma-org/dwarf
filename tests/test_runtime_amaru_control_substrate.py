@@ -1,10 +1,14 @@
+import json
+
 import pytest
 
 from scripts.runtime_amaru_control_substrate import (
     RuntimeControlError,
+    _gate_result,
     build_runtime_metadata,
     prepare_runtime_model,
     validate_runtime_request,
+    verify_plutus_v2_evidence,
 )
 
 
@@ -191,3 +195,147 @@ def test_runtime_metadata_discloses_logical_targets_and_actual_support_topology(
     assert metadata["identity"]["matched"] is True
     assert metadata["versions"]["policy_source"] == "implicit-default"
     assert metadata["versions"]["deployment_adapter"] == "amaru-control"
+
+
+def test_plutus_v2_request_fails_closed_without_an_exact_pinned_model(tmp_path):
+    config = {**_config(), "plutus_v2_genesis": True}
+
+    with pytest.raises(RuntimeControlError, match="cost model path"):
+        validate_runtime_request(config)
+
+    model = tmp_path / "model.json"
+    model.write_text("[1,2,3]", encoding="utf-8")
+    with pytest.raises(RuntimeControlError, match="sha256"):
+        validate_runtime_request(
+            {
+                **config,
+                "plutus_v2_cost_model_path": str(model),
+                "plutus_v2_cost_model_sha256": "0" * 64,
+            }
+        )
+
+
+def test_live_plutus_v2_evidence_is_a_retention_gate():
+    core = {
+        "fresh_state": True,
+        "exact_identity": True,
+        "required_services": True,
+        "chain_progress": True,
+        "peer_formation": True,
+        "consumer_amaru_only_path": True,
+        "consumer_converged": True,
+        "no_fatal_signatures": True,
+        "no_restart_loop": True,
+        "plutus_v2_live_parameters": False,
+    }
+
+    result = _gate_result(core)
+
+    assert result["passed"] is False
+    assert result["failed_gates"] == ["plutus_v2_live_parameters"]
+
+
+def test_plutus_v2_model_is_injected_only_into_additive_runtime(tmp_path):
+    model_path = tmp_path / "plutus-v2.json"
+    model_path.write_text("[1,2,3]", encoding="utf-8")
+    import hashlib
+
+    digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
+    config = {
+        **_config(),
+        "plutus_v2_genesis": True,
+        "plutus_v2_cost_model_path": str(model_path),
+        "plutus_v2_cost_model_sha256": digest,
+    }
+    baseline = _baseline()
+    baseline["services"]["configurator"].update(
+        {
+            "command": ["set -euo pipefail\n/configurator.sh\n"],
+            "volumes": ["p1-configs:/configs/1"],
+        }
+    )
+
+    prepared = prepare_runtime_model(baseline, config)
+    configurator = prepared["services"]["configurator"]
+
+    assert f"{model_path}:/dwarf/plutus-v2-cost-model.json:ro" in configurator["volumes"]
+    assert "--slurpfile model /dwarf/plutus-v2-cost-model.json" in configurator["command"][0]
+    assert "for dir in /configs/[123]" in configurator["command"][0]
+    assert ".dRepVotingThresholds.ppTechnicalGroup = 0" in configurator["command"][0]
+    assert ".poolVotingThresholds |= with_entries" not in configurator["command"][0]
+    assert ".constitution.script = null" in configurator["command"][0]
+    activator = prepared["services"]["plutus-v2-activate"]
+    assert activator["image"] == config["cardano_image"]
+    assert activator["depends_on"] == {"p1": {"condition": "service_started"}}
+    assert "create-protocol-parameters-update" in activator["command"][0]
+    assert "conway transaction build" in activator["command"][0]
+    assert "hash anchor-data --url" in activator["command"][0]
+    assert 'gov_deposit=$$(jq -r' in activator["command"][0]
+    assert "active_epoch=$$(jq" in activator["command"][0]
+    assert "active_in_epoch: $$active_epoch" in activator["command"][0]
+    assert prepared["services"]["amaru-consumer-seed"]["depends_on"][
+        "plutus-v2-activate"
+    ] == {"condition": "service_completed_successfully"}
+    unchanged = prepare_runtime_model(_baseline(), _config())
+    assert not any(
+        "/dwarf/plutus-v2-cost-model.json" in str(item)
+        for item in unchanged["services"]["configurator"].get("volumes", [])
+    )
+    assert "plutus_v2_genesis" not in unchanged["x-dwarf-retained-runtime"]
+
+
+def test_plutus_v2_evidence_requires_all_genesis_and_live_protocol_parameters(tmp_path):
+    model = list(range(175))
+    pinned = tmp_path / "pinned.json"
+    pinned.write_text(json.dumps(model, separators=(",", ":")), encoding="utf-8")
+    genesis_paths = []
+    conway_paths = []
+    for index in range(1, 4):
+        path = tmp_path / f"alonzo-{index}.json"
+        path.write_text(json.dumps({"costModels": {"PlutusV2": model}}), encoding="utf-8")
+        genesis_paths.append(path)
+        conway = tmp_path / f"conway-{index}.json"
+        conway.write_text(
+            json.dumps(
+                {
+                    "dRepVotingThresholds": {
+                        "ppTechnicalGroup": 0,
+                        "ppNetworkGroup": 0.67,
+                    },
+                    "poolVotingThresholds": {"ppSecurityGroup": 0.51},
+                    "committee": {"members": {}, "threshold": 0},
+                    "committeeMinSize": 0,
+                    "govActionDeposit": 100000000000,
+                    "constitution": {"script": None},
+                }
+            ),
+            encoding="utf-8",
+        )
+        conway_paths.append(conway)
+    live = tmp_path / "protocol-parameters.json"
+    live.write_text(json.dumps({"costModels": {"PlutusV2": model}}), encoding="utf-8")
+
+    evidence = verify_plutus_v2_evidence(
+        pinned_model_path=pinned,
+        expected_sha256=__import__("hashlib").sha256(pinned.read_bytes()).hexdigest(),
+        genesis_paths=genesis_paths,
+        conway_genesis_paths=conway_paths,
+        live_protocol_parameters_path=live,
+    )
+
+    assert evidence["verified"] is True
+    assert evidence["cost_model_entry_count"] == 175
+    assert len(evidence["generated_genesis"]) == 6
+    assert evidence["live_protocol_parameters"]["sha256"]
+
+    bad = json.loads(live.read_text())
+    bad["costModels"]["PlutusV2"][10] = -1
+    live.write_text(json.dumps(bad), encoding="utf-8")
+    with pytest.raises(RuntimeControlError, match="live PlutusV2 cost model"):
+        verify_plutus_v2_evidence(
+            pinned_model_path=pinned,
+            expected_sha256=__import__("hashlib").sha256(pinned.read_bytes()).hexdigest(),
+            genesis_paths=genesis_paths,
+            conway_genesis_paths=conway_paths,
+            live_protocol_parameters_path=live,
+        )

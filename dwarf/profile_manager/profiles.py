@@ -59,6 +59,9 @@ class Profile:
     measurement_patch_set_sha256: str | None = None
     amaru_json_traces: bool = False
     cardano_measurement_traces: bool = False
+    plutus_v2_genesis: bool = False
+    plutus_v2_cost_model_path: str | None = None
+    plutus_v2_cost_model_sha256: str | None = None
 
     @classmethod
     def from_dict(cls, data):
@@ -98,6 +101,9 @@ class Profile:
             cardano_measurement_traces=bool(
                 data.get("cardano_measurement_traces", False)
             ),
+            plutus_v2_genesis=bool(data.get("plutus_v2_genesis", False)),
+            plutus_v2_cost_model_path=data.get("plutus_v2_cost_model_path"),
+            plutus_v2_cost_model_sha256=data.get("plutus_v2_cost_model_sha256"),
         )
 
 
@@ -158,6 +164,9 @@ def profile_diff_text(left_id, right_id):
         "measurement_patch_set_sha256",
         "amaru_json_traces",
         "cardano_measurement_traces",
+        "plutus_v2_genesis",
+        "plutus_v2_cost_model_path",
+        "plutus_v2_cost_model_sha256",
     )
     lines = [
         "Profile diff",
@@ -456,6 +465,9 @@ def versioned_substrate_for_profile(profile, version_preview):
         "measurement_target_mode": profile.measurement_target_mode,
         "amaru_json_traces": profile.amaru_json_traces,
         "cardano_measurement_traces": profile.cardano_measurement_traces,
+        "plutus_v2_genesis": profile.plutus_v2_genesis,
+        "plutus_v2_cost_model_path": profile.plutus_v2_cost_model_path,
+        "plutus_v2_cost_model_sha256": profile.plutus_v2_cost_model_sha256,
         "nodes": nodes,
         "topology": {"edges": edges},
     }
@@ -523,6 +535,19 @@ def _versioned_deploy_command(profile, version_preview, remote_dwarf_root=None):
                 "healthy_timeout_seconds": 1800,
             }
         )
+        if substrate["plutus_v2_genesis"]:
+            cost_model_path = Path(str(substrate["plutus_v2_cost_model_path"]))
+            if not cost_model_path.is_absolute() and remote_dwarf_root:
+                cost_model_path = Path(remote_dwarf_root) / cost_model_path
+            config_body.update(
+                {
+                    "plutus_v2_genesis": True,
+                    "plutus_v2_cost_model_path": str(cost_model_path),
+                    "plutus_v2_cost_model_sha256": substrate[
+                        "plutus_v2_cost_model_sha256"
+                    ],
+                }
+            )
     config_json = json.dumps(config_body, indent=2, sort_keys=True)
     image_refs = sorted(
         {node["image"] for node in substrate["nodes"] if node["target_mode"] == "stock"}

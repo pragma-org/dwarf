@@ -30,12 +30,15 @@ A new target family will pin source revision `d3a6dafcced78f5809a96619e883cf0491
 
 ## Card 02: on-chain Plutus V2 topology
 
-A new Amaru-only measurement profile will reuse the proven Cardano-producer and Amaru-consumer lifecycle. It will not modify an existing profile. Before any producer starts, its configurator will add a digest-pinned Plutus V2 cost model to every generated `alonzo-genesis.json`. All producer genesis files must remain identical after configuration.
+A new Amaru-only measurement profile will reuse the proven Cardano-producer and Amaru-consumer lifecycle. It will not modify an existing profile. Before any producer starts, its configurator will add a digest-pinned Plutus V2 cost model to every generated `alonzo-genesis.json`. It will also make a narrow Conway governance change: only the technical DRep threshold is zero, the committee is empty with a zero threshold and minimum size, and the constitution has no guardrail script. Other DRep thresholds, pool thresholds, and the real governance-action deposit stay unchanged. All producer Alonzo and Conway genesis files must remain identical after configuration.
+
+The chain will start in Conway as the proven Amaru bootstrap requires. A one-shot service will submit a real protocol-parameter governance action for the pinned model. The service will retain the action, signed transaction, transaction hash, anchor identity, pre-update parameters, and post-enactment parameters. It will complete only after the on-chain model is active. The Amaru consumer seed cannot start until this service completes successfully.
 
 The deployment gate will retain and verify:
 
-- each generated genesis digest;
+- each generated Alonzo and Conway genesis digest;
 - the exact cost-model source and digest;
+- the governance action, signed update transaction, and transaction hash;
 - live queried protocol parameters and their digest;
 - proof that live `costModels.PlutusV2` equals the pinned model;
 - Cardano and Amaru revisions and image digests;
@@ -98,6 +101,12 @@ Each behavior follows red-green-refactor:
 - schema, scenario, report, dashboard, export/import, full regression, and browser tests cover integration.
 
 Real evidence is accepted only after exact-target verification, all required collectors finalize, bundle verification succeeds, dashboard routes export successfully, and desktop and mobile renders pass.
+
+## Card 02 accepted implementation record
+
+Run `20260921T013953Z-565b77c3` proves the chosen additive design. Conway governance update transaction `f2a39979f67f1853abfe59cbe1c92e8e015ea997bc09c8beb69c45dd7183c84e` activated the pinned 175-entry Plutus V2 model in epoch 2. The live workload retained 30 included-valid and 30 included-invalid transactions, 60 unique attempt identities, 60 unique lock transaction identities, and 60 unique spend transaction identities. Amaru advanced from block 335 to block 662 with no restart, OOM, fatal signal, or unexpected exit.
+
+The run verifier returned `OK`. Bundle-local verification passed across 575 files, and archive import recomputed the signed manifest digest `436232f557906fbb58661b528db1ac6d37c73ac21506e7daef9dce9ad2956927`. The accepted bundle SHA-256 is `bf5604de608889cabc4ea30242a2236aaccf12cd06c07999c14ee26a8a3c7ed0`.
 
 ## Delivery boundaries
 

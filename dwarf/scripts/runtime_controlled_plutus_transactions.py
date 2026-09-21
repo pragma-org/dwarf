@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shlex
+import shutil
 import tempfile
 from contextlib import ExitStack
 from datetime import datetime, timezone
@@ -146,6 +148,33 @@ def _prepare_amaru_transaction_producer(
     }
 
 
+def _retain_plutus_v2_topology(runtime: dict, destination: Path) -> dict:
+    topology = json.loads(json.dumps(runtime.get("plutus_v2") or {}))
+    if topology.get("verified") is not True:
+        raise RuntimeError("Amaru workload requires verified live PlutusV2 topology evidence")
+    records = [topology.get("pinned_cost_model") or {}]
+    records.extend(topology.get("generated_genesis") or [])
+    records.append(topology.get("live_protocol_parameters") or {})
+    if len(records) != 8:
+        raise RuntimeError("live PlutusV2 topology evidence is incomplete")
+    destination.mkdir(parents=True, exist_ok=False)
+    names = ["pinned-cost-model.json"]
+    names.extend(Path(str(record.get("path") or "")).name for record in records[1:-1])
+    names.append("live-protocol-parameters.json")
+    for record, name in zip(records, names, strict=True):
+        source = Path(str(record.get("path") or ""))
+        expected = str(record.get("sha256") or "")
+        if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != expected:
+            raise RuntimeError(f"PlutusV2 topology evidence digest mismatch: {source}")
+        retained = destination / name
+        shutil.copy2(source, retained)
+        record["path"] = str(retained)
+    topology["pinned_cost_model"] = records[0]
+    topology["generated_genesis"] = records[1:7]
+    topology["live_protocol_parameters"] = records[7]
+    return topology
+
+
 def run_controlled_plutus_transactions(
     *,
     runtime_root: Path,
@@ -156,7 +185,17 @@ def run_controlled_plutus_transactions(
     if transaction_count != 60:
         raise ValueError("transaction_count must be exactly 60")
     runtime = json.loads((runtime_root / "runtime.json").read_text(encoding="utf-8"))
+    if (
+        measurement_implementation == "amaru"
+        and (runtime.get("plutus_v2") or {}).get("verified") is not True
+    ):
+        raise RuntimeError("Amaru workload requires verified live PlutusV2 topology evidence")
     output_dir.mkdir(parents=True, exist_ok=False)
+    retained_topology = None
+    if measurement_implementation == "amaru":
+        retained_topology = _retain_plutus_v2_topology(
+            runtime, output_dir / "topology-evidence"
+        )
     with ExitStack() as stack:
         if measurement_implementation == "amaru":
             workload_runtime, node = _prepare_amaru_transaction_producer(
@@ -188,6 +227,8 @@ def run_controlled_plutus_transactions(
                 _container_logs(container, since=started_at)
             ),
         }
+        if retained_topology is not None:
+            result["plutus_v2_topology"] = retained_topology
     accepted = sum(
         row["outcome"] == "accepted" and row["chain_outcome"] == "included-valid"
         for row in result["records"]
@@ -196,8 +237,33 @@ def run_controlled_plutus_transactions(
         row["outcome"] == "rejected" and row["chain_outcome"] == "included-invalid"
         for row in result["records"]
     )
+    identifiers_retained = all(
+        all(row.get(key) for key in ("attempt_id", "lock_transaction_id", "spend_transaction_id"))
+        for row in result["records"]
+    )
+    health = result["target_health"]
+    before_height = (health.get("tip_before") or {}).get("block_height")
+    after_height = (health.get("tip_after") or {}).get("block_height")
+    progress = (
+        isinstance(before_height, int)
+        and isinstance(after_height, int)
+        and after_height > before_height
+    )
+    before_state = health.get("before") or {}
+    after_state = health.get("after") or {}
+    health_clean = (
+        before_state.get("running") is True
+        and after_state.get("running") is True
+        and after_state.get("oom_killed") is not True
+        and int(after_state.get("restart_count") or 0)
+        == int(before_state.get("restart_count") or 0)
+        and not (health.get("log_signals") or {}).get("fatal")
+    )
     result["checks"] = {
         "plutus_live_outcomes_observed": accepted >= 30 and rejected >= 30,
+        "transaction_identifiers_retained": identifiers_retained,
+        "target_progress_continues": progress,
+        "target_health_clean": health_clean,
     }
     result["outcome_counts"] = {"accepted": accepted, "rejected": rejected}
     (output_dir / "result.json").write_text(
@@ -226,7 +292,7 @@ def main(argv=None) -> int:
         measurement_implementation=args.measurement_implementation,
     )
     print(json.dumps(result, sort_keys=True))
-    return 0 if result["checks"]["plutus_live_outcomes_observed"] else 2
+    return 0 if all(result["checks"].values()) else 2
 
 
 if __name__ == "__main__":

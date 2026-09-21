@@ -1,0 +1,67 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-plutus-vm-amaru-onchain-v2",
+  "title": "Client example 02 — live Plutus V2 conformance — Amaru",
+  "authors": ["dwarf"],
+  "tags": ["client-example", "amaru", "measurement", "plutus", "security"],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This additive topology proves that the live chain uses the pinned Plutus V2 cost model. It does not change older topology evidence.",
+    "This separate execution is not a mixed-node performance comparison.",
+    "Security assertions are authoritative; measurements do not gate by default."
+  ],
+  "target": {"implementation": "amaru", "version": "10.11.20260912", "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638"},
+  "runtime": "devnet",
+  "profile": "profile-w-amaru-measurement-plutus-v2",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0x5107A502",
+  "setup": [{
+    "primitive": "runtime_verify_exact_target",
+    "implementation": "amaru",
+    "version": "10.11.20260912",
+    "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+    "mode": "patched",
+    "image_digest": "sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862",
+    "executable_digest": "sha256:05233bac96c1914a232a2d9c5a704f08401aff0b20356c015e848f295b919b78",
+    "patch_set_sha256": "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0"
+  }],
+  "load": [
+    {
+      "primitive": "runtime_version_pinned_plutus_conformance",
+      "cost_model": "/home/nigel/dwarf-pragma/dwarf/corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json",
+      "output_dir": "outputs/plutus-conformance",
+      "executions_per_script": 30,
+      "adapters": {
+        "amaru": {
+          "record": "/home/nigel/.local/share/dwarf/state/measurement-targets/amaru/plutus-conformance/b159172f25a9c389f82f20bca4f15e3032791638/ee3574789aa18e73f78117a8639ff4fb6833b2c37fb8a95918f09cb285394d0b.json",
+          "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638"
+        },
+        "cardano-node": {
+          "record": "/home/nigel/.local/share/dwarf/state/measurement-targets/cardano-node/plutus-conformance/fef83fed01d7926f3de83b3b917be5a4a48768b5/0d73dc998d695bd557be97e24bce10f5b25066a8620e77578be6081f4f38fc6e.json",
+          "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+        }
+      },
+      "timeout_seconds": 1200,
+      "expect_exit": 0
+    },
+    {
+      "primitive": "runtime_controlled_plutus_transactions",
+      "profile_id": "profile-w-amaru-measurement-plutus-v2",
+      "measurement_implementation": "amaru",
+      "output_dir": "outputs/controlled-plutus-transactions",
+      "timeout_seconds": 3600,
+      "expect_exit": 0
+    }
+  ],
+  "faults": [],
+  "probes": [{
+    "primitive": "runtime_target_health_and_progress",
+    "report_path": "outputs/controlled-plutus-transactions/result.json"
+  }],
+  "assertions": [
+    {"primitive": "plutus_result_and_budget_match", "executions_per_outcome": 30},
+    {"primitive": "plutus_live_outcomes_observed", "minimum_per_outcome": 30},
+    {"primitive": "target_progress_continues"}
+  ],
+  "teardown": []
+}

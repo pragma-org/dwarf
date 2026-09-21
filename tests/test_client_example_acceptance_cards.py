@@ -170,6 +170,14 @@ def _card(card_id):
     return next(item for item in _cards() if item["id"] == card_id)
 
 
+def _scenario(scenario_id):
+    return json.loads(
+        (ROOT / "dwarf" / "scenarios" / f"{scenario_id}.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+
 def test_card01_records_completed_finding_and_exact_fixed_revision_regression():
     resolution = _card("client-example-01-cbor-decoding")["approved_resolution"]
 
@@ -214,6 +222,31 @@ def test_card02_requires_additive_topology_with_live_on_chain_plutus_v2():
         "transaction-hashes-and-identifiers-retained",
         "continued-amaru-chain-progress",
     ]
+
+    scenario = _scenario("client-example-plutus-vm-amaru-onchain-v2")
+    assert scenario["profile"] == "profile-w-amaru-measurement-plutus-v2"
+    assert scenario["target"]["source_revision"] == (
+        "b159172f25a9c389f82f20bca4f15e3032791638"
+    )
+    controlled = next(
+        step
+        for step in scenario["load"]
+        if step["primitive"] == "runtime_controlled_plutus_transactions"
+    )
+    assert controlled["profile_id"] == "profile-w-amaru-measurement-plutus-v2"
+    assert resolution["accepted_evidence"] == {
+        "run_id": "20260921T013953Z-565b77c3",
+        "measurement_revision": "nanoseconds-v2",
+        "framework_commit": "05e757016838afd0594aeeea5b7019698d797e73",
+        "scenario_sha256": "3dc7db5b24e3e6396cf6e25304db3c5a96469863be94d540ca2c3b468ed49b01",
+        "manifest_sha256": "436232f557906fbb58661b528db1ac6d37c73ac21506e7daef9dce9ad2956927",
+        "assertions_sha256": "98e71e58ab5f7696b121ae1c498155d24524c35146f86af2926effe41f304c06",
+        "measurement_report_sha256": "86c3dc58e43a3571243693a26de6622f983d926a3cd9d3c046f4678bd5d2c525",
+        "transaction_result_sha256": "9403d75f28e7ad4125aef0d774a40e340d12fcee9d1d892437cd20a1f158708c",
+        "health_progress_sha256": "eec8329a68e6358ae5fef76b369e19ef85ee402a2dd6b799ea4fc2ed8e677f64",
+        "bundle_sha256": "bf5604de608889cabc4ea30242a2236aaccf12cd06c07999c14ee26a8a3c7ed0",
+        "bundle_file_count": 575,
+    }
 
 
 def test_card04_replaces_raw_monotonicity_with_canonical_progress_v2():

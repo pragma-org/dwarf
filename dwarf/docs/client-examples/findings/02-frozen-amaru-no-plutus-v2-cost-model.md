@@ -1,8 +1,8 @@
 # Card 02 frozen-topology finding: no Plutus V2 cost model
 
-Status: The Amaru live-transaction leg cannot be accepted with the frozen support topology.
+Status: Confirmed historical topology finding. The additive measurement-specific topology resolves the Card 02 gap; the preserved old topology still cannot run Plutus V2 transactions.
 
-Child explanation: Both program engines gave the same answers. The Amaru test chain does not have the rule table that lets a real Plutus V2 transaction run.
+Child explanation: The old Amaru test chain does not have the V2 rule table. DWARF kept that proof and made a separate test chain whose real rule book contains the missing rules.
 
 ## Exact boundary
 
@@ -35,9 +35,9 @@ No Plutus transaction was submitted. The failure occurred before the frozen `plu
 
 The two Amaru runs are diagnostic evidence. They are not accepted Gate 5 evidence.
 
-## Required decision
+## Historical decision boundary
 
-Card 02 remains incomplete until an authorized frozen-topology change supplies a qualified Amaru test chain with active Plutus V2 protocol parameters, or the controlling card changes its real-node requirement. This finding does not change the Card 02 security assertions, the Card 03 accepted evidence, or the Card 03 whole-microsecond measurement revision.
+This finding required an authorized additive topology with active Plutus V2 protocol parameters. It did not permit a change to the Card 02 security assertions, the Card 03 accepted evidence, or the Card 03 whole-microsecond measurement revision.
 
 ## Approved resolution
 
@@ -46,3 +46,11 @@ Add a separate measurement-specific Amaru topology. Preserve all existing topolo
 An off-chain cost-model file is not sufficient. The live queried protocol parameters must contain the same Plutus V2 model.
 
 Child explanation: Make a new test chain whose real rule book contains the missing Plutus V2 rules. Do not pretend that a separate file changes the chain.
+
+## Resolution evidence
+
+Run `20260921T013953Z-565b77c3` used additive profile `profile-w-amaru-measurement-plutus-v2`. A real Conway governance action activated the exact pinned 175-entry Plutus V2 model in epoch 2. The run retained the six generated genesis files, live protocol parameters, governance action and transaction IDs, 30 included-valid transactions, 30 included-invalid transactions, and continued Amaru progress from block 335 to block 662.
+
+All three frozen security assertions passed. The run manifest SHA-256 is `436232f557906fbb58661b528db1ac6d37c73ac21506e7daef9dce9ad2956927`. The live transaction result SHA-256 is `9403d75f28e7ad4125aef0d774a40e340d12fcee9d1d892437cd20a1f158708c`.
+
+This resolution does not alter or replace the two diagnostic runs. They remain exact proof of the old topology limitation.

@@ -4,19 +4,19 @@ This directory freezes the five smallest security-centered examples required by 
 The machine-readable cards are in `contracts/` and validate against
 `dwarf/spec/v1/client-example-acceptance-card.schema.json`.
 
-Technical status on 2026-09-20: all five contracts remain frozen. G3-A through G3-C are implemented. Cards 01 and 05 have accepted evidence for both implementations on `nanoseconds-v2`. Card 03 has accepted evidence for both implementations on `whole-microseconds-v1`. Cards 02 and 04 have accepted Cardano-node legs and retained Amaru work. Gates 4 and 5 are not complete.
+Technical status on 2026-09-21: all five contracts remain frozen. G3-A through G3-C are implemented. Cards 01, 02, and 05 have accepted evidence for both implementations on `nanoseconds-v2`. Card 03 has accepted evidence for both implementations on `whole-microseconds-v1`. Card 04 has an accepted Cardano-node leg and retained Amaru work. Gates 4 and 5 are not complete.
 
-Child explanation: DWARF finished three of the five recipes for both nodes. Two Amaru parts still need work. The old Amaru bug stays visible beside the newer run that proves its fix.
+Child explanation: DWARF finished four of the five recipes for both nodes. One Amaru part still needs work. The old Amaru limits stay visible beside the newer runs that resolve them.
 
 | Card | Exact current state | Measurement revision |
 |---|---|---|
 | 01 | Cardano-node accepted as run `20260920T132629Z-ea000d37`; fixed Amaru accepted as run `20260920T235440Z-050046a4`; old Amaru run `20260920T135054Z-28289dcd` remains a completed finding | `nanoseconds-v2` |
-| 02 | Cardano-node accepted as final run `20260920T135958Z-362eedc7`; Amaru blocked because the frozen chain has no Plutus V2 cost model | `nanoseconds-v2` |
+| 02 | both legs accepted: Cardano-node `20260920T135958Z-362eedc7`, Amaru additive on-chain V2 topology `20260921T013953Z-565b77c3`; the old topology finding remains retained | `nanoseconds-v2` |
 | 03 | both legs accepted: Amaru `20260920T072858Z-2cc3bb0c`, Cardano-node `20260920T073447Z-ab81bfb7` | `whole-microseconds-v1` |
 | 04 | Cardano-node accepted as run `20260920T125840Z-778a7cf7`; Amaru retained a real same-height fork finding | `nanoseconds-v2` |
 | 05 | both legs accepted: Amaru `20260920T122606Z-32c0e998`, Cardano-node `20260920T130232Z-2c68fb83` | `nanoseconds-v2` |
 
-The accepted labels are `framework proven` and `collection proven`. The full five-card client requirement remains partial because Cards 02 and 04 do not yet have accepted Amaru legs.
+The accepted labels are `framework proven` and `collection proven`. The full five-card client requirement remains partial because Card 04 does not yet have an accepted Amaru leg.
 
 | Card | Functional focus | Non-functional focus | Gate 1 state |
 |---|---|---|---|
@@ -63,14 +63,14 @@ item as `proven`, `reusable`, `missing`, or `accepted unavailable`. It does not 
 or a finalized zero-sample collector as final runtime proof.
 
 G3-A through G3-C are implemented and tested. The accepted Card 03 evidence remains unchanged. The additive
-`nanoseconds-v2` targets supply finer timing for Cards 01, 02, 04, and 05. The three retained findings state why the
-remaining Amaru legs cannot satisfy their frozen contracts.
+`nanoseconds-v2` targets supply finer timing for Cards 01, 02, 04, and 05. The retained findings preserve the exact
+historical limits. Card 02 now has accepted evidence from its additive on-chain Plutus V2 topology.
 
-Technical boundary: Gates 4 and 5 remain incomplete. Do not mark the five-card requirement complete while Card 01 and
-the Amaru legs for Cards 02 and 04 remain blocked.
+Technical boundary: Gates 4 and 5 remain incomplete. Do not mark the five-card requirement complete while the Amaru
+leg for Card 04 remains unresolved.
 
-Child explanation: the tools are built. Some recipes passed. Three Amaru checks reached real limits, so the complete
-five-card promise is still not finished.
+Child explanation: the tools are built. Four recipes passed for both nodes. One Amaru recipe still needs final proof,
+so the complete five-card promise is not finished.
 
 ## Dashboard inspection check
 

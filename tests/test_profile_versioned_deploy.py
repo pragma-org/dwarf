@@ -131,6 +131,32 @@ def test_versioned_amaru_deploy_uses_live_producer_control_adapter():
     assert "docker pull" in command
 
 
+def test_plutus_v2_profile_propagates_pinned_model_to_additive_runtime():
+    profile = _profile(
+        id="profile-w-amaru-measurement-plutus-v2",
+        node_type="amaru",
+        node_count=0,
+        amaru_node_count=1,
+        version_policy="exact",
+        amaru_version="10.11.20260912",
+        plutus_v2_genesis=True,
+        plutus_v2_cost_model_path="corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json",
+        plutus_v2_cost_model_sha256="675a27a3c1f2f9b32954c67c1f0ad21479713eef5513386638d78e05f5e277cc",
+    )
+
+    substrate = versioned_substrate_for_profile(profile, _preview(profile))
+    command = deploy_command(
+        profile,
+        version_preview=_preview(profile),
+        remote_dwarf_root="/home/nigel/dwarf-pragma/dwarf",
+    )
+
+    assert substrate["plutus_v2_genesis"] is True
+    assert substrate["plutus_v2_cost_model_sha256"] == profile.plutus_v2_cost_model_sha256
+    assert '"plutus_v2_genesis": true' in command
+    assert "/home/nigel/dwarf-pragma/dwarf/corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json" in command
+
+
 def test_versioned_mixed_deploy_uses_live_producer_control_adapter():
     profile = _profile(
         node_type="mixed",

@@ -222,6 +222,7 @@
         "profile": {"type": "string", "minLength": 1},
         "preserve_existing_topologies": {"type": "boolean"},
         "requirements": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "accepted_evidence": {"type": "object"},
         "preserve_v1_runs": {"type": "boolean"},
         "scenario_ids": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
         "raw_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},

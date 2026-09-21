@@ -86,23 +86,26 @@
 
 ### Task 5: Add the on-chain Plutus V2 Amaru topology
 
+Status: implementation and evidence complete in run `20260921T013953Z-565b77c3`; final route inspection remains part of Task 8.
+
 **Files:**
 - Create: `dwarf/profiles/profile-w-amaru-measurement-plutus-v2/profile.yaml`
 - Modify: `dwarf/scripts/runtime_amaru_control_substrate.py`
-- Modify: `dwarf/scripts/runtime_amaru_bootstrap_synth.py`
 - Modify: `dwarf/scripts/runtime_controlled_plutus_transactions.py`
 - Create: `dwarf/scenarios/client-example-plutus-vm-amaru-onchain-v2.yaml`
 - Test: `tests/test_runtime_amaru_control_substrate.py`
 - Test: `tests/test_controlled_plutus_transactions.py`
 - Test: `tests/test_profile_version_resolution.py`
 
-1. Add failing tests for configurator-before-producer ordering, exact V2 genesis insertion, identical generated genesis, live parameter equality, and digest retention.
+1. Add failing tests for configurator-before-producer ordering, exact V2 genesis insertion, narrowly scoped Conway governance, identical generated genesis, live parameter equality, and digest retention.
 2. Add failing workload tests for transaction hashes and IDs, 30 valid inclusions, 30 expected-invalid inclusions, budgets where exposed, health, and progress.
-3. Add the additive profile and fail-closed topology configuration.
-4. Retain generated genesis, cost-model source, live protocol parameters, revisions, images, and hashes in deployment evidence.
+3. Add the additive profile, a one-shot on-chain protocol-parameter action, and a fail-closed seed dependency. Keep the proven all-Conway Amaru bootstrap path.
+4. Retain generated Alonzo and Conway genesis, the cost-model source, governance action, signed update transaction, update transaction hash, live protocol parameters, revisions, images, and hashes in deployment evidence.
 5. Run focused tests and all scenario validation.
 6. Deploy the new topology, prove live V2 parameters, and run the exact Card 02 scenario.
 7. Verify the run, report, raw evidence, route, and bundle export/import. Review and commit.
+
+Completion evidence: all three security assertions passed; the 60-transaction live workload split into 30 included-valid and 30 included-invalid outcomes; the exact Amaru target advanced from block 335 to block 662 without restart, OOM, fatal signal, or unexpected exit. `cardano-profile verify` returned `OK`. Bundle-local verification and archive import matched the signed manifest across 575 files. Manifest SHA-256: `436232f557906fbb58661b528db1ac6d37c73ac21506e7daef9dce9ad2956927`. Bundle SHA-256: `bf5604de608889cabc4ea30242a2236aaccf12cd06c07999c14ee26a8a3c7ed0`.
 
 ### Task 6: Implement canonical-progress-v2
 
