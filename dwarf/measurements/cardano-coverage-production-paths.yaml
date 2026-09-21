@@ -1,0 +1,17 @@
+schema_version: v1
+id: cardano-coverage-production-paths
+title: Cardano production-path compiler coverage
+description: Links existing Cardano production-library harness coverage to exact source, corpus, seed, and input identity; it is not correctness or performance authority.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: cardano-node
+  versions: [{version: 11.1.2, source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5}]
+  target_modes: [coverage]
+collection_mode: compiler-coverage
+required_capabilities: [cardano-coverage-target, dwarf-coverage-artifacts]
+default_enabled: false
+overhead_class: high
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/cardano-coverage-production-paths/result.json]
+correlation_identifiers: [run_id, campaign_id, input_id, corpus_id]
+threshold_gate: {supported: true, default_enabled: false}

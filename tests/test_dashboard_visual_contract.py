@@ -4,6 +4,8 @@ import threading
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
+from PIL import Image
+
 from profile_manager.data import schedule_store
 from profile_manager import dashboard
 from profile_manager.views import operate_schedule
@@ -41,6 +43,26 @@ DEFINITION_DETAIL_VIEW = (
 )
 OPERATIONS = ROOT / "OPERATIONS.md"
 LEARN_DOCS = ROOT / "dwarf" / "profile_manager" / "data" / "learn_docs.py"
+DWARF_LOGO = ROOT / "dwarf" / "dashboard" / "static" / "dwarf-logo.png"
+
+
+def test_dwarf_logo_contains_only_the_flask_monster_artwork():
+    """The product mark must not include the retired outlined wordmark."""
+
+    with Image.open(DWARF_LOGO) as image:
+        assert image.mode == "RGBA"
+        assert image.width >= 1000
+        assert image.height >= 700
+
+        alpha = image.getchannel("A")
+        opaque_bounds = alpha.getbbox()
+        visible_floor = alpha.point(lambda value: 255 if value >= 32 else 0)
+        lower_seven_percent = visible_floor.crop(
+            (0, int(image.height * 0.93), image.width, image.height)
+        )
+
+    assert opaque_bounds is not None
+    assert lower_seven_percent.getbbox() is None
 
 
 def test_author_styles_preserve_hidden_attribute_semantics():
@@ -157,28 +179,30 @@ def test_topology_health_panel_has_responsive_product_chrome():
     assert "dialog.scrollTop = 0" in script
 
 
-def test_mixed_topology_is_the_authoritative_substrate_health_surface():
+def test_current_managed_topology_is_the_authoritative_health_surface():
     template = (
         ROOT / "dwarf/dashboard/templates/operate/status.j2"
+    ).read_text(encoding="utf-8")
+    landing = (
+        ROOT / "dwarf/dashboard/templates/landing.j2"
     ).read_text(encoding="utf-8")
     script = (
         ROOT / "dwarf/dashboard/static/js/topology-health.js"
     ).read_text(encoding="utf-8")
 
-    flask = template.index('<section class="flask-stage"')
     mixed_health = template.index('id="topology-health-panel"')
     summary = template.index('<section class="status-summary"')
     recovery_action = template.index('data-topology-action="redeploy"')
     diagnostics = template.index('class="topology-health__grid"')
     legacy_substrate = template.index('<span class="eyebrow">Substrate</span>')
 
-    assert flask < mixed_health < summary
+    assert mixed_health < summary
     assert recovery_action < diagnostics
-    assert "Active substrate · Cardano + Amaru" in template
-    assert "Mixed topology health" in template
-    assert ">Fresh redeploy&hellip;</button>" in template
-    assert "flask-logo-img{% if _no_substrate and not shim_enabled %}" in template
-    assert "flask.dataset.state = effectiveState;" in script
+    assert "Active substrate · current managed profile" in template
+    assert "Current managed topology health" in template
+    assert "redeploy_supported" in script
+    assert 'src="/static/dwarf-logo.png"' in landing
+    assert '<section class="flask-stage"' not in template
     assert "{% if not shim_enabled %}" in template[summary:legacy_substrate]
 
 

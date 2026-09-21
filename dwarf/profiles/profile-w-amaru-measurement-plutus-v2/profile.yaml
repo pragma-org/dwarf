@@ -1,0 +1,20 @@
+{
+  "id": "profile-w-amaru-measurement-plutus-v2",
+  "label": "Amaru 10.11.20260912 — nanosecond measurement with live Plutus V2",
+  "haskell_count": 0,
+  "amaru_count": 1,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "exact",
+  "amaru_version": "10.11.20260912",
+  "topology_pattern": "local-mesh",
+  "shared_genesis": true,
+  "measurement_target_mode": "patched",
+  "measurement_revision": "nanoseconds-v2",
+  "measurement_patch_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+  "measurement_patch_set_sha256": "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0",
+  "amaru_json_traces": true,
+  "plutus_v2_genesis": true,
+  "plutus_v2_cost_model_path": "corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json",
+  "plutus_v2_cost_model_sha256": "675a27a3c1f2f9b32954c67c1f0ad21479713eef5513386638d78e05f5e277cc"
+}

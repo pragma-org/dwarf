@@ -42,7 +42,7 @@ INTERNAL_NETWORK=false docker compose \
 
 ## Required runtime proof
 
-A successful local control must be started through DWARF on `cardano-box` with
+A successful local control must be started through DWARF on `dwarf-host-a` with
 fresh dedicated volumes and must retain evidence for all of these conditions:
 
 1. both relays extract three nonempty completed-epoch target rows;

@@ -1,0 +1,17 @@
+schema_version: v1
+id: cardano-stock-plutus-execution
+title: Cardano Plutus execution evidence
+description: Correlates stock node transaction outcomes with retained Plutus workload budgets; VM wall-clock stage timing remains unavailable in stock mode.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: cardano-node
+  versions: [{version: 11.1.2, source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5}]
+  target_modes: [stock, patched]
+collection_mode: stock-telemetry
+required_capabilities: [cardano-new-tracing, cardano-mempool-traces, dwarf-workload-events]
+default_enabled: true
+overhead_class: low
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/cardano-stock-plutus-execution/result.json]
+correlation_identifiers: [run_id, workload_phase, tx_id, input_id]
+threshold_gate: {supported: true, default_enabled: false}

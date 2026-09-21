@@ -67,6 +67,8 @@
         </select>
         {% elif field.type == 'array' %}
         <textarea name="{{ field.name }}" data-field="{{ field.name }}" data-field-type="array" rows="5" placeholder="One value per line" aria-describedby="{{ catalog }}-{{ field.name }}-help"></textarea>
+        {% elif field.type == 'json-array' %}
+        <textarea name="{{ field.name }}" data-field="{{ field.name }}" data-field-type="json-array" rows="9" spellcheck="false" placeholder="[ ]" aria-describedby="{{ catalog }}-{{ field.name }}-help"></textarea>
         {% elif field.type == 'object' %}
         <textarea name="{{ field.name }}" data-field="{{ field.name }}" data-field-type="object" rows="7" spellcheck="false" placeholder="{ }" aria-describedby="{{ catalog }}-{{ field.name }}-help"></textarea>
         {% elif field.type == 'boolean' %}

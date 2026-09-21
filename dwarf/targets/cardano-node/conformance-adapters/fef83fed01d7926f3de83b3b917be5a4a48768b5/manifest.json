@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "kind": "production-cbor-conformance",
+  "source": {
+    "repository": "https://github.com/IntersectMBO/cardano-node.git",
+    "release": "11.1.2",
+    "tag": "11.1.2",
+    "revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+  },
+  "measurement_boundary": "production-codec-only",
+  "production_entrypoint": "Cardano.Ledger.Binary.decodeFullAnnotator (eraProtVerLow @ConwayEra) decCBOR :: Either DecoderError (Data ConwayEra)",
+  "toolchain": {
+    "ghc": "9.6.7",
+    "cabal": "3.16.0.0"
+  },
+  "adapter_set_sha256": "6f51b43e149a7b4db0e5d3ba3c54fae86e3ac1cc816a0bff9fe65843429e290f",
+  "adapter_files": [
+    {
+      "path": "cbor/cabal.project",
+      "sha256": "09aa640ae684827b0d2d0cdec792429cf716c269364862ef71c14b5a823a7574"
+    },
+    {
+      "path": "cbor/dwarf-cardano-cbor-conformance.cabal",
+      "sha256": "9ec6ec6570aeb68ed06e436d2a0db0b10472f742750aa4dca0c9b086f6ba1c6b"
+    },
+    {
+      "path": "cbor/src/Main.hs",
+      "sha256": "3373a69b847810f2bddd65ec5dc56abde9e2297396d0042ac80f56e3ff75c19c"
+    }
+  ],
+  "build": {
+    "command": [
+      "cabal-3.16.0.0",
+      "build",
+      "-w",
+      "ghc-9.6.7",
+      "--project-file=dwarf-conformance-adapters/cardano-cbor/cabal.project",
+      "exe:dwarf-cardano-cbor-conformance"
+    ],
+    "binary_query": [
+      "cabal-3.16.0.0",
+      "list-bin",
+      "-w",
+      "ghc-9.6.7",
+      "--project-file=dwarf-conformance-adapters/cardano-cbor/cabal.project",
+      "exe:dwarf-cardano-cbor-conformance"
+    ],
+    "environment": {
+      "LANG": "C.UTF-8"
+    }
+  }
+}

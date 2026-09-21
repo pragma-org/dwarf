@@ -282,3 +282,96 @@ def test_enabled_auto_redeploy_failure_stops_after_one_attempt(monkeypatch, tmp_
     assert calls == []
     assert manifest["exit_status"] == "precondition_failed"
     assert manifest["precondition"]["reason_code"] == "topology_redeploy_failed"
+
+
+def _write_profile_devnet_scenario(path: Path, *, profile: str = "profile-x-undeployed") -> Path:
+    body = {
+        "spec_version": "v1",
+        "id": "auto-attach-wiring-test",
+        "title": "Auto attach wiring test",
+        "target": {"implementation": "cardano-node", "version": "test"},
+        "runtime": "devnet",
+        "profile": profile,
+        "setup": [],
+        "load": [{"primitive": "load_shell_command", "command": "true"}],
+        "faults": [],
+        "probes": [],
+        "assertions": [],
+        "teardown": [],
+    }
+    path.write_text(json.dumps(body), encoding="utf-8")
+    return path
+
+
+def _log_events(handle) -> list[dict]:
+    log_path = handle.run_dir / "log.ndjson"
+    return [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def test_profile_devnet_scenario_auto_attaches_measurements(monkeypatch, tmp_path):
+    """A scenario that never named a measurement profile still gets prepared."""
+    monkeypatch.setattr(telemetry, "ObserverCollector", _Observer)
+    monkeypatch.setattr(scenario, "_run_phase", lambda *a, **k: None)
+    seen = []
+
+    class _Prepared:
+        resolution = {"target_identity": {"implementation": "cardano-node"}, "resolved": []}
+
+        def build_factories(self, _run_dir):
+            return {}
+
+    def fake_prepare(scen):
+        seen.append(scen.id)
+        return _Prepared()
+
+    monkeypatch.setattr(
+        "profile_manager.measurement_execution.prepare_scenario_measurements", fake_prepare
+    )
+    path = _write_profile_devnet_scenario(tmp_path / "scenario.yaml")
+
+    scenario.run_scenario(path, runs_dir=tmp_path / "runs", state_dir=tmp_path / "state")
+
+    assert seen == ["auto-attach-wiring-test"]
+
+
+def test_undeployed_profile_skips_measurements_without_failing_the_run(monkeypatch, tmp_path):
+    """Auto-attachment must never turn a working scenario into a failing one."""
+    monkeypatch.setattr(telemetry, "ObserverCollector", _Observer)
+    monkeypatch.setattr(scenario, "_run_phase", lambda *a, **k: None)
+
+    def explode(_scen):
+        from profile_manager.measurement_execution import MeasurementExecutionError
+
+        raise MeasurementExecutionError("fresh deployed runtime is unavailable: /opt/x/runtime.json")
+
+    monkeypatch.setattr(
+        "profile_manager.measurement_execution.prepare_scenario_measurements", explode
+    )
+    path = _write_profile_devnet_scenario(tmp_path / "scenario.yaml")
+
+    handle = scenario.run_scenario(path, runs_dir=tmp_path / "runs", state_dir=tmp_path / "state")
+
+    manifest = json.loads((handle.run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["exit_status"] == "pass"
+    skips = [e for e in _log_events(handle) if e["event"] == "measurement_auto_attach_skipped"]
+    assert len(skips) == 1
+    assert "fresh deployed runtime is unavailable" in skips[0]["payload"]["reason"]
+
+
+def test_kill_switch_env_var_prevents_auto_attachment(monkeypatch, tmp_path):
+    monkeypatch.setattr(telemetry, "ObserverCollector", _Observer)
+    monkeypatch.setattr(scenario, "_run_phase", lambda *a, **k: None)
+    monkeypatch.setenv("DWARF_MEASUREMENTS", "off")
+    seen = []
+
+    monkeypatch.setattr(
+        "profile_manager.measurement_execution.prepare_scenario_measurements",
+        lambda scen: seen.append(scen.id),
+    )
+    path = _write_profile_devnet_scenario(tmp_path / "scenario.yaml")
+
+    handle = scenario.run_scenario(path, runs_dir=tmp_path / "runs", state_dir=tmp_path / "state")
+
+    assert seen == []
+    manifest = json.loads((handle.run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["exit_status"] == "pass"

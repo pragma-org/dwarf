@@ -72,7 +72,7 @@ services:
       - ${DWARF_RUNTIME_ROOT:-../var}/runs:/var/dwarf/runs
       - ${DWARF_RUNTIME_ROOT:-../var}/state:/var/dwarf/state
       - ${DWARF_RUNTIME_ROOT:-../var}/bundles:/var/dwarf/bundles
-      - ${DWARF_SSH_KEY_PATH:-../var/state/ssh_deploy_key}:/home/dwarf/.ssh/cardano-box:ro
+      - ${DWARF_SSH_KEY_PATH:-../var/state/ssh_deploy_key}:/home/dwarf/.ssh/id_ed25519:ro
       - ${DWARF_SSH_KNOWN_HOSTS:-../var/state/ssh_known_hosts}:/home/dwarf/.ssh/known_hosts:ro
     read_only: true
     cap_drop:
@@ -88,4 +88,4 @@ networks:
   default:
     ipam:
       config:
-        - subnet: 10.201.0.0/24
+        - subnet: ${DWARF_NETWORK_SUBNET:-10.201.0.0/24}

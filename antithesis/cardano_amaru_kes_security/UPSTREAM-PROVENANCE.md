@@ -31,7 +31,7 @@ The selected bootstrap image contains Amaru `10.11.0` at
 
 Anonymous tag and digest requests both returned HTTP 200 and the same
 `docker-content-digest`. An anonymous `docker pull` by digest also succeeded on
-`cardano-box` and `docker image inspect` returned that exact repository digest.
+`dwarf-host-a` and `docker image inspect` returned that exact repository digest.
 
 The image contains executable paths:
 
@@ -149,6 +149,6 @@ split control network. A fresh local run observed this exact one-second split.
 The new package retains the upstream generator and topology, then normalizes
 only those two clock fields to pool 1 before the configurator exits. A separate
 runtime probe reads all three producer files and refuses to continue unless the
-clock pairs are identical. An isolated configurator execution on `cardano-box`
+clock pairs are identical. An isolated configurator execution on `dwarf-host-a`
 then produced identical SHA-256 values for all three Shelley genesis files and
 identical SHA-256 values for all three Byron genesis files.

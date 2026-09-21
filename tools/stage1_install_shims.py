@@ -1,5 +1,5 @@
 """Install built dwarf-cardano-shims executables to their manifest-declared
-binary paths. Run on cardano-box after `cabal build all`."""
+binary paths. Run on dwarf-host-a after `cabal build all`."""
 import glob
 import json
 import os

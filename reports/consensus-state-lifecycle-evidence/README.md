@@ -35,7 +35,7 @@ from-genesis rebuild; store-invariant violations panic), while cardano-node repl
 newest snapshot down to genesis. This is not an exploit — a lifecycle/recovery model difference a
 tip-convergence oracle cannot see, plus a new test dimension DWARF should add.
 
-## Live run corrected one predicted finding (read `logs/live-run-2026-07-18.txt`)
+## Live run corrected one predicted finding
 
 A DWARF run (`consensus-state-lifecycle-bootstrap-differential`, schema + registry valid)
 fresh-bootstrapped a real Amaru node on the `cardano_amaru` mesh. **Result: it crossed epoch
@@ -53,11 +53,10 @@ Exact symbol/line references: the four-store split and `MIN_LEDGER_SNAPSHOTS`, t
 `NoSuitableStakeDistribution` error path, the roll-forward error surfacing, the hard panics,
 and `build_node.rs`'s "must be bootstrapped / tip-aligned" restart requirement.
 
-## `logs/`
+## Public evidence boundary
 
-`observed-epoch-crash.md` — notes on the live crash from the earlier campaign (a freshly
-bootstrapped Amaru crashing while forward-syncing across an epoch boundary) and the
-single-epoch workaround that avoided it.
+This report keeps the reviewed conclusion and public source citations. Raw operator logs and
+earlier campaign notes are not part of the public source tree.
 
 ## Next step (adversarial)
 

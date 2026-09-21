@@ -129,10 +129,9 @@ seed_example_runs() {
     done
   fi
 
-  # Public delivery keeps examples as tar.gz bundles rather than duplicating
-  # their unpacked run trees. Materialize each missing run on install/deploy so
-  # a fresh dashboard has the same inspectable examples without overwriting
-  # any runtime evidence already present.
+  # A source package may provide explicitly distributable example bundles.
+  # The public repository does not ship runtime evidence, so this is normally
+  # a no-op. Keep the compatibility path for separately supplied examples.
   local bundle_path
   if [[ -d "${source_bundles}" ]]; then
     for bundle_path in "${source_bundles}"/*.tar.gz; do

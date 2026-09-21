@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-20T23:17:05Z",
+  "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+  "source_release": "v10.11.20260912-30-gd3a6dafc",
+  "upstream_fix": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+  "measurement_revision": "nanoseconds-v2",
+  "manifest_sha256": "45ae00451871355b26df3f067d672c2589ffcd159e16cc8b9cd837827582ac53",
+  "patch_sha256": "fbc41302f7c577324c3fe8ea9ff9391a040e255194732d7c5c63b5bcc862fa3a",
+  "patch_set_sha256": "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0",
+  "build_log_sha256": "156eeae70fdc1eb61947f8c983a4b73a2ef6636c11748fc9fe207726ccd79d58",
+  "build_result_sha256": "sha256:2ea77ff8e03c29e44a8f506542d55bde89c6ffa0119817757480d062200d639a",
+  "registry_record_sha256": "bc3cc4c4fe94327d1c38b187cd5483cce33f4ebdb50b0b6810a00e2c8221109f",
+  "executable_digest": "sha256:2970fa583d53967c72fdacb7e61d2954e1fb8d1b56fc7a34590018551085184e",
+  "executable_size_bytes": 42969544,
+  "static_linkage": true,
+  "image_reference": "dwarf/amaru-measurement@sha256:c890ee54aad19fe36aa80efbdee2f8a155dd80b2207970e844c836d37d8c5932",
+  "image_digest": "sha256:c890ee54aad19fe36aa80efbdee2f8a155dd80b2207970e844c836d37d8c5932",
+  "image_build_log_sha256": "5d6e8c36d1e1c4faa566c8bbfb63f6b2826b8301ed3afa1284b7c9824bdfe1bd",
+  "image_smoke": "passed",
+  "image_smoke_log_sha256": "84a8f09eada3a75f2edc05f001892811300b24478751604a6ae2f5a4570d0d6e",
+  "runtime_probe_smoke": "passed",
+  "runtime_probe_log_sha256": "84a8f09eada3a75f2edc05f001892811300b24478751604a6ae2f5a4570d0d6e",
+  "toolchain": {
+    "rust": "nightly-2026-09-04",
+    "cargo_zigbuild": "0.23.4",
+    "zig": "0.15.2",
+    "target": "x86_64-unknown-linux-musl"
+  }
+}

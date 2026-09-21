@@ -68,15 +68,44 @@ def render_topology_redeploy_command(
     )
 
 
+def render_launch_command(config, launch_id: str) -> list[str]:
+    """Render the identifier-only command accepted by the forced-command shim."""
+    from profile_manager.launch_store import validate_launch_id
+
+    checked = validate_launch_id(launch_id)
+    return render_ssh_command(
+        config,
+        f"launch {checked}",
+        verb=("launch", checked),
+    )
+
+
+def render_launch_preflight_command(config, launch_id: str) -> list[str]:
+    """Render the read-only exact-runtime check for one stored launch."""
+    from profile_manager.launch_store import validate_launch_id
+
+    checked = validate_launch_id(launch_id)
+    return render_ssh_command(
+        config,
+        f"launch-preflight {checked}",
+        verb=("launch-preflight", checked),
+    )
+
+
 def resolve_ssh_key_path(config) -> str:
     configured = Path(config.ssh_key_path).expanduser()
     if configured.exists():
         return str(configured)
 
     parts = configured.parts
-    if len(parts) >= 5 and parts[:4] == ("/", "home", "dwarf", ".ssh"):
+    if (
+        len(parts) >= 5
+        and parts[0:2] == ("/", "home")
+        and parts[-2] == ".ssh"
+    ):
         candidates = [
             Path.home() / ".ssh" / configured.name,
+            Path("/home/dwarf/.ssh") / configured.name,
             Path("/home") / str(config.ssh_user) / ".ssh" / configured.name,
             Path("/Users") / str(config.ssh_user) / ".ssh" / configured.name,
         ]

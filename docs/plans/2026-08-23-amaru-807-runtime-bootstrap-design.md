@@ -15,7 +15,7 @@ Build one new source-pinned `amaru-807-custom-bootstrap` image. It contains:
 
 - Amaru source pinned to commit `493bffba`;
 - the documented local-manifest, definite-map TVar, and custom-parameter
-  patches already proven on `cardano-box`;
+  patches already proven on `dwarf-host-a`;
 - `db-analyser` from the same immutable Cardano 10.7.1 image used by the testnet;
 - a bootstrap entrypoint and the fixed Amaru runtime binary.
 

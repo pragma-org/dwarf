@@ -1,0 +1,17 @@
+schema_version: v1
+id: amaru-coverage-production-paths
+title: Amaru production-path code coverage
+description: Records which compiler-instrumented real Amaru production paths execute; it is neither correctness nor performance authority.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: amaru
+  versions: [{version: 10.11.20260912, source_revision: b159172f25a9c389f82f20bca4f15e3032791638}]
+  target_modes: [coverage]
+collection_mode: compiler-coverage
+required_capabilities: [amaru-coverage-build, dwarf-coverage-collector]
+default_enabled: false
+overhead_class: high
+collector: {lifecycle: process, start: before-target, stop: target-exit, failure_behavior: warn}
+emitted_artifacts: [measurements/amaru-coverage-production-paths/result.json, measurements/amaru-coverage-production-paths/report]
+correlation_identifiers: [run_id, workload_phase, coverage_campaign_id, corpus_input_id, input_id]
+threshold_gate: {supported: false, default_enabled: false}

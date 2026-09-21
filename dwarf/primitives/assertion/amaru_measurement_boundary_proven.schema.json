@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "amaru_measurement_boundary_proven params",
+  "type": "object",
+  "required": [
+    "expected_mode",
+    "min_attempts_per_case",
+    "min_internal_samples_per_outcome"
+  ],
+  "properties": {
+    "expected_mode": {"type": "string", "enum": ["stock", "patched"]},
+    "min_attempts_per_case": {"type": "integer", "minimum": 1},
+    "min_internal_samples_per_outcome": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,21 @@
+[package]
+name = "dwarf-amaru-coverage-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+amaru-kernel = { path = "../crates/amaru-kernel" }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "plutus_data"
+path = "fuzz_targets/plutus_data.rs"
+test = false
+doc = false
+bench = false

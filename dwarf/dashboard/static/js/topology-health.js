@@ -29,6 +29,28 @@ if (panel) {
     const body = field('nodes');
     if (!body) return;
     body.replaceChildren();
+    const current = payload.state === 'checking' && payload.previous ? payload.previous : payload;
+    if (current.topology_kind === 'managed_profile') {
+      const observed = current.observation || {};
+      const row = document.createElement('tr');
+      const values = [
+        current.profile_id || 'no active profile',
+        'Managed profile',
+        current.state || payload.state || 'unknown',
+        observed.tip_slot === undefined || observed.tip_slot === null
+          ? '—' : `slot ${observed.tip_slot} · block ${observed.tip_block ?? '—'}`,
+        '—',
+        observed.node_processes === undefined
+          ? '—' : `${observed.node_processes} / ${observed.expected_nodes ?? '—'} ready`,
+      ];
+      values.forEach((value) => {
+        const cell = document.createElement('td');
+        cell.textContent = String(value);
+        row.appendChild(cell);
+      });
+      body.appendChild(row);
+      return;
+    }
     const observation = payload.observation || (payload.previous || {}).observation || {};
     const containers = observation.containers || {};
     const samples = observation.samples || [];
@@ -70,14 +92,20 @@ if (panel) {
     const current = payload.state === 'checking' && payload.previous ? payload.previous : payload;
     setText('state', String(payload.state || 'unknown').toUpperCase());
     setText('checked-at', payload.state === 'checking' ? (payload.started_at || 'checking') : current.checked_at);
-    const reference = current.reference_tip || {};
+    const managed = current.observation || {};
+    const reference = current.topology_kind === "managed_profile"
+      ? {slot: managed.tip_slot, block: managed.tip_block}
+      : (current.reference_tip || {});
     setText('reference-tip', reference.slot === undefined ? '—' : `slot ${reference.slot} · block ${reference.block ?? '—'}`);
-    setText('consumer-lag', current.consumer_lag_slots === null || current.consumer_lag_slots === undefined ? '—' : `${current.consumer_lag_slots} slots`);
+    const readiness = current.topology_kind === "managed_profile"
+      ? `${managed.node_processes ?? "—"} / ${managed.expected_nodes ?? "—"} nodes`
+      : (current.consumer_lag_slots === null || current.consumer_lag_slots === undefined ? "—" : `${current.consumer_lag_slots} slots`);
+    setText("consumer-lag", readiness);
     setText('reason', current.reason_code || 'pending');
     setText('detail', current.detail || '');
     const notice = payload.state === 'checking'
       ? (payload.previous ? 'Fresh check in progress; values below are explicitly the previous result.' : 'Fresh health check in progress.')
-      : (payload.state === 'healthy' ? 'The pre-staged topology is ready for attached scenarios.' : 'The topology is not ready; attached scenarios must not run against this state.');
+      : (payload.state === 'healthy' ? 'The current managed profile is ready and progressing.' : 'The current managed profile is not ready; do not start an attached scenario against this state.');
     setText('notice', notice);
     const evidence = field('evidence');
     if (evidence) {
@@ -92,7 +120,7 @@ if (panel) {
     const effectiveState = current.state || payload.state;
     if (flask) flask.dataset.state = effectiveState;
     if (redeployButton) {
-      redeployButton.hidden = !['unhealthy', 'unknown'].includes(effectiveState);
+      redeployButton.hidden = !current.redeploy_supported || !["unhealthy", "unknown"].includes(effectiveState);
       redeployButton.disabled = redeploying;
     }
     renderNodes(payload);

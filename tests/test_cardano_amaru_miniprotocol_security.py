@@ -82,11 +82,10 @@ def test_new_package_has_the_complete_additive_file_set():
         "amaru-runtime/global-parameters.json",
         "workload/Dockerfile",
         "workload/miniprotocol_observer.py",
-        "scratchbook/property-catalog.md",
-        "scratchbook/properties/mixed-miniprotocol-containment.md",
     }
     missing = sorted(name for name in required if not (BUNDLE / name).is_file())
     assert not missing, missing
+    assert not (BUNDLE / "scratchbook").exists()
 
 
 def test_package_keeps_proven_control_assets_byte_identical():

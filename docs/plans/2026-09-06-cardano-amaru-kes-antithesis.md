@@ -6,7 +6,7 @@ dedicated Cardano-node and Amaru victims without weakening the proven mixed
 control.
 
 **Constraints:** No worktree, no edits to existing scenario packages, no
-credential material, all live work on `cardano-box`, and no Antithesis/Moog
+credential material, all live work on `dwarf-host-a`, and no Antithesis/Moog
 submission without explicit approval.
 
 ## 1. Freeze research and contracts
@@ -63,7 +63,7 @@ submission without explicit approval.
 
 ## 6. Prove locally through DWARF
 
-- Sync the additive files to `cardano-box` without deleting unrelated state.
+- Sync the additive files to `dwarf-host-a` without deleting unrelated state.
 - Build the Haskell binary with `-Werror`, run its tests, build local images, and
   render the exact local Compose model.
 - Add a uniquely named DWARF scenario/probe. Start a fresh unique Compose

@@ -133,6 +133,7 @@ def render_html(title, subtitle, favicon_kicker, blocks):
 # assertions: the pass condition (the "expected outcome"). load/etc: the purpose.
 DESC = {
 # ---- assertions (oracle / pass condition) ----
+"canonical_chain_progress_complete":"PASS iff lossless raw chain-selection evidence derives at least the required final height progress, reaches the exact final tip after bounded oscillation, retains the required application correlations, and has no fatal health signal.",
 "parse_succeeds_or_clean_error":"PASS iff no parse outcome is a crash (every input is `ok` or `clean_error`) over >= min_outcomes_count inputs.",
 "roundtrip_equals_original":"PASS iff every `ok` parse re-encodes to bytes identical to the input, over >= min_inputs_parsed inputs.",
 "parser_bounds_enforced":"PASS iff parser/deserialization bounds are enforced before any unbounded work.",
@@ -208,6 +209,7 @@ DESC = {
 "bundle_summary_compose_completed_clean":"PASS iff the composed summary bundle is non-empty (>= min_completed).",
 "bundle_timeline_emitted_clean":"PASS iff the bundle timeline emits >= 1 signature record.",
 "aflpp_smoke_exit_clean":"PASS iff the AFL++ smoke run exits clean, meeting completed/queue/execs/cycles/bitmap-coverage floors.",
+"runtime_controlled_chain_progress_window":"Retain a bounded real-node block window. Version 2 keeps every raw adoption, fork, rollback, and application timing, then derives canonical progress without rewriting the raw sequence.",
 # ---- load / setup / probe / fault / teardown (purpose) ----
 "cbor_edge_cases":"Feed a curated list of hand-crafted CBOR edge-case byte strings at a decode target and classify each.",
 "cbor_fuzz_structured":"Shape-aware CBOR fuzzing: generate a structurally-valid CBOR value from a shape tree, mutate inner bytes, feed to a decode target.",

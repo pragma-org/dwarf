@@ -1,9 +1,11 @@
 import random
 import sys
+from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, "/Users/operator/dwarf-project/dwarf-v4/dwarf")
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "dwarf"))
 from profile_manager import scenario as s
 from profile_manager import primitives as p
 

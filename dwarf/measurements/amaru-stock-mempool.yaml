@@ -1,0 +1,17 @@
+schema_version: v1
+id: amaru-stock-mempool
+title: Amaru mempool admission and pressure
+description: Counts accepted, invalid, duplicate, and full outcomes and correlates mempool growth, revalidation, eviction, and recovery.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: amaru
+  versions: [{version: 10.11.20260912, source_revision: b159172f25a9c389f82f20bca4f15e3032791638}, {version: v10.11.20260912-30-gd3a6dafc, source_revision: d3a6dafcced78f5809a96619e883cf04911d2bdc}]
+  target_modes: [stock, patched]
+collection_mode: stock-telemetry
+required_capabilities: [amaru-mempool-metrics, amaru-json-traces]
+default_enabled: true
+overhead_class: low
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/amaru-stock-mempool/result.json]
+correlation_identifiers: [run_id, workload_phase, transaction_id, trace_id, fault_id, window]
+threshold_gate: {supported: true, default_enabled: false}

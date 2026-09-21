@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from profile_manager import plugin_loader
+from profile_manager.measurement_precision import precise_microseconds
 
 FAMILIES = frozenset({"setup", "load", "probe", "assertion", "fault", "teardown"})
 RUNTIMES = frozenset({"library", "single-node", "devnet"})
@@ -252,6 +253,9 @@ def _build_dwarf_telemetry_env(handle):
     metrics_dir = run_dir / "metrics"
     runtime_metrics_dir = metrics_dir / "runtime"
     target_event_log = events_dir / "target-hooks.ndjson"
+    env["PYTHONPATH"] = os.pathsep.join(
+        value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value
+    )
     env.update({
         "ADA2_DWARF_RUN_DIR": str(run_dir),
         "ADA2_DWARF_EVENTS_DIR": str(events_dir),
@@ -1051,6 +1055,24 @@ def build_runtime_cardano_cbor_dataset_differential_command(*, config_path: Path
     return [
         "python3",
         str(DWARF_ROOT / "scripts" / "runtime_cardano_cbor_dataset_differential.py"),
+        "--config",
+        str(config_path),
+    ]
+
+
+def build_runtime_version_pinned_cbor_conformance_command(*, config_path: Path) -> list[str]:
+    return [
+        "python3",
+        str(DWARF_ROOT / "scripts" / "runtime_version_pinned_cbor_conformance.py"),
+        "--config",
+        str(config_path),
+    ]
+
+
+def build_runtime_version_pinned_plutus_conformance_command(*, config_path: Path) -> list[str]:
+    return [
+        "python3",
+        str(DWARF_ROOT / "scripts" / "runtime_version_pinned_plutus_conformance.py"),
         "--config",
         str(config_path),
     ]
@@ -3952,6 +3974,137 @@ class RuntimeCardanoCborDatasetDifferential(LoadPrimitive):
                 "stderr": stderr[-4096:],
             },
         )
+
+
+class RuntimeVersionPinnedCborConformance(LoadPrimitive):
+    """Run the frozen corpus through one exact production codec adapter."""
+
+    def run(self, handle, rng):
+        output_dir = _resolve_output_path(handle, self.params["output_dir"])
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        config = {
+            "source_repository": str(self.params["source_repository"]),
+            "dataset_revision": str(self.params["dataset_revision"]),
+            "dataset_repo_dir": str(_resolve_runtime_path(self.params["dataset_repo_dir"])),
+            "dataset_dir": str(_resolve_runtime_path(self.params["dataset_dir"])),
+            "implementation": str(self.params["implementation"]),
+            "source_revision": str(self.params["source_revision"]),
+            "output_dir": str(output_dir),
+            "per_input_timeout_seconds": float(
+                self.params.get("per_input_timeout_seconds", 5)
+            ),
+        }
+        if self.params.get("adapter_record"):
+            config["adapter_record"] = str(
+                _resolve_runtime_path(self.params["adapter_record"])
+            )
+        else:
+            config["adapter_manifest"] = str(
+                _resolve_runtime_path(self.params["adapter_manifest"])
+            )
+            config["adapter_manifest_sha256"] = str(
+                self.params["adapter_manifest_sha256"]
+            )
+            if self.params.get("adapter_registry_root"):
+                config["adapter_registry_root"] = str(
+                    _resolve_runtime_path(self.params["adapter_registry_root"])
+                )
+        config_path = output_dir.parent / f"{output_dir.name}-config.json"
+        config_path.write_text(
+            json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        command = build_runtime_version_pinned_cbor_conformance_command(
+            config_path=config_path
+        )
+        timeout_seconds = float(self.params.get("timeout_seconds", 1200))
+        expect_exit = int(self.params.get("expect_exit", 0))
+        handle.log(
+            phase="load",
+            primitive="runtime_version_pinned_cbor_conformance",
+            level="info",
+            event="started",
+            payload={
+                "implementation": config["implementation"],
+                "source_revision": config["source_revision"],
+                "dataset_revision": config["dataset_revision"],
+                "output_dir": str(output_dir),
+                "command": command,
+            },
+        )
+        proc = subprocess.run(
+            command,
+            cwd=DWARF_ROOT,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+            env=_build_dwarf_telemetry_env(handle),
+        )
+        report = {}
+        report_path = output_dir / "result.json"
+        if report_path.is_file():
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        artifacts = {
+            "has_result_json": report_path.is_file(),
+            "has_inputs_ndjson": (output_dir / "inputs.ndjson").is_file(),
+            "has_report_markdown": (output_dir / "report.md").is_file(),
+        }
+        outcome = "ok" if proc.returncode == expect_exit else "unexpected_exit"
+        handle.log(
+            phase="load",
+            primitive="runtime_version_pinned_cbor_conformance",
+            level="info" if outcome == "ok" else "error",
+            event="completed",
+            payload={
+                "exit_code": proc.returncode,
+                "outcome": outcome,
+                "artifact_summary": artifacts,
+                "report": report,
+                "stdout": _decode_process_output(proc.stdout)[-4096:],
+                "stderr": _decode_process_output(proc.stderr)[-4096:],
+            },
+        )
+
+
+class RuntimeVersionPinnedPlutusConformance(LoadPrimitive):
+    """Run both exact production Plutus V2 evaluators with one cost model."""
+
+    def run(self, handle, rng):
+        output_dir = _resolve_output_path(handle, self.params["output_dir"])
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        config = {
+            "cost_model": str(_resolve_runtime_path(self.params["cost_model"])),
+            "output_dir": str(output_dir),
+            "executions_per_script": int(self.params.get("executions_per_script", 30)),
+            "adapters": {
+                implementation: {
+                    "record": str(_resolve_runtime_path(item["record"])),
+                    "source_revision": str(item["source_revision"]),
+                }
+                for implementation, item in self.params["adapters"].items()
+            },
+        }
+        config_path = output_dir.parent / f"{output_dir.name}-config.json"
+        config_path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        command = build_runtime_version_pinned_plutus_conformance_command(config_path=config_path)
+        handle.log(phase="load", primitive="runtime_version_pinned_plutus_conformance",
+                   level="info", event="started", payload={"output_dir": str(output_dir), "command": command})
+        proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True,
+                              timeout=float(self.params.get("timeout_seconds", 1200)),
+                              check=False, env=_build_dwarf_telemetry_env(handle))
+        report_path = output_dir / "report.json"
+        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
+        artifacts = {
+            "has_report_json": report_path.is_file(),
+            "has_raw_evaluations": (output_dir / "raw-evaluations.ndjson").is_file(),
+            "has_report_markdown": (output_dir / "report.md").is_file(),
+        }
+        outcome = "ok" if proc.returncode == int(self.params.get("expect_exit", 0)) else "unexpected_exit"
+        handle.log(phase="load", primitive="runtime_version_pinned_plutus_conformance",
+                   level="info" if outcome == "ok" else "error", event="completed",
+                   payload={"outcome": outcome, "exit_code": proc.returncode,
+                            "artifact_summary": artifacts, "report": report,
+                            "stdout": _decode_process_output(proc.stdout)[-4096:],
+                            "stderr": _decode_process_output(proc.stderr)[-4096:]})
 
 
 class RuntimeAflNetCampaign(LoadPrimitive):
@@ -13187,7 +13340,11 @@ class RuntimePreviewUpstreamLoss(LoadPrimitive):
 class RuntimeLiveImplementationBaseline(LoadPrimitive):
     """Run the existing live implementation baseline helper as a declarative primitive."""
 
-    _DEFAULT_HELPER = "/home/dwarf/dwarf-fw/scripts/runtime_live_implementation_check.py"
+    _DEFAULT_HELPER = str(
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "runtime_live_implementation_check.py"
+    )
 
     def run(self, handle, rng):
         import os
@@ -13303,6 +13460,2476 @@ class RuntimeLiveImplementationBaseline(LoadPrimitive):
             level="info" if outcome == "ok" else "error",
             event="completed",
             payload=payload,
+        )
+
+
+class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
+    """Run one retained real-node leg of the stock/patched Amaru calibration."""
+
+    _DEFAULT_HELPER = str(
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "runtime_amaru_measurement_calibration.py"
+    )
+    _PRIMITIVE_NAME = "runtime_amaru_measurement_calibration"
+    _OUTPUT_SUBDIR = "amaru-measurement-calibration"
+    _OBSERVATION_WINDOW = False
+    _CARDANO_NODE_WORKLOAD = False
+
+    def run(self, handle, rng):
+        import os
+        import subprocess
+
+        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        python_bin = str(self.params.get("python_bin", "python3"))
+        profile_id = self.params.get("profile_id")
+        runtime_root_value = self.params.get("runtime_root")
+        if bool(profile_id) == bool(runtime_root_value):
+            raise ValueError(
+                f"{self._PRIMITIVE_NAME} requires exactly one of "
+                "profile_id or runtime_root"
+            )
+        if profile_id:
+            from profile_manager.profiles import remote_base
+
+            runtime_root = str(Path(remote_base()) / str(profile_id))
+        else:
+            runtime_root = str(runtime_root_value)
+        attempts = int(self.params.get("attempts", 40))
+        case_set = str(
+            self.params.get("case_set", "unsupported-version-only-v1")
+        )
+        response_timeout_seconds = float(
+            self.params.get("response_timeout_seconds", 2.0)
+        )
+        progress_timeout_seconds = float(
+            self.params.get("progress_timeout_seconds", 120.0)
+        )
+        observation_seconds = (
+            float(self.params.get("observation_seconds", 2.0))
+            if self._OBSERVATION_WINDOW
+            else None
+        )
+        trace_timeout_seconds = (
+            float(self.params.get("trace_timeout_seconds", 20.0))
+            if self._OBSERVATION_WINDOW
+            else None
+        )
+        plutus_transactions = (
+            int(self.params.get("plutus_transactions", 0))
+            if self._CARDANO_NODE_WORKLOAD
+            else 0
+        )
+        epoch_observation_seconds = (
+            float(self.params.get("epoch_observation_seconds", 0))
+            if self._CARDANO_NODE_WORKLOAD
+            else 0
+        )
+        timeout_seconds = float(self.params.get("timeout_seconds", 180))
+        expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
+        run_dir = getattr(handle, "run_dir", None)
+        if run_dir is None and "output_dir" not in self.params:
+            raise ValueError(
+                f"{self._PRIMITIVE_NAME} requires a run directory or output_dir"
+            )
+        output_dir = Path(
+            self.params.get(
+                "output_dir",
+                Path(run_dir) / "outputs" / self._OUTPUT_SUBDIR,
+            )
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        command = [
+            python_bin,
+            helper_script,
+            "leg",
+            "--runtime-root",
+            runtime_root,
+            "--output-dir",
+            str(output_dir),
+            "--attempts",
+            str(attempts),
+            "--timeout-seconds",
+            str(response_timeout_seconds),
+            "--case-set",
+            case_set,
+            "--progress-timeout-seconds",
+            str(progress_timeout_seconds),
+        ]
+        if observation_seconds is not None:
+            command.extend(["--observation-seconds", str(observation_seconds)])
+        if trace_timeout_seconds is not None:
+            command.extend(["--trace-timeout-seconds", str(trace_timeout_seconds)])
+        if self._CARDANO_NODE_WORKLOAD:
+            command.extend([
+                "--plutus-transactions", str(plutus_transactions),
+                "--epoch-observation-seconds", str(epoch_observation_seconds),
+            ])
+        handle.log(
+            phase="load",
+            primitive=self._PRIMITIVE_NAME,
+            level="info",
+            event="started",
+            payload={
+                "profile_id": profile_id,
+                "runtime_root": runtime_root,
+                "output_dir": str(output_dir),
+                "attempts": attempts,
+                "case_set": case_set,
+                "response_timeout_seconds": response_timeout_seconds,
+                "progress_timeout_seconds": progress_timeout_seconds,
+                "observation_seconds": observation_seconds,
+                "trace_timeout_seconds": trace_timeout_seconds,
+                "plutus_transactions": plutus_transactions,
+                "epoch_observation_seconds": epoch_observation_seconds,
+            },
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(
+            value
+            for value in (str(DWARF_ROOT), env.get("PYTHONPATH"))
+            if value
+        )
+        timed_out = False
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=DWARF_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+                env=env,
+            )
+            helper_exit_code = int(proc.returncode)
+            stdout = proc.stdout or ""
+            stderr = proc.stderr or ""
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            helper_exit_code = -1
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+        report_path = output_dir / "result.json"
+        report = (
+            json.loads(report_path.read_text(encoding="utf-8"))
+            if report_path.is_file()
+            else {}
+        )
+        attempt_records = []
+        attempts_path = output_dir / "attempts.ndjson"
+        if attempts_path.is_file():
+            for line in attempts_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(record, dict):
+                    attempt_records.append(record)
+        outcome = (
+            "ok"
+            if helper_exit_code == expected_helper_exit
+            else ("timeout" if timed_out else "unexpected_exit")
+        )
+        handle.log(
+            phase="load",
+            primitive=self._PRIMITIVE_NAME,
+            level="info" if outcome == "ok" else "error",
+            event="completed",
+            payload={
+                "outcome": outcome,
+                "helper_exit_code": helper_exit_code,
+                "timed_out": timed_out,
+                "runtime_root": runtime_root,
+                "profile_id": profile_id,
+                "output_dir": str(output_dir),
+                "attempts": attempts,
+                "plutus_transactions": plutus_transactions,
+                "epoch_observation_seconds": epoch_observation_seconds,
+                "report": report,
+                "stdout": stdout[-4096:],
+                "stderr": stderr[-2048:],
+            },
+        )
+        successful_outcomes = {"accepted", "ok", "success", "successful"}
+        rejected_outcomes = {"rejected", "invalid", "duplicate"}
+        handle.log(
+            phase="load",
+            primitive=self._PRIMITIVE_NAME,
+            level="info",
+            event="workload_accounting",
+            payload={
+                "attempted": len(attempt_records),
+                "successful": sum(
+                    str(row.get("outcome") or "").lower() in successful_outcomes
+                    for row in attempt_records
+                ),
+                "rejected": sum(
+                    str(row.get("outcome") or "").lower() in rejected_outcomes
+                    for row in attempt_records
+                ),
+                "bytes": sum(
+                    int(row.get("request_length") or 0) for row in attempt_records
+                ),
+                "batches": len(attempt_records),
+                "backlog": None,
+                "attempts": [
+                    {
+                        "input_id": str(row.get("attempt_id") or ""),
+                        "outcome": str(row.get("outcome") or "unclassified"),
+                        "elapsed_micros": int(row.get("elapsed_micros") or 0),
+                    }
+                    for row in attempt_records
+                ],
+            },
+        )
+
+
+class RuntimeCardanoMeasurementCalibration(RuntimeAmaruMeasurementCalibration):
+    """Run one retained real-node Cardano-node measurement workload leg."""
+
+    _DEFAULT_HELPER = str(
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "runtime_cardano_measurement_calibration.py"
+    )
+    _PRIMITIVE_NAME = "runtime_cardano_measurement_calibration"
+    _OUTPUT_SUBDIR = "cardano-measurement-calibration"
+    _OBSERVATION_WINDOW = True
+    _CARDANO_NODE_WORKLOAD = True
+
+
+def _client_example_proof_path(handle, relative_path: str) -> Path:
+    run_dir = Path(handle.run_dir).resolve()
+    candidate = (run_dir / relative_path).resolve()
+    try:
+        candidate.relative_to(run_dir)
+    except ValueError as exc:
+        raise ValueError("client example evidence path escapes the run directory") from exc
+    return candidate
+
+
+def _write_client_example_proof(handle, filename: str, payload: dict[str, Any]) -> Path:
+    destination = _client_example_proof_path(
+        handle, f"outputs/client-example-proof/{filename}"
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return destination
+
+
+def _measurement_target_identity(handle) -> dict[str, Any]:
+    context = getattr(handle, "_measurement_context", None) or {}
+    resolution = context.get("resolution") if isinstance(context, dict) else None
+    if not isinstance(resolution, dict):
+        resolution = context
+    identity = (resolution or {}).get("target_identity")
+    if not isinstance(identity, dict) or not identity:
+        raise RuntimeError("resolved measurement target identity is unavailable")
+    return dict(identity)
+
+
+class RuntimeControlledPlutusTransactions(LoadPrimitive):
+    """Submit exactly 30 valid and 30 invalid frozen Plutus transactions."""
+
+    def run(self, handle, rng):
+        import os
+        from profile_manager.profiles import remote_base
+
+        profile_id = self.params.get("profile_id")
+        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        output_dir = _resolve_output_path(
+            handle, self.params.get("output_dir", "outputs/controlled-plutus-transactions")
+        )
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            str(self.params.get("python_bin", "python3")),
+            str(DWARF_ROOT / "scripts" / "runtime_controlled_plutus_transactions.py"),
+            "--measurement-implementation",
+            str(self.params["measurement_implementation"]),
+            "--runtime-root", str(runtime_root),
+            "--output-dir", str(output_dir),
+            "--transaction-count", "60",
+        ]
+        handle.log(phase="load", primitive="runtime_controlled_plutus_transactions",
+                   level="info", event="started",
+                   payload={"profile_id": profile_id, "runtime_root": str(runtime_root), "command": command})
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value)
+        proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True, text=True,
+                              timeout=float(self.params.get("timeout_seconds", 3600)),
+                              check=False, env=env)
+        report_path = output_dir / "result.json"
+        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
+        outcome = "ok" if proc.returncode == int(self.params.get("expect_exit", 0)) else "unexpected_exit"
+        handle.log(phase="load", primitive="runtime_controlled_plutus_transactions",
+                   level="info" if outcome == "ok" else "error", event="completed",
+                   payload={"outcome": outcome, "exit_code": proc.returncode,
+                            "report": report, "output_dir": str(output_dir),
+                            "stdout": (proc.stdout or "")[-4096:], "stderr": (proc.stderr or "")[-4096:]})
+
+class RuntimeVerifyExactTarget(LoadPrimitive):
+    """Fail closed unless the deployed measurement target matches every frozen field."""
+
+    _FIELDS = (
+        "implementation",
+        "version",
+        "source_revision",
+        "mode",
+        "image_digest",
+        "executable_digest",
+        "patch_set_sha256",
+    )
+
+    def run(self, handle, rng):
+        observed = _measurement_target_identity(handle)
+        expected = {
+            field: self.params[field]
+            for field in self._FIELDS
+            if field in self.params
+        }
+        missing = [field for field in expected if observed.get(field) in (None, "")]
+        mismatches = {
+            field: {"expected": value, "observed": observed.get(field)}
+            for field, value in expected.items()
+            if observed.get(field) != value
+        }
+        proof = {
+            "schema_version": "v1",
+            "matched": not missing and not mismatches,
+            "expected": expected,
+            "observed": observed,
+            "missing_fields": missing,
+            "mismatches": mismatches,
+        }
+        _write_client_example_proof(handle, "exact-target.json", proof)
+        handle.log(
+            phase="setup",
+            primitive="runtime_verify_exact_target",
+            level="info" if proof["matched"] else "error",
+            event="completed",
+            payload={"outcome": "ok" if proof["matched"] else "mismatch", **proof},
+        )
+        if not proof["matched"]:
+            fields = sorted(set(missing).union(mismatches))
+            raise RuntimeError(
+                "exact target identity mismatch: " + ", ".join(fields)
+            )
+
+
+def _protocol_decode_report(handle, params: dict[str, Any]) -> dict[str, Any]:
+    relative = str(
+        params.get("report_path", "outputs/protocol-decode-cases/result.json")
+    )
+    path = _client_example_proof_path(handle, relative)
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"protocol-decode evidence is unavailable: {path}") from exc
+    if not isinstance(report, dict):
+        raise RuntimeError("protocol-decode evidence must be a JSON object")
+    return report
+
+
+def _tip_position(tip: dict[str, Any]) -> int | None:
+    for field in ("block_height", "block", "slot"):
+        try:
+            if tip.get(field) is not None:
+                return int(tip[field])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _protocol_docker_result(command: list[str], *, timeout: float = 60.0):
+    return subprocess.run(
+        ["docker", *command],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _protocol_container_state(container: str) -> dict[str, Any]:
+    result = _protocol_docker_result(["inspect", container])
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"cannot inspect {container}")
+    body = json.loads(result.stdout)[0]
+    state = body.get("State") or {}
+    return {
+        "running": state.get("Running") is True,
+        "status": state.get("Status"),
+        "exit_code": state.get("ExitCode"),
+        "oom_killed": state.get("OOMKilled") is True,
+        "restart_count": int(body.get("RestartCount") or 0),
+    }
+
+
+def _observe_protocol_peer(observer: dict[str, Any]) -> dict[str, Any]:
+    container = str(observer.get("container") or "")
+    if not container:
+        raise RuntimeError("peer observer has no container identity")
+    socket_path = str(observer.get("socket_path") or "/state/node.socket")
+    network_magic = int(observer.get("network_magic", 42))
+    result = _protocol_docker_result(
+        [
+            "exec", container, "cardano-cli", "query", "tip",
+            "--socket-path", socket_path,
+            "--testnet-magic", str(network_magic),
+        ],
+        timeout=30,
+    )
+    tip = None
+    if result.returncode == 0:
+        try:
+            candidate = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            candidate = {}
+        height = candidate.get("block")
+        if isinstance(height, int) and not isinstance(height, bool) and candidate.get("hash"):
+            tip = {
+                "block_height": height,
+                "hash": candidate.get("hash"),
+                "slot": candidate.get("slot"),
+            }
+    return {
+        "observed_at_epoch_seconds": datetime.now(timezone.utc).timestamp(),
+        "peer_id": observer.get("peer_id"),
+        "container": container,
+        "usable": tip is not None,
+        "tip": tip,
+    }
+
+
+def _observe_protocol_target(observer: dict[str, Any]) -> dict[str, Any]:
+    implementation = str(observer.get("implementation") or "")
+    container = str(observer.get("container") or "")
+    if implementation not in {"amaru", "cardano-node"} or not container:
+        raise RuntimeError("target observer has no supported implementation and container")
+    state = _protocol_container_state(container)
+    since = str(observer.get("started_at") or "0")
+    logs = _protocol_docker_result(["logs", "--since", since, container], timeout=120)
+    if logs.returncode != 0:
+        raise RuntimeError(logs.stderr.strip() or f"cannot read logs from {container}")
+    log_text = logs.stdout + ("\n" + logs.stderr if logs.stderr else "")
+    if implementation == "amaru":
+        from scripts.runtime_amaru_measurement_calibration import (
+            classify_log_signals,
+            extract_latest_adopted_tip,
+        )
+
+        tip = extract_latest_adopted_tip(log_text)
+    else:
+        from scripts.runtime_cardano_measurement_calibration import classify_log_signals
+
+        peer = _observe_protocol_peer(observer)
+        tip = peer.get("tip")
+    return {
+        "state": state,
+        "tip": tip,
+        "log_signals": classify_log_signals(log_text),
+    }
+
+
+class RuntimeTargetHealthAndProgress(ProbePrimitive):
+    """Retain target process health and honest progress from the real workload leg."""
+
+    def sample(self, handle):
+        report = _protocol_decode_report(handle, self.params)
+        health = report.get("target_health") or {}
+        before = health.get("before") or {}
+        tip_before = health.get("tip_before") or {}
+        observation = (
+            _observe_protocol_target(health["observer"])
+            if isinstance(health.get("observer"), dict)
+            else {}
+        )
+        after = observation.get("state") or health.get("after") or {}
+        tip_after = observation.get("tip") or health.get("tip_after") or {}
+        tip_initial = health.get("tip_before") or {}
+        tip_hostile_end = health.get("tip_after") or {}
+        progress_reference = str(self.params.get("progress_reference") or "post-load")
+        if progress_reference not in {"load-start", "post-load"}:
+            raise ValueError(
+                "progress_reference must be load-start or post-load"
+            )
+        tip_before = (
+            tip_initial
+            if progress_reference == "load-start" or not observation
+            else tip_hostile_end
+        )
+        log_signals = observation.get("log_signals") or health.get("log_signals") or {}
+        before_position = _tip_position(tip_before)
+        after_position = _tip_position(tip_after)
+        if before_position is None or after_position is None:
+            raise RuntimeError("target health evidence has no comparable chain positions")
+        checks = {
+            "no_fatal_signals": not bool(log_signals.get("fatal")),
+            "target_not_oom_killed": after.get("oom_killed") is False,
+            "target_restart_count_unchanged": (
+                before.get("restart_count") is not None
+                and after.get("restart_count") == before.get("restart_count")
+            ),
+            "target_running_after": after.get("running") is True,
+            "target_running_before": before.get("running") is True,
+            "target_progressed": after_position > before_position,
+        }
+        evidence = {
+            "before": before,
+            "after": after,
+            "progress_reference": progress_reference,
+            "tip_initial": tip_initial,
+            "tip_hostile_end": tip_hostile_end,
+            "tip_before": tip_before,
+            "tip_after": tip_after,
+            "log_signals": log_signals,
+            "checks": checks,
+        }
+        _write_client_example_proof(handle, "target-health-and-progress.json", evidence)
+        handle.probe_sample(
+            "runtime_target_health_and_progress",
+            value=evidence,
+            meta={"source": self.params.get("report_path", "outputs/protocol-decode-cases/result.json")},
+        )
+
+
+class RuntimePeerSessionHealth(ProbePrimitive):
+    """Retain one independent honest peer session before, during, and after load."""
+
+    def sample(self, handle):
+        report = _protocol_decode_report(handle, self.params)
+        peer = report.get("peer_session") or {}
+        peer_id = str(peer.get("peer_id") or "")
+        phases = {name: peer.get(name) for name in ("before", "during", "after")}
+        if isinstance(peer.get("observer"), dict):
+            phases["after"] = _observe_protocol_peer(peer["observer"])
+        if not peer_id or any(not isinstance(value, dict) for value in phases.values()):
+            raise RuntimeError(
+                "peer-session evidence requires peer_id and before/during/after observations"
+            )
+        checks = {
+            f"peer_usable_{name}": phases[name].get("usable") is True
+            for name in ("after", "before", "during")
+        }
+        recovered = peer.get("recovered_within_seconds")
+        if phases["after"].get("usable") is True and phases["during"].get("usable") is not True:
+            during_at = phases["during"].get("observed_at_epoch_seconds")
+            after_at = phases["after"].get("observed_at_epoch_seconds")
+            if isinstance(during_at, (int, float)) and isinstance(after_at, (int, float)):
+                recovered = max(0.0, float(after_at) - float(during_at))
+        evidence = {
+            "peer_id": peer_id,
+            **phases,
+            "recovered_within_seconds": recovered,
+            "checks": checks,
+        }
+        _write_client_example_proof(handle, "peer-session-health.json", evidence)
+        handle.probe_sample(
+            "runtime_peer_session_health",
+            value=evidence,
+            meta={"source": self.params.get("report_path", "outputs/protocol-decode-cases/result.json")},
+        )
+
+
+def _active_measurement_runtime(handle):
+    runtime = getattr(handle, "_measurement_runtime", None)
+    if runtime is None or not callable(getattr(runtime, "mark_phase", None)):
+        raise RuntimeError("active measurement runtime is unavailable")
+    return runtime
+
+
+class _RuntimeTimedMeasurementWindow(LoadPrimitive):
+    _WINDOW_NAME = ""
+
+    def run(self, handle, rng):
+        import time
+
+        duration = float(self.params.get("duration_seconds", 35.0))
+        if duration < 0:
+            raise ValueError("duration_seconds must be non-negative")
+        runtime = _active_measurement_runtime(handle)
+        start_marker = runtime.mark_phase(self._WINDOW_NAME, "start")
+        try:
+            time.sleep(duration)
+        finally:
+            end_marker = runtime.mark_phase(self._WINDOW_NAME, "end")
+        handle.log(
+            phase="setup" if self._WINDOW_NAME == "baseline" else "load",
+            primitive=f"runtime_mark_{self._WINDOW_NAME}_window",
+            level="info",
+            event="completed",
+            payload={
+                "outcome": "ok",
+                "window": self._WINDOW_NAME,
+                "duration_seconds": duration,
+                "start_marker": start_marker,
+                "end_marker": end_marker,
+            },
+        )
+
+
+class RuntimeMarkBaselineWindow(_RuntimeTimedMeasurementWindow):
+    """Create the resource-measurement baseline window before hostile load."""
+
+    _WINDOW_NAME = "baseline"
+
+
+class RuntimeMarkRecoveryWindow(_RuntimeTimedMeasurementWindow):
+    """Create the resource-measurement recovery window after hostile load."""
+
+    _WINDOW_NAME = "recovery"
+
+
+class RuntimeMarkHostileWindow(LoadPrimitive):
+    """Verify the complete hostile window written around the protocol workload."""
+
+    def run(self, handle, rng):
+        import math
+
+        path = _client_example_proof_path(handle, "measurements/windows.ndjson")
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise RuntimeError(f"hostile measurement window is unavailable: {path}") from exc
+
+        markers = {"start": [], "end": []}
+        for line_number, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            try:
+                marker = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    f"malformed measurement window marker at line {line_number}"
+                ) from exc
+            if not isinstance(marker, dict) or marker.get("phase_id") != "hostile":
+                continue
+            state = marker.get("state")
+            epoch = marker.get("epoch_seconds")
+            if state not in markers or not isinstance(epoch, (int, float)) or not math.isfinite(float(epoch)):
+                raise RuntimeError(
+                    f"malformed hostile measurement window marker at line {line_number}"
+                )
+            markers[state].append({**marker, "epoch_seconds": float(epoch)})
+
+        if len(markers["start"]) != 1 or len(markers["end"]) != 1:
+            raise RuntimeError(
+                "hostile measurement window requires exactly one start and one end marker"
+            )
+        start_marker = markers["start"][0]
+        end_marker = markers["end"][0]
+        start = start_marker["epoch_seconds"]
+        end = end_marker["epoch_seconds"]
+        if end < start:
+            raise RuntimeError("hostile measurement window is reversed")
+        handle.log(
+            phase="load",
+            primitive="runtime_mark_hostile_window",
+            level="info",
+            event="completed",
+            payload={
+                "outcome": "ok",
+                "window": "hostile",
+                "duration_seconds": end - start,
+                "start_marker": start_marker,
+                "end_marker": end_marker,
+            },
+        )
+
+
+_CLIENT_PROTOCOL_WORKLOAD_ID = "fixed-handshake-invalid-cases-v1"
+_CLIENT_PROTOCOL_SEED = "0xBAD0C003"
+_CLIENT_PROTOCOL_DIGEST = (
+    "sha256:1ab6db08d45f22f42b1333c255ed07ac9dc57ecacb69ee7c645ecfd451c4225e"
+)
+
+
+class RuntimeProtocolDecodeCases(LoadPrimitive):
+    """Run the frozen invalid Handshake cases against one exact real listener."""
+
+    _HELPERS = {
+        "amaru": "runtime_amaru_measurement_calibration.py",
+        "cardano-node": "runtime_cardano_measurement_calibration.py",
+    }
+
+    def run(self, handle, rng):
+        import os
+        import subprocess
+        import time
+
+        target = _measurement_target_identity(handle)
+        implementation = str(target.get("implementation") or "")
+        if implementation not in self._HELPERS:
+            raise ValueError(f"unsupported protocol-decode target: {implementation}")
+        profile_id = self.params.get("profile_id")
+        runtime_root_value = self.params.get("runtime_root")
+        if bool(profile_id) == bool(runtime_root_value):
+            raise ValueError(
+                "runtime_protocol_decode_cases requires exactly one of profile_id or runtime_root"
+            )
+        if profile_id:
+            from profile_manager.profiles import remote_base
+
+            runtime_root = Path(remote_base()) / str(profile_id)
+        else:
+            runtime_root = Path(str(runtime_root_value))
+        attempts_per_case = int(self.params.get("attempts_per_case", 100))
+        if attempts_per_case <= 0:
+            raise ValueError("attempts_per_case must be positive")
+        duration = float(self.params.get("duration_seconds", 240.0))
+        if duration < 0:
+            raise ValueError("duration_seconds must be non-negative")
+        expected_digest = str(
+            self.params.get("workload_digest", _CLIENT_PROTOCOL_DIGEST)
+        )
+        if expected_digest != _CLIENT_PROTOCOL_DIGEST:
+            raise ValueError("runtime_protocol_decode_cases workload digest is not frozen")
+        output_dir = _client_example_proof_path(
+            handle,
+            str(self.params.get("output_dir", "outputs/protocol-decode-cases")),
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        helper = DWARF_ROOT / "scripts" / self._HELPERS[implementation]
+        command = [
+            str(self.params.get("python_bin", "python3")),
+            str(self.params.get("helper_script", helper)),
+            "leg",
+            "--runtime-root",
+            str(runtime_root),
+            "--output-dir",
+            str(output_dir),
+            "--attempts",
+            str(attempts_per_case * 2),
+            "--timeout-seconds",
+            str(float(self.params.get("response_timeout_seconds", 2.0))),
+            "--case-set",
+            _CLIENT_PROTOCOL_WORKLOAD_ID,
+            "--attempt-interval-seconds",
+            str(duration / max(attempts_per_case * 2, 1)),
+        ]
+        if implementation == "amaru":
+            command.extend(
+                [
+                    "--progress-timeout-seconds",
+                    str(float(self.params.get("progress_timeout_seconds", 120.0))),
+                ]
+            )
+        else:
+            command.extend(
+                [
+                    "--observation-seconds",
+                    str(float(self.params.get("observation_seconds", 2.0))),
+                    "--trace-timeout-seconds",
+                    str(float(self.params.get("trace_timeout_seconds", 20.0))),
+                ]
+            )
+
+        runtime = _active_measurement_runtime(handle)
+        handle.log(
+            phase="load",
+            primitive="runtime_protocol_decode_cases",
+            level="info",
+            event="started",
+            payload={
+                "implementation": implementation,
+                "runtime_root": str(runtime_root),
+                "attempts_per_case": attempts_per_case,
+                "duration_seconds": duration,
+                "workload_digest": _CLIENT_PROTOCOL_DIGEST,
+            },
+        )
+        start_marker = runtime.mark_phase("hostile", "start")
+        started = time.monotonic()
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(
+            value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value
+        )
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=DWARF_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=float(self.params.get("timeout_seconds", max(300.0, duration + 60.0))),
+                check=False,
+                env=env,
+            )
+            remaining = duration - (time.monotonic() - started)
+            if remaining > 0:
+                time.sleep(remaining)
+        finally:
+            end_marker = runtime.mark_phase("hostile", "end")
+
+        report_path = output_dir / "result.json"
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            raise RuntimeError("protocol-decode helper did not retain a valid result") from exc
+        attempts = []
+        attempts_path = output_dir / "attempts.ndjson"
+        if attempts_path.is_file():
+            for line in attempts_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError("protocol-decode attempt evidence is malformed") from exc
+                if not isinstance(row, dict):
+                    raise RuntimeError("protocol-decode attempt evidence must contain objects")
+                attempts.append(row)
+        elif isinstance(report.get("attempt_records"), list):
+            attempts = list(report["attempt_records"])
+        report.update(
+            {
+                "workload_identity": {
+                    "identity": _CLIENT_PROTOCOL_WORKLOAD_ID,
+                    "seed": _CLIENT_PROTOCOL_SEED,
+                    "digest": _CLIENT_PROTOCOL_DIGEST,
+                    "attempts_per_case": attempts_per_case,
+                    "attempt_count": attempts_per_case * 2,
+                    "cases": [
+                        {
+                            "name": "unsupported-version-refusal",
+                            "payload_hex": "8200a11903e784182af400f4",
+                            "mux_frame_hex": "000000000000000c8200a11903e784182af400f4",
+                            "attempt_count": attempts_per_case,
+                        },
+                        {
+                            "name": "malformed-cbor",
+                            "payload_hex": "ff",
+                            "mux_frame_hex": "0000000000000001ff",
+                            "attempt_count": attempts_per_case,
+                        },
+                    ],
+                },
+                "attempt_records": attempts,
+                "hostile_window": {
+                    "start_marker": start_marker,
+                    "end_marker": end_marker,
+                    "marker_artifact": "measurements/windows.ndjson",
+                },
+            }
+        )
+        report_path.write_text(
+            json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        outcome = "ok" if proc.returncode == int(self.params.get("expected_helper_exit", 0)) else "unexpected_exit"
+        handle.log(
+            phase="load",
+            primitive="runtime_protocol_decode_cases",
+            level="info" if outcome == "ok" else "error",
+            event="completed",
+            payload={
+                "outcome": outcome,
+                "helper_exit_code": proc.returncode,
+                "attempt_count": len(attempts),
+                "output_dir": str(output_dir),
+                "stdout": (proc.stdout or "")[-4096:],
+                "stderr": (proc.stderr or "")[-2048:],
+            },
+        )
+        if outcome != "ok":
+            raise RuntimeError(
+                f"protocol-decode helper exited with {proc.returncode}: {(proc.stderr or '').strip()}"
+            )
+
+
+def _client_epoch() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
+def _resolve_client_runtime_target(handle, params: dict[str, Any]) -> dict[str, Any]:
+    profile_id = str(params.get("profile_id") or "")
+    metadata_value = params.get("runtime_metadata_path")
+    if metadata_value:
+        metadata_path = Path(str(metadata_value))
+    elif profile_id:
+        metadata_path = Path("/opt/dwarf/cardano-profiles") / profile_id / "runtime.json"
+    else:
+        raise RuntimeError("profile_id or runtime_metadata_path is required")
+    try:
+        runtime = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"runtime metadata is unavailable: {metadata_path}") from exc
+
+    implementation = str((_measurement_target_identity(handle) or {}).get("implementation") or "")
+    if implementation == "cardano-node":
+        nodes = runtime.get("haskell_nodes") or []
+        node = next((item for item in nodes if item.get("id") == "node1"), None)
+        if not isinstance(node, dict):
+            raise RuntimeError("Cardano runtime has no node1 target")
+        peers = [item for item in nodes if item.get("id") != "node1"]
+        return {
+            "id": "node1",
+            "implementation": implementation,
+            "container": node.get("container_name"),
+            "listen_host": node.get("container_ip") or "node1",
+            "listen_port": 3001,
+            "socket_path": node.get("container_socket_path"),
+            "network_magic": runtime.get("network_magic", 42),
+            "log_path": node.get("log_path"),
+            "measurement_log_path": str(metadata_path.parent / "logs/node1/cardano-measurement.ndjson"),
+            "peer": {
+                "id": (peers[0].get("id") if peers else None),
+                "container": (peers[0].get("container_name") if peers else None),
+                "socket_path": (peers[0].get("container_socket_path") if peers else None),
+            },
+            "runtime_metadata_path": str(metadata_path),
+        }
+
+    if implementation == "amaru":
+        services = ((runtime.get("identity") or {}).get("services") or {})
+        target = services.get("amaru-relay-1") or {}
+        peer = services.get("amaru-consumer") or {}
+        container = target.get("container")
+        if not container:
+            raise RuntimeError("Amaru runtime has no amaru-relay-1 target")
+        inspect = _protocol_docker_result(["inspect", str(container)])
+        ip_address = None
+        if inspect.returncode == 0:
+            try:
+                networks = json.loads(inspect.stdout)[0]["NetworkSettings"]["Networks"]
+                ip_address = next(
+                    (item.get("IPAddress") for item in networks.values() if item.get("IPAddress")),
+                    None,
+                )
+            except (KeyError, IndexError, json.JSONDecodeError, StopIteration):
+                ip_address = None
+        return {
+            "id": "amaru-relay-1",
+            "implementation": implementation,
+            "container": container,
+            "listen_host": ip_address or str(container),
+            "listen_port": 3000,
+            "peer": {
+                "id": "amaru-consumer",
+                "container": peer.get("container"),
+                "socket_path": "/state/node.socket",
+            },
+            "network_magic": 42,
+            "runtime_metadata_path": str(metadata_path),
+        }
+    raise RuntimeError(f"unsupported client target implementation: {implementation}")
+
+
+def _observe_client_target_tip(target: dict[str, Any]) -> dict[str, Any]:
+    implementation = target.get("implementation")
+    if implementation == "cardano-node":
+        observer = {
+            "container": target.get("container"),
+            "socket_path": target.get("socket_path"),
+            "network_magic": target.get("network_magic", 42),
+            "peer_id": target.get("id"),
+        }
+        result = _observe_protocol_peer(observer)
+        if not result.get("usable"):
+            raise RuntimeError("Cardano target tip is unavailable")
+        return dict(result["tip"])
+    if implementation == "amaru":
+        result = _protocol_docker_result(
+            ["logs", "--tail", "12000", str(target.get("container"))], timeout=120
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "cannot read Amaru target logs")
+        from scripts.runtime_amaru_measurement_calibration import extract_latest_adopted_tip
+
+        tip = extract_latest_adopted_tip(result.stdout + "\n" + result.stderr)
+        if not isinstance(tip, dict):
+            raise RuntimeError("Amaru target tip is unavailable")
+        return dict(tip)
+    raise RuntimeError("target implementation is unavailable")
+
+
+def _tip_height(tip: dict[str, Any]) -> int:
+    position = _tip_position(tip)
+    if position is None:
+        raise RuntimeError("tip has no numeric block height")
+    return position
+
+
+def _wait_for_tip_delta(
+    target: dict[str, Any],
+    start_tip: dict[str, Any],
+    *,
+    minimum_blocks: int,
+    timeout_seconds: float,
+    poll_interval_seconds: float,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    import time
+
+    start_height = _tip_height(start_tip)
+    deadline = time.monotonic() + timeout_seconds
+    observations = []
+    while True:
+        tip = _observe_client_target_tip(target)
+        observations.append({"observed_at_epoch_seconds": _client_epoch(), **tip})
+        if _tip_height(tip) >= start_height + minimum_blocks:
+            return tip, observations
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"target did not advance by {minimum_blocks} blocks within {timeout_seconds}s"
+            )
+        time.sleep(poll_interval_seconds)
+
+
+class RuntimeWaitForChainProgress(LoadPrimitive):
+    """Require positive real-node progress before a controlled measurement."""
+
+    def run(self, handle, rng):
+        target = _resolve_client_runtime_target(handle, self.params)
+        minimum = int(self.params.get("minimum_blocks", 5))
+        start = _observe_client_target_tip(target)
+        end, observations = _wait_for_tip_delta(
+            target,
+            start,
+            minimum_blocks=minimum,
+            timeout_seconds=float(self.params.get("timeout_seconds", 120)),
+            poll_interval_seconds=float(self.params.get("poll_interval_seconds", 1)),
+        )
+        proof = {
+            "schema_version": "v1",
+            "target_node": target.get("id"),
+            "minimum_blocks": minimum,
+            "start_tip": start,
+            "end_tip": end,
+            "observations": observations,
+            "checks": {"minimum_progress_observed": _tip_height(end) >= _tip_height(start) + minimum},
+        }
+        _write_client_example_proof(handle, "chain-progress-readiness.json", proof)
+        handle.log(
+            phase="setup", primitive="runtime_wait_for_chain_progress", level="info",
+            event="completed", payload={"outcome": "ok", **proof},
+        )
+
+
+def _json_lines_between(path: Path, offset: int) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    records = []
+    with path.open("rb") as stream:
+        stream.seek(offset)
+        for raw in stream:
+            try:
+                value = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if isinstance(value, dict):
+                records.append(value)
+    return records
+
+
+def _timestamp_in_controlled_window(
+    value: Any, target: dict[str, Any]
+) -> bool:
+    """Accept timestamped evidence only inside the retained marker interval."""
+
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        observed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        started = datetime.fromisoformat(
+            str(target.get("window_started_at")).replace("Z", "+00:00")
+        )
+        ended_value = target.get("window_ended_at")
+        ended = (
+            datetime.fromisoformat(str(ended_value).replace("Z", "+00:00"))
+            if ended_value
+            else None
+        )
+    except (TypeError, ValueError):
+        return False
+    return observed >= started and (ended is None or observed <= ended)
+
+
+def _collect_raw_chain_events(
+    target: dict[str, Any], *, log_offset: int
+) -> list[dict[str, Any]]:
+    implementation = target.get("implementation")
+    if implementation == "cardano-node":
+        retained = []
+        for row in _json_lines_between(Path(str(target.get("log_path"))), log_offset):
+            namespace = str(row.get("ns") or "")
+            lowered = namespace.lower()
+            if "fork" not in lowered and "rollback" not in lowered:
+                continue
+            if "switchedtoafork" in lowered:
+                event = "fork-switch"
+            elif "tryswitchtoafork" in lowered:
+                event = "fork-candidate"
+            else:
+                event = "rollback"
+            retained.append(
+                {
+                    "event": event,
+                    "observed_at": row.get("at"),
+                    "namespace": namespace,
+                    "data": row.get("data"),
+                }
+            )
+        return retained
+    if implementation == "amaru":
+        result = _protocol_docker_result(
+            [
+                "logs",
+                "--since",
+                str(target.get("window_started_at")),
+                str(target.get("container")),
+            ],
+            timeout=120,
+        )
+        retained = []
+        for line in (result.stdout + "\n" + result.stderr).splitlines():
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            if not _timestamp_in_controlled_window(row.get("timestamp"), target):
+                continue
+            fields = row.get("fields") or {}
+            span = row.get("span") or {}
+            if fields.get("message") != "enter":
+                continue
+            name = span.get("name")
+            if name == "state.switch_to_fork":
+                retained.append(
+                    {
+                        "event": "fork-switch",
+                        "observed_at": row.get("timestamp"),
+                        "event_id": row.get("id"),
+                        "parent_event_id": row.get("parent_id"),
+                        "fork_length": fields.get("fork_length"),
+                        "rollback_length": fields.get("rollback_length"),
+                        "fork_point": fields.get("fork_point"),
+                    }
+                )
+            elif name == "state.roll_backward":
+                retained.append(
+                    {
+                        "event": "rollback",
+                        "observed_at": row.get("timestamp"),
+                        "event_id": row.get("id"),
+                        "parent_event_id": row.get("parent_id"),
+                    }
+                )
+        return retained
+    return []
+
+
+def _collect_controlled_block_evidence(
+    target: dict[str, Any],
+    *,
+    log_offset: int,
+    measurement_offset: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    implementation = target.get("implementation")
+    adopted = []
+    applications = []
+    excluded_applications = []
+    if implementation == "cardano-node":
+        candidates = []
+        for row in _json_lines_between(Path(str(target.get("log_path"))), log_offset):
+            namespace = row.get("ns")
+            if namespace == "ChainDB.AddBlockEvent.AddBlockValidation.ValidCandidate":
+                block = str((row.get("data") or {}).get("block") or "")
+                block_hash, separator, slot = block.partition("@")
+                if separator and block_hash and slot.isdigit():
+                    candidates.append({
+                        "hash": block_hash,
+                        "slot": int(slot),
+                        "observed_at": row.get("at"),
+                    })
+                continue
+            if namespace != "ChainDB.AddBlockEvent.AddedToCurrentChain":
+                continue
+            for header in ((row.get("data") or {}).get("headers") or []):
+                try:
+                    height = int(header.get("blockNo"))
+                except (TypeError, ValueError):
+                    continue
+                block_hash = str(header.get("hash") or "").strip('"')
+                if block_hash:
+                    adopted.append({
+                        "block_height": height,
+                        "hash": block_hash,
+                        "slot": int(header.get("slotNo")),
+                        "observed_at": row.get("at"),
+                    })
+        for index, row in enumerate(
+            _json_lines_between(Path(str(target.get("measurement_log_path"))), measurement_offset)
+        ):
+            if (
+                row.get("event") == "ledger_stage"
+                and row.get("stage") == "block-application"
+                and row.get("outcome") == "accepted"
+            ):
+                elapsed_nanos, duration_micros = precise_microseconds(
+                    row, nanos_field="elapsed_nanos", micros_field="duration_us"
+                )
+                application = {
+                    "sample_id": f"apply-{index:04d}",
+                    "duration_micros": duration_micros,
+                    "ended_monotonic_ns": row.get("ended_monotonic_ns"),
+                    "outcome": row.get("outcome"),
+                }
+                if elapsed_nanos is not None:
+                    application["elapsed_nanos"] = elapsed_nanos
+                applications.append(application)
+        if candidates:
+            if len(candidates) != len(applications):
+                excluded_applications.append({
+                    "candidate_count": len(candidates),
+                    "application_sample_count": len(applications),
+                    "reason": "candidate-application-cardinality-mismatch",
+                })
+                for candidate, application in zip(candidates, applications):
+                    application["block_hash"] = candidate["hash"]
+                    application["block_slot"] = candidate["slot"]
+                    application["candidate_observed_at"] = candidate.get("observed_at")
+            else:
+                adopted_by_hash = {row["hash"]: row for row in adopted}
+                retained_applications = []
+                for candidate, application in zip(candidates, applications):
+                    block_hash = candidate["hash"]
+                    application["block_hash"] = block_hash
+                    application["block_slot"] = candidate["slot"]
+                    application["candidate_observed_at"] = candidate.get("observed_at")
+                    adopted_block = adopted_by_hash.get(block_hash)
+                    if adopted_block is not None:
+                        application["block_height"] = adopted_block["block_height"]
+                        retained_applications.append(application)
+                        continue
+                    excluded = {
+                        "sample_id": application["sample_id"],
+                        "block_hash": block_hash,
+                        "block_slot": candidate["slot"],
+                        "duration_micros": application["duration_micros"],
+                        "reason": "valid-candidate-not-adopted-in-controlled-window",
+                    }
+                    if "elapsed_nanos" in application:
+                        excluded["elapsed_nanos"] = application["elapsed_nanos"]
+                    excluded_applications.append(excluded)
+                applications = retained_applications
+    elif implementation == "amaru":
+        result = _protocol_docker_result(
+            ["logs", "--since", str(target.get("window_started_at")), str(target.get("container"))],
+            timeout=120,
+        )
+        rows = []
+        for line in (result.stdout + "\n" + result.stderr).splitlines():
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                if _timestamp_in_controlled_window(value.get("timestamp"), target):
+                    rows.append(value)
+        capture_value = target.get("measurement_capture_path")
+        if capture_value:
+            capture_path = Path(str(capture_value))
+            capture_path.parent.mkdir(parents=True, exist_ok=True)
+            with capture_path.open("a", encoding="utf-8") as stream:
+                for row in rows:
+                    stream.write(
+                        json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+                    )
+        enters = {}
+        patched_applications = []
+        legacy_applications = []
+        for row in rows:
+            fields = row.get("fields") or {}
+            span = row.get("span") or {}
+            if fields.get("message") == "tip.update" and fields.get("header_hash"):
+                adopted.append({
+                    "block_height": int(fields["block_height"]),
+                    "hash": fields["header_hash"],
+                    "slot": fields.get("slot"),
+                    "observed_at": row.get("timestamp"),
+                })
+            if fields.get("message") == "measurement.block_apply":
+                elapsed_nanos, duration_micros = precise_microseconds(
+                    fields,
+                    nanos_field="elapsed_nanos",
+                    micros_field="elapsed_micros",
+                )
+                application = {
+                    "sample_id": f"apply-{len(patched_applications):04d}",
+                    "duration_micros": duration_micros,
+                    "observed_at": row.get("timestamp"),
+                    "point_slot": fields.get("point_slot"),
+                    "outcome": fields.get("outcome"),
+                    "timing_source": "patched-monotonic-nanoseconds",
+                }
+                if elapsed_nanos is not None:
+                    application["elapsed_nanos"] = elapsed_nanos
+                patched_applications.append(application)
+            if span.get("name") == "block.apply" and fields.get("message") == "enter":
+                enters[row.get("id")] = row
+            if span.get("name") == "block.apply" and fields.get("message") == "exit":
+                start = enters.get(row.get("id"))
+                if start and start.get("timestamp") and row.get("timestamp"):
+                    begin = datetime.fromisoformat(start["timestamp"].replace("Z", "+00:00"))
+                    end = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+                    legacy_applications.append({
+                        "sample_id": f"apply-{len(legacy_applications):04d}",
+                        "duration_micros": (end - begin).total_seconds() * 1_000_000,
+                        "observed_at": row.get("timestamp"),
+                        "point_slot": fields.get("point_slot"),
+                        "outcome": "completed",
+                        "timing_source": "legacy-paired-wall-clock-span",
+                    })
+        applications.extend(patched_applications or legacy_applications)
+    return adopted, applications, excluded_applications
+
+
+def _monotonic_adopted(adopted: list[dict[str, Any]]) -> bool:
+    heights = [_tip_height(row) for row in adopted]
+    return bool(heights) and all(right > left for left, right in zip(heights, heights[1:]))
+
+
+def _tip_hash(tip: dict[str, Any]) -> str:
+    return str(tip.get("hash") or tip.get("block_hash") or "")
+
+
+def _derive_canonical_progress(
+    adopted: list[dict[str, Any]],
+    *,
+    start_tip: dict[str, Any],
+    end_tip: dict[str, Any],
+    minimum_blocks: int,
+    max_oscillation_episodes: int,
+    max_oscillation_transitions: int,
+    minimum_convergence_blocks: int,
+) -> dict[str, Any]:
+    """Keep raw selection order and derive bounded final progress separately."""
+
+    if min(
+        minimum_blocks,
+        max_oscillation_episodes,
+        max_oscillation_transitions,
+        minimum_convergence_blocks,
+    ) < 0 or minimum_blocks < 1 or minimum_convergence_blocks < 1:
+        raise ValueError("canonical progress bounds are invalid")
+    start_height = _tip_position(start_tip)
+    end_height = _tip_position(end_tip)
+    if start_height is None or end_height is None:
+        raise RuntimeError("canonical progress requires exact start and end heights")
+
+    previous = start_tip
+    raw_selection = []
+    episodes: list[dict[str, Any]] = []
+    current_episode: dict[str, Any] | None = None
+    advance_run = 0
+    latest_by_height: dict[int, dict[str, Any]] = {}
+    oscillation_count = 0
+    for index, event in enumerate(adopted):
+        height = _tip_position(event)
+        block_hash = _tip_hash(event)
+        previous_height = _tip_position(previous)
+        previous_hash = _tip_hash(previous)
+        if height is None or not block_hash or previous_height is None:
+            raise RuntimeError(f"raw chain-selection event {index} lacks exact identity")
+        if height > previous_height:
+            transition = "advance"
+            advance_run += 1
+        elif height < previous_height:
+            transition = "rollback"
+        elif block_hash != previous_hash:
+            transition = "same-height-hash-switch"
+        else:
+            transition = "repeated-observation"
+        retained = {
+            **event,
+            "event_index": index,
+            "transition": transition,
+            "previous_block_height": previous_height,
+            "previous_hash": previous_hash,
+        }
+        raw_selection.append(retained)
+        latest_by_height[height] = dict(event)
+
+        if transition in {"rollback", "same-height-hash-switch"}:
+            oscillation_count += 1
+            if current_episode is None or advance_run >= minimum_convergence_blocks:
+                current_episode = {
+                    "episode_index": len(episodes),
+                    "start_event_index": index,
+                    "end_event_index": index,
+                    "transitions": [],
+                }
+                episodes.append(current_episode)
+            current_episode["end_event_index"] = index
+            current_episode["transitions"].append(retained)
+            advance_run = 0
+        elif transition == "repeated-observation":
+            advance_run = 0
+        previous = event
+
+    last = adopted[-1] if adopted else start_tip
+    last_height = _tip_position(last)
+    if last_height is not None and end_height > last_height:
+        terminal_tip_relation = "ahead"
+        terminal_matches = bool(_tip_hash(last))
+    elif last_height == end_height and _tip_hash(last) == _tip_hash(end_tip):
+        terminal_tip_relation = "exact"
+        terminal_matches = bool(_tip_hash(last))
+    elif last_height == end_height:
+        terminal_tip_relation = "same-height-mismatch"
+        terminal_matches = False
+    else:
+        terminal_tip_relation = "behind"
+        terminal_matches = False
+    trailing_advances = 0
+    for event in reversed(raw_selection):
+        if event["transition"] != "advance":
+            break
+        trailing_advances += 1
+    bounded_progress = end_height - start_height >= minimum_blocks
+    oscillation_within_bounds = (
+        len(episodes) <= max_oscillation_episodes
+        and oscillation_count <= max_oscillation_transitions
+    )
+    final_convergence = terminal_matches and (
+        oscillation_count == 0 or trailing_advances >= minimum_convergence_blocks
+    )
+    selected = [
+        latest_by_height[height]
+        for height in sorted(latest_by_height)
+        if start_height < height <= end_height
+    ]
+    return {
+        "schema_version": "canonical-progress-v2",
+        "start_tip": start_tip,
+        "end_tip": end_tip,
+        "height_delta": end_height - start_height,
+        "minimum_blocks": minimum_blocks,
+        "raw_chain_selection": raw_selection,
+        "derived_final_selected_observations": selected,
+        "oscillation_episodes": episodes,
+        "oscillation_transition_count": oscillation_count,
+        "trailing_advance_count": trailing_advances,
+        "terminal_tip_relation": terminal_tip_relation,
+        "bounds": {
+            "max_oscillation_episodes": max_oscillation_episodes,
+            "max_oscillation_transitions": max_oscillation_transitions,
+            "minimum_convergence_blocks": minimum_convergence_blocks,
+        },
+        "checks": {
+            "bounded_canonical_progress": bounded_progress,
+            "final_convergence": final_convergence,
+            "oscillation_within_bounds": oscillation_within_bounds,
+            "terminal_identity_matches": terminal_matches,
+        },
+    }
+
+
+def _canonical_progress_checks(
+    progress: dict[str, Any],
+    *,
+    correlations: list[dict[str, Any]],
+    minimum_correlations: int,
+    target_health: dict[str, Any],
+) -> dict[str, bool]:
+    progress_checks = progress.get("checks") or {}
+    complete_correlations = (
+        len(correlations) >= minimum_correlations
+        and len({row.get("application_sample_id") for row in correlations})
+        == len(correlations)
+        and all(
+            row.get("block_hash")
+            and row.get("application_sample_id")
+            and isinstance(row.get("duration_micros"), (int, float))
+            and not isinstance(row.get("duration_micros"), bool)
+            for row in correlations
+        )
+    )
+    before = target_health.get("before") or {}
+    after = target_health.get("after") or {}
+    signals = target_health.get("log_signals") or {}
+    health_clean = (
+        before.get("running") is True
+        and after.get("running") is True
+        and before.get("oom_killed") is not True
+        and after.get("oom_killed") is not True
+        and before.get("restart_count") == after.get("restart_count")
+        and not (signals.get("fatal") or [])
+    )
+    checks = {
+        "bounded_canonical_progress": progress_checks.get("bounded_canonical_progress") is True,
+        "final_convergence": progress_checks.get("final_convergence") is True,
+        "oscillation_within_bounds": progress_checks.get("oscillation_within_bounds") is True,
+        "terminal_identity_matches": progress_checks.get("terminal_identity_matches") is True,
+        "complete_required_correlations": complete_correlations,
+        "no_fatal_health_signal": health_clean,
+    }
+    checks["canonical_chain_progress_complete"] = all(checks.values())
+    return checks
+
+
+def _canonical_window_proof(
+    *,
+    target: dict[str, Any],
+    minimum: int,
+    start_tip: dict[str, Any],
+    end_tip: dict[str, Any],
+    start_marker: dict[str, Any],
+    end_marker: dict[str, Any],
+    adopted: list[dict[str, Any]],
+    applications: list[dict[str, Any]],
+    excluded_applications: list[dict[str, Any]],
+    explicit_chain_events: list[dict[str, Any]],
+    target_health: dict[str, Any],
+    max_oscillation_episodes: int,
+    max_oscillation_transitions: int,
+    minimum_convergence_blocks: int,
+) -> dict[str, Any]:
+    raw_applications = [dict(row) for row in applications]
+    retained_exclusions = [dict(row) for row in excluded_applications]
+    correlations = []
+    selected_applications = []
+    adopted_by_hash = {str(row.get("hash") or ""): row for row in adopted}
+    for index, application in enumerate(applications):
+        selected = dict(application)
+        block_hash = selected.get("block_hash")
+        block_height = selected.get("block_height")
+        correlation_basis = "exact-valid-candidate-and-adopted-hash-within-controlled-window"
+        if not block_hash and index < len(adopted):
+            block_hash = adopted[index]["hash"]
+            block_height = adopted[index]["block_height"]
+            selected["block_hash"] = block_hash
+            selected["block_height"] = block_height
+            selected["block_slot"] = adopted[index].get("slot")
+            correlation_basis = "same-target-temporal-order-within-controlled-window"
+        if not block_hash:
+            retained_exclusions.append(
+                {**selected, "reason": "no-adopted-event-temporal-pair"}
+            )
+            continue
+        adopted_event = adopted_by_hash.get(str(block_hash))
+        if adopted_event is None:
+            retained_exclusions.append(
+                {**selected, "reason": "application-block-not-adopted-in-controlled-window"}
+            )
+            continue
+        block_height = adopted_event.get("block_height")
+        selected["block_height"] = block_height
+        selected_applications.append(selected)
+        correlations.append(
+            {
+                "block_height": block_height,
+                "block_hash": block_hash,
+                "application_sample_id": selected["sample_id"],
+                "duration_micros": selected.get("duration_micros"),
+                "correlation_basis": correlation_basis,
+            }
+        )
+    progress = _derive_canonical_progress(
+        adopted,
+        start_tip=start_tip,
+        end_tip=end_tip,
+        minimum_blocks=minimum,
+        max_oscillation_episodes=max_oscillation_episodes,
+        max_oscillation_transitions=max_oscillation_transitions,
+        minimum_convergence_blocks=minimum_convergence_blocks,
+    )
+    checks = _canonical_progress_checks(
+        progress,
+        correlations=correlations,
+        minimum_correlations=minimum,
+        target_health=target_health,
+    )
+    return {
+        "schema_version": "canonical-progress-v2",
+        "target_node": target.get("id"),
+        "minimum_adopted_blocks": minimum,
+        "start_tip": start_tip,
+        "end_tip": end_tip,
+        "start_marker": start_marker,
+        "end_marker": end_marker,
+        "adopted_blocks": adopted,
+        "raw_application_sample_count": len(raw_applications) + sum(
+            1
+            for row in excluded_applications
+            if row.get("sample_id") is not None
+        ),
+        "application_samples": selected_applications,
+        "excluded_application_samples": retained_exclusions,
+        "correlations": correlations,
+        "canonical_progress": progress,
+        "raw_evidence": {
+            "chain_selection": progress["raw_chain_selection"],
+            "fork_and_rollback_events": explicit_chain_events,
+            "application_timings": raw_applications,
+            "excluded_application_timings": retained_exclusions,
+        },
+        "checks": checks,
+        "target_health": target_health,
+    }
+
+
+def _observe_client_window_health(
+    target: dict[str, Any],
+    *,
+    started_at: str,
+    before: dict[str, Any],
+    tip_before: dict[str, Any],
+) -> dict[str, Any]:
+    observer = {
+        "implementation": target.get("implementation"),
+        "container": target.get("container"),
+        "socket_path": target.get("socket_path"),
+        "network_magic": target.get("network_magic", 42),
+        "peer_id": target.get("id"),
+        "started_at": started_at,
+    }
+    observed = _observe_protocol_target(observer)
+    after = observed.get("state")
+    tip_after = observed.get("tip")
+    signals = observed.get("log_signals")
+    if not isinstance(after, dict) or not isinstance(tip_after, dict):
+        raise RuntimeError("observed target health is incomplete")
+    if not isinstance(signals, dict):
+        raise RuntimeError("observed target log classification is unavailable")
+    return {
+        "before": before,
+        "after": after,
+        "tip_before": tip_before,
+        "tip_after": tip_after,
+        "log_signals": signals,
+        "observer": observer,
+    }
+
+
+class RuntimeControlledChainProgressWindow(LoadPrimitive):
+    """Retain a bounded real adopted-block range and application correlations."""
+
+    def run(self, handle, rng):
+        import time
+
+        target = _resolve_client_runtime_target(handle, self.params)
+        warm_up = float(self.params.get("warm_up_seconds", 30))
+        duration = float(self.params.get("duration_seconds", 180))
+        minimum = int(self.params.get("minimum_adopted_blocks", 30))
+        if warm_up < 0 or duration < 0 or minimum < 1:
+            raise ValueError("controlled chain progress parameters are invalid")
+        if warm_up:
+            time.sleep(warm_up)
+        start_tip = _observe_client_target_tip(target)
+        before_state = _protocol_container_state(str(target.get("container") or ""))
+        window_started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        log_path = Path(str(target.get("log_path") or ""))
+        measurement_path = Path(str(target.get("measurement_log_path") or ""))
+        log_offset = log_path.stat().st_size if log_path.is_file() else 0
+        measurement_offset = measurement_path.stat().st_size if measurement_path.is_file() else 0
+        runtime = _active_measurement_runtime(handle)
+        target["window_started_at"] = window_started_at
+        if target.get("implementation") == "amaru":
+            target["measurement_capture_path"] = str(
+                handle.run_dir
+                / "outputs"
+                / "amaru-measurement-calibration"
+                / "raw"
+                / "amaru-relay-1.ndjson"
+            )
+        start_marker = runtime.mark_phase("controlled-chain-progress", "start")
+        try:
+            time.sleep(duration)
+        finally:
+            end_marker = runtime.mark_phase("controlled-chain-progress", "end")
+            target["window_ended_at"] = datetime.fromtimestamp(
+                float(end_marker["epoch_seconds"]), timezone.utc
+            ).isoformat().replace("+00:00", "Z")
+        end_tip = _observe_client_target_tip(target)
+        adopted, applications, excluded_applications = _collect_controlled_block_evidence(
+            target, log_offset=log_offset, measurement_offset=measurement_offset
+        )
+        target_health = _observe_client_window_health(
+            target,
+            started_at=window_started_at,
+            before=before_state,
+            tip_before=start_tip,
+        )
+
+        if self.params.get("progress_contract") == "canonical-progress-v2":
+            explicit_chain_events = _collect_raw_chain_events(
+                target, log_offset=log_offset
+            )
+            proof = _canonical_window_proof(
+                target=target,
+                minimum=minimum,
+                start_tip=start_tip,
+                end_tip=end_tip,
+                start_marker=start_marker,
+                end_marker=end_marker,
+                adopted=adopted,
+                applications=applications,
+                excluded_applications=excluded_applications,
+                explicit_chain_events=explicit_chain_events,
+                target_health=target_health,
+                max_oscillation_episodes=int(
+                    self.params.get("max_oscillation_episodes", 3)
+                ),
+                max_oscillation_transitions=int(
+                    self.params.get("max_oscillation_transitions", 8)
+                ),
+                minimum_convergence_blocks=int(
+                    self.params.get("minimum_convergence_blocks", 3)
+                ),
+            )
+            _write_client_example_proof(
+                handle, "controlled-chain-progress.json", proof
+            )
+            if proof["checks"]["canonical_chain_progress_complete"] is not True:
+                raise RuntimeError(
+                    f"canonical chain progress proof failed: {proof['checks']}"
+                )
+            handle.log(
+                phase="load",
+                primitive="runtime_controlled_chain_progress_window",
+                level="info",
+                event="completed",
+                payload={"outcome": "ok", **proof},
+            )
+            return
+
+        correlations = []
+        for index, application in enumerate(applications):
+            block_hash = application.get("block_hash")
+            block_height = application.get("block_height")
+            correlation_basis = "exact-valid-candidate-and-adopted-hash-within-controlled-window"
+            if not block_hash and index < len(adopted):
+                block_hash = adopted[index]["hash"]
+                block_height = adopted[index]["block_height"]
+                correlation_basis = "same-target-temporal-order-within-controlled-window"
+            if not block_hash:
+                continue
+            correlations.append({
+                "block_height": block_height,
+                "block_hash": block_hash,
+                "application_sample_id": application["sample_id"],
+                "duration_micros": application.get("duration_micros"),
+                "correlation_basis": correlation_basis,
+            })
+        candidate_alignment = not any(
+            row.get("reason") == "candidate-application-cardinality-mismatch"
+            for row in excluded_applications
+        )
+        checks = {
+            "application_samples_correlated": len(correlations) >= minimum,
+            "all_application_samples_correlated": len(correlations) == len(applications),
+            "candidate_application_alignment": candidate_alignment,
+            "minimum_adopted_block_range_observed": len(adopted) >= minimum,
+            "monotonic_height": _monotonic_adopted(adopted),
+        }
+        proof = {
+            "schema_version": "v1",
+            "target_node": target.get("id"),
+            "minimum_adopted_blocks": minimum,
+            "start_tip": start_tip,
+            "end_tip": end_tip,
+            "start_marker": start_marker,
+            "end_marker": end_marker,
+            "adopted_blocks": adopted,
+            "raw_application_sample_count": len(applications) + sum(
+                1 for row in excluded_applications
+                if row.get("sample_id") is not None
+            ),
+            "application_samples": applications,
+            "excluded_application_samples": excluded_applications,
+            "correlations": correlations,
+            "checks": checks,
+            "target_health": target_health,
+        }
+        _write_client_example_proof(handle, "controlled-chain-progress.json", proof)
+        if not all(checks.values()):
+            raise RuntimeError(f"controlled chain progress proof failed: {checks}")
+        handle.log(
+            phase="load", primitive="runtime_controlled_chain_progress_window",
+            level="info", event="completed", payload={"outcome": "ok", **proof},
+        )
+
+
+def _restart_client_runtime_target(target: dict[str, Any]) -> dict[str, Any]:
+    container = str(target.get("container") or "")
+    if not container:
+        raise RuntimeError("restart target container is unavailable")
+    result = _protocol_docker_result(["restart", "--time", "30", container], timeout=90)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"cannot restart {container}")
+    return {"command": f"docker restart --time 30 {container}", "exit_code": result.returncode}
+
+
+def _client_listener_ready(target: dict[str, Any]) -> bool:
+    import socket
+
+    try:
+        with socket.create_connection(
+            (str(target.get("listen_host")), int(target.get("listen_port"))), timeout=2
+        ):
+            return True
+    except OSError:
+        return False
+
+
+def _client_peer_role_ready(target: dict[str, Any]) -> dict[str, Any]:
+    peer = target.get("peer") or {}
+    observer = {
+        "container": peer.get("container"),
+        "socket_path": peer.get("socket_path"),
+        "network_magic": target.get("network_magic", 42),
+        "peer_id": peer.get("id"),
+    }
+    try:
+        evidence = _observe_protocol_peer(observer)
+    except RuntimeError:
+        evidence = {"usable": False, "peer_id": peer.get("id")}
+    return {"ready": evidence.get("usable") is True, **evidence}
+
+
+def _emit_readiness_gate(handle, target_node: str, event: str, payload: dict[str, Any]) -> dict[str, Any]:
+    observed_at = _client_epoch()
+    elapsed_seconds = _active_measurement_runtime(handle).elapsed_seconds()
+    body = {"target_node": target_node, "elapsed_seconds": elapsed_seconds, "observed_at_epoch_seconds": observed_at, **payload}
+    _append_target_hook_event(
+        handle, primitive="runtime_real_target_restart_and_readiness", event=event, payload=body
+    )
+    return {"event": event, **body}
+
+
+class RuntimeRealTargetRestartAndReadiness(LoadPrimitive):
+    """Restart the real target and retain listener, progress, and peer gates."""
+
+    def run(self, handle, rng):
+        import time
+
+        target = _resolve_client_runtime_target(handle, self.params)
+        timeout = float(self.params.get("timeout_seconds", 240))
+        interval = float(self.params.get("poll_interval_seconds", 1))
+        before = _observe_client_target_tip(target)
+        runtime = _active_measurement_runtime(handle)
+        recovery_start_marker = runtime.mark_phase("restart-recovery", "start")
+        restart = _emit_readiness_gate(handle, str(target["id"]), "restart_started", {"tip": before})
+        restart_command = _restart_client_runtime_target(target)
+        deadline = time.monotonic() + timeout
+        gates = []
+        while not _client_listener_ready(target):
+            if time.monotonic() >= deadline:
+                raise TimeoutError("target listener did not return after restart")
+            time.sleep(interval)
+        gates.append(_emit_readiness_gate(handle, str(target["id"]), "listener_ready", {}))
+        while True:
+            try:
+                after = _observe_client_target_tip(target)
+            except RuntimeError:
+                after = None
+            if after is not None and _tip_height(after) > _tip_height(before):
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError("target chain progress did not return after restart")
+            time.sleep(interval)
+        gates.append(_emit_readiness_gate(handle, str(target["id"]), "chain_progress_ready", {"tip": after}))
+        while True:
+            peer = _client_peer_role_ready(target)
+            if peer.get("ready") is True:
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError("required peer role did not return after restart")
+            time.sleep(interval)
+        gates.append(_emit_readiness_gate(handle, str(target["id"]), "peer_role_ready", peer))
+        times = [restart["elapsed_seconds"], *[row["elapsed_seconds"] for row in gates]]
+        checks = {
+            "all_readiness_gates_observed": len(gates) == 3,
+            "readiness_gates_ordered": times == sorted(times),
+            "target_progressed_after_restart": _tip_height(after) > _tip_height(before),
+        }
+        proof = {
+            "schema_version": "v1", "target_node": target["id"],
+            "tip_before_restart": before, "tip_after_readiness": after,
+            "restart": restart, "restart_command": restart_command,
+            "recovery_start_marker": recovery_start_marker,
+            "gates": gates, "peer_role": peer, "checks": checks,
+        }
+        _write_client_example_proof(handle, "restart-readiness.json", proof)
+        handle.log(
+            phase="load", primitive="runtime_real_target_restart_and_readiness",
+            level="info", event="completed", payload={"outcome": "ok", **proof},
+        )
+
+
+class RuntimeControlledSyncRange(LoadPrimitive):
+    """Retain exact post-restart sync start/end identities and peer policy."""
+
+    def run(self, handle, rng):
+        import time
+
+        target = _resolve_client_runtime_target(handle, self.params)
+        minimum = int(self.params.get("minimum_blocks", 5))
+        policy = str(self.params.get("peer_policy") or (
+            "single-controlled-producer" if target.get("implementation") == "amaru"
+            else "three-node-controlled-local-mesh"
+        ))
+        start = _observe_client_target_tip(target)
+        before_state = _protocol_container_state(str(target.get("container") or ""))
+        window_started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        peer_before = _client_peer_role_ready(target)
+        runtime = _active_measurement_runtime(handle)
+        sync_start_marker = runtime.mark_phase("controlled-sync-range", "start")
+        started_event = {
+            "event": "sync_range_started",
+            "target_node": target["id"],
+            "elapsed_seconds": runtime.elapsed_seconds(),
+            "observed_at_epoch_seconds": _client_epoch(),
+            "tip": start,
+            "peer_policy": policy,
+        }
+        _append_target_hook_event(
+            handle, primitive="runtime_controlled_sync_range", event="sync_range_started",
+            payload={key: value for key, value in started_event.items() if key != "event"},
+        )
+        peer_during = _client_peer_role_ready(target)
+        try:
+            end, observations = _wait_for_tip_delta(
+                target, start, minimum_blocks=minimum,
+                timeout_seconds=float(self.params.get("timeout_seconds", 180)),
+                poll_interval_seconds=float(self.params.get("poll_interval_seconds", 1)),
+            )
+        finally:
+            sync_end_marker = runtime.mark_phase("controlled-sync-range", "end")
+        completed_event = {
+            "event": "sync_range_completed",
+            "target_node": target["id"],
+            "elapsed_seconds": runtime.elapsed_seconds(),
+            "observed_at_epoch_seconds": _client_epoch(),
+            "tip": end,
+            "peer_policy": policy,
+        }
+        _append_target_hook_event(
+            handle, primitive="runtime_controlled_sync_range", event="sync_range_completed",
+            payload={key: value for key, value in completed_event.items() if key != "event"},
+        )
+        recovery_end_marker = runtime.mark_phase("restart-recovery", "end")
+        peer_after = _client_peer_role_ready(target)
+        target_health = _observe_client_window_health(
+            target,
+            started_at=window_started_at,
+            before=before_state,
+            tip_before=start,
+        )
+        proof = {
+            "schema_version": "v1", "target_node": target["id"],
+            "minimum_blocks": minimum, "peer_policy": policy,
+            "start": start, "end": end, "observations": observations,
+            "sync_start_marker": sync_start_marker,
+            "sync_end_marker": sync_end_marker,
+            "range_events": [started_event, completed_event],
+            "recovery_end_marker": recovery_end_marker,
+            "checks": {"controlled_sync_range_complete": _tip_height(end) >= _tip_height(start) + minimum},
+            "target_health": target_health,
+            "peer_session": {
+                "peer_id": peer_before.get("peer_id"),
+                "before": peer_before,
+                "during": peer_during,
+                "after": peer_after,
+            },
+        }
+        _write_client_example_proof(handle, "controlled-sync-range.json", proof)
+        handle.log(
+            phase="load", primitive="runtime_controlled_sync_range", level="info",
+            event="completed", payload={"outcome": "ok", **proof},
+        )
+
+
+def _client_assertion_result(
+    name: str,
+    params: dict[str, Any],
+    *,
+    passed: bool,
+    evaluated: dict[str, Any],
+    data_points: list[dict[str, Any]],
+    note: str,
+) -> dict[str, Any]:
+    return {
+        "primitive": name,
+        "params": dict(params),
+        "evaluated_value": evaluated,
+        "data_points_used": data_points,
+        "result": "pass" if passed else "fail",
+        "note": None if passed else note,
+    }
+
+
+def _read_client_proof(handle, relative_path: str) -> tuple[Path, dict[str, Any]]:
+    path = _client_example_proof_path(handle, relative_path)
+    try:
+        body = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"client example proof is unavailable: {path}") from exc
+    if not isinstance(body, dict):
+        raise RuntimeError(f"client example proof must be an object: {path}")
+    return path, body
+
+
+class InvalidProtocolCasesContained(AssertionPrimitive):
+    _FRAMES = {
+        "unsupported-version-refusal": "000000000000000c8200a11903e784182af400f4",
+        "malformed-cbor": "0000000000000001ff",
+    }
+
+    def evaluate(self, handle):
+        name = "invalid_protocol_cases_contained"
+        try:
+            path, report = _read_client_proof(
+                handle, "outputs/protocol-decode-cases/result.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name,
+                self.params,
+                passed=False,
+                evaluated={"error": str(exc)},
+                data_points=[],
+                note="the retained protocol-decode proof is unavailable",
+            )
+        workload = report.get("workload_identity") or {}
+        attempts = report.get("attempt_records") or []
+        failures = []
+        counts = {}
+        for case, frame in self._FRAMES.items():
+            rows = [row for row in attempts if row.get("case") == case]
+            counts[case] = len(rows)
+            if len(rows) != 100:
+                failures.append(f"{case}:count")
+            for row in rows:
+                if row.get("request_hex") != frame:
+                    failures.append(f"{case}:request")
+                if row.get("listener_reached") is not True:
+                    failures.append(f"{case}:listener")
+                if not row.get("target_endpoint"):
+                    failures.append(f"{case}:endpoint")
+                if row.get("outcome") not in {"rejected", "disconnected"}:
+                    failures.append(f"{case}:outcome")
+                elapsed = row.get("elapsed_micros")
+                if (
+                    isinstance(elapsed, bool)
+                    or not isinstance(elapsed, int)
+                    or elapsed < 0
+                    or elapsed > 2_000_000
+                ):
+                    failures.append(f"{case}:duration")
+                if (
+                    not row.get("attempt_id")
+                    or not row.get("started_at")
+                    or not row.get("completed_at")
+                ):
+                    failures.append(f"{case}:identity")
+        identity_ok = all(
+            workload.get(field) == expected
+            for field, expected in {
+                "identity": _CLIENT_PROTOCOL_WORKLOAD_ID,
+                "seed": _CLIENT_PROTOCOL_SEED,
+                "digest": _CLIENT_PROTOCOL_DIGEST,
+                "attempts_per_case": 100,
+            }.items()
+        )
+        passed = identity_ok and len(attempts) == 200 and not failures
+        return _client_assertion_result(
+            name,
+            self.params,
+            passed=passed,
+            evaluated={
+                "attempt_count": len(attempts),
+                "counts": counts,
+                "target_endpoints": sorted(
+                    {
+                        str(row.get("target_endpoint"))
+                        for row in attempts
+                        if row.get("target_endpoint")
+                    }
+                ),
+                "workload_identity_matches": identity_ok,
+                "failures": sorted(set(failures)),
+            },
+            data_points=[{"report": path.relative_to(handle.run_dir).as_posix()}],
+            note="the frozen invalid protocol attempts were incomplete, unbounded, or unproven",
+        )
+
+
+class TargetProgressContinues(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "target_progress_continues"
+        try:
+            path, proof = _read_client_proof(
+                handle, "outputs/client-example-proof/target-health-and-progress.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="target progress proof is unavailable"
+            )
+        checks = proof.get("checks") or {}
+        passed = checks.get("target_progressed") is True
+        return _client_assertion_result(
+            name, self.params, passed=passed, evaluated={"checks": checks},
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="the retained target did not prove positive post-workload progress"
+        )
+
+
+class UnrelatedPeerSessionUsable(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "unrelated_peer_session_usable"
+        try:
+            path, proof = _read_client_proof(
+                handle, "outputs/client-example-proof/peer-session-health.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="independent peer-session proof is unavailable"
+            )
+        maximum = float(self.params.get("max_recovery_seconds", 35.0))
+        recovered = proof.get("recovered_within_seconds")
+        before = (proof.get("before") or {}).get("usable") is True
+        during = (proof.get("during") or {}).get("usable") is True
+        after = (proof.get("after") or {}).get("usable") is True
+        recovery_ok = during or (
+            isinstance(recovered, (int, float)) and 0 <= float(recovered) <= maximum
+        )
+        passed = bool(proof.get("peer_id")) and before and after and recovery_ok
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={
+                "peer_id": proof.get("peer_id"), "before_usable": before,
+                "during_usable": during, "after_usable": after,
+                "recovered_within_seconds": recovered,
+                "max_recovery_seconds": maximum,
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="the independent honest peer was not usable within the recovery bound"
+        )
+
+
+class NoTargetFatalSignal(AssertionPrimitive):
+    _REQUIRED = (
+        "no_fatal_signals",
+        "target_not_oom_killed",
+        "target_restart_count_unchanged",
+        "target_running_after",
+        "target_running_before",
+    )
+
+    def evaluate(self, handle):
+        name = "no_target_fatal_signal"
+        try:
+            path, proof = _read_client_proof(
+                handle, "outputs/client-example-proof/target-health-and-progress.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="target fatal-signal proof is unavailable"
+            )
+        checks = proof.get("checks") or {}
+        failed = [key for key in self._REQUIRED if checks.get(key) is not True]
+        return _client_assertion_result(
+            name, self.params, passed=not failed,
+            evaluated={"checks": checks, "failed_checks": failed},
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="the target has an unclassified fatal, exit, restart, or OOM signal"
+        )
+
+
+class MinimumAdoptedBlockRangeObserved(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "minimum_adopted_block_range_observed"
+        relative = str(self.params.get(
+            "report_path", "outputs/client-example-proof/controlled-chain-progress.json"
+        ))
+        try:
+            path, proof = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="controlled adopted-block proof is unavailable",
+            )
+        minimum = int(self.params.get("minimum_adopted_blocks", 30))
+        blocks = proof.get("adopted_blocks") or []
+        heights = [_tip_position(row) for row in blocks]
+        monotonic = bool(heights) and None not in heights and all(
+            right > left for left, right in zip(heights, heights[1:])
+        )
+        identities = all(row.get("hash") for row in blocks)
+        passed = len(blocks) >= minimum and monotonic and identities
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={
+                "adopted_block_count": len(blocks), "minimum": minimum,
+                "monotonic_height": monotonic, "all_hashes_present": identities,
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="fewer than the required exact monotonic adopted block identities were retained",
+        )
+
+
+class CanonicalChainProgressComplete(AssertionPrimitive):
+    """Re-derive canonical-progress-v2 from retained lossless evidence."""
+
+    def evaluate(self, handle):
+        name = "canonical_chain_progress_complete"
+        relative = str(
+            self.params.get(
+                "report_path",
+                "outputs/client-example-proof/controlled-chain-progress.json",
+            )
+        )
+        try:
+            path, proof = _read_client_proof(handle, relative)
+            if proof.get("schema_version") != "canonical-progress-v2":
+                raise RuntimeError("canonical-progress-v2 proof is required")
+            minimum_blocks = int(self.params.get("minimum_adopted_blocks", 30))
+            minimum_correlations = int(
+                self.params.get("minimum_correlations", minimum_blocks)
+            )
+            progress = _derive_canonical_progress(
+                proof.get("adopted_blocks") or [],
+                start_tip=proof.get("start_tip") or {},
+                end_tip=proof.get("end_tip") or {},
+                minimum_blocks=minimum_blocks,
+                max_oscillation_episodes=int(
+                    self.params.get("max_oscillation_episodes", 3)
+                ),
+                max_oscillation_transitions=int(
+                    self.params.get("max_oscillation_transitions", 8)
+                ),
+                minimum_convergence_blocks=int(
+                    self.params.get("minimum_convergence_blocks", 3)
+                ),
+            )
+            checks = _canonical_progress_checks(
+                progress,
+                correlations=proof.get("correlations") or [],
+                minimum_correlations=minimum_correlations,
+                target_health=proof.get("target_health") or {},
+            )
+        except (RuntimeError, TypeError, ValueError) as exc:
+            return _client_assertion_result(
+                name,
+                self.params,
+                passed=False,
+                evaluated={"error": str(exc)},
+                data_points=[],
+                note="canonical chain progress proof is unavailable or invalid",
+            )
+        return _client_assertion_result(
+            name,
+            self.params,
+            passed=checks["canonical_chain_progress_complete"],
+            evaluated={
+                **checks,
+                "height_delta": progress["height_delta"],
+                "oscillation_episode_count": len(progress["oscillation_episodes"]),
+                "oscillation_transition_count": progress[
+                    "oscillation_transition_count"
+                ],
+                "trailing_advance_count": progress["trailing_advance_count"],
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note=(
+                "the chain did not make bounded converged progress with complete "
+                "correlations and clean health"
+            ),
+        )
+
+
+class BlockApplicationSamplesCorrelated(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "block_application_samples_correlated"
+        relative = str(self.params.get(
+            "report_path", "outputs/client-example-proof/controlled-chain-progress.json"
+        ))
+        try:
+            path, proof = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="block-application correlation proof is unavailable",
+            )
+        minimum = int(self.params.get("minimum_samples", 30))
+        correlations = proof.get("correlations") or []
+        applications = proof.get("application_samples") or []
+        complete = all(
+            row.get("block_hash") and row.get("application_sample_id")
+            and isinstance(row.get("duration_micros"), (int, float))
+            and not isinstance(row.get("duration_micros"), bool)
+            for row in correlations
+        )
+        application_ids = [row.get("sample_id") for row in applications]
+        correlated_ids = [row.get("application_sample_id") for row in correlations]
+        all_correlated = (
+            len(correlations) == len(applications)
+            and len(set(application_ids)) == len(application_ids)
+            and len(set(correlated_ids)) == len(correlated_ids)
+            and set(correlated_ids) == set(application_ids)
+        )
+        start_marker = proof.get("start_marker") or {}
+        end_marker = proof.get("end_marker") or {}
+        exact_window = (
+            bool(proof.get("target_node"))
+            and start_marker.get("phase_id") == "controlled-chain-progress"
+            and start_marker.get("state") == "start"
+            and end_marker.get("phase_id") == "controlled-chain-progress"
+            and end_marker.get("state") == "end"
+        )
+        passed = (
+            len(correlations) >= minimum
+            and complete
+            and all_correlated
+            and exact_window
+        )
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={
+                "correlated_sample_count": len(correlations),
+                "minimum": minimum,
+                "complete": complete,
+                "all_application_samples_correlated": all_correlated,
+                "exact_target_window_evidence": exact_window,
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="the required application samples were not correlated to retained blocks",
+        )
+
+
+class RestartReadinessComplete(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "restart_readiness_complete"
+        try:
+            path, proof = _read_client_proof(
+                handle, "outputs/client-example-proof/restart-readiness.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="restart readiness proof is unavailable",
+            )
+        checks = proof.get("checks") or {}
+        required = (
+            "all_readiness_gates_observed",
+            "readiness_gates_ordered",
+            "target_progressed_after_restart",
+        )
+        failed = [item for item in required if checks.get(item) is not True]
+        restart = proof.get("restart") or {}
+        gates = proof.get("gates") or []
+        events = [restart, *gates]
+        expected_events = [
+            "restart_started",
+            "listener_ready",
+            "chain_progress_ready",
+            "peer_role_ready",
+        ]
+        elapsed = [row.get("elapsed_seconds") for row in events]
+        target_node = proof.get("target_node")
+        raw_complete = (
+            len(events) == 4
+            and [row.get("event") for row in events] == expected_events
+            and bool(target_node)
+            and all(row.get("target_node") == target_node for row in events)
+            and all(
+                isinstance(value, (int, float)) and not isinstance(value, bool)
+                for value in elapsed
+            )
+            and elapsed == sorted(elapsed)
+        )
+        return _client_assertion_result(
+            name, self.params, passed=not failed and raw_complete,
+            evaluated={
+                "checks": checks,
+                "failed_checks": failed,
+                "observed_readiness_gates_complete": raw_complete,
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="restart readiness gates are missing, out of order, or did not prove progress",
+        )
+
+
+class ControlledSyncRangeComplete(AssertionPrimitive):
+    def evaluate(self, handle):
+        name = "controlled_sync_range_complete"
+        try:
+            path, proof = _read_client_proof(
+                handle, "outputs/client-example-proof/controlled-sync-range.json"
+            )
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="controlled sync-range proof is unavailable",
+            )
+        start = proof.get("start") or {}
+        end = proof.get("end") or {}
+        minimum = int(proof.get("minimum_blocks") or self.params.get("minimum_blocks", 5))
+        try:
+            delta = _tip_height(end) - _tip_height(start)
+        except RuntimeError:
+            delta = None
+        events = proof.get("range_events") or []
+        timed_events = False
+        if len(events) == 2:
+            started, completed = events
+            started_time = started.get("elapsed_seconds")
+            completed_time = completed.get("elapsed_seconds")
+            target_node = proof.get("target_node")
+            peer_policy = proof.get("peer_policy")
+            started_tip = started.get("tip") or {}
+            completed_tip = completed.get("tip") or {}
+            timed_events = (
+                started.get("event") == "sync_range_started"
+                and completed.get("event") == "sync_range_completed"
+                and bool(target_node)
+                and started.get("target_node") == target_node
+                and completed.get("target_node") == target_node
+                and started.get("peer_policy") == peer_policy
+                and completed.get("peer_policy") == peer_policy
+                and isinstance(started_time, (int, float))
+                and not isinstance(started_time, bool)
+                and isinstance(completed_time, (int, float))
+                and not isinstance(completed_time, bool)
+                and completed_time > started_time
+                and _tip_position(started_tip) == _tip_position(start)
+                and _tip_position(completed_tip) == _tip_position(end)
+                and started_tip.get("hash") == start.get("hash")
+                and completed_tip.get("hash") == end.get("hash")
+            )
+        passed = (
+            delta is not None
+            and delta >= minimum
+            and bool(start.get("hash"))
+            and bool(end.get("hash"))
+            and bool(proof.get("peer_policy"))
+            and timed_events
+        )
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={
+                "height_delta": delta,
+                "minimum": minimum,
+                "peer_policy": proof.get("peer_policy"),
+                "timed_range_events_complete": timed_events,
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note="the target did not complete the exact retained controlled sync range",
         )
 
 
@@ -13979,6 +16606,182 @@ class LoadEventsAreOk(AssertionPrimitive):
             ],
             "result": result,
             "note": note,
+        }
+
+
+class AmaruMeasurementBoundaryProven(AssertionPrimitive):
+    """Pass only when the retained real-node boundary proof is non-vacuous."""
+
+    _CASES = {
+        "supported-version-acceptance": "accepted",
+        "unsupported-version-refusal": "rejected",
+        "malformed-cbor-rejection": "rejected",
+    }
+
+    def evaluate(self, handle):
+        report_path = (
+            Path(handle.run_dir)
+            / "outputs"
+            / "amaru-measurement-calibration"
+            / "result.json"
+        )
+        expected_mode = str(self.params.get("expected_mode", "patched"))
+        min_per_case = int(self.params.get("min_attempts_per_case", 40))
+        min_internal = int(
+            self.params.get("min_internal_samples_per_outcome", 30)
+        )
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            return {
+                "primitive": "amaru_measurement_boundary_proven",
+                "params": dict(self.params),
+                "evaluated_value": {"report": str(report_path), "error": str(exc)},
+                "data_points_used": [],
+                "result": "fail",
+                "note": "the retained Amaru boundary report is unavailable or invalid",
+            }
+
+        attempts = report.get("attempts") or {}
+        by_case = attempts.get("by_case") or {}
+        health_checks = ((report.get("target_health") or {}).get("checks") or {})
+        failed_checks = sorted(
+            name for name, passed in health_checks.items() if passed is not True
+        )
+        case_failures = []
+        for case, expected_outcome in self._CASES.items():
+            row = by_case.get(case) or {}
+            total = int(row.get("total") or 0)
+            matching = int((row.get("outcomes") or {}).get(expected_outcome) or 0)
+            if total < min_per_case or matching != total:
+                case_failures.append(
+                    {
+                        "case": case,
+                        "total": total,
+                        "expected_outcome": expected_outcome,
+                        "matching": matching,
+                    }
+                )
+
+        patched = (
+            (report.get("node_measurements") or {}).get(
+                "amaru-patched-protocol-decode"
+            )
+            or {}
+        )
+        ingress_outcomes = (
+            (patched.get("measurements") or {}).get(
+                "handshake_ingress_by_outcome"
+            )
+            or {}
+        )
+        framed_samples = int(
+            (ingress_outcomes.get("framed") or {}).get("sample_count") or 0
+        )
+        malformed_samples = int(
+            (ingress_outcomes.get("malformed") or {}).get("sample_count") or 0
+        )
+        decode_outcomes = (
+            (patched.get("measurements") or {}).get(
+                "handshake_decode_by_decode_outcome"
+            )
+            or {}
+        )
+        decoded_samples = int(
+            (decode_outcomes.get("decoded") or {}).get("sample_count") or 0
+        )
+        state_outcomes = (
+            (patched.get("measurements") or {}).get(
+                "handshake_state_by_outcome"
+            )
+            or {}
+        )
+        state_admitted_samples = int(
+            (state_outcomes.get("accepted") or {}).get("sample_count") or 0
+        )
+        negotiation_outcomes = (
+            (patched.get("measurements") or {}).get(
+                "handshake_negotiation_by_outcome"
+            )
+            or {}
+        )
+        negotiation_accepted_samples = int(
+            (negotiation_outcomes.get("accepted") or {}).get("sample_count") or 0
+        )
+        negotiation_refused_samples = int(
+            (negotiation_outcomes.get("refused") or {}).get("sample_count") or 0
+        )
+        supported_attempts = int(
+            (by_case.get("supported-version-acceptance") or {}).get("total") or 0
+        )
+        unsupported_attempts = int(
+            (by_case.get("unsupported-version-refusal") or {}).get("total") or 0
+        )
+        malformed_attempts = int(
+            (by_case.get("malformed-cbor-rejection") or {}).get("total") or 0
+        )
+        decoded_attempts = supported_attempts + unsupported_attempts
+        internal_complete = (
+            min_internal == 0
+            or (
+                decoded_samples >= min_internal
+                and malformed_samples >= min_internal
+                and state_admitted_samples >= min_internal
+                and negotiation_accepted_samples >= min_internal
+                and negotiation_refused_samples >= min_internal
+                and framed_samples == decoded_attempts
+                and decoded_samples == decoded_attempts
+                and state_admitted_samples == decoded_attempts
+                and negotiation_accepted_samples == supported_attempts
+                and negotiation_refused_samples == unsupported_attempts
+                and malformed_samples == malformed_attempts
+                and (patched.get("export") or {}).get("incomplete") is False
+            )
+        )
+        workload = report.get("workload_identity") or {}
+        target = report.get("target") or {}
+        passed = (
+            report.get("status") == "available"
+            and target.get("mode") == expected_mode
+            and workload.get("case_set") == "accepted-and-rejected-v1"
+            and str(workload.get("workload_digest") or "").startswith("sha256:")
+            and int(attempts.get("unexpected_count") or 0) == 0
+            and not case_failures
+            and bool(health_checks)
+            and not failed_checks
+            and internal_complete
+        )
+        evaluated = {
+            "expected_mode": expected_mode,
+            "observed_mode": target.get("mode"),
+            "external_attempts": int(attempts.get("total") or 0),
+            "case_failures": case_failures,
+            "failed_checks": failed_checks,
+            "internal_framed_samples": framed_samples,
+            "internal_decoded_samples": decoded_samples,
+            "internal_malformed_samples": malformed_samples,
+            "internal_state_admitted_samples": state_admitted_samples,
+            "internal_negotiation_accepted_samples": negotiation_accepted_samples,
+            "internal_negotiation_refused_samples": negotiation_refused_samples,
+            "internal_accepted_samples": negotiation_accepted_samples,
+            "internal_rejected_samples": negotiation_refused_samples,
+            "internal_not_attempted_samples": malformed_samples,
+            "min_internal_samples_per_outcome": min_internal,
+            "workload_digest": workload.get("workload_digest"),
+        }
+        return {
+            "primitive": "amaru_measurement_boundary_proven",
+            "params": dict(self.params),
+            "evaluated_value": evaluated,
+            "data_points_used": [
+                {
+                    "report": report_path.relative_to(handle.run_dir).as_posix(),
+                    "target": target,
+                    "workload_identity": workload,
+                }
+            ],
+            "result": "pass" if passed else "fail",
+            "note": None if passed else "the real-node boundary proof did not satisfy every required gate",
         }
 
 
@@ -14877,6 +17680,128 @@ class ExecutionTraceAmaruCardanoNodeEquivalent(AssertionPrimitive):
             "result": result,
             "note": note,
         }
+
+
+class PlutusResultAndBudgetMatch(AssertionPrimitive):
+    """Require exact result and CPU/memory agreement for both frozen programs."""
+
+    def evaluate(self, handle):
+        completed = _events_from_handle(
+            handle, phase="load", event="completed",
+            primitive="runtime_version_pinned_plutus_conformance",
+        )
+        minimum = int(self.params.get("executions_per_outcome", 30))
+        non_ok = []
+        for event in completed:
+            payload = event.get("payload") or {}
+            report = payload.get("report") or {}
+            distributions = report.get("distributions") or {}
+            enough = all(
+                int(((distributions.get(implementation) or {}).get(outcome) or {}).get("sample_count") or 0) >= minimum
+                for implementation in ("amaru", "cardano-node")
+                for outcome in ("accepted", "rejected")
+            )
+            if (payload.get("outcome") != "ok"
+                    or (report.get("checks") or {}).get("plutus_result_and_budget_match") is not True
+                    or bool(report.get("mismatches"))
+                    or not enough):
+                non_ok.append(payload)
+        passed = len(completed) >= 1 and not non_ok
+        return {"primitive": "plutus_result_and_budget_match", "params": dict(self.params),
+                "evaluated_value": {"completed": len(completed), "non_ok": len(non_ok)},
+                "data_points_used": [event.get("payload") or {} for event in completed],
+                "result": "pass" if passed else "fail",
+                "note": None if passed else "Plutus result or budget evidence did not match"}
+
+
+class PlutusLiveOutcomesObserved(AssertionPrimitive):
+    """Require 30 included valid and 30 included invalid live transactions."""
+
+    def evaluate(self, handle):
+        completed = _events_from_handle(
+            handle, phase="load", event="completed",
+            primitive="runtime_controlled_plutus_transactions",
+        )
+        minimum = int(self.params.get("minimum_per_outcome", 30))
+        non_ok = []
+        for event in completed:
+            payload = event.get("payload") or {}
+            report = payload.get("report") or {}
+            counts = report.get("outcome_counts") or {}
+            if (payload.get("outcome") != "ok"
+                    or (report.get("checks") or {}).get("plutus_live_outcomes_observed") is not True
+                    or int(counts.get("accepted") or 0) < minimum
+                    or int(counts.get("rejected") or 0) < minimum):
+                non_ok.append(payload)
+        passed = len(completed) >= 1 and not non_ok
+        return {"primitive": "plutus_live_outcomes_observed", "params": dict(self.params),
+                "evaluated_value": {"completed": len(completed), "non_ok": len(non_ok)},
+                "data_points_used": [event.get("payload") or {} for event in completed],
+                "result": "pass" if passed else "fail",
+                "note": None if passed else "Live Plutus outcomes were incomplete"}
+
+def _evaluate_version_pinned_cbor_check(handle, params, *, check_name, failure_key):
+    completed = _events_from_handle(
+        handle,
+        phase="load",
+        event="completed",
+        primitive="runtime_version_pinned_cbor_conformance",
+    )
+    minimum = int(params.get("min_inputs_processed", 100))
+    non_ok = []
+    for event in completed:
+        payload = event.get("payload") or {}
+        artifacts = payload.get("artifact_summary") or {}
+        report = payload.get("report") or {}
+        failures = report.get(failure_key)
+        if (
+            payload.get("outcome") != "ok"
+            or not artifacts.get("has_result_json", False)
+            or not artifacts.get("has_inputs_ndjson", False)
+            or not artifacts.get("has_report_markdown", False)
+            or int(report.get("input_count", 0) or 0) < minimum
+            or not isinstance(failures, list)
+            or bool(failures)
+            or (report.get("checks") or {}).get(check_name) is not True
+        ):
+            non_ok.append(payload)
+    passed = len(completed) >= int(params.get("min_completed", 1)) and not non_ok
+    return {
+        "evaluated_value": {
+            "completed": len(completed),
+            "non_ok": len(non_ok),
+            "minimum_inputs": minimum,
+        },
+        "data_points_used": [event.get("payload") or {} for event in completed],
+        "result": "pass" if passed else "fail",
+        "note": None if passed else f"{check_name} did not pass with complete evidence",
+    }
+
+
+class CborConformanceClean(AssertionPrimitive):
+    """Require all frozen CBOR inputs to have the expected terminal outcome."""
+
+    def evaluate(self, handle):
+        result = _evaluate_version_pinned_cbor_check(
+            handle,
+            self.params,
+            check_name="cbor_conformance_clean",
+            failure_key="outcome_mismatches",
+        )
+        return {"primitive": "cbor_conformance_clean", "params": dict(self.params), **result}
+
+
+class CborRoundtripConsistent(AssertionPrimitive):
+    """Require every accepted CBOR value to have stable canonical bytes."""
+
+    def evaluate(self, handle):
+        result = _evaluate_version_pinned_cbor_check(
+            handle,
+            self.params,
+            check_name="cbor_roundtrip_consistent",
+            failure_key="roundtrip_failures",
+        )
+        return {"primitive": "cbor_roundtrip_consistent", "params": dict(self.params), **result}
 
 
 class CardanoCborDatasetDifferentialClean(AssertionPrimitive):

@@ -80,7 +80,7 @@ an exact repeat against that fixed revision.
 
 ## Runtime proof
 
-The exact scenario passed end to end through DWARF on `cardano-box` as run
+The exact scenario passed end to end through DWARF on `dwarf-host-a` as run
 `20260917T160226Z-6bf185e1` from a clean public-main overlay at
 `973718a3971a7bc9311c431c29a7176210b27c7d`. It retained seed `0xA7561CD0`,
 the pinned dataset revision and aggregate digest, immutable verifier-image
@@ -93,7 +93,7 @@ disagreements, expectation mismatches, crashes, or timeouts.
 
 - Runner unit tests with fake typed verifier and fake shims.
 - Scenario JSON Schema and semantic validation.
-- Exact end-to-end scenario execution on `cardano-box` using fresh output,
+- Exact end-to-end scenario execution on `dwarf-host-a` using fresh output,
   the pinned client dataset revision, real Cardano/Amaru shims, and the real
   upstream verifier image.
 - No Antithesis submission and no live-topology claim in this slice.

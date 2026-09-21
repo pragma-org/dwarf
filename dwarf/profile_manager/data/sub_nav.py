@@ -17,6 +17,7 @@ from typing import Any
 
 OPERATE_SUB_NAV: list[dict[str, str]] = [
     {"slug": "overview", "label": "Overview", "url": "/operate"},
+    {"slug": "run", "label": "Start run", "url": "/run"},
     {"slug": "runs", "label": "Runs", "url": "/operate/runs"},
     {"slug": "scenarios", "label": "Scenarios", "url": "/operate/scenarios"},
     {"slug": "primitives", "label": "Primitives", "url": "/operate/primitives"},
@@ -25,6 +26,8 @@ OPERATE_SUB_NAV: list[dict[str, str]] = [
     {"slug": "antithesis", "label": "Antithesis", "url": "/operate/antithesis"},
     {"slug": "targets", "label": "Targets", "url": "/operate/targets"},
     {"slug": "profiles", "label": "Profiles", "url": "/operate/profiles"},
+    {"slug": "measurements", "label": "Measurements", "url": "/operate/measurements"},
+    {"slug": "measurement-profiles", "label": "Measurement profiles", "url": "/operate/measurement-profiles"},
     {"slug": "versions", "label": "Node versions", "url": "/operate/versions"},
     {"slug": "profile-templates", "label": "Profile templates", "url": "/operate/profile-templates"},
     {"slug": "corpora", "label": "Corpora", "url": "/operate/corpora"},
@@ -46,6 +49,7 @@ LEARN_SUB_NAV: list[dict[str, str]] = [
     {"slug": "overview", "label": "Overview", "url": "/learn"},
     {"slug": "getting-started", "label": "Getting started", "url": "/learn/getting-started"},
     {"slug": "examples", "label": "Examples", "url": "/learn/examples"},
+    {"slug": "measurements", "label": "Measurements", "url": "/learn/measurements"},
     {"slug": "primitives", "label": "Primitives", "url": "/learn/primitives"},
     {"slug": "profile-templates", "label": "Profile templates", "url": "/learn/profile-templates"},
     {"slug": "versions", "label": "Node versions", "url": "/learn/versions"},

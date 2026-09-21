@@ -47,7 +47,7 @@ def test_live_moog_create_test_uses_fixed_control_shim_verb(monkeypatch):
 
     def fake_ssh(config, remote_command, timeout=None, dry_run=False, verb=None):
         captured.update(remote_command=remote_command, verb=verb)
-        return CommandResult(0, "submitted\n", "", "ssh cardano-box moog-create-test ...")
+        return CommandResult(0, "submitted\n", "", "ssh dwarf-host-a moog-create-test ...")
 
     monkeypatch.setenv("ADA2_DWARF_CONTROL_SHIM", "1")
     monkeypatch.setattr(remote, "ssh_command", fake_ssh)
@@ -204,7 +204,7 @@ def test_parse_moog_health_result_summarizes_remote_json():
         returncode=0,
         stdout=json.dumps(remote_payload),
         stderr="",
-        rendered_command="ssh cardano-box moog-health",
+        rendered_command="ssh dwarf-host-a moog-health",
     )
 
     parsed = parse_moog_health_result(result)
@@ -228,7 +228,7 @@ def test_moog_health_uses_fixed_control_shim_verb(monkeypatch):
             0,
             json.dumps({"checks": [], "wallets": {}}),
             "",
-            "ssh cardano-box moog-health",
+            "ssh dwarf-host-a moog-health",
         )
 
     monkeypatch.setattr("profile_manager.moog.ssh_command", fake_ssh)
@@ -268,7 +268,7 @@ def test_moog_facts_uses_fixed_control_shim_verb(monkeypatch):
             0,
             json.dumps({"facts": {"users": [], "roles": [], "white_list": []}, "checks": []}),
             "",
-            "ssh cardano-box moog-facts",
+            "ssh dwarf-host-a moog-facts",
         )
 
     monkeypatch.setattr("profile_manager.moog.ssh_command", fake_ssh)
@@ -368,7 +368,7 @@ def test_parse_moog_bootstrap_result_summarizes_remote_json():
         returncode=0,
         stdout=json.dumps(remote_payload),
         stderr="",
-        rendered_command="ssh cardano-box moog-bootstrap",
+        rendered_command="ssh dwarf-host-a moog-bootstrap",
     )
 
     parsed = parse_moog_bootstrap_result(result)
@@ -645,7 +645,7 @@ def test_moog_bootstrap_cli_approve_executes_remote_command(monkeypatch, capsys)
                 }
             ),
             stderr="",
-            rendered_command="ssh cardano-box moog-bootstrap",
+            rendered_command="ssh dwarf-host-a moog-bootstrap",
         )
 
     monkeypatch.setattr("profile_manager.cli._load_or_intake", lambda _command: config)

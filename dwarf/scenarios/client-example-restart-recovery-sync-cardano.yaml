@@ -1,0 +1,100 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-restart-recovery-sync-cardano",
+  "title": "Client example 05 — restart recovery and synchronization — cardano-node",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "client-example",
+    "cardano",
+    "measurement",
+    "restart",
+    "synchronization",
+    "security"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "One restart proves collection and recovery for this run only.",
+    "This separate execution is not a mixed-node comparison."
+  ],
+  "target": {
+    "implementation": "cardano-node",
+    "version": "11.1.2"
+  },
+  "runtime": "devnet",
+  "profile": "profile-v-cardano-measurement-nanoseconds-v2",
+  "measurement_profile": "cardano-security-patched",
+  "measurements": [
+    {
+      "id": "cardano-stock-resources",
+      "enabled": true,
+      "parameters": {"sample_interval_seconds": 0.25},
+      "threshold_gate": {"enabled": false, "thresholds": []}
+    }
+  ],
+  "seed": "0x5E570005",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+      "mode": "patched",
+      "image_digest": "sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370",
+      "executable_digest": "sha256:3fb83f12ac1152e96c884c756a505484a39d9200da6c59b24678ac61218220eb",
+      "patch_set_sha256": "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c"
+    },
+    {
+      "primitive": "runtime_wait_for_chain_progress",
+      "profile_id": "profile-v-cardano-measurement-nanoseconds-v2",
+      "minimum_blocks": 5,
+      "timeout_seconds": 120,
+      "poll_interval_seconds": 1
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_real_target_restart_and_readiness",
+      "profile_id": "profile-v-cardano-measurement-nanoseconds-v2",
+      "timeout_seconds": 240,
+      "poll_interval_seconds": 1
+    },
+    {
+      "primitive": "runtime_controlled_sync_range",
+      "profile_id": "profile-v-cardano-measurement-nanoseconds-v2",
+      "minimum_blocks": 5,
+      "timeout_seconds": 180,
+      "poll_interval_seconds": 1,
+      "peer_policy": "three-node-controlled-local-mesh"
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {
+      "primitive": "runtime_target_health_and_progress",
+      "report_path": "outputs/client-example-proof/controlled-sync-range.json",
+      "progress_reference": "load-start"
+    },
+    {
+      "primitive": "runtime_peer_session_health",
+      "report_path": "outputs/client-example-proof/controlled-sync-range.json"
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "restart_readiness_complete"
+    },
+    {
+      "primitive": "controlled_sync_range_complete",
+      "minimum_blocks": 5
+    },
+    {
+      "primitive": "target_progress_continues"
+    },
+    {
+      "primitive": "no_target_fatal_signal"
+    }
+  ],
+  "teardown": []
+}

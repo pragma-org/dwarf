@@ -1,0 +1,36 @@
+{
+  "spec_version": "v1",
+  "id": "cardano-measurement-overhead-calibration-stock",
+  "title": "Cardano-node measurement overhead calibration — stock control",
+  "authors": ["dwarf"],
+  "tags": ["cardano-node", "measurement", "calibration", "stock", "real-node"],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This is an observer-overhead calibration leg, not a security finding scenario.",
+    "Performance authority requires the paired patched leg, identical workload identity, matching terminal outcomes, and at least 30 common samples."
+  ],
+  "target": {"implementation": "cardano-node", "version": "11.1.2"},
+  "runtime": "devnet",
+  "profile": "profile-s-cardano-measurement-stock-control",
+  "measurement_profile": "cardano-security-default",
+  "seed": "0xCA4DA001",
+  "setup": [],
+  "load": [
+    {
+      "primitive": "runtime_cardano_measurement_calibration",
+      "profile_id": "profile-s-cardano-measurement-stock-control",
+      "attempts": 100,
+      "response_timeout_seconds": 2,
+      "observation_seconds": 2,
+      "trace_timeout_seconds": 20,
+      "plutus_transactions": 2,
+      "epoch_observation_seconds": 55,
+      "timeout_seconds": 180,
+      "expected_helper_exit": 0
+    }
+  ],
+  "faults": [],
+  "probes": [],
+  "assertions": [{"primitive": "load_events_are_ok", "min_completed": 1, "min_event_count": 1}],
+  "teardown": []
+}

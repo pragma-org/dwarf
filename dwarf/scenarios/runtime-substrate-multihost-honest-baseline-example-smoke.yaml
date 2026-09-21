@@ -13,16 +13,16 @@
     "network": "preview",
     "hosts": [
       {
-        "id": "cardano-box",
-        "ssh_target": "cardano-box",
+        "id": "dwarf-host-a",
+        "ssh_target": "dwarf-host-a",
         "remote_runtime_base": "~/cardano-profiles",
         "published_host": "127.0.0.1"
       },
       {
-        "id": "brabox",
-        "ssh_target": "brabox",
+        "id": "dwarf-host-b",
+        "ssh_target": "dwarf-host-b",
         "remote_runtime_base": "~/cardano-profiles",
-        "published_host": "192.168.30.15"
+        "published_host": "192.0.2.15"
       }
     ],
     "nodes": [
@@ -31,14 +31,14 @@
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "cardano-box"
+        "host": "dwarf-host-a"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "brabox"
+        "host": "dwarf-host-b"
       }
     ],
     "topology": {

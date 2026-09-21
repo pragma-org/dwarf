@@ -101,6 +101,17 @@
       <span class="tile__sub">Cardano-node {{ version_defaults.cardano }} · Amaru {{ version_defaults.amaru }} · Mixed {{ version_defaults.mixed_cardano }} + {{ version_defaults.mixed_amaru }}</span>
     </a>
 
+    <article class="tile tile--data" data-measurements-hub>
+      <span class="tile__eyebrow">Measurements</span>
+      <span class="tile__metric">{{ measurement_count }} <small>taps</small> · {{ measurement_profile_count }} <small>profiles</small></span>
+      <span class="tile__sub">Profiles select taps; run reports contain results.</span>
+      <span class="tile__sub">
+        <a href="/operate/measurements">Definitions</a> ·
+        <a href="/operate/measurement-profiles">Profiles</a> ·
+        <a href="/operate/runs">Run results</a>
+      </span>
+    </article>
+
     <a class="tile" href="/operate/profile-templates">
       <span class="tile__eyebrow">Profile templates</span>
       <span class="tile__metric">{{ profile_template_count }}</span>

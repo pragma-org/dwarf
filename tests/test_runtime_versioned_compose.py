@@ -47,6 +47,29 @@ def test_versioned_compose_nodes_are_discoverable_as_dwarf_managed():
     assert labels["ada2.service"] == "node1"
 
 
+def test_patched_cardano_service_writes_opt_in_measurement_traces_to_retained_logs():
+    node = {
+        "id": "node1",
+        "impl": "cardano-node",
+        "listen_address": "127.0.0.1:33001",
+        "host_slot_index": 1,
+        "target_mode": "patched",
+        "image": "dwarf/cardano-measurement@sha256:" + "a" * 64,
+    }
+
+    service = compose._docker_compose_body(
+        compose_project="dwarf-profile-t-cardano-measurement-patched",
+        nodes=[node],
+        network_name="testnet_42",
+    )["services"]["node1"]
+
+    assert service["environment"] == {
+        "DWARF_CARDANO_MEASUREMENT_TRACE": "/logs/node1/cardano-measurement.ndjson",
+        "DWARF_CARDANO_PLUTUS_TRACE": "/logs/node1/cardano-plutus.ndjson",
+    }
+    assert "./logs:/logs" in service["volumes"]
+
+
 def test_custom_testnet_bootstrap_uses_immutable_support_tool_not_target_binary(monkeypatch, tmp_path):
     selected = "ghcr.io/pragma-org/amaru:v10.11.20260903@sha256:" + "b" * 64
     calls = []

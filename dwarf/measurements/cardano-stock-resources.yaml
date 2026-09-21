@@ -1,0 +1,17 @@
+schema_version: v1
+id: cardano-stock-resources
+title: Cardano process resources
+description: Retains node-emitted ResourceStats plus explicitly scoped DWARF process, cgroup, disk, file-descriptor, thread, and network-namespace samples.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: cardano-node
+  versions: [{version: 11.1.2, source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5}]
+  target_modes: [stock, patched]
+collection_mode: stock-telemetry
+required_capabilities: [cardano-resource-traces, dwarf-container-metrics]
+default_enabled: true
+overhead_class: low
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/cardano-stock-resources/result.json]
+correlation_identifiers: [run_id, workload_phase, target_pid, container_id]
+threshold_gate: {supported: true, default_enabled: false}

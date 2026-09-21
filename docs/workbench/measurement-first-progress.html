@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DWARF — Measurement-first progress</title>
+<style>
+:root{--bg:var(--wb-bg,#06080b);--surface:var(--wb-surface,#111920);--surface2:#17232d;--ink:var(--wb-ink,#eaf4f4);--muted:var(--wb-muted,#9eafb8);--rule:var(--wb-rule,rgba(43,224,224,.22));--accent:var(--wb-accent,#2be0e0);--ok:var(--wb-success,#65d28a);--warn:var(--wb-warning,#e7b75b);--bad:#ef7777;--info:#73aef4;--radius:var(--wb-card-radius,12px);--body:var(--wb-font-body,Inter,system-ui,sans-serif);--mono:var(--wb-font-mono,ui-monospace,SFMono-Regular,monospace)}
+*{box-sizing:border-box}html{background:var(--bg);color:var(--ink);font-family:var(--body);scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 78% -8%,rgba(43,224,224,.12),transparent 34rem),linear-gradient(180deg,#071016 0,var(--bg) 34rem)}a{color:var(--accent)}code{font-family:var(--mono);overflow-wrap:anywhere;color:var(--ink)}main{width:min(1180px,calc(100% - 30px));margin:auto;padding:34px 0 80px}.eyebrow{font:750 .72rem/1.2 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}h1{font-size:clamp(2.4rem,7vw,5.7rem);line-height:.92;letter-spacing:-.055em;margin:.55rem 0 1rem;max-width:980px}h2{font-size:clamp(1.45rem,3vw,2.35rem);letter-spacing:-.025em;margin:0 0 .75rem}h3{font-size:1.03rem;margin:0 0 .55rem}p,li{color:var(--muted);line-height:1.62}.lede{max-width:900px;font-size:clamp(1rem,2vw,1.18rem)}.hero-meta,.filters,.actions{display:flex;gap:8px;flex-wrap:wrap}.hero-meta{margin:22px 0 8px}.pill,.filter{border:1px solid currentColor;border-radius:999px;padding:.38rem .68rem;font:750 .69rem/1 var(--mono);letter-spacing:.055em;text-transform:uppercase;background:transparent}.pill--ok{color:var(--ok)}.pill--warn{color:var(--warn)}.pill--bad{color:var(--bad)}.pill--info{color:var(--info)}.pill--off{color:var(--muted)}.filter{color:var(--muted);cursor:pointer}.filter[aria-pressed="true"]{color:var(--bg);background:var(--accent);border-color:var(--accent)}nav{position:sticky;top:0;z-index:4;margin:25px 0 32px;padding:10px;border:1px solid var(--rule);border-radius:999px;background:rgba(6,8,11,.88);backdrop-filter:blur(14px);display:flex;gap:5px;overflow:auto}nav a{white-space:nowrap;text-decoration:none;color:var(--muted);padding:.48rem .7rem;border-radius:999px;font:700 .72rem/1 var(--mono)}nav a:hover{color:var(--ink);background:rgba(43,224,224,.08)}section{scroll-margin-top:78px;margin:42px 0}.section-head{display:flex;justify-content:space-between;gap:18px;align-items:end;margin-bottom:14px}.section-head p{max-width:650px;margin:0}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.grid--2{grid-template-columns:repeat(2,minmax(0,1fr))}.card{min-width:0;padding:20px;border:1px solid var(--rule);border-radius:var(--radius);background:linear-gradient(145deg,rgba(255,255,255,.026),transparent),var(--surface)}.card--hero{padding:24px;background:linear-gradient(135deg,rgba(43,224,224,.09),transparent 55%),var(--surface)}.metric{font:800 clamp(1.7rem,4vw,2.8rem)/1 var(--mono);letter-spacing:-.04em;margin:.65rem 0}.sub{color:var(--muted);font-size:.86rem}.flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;align-items:stretch}.flow .card{position:relative;padding:17px}.flow .step{font:800 .7rem/1 var(--mono);color:var(--accent);letter-spacing:.08em}.flow .card:not(:last-child)::after{content:"→";position:absolute;right:-10px;top:45%;z-index:2;color:var(--accent);font-size:1.25rem}.table-wrap{overflow:auto;border:1px solid var(--rule);border-radius:var(--radius);background:var(--surface)}table{width:100%;border-collapse:collapse;min-width:860px}th,td{text-align:left;vertical-align:top;padding:13px 14px;border-bottom:1px solid rgba(43,224,224,.12)}th{position:sticky;top:0;background:#12202a;color:var(--ink);font:750 .7rem/1.25 var(--mono);letter-spacing:.07em;text-transform:uppercase}td{color:var(--muted);font-size:.9rem;line-height:1.5}tr:last-child td{border-bottom:0}tr[hidden]{display:none}.status{white-space:nowrap}.status b{font:750 .69rem/1 var(--mono);letter-spacing:.04em;text-transform:uppercase}.status--proven b{color:var(--ok)}.status--partial b{color:var(--warn)}.status--not-started b{color:var(--bad)}.status--deferred b{color:var(--info)}.proof-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.proof-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:16px}.proof-item{padding:11px 12px;border-left:2px solid var(--accent);background:rgba(255,255,255,.024)}.proof-item b{display:block;color:var(--ink);font:750 1.05rem/1.15 var(--mono)}.proof-item span{font-size:.78rem;color:var(--muted)}.callout{border:1px solid rgba(231,183,91,.5);border-radius:var(--radius);padding:18px;background:rgba(231,183,91,.065)}.callout strong{color:var(--warn)}.checklist{margin:0;padding-left:1.2rem}.checklist li{margin:.45rem 0}.actions a{display:inline-flex;text-decoration:none;border:1px solid var(--rule);border-radius:8px;padding:.55rem .75rem;font:700 .75rem/1 var(--mono)}.actions a:first-child{background:var(--accent);border-color:var(--accent);color:var(--bg)}.note{font-size:.82rem;color:var(--muted)}[data-status-card][hidden]{display:none}@media(max-width:900px){.grid,.grid--2,.flow{grid-template-columns:1fr}.flow .card:not(:last-child)::after{content:"↓";right:auto;left:50%;top:auto;bottom:-14px}.proof-list{grid-template-columns:1fr}.section-head{display:block}.section-head p{margin-top:.5rem}}@media(max-width:560px){main{width:min(100% - 20px,1180px);padding-top:22px}h1{font-size:clamp(2.2rem,14vw,4.2rem)}.card,.card--hero{padding:16px}nav{border-radius:12px}.hero-meta{gap:6px}.pill,.filter{font-size:.64rem}}
+</style>
+</head>
+<body><main>
+<span class="eyebrow">DWARF · client guidance · implementation record</span>
+<h1>Measurement-first progress</h1>
+<p class="lede">What the client asked for, how DWARF separated reusable real-node measurements from security scenarios, what is independently proven for Amaru and Cardano-node, and what remains before this becomes a complete conformance and regression program.</p>
+<div class="hero-meta">
+  <span class="pill pill--ok">Amaru proven independently</span>
+  <span class="pill pill--ok">Cardano proven independently</span>
+  <span class="pill pill--bad">Mixed not started</span>
+  <span class="pill pill--warn">Full client program partial</span>
+</div>
+
+<nav aria-label="Sections">
+  <a href="#ask">Client ask</a><a href="#approach">DWARF approach</a><a href="#proof">Independent proof</a><a href="#status">Implementation status</a><a href="#inspect">See the output</a><a href="#next">Next work</a>
+</nav>
+
+<section id="ask">
+  <div class="section-head"><div><span class="eyebrow">01 · Original guidance</span><h2>What the client asked for</h2></div><p>The source request combines functional conformance, node-level performance distributions, stress tests, repeatable examples, threat/risk classification, and recurring execution.</p></div>
+  <div class="grid">
+    <article class="card"><h3>Functional conformance</h3><ul class="checklist"><li>Ledger-rule scenario scoreboards</li><li>CBOR decode and self-consistency</li><li>Plutus result and CPU/MEM budget agreement</li><li>Header validation</li><li>Chain selection</li><li>Epoch stake-distribution comparison</li></ul></article>
+    <article class="card"><h3>Critical node measures</h3><ul class="checklist"><li>Simple transfer</li><li>Block application</li><li>Virtual machine</li><li>Epoch transition</li><li>Time to restart</li><li>Sync speed</li><li>Header Observe/Select/Fetch/Adopt</li><li>Deep chain-switch</li></ul></article>
+    <article class="card"><h3>Delivery program</h3><ul class="checklist"><li>Mean, median, p95 and p99</li><li>Accepted and rejected outcomes</li><li>Five examples from definition through report</li><li>Threat-model and risk-work coverage</li><li>DWARF, GitHub Actions and nightly workflows</li><li>Weekly Cardano and Amaru regression runs</li></ul></article>
+  </div>
+  <p class="note">Source contract: <a href="https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792" target="_blank" rel="noopener">client conformance and non-functional requirements gist</a>.</p>
+</section>
+
+<section id="approach">
+  <div class="section-head"><div><span class="eyebrow">02 · Measurement model</span><h2>How DWARF approached it</h2></div><p>A measurement is an observer, not another scenario engine. The scenario keeps the security intent; compatible taps add node-level evidence without converting DWARF into a simulator or generic benchmark framework.</p></div>
+  <div class="flow" aria-label="Measurement data flow">
+    <article class="card"><span class="step">01</span><h3>Scenario</h3><p>Real workload, adversarial input, fault and security assertion.</p></article>
+    <article class="card"><span class="step">02</span><h3>Profile</h3><p>Reusable stock or patched measurement selection.</p></article>
+    <article class="card"><span class="step">03</span><h3>Identity gate</h3><p>Exact implementation, release, source, image and patch identity.</p></article>
+    <article class="card"><span class="step">04</span><h3>Real-node taps</h3><p>Stock traces, external probes, resources and minimal patched boundaries.</p></article>
+    <article class="card"><span class="step">05</span><h3>Evidence</h3><p>Outcomes, distributions, raw/normalized records, report and portable bundle.</p></article>
+  </div>
+  <div class="grid" style="margin-top:14px">
+    <article class="card"><span class="eyebrow">Catalog</span><div class="metric">30</div><p>Independent measurement definitions across Amaru and Cardano-node.</p></article>
+    <article class="card"><span class="eyebrow">Reusable selection</span><div class="metric">4</div><p>Stock and patched profiles for the two implementations.</p></article>
+    <article class="card"><span class="eyebrow">Verdict policy</span><div class="metric">opt-in</div><p>Thresholds are disabled by default; collector health is separate from the security verdict.</p></article>
+  </div>
+</section>
+
+<section id="proof">
+  <div class="section-head"><div><span class="eyebrow">03 · End-to-end evidence</span><h2>Independent proof before mixed comparison</h2></div><p>Both workflows were launched through the deployed DWARF GUI against real, exact-version nodes. These runs prove collection and reporting—not release thresholds or a vulnerability.</p></div>
+  <div class="grid grid--2">
+    <article class="card card--hero">
+      <div class="proof-head"><div><span class="eyebrow">Amaru</span><h2>10.11.20260912</h2></div><span class="pill pill--ok">GUI proven</span></div>
+      <p><a href="/operate/runs/20260918T234213Z-64959688"><code>20260918T234213Z-64959688</code></a></p>
+      <div class="proof-list"><div class="proof-item"><b>11 / 11</b><span>collectors finalized; zero errors</span></div><div class="proof-item"><b>28 / 49</b><span>available metrics; 21 honest absences</span></div><div class="proof-item"><b>100 / 100</b><span>hostile attempts timed and classified</span></div><div class="proof-item"><b>136 µs</b><span>block-application median, n=4</span></div><div class="proof-item"><b>628.5 µs</b><span>BlockFetch median, n=4</span></div><div class="proof-item"><b>0.56275</b><span>controlled sync blocks/s</span></div></div>
+      <p class="note">Transfer, VM, epoch and restart boundaries were unavailable in this bounded workload and remain unavailable rather than zero.</p>
+    </article>
+    <article class="card card--hero">
+      <div class="proof-head"><div><span class="eyebrow">Cardano-node</span><h2>11.1.2</h2></div><span class="pill pill--ok">GUI proven</span></div>
+      <p><a href="/operate/runs/20260919T032200Z-59f94558"><code>20260919T032200Z-59f94558</code></a></p>
+      <div class="proof-list"><div class="proof-item"><b>12 / 12</b><span>collectors finalized; zero errors</span></div><div class="proof-item"><b>35 / 48</b><span>available metrics; 13 honest absences</span></div><div class="proof-item"><b>493</b><span>protocol receive/decode samples</span></div><div class="proof-item"><b>36 µs</b><span>block-application median, n=29</span></div><div class="proof-item"><b>52 µs</b><span>Plutus VM median, n=4</span></div><div class="proof-item"><b>168 µs</b><span>epoch-transition median, n=2</span></div></div>
+      <p class="note">The patched result includes accepted and rejected Plutus outcomes. Restart remained unavailable because this scenario did not restart the node.</p>
+    </article>
+  </div>
+</section>
+
+<section id="status">
+  <div class="section-head"><div><span class="eyebrow">04 · Honest status</span><h2>What has actually been implemented</h2></div><p>Filter the table by delivery state. “Proven” means retained real-node evidence exists; “partial” means useful machinery exists but does not yet satisfy the complete client contract.</p></div>
+  <div class="filters" role="group" aria-label="Filter delivery status">
+    <button class="filter" data-filter="all" aria-pressed="true">All</button><button class="filter" data-filter="proven" aria-pressed="false">Proven</button><button class="filter" data-filter="partial" aria-pressed="false">Partial</button><button class="filter" data-filter="deferred" aria-pressed="false">Deferred</button><button class="filter" data-filter="not-started" aria-pressed="false">Not started</button>
+  </div>
+  <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Client requirement</th><th>Status</th><th>Current DWARF implementation</th><th>Remaining boundary</th></tr></thead><tbody>
+    <tr data-state="proven"><td>Measurements independent from scenarios</td><td class="status status--proven"><b>Proven</b></td><td>First-class tap catalog, reusable profiles, lifecycle and bundle outputs.</td><td>None for explicit measurement-enabled scenarios.</td></tr>
+    <tr data-state="partial"><td>Automatic compatible default tap</td><td class="status status--partial"><b>Partial</b></td><td>Resolver defines implicit defaults; explicit profiles work.</td><td>The scenario-runner guard currently skips implicit attachment when both profile and overrides are omitted.</td></tr>
+    <tr data-state="proven"><td>Version-pinned real nodes and patched instrumentation</td><td class="status status--proven"><b>Proven</b></td><td>Exact Amaru and Cardano source, image, executable and patch identities; no simulated node substitutes.</td><td>Requalify patches for each new supported source revision.</td></tr>
+    <tr data-state="proven"><td>Outcome-independent timing and distributions</td><td class="status status--proven"><b>Proven</b></td><td>Accepted/rejected/timeout-capable terminal classes with count, mean, median, p95 and p99.</td><td>Supply each client workload needed to populate the relevant boundary.</td></tr>
+    <tr data-state="partial"><td>Critical NFR table</td><td class="status status--partial"><b>Partial</b></td><td>Block, protocol, VM, epoch, sync and resource values are demonstrated.</td><td>Standardized Simple Transfer, restart, header-lifecycle and deep-chain-switch programs remain.</td></tr>
+    <tr data-state="partial"><td>Functional conformance scoreboards</td><td class="status status--partial"><b>Partial</b></td><td>Existing ledger, CBOR, Plutus, header and chain-selection scenarios overlap.</td><td>No complete cross-implementation ledger/CBOR/Plutus/header/chain/SNAP scoreboard yet.</td></tr>
+    <tr data-state="partial"><td>Full protocol transcripts</td><td class="status status--partial"><b>Partial</b></td><td>Bounded raw node NDJSON plus normalized and correlated events are retained.</td><td>No session-by-session transcript index and complete controlled-session transcript output yet.</td></tr>
+    <tr data-state="partial"><td>Five beginning-to-end examples</td><td class="status status--partial"><b>Partial</b></td><td>Two definitive GUI examples exist: one Amaru, one Cardano-node.</td><td>Three more documented client examples and their final reports remain.</td></tr>
+    <tr data-state="partial"><td>Threat/risk work coverage</td><td class="status status--partial"><b>Partial</b></td><td>Threat coverage map and four risk work packages are available.</td><td>Curate the new measurement examples into the client-requested risk/category review.</td></tr>
+    <tr data-state="deferred"><td>GitHub Actions, nightly and weekly operation</td><td class="status status--deferred"><b>Deferred</b></td><td>DWARF has general workflows and a scheduler.</td><td>No measurement-specific workflow or recurring entry is configured; weekly was explicitly deferred.</td></tr>
+    <tr data-state="not-started"><td>Mixed Cardano/Amaru measurements</td><td class="status status--not-started"><b>Not started</b></td><td>Independent implementations were intentionally completed first.</td><td>Define comparable paired workloads and only then run mixed comparison.</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="inspect">
+  <div class="section-head"><div><span class="eyebrow">05 · Operator path</span><h2>Where to see the output</h2></div><p>The browser shows the same retained report that is packaged in the evidence bundle.</p></div>
+  <div class="grid">
+    <article class="card"><span class="eyebrow">Catalog</span><h3>Browse taps</h3><p>Inspect compatibility, source, collection mode, overhead and output contracts.</p><div class="actions"><a href="/operate/measurements">Measurements</a></div></article>
+    <article class="card"><span class="eyebrow">Selection</span><h3>Browse profiles</h3><p>See the four reusable stock and patched tap selections independently from scenarios.</p><div class="actions"><a href="/operate/measurement-profiles">Measurement profiles</a></div></article>
+    <article class="card"><span class="eyebrow">Guidance</span><h3>Read the model</h3><p>Understand stock, coverage and patched modes, outcome handling and honest unavailable values.</p><div class="actions"><a href="/learn/measurements">Learn</a></div></article>
+  </div>
+  <div class="callout" style="margin-top:14px"><strong>Inside every measured bundle:</strong> <code>measurements/selection.json</code>, <code>runtime.json</code>, <code>windows.ndjson</code>, <code>summary.json</code>, <code>report.json</code>, <code>report.md</code>, <code>compact-table.json</code>, and per-collector raw/normalized/correlation evidence.</div>
+</section>
+
+<section id="next">
+  <div class="section-head"><div><span class="eyebrow">06 · Completion path</span><h2>Highest-value next work</h2></div><p>Finish the client-visible program in layers without leaving DWARF's security-testing purpose.</p></div>
+  <div class="grid">
+    <article class="card" data-status-card="partial"><span class="pill pill--warn">1 · repair</span><h3>Automatic defaults</h3><p>Make compatible passive profiles attach when a scenario omits measurement fields, while preserving explicit <code>none</code>.</p></article>
+    <article class="card" data-status-card="partial"><span class="pill pill--warn">2 · populate</span><h3>Missing critical workloads</h3><p>Add standardized transfer, restart, header-lifecycle and deep-chain-switch scenarios for both implementations.</p></article>
+    <article class="card" data-status-card="partial"><span class="pill pill--warn">3 · conform</span><h3>Functional scoreboards</h3><p>Aggregate ledger, CBOR, Plutus, header, chain-selection and SNAP results using pinned datasets and test identities.</p></article>
+    <article class="card" data-status-card="partial"><span class="pill pill--warn">4 · explain</span><h3>Five client examples</h3><p>Document why each exists, conditions, workflow, expected result, run method, functional requirement and one NFR.</p></article>
+    <article class="card" data-status-card="deferred"><span class="pill pill--info">5 · automate later</span><h3>Recurring execution</h3><p>Wire GitHub Actions/nightly/weekly only after workloads and baselines are stable enough to compare.</p></article>
+    <article class="card" data-status-card="not-started"><span class="pill pill--bad">6 · last</span><h3>Mixed comparison</h3><p>Begin only after the same controlled program is authoritative independently for both implementations.</p></article>
+  </div>
+</section>
+
+<div class="callout"><strong>Claim boundary:</strong> DWARF now has a working, evidence-backed measurement engine for explicit Amaru and Cardano-node runs. It does not yet have the complete client conformance/regression program, stable release thresholds, or a mixed-node measurement result.</div>
+</main>
+<script>
+document.querySelectorAll('[data-filter]').forEach(function(button){button.addEventListener('click',function(){var state=button.dataset.filter;document.querySelectorAll('[data-filter]').forEach(function(item){item.setAttribute('aria-pressed',String(item===button));});document.querySelectorAll('tbody tr[data-state]').forEach(function(row){row.hidden=state!=='all'&&row.dataset.state!==state;});});});
+</script>
+</body>
+</html>

@@ -250,17 +250,16 @@ DWARF/
 ├── dwarf/
 │   ├── cardano-profile                  # CLI entrypoint
 │   ├── profile_manager/                 # framework + antithesis.py + antithesis_generator.py + moog.py
-│   ├── scenarios/                       # 228 scenario YAMLs (~8 families)
+│   ├── scenarios/                       # 266 validated scenario YAMLs
 │   ├── primitives/                      # primitive registry + schemas
-│   ├── profiles/                        # 12 profiles + templates/
-│   ├── bundles/                        # preserved bundle archives (runs/ evidence/ generated at runtime)
+│   ├── profiles/                        # 25 profiles + templates/
 │   ├── spec/                            # SARIF + spec schemas
 │   └── docs/
 ├── delivery/                            # Docker delivery wrapper (framework image)
 ├── infrastructure/docker/
 ├── tools/                               # local repro/validation gates
 ├── tests/                               # framework + integration tests
-└── docs/                                # design specs + implementation plans
+└── docs/                                # public product and implementation documentation
 ```
 
 ## Build & run

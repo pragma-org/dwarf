@@ -20,7 +20,7 @@
   "load": [
     {
       "primitive": "load_shell_command",
-      "command": "python3 /home/nigel/dwarf-v4/tools/cardano_amaru_relay_bootstrap_probe.py /home/nigel/dwarf-v4/antithesis/cardano_amaru_relay_bootstrap_control --timeout-seconds 3600",
+      "command": "python3 tools/cardano_amaru_relay_bootstrap_probe.py antithesis/cardano_amaru_relay_bootstrap_control --timeout-seconds 3600",
       "timeout_seconds": 3700,
       "expect_exit": 0
     }

@@ -1,0 +1,19 @@
+cabal-version: 3.0
+name:          dwarf-cardano-coverage
+version:       0.1.0.0
+license:       Apache-2.0
+build-type:    Simple
+
+executable cardano-node-production-handshake-coverage
+  main-is:          CoverageHandshake.hs
+  default-language: GHC2021
+  ghc-options:      -Wall -Werror -fhpc
+  build-depends:
+      base >= 4.18 && < 5
+    , bytestring
+    , cardano-diffusion:api
+    , cardano-diffusion:protocols
+    , cborg
+    , ouroboros-network:api
+    , ouroboros-network:framework
+    , typed-protocols:typed-protocols

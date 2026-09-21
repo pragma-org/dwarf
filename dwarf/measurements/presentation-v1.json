@@ -1,0 +1,740 @@
+{
+  "schema_version": "v1",
+  "source_labels": {
+    "stock": "Stock",
+    "external": "External",
+    "patched": "Patched",
+    "reserved": "Reserved / not implemented"
+  },
+  "categories": [
+    {
+      "id": "workload-outcomes",
+      "label": "Workload and outcomes",
+      "description": "What DWARF attempted and how the target responded."
+    },
+    {
+      "id": "latency-processing",
+      "label": "Latency and processing time",
+      "description": "How long observed node and protocol operations took."
+    },
+    {
+      "id": "throughput-progress",
+      "label": "Throughput and chain progress",
+      "description": "Rates, transferred work, and real chain movement during the run."
+    },
+    {
+      "id": "resources",
+      "label": "CPU, memory, disk, and network",
+      "description": "Resource cost attributed to the target process or its explicitly named scope."
+    },
+    {
+      "id": "protocol-ledger",
+      "label": "Protocol and ledger activity",
+      "description": "Observed protocol, mempool, chain, ledger, and virtual-machine events."
+    },
+    {
+      "id": "unavailable",
+      "label": "Unavailable measurements",
+      "description": "Measurements that were not produced, with the exact reason retained."
+    }
+  ],
+  "concepts": [
+    {
+      "id": "block-application-time",
+      "title": "Block application time",
+      "description": "Time spent applying a block to the node's ledger state at the instrumented boundary.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": ["stock", "patched"],
+          "metric_ids": ["block_application", "block_application_by_outcome"],
+          "source": "stock",
+          "derivation": "Summarized from completed Amaru block-application timing observations."
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": ["stock"],
+          "metric_ids": ["block_application", "block_application_by_outcome"],
+          "source": "stock",
+          "derivation": "Summarized from Cardano-node stock block-application observations."
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": ["patched"],
+          "metric_ids": ["block_application", "block_application_by_outcome"],
+          "source": "patched",
+          "derivation": "Summarized from revision-locked Cardano-node block-application instrumentation."
+        }
+      ]
+    },
+    {
+      "id": "epoch-transition-time",
+      "title": "Epoch transition time",
+      "description": "Time observed at the node boundary responsible for completing an epoch transition.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": ["stock", "patched"],
+          "metric_ids": ["epoch_transition", "epoch_transition_by_outcome"],
+          "source": "stock",
+          "derivation": "Summarized from completed Amaru epoch-transition spans."
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": ["stock"],
+          "metric_ids": ["epoch_transition", "epoch_transition_by_outcome", "epoch_transition_duration"],
+          "source": "stock",
+          "derivation": "Summarized from Cardano-node stock epoch observations."
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": ["patched"],
+          "metric_ids": ["epoch_transition", "epoch_transition_by_outcome", "epoch_transition_duration"],
+          "source": "patched",
+          "derivation": "Summarized from revision-locked Cardano-node epoch instrumentation."
+        }
+      ]
+    },
+    {
+      "id": "chain-sync-speed",
+      "title": "Chain sync speed",
+      "description": "Rate at which the observed node advanced through a controlled real-chain range.",
+      "category": "throughput-progress",
+      "metric_type": "scalar",
+      "primary_statistic": "value",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": ["stock", "patched"],
+          "metric_ids": ["sync_speed"],
+          "source": "external",
+          "derivation": "Calculated from the observed chain-height change divided by the bounded observation duration."
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": ["stock", "patched"],
+          "metric_ids": ["sync_speed"],
+          "source": "external",
+          "derivation": "Calculated from the observed chain-height change divided by the bounded observation duration."
+        }
+      ]
+    },
+    {
+      "id": "ledger-events",
+      "title": "Ledger events observed",
+      "description": "Number of retained ledger-stage events emitted by the node during this run.",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {
+          "implementation": "cardano-node",
+          "modes": ["stock", "patched"],
+          "metric_ids": ["ledger_samples"],
+          "source": "stock",
+          "derivation": "Counted from retained Cardano-node stock ledger-metrics records."
+        }
+      ]
+    },
+    {
+      "id": "workload-attempt-latency",
+      "title": "Workload attempt latency",
+      "description": "Elapsed time from each DWARF workload attempt to its recorded terminal outcome.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["attempt_latency"], "source": "external", "derivation": "Summarized from DWARF workload attempt timestamps and terminal outcomes."}
+      ]
+    },
+    {
+      "id": "workload-backlog",
+      "title": "Workload backlog",
+      "description": "Largest observed difference between offered work and completed work during the run.",
+      "category": "workload-outcomes",
+      "metric_type": "scalar",
+      "primary_statistic": "peak",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["backlog"], "source": "external", "derivation": "Derived from the retained DWARF offered-versus-terminal workload timeline."}
+      ]
+    },
+    {
+      "id": "batch-rate",
+      "title": "Workload batch rate",
+      "description": "Number of workload batches generated per second during the bounded run.",
+      "category": "workload-outcomes",
+      "metric_type": "scalar",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["batches_per_second"], "source": "external", "derivation": "Calculated from retained workload batches divided by the observation duration."}
+      ]
+    },
+    {
+      "id": "offered-byte-rate",
+      "title": "Offered workload bytes",
+      "description": "Rate of encoded workload bytes DWARF attempted to deliver to the target.",
+      "category": "workload-outcomes",
+      "metric_type": "scalar",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["offered_bytes_per_second"], "source": "external", "derivation": "Calculated from encoded workload bytes divided by the observation duration."}
+      ]
+    },
+    {
+      "id": "offered-operation-rate",
+      "title": "Offered operation rate",
+      "description": "Rate at which DWARF attempted operations against the target, independent of their outcome.",
+      "category": "workload-outcomes",
+      "metric_type": "scalar",
+      "primary_statistic": "offered_rate",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["offered_operations"], "source": "external", "derivation": "Calculated from all attempted operations divided by the observation duration."}
+      ]
+    },
+    {
+      "id": "rejected-operation-count",
+      "title": "Rejected workload operations",
+      "description": "Number of attempted workload operations that ended in a rejected outcome.",
+      "category": "workload-outcomes",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["rejected_operations"], "source": "external", "derivation": "Counted from retained workload terminal outcomes."}
+      ]
+    },
+    {
+      "id": "rejected-operation-rate",
+      "title": "Rejected operation rate",
+      "description": "Number of rejected workload operations per second during the observation window.",
+      "category": "workload-outcomes",
+      "metric_type": "scalar",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["rejected_operations_per_second"], "source": "external", "derivation": "Calculated from rejected outcomes divided by the observation duration."}
+      ]
+    },
+    {
+      "id": "successful-operation-count",
+      "title": "Successful workload operations",
+      "description": "Number of attempted workload operations recorded as successful by the workload driver.",
+      "category": "workload-outcomes",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["successful_operations"], "source": "external", "derivation": "Counted from retained workload terminal outcomes."}
+      ]
+    },
+    {
+      "id": "successful-operation-rate",
+      "title": "Successful operation rate",
+      "description": "Number of successful workload operations per second during the observation window.",
+      "category": "workload-outcomes",
+      "metric_type": "scalar",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["successful_operations_per_second"], "source": "external", "derivation": "Calculated from successful outcomes divided by the observation duration."}
+      ]
+    },
+    {
+      "id": "restart-readiness",
+      "title": "Restart recovery time",
+      "description": "Time from a requested restart until listener, peer, and chain-progress readiness gates all hold.",
+      "category": "latency-processing",
+      "metric_type": "scalar",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["restart_readiness"], "source": "external", "derivation": "Measured by DWARF readiness probes against the real restarted target."}
+      ]
+    },
+    {
+      "id": "blockfetch-time",
+      "title": "BlockFetch processing time",
+      "description": "Observed time to complete the measured BlockFetch operation or fetch span.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["block_fetch", "block_fetch_by_outcome"], "source": "stock", "derivation": "Summarized from completed Amaru BlockFetch telemetry observations."},
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["blockfetch_duration"], "source": "stock", "derivation": "Summarized from completed Cardano-node BlockFetch trace observations."}
+      ]
+    },
+    {
+      "id": "block-preparation-time",
+      "title": "Block preparation time",
+      "description": "Time Amaru spent preparing block context before applying the block to ledger state.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["block_prepare"], "source": "stock", "derivation": "Summarized from completed Amaru block-preparation spans."}
+      ]
+    },
+    {
+      "id": "header-to-fetch-request-time",
+      "title": "Header-to-fetch request time",
+      "description": "Time from receiving a header until Amaru requested the corresponding block.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["header_reception_to_fetch_request", "header_reception_to_fetch_request_by_outcome"], "source": "stock", "derivation": "Summarized from correlated Amaru header and fetch-request telemetry."}
+      ]
+    },
+    {
+      "id": "header-terminal-time",
+      "title": "Header terminal-processing time",
+      "description": "Time from receiving a header until its final forwarded, pruned, or otherwise terminal outcome.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["header_reception_to_terminal_forward", "header_reception_to_terminal_forward_by_outcome"], "source": "stock", "derivation": "Summarized from correlated Amaru header lifecycle telemetry and shown by outcome in technical details."}
+      ]
+    },
+    {
+      "id": "header-arrival-offset",
+      "title": "Header arrival offset",
+      "description": "Observed interval between the header's declared slot-start boundary and its reception timestamp.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["header_slot_start_to_reception", "header_slot_start_to_reception_by_outcome"], "source": "stock", "derivation": "Calculated from retained Amaru slot-start and reception timestamps; inspect clock provenance before interpretation."}
+      ]
+    },
+    {
+      "id": "keepalive-round-trip-time",
+      "title": "KeepAlive round-trip time",
+      "description": "Round-trip time observed for KeepAlive exchanges with a live peer.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["keepalive_round_trip"], "source": "stock", "derivation": "Summarized from Amaru KeepAlive telemetry."},
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["keepalive_rtt"], "source": "stock", "derivation": "Summarized from Cardano-node KeepAlive traces."}
+      ]
+    },
+    {
+      "id": "fork-switch-time",
+      "title": "Fork-switch processing time",
+      "description": "Time observed while Amaru detected and processed a change to a competing chain.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["fork_switch", "fork_switch_by_outcome"], "source": "stock", "derivation": "Summarized from Amaru fork-switch telemetry."}
+      ]
+    },
+    {
+      "id": "protocol-decode-time",
+      "title": "Protocol receive and decode time",
+      "description": "Time spent receiving and decoding an instrumented live mini-protocol message.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["patched"], "metric_ids": ["protocol_receive_decode", "protocol_receive_decode_by_outcome"], "source": "patched", "derivation": "Summarized from revision-locked Cardano-node protocol receive/decode events."}
+      ]
+    },
+    {
+      "id": "handler-queue-residence",
+      "title": "Protocol handler queue residence",
+      "description": "Time a received protocol item waited before its node handler processed it.",
+      "category": "latency-processing",
+      "metric_type": "scalar",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["patched"], "metric_ids": ["handler_queue_residence"], "source": "reserved", "derivation": "No DWARF collector currently implements the internal BlockFetch handler-queue boundary for Cardano-node."}
+      ]
+    },
+    {
+      "id": "txsubmission-residence",
+      "title": "TxSubmission residence time",
+      "description": "Time from the instrumented TxSubmission request boundary to terminal mempool handling.",
+      "category": "latency-processing",
+      "metric_type": "scalar",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["patched"], "metric_ids": ["txsubmission_residence"], "source": "reserved", "derivation": "No DWARF collector currently implements continuous per-transaction TxSubmission2 residence for Cardano-node."}
+      ]
+    },
+    {
+      "id": "mempool-terminal-latency",
+      "title": "Mempool terminal latency",
+      "description": "Time from transaction receipt until its accepted, rejected, or evicted mempool outcome.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["mempool_terminal_latency"], "source": "stock", "derivation": "Summarized from correlated Amaru mempool receipt and terminal events."}
+      ]
+    },
+    {
+      "id": "mempool-sync-time",
+      "title": "Mempool synchronization time",
+      "description": "Time Cardano-node reported for synchronizing mempool state with a ledger tip.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["mempool_sync_duration"], "source": "stock", "derivation": "Summarized from Cardano-node stock mempool synchronization telemetry."}
+      ]
+    },
+    {
+      "id": "transaction-validation-time",
+      "title": "Transaction validation time",
+      "description": "Time spent in the node's instrumented transaction-validation boundary.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["transfer_validation"], "source": "stock", "derivation": "Summarized from completed Amaru transaction-validation telemetry spans."}
+      ]
+    },
+    {
+      "id": "plutus-execution-time",
+      "title": "Plutus VM execution time",
+      "description": "Wall-clock time observed while evaluating a Plutus program at the instrumented node boundary.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["virtual_machine_evaluate"], "source": "stock", "derivation": "Summarized from Amaru's Plutus evaluation telemetry."},
+        {"implementation": "cardano-node", "modes": ["stock"], "metric_ids": ["plutus_vm_duration"], "source": "stock", "derivation": "Stock Cardano-node does not expose an authoritative per-execution wall-clock interval in this report."},
+        {"implementation": "cardano-node", "modes": ["patched"], "metric_ids": ["plutus_vm", "plutus_vm_by_outcome", "plutus_vm_duration"], "source": "patched", "derivation": "Summarized from revision-locked Cardano-node Plutus execution events and separated by outcome in technical details."}
+      ]
+    },
+    {
+      "id": "plutus-arena-acquisition-time",
+      "title": "Plutus arena acquisition time",
+      "description": "Time Amaru spent acquiring the memory arena used by the virtual machine.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["virtual_machine_acquire_arena"], "source": "stock", "derivation": "Summarized from Amaru Plutus VM stage telemetry."}
+      ]
+    },
+    {
+      "id": "plutus-program-build-time",
+      "title": "Plutus program build time",
+      "description": "Time Amaru spent constructing the UPLC program before evaluation.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["virtual_machine_build_program"], "source": "stock", "derivation": "Summarized from Amaru Plutus VM stage telemetry."}
+      ]
+    },
+    {
+      "id": "plutus-script-decode-time",
+      "title": "Plutus script decode time",
+      "description": "Time Amaru spent decoding a Plutus script before program construction.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["virtual_machine_decode_script"], "source": "stock", "derivation": "Summarized from Amaru Plutus VM stage telemetry."}
+      ]
+    },
+    {
+      "id": "adopted-block-count",
+      "title": "Blocks adopted",
+      "description": "Number of block-adoption events observed on the target's selected chain.",
+      "category": "throughput-progress",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["adopted_blocks", "cardano-stock-ledger-block-epoch.adopted_blocks"], "source": "stock", "derivation": "Counted from Cardano-node chain and ledger adoption traces."}
+      ]
+    },
+    {
+      "id": "served-block-count",
+      "title": "Blocks served",
+      "description": "Number of blocks Cardano-node served to peers during the observation window.",
+      "category": "throughput-progress",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["served_blocks"], "source": "stock", "derivation": "Counted from Cardano-node BlockFetch server traces."}
+      ]
+    },
+    {
+      "id": "blockfetch-byte-count",
+      "title": "BlockFetch bytes transferred",
+      "description": "Total block bytes represented by completed BlockFetch observations in this run.",
+      "category": "throughput-progress",
+      "metric_type": "scalar",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["blockfetch_bytes"], "source": "stock", "derivation": "Summed from retained Cardano-node completed-block fetch records."}
+      ]
+    },
+    {
+      "id": "chain-tip-update-count",
+      "title": "Chain-tip updates",
+      "description": "Number of selected-chain tip changes emitted by Amaru during the run.",
+      "category": "throughput-progress",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["chain_tip_updates"], "source": "stock", "derivation": "Counted from Amaru chain-tip telemetry."}
+      ]
+    },
+    {
+      "id": "chain-event-count",
+      "title": "Chain lifecycle events",
+      "description": "Number of retained Cardano-node chain download, validation, selection, adoption, or rollback events.",
+      "category": "throughput-progress",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["chain_events"], "source": "stock", "derivation": "Counted from Cardano-node stock chain lifecycle traces."}
+      ]
+    },
+    {
+      "id": "rollback-count",
+      "title": "Chain rollbacks",
+      "description": "Number of rollback events emitted by Cardano-node during the run.",
+      "category": "throughput-progress",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["rollbacks"], "source": "stock", "derivation": "Counted from Cardano-node chain lifecycle traces."}
+      ]
+    },
+    {
+      "id": "cpu-utilization",
+      "title": "Target CPU utilization",
+      "description": "CPU utilization observed for the real target process during the measurement window.",
+      "category": "resources",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["cpu_percent"], "source": "external", "derivation": "Sampled by DWARF from the target process or explicitly identified container scope."}
+      ]
+    },
+    {
+      "id": "cpu-time",
+      "title": "Target CPU time consumed",
+      "description": "Increase in cumulative CPU time for the target over the observation window.",
+      "category": "resources",
+      "metric_type": "scalar",
+      "primary_statistic": "delta",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["cpu_time_seconds"], "source": "external", "derivation": "Calculated as the target's ending cumulative CPU time minus its starting value."}
+      ]
+    },
+    {
+      "id": "resident-memory",
+      "title": "Target resident memory",
+      "description": "Resident memory attributed to the target process during the measurement window.",
+      "category": "resources",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["rss_bytes"], "source": "external", "derivation": "Sampled by DWARF from the real target process."}
+      ]
+    },
+    {
+      "id": "disk-read-volume",
+      "title": "Target disk bytes read",
+      "description": "Increase in cumulative bytes read by the target during the observation window.",
+      "category": "resources",
+      "metric_type": "scalar",
+      "primary_statistic": "delta",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["disk_read_bytes"], "source": "external", "derivation": "Calculated from monotonic target IO counters at the start and end of the window."}
+      ]
+    },
+    {
+      "id": "disk-write-volume",
+      "title": "Target disk bytes written",
+      "description": "Increase in cumulative bytes written by the target during the observation window.",
+      "category": "resources",
+      "metric_type": "scalar",
+      "primary_statistic": "delta",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["disk_write_bytes"], "source": "external", "derivation": "Calculated from monotonic target IO counters at the start and end of the window."}
+      ]
+    },
+    {
+      "id": "network-receive-volume",
+      "title": "Network bytes received",
+      "description": "Increase in bytes received by the explicitly named target network scope.",
+      "category": "resources",
+      "metric_type": "scalar",
+      "primary_statistic": "delta",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["network_rx_bytes"], "source": "external", "derivation": "Calculated from network-namespace counters at the start and end of the window."}
+      ]
+    },
+    {
+      "id": "network-transmit-volume",
+      "title": "Network bytes transmitted",
+      "description": "Increase in bytes transmitted by the explicitly named target network scope.",
+      "category": "resources",
+      "metric_type": "scalar",
+      "primary_statistic": "delta",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["network_tx_bytes"], "source": "external", "derivation": "Calculated from network-namespace counters at the start and end of the window."}
+      ]
+    },
+    {
+      "id": "open-file-descriptors",
+      "title": "Open file descriptors",
+      "description": "Number of file descriptors held by the target process across sampled observations.",
+      "category": "resources",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["fd_count"], "source": "external", "derivation": "Sampled by DWARF from the real target process."}
+      ]
+    },
+    {
+      "id": "thread-count",
+      "title": "Target thread count",
+      "description": "Number of operating-system threads held by the target process across sampled observations.",
+      "category": "resources",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["threads"], "source": "external", "derivation": "Sampled by DWARF from the real target process."}
+      ]
+    },
+    {
+      "id": "mempool-accepted-count",
+      "title": "Transactions accepted by the mempool",
+      "description": "Number of transaction-admission events recorded as accepted by the node's mempool.",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["mempool_accepted"], "source": "stock", "derivation": "Counted from node mempool telemetry."}
+      ]
+    },
+    {
+      "id": "mempool-rejected-count",
+      "title": "Transactions rejected by the mempool",
+      "description": "Number of transaction-admission events recorded as rejected by the node's mempool.",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["mempool_rejected"], "source": "stock", "derivation": "Counted from node mempool telemetry; rejection reasons remain in technical details when present."}
+      ]
+    },
+    {
+      "id": "mempool-received-count",
+      "title": "Transactions received by the mempool",
+      "description": "Number of transaction-receipt events observed at Amaru's mempool boundary.",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["mempool_received"], "source": "stock", "derivation": "Counted from Amaru mempool telemetry."}
+      ]
+    },
+    {
+      "id": "mempool-evicted-count",
+      "title": "Transactions evicted from the mempool",
+      "description": "Number of transaction-eviction events observed at Amaru's mempool boundary.",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["mempool_evicted"], "source": "stock", "derivation": "Counted from Amaru mempool telemetry."}
+      ]
+    },
+    {
+      "id": "mempool-byte-size",
+      "title": "Mempool size in bytes",
+      "description": "Observed encoded size of transactions held in the target's mempool.",
+      "category": "protocol-ledger",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["mempool_size_bytes"], "source": "stock", "derivation": "Sampled from Amaru mempool telemetry."},
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["mempool_bytes"], "source": "stock", "derivation": "Sampled from Cardano-node mempool telemetry."}
+      ]
+    },
+    {
+      "id": "mempool-transaction-count",
+      "title": "Transactions held in the mempool",
+      "description": "Observed number of transactions held in the target's mempool.",
+      "category": "protocol-ledger",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "*", "modes": ["stock", "patched"], "metric_ids": ["mempool_tx_count"], "source": "stock", "derivation": "Sampled from node mempool telemetry."}
+      ]
+    },
+    {
+      "id": "mux-failure-count",
+      "title": "Multiplexer failures",
+      "description": "Number of failed multiplexer events emitted by Amaru during the run.",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["mux_failed"], "source": "stock", "derivation": "Counted from Amaru network telemetry."}
+      ]
+    },
+    {
+      "id": "peer-connection-count",
+      "title": "Peer connection events",
+      "description": "Number of peer-connected events emitted by Amaru during the observation window.",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "amaru", "modes": ["stock", "patched"], "metric_ids": ["peer_connected"], "source": "stock", "derivation": "Counted from Amaru peer telemetry."}
+      ]
+    },
+    {
+      "id": "protocol-event-count",
+      "title": "Instrumented protocol events",
+      "description": "Number of live mini-protocol receive/decode records retained from the patched target.",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["protocol_events"], "source": "stock", "derivation": "Counted from selected stock Cardano-node mini-protocol traces; this is not a complete transcript."}
+      ]
+    },
+    {
+      "id": "transaction-outcome-count",
+      "title": "Instrumented transaction outcomes",
+      "description": "Number of accepted and rejected transaction outcomes retained by the patched node collector.",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["transaction_outcomes"], "source": "stock", "derivation": "Counted from stock Cardano-node mempool accepted and rejected transaction outcomes."}
+      ]
+    },
+    {
+      "id": "block-selection-time",
+      "title": "Block selection time",
+      "description": "Time spent choosing the preferred chain or block candidate inside the node.",
+      "category": "latency-processing",
+      "metric_type": "unavailable",
+      "primary_statistic": "reason",
+      "bindings": [
+        {
+          "implementation": "*",
+          "modes": ["stock", "patched"],
+          "metric_ids": [],
+          "source": "reserved",
+          "derivation": "No DWARF collector currently implements this internal boundary for the selected target."
+        }
+      ]
+    }
+  ]
+}

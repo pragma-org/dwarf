@@ -2,10 +2,10 @@
 # Build a from-807 amaru store off the d807adv cardano cluster (k=20, epochLength=400).
 # Proven recipe: db-analyser boundary points -> amaru snapshot create -> amaru node bootstrap.
 set -euo pipefail
-export PATH=/home/nigel/.local/bin:$HOME/.cargo/bin:$PATH
+export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH
 
-D=/home/nigel/d807-amaru
-AMARU=/home/nigel/codebases/amaru/target/release/amaru
+D=$HOME/d807-amaru
+AMARU=$HOME/codebases/amaru/target/release/amaru
 EPOCH_LEN=400
 TARGET_EPOCH=3          # bootstrap consumes epochs 0,1,2
 

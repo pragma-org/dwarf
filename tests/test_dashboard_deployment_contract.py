@@ -7,11 +7,15 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from profile_manager.config import DeploymentConfig
 from profile_manager import dashboard
 from profile_manager import cli
 from profile_manager.remote import (
     CommandResult,
+    render_launch_command,
+    render_launch_preflight_command,
     render_topology_health_command,
     render_topology_redeploy_command,
 )
@@ -34,8 +38,14 @@ def test_default_ssh_key_matches_container_mount():
     config = DeploymentConfig.from_dict({})
     compose = (ROOT / "delivery/docker-compose.dwarf.yml").read_text(encoding="utf-8")
 
-    assert config.ssh_key_path == "~/.ssh/cardano-box"
-    assert ":/home/dwarf/.ssh/cardano-box:ro" in compose
+    assert config.ssh_key_path == "~/.ssh/id_ed25519"
+    assert ":/home/dwarf/.ssh/id_ed25519:ro" in compose
+
+
+def test_delivery_network_subnet_can_be_isolated_per_deployment():
+    compose = (ROOT / "delivery/docker-compose.dwarf.yml").read_text(encoding="utf-8")
+
+    assert "${DWARF_NETWORK_SUBNET:-10.201.0.0/24}" in compose
 
 
 def test_control_shim_executes_large_generated_script_without_argv_limit():
@@ -187,6 +197,48 @@ def test_control_shim_routes_catalog_scenario_run_to_host(monkeypatch, tmp_path)
     assert command[:4] == ["ssh", "-n", "-o", "BatchMode=yes"]
 
 
+def test_control_shim_launch_command_accepts_only_strict_launch_ids(tmp_path):
+    config = DeploymentConfig.from_dict(
+        {
+            "host": "127.0.0.1",
+            "ssh_user": "nigel",
+            "ssh_key_path": str(tmp_path / "key"),
+        }
+    )
+
+    command = render_launch_command(config, "launch-0123456789abcdef01234567")
+
+    assert command[-2:] == [
+        "nigel@127.0.0.1",
+        "launch launch-0123456789abcdef01234567",
+    ]
+    with pytest.raises(ValueError):
+        render_launch_command(config, "../scenario.yaml")
+
+    preflight = render_launch_preflight_command(
+        config, "launch-0123456789abcdef01234567"
+    )
+    assert preflight[-1] == "launch-preflight launch-0123456789abcdef01234567"
+
+
+def test_control_channel_provisions_restricted_launch_root():
+    shim = (ROOT / "delivery/control-plane/dwarf-deploy-shim.py").read_text(
+        encoding="utf-8"
+    )
+    provision = (
+        ROOT / "delivery/control-plane/provision-control-channel.sh"
+    ).read_text(encoding="utf-8")
+
+    assert '"launch"' in shim
+    assert '"launch-preflight"' in shim
+    assert "_LAUNCH_ID_RE" in shim
+    assert "LAUNCH_ROOT" in shim
+    assert "load_launch" in shim
+    assert "ADA2_DWARF_LAUNCH_ID" in shim
+    assert "LAUNCH_ROOT=${LAUNCH_ROOT:-$STATE_DIR/launches}" in provision
+    assert "LAUNCH_ROOT=$LAUNCH_ROOT" in provision
+
+
 def test_control_shim_rejects_scenario_outside_catalog(monkeypatch, tmp_path):
     scenarios = tmp_path / "scenarios"
     scenarios.mkdir()
@@ -293,7 +345,7 @@ def test_smoke_run_uses_one_fixed_control_verb_in_shim_mode(monkeypatch):
 
     def fake_ssh(config, remote_command, timeout=None, dry_run=False, verb=None):
         calls.append((remote_command, verb))
-        return CommandResult(0, "ok\n", "", "ssh cardano-box smoke environment-smoke")
+        return CommandResult(0, "ok\n", "", "ssh dwarf-host-a smoke environment-smoke")
 
     monkeypatch.setenv("ADA2_DWARF_CONTROL_SHIM", "1")
     monkeypatch.setattr(cli, "ssh_command", fake_ssh)
@@ -450,6 +502,27 @@ def test_control_shim_builds_read_only_topology_health_command(tmp_path):
     assert "redeploy" not in completed.stdout
 
 
+def test_control_shim_builds_profile_scoped_health_command(tmp_path):
+    shim = tmp_path / "dwarf-deploy-shim"
+    shutil.copy2(ROOT / "delivery/control-plane/dwarf-deploy-shim.py", shim)
+    (tmp_path / "dwarf-control.conf").write_text(
+        f"DWARF_ROOT={ROOT / 'dwarf'}\n", encoding="utf-8"
+    )
+    completed = subprocess.run(
+        [sys.executable, str(shim)], text=True, capture_output=True, check=False,
+        env={**dict(os.environ), "SSH_ORIGINAL_COMMAND": "profile-health profile-v-cardano-measurement-nanoseconds-v2 --dry-run"},
+    )
+    missing = subprocess.run(
+        [sys.executable, str(shim)], text=True, capture_output=True, check=False,
+        env={**dict(os.environ), "SSH_ORIGINAL_COMMAND": "profile-health --dry-run"},
+    )
+
+    assert completed.returncode == 0
+    assert "/opt/dwarf/cardano-profiles/profile-v-cardano-measurement-nanoseconds-v2" in completed.stdout
+    assert "## tip" in completed.stdout
+    assert missing.returncode == 77
+
+
 def test_control_shim_allows_only_fixed_topology_redeploy_id(tmp_path):
     shim = tmp_path / "dwarf-deploy-shim"
     shutil.copy2(ROOT / "delivery/control-plane/dwarf-deploy-shim.py", shim)
@@ -521,7 +594,7 @@ def test_topology_redeploy_endpoint_is_confirmed_token_gated_and_streamed():
     commands = []
 
     def build_command():
-        command = ["ssh", "cardano-box", "topology-redeploy cardano_amaru"]
+        command = ["ssh", "dwarf-host-a", "topology-redeploy cardano_amaru"]
         commands.append(command)
         return command
 
@@ -546,7 +619,7 @@ def test_topology_redeploy_endpoint_is_confirmed_token_gated_and_streamed():
     assert status == 200
     assert content_type.startswith("text/event-stream")
     assert b"capture_complete" in b"".join(body)
-    assert commands == [["ssh", "cardano-box", "topology-redeploy cardano_amaru"]]
+    assert commands == [["ssh", "dwarf-host-a", "topology-redeploy cardano_amaru"]]
 
 
 def test_topology_redeploy_endpoint_rejects_every_unconfirmed_or_variable_target():

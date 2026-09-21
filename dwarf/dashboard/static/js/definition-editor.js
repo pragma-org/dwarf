@@ -132,6 +132,7 @@
       const value = model[input.dataset.field];
       if (input.type === 'checkbox') input.checked = Boolean(value);
       else if (input.dataset.fieldType === 'array') input.value = Array.isArray(value) ? value.join('\n') : (value || '');
+      else if (input.dataset.fieldType === 'json-array') input.value = Array.isArray(value) ? JSON.stringify(value, null, 2) : '';
       else if (input.dataset.fieldType === 'object') input.value = value && typeof value === 'object' ? JSON.stringify(value, null, 2) : '';
       else input.value = value === undefined || value === null ? '' : String(value);
       updateSelectedOptionHelp(input);
@@ -150,6 +151,20 @@
         const values = input.value.split('\n').map((value) => value.trim()).filter(Boolean);
         if (values.length) model[key] = values;
         else delete model[key];
+      } else if (input.dataset.fieldType === 'json-array') {
+        if (input.value.trim() === '') delete model[key];
+        else {
+          try {
+            const value = JSON.parse(input.value);
+            if (!Array.isArray(value)) throw new Error('must be a JSON array');
+            model[key] = value;
+            input.removeAttribute('aria-invalid');
+          } catch (error) {
+            valid = false;
+            input.setAttribute('aria-invalid', 'true');
+            report.textContent = `${key}: ${error.message}`;
+          }
+        }
       } else if (input.dataset.fieldType === 'object') {
         if (input.value.trim() === '') delete model[key];
         else {

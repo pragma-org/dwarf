@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DWARF Measurement Program — Implementation Overview and Technical Debrief</title>
+<style>
+:root{--bg:var(--wb-bg,#05080a);--panel:var(--wb-surface,#0c1318);--panel2:color-mix(in srgb,var(--wb-surface,#0c1318) 88%,var(--wb-ink,#e9f5f4));--ink:var(--wb-ink,#e9f5f4);--muted:var(--wb-muted,#9bb0b7);--cyan:var(--wb-accent,#35e2dc);--cyan2:var(--wb-accent-2,#116d73);--green:var(--wb-success,#79da91);--amber:var(--wb-warning,#f0bd62);--red:var(--wb-error,#ff7777);--line:var(--wb-rule,rgba(53,226,220,.22));--mono:var(--wb-font-mono,ui-monospace,SFMono-Regular,Consolas,monospace);--sans:var(--wb-font-body,Inter,ui-sans-serif,system-ui,sans-serif);--radius:var(--wb-card-radius,var(--wb-rounded-md,12px))}
+*{box-sizing:border-box}html{scroll-behavior:smooth;overflow-x:clip;background:var(--bg)}body{margin:0;color:var(--ink);font-family:var(--sans);background:radial-gradient(circle at 82% 2%,rgba(53,226,220,.09),transparent 28rem),linear-gradient(180deg,#05080a,#071015 54%,#05080a);overflow-x:clip}
+a{color:var(--cyan);text-underline-offset:.18em;overflow-wrap:anywhere}a:hover{color:#b2fffb}.skip-link{position:fixed;z-index:50;top:8px;left:8px;transform:translateY(-160%);background:var(--cyan);color:#001214;padding:.65rem 1rem;border-radius:6px;font-weight:800}.skip-link:focus{transform:none}
+.shell{width:min(1460px,100%);margin:auto;display:grid;grid-template-columns:260px minmax(0,1fr);gap:28px;padding:0 24px 72px}.rail{position:sticky;top:0;height:100vh;padding:28px 0;overflow:auto}.brand{font:800 .72rem/1.3 var(--mono);letter-spacing:.16em;color:var(--cyan);text-transform:uppercase}.rail nav{margin-top:2rem;display:grid;gap:.2rem}.rail nav a{color:var(--muted);text-decoration:none;padding:.52rem .7rem;border-left:2px solid transparent;font-size:.88rem}.rail nav a:hover,.rail nav a:focus{color:var(--ink);border-color:var(--cyan);background:rgba(53,226,220,.06)}.rail small{display:block;color:var(--muted);line-height:1.55;margin-top:1.5rem}
+main{min-width:0;padding-top:54px}.hero{padding:20px 0 42px;border-bottom:1px solid var(--line)}.kicker,.eyebrow{font:800 .7rem/1.25 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}h1{overflow-wrap:anywhere;font-size:clamp(2.35rem,6vw,5.8rem);line-height:.93;letter-spacing:-.055em;margin:.7rem 0 1.1rem;max-width:1100px}h2{font-size:clamp(1.55rem,3vw,2.6rem);letter-spacing:-.025em;margin:.25rem 0 1rem}h3{font-size:1.08rem;margin:.1rem 0 .65rem}p,li{line-height:1.62;color:var(--muted)}strong{color:var(--ink)}code,.mono{font-family:var(--mono);font-size:.91em;overflow-wrap:anywhere;color:#d7ffff}.lede{font-size:1.08rem;max-width:900px}.stamp{display:flex;flex-wrap:wrap;gap:8px;margin-top:1.5rem}
+.pill,.filter{border:1px solid currentColor;border-radius:999px;padding:.36rem .66rem;font:800 .69rem/1 var(--mono);letter-spacing:.06em;text-transform:uppercase}.proven{color:var(--green)}.partial{color:var(--amber)}.unavailable{color:var(--red)}.deferred{color:var(--muted)}
+.controls{position:sticky;top:0;z-index:20;margin:0 -12px;padding:12px;background:rgba(5,8,10,.94);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);display:grid;grid-template-columns:minmax(180px,1fr) auto auto;gap:10px;align-items:center}.controls input{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:.72rem .8rem;font:inherit}.filters,.detail-actions{display:flex;flex-wrap:wrap;gap:6px}.filter,button{background:var(--panel);cursor:pointer}.filter[aria-pressed="true"]{background:currentColor}.filter[aria-pressed="true"] span{color:#041011}.detail-actions button{color:var(--cyan);border:1px solid var(--line);border-radius:7px;padding:.6rem .72rem;font:700 .72rem var(--mono)}
+section.tech{margin-top:28px;padding:clamp(20px,3vw,34px);border:1px solid var(--line);border-radius:var(--radius);background:linear-gradient(145deg,rgba(255,255,255,.025),transparent 55%),var(--panel);box-shadow:0 24px 70px rgba(0,0,0,.22);scroll-margin-top:80px}.child-explanation{margin:9px 0 0;padding:14px 18px;border:1px dashed rgba(240,189,98,.5);border-radius:0 0 var(--radius) var(--radius);background:rgba(240,189,98,.055);color:var(--muted);line-height:1.55}.child-explanation b{display:block;color:var(--amber);font:800 .7rem/1.2 var(--mono);letter-spacing:.11em;text-transform:uppercase;margin-bottom:.35rem}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.card{min-width:0;padding:18px;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}.card p:last-child{margin-bottom:0}.number{font:800 2rem/1 var(--mono);color:var(--cyan)}.table-wrap{overflow-x:auto;max-width:100%;border:1px solid var(--line);border-radius:8px}table{border-collapse:collapse;width:100%;min-width:720px}th,td{text-align:left;vertical-align:top;padding:.76rem;border-bottom:1px solid var(--line);color:var(--muted);line-height:1.45}th{color:var(--ink);font:800 .71rem var(--mono);letter-spacing:.07em;text-transform:uppercase;background:#101b20}tr:last-child td{border-bottom:0}
+details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background:#091015}summary{cursor:pointer;padding:1rem;font-weight:800;color:var(--ink)}details[open] summary{border-bottom:1px solid var(--line)}.detail-body{padding:1rem}.kv{display:grid;grid-template-columns:minmax(130px,.35fr) 1fr;gap:.45rem 1rem;margin:.3rem 0}.kv dt{color:var(--cyan);font:700 .72rem var(--mono);text-transform:uppercase}.kv dd{margin:0;color:var(--muted);overflow-wrap:anywhere}.callout{border-left:3px solid var(--amber);padding:.5rem 1rem;margin:1rem 0;background:rgba(240,189,98,.05)}.run-links{display:flex;flex-wrap:wrap;gap:8px}.run-links a{border:1px solid var(--line);border-radius:6px;padding:.45rem .58rem;font:700 .75rem var(--mono);text-decoration:none}.steps{counter-reset:step;list-style:none;padding:0}.steps li{position:relative;padding:0 0 1.1rem 3rem}.steps li:before{counter-increment:step;content:counter(step,decimal-leading-zero);position:absolute;left:0;color:var(--cyan);font:800 1rem var(--mono)}
+[data-hidden="true"]{display:none!important}#empty-state{display:none;padding:2rem;text-align:center;color:var(--amber)}#empty-state.visible{display:block}.footer{padding:40px 0;color:var(--muted);font-size:.83rem}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+@media (max-width:1050px){.shell{grid-template-columns:1fr}.rail{position:relative;height:auto;padding-bottom:0}.rail nav{display:flex;overflow-x:auto;padding-bottom:8px}.rail nav a{white-space:nowrap;border-left:0;border-bottom:2px solid transparent}.controls{top:0}.grid.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){.shell{padding:0 14px 48px;gap:10px}main{padding-top:12px}.rail{padding-top:18px}.controls{grid-template-columns:1fr;margin:0 -6px}.grid,.grid.four{grid-template-columns:1fr}section.tech{padding:18px;margin-top:18px}h1{overflow-wrap:anywhere;font-size:clamp(2.25rem,13vw,4rem)}.kv{grid-template-columns:1fr}.detail-actions{display:none}}
+@media print{html,body{background:#fff!important;color:#111!important;overflow:visible}.shell{display:block;width:100%;padding:0}.rail,.controls,.skip-link{display:none!important}main{padding:0}section.tech,.card,details{break-inside:avoid;background:#fff!important;border-color:#bbb;box-shadow:none}p,li,td,.child-explanation{color:#222}.child-explanation{border-color:#777;background:#f5f5f5}a{color:#111;text-decoration:none}a[href]:after{content:" (" attr(href) ")";font-size:.7em;overflow-wrap:anywhere}details{display:block}details>*{display:block!important}summary{border-bottom:1px solid #bbb}.footer{color:#222}}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to evidence</a>
+<div class="shell">
+<aside class="rail" aria-label="Debrief navigation">
+<div class="brand">DWARF / measurement evidence</div>
+<nav>
+<a href="#summary">Executive summary</a><a href="#traceability">Traceability</a><a href="#architecture">Tap architecture</a><a href="#cards">Five cards</a><a href="#findings">Findings</a><a href="#usage">Use DWARF</a><a href="#inventory">Inventory</a><a href="#coverage">Coverage</a><a href="#reproducibility">Reproducibility</a><a href="#health-repair">Health repair</a><a href="#full-metrics">Full metrics</a><a href="#run-recipes">Run recipes</a><a href="#next-work">Next work</a>
+</nav>
+<small>Internal implementation debrief<br>Evidence cut: 2026-09-21<br>ASD-STE100 style</small>
+</aside>
+<main id="main">
+<header class="hero">
+<div class="kicker">Case file / five-card implementation / final evidence</div>
+<h1>DWARF Measurement Program — Implementation Overview and Technical Debrief</h1>
+<p class="lede">DWARF now collects, correlates, reports, and exports security-centered measurements from exact Amaru and Cardano-node targets. This debrief maps the client request to the implementation and to the retained evidence. It also states every important claim limit.</p>
+<div class="stamp"><span class="pill proven">5 cards accepted</span><span class="pill proven">10 final legs</span><span class="pill partial">historical findings retained</span><span class="pill deferred">mixed comparison deferred</span></div>
+</header>
+
+<div class="controls" aria-label="Debrief controls">
+<label><span class="eyebrow">Search evidence</span><input id="debrief-search" type="search" placeholder="Run ID, card, metric, digest…" autocomplete="off"></label>
+<div class="filters" aria-label="Filter evidence by status">
+<button class="filter proven" data-filter="proven" aria-pressed="true" title="Alt+1"><span>Proven</span></button>
+<button class="filter partial" data-filter="partial" aria-pressed="true" title="Alt+2"><span>Partial</span></button>
+<button class="filter unavailable" data-filter="unavailable" aria-pressed="true" title="Alt+3"><span>Unavailable</span></button>
+<button class="filter deferred" data-filter="deferred" aria-pressed="true" title="Alt+4"><span>Deferred</span></button>
+</div>
+<div class="detail-actions"><button id="expand-all">Expand all</button><button id="collapse-all">Collapse all</button></div>
+</div>
+<p id="result-status" class="eyebrow" aria-live="polite">Showing all evidence.</p>
+<div id="empty-state">No evidence matches the current search and filters.</div>
+
+<section class="tech search-unit" id="summary" data-status="proven">
+<div class="eyebrow">01 / executive summary</div><h2>The measurement foundation and all five frozen cards are complete.</h2>
+<div class="grid four">
+<div class="card"><span class="number">10</span><h3>accepted final legs</h3><p>One Amaru leg and one Cardano-node leg for each card.</p></div>
+<div class="card"><span class="number">4</span><h3>measurement revisions</h3><p>Stock and patched v1 evidence remains reproducible. Nanosecond v2 and Amaru canonical-progress v3 are additive.</p></div>
+<div class="card"><span class="number">1</span><h3>reporting system</h3><p>The same DWARF manifest, report, dashboard, SARIF, attestation, export, and import path is used.</p></div>
+<div class="card"><span class="number">0</span><h3>security semantics weakened</h3><p>The old Card 01 failure remains a failure and a completed finding.</p></div>
+</div>
+<p class="callout"><strong>Claim boundary.</strong> The evidence proves the frozen workloads on the exact targets, revisions, images, seeds, and hardware that the contracts name. It is not an Amaru-versus-Cardano performance benchmark. It does not prove all workloads, all hardware, or all future releases.</p>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>We gave both kinds of node five exact tests. Each node finished all five tests. We kept the old broken result so nobody can pretend it never happened.</aside>
+
+<section class="tech search-unit" id="traceability" data-status="proven">
+<div class="eyebrow">02 / ask → tasks → proof</div><h2>Every client request ends at inspectable evidence.</h2>
+<div class="table-wrap"><table><thead><tr><th>Original client ask</th><th>Implementation task</th><th>Evidence and result</th></tr></thead><tbody>
+<tr><td>Measure real Amaru and Cardano-node behavior.</td><td>Pin exact targets; add reusable collectors and patched taps; keep scenario assertions authoritative.</td><td>Exact target identities are in each manifest. Ten accepted run reports and bundles are retained.</td></tr>
+<tr><td>Show CBOR decode result and cost.</td><td>Build revision-locked codec adapters, live invalid cases, round-trip checks, and nanosecond timing.</td><td>Card 01 has a preserved frozen-release finding and an explicit fixed-revision pass.</td></tr>
+<tr><td>Show Plutus result, budgets, and cost.</td><td>Add evaluator adapters and an Amaru consumer topology with active on-chain Plutus V2 parameters.</td><td>Card 02 retains valid and expected-invalid transaction outcomes, inclusion evidence, budgets, and progress.</td></tr>
+<tr><td>Contain invalid mini-protocol traffic.</td><td>Add baseline, hostile, and recovery windows; attribute process resources; check peers and progress.</td><td>Card 03 keeps its accepted v1 runs and whole-microsecond evidence unchanged.</td></tr>
+<tr><td>Measure block application without false fork failures.</td><td>Separate raw chain-selection history from derived canonical progress and convergence.</td><td>Card 04 preserves every switch and accepts bounded same-height switches when convergence succeeds.</td></tr>
+<tr><td>Measure restart and controlled resync.</td><td>Record restart, listener, progress, peer-role gates, exact range, and recovery resources.</td><td>Card 05 retains ordered readiness, exact sync endpoints, progress, and health evidence.</td></tr>
+</tbody></table></div>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>Each promise has a job, and each job has a saved proof. You can follow the line from “please test this” to “here is the exact result.”</aside>
+
+<section class="tech search-unit" id="architecture" data-status="proven">
+<div class="eyebrow">03 / tap architecture</div><h2>Measurement sources stay separate from the test verdict.</h2>
+<div class="grid four">
+<article class="card"><h3>Stock</h3><p>Signals that the unmodified node already exposes: logs, network state, ledger events, and process state.</p></article>
+<article class="card"><h3>External</h3><p>Observer-side evidence: workload accounting, process and cgroup resources, health, chain tips, restart gates, and sync endpoints.</p></article>
+<article class="card"><h3>Patched</h3><p>Revision-locked internal timing taps. They retain integer <code>elapsed_nanos</code>, keep <code>elapsed_micros</code>, and report fractional microseconds.</p></article>
+<article class="card"><h3>Reserved</h3><p>A declared source class for future instrumentation. It makes absence explicit; it is not fabricated evidence.</p></article>
+</div>
+<p><strong>Flow:</strong> exact target → raw source records → normalized collectors → window correlation → report and raw evidence → dashboard → signed export/import. Assertions read evidence but measurement thresholds do not gate by default.</p>
+<p><strong>Precision rule:</strong> collectors prefer nanoseconds when present. For example, 2184 ns becomes 2.184 µs. Legacy whole-microsecond records still load. Card 03 stays on <code>whole-microseconds-v1</code>.</p>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>Some measuring marks are already on the machine, some sit outside it, and some were added inside an exact copy. All marks send notes to the same evidence box.</aside>
+
+<section class="tech search-unit" id="cards" data-status="proven">
+<div class="eyebrow">04 / five acceptance cards</div><h2>Versions, workloads, metrics, assertions, runs, meaning, and limits.</h2>
+
+<details open data-status="proven"><summary>Card 01 — CBOR decoding conformance and decode cost</summary><div class="detail-body">
+<dl class="kv"><dt>Targets</dt><dd>Cardano-node 11.1.2 at <code>fef83fed01d7926f3de83b3b917be5a4a48768b5</code>; frozen Amaru 10.11.20260912 at <code>b159172f25a9c389f82f20bca4f15e3032791638</code>; fixed Amaru regression at <code>d3a6dafcced78f5809a96619e883cf04911d2bdc</code>.</dd>
+<dt>Workload</dt><dd><code>conway-plutus-data-100-plus-live-handshake-decode-cases-v1</code>; seed <code>0xA7561CD0</code>; digest <code>8f5b409f…22dd9</code>.</dd>
+<dt>Metrics</dt><dd><code>production_codec_decode</code>, accepted live receive/decode, rejected live receive/decode; nanoseconds retained and fractional microseconds shown.</dd>
+<dt>Assertions</dt><dd><code>cbor_conformance_clean</code>, <code>cbor_roundtrip_consistent</code>, invalid-case containment, and continued progress.</dd></dl>
+<div class="run-links"><a href="http://127.0.0.1:8787/operate/runs/20260920T235440Z-050046a4">Fixed Amaru run 20260920T235440Z-050046a4</a><a href="http://127.0.0.1:8787/operate/runs/20260920T132629Z-ea000d37">Cardano run 20260920T132629Z-ea000d37</a></div>
+<p><strong>Meaning:</strong> the same frozen corpus passes on the fixed Amaru revision and Cardano-node. <strong>Limit:</strong> this is not every Cardano CBOR type or every mini-protocol codec. The frozen Amaru run <code>20260920T135054Z-28289dcd</code> remains <code>completed_with_security_finding</code>: its 64-byte bound failed. That failed security assertion was not changed.</p>
+</div></details>
+
+<details data-status="proven"><summary>Card 02 — Plutus VM conformance and execution cost</summary><div class="detail-body">
+<dl class="kv"><dt>Targets</dt><dd>Amaru 10.11.20260912 and Cardano-node 11.1.2, exact revisions above, with <code>nanoseconds-v2</code> patched targets.</dd>
+<dt>Workload</dt><dd><code>dwarf-cardano-measurement-plutus-v2-v1</code>; seed <code>0x5107A502</code>; digest <code>0e7da742…6e3f8</code>; 30 valid and 30 expected-invalid Plutus V2 executions per outcome.</dd>
+<dt>Metrics</dt><dd><code>plutus_vm_by_outcome</code>, <code>plutus_cpu_budget</code>, and <code>plutus_memory_budget</code>.</dd>
+<dt>Assertions</dt><dd>Result and budget match; live accepted and rejected outcomes exist; the target continues progress.</dd></dl>
+<div class="run-links"><a href="http://127.0.0.1:8787/operate/runs/20260921T013953Z-565b77c3">Amaru run 20260921T013953Z-565b77c3</a><a href="http://127.0.0.1:8787/operate/runs/20260920T135958Z-362eedc7">Cardano run 20260920T135958Z-362eedc7</a></div>
+<p><strong>Meaning:</strong> the Amaru-specific producer/consumer topology used active on-chain Plutus V2 protocol parameters and cost model. It retained transaction hashes, inclusion or execution evidence, budgets where exposed, and chain progress. <strong>Limit:</strong> the VM timing excludes context fetch and wider ledger application. An off-chain cost-model file alone is not the proof.</p>
+</div></details>
+
+<details data-status="proven"><summary>Card 03 — invalid mini-protocol containment and node cost</summary><div class="detail-body">
+<dl class="kv"><dt>Targets</dt><dd>Amaru 10.11.20260912 and Cardano-node 11.1.2 at the original revision-locked patched targets.</dd>
+<dt>Workload</dt><dd><code>fixed-handshake-invalid-cases-v1</code>; seed <code>0xBAD0C003</code>; digest <code>1ab6db08…4225e</code>; 100 unsupported and 100 malformed attempts per implementation.</dd>
+<dt>Metrics</dt><dd>Handshake ingress, decode/state, negotiation, target CPU, and RSS across baseline, hostile, and recovery windows.</dd>
+<dt>Assertions</dt><dd>All cases contained; no fatal signal; unrelated peer usable; post-hostile progress continues.</dd></dl>
+<div class="run-links"><a href="http://127.0.0.1:8787/operate/runs/20260920T072858Z-2cc3bb0c">Amaru run 20260920T072858Z-2cc3bb0c</a><a href="http://127.0.0.1:8787/operate/runs/20260920T073447Z-ab81bfb7">Cardano run 20260920T073447Z-ab81bfb7</a></div>
+<p><strong>Meaning:</strong> hostile traffic was bounded and correlated to exact resource windows while honest service recovered. <strong>Limit:</strong> these accepted runs remain <code>whole-microseconds-v1</code>. They were not rerun or relabeled after nanosecond support was added.</p>
+</div></details>
+
+<details data-status="proven"><summary>Card 04 — block application and canonical chain progress</summary><div class="detail-body">
+<dl class="kv"><dt>Targets</dt><dd>Amaru <code>nanoseconds-v3</code>; Cardano-node <code>nanoseconds-v2</code>; exact releases and revisions above.</dd>
+<dt>Workload</dt><dd><code>controlled-local-chain-progress-v1</code>; seed <code>0xB10C0004</code>; digest <code>39ac3a69…b41b</code>; at least 30 canonical blocks.</dd>
+<dt>Metrics</dt><dd><code>block_application</code>, raw adopted/chain-selection events, derived canonical progress, and correlated target resources.</dd>
+<dt>Assertions</dt><dd>Bounded canonical progress and final convergence; at least 30 correlated applications; no fatal signal; continued progress.</dd></dl>
+<div class="run-links"><a href="http://127.0.0.1:8787/operate/runs/20260921T035546Z-9747122c">Amaru run 20260921T035546Z-9747122c</a><a href="http://127.0.0.1:8787/operate/runs/20260921T021935Z-3b58eafc">Cardano run 20260921T021935Z-3b58eafc</a></div>
+<p><strong>Meaning:</strong> raw chain-selection evidence preserves each adopted block, rollback/fork event, timing, and same-height hash switch. Canonical progress is derived separately. <strong>Limit:</strong> a bounded same-height fork switch alone does not fail. No progress, non-convergence, continuing oscillation, missing correlations, or fatal health does fail.</p>
+</div></details>
+
+<details data-status="proven"><summary>Card 05 — restart, recovery, and synchronization</summary><div class="detail-body">
+<dl class="kv"><dt>Targets</dt><dd>Amaru 10.11.20260912 and Cardano-node 11.1.2 with <code>nanoseconds-v2</code>.</dd>
+<dt>Workload</dt><dd><code>real-target-restart-and-controlled-resync-v1</code>; seed <code>0x5E570005</code>; digest <code>1b5e9008…03f0</code>.</dd>
+<dt>Metrics</dt><dd><code>restart_readiness</code>, <code>sync_speed</code>, and <code>recovery_resource_cost</code>.</dd>
+<dt>Assertions</dt><dd>Ordered listener/progress/peer readiness, exact controlled sync range, no unclassified fatal signal, and at least five blocks of progress.</dd></dl>
+<div class="run-links"><a href="http://127.0.0.1:8787/operate/runs/20260921T045619Z-15e864a0">Amaru run 20260921T045619Z-15e864a0</a><a href="http://127.0.0.1:8787/operate/runs/20260921T045807Z-8e2bbb0e">Cardano run 20260921T045807Z-8e2bbb0e</a></div>
+<p><strong>Meaning:</strong> each real target restarted, passed its three readiness gates, reached exact retained endpoints, and kept health evidence. <strong>Limit:</strong> this is a controlled local recovery range, not a full historical sync benchmark.</p>
+</div></details>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>Each card is a recipe. It says which machine, which messages, which ruler, and which pass rules to use. The saved run links are the completed worksheets.</aside>
+
+<section class="tech search-unit" id="findings" data-status="partial">
+<div class="eyebrow">05 / findings and resolutions</div><h2>Findings stay visible when later evidence resolves the test path.</h2>
+<div class="grid">
+<div class="card" data-status="partial"><h3>CBOR / preserved finding</h3><p>Frozen Amaru <code>b159172f…</code> failed the 64-byte bound in the exact corpus. DWARF classifies the completed run as a node conformance finding and keeps the failed assertion. The exact upstream fixed revision <code>d3a6dafc…</code> passes the same corpus.</p></div>
+<div class="card" data-status="proven"><h3>Plutus / active-chain resolution</h3><p>The first Amaru topology did not prove an active Plutus V2 cost model. The additive topology uses a Cardano producer and Amaru consumer, pins genesis and parameters, activates the model on chain, and retains real transaction evidence.</p></div>
+<div class="card" data-status="proven"><h3>Forks / semantic correction</h3><p>The old strict raw-event monotonic rule was incorrect because legitimate same-height switches can occur. The new model preserves raw history and evaluates bounded canonical progress, convergence, correlations, and health separately.</p></div>
+<div class="card" data-status="partial"><h3>What resolution does not mean</h3><p>A later pass does not rewrite an earlier failure. A topology repair does not prove every Plutus workload. A converged fork test does not prove freedom from all deep-chain behavior.</p></div>
+</div>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>If a test found a crack, we kept the picture of the crack. Then we tested the exact repaired brick. We did not erase the first picture.</aside>
+
+<section class="tech search-unit" id="usage" data-status="proven">
+<div class="eyebrow">06 / exact viewing steps</div><h2>Open, inspect, export, and verify evidence in DWARF.</h2>
+<ol class="steps">
+<li>Open the installed dashboard at <code>http://127.0.0.1:8787</code>. For a remote installation, use an SSH host that you configured.</li>
+<li>Open <a href="http://127.0.0.1:8787/learn/measurements">http://127.0.0.1:8787/learn/measurements</a>. Read the revision and claim-boundary guidance first.</li>
+<li>Open a run link in a card dossier. Check the run ID, target identity, scenario, seed, collector states, assertions, and report.</li>
+<li>Use the raw-evidence links to inspect source records, window markers, exact target proof, and card-specific proof outputs.</li>
+<li>Export the evidence bundle from the run page. Verify it with <code>dwarf/cardano-profile verify RUN_ID</code>. Import into an isolated run directory and compare the manifest SHA-256.</li>
+<li>Use the workbench records for program-level context: <a href="/wb/dwarf-latest/o/obj_8b15834b9a2047d69f9b661a">runbook</a>, <a href="/wb/dwarf-latest/o/obj_1463810836b54852b24b2ef2">status</a>, <a href="/wb/dwarf-latest/o/obj_48a4b0c0bc0441bfab10dab7">exact goal</a>, <a href="/wb/dwarf-latest/o/obj_eb40eb62fdd24c539d85d818">handoff</a>, and <a href="/wb/dwarf-latest/o/obj_110d143967b546d98179e595">completion proof</a>.</li>
+</ol>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>Make a safe tunnel to the evidence screen. Pick a worksheet, check its name and machine, then download its sealed evidence box.</aside>
+
+<section class="tech search-unit" id="inventory" data-status="proven">
+<div class="eyebrow">07 / linked implementation inventory</div><h2>The source of every measurement layer is inspectable.</h2>
+<div class="grid">
+<div class="card"><h3>Execution definitions</h3><p><a href="https://github.com/pragma-org/dwarf/tree/main/dwarf/profiles/">Profiles</a> · <a href="https://github.com/pragma-org/dwarf/tree/main/dwarf/scenarios/">Scenarios</a> · <a href="https://github.com/pragma-org/dwarf/tree/main/dwarf/primitives/">Primitives</a></p></div>
+<div class="card"><h3>Collection and targets</h3><p><a href="https://github.com/pragma-org/dwarf/tree/main/dwarf/measurements/">Collectors</a> · <a href="https://github.com/pragma-org/dwarf/tree/main/dwarf/targets/">Targets and patch manifests</a></p></div>
+<div class="card"><h3>Contracts and schemas</h3><p><a href="https://github.com/pragma-org/dwarf/tree/main/dwarf/docs/client-examples/contracts/">Five card contracts</a> · <a href="https://github.com/pragma-org/dwarf/tree/main/dwarf/spec/v1/">Schemas</a></p></div>
+<div class="card"><h3>Verification and interface</h3><p><a href="https://github.com/pragma-org/dwarf/tree/main/tests/">Tests</a> · <a href="https://github.com/pragma-org/dwarf/tree/main/dwarf/dashboard/">Dashboard</a> · <a href="http://127.0.0.1:8787/operate/runs">Run catalog</a></p></div>
+</div>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>These links are the shelves where DWARF keeps recipes, measuring tools, machine labels, proof rules, checks, and screens.</aside>
+
+<section class="tech search-unit" id="coverage" data-status="partial">
+<div class="eyebrow">08 / coverage ledger</div><h2>Absence and deferral are explicit states, never zeros.</h2>
+<div class="table-wrap"><table><thead><tr><th>Status</th><th>Coverage</th><th>Meaning</th></tr></thead><tbody>
+<tr data-status="proven"><td><span class="pill proven">proven</span></td><td>Five frozen cards; exact independent Amaru and Cardano legs; collection, reporting, browser, export/import.</td><td>Retained accepted evidence exists for the stated boundary.</td></tr>
+<tr data-status="partial"><td><span class="pill partial">partial</span></td><td>Historical failed or superseded runs; very small or small distributions; broader workload families.</td><td>Evidence exists, but it cannot support the full claim.</td></tr>
+<tr data-status="unavailable"><td><span class="pill unavailable">unavailable</span></td><td>Metrics not exposed by a target or unrelated to a card can remain unavailable with a recorded reason.</td><td>Unavailable is not zero and is not silently estimated.</td></tr>
+<tr data-status="deferred"><td><span class="pill deferred">deferred</span></td><td>No mixed-node comparison; No stable release threshold; no weekly automation; no presentation walkthrough; no Antithesis or Moog launch.</td><td>No claim or evidence was created for deferred scope.</td></tr>
+</tbody></table></div>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>A green box means “we proved this exact thing.” Yellow means “we know only part.” Red means “the ruler could not read it.” Gray means “we agreed to do it later.”</aside>
+
+<section class="tech search-unit" id="reproducibility" data-status="proven">
+<div class="eyebrow">09 / reproducibility identities</div><h2>Reproduction starts with exact identities, not names alone.</h2>
+<div class="grid">
+<div class="card"><h3>Source and image identities</h3><p>Amaru v2 image <code>sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862</code>; Amaru v3 image <code>sha256:d120f9515d5bcc6aa68629e0370fa7bdf5a5612e5d35005aa231d32ab2b7169a</code>; Cardano v2 image <code>sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370</code>.</p></div>
+<div class="card"><h3>Patch and executable identities</h3><p>Amaru v2 patch set <code>4c22d7b0…75de0</code>, executable <code>05233bac…19b78</code>; Amaru v3 patch set <code>042f6b18…aad00</code>, executable <code>6c33df93…dc94c</code>; Cardano v2 patch set <code>1c52fa42…d93c</code>, executable <code>3fb83f12…20eb</code>.</p></div>
+<div class="card"><h3>Seeds and environment</h3><p>Seeds: <code>0xA7561CD0</code>, <code>0x5107A502</code>, <code>0xBAD0C003</code>, <code>0xB10C0004</code>, <code>0x5E570005</code>. Hardware fingerprint: <code>cardano-box-2026-09-19</code>.</p></div>
+<div class="card"><h3>Accepted bundle digests</h3><p>Card 01: <code>6fd2d11f…13440</code>, <code>f856535b…2214</code>. Card 02: <code>bf5604de…7ed0</code>, <code>3a49f5cc…d920</code>. Card 03: <code>01313324…1b81</code>, <code>e2d8bb5b…e4a61</code>. Card 04: <code>f17b4892…c808</code>, <code>c02a192f…af28</code>. Card 05: <code>d0b0bce3…2217</code>, <code>0cf0d4e2…cfce</code>.</p></div>
+</div>
+<p>Each full run identity also includes scenario and resolved-profile snapshots, target manifest, exact patch manifest, workload digest, environment, raw sources, assertions, report, SARIF and attestation state, and export manifest.</p>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>A version name is like “blue toy.” A digest is the toy’s unique fingerprint. DWARF saves fingerprints, dice seeds, and the table where the test ran so another person can rebuild the same setup.</aside>
+
+<section class="tech search-unit" id="health-repair" data-status="proven">
+<div class="eyebrow">10 / current topology health</div><h2>The dashboard now checks the active managed topology, not a retired stack.</h2>
+<div class="grid">
+<div class="card"><h3>Observed root cause</h3><p>The old probe used fixed command <code>topology-health</code> for retired project <code>cardano_amaru_relay_bootstrap_control</code>. Its Amaru relays were genuinely stalled at slot 7755 and block 1471 while Cardano continued, so retained reason <code>amaru_relay_stalled</code> was correct for that old stack. Status also defaulted to retired <code>profile-a-haskell-peersharing-disabled</code>. A fresh probe proved that caching was not the cause.</p></div>
+<div class="card"><h3>Smallest correct repair</h3><p>DWARF discovers the exact active <code>ada2.profile</code> label and runs restricted <code>profile-health &lt;id&gt;</code>. Landing and <code>/operate/status</code> use the same API snapshot. It checks exact process, socket, listener, loopback, sync, tip-progress, and profile identity conditions. Docker execution is tried before a host socket path.</p></div>
+<div class="card"><h3>Current proof</h3><p>Active <code>profile-v-cardano-measurement-nanoseconds-v2</code> has three of three processes, sockets, and listeners, loopback-only listeners, 100% sync, and advancing tips. The initial repair deployment used commit <code>62f43bbd6655af423323e03cb487be38496028bf</code> and image <code>sha256:b2bceb0d07683fdd927def372bff4ba357b9862935324871139fa1ff2e838a53</code>. The current follow-on dashboard uses commit <code>c19ea75954f5e48206e49caec948c8dc6f1416e6</code> and image <code>sha256:929406cf125af6174022a90d0372b3a485d0eee74890f0aa00b404d24f469495</code>.</p></div>
+<div class="card"><h3>Honest states remain</h3><p>Real failures show <code>unhealthy</code>. No active managed profile shows <code>no_active</code>. Deployment can show <code>catching_up</code> or an unknown/profile-change result. Redeploy controls appear only when the health contract says redeploy is supported.</p></div>
+</div>
+<p><strong>Claim limit:</strong> this proves the current profile-v health contract. It does not repair or erase the retired Amaru relay evidence.</p>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>The screen was checking an old group of machines. That old group really was sick. DWARF now reads the current group’s name tag and checks that exact group with one shared result.</aside>
+
+<section class="tech search-unit" id="full-metrics" data-status="partial">
+<div class="eyebrow">11 / full-metrics compatibility audit</div><h2>Configured collectors and exercised metrics are different facts.</h2>
+<p><strong>Definition.</strong> “Full metrics” means that one run retains workload-attributable raw or normalized evidence, correlations, and a meaningful positive sample, event, delta, readiness result, or timing distribution for every implemented definition. A finalized state, availability flag, zero value, or configured collector is not exercise.</p>
+<div class="grid">
+<div class="card"><h3>Amaru highest coverage</h3><p><code>client-example-block-application-amaru-canonical-v3</code>, profile-y, and <code>amaru-security-patched</code> are the broadest single path. Run <a href="http://127.0.0.1:8787/operate/runs/20260921T035546Z-9747122c"><code>20260921T035546Z-9747122c</code></a> exercised <strong>8 of 14 configured collectors</strong>, or 8 of 15 implemented definitions with unprofiled coverage. Missing: restart readiness, workload accounting, mempool, ledger rules, TxSubmission residence, and Plutus execution.</p></div>
+<div class="card"><h3>Cardano-node highest coverage</h3><p><code>client-example-cbor-decoding-cardano-patched</code>, profile-v, and <code>cardano-security-patched</code> are the broadest single path. Run <a href="http://127.0.0.1:8787/operate/runs/20260920T132629Z-ea000d37"><code>20260920T132629Z-ea000d37</code></a> exercised <strong>8 of 12 configured collectors</strong>, or 8 of 15 implemented definitions with reserved/unprofiled definitions. Missing: restart readiness, workload accounting, Plutus execution, and TxSubmission/mempool.</p></div>
+</div>
+<p>No one scenario exercises every implemented metric. A report can say <strong>all collectors configured</strong> or all configured collectors finalized. It cannot say <strong>all metrics exercised</strong>. The complete 30-definition matrix is in <a href="https://github.com/pragma-org/dwarf/blob/main/docs/measurement-full-metrics-compatibility-audit.md"><code>docs/measurement-full-metrics-compatibility-audit.md</code></a>.</p>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>A box of fourteen rulers can be ready, but one test may touch only eight. DWARF says which eight moved and which six did not.</aside>
+
+<section class="tech search-unit" id="run-recipes" data-status="partial">
+<div class="eyebrow">12 / exact /run recipes</div><h2>Use the broadest supported local paths without starting an external run.</h2>
+<details open><summary>Amaru — canonical block progress, nanoseconds v3</summary><div class="detail-body"><ol class="steps">
+<li><strong>Scenario:</strong> search <code>client-example-block-application-amaru-canonical-v3</code>; select <strong>Client example 04 — canonical block progress — Amaru nanoseconds v3 · devnet</strong>.</li>
+<li><strong>Target and runtime:</strong> confirm Amaru 10.11.20260912 and devnet.</li>
+<li><strong>Profile:</strong> keep <strong>Scenario default</strong>; confirm profile-y.</li>
+<li><strong>Node versions:</strong> keep <strong>Profile default</strong>; leave exact entries empty and the unconfirmed-version box clear.</li>
+<li><strong>Measurements:</strong> keep <strong>Scenario or compatible default</strong>; confirm <code>amaru-security-patched</code> and 14 taps.</li>
+<li><strong>Primitives:</strong> confirm target identity, chain-progress wait/window/probe, canonical-progress and correlation assertions, continued progress, and no fatal signal.</li>
+<li><strong>Run settings:</strong> seed <code>0xB10C0004</code>; iterations <strong>scenario default</strong>; <strong>Local real-node DWARF engine</strong>; allow about four minutes after readiness.</li>
+<li><strong>Readiness:</strong> require framework, profile-y, and deployed-version identity. Profile-y is not current; deploy it through the supported lifecycle before a real run.</li>
+<li><strong>Review:</strong> verify the plan. The Local backend currently says <code>supported-unconfirmed</code> despite the retained accepted run.</li>
+<li><strong>Run:</strong> the action is <strong>Start local run</strong>. Do not press it for browser verification. A later authorized run opens at <code>/operate/runs/&lt;run_id&gt;</code>.</li>
+</ol></div></details>
+<details><summary>Cardano-node — CBOR decoding, nanoseconds v2</summary><div class="detail-body"><ol class="steps">
+<li><strong>Scenario:</strong> search <code>client-example-cbor-decoding-cardano-patched</code>; select <strong>Client example 01 — CBOR decoding conformance — Cardano-node · devnet</strong>.</li>
+<li><strong>Target and runtime:</strong> confirm Cardano-node 11.1.2 and devnet.</li>
+<li><strong>Profile:</strong> keep <strong>Scenario default</strong>; confirm profile-v.</li>
+<li><strong>Node versions:</strong> keep <strong>Profile default</strong>; leave exact entries empty and the unconfirmed-version box clear.</li>
+<li><strong>Measurements:</strong> keep <strong>Scenario or compatible default</strong>; confirm <code>cardano-security-patched</code> and 12 taps.</li>
+<li><strong>Primitives:</strong> confirm exact target, pinned CBOR corpus, live protocol cases, health probe, clean corpus, round-trip, containment, and progress assertions.</li>
+<li><strong>Run settings:</strong> seed <code>0xA7561CD0</code>; iterations <strong>scenario default</strong>; <strong>Local real-node DWARF engine</strong>; allow about four to five minutes while profile-v is ready.</li>
+<li><strong>Readiness:</strong> require framework, profile-v, and deployed-version identity. Read the fresh status before start.</li>
+<li><strong>Review:</strong> verify the plan and note the current <code>supported-unconfirmed</code> confirmation-matching limit.</li>
+<li><strong>Run:</strong> use <strong>Start local run</strong> only for an authorized run; evidence opens at <code>/operate/runs/&lt;run_id&gt;</code>.</li>
+</ol></div></details>
+<p><strong>Backend limit:</strong> both recipes use Local. GitHub Actions and Antithesis are unsupported for these exact plans. <strong>Do not launch Antithesis.</strong> Browser verification does not launch a paid run.</p>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>Choose the named recipe, keep its saved choices, check the matching machines, and read the review. The final button starts a real test, so a practice check stops before that button.</aside>
+
+<section class="tech search-unit" id="next-work" data-status="deferred">
+<div class="eyebrow">13 / next work</div><h2>Expand only after a new decision and a new frozen contract.</h2>
+<ul>
+<li>Choose whether to authorize a mixed-node comparison. If authorized, freeze common boundaries and do not reuse independent-run numbers as a benchmark.</li>
+<li>Define stable thresholds only after enough qualified distributions exist across hardware and revisions.</li>
+<li>Decide whether weekly automation and a presentation walkthrough are required.</li>
+<li>Retain additive measurement revisions. Never invalidate Card 03 v1 or rewrite a historical security finding.</li>
+<li>Keep new target builds revision-locked with patch-set, executable, image, and manifest digests.</li>
+</ul>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>The five promised tests are done. The next games need new rules before anyone starts the stopwatch.</aside>
+
+<footer class="footer">DWARF measurement technical debrief · evidence cut 2026-09-21 · source retained in the verified DWARF product revision · missing values are never reported as zero.</footer>
+</main></div>
+<script>
+(() => {
+  const search = document.getElementById('debrief-search');
+  const filters = [...document.querySelectorAll('[data-filter]')];
+  const units = [...document.querySelectorAll('.search-unit')];
+  const status = document.getElementById('result-status');
+  const empty = document.getElementById('empty-state');
+  const activeStatuses = () => new Set(filters.filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.filter));
+  function apply() {
+    const query = search.value.trim().toLowerCase();
+    const active = activeStatuses();
+    let visible = 0;
+    units.forEach(unit => {
+      const statuses = new Set([unit.dataset.status, ...[...unit.querySelectorAll('[data-status]')].map(x => x.dataset.status)]);
+      const statusMatch = [...statuses].some(value => active.has(value));
+      const textMatch = !query || unit.textContent.toLowerCase().includes(query);
+      const show = statusMatch && textMatch;
+      unit.dataset.hidden = String(!show);
+      const child = unit.nextElementSibling;
+      if (child?.classList.contains('child-explanation')) child.dataset.hidden = String(!show);
+      if (show) visible += 1;
+    });
+    status.textContent = `Showing ${visible} of ${units.length} technical sections.`;
+    empty.classList.toggle('visible', visible === 0);
+  }
+  filters.forEach(button => button.addEventListener('click', () => {
+    button.setAttribute('aria-pressed', String(button.getAttribute('aria-pressed') !== 'true'));
+    apply();
+  }));
+  search.addEventListener('input', apply);
+  document.getElementById('expand-all').addEventListener('click', () => document.querySelectorAll('details').forEach(d => d.open = true));
+  document.getElementById('collapse-all').addEventListener('click', () => document.querySelectorAll('details').forEach(d => d.open = false));
+  document.addEventListener('keydown', event => {
+    if (event.key === '/' && document.activeElement !== search) { event.preventDefault(); search.focus(); }
+    if (event.key === 'Escape') { search.value = ''; search.blur(); apply(); }
+    if (event.altKey && /^Digit[1-4]$/.test(event.code)) {
+      event.preventDefault();
+      filters[Number(event.code.slice(-1)) - 1].click();
+    }
+  });
+  apply();
+})();
+</script>
+</body>
+</html>

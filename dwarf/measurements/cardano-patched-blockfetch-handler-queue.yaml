@@ -1,0 +1,17 @@
+schema_version: v1
+id: cardano-patched-blockfetch-handler-queue
+title: Cardano BlockFetch handler queues
+description: Reserved capability definition for a future revision-locked BlockFetch handler queue-depth and queue-residence patch; it is not enabled by the current patched profile.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: cardano-node
+  versions: [{version: 11.1.2, source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5}]
+  target_modes: [patched]
+collection_mode: patched-node
+required_capabilities: [cardano-patched-blockfetch-queue]
+default_enabled: false
+overhead_class: moderate
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/cardano-patched-blockfetch-handler-queue/result.json]
+correlation_identifiers: [run_id, workload_phase, peer_id, block_hash, request_id]
+threshold_gate: {supported: true, default_enabled: false}

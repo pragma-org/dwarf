@@ -8,7 +8,7 @@
 # origin (valid headers, 0 VRFKeyBadProof) and block-fetches MUTATED bodies ->
 # the block decoder runs on them (dwarf_served_mutated_block). SUCCESS =
 # loadBakedChain loaded N>0, dwarf_served_mutated_block>0, VRFKeyBadProof 0,
-# adversary RestartCount 0. Run on cardano-box.
+# adversary RestartCount 0. Run on dwarf-host-a.
 set -uo pipefail
 cd /home/dwarf/dwarf-v4/antithesis/cardano_node_dwarf_baked
 docker compose down --remove-orphans >/dev/null 2>&1

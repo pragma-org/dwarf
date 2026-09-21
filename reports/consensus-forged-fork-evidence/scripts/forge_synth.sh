@@ -1,5 +1,5 @@
 #!/bin/bash
-ssh cardano-box '
+ssh dwarf-host-a '
 T=/tmp/occ/ouroboros-consensus-cardano-0.25.1.0/dist-newstyle/build/x86_64-linux/ghc-9.6.7/ouroboros-consensus-cardano-0.25.1.0/x
 K=/tmp/planB/keys
 $T/db-synthesizer/build/db-synthesizer/db-synthesizer \

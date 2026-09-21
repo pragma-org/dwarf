@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RuntimeVerifyExactTarget",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "implementation",
+    "version",
+    "source_revision",
+    "mode",
+    "image_digest"
+  ],
+  "properties": {
+    "implementation": {"type": "string", "enum": ["amaru", "cardano-node"]},
+    "version": {"type": "string", "minLength": 1},
+    "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "mode": {"type": "string", "enum": ["stock", "patched"]},
+    "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "executable_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "patch_set_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

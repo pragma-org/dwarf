@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "plutus_live_outcomes_observed params",
+  "type": "object",
+  "properties": {"minimum_per_outcome": {"const": 30}},
+  "additionalProperties": false
+}

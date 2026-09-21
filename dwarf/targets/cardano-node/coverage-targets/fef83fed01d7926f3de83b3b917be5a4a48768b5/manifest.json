@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "target": "cardano-node-compiler-coverage",
+  "source": {
+    "repository": "https://github.com/IntersectMBO/cardano-node.git",
+    "release": "11.1.2",
+    "tag": "11.1.2",
+    "revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+  },
+  "toolchain": {
+    "ghc": "9.6.7",
+    "cabal": "3.16.0.0"
+  },
+  "engine": "GHC HPC corpus replay",
+  "performance_authority": "non-authoritative",
+  "non_authoritative_performance": true,
+  "production_entrypoints": "Cardano.Network.Protocol.Handshake.Codec.nodeToNodeHandshakeCodec",
+  "target_names": [
+    "cardano-node-production-handshake-coverage"
+  ],
+  "dependencies": [
+    {
+      "package": "cardano-diffusion",
+      "version": "1.1.1.0",
+      "archive": "cardano-diffusion-1.1.1.0.tar.gz",
+      "sha256": "50c0fceec6bcc8b37f9eefaf4fcb0544eae5108c2413d5d87a9833b623fdc549"
+    }
+  ],
+  "build": {
+    "command_prefix": ["cabal", "build", "-w", "ghc-9.6.7", "--enable-coverage"],
+    "instrumented_packages": ["cardano-diffusion"],
+    "ghc_options": ["-fhpc"],
+    "environment": {
+      "CABAL_CONFIG": "state:cabal/cardano-node-11.1.2.config",
+      "LANG": "C.UTF-8"
+    }
+  },
+  "harness_files": [
+    {"path": "dwarf-cardano-coverage.cabal", "sha256": "fc5eec420ca00cc067e8239d8e4ceeabf285eea537a68470a2104d2aea0a998e"},
+    {"path": "CoverageHandshake.hs", "sha256": "b78a94909ffbe6cc50a6955a7a55e5f2d95a259a3ed570f31ba6f60ffd87e3bf"}
+  ],
+  "coverage_harness_sha256": "e6eb35c1878f241a9903105aee5fc758cd4e43741f71814c9ab7226e531327c8"
+}

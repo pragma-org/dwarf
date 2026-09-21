@@ -1,6 +1,6 @@
 """Fail-closed local proof for the additive Cardano/Amaru control package.
 
-The script is invoked by DWARF on cardano-box. It gives the normalized Compose
+The script is invoked by DWARF on dwarf-host-a. It gives the normalized Compose
 model a unique project identity, starts fresh project-scoped volumes, and stops
 only that project. Containers and volumes are retained for review.
 """

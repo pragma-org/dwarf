@@ -1,0 +1,17 @@
+schema_version: v1
+id: cardano-patched-protocol-decode
+title: Cardano protocol decode timing
+description: Consumes revision-locked node events for successful and failed live mini-protocol decode duration and outcome.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: cardano-node
+  versions: [{version: 11.1.2, source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5}]
+  target_modes: [patched]
+collection_mode: patched-node
+required_capabilities: [cardano-patched-protocol-decode]
+default_enabled: false
+overhead_class: moderate
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/cardano-patched-protocol-decode/result.json]
+correlation_identifiers: [run_id, workload_phase, peer_id, protocol, message_type, input_id]
+threshold_gate: {supported: true, default_enabled: false}

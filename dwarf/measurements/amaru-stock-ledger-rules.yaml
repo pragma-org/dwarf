@@ -1,0 +1,17 @@
+schema_version: v1
+id: amaru-stock-ledger-rules
+title: Amaru ledger-rule conformance and timing
+description: Produces named ledger-rule pass totals and phase-one validation timing from production-library and live-node Amaru traces.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: amaru
+  versions: [{version: 10.11.20260912, source_revision: b159172f25a9c389f82f20bca4f15e3032791638}, {version: v10.11.20260912-30-gd3a6dafc, source_revision: d3a6dafcced78f5809a96619e883cf04911d2bdc}]
+  target_modes: [stock, patched]
+collection_mode: stock-telemetry
+required_capabilities: [amaru-ledger-rule-traces, amaru-transaction-validation-spans]
+default_enabled: true
+overhead_class: low
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/amaru-stock-ledger-rules/result.json]
+correlation_identifiers: [run_id, workload_phase, input_id, transaction_id, trace_id, span_id]
+threshold_gate: {supported: true, default_enabled: false}

@@ -9,7 +9,8 @@ The framework provides:
 - The current scenario catalog under `scenarios/`.
 - Primitive schemas and registry data under `primitives/`.
 - Profile and profile-template examples under `profiles/`.
-- Preserved bundle archives under `bundles/`.
+- Runtime runs, state, and evidence bundles are created under the configured
+  runtime root and are not distributed in the public source tree.
 - Documentation under `docs/`.
 
 The delivery wrapper at the repository root is the intended operator entrypoint:

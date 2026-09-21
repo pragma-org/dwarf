@@ -5,7 +5,7 @@
 # relay2 ADVANCES: it block-fetches bodies from the adversary, decodes them, and
 # adds blocks to its ChainDB (AddedBlockToVolatileDB / ValidCandidate) — instead
 # of the pre-fix loop (FindIntersect -> 3x RequestNext -> reset, 0 blocks added).
-# Run on cardano-box. Set ADV_TAG to the adversary image tag to test.
+# Run on dwarf-host-a. Set ADV_TAG to the adversary image tag to test.
 set -uo pipefail
 ADV_TAG="${1:-0.4.0}"
 cd /home/dwarf/dwarf-v4/antithesis/cardano_node_dwarf

@@ -1,0 +1,21 @@
+schema_version: v1
+id: amaru-security-patched
+title: Amaru security measurements — patched attribution
+description: Stock and external taps plus revision-locked patched-node visibility for attribution and calibrated comparison; not vulnerability authority by itself.
+implementation: amaru
+target_modes: [patched]
+measurements:
+  - {id: amaru-stock-header-lifecycle, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-fork-switch, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-mempool, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-ledger-rules, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-plutus-execution, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-block-epoch, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-network, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-stock-resources, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-external-restart-readiness, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-external-sync-speed, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-external-workload-accounting, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-patched-protocol-decode, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-patched-blockfetch-queues, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}
+  - {id: amaru-patched-txsubmission-residence, enabled: true, parameters: {}, threshold_gate: {enabled: false, thresholds: []}}

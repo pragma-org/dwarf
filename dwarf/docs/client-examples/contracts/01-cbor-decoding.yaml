@@ -1,0 +1,156 @@
+schema_version: v1
+id: client-example-01-cbor-decoding
+title: CBOR decoding conformance and decode cost
+status: frozen
+purpose:
+  technical: Verify outcome parity and self-consistent round trips at an exact production codec boundary, then measure accepted and rejected decode work at the real node ingress boundary.
+  child: Give both nodes the same valid and broken messages. Check that they agree and measure how long each node takes.
+scope:
+  real_node_required: true
+  simulation_allowed: false
+  comparison_model: separate-implementation-executions-not-mixed-node
+controlling_sources:
+  - {name: Client conformance requirements, location: "https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792", sha256_or_revision: "gist-api-sha256:d38556b71b40de79b7128ed62a5282c9af4291d8eb0584a9f09f771da5f94738"}
+  - {name: Risk Register v2, location: "dwarf workbench file JG-RiskRegister-V2.csv", sha256_or_revision: "sha256:11dee3e9e0cc800c7dc65fe8dde27ae55c7ad2edc8bab3c6d31402cdf56ec65a"}
+  - {name: Qualified Cardano CBOR dataset, location: "https://github.com/r2rationality/cardano-cbor-dataset", sha256_or_revision: "a7561cd063550c2218898571520f14c3674efe91"}
+security_mapping:
+  threat_model:
+    - {id: TM-015, title: Parsing / validation / implementation discrepancy, reason: The same malformed input can produce security-relevant implementation differences.}
+    - {id: TM-021, title: Parsing / deserialization, reason: "Encoded input can trigger parser-bound, crash, or resource behavior."}
+  risk_register:
+    - {id: RR-015, title: Malformed-input handling divergence, severity: High, boundaries: [B-002, B-003, B-004, B-005], interfaces: [IF-002, IF-003, IF-004, IF-005, IF-006, IF-007], reason: The test compares terminal decode outcomes for the same bytes.}
+    - {id: RR-024, title: Parser or deserialization bounds failure, severity: High, boundaries: [B-003, B-004, B-005], interfaces: [IF-003, IF-004, IF-005, IF-006], reason: The test times bounded valid and invalid inputs and rejects crashes or hangs.}
+scenario_legs:
+  - scenario_id: client-example-cbor-decoding-amaru-patched
+    implementation: amaru
+    status: additive-required
+    profile: profile-u-amaru-measurement-nanoseconds-v2
+    measurement_profile: amaru-security-patched
+    primitives:
+      setup: [runtime_verify_exact_target]
+      load: [runtime_version_pinned_cbor_conformance, runtime_protocol_decode_cases]
+      probes: [runtime_target_health_and_progress]
+      assertions: [cbor_conformance_clean, cbor_roundtrip_consistent, invalid_protocol_cases_contained, target_progress_continues]
+      teardown: []
+  - scenario_id: client-example-cbor-decoding-cardano-patched
+    implementation: cardano-node
+    status: additive-required
+    profile: profile-v-cardano-measurement-nanoseconds-v2
+    measurement_profile: cardano-security-patched
+    primitives:
+      setup: [runtime_verify_exact_target]
+      load: [runtime_version_pinned_cbor_conformance, runtime_protocol_decode_cases]
+      probes: [runtime_target_health_and_progress]
+      assertions: [cbor_conformance_clean, cbor_roundtrip_consistent, invalid_protocol_cases_contained, target_progress_continues]
+      teardown: []
+targets:
+  amaru:
+    version: 10.11.20260912
+    source_repository: https://github.com/pragma-org/amaru.git
+    source_revision: b159172f25a9c389f82f20bca4f15e3032791638
+    supporting_cardano_version: 10.7.1
+    stock_mode: stock
+    stock_image_reference: ghcr.io/pragma-org/amaru:v10.11.20260912
+    stock_image_digest: sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e
+    patched_mode: patched
+    measurement_revision: nanoseconds-v2
+    patch_manifest_sha256: sha256:1012e64ad3a3f5a9abd1aea061d5036fcc8e936392f82d5829e3df7733ab6b99
+    build_result_sha256: sha256:6fb4c905c299b1f4ee8066bde8bf8182d63c770edd6412568d265af873176b70
+    patched_image_reference: dwarf/amaru-measurement@sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862
+    patched_image_digest: sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862
+    patched_executable_digest: sha256:05233bac96c1914a232a2d9c5a704f08401aff0b20356c015e848f295b919b78
+    patch_set_sha256: 4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0
+  cardano-node:
+    version: 11.1.2
+    source_repository: https://github.com/IntersectMBO/cardano-node.git
+    source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5
+    stock_mode: stock
+    stock_image_reference: ghcr.io/intersectmbo/cardano-node:11.1.2
+    stock_image_digest: sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f
+    patched_mode: patched
+    measurement_revision: nanoseconds-v2
+    patch_manifest_sha256: sha256:06405007512eb8040898fbe53984b43bb5419100e5c7c64954588ee618ad7071
+    build_result_sha256: sha256:f8f94f4068483e1f3a099b25b8bb534a691fcc402711a5fedc103a0ad5b9f524
+    patched_image_reference: dwarf/cardano-measurement@sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370
+    patched_image_digest: sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370
+    patched_executable_digest: sha256:3fb83f12ac1152e96c884c756a505484a39d9200da6c59b24678ac61218220eb
+    patch_set_sha256: 1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c
+workload:
+  identity: conway-plutus-data-100-plus-live-handshake-decode-cases-v1
+  seed: "0xA7561CD0"
+  digest: sha256:8f5b409f5c2b25b31e392365bab0e9a703a526e776a4f34dfbc3204f9b022dd9
+  dataset_or_corpus:
+    repository: https://github.com/r2rationality/cardano-cbor-dataset.git
+    revision: a7561cd063550c2218898571520f14c3674efe91
+    tree: a3b2ca9b1a009b59c2fd5f21b819a03762eac48f
+    era: conway
+    rule: plutus_data
+    categories: [valid, zap-1, zap-2, zap-3]
+    samples_per_category: 25
+    live_cases: [handshake-unsupported-valid, handshake-malformed-cbor]
+    attempts_per_live_case: 100
+  warm_up_seconds: 30
+  duration_seconds: 240
+  stop_conditions:
+    - Stop with failure if the exact target or workload identity differs.
+    - Stop with failure on crash, panic, hang, collector error, or loss of chain progress.
+    - Stop with failure if any category has fewer than 25 completed corpus inputs.
+environment:
+  hardware_fingerprint: cardano-box-2026-09-19
+  hardware: {cpu: AMD Ryzen 7 6800U, physical_cores: 8, logical_cpus: 16, memory_bytes: 29193207808, kernel: 6.8.0-138-generic, docker: 29.6.0, storage_driver: overlayfs}
+  amaru_topology: One exact Amaru target peers with one controlled Cardano-node 10.7.1 support producer; only Amaru is measured and no mixed comparison is made.
+  cardano_topology: Three exact Cardano-node 11.1.2 nodes in the qualified local mesh; node1 is the measured ingress target.
+functional_requirement:
+  id: FR-CBOR-001
+  statement: Both exact production codec adapters must return the expected terminal outcome for all 100 inputs, and every successful decode must pass decode-encode-decode-encode byte equality.
+  expected_result: 100 of 100 outcomes match the frozen expectation and all successful canonical encodings are stable on the second encode.
+measurements:
+  - {name: production_codec_decode, boundary: Production codec entry to terminal decode result in the exact source revision, unit: us, minimum_sample_floor: 100, evidence_role: useful-distribution}
+  - {name: live_protocol_receive_decode_accepted, boundary: Real node receive plus incremental protocol decode for honest accepted traffic, unit: us, minimum_sample_floor: 30, evidence_role: useful-distribution}
+  - {name: live_protocol_receive_decode_rejected, boundary: Real node receive plus decode for the frozen invalid cases, unit: us, minimum_sample_floor: 30, evidence_role: useful-distribution}
+evidence_quality_rules: {very_small_sample: "n < 5", small_sample: "5 <= n < 30", useful_sample: "n >= 30", authority_rule: "Per-outcome distributions need at least 30 samples; 100 corpus outcomes are functional evidence, not a complete decoder inventory."}
+required_collectors:
+  amaru: [amaru-patched-protocol-decode, amaru-stock-network, amaru-stock-resources, amaru-external-workload-accounting]
+  cardano-node: [cardano-patched-protocol-decode, cardano-stock-network, cardano-stock-resources, cardano-external-workload-accounting]
+acceptable_unavailable:
+  - Metrics unrelated to decode, resources, workload accounting, target health, or chain progress can remain unavailable with a stated reason.
+security_assertions:
+  - {id: cbor_conformance_clean, statement: "No expected-outcome mismatch, crash, panic, timeout, or unclassified result occurs."}
+  - {id: cbor_roundtrip_consistent, statement: Each successful decode has stable second-encode bytes.}
+  - {id: target_progress_continues, statement: The real target stays healthy and its chain height increases after invalid traffic.}
+retained_artifacts: [manifest.json, scenario.yaml, resolved-profile.json, exact target identity, dataset manifest and selected input hashes, per-input outcomes and timings, raw patched trace, measurements/report.json, measurements/report.md, assertions.json, log.ndjson, SARIF and attestation state, exportable evidence bundle and digest]
+report_routes: ["/operate/runs/{run_id}", "/operate/scenarios/client-example-cbor-decoding-{implementation}-patched", "/operate/measurement-profiles/{measurement_profile}"]
+legitimate_claims:
+  - The exact selected implementations produced the recorded result for the frozen 100-input Plutus-data set.
+  - The real nodes contained the selected live invalid decode cases and produced the recorded per-outcome timing samples.
+explicit_non_claims:
+  - This is not complete coverage of every Cardano CBOR type or every mini-protocol codec.
+  - The production-library conformance leg and live-node ingress leg are separate boundaries.
+  - The run is not automatically an Amaru-versus-Cardano performance benchmark.
+verdict_policy: {security_assertions_authoritative: true, measurements_gate_by_default: false, threshold_gate: explicit-opt-in-only}
+approved_resolution:
+  kind: completed-security-finding-and-regression
+  historical_finding:
+    run_id: 20260920T135054Z-28289dcd
+    source_revision: b159172f25a9c389f82f20bca4f15e3032791638
+    failed_assertion: cbor_conformance_clean
+    finding_id: amaru-plutus-data-byte-string-bound
+    execution_classification: completed_with_security_finding
+    security_verdict: fail
+  regression:
+    scenario_id: client-example-cbor-decoding-amaru-d3a6dafc-regression
+    profile: profile-x-amaru-cbor-fix-regression-nanoseconds-v2
+    source_revision: d3a6dafcced78f5809a96619e883cf04911d2bdc
+    upstream_fix_revision: d3a6dafcced78f5809a96619e883cf04911d2bdc
+    measurement_revision: nanoseconds-v2
+    corpus_digest: sha256:8f5b409f5c2b25b31e392365bab0e9a703a526e776a4f34dfbc3204f9b022dd9
+    required_result: pass
+    accepted_run_id: 20260920T235440Z-050046a4
+    manifest_sha256: 3e7412574ddcda16aaa788b4c27a4bc74f9728dd1fcc381fd5d822611fb65871
+    assertions_sha256: 545bb3ab6164782ba3aae56a95b9a9391f6170b1e0e80573873c96904c5f73ae
+    codec_result_sha256: 89ac73f932ec9dc1cca0b78a0ec52714b3579f5289d5aad4227a4a4c354cf733
+    bundle_sha256: 6fd2d11f9dcb17d181edc06e81983c3ff18968cfbc484fc20887ddbfc4513440
+implementation_gaps:
+  - {id: GAP-CBOR-PINNED-ADAPTERS, status: closed, required_change: The revision-locked production codec adapters now retain decode and canonical round-trip output for both accepted exact targets.}
+  - {id: GAP-CBOR-LIVE-CASES, status: closed, required_change: The bounded real-node workloads sent the exact unsupported and malformed handshake cases and retained correlated hostile windows.}
+deferred_scope: {presentation_walkthrough: true, mixed_node_comparison: true, weekly_automation: true, stable_release_thresholds: true}

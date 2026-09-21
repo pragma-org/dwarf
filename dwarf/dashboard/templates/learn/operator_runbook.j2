@@ -37,17 +37,27 @@ python3 -m pip install -r infrastructure/docker/requirements-framework.txt
 <section>
   <header><span class="eyebrow">Step 2</span><h2>Common operations</h2></header>
 
-  <h3>Run a scenario</h3>
-  <p>From <a href="/operate/scenarios">/operate/scenarios</a>, the <strong>Run a scenario</strong> control streams execution output and records the run bundle. It uses the restricted host control channel when configured; otherwise it executes in the framework runtime, where compatible target binaries must be available. The equivalent host CLI is:</p>
-  <pre class="run-payload-pre"><code># Fuzz (CBOR / ledger-rule / mini-protocol) — build targets once
-make -C dwarf/targets amaru        # or: make -C dwarf/targets all
+  <h3>Start a local run</h3>
+  <p>Open <a href="/run">Start run</a>. Select a scenario first. DWARF then resolves the target, deployment profile, exact node versions, measurement profile, primitives, run settings, and readiness checks in that order. It selects safe defaults, but it does not hide available alternatives.</p>
+  <p><strong>Plain meaning:</strong> Pick the test. DWARF fills in the normal choices. You can review every choice before you press Start.</p>
+  <ul>
+    <li><strong>Profile:</strong> a library or attached-topology scenario does not use a profile. Other real-node scenarios use the scenario profile unless you select another compatible profile.</li>
+    <li><strong>Versions:</strong> <code>latest-confirmed</code> is the normal default. <code>exact</code> pins named releases. <code>latest-stable</code> can require a one-run acknowledgement when the selected release is not confirmed for that deployment scope.</li>
+    <li><strong>Measurements:</strong> Measurements observe the run. They do not change pass or fail unless the selected profile has an explicit threshold gate.</li>
+    <li><strong>Primitives:</strong> the wizard shows the scenario operations as read-only. Use <strong>Customize as a new scenario</strong> to change them, because a primitive change creates a different test.</li>
+    <li><strong>Readiness:</strong> DWARF checks only the runtime surfaces that the selected scenario needs. It does not block an unrelated library or self-contained run because a retained mixed topology is unhealthy.</li>
+  </ul>
+  <p><strong>Version pinning prevents release drift. It does not prove that a process is live, advancing, reachable, or using the expected runtime state.</strong> The Start gate checks those conditions again when the scenario needs an existing target.</p>
+  <p><strong>Plain meaning:</strong> A name tag says which node should run. A health check says whether that node is alive and ready.</p>
+  <p>The dashboard freezes the resolved plan and exact inputs, runs a scenario-specific preflight, and then passes only an identifier to the restricted host control channel. A failed preflight stops before setup, load, fault, probe, or assertion work starts. The run bundle retains the plan, scenario, profile when used, and preflight result.</p>
+  <p><strong>Exact command-line equivalent:</strong> the control channel runs the normal scenario engine against the frozen scenario snapshot. For an unchanged catalog scenario, the direct form is:</p>
+  <pre class="run-payload-pre"><code># Library or real-node scenario
 ./dwarf/cardano-profile scenario run \
-  dwarf/scenarios/amaru-cbor-tx-body-fuzz.yaml
+  dwarf/scenarios/&lt;scenario-id&gt;.yaml
 
-# Substrate (containerized devnet) — needs Docker + the devnet runtime
-./dwarf/cardano-profile scenario run --runtime devnet \
-  dwarf/scenarios/runtime-substrate-honest-baseline-example-smoke.yaml</code></pre>
-  <p>Output lands in <code>runs/&lt;timestamp&gt;-&lt;hash&gt;/</code>; the dashboard auto-discovers it. <a href="/operate/runs">/operate/runs</a> lists newest-first.</p>
+# The wizard's exact frozen input is retained with the run at:
+runs/&lt;run-id&gt;/launch/scenario.yaml</code></pre>
+  <p>Direct CLI execution keeps the scenario semantics, but it does not add the wizard's plan-resolution and preflight record. Output lands in <code>runs/&lt;timestamp&gt;-&lt;hash&gt;/</code>; the dashboard auto-discovers it. <a href="/operate/runs">/operate/runs</a> lists newest-first.</p>
 
   <h3>Pre-staged Cardano + Amaru topology health</h3>
   <p><strong>Container presence is not node health.</strong> Likewise, <code>ensure_cardano_amaru_converged.py</code> proves producer-side convergence only; it does not prove that either Amaru relay or the isolated Amaru-fed consumer is usable.</p>
@@ -446,7 +456,7 @@ cardano-profile restore --archive /backups/dwarf-20260429.tar.gz \
   - job_name: dwarf
     metrics_path: /metrics
     static_configs:
-      - targets: ['dwarf.gainpalfam.com:443']
+      - targets: ['127.0.0.1:8787']
     scheme: https</code></pre>
 </section>
 

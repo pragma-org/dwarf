@@ -1,0 +1,17 @@
+schema_version: v1
+id: amaru-external-restart-readiness
+title: Amaru restart readiness
+description: Measures wall-clock restart recovery until the real Amaru process, peer service, and chain-progress readiness conditions all hold.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: amaru
+  versions: [{version: 10.11.20260912, source_revision: b159172f25a9c389f82f20bca4f15e3032791638}, {version: v10.11.20260912-30-gd3a6dafc, source_revision: d3a6dafcced78f5809a96619e883cf04911d2bdc}]
+  target_modes: [stock, coverage, patched]
+collection_mode: external
+required_capabilities: [dwarf-target-lifecycle, amaru-readiness-probe]
+default_enabled: true
+overhead_class: negligible
+collector: {lifecycle: phase, start: on-demand, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/amaru-external-restart-readiness/result.json]
+correlation_identifiers: [run_id, workload_phase, fault_id, window]
+threshold_gate: {supported: true, default_enabled: false}

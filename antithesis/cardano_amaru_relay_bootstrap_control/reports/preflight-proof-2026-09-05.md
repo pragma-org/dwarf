@@ -7,7 +7,7 @@ Antithesis security scenario and must not be submitted as one.
 
 - The package is additive; no existing scenario or package was edited.
 - Every image in the rendered Compose model is digest-pinned and was pulled
-  anonymously on `cardano-box`.
+  anonymously on `dwarf-host-a`.
 - The selected relay artifact is
   `ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36`.
 - The run's source Compose SHA-256 is

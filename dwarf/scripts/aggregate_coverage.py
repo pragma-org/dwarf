@@ -99,11 +99,40 @@ def _load_cargo_fuzz_bundle(run_dir: Path, *, runs_root: Path) -> dict | None:
     cov_count, feature_count = _max_libfuzzer_cov(run_dir / "outputs" / "cargo-fuzz" / "stderr.log")
     if feature_count is None and "feature_count" in stats:
         feature_count = int(stats["feature_count"])
-    return {
+    coverage_result = None
+    coverage_result_relpath = summary.get("coverage_result")
+    if isinstance(coverage_result_relpath, str) and coverage_result_relpath:
+        relative = Path(coverage_result_relpath)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("coverage result path must remain inside the run bundle")
+        candidate = run_dir / relative
+        if candidate.is_file():
+            coverage_result = json.loads(candidate.read_text(encoding="utf-8"))
+    target_identity = (
+        coverage_result.get("target")
+        if isinstance(coverage_result, dict)
+        and isinstance(coverage_result.get("target"), dict)
+        else None
+    )
+    provenance = (
+        coverage_result.get("provenance")
+        if isinstance(coverage_result, dict)
+        and isinstance(coverage_result.get("provenance"), dict)
+        else {}
+    )
+    correlation = (
+        coverage_result.get("correlation")
+        if isinstance(coverage_result, dict)
+        and isinstance(coverage_result.get("correlation"), dict)
+        else {}
+    )
+    entry = {
         "source_type": "bundle",
         "bundle_id": _normalize_bundle_id(run_dir, runs_root),
         "engine": "cargo-fuzz",
-        "target": "unknown",
+        "target": (
+            target_identity.get("implementation") if target_identity else "unknown"
+        ),
         "queue_count": int(summary.get("queue_count", 0)),
         "crash_count": int(summary.get("crash_count", 0)),
         "hang_count": int(summary.get("hang_count", 0)),
@@ -117,6 +146,22 @@ def _load_cargo_fuzz_bundle(run_dir: Path, *, runs_root: Path) -> dict | None:
         ),
         "source_path": str(run_dir),
     }
+    if coverage_result is not None:
+        dataset = provenance.get("dataset") if isinstance(provenance.get("dataset"), dict) else {}
+        entry.update(
+            {
+                "target_identity": target_identity,
+                "coverage_campaign_id": correlation.get("coverage_campaign_id"),
+                "corpus_id": dataset.get("corpus_id"),
+                "corpus_digest": dataset.get("corpus_digest"),
+                "performance_authority": coverage_result.get("performance_authority"),
+                "non_authoritative_performance": coverage_result.get(
+                    "non_authoritative_performance"
+                ),
+                "coverage_result": coverage_result_relpath,
+            }
+        )
+    return entry
 
 
 def _load_campaign_bundle(run_dir: Path, *, runs_root: Path) -> list[dict]:

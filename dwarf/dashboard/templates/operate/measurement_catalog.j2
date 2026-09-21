@@ -1,0 +1,60 @@
+{% extends "_base.j2" %}
+{% block main %}
+<div class="scenarios-header">
+  <div>
+    <span class="eyebrow">Operate · {{ eyebrow }}</span>
+    <h1>{{ heading }}</h1>
+  </div>
+  <div class="definition-actions">
+    <a class="cta cta--ghost" href="{{ other_url }}">{{ other_label }}</a>
+    <a class="cta cta--ghost" href="/api/catalog/{{ catalog }}/export" download>Download all</a>
+    <a class="cta" href="/operate/{{ catalog }}/new">{{ create_label }}</a>
+  </div>
+</div>
+<p>{{ description }}</p>
+
+<hr class="hairline">
+
+<label class="profile-catalog__search">Search {{ heading|lower }}
+  <input type="search" data-measurement-filter placeholder="ID, title, implementation, mode…">
+</label>
+
+{% if empty %}
+<p class="empty-section-statement">No {{ heading|lower }} found.</p>
+{% else %}
+<div class="version-catalog" data-measurement-list>
+  {% for row in rows %}
+  <article class="version-card" data-measurement-search="{{ row.search }}">
+    <div class="version-card__head">
+      <div>
+        <span class="eyebrow">{{ row.implementation }}</span>
+        <h2>{{ row.title }}</h2>
+        <code>{{ row.id }}</code>
+      </div>
+      {% if catalog == 'measurements' %}
+      <span class="version-badge version-badge--{{ 'confirmed' if row.default_enabled else 'unknown' }}">{{ 'default' if row.default_enabled else 'optional' }}</span>
+      {% else %}
+      <span class="version-badge version-badge--confirmed">{{ row.measurement_count }} taps</span>
+      {% endif %}
+    </div>
+    {% if row.description %}<p>{{ row.description }}</p>{% endif %}
+    <dl>
+      {% if row.collection_mode %}<div><dt>collection</dt><dd><code>{{ row.collection_mode }}</code></dd></div>{% endif %}
+      {% if row.overhead_class %}<div><dt>overhead</dt><dd><code>{{ row.overhead_class }}</code></dd></div>{% endif %}
+      <div><dt>target modes</dt><dd>{% for mode in row.modes %}<code>{{ mode }}</code>{% if not loop.last %} · {% endif %}{% else %}—{% endfor %}</dd></div>
+    </dl>
+    <div class="definition-actions">
+      <a class="cta cta--primary" href="/operate/{{ catalog }}/{{ row.id }}">View</a>
+      <a class="cta cta--ghost" href="/operate/{{ catalog }}/{{ row.id }}/edit">Edit</a>
+      <a class="cta cta--ghost" href="/api/catalog/{{ catalog }}/{{ row.id }}/download" download>Download</a>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+
+<script>
+var measurementFilter=document.querySelector('[data-measurement-filter]');
+if(measurementFilter){measurementFilter.addEventListener('input',function(){var q=this.value.trim().toLowerCase();document.querySelectorAll('[data-measurement-search]').forEach(function(row){row.hidden=Boolean(q&&!row.dataset.measurementSearch.includes(q));});});}
+</script>
+{% endblock %}

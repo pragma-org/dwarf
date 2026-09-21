@@ -11,6 +11,7 @@ types). Nothing synthesized.
 from __future__ import annotations
 
 from profile_manager.data.concepts import CONCEPTS
+from profile_manager.data.catalog_definitions import list_definitions
 from profile_manager.data.learn_docs import GLOSSARY
 from profile_manager.data.learn_examples import asset_catalog_examples, list_examples
 from profile_manager.data.operate_targets import operate_target_rows
@@ -49,6 +50,8 @@ def render_learn_landing() -> str:
         active_sub="overview",
         implementations=impls,
         scenario_count=len(_list_scenarios_for_compare()),
+        measurement_count=len(list_definitions("measurements")),
+        measurement_profile_count=len(list_definitions("measurement-profiles")),
         primitive_count=deployed_source_summary()["primitive_count"],
         profile_template_count=len(profile_template_catalog_rows()),
         corpus_count=len(corpora),

@@ -12,7 +12,7 @@
 #     exit-1 crash-loop, RestartCount climbing into the thousands), AND
 #   - it actually served at least one tx ("tx-submission: serving") and then
 #     kept running (looped back to idle / parked) instead of sending Done.
-# Run on cardano-box. Set ADV_TAG to the adversary image tag to test.
+# Run on dwarf-host-a. Set ADV_TAG to the adversary image tag to test.
 set -uo pipefail
 ADV_TAG="${1:-0.5.0}"
 cd /home/dwarf/dwarf-v4/antithesis/cardano_node_dwarf

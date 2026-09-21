@@ -1,0 +1,58 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-invalid-mini-protocol-cardano",
+  "title": "Client example 03 — invalid Handshake containment — Cardano-node",
+  "authors": ["dwarf"],
+  "tags": ["client-example", "cardano-node", "measurement", "handshake", "security"],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This separate Cardano-node execution is not a mixed-node comparison.",
+    "Security assertions are authoritative; measurements do not gate by default."
+  ],
+  "target": {"implementation": "cardano-node", "version": "11.1.2"},
+  "runtime": "devnet",
+  "profile": "profile-t-cardano-measurement-patched",
+  "measurement_profile": "cardano-security-patched",
+  "seed": "0xBAD0C003",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+      "mode": "patched",
+      "image_digest": "sha256:c74c3deafac54ed4d30da21952fce579c3293919993d31081e18787605757b8c",
+      "executable_digest": "sha256:2777c36dbfdc4b8e57b9c839f055a65709e3049800030817a97a3943c712f738",
+      "patch_set_sha256": "7a948067c6b957b277400675cf95e32864ed8d92cd130fbadb673775249b5cc1"
+    },
+    {"primitive": "runtime_mark_baseline_window", "duration_seconds": 35}
+  ],
+  "load": [
+    {
+      "primitive": "runtime_protocol_decode_cases",
+      "profile_id": "profile-t-cardano-measurement-patched",
+      "attempts_per_case": 100,
+      "duration_seconds": 240,
+      "workload_digest": "sha256:1ab6db08d45f22f42b1333c255ed07ac9dc57ecacb69ee7c645ecfd451c4225e",
+      "response_timeout_seconds": 2,
+      "observation_seconds": 2,
+      "trace_timeout_seconds": 20,
+      "timeout_seconds": 360,
+      "expected_helper_exit": 0
+    },
+    {"primitive": "runtime_mark_hostile_window"},
+    {"primitive": "runtime_mark_recovery_window", "duration_seconds": 35}
+  ],
+  "faults": [],
+  "probes": [
+    {"primitive": "runtime_target_health_and_progress"},
+    {"primitive": "runtime_peer_session_health"}
+  ],
+  "assertions": [
+    {"primitive": "invalid_protocol_cases_contained"},
+    {"primitive": "target_progress_continues"},
+    {"primitive": "unrelated_peer_session_usable", "max_recovery_seconds": 35},
+    {"primitive": "no_target_fatal_signal"}
+  ],
+  "teardown": []
+}

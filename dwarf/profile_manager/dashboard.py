@@ -89,6 +89,10 @@ from profile_manager.views.operate_audit import render_operate_audit
 from profile_manager.views.operate_timeline import render_operate_timeline
 from profile_manager.views.operate_static_analysis import render_operate_static_analysis
 from profile_manager.views.operate_profiles import render_operate_profiles
+from profile_manager.views.operate_measurements import (
+    render_operate_measurement_profiles,
+    render_operate_measurements,
+)
 from profile_manager.views.operate_versions import render_operate_versions
 from profile_manager.views.operate_bundles import render_operate_bundles
 from profile_manager.views.operate_plugins import dispatch_plugin_request
@@ -120,9 +124,11 @@ from profile_manager.views.learn_runbooks import (
 from profile_manager.views.operate_contract import render_operate_contract
 from profile_manager.views.operate_run import (
     render_operate_run,
+    render_operate_run_measurements_raw,
     render_operate_run_not_found,
 )
 from profile_manager.views.operate_runs import render_operate_runs
+from profile_manager.views.operate_run_wizard import render_operate_run_wizard
 from profile_manager.views.operate_status import render_operate_status
 from profile_manager.views.operate_targets import render_operate_targets
 from profile_manager.views.status import render_learn_status
@@ -134,10 +140,12 @@ from profile_manager.views.learn import render_learn_landing
 from profile_manager.views.learn_primitives import render_learn_primitives
 from profile_manager.views.learn_profile_templates import render_learn_profile_templates
 from profile_manager.views.learn_versions import render_learn_versions
+from profile_manager.views.learn_measurements import render_learn_measurements
 from profile_manager.views.learn_testcases import render_learn_testcases
 from profile_manager.views.learn_corpora import render_learn_corpora
 from profile_manager.views.learn_grammars import render_learn_grammars
 from profile_manager.views.learn_risk_packages import render_learn_risk_packages
+from profile_manager.views.landing import render_landing
 from profile_manager.views.operate import render_operate_landing
 from profile_manager.views.scenarios import render_operate_scenarios
 
@@ -151,12 +159,12 @@ def _pick_dashboard_root(project_root: Path) -> Path:
     Two candidate layouts:
     - ``project_root/dwarf/dashboard``  (local Mac dev checkout: dwarf/ is the
       app subdir under the parent ada2 repo)
-    - ``project_root/dashboard``        (cardano-box flattened layout: rsync
+    - ``project_root/dashboard``        (dwarf-host-a flattened layout: rsync
       from sync-dwarf-fw.sh strips the dwarf/ wrapper, putting dashboard/ +
       profile_manager/ at top level)
 
     Pre-slice-19 logic checked only that ``project_root/dwarf`` *existed*,
-    which on cardano-box was true but stale -- a leftover ``dwarf/`` directory
+    which on dwarf-host-a was true but stale -- a leftover ``dwarf/`` directory
     from an old layout containing only an ``index.html``, no ``static/``.
     Result: the picker selected ``project_root/dwarf/dashboard`` (which had
     no ``static/``), so ``/static/css/base.css`` returned 404 and all
@@ -191,7 +199,7 @@ class DashboardResult:
     url: str
 
 
-def build_dashboard_status_payload(live=True, profile_id="profile-a-haskell-peersharing-disabled"):
+def build_dashboard_status_payload(live=True, profile_id=None):
     health_path, health_body = _latest_profile_health()
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -907,7 +915,7 @@ def render_command_center_html():
     <div class="flow" id="deployment-flow">
       <div class="flow-step"><strong>Browser / CLI</strong>Local operator view and command entry point.</div>
       <div class="flow-step"><strong>SSH</strong>Read-only health polling and explicit CLI operations.</div>
-      <div class="flow-step"><strong>cardano-box</strong>Ubuntu host for local Cardano profile runtime.</div>
+      <div class="flow-step"><strong>dwarf-host-a</strong>Ubuntu host for local Cardano profile runtime.</div>
       <div class="flow-step"><strong>Profile Runtime</strong>Managed local testnet profile under `/opt/dwarf/cardano-profiles`.</div>
       <div class="flow-step"><strong>node1 / node2 / node3</strong>Loopback node-to-node listeners, sockets, logs, and DB state.</div>
     </div>
@@ -1082,7 +1090,7 @@ function drawDeploymentFlow(payload, active, parsed) {
     <line class="edge" x1="154" y1="119" x2="238" y2="119"/>
     <rect class="node" x="248" y="86" width="110" height="66" rx="8"/><text x="303" y="114" text-anchor="middle" font-weight="700">SSH</text><text class="muted" x="303" y="136" text-anchor="middle">read-only poll</text>
     <line class="edge" x1="358" y1="119" x2="438" y2="119"/>
-    <rect class="node" x="448" y="66" width="146" height="106" rx="8"/><text x="521" y="102" text-anchor="middle" font-weight="700">cardano-box</text><text class="muted" x="521" y="126" text-anchor="middle">${esc((payload.config || {}).host || "unknown")}</text><text class="muted" x="521" y="150" text-anchor="middle">Ubuntu host</text>
+    <rect class="node" x="448" y="66" width="146" height="106" rx="8"/><text x="521" y="102" text-anchor="middle" font-weight="700">dwarf-host-a</text><text class="muted" x="521" y="126" text-anchor="middle">${esc((payload.config || {}).host || "unknown")}</text><text class="muted" x="521" y="150" text-anchor="middle">Ubuntu host</text>
     <line class="edge" x1="594" y1="119" x2="674" y2="119"/>
     <rect class="node" x="684" y="46" width="190" height="146" rx="8"/><text x="779" y="76" text-anchor="middle" font-weight="700">${esc(active.id || "active profile")}</text>
     <circle class="${processClass}" cx="729" cy="124" r="22"/><text x="729" y="130" text-anchor="middle">n1</text>
@@ -1498,6 +1506,166 @@ def dispatch_mutating_request(*, method, path, expected_token, cli_command_build
         finally:
             release_mutating_lock()
     return (200, "text/event-stream; charset=utf-8", _gen())
+
+
+def _sse_event(event: str, payload) -> bytes:
+    body = payload if isinstance(payload, str) else json.dumps(payload, sort_keys=True)
+    return f"event: {event}\ndata: {body}\n\n".encode("utf-8")
+
+
+def _default_run_preflight(launch_id: str, plan: dict) -> dict:
+    readiness = plan["readiness"]
+    if readiness.get("topology_id"):
+        from profile_manager.data.operate_topology_health import (
+            request_topology_health_check,
+            wait_for_topology_health,
+        )
+
+        request_topology_health_check()
+        health = wait_for_topology_health(timeout=120)
+        return {
+            "state": "ready" if health.get("state") == "healthy" else "blocked",
+            "kind": "topology",
+            "topology_id": readiness["topology_id"],
+            "health": health,
+            "checks": [
+                {
+                    "id": f"topology:{readiness['topology_id']}",
+                    "passed": health.get("state") == "healthy",
+                    "reason": health.get("reason_code"),
+                }
+            ],
+        }
+    if plan.get("profile"):
+        import subprocess as _subprocess
+
+        from profile_manager.remote import render_launch_preflight_command
+
+        command = render_launch_preflight_command(load_config(), launch_id)
+        completed = _subprocess.run(
+            command, text=True, capture_output=True, check=False, timeout=90
+        )
+        for line in reversed((completed.stdout or "").splitlines()):
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and payload.get("state") in {"ready", "blocked"}:
+                return payload
+        return {
+            "state": "blocked",
+            "kind": "profile",
+            "checks": [],
+            "detail": (completed.stderr or completed.stdout or "profile preflight returned no result").strip(),
+        }
+    return {
+        "state": "ready",
+        "kind": "self-contained",
+        "checks": [{"id": "framework", "passed": True}],
+    }
+
+
+def dispatch_run_start_request(
+    *,
+    method,
+    path,
+    body,
+    expected_token,
+    preflight_runner=None,
+    command_builder=None,
+    streamer=None,
+):
+    """Re-resolve, preflight, and stream one identifier-only local launch."""
+    if urlsplit(path).path != "/api/run/start":
+        return None
+    if method != "POST":
+        return (405, "application/json; charset=utf-8", b'{"ok":false,"error":{"message":"use POST"}}')
+    ok, error = check_token(path, expected=expected_token)
+    if not ok:
+        payload = {"ok": False, "error": {"field": "token", "message": error}}
+        return (401, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    if len(body) > 8192:
+        payload = {"ok": False, "error": {"field": "request", "message": "request body is too large"}}
+        return (413, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    try:
+        value = json.loads(body.decode("utf-8"))
+        if not isinstance(value, dict) or set(value) - {"request", "plan_digest"}:
+            raise ValueError("start body must contain request and plan_digest only")
+        from profile_manager.run_plan import (
+            RunPlanRequest,
+            digest_run_plan,
+            resolve_run_plan,
+        )
+
+        request = RunPlanRequest.from_mapping(value.get("request"))
+        plan = resolve_run_plan(request)
+        current_digest = digest_run_plan(plan)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        field = getattr(exc, "field", "request")
+        payload = {"ok": False, "error": {"field": field, "message": str(exc)}}
+        return (400, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    if value.get("plan_digest") != current_digest:
+        payload = {
+            "ok": False,
+            "error": {
+                "field": "plan_digest",
+                "message": "The catalog or selection changed. Resolve the plan again before launch.",
+            },
+        }
+        return (409, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    if not try_acquire_mutating_lock():
+        payload = {"ok": False, "error": {"field": "launch", "message": "another mutating action is already in progress"}}
+        return (409, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    try:
+        from profile_manager.launch_store import create_launch
+
+        launch = create_launch(plan)
+    except Exception as exc:
+        release_mutating_lock()
+        payload = {"ok": False, "error": {"field": "launch", "message": str(exc)}}
+        return (400, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+
+    selected_preflight = preflight_runner or _default_run_preflight
+    selected_streamer = streamer or stream_subprocess_sse
+
+    def default_command(launch_id):
+        from profile_manager.remote import render_launch_command
+
+        if not control_shim_enabled():
+            raise RuntimeError("the restricted DWARF control channel is not enabled")
+        return render_launch_command(load_config(), launch_id)
+
+    selected_command = command_builder or default_command
+
+    def generate():
+        try:
+            yield _sse_event(
+                "plan",
+                {"launch_id": launch["launch_id"], "plan_digest": current_digest},
+            )
+            try:
+                preflight = selected_preflight(launch["launch_id"], plan)
+            except Exception as exc:  # noqa: BLE001 - retain failed readiness as evidence
+                preflight = {
+                    "state": "blocked",
+                    "checks": [],
+                    "detail": f"{type(exc).__name__}: {exc}",
+                }
+            from profile_manager.launch_store import record_launch_preflight
+
+            record_launch_preflight(launch["launch_id"], preflight)
+            yield _sse_event("preflight", preflight)
+            if preflight.get("state") != "ready":
+                yield _sse_event("error", {"error": "preflight_failed", "preflight": preflight})
+                yield _sse_event("done", {"exit_code": 78})
+                return
+            command = selected_command(launch["launch_id"])
+            yield _sse_event("launch", {"launch_id": launch["launch_id"]})
+            yield from selected_streamer(command)
+        finally:
+            release_mutating_lock()
+
+    return (200, "text/event-stream; charset=utf-8", generate())
 
 
 def dispatch_deployment_preview_request(*, method, path):
@@ -1918,7 +2086,9 @@ def dispatch_api_request(path, *, runs_dir=None, bundles_dir=None):
             return (404, "text/plain; charset=utf-8", b"not found\n")
         except CatalogError:
             return (422, "text/plain; charset=utf-8", b"invalid definition\n")
-        if len(parts) >= 3 and parts[2] not in {"scenarios", "targets", "profiles"}:
+        if len(parts) >= 3 and parts[2] not in {
+            "scenarios", "targets", "profiles", "measurements", "measurement-profiles"
+        }:
             return (404, "text/plain; charset=utf-8", b"not found\n")
         return (400, "text/plain; charset=utf-8", b"invalid catalog request\n")
 
@@ -2652,7 +2822,6 @@ def _md_to_html(md_text):
 # all redirects. Keys are paths (post query-string strip); values are
 # Location header values.
 REDIRECTS = {
-    "/": "/operate",
     "/index.html": "/operate",
     "/compare": "/operate/compare",
     # Slice 25: legacy /architecture targeted /operate/status (substrate
@@ -2697,7 +2866,13 @@ def render_route_html(route, *, token=None):
         right = (qs.get("right") or [""])[0]
         return render_operate_run_compare(left, right)
     path_only = route.split("?", 1)[0].rstrip("/")
-    if path_only in {"/operate/profiles/new", "/operate/targets/new", "/operate/scenarios/new"}:
+    if path_only in {
+        "/operate/profiles/new",
+        "/operate/targets/new",
+        "/operate/scenarios/new",
+        "/operate/measurements/new",
+        "/operate/measurement-profiles/new",
+    }:
         from urllib.parse import parse_qs, urlsplit
         from profile_manager.views.operate_definition_edit import render_operate_definition_edit
 
@@ -2710,7 +2885,9 @@ def render_route_html(route, *, token=None):
     if (
         len(edit_parts) == 4
         and edit_parts[0] == "operate"
-        and edit_parts[1] in {"scenarios", "targets", "profiles"}
+        and edit_parts[1] in {
+            "scenarios", "targets", "profiles", "measurements", "measurement-profiles"
+        }
         and edit_parts[3] == "edit"
     ):
         from profile_manager.views.operate_definition_edit import render_operate_definition_edit
@@ -2720,7 +2897,9 @@ def render_route_html(route, *, token=None):
     if (
         len(definition_parts) == 3
         and definition_parts[0] == "operate"
-        and definition_parts[1] in {"scenarios", "targets", "profiles"}
+        and definition_parts[1] in {
+            "scenarios", "targets", "profiles", "measurements", "measurement-profiles"
+        }
     ):
         from profile_manager.data.catalog_definitions import DefinitionNotFoundError
         from profile_manager.views.operate_definition import render_operate_definition
@@ -2787,7 +2966,8 @@ def render_route_html(route, *, token=None):
     # Strip query string before lookup; routes are paths only.
     route = route.split("?", 1)[0]
     routes = {
-        "/": render_command_center_html,
+        "/": render_landing,
+        "/run": lambda: render_operate_run_wizard(token=token),
         "/index.html": render_command_center_html,
         "/tests": render_tests_html,
         "/scenarios": render_scenarios_html,
@@ -2804,6 +2984,8 @@ def render_route_html(route, *, token=None):
         "/operate/compare": render_operate_compare,
         "/learn/architecture": render_learn_architecture,
         "/operate/profiles": render_operate_profiles,
+        "/operate/measurements": render_operate_measurements,
+        "/operate/measurement-profiles": render_operate_measurement_profiles,
         "/operate/runs": render_operate_runs,
         "/operate/status": render_operate_status,
         "/operate/targets": render_operate_targets,
@@ -2816,6 +2998,7 @@ def render_route_html(route, *, token=None):
         "/learn/primitives": render_learn_primitives,
         "/learn/profile-templates": render_learn_profile_templates,
         "/learn/versions": render_learn_versions,
+        "/learn/measurements": render_learn_measurements,
         "/learn/testcases": render_learn_testcases,
         "/learn/corpora": render_learn_corpora,
         "/learn/grammars": render_learn_grammars,
@@ -2838,6 +3021,13 @@ def render_route_html(route, *, token=None):
     renderer = routes.get(route)
     if renderer is not None:
         return renderer()
+    if route.startswith("/operate/runs/") and route.endswith("/measurements/raw"):
+        rid = route[len("/operate/runs/"):-len("/measurements/raw")]
+        if rid and "/" not in rid and ".." not in rid:
+            html = render_operate_run_measurements_raw(rid)
+            if html is not None:
+                return html
+            return render_operate_run_not_found(rid)
     # Slice 47 — /operate/runs/<id>/live serves the streaming HTML view.
     # The /tail SSE endpoint is dispatched from do_GET (needs streaming),
     # not from this HTML-only route function.
@@ -2967,6 +3157,30 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
             body_bytes = self.rfile.read(length) if length > 0 else b""
+            from profile_manager.data.operate_run_wizard import (
+                dispatch_run_resolve_request,
+            )
+
+            run_resolve = dispatch_run_resolve_request(
+                method="POST", path=self.path, body=body_bytes
+            )
+            if run_resolve is not None:
+                status, ctype, response_body = run_resolve
+                self._send(status, ctype, response_body)
+                return
+            run_start = dispatch_run_start_request(
+                method="POST",
+                path=self.path,
+                body=body_bytes,
+                expected_token=expected_token,
+            )
+            if run_start is not None:
+                status, ctype, response_body = run_start
+                if status == 200 and "event-stream" in ctype:
+                    self._send_stream(status, ctype, response_body)
+                else:
+                    self._send(status, ctype, response_body)
+                return
             version_refresh = dispatch_version_refresh_request(
                 method="POST", path=self.path, expected_token=expected_token
             )
@@ -3149,6 +3363,7 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 "/api/scenario/paste", "/api/scenario/promote", "/api/scenario/compare",
                 "/api/scenario/run", "/api/backup/create", "/api/coverage/run",
                 "/api/topology/redeploy",
+                "/api/run/resolve", "/api/run/start",
                 "/api/versions/refresh",
                 "/operate/config/save",
             }

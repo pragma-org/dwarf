@@ -1,0 +1,1070 @@
+diff --git a/crates/amaru-observability/src/schemas.rs b/crates/amaru-observability/src/schemas.rs
+index 53716cde6a7c7071d76146cd40e246add2c58b85..a5cc0ebc696b13bf1414a21ead9ec8f909917965 100644
+--- a/crates/amaru-observability/src/schemas.rs
++++ b/crates/amaru-observability/src/schemas.rs
+@@ -1855,6 +1855,101 @@ define_schemas! {
+             }
+         }
+         protocols {
++            measurement {
++                /// Mux CBOR-item extraction for a live mini-protocol input.
++                public PROTOCOL_INGRESS {
++                    required protocol_id: String
++                    required role: String
++                    required boundary: String
++                    required bytes: usize
++                    required outcome: String
++                    required elapsed_nanos: u64
++                    required elapsed_micros: u64
++                }
++                /// Exact live mini-protocol CBOR decode and state-admission timing.
++                public PROTOCOL_DECODE {
++                    optional protocol_id: String
++                    optional role: String
++                    optional boundary: String
++                    required message_type: String
++                    required bytes: usize
++                    required decode_outcome: String
++                    required state_outcome: String
++                    required decode_nanos: u64
++                    required decode_micros: u64
++                    required total_nanos: u64
++                    required total_micros: u64
++                }
++                /// Responder-side Handshake negotiation after decode and state admission.
++                public HANDSHAKE_NEGOTIATION {
++                    required protocol_id: String
++                    required role: String
++                    required boundary: String
++                    required outcome: String
++                    required elapsed_nanos: u64
++                    required elapsed_micros: u64
++                }
++                /// BlockFetch handler cost and queue state for every handled input.
++                public BLOCKFETCH_HANDLER {
++                    required peer: %amaru_kernel::Peer
++                    required state: String
++                    required input: String
++                    required outcome: String
++                    required handler_nanos: u64
++                    required handler_micros: u64
++                    required inflight_depth: usize
++                    required pending_depth: usize
++                }
++                /// Decode of the block body carried by a live BlockFetch message.
++                public BLOCKFETCH_BLOCK_DECODE {
++                    required peer: %amaru_kernel::Peer
++                    required request_id: u64
++                    required bytes: usize
++                    required outcome: String
++                    required elapsed_nanos: u64
++                    required elapsed_micros: u64
++                }
++                /// Residence of a locally queued BlockFetch range request.
++                public BLOCKFETCH_QUEUE_RESIDENCE {
++                    required peer: %amaru_kernel::Peer
++                    required request_id: u64
++                    required outcome: String
++                    required elapsed_nanos: u64
++                    required elapsed_micros: u64
++                    required queue_depth: usize
++                }
++                /// TxSubmission2 queue depths at an observed transition.
++                public TXSUBMISSION_DEPTH {
++                    required peer: %amaru_kernel::Peer
++                    required transition: String
++                    required pending_depth: usize
++                    required inflight_depth: usize
++                    required unacked_depth: usize
++                }
++                /// TxSubmission2 advertisement-to-body-to-insertion residence by outcome.
++                public TXSUBMISSION_RESIDENCE {
++                    required peer: %amaru_kernel::Peer
++                    required id: amaru_kernel::TransactionId
++                    required outcome: String
++                    required advertised_to_terminal_nanos: u64
++                    required advertised_to_terminal_micros: u64
++                    optional advertised_to_body_nanos: u64
++                    optional advertised_to_body_micros: u64
++                    optional body_to_terminal_nanos: u64
++                    optional body_to_terminal_micros: u64
++                    required pending_depth: usize
++                    required inflight_depth: usize
++                }
++                /// Initiator blocking-request residence, including rejected requests.
++                public TXSUBMISSION_BLOCKING_RESIDENCE {
++                    required peer: %amaru_kernel::Peer
++                    required outcome: String
++                    required elapsed_nanos: u64
++                    required elapsed_micros: u64
++                    required window_depth: usize
++                    required pending_depth: usize
++                }
++            }
+             connection {
+                 message {
+                     /// Handle connection stage messages
+diff --git a/crates/amaru-protocols/src/blockfetch/initiator.rs b/crates/amaru-protocols/src/blockfetch/initiator.rs
+index dd84ba0db3f43a1cc1e47326e7e8e20fedaccc6c..3f5e70e2241b8c5ed193276d3a7bff681500a083 100644
+--- a/crates/amaru-protocols/src/blockfetch/initiator.rs
++++ b/crates/amaru-protocols/src/blockfetch/initiator.rs
+@@ -20,13 +20,14 @@
+ 
+ use std::{
+     num::{NonZeroU8, NonZeroUsize},
+-    time::Duration,
++    time::{Duration, Instant as WallInstant},
+ };
+ 
+ use amaru_kernel::{NetworkPoint, Peer, Point, RawBlock, cardano::network_block::NetworkBlock, utils::debug_bytes};
+-use amaru_observability::error;
++use amaru_observability::{debug, error};
+ use amaru_pure_stage::{
+-    DeserializerGuards, Effects, StageRef, define_role, define_role_tag, make_states, on_receive, typestate::prelude::*,
++    DeserializerGuards, Effects, Instant, StageRef, define_role, define_role_tag, make_states, on_receive,
++    typestate::prelude::*,
+ };
+ 
+ use super::{BatchDone, Block, ClientDone, Message, NoBlocks, RequestRange, StartBatch, responder::MAX_FETCHED_BLOCKS};
+@@ -221,7 +222,13 @@ struct Instance {
+     peer: Peer,
+     pending_close: bool,
+     /// Next range from fetch-blocks, issued at last body (before `BatchDone`).
+-    pending_fetch: Option<Fetch>,
++    pending_fetch: Option<QueuedFetch>,
++}
++
++#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++struct QueuedFetch {
++    fetch: Fetch,
++    queued_at: Instant,
+ }
+ 
+ type Mail = Inputs<BlockFetchMessage>;
+@@ -250,7 +257,49 @@ impl Instance {
+     }
+ }
+ 
++fn proto_name(proto: &Proto) -> String {
++    match proto {
++        Proto::Idle(state) => state.name().to_string(),
++        Proto::Busy(state) => state.name().to_string(),
++        Proto::Streaming(state) => state.name().to_string(),
++        Proto::Done(state) => state.name().to_string(),
++    }
++}
++
++fn input_name(mail: &Mail) -> String {
++    match mail {
++        Inputs::Local(input) => format!("local:{input:?}"),
++        Inputs::Network(HandlerMessage::Registered(_)) => "network:registered".to_string(),
++        Inputs::Network(HandlerMessage::FromNetwork(_)) => "network:message".to_string(),
++        Inputs::Internal(Internal::Pull) => "internal:pull".to_string(),
++        Inputs::Internal(Internal::Timeout) => "internal:timeout".to_string(),
++    }
++}
++
+ async fn instance(inst: Instance, mail: Mail, eff: Effects<Mail>) -> Instance {
++    let started = WallInstant::now();
++    let state = proto_name(&inst.proto);
++    let input = input_name(&mail);
++    let peer = inst.peer;
++    let inflight_depth = usize::from(inst.inflight.is_some());
++    let pending_depth = usize::from(inst.pending_fetch.is_some());
++    let result = instance_inner(inst, mail, eff).await;
++    let handler_nanos = started.elapsed().as_nanos() as u64;
++    debug!(
++        protocols::measurement::BLOCKFETCH_HANDLER,
++        peer,
++        state,
++        input,
++        outcome = "completed",
++        handler_nanos,
++        handler_micros = handler_nanos / 1_000,
++        inflight_depth,
++        pending_depth
++    );
++    result
++}
++
++async fn instance_inner(inst: Instance, mail: Mail, eff: Effects<Mail>) -> Instance {
+     if matches!(mail, Inputs::Network(HandlerMessage::Registered(_))) {
+         return inst;
+     }
+@@ -311,7 +360,7 @@ async fn instance(inst: Instance, mail: Mail, eff: Effects<Mail>) -> Instance {
+             }
+             Err(mail) => match Fetch::from_mailbox(mail) {
+                 Ok(fetch) => {
+-                    pending_fetch = Some(fetch);
++                    queue_fetch(peer, fetch, &mut pending_fetch, &eff).await;
+                     busy.into()
+                 }
+                 Err(mail) => return invalid(peer, busy.name(), mail, eff).await,
+@@ -325,8 +374,36 @@ async fn instance(inst: Instance, mail: Mail, eff: Effects<Mail>) -> Instance {
+                 if flight.remaining == 0 {
+                     return invalid(peer, streaming.name(), "too many blocks", eff).await;
+                 }
+-                let Ok(network_block) = NetworkBlock::try_from(RawBlock::from(block.body.as_slice())) else {
+-                    return invalid(peer, streaming.name(), "invalid block CBOR", eff).await;
++                let decode_started = WallInstant::now();
++                let block_bytes = block.body.len();
++                let decoded = NetworkBlock::try_from(RawBlock::from(block.body.as_slice()));
++                let decode_nanos = decode_started.elapsed().as_nanos() as u64;
++                let decode_micros = decode_nanos / 1_000;
++                let network_block = match decoded {
++                    Ok(network_block) => {
++                        debug!(
++                            protocols::measurement::BLOCKFETCH_BLOCK_DECODE,
++                            peer,
++                            request_id = flight.id,
++                            bytes = block_bytes,
++                            outcome = "accepted",
++                            elapsed_nanos = decode_nanos,
++                            elapsed_micros = decode_micros
++                        );
++                        network_block
++                    }
++                    Err(_) => {
++                        debug!(
++                            protocols::measurement::BLOCKFETCH_BLOCK_DECODE,
++                            peer,
++                            request_id = flight.id,
++                            bytes = block_bytes,
++                            outcome = "rejected",
++                            elapsed_nanos = decode_nanos,
++                            elapsed_micros = decode_micros
++                        );
++                        return invalid(peer, streaming.name(), "invalid block CBOR", eff).await;
++                    }
+                 };
+                 flight.remaining -= 1;
+                 let collector = CollectorOut::new(flight.cr.clone());
+@@ -362,7 +439,7 @@ async fn instance(inst: Instance, mail: Mail, eff: Effects<Mail>) -> Instance {
+             }
+             Err(mail) => match Fetch::from_mailbox(mail) {
+                 Ok(fetch) => {
+-                    pending_fetch = Some(fetch);
++                    queue_fetch(peer, fetch, &mut pending_fetch, &eff).await;
+                     streaming.into()
+                 }
+                 Err(mail) => return invalid(peer, streaming.name(), mail, eff).await,
+@@ -376,13 +453,18 @@ async fn instance(inst: Instance, mail: Mail, eff: Effects<Mail>) -> Instance {
+         },
+     };
+     let proto = match (pending_close, pending_fetch.take(), proto) {
+-        (true, _, Proto::Idle(idle)) => {
++        (true, queued, Proto::Idle(idle)) => {
++            if let Some(queued) = queued {
++                emit_queue_residence(peer, &queued, "cancelled", &follow_eff).await;
++            }
+             pending_close = false;
+             inflight = None;
+             let (_, s) = idle.receive(Close, follow_eff).call(&mux, ClientDone).await;
+             s.finish().into()
+         }
+-        (false, Some(fetch), Proto::Idle(idle)) => {
++        (false, Some(queued), Proto::Idle(idle)) => {
++            emit_queue_residence(peer, &queued, "dequeued", &follow_eff).await;
++            let fetch = queued.fetch;
+             let range = RequestRange { from: fetch.from, through: fetch.through };
+             inflight = Some(Inflight { id: fetch.id, cr: fetch.cr.clone(), remaining: MAX_FETCHED_BLOCKS });
+             let (_, s) = idle.receive(fetch, follow_eff).call(&mux, range).await;
+@@ -395,14 +477,35 @@ async fn instance(inst: Instance, mail: Mail, eff: Effects<Mail>) -> Instance {
+                 .finish()
+                 .into()
+         }
+-        (_, fetch, proto) => {
+-            pending_fetch = fetch;
++        (_, queued, proto) => {
++            pending_fetch = queued;
+             proto
+         }
+     };
+     Instance { proto, mux, inflight, peer, pending_close, pending_fetch }
+ }
+ 
++async fn queue_fetch(peer: Peer, fetch: Fetch, pending: &mut Option<QueuedFetch>, eff: &Effects<Mail>) {
++    if let Some(replaced) = pending.take() {
++        emit_queue_residence(peer, &replaced, "replaced", eff).await;
++    }
++    *pending = Some(QueuedFetch { fetch, queued_at: eff.clock().await });
++}
++
++async fn emit_queue_residence(peer: Peer, queued: &QueuedFetch, outcome: &str, eff: &Effects<Mail>) {
++    let elapsed_nanos = eff.clock().await.saturating_since(queued.queued_at).as_nanos() as u64;
++    let elapsed_micros = elapsed_nanos / 1_000;
++    debug!(
++        protocols::measurement::BLOCKFETCH_QUEUE_RESIDENCE,
++        peer,
++        request_id = queued.fetch.id,
++        outcome = outcome.to_string(),
++        elapsed_nanos,
++        elapsed_micros,
++        queue_depth = 1
++    );
++}
++
+ async fn invalid(peer: Peer, state: &str, input: impl std::fmt::Debug, eff: Effects<Mail>) -> Instance {
+     error!(
+         protocols::INVALID_INPUT,
+diff --git a/crates/amaru-protocols/src/handshake/responder.rs b/crates/amaru-protocols/src/handshake/responder.rs
+index 103308c5db29eabd380f7650c46d4ffeb655e1d2..8c91b412785dc04ed4849aa7943660eae00ceabd 100644
+--- a/crates/amaru-protocols/src/handshake/responder.rs
++++ b/crates/amaru-protocols/src/handshake/responder.rs
+@@ -12,7 +12,9 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
+-use amaru_observability::{Instrument, debug_span};
++use std::time::Instant;
++
++use amaru_observability::{Instrument, debug, debug_span};
+ use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
+ 
+ use crate::{
+@@ -78,7 +80,23 @@ impl StageState<State, Responder> for HandshakeResponder {
+         let version_table = input.0.to_string();
+ 
+         async move {
++            let started = Instant::now();
+             let result = crate::handshake::compute_negotiation_result(&self.our_versions, &input.0);
++            let outcome = match &result {
++                HandshakeResult::Accepted(..) => "accepted",
++                HandshakeResult::Refused(..) => "refused",
++                HandshakeResult::Query(..) => "query",
++            };
++            let elapsed_nanos = started.elapsed().as_nanos() as u64;
++            debug!(
++                protocols::measurement::HANDSHAKE_NEGOTIATION,
++                protocol_id = "0",
++                role = "responder",
++                boundary = "handshake-negotiation",
++                outcome,
++                elapsed_nanos,
++                elapsed_micros = elapsed_nanos / 1_000
++            );
+             eff.send(&self.connection, result.clone()).await;
+             Ok((Some(result.into()), self))
+         }
+diff --git a/crates/amaru-protocols/src/mux.rs b/crates/amaru-protocols/src/mux.rs
+index 77ea86aafa080f3763f95c88e2a1f44671ae88d3..e34f1aab93e19b212f9d3941d7f3008e4fa8c1f1 100644
+--- a/crates/amaru-protocols/src/mux.rs
++++ b/crates/amaru-protocols/src/mux.rs
+@@ -18,7 +18,7 @@ use std::{
+     cell::RefCell,
+     collections::{VecDeque, hash_map::Entry},
+     num::{NonZeroU16, NonZeroUsize},
+-    time::{Duration, SystemTime},
++    time::{Duration, Instant as WallInstant, SystemTime},
+ };
+ 
+ use amaru_kernel::{NonEmptyBytes, Peer};
+@@ -622,7 +622,7 @@ impl Muxer {
+         let byte_len = bytes.len() as u64;
+         async {
+             if let Some(proto) = self.protocols.get_mut(&proto_id) {
+-                proto.received(timestamp, bytes, eff).await
++                proto.received(timestamp, proto_id, bytes, eff).await
+             } else {
+                 anyhow::bail!("received data for unknown protocol {}", proto_id)
+             }
+@@ -638,7 +638,7 @@ impl Muxer {
+                 .get_mut(&proto_id)
+                 .ok_or_else(|| anyhow::anyhow!("protocol {} not registered", proto_id))
+                 .expect("internal error")
+-                .want_next(eff)
++                .want_next(proto_id, eff)
+                 .await?;
+             Ok(())
+         }
+@@ -688,7 +688,13 @@ impl PerProto {
+         }
+     }
+ 
+-    pub async fn received<M>(&mut self, _timestamp: Timestamp, bytes: Bytes, eff: &Effects<M>) -> anyhow::Result<()> {
++    pub async fn received<M>(
++        &mut self,
++        _timestamp: Timestamp,
++        proto_id: ProtocolId<Erased>,
++        bytes: Bytes,
++        eff: &Effects<M>,
++    ) -> anyhow::Result<()> {
+         if self.max_buffer == 0 {
+             debug!(protocols::mux::protocol::IGNORING_BYTES, bytes = bytes.len());
+             return Ok(());
+@@ -709,7 +715,7 @@ impl PerProto {
+         }
+         self.incoming.extend(&bytes);
+         while self.wanted > 0
+-            && let Some(bytes) = self.frame.try_consume(&mut self.incoming)?
++            && let Some(bytes) = self.try_consume(proto_id)?
+         {
+             trace!(protocols::mux::protocol::MESSAGE_EXTRACTED, bytes = bytes.len().get());
+             eff.send(&self.handler, HandlerMessage::FromNetwork(bytes)).await;
+@@ -718,10 +724,10 @@ impl PerProto {
+         Ok(())
+     }
+ 
+-    pub async fn want_next<M>(&mut self, eff: &Effects<M>) -> anyhow::Result<()> {
++    pub async fn want_next<M>(&mut self, proto_id: ProtocolId<Erased>, eff: &Effects<M>) -> anyhow::Result<()> {
+         trace!(protocols::mux::protocol::BYTES_RECEIVED, wanted = self.wanted);
+         if !self.incoming.is_empty()
+-            && let Some(bytes) = self.frame.try_consume(&mut self.incoming)?
++            && let Some(bytes) = self.try_consume(proto_id)?
+         {
+             trace!(protocols::mux::protocol::MESSAGE_EXTRACTED, bytes = bytes.len().get());
+             eff.send(&self.handler, HandlerMessage::FromNetwork(bytes)).await;
+@@ -732,6 +738,48 @@ impl PerProto {
+         Ok(())
+     }
+ 
++    fn try_consume(&mut self, proto_id: ProtocolId<Erased>) -> anyhow::Result<Option<NonEmptyBytes>> {
++        let started = WallInstant::now();
++        let buffered_bytes = self.incoming.len();
++        let protocol_id = if proto_id.is_responder() { proto_id.opposite().to_string() } else { proto_id.to_string() };
++        let role = proto_id.role().to_string();
++        match self.frame.try_consume(&mut self.incoming) {
++            Ok(Some(bytes)) => {
++                if self.frame == Frame::OneCborItem {
++                    let elapsed_nanos = started.elapsed().as_nanos() as u64;
++                    debug!(
++                        protocols::measurement::PROTOCOL_INGRESS,
++                        protocol_id,
++                        role,
++                        boundary = "mux-cbor-item",
++                        bytes = bytes.len().get(),
++                        outcome = "framed",
++                        elapsed_nanos,
++                        elapsed_micros = elapsed_nanos / 1_000
++                    );
++                }
++                Ok(Some(bytes))
++            }
++            Ok(None) => Ok(None),
++            Err(error) => {
++                if self.frame == Frame::OneCborItem {
++                    let elapsed_nanos = started.elapsed().as_nanos() as u64;
++                    debug!(
++                        protocols::measurement::PROTOCOL_INGRESS,
++                        protocol_id,
++                        role,
++                        boundary = "mux-cbor-item",
++                        bytes = buffered_bytes,
++                        outcome = "malformed",
++                        elapsed_nanos,
++                        elapsed_micros = elapsed_nanos / 1_000
++                    );
++                }
++                Err(error.into())
++            }
++        }
++    }
++
+     pub fn enqueue_send(&mut self, bytes: Bytes, sent: StageRef<Sent>) {
+         self.outgoing.extend(&bytes);
+         self.notifiers.push_back((sent, self.sent_bytes + self.outgoing.len()));
+diff --git a/crates/amaru-protocols/src/protocol/miniprotocol.rs b/crates/amaru-protocols/src/protocol/miniprotocol.rs
+index 0abc323fb7957f15f6230909c8f281395a44e18c..bb3965e408e56a5b8df683c566dc57cdf5f111b0 100644
+--- a/crates/amaru-protocols/src/protocol/miniprotocol.rs
++++ b/crates/amaru-protocols/src/protocol/miniprotocol.rs
+@@ -12,9 +12,10 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
+-use std::future::Future;
++use std::{any::type_name, future::Future, time::Instant};
+ 
+ use amaru_kernel::{NonEmptyBytes, cbor};
++use amaru_observability::debug;
+ use amaru_pure_stage::{
+     BoxFuture, Effects, OrTerminateWith, SendData, StageRef, TryInStage, Void, err, typestate::FromMailbox,
+ };
+@@ -55,10 +56,62 @@ pub enum Inputs<L> {
+ pub fn from_wire<T: FromMailbox<M>, M: for<'de> cbor::Decode<'de, ()>, L>(msg: Inputs<L>) -> Result<T, Inputs<L>> {
+     match msg {
+         Inputs::Network(HandlerMessage::FromNetwork(bytes)) => {
+-            let Ok(decoded) = cbor::decode(bytes.as_ref()) else {
+-                return Err(Inputs::Network(HandlerMessage::FromNetwork(bytes)));
++            let started = Instant::now();
++            let byte_count = bytes.len().get();
++            let message_type = type_name::<T>().to_string();
++            let decoded = match cbor::decode(bytes.as_ref()) {
++                Ok(decoded) => decoded,
++                Err(_) => {
++                    let decode_nanos = started.elapsed().as_nanos() as u64;
++                    let decode_micros = decode_nanos / 1_000;
++                    debug!(
++                        protocols::measurement::PROTOCOL_DECODE,
++                        message_type,
++                        bytes = byte_count,
++                        decode_outcome = "malformed",
++                        state_outcome = "not_attempted",
++                        decode_nanos,
++                        decode_micros,
++                        total_nanos = decode_nanos,
++                        total_micros = decode_micros
++                    );
++                    return Err(Inputs::Network(HandlerMessage::FromNetwork(bytes)));
++                }
+             };
+-            T::from_mailbox(decoded).map_err(|_| Inputs::Network(HandlerMessage::FromNetwork(bytes)))
++            let decode_nanos = started.elapsed().as_nanos() as u64;
++            let decode_micros = decode_nanos / 1_000;
++            match T::from_mailbox(decoded) {
++                Ok(value) => {
++                    let total_nanos = started.elapsed().as_nanos() as u64;
++                    debug!(
++                        protocols::measurement::PROTOCOL_DECODE,
++                        message_type,
++                        bytes = byte_count,
++                        decode_outcome = "decoded",
++                        state_outcome = "accepted",
++                        decode_nanos,
++                        decode_micros,
++                        total_nanos,
++                        total_micros = total_nanos / 1_000
++                    );
++                    Ok(value)
++                }
++                Err(_) => {
++                    let total_nanos = started.elapsed().as_nanos() as u64;
++                    debug!(
++                        protocols::measurement::PROTOCOL_DECODE,
++                        message_type,
++                        bytes = byte_count,
++                        decode_outcome = "decoded",
++                        state_outcome = "rejected",
++                        decode_nanos,
++                        decode_micros,
++                        total_nanos,
++                        total_micros = total_nanos / 1_000
++                    );
++                    Err(Inputs::Network(HandlerMessage::FromNetwork(bytes)))
++                }
++            }
+         }
+         other => Err(other),
+     }
+@@ -202,10 +255,77 @@ where
+             let local_or_network = match input {
+                 Inputs::Network(wire_msg) => {
+                     let (outcome, s) = if let HandlerMessage::FromNetwork(wire_msg) = wire_msg {
+-                        let wire_msg: Proto::WireMsg = cbor::decode(&wire_msg)
+-                            .or_terminate(&eff, err("failed to decode message from network"))
+-                            .await;
+-                        proto.network(wire_msg).or_terminate(&eff, err("failed to step protocol state (network)")).await
++                        let started = Instant::now();
++                        let byte_count = wire_msg.len().get();
++                        let message_type = type_name::<Proto::WireMsg>().to_string();
++                        let protocol_id = if proto_id.is_responder() {
++                            proto_id.opposite().to_string()
++                        } else {
++                            proto_id.to_string()
++                        };
++                        let role = proto_id.role().to_string();
++                        let wire_msg: Proto::WireMsg = match cbor::decode(&wire_msg) {
++                            Ok(message) => message,
++                            Err(error) => {
++                                let decode_nanos = started.elapsed().as_nanos() as u64;
++                                let decode_micros = decode_nanos / 1_000;
++                                debug!(
++                                    protocols::measurement::PROTOCOL_DECODE,
++                                    protocol_id,
++                                    role,
++                                    boundary = "mini-protocol-decode",
++                                    message_type,
++                                    bytes = byte_count,
++                                    decode_outcome = "malformed",
++                                    state_outcome = "not_attempted",
++                                    decode_nanos,
++                                    decode_micros,
++                                    total_nanos = decode_nanos,
++                                    total_micros = decode_micros
++                                );
++                                Err(error).or_terminate(&eff, err("failed to decode message from network")).await
++                            }
++                        };
++                        let decode_nanos = started.elapsed().as_nanos() as u64;
++                        let decode_micros = decode_nanos / 1_000;
++                        match proto.network(wire_msg) {
++                            Ok(result) => {
++                                let total_nanos = started.elapsed().as_nanos() as u64;
++                                debug!(
++                                    protocols::measurement::PROTOCOL_DECODE,
++                                    protocol_id,
++                                    role,
++                                    boundary = "mini-protocol-decode",
++                                    message_type,
++                                    bytes = byte_count,
++                                    decode_outcome = "decoded",
++                                    state_outcome = "accepted",
++                                    decode_nanos,
++                                    decode_micros,
++                                    total_nanos,
++                                    total_micros = total_nanos / 1_000
++                                );
++                                result
++                            }
++                            Err(error) => {
++                                let total_nanos = started.elapsed().as_nanos() as u64;
++                                debug!(
++                                    protocols::measurement::PROTOCOL_DECODE,
++                                    protocol_id,
++                                    role,
++                                    boundary = "mini-protocol-decode",
++                                    message_type,
++                                    bytes = byte_count,
++                                    decode_outcome = "decoded",
++                                    state_outcome = "rejected",
++                                    decode_nanos,
++                                    decode_micros,
++                                    total_nanos,
++                                    total_micros = total_nanos / 1_000
++                                );
++                                Err(error).or_terminate(&eff, err("failed to step protocol state (network)")).await
++                            }
++                        }
+                     } else {
+                         proto.init().or_terminate(&eff, err("failed to initialize protocol state")).await
+                     };
+diff --git a/crates/amaru-protocols/src/tx_submission/initiator.rs b/crates/amaru-protocols/src/tx_submission/initiator.rs
+index 7d739fa4be59c689533468cf6fd35ee5b514fa34..638ff901cce039c6f1b84de414de9b4471e8b753 100644
+--- a/crates/amaru-protocols/src/tx_submission/initiator.rs
++++ b/crates/amaru-protocols/src/tx_submission/initiator.rs
+@@ -51,6 +51,7 @@ use std::collections::{BTreeSet, VecDeque};
+ use std::{
+     fmt::{Debug, Display},
+     sync::Arc,
++    time::Duration,
+ };
+ 
+ use ProtocolError::*;
+@@ -59,7 +60,7 @@ use amaru_kernel::{
+ };
+ use amaru_observability::{Instrument, debug, debug_span, warn};
+ use amaru_ouroboros::{MempoolMsg, MempoolSeqNo};
+-use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
++use amaru_pure_stage::{DeserializerGuards, Effects, Instant, StageRef, Void};
+ 
+ use crate::{
+     mempool_effects::{AsyncMempool, MemoryPool},
+@@ -85,6 +86,10 @@ pub fn initiator() -> Miniprotocol<State, TxSubmissionInitiator, Initiator> {
+     miniprotocol(PROTO_N2N_TX_SUB)
+ }
+ 
++fn measurement_now() -> Instant {
++    Instant::from_tokio(tokio::time::Instant::now(), Duration::ZERO)
++}
++
+ impl StageState<State, Initiator> for TxSubmissionInitiator {
+     type LocalIn = InitiatorLocalIn;
+ 
+@@ -113,6 +118,7 @@ impl StageState<State, Initiator> for TxSubmissionInitiator {
+             }
+             InitiatorLocalIn::Close => {
+                 if matches!(proto, crate::tx_submission::State::TxIdsBlocking) {
++                    self.finish_blocking_measurement("cancelled");
+                     Some(InitiatorAction::Done)
+                 } else {
+                     self.pending_close = true;
+@@ -339,9 +345,14 @@ impl TxSubmissionInitiator {
+         ack: u16,
+         req: u16,
+     ) -> anyhow::Result<Option<InitiatorAction>> {
++        let request_started_at = measurement_now();
+         let expected_seq_no = match self.begin_request_tx_ids_blocking(ack, req) {
+             Ok(seq_no) => seq_no,
+-            Err(cause) => return terminate(cause),
++            Err(cause) => {
++                let timing = PendingBlockingRequest { req, started_at: request_started_at };
++                self.emit_blocking_measurement("rejected", measurement_now(), Some(&timing));
++                return terminate(cause);
++            }
+         };
+ 
+         // Ask the mempool to notify us when it has reached the expected sequence number,
+@@ -386,7 +397,7 @@ impl TxSubmissionInitiator {
+         // update the window by discarding acknowledged tx ids and wait for any new tx id to become available.
+         self.discard(ack);
+         let seq_no = self.last_seq.unwrap_or_default().next();
+-        self.pending_blocking_request = Some(PendingBlockingRequest { req });
++        self.pending_blocking_request = Some(PendingBlockingRequest { req, started_at: measurement_now() });
+         Ok(seq_no)
+     }
+ 
+@@ -397,16 +408,22 @@ impl TxSubmissionInitiator {
+         &mut self,
+         mempool: &dyn AsyncMempool,
+     ) -> anyhow::Result<Option<InitiatorAction>> {
+-        let Some(PendingBlockingRequest { req }) = self.pending_blocking_request.as_ref() else {
++        let Some(PendingBlockingRequest { req, .. }) = self.pending_blocking_request.as_ref() else {
+             anyhow::bail!("missing pending blocking request")
+         };
+         let req = *req;
+ 
+-        let tx_ids = self.get_next_tx_ids(mempool, req).await?;
++        let tx_ids = match self.get_next_tx_ids(mempool, req).await {
++            Ok(tx_ids) => tx_ids,
++            Err(error) => {
++                self.finish_blocking_measurement("mempool_error");
++                return Err(error);
++            }
++        };
+         if tx_ids.is_empty() {
+             return Ok(None);
+         }
+-        self.pending_blocking_request = None;
++        self.finish_blocking_measurement("fulfilled");
+         self.emit_reply_tx_ids(&tx_ids);
+         Ok(Some(InitiatorAction::SendReplyTxIds(self.tag_ids(tx_ids))))
+     }
+@@ -544,6 +561,25 @@ impl TxSubmissionInitiator {
+             None => MempoolSeqNo(0),
+         }
+     }
++
++    fn finish_blocking_measurement(&mut self, outcome: &str) {
++        let timing = self.pending_blocking_request.take();
++        self.emit_blocking_measurement(outcome, measurement_now(), timing.as_ref());
++    }
++
++    fn emit_blocking_measurement(&self, outcome: &str, terminal_at: Instant, timing: Option<&PendingBlockingRequest>) {
++        let started_at = timing.map(|value| value.started_at).unwrap_or(terminal_at);
++        let elapsed_nanos = terminal_at.saturating_since(started_at).as_nanos() as u64;
++        debug!(
++            protocols::measurement::TXSUBMISSION_BLOCKING_RESIDENCE,
++            peer = self.peer,
++            outcome = outcome.to_string(),
++            elapsed_nanos,
++            elapsed_micros = elapsed_nanos / 1_000,
++            window_depth = self.window.len(),
++            pending_depth = usize::from(timing.is_some())
++        );
++    }
+ }
+ 
+ #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+@@ -555,6 +591,7 @@ pub enum InitiatorLocalIn {
+ #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+ struct PendingBlockingRequest {
+     req: u16,
++    started_at: Instant,
+ }
+ 
+ fn terminate(cause: impl Into<TerminationCause>) -> anyhow::Result<Option<InitiatorAction>> {
+diff --git a/crates/amaru-protocols/src/tx_submission/responder.rs b/crates/amaru-protocols/src/tx_submission/responder.rs
+index 8c7ad8c88b6a8f254d4d53e273d76ae9bb352310..8759830f33f139bf5669773077dd0cf1bc9f0ecb 100644
+--- a/crates/amaru-protocols/src/tx_submission/responder.rs
++++ b/crates/amaru-protocols/src/tx_submission/responder.rs
+@@ -13,10 +13,11 @@
+ // limitations under the License.
+ 
+ use std::{
+-    collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry},
++    collections::{BTreeMap, BTreeSet, VecDeque},
+     fmt::Display,
+     num::NonZeroU32,
+     sync::Arc,
++    time::Duration,
+ };
+ 
+ use ProtocolError::*;
+@@ -24,7 +25,7 @@ use TerminationCause::*;
+ use amaru_kernel::{EraHistory, Peer, Transaction, TransactionId, cbor::WithOriginalBytes, to_cbor};
+ use amaru_observability::{Instrument, debug, debug_span, error, trace, warn};
+ use amaru_ouroboros::{MempoolInsertResult, MempoolMsg, MempoolSeqNo, TxInsertResult, TxOrigin, TxRejectReason};
+-use amaru_pure_stage::{DeserializerGuards, Effects, ScheduleId, StageRef, Void};
++use amaru_pure_stage::{DeserializerGuards, Effects, Instant, ScheduleId, StageRef, Void};
+ 
+ use crate::{
+     mempool_effects::{AsyncMempool, MemoryPool},
+@@ -41,6 +42,10 @@ use crate::{
+ /// in `ReplyTxIds`
+ const MAX_TX_SIZE_DISCREPANCY: u32 = 32;
+ 
++fn measurement_now() -> Instant {
++    Instant::from_tokio(tokio::time::Instant::now(), Duration::ZERO)
++}
++
+ pub fn register_deserializers() -> DeserializerGuards {
+     vec![
+         amaru_pure_stage::register_data_deserializer::<TxSubmissionResponder>().boxed(),
+@@ -258,6 +263,8 @@ pub struct TxSubmissionResponder {
+     mempool_stage: StageRef<MempoolMsg>,
+     /// Era history used to derive the current era tag for outgoing wire messages.
+     era_history: Arc<EraHistory>,
++    /// Monotonic per-transaction times retained only for measurement correlation.
++    measurement_timing: BTreeMap<TransactionId, TxMeasurementTiming>,
+ }
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+@@ -268,6 +275,12 @@ pub struct TxStateEntry {
+     pub refcount: NonZeroU32,
+ }
+ 
++#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++struct TxMeasurementTiming {
++    advertised_at: Instant,
++    body_requested_at: Option<Instant>,
++}
++
+ impl TxSubmissionResponder {
+     pub fn new(
+         peer: Peer,
+@@ -291,6 +304,7 @@ impl TxSubmissionResponder {
+                 muxer,
+                 mempool_stage,
+                 era_history,
++                measurement_timing: BTreeMap::new(),
+             },
+         )
+     }
+@@ -311,6 +325,7 @@ impl TxSubmissionResponder {
+         mempool: &dyn AsyncMempool,
+         tx_ids: Vec<(TransactionId, u32)>,
+     ) -> anyhow::Result<FetchOutcome> {
++        let advertised_at = measurement_now();
+         debug!(protocols::tx_submission::responder::REPLY_TX_IDS_RECEIVED, peer = self.peer, count = tx_ids.len());
+         let max_window: usize = self.params.max_window.get().into();
+         if self.unacked.len() + tx_ids.len() > max_window {
+@@ -348,25 +363,25 @@ impl TxSubmissionResponder {
+         // Increment the tx_id refcount if there are duplicates
+         for (tx_id, size) in tx_ids {
+             self.unacked.push_back(tx_id);
+-            match self.tx_states.entry(tx_id) {
+-                Entry::Occupied(mut e) => {
+-                    let entry = e.get_mut();
+-                    entry.refcount =
+-                        entry.refcount.checked_add(1).expect("refcount overflow: protocol invariant violated");
+-                }
+-                Entry::Vacant(v) => {
+-                    let status = if mempool.contains(&tx_id).await {
+-                        debug!(protocols::tx_submission::responder::SKIP_FETCH, peer = self.peer, id = tx_id);
+-                        TxStatus::Done
+-                    } else {
+-                        TxStatus::Pending(size)
+-                    };
+-                    v.insert(TxStateEntry { status, refcount: one() });
+-                }
++            if let Some(entry) = self.tx_states.get_mut(&tx_id) {
++                entry.refcount = entry.refcount.checked_add(1).expect("refcount overflow: protocol invariant violated");
++                continue;
++            }
++            self.measurement_timing.insert(tx_id, TxMeasurementTiming { advertised_at, body_requested_at: None });
++            let status = if mempool.contains(&tx_id).await {
++                debug!(protocols::tx_submission::responder::SKIP_FETCH, peer = self.peer, id = tx_id);
++                TxStatus::Done
++            } else {
++                TxStatus::Pending(size)
++            };
++            self.tx_states.insert(tx_id, TxStateEntry { status, refcount: one() });
++            if status.is_done() {
++                self.emit_residence(tx_id, "already_present", measurement_now(), None);
+             }
+         }
+ 
+         // Prepare a request for tx bodies
++        self.emit_depth("ids_received");
+         let txs = self.txs_to_request(mempool).await;
+         if !txs.is_empty() {
+             return Ok(FetchOutcome::Action(ResponderAction::SendRequestTxs(self.tag_ids(txs))));
+@@ -441,6 +456,7 @@ impl TxSubmissionResponder {
+     /// So when this returns empty with Pending entries remaining, the cause is mempool capacity.
+     #[allow(clippy::expect_used)]
+     async fn txs_to_request(&mut self, mempool: &dyn AsyncMempool) -> Vec<TransactionId> {
++        let requested_at = measurement_now();
+         let mut tx_ids = Vec::new();
+         let mut reserved: u64 = 0;
+         let budget = self.params.fetch_batch_bytes.get();
+@@ -463,6 +479,9 @@ impl TxSubmissionResponder {
+             }
+ 
+             entry.status = TxStatus::Inflight(size);
++            if let Some(timing) = self.measurement_timing.get_mut(&tx_id) {
++                timing.body_requested_at = Some(requested_at);
++            }
+             tx_ids.push(tx_id);
+             reserved = next_total;
+         }
+@@ -475,6 +494,7 @@ impl TxSubmissionResponder {
+                 ids = tx_ids.as_slice()
+             );
+         }
++        self.emit_depth("bodies_requested");
+         tx_ids
+     }
+ 
+@@ -487,6 +507,7 @@ impl TxSubmissionResponder {
+         mut txs: Vec<WithOriginalBytes<Transaction>>,
+         eff: &Effects<Inputs<ResponderLocalIn>>,
+     ) -> anyhow::Result<Option<ResponderAction>> {
++        let body_received_at = measurement_now();
+         debug!(protocols::tx_submission::responder::REPLY_TXS_RECEIVED, peer = self.peer, count = txs.len());
+ 
+         if let Some(id) = self.inflight_timeout_id.take() {
+@@ -499,17 +520,30 @@ impl TxSubmissionResponder {
+         }
+ 
+         if let Some(action) = self.validate_received_txs(&txs)? {
++            let terminal_at = measurement_now();
++            for tx in &txs {
++                self.emit_residence(tx.tx_id(), "protocol_rejected", terminal_at, Some(body_received_at));
++            }
+             return Ok(Some(action));
+         }
+ 
+         // ReplyTxs is the peer's complete answer to the preceding RequestTxs. Every Inflight
+         // entry is now resolved, whether the body arrived or not — set them all to Done so the
+         // ack loop can free the slots.
++        let received_ids: BTreeSet<TransactionId> = txs.iter().map(|tx| tx.tx_id()).collect();
++        let omitted_ids: Vec<TransactionId> = self
++            .tx_states
++            .iter()
++            .filter_map(|(id, entry)| (entry.status.is_inflight() && !received_ids.contains(id)).then_some(*id))
++            .collect();
+         for entry in self.tx_states.values_mut() {
+             if entry.status.is_inflight() {
+                 entry.status = TxStatus::Done;
+             }
+         }
++        for id in &omitted_ids {
++            self.emit_residence(*id, "omitted", body_received_at, None);
++        }
+ 
+         let origin = self.origin.clone();
+         match eff
+@@ -520,16 +554,27 @@ impl TxSubmissionResponder {
+         {
+             None => {
+                 error!(protocols::tx_submission::responder::MEMPOOL_TIMEOUT);
++                let terminal_at = measurement_now();
++                for id in received_ids {
++                    self.emit_residence(id, "mempool_timeout", terminal_at, Some(body_received_at));
++                }
+                 return terminate(MempoolBatchInsertFailedTimedout);
+             }
+             Some(results) => {
+-                // Individual transaction rejection are just logged
+                 for result in results {
+                     log_insert_result(&result);
++                    self.emit_residence(
++                        insert_result_id(&result),
++                        insert_result_outcome(&result),
++                        measurement_now(),
++                        Some(body_received_at),
++                    );
+                 }
+             }
+         }
+ 
++        self.emit_depth("insert_complete");
++
+         let mempool = MemoryPool::new(eff.clone());
+         let (ack, req, blocking) = self.request_tx_ids(&mempool).await;
+         Ok(Some(ResponderAction::SendRequestTxIds { ack, req, blocking }))
+@@ -604,7 +649,14 @@ impl TxSubmissionResponder {
+     /// Fail if items are still in flight, otherwise this timer was already in the mailbox when
+     /// the peer’s response was processed.
+     fn handle_inflight_timeout(&mut self) -> Option<ResponderAction> {
++        let terminal_at = measurement_now();
+         self.inflight_timeout_id = None;
++        let timed_out: Vec<TransactionId> =
++            self.tx_states.iter().filter_map(|(id, entry)| entry.status.is_inflight().then_some(*id)).collect();
++        for id in timed_out {
++            self.emit_residence(id, "body_timeout", terminal_at, None);
++        }
++        self.emit_depth("body_timeout");
+         if self.has_inflight() { Some(ResponderAction::Error(TxFetchTimeout)) } else { None }
+     }
+ 
+@@ -659,6 +711,68 @@ impl TxSubmissionResponder {
+         self.tx_states.values().any(|e| e.status.is_pending())
+     }
+ 
++    fn depths(&self) -> (usize, usize) {
++        let pending = self.tx_states.values().filter(|entry| entry.status.is_pending()).count();
++        let inflight = self.tx_states.values().filter(|entry| entry.status.is_inflight()).count();
++        (pending, inflight)
++    }
++
++    fn emit_depth(&self, transition: &str) {
++        let (pending_depth, inflight_depth) = self.depths();
++        debug!(
++            protocols::measurement::TXSUBMISSION_DEPTH,
++            peer = self.peer,
++            transition = transition.to_string(),
++            pending_depth,
++            inflight_depth,
++            unacked_depth = self.unacked.len()
++        );
++    }
++
++    fn emit_residence(
++        &mut self,
++        id: TransactionId,
++        outcome: &str,
++        terminal_at: Instant,
++        body_received_at: Option<Instant>,
++    ) {
++        let Some(timing) = self.measurement_timing.remove(&id) else {
++            return;
++        };
++        let (pending_depth, inflight_depth) = self.depths();
++        let advertised_to_terminal_nanos = terminal_at.saturating_since(timing.advertised_at).as_nanos() as u64;
++        let advertised_to_terminal_micros = advertised_to_terminal_nanos / 1_000;
++        if let Some(body_received_at) = body_received_at {
++            let advertised_to_body_nanos = body_received_at.saturating_since(timing.advertised_at).as_nanos() as u64;
++            let body_to_terminal_nanos = terminal_at.saturating_since(body_received_at).as_nanos() as u64;
++            debug!(
++                protocols::measurement::TXSUBMISSION_RESIDENCE,
++                peer = self.peer,
++                id,
++                outcome = outcome.to_string(),
++                advertised_to_terminal_nanos,
++                advertised_to_terminal_micros,
++                advertised_to_body_nanos,
++                advertised_to_body_micros = advertised_to_body_nanos / 1_000,
++                body_to_terminal_nanos,
++                body_to_terminal_micros = body_to_terminal_nanos / 1_000,
++                pending_depth,
++                inflight_depth
++            );
++        } else {
++            debug!(
++                protocols::measurement::TXSUBMISSION_RESIDENCE,
++                peer = self.peer,
++                id,
++                outcome = outcome.to_string(),
++                advertised_to_terminal_nanos,
++                advertised_to_terminal_micros,
++                pending_depth,
++                inflight_depth
++            );
++        }
++    }
++
+     /// Wrap each `tx_id` with the current era tag for outgoing wire messages.
+     fn tag_ids(&self, items: Vec<TransactionId>) -> Vec<EraTaggedTxId> {
+         let era = self.era_history.current_era_tag();
+@@ -717,6 +831,21 @@ fn log_insert_result(result: &TxInsertResult) {
+     }
+ }
+ 
++fn insert_result_id(result: &TxInsertResult) -> TransactionId {
++    match result {
++        TxInsertResult::Accepted { tx_id, .. } | TxInsertResult::Rejected { tx_id, .. } => *tx_id,
++    }
++}
++
++fn insert_result_outcome(result: &TxInsertResult) -> &'static str {
++    match result {
++        TxInsertResult::Accepted { .. } => "accepted",
++        TxInsertResult::Rejected { reason: TxRejectReason::Invalid(_), .. } => "rejected_invalid",
++        TxInsertResult::Rejected { reason: TxRejectReason::MempoolFull, .. } => "rejected_mempool_full",
++        TxInsertResult::Rejected { reason: TxRejectReason::Duplicate, .. } => "rejected_duplicate",
++    }
++}
++
+ #[allow(clippy::expect_used)]
+ fn one() -> NonZeroU32 {
+     NonZeroU32::new(1).expect("1 is non-zero")

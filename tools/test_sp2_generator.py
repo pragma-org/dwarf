@@ -2,7 +2,7 @@ import json, sys
 from pathlib import Path
 import pytest
 
-ROOT = Path("/Users/operator/dwarf-project/dwarf-v4")
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "dwarf"))
 from profile_manager import scenario as scn
 from profile_manager import antithesis_generator as gen
@@ -56,12 +56,12 @@ def test_derive_adversary_header_path():
     assert "--seed" in args
 
 
-def test_derive_adversary_refuses_unbuilt_shape():
+def test_derive_adversary_supports_tx_body_shape():
     s = _load(HEADER)
     s.load[0].params["target_id"] = "cardano-node-cbor-decode-tx-body"
-    with pytest.raises(gen.GeneratorError) as ei:
-        gen.derive_adversary(s)
-    assert "txsubmission" in str(ei.value)
+    adversary = gen.derive_adversary(s)
+    assert adversary["protocol"] == "txsubmission"
+    assert adversary["shape"] == "tx-body"
 
 
 def test_derive_adversary_refuses_amaru():
@@ -88,7 +88,7 @@ def test_render_bundle_files_and_labels():
     assert any(p.startswith("test/") for p in files)
     assert "dwarf-manifest.json" in files
     compose = files["config/docker-compose.yaml"]
-    assert "ghcr.io/j-gainsec/dwarf-adversary:0.1.0" in compose
+    assert "ghcr.io/j-gainsec/dwarf-adversary:0.9.0" in compose
     assert "com.antithesis.exclude_from_faults" in compose
     assert "build:" not in compose
     assert "--mutation-rate" in compose

@@ -53,6 +53,15 @@ class Profile:
     cardano_version: str | None = None
     amaru_version: str | None = None
     compatibility_pair: str | None = None
+    measurement_target_mode: str = "stock"
+    measurement_revision: str | None = None
+    measurement_patch_revision: str | None = None
+    measurement_patch_set_sha256: str | None = None
+    amaru_json_traces: bool = False
+    cardano_measurement_traces: bool = False
+    plutus_v2_genesis: bool = False
+    plutus_v2_cost_model_path: str | None = None
+    plutus_v2_cost_model_sha256: str | None = None
 
     @classmethod
     def from_dict(cls, data):
@@ -84,6 +93,17 @@ class Profile:
             cardano_version=data.get("cardano_version"),
             amaru_version=data.get("amaru_version"),
             compatibility_pair=data.get("compatibility_pair"),
+            measurement_target_mode=str(data.get("measurement_target_mode") or "stock"),
+            measurement_revision=data.get("measurement_revision"),
+            measurement_patch_revision=data.get("measurement_patch_revision"),
+            measurement_patch_set_sha256=data.get("measurement_patch_set_sha256"),
+            amaru_json_traces=bool(data.get("amaru_json_traces", False)),
+            cardano_measurement_traces=bool(
+                data.get("cardano_measurement_traces", False)
+            ),
+            plutus_v2_genesis=bool(data.get("plutus_v2_genesis", False)),
+            plutus_v2_cost_model_path=data.get("plutus_v2_cost_model_path"),
+            plutus_v2_cost_model_sha256=data.get("plutus_v2_cost_model_sha256"),
         )
 
 
@@ -138,6 +158,15 @@ def profile_diff_text(left_id, right_id):
         "cardano_version",
         "amaru_version",
         "compatibility_pair",
+        "measurement_target_mode",
+        "measurement_revision",
+        "measurement_patch_revision",
+        "measurement_patch_set_sha256",
+        "amaru_json_traces",
+        "cardano_measurement_traces",
+        "plutus_v2_genesis",
+        "plutus_v2_cost_model_path",
+        "plutus_v2_cost_model_sha256",
     )
     lines = [
         "Profile diff",
@@ -181,7 +210,7 @@ def active_profile_command():
     which carry no docker label). The dashboard counts these lines to show the
     real substrate state; a non-empty stream also means "a devnet is active" for
     the deploy/remove pre-checks."""
-    return r"""docker ps --filter 'label=ada2.managed=dwarf' --format 'DWARF_NODE docker {{.Names}} {{.Status}}' 2>/dev/null || true
+    return r"""docker ps --filter 'label=ada2.managed=dwarf' --format 'DWARF_NODE docker {{.Label "ada2.profile"}} {{.Names}} {{.Status}}' 2>/dev/null || true
 tmux ls 2>/dev/null | grep -oE '^dwarf-profile-[^:]+' | sed 's/^/DWARF_NODE tmux /' || true"""
 
 
@@ -297,6 +326,7 @@ def _versioned_node(node_id, role, release, *, supporting=False):
         "image": _exact_oci_reference(release),
         "source_revision": release["source_revision"],
         "supporting": supporting,
+        "target_mode": "stock",
     }
 
 
@@ -344,13 +374,70 @@ def versioned_substrate_for_profile(profile, version_preview):
         for index in range(1, profile.amaru_node_count + 1):
             nodes.append(_versioned_node(f"amaru{index}", "consumer", amaru_release))
 
+    if profile.measurement_target_mode not in {"stock", "patched"}:
+        raise ValueError("measurement_target_mode must be stock or patched")
+    if profile.measurement_target_mode == "patched":
+        if profile.amaru_node_count:
+            implementation = "amaru"
+            from profile_manager.measurement_targets import resolve_patched_amaru_target
+
+            target = resolve_patched_amaru_target(profile)
+        elif profile.node_count:
+            implementation = "cardano-node"
+            from profile_manager.measurement_targets import resolve_patched_cardano_target
+
+            target = resolve_patched_cardano_target(profile)
+        else:
+            raise ValueError("patched measurement target requires at least one target node")
+        for node in nodes:
+            if node["impl"] != implementation:
+                continue
+            patched_identity = {
+                "image": target["image_reference"],
+                "image_digest": target["image_digest"],
+                "executable_digest": target["executable_digest"],
+                "target_mode": "patched",
+                "patch_set_sha256": target["patch_set_sha256"],
+                "build_result_sha256": target["build_result_sha256"],
+                "runtime_probe_log_sha256": target["runtime_probe_log_sha256"],
+            }
+            if target.get("runtime_probe_image"):
+                patched_identity["runtime_probe_image"] = target[
+                    "runtime_probe_image"
+                ]
+            node.update(patched_identity)
+
     edges = [
         {"from": left["id"], "to": right["id"]}
         for left in nodes
         for right in nodes
         if left["id"] != right["id"]
     ]
+    selected_releases = []
+    selected_keys = set()
+    for release in [
+        *resolved.values(),
+        *(version_preview.get("supporting") or {}).values(),
+    ]:
+        if not isinstance(release, dict):
+            continue
+        key = (release.get("implementation"), release.get("version"))
+        if key in selected_keys:
+            continue
+        selected_keys.add(key)
+        selected_releases.append(release)
+    full_catalog = version_preview.get("catalog_snapshot") or {}
+    selected_catalog_snapshot = {
+        "schema_version": 1,
+        "catalog_revision": version_preview.get("catalog_revision"),
+        "catalog_updated_at": full_catalog.get("updated_at"),
+        "selection_policy": version_preview.get("policy"),
+        "selection_status": version_preview.get("status"),
+        "selected_pair": version_preview.get("pair"),
+        "selected_releases": selected_releases,
+    }
     return {
+        "profile_id": profile.id,
         "compose_mode": "docker",
         "scope": scope,
         "target_node_count": target_node_count,
@@ -374,13 +461,19 @@ def versioned_substrate_for_profile(profile, version_preview):
         "version_status": version_preview.get("status"),
         "unknown_acknowledged": bool(version_preview.get("unknown_acknowledged", False)),
         "catalog_revision": version_preview.get("catalog_revision"),
-        "catalog_snapshot": version_preview.get("catalog_snapshot"),
+        "catalog_snapshot": selected_catalog_snapshot,
+        "measurement_target_mode": profile.measurement_target_mode,
+        "amaru_json_traces": profile.amaru_json_traces,
+        "cardano_measurement_traces": profile.cardano_measurement_traces,
+        "plutus_v2_genesis": profile.plutus_v2_genesis,
+        "plutus_v2_cost_model_path": profile.plutus_v2_cost_model_path,
+        "plutus_v2_cost_model_sha256": profile.plutus_v2_cost_model_sha256,
         "nodes": nodes,
         "topology": {"edges": edges},
     }
 
 
-def _versioned_deploy_command(profile, version_preview):
+def _versioned_deploy_command(profile, version_preview, remote_dwarf_root=None):
     substrate = versioned_substrate_for_profile(profile, version_preview)
     use_amaru_control = substrate["deployment_adapter"] == "amaru-control"
     adapter = (
@@ -416,12 +509,106 @@ def _versioned_deploy_command(profile, version_preview):
                 "cardano_image": cardano["image"],
                 "amaru_version": amaru["version"],
                 "amaru_image": amaru["image"],
+                "measurement_target_mode": amaru["target_mode"],
+                "amaru_json_traces": substrate["amaru_json_traces"],
+                "amaru_runtime_interface": (
+                    "extracted-binary"
+                    if amaru["target_mode"] == "patched"
+                    else None
+                ),
+                "measurement_target_identity": {
+                    key: amaru[key]
+                    for key in (
+                        "version",
+                        "source_revision",
+                        "target_mode",
+                        "image",
+                        "image_digest",
+                        "executable_digest",
+                        "patch_set_sha256",
+                        "build_result_sha256",
+                        "runtime_probe_image",
+                        "runtime_probe_log_sha256",
+                    )
+                    if key in amaru
+                },
                 "healthy_timeout_seconds": 1800,
             }
         )
+        if substrate["plutus_v2_genesis"]:
+            cost_model_path = Path(str(substrate["plutus_v2_cost_model_path"]))
+            if not cost_model_path.is_absolute() and remote_dwarf_root:
+                cost_model_path = Path(remote_dwarf_root) / cost_model_path
+            config_body.update(
+                {
+                    "plutus_v2_genesis": True,
+                    "plutus_v2_cost_model_path": str(cost_model_path),
+                    "plutus_v2_cost_model_sha256": substrate[
+                        "plutus_v2_cost_model_sha256"
+                    ],
+                }
+            )
     config_json = json.dumps(config_body, indent=2, sort_keys=True)
-    image_refs = sorted({node["image"] for node in substrate["nodes"]})
+    image_refs = sorted(
+        {node["image"] for node in substrate["nodes"] if node["target_mode"] == "stock"}
+    )
+    image_refs.extend(
+        node["runtime_probe_image"]
+        for node in substrate["nodes"]
+        if node["target_mode"] == "patched" and node.get("runtime_probe_image")
+    )
+    image_refs = sorted(set(image_refs))
     pull_lines = "\n".join(f"docker pull {shlex.quote(image)}" for image in image_refs)
+    local_image_checks = []
+    for node in substrate["nodes"]:
+        if node["target_mode"] != "patched":
+            continue
+        image = shlex.quote(node["image"])
+        expected_id = shlex.quote(node["image_digest"])
+        revision = shlex.quote(node["source_revision"])
+        patch_set = shlex.quote(node["patch_set_sha256"])
+        implementation_label = (
+            "Cardano-node" if node["impl"] == "cardano-node" else "Amaru"
+        )
+        identity_check = f'''actual_id=$(docker image inspect --format '{{{{.Id}}}}' {image} 2>/dev/null || true)
+if [ "$actual_id" != {expected_id} ]; then
+  echo "Patched {implementation_label} image is missing or has the wrong image id: {node['image']}" >&2
+  exit 8
+fi
+actual_revision=$(docker image inspect --format '{{{{index .Config.Labels "org.opencontainers.image.revision"}}}}' {image})
+actual_patch=$(docker image inspect --format '{{{{index .Config.Labels "org.dwarf.measurement.patch-sha256"}}}}' {image})
+if [ "$actual_revision" != {revision} ] || [ "$actual_patch" != {patch_set} ]; then
+  echo "Patched {implementation_label} image labels do not match the audited target identity" >&2
+  exit 9
+fi'''
+        if node["impl"] == "cardano-node":
+            compatibility_probe = f'''echo "DWARF patched-target Cardano-node compatibility probe"
+docker run --rm --entrypoint /usr/local/bin/cardano-node {image} --version'''
+        else:
+            probe_image = shlex.quote(node["runtime_probe_image"])
+            compatibility_probe = f'''probe_dir=$(mktemp -d)
+probe_container=""
+cleanup_dwarf_probe() {{
+  [ -z "$probe_container" ] || docker rm -f "$probe_container" >/dev/null 2>&1 || true
+  rm -rf "$probe_dir"
+}}
+trap cleanup_dwarf_probe EXIT
+probe_container=$(docker create {image})
+docker cp "$probe_container:/usr/local/bin/amaru" "$probe_dir/amaru"
+docker rm "$probe_container" >/dev/null
+probe_container=""
+chmod 0755 "$probe_dir/amaru"
+echo "DWARF patched-target wrapper compatibility probe"
+docker run --rm --entrypoint /bin/bash --volume "$probe_dir/amaru:/target/amaru:ro" {probe_image} -lc '/target/amaru --version'
+cleanup_dwarf_probe
+trap - EXIT'''
+        local_image_checks.append(identity_check + "\n" + compatibility_probe)
+    image_check_lines = "\n".join(local_image_checks)
+    dwarf_root_assignment = (
+        f"dwarf_root={shlex.quote(remote_dwarf_root)}"
+        if remote_dwarf_root
+        else 'dwarf_root="${ADA2_DWARF_ROOT:-}"'
+    )
     return f"""set -e
 runtime={runtime}
 project={project}
@@ -429,7 +616,7 @@ if [ -e "$runtime/env" ] || [ -e "$runtime/docker-compose.yml" ]; then
   echo "Runtime assets already exist under: $runtime" >&2
   exit 4
 fi
-dwarf_root="${{ADA2_DWARF_ROOT:-}}"
+{dwarf_root_assignment}
 if [ -z "$dwarf_root" ] || [ ! -f "$dwarf_root/scripts/{adapter}" ]; then
   echo "ADA2_DWARF_ROOT must identify the installed DWARF source root" >&2
   exit 7
@@ -440,6 +627,7 @@ cat > "$config_path" <<'DWARF_VERSIONED_DEPLOYMENT'
 {config_json}
 DWARF_VERSIONED_DEPLOYMENT
 {pull_lines}
+{image_check_lines}
 cd "$dwarf_root"
 PYTHONPATH="$dwarf_root" python3 scripts/{adapter} --config "$config_path"
 """
@@ -497,13 +685,19 @@ def deploy_dry_run_text(profile):
         f"{node['id']}={node['impl']} {node['version']} ({node['image']})"
         for node in substrate["nodes"]
     )
+    image_preflight = (
+        "Would pull stock and wrapper images, verify the local patched image identity, "
+        "and run its exact wrapper-compatibility probe before launch.\n"
+        if any(node["target_mode"] == "patched" for node in substrate["nodes"])
+        else "Would pull every digest-pinned image before launch and verify the running image and node-reported version.\n"
+    )
     return (
         f"DRY RUN deploy for {profile.id}\n"
         f"Version policy: {preview['policy']} ({preview['policy_source']}; {preview['status']}).\n"
         f"Deployment adapter: {substrate['deployment_adapter']} ({preview['deployment_context']}).\n"
         f"Exact real-node artifacts: {identities}.\n"
         f"Would create a fresh runtime under {profile.remote_runtime_root} while preserving the profile's topology, network, peer, and configuration contract.\n"
-        "Would pull every digest-pinned image before launch and verify the running image and node-reported version.\n"
+        f"{image_preflight}"
         "No remote state changed.\n"
     )
 
@@ -591,14 +785,18 @@ def remove_dry_run_text():
     )
 
 
-def deploy_command(profile, version_preview=None):
+def deploy_command(profile, version_preview=None, remote_dwarf_root=None):
     """Build the image, generate the env via cardano-testnet, write compose, up -d."""
     if version_preview is None:
         from dataclasses import asdict
         from profile_manager.deployment_versions import build_deployment_version_preview
 
         version_preview = build_deployment_version_preview(asdict(profile))
-    return _versioned_deploy_command(profile, version_preview)
+    return _versioned_deploy_command(
+        profile,
+        version_preview,
+        remote_dwarf_root=remote_dwarf_root,
+    )
 
     # No caller can reach the historical ambient-binary implementation below.
     if profile.version_policy != "legacy":

@@ -1,0 +1,17 @@
+{
+  "id": "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
+  "label": "Amaru d3a6dafc CBOR fix regression — nanosecond measurement target",
+  "haskell_count": 0,
+  "amaru_count": 1,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "exact",
+  "amaru_version": "v10.11.20260912-30-gd3a6dafc",
+  "topology_pattern": "local-mesh",
+  "shared_genesis": true,
+  "measurement_target_mode": "patched",
+  "measurement_revision": "nanoseconds-v2",
+  "measurement_patch_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+  "measurement_patch_set_sha256": "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0",
+  "amaru_json_traces": true
+}

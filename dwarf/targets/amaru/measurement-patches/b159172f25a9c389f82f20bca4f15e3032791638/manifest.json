@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "target": "amaru-measurement",
+  "source": {
+    "repository": "https://github.com/pragma-org/amaru.git",
+    "release": "10.11.20260912",
+    "tag": "v10.11.20260912",
+    "revision": "b159172f25a9c389f82f20bca4f15e3032791638"
+  },
+  "toolchain": "nightly-2026-09-04",
+  "build_tools": {
+    "cargo-zigbuild": "0.23.4",
+    "zig": "0.15.2",
+    "target": "x86_64-unknown-linux-musl"
+  },
+  "base_image": "ghcr.io/pragma-org/amaru@sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
+  "runtime_probe_image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+  "build": {
+    "command": [
+      "cargo",
+      "+nightly-2026-09-04",
+      "zigbuild",
+      "--locked",
+      "--release",
+      "-p",
+      "amaru",
+      "--bin",
+      "amaru",
+      "--target",
+      "x86_64-unknown-linux-musl"
+    ],
+    "binary": "target/x86_64-unknown-linux-musl/release/amaru",
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_TERM_COLOR": "never",
+      "CARGO_ZIGBUILD_ZIG_COMMAND": "python-zig"
+    }
+  },
+  "patches": [
+    {
+      "path": "0001-dwarf-measurement-instrumentation.patch",
+      "sha256": "639a49b5e7702d3b805e719287b18f8ca0c60a03bc5ca6e367548fbf373bb06d",
+      "preimages": [
+        {
+          "path": "crates/amaru-observability/src/schemas.rs",
+          "sha256": "bfa19011c5d3c5867236ed3207f01b153933648fc93e3bc21a80a83361c99553"
+        },
+        {
+          "path": "crates/amaru-protocols/src/blockfetch/initiator.rs",
+          "sha256": "e5f223f0e255101eff648660b44afb67d69fce460b7856af42be75c3b36c890e"
+        },
+        {
+          "path": "crates/amaru-protocols/src/handshake/responder.rs",
+          "sha256": "44af5a64ec777c116dcceb53800b9478f5ca37c0785e0bf1486ed9cd2e08e48a"
+        },
+        {
+          "path": "crates/amaru-protocols/src/mux.rs",
+          "sha256": "996b5deff1d263ee235a9f2efb6a77bba3d6f19cb4f5e77b7ae96950ae2079f3"
+        },
+        {
+          "path": "crates/amaru-protocols/src/protocol/miniprotocol.rs",
+          "sha256": "b74d9ee9f0c6bc5b5b9e7eafbfde27330a2cb708747eae8336da1c03df7880d8"
+        },
+        {
+          "path": "crates/amaru-protocols/src/tx_submission/initiator.rs",
+          "sha256": "9fb5884416bc816c8871d2abebe2520ba0e816a0961dbc38615dafaf472689b3"
+        },
+        {
+          "path": "crates/amaru-protocols/src/tx_submission/responder.rs",
+          "sha256": "7d35a5b472ffe36268cf3bafdc61223055a751631865e57391025ab58d36428d"
+        }
+      ]
+    }
+  ],
+  "patch_set_sha256": "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af",
+  "instrumentation": [
+    {
+      "capability": "live-protocol-cbor-decode",
+      "events": [
+        "amaru::protocols/measurement.protocol_ingress",
+        "amaru::protocols/measurement.protocol_decode",
+        "amaru::protocols/measurement.handshake_negotiation"
+      ],
+      "all_outcomes_timed": true,
+      "outcomes": [
+        "framed",
+        "malformed",
+        "decoded",
+        "accepted",
+        "rejected",
+        "not_attempted",
+        "refused",
+        "query"
+      ],
+      "boundaries": [
+        "mux-cbor-item",
+        "mini-protocol-decode",
+        "handshake-negotiation"
+      ]
+    },
+    {
+      "capability": "blockfetch-handler-queue",
+      "events": [
+        "amaru::protocols/measurement.blockfetch_handler",
+        "amaru::protocols/measurement.blockfetch_block_decode",
+        "amaru::protocols/measurement.blockfetch_queue_residence"
+      ],
+      "all_outcomes_timed": true,
+      "outcomes": ["accepted", "rejected", "completed", "dequeued", "replaced", "cancelled"]
+    },
+    {
+      "capability": "txsubmission2-residence",
+      "events": [
+        "amaru::protocols/measurement.txsubmission_depth",
+        "amaru::protocols/measurement.txsubmission_residence",
+        "amaru::protocols/measurement.txsubmission_blocking_residence"
+      ],
+      "all_outcomes_timed": true,
+      "outcomes": [
+        "accepted",
+        "rejected_invalid",
+        "rejected_mempool_full",
+        "rejected_duplicate",
+        "protocol_rejected",
+        "mempool_timeout",
+        "body_timeout",
+        "omitted",
+        "already_present",
+        "fulfilled",
+        "cancelled",
+        "mempool_error",
+        "rejected"
+      ]
+    }
+  ],
+  "changed_paths": [
+    "crates/amaru-observability/src/schemas.rs",
+    "crates/amaru-protocols/src/blockfetch/initiator.rs",
+    "crates/amaru-protocols/src/handshake/responder.rs",
+    "crates/amaru-protocols/src/mux.rs",
+    "crates/amaru-protocols/src/protocol/miniprotocol.rs",
+    "crates/amaru-protocols/src/tx_submission/initiator.rs",
+    "crates/amaru-protocols/src/tx_submission/responder.rs"
+  ]
+}

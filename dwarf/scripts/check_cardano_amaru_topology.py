@@ -90,6 +90,7 @@ def parse_amaru_progress(text: str) -> dict[str, Any]:
         r'\s+tip\.block_height=([0-9]+)\b'
     )
     current_point = None
+    structured_highest = []
     for line in text.splitlines():
         if match := current_pattern.search(line):
             current_point = match.groups()
@@ -97,6 +98,27 @@ def parse_amaru_progress(text: str) -> dict[str, Any]:
             current_point = match.groups()
         if match := adopted_tip_pattern.search(line):
             current_point = match.groups()
+        try:
+            record = json.loads(line)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        fields = record.get("fields") if isinstance(record, dict) else None
+        if record.get("target") != "amaru::consensus" or not isinstance(fields, dict):
+            continue
+        current = fields.get("current")
+        highest_value = fields.get("highest")
+        if isinstance(current, list) and len(current) == 3:
+            current_point = tuple(current)
+        if isinstance(highest_value, list) and len(highest_value) == 3:
+            structured_highest.append(tuple(highest_value))
+        if fields.get("message") == "tip.adopt" and all(
+            fields.get(name) is not None for name in ("slot", "header_hash", "block_height")
+        ):
+            current_point = (
+                fields["slot"],
+                fields["header_hash"],
+                fields["block_height"],
+            )
     highest = re.findall(
         r'highest="\[([0-9]+),\s*h\'([^\']+)\',\s*([0-9]+)\]"', text
     )
@@ -119,7 +141,7 @@ def parse_amaru_progress(text: str) -> dict[str, Any]:
             (slot, "", "0")
             for slot in re.findall(r"highest=Point[^\n]*?slot:\s*Slot\(([0-9]+)\)", text)
         ]
-    highest_point = highest[-1] if highest else None
+    highest_point = structured_highest[-1] if structured_highest else (highest[-1] if highest else None)
     return {
         "target_slots": target_slots,
         "committed": "committed bundle to" in text,

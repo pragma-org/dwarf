@@ -35,7 +35,7 @@
 
 1. Update scratchbook, runbook, and MOOG workbench note with the final evidence.
 2. Run final secret and macOS metadata scans; verify no `._*` files.
-3. Commit the implementation on `cardano-box` and push the public branch/commit.
+3. Commit the implementation on `dwarf-host-a` and push the public branch/commit.
 4. Submit with release MOOG to `pragma-org/dwarf`, directory
    `antithesis/cardano_amaru_adversarial`, tenant `amaru-cardano`.
 5. Track the MOOG request through Antithesis creation, then triage the completed run.

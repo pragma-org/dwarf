@@ -1,5 +1,5 @@
 #!/bin/bash
-ssh cardano-box '
+ssh dwarf-host-a '
 T=/tmp/occ/ouroboros-consensus-cardano-0.25.1.0/dist-newstyle/build/x86_64-linux/ghc-9.6.7/ouroboros-consensus-cardano-0.25.1.0/x
 nohup $T/immdb-server/build/immdb-server/immdb-server --db /tmp/planB/forkdb --port 3010 --config /tmp/planB/configs/config.json > /tmp/planB/immdb.log 2>&1 &
 echo "immdb-server pid $!"; sleep 8

@@ -89,7 +89,7 @@ Tails both relays' logs (shared `amaru-logs` volume) and emits Antithesis SDK pr
 **A failing `always` is a finding:** Amaru accepted/adopted something forged that the honest
 node rejected.
 
-## Verified locally (2026-08-02, cardano-box)
+## Verified locally (2026-08-02, dwarf-host-a)
 
 Full deployment came up end-to-end. `amaru-relay-1` fed the adversary's mutated blocks:
 ```

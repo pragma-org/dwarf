@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/pragma-org/dwarf/main/dwarf/spec/v1/measurement-profile.schema.json",
+  "title": "DWARF measurement profile",
+  "description": "A reusable selection of independent measurement taps and explicit threshold choices.",
+  "type": "object",
+  "required": ["schema_version", "id", "title", "description", "implementation", "target_modes", "measurements"],
+  "properties": {
+    "schema_version": {"const": "v1", "description": "Version of the measurement-profile contract."},
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$", "description": "Immutable measurement-profile identifier."},
+    "title": {"type": "string", "minLength": 1, "description": "Human-readable profile name."},
+    "description": {"type": "string", "minLength": 1, "description": "Purpose, intended target mode, and expected overhead."},
+    "implementation": {
+      "type": "string",
+      "enum": ["amaru", "cardano-node", "mixed"],
+      "description": "Implementation scope selected by this profile.",
+      "x-ui-option-descriptions": {
+        "amaru": "Select taps for real Rust Amaru targets.",
+        "cardano-node": "Select taps for real Haskell cardano-node targets.",
+        "mixed": "Select implementation-aware taps for interoperating real nodes."
+      }
+    },
+    "target_modes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "enum": ["stock", "coverage", "patched"]},
+      "description": "Executable modes in which this selection is intended to run."
+    },
+    "measurements": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered measurement selections; each ID must exist in the measurement catalog.",
+      "items": {
+        "type": "object",
+        "required": ["id", "enabled", "parameters", "threshold_gate"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"},
+          "enabled": {"type": "boolean"},
+          "parameters": {"type": "object", "additionalProperties": true},
+          "threshold_gate": {
+            "type": "object",
+            "required": ["enabled", "thresholds"],
+            "properties": {
+              "enabled": {"type": "boolean"},
+              "thresholds": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["metric", "operator", "value"],
+                  "properties": {
+                    "metric": {"type": "string", "minLength": 1},
+                    "operator": {"type": "string", "enum": ["lt", "lte", "gt", "gte", "eq"]},
+                    "value": {"type": "number"},
+                    "unit": {"type": "string"}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

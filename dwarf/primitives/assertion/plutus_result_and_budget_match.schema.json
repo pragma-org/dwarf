@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "plutus_result_and_budget_match params",
+  "type": "object",
+  "properties": {"executions_per_outcome": {"const": 30}},
+  "additionalProperties": false
+}

@@ -29,6 +29,7 @@ from profile_manager.data.operate_grammars import grammar_catalog_rows
 from profile_manager.data.operate_risk_packages import risk_package_catalog_rows
 from profile_manager.data.operate_versions import version_default_summary
 from profile_manager.data.scenarios import _list_scenarios_for_compare
+from profile_manager.data.catalog_definitions import list_definitions
 from profile_manager.templating import render
 
 # Recent-runs window for the pass/fail tile. 200 keeps a meaningful
@@ -75,6 +76,8 @@ def render_operate_landing() -> str:
         target_count=len(targets),
         target_pills=[p for p in target_pills if p["slug"]],
         scenario_count=len(_list_scenarios_for_compare()),
+        measurement_count=len(list_definitions("measurements")),
+        measurement_profile_count=len(list_definitions("measurement-profiles")),
         primitive_count=len(primitive_catalog_rows()),
         profile_template_count=len(profile_template_catalog_rows()),
         corpus_count=len(corpora),

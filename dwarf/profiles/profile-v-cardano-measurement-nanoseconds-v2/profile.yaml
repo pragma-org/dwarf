@@ -1,0 +1,17 @@
+{
+  "id": "profile-v-cardano-measurement-nanoseconds-v2",
+  "label": "Cardano-node 11.1.2 — nanosecond measurement target",
+  "haskell_count": 3,
+  "amaru_count": 0,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "exact",
+  "cardano_version": "11.1.2",
+  "topology_pattern": "local-mesh",
+  "shared_genesis": true,
+  "measurement_target_mode": "patched",
+  "measurement_revision": "nanoseconds-v2",
+  "measurement_patch_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+  "measurement_patch_set_sha256": "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c",
+  "cardano_measurement_traces": true
+}

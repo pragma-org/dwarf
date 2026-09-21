@@ -1,0 +1,5 @@
+{
+  "type": "PlutusScriptV2",
+  "description": "DWARF revision-retained real-node measurement workload",
+  "cborHex": "49480100002221200101"
+}

@@ -1,0 +1,101 @@
+schema_version: v1
+id: client-example-03-invalid-mini-protocol
+title: Invalid mini-protocol traffic containment and node cost
+status: frozen
+purpose:
+  technical: Deliver bounded valid-but-unsupported and malformed Handshake traffic to each real node, prove containment and continued honest progress, and measure per-outcome decode plus target resource cost.
+  child: Send bad hello messages. The node must say no, stay awake, and keep doing its normal work.
+scope: {real_node_required: true, simulation_allowed: false, comparison_model: separate-implementation-executions-not-mixed-node}
+controlling_sources:
+  - {name: Risk Register v2, location: "dwarf workbench file JG-RiskRegister-V2.csv", sha256_or_revision: "sha256:11dee3e9e0cc800c7dc65fe8dde27ae55c7ad2edc8bab3c6d31402cdf56ec65a"}
+  - {name: Amaru measurement patch manifest, location: dwarf/targets/amaru/measurement-patches/b159172f25a9c389f82f20bca4f15e3032791638/manifest.json, sha256_or_revision: "sha256:586d21a0ed7c6b4cb4d62e5a3b109c1f51f3d6d1ebb96cec7db1247cecf928b1"}
+  - {name: Cardano measurement patch manifest, location: dwarf/targets/cardano-node/measurement-patches/fef83fed01d7926f3de83b3b917be5a4a48768b5/manifest.json, sha256_or_revision: "sha256:6ec8329317dec47205504d8511e9a3584f5a1fcd0bf826f59165af7f9c669aa9"}
+security_mapping:
+  threat_model:
+    - {id: TM-015, title: Parsing / validation / implementation discrepancy, reason: Terminal handling of the same invalid protocol input can diverge.}
+    - {id: TM-021, title: Parsing / deserialization, reason: Malformed protocol bytes can reach a parser or crash boundary.}
+    - {id: TM-022, title: Runtime / liveness / implementation behavior, reason: Repeated invalid traffic can create asymmetric work or fatal paths.}
+  risk_register:
+    - {id: RR-015, title: Malformed-input handling divergence, severity: High, boundaries: [B-002, B-003, B-004, B-005], interfaces: [IF-002, IF-003, IF-004, IF-005, IF-006, IF-007], reason: The exact invalid cases are applied separately to both implementations.}
+    - {id: RR-024, title: Parser or deserialization bounds failure, severity: High, boundaries: [B-003, B-004, B-005], interfaces: [IF-003, IF-004, IF-005, IF-006], reason: Malformed decode must terminate cleanly within a bound.}
+    - {id: RR-026, title: Panic-path availability failure, severity: Medium, boundaries: [B-003, B-004, B-005, B-007], interfaces: [IF-003, IF-004, IF-005, IF-006, IF-009, IF-010], reason: A reachable invalid input must not panic or terminate the node.}
+scenario_legs:
+  - scenario_id: client-example-invalid-mini-protocol-amaru
+    implementation: amaru
+    status: additive-required
+    profile: profile-q-amaru-measurement-patched
+    measurement_profile: amaru-security-patched
+    primitives:
+      setup: [runtime_verify_exact_target, runtime_mark_baseline_window]
+      load: [runtime_protocol_decode_cases, runtime_mark_hostile_window, runtime_mark_recovery_window]
+      probes: [runtime_target_health_and_progress, runtime_peer_session_health]
+      assertions: [invalid_protocol_cases_contained, target_progress_continues, unrelated_peer_session_usable, no_target_fatal_signal]
+      teardown: []
+  - scenario_id: client-example-invalid-mini-protocol-cardano
+    implementation: cardano-node
+    status: additive-required
+    profile: profile-t-cardano-measurement-patched
+    measurement_profile: cardano-security-patched
+    primitives:
+      setup: [runtime_verify_exact_target, runtime_mark_baseline_window]
+      load: [runtime_protocol_decode_cases, runtime_mark_hostile_window, runtime_mark_recovery_window]
+      probes: [runtime_target_health_and_progress, runtime_peer_session_health]
+      assertions: [invalid_protocol_cases_contained, target_progress_continues, unrelated_peer_session_usable, no_target_fatal_signal]
+      teardown: []
+targets:
+  amaru: {version: 10.11.20260912, source_repository: "https://github.com/pragma-org/amaru.git", source_revision: b159172f25a9c389f82f20bca4f15e3032791638, supporting_cardano_version: 10.7.1, stock_mode: stock, stock_image_reference: "ghcr.io/pragma-org/amaru:v10.11.20260912", stock_image_digest: "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e", patched_mode: patched, patched_image_reference: "dwarf/amaru-measurement:10.11.20260912-b159172", patched_image_digest: "sha256:dacb2351e69ab1d0bbfbc569b222d1bde40d9a158e79c556b30df554375addcc", patched_executable_digest: "sha256:b0cebe917e092c3d4e47ac4841de7a49338dca1e586616803fe17e92d0d93425", patch_set_sha256: f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af}
+  cardano-node: {version: 11.1.2, source_repository: "https://github.com/IntersectMBO/cardano-node.git", source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5, stock_mode: stock, stock_image_reference: "ghcr.io/intersectmbo/cardano-node:11.1.2", stock_image_digest: "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f", patched_mode: patched, patched_image_reference: "dwarf/cardano-measurement:11.1.2-fef83fed", patched_image_digest: "sha256:c74c3deafac54ed4d30da21952fce579c3293919993d31081e18787605757b8c", patched_executable_digest: "sha256:2777c36dbfdc4b8e57b9c839f055a65709e3049800030817a97a3943c712f738", patch_set_sha256: 7a948067c6b957b277400675cf95e32864ed8d92cd130fbadb673775249b5cc1}
+workload:
+  identity: fixed-handshake-invalid-cases-v1
+  seed: "0xBAD0C003"
+  digest: sha256:1ab6db08d45f22f42b1333c255ed07ac9dc57ecacb69ee7c645ecfd451c4225e
+  dataset_or_corpus:
+    mini_protocol: handshake
+    attempts_per_case: 100
+    cases:
+      - {name: unsupported-version-refusal, payload_hex: 8200a11903e784182af400f4, mux_frame_hex: 000000000000000c8200a11903e784182af400f4}
+      - {name: malformed-cbor, payload_hex: ff, mux_frame_hex: 0000000000000001ff}
+  warm_up_seconds: 30
+  duration_seconds: 240
+  stop_conditions:
+    - Stop with failure if either case does not reach the real target listener.
+    - Stop with failure on panic, fatal termination, restart, OOM, or lost honest progress.
+    - Stop with failure if a required baseline, hostile, or recovery window is absent.
+environment:
+  hardware_fingerprint: cardano-box-2026-09-19
+  hardware: {cpu: AMD Ryzen 7 6800U, physical_cores: 8, logical_cpus: 16, memory_bytes: 29193207808, kernel: 6.8.0-138-generic, docker: 29.6.0, storage_driver: overlayfs}
+  amaru_topology: One exact Amaru target and one controlled honest support producer; the hostile connection is independent from the honest peer session.
+  cardano_topology: Three exact Cardano-node nodes; node1 receives hostile traffic while node2 and node3 preserve honest sessions and progress.
+functional_requirement:
+  id: FR-PROTOCOL-001
+  statement: Every hostile attempt reaches the intended listener and terminates as a bounded rejection or disconnect without node panic, fatal exit, restart, or loss of honest progress.
+  expected_result: 200 classifiable attempts per implementation are contained; the target stays healthy, an unrelated honest peer session stays usable, and the chain advances in the recovery window.
+measurements:
+  - {name: handshake_ingress_by_outcome, boundary: mux-cbor-item, unit: us, minimum_sample_floor: 30, evidence_role: useful-distribution}
+  - {name: handshake_decode_and_state_by_outcome, boundary: mini-protocol-decode, unit: us, minimum_sample_floor: 30, evidence_role: useful-distribution}
+  - {name: handshake_negotiation_by_outcome, boundary: handshake-negotiation, unit: us, minimum_sample_floor: 30, evidence_role: useful-distribution}
+  - {name: target_cpu_percent, boundary: "Exact target process or target container cgroup during baseline, hostile, and recovery windows", unit: percent, minimum_sample_floor: 30, evidence_role: useful-distribution}
+  - {name: target_rss_bytes, boundary: Exact target process resident set during the three windows, unit: bytes, minimum_sample_floor: 30, evidence_role: useful-distribution}
+evidence_quality_rules: {very_small_sample: "n < 5", small_sample: "5 <= n < 30", useful_sample: "n >= 30", authority_rule: Each invalid case needs 100 external outcomes and each reported resource or internal-timing distribution needs at least 30 samples.}
+required_collectors:
+  amaru: [amaru-patched-protocol-decode, amaru-stock-network, amaru-stock-resources, amaru-external-sync-speed, amaru-external-workload-accounting]
+  cardano-node: [cardano-patched-protocol-decode, cardano-stock-network, cardano-stock-resources, cardano-external-sync-speed, cardano-external-workload-accounting]
+acceptable_unavailable:
+  - Plutus, epoch-transition, and queue metrics not exercised by Handshake can remain unavailable with a stated reason.
+security_assertions:
+  - {id: invalid_protocol_cases_contained, statement: All hostile attempts are classifiable and bounded; no attempt is unclassified or hangs.}
+  - {id: no_target_fatal_signal, statement: "No panic, fatal log, OOM, process exit, or restart is observed."}
+  - {id: unrelated_peer_session_usable, statement: The independent honest peer session remains connected or reconnects within the recovery bound.}
+  - {id: target_progress_continues, statement: Honest block height increases after hostile traffic ends.}
+retained_artifacts: [manifest.json, scenario.yaml, resolved-profile.json, target identity, exact request and response transcripts, attempt timings and classifications, baseline-hostile-recovery markers, raw patched trace, target logs and health samples, measurements/report.json, assertions.json, SARIF and attestation state, evidence bundle and digest]
+report_routes: ["/operate/runs/{run_id}", "/operate/scenarios/client-example-invalid-mini-protocol-{implementation}", "/operate/measurement-profiles/{measurement_profile}"]
+legitimate_claims:
+  - The exact node contained the two frozen Handshake cases and continued honest work under the stated rate and duration.
+explicit_non_claims:
+  - This does not cover every mini-protocol, illegal state-machine class, flood rate, or peer-governor behavior.
+  - This is not a throughput ceiling or an automatic comparison between implementations.
+verdict_policy: {security_assertions_authoritative: true, measurements_gate_by_default: false, threshold_gate: explicit-opt-in-only}
+implementation_gaps:
+  - {id: GAP-PROTOCOL-MALFORMED-CASE, status: open, required_change: Extend the existing calibration helper with exact malformed CBOR and per-case reachability evidence.}
+  - {id: GAP-PROTOCOL-CONTAINMENT-ASSERTIONS, status: open, required_change: "Add real target health, unrelated peer session, fatal-signal, and post-hostile progress assertions."}
+deferred_scope: {presentation_walkthrough: true, mixed_node_comparison: true, weekly_automation: true, stable_release_thresholds: true}

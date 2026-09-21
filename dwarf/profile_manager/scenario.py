@@ -122,6 +122,8 @@ ASSERTION_PRODUCER_MAP = {
     "chainsync_responder_rollback_then_forward_clean": {"runtime_chainsync_responder_fork_switch"},
     "execution_trace_amaru_cardano_node_equivalent": {"runtime_execution_trace_differential"},
     "cardano_cbor_dataset_differential_clean": {"runtime_cardano_cbor_dataset_differential"},
+    "cbor_conformance_clean": {"runtime_version_pinned_cbor_conformance"},
+    "cbor_roundtrip_consistent": {"runtime_version_pinned_cbor_conformance"},
     "credential_ceremony_recorded_clean": {"runtime_credential_ceremony"},
     "amaru_proptest_oracle_recorded_clean": {"runtime_amaru_proptest_oracle"},
 }
@@ -174,6 +176,16 @@ class ScenarioPhase:
 
 
 @dataclass(frozen=True)
+class ScenarioMeasurementSelection:
+    id: str
+    enabled: bool
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    threshold_gate: Dict[str, Any] = field(
+        default_factory=lambda: {"enabled": False, "thresholds": []}
+    )
+
+
+@dataclass(frozen=True)
 class Scenario:
     id: str
     title: str
@@ -187,8 +199,11 @@ class Scenario:
     related_milestones: List[str]
     m1_trace: Dict[str, List[str]]
     evidence_intent: Optional[str]
+    expected_security_finding: Optional[Dict[str, str]]
     promotion_blockers: List[str]
     testcase_candidate: Optional[Dict[str, str]]
+    measurement_profile: Optional[str]
+    measurements: List[ScenarioMeasurementSelection]
     setup: List[PrimitiveRef]
     load: List[PrimitiveRef]
     faults: List[PrimitiveRef]
@@ -479,6 +494,45 @@ def _validate_evidence_intent(body):
     return value
 
 
+def _validate_expected_security_finding(body):
+    value = body.get("expected_security_finding")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ScenarioValidationError("expected_security_finding must be a mapping")
+    required = {"finding_id", "failed_assertion", "target_source_revision"}
+    if set(value) != required:
+        raise ScenarioValidationError(
+            "expected_security_finding must contain exactly finding_id, "
+            "failed_assertion, and target_source_revision"
+        )
+    finding_id = value["finding_id"]
+    failed_assertion = value["failed_assertion"]
+    target_source_revision = value["target_source_revision"]
+    if not isinstance(finding_id, str) or not ID_PATTERN.match(finding_id):
+        raise ScenarioValidationError(
+            "expected_security_finding.finding_id must be lowercase kebab-case"
+        )
+    if not isinstance(failed_assertion, str) or not re.match(
+        r"^[a-z][a-z0-9_]*$", failed_assertion
+    ):
+        raise ScenarioValidationError(
+            "expected_security_finding.failed_assertion must be lowercase snake-case"
+        )
+    if not isinstance(target_source_revision, str) or not re.fullmatch(
+        r"[0-9a-f]{40}", target_source_revision
+    ):
+        raise ScenarioValidationError(
+            "expected_security_finding.target_source_revision must be a 40-character lowercase Git revision"
+        )
+    target = body.get("target") or {}
+    if target.get("source_revision") != target_source_revision:
+        raise ScenarioValidationError(
+            "expected_security_finding.target_source_revision must equal target.source_revision"
+        )
+    return dict(value)
+
+
 def _validate_schedule(body):
     value = body.get("schedule")
     if value is None:
@@ -517,6 +571,140 @@ def _validate_testcase_candidate(body):
         "producer": producer,
         "source_artifact_path": source_artifact_path,
     }
+
+
+def _bounded_measurement_parameter(value: Any) -> bool:
+    if value is None or isinstance(value, (bool, int, float)):
+        return True
+    if isinstance(value, str):
+        return len(value) <= 1024
+    if isinstance(value, list):
+        return len(value) <= 64 and all(
+            item is None
+            or isinstance(item, (bool, int, float))
+            or (isinstance(item, str) and len(item) <= 1024)
+            for item in value
+        )
+    return False
+
+
+def _validate_measurement_config(
+    body: Dict[str, Any],
+) -> tuple[Optional[str], List[ScenarioMeasurementSelection]]:
+    from profile_manager.data.catalog_definitions import CatalogError, load_definition
+
+    profile = body.get("measurement_profile")
+    if profile is not None:
+        if not isinstance(profile, str) or not profile:
+            raise ScenarioValidationError(
+                "measurement_profile must be a non-empty catalog id, 'none', or null"
+            )
+        if profile != "none":
+            try:
+                load_definition("measurement-profiles", profile)
+            except CatalogError as exc:
+                raise ScenarioValidationError(
+                    f"unknown measurement_profile {profile!r}"
+                ) from exc
+
+    raw_selections = body.get("measurements", []) or []
+    if not isinstance(raw_selections, list) or len(raw_selections) > 64:
+        raise ScenarioValidationError("measurements must be a list of at most 64 selections")
+    selections: List[ScenarioMeasurementSelection] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(raw_selections):
+        context = f"measurements[{index}]"
+        if not isinstance(raw, dict):
+            raise ScenarioValidationError(f"{context} must be a mapping")
+        unexpected = set(raw) - {"id", "enabled", "parameters", "threshold_gate"}
+        if unexpected:
+            raise ScenarioValidationError(
+                f"{context} has unsupported fields: {', '.join(sorted(unexpected))}"
+            )
+        measurement_id = raw.get("id")
+        if not isinstance(measurement_id, str) or not measurement_id:
+            raise ScenarioValidationError(f"{context}.id must be a non-empty string")
+        if measurement_id in seen:
+            raise ScenarioValidationError(f"duplicate measurement {measurement_id!r}")
+        seen.add(measurement_id)
+        try:
+            measurement = load_definition("measurements", measurement_id).data
+        except CatalogError as exc:
+            raise ScenarioValidationError(
+                f"unknown measurement {measurement_id!r}"
+            ) from exc
+
+        enabled = raw.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ScenarioValidationError(f"{context}.enabled must be a boolean")
+        parameters = raw.get("parameters", {})
+        if not isinstance(parameters, dict) or len(parameters) > 32:
+            raise ScenarioValidationError(
+                f"{context}.parameters must contain at most 32 entries"
+            )
+        for name, value in parameters.items():
+            if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name):
+                raise ScenarioValidationError(
+                    f"{context}.parameters keys must be lowercase identifiers"
+                )
+            if not _bounded_measurement_parameter(value):
+                raise ScenarioValidationError(
+                    f"{context}.parameters.{name} must be a bounded scalar or scalar list"
+                )
+
+        gate = raw.get("threshold_gate") or {"enabled": False, "thresholds": []}
+        if not isinstance(gate, dict) or set(gate) - {"enabled", "thresholds"}:
+            raise ScenarioValidationError(f"{context}.threshold_gate is invalid")
+        gate_enabled = gate.get("enabled", False)
+        thresholds = gate.get("thresholds", [])
+        if not isinstance(gate_enabled, bool):
+            raise ScenarioValidationError(
+                f"{context}.threshold_gate.enabled must be a boolean"
+            )
+        if not isinstance(thresholds, list) or len(thresholds) > 16:
+            raise ScenarioValidationError(
+                f"{context}.threshold_gate.thresholds must contain at most 16 entries"
+            )
+        if gate_enabled and not thresholds:
+            raise ScenarioValidationError(
+                f"{context}.threshold_gate requires at least one threshold"
+            )
+        if gate_enabled and not measurement["threshold_gate"]["supported"]:
+            raise ScenarioValidationError(
+                f"measurement {measurement_id!r} does not support threshold gating"
+            )
+        normalized_thresholds = []
+        for threshold_index, threshold in enumerate(thresholds):
+            threshold_context = f"{context}.threshold_gate.thresholds[{threshold_index}]"
+            if not isinstance(threshold, dict):
+                raise ScenarioValidationError(f"{threshold_context} must be a mapping")
+            if set(threshold) - {"metric", "operator", "value", "unit"}:
+                raise ScenarioValidationError(f"{threshold_context} has unsupported fields")
+            metric = threshold.get("metric")
+            operator = threshold.get("operator")
+            value = threshold.get("value")
+            unit = threshold.get("unit")
+            if not isinstance(metric, str) or not metric:
+                raise ScenarioValidationError(f"{threshold_context}.metric is required")
+            if operator not in {"lt", "lte", "gt", "gte", "eq"}:
+                raise ScenarioValidationError(f"{threshold_context}.operator is invalid")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ScenarioValidationError(f"{threshold_context}.value must be numeric")
+            if unit is not None and (not isinstance(unit, str) or len(unit) > 64):
+                raise ScenarioValidationError(f"{threshold_context}.unit is invalid")
+            normalized_thresholds.append(dict(threshold))
+        selections.append(
+            ScenarioMeasurementSelection(
+                id=measurement_id,
+                enabled=enabled,
+                parameters=dict(parameters),
+                threshold_gate={
+                    "enabled": gate_enabled,
+                    "thresholds": normalized_thresholds,
+                },
+            )
+        )
+    return profile, selections
 
 
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "primitives" / "registry.json"
@@ -639,10 +827,92 @@ def _auto_redeploy_configured(explicit):
         return False
 
 
+def _git_framework_commit():
+    repository = Path(__file__).resolve().parents[2]
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repository), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    revision = completed.stdout.strip().lower()
+    if completed.returncode != 0 or re.fullmatch(r"[0-9a-f]{40,64}", revision) is None:
+        return None
+    return revision
+
+
+MEASUREMENT_AUTO_ATTACH_IMPLEMENTATIONS = ("amaru", "cardano-node")
+MEASUREMENT_DISABLED_VALUES = frozenset({"off", "0", "false", "no"})
+
+
+def measurement_explicitly_requested(scen) -> bool:
+    """True when the scenario names a real measurement profile or overrides taps."""
+    return scen.measurement_profile not in (None, "none") or bool(scen.measurements)
+
+
+def measurement_auto_attach_target(scen, *, env=None) -> bool:
+    """True when the scenario should receive its implicit-default profile.
+
+    Auto-attachment covers deployed local devnets only. The resolver binds the
+    default profile against the deployed profile's runtime.json, so a substrate
+    or attached topology - which carries no profile id - has nothing to bind to.
+    """
+    if env is None:
+        env = os.environ
+    if str(env.get("DWARF_MEASUREMENTS", "")).strip().lower() in MEASUREMENT_DISABLED_VALUES:
+        return False
+    if scen.measurement_profile == "none":
+        return False
+    if measurement_explicitly_requested(scen):
+        return False
+    if scen.runtime != "devnet" or not scen.profile:
+        return False
+    return scen.target.get("implementation") in MEASUREMENT_AUTO_ATTACH_IMPLEMENTATIONS
+
+
+def prepare_auto_measurements(scen):
+    """Prepare scenario measurements, returning ``(prepared, skip_reason)``.
+
+    Explicit intent fails loud: a scenario that asked to be measured must not
+    run unmeasured. An implicit default degrades to a recorded skip reason, so
+    auto-attachment never turns a working scenario into a failing one.
+    """
+    from profile_manager.measurement_execution import (
+        MeasurementExecutionError,
+        prepare_scenario_measurements,
+    )
+    from profile_manager.measurement_resolution import MeasurementResolutionError
+
+    explicit = measurement_explicitly_requested(scen)
+    if not explicit and not measurement_auto_attach_target(scen):
+        return None, None
+    try:
+        return prepare_scenario_measurements(scen), None
+    except (MeasurementExecutionError, MeasurementResolutionError) as exc:
+        if explicit:
+            raise
+        return None, str(exc)
+
+
+def _resolve_framework_commit(explicit):
+    if explicit is not None and str(explicit).strip():
+        return str(explicit).strip()
+    return (
+        os.environ.get("DWARF_SOURCE_REVISION", "").strip()
+        or _git_framework_commit()
+        or "unknown"
+    )
+
+
 def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
-                 framework_version="0.1.0", framework_commit="unknown", actor="shared:dwarf",
+                 framework_version="0.1.0", framework_commit=None, actor="shared:dwarf",
                  topology_preflight=None, topology_redeploy=None,
-                 auto_redeploy_unhealthy=None):
+                 auto_redeploy_unhealthy=None, measurement_context=None,
+                 measurement_collector_factories=None):
     """Execute a scenario end-to-end, producing a forensic bundle.
 
     v1 runs setup → load → per-iteration probe fan-out → assertions → teardown.
@@ -653,6 +923,12 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
 
     scen = load_scenario(path)
     registry = primitives.load_registry(registry_path or DEFAULT_REGISTRY_PATH)
+    prepared_measurements = None
+    measurement_auto_skip = None
+    if measurement_context is None:
+        prepared_measurements, measurement_auto_skip = prepare_auto_measurements(scen)
+        if prepared_measurements is not None:
+            measurement_context = prepared_measurements.resolution
     seed = scen.seed if scen.seed is not None else 0
     # Derive an int seed for random.Random.
     if isinstance(seed, str) and seed.lower().startswith("0x"):
@@ -662,6 +938,7 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     rng = random.Random(rng_seed)
 
     profile_resolved = {"id": scen.profile} if scen.runtime == "devnet" and scen.profile else None
+    framework_commit = _resolve_framework_commit(framework_commit)
 
     handle = forensic.start_run(
         scenario_id=scen.id,
@@ -676,8 +953,28 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         actor=actor,
         runs_dir=runs_dir,
         state_dir=state_dir,
+        measurement_context=measurement_context,
+        expected_security_finding=scen.expected_security_finding,
     )
+    from profile_manager.launch_store import retain_launch_inputs_from_environment
+
+    retain_launch_inputs_from_environment(handle.run_dir)
+    if measurement_auto_skip:
+        handle.log(
+            phase="setup",
+            primitive="measurement-auto-attach",
+            level="info",
+            event="measurement_auto_attach_skipped",
+            payload={"reason": measurement_auto_skip},
+        )
     handle.set_start_resource_snapshot(forensic.capture_local_resource_snapshot(pid=os.getpid(), data_dir=handle.run_dir))
+    if (
+        prepared_measurements is not None
+        and measurement_collector_factories is None
+    ):
+        measurement_collector_factories = prepared_measurements.build_factories(
+            handle.run_dir
+        )
     topology_id = _attached_topology_id(scen)
     topology_lock = None
     if topology_id:
@@ -828,6 +1125,21 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
             if topology_lock is not None:
                 topology_lock.close()
             return handle
+    measurement_runtime = None
+    if measurement_context is not None:
+        from profile_manager.measurement_runtime import MeasurementRuntime
+
+        measurement_runtime = MeasurementRuntime(
+            run_dir=handle.run_dir,
+            resolution=measurement_context,
+            collector_factories=measurement_collector_factories or {},
+            scenario_id=scen.id,
+        )
+        measurement_runtime.prepare()
+        measurement_runtime.start()
+        handle._measurement_runtime = measurement_runtime
+        handle.set_measurement_context(measurement_runtime.snapshot())
+
     observer = telemetry.ObserverCollector(metrics_dir=handle.run_dir / "metrics", pid=os.getpid())
     observer.start()
 
@@ -916,6 +1228,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
 
     try:
         for index, phase_obj in enumerate(phases, start=1):
+            if measurement_runtime is not None:
+                measurement_runtime.mark_phase(
+                    phase_obj.id, "start", phase_index=index
+                )
             handle.log(
                 phase="framework",
                 primitive="framework",
@@ -950,6 +1266,11 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                                 prim.sample_for_input(handle, input_id=outcome.get("i"), outcome=outcome)
                             except NotImplementedError:
                                 break
+                    if hasattr(prim, "sample"):
+                        try:
+                            prim.sample(handle)
+                        except NotImplementedError:
+                            pass
 
                 _run_phase_assertions(phase_obj, outcomes)
                 phase_ok = True
@@ -961,6 +1282,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                     handle, rng, registry, scen, phase_obj.teardown, _phase_step(phase_obj.id, "teardown"),
                     ignore_errors=True, shared_state=shared_state,
                 )
+                if measurement_runtime is not None:
+                    measurement_runtime.mark_phase(
+                        phase_obj.id, "end", phase_index=index
+                    )
                 if phase_ok:
                     handle.log(
                         phase="framework",
@@ -987,6 +1312,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     finally:
         observer.stop()
         handle.set_telemetry_summary(observer.summarize())
+        if measurement_runtime is not None:
+            measurement_result = measurement_runtime.finalize()
+            handle.set_measurement_context(measurement_result)
+            overall = measurement_runtime.scenario_exit_status(overall)
 
     handle.end(
         exit_status=overall,
@@ -1554,9 +1883,11 @@ def validate_scenario_body(body_bytes):
         related_milestones = _optional_string_list(body, "related_milestones")
         m1_trace = _validate_m1_trace(body)
         evidence_intent = _validate_evidence_intent(body)
+        _validate_expected_security_finding(body)
         schedule = _validate_schedule(body)
         promotion_blockers = _optional_string_list(body, "promotion_blockers")
         testcase_candidate = _validate_testcase_candidate(body)
+        _validate_measurement_config(body)
         phases = _phase_refs(body)
         if phases:
             for key in ("setup", "load", "faults", "probes", "assertions", "teardown"):
@@ -1674,9 +2005,11 @@ def _scenario_from_data(body, *, raw, path):
     related_milestones = _optional_string_list(body, "related_milestones")
     m1_trace = _validate_m1_trace(body)
     evidence_intent = _validate_evidence_intent(body)
+    expected_security_finding = _validate_expected_security_finding(body)
     schedule = _validate_schedule(body)
     promotion_blockers = _optional_string_list(body, "promotion_blockers")
     testcase_candidate = _validate_testcase_candidate(body)
+    measurement_profile, measurements = _validate_measurement_config(body)
     phases = _phase_refs(body)
     if phases:
         for key in ("setup", "load", "faults", "probes", "assertions", "teardown"):
@@ -1708,8 +2041,11 @@ def _scenario_from_data(body, *, raw, path):
         related_milestones=related_milestones,
         m1_trace=m1_trace,
         evidence_intent=evidence_intent,
+        expected_security_finding=expected_security_finding,
         promotion_blockers=promotion_blockers,
         testcase_candidate=testcase_candidate,
+        measurement_profile=measurement_profile,
+        measurements=measurements,
         setup=setup,
         load=load,
         faults=faults,

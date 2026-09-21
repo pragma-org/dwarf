@@ -19,12 +19,14 @@ const screenshotDir = process.argv[3] || '';
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
+  { name: 'tablet', width: 820, height: 1180 },
   { name: 'mobile', width: 390, height: 844 },
 ];
 
 const ROUTES = [
-  '/', '/tests', '/scenarios',
+  '/', '/run', '/tests', '/scenarios',
   '/operate', '/operate/audit', '/operate/bundles',
+  '/operate/measurements', '/operate/measurement-profiles',
   '/operate/antithesis', '/operate/compare', '/operate/compare/runs',
   '/operate/config', '/operate/config/edit', '/operate/contract',
   '/operate/coverage', '/operate/crashes', '/operate/notifications', '/operate/plugins',
@@ -35,6 +37,7 @@ const ROUTES = [
   '/operate/static-analysis', '/operate/status', '/operate/targets', '/operate/targets/new',
   '/operate/timeline',
   '/learn', '/learn/api', '/learn/architecture', '/learn/attack-cost', '/learn/cli',
+  '/learn/measurements',
   '/learn/concepts', '/learn/consensus', '/learn/coverage', '/learn/developer-onboarding',
   '/learn/examples', '/learn/faq', '/learn/getting-started', '/learn/glossary',
   '/learn/operator-runbook', '/learn/overview', '/learn/plugin-authoring', '/learn/primitives',

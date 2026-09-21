@@ -7,6 +7,10 @@ from profile_manager.data.coverage import scenario_census
 from profile_manager.data.learn_api import html_route_groups
 from profile_manager.dashboard import dashboard_serve_text, dispatch_api_request, render_dashboard_html
 from profile_manager.data import operate_topology_health
+from profile_manager.data.health import active_profile_ids
+from profile_manager.profiles import active_profile_command
+from profile_manager.inspect import inspect_health_command
+from profile_manager.data.operate_status import active_profile
 from profile_manager.fuzz import fuzz_evidence_root
 from profile_manager.smoke import smoke_evidence_root
 from profile_manager.views.learn_overview import render_learn_overview
@@ -180,6 +184,46 @@ def test_topology_health_service_shares_one_inflight_probe():
     assert calls == ["probe"]
 
 
+def test_topology_health_result_survives_dashboard_restart(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path))
+    operate_topology_health.reset_topology_health_state()
+
+    operate_topology_health.request_topology_health_check(
+        probe=lambda: {
+            "state": "healthy",
+            "checked_at": "2026-09-19T12:00:00Z",
+            "reason_code": "all_mixed_readiness_gates_passed",
+        }
+    )
+    completed = operate_topology_health.wait_for_topology_health(timeout=2)
+
+    assert completed["state"] == "healthy"
+    evidence_path = tmp_path / "topology-health" / "dashboard-latest.json"
+    assert json.loads(evidence_path.read_text(encoding="utf-8"))["state"] == "healthy"
+
+    # Simulate a process restart by clearing only process-local state.
+    operate_topology_health.reset_topology_health_state()
+    restored = operate_topology_health.topology_health_snapshot()
+
+    assert restored["state"] == "healthy"
+    assert restored["observation_source"] == "persisted"
+    assert restored["cached"] is True
+    assert restored["age_seconds"] >= 0
+
+
+def test_topology_health_ignores_invalid_persisted_result(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path))
+    evidence_path = tmp_path / "topology-health" / "dashboard-latest.json"
+    evidence_path.parent.mkdir(parents=True)
+    evidence_path.write_text("not json", encoding="utf-8")
+    operate_topology_health.reset_topology_health_state()
+
+    restored = operate_topology_health.topology_health_snapshot()
+
+    assert restored["state"] == "idle"
+    assert restored["previous"] is None
+
+
 def test_topology_health_timeout_is_unknown_not_cached_success():
     operate_topology_health.reset_topology_health_state()
 
@@ -192,6 +236,88 @@ def test_topology_health_timeout_is_unknown_not_cached_success():
     assert result["reason_code"] == "topology_probe_failed"
     assert result["previous"]["state"] == "healthy"
     assert result["previous_is_current"] is False
+
+
+def test_active_profile_discovery_uses_managed_profile_identity():
+    stdout = "\n".join([
+        "DWARF_NODE docker profile-v-cardano-measurement-nanoseconds-v2 node1 Up 3 hours",
+        "DWARF_NODE docker profile-v-cardano-measurement-nanoseconds-v2 node2 Up 3 hours",
+        "DWARF_NODE docker profile-v-cardano-measurement-nanoseconds-v2 node3 Up 3 hours",
+    ])
+
+    assert active_profile_ids(stdout) == ["profile-v-cardano-measurement-nanoseconds-v2"]
+    assert '.Label "ada2.profile"' in active_profile_command()
+
+
+def test_active_profile_discovery_preserves_no_active_and_ambiguous_states():
+    assert active_profile_ids("") == []
+    assert active_profile_ids(
+        "DWARF_NODE docker profile-a node1 Up\n"
+        "DWARF_NODE docker profile-b node1 Up\n"
+    ) == ["profile-a", "profile-b"]
+
+
+def test_docker_profile_health_queries_tip_inside_exact_container_first():
+    command = inspect_health_command(
+        "/opt/dwarf/cardano-profiles/profile-v-cardano-measurement-nanoseconds-v2"
+    )
+
+    assert command.index('docker inspect "$container"') < command.index(
+        'if [ -S "$socket" ]'
+    )
+
+
+def test_status_does_not_label_first_catalog_entry_as_active_when_none_is_running():
+    payload = {
+        "live": {"enabled": False, "state": "no_active"},
+        "profiles": [{"id": "profile-a"}, {"id": "profile-b"}],
+    }
+
+    assert active_profile(payload) == {}
+
+
+def test_current_topology_health_requires_exact_readiness_and_progress():
+    first = {
+        "enabled": True,
+        "profile_id": "profile-v-cardano-measurement-nanoseconds-v2",
+        "health": {"returncode": 0, "parsed": {
+            "cardano_node_processes": "3", "socket_count": "3",
+            "listener_count": "3", "loopback_only": "true",
+            "tip_block": 2400, "tip_slot": 50000, "sync_progress": "100.00",
+        }},
+        "expected_nodes": 3,
+    }
+    second = json.loads(json.dumps(first))
+    second["health"]["parsed"].update({"tip_block": 2402, "tip_slot": 50002})
+
+    result = operate_topology_health.classify_current_profile_health(first, second)
+
+    assert result["state"] == "healthy"
+    assert result["profile_id"] == "profile-v-cardano-measurement-nanoseconds-v2"
+    assert result["reason_code"] == "active_profile_ready_and_progressing"
+    assert result["redeploy_supported"] is False
+
+
+def test_current_topology_health_does_not_hide_no_active_or_stalled_state():
+    no_active = operate_topology_health.classify_current_profile_health(
+        {"enabled": False, "state": "no_active", "error": "no active profile"}, None,
+    )
+    stalled_sample = {
+        "enabled": True, "profile_id": "profile-v", "expected_nodes": 3,
+        "health": {"returncode": 0, "parsed": {
+            "cardano_node_processes": "3", "socket_count": "3",
+            "listener_count": "3", "loopback_only": "true",
+            "tip_block": 9, "tip_slot": 11, "sync_progress": "100.00",
+        }},
+    }
+    stalled = operate_topology_health.classify_current_profile_health(
+        stalled_sample, json.loads(json.dumps(stalled_sample))
+    )
+
+    assert no_active["state"] == "no_active"
+    assert stalled["state"] == "unhealthy"
+    assert stalled["reason_code"] == "active_profile_not_progressing"
+    assert stalled["redeploy_supported"] is False
 
 
 def test_topology_health_api_starts_fresh_check(monkeypatch):
@@ -255,6 +381,8 @@ def test_operate_status_loads_active_topology_health_panel(monkeypatch):
     assert 'src="/static/js/topology-health.js"' in html
     assert 'data-health-url="/api/topology/health"' in html
     assert "A fresh read-only check starts whenever this page is opened" in html
+    assert "Current managed topology health" in html
+    assert "Mixed topology health" not in html
 
 
 def test_learn_cli_links_to_live_primitive_catalog_and_reference():

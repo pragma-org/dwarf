@@ -146,6 +146,8 @@ def active_profile(payload: dict[str, Any]) -> dict[str, Any]:
         for p in profiles:
             if p.get("id") == live_id:
                 return dict(p)
+    if "live" in payload:
+        return {}
     if profiles:
         return dict(profiles[0])
     return {}

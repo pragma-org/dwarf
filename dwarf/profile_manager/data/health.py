@@ -138,18 +138,51 @@ def _health_from_body(body, evidence_path=None, returncode=0, stderr=""):
             "listener_count": _extract_health_value(body, "listener_count"),
             "loopback_only": _extract_health_value(body, "loopback_only"),
             "tip_block": tip.get("block", "unknown"),
+            "tip_slot": tip.get("slot", "unknown"),
             "sync_progress": tip.get("syncProgress", "unknown"),
         },
     }
 
 
-def _live_health(profile_id):
+def _live_health(profile_id=None):
     if not config_exists():
         return {
             "enabled": False,
             "error": "config missing",
             "health": _health_from_body(""),
         }
+    cfg = load_config()
+    transport = "local" if _is_local_host(cfg.host) else "ssh"
+    from profile_manager.remote import control_shim_enabled
+    if profile_id is None:
+        from profile_manager.profiles import active_profile_command
+        active_command = active_profile_command()
+        if transport == "local":
+            active = _local_command(active_command, timeout=30)
+        else:
+            active = ssh_command(
+                cfg, active_command, timeout=30,
+                verb=("active",) if control_shim_enabled() else None,
+            )
+        if active.returncode != 0:
+            return {
+                "enabled": False, "state": "unknown",
+                "error": (active.stderr or "active profile discovery failed").strip(),
+                "health": _health_from_body(""),
+            }
+        ids = active_profile_ids(active.stdout)
+        if not ids:
+            return {
+                "enabled": False, "state": "no_active",
+                "error": "no active managed profile", "health": _health_from_body(""),
+            }
+        if len(ids) != 1:
+            return {
+                "enabled": False, "state": "unknown",
+                "error": "multiple active managed profiles: " + ", ".join(ids),
+                "active_profile_ids": ids, "health": _health_from_body(""),
+            }
+        profile_id = ids[0]
     profile = next((item for item in load_profiles() if item.id == profile_id), None)
     if not profile:
         return {
@@ -157,30 +190,17 @@ def _live_health(profile_id):
             "error": f"profile not found: {profile_id}",
             "health": _health_from_body(""),
         }
-    cfg = load_config()
     command = inspect_health_command(profile.remote_runtime_root)
-    # Slice 27: when the dashboard runs on the same host it inspects, run
-    # the inspect-health script directly via subprocess instead of going
-    # through SSH-to-self (which requires loopback authorized_keys and
-    # path-portable ssh_key_path — neither holds on the deployed box).
-    transport = "local" if _is_local_host(cfg.host) else "ssh"
-    from profile_manager.remote import control_shim_enabled
     if transport == "local":
         result = _local_command(command, timeout=30)
         health = _health_from_body(result.stdout, returncode=result.returncode, stderr=result.stderr)
     elif control_shim_enabled():
-        # Over the restricted control-channel shim the full inspect script is
-        # refused (it isn't a whitelisted verb). Use the `active` verb — which is
-        # whitelisted — to count live devnet nodes (docker + host-tmux) and
-        # synthesize the health body, so a deployed devnet shows as live instead
-        # of a misleading IDLE.
-        from profile_manager.profiles import active_profile_command
-        result = ssh_command(cfg, active_profile_command(), timeout=30, verb=("active",))
-        health = {
-            "parsed": {"cardano_node_processes": _count_active_nodes(result.stdout)},
-            "returncode": 0 if result.returncode == 0 else result.returncode,
-            "raw": result.stdout,
-        }
+        result = ssh_command(
+            cfg, command, timeout=30, verb=("profile-health", profile.id)
+        )
+        health = _health_from_body(
+            result.stdout, returncode=result.returncode, stderr=result.stderr
+        )
     else:
         result = ssh_command(cfg, command, timeout=30)
         health = _health_from_body(result.stdout, returncode=result.returncode, stderr=result.stderr)
@@ -189,6 +209,7 @@ def _live_health(profile_id):
         "profile_id": profile.id,
         "runtime_root": profile.remote_runtime_root,
         "transport": transport,
+        "expected_nodes": profile.node_count + profile.amaru_node_count,
         "health": health,
     }
 
@@ -197,3 +218,18 @@ def _count_active_nodes(stdout: str) -> int:
     """Count devnet node lines the `active` verb emits (DWARF_NODE per node)."""
     return sum(1 for line in (stdout or "").splitlines()
                if line.strip().startswith("DWARF_NODE"))
+
+
+def active_profile_ids(stdout: str) -> list[str]:
+    """Return distinct managed profile ids from the restricted active listing."""
+    found = set()
+    for raw in (stdout or "").splitlines():
+        parts = raw.strip().split()
+        if len(parts) < 3 or parts[0] != "DWARF_NODE":
+            continue
+        candidate = parts[2]
+        if candidate.startswith("dwarf-profile-"):
+            candidate = candidate.removeprefix("dwarf-")
+        if candidate.startswith("profile-"):
+            found.add(candidate)
+    return sorted(found)

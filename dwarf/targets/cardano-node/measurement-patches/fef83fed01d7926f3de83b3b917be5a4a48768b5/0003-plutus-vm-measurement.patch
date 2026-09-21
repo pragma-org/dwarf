@@ -1,0 +1,93 @@
+diff --git a/cardano-ledger-alonzo.cabal b/cardano-ledger-alonzo.cabal
+index 7e8d3ac..0584404 100644
+--- a/cardano-ledger-alonzo.cabal
++++ b/cardano-ledger-alonzo.cabal
+@@ -49,6 +49,7 @@ library
+ 
+   hs-source-dirs: src
+   other-modules:
++    Cardano.Ledger.Alonzo.DwarfMeasurement
+     Cardano.Ledger.Alonzo.Era
+     Cardano.Ledger.Alonzo.Forecast
+     Cardano.Ledger.Alonzo.Rules.Bbody
+diff --git a/src/Cardano/Ledger/Alonzo/DwarfMeasurement.hs b/src/Cardano/Ledger/Alonzo/DwarfMeasurement.hs
+new file mode 100644
+index 0000000..320fde0
+--- /dev/null
++++ b/src/Cardano/Ledger/Alonzo/DwarfMeasurement.hs
+@@ -0,0 +1,47 @@
++{-# LANGUAGE OverloadedStrings #-}
++
++module Cardano.Ledger.Alonzo.DwarfMeasurement (measureDwarfPlutus) where
++
++import Control.Concurrent.MVar (MVar, newMVar, withMVar)
++import Control.Exception (evaluate)
++import Data.Aeson (encode, object, (.=))
++import qualified Data.ByteString.Lazy.Char8 as LBS
++import GHC.Clock (getMonotonicTimeNSec)
++import System.Environment (lookupEnv)
++import System.IO (BufferMode (LineBuffering), Handle, IOMode (AppendMode), hSetBuffering, openFile)
++import System.IO.Unsafe (unsafePerformIO)
++
++
++{-# NOINLINE measurementHandle #-}
++measurementHandle :: Maybe (MVar Handle)
++measurementHandle = unsafePerformIO $ do
++  path <- lookupEnv "DWARF_CARDANO_PLUTUS_TRACE"
++  case path of
++    Nothing -> pure Nothing
++    Just "" -> pure Nothing
++    Just output -> do
++      handle <- openFile output AppendMode
++      hSetBuffering handle LineBuffering
++      Just <$> newMVar handle
++
++
++{-# NOINLINE measureDwarfPlutus #-}
++measureDwarfPlutus :: (a -> String) -> a -> a
++measureDwarfPlutus classify value = unsafePerformIO $ do
++  startedNs <- getMonotonicTimeNSec
++  result <- evaluate value
++  outcome <- evaluate (classify result)
++  endedNs <- getMonotonicTimeNSec
++  case measurementHandle of
++    Nothing -> pure ()
++    Just lock -> withMVar lock $ \handle ->
++      LBS.hPutStrLn handle $ encode $ object
++        [ "schema_version" .= ("v1" :: String)
++        , "target" .= ("cardano-node::measurement" :: String)
++        , "event" .= ("ledger_stage" :: String)
++        , "stage" .= ("plutus-vm" :: String)
++        , "outcome" .= outcome
++        , "ended_monotonic_ns" .= endedNs
++        , "duration_us" .= ((endedNs - startedNs) `div` 1000)
++        ]
++  pure result
+diff --git a/src/Cardano/Ledger/Alonzo/Plutus/Evaluate.hs b/src/Cardano/Ledger/Alonzo/Plutus/Evaluate.hs
+index 6040f4c..f898282 100644
+--- a/src/Cardano/Ledger/Alonzo/Plutus/Evaluate.hs
++++ b/src/Cardano/Ledger/Alonzo/Plutus/Evaluate.hs
+@@ -33,6 +33,7 @@ module Cardano.Ledger.Alonzo.Plutus.Evaluate (
+ ) where
+ 
+ import Cardano.Ledger.Alonzo.Core
++import Cardano.Ledger.Alonzo.DwarfMeasurement (measureDwarfPlutus)
+ import Cardano.Ledger.Alonzo.Plutus.Context (
+   CollectError (..),
+   ContextError,
+@@ -197,7 +198,14 @@ evalPlutusScriptsWithLogs (plutusWithContext : rest) =
+           [ "[LEDGER][PLUTUS_SCRIPT]"
+           , "BEGIN"
+           ]
+-      !res = Debug.traceEvent beginMsg $ runPlutusScriptWithLogs plutusWithContext
++      !res =
++        Debug.traceEvent beginMsg
++          $ measureDwarfPlutus
++            (\(_, scriptResult) -> case scriptResult of
++                Passes _ -> "accepted"
++                Fails _ _ -> "rejected"
++            )
++          $ runPlutusScriptWithLogs plutusWithContext
+       endMsg =
+         intercalate
+           ","

@@ -47,6 +47,33 @@ def _runtime_json_descriptor(runtime_root: Path, target_implementation: str) -> 
             "log_path": Path(str(body["log_path"])),
             "pid_file": Path(str(body["pid_file"])),
         }
+    actual_topology = body.get("actual_topology")
+    compose_project = body.get("compose_project")
+    if isinstance(actual_topology, dict) and isinstance(compose_project, str):
+        if target_implementation == "amaru":
+            services = actual_topology.get("amaru_services")
+            service = services[0] if isinstance(services, list) and services else None
+            if service:
+                return {
+                    "mode": "container",
+                    "compose_project": compose_project,
+                    "service": str(service),
+                    "listener_port": 3000,
+                    "data_dir_inside_container": "/srv/amaru",
+                    "log_path": None,
+                }
+        else:
+            services = actual_topology.get("cardano_services")
+            service = services[0] if isinstance(services, list) and services else None
+            if service:
+                return {
+                    "mode": "container",
+                    "compose_project": compose_project,
+                    "service": str(service),
+                    "listener_port": 3001,
+                    "data_dir_inside_container": "/state",
+                    "log_path": None,
+                }
     node_key = "haskell_nodes" if target_implementation == "cardano-node" else "amaru_nodes"
     nodes = body.get(node_key)
     if not isinstance(nodes, list) or not nodes:
@@ -66,6 +93,10 @@ def _runtime_json_descriptor(runtime_root: Path, target_implementation: str) -> 
 def _service_descriptor(runtime_root: Path, target_implementation: str) -> dict:
     host_descriptor = _runtime_json_descriptor(runtime_root, target_implementation)
     if host_descriptor is not None:
+        if host_descriptor.get("mode") == "container" and not host_descriptor.get("container_name"):
+            host_descriptor["container_name"] = _compose_container(
+                host_descriptor["compose_project"], host_descriptor["service"]
+            )
         return host_descriptor
     compose_project = _compose_project_for_runtime(runtime_root)
     if target_implementation == "cardano-node":
@@ -98,6 +129,29 @@ def _docker_json(*args: str):
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or f"docker {' '.join(args)} failed")
     return json.loads(proc.stdout)
+
+
+def _compose_container(project: str, service: str) -> str:
+    proc = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-q",
+            "--filter",
+            f"label=com.docker.compose.project={project}",
+            "--filter",
+            f"label=com.docker.compose.service={service}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    matches = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    if proc.returncode != 0 or len(matches) != 1:
+        detail = proc.stderr.strip() or f"found {len(matches)} containers"
+        raise RuntimeError(f"cannot resolve {project}/{service}: {detail}")
+    return matches[0]
 
 
 def _container_running(container_name: str) -> bool:
@@ -138,6 +192,34 @@ def _docker_log_bytes(container_name: str) -> int:
         timeout=20,
     )
     return len((proc.stdout or b"") + (proc.stderr or b""))
+
+
+def _docker_data_dir_bytes(container_name: str, path: str) -> int:
+    proc = subprocess.run(
+        [
+            "docker",
+            "exec",
+            container_name,
+            "/bin/sh",
+            "-c",
+            'du -sb "$1" | cut -f1',
+            "dwarf-data-size",
+            path,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    try:
+        value = int(proc.stdout.strip())
+    except ValueError as exc:
+        raise RuntimeError(
+            proc.stderr.strip() or f"cannot measure data directory in {container_name}:{path}"
+        ) from exc
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or f"cannot measure data directory in {container_name}:{path}")
+    return value
 
 
 def _pid_running(pid_file: Path) -> bool:
@@ -203,10 +285,14 @@ def run_live_baseline(*, runtime_root: Path, scenario_path: Path) -> int:
         listener_ok = _listener_ok(container_ip, service["listener_port"])
         if not listener_ok:
             raise RuntimeError(f"listener probe failed for {container_name} on {container_ip}:{service['listener_port']}")
-    data_dir = Path(service["data_dir"])
-    if not data_dir.exists():
-        raise RuntimeError(f"missing data directory: {data_dir}")
-    data_dir_bytes = sum(path.stat().st_size for path in data_dir.rglob("*") if path.is_file())
+    if service.get("data_dir_inside_container"):
+        data_dir = service["data_dir_inside_container"]
+        data_dir_bytes = _docker_data_dir_bytes(container_name, data_dir)
+    else:
+        data_dir = Path(service["data_dir"])
+        if not data_dir.exists():
+            raise RuntimeError(f"missing data directory: {data_dir}")
+        data_dir_bytes = sum(path.stat().st_size for path in data_dir.rglob("*") if path.is_file())
     if service["log_path"] is None:
         log_bytes = _docker_log_bytes(container_name)
     else:

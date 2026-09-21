@@ -97,6 +97,19 @@ def test_versioned_cardano_deploy_uses_exact_images_and_runtime_compose_adapter(
     assert json.dumps(preview["catalog_revision"]) in command
 
 
+def test_versioned_deploy_can_pin_the_remote_installed_dwarf_root():
+    profile = _profile()
+
+    command = deploy_command(
+        profile,
+        version_preview=_preview(profile),
+        remote_dwarf_root="/srv/dwarf/dwarf",
+    )
+
+    assert "dwarf_root=/srv/dwarf/dwarf" in command
+    assert 'dwarf_root="${ADA2_DWARF_ROOT:-}"' not in command
+
+
 def test_versioned_amaru_deploy_uses_live_producer_control_adapter():
     profile = _profile(
         node_type="amaru",
@@ -118,6 +131,32 @@ def test_versioned_amaru_deploy_uses_live_producer_control_adapter():
     assert "docker pull" in command
 
 
+def test_plutus_v2_profile_propagates_pinned_model_to_additive_runtime():
+    profile = _profile(
+        id="profile-w-amaru-measurement-plutus-v2",
+        node_type="amaru",
+        node_count=0,
+        amaru_node_count=1,
+        version_policy="exact",
+        amaru_version="10.11.20260912",
+        plutus_v2_genesis=True,
+        plutus_v2_cost_model_path="corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json",
+        plutus_v2_cost_model_sha256="675a27a3c1f2f9b32954c67c1f0ad21479713eef5513386638d78e05f5e277cc",
+    )
+
+    substrate = versioned_substrate_for_profile(profile, _preview(profile))
+    command = deploy_command(
+        profile,
+        version_preview=_preview(profile),
+        remote_dwarf_root="dwarf",
+    )
+
+    assert substrate["plutus_v2_genesis"] is True
+    assert substrate["plutus_v2_cost_model_sha256"] == profile.plutus_v2_cost_model_sha256
+    assert '"plutus_v2_genesis": true' in command
+    assert "dwarf/corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json" in command
+
+
 def test_versioned_mixed_deploy_uses_live_producer_control_adapter():
     profile = _profile(
         node_type="mixed",
@@ -133,6 +172,28 @@ def test_versioned_mixed_deploy_uses_live_producer_control_adapter():
     assert "runtime_compose_substrate.py" not in command
     assert '"scope": "mixed"' in command
     assert '"lifecycle": "cardano_amaru_relay_bootstrap_control"' in command
+
+
+def test_deploy_command_retains_selected_catalog_evidence_without_exceeding_exec_limit():
+    profile = _profile(
+        node_type="amaru",
+        node_count=0,
+        amaru_node_count=1,
+        version_policy="exact",
+        amaru_version="10.11.20260912",
+    )
+    preview = _preview(profile)
+
+    substrate = versioned_substrate_for_profile(profile, preview)
+    command = deploy_command(profile, version_preview=preview)
+
+    snapshot = substrate["catalog_snapshot"]
+    assert snapshot["catalog_revision"] == preview["catalog_revision"]
+    assert {item["implementation"] for item in snapshot["selected_releases"]} == {
+        "amaru",
+        "cardano-node",
+    }
+    assert len(command.encode("utf-8")) < 128 * 1024
 
 
 def test_version_policy_does_not_select_or_replace_deployment_adapter():

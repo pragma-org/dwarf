@@ -1,0 +1,22 @@
+{
+  "schema_version": "v1",
+  "implementation": "amaru",
+  "version": "10.11.20260912",
+  "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+  "inputs": [
+    "amaru-json-ndjson",
+    "otlp-json-export"
+  ],
+  "storage": "dwarf-run-bundle",
+  "general_monitoring_store": false,
+  "default_limits": {
+    "max_source_bytes": 33554432,
+    "max_source_paths": 16
+  },
+  "claim_boundaries": {
+    "json_point_event_duration": "only explicitly emitted *_micros fields",
+    "span_duration": "only completed OTLP start/end timestamps",
+    "outcome_timing": "retain every timed outcome; report combined and per-outcome distributions",
+    "missing": "unavailable, never zero or inferred"
+  }
+}

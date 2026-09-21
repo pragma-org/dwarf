@@ -1,0 +1,141 @@
+schema_version: v1
+id: client-example-04-block-application
+title: Block application and chain progress
+status: accepted
+purpose:
+  technical: Measure the exact production block-application boundary while a controlled real-node devnet makes sustained progress, and prove that the samples belong to adopted blocks.
+  child: Watch the node add real blocks. Count the blocks and time the work inside the node.
+scope: {real_node_required: true, simulation_allowed: false, comparison_model: separate-implementation-executions-not-mixed-node}
+controlling_sources:
+  - {name: Client non-functional requirements, location: "https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792", sha256_or_revision: "gist-api-sha256:d38556b71b40de79b7128ed62a5282c9af4291d8eb0584a9f09f771da5f94738"}
+  - {name: Risk Register v2, location: "dwarf workbench file JG-RiskRegister-V2.csv", sha256_or_revision: "sha256:11dee3e9e0cc800c7dc65fe8dde27ae55c7ad2edc8bab3c6d31402cdf56ec65a"}
+security_mapping:
+  threat_model:
+    - {id: TM-036, title: Block validation / ledger application, reason: Block application is the production boundary that enforces phase-1 and phase-2 ledger work.}
+    - {id: TM-022, title: Runtime / liveness / implementation behavior, reason: Slow or blocking application can degrade chain liveness.}
+  risk_register:
+    - {id: RR-025, title: Runtime starvation or blocking-work availability degradation, severity: High, boundaries: [B-003, B-004, B-005, B-007], interfaces: [IF-003, IF-004, IF-005, IF-006, IF-009], reason: Sustained application timing is correlated with real chain progress and resource use.}
+    - {id: RR-026, title: Panic-path availability failure, severity: Medium, boundaries: [B-003, B-004, B-005, B-007], interfaces: [IF-003, IF-004, IF-005, IF-006, IF-009, IF-010], reason: The target must apply the controlled block range without panic or fatal termination.}
+scenario_legs:
+  - scenario_id: client-example-block-application-amaru-canonical-v3
+    implementation: amaru
+    status: accepted
+    profile: profile-y-amaru-block-application-nanoseconds-v3
+    measurement_profile: amaru-security-patched
+    primitives:
+      setup: [runtime_verify_exact_target, runtime_wait_for_chain_progress]
+      load: [runtime_controlled_chain_progress_window]
+      probes: [runtime_target_health_and_progress]
+      assertions: [minimum_adopted_block_range_observed, block_application_samples_correlated, target_progress_continues, no_target_fatal_signal]
+      teardown: []
+  - scenario_id: client-example-block-application-cardano-canonical-v2
+    implementation: cardano-node
+    status: accepted
+    profile: profile-v-cardano-measurement-nanoseconds-v2
+    measurement_profile: cardano-security-patched
+    primitives:
+      setup: [runtime_verify_exact_target, runtime_wait_for_chain_progress]
+      load: [runtime_controlled_chain_progress_window]
+      probes: [runtime_target_health_and_progress]
+      assertions: [minimum_adopted_block_range_observed, block_application_samples_correlated, target_progress_continues, no_target_fatal_signal]
+      teardown: []
+targets:
+  amaru: {version: 10.11.20260912, source_repository: "https://github.com/pragma-org/amaru.git", source_revision: b159172f25a9c389f82f20bca4f15e3032791638, supporting_cardano_version: 10.7.1, stock_mode: stock, stock_image_reference: "ghcr.io/pragma-org/amaru:v10.11.20260912", stock_image_digest: "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e", patched_mode: patched, measurement_revision: nanoseconds-v3, patch_manifest_sha256: "sha256:05f4baf227395c75467d716fb6f59a8344d3ebbae726011e19173cbd74385fe9", build_result_sha256: "sha256:b9442b76fa7e23cab1155a72651ca6a5cae64aeed619f7395da4fa759c9c79b3", patched_image_reference: "dwarf/amaru-measurement@sha256:d120f9515d5bcc6aa68629e0370fa7bdf5a5612e5d35005aa231d32ab2b7169a", patched_image_digest: "sha256:d120f9515d5bcc6aa68629e0370fa7bdf5a5612e5d35005aa231d32ab2b7169a", patched_executable_digest: "sha256:6c33df932f50601166a0107ed9a47742ebc501218be5bc59f99a69f5fcddc94c", patch_set_sha256: 042f6b1840bc6a30e65d77ce702e1be9967b77564ecfb9c77c1e5c25520aad00}
+  cardano-node: {version: 11.1.2, source_repository: "https://github.com/IntersectMBO/cardano-node.git", source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5, stock_mode: stock, stock_image_reference: "ghcr.io/intersectmbo/cardano-node:11.1.2", stock_image_digest: "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f", patched_mode: patched, measurement_revision: nanoseconds-v2, patch_manifest_sha256: "sha256:06405007512eb8040898fbe53984b43bb5419100e5c7c64954588ee618ad7071", build_result_sha256: "sha256:f8f94f4068483e1f3a099b25b8bb534a691fcc402711a5fedc103a0ad5b9f524", patched_image_reference: "dwarf/cardano-measurement@sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370", patched_image_digest: "sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370", patched_executable_digest: "sha256:3fb83f12ac1152e96c884c756a505484a39d9200da6c59b24678ac61218220eb", patch_set_sha256: 1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c}
+workload:
+  identity: controlled-local-chain-progress-v1
+  seed: "0xB10C0004"
+  digest: sha256:39ac3a6995ca1c859adc7c16f69a94060cc424109a291bffcf3eaab50c06b41b
+  dataset_or_corpus: {source: real locally forged blocks, minimum_adopted_blocks: 30, transaction_mix: natural-qualified-devnet-traffic, block_identity_required: true}
+  warm_up_seconds: 30
+  duration_seconds: 180
+  stop_conditions:
+    - Stop with failure if fewer than 30 new adopted blocks are observed.
+    - Stop with failure if an application sample cannot be correlated to the exact target and measurement window.
+    - Stop with failure on no canonical progress, non-convergence, excessive or continuing oscillation, missing correlations, panic, fatal exit, unexpected restart, or collector error.
+environment:
+  hardware_fingerprint: cardano-box-2026-09-19
+  hardware: {cpu: AMD Ryzen 7 6800U, physical_cores: 8, logical_cpus: 16, memory_bytes: 29193207808, kernel: 6.8.0-138-generic, docker: 29.6.0, storage_driver: overlayfs}
+  amaru_topology: One exact Amaru target follows one controlled Cardano-node 10.7.1 support producer over the qualified Amaru-only lifecycle.
+  cardano_topology: Three exact Cardano-node 11.1.2 nodes in the qualified local forging mesh.
+functional_requirement:
+  id: FR-BLOCK-001
+  statement: The exact target must retain every raw chain-selection event, make bounded canonical progress of at least 30 blocks, converge, and have no panic, fatal termination, or unexpected restart.
+  expected_result: Every raw adoption, fork, and rollback event is retained; the final canonical path advances by at least 30 blocks and converges; and at least 30 application timings correlate to retained identities for each implementation.
+measurements:
+  - {name: block_application, boundary: Exact production ledger block-application boundary; networking delay is excluded, unit: us, minimum_sample_floor: 30, evidence_role: useful-distribution}
+  - {name: adopted_blocks, boundary: Target-local raw chain-selection events and derived final canonical height delta in the controlled window, unit: blocks, minimum_sample_floor: 30, evidence_role: functional-correlation}
+  - {name: target_resources, boundary: Exact target process or container during the same block range, unit: samples, minimum_sample_floor: 30, evidence_role: useful-distribution}
+evidence_quality_rules: {very_small_sample: "n < 5", small_sample: "5 <= n < 30", useful_sample: "n >= 30", authority_rule: No block-application distribution is accepted below 30 correlated application events.}
+required_collectors:
+  amaru: [amaru-stock-block-epoch, amaru-external-sync-speed, amaru-stock-resources]
+  cardano-node: [cardano-patched-ledger-plutus-stages, cardano-stock-ledger-block-epoch, cardano-external-sync-speed, cardano-stock-resources]
+acceptable_unavailable:
+  - Plutus, restart-readiness, protocol queue, and epoch-transition metrics can remain unavailable when the workload does not reach those boundaries.
+security_assertions:
+  - {id: canonical_chain_progress_complete, statement: The retained raw chain-selection events derive a bounded canonical path that advances by at least 30 blocks and converges without excessive or continuing oscillation.}
+  - {id: block_application_samples_correlated, statement: At least 30 application timings belong to the measured target and controlled window.}
+  - {id: no_target_fatal_signal, statement: "The target has no panic, fatal exit, OOM, or restart."}
+  - {id: target_progress_continues, statement: The final canonical chain height is greater than the start height after bounded fork handling.}
+retained_artifacts: [manifest.json, scenario.yaml, resolved-profile.json, target identity, warm-up and measurement markers, start and end tips, adopted block identities, raw application trace, target resource samples, measurements/report.json, assertions.json, SARIF and attestation state, evidence bundle and digest]
+report_routes: ["/operate/runs/{run_id}", "/operate/scenarios/client-example-block-application-{implementation}", "/operate/measurement-profiles/{measurement_profile}"]
+legitimate_claims:
+  - The exact node applied and adopted the retained local-devnet block range and produced the stated application-time distribution.
+explicit_non_claims:
+  - The local-devnet block mix is not a representative mainnet block sample.
+  - The metric excludes network diffusion and does not establish a stable release threshold.
+  - Separate runs are not an automatic Amaru-versus-Cardano benchmark.
+verdict_policy: {security_assertions_authoritative: true, measurements_gate_by_default: false, threshold_gate: explicit-opt-in-only}
+approved_resolution:
+  kind: canonical-progress-v2
+  preserve_v1_runs: true
+  scenario_ids:
+    amaru: client-example-block-application-amaru-canonical-v3
+    cardano-node: client-example-block-application-cardano-canonical-v2
+  measurement_revisions:
+    amaru: nanoseconds-v3
+    cardano-node: nanoseconds-v2
+  raw_evidence:
+    - adopted-block-events
+    - same-height-hash-switches
+    - rollback-and-fork-events
+    - application-timings
+  pass_conditions:
+    - bounded-canonical-progress
+    - final-convergence
+    - complete-required-correlations
+    - no-fatal-health-signal
+  fail_conditions:
+    - no-progress
+    - non-convergence
+    - excessive-or-continuing-oscillation
+    - missing-correlations
+    - fatal-health-signal
+  same_height_switch_alone_fails: false
+  accepted_evidence:
+    cardano-node:
+      run_id: 20260921T021935Z-3b58eafc
+      measurement_revision: nanoseconds-v2
+      framework_commit: 91ed1320da73ad0fa031cb7c68373d4727dca869
+      scenario_sha256: 5fadd0c60dee960eb247e327755ff65137a55d29776aa47f68f90159101666d4
+      manifest_sha256: b0772ee433fb95b9955fafa2b230734fee4a48350923fca729eff61ec7980a24
+      assertions_sha256: 04e25ed0a62842ed614b39a07ebbc5999a79151126afa692292814c680382ac1
+      controlled_proof_sha256: 059e322acc6052404c3198a76f39b7c2a148e967f0b226849bab6bc952c94c7f
+      measurement_report_sha256: 118970306b5797a95b876182d635ef70703a5799607c24e13526cfc0083baad7
+      health_progress_sha256: be94a485b151dd1e32759ad9be4f0c6e46b2e0a3cf7dc8d9b32720d410fb1549
+      bundle_sha256: c02a192f88cf9dc1caa6d9e3aea56a42c9436186e3596533cda19af7ab32af28
+    amaru:
+      run_id: 20260921T035546Z-9747122c
+      measurement_revision: nanoseconds-v3
+      framework_commit: e292babc02250ebfa0cbb866339f86064439c744
+      scenario_sha256: 2f25b399ebfe78f00fe2b19f3e7e73f8b1749e89d14d11df903812cea8522770
+      manifest_sha256: 96408821a8b7b88d5fac594bf706d330993555a68d9e3fabb29828199cf49903
+      assertions_sha256: 46f16b8e058946c1d233f4053417872187b6e55cbb9ea31901209c306e047a8d
+      controlled_proof_sha256: 1266fa35d98d4a20225fef5b5b74be583214f7bc3491b63a589b8a33ff397f5b
+      measurement_report_sha256: 78e9eab912ba410a709591ea363ad94be3847b767f53b57410312135fdaa7c7d
+      health_progress_sha256: 18b8a6a55311462511af6e1047390b7fb673e88123c3580bb6ba2131671c5691
+      bundle_sha256: f17b4892ca45d003a94b7c175d510cbd0890420bdf79420a46ed4dff79c0c808
+      bundle_file_count: 81
+implementation_gaps:
+  - {id: GAP-BLOCK-SAMPLE-FLOOR, status: closed, required_change: The controlled progress-window primitive and assertions bind at least 30 application events to adopted block progress.}
+deferred_scope: {presentation_walkthrough: true, mixed_node_comparison: true, weekly_automation: true, stable_release_thresholds: true}

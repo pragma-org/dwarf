@@ -7,11 +7,14 @@ import pytest
 
 from profile_manager.primitives import load_registry
 from profile_manager.scenario import semantic_validate_scenario
+from scripts import runtime_cardano_cbor_dataset_differential as dataset_runtime
 from scripts.runtime_cardano_cbor_dataset_differential import (
+    QUALIFIED_DATASET_REVISION,
     REQUIRED_CATEGORIES,
     _inspect_container_image,
     _load_target,
     run_cardano_cbor_dataset_differential,
+    validate_qualified_dataset_contract,
 )
 
 
@@ -25,7 +28,7 @@ def _make_source_repo(tmp_path: Path) -> tuple[Path, Path, str]:
     repo = tmp_path / "cardano-cbor-dataset"
     dataset = repo / "dataset" / "conway-123-2"
     for category in REQUIRED_CATEGORIES:
-        category_dir = dataset / "transaction_body" / category
+        category_dir = dataset / "plutus_data" / category
         category_dir.mkdir(parents=True, exist_ok=True)
         prefix = b"valid" if category == "valid" else b"invalid"
         for index in range(2):
@@ -85,7 +88,7 @@ import pathlib
 import sys
 root = pathlib.Path(sys.argv[-1])
 required = {"valid", "zap-1", "zap-2", "zap-3"}
-actual = {p.name for p in (root / "transaction_body").iterdir() if p.is_dir()}
+actual = {p.name for p in (root / "plutus_data").iterdir() if p.is_dir()}
 if actual != required:
     print(f"bad categories: {actual}", file=sys.stderr)
     raise SystemExit(2)
@@ -98,16 +101,16 @@ print("Checked 8 conway CBOR files")
 
 
 def _config(tmp_path: Path, *, disagree: bool = False) -> dict:
-    repo, dataset, revision = _make_source_repo(tmp_path)
+    repo, dataset, _fixture_revision = _make_source_repo(tmp_path)
     reference_id, manifests = _make_target(tmp_path, "cardano_target")
     candidate_id, _ = _make_target(tmp_path, "amaru_target", disagree=disagree)
     return {
         "dataset_dir": str(dataset),
         "dataset_repo_dir": str(repo),
-        "expected_source_revision": revision,
+        "expected_source_revision": QUALIFIED_DATASET_REVISION,
         "source_repository": "https://github.com/r2rationality/cardano-cbor-dataset.git",
         "era": "conway",
-        "rule": "transaction_body",
+        "rule": "plutus_data",
         "samples_per_category": 2,
         "manifests_dir": str(manifests),
         "reference_target_id": reference_id,
@@ -118,7 +121,8 @@ def _config(tmp_path: Path, *, disagree: bool = False) -> dict:
     }
 
 
-def test_differential_replay_is_non_vacuous_and_retains_provenance(tmp_path):
+def test_differential_replay_is_non_vacuous_and_retains_provenance(tmp_path, monkeypatch):
+    monkeypatch.setattr(dataset_runtime, "_git_revision", lambda _path: QUALIFIED_DATASET_REVISION)
     report_path = run_cardano_cbor_dataset_differential(_config(tmp_path))
     report = json.loads(report_path.read_text(encoding="utf-8"))
 
@@ -137,7 +141,8 @@ def test_differential_replay_is_non_vacuous_and_retains_provenance(tmp_path):
     assert (tmp_path / "out" / "summary.md").is_file()
 
 
-def test_differential_replay_reports_candidate_disagreement(tmp_path):
+def test_differential_replay_reports_candidate_disagreement(tmp_path, monkeypatch):
+    monkeypatch.setattr(dataset_runtime, "_git_revision", lambda _path: QUALIFIED_DATASET_REVISION)
     report_path = run_cardano_cbor_dataset_differential(_config(tmp_path, disagree=True))
     report = json.loads(report_path.read_text(encoding="utf-8"))
 
@@ -147,17 +152,57 @@ def test_differential_replay_reports_candidate_disagreement(tmp_path):
     assert report["clean"] is False
 
 
-def test_differential_replay_refuses_wrong_source_revision(tmp_path):
+def test_differential_replay_refuses_wrong_source_revision(tmp_path, monkeypatch):
     config = _config(tmp_path)
-    config["expected_source_revision"] = "0" * 40
+    monkeypatch.setattr(dataset_runtime, "_git_revision", lambda _path: "0" * 40)
 
     with pytest.raises(ValueError, match="source revision mismatch"):
         run_cardano_cbor_dataset_differential(config)
 
 
-def test_differential_replay_requires_every_category(tmp_path):
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("source_repository", "https://example.invalid/dataset.git", "repository"),
+        ("expected_source_revision", "0" * 40, "revision"),
+        ("era", "babbage", "Conway"),
+        ("rule", "transaction_body", "plutus_data"),
+    ],
+)
+def test_dataset_contract_refuses_every_unqualified_surface(field, value, message):
+    config = {
+        "source_repository": "https://github.com/r2rationality/cardano-cbor-dataset.git",
+        "expected_source_revision": QUALIFIED_DATASET_REVISION,
+        "era": "conway",
+        "rule": "plutus_data",
+    }
+    config[field] = value
+
+    with pytest.raises(ValueError, match=message):
+        validate_qualified_dataset_contract(config)
+
+
+def test_dataset_contract_accepts_only_pinned_conway_plutus_data():
+    assert validate_qualified_dataset_contract(
+        {
+            "source_repository": "https://github.com/r2rationality/cardano-cbor-dataset.git",
+            "expected_source_revision": QUALIFIED_DATASET_REVISION,
+            "era": "conway",
+            "rule": "plutus_data",
+        }
+    ) == {
+        "source_repository": "https://github.com/r2rationality/cardano-cbor-dataset.git",
+        "source_revision": QUALIFIED_DATASET_REVISION,
+        "era": "conway",
+        "rule": "plutus_data",
+        "qualification": "typed-verifier-qualified",
+    }
+
+
+def test_differential_replay_requires_every_category(tmp_path, monkeypatch):
     config = _config(tmp_path)
-    missing = Path(config["dataset_dir"]) / "transaction_body" / "zap-3"
+    monkeypatch.setattr(dataset_runtime, "_git_revision", lambda _path: QUALIFIED_DATASET_REVISION)
+    missing = Path(config["dataset_dir"]) / "plutus_data" / "zap-3"
     for path in missing.iterdir():
         path.unlink()
     missing.rmdir()

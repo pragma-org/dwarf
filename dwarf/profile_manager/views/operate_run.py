@@ -22,6 +22,22 @@ def render_operate_run(run_id: str) -> str | None:
     )
 
 
+def render_operate_run_measurements_raw(run_id: str) -> str | None:
+    """Render the exact operator-oriented measurement table for one run."""
+    detail = operate_run_detail(run_id)
+    if detail is None or not detail["measurements"]["present"]:
+        return None
+    return render(
+        "operate/run_measurements_raw.j2",
+        page_title=f"Raw measurements · {run_id}",
+        density="reading",
+        layout="wide",
+        active="operate",
+        active_sub="runs",
+        run=detail,
+    )
+
+
 def render_operate_run_not_found(run_id: str) -> str:
     """Render the explicit not-found surface for /operate/runs/<id>."""
     return render(

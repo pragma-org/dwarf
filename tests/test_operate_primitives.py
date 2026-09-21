@@ -44,7 +44,7 @@ def test_primitive_catalog_reconciles_to_full_registry_and_six_families():
 def test_registry_authoring_comment_describes_current_catalog_not_old_slice():
     payload = json.loads(REGISTRY.read_text(encoding="utf-8"))
 
-    assert len(payload["primitives"]) == 208
+    assert len(payload["primitives"]) == 238
     assert "map is empty" not in payload["$comment"]
     assert "Adding a primitive is a code change" in payload["$comment"]
 
@@ -287,7 +287,7 @@ def test_plugin_registry_cannot_escape_its_configured_plugin_root(tmp_path):
         plugin_roots=[plugin_root],
     )
 
-    assert len(payload["rows"]) == 208
+    assert len(payload["rows"]) == 238
     assert any("escapes the plugin root" in error for error in payload["errors"])
 
 
@@ -349,7 +349,7 @@ def test_primitive_archive_is_deterministic_complete_and_noise_free():
     with gzip.GzipFile(fileobj=io.BytesIO(first[2]), mode="rb") as zipped:
         with tarfile.open(fileobj=zipped, mode="r:") as archive:
             names = archive.getnames()
-        assert len(names) == 209
+        assert len(names) == 239
     assert "DWARF-EXPORT-MANIFEST.json" in names
     assert names == sorted(names)
     assert not any("._" in name or "__pycache__" in name for name in names)
@@ -400,7 +400,7 @@ def test_navigation_landings_api_and_scaffold_lifecycle_are_reconciled():
     assert any(item["url"] == "/operate/primitives" for item in nav.OPERATE_SUB_NAV)
     assert any(item["url"] == "/learn/primitives" for item in nav.LEARN_SUB_NAV)
     assert 'href="/operate/primitives"' in operate
-    assert "208" in operate
+    assert "238" in operate
     assert 'href="/learn/primitives"' in learn
     assert 'href="/learn/primitives#authoring"' in scaffold
     assert "requires implementation" in scaffold.lower()

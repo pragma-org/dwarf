@@ -1,0 +1,16 @@
+{
+  "id": "profile-q-amaru-measurement-patched",
+  "label": "Amaru 10.11.20260912 — patched measurement target",
+  "haskell_count": 0,
+  "amaru_count": 1,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "exact",
+  "amaru_version": "10.11.20260912",
+  "topology_pattern": "local-mesh",
+  "shared_genesis": true,
+  "measurement_target_mode": "patched",
+  "measurement_patch_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+  "measurement_patch_set_sha256": "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af",
+  "amaru_json_traces": true
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cbor_conformance_clean params",
+  "type": "object",
+  "properties": {
+    "min_completed": {"type": "integer", "minimum": 1},
+    "min_inputs_processed": {"type": "integer", "minimum": 100}
+  },
+  "additionalProperties": false
+}

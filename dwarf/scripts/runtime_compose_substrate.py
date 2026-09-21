@@ -175,6 +175,43 @@ def _refresh_cardano_testnet_start_times(
     }
 
 
+CARDANO_MEASUREMENT_TRACE_NAMESPACES = (
+    "Net.Handshake.Remote",
+    "ChainSync.Client",
+    "ChainSync.ServerHeader",
+    "BlockFetch.Client",
+    "BlockFetch.Server",
+    "TxSubmission.TxInbound",
+    "TxSubmission.TxOutbound",
+    "Mempool",
+    "KeepAlive.Remote",
+    "ChainDB",
+    "Forge.Loop",
+    "LedgerMetrics",
+    "Resources",
+)
+
+
+def _enable_cardano_measurement_traces(config_path: Path) -> dict:
+    """Enable audited machine namespaces only for an opt-in measurement profile."""
+    body = json.loads(config_path.read_text(encoding="utf-8"))
+    options = body.get("TraceOptions")
+    if not isinstance(options, dict):
+        options = {}
+    for namespace in CARDANO_MEASUREMENT_TRACE_NAMESPACES:
+        current = options.get(namespace)
+        configured = dict(current) if isinstance(current, dict) else {}
+        configured.update({"severity": "Info", "detail": "DDetailed"})
+        options[namespace] = configured
+    body["TraceOptions"] = options
+    config_path.write_text(json.dumps(body, indent=4) + "\n", encoding="utf-8")
+    return {
+        "enabled": True,
+        "namespaces": sorted(CARDANO_MEASUREMENT_TRACE_NAMESPACES),
+        "config_path": str(config_path),
+    }
+
+
 def _refresh_cardano_testnet_start_times_remote(*, host: dict, env_root: str, start_time_offset_seconds: int = 15) -> dict:
     command = (
         "python3 - "
@@ -713,10 +750,17 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
     for node in nodes:
         host, port_text = node["listen_address"].rsplit(":", 1)
         if node["impl"] == "cardano-node":
+            patched_measurement_trace_setup = ""
+            if node.get("target_mode") == "patched":
+                patched_measurement_trace_setup = (
+                    f"touch /logs/{node['id']}/cardano-measurement.ndjson "
+                    f"/logs/{node['id']}/cardano-plutus.ndjson && "
+                )
             if node.get("public_network"):
                 command = [(
                     "set -euo pipefail; "
                     f"mkdir -p /env/socket/{node['id']} /logs/{node['id']} /env/node-data/node{node['host_slot_index']} && "
+                    f"{patched_measurement_trace_setup}"
                     "exec cardano-node run "
                     f"--config /env/configuration.yaml "
                     f"--topology /env/node-data/node{node['host_slot_index']}/topology.json "
@@ -736,6 +780,7 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
                 command = [(
                     "set -euo pipefail; "
                     f"mkdir -p /env/socket/{node['id']} /logs/{node['id']} && "
+                    f"{patched_measurement_trace_setup}"
                     "exec cardano-node run "
                     f"--config /env/configuration.yaml "
                     f"--topology /env/node-data/node{node['host_slot_index']}/topology.json "
@@ -819,6 +864,15 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
             services[node["id"]]["volumes"].append("./amaru:/amaru")
             services[node["id"]]["environment"] = {
                 "AMARU_MIGRATE_CHAIN_DB": "true",
+            }
+        elif node.get("target_mode") == "patched":
+            services[node["id"]]["environment"] = {
+                "DWARF_CARDANO_MEASUREMENT_TRACE": (
+                    f"/logs/{node['id']}/cardano-measurement.ndjson"
+                ),
+                "DWARF_CARDANO_PLUTUS_TRACE": (
+                    f"/logs/{node['id']}/cardano-plutus.ndjson"
+                ),
             }
     return {
         "name": compose_project,
@@ -954,6 +1008,11 @@ def _compose_substrate_docker(
             genesis_path=env_root / "shelley-genesis.json",
             nodes=haskell_nodes,
         )
+        measurement_trace_config = (
+            _enable_cardano_measurement_traces(env_root / "configuration.yaml")
+            if plan.get("cardano_measurement_traces") is True
+            else {"enabled": False, "namespaces": []}
+        )
         for node in haskell_nodes:
             node["socket_path"] = str(env_root / "socket" / node["id"] / "sock")
             node["db_dir"] = str(env_root / "node-data" / f"node{node['slot_index']}" / "db")
@@ -1053,7 +1112,7 @@ def _compose_substrate_docker(
 
     metadata = {
         "compose_mode": "docker",
-        "profile_id": compose_project,
+        "profile_id": str(plan.get("profile_id") or compose_project),
         "runtime_root": str(runtime_root),
         "compose_project": docker_project,
         "network": plan["network"],
@@ -1068,6 +1127,7 @@ def _compose_substrate_docker(
         "faults": [],
         "era_transition": {},
         "version_provenance": build_version_provenance(plan, metadata_nodes),
+        "cardano_measurement_traces": measurement_trace_config if haskell_nodes and not public_network else {"enabled": False, "namespaces": []},
     }
     metadata_path = runtime_root / "runtime.json"
     write_json(metadata_path, metadata)
@@ -1439,7 +1499,7 @@ def _compose_substrate_docker_multihost(
         "compose_mode": "docker",
         "multi_host": True,
         "host_strategy": plan["host_strategy"],
-        "profile_id": compose_project,
+        "profile_id": str(plan.get("profile_id") or compose_project),
         "runtime_root": str(runtime_root),
         "compose_project": compose_project,
         "network": plan["network"],
@@ -1677,7 +1737,7 @@ def compose_substrate(
         )
 
     metadata = {
-        "profile_id": compose_project,
+        "profile_id": str(plan.get("profile_id") or compose_project),
         "runtime_root": str(runtime_root),
         "compose_project": compose_project,
         "network": network_name,

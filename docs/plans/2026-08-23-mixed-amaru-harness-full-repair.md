@@ -10,7 +10,7 @@
 
 ---
 
-All work is performed in `/home/nigel/dwarf-fresh` on `cardano-box`. Preserve the untracked mode-0600 `.env`; never add or print it. Do not use `snouty`. Do not submit a paid run as part of this plan.
+All work is performed in `$HOME/dwarf-fresh` on `dwarf-host-a`. Preserve the untracked mode-0600 `.env`; never add or print it. Do not use `snouty`. Do not submit a paid run as part of this plan.
 
 ### Task 1: Preserve the failed-run diagnosis as a regression contract
 
@@ -474,7 +474,7 @@ Build the oracle and, only if required, tracer wrapper with date/version tags. I
 
 **Step 5: Authenticate without exposing the PAT**
 
-Read `/home/nigel/moog-secrets/ghcr.token` only through `docker login --password-stdin`. Never place it in argv or output.
+Read `$HOME/moog-secrets/ghcr.token` only through `docker login --password-stdin`. Never place it in argv or output.
 
 **Step 6: Push, obtain immutable digests, and verify anonymous access**
 

@@ -5,7 +5,7 @@ has finished. The five-case corpus is published but has **not** been submitted.
 Any new Step 3 request spends money; run it only with explicit approval. Design
 rationale and expected outcome: `RUN-DESIGN.md`.
 
-All commands run on **cardano-box**.
+All commands run on **dwarf-host-a**.
 
 ---
 
@@ -45,7 +45,7 @@ mode-0600 token through stdin; never place the token in argv or output:
 docker build -f workload/Dockerfile \
   -t ghcr.io/j-gainsec/dwarf-mixed-phase1-workload:<new-tag> .
 docker login ghcr.io -u J-GainSec --password-stdin \
-  < /home/nigel/moog-secrets/ghcr.token
+  < $HOME/moog-secrets/ghcr.token
 docker push ghcr.io/j-gainsec/dwarf-mixed-phase1-workload:<new-tag>
 ```
 
@@ -119,7 +119,7 @@ New published images pinned in Compose:
 | `ghcr.io/j-gainsec/dwarf-mixed-phase1-workload` | `sha256:31dc030ed0cd5884fa36ce0b230609167678f44ca55d565dc4169dafb018a0a1` |
 | `ghcr.io/j-gainsec/dwarf-adversary-anti` (seed sanitization) | `sha256:e99cb81ffc51465042b77ac3100d18092f69a25c36c66fff4954663b7200d2bd` |
 
-Verification completed on `cardano-box`:
+Verification completed on `dwarf-host-a`:
 
 - 23 unit/contract tests pass after the relay-entrypoint regression guard;
 - image added paths contain no `.skey`, key, PEM, or environment files;
@@ -246,14 +246,14 @@ commit, so the SHA must contain this compose, both image contexts, and the fixed
 > So: **`--try 1 -t 1` first. Then `--try 2 -t 3` at the same commit.**
 
 ```bash
-export MOOG_TOKEN_ID=$(python3 -c "import yaml;print(yaml.safe_load(open('/home/nigel/dwarf-v4/var/state/config.yaml'))['moog']['token_id'])")
+export MOOG_TOKEN_ID=$(python3 -c "import yaml;print(yaml.safe_load(open('var/state/config.yaml'))['moog']['token_id'])")
 export MOOG_MPFS_HOST=https://mpfs.plutimus.com
-export MOOG_GITHUB_PAT=$(python3 -c "import yaml;print(yaml.safe_load(open('/home/nigel/dwarf-v4/var/state/config.yaml'))['moog']['github_pat'])")
-export MOOG_WALLET_PASSPHRASE="$(cat /home/nigel/moog-secrets/requester/wallet.passphrase)"
+export MOOG_GITHUB_PAT=$(python3 -c "import yaml;print(yaml.safe_load(open('var/state/config.yaml'))['moog']['github_pat'])")
+export MOOG_WALLET_PASSPHRASE="$(cat $HOME/moog-secrets/requester/wallet.passphrase)"
 # NB the wallet file is requester.json (holds `encryptedMnemonics`); there is no wallet.json.
 
-/home/nigel/bin/moog requester create-test \
-  -w /home/nigel/moog-secrets/requester/requester.json \
+$HOME/bin/moog requester create-test \
+  -w $HOME/moog-secrets/requester/requester.json \
   -p github \
   -r pragma-org/dwarf \
   -d antithesis/cardano_amaru_adversarial \
@@ -268,8 +268,8 @@ Faults **must** be on — with faults off this is just the local validation at a
 Once `try 1` reaches `phase: finished`, escalate to the full run at the **same commit**:
 
 ```bash
-/home/nigel/bin/moog requester create-test \
-  -w /home/nigel/moog-secrets/requester/requester.json \
+$HOME/bin/moog requester create-test \
+  -w $HOME/moog-secrets/requester/requester.json \
   -p github -r pragma-org/dwarf -d antithesis/cardano_amaru_adversarial \
   -c <SAME_COMMIT_SHA> \
   --try 2 \

@@ -20,12 +20,8 @@ fuzzing reaches.
   (testRunId `dd2bde69…`). Node-safety (`Never: Cardano Node Errors`/`Critical`)
   passed in both; 0 rare in both; `dwarf_statemachine_violation_served` fired in
   both (incl. under faults).
-- `logs/statemachine-soak-summary.txt` — the 8h local soak sample table +
-  scenario breakdown + final state.
-- `logs/statemachine-soak-adversary.log` — full 8h adversary stdout (per-injection).
-- `logs/statemachine-soak-node-tracer.json.gz` — full 8h `relay2` node tracer
-  (`node.json`): **0** Error/Critical lines, **7,158** `printf: bad formatting
-  char 'd'` occurrences.
+- Public source keeps this reviewed summary and the reproduction source. Raw local soak
+  logs and compressed node traces are not distributed.
 
 ## Result
 

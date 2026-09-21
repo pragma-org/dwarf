@@ -1,0 +1,122 @@
+schema_version: v1
+id: client-example-02-plutus-vm
+title: Plutus VM conformance and execution cost
+status: frozen
+purpose:
+  technical: Execute a frozen valid and invalid Plutus V2 corpus through exact production evaluators and real node transactions, compare result plus CPU/memory budget, and retain wall-clock VM timing by outcome.
+  child: Run one script that should work and one that should fail. Check the answer, the fuel used, and the time used.
+scope: {real_node_required: true, simulation_allowed: false, comparison_model: separate-implementation-executions-not-mixed-node}
+controlling_sources:
+  - {name: Client conformance requirements, location: "https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792", sha256_or_revision: "gist-api-sha256:d38556b71b40de79b7128ed62a5282c9af4291d8eb0584a9f09f771da5f94738"}
+  - {name: Risk Register v2, location: "dwarf workbench file JG-RiskRegister-V2.csv", sha256_or_revision: "sha256:11dee3e9e0cc800c7dc65fe8dde27ae55c7ad2edc8bab3c6d31402cdf56ec65a"}
+security_mapping:
+  threat_model:
+    - {id: TM-036, title: Block validation / ledger application, reason: "Phase-2 validity, ExUnits bounds, and IsValid handling are the direct security controls."}
+    - {id: TM-022, title: Runtime / liveness / implementation behavior, reason: Expensive script execution can create availability pressure.}
+  risk_register:
+    - {id: RR-031, title: Phase-2 (Plutus) ExUnits / IsValid asymmetry, severity: High, boundaries: [B-005, B-007], interfaces: [IF-006, IF-009], reason: The test checks result and CPU/memory budget for valid and invalid programs.}
+    - {id: RR-025, title: Runtime starvation or blocking-work availability degradation, severity: High, boundaries: [B-003, B-004, B-005, B-007], interfaces: [IF-003, IF-004, IF-005, IF-006, IF-009], reason: The test retains VM wall-clock time and target resource cost.}
+scenario_legs:
+  - scenario_id: client-example-plutus-vm-amaru
+    implementation: amaru
+    status: additive-required
+    profile: profile-u-amaru-measurement-nanoseconds-v2
+    measurement_profile: amaru-security-patched
+    primitives:
+      setup: [runtime_verify_exact_target]
+      load: [runtime_version_pinned_plutus_conformance, runtime_controlled_plutus_transactions]
+      probes: [runtime_target_health_and_progress]
+      assertions: [plutus_result_and_budget_match, plutus_live_outcomes_observed, target_progress_continues]
+      teardown: []
+  - scenario_id: client-example-plutus-vm-cardano
+    implementation: cardano-node
+    status: additive-required
+    profile: profile-v-cardano-measurement-nanoseconds-v2
+    measurement_profile: cardano-security-patched
+    primitives:
+      setup: [runtime_verify_exact_target]
+      load: [runtime_version_pinned_plutus_conformance, runtime_controlled_plutus_transactions]
+      probes: [runtime_target_health_and_progress]
+      assertions: [plutus_result_and_budget_match, plutus_live_outcomes_observed, target_progress_continues]
+      teardown: []
+targets:
+  amaru: {version: 10.11.20260912, source_repository: "https://github.com/pragma-org/amaru.git", source_revision: b159172f25a9c389f82f20bca4f15e3032791638, supporting_cardano_version: 10.7.1, stock_mode: stock, stock_image_reference: "ghcr.io/pragma-org/amaru:v10.11.20260912", stock_image_digest: "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e", patched_mode: patched, measurement_revision: nanoseconds-v2, patch_manifest_sha256: "sha256:1012e64ad3a3f5a9abd1aea061d5036fcc8e936392f82d5829e3df7733ab6b99", build_result_sha256: "sha256:6fb4c905c299b1f4ee8066bde8bf8182d63c770edd6412568d265af873176b70", patched_image_reference: "dwarf/amaru-measurement@sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862", patched_image_digest: "sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862", patched_executable_digest: "sha256:05233bac96c1914a232a2d9c5a704f08401aff0b20356c015e848f295b919b78", patch_set_sha256: 4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0}
+  cardano-node: {version: 11.1.2, source_repository: "https://github.com/IntersectMBO/cardano-node.git", source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5, stock_mode: stock, stock_image_reference: "ghcr.io/intersectmbo/cardano-node:11.1.2", stock_image_digest: "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f", patched_mode: patched, measurement_revision: nanoseconds-v2, patch_manifest_sha256: "sha256:06405007512eb8040898fbe53984b43bb5419100e5c7c64954588ee618ad7071", build_result_sha256: "sha256:f8f94f4068483e1f3a099b25b8bb534a691fcc402711a5fedc103a0ad5b9f524", patched_image_reference: "dwarf/cardano-measurement@sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370", patched_image_digest: "sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370", patched_executable_digest: "sha256:3fb83f12ac1152e96c884c756a505484a39d9200da6c59b24678ac61218220eb", patch_set_sha256: 1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c}
+workload:
+  identity: dwarf-cardano-measurement-plutus-v2-v1
+  seed: "0x5107A502"
+  digest: sha256:0e7da7425ff1536b78a3a47f80c1f47b7940a659869f9309f3a5a5ca96b6e3f8
+  dataset_or_corpus:
+    plutus_version: v2
+    executions_per_script: 30
+    scripts:
+      - {name: always-succeeds-v2.plutus, sha256: 8ec6e6882130b15c84f6062125fc6d7665e1f72f8aa4e559b93d963b47c83a0a, expected_result: accepted}
+      - {name: always-fails-v2.plutus, sha256: 99f9d7bf49fdd9c257321942bedf074d562c5e6d50eb33bd134b53afc877ae34, expected_result: rejected}
+    cost_model: Exact protocol-parameter cost model is hashed and retained before execution; both evaluator legs must use the same digest.
+  warm_up_seconds: 30
+  duration_seconds: 1200
+  stop_conditions:
+    - Stop with failure on target identity or cost-model digest mismatch.
+    - Stop with failure when result or CPU/memory budget differs for the same program input.
+    - Stop with failure on panic, fatal termination, inclusion timeout, or loss of chain progress.
+environment:
+  hardware_fingerprint: cardano-box-2026-09-19
+  hardware: {cpu: AMD Ryzen 7 6800U, physical_cores: 8, logical_cpus: 16, memory_bytes: 29193207808, kernel: 6.8.0-138-generic, docker: 29.6.0, storage_driver: overlayfs}
+  amaru_topology: One exact Amaru target with the qualified controlled Cardano-node 10.7.1 support producer; only Amaru is measured.
+  cardano_topology: Three exact Cardano-node 11.1.2 nodes in the qualified local mesh; node1 accepts the controlled transactions.
+functional_requirement:
+  id: FR-PLUTUS-001
+  statement: Both exact production evaluators must match the frozen expected result and must agree on CPU and memory budget for each script under one retained cost model.
+  expected_result: The success program is accepted, the failure program is rejected, and result plus CPU and memory budget match for all selected inputs.
+measurements:
+  - {name: plutus_vm_by_outcome, boundary: Production VM evaluation only; context fetch and ledger state application are excluded, unit: us, minimum_sample_floor: 30, evidence_role: useful-distribution}
+  - {name: plutus_cpu_budget, boundary: Evaluator-reported CPU budget for the exact program and cost model, unit: exunits-cpu, minimum_sample_floor: 2, evidence_role: functional-correlation}
+  - {name: plutus_memory_budget, boundary: Evaluator-reported memory budget for the exact program and cost model, unit: exunits-memory, minimum_sample_floor: 2, evidence_role: functional-correlation}
+evidence_quality_rules: {very_small_sample: "n < 5", small_sample: "5 <= n < 30", useful_sample: "n >= 30", authority_rule: Result and budget equality are functional checks per unique program; wall-clock summaries require 30 executions per outcome.}
+required_collectors:
+  amaru: [amaru-stock-plutus-execution, amaru-stock-resources, amaru-external-workload-accounting]
+  cardano-node: [cardano-patched-ledger-plutus-stages, cardano-stock-resources, cardano-external-workload-accounting]
+acceptable_unavailable:
+  - Protocol queue, restart, epoch-transition, and unrelated ledger-rule metrics can remain unavailable with a stated reason.
+security_assertions:
+  - {id: plutus_result_and_budget_match, statement: Result and CPU/memory budget match the reference for each exact input and cost model.}
+  - {id: plutus_live_outcomes_observed, statement: The real node records at least 30 accepted and 30 rejected VM executions at the intended boundary.}
+  - {id: target_progress_continues, statement: The node stays live and the honest chain advances after the workload.}
+retained_artifacts: [manifest.json, scenario.yaml, resolved-profile.json, target identity, script files and hashes, cost-model file and hash, per-execution result and budget, transaction IDs and outcomes, raw VM traces, measurements/report.json, assertions.json, SARIF and attestation state, evidence bundle and digest]
+report_routes: ["/operate/runs/{run_id}", "/operate/scenarios/client-example-plutus-vm-{implementation}", "/operate/measurement-profiles/{measurement_profile}"]
+legitimate_claims:
+  - The two frozen programs produced the recorded result, budget, and wall-clock evidence at the stated boundaries.
+explicit_non_claims:
+  - This two-program corpus is not full Plutus conformance and is not a mainnet turbo-benchmark sample.
+  - Wall-clock values do not include transaction context fetch or full ledger-state application.
+  - Separate runs do not automatically establish a cross-implementation performance ranking.
+verdict_policy: {security_assertions_authoritative: true, measurements_gate_by_default: false, threshold_gate: explicit-opt-in-only}
+approved_resolution:
+  kind: on-chain-plutus-v2-topology
+  scenario_id: client-example-plutus-vm-amaru-onchain-v2
+  profile: profile-w-amaru-measurement-plutus-v2
+  preserve_existing_topologies: true
+  requirements:
+    - generated-genesis-digests-retained
+    - live-protocol-parameters-digest-retained
+    - live-plutus-v2-cost-model-matches-pinned-model
+    - 30-valid-transactions-included
+    - 30-expected-invalid-transactions-included
+    - transaction-hashes-and-identifiers-retained
+    - continued-amaru-chain-progress
+  accepted_evidence:
+    run_id: 20260921T013953Z-565b77c3
+    measurement_revision: nanoseconds-v2
+    framework_commit: 05e757016838afd0594aeeea5b7019698d797e73
+    scenario_sha256: 3dc7db5b24e3e6396cf6e25304db3c5a96469863be94d540ca2c3b468ed49b01
+    manifest_sha256: 436232f557906fbb58661b528db1ac6d37c73ac21506e7daef9dce9ad2956927
+    assertions_sha256: 98e71e58ab5f7696b121ae1c498155d24524c35146f86af2926effe41f304c06
+    measurement_report_sha256: 86c3dc58e43a3571243693a26de6622f983d926a3cd9d3c046f4678bd5d2c525
+    transaction_result_sha256: 9403d75f28e7ad4125aef0d774a40e340d12fcee9d1d892437cd20a1f158708c
+    health_progress_sha256: eec8329a68e6358ae5fef76b369e19ef85ee402a2dd6b799ea4fc2ed8e677f64
+    bundle_sha256: bf5604de608889cabc4ea30242a2236aaccf12cd06c07999c14ee26a8a3c7ed0
+    bundle_file_count: 575
+implementation_gaps:
+  - {id: GAP-PLUTUS-CONFORMANCE-ADAPTER, status: closed, required_change: "Exact-revision evaluator adapters retain result, CPU budget, memory budget, Plutus version, cost-model digest, integer nanoseconds, and fractional microseconds."}
+  - {id: GAP-PLUTUS-AMARU-LIVE-WORKLOAD, status: closed, required_change: The additive topology activates the pinned cost model on chain and retains 30 included-valid plus 30 included-invalid Plutus V2 transactions through the exact Amaru target.}
+deferred_scope: {presentation_walkthrough: true, mixed_node_comparison: true, weekly_automation: true, stable_release_thresholds: true}

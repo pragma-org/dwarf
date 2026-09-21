@@ -5,9 +5,10 @@ import json
 import os
 from pathlib import Path
 
-MAY = Path("/Users/operator/dwarf-project/dwarf-deploypackage-may/dwarf")
-V4 = Path("/Users/operator/dwarf-project/dwarf-v4/dwarf")
-OUT = Path("/Users/operator/dwarf-project/dwarf-v4/sp1-closure")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MAY = Path(os.environ.get("DWARF_MAY_ROOT", REPO_ROOT)) / "dwarf"
+V4 = Path(os.environ.get("DWARF_CURRENT_ROOT", REPO_ROOT)) / "dwarf"
+OUT = Path(os.environ.get("DWARF_SP1_OUTPUT", REPO_ROOT / "sp1-closure"))
 
 
 def load(path):

@@ -19,6 +19,39 @@ from pathlib import Path
 
 
 REQUIRED_CATEGORIES = ("valid", "zap-1", "zap-2", "zap-3")
+QUALIFIED_DATASET_REPOSITORY = (
+    "https://github.com/r2rationality/cardano-cbor-dataset.git"
+)
+QUALIFIED_DATASET_REVISION = "a7561cd063550c2218898571520f14c3674efe91"
+QUALIFIED_DATASET_ERA = "conway"
+QUALIFIED_DATASET_RULE = "plutus_data"
+
+
+def validate_qualified_dataset_contract(config: dict) -> dict:
+    """Refuse Cardano dataset surfaces that have not passed the typed verifier gate."""
+    repository = str(config.get("source_repository") or "")
+    revision = str(config.get("expected_source_revision") or "")
+    era = str(config.get("era") or "")
+    rule = str(config.get("rule") or "")
+    if repository != QUALIFIED_DATASET_REPOSITORY:
+        raise ValueError(
+            f"dataset repository is unqualified; expected {QUALIFIED_DATASET_REPOSITORY}"
+        )
+    if revision != QUALIFIED_DATASET_REVISION:
+        raise ValueError(
+            f"dataset revision is unqualified; expected {QUALIFIED_DATASET_REVISION}"
+        )
+    if era != QUALIFIED_DATASET_ERA:
+        raise ValueError("only the qualified Conway dataset boundary is supported")
+    if rule != QUALIFIED_DATASET_RULE:
+        raise ValueError("only the qualified Conway plutus_data rule is supported")
+    return {
+        "source_repository": repository,
+        "source_revision": revision,
+        "era": era,
+        "rule": rule,
+        "qualification": "typed-verifier-qualified",
+    }
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -318,6 +351,7 @@ def _write_summary(output_dir: Path, report: dict) -> None:
 
 
 def run_cardano_cbor_dataset_differential(config: dict) -> Path:
+    qualification = validate_qualified_dataset_contract(config)
     dataset_dir = Path(os.path.expandvars(os.path.expanduser(str(config["dataset_dir"])))).resolve()
     repo_dir = Path(os.path.expandvars(os.path.expanduser(str(config["dataset_repo_dir"])))).resolve()
     output_dir = Path(os.path.expandvars(os.path.expanduser(str(config["output_dir"])))).resolve()
@@ -422,6 +456,7 @@ def run_cardano_cbor_dataset_differential(config: dict) -> Path:
         "clean": clean,
         "transcript": "inputs.ndjson",
         "claim_scope": "typed_library_decoder_only",
+        "qualification": qualification,
     }
     report_path = output_dir / "result.json"
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")

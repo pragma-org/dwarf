@@ -52,7 +52,8 @@
     <img src="/static/dwarf-logo.png" alt="Dwarf">
   </a>
   <nav class="shell-nav" aria-label="Primary">
-    <a href="/operate" class="{{ 'active' if active == 'operate' else '' }}">Operate</a>
+    <a href="/run" class="shell-nav__start {{ 'active' if active_sub == 'run' else '' }}">Start run</a>
+    <a href="/operate" class="{{ 'active' if active == 'operate' and active_sub != 'run' else '' }}">Operate</a>
     <a href="/learn"   class="{{ 'active' if active == 'learn'   else '' }}">Learn</a>
   </nav>
 </header>

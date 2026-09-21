@@ -12,7 +12,7 @@ old lambdasistemi 10.10 producer. The 10.10 store is **format-incompatible** wit
 the 10.11 format** — a fresh testnet_42 store bootstrapped from the live `cardano_amaru`
 devnet's p1 chain (epochs 0/1/2, target epoch 3) via `amaru snapshot create` +
 `amaru node bootstrap` (full recipe recorded in the memory note `antithesis-amaru-audit`).
-Verified on cardano-box: baked image boots clean, `build_ledger tip.slot=371`, submit-api
+Verified on dwarf-host-a: baked image boots clean, `build_ledger tip.slot=371`, submit-api
 up, no permission/panic. **Note the tx-3element finding is now FIXED in this image** — the
 `0x83` (3-element) tx is rejected at decode (`CBOR array length mismatch: expected 4 got 3`),
 matching cardano-node; the bundle therefore now demonstrates the *fixed* decoder (and stays
@@ -82,7 +82,7 @@ workload  --POST mutated tx CBOR-->  amaru-baked :3011 (HTTP submit-api)
 - `sometimes` Amaru rejects malformed CBOR
 - (multi-target) `always` implementations agree on accept/reject
 
-## Verified locally (2026-07-21, cardano-box)
+## Verified locally (2026-07-21, dwarf-host-a)
 `docker compose up` → amaru-baked Up `restarts=0` (ledger loaded, submit-api +
 listen live), workload Up driving. Manual + looped `drive-submit` over the 20-file
 corpus → real `400` rejects, `panic=False`, Amaru survives a sustained stream, 0
@@ -99,7 +99,7 @@ panics. `docker compose config` clean.
   consensus-relevant divergence = a finding. Neither node needs to sync — p1 forges
   its own testnet_42 chain; Amaru serves its baked store.
 
-  Verified live on cardano-box: cold `docker compose -f docker-compose.differential.yaml
+  Verified live on dwarf-host-a: cold `docker compose -f docker-compose.differential.yaml
   up` → all 6 services up, p1 forging, submit-api connected (400+ txs processed),
   workload driving both → `{'assertions': 7, 'targets': 2, 'agree': True, 'panic':
   False, detail: {amaru: 400, cardano: 400}}`, 0 panics, all nodes `restarts=0`.

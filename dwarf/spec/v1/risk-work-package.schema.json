@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dwarf.gainpalfam.com/spec/v1/risk-work-package.schema.json",
+  "$id": "https://raw.githubusercontent.com/pragma-org/dwarf/main/dwarf/spec/v1/risk-work-package.schema.json",
   "title": "DWARF risk work package",
   "description": "A Milestone-1 planning and grouping record that connects candidate risks to evidence and remaining work; it is not a forensic runtime bundle.",
   "type": "object",

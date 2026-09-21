@@ -1,4 +1,4 @@
-"""Shared detail view for scenario, target, and profile definitions."""
+"""Shared detail view for DWARF catalog definitions."""
 from __future__ import annotations
 
 import json
@@ -15,6 +15,8 @@ def _summary_fields(catalog: str, data: dict) -> list[dict[str, str]]:
         "scenarios": ("runtime", "target", "profile", "duration", "evidence_intent"),
         "targets": ("implementation", "language", "decoder_type", "input_format", "upstream_commit"),
         "profiles": ("node_type", "node_count", "amaru_node_count", "network_magic", "peer_sharing", "version_policy", "cardano_version", "amaru_version", "compatibility_pair"),
+        "measurements": ("collection_mode", "compatibility", "default_enabled", "overhead_class", "required_capabilities"),
+        "measurement-profiles": ("implementation", "target_modes", "measurements"),
     }[catalog]
     fields = []
     for key in preferred:

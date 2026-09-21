@@ -1,0 +1,291 @@
+{
+  "schema_version": "v1",
+  "audited_at": "2026-09-18T23:58:00Z",
+  "implementation": "cardano-node",
+  "release": "11.1.2",
+  "release_url": "https://github.com/IntersectMBO/cardano-node/releases/tag/11.1.2",
+  "source_repository": "https://github.com/IntersectMBO/cardano-node",
+  "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+  "image": {
+    "reference": "ghcr.io/intersectmbo/cardano-node:11.1.2",
+    "digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f"
+  },
+  "qualification": {
+    "scope": "cardano-only",
+    "status": "confirmed",
+    "default": true,
+    "evidence": [
+      "state:version-qualifications/20260918T032343Z-dwarf-qual-cardano-11-1-2-b1f28ed0"
+    ]
+  },
+  "dwarf_baseline": {
+    "repository": "https://github.com/pragma-org/dwarf",
+    "commit": "19def2885a43c58e6dc11c37c4e0cdd1143c4d9a"
+  },
+  "source_audit_method": {
+    "immutable_object_verified": true,
+    "command": "git show fef83fed01d7926f3de83b3b917be5a4a48768b5:<path>",
+    "working_tree_used_as_authority": false,
+    "note": "Every stock claim below is bounded to constructors, fields, metrics, and units visible at the pinned Git object. Imported dependency types are claimed only where this revision's tracing adapters serialize or consume them."
+  },
+  "export_contract": {
+    "legacy_tracing_removed": true,
+    "new_tracing": true,
+    "prometheus_simple": true,
+    "source_paths": [
+      "cardano-node/src/Cardano/Node/Tracing/API.hs",
+      "cardano-node/src/Cardano/Node/Tracing/Tracers.hs",
+      "cardano-node/src/Cardano/Node/Tracing/StateRep.hs",
+      "configuration/cardano/mainnet-config.json"
+    ],
+    "claim": "The node's new tracing dispatcher can emit structured machine traces and expose its EKG metric store through PrometheusSimple. Trace namespaces still require explicit configuration at runtime."
+  },
+  "stock_signals": [
+    {
+      "id": "chainsync",
+      "available": true,
+      "source_paths": [
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/Consensus.hs",
+        "cardano-node/src/Cardano/Node/Tracing/Tracers.hs"
+      ],
+      "constructors_or_metrics": [
+        "TraceDownloadedHeader",
+        "TraceRolledBack",
+        "TraceValidatedHeader",
+        "TraceChainSyncServerUpdate",
+        "served.header"
+      ],
+      "fields": ["kind", "tip.slot", "tip.block", "tip.blockNo", "addBlock", "rollBackTo", "blockingRead"],
+      "units": ["slot number", "block number", "event count"],
+      "claim": "Stock traces expose header download/validation/rollback and server add-block/rollback activity. They do not expose codec duration."
+    },
+    {
+      "id": "blockfetch",
+      "available": true,
+      "source_paths": [
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/Consensus.hs",
+        "cardano-node/src/Cardano/Node/Tracing/Tracers.hs"
+      ],
+      "constructors_or_metrics": [
+        "AddedFetchRequest",
+        "SendFetchRequest",
+        "StartedFetchBatch",
+        "CompletedBlockFetch",
+        "CompletedFetchBatch",
+        "RejectedFetchBatch",
+        "TraceBlockFetchServerSendBlock",
+        "blockfetchclient.blockdelay",
+        "blockfetchclient.blocksize",
+        "served.block"
+      ],
+      "fields": ["kind", "peer", "block", "size", "delay", "range", "outstanding"],
+      "units": ["seconds", "bytes", "block count", "event count"],
+      "claim": "Stock client and server traces expose fetch lifecycle, completed-block size/delay, and served-block counts. Internal handler queue residence is not exposed."
+    },
+    {
+      "id": "txsubmission",
+      "available": "partial",
+      "source_paths": [
+        "cardano-node/src/Cardano/Node/Tracing/Tracers.hs",
+        "cardano-node/src/Cardano/Node/Tracing/Consistency.hs",
+        "bench/locli/src/Cardano/Unlog/LogObject.hs",
+        "ouroboros-network-1.2.0.0/lib/Ouroboros/Network/TxSubmission/Inbound/V2/Types.hs",
+        "ouroboros-network-1.2.0.0/tracing/Ouroboros/Network/Tracing/TxSubmission.hs",
+        "ouroboros-network-1.2.0.0/tracing/Ouroboros/Network/Tracing/TxSubmission/Inbound.hs"
+      ],
+      "constructors_or_metrics": [
+        "TraceTxSubmissionInbound",
+        "TraceTxSubmissionOutbound",
+        "TraceTxSubmissionCollected",
+        "TraceTxSubmissionProcessed",
+        "TxSubmissionCounters",
+        "TraceTxInboundAddedToMempool",
+        "TraceTxInboundRejectedFromMempool",
+        "txIdBlockingWaitMs",
+        "txPipelineWaitMs",
+        "txSubmissionWaitMs"
+      ],
+      "fields": ["kind", "peer", "txIds", "accepted", "rejected", "collected", "processed", "dt", "txIdBlockingWaitMs", "txPipelineWaitMs", "txSubmissionWaitMs"],
+      "units": ["transaction count", "event count", "milliseconds", "DiffTime seconds"],
+      "claim": "The stock TxSubmission2 tracer exports request/reply/accept/reject counters, cumulative blocking/pipeline/mempool-submit wait in milliseconds, and accepted/rejected mempool-add durations. It does not join those phases into one authoritative per-transaction residence interval."
+    },
+    {
+      "id": "mempool",
+      "available": true,
+      "source_paths": [
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/Consensus.hs",
+        "cardano-node/src/Cardano/Node/Tracing/Tracers.hs"
+      ],
+      "constructors_or_metrics": [
+        "TraceMempoolAttemptingAdd",
+        "TraceMempoolAddedTx",
+        "TraceMempoolRejectedTx",
+        "TraceMempoolRemoveTxs",
+        "TraceMempoolSynced",
+        "txsInMempool",
+        "mempoolBytes",
+        "txsProcessedNum",
+        "txsSyncDuration"
+      ],
+      "fields": ["kind", "tx", "err", "mempoolSize.numTxs", "mempoolSize.numBytes", "tip"],
+      "units": ["transactions", "bytes", "milliseconds", "event count"],
+      "claim": "Stock traces distinguish attempted, admitted, rejected, removed, and synchronized transactions and export mempool size and sync duration metrics."
+    },
+    {
+      "id": "keepalive",
+      "available": true,
+      "source_paths": [
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/NodeToNode.hs",
+        "cardano-node/src/Cardano/Node/Tracing/Tracers.hs"
+      ],
+      "constructors_or_metrics": ["AddSample", "KeepAliveClient"],
+      "fields": ["kind", "address", "rtt", "sampleTime", "outboundG", "inboundG"],
+      "units": ["DiffTime seconds", "sample timestamp"],
+      "claim": "Stock KeepAlive client samples expose peer RTT and inbound/outbound GSV values for live peers."
+    },
+    {
+      "id": "chaindb-selection-adoption",
+      "available": true,
+      "source_paths": [
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/ChainDB.hs",
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/Consensus.hs"
+      ],
+      "constructors_or_metrics": [
+        "TraceAddBlockEvent",
+        "AddedToCurrentChain",
+        "SwitchedToAFork",
+        "TraceChainSelStarvationEvent",
+        "TraceAdoptedBlock",
+        "TraceDidntAdoptBlock"
+      ],
+      "fields": ["kind", "block", "blockNo", "slot", "tip", "newtip", "oldtip", "txIds"],
+      "units": ["slot number", "block number", "transaction count", "event count"],
+      "claim": "Stock ChainDB and forging traces expose selected-chain changes and forged-block adoption outcomes suitable for chain-progress and submitted-transaction correlation when detailed trace fields are enabled."
+    },
+    {
+      "id": "ledger-block-epoch",
+      "available": "partial",
+      "source_paths": [
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/ChainDB.hs",
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/Consensus.hs",
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/LedgerMetrics.hs"
+      ],
+      "constructors_or_metrics": [
+        "TraceValidationEvent",
+        "TraceLedgerDBEvent",
+        "TraceLedgerState",
+        "TraceForgeTickedLedgerState",
+        "TraceAdoptedBlock",
+        "LedgerMetrics"
+      ],
+      "fields": ["kind", "slot", "block", "blockNo", "utxoSize", "delegMapSize", "drepCount", "drepMapSize"],
+      "units": ["slot number", "block number", "entry count", "event timestamp"],
+      "claim": "Stock events expose block validation/adoption boundaries and periodic ledger state sizes. An isolated authoritative epoch-transition duration is not uniformly emitted and must remain unavailable unless bracketed by a controlled workload or patched boundary."
+    },
+    {
+      "id": "plutus-execution",
+      "available": "partial",
+      "source_paths": [
+        "bench/tx-generator/src/Cardano/Benchmarking/LogTypes.hs",
+        "bench/tx-generator/src/Cardano/Benchmarking/Tracer.hs",
+        "bench/tx-generator/src/Cardano/TxGenerator/PlutusContext.hs",
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/Consensus.hs",
+        "cardano-ledger-alonzo-1.16.0.0/src/Cardano/Ledger/Alonzo/Plutus/Evaluate.hs"
+      ],
+      "constructors_or_metrics": ["TraceBenchPlutusBudgetSummary", "PlutusBudgetSummary", "TraceMempoolAddedTx", "TraceMempoolRejectedTx", "[LEDGER][PLUTUS_SCRIPT],BEGIN", "[LEDGER][PLUTUS_SCRIPT],END"],
+      "fields": ["budgetPerBlock", "budgetPerTx", "budgetPerTxInput", "budgetUsedPerTxInput", "tx", "err", "eventlog timestamp"],
+      "units": ["execution memory units", "execution CPU steps", "transaction outcome", "RTS eventlog time"],
+      "claim": "The shipped workload generator records Plutus execution budgets and the node records transaction outcomes. The pinned ledger dependency brackets actual VM execution with RTS eventlog BEGIN/END markers, but those markers lack transaction/script identity and outcome; the revision-locked patch adds a directly ingestible duration and accepted/rejected outcome without claiming that stock has no timing signal."
+    },
+    {
+      "id": "process-rts-resources",
+      "available": true,
+      "source_paths": [
+        "cardano-node/src/Cardano/Node/Tracing/Tracers/Resources.hs",
+        "bench/locli/src/Cardano/Unlog/LogObject.hs",
+        "bench/locli/src/Cardano/Unlog/Resources.hs"
+      ],
+      "constructors_or_metrics": ["ResourceStats", "readResourceStats", "CentiCpu", "RSS", "Heap", "Alloc", "NetRd", "NetWr", "Threads"],
+      "fields": ["CentiCpu", "RSS", "Heap", "Alloc", "NetRd", "NetWr", "Threads"],
+      "units": ["centi-CPU percent", "bytes", "count", "cumulative counters"],
+      "claim": "The node periodically emits process resource statistics; DWARF must retain raw samples and may separately collect container/cgroup and network-namespace counters with explicit ownership."
+    },
+    {
+      "id": "new-tracing-prometheus-export",
+      "available": true,
+      "source_paths": [
+        "cardano-node/src/Cardano/Node/Tracing/API.hs",
+        "cardano-node/src/Cardano/Node/Tracing/StateRep.hs",
+        "cardano-node/src/Cardano/Node/Tracing/Tracers.hs"
+      ],
+      "constructors_or_metrics": ["mkTracers", "PrometheusSimple", "runPrometheusSimple", "TracePrometheusSimpleStart", "TracePrometheusSimpleStop"],
+      "fields": ["namespace", "kind", "metric name", "metric value", "timestamp"],
+      "units": ["metric-defined", "RFC3339 timestamp"],
+      "claim": "The stock node can export its EKG metric store over PrometheusSimple and structured namespaces through the new tracing dispatcher."
+    }
+  ],
+  "visibility_gaps": [
+    {
+      "id": "protocol-decode-duration",
+      "missing_boundary": "The stock tracing graph records protocol events but not per-message successful and failed CBOR decode duration with protocol, message, peer, and outcome identity.",
+      "source_paths": ["cardano-node/src/Cardano/Node/Tracing/Consistency.hs", "cardano-node/src/Cardano/Node/Tracing/Tracers/NodeToNode.hs"],
+      "patch_mode": "patched-node",
+      "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+      "stock_overlap_reviewed": ["chainsync", "blockfetch", "txsubmission", "keepalive"],
+      "patch_required": true
+    },
+    {
+      "id": "blockfetch-handler-queue-residence",
+      "missing_boundary": "Stock BlockFetch lifecycle events and completion delay do not expose handler/decode queue depth or queue-entry-to-service residence.",
+      "source_paths": ["cardano-node/src/Cardano/Node/Tracing/Tracers/Consensus.hs", "cardano-node/src/Cardano/Node/Tracing/Tracers.hs"],
+      "patch_mode": "patched-node",
+      "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+      "stock_overlap_reviewed": ["blockfetch"],
+      "patch_required": true
+    },
+    {
+      "id": "txsubmission-inflight-residence",
+      "missing_boundary": "Stock TxSubmission2 already provides phase counters, cumulative blocking/pipeline/mempool-submit wait, and accepted/rejected mempool-add duration; it does not provide one continuous per-transaction request-to-body-to-mempool interval with pending and in-flight depth.",
+      "source_paths": ["cardano-node/src/Cardano/Node/Tracing/Tracers.hs", "cardano-node/src/Cardano/Node/Tracing/Consistency.hs", "ouroboros-network-1.2.0.0/tracing/Ouroboros/Network/Tracing/TxSubmission.hs", "ouroboros-network-1.2.0.0/tracing/Ouroboros/Network/Tracing/TxSubmission/Inbound.hs"],
+      "patch_mode": "patched-node",
+      "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+      "stock_overlap_reviewed": ["txsubmission", "mempool"],
+      "patch_required": true
+    },
+    {
+      "id": "ledger-plutus-stage-boundaries",
+      "missing_boundary": "Stock traces do not expose exact block-application and new-epoch-transition wall-clock duration as stable structured events. Stock RTS eventlog markers bracket actual Plutus VM execution but lack identity and outcome. The current revision-locked patch adds exact block-application, new-epoch-transition, and Plutus VM duration plus accepted/rejected outcome; it does not claim decode, script-context construction, or block-selection timing.",
+      "source_paths": ["ouroboros-consensus-4.2.1.0/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs", "cardano-ledger-alonzo-1.16.0.0/src/Cardano/Ledger/Alonzo/Plutus/Evaluate.hs"],
+      "patch_mode": "patched-node",
+      "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+      "stock_overlap_reviewed": ["mempool", "chaindb-selection-adoption", "ledger-block-epoch", "plutus-execution"],
+      "patch_required": true
+    }
+  ],
+  "metric_ownership": {
+    "node_process": ["structured trace events", "PrometheusSimple metrics", "ResourceStats"],
+    "container_or_network_namespace": ["cgroup CPU/RSS/IO", "network namespace RX/TX", "container lifecycle"],
+    "dwarf_controller": ["attempt start/end/outcome", "workload phase", "collector health", "correlation", "report and evidence retention"],
+    "network_namespace_is_per_process": false
+  },
+  "attempt_timing_contract": {
+    "outcome_inclusion": "all",
+    "terminal_outcomes": ["accepted", "rejected", "invalid", "duplicate", "timeout", "disconnected", "unclassified"],
+    "clock": "monotonic for elapsed duration; wall clock retained for cross-source correlation",
+    "missing_boundary_value": "unavailable"
+  },
+  "coverage_boundary": {
+    "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+    "existing_dwarf_harnesses": ["cardano-node-cov-*", "cardano-node-mini-protocol-*", "cardano-node-cbor-*"],
+    "performance_authority": false,
+    "correctness_authority": false,
+    "claim": "Compiler coverage can prove that a retained workload reached instrumented code in this exact revision; it cannot prove correctness or supply missing timing boundaries."
+  },
+  "claim_boundaries": {
+    "submission_success_is_chain_adoption": false,
+    "compiler_coverage_is_correctness": false,
+    "patched_only_behavior_is_vulnerability": false,
+    "cardano_only_proves_mixed_parity": false,
+    "unavailable_internal_visibility_may_be_inferred": false
+  }
+}

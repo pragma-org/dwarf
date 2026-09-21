@@ -1,0 +1,175 @@
+{
+  "base_image": "ghcr.io/intersectmbo/cardano-node:11.1.2@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+  "build": {
+    "binary_query": [
+      "cabal",
+      "list-bin",
+      "--builddir=dist-newstyle-dwarf-measurement",
+      "-w",
+      "ghc-9.6.7",
+      "exe:cardano-node"
+    ],
+    "command": [
+      "cabal",
+      "build",
+      "--builddir=dist-newstyle-dwarf-measurement",
+      "-w",
+      "ghc-9.6.7",
+      "exe:cardano-node"
+    ],
+    "environment": {
+      "LANG": "C.UTF-8"
+    }
+  },
+  "changed_paths": [
+    "ouroboros-network.cabal",
+    "api/lib/Ouroboros/Network/DwarfMeasurement.hs",
+    "framework/lib/Ouroboros/Network/Driver/Limits.hs",
+    "ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs",
+    "cardano-ledger-alonzo.cabal",
+    "src/Cardano/Ledger/Alonzo/DwarfMeasurement.hs",
+    "src/Cardano/Ledger/Alonzo/Plutus/Evaluate.hs"
+  ],
+  "dependencies": [
+    {
+      "archive": "ouroboros-network-1.2.0.0.tar.gz",
+      "package": "ouroboros-network",
+      "sha256": "f94167122d6d7956206626afff2d90ce2637d4c82af8dff8784fae227ddbad70",
+      "version": "1.2.0.0"
+    },
+    {
+      "archive": "ouroboros-consensus-4.2.1.0.tar.gz",
+      "package": "ouroboros-consensus",
+      "sha256": "160af19b249dbb65c8d84cf74a6c475b2080a5b16b1c30c3c709f3e6065f0972",
+      "version": "4.2.1.0"
+    },
+    {
+      "archive": "cardano-ledger-alonzo-1.16.0.0.tar.gz",
+      "package": "cardano-ledger-alonzo",
+      "sha256": "195f1b9dac59bcdd8d4f499275f450bc37ee57169efee0fadf0d1676bc37cae5",
+      "version": "1.16.0.0"
+    }
+  ],
+  "instrumentation": [
+    {
+      "all_outcomes_timed": true,
+      "boundary": "receive-plus-incremental-decode",
+      "capability": "live-protocol-receive-decode",
+      "events": [
+        "cardano-node::measurement/protocol_receive_decode"
+      ],
+      "outcomes": [
+        "accepted",
+        "decode_failure",
+        "size_limit",
+        "timeout"
+      ],
+      "timing_precision": {
+        "authoritative_field": "elapsed_nanos",
+        "authoritative_field_unit": "nanoseconds",
+        "compatibility_field": "duration_us",
+        "compatibility_field_unit": "whole-microseconds",
+        "derivation": "same monotonic duration; compatibility value is integer nanoseconds divided by 1000"
+      }
+    },
+    {
+      "all_outcomes_timed": true,
+      "boundaries": [
+        "block-application",
+        "epoch-transition"
+      ],
+      "capability": "live-block-application-and-epoch-transition",
+      "events": [
+        "cardano-node::measurement/ledger_stage"
+      ],
+      "outcomes": [
+        "accepted",
+        "rejected",
+        "completed"
+      ],
+      "timing_precision": {
+        "authoritative_field": "elapsed_nanos",
+        "authoritative_field_unit": "nanoseconds",
+        "compatibility_field": "duration_us",
+        "compatibility_field_unit": "whole-microseconds",
+        "derivation": "same monotonic duration; compatibility value is integer nanoseconds divided by 1000"
+      }
+    },
+    {
+      "all_outcomes_timed": true,
+      "boundary": "plutus-vm",
+      "capability": "live-plutus-vm",
+      "events": [
+        "cardano-node::measurement/ledger_stage"
+      ],
+      "outcomes": [
+        "accepted",
+        "rejected"
+      ],
+      "timing_precision": {
+        "authoritative_field": "elapsed_nanos",
+        "authoritative_field_unit": "nanoseconds",
+        "compatibility_field": "duration_us",
+        "compatibility_field_unit": "whole-microseconds",
+        "derivation": "same monotonic duration; compatibility value is integer nanoseconds divided by 1000"
+      }
+    }
+  ],
+  "measurement_revision": "nanoseconds-v2",
+  "patch_set_sha256": "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c",
+  "patches": [
+    {
+      "path": "0001-network-protocol-and-ledger-measurements.patch",
+      "preimages": [
+        {
+          "path": "ouroboros-network.cabal",
+          "sha256": "a36bd402ca27c3b8d228fe8dec235fed42df5f200d1d6de0cfb0284958845cb4"
+        },
+        {
+          "path": "framework/lib/Ouroboros/Network/Driver/Limits.hs",
+          "sha256": "75321cc9865e294c92b8b7e1b8db8d239bab79439ef2c23f0b07247ab544e79a"
+        }
+      ],
+      "root": "dependency:ouroboros-network-1.2.0.0",
+      "sha256": "8e09179477fa2bd66570d7083c13440cf4bcc648b3fd2e2ce45c77664a989ce1"
+    },
+    {
+      "path": "0002-consensus-block-epoch-measurements.patch",
+      "preimages": [
+        {
+          "path": "ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs",
+          "sha256": "61d57a74d3ec8510723a059fd7c669fa7ed3ef3f4e03d89ff75e36a7336fc1bc"
+        }
+      ],
+      "root": "dependency:ouroboros-consensus-4.2.1.0",
+      "sha256": "cc05a427560af75479ca9c0ba923b8698c1b09e6bef5ddf4ab68bf33eaac52b4"
+    },
+    {
+      "path": "0003-plutus-vm-measurement.patch",
+      "preimages": [
+        {
+          "path": "cardano-ledger-alonzo.cabal",
+          "sha256": "bdf63322c66120e39c32190adc6b10ac40c93d901bb3a8f24be8c141c2275a15"
+        },
+        {
+          "path": "src/Cardano/Ledger/Alonzo/Plutus/Evaluate.hs",
+          "sha256": "91367fddfcc2de241d44d2f8861028438d798199204951ef51e73a991a4e4905"
+        }
+      ],
+      "root": "dependency:cardano-ledger-alonzo-1.16.0.0",
+      "sha256": "a550de91c57fd19b36729a8d367d69669da341a7e1a09427a08b5190d04dc72d"
+    }
+  ],
+  "schema_version": 1,
+  "source": {
+    "release": "11.1.2",
+    "repository": "https://github.com/IntersectMBO/cardano-node.git",
+    "revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+    "tag": "11.1.2"
+  },
+  "target": "cardano-node-measurement-nanoseconds-v2",
+  "toolchain": {
+    "cabal": "3.16.0.0",
+    "ghc": "9.6.7"
+  }
+}
