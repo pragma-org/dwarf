@@ -144,6 +144,6 @@ def test_readme_shell_blocks_parse_and_public_safety_holds():
         assert value not in lowered
     assert (
         '<img src="dwarf/dashboard/static/dwarf-logo.png" '
-        'alt="DWARF logo" width="20%">'
+        'alt="DWARF logo" width="35%">'
     ) in text
     assert "PRAGMA" in text
