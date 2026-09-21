@@ -1,8 +1,8 @@
 # DWARF Primitives Reference
 
-The complete catalogue of the **237** primitives a scenario can reference — every *strategy* (what a scenario can do) and every *oracle* (what it can assert). Generated from `primitives/registry.json`; purposes/pass-conditions are curated. A scenario may only reference names listed here. Many primitives operate on CBOR (Concise Binary Object Representation), Cardano's binary wire and ledger encoding. The **Antithesis** column marks the primitives the DWARF&rarr;Antithesis generator can carry onto the Antithesis backend (CBOR-only by design &mdash; `cbor_fuzz_*` strategies, the `runtime_aflpp_campaign` coverage surface, and the assertions mapped to native SDK checks); everything else runs on the local backend only.
+The complete catalogue of the **238** primitives a scenario can reference — every *strategy* (what a scenario can do) and every *oracle* (what it can assert). Generated from `primitives/registry.json`; purposes/pass-conditions are curated. A scenario may only reference names listed here. Many primitives operate on CBOR (Concise Binary Object Representation), Cardano's binary wire and ledger encoding. The **Antithesis** column marks the primitives the DWARF&rarr;Antithesis generator can carry onto the Antithesis backend (CBOR-only by design &mdash; `cbor_fuzz_*` strategies, the `runtime_aflpp_campaign` coverage surface, and the assertions mapped to native SDK checks); everything else runs on the local backend only.
 
-> Coverage: 206/237 primitives carry a curated description (87%). Any without one is still listed with its registry metadata. Regenerate with `scripts/gen_reference.py`.
+> Coverage: 208/238 primitives carry a curated description (87%). Any without one is still listed with its registry metadata. Regenerate with `scripts/gen_reference.py`.
 
 The browser catalog at `/operate/primitives` is the source-backed inventory for registry metadata, parameter schemas, executor provenance, scenario references, and deterministic source export. `/learn/primitives` documents the code-change lifecycle. A primitive is executable code; it is not a corpus, generation grammar, target, profile, or scenario.
 
@@ -152,7 +152,7 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_cardano_cbor_dataset_differential` | *(runtime cardano cbor dataset differential)* | lib | full · amaru | — |
 | `runtime_cardano_measurement_calibration` | *(runtime cardano measurement calibration)* | dev | full · cn | — |
 | `runtime_chain_switch_inject` | Inject a chain switch and observe honest-node convergence to the new tip. | dev | smoke · cn | — |
-| `runtime_controlled_chain_progress_window` | *(runtime controlled chain progress window)* | dev | full · cn+amaru | — |
+| `runtime_controlled_chain_progress_window` | Retain a bounded real-node block window. Version 2 keeps every raw adoption, fork, rollback, and application timing, then derives canonical progress without rewriting the raw sequence. | dev | full · cn+amaru | — |
 | `runtime_controlled_plutus_transactions` | *(runtime controlled plutus transactions)* | dev | full · cn+amaru | — |
 | `runtime_controlled_sync_range` | *(runtime controlled sync range)* | dev | full · cn+amaru | — |
 | `runtime_duplex_promotion_pressure` | Apply duplex-promotion pressure to test the hard slot limit. | dev | smoke · cn | — |
@@ -261,7 +261,7 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_txsubmission_window_pressure` | Push the TxSubmission txid inflight window past its negotiated bound. | dev | smoke · cn | — |
 
 
-## Assertion primitives — oracles (90)
+## Assertion primitives — oracles (91)
 
 What a scenario *proves*. Each is evaluated after load; the **pass condition** is the expected outcome. Thresholds shown are the tunable params.
 
@@ -375,6 +375,7 @@ What a scenario *proves*. Each is evaluated after load; the **pass condition** i
 |---|---|---|---|---|
 | `amaru_measurement_boundary_proven` | *(amaru measurement boundary proven)* | dev | full · amaru | — |
 | `block_application_samples_correlated` | *(block application samples correlated)* | dev | full · cn+amaru | — |
+| `canonical_chain_progress_complete` | PASS iff lossless raw chain-selection evidence derives at least the required final height progress, reaches the exact final tip after bounded oscillation, retains the required application correlations, and has no fatal health signal. | dev | full · cn+amaru | — |
 | `cardano_cbor_dataset_differential_clean` | *(cardano cbor dataset differential clean)* | lib | full · amaru | — |
 | `cbor_conformance_clean` | *(cbor conformance clean)* | sin·dev | full · cn+amaru | — |
 | `cbor_roundtrip_consistent` | *(cbor roundtrip consistent)* | sin·dev | full · cn+amaru | — |
@@ -452,4 +453,4 @@ What a scenario *proves*. Each is evaluated after load; the **pass condition** i
 
 ## Primitives awaiting a curated description
 
-These are registered but not yet hand-described (listed above with a fallback). Add them to `DESC` in the generator: `amaru_measurement_boundary_proven`, `block_application_samples_correlated`, `cardano_cbor_dataset_differential_clean`, `cbor_conformance_clean`, `cbor_roundtrip_consistent`, `controlled_sync_range_complete`, `invalid_protocol_cases_contained`, `minimum_adopted_block_range_observed`, `no_target_fatal_signal`, `plutus_live_outcomes_observed`, `plutus_result_and_budget_match`, `restart_readiness_complete`, `runtime_amaru_measurement_calibration`, `runtime_cardano_cbor_dataset_differential`, `runtime_cardano_measurement_calibration`, `runtime_controlled_chain_progress_window`, `runtime_controlled_plutus_transactions`, `runtime_controlled_sync_range`, `runtime_mark_baseline_window`, `runtime_mark_hostile_window`, `runtime_mark_recovery_window`, `runtime_peer_session_health`, `runtime_protocol_decode_cases`, `runtime_real_target_restart_and_readiness`, `runtime_target_health_and_progress`, `runtime_verify_exact_target`, `runtime_version_pinned_cbor_conformance`, `runtime_version_pinned_plutus_conformance`, `runtime_wait_for_chain_progress`, `target_progress_continues`, `unrelated_peer_session_usable`
+These are registered but not yet hand-described (listed above with a fallback). Add them to `DESC` in the generator: `amaru_measurement_boundary_proven`, `block_application_samples_correlated`, `cardano_cbor_dataset_differential_clean`, `cbor_conformance_clean`, `cbor_roundtrip_consistent`, `controlled_sync_range_complete`, `invalid_protocol_cases_contained`, `minimum_adopted_block_range_observed`, `no_target_fatal_signal`, `plutus_live_outcomes_observed`, `plutus_result_and_budget_match`, `restart_readiness_complete`, `runtime_amaru_measurement_calibration`, `runtime_cardano_cbor_dataset_differential`, `runtime_cardano_measurement_calibration`, `runtime_controlled_plutus_transactions`, `runtime_controlled_sync_range`, `runtime_mark_baseline_window`, `runtime_mark_hostile_window`, `runtime_mark_recovery_window`, `runtime_peer_session_health`, `runtime_protocol_decode_cases`, `runtime_real_target_restart_and_readiness`, `runtime_target_health_and_progress`, `runtime_verify_exact_target`, `runtime_version_pinned_cbor_conformance`, `runtime_version_pinned_plutus_conformance`, `runtime_wait_for_chain_progress`, `target_progress_continues`, `unrelated_peer_session_usable`

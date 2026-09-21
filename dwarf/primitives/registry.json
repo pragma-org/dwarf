@@ -2246,6 +2246,15 @@
       "supports": ["cardano-node", "amaru"],
       "version": "0.1.0"
     },
+    "canonical_chain_progress_complete": {
+      "class": "CanonicalChainProgressComplete",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/canonical_chain_progress_complete.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.2.0"
+    },
     "block_application_samples_correlated": {
       "class": "BlockApplicationSamplesCorrelated",
       "family": "assertion",

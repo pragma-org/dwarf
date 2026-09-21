@@ -14529,6 +14529,80 @@ def _json_lines_between(path: Path, offset: int) -> list[dict[str, Any]]:
     return records
 
 
+def _collect_raw_chain_events(
+    target: dict[str, Any], *, log_offset: int
+) -> list[dict[str, Any]]:
+    implementation = target.get("implementation")
+    if implementation == "cardano-node":
+        retained = []
+        for row in _json_lines_between(Path(str(target.get("log_path"))), log_offset):
+            namespace = str(row.get("ns") or "")
+            lowered = namespace.lower()
+            if "fork" not in lowered and "rollback" not in lowered:
+                continue
+            if "switchedtoafork" in lowered:
+                event = "fork-switch"
+            elif "tryswitchtoafork" in lowered:
+                event = "fork-candidate"
+            else:
+                event = "rollback"
+            retained.append(
+                {
+                    "event": event,
+                    "observed_at": row.get("at"),
+                    "namespace": namespace,
+                    "data": row.get("data"),
+                }
+            )
+        return retained
+    if implementation == "amaru":
+        result = _protocol_docker_result(
+            [
+                "logs",
+                "--since",
+                str(target.get("window_started_at")),
+                str(target.get("container")),
+            ],
+            timeout=120,
+        )
+        retained = []
+        for line in (result.stdout + "\n" + result.stderr).splitlines():
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            fields = row.get("fields") or {}
+            span = row.get("span") or {}
+            if fields.get("message") != "enter":
+                continue
+            name = span.get("name")
+            if name == "state.switch_to_fork":
+                retained.append(
+                    {
+                        "event": "fork-switch",
+                        "observed_at": row.get("timestamp"),
+                        "event_id": row.get("id"),
+                        "parent_event_id": row.get("parent_id"),
+                        "fork_length": fields.get("fork_length"),
+                        "rollback_length": fields.get("rollback_length"),
+                        "fork_point": fields.get("fork_point"),
+                    }
+                )
+            elif name == "state.roll_backward":
+                retained.append(
+                    {
+                        "event": "rollback",
+                        "observed_at": row.get("timestamp"),
+                        "event_id": row.get("id"),
+                        "parent_event_id": row.get("parent_id"),
+                    }
+                )
+        return retained
+    return []
+
+
 def _collect_controlled_block_evidence(
     target: dict[str, Any],
     *,
@@ -14668,6 +14742,277 @@ def _monotonic_adopted(adopted: list[dict[str, Any]]) -> bool:
     return bool(heights) and all(right > left for left, right in zip(heights, heights[1:]))
 
 
+def _tip_hash(tip: dict[str, Any]) -> str:
+    return str(tip.get("hash") or tip.get("block_hash") or "")
+
+
+def _derive_canonical_progress(
+    adopted: list[dict[str, Any]],
+    *,
+    start_tip: dict[str, Any],
+    end_tip: dict[str, Any],
+    minimum_blocks: int,
+    max_oscillation_episodes: int,
+    max_oscillation_transitions: int,
+    minimum_convergence_blocks: int,
+) -> dict[str, Any]:
+    """Keep raw selection order and derive bounded final progress separately."""
+
+    if min(
+        minimum_blocks,
+        max_oscillation_episodes,
+        max_oscillation_transitions,
+        minimum_convergence_blocks,
+    ) < 0 or minimum_blocks < 1 or minimum_convergence_blocks < 1:
+        raise ValueError("canonical progress bounds are invalid")
+    start_height = _tip_position(start_tip)
+    end_height = _tip_position(end_tip)
+    if start_height is None or end_height is None:
+        raise RuntimeError("canonical progress requires exact start and end heights")
+
+    previous = start_tip
+    raw_selection = []
+    episodes: list[dict[str, Any]] = []
+    current_episode: dict[str, Any] | None = None
+    advance_run = 0
+    latest_by_height: dict[int, dict[str, Any]] = {}
+    oscillation_count = 0
+    for index, event in enumerate(adopted):
+        height = _tip_position(event)
+        block_hash = _tip_hash(event)
+        previous_height = _tip_position(previous)
+        previous_hash = _tip_hash(previous)
+        if height is None or not block_hash or previous_height is None:
+            raise RuntimeError(f"raw chain-selection event {index} lacks exact identity")
+        if height > previous_height:
+            transition = "advance"
+            advance_run += 1
+        elif height < previous_height:
+            transition = "rollback"
+        elif block_hash != previous_hash:
+            transition = "same-height-hash-switch"
+        else:
+            transition = "repeated-observation"
+        retained = {
+            **event,
+            "event_index": index,
+            "transition": transition,
+            "previous_block_height": previous_height,
+            "previous_hash": previous_hash,
+        }
+        raw_selection.append(retained)
+        latest_by_height[height] = dict(event)
+
+        if transition in {"rollback", "same-height-hash-switch"}:
+            oscillation_count += 1
+            if current_episode is None or advance_run >= minimum_convergence_blocks:
+                current_episode = {
+                    "episode_index": len(episodes),
+                    "start_event_index": index,
+                    "end_event_index": index,
+                    "transitions": [],
+                }
+                episodes.append(current_episode)
+            current_episode["end_event_index"] = index
+            current_episode["transitions"].append(retained)
+            advance_run = 0
+        elif transition == "repeated-observation":
+            advance_run = 0
+        previous = event
+
+    last = adopted[-1] if adopted else start_tip
+    terminal_matches = (
+        _tip_position(last) == end_height
+        and bool(_tip_hash(last))
+        and _tip_hash(last) == _tip_hash(end_tip)
+    )
+    trailing_advances = 0
+    for event in reversed(raw_selection):
+        if event["transition"] != "advance":
+            break
+        trailing_advances += 1
+    bounded_progress = end_height - start_height >= minimum_blocks
+    oscillation_within_bounds = (
+        len(episodes) <= max_oscillation_episodes
+        and oscillation_count <= max_oscillation_transitions
+    )
+    final_convergence = terminal_matches and (
+        oscillation_count == 0 or trailing_advances >= minimum_convergence_blocks
+    )
+    selected = [
+        latest_by_height[height]
+        for height in sorted(latest_by_height)
+        if start_height < height <= end_height
+    ]
+    return {
+        "schema_version": "canonical-progress-v2",
+        "start_tip": start_tip,
+        "end_tip": end_tip,
+        "height_delta": end_height - start_height,
+        "minimum_blocks": minimum_blocks,
+        "raw_chain_selection": raw_selection,
+        "derived_final_selected_observations": selected,
+        "oscillation_episodes": episodes,
+        "oscillation_transition_count": oscillation_count,
+        "trailing_advance_count": trailing_advances,
+        "bounds": {
+            "max_oscillation_episodes": max_oscillation_episodes,
+            "max_oscillation_transitions": max_oscillation_transitions,
+            "minimum_convergence_blocks": minimum_convergence_blocks,
+        },
+        "checks": {
+            "bounded_canonical_progress": bounded_progress,
+            "final_convergence": final_convergence,
+            "oscillation_within_bounds": oscillation_within_bounds,
+            "terminal_identity_matches": terminal_matches,
+        },
+    }
+
+
+def _canonical_progress_checks(
+    progress: dict[str, Any],
+    *,
+    correlations: list[dict[str, Any]],
+    minimum_correlations: int,
+    target_health: dict[str, Any],
+) -> dict[str, bool]:
+    progress_checks = progress.get("checks") or {}
+    complete_correlations = (
+        len(correlations) >= minimum_correlations
+        and len({row.get("application_sample_id") for row in correlations})
+        == len(correlations)
+        and all(
+            row.get("block_hash")
+            and row.get("application_sample_id")
+            and isinstance(row.get("duration_micros"), (int, float))
+            and not isinstance(row.get("duration_micros"), bool)
+            for row in correlations
+        )
+    )
+    before = target_health.get("before") or {}
+    after = target_health.get("after") or {}
+    signals = target_health.get("log_signals") or {}
+    health_clean = (
+        before.get("running") is True
+        and after.get("running") is True
+        and before.get("oom_killed") is not True
+        and after.get("oom_killed") is not True
+        and before.get("restart_count") == after.get("restart_count")
+        and not (signals.get("fatal") or [])
+    )
+    checks = {
+        "bounded_canonical_progress": progress_checks.get("bounded_canonical_progress") is True,
+        "final_convergence": progress_checks.get("final_convergence") is True,
+        "oscillation_within_bounds": progress_checks.get("oscillation_within_bounds") is True,
+        "terminal_identity_matches": progress_checks.get("terminal_identity_matches") is True,
+        "complete_required_correlations": complete_correlations,
+        "no_fatal_health_signal": health_clean,
+    }
+    checks["canonical_chain_progress_complete"] = all(checks.values())
+    return checks
+
+
+def _canonical_window_proof(
+    *,
+    target: dict[str, Any],
+    minimum: int,
+    start_tip: dict[str, Any],
+    end_tip: dict[str, Any],
+    start_marker: dict[str, Any],
+    end_marker: dict[str, Any],
+    adopted: list[dict[str, Any]],
+    applications: list[dict[str, Any]],
+    excluded_applications: list[dict[str, Any]],
+    explicit_chain_events: list[dict[str, Any]],
+    target_health: dict[str, Any],
+    max_oscillation_episodes: int,
+    max_oscillation_transitions: int,
+    minimum_convergence_blocks: int,
+) -> dict[str, Any]:
+    raw_applications = [dict(row) for row in applications]
+    retained_exclusions = [dict(row) for row in excluded_applications]
+    correlations = []
+    selected_applications = []
+    adopted_by_hash = {str(row.get("hash") or ""): row for row in adopted}
+    for index, application in enumerate(applications):
+        selected = dict(application)
+        block_hash = selected.get("block_hash")
+        block_height = selected.get("block_height")
+        correlation_basis = "exact-valid-candidate-and-adopted-hash-within-controlled-window"
+        if not block_hash and index < len(adopted):
+            block_hash = adopted[index]["hash"]
+            block_height = adopted[index]["block_height"]
+            selected["block_hash"] = block_hash
+            selected["block_height"] = block_height
+            selected["block_slot"] = adopted[index].get("slot")
+            correlation_basis = "same-target-temporal-order-within-controlled-window"
+        if not block_hash:
+            retained_exclusions.append(
+                {**selected, "reason": "no-adopted-event-temporal-pair"}
+            )
+            continue
+        adopted_event = adopted_by_hash.get(str(block_hash))
+        if adopted_event is None:
+            retained_exclusions.append(
+                {**selected, "reason": "application-block-not-adopted-in-controlled-window"}
+            )
+            continue
+        block_height = adopted_event.get("block_height")
+        selected["block_height"] = block_height
+        selected_applications.append(selected)
+        correlations.append(
+            {
+                "block_height": block_height,
+                "block_hash": block_hash,
+                "application_sample_id": selected["sample_id"],
+                "duration_micros": selected.get("duration_micros"),
+                "correlation_basis": correlation_basis,
+            }
+        )
+    progress = _derive_canonical_progress(
+        adopted,
+        start_tip=start_tip,
+        end_tip=end_tip,
+        minimum_blocks=minimum,
+        max_oscillation_episodes=max_oscillation_episodes,
+        max_oscillation_transitions=max_oscillation_transitions,
+        minimum_convergence_blocks=minimum_convergence_blocks,
+    )
+    checks = _canonical_progress_checks(
+        progress,
+        correlations=correlations,
+        minimum_correlations=minimum,
+        target_health=target_health,
+    )
+    return {
+        "schema_version": "canonical-progress-v2",
+        "target_node": target.get("id"),
+        "minimum_adopted_blocks": minimum,
+        "start_tip": start_tip,
+        "end_tip": end_tip,
+        "start_marker": start_marker,
+        "end_marker": end_marker,
+        "adopted_blocks": adopted,
+        "raw_application_sample_count": len(raw_applications) + sum(
+            1
+            for row in excluded_applications
+            if row.get("sample_id") is not None
+        ),
+        "application_samples": selected_applications,
+        "excluded_application_samples": retained_exclusions,
+        "correlations": correlations,
+        "canonical_progress": progress,
+        "raw_evidence": {
+            "chain_selection": progress["raw_chain_selection"],
+            "fork_and_rollback_events": explicit_chain_events,
+            "application_timings": raw_applications,
+            "excluded_application_timings": retained_exclusions,
+        },
+        "checks": checks,
+        "target_health": target_health,
+    }
+
+
 def _observe_client_window_health(
     target: dict[str, Any],
     *,
@@ -14739,6 +15084,48 @@ class RuntimeControlledChainProgressWindow(LoadPrimitive):
             before=before_state,
             tip_before=start_tip,
         )
+
+        if self.params.get("progress_contract") == "canonical-progress-v2":
+            explicit_chain_events = _collect_raw_chain_events(
+                target, log_offset=log_offset
+            )
+            proof = _canonical_window_proof(
+                target=target,
+                minimum=minimum,
+                start_tip=start_tip,
+                end_tip=end_tip,
+                start_marker=start_marker,
+                end_marker=end_marker,
+                adopted=adopted,
+                applications=applications,
+                excluded_applications=excluded_applications,
+                explicit_chain_events=explicit_chain_events,
+                target_health=target_health,
+                max_oscillation_episodes=int(
+                    self.params.get("max_oscillation_episodes", 3)
+                ),
+                max_oscillation_transitions=int(
+                    self.params.get("max_oscillation_transitions", 8)
+                ),
+                minimum_convergence_blocks=int(
+                    self.params.get("minimum_convergence_blocks", 3)
+                ),
+            )
+            _write_client_example_proof(
+                handle, "controlled-chain-progress.json", proof
+            )
+            if proof["checks"]["canonical_chain_progress_complete"] is not True:
+                raise RuntimeError(
+                    f"canonical chain progress proof failed: {proof['checks']}"
+                )
+            handle.log(
+                phase="load",
+                primitive="runtime_controlled_chain_progress_window",
+                level="info",
+                event="completed",
+                payload={"outcome": "ok", **proof},
+            )
+            return
 
         correlations = []
         for index, application in enumerate(applications):
@@ -15218,6 +15605,76 @@ class MinimumAdoptedBlockRangeObserved(AssertionPrimitive):
             },
             data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
             note="fewer than the required exact monotonic adopted block identities were retained",
+        )
+
+
+class CanonicalChainProgressComplete(AssertionPrimitive):
+    """Re-derive canonical-progress-v2 from retained lossless evidence."""
+
+    def evaluate(self, handle):
+        name = "canonical_chain_progress_complete"
+        relative = str(
+            self.params.get(
+                "report_path",
+                "outputs/client-example-proof/controlled-chain-progress.json",
+            )
+        )
+        try:
+            path, proof = _read_client_proof(handle, relative)
+            if proof.get("schema_version") != "canonical-progress-v2":
+                raise RuntimeError("canonical-progress-v2 proof is required")
+            minimum_blocks = int(self.params.get("minimum_adopted_blocks", 30))
+            minimum_correlations = int(
+                self.params.get("minimum_correlations", minimum_blocks)
+            )
+            progress = _derive_canonical_progress(
+                proof.get("adopted_blocks") or [],
+                start_tip=proof.get("start_tip") or {},
+                end_tip=proof.get("end_tip") or {},
+                minimum_blocks=minimum_blocks,
+                max_oscillation_episodes=int(
+                    self.params.get("max_oscillation_episodes", 3)
+                ),
+                max_oscillation_transitions=int(
+                    self.params.get("max_oscillation_transitions", 8)
+                ),
+                minimum_convergence_blocks=int(
+                    self.params.get("minimum_convergence_blocks", 3)
+                ),
+            )
+            checks = _canonical_progress_checks(
+                progress,
+                correlations=proof.get("correlations") or [],
+                minimum_correlations=minimum_correlations,
+                target_health=proof.get("target_health") or {},
+            )
+        except (RuntimeError, TypeError, ValueError) as exc:
+            return _client_assertion_result(
+                name,
+                self.params,
+                passed=False,
+                evaluated={"error": str(exc)},
+                data_points=[],
+                note="canonical chain progress proof is unavailable or invalid",
+            )
+        return _client_assertion_result(
+            name,
+            self.params,
+            passed=checks["canonical_chain_progress_complete"],
+            evaluated={
+                **checks,
+                "height_delta": progress["height_delta"],
+                "oscillation_episode_count": len(progress["oscillation_episodes"]),
+                "oscillation_transition_count": progress[
+                    "oscillation_transition_count"
+                ],
+                "trailing_advance_count": progress["trailing_advance_count"],
+            },
+            data_points=[{"proof": path.relative_to(handle.run_dir).as_posix()}],
+            note=(
+                "the chain did not make bounded converged progress with complete "
+                "correlations and clean health"
+            ),
         )
 
 

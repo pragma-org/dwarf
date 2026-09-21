@@ -1,0 +1,89 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-block-application-amaru-canonical-v2",
+  "title": "Client example 04 — canonical block progress — Amaru",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "client-example",
+    "amaru",
+    "measurement",
+    "block-application",
+    "security"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This separate execution is not a mixed-node comparison.",
+    "Security assertions are authoritative; measurements do not gate by default."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260912"
+  },
+  "runtime": "devnet",
+  "profile": "profile-u-amaru-measurement-nanoseconds-v2",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0xB10C0004",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "amaru",
+      "version": "10.11.20260912",
+      "source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+      "mode": "patched",
+      "image_digest": "sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862",
+      "executable_digest": "sha256:05233bac96c1914a232a2d9c5a704f08401aff0b20356c015e848f295b919b78",
+      "patch_set_sha256": "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0"
+    },
+    {
+      "primitive": "runtime_wait_for_chain_progress",
+      "profile_id": "profile-u-amaru-measurement-nanoseconds-v2",
+      "minimum_blocks": 5,
+      "timeout_seconds": 120,
+      "poll_interval_seconds": 1
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_controlled_chain_progress_window",
+      "profile_id": "profile-u-amaru-measurement-nanoseconds-v2",
+      "progress_contract": "canonical-progress-v2",
+      "warm_up_seconds": 30,
+      "duration_seconds": 180,
+      "minimum_adopted_blocks": 30,
+      "max_oscillation_episodes": 3,
+      "max_oscillation_transitions": 8,
+      "minimum_convergence_blocks": 3
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {
+      "primitive": "runtime_target_health_and_progress",
+      "report_path": "outputs/client-example-proof/controlled-chain-progress.json",
+      "progress_reference": "load-start"
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "canonical_chain_progress_complete",
+      "minimum_adopted_blocks": 30,
+      "minimum_correlations": 30,
+      "max_oscillation_episodes": 3,
+      "max_oscillation_transitions": 8,
+      "minimum_convergence_blocks": 3
+    },
+    {
+      "primitive": "block_application_samples_correlated",
+      "minimum_samples": 30
+    },
+    {
+      "primitive": "target_progress_continues"
+    },
+    {
+      "primitive": "no_target_fatal_signal"
+    }
+  ],
+  "teardown": []
+}

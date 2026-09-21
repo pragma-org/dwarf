@@ -388,6 +388,7 @@ def test_g3b_primitives_and_assertions_are_registered_with_schemas():
         "block_application_samples_correlated": "assertion",
         "restart_readiness_complete": "assertion",
         "controlled_sync_range_complete": "assertion",
+        "canonical_chain_progress_complete": "assertion",
     }
     for name, family in expected.items():
         assert name in registry
@@ -401,6 +402,8 @@ def test_g3b_final_scenarios_match_frozen_legs():
     expected = {
         "client-example-block-application-amaru": "amaru",
         "client-example-block-application-cardano": "cardano-node",
+        "client-example-block-application-amaru-canonical-v2": "amaru",
+        "client-example-block-application-cardano-canonical-v2": "cardano-node",
         "client-example-restart-recovery-sync-amaru": "amaru",
         "client-example-restart-recovery-sync-cardano": "cardano-node",
 
@@ -436,6 +439,15 @@ def test_g3b_final_scenarios_match_frozen_legs():
                 if item["id"] == resource_id
             )
             assert resource_override["parameters"]["sample_interval_seconds"] == 0.25
+        if "canonical-v2" in scenario_id:
+            window = next(
+                item for item in body["load"]
+                if item["primitive"] == "runtime_controlled_chain_progress_window"
+            )
+            assert window["progress_contract"] == "canonical-progress-v2"
+            assert body["assertions"][0]["primitive"] == (
+                "canonical_chain_progress_complete"
+            )
 
 
 def test_block_application_assertion_rejects_unpaired_retained_sample(tmp_path):
@@ -524,3 +536,319 @@ def test_restart_readiness_assertion_rechecks_raw_gate_order(tmp_path):
 
     assert result["result"] == "fail"
     assert result["evaluated_value"]["observed_readiness_gates_complete"] is False
+
+
+def _canonical(events, *, end=None, **overrides):
+    params = {
+        "minimum_blocks": 30,
+        "max_oscillation_episodes": 3,
+        "max_oscillation_transitions": 4,
+        "minimum_convergence_blocks": 3,
+    }
+    params.update(overrides)
+    return primitive_module._derive_canonical_progress(
+        events,
+        start_tip=_tip(100),
+        end_tip=end or events[-1],
+        **params,
+    )
+
+
+def _healthy_window():
+    return {
+        "before": {"running": True, "restart_count": 2, "oom_killed": False},
+        "after": {"running": True, "restart_count": 2, "oom_killed": False},
+        "log_signals": {"fatal": [], "background": []},
+    }
+
+
+def _complete_correlations(count=30):
+    return [
+        {
+            "block_hash": f"{index + 101:064x}",
+            "application_sample_id": f"apply-{index:04d}",
+            "duration_micros": 2.184,
+        }
+        for index in range(count)
+    ]
+
+
+def test_canonical_progress_v2_accepts_straight_progress():
+    progress = _canonical([_tip(height) for height in range(101, 136)])
+
+    assert progress["height_delta"] == 35
+    assert progress["checks"] == {
+        "bounded_canonical_progress": True,
+        "final_convergence": True,
+        "oscillation_within_bounds": True,
+        "terminal_identity_matches": True,
+    }
+    assert progress["oscillation_episodes"] == []
+
+
+def test_canonical_progress_v2_keeps_and_accepts_bounded_same_height_switch():
+    events = [_tip(height) for height in range(101, 111)]
+    events.append({**_tip(110), "hash": "f" * 64})
+    events.extend(_tip(height) for height in range(111, 136))
+
+    progress = _canonical(events)
+
+    switches = [
+        row for row in progress["raw_chain_selection"]
+        if row["transition"] == "same-height-hash-switch"
+    ]
+    assert len(switches) == 1
+    assert progress["checks"]["final_convergence"] is True
+    assert progress["checks"]["oscillation_within_bounds"] is True
+
+
+def test_canonical_progress_v2_accepts_rollback_then_recovery():
+    events = [_tip(height) for height in range(101, 116)]
+    events.extend(
+        {**_tip(height), "hash": f"{height + 1000:064x}"}
+        for height in range(112, 136)
+    )
+
+    progress = _canonical(events)
+
+    assert any(
+        row["transition"] == "rollback"
+        for row in progress["raw_chain_selection"]
+    )
+    assert progress["checks"]["final_convergence"] is True
+    assert progress["checks"]["bounded_canonical_progress"] is True
+
+
+def test_canonical_progress_v2_rejects_excessive_oscillation():
+    events = [_tip(height) for height in range(101, 111)]
+    events.extend(
+        {**_tip(110), "hash": f"{index + 9000:064x}"}
+        for index in range(6)
+    )
+    events.extend(_tip(height) for height in range(111, 136))
+
+    progress = _canonical(events)
+
+    assert progress["oscillation_transition_count"] == 6
+    assert progress["checks"]["oscillation_within_bounds"] is False
+
+
+def test_canonical_progress_v2_rejects_continuing_oscillation():
+    events = [_tip(height) for height in range(101, 135)]
+    events.append({**_tip(134), "hash": "e" * 64})
+
+    progress = _canonical(events, end=events[-1])
+
+    assert progress["trailing_advance_count"] == 0
+    assert progress["checks"]["final_convergence"] is False
+
+
+def test_canonical_progress_v2_rejects_non_converged_terminal_identity():
+    events = [_tip(height) for height in range(101, 136)]
+    end = {**_tip(135), "hash": "d" * 64}
+
+    progress = _canonical(events, end=end)
+
+    assert progress["checks"]["terminal_identity_matches"] is False
+    assert progress["checks"]["final_convergence"] is False
+
+
+def test_canonical_progress_v2_rejects_no_progress():
+    events = [_tip(height) for height in range(101, 121)]
+
+    progress = _canonical(events)
+
+    assert progress["height_delta"] == 20
+    assert progress["checks"]["bounded_canonical_progress"] is False
+
+
+def test_canonical_progress_v2_rejects_missing_required_correlations():
+    progress = _canonical([_tip(height) for height in range(101, 136)])
+
+    checks = primitive_module._canonical_progress_checks(
+        progress,
+        correlations=_complete_correlations(29),
+        minimum_correlations=30,
+        target_health=_healthy_window(),
+    )
+
+    assert checks["complete_required_correlations"] is False
+    assert checks["canonical_chain_progress_complete"] is False
+
+
+def test_canonical_progress_v2_rejects_fatal_health_signal():
+    progress = _canonical([_tip(height) for height in range(101, 136)])
+    health = _healthy_window()
+    health["log_signals"]["fatal"] = ["panic"]
+
+    checks = primitive_module._canonical_progress_checks(
+        progress,
+        correlations=_complete_correlations(),
+        minimum_correlations=30,
+        target_health=health,
+    )
+
+    assert checks["no_fatal_health_signal"] is False
+    assert checks["canonical_chain_progress_complete"] is False
+
+
+def test_canonical_v2_window_accepts_switch_and_retains_extra_timing(
+    monkeypatch, tmp_path
+):
+    handle = _Handle(tmp_path / "run")
+    adopted = [_tip(height) for height in range(101, 111)]
+    adopted.append({**_tip(110), "hash": "f" * 64})
+    adopted.extend(_tip(height) for height in range(111, 136))
+    applications = [
+        {"sample_id": f"apply-{index:04d}", "duration_micros": 2.184}
+        for index in range(len(adopted) + 1)
+    ]
+    tips = iter([_tip(100), _tip(135)])
+    monkeypatch.setattr(
+        primitive_module, "_resolve_client_runtime_target", lambda *_: {"id": "node1"}
+    )
+    monkeypatch.setattr(
+        primitive_module, "_protocol_container_state", lambda *_: _healthy_window()["before"]
+    )
+    monkeypatch.setattr(
+        primitive_module, "_observe_client_target_tip", lambda *_: next(tips)
+    )
+    monkeypatch.setattr(
+        primitive_module,
+        "_collect_controlled_block_evidence",
+        lambda *_args, **_kwargs: (adopted, applications, []),
+    )
+    monkeypatch.setattr(
+        primitive_module,
+        "_collect_raw_chain_events",
+        lambda *_args, **_kwargs: [
+            {"event": "fork-switch", "fork_length": 2, "rollback_length": 0}
+        ],
+    )
+    monkeypatch.setattr(
+        primitive_module,
+        "_observe_client_window_health",
+        lambda *_args, **_kwargs: _healthy_window(),
+    )
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+
+    _primitive(
+        "RuntimeControlledChainProgressWindow",
+        {
+            "progress_contract": "canonical-progress-v2",
+            "warm_up_seconds": 0,
+            "duration_seconds": 0,
+            "minimum_adopted_blocks": 30,
+            "max_oscillation_episodes": 3,
+            "max_oscillation_transitions": 4,
+            "minimum_convergence_blocks": 3,
+        },
+    ).run(handle, None)
+
+    proof = json.loads(
+        (handle.run_dir / "outputs/client-example-proof/controlled-chain-progress.json").read_text()
+    )
+    assert proof["schema_version"] == "canonical-progress-v2"
+    assert proof["checks"]["canonical_chain_progress_complete"] is True
+    assert len(proof["raw_evidence"]["application_timings"]) == len(adopted) + 1
+    assert len(proof["application_samples"]) == len(adopted)
+    assert proof["excluded_application_samples"][-1]["reason"] == (
+        "no-adopted-event-temporal-pair"
+    )
+    assert proof["raw_evidence"]["fork_and_rollback_events"][0]["event"] == (
+        "fork-switch"
+    )
+
+
+def test_amaru_raw_chain_events_keep_fork_and_rollback_fields(monkeypatch):
+    rows = [
+        {
+            "timestamp": "2026-09-21T01:00:00Z",
+            "fields": {
+                "message": "enter",
+                "fork_length": 2,
+                "rollback_length": 1,
+                "fork_point": [100, "a" * 64, 20],
+            },
+            "span": {"name": "state.switch_to_fork"},
+            "id": 7,
+        },
+        {
+            "timestamp": "2026-09-21T01:00:00.1Z",
+            "fields": {"message": "enter"},
+            "span": {"name": "state.roll_backward"},
+            "id": 8,
+            "parent_id": 7,
+        },
+    ]
+    monkeypatch.setattr(
+        primitive_module,
+        "_protocol_docker_result",
+        lambda *_args, **_kwargs: type(
+            "Result", (), {"stdout": "\n".join(json.dumps(row) for row in rows), "stderr": ""}
+        )(),
+    )
+
+    events = primitive_module._collect_raw_chain_events(
+        {
+            "implementation": "amaru",
+            "container": "amaru",
+            "window_started_at": "2026-09-21T01:00:00Z",
+        },
+        log_offset=0,
+    )
+
+    assert events == [
+        {
+            "event": "fork-switch",
+            "observed_at": "2026-09-21T01:00:00Z",
+            "event_id": 7,
+            "parent_event_id": None,
+            "fork_length": 2,
+            "rollback_length": 1,
+            "fork_point": [100, "a" * 64, 20],
+        },
+        {
+            "event": "rollback",
+            "observed_at": "2026-09-21T01:00:00.1Z",
+            "event_id": 8,
+            "parent_event_id": 7,
+        },
+    ]
+
+
+def test_canonical_progress_assertion_rederives_the_retained_raw_evidence(tmp_path):
+    handle = _Handle(tmp_path / "run")
+    proof_dir = handle.run_dir / "outputs/client-example-proof"
+    proof_dir.mkdir(parents=True)
+    events = [_tip(height) for height in range(101, 111)]
+    events.append({**_tip(110), "hash": "f" * 64})
+    events.extend(_tip(height) for height in range(111, 136))
+    progress = _canonical(events)
+    (proof_dir / "controlled-chain-progress.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "canonical-progress-v2",
+                "start_tip": _tip(100),
+                "end_tip": _tip(135),
+                "adopted_blocks": events,
+                "canonical_progress": progress,
+                "correlations": _complete_correlations(),
+                "target_health": _healthy_window(),
+            }
+        )
+    )
+
+    result = _primitive(
+        "CanonicalChainProgressComplete",
+        {
+            "minimum_adopted_blocks": 30,
+            "minimum_correlations": 30,
+            "max_oscillation_episodes": 3,
+            "max_oscillation_transitions": 4,
+            "minimum_convergence_blocks": 3,
+        },
+    ).evaluate(handle)
+
+    assert result["result"] == "pass"
+    assert result["evaluated_value"]["canonical_chain_progress_complete"] is True
