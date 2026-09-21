@@ -268,8 +268,11 @@ def test_card02_requires_additive_topology_with_live_on_chain_plutus_v2():
 
 
 def test_card04_replaces_raw_monotonicity_with_canonical_progress_v2():
-    resolution = _card("client-example-04-block-application")["approved_resolution"]
+    card = _card("client-example-04-block-application")
+    resolution = card["approved_resolution"]
 
+    assert card["status"] == "accepted"
+    assert {leg["status"] for leg in card["scenario_legs"]} == {"accepted"}
     assert resolution["kind"] == "canonical-progress-v2"
     assert resolution["preserve_v1_runs"] is True
     assert resolution["scenario_ids"] == {
@@ -300,3 +303,18 @@ def test_card04_replaces_raw_monotonicity_with_canonical_progress_v2():
         "fatal-health-signal",
     ]
     assert resolution["same_height_switch_alone_fails"] is False
+    assert resolution["accepted_evidence"]["cardano-node"]["run_id"] == (
+        "20260921T021935Z-3b58eafc"
+    )
+    assert resolution["accepted_evidence"]["cardano-node"]["measurement_revision"] == (
+        "nanoseconds-v2"
+    )
+    assert resolution["accepted_evidence"]["amaru"]["run_id"] == (
+        "20260921T035546Z-9747122c"
+    )
+    assert resolution["accepted_evidence"]["amaru"]["measurement_revision"] == (
+        "nanoseconds-v3"
+    )
+    assert resolution["accepted_evidence"]["amaru"]["bundle_sha256"] == (
+        "f17b4892ca45d003a94b7c175d510cbd0890420bdf79420a46ed4dff79c0c808"
+    )

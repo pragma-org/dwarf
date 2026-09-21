@@ -45,9 +45,9 @@ monotonic-height check before assertions.
 - Measurement report SHA-256: `1e0c2da207f79f1322802138631a7f5b6fb415a41278882906d0931fb62db7e1`
 - Verified 79-file bundle SHA-256: `44ac2202e507fe4a28c1f853197c20a7b13751c2f748bc9eba7069bd9d419b28`
 
-## Required decision
+## Historical decision boundary
 
-Card 04 remains incomplete for Amaru. An authorized contract decision must define whether a canonical-chain-only sequence can replace the current adopted-event sequence. This finding does not change the frozen monotonic assertion.
+Card 04 was incomplete until the user approved a separate canonical-progress proof. The old runs and their failed strict-monotonic verdicts remain unchanged.
 
 ## Approved resolution
 
@@ -56,3 +56,16 @@ The strict monotonic check over raw adoption events is replaced by `canonical-pr
 A bounded same-height fork switch alone does not fail. No progress, non-convergence, excessive or continuing oscillation, missing correlations, panic, fatal exit, OOM, or unexpected restart fails. The old v1 runs and their verdicts remain unchanged.
 
 Child explanation: Keep every turn the chain takes. Judge whether it settles on one path and keeps moving, not whether it ever took a short detour.
+
+## Accepted resolution evidence
+
+Run `20260921T035546Z-9747122c` used the additive Amaru `nanoseconds-v3` target and canonical-progress-v2 scenario. It passed all four assertions. The window advanced 69 blocks, retained 56 adopted identities and 56 correlations, and kept 16 explicit fork or rollback events. One same-height switch was followed by 36 stable advances. The target had no panic, fatal exit, OOM, or restart.
+
+Every accepted proof timing retains integer nanoseconds and exact fractional microseconds. The standard report contains 69 samples from `patched-monotonic-nanoseconds`.
+
+- Manifest SHA-256: `96408821a8b7b88d5fac594bf706d330993555a68d9e3fabb29828199cf49903`
+- Controlled proof SHA-256: `1266fa35d98d4a20225fef5b5b74be583214f7bc3491b63a589b8a33ff397f5b`
+- Measurement report SHA-256: `78e9eab912ba410a709591ea363ad94be3847b767f53b57410312135fdaa7c7d`
+- Verified 81-file bundle SHA-256: `f17b4892ca45d003a94b7c175d510cbd0890420bdf79420a46ed4dff79c0c808`
+
+Status: Closed by additive canonical-progress-v2 evidence. The historical finding remains reproducible.

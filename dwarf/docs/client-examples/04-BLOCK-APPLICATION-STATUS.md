@@ -1,13 +1,15 @@
 # Card 04 block application status
 
-Status: The Cardano-node leg is accepted. The Amaru leg is blocked by a retained frozen-contract finding.
+Status: Complete. The Cardano-node canonical-v2 leg and the Amaru canonical-v3 leg are accepted.
 
-Child explanation: The Cardano node added and measured enough real blocks. The Amaru node changed between two valid chains at the same height, so the frozen rule rejected its run.
+Child explanation: Both nodes added enough real blocks. DWARF kept every chain turn, checked that each node settled and kept moving, and matched the timer samples to the measured block window.
 
-The accepted Cardano-node run is `20260920T125840Z-778a7cf7` on `nanoseconds-v2`. It passed 4/4 assertions, retained 80 adopted block identities, correlated 80 exact application timings, and retained 180 resource samples in the controlled window. Its exported bundle SHA-256 is `1e03242b941f000db4487ba36566d890202e4eee5758abacd9d58daad38701d2`.
+The accepted Cardano-node run is `20260921T021935Z-3b58eafc` on `nanoseconds-v2`. It passed 4/4 assertions, advanced 88 blocks, retained 88 adopted block identities, and correlated 88 exact application timings. It had no fork or rollback event, panic, fatal exit, OOM, or restart. Its verified bundle SHA-256 is `c02a192f88cf9dc1caa6d9e3aea56a42c9436186e3596533cda19af7ab32af28`.
 
-Amaru rehearsals `20260920T114304Z-a8ac5c5e` and `20260920T143735Z-69f67c6a` reached the exact production topology but observed real same-height fork switches. The second run retained 60 adopted-block records, 73 application samples, and 60 correlations. Its verified 79-file bundle SHA-256 is `44ac2202e507fe4a28c1f853197c20a7b13751c2f748bc9eba7069bd9d419b28`.
+The accepted Amaru run is `20260921T035546Z-9747122c` on additive revision `nanoseconds-v3`. It passed 4/4 assertions, advanced 69 blocks, retained 56 adopted identities, and correlated 56 application timings. It kept 16 explicit fork or rollback events. One bounded same-height switch was followed by 36 stable advances. The target had no panic, fatal exit, OOM, or restart.
 
-The frozen monotonic-height requirement cannot accept that behavior without a contract or topology decision. See `findings/03-frozen-amaru-block-application-forks.md`.
+Every accepted Amaru proof sample keeps integer `elapsed_nanos` and exact fractional microseconds. The standard report contains 69 precise block-application samples. The minimum is 72.319 microseconds, the median is 136.551 microseconds, and the maximum is 347.806 microseconds. Its verified 81-file bundle SHA-256 is `f17b4892ca45d003a94b7c175d510cbd0890420bdf79420a46ed4dff79c0c808`.
 
-Exact Cardano evidence and claim limits are in `04-CARDANO-BLOCK-APPLICATION-PROOF.md`. This card remains a partial client requirement. It is not an implementation performance comparison.
+The old strict-monotonic runs and the first canonical-v2 rehearsal remain unchanged. They are historical evidence, not accepted Card 04 evidence. The accepted rule keeps raw chain-selection evidence and evaluates bounded canonical progress and final convergence. A bounded same-height switch alone does not fail.
+
+Exact evidence and claim limits are in `04-CARDANO-BLOCK-APPLICATION-PROOF.md`. This card proves collection on two separate local-devnet executions. It is not an Amaru-versus-Cardano performance comparison.

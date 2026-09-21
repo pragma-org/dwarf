@@ -165,7 +165,7 @@
       "properties": {
         "scenario_id": {"type": "string"},
         "implementation": {"enum": ["amaru", "cardano-node", "differential"]},
-        "status": {"enum": ["existing", "additive-required"]},
+        "status": {"enum": ["existing", "additive-required", "accepted"]},
         "profile": {"type": "string"},
         "measurement_profile": {"type": "string"},
         "primitives": {"type": "object", "required": ["load", "assertions"], "properties": {"setup": {"type": "array", "items": {"type": "string"}}, "load": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "probes": {"type": "array", "items": {"type": "string"}}, "assertions": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "teardown": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false}

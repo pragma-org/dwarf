@@ -1,7 +1,7 @@
 schema_version: v1
 id: client-example-04-block-application
 title: Block application and chain progress
-status: frozen
+status: accepted
 purpose:
   technical: Measure the exact production block-application boundary while a controlled real-node devnet makes sustained progress, and prove that the samples belong to adopted blocks.
   child: Watch the node add real blocks. Count the blocks and time the work inside the node.
@@ -19,7 +19,7 @@ security_mapping:
 scenario_legs:
   - scenario_id: client-example-block-application-amaru-canonical-v3
     implementation: amaru
-    status: additive-required
+    status: accepted
     profile: profile-y-amaru-block-application-nanoseconds-v3
     measurement_profile: amaru-security-patched
     primitives:
@@ -30,7 +30,7 @@ scenario_legs:
       teardown: []
   - scenario_id: client-example-block-application-cardano-canonical-v2
     implementation: cardano-node
-    status: additive-required
+    status: accepted
     profile: profile-v-cardano-measurement-nanoseconds-v2
     measurement_profile: cardano-security-patched
     primitives:
@@ -112,6 +112,30 @@ approved_resolution:
     - missing-correlations
     - fatal-health-signal
   same_height_switch_alone_fails: false
+  accepted_evidence:
+    cardano-node:
+      run_id: 20260921T021935Z-3b58eafc
+      measurement_revision: nanoseconds-v2
+      framework_commit: 91ed1320da73ad0fa031cb7c68373d4727dca869
+      scenario_sha256: 5fadd0c60dee960eb247e327755ff65137a55d29776aa47f68f90159101666d4
+      manifest_sha256: b0772ee433fb95b9955fafa2b230734fee4a48350923fca729eff61ec7980a24
+      assertions_sha256: 04e25ed0a62842ed614b39a07ebbc5999a79151126afa692292814c680382ac1
+      controlled_proof_sha256: 059e322acc6052404c3198a76f39b7c2a148e967f0b226849bab6bc952c94c7f
+      measurement_report_sha256: 118970306b5797a95b876182d635ef70703a5799607c24e13526cfc0083baad7
+      health_progress_sha256: be94a485b151dd1e32759ad9be4f0c6e46b2e0a3cf7dc8d9b32720d410fb1549
+      bundle_sha256: c02a192f88cf9dc1caa6d9e3aea56a42c9436186e3596533cda19af7ab32af28
+    amaru:
+      run_id: 20260921T035546Z-9747122c
+      measurement_revision: nanoseconds-v3
+      framework_commit: e292babc02250ebfa0cbb866339f86064439c744
+      scenario_sha256: 2f25b399ebfe78f00fe2b19f3e7e73f8b1749e89d14d11df903812cea8522770
+      manifest_sha256: 96408821a8b7b88d5fac594bf706d330993555a68d9e3fabb29828199cf49903
+      assertions_sha256: 46f16b8e058946c1d233f4053417872187b6e55cbb9ea31901209c306e047a8d
+      controlled_proof_sha256: 1266fa35d98d4a20225fef5b5b74be583214f7bc3491b63a589b8a33ff397f5b
+      measurement_report_sha256: 78e9eab912ba410a709591ea363ad94be3847b767f53b57410312135fdaa7c7d
+      health_progress_sha256: 18b8a6a55311462511af6e1047390b7fb673e88123c3580bb6ba2131671c5691
+      bundle_sha256: f17b4892ca45d003a94b7c175d510cbd0890420bdf79420a46ed4dff79c0c808
+      bundle_file_count: 81
 implementation_gaps:
-  - {id: GAP-BLOCK-SAMPLE-FLOOR, status: open, required_change: Add a controlled progress-window primitive and assertions that bind at least 30 application events to adopted block progress.}
+  - {id: GAP-BLOCK-SAMPLE-FLOOR, status: closed, required_change: The controlled progress-window primitive and assertions bind at least 30 application events to adopted block progress.}
 deferred_scope: {presentation_walkthrough: true, mixed_node_comparison: true, weekly_automation: true, stable_release_thresholds: true}
