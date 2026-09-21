@@ -141,6 +141,7 @@ from profile_manager.views.learn_primitives import render_learn_primitives
 from profile_manager.views.learn_profile_templates import render_learn_profile_templates
 from profile_manager.views.learn_versions import render_learn_versions
 from profile_manager.views.learn_measurements import render_learn_measurements
+from profile_manager.views.learn_measurement_coverage import render_learn_measurement_coverage
 from profile_manager.views.learn_testcases import render_learn_testcases
 from profile_manager.views.learn_corpora import render_learn_corpora
 from profile_manager.views.learn_grammars import render_learn_grammars
@@ -2999,6 +3000,7 @@ def render_route_html(route, *, token=None):
         "/learn/profile-templates": render_learn_profile_templates,
         "/learn/versions": render_learn_versions,
         "/learn/measurements": render_learn_measurements,
+        "/learn/measurement-coverage": render_learn_measurement_coverage,
         "/learn/testcases": render_learn_testcases,
         "/learn/corpora": render_learn_corpora,
         "/learn/grammars": render_learn_grammars,

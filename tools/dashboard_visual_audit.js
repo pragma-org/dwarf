@@ -40,6 +40,7 @@ const ROUTES = [
   '/learn/examples', '/learn/faq', '/learn/getting-started', '/learn/glossary',
   '/learn/operator-runbook', '/learn/overview', '/learn/plugin-authoring', '/learn/primitives',
   '/learn/profile-templates', '/learn/status', '/learn/testcases', '/learn/corpora', '/learn/grammars', '/learn/risk-packages',
+  '/learn/measurements', '/learn/measurement-coverage',
   '/learn/versions',
   '/learn/threat-coverage', '/learn/troubleshooting', '/learn/walkthroughs',
 ];

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pragma-org/dwarf/blob/main/dwarf/spec/v1/measurement-coverage-map.schema.json",
+  "title": "DWARF measurement coverage applicability map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "provenance", "surface_rules", "family_rules", "evidence_rules"],
+  "properties": {
+    "schema_version": {"const": "v1"},
+    "id": {"const": "measurement-coverage-v1"},
+    "provenance": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "surface_rules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rule"}},
+    "family_rules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rule"}},
+    "evidence_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["card_id", "implementation", "measurements"],
+        "properties": {
+          "card_id": {"pattern": "^[0-9]{2}$"},
+          "implementation": {"enum": ["amaru", "cardano-node"]},
+          "measurements": {"$ref": "#/$defs/measurementIds"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "measurementIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^(amaru|cardano)-[a-z0-9-]+$"}
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "description", "measurements", "prerequisite", "can_prove", "non_claims"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "measurements": {"$ref": "#/$defs/measurementIds"},
+        "prerequisite": {"type": "string", "minLength": 1},
+        "can_prove": {"type": "string", "minLength": 1},
+        "non_claims": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

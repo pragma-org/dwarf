@@ -6,6 +6,7 @@
 <p><strong>Scenario census</strong> accounts for every scenario exactly once — its Total column reconciles to the full catalog. The matrices below it are <em>overlapping technical slices</em> of the same catalog (a scenario can exercise a mini-protocol <em>and</em> a CBOR surface, or neither), so their counts intentionally do not sum to the catalog total.</p>
 <p>The mini-protocol matrix can show retained report states such as ran with zero or observed coverage. The CBOR, fault-family, and fuzzer-backend matrices are catalog inventory. The phrase <strong>all collectors configured</strong> is not the same claim as <strong>all metrics exercised</strong>.</p>
 <p><strong>Child explanation:</strong> This page first counts the recipes on the shelf. The evidence list below shows recipes that were really cooked and saved.</p>
+<p><a href="/learn/measurement-coverage">Open measurement coverage</a> to join this inventory to tap applicability, workload prerequisites, and retained evidence.</p>
 <hr class="hairline">
 
 {% for matrix in matrices %}

@@ -116,6 +116,7 @@ def test_measurement_destinations_are_in_the_existing_route_inventory():
     routes = {route for group in html_route_groups() for route in group["routes"]}
 
     assert "/learn/measurements" in routes
+    assert "/learn/measurement-coverage" in routes
     assert "/operate/measurements" in routes
     assert "/operate/measurement-profiles" in routes
     assert "/operate/runs" in routes

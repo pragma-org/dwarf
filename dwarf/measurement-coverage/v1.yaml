@@ -1,0 +1,195 @@
+schema_version: v1
+id: measurement-coverage-v1
+provenance:
+  - dwarf/profile_manager/data/threat_risk_coverage.html
+  - dwarf/profile_manager/data/coverage.py
+  - dwarf/measurements/*.yaml
+  - dwarf/measurement-profiles/*.yaml
+  - dwarf/docs/client-examples/contracts/*.yaml
+  - docs/measurement-full-metrics-compatibility-audit.md
+
+surface_rules:
+  - id: chainsync
+    title: ChainSync
+    description: Header announcement, intersection, rollback, and candidate-chain activity.
+    measurements: [amaru-stock-header-lifecycle, amaru-stock-fork-switch, amaru-stock-network, amaru-external-sync-speed, amaru-patched-protocol-decode, cardano-stock-chain-lifecycle, cardano-stock-network, cardano-external-sync-speed, cardano-patched-protocol-decode]
+    prerequisite: A real peer session must exchange ChainSync messages and retain correlated header, tip, or rollback events.
+    can_prove: The retained events can show observed ChainSync activity, selected-chain changes, progress, and measured timing at available boundaries.
+    non_claims: Presence of a tap does not prove consensus correctness, convergence, or complete ChainSync state-machine coverage.
+  - id: blockfetch
+    title: BlockFetch
+    description: Block request, delivery, queue, decode, and completion activity.
+    measurements: [amaru-stock-header-lifecycle, amaru-stock-network, amaru-patched-blockfetch-queues, cardano-stock-blockfetch, cardano-stock-network, cardano-patched-blockfetch-handler-queue]
+    prerequisite: A real peer must request or serve blocks and retain peer and block correlation identifiers.
+    can_prove: Evidence can show observed block transfer activity, queue or handler samples, and correlated block identities.
+    non_claims: It does not prove every BlockFetch path, peer fairness, or throughput outside the measured workload window.
+  - id: cbor/parser
+    title: CBOR and parser boundaries
+    description: Structured decode and parser behavior for node and protocol inputs.
+    measurements: [amaru-external-workload-accounting, amaru-patched-protocol-decode, amaru-stock-resources, cardano-external-workload-accounting, cardano-patched-protocol-decode, cardano-stock-resources]
+    prerequisite: The workload must deliver identified inputs to a real decode boundary and retain terminal outcomes.
+    can_prove: Evidence can correlate offered inputs with observed decode outcomes, elapsed time, and bounded resource cost.
+    non_claims: A successful corpus does not prove parser completeness or safety for inputs that were not executed.
+  - id: consensus/chain-selection
+    title: Consensus and chain selection
+    description: Candidate-chain choice, fork switching, rollback, adoption, and canonical progress.
+    measurements: [amaru-stock-header-lifecycle, amaru-stock-fork-switch, amaru-stock-block-epoch, amaru-external-sync-speed, amaru-stock-resources, cardano-stock-chain-lifecycle, cardano-stock-ledger-block-epoch, cardano-external-sync-speed, cardano-stock-resources]
+    prerequisite: A controlled real-node window must retain adopted blocks, raw chain-selection events, correlations, and final convergence or bounded progress.
+    can_prove: Evidence can show the chain choices and progress observed during the bounded run.
+    non_claims: It does not prove global consensus safety, all possible forks, or a performance threshold outside the retained run.
+  - id: handshake
+    title: Handshake
+    description: Version negotiation, invalid-message containment, and connection setup.
+    measurements: [amaru-stock-network, amaru-external-workload-accounting, amaru-patched-protocol-decode, amaru-stock-resources, cardano-stock-network, cardano-external-workload-accounting, cardano-patched-protocol-decode, cardano-stock-resources]
+    prerequisite: Real valid and invalid Handshake messages must reach the target and retain offered-attempt and terminal-outcome correlations.
+    can_prove: Evidence can show observed negotiation outcomes, containment, liveness, timing, and bounded resource use.
+    non_claims: It does not prove all protocol versions or that patched timing alone describes stock-node performance.
+  - id: keepalive
+    title: KeepAlive
+    description: Peer liveness messages, response activity, and connection health.
+    measurements: [amaru-stock-network, amaru-stock-resources, cardano-stock-network, cardano-stock-resources]
+    prerequisite: A live peer session must exchange KeepAlive messages during a bounded observation window.
+    can_prove: Evidence can show observed peer liveness traffic and resource samples in that window.
+    non_claims: It does not prove long-term availability or every disconnect path.
+  - id: peersharing
+    title: PeerSharing
+    description: Peer address exchange and peer-set behavior.
+    measurements: [amaru-stock-network, cardano-stock-network]
+    prerequisite: PeerSharing must be enabled and real peers must exchange retained protocol events.
+    can_prove: Evidence can show that PeerSharing traffic occurred for identified connections.
+    non_claims: It does not prove Sybil resistance or a safe peer-set distribution.
+  - id: mux/connection
+    title: Multiplexer and connections
+    description: Connection lifecycle, multiplexed protocol activity, and transport health.
+    measurements: [amaru-stock-network, amaru-stock-resources, cardano-stock-network, cardano-stock-resources]
+    prerequisite: A live connection must retain connection or mux events plus the target process identity.
+    can_prove: Evidence can show observed connections, protocol activity, and scoped resource cost.
+    non_claims: It does not prove full wire transcripts or network behavior outside retained events.
+  - id: txsubmission
+    title: Transaction submission and mempool
+    description: Transaction ingress, admission, rejection, queueing, validation, and execution.
+    measurements: [amaru-stock-mempool, amaru-stock-ledger-rules, amaru-stock-plutus-execution, amaru-external-workload-accounting, amaru-patched-txsubmission-residence, cardano-stock-txsubmission-mempool, cardano-stock-plutus-execution, cardano-external-workload-accounting, cardano-patched-txsubmission-residence, cardano-patched-ledger-plutus-stages]
+    prerequisite: Real identified transactions must be submitted and retain terminal node outcomes, budgets, or queue correlations.
+    can_prove: Evidence can show observed admission, rejection, execution, timing, budget, or queue behavior when those records are non-vacuous.
+    non_claims: Configured collectors and zero samples do not prove transaction-path exercise or Plutus correctness.
+  - id: bootstrap/genesis
+    title: Bootstrap and genesis
+    description: Startup identity, genesis configuration, peer readiness, and initial chain progress.
+    measurements: [amaru-external-restart-readiness, amaru-external-sync-speed, amaru-stock-header-lifecycle, cardano-external-restart-readiness, cardano-external-sync-speed, cardano-stock-chain-lifecycle]
+    prerequisite: A version-pinned real node must start or restart with retained configuration identity and ordered readiness gates.
+    can_prove: Evidence can show the observed startup configuration, readiness transitions, and controlled progress.
+    non_claims: It does not prove trust assumptions, production bootstrap safety, or every genesis configuration.
+  - id: observability
+    title: Observability and evidence
+    description: Workload accounting, target resources, retained artifacts, and production-path coverage.
+    measurements: [amaru-external-workload-accounting, amaru-stock-resources, amaru-coverage-production-paths, cardano-external-workload-accounting, cardano-stock-resources, cardano-coverage-production-paths]
+    prerequisite: A bounded workload must retain target identity, event correlations, and positive samples or coverage artifacts.
+    can_prove: Evidence can show what the named collector observed for the retained workload.
+    non_claims: Instrument availability is not workload exercise, and code coverage is not correctness or security proof.
+  - id: resource/runtime
+    title: Resource and runtime behavior
+    description: CPU, memory, disk, file, thread, network, restart, and recovery behavior.
+    measurements: [amaru-stock-resources, amaru-external-restart-readiness, amaru-external-workload-accounting, cardano-stock-resources, cardano-external-restart-readiness, cardano-external-workload-accounting]
+    prerequisite: The real target process must be identified and sampled inside a bounded workload or recovery window.
+    can_prove: Evidence can show scoped resource samples, deltas, and readiness transitions for that window.
+    non_claims: It does not establish capacity, production limits, or stable benchmark thresholds.
+  - id: other
+    title: Other catalog surfaces
+    description: Scenarios that do not yet map to a more specific technical surface.
+    measurements: [amaru-external-workload-accounting, amaru-stock-resources, cardano-external-workload-accounting, cardano-stock-resources]
+    prerequisite: The scenario must retain identified workload events and target resource samples.
+    can_prove: Evidence can show only the generic offered workload and scoped resource observations.
+    non_claims: Generic measurements do not establish coverage of an unnamed node or protocol boundary.
+
+family_rules:
+  - id: decode-parser
+    title: Decode / parser robustness
+    description: Scenarios that send structured, malformed, or adversarial encoded inputs.
+    measurements: [amaru-external-workload-accounting, amaru-patched-protocol-decode, amaru-stock-resources, cardano-external-workload-accounting, cardano-patched-protocol-decode, cardano-stock-resources]
+    prerequisite: Identified inputs must reach a real parser and retain terminal outcomes.
+    can_prove: Retained evidence can show outcomes, timing, and bounded resource effects for executed inputs.
+    non_claims: It does not prove parser completeness or unexecuted inputs.
+  - id: mini-protocol-wire
+    title: Mini-protocol wire
+    description: Wire-message grammar, sequencing, decode, and containment scenarios.
+    measurements: [amaru-stock-network, amaru-patched-protocol-decode, amaru-external-workload-accounting, cardano-stock-network, cardano-patched-protocol-decode, cardano-external-workload-accounting]
+    prerequisite: Real protocol messages must reach the target with connection and outcome correlations.
+    can_prove: Evidence can show observed protocol outcomes and timing at available boundaries.
+    non_claims: It does not prove complete protocol state-machine coverage.
+  - id: runtime-protocol
+    title: Runtime protocol behavior
+    description: Live ChainSync, BlockFetch, TxSubmission, Handshake, KeepAlive, and PeerSharing behavior.
+    measurements: [amaru-stock-network, amaru-stock-header-lifecycle, amaru-patched-blockfetch-queues, cardano-stock-network, cardano-stock-chain-lifecycle, cardano-stock-blockfetch]
+    prerequisite: A real peer session must generate non-vacuous protocol events.
+    can_prove: Evidence can show protocol activity, correlated lifecycle events, and available timing.
+    non_claims: It does not prove all protocols or long-term network health.
+  - id: consensus-chain
+    title: Consensus / chain
+    description: Fork, rollback, epoch, leadership, and chain-selection scenarios.
+    measurements: [amaru-stock-header-lifecycle, amaru-stock-fork-switch, amaru-stock-block-epoch, amaru-external-sync-speed, cardano-stock-chain-lifecycle, cardano-stock-ledger-block-epoch, cardano-external-sync-speed]
+    prerequisite: The workload must retain raw selection events and bounded canonical progress or convergence.
+    can_prove: Evidence can show observed chain choices and progress in the controlled window.
+    non_claims: It does not prove global consensus safety or all fork histories.
+  - id: era-hardfork
+    title: Era / hard-fork
+    description: Era boundary, epoch transition, and hard-fork behavior.
+    measurements: [amaru-stock-block-epoch, amaru-stock-header-lifecycle, cardano-stock-ledger-block-epoch, cardano-stock-chain-lifecycle, cardano-patched-ledger-plutus-stages]
+    prerequisite: A real chain must cross the named boundary and retain block, epoch, or ledger correlations.
+    can_prove: Evidence can show the observed boundary events and available stage timing.
+    non_claims: It does not prove every era transition or future protocol version.
+  - id: plutus-scripts
+    title: Plutus / scripts
+    description: Script evaluation, budget, phase-two outcome, and cost-model scenarios.
+    measurements: [amaru-stock-plutus-execution, amaru-stock-ledger-rules, amaru-external-workload-accounting, cardano-stock-plutus-execution, cardano-patched-ledger-plutus-stages, cardano-external-workload-accounting]
+    prerequisite: Real valid and expected-invalid Plutus transactions must retain outcomes, budgets, and cost-model identity.
+    can_prove: Evidence can show observed evaluator outcomes and exposed cost or timing fields.
+    non_claims: It does not prove all scripts, cost models, or performance limits.
+  - id: topology-eclipse
+    title: Topology / eclipse / Sybil
+    description: Peer-set, partition, concentration, and topology fault scenarios.
+    measurements: [amaru-stock-network, amaru-external-sync-speed, amaru-stock-header-lifecycle, cardano-stock-network, cardano-external-sync-speed, cardano-stock-chain-lifecycle]
+    prerequisite: The controlled topology and fault window must retain peer identity and chain progress.
+    can_prove: Evidence can show observed peer and progress behavior under the retained topology.
+    non_claims: It does not prove production Sybil resistance or all network partitions.
+  - id: mempool-n2c
+    title: Mempool / node-to-client
+    description: Local submission, mempool pressure, admission, and query scenarios.
+    measurements: [amaru-stock-mempool, amaru-stock-ledger-rules, amaru-external-workload-accounting, cardano-stock-txsubmission-mempool, cardano-external-workload-accounting]
+    prerequisite: Identified transactions or queries must reach the live node and retain terminal outcomes.
+    can_prove: Evidence can show observed admission, rejection, backlog, and workload accounting.
+    non_claims: It does not prove capacity or exercise when result populations are empty.
+  - id: resource-dos
+    title: Resource / DoS
+    description: CPU, memory, disk, bandwidth, timing, and starvation pressure scenarios.
+    measurements: [amaru-stock-resources, amaru-external-workload-accounting, cardano-stock-resources, cardano-external-workload-accounting]
+    prerequisite: The target process must be sampled before, during, and after a bounded pressure window.
+    can_prove: Evidence can show scoped resource deltas and recovery for the executed workload.
+    non_claims: It does not establish production capacity or a universal denial-of-service threshold.
+  - id: lifecycle-robustness
+    title: Lifecycle / robustness
+    description: Restart, recovery, snapshot, bootstrap, evidence, and state lifecycle scenarios.
+    measurements: [amaru-external-restart-readiness, amaru-external-sync-speed, amaru-stock-resources, cardano-external-restart-readiness, cardano-external-sync-speed, cardano-stock-resources]
+    prerequisite: A real lifecycle transition must retain ordered readiness and progress gates.
+    can_prove: Evidence can show observed recovery order, readiness, progress, and resource windows.
+    non_claims: It does not prove every restart cause or production recovery objective.
+  - id: other
+    title: Other
+    description: Scenarios outside the current primary family taxonomy.
+    measurements: [amaru-external-workload-accounting, amaru-stock-resources, cardano-external-workload-accounting, cardano-stock-resources]
+    prerequisite: The scenario must retain identified workload and target observations.
+    can_prove: Evidence can show generic workload and resource observations only.
+    non_claims: It does not prove a technical boundary that the catalog has not named.
+
+evidence_rules:
+  - card_id: "04"
+    implementation: amaru
+    measurements: [amaru-stock-header-lifecycle, amaru-stock-fork-switch, amaru-stock-block-epoch, amaru-stock-network, amaru-stock-resources, amaru-external-sync-speed, amaru-patched-protocol-decode, amaru-patched-blockfetch-queues]
+  - card_id: "05"
+    implementation: amaru
+    measurements: [amaru-external-restart-readiness]
+  - card_id: "01"
+    implementation: cardano-node
+    measurements: [cardano-stock-blockfetch, cardano-stock-chain-lifecycle, cardano-stock-ledger-block-epoch, cardano-stock-network, cardano-stock-resources, cardano-external-sync-speed, cardano-patched-protocol-decode, cardano-patched-ledger-plutus-stages]
+  - card_id: "05"
+    implementation: cardano-node
+    measurements: [cardano-external-restart-readiness]
