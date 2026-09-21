@@ -7,6 +7,7 @@ import yaml
 
 from profile_manager.dashboard import render_route_html
 from profile_manager.data.measurement_coverage import measurement_coverage_payload
+from profile_manager.data import client_example_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,12 @@ MAP = ROOT / "dwarf/measurement-coverage/v1.yaml"
 SCHEMA = ROOT / "dwarf/spec/v1/measurement-coverage-map.schema.json"
 SCRIPT = ROOT / "dwarf/dashboard/static/js/measurement-coverage.js"
 CSS = ROOT / "dwarf/dashboard/static/css/base.css"
+
+
+def test_five_card_evidence_uses_the_authoritative_runtime_runs_root(monkeypatch, tmp_path):
+    monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(tmp_path))
+    run_id = "20260920T235440Z-050046a4"
+    assert client_example_evidence._run_manifest_path(run_id) == tmp_path / run_id / "manifest.json"
 
 
 def test_versioned_mapping_is_schema_valid_and_references_current_measurements():
