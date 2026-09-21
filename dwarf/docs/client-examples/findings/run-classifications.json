@@ -9,7 +9,10 @@
       "exact_target_sha256": "41d12cdad5531cb10a20cacc215b2e4330b611d3e4f01955b1cf7f372978624f",
       "finding_id": "amaru-plutus-data-byte-string-bound",
       "failed_assertion": "cbor_conformance_clean",
-      "target_source_revision": "b159172f25a9c389f82f20bca4f15e3032791638"
+      "target_source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+      "regression_run_id": "20260920T235440Z-050046a4",
+      "regression_source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+      "regression_security_verdict": "pass"
     }
   ]
 }

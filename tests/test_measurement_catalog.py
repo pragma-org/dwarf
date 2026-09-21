@@ -23,6 +23,8 @@ from profile_manager.measurements import (
 
 AMARU_VERSION = "10.11.20260912"
 AMARU_REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
+AMARU_FIXED_VERSION = "v10.11.20260912-30-gd3a6dafc"
+AMARU_FIXED_REVISION = "d3a6dafcced78f5809a96619e883cf04911d2bdc"
 
 
 def _measurement(
@@ -262,6 +264,7 @@ def test_seed_catalog_is_exactly_version_pinned_and_modes_are_not_conflated():
         "cardano-patched-ledger-plutus-stages",
     }
     expected = expected_amaru | expected_cardano
+    fixed_revision_amaru = expected_amaru - {"amaru-coverage-production-paths"}
     records = list_definitions("measurements")
     assert {record.definition_id for record in records} == expected
     for record in records:
@@ -274,7 +277,15 @@ def test_seed_catalog_is_exactly_version_pinned_and_modes_are_not_conflated():
                 "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
             }
         )
-        assert versions == [expected_identity]
+        expected_versions = [expected_identity]
+        if record.definition_id in fixed_revision_amaru:
+            expected_versions.append(
+                {
+                    "version": AMARU_FIXED_VERSION,
+                    "source_revision": AMARU_FIXED_REVISION,
+                }
+            )
+        assert versions == expected_versions
         if record.data["collection_mode"] in {"patched-node", "compiler-coverage"}:
             assert record.data["default_enabled"] is False
 

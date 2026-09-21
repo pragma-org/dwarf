@@ -8,6 +8,7 @@ from scripts import runtime_version_pinned_cbor_conformance as subject
 
 
 AMARU_REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
+FIXED_REVISION = "d3a6dafcced78f5809a96619e883cf04911d2bdc"
 
 
 def _accepted():
@@ -110,6 +111,47 @@ def test_adapter_record_requires_exact_executable_digest_and_revision(tmp_path):
     with pytest.raises(subject.ConformanceContractError, match="source_revision"):
         subject.load_adapter_record(
             record, implementation="amaru", source_revision=AMARU_REVISION
+        )
+
+
+def test_adapter_record_path_is_selected_by_exact_manifest_digest(tmp_path):
+    manifest_dir = tmp_path / "manifests" / FIXED_REVISION
+    manifest_dir.mkdir(parents=True)
+    manifest_path = manifest_dir / "manifest.json"
+    adapter_set = "1" * 64
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "source": {"revision": FIXED_REVISION},
+                "adapter_set_sha256": adapter_set,
+            },
+            sort_keys=True,
+        )
+    )
+    registry = tmp_path / "registry"
+    record = registry / "amaru" / "conformance" / FIXED_REVISION / f"{adapter_set}.json"
+    record.parent.mkdir(parents=True)
+    record.write_text("{}")
+    manifest_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+
+    selected = subject.resolve_adapter_record_path(
+        {
+            "adapter_manifest": str(manifest_path),
+            "adapter_manifest_sha256": manifest_digest,
+            "adapter_registry_root": str(registry),
+            "source_revision": FIXED_REVISION,
+        }
+    )
+
+    assert selected == record
+    with pytest.raises(subject.ConformanceContractError, match="manifest digest"):
+        subject.resolve_adapter_record_path(
+            {
+                "adapter_manifest": str(manifest_path),
+                "adapter_manifest_sha256": "0" * 64,
+                "adapter_registry_root": str(registry),
+                "source_revision": FIXED_REVISION,
+            }
         )
 
 

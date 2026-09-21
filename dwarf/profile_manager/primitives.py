@@ -3989,12 +3989,26 @@ class RuntimeVersionPinnedCborConformance(LoadPrimitive):
             "dataset_dir": str(_resolve_runtime_path(self.params["dataset_dir"])),
             "implementation": str(self.params["implementation"]),
             "source_revision": str(self.params["source_revision"]),
-            "adapter_record": str(_resolve_runtime_path(self.params["adapter_record"])),
             "output_dir": str(output_dir),
             "per_input_timeout_seconds": float(
                 self.params.get("per_input_timeout_seconds", 5)
             ),
         }
+        if self.params.get("adapter_record"):
+            config["adapter_record"] = str(
+                _resolve_runtime_path(self.params["adapter_record"])
+            )
+        else:
+            config["adapter_manifest"] = str(
+                _resolve_runtime_path(self.params["adapter_manifest"])
+            )
+            config["adapter_manifest_sha256"] = str(
+                self.params["adapter_manifest_sha256"]
+            )
+            if self.params.get("adapter_registry_root"):
+                config["adapter_registry_root"] = str(
+                    _resolve_runtime_path(self.params["adapter_registry_root"])
+                )
         config_path = output_dir.parent / f"{output_dir.name}-config.json"
         config_path.write_text(
             json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8"

@@ -193,6 +193,9 @@ def test_accepted_historical_card_01_run_gets_digest_locked_finding_classificati
         "failed_assertion": "cbor_conformance_clean",
         "target_source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
         "classification_source": "digest-locked-historical-run",
+        "regression_run_id": "20260920T235440Z-050046a4",
+        "regression_source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+        "regression_security_verdict": "pass",
     }
     html = render(
         "operate/run.j2",
@@ -205,6 +208,9 @@ def test_accepted_historical_card_01_run_gets_digest_locked_finding_classificati
     assert "Completed run with security finding" in html
     assert "The security verdict remains" in html
     assert "b159172f25a9c389f82f20bca4f15e3032791638" in html
+    assert "20260920T235440Z-050046a4" in html
+    assert "d3a6dafcced78f5809a96619e883cf04911d2bdc" in html
+    assert "The old node showed the bug" in html
 
 
 def test_historical_finding_classification_refuses_digest_mismatch(tmp_path):

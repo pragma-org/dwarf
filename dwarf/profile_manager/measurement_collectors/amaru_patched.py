@@ -13,6 +13,7 @@ from profile_manager.measurement_report import distribution_summary
 
 
 AMARU_SOURCE_REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
+AMARU_FIXED_SOURCE_REVISION = "d3a6dafcced78f5809a96619e883cf04911d2bdc"
 AMARU_MEASUREMENT_PATCH_SHA256 = (
     "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af"
 )
@@ -22,6 +23,12 @@ AMARU_NANOSECOND_PATCH_SHA256 = (
 AMARU_MEASUREMENT_REVISIONS = {
     AMARU_MEASUREMENT_PATCH_SHA256: "whole-microseconds-v1",
     AMARU_NANOSECOND_PATCH_SHA256: "nanoseconds-v2",
+}
+AMARU_MEASUREMENT_SOURCES = {
+    AMARU_MEASUREMENT_PATCH_SHA256: frozenset({AMARU_SOURCE_REVISION}),
+    AMARU_NANOSECOND_PATCH_SHA256: frozenset(
+        {AMARU_SOURCE_REVISION, AMARU_FIXED_SOURCE_REVISION}
+    ),
 }
 DEFAULT_MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_PATHS = 16
@@ -345,18 +352,26 @@ def _build_measurements(
     return {}
 
 
+def resolve_amaru_measurement_revision(
+    source_revision: Any, patch_set_sha256: Any
+) -> str | None:
+    measurement_revision = AMARU_MEASUREMENT_REVISIONS.get(patch_set_sha256)
+    allowed_sources = AMARU_MEASUREMENT_SOURCES.get(patch_set_sha256, frozenset())
+    if measurement_revision is None or source_revision not in allowed_sources:
+        return None
+    return measurement_revision
+
+
 def _validate_identity(identity: Mapping[str, Any]) -> str:
     if identity.get("implementation") != "amaru" or identity.get("mode") != "patched":
         raise ValueError("patched collector requires an Amaru target in patched mode")
-    if identity.get("source_revision") != AMARU_SOURCE_REVISION:
-        raise ValueError(
-            "patched collector source revision does not match the exact audited Amaru source revision"
-        )
-    measurement_revision = AMARU_MEASUREMENT_REVISIONS.get(
-        identity.get("patch_set_sha256")
+    measurement_revision = resolve_amaru_measurement_revision(
+        identity.get("source_revision"), identity.get("patch_set_sha256")
     )
     if measurement_revision is None:
-        raise ValueError("patched collector patch-set identity does not match")
+        raise ValueError(
+            "patched collector source revision and patch-set identity do not match an audited target"
+        )
     digest = identity.get("image_digest")
     if not isinstance(digest, str) or not digest.startswith("sha256:"):
         raise ValueError("patched collector requires an immutable image digest")
@@ -440,7 +455,7 @@ class AmaruPatchedCollector:
         result = {
             "schema_version": "v1",
             "measurement_id": self.measurement_id,
-            "source_revision": AMARU_SOURCE_REVISION,
+            "source_revision": self.target_identity["source_revision"],
             "patch_set_sha256": self.target_identity["patch_set_sha256"],
             "measurement_revision": self.measurement_revision,
             "target": self.target_identity,

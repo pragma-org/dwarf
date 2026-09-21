@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
+from profile_manager.measurement_targets import measurement_target_registry_root
 from scripts.runtime_cardano_cbor_dataset_differential import (
     QUALIFIED_DATASET_REPOSITORY,
     QUALIFIED_DATASET_REVISION,
@@ -27,6 +28,47 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def resolve_adapter_record_path(config: dict[str, Any]) -> Path:
+    legacy = config.get("adapter_record")
+    if legacy:
+        return Path(str(legacy)).resolve()
+    manifest_path = Path(str(config.get("adapter_manifest") or "")).resolve()
+    if not manifest_path.is_file():
+        raise ConformanceContractError(
+            f"adapter manifest is unavailable: {manifest_path}"
+        )
+    expected_digest = str(config.get("adapter_manifest_sha256") or "")
+    if len(expected_digest) != 64 or _sha256(manifest_path) != expected_digest:
+        raise ConformanceContractError("adapter manifest digest mismatch")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConformanceContractError("adapter manifest is not valid JSON") from exc
+    source_revision = str(config.get("source_revision") or "")
+    if (manifest.get("source") or {}).get("revision") != source_revision:
+        raise ConformanceContractError("adapter manifest source revision mismatch")
+    if manifest_path.parent.name != source_revision:
+        raise ConformanceContractError("adapter manifest revision directory mismatch")
+    adapter_set = str(manifest.get("adapter_set_sha256") or "")
+    if len(adapter_set) != 64 or any(c not in "0123456789abcdef" for c in adapter_set):
+        raise ConformanceContractError("adapter manifest adapter-set digest is invalid")
+    registry_root = Path(
+        str(config.get("adapter_registry_root") or measurement_target_registry_root())
+    )
+    record = (
+        registry_root
+        / "amaru"
+        / "conformance"
+        / source_revision
+        / f"{adapter_set}.json"
+    )
+    if not record.is_file():
+        raise ConformanceContractError(
+            f"manifest-selected adapter record is unavailable: {record}"
+        )
+    return record
 
 
 def load_adapter_record(
@@ -221,7 +263,7 @@ def run_cbor_conformance(
     implementation = str(config["implementation"])
     source_revision = str(config["source_revision"])
     adapter = load_adapter_record(
-        Path(str(config["adapter_record"])),
+        resolve_adapter_record_path(config),
         implementation=implementation,
         source_revision=source_revision,
     )

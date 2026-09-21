@@ -5,7 +5,7 @@ description: Measures real block context and ledger-state application plus SNAP-
 output_schema: dwarf/spec/v1/measurement-result.schema.json
 compatibility:
   implementation: amaru
-  versions: [{version: 10.11.20260912, source_revision: b159172f25a9c389f82f20bca4f15e3032791638}]
+  versions: [{version: 10.11.20260912, source_revision: b159172f25a9c389f82f20bca4f15e3032791638}, {version: v10.11.20260912-30-gd3a6dafc, source_revision: d3a6dafcced78f5809a96619e883cf04911d2bdc}]
   target_modes: [stock, patched]
 collection_mode: stock-telemetry
 required_capabilities: [amaru-block-epoch-spans, amaru-json-traces]

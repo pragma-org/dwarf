@@ -12,7 +12,7 @@ from profile_manager.measurement_collectors.amaru_factory import (
 )
 from profile_manager.measurement_collectors.amaru_patched import (
     AMARU_MEASUREMENT_REVISIONS,
-    AMARU_SOURCE_REVISION,
+    resolve_amaru_measurement_revision,
 )
 from profile_manager.measurement_collectors.cardano_factory import (
     build_cardano_measurement_factories,
@@ -177,18 +177,17 @@ def _patched_amaru_identity(runtime: dict[str, Any], scenario) -> dict[str, Any]
             f"deployed patched Amaru version {version or 'unknown'} does not match scenario"
         )
     source_revision = str(target.get("source_revision") or "")
-    if (
-        source_revision != AMARU_SOURCE_REVISION
-        or source_revision != str(release.get("source_revision") or "")
-    ):
+    if source_revision != str(release.get("source_revision") or ""):
         raise MeasurementExecutionError(
             "deployed patched Amaru source revision does not match collector"
         )
     patch_set = str(target.get("patch_set_sha256") or "")
-    measurement_revision = _measurement_revision_for_patch("amaru", patch_set)
+    measurement_revision = resolve_amaru_measurement_revision(
+        source_revision, patch_set
+    )
     if measurement_revision is None:
         raise MeasurementExecutionError(
-            "deployed patched Amaru patch-set identity does not match collector"
+            "deployed patched Amaru source revision and patch-set identity do not match collector"
         )
     image_digest = _immutable_sha256(target.get("image_digest"), "image digest")
     executable_digest = _immutable_sha256(

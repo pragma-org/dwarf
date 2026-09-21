@@ -120,3 +120,41 @@ def test_frozen_card_01_scenarios_are_semantically_valid():
             "invalid_protocol_cases_contained",
             "target_progress_continues",
         ]
+
+
+def test_fixed_amaru_regression_scenario_links_old_failure_and_upstream_fix():
+    path = ROOT / "dwarf/scenarios/client-example-cbor-decoding-amaru-d3a6dafc-regression.yaml"
+    result = semantic_validate_scenario(
+        path, registry_path=ROOT / "dwarf/primitives/registry.json"
+    )
+
+    assert result["errors"] == []
+    import json
+    body = json.loads(path.read_text())
+    assert body["profile"] == "profile-x-amaru-cbor-fix-regression-nanoseconds-v2"
+    assert body["target"] == {
+        "implementation": "amaru",
+        "version": "v10.11.20260912-30-gd3a6dafc",
+        "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+    }
+    assert body["m1_trace"]["finding_ids"] == ["amaru-plutus-data-byte-string-bound"]
+    assert body["m1_trace"]["historical_run_ids"] == ["20260920T135054Z-28289dcd"]
+    assert body["m1_trace"]["upstream_fix_revisions"] == [
+        "d3a6dafcced78f5809a96619e883cf04911d2bdc"
+    ]
+    assert body["load"][0]["adapter_manifest_sha256"] == (
+        "8877a4ae7f46521ae1a8bf6584e4092b39ef3f0f8acf93bbcc4e0bd551f1f685"
+    )
+    assert body["load"][0]["adapter_manifest"] == (
+        "targets/amaru/conformance-adapters/"
+        "d3a6dafcced78f5809a96619e883cf04911d2bdc/manifest.json"
+    )
+    assert body["load"][0]["dataset_revision"] == (
+        "a7561cd063550c2218898571520f14c3674efe91"
+    )
+    assert [row["primitive"] for row in body["assertions"]] == [
+        "cbor_conformance_clean",
+        "cbor_roundtrip_consistent",
+        "invalid_protocol_cases_contained",
+        "target_progress_continues",
+    ]

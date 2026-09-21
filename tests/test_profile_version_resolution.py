@@ -90,10 +90,11 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
         "profile-t-cardano-measurement-patched": "generated-cardano-local",
         "profile-u-amaru-measurement-nanoseconds-v2": "amaru-control",
         "profile-v-cardano-measurement-nanoseconds-v2": "generated-cardano-local",
+        "profile-x-amaru-cbor-fix-regression-nanoseconds-v2": "amaru-control",
     }
     profiles = load_profiles()
 
-    assert len(profiles) == 22
+    assert len(profiles) == 23
     assert {profile.id for profile in profiles} == set(expected_adapters)
     for profile in profiles:
         source = next(
@@ -109,6 +110,7 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
                 "profile-t-cardano-measurement-patched",
                 "profile-u-amaru-measurement-nanoseconds-v2",
                 "profile-v-cardano-measurement-nanoseconds-v2",
+                "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
             }
             else "latest-confirmed"
         )
@@ -116,7 +118,10 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
         assert profile.version_policy_source == "explicit"
         assert deployment_adapter_for_profile(profile) == expected_adapters[profile.id]
         preview = build_deployment_version_preview(raw)
-        if expected_adapters[profile.id] in {"cardano-public-peer", "amaru-public-peer"}:
+        if (
+            expected_adapters[profile.id]
+            in {"cardano-public-peer", "amaru-public-peer"}
+        ):
             assert preview["status"] == "unknown"
             assert preview["requires_acknowledgement"] is True
         else:
@@ -291,3 +296,29 @@ def test_shipped_version_aware_defaults_resolve_exact_confirmed_contracts():
         assert resolved["resolved"][implementation]["version"] == target_version
         if support_version:
             assert resolved["supporting"]["cardano-node"]["version"] == support_version
+
+
+def test_fixed_amaru_regression_profile_resolves_exact_confirmed_commit():
+    body = json.loads(
+        (
+            CATALOG_PATH.parents[1]
+            / "profiles/profile-x-amaru-cbor-fix-regression-nanoseconds-v2/profile.yaml"
+        ).read_text()
+    )
+
+    resolved = resolve_profile_versions(body, load_version_catalog(CATALOG_PATH))
+
+    assert resolved["status"] == "confirmed"
+    assert resolved["requires_acknowledgement"] is False
+    assert resolved["resolved"]["amaru"]["version"] == "v10.11.20260912-30-gd3a6dafc"
+    assert resolved["resolved"]["amaru"]["source_revision"] == (
+        "d3a6dafcced78f5809a96619e883cf04911d2bdc"
+    )
+    assert resolved["supporting"]["cardano-node"]["version"] == "10.7.1"
+    assert body["measurement_revision"] == "nanoseconds-v2"
+    assert body["measurement_patch_revision"] == (
+        "d3a6dafcced78f5809a96619e883cf04911d2bdc"
+    )
+    verification = resolved["resolved"]["amaru"]["verification"]["amaru-only"]
+    assert "run:20260920T235440Z-050046a4" in verification["evidence"]
+    assert verification["default"] is False

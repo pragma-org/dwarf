@@ -17,6 +17,9 @@ AMARU_DIGEST = "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6
 AMARU_PATCHED_DIGEST = "sha256:dacb2351e69ab1d0bbfbc569b222d1bde40d9a158e79c556b30df554375addcc"
 AMARU_PATCHED_EXECUTABLE = "sha256:b0cebe917e092c3d4e47ac4841de7a49338dca1e586616803fe17e92d0d93425"
 AMARU_PATCH_SET = "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af"
+AMARU_FIXED_VERSION = "v10.11.20260912-30-gd3a6dafc"
+AMARU_FIXED_REVISION = "d3a6dafcced78f5809a96619e883cf04911d2bdc"
+AMARU_NANOSECOND_PATCH_SET = "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0"
 
 
 def _runtime(path: Path, *, matched=True, digest=AMARU_DIGEST):
@@ -203,6 +206,37 @@ def test_prepare_scenario_measurements_resolves_exact_live_patched_runtime(tmp_p
         )
     )
     assert collector.target_identity == identity
+
+
+def test_prepare_scenario_measurements_accepts_fixed_revision_nanosecond_target(tmp_path):
+    scenario = load_scenario(
+        "dwarf/scenarios/client-example-cbor-decoding-amaru-d3a6dafc-regression.yaml"
+    )
+    runtime_path = _patched_runtime(tmp_path / "runtime.json")
+    runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+    runtime["profile_id"] = scenario.profile
+    runtime["measurement_target"].update(
+        {
+            "version": AMARU_FIXED_VERSION,
+            "source_revision": AMARU_FIXED_REVISION,
+            "patch_set_sha256": AMARU_NANOSECOND_PATCH_SET,
+        }
+    )
+    release = runtime["versions"]["catalog_snapshot"]["selected_releases"][0]
+    release["version"] = AMARU_FIXED_VERSION
+    release["source_revision"] = AMARU_FIXED_REVISION
+    runtime_path.write_text(json.dumps(runtime), encoding="utf-8")
+
+    prepared = prepare_scenario_measurements(
+        scenario,
+        runtime_metadata_path=runtime_path,
+        tip_probe=lambda: {"block_height": 1, "block_hash": "a" * 64},
+    )
+
+    identity = prepared.resolution["target_identity"]
+    assert identity["source_revision"] == AMARU_FIXED_REVISION
+    assert identity["patch_set_sha256"] == AMARU_NANOSECOND_PATCH_SET
+    assert identity["measurement_revision"] == "nanoseconds-v2"
 
 
 @pytest.mark.parametrize(

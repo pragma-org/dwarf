@@ -190,6 +190,11 @@ def test_card01_records_completed_finding_and_exact_fixed_revision_regression():
         "measurement_revision": "nanoseconds-v2",
         "corpus_digest": "sha256:8f5b409f5c2b25b31e392365bab0e9a703a526e776a4f34dfbc3204f9b022dd9",
         "required_result": "pass",
+        "accepted_run_id": "20260920T235440Z-050046a4",
+        "manifest_sha256": "3e7412574ddcda16aaa788b4c27a4bc74f9728dd1fcc381fd5d822611fb65871",
+        "assertions_sha256": "545bb3ab6164782ba3aae56a95b9a9391f6170b1e0e80573873c96904c5f73ae",
+        "codec_result_sha256": "89ac73f932ec9dc1cca0b78a0ec52714b3579f5289d5aad4227a4a4c354cf733",
+        "bundle_sha256": "6fd2d11f9dcb17d181edc06e81983c3ff18968cfbc484fc20887ddbfc4513440",
     }
 
 

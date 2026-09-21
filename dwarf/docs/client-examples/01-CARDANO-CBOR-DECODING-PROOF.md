@@ -1,10 +1,10 @@
 # Card 01 Cardano-node CBOR decoding proof
 
-Status: The Cardano-node leg has one accepted collection-proof run. The complete card remains partial because the frozen Amaru target does not enforce the required 64-byte Plutus byte-string bound.
+Status: Both current Card 01 legs have accepted runs. The historical frozen Amaru failure remains a completed security finding.
 
-Child explanation: The Cardano node got 100 saved messages and gave the expected answer for every message. It also stayed awake after 200 bad hello messages. The Amaru half cannot pass because that old Amaru version accepts 30 messages that it must reject.
+Child explanation: The Cardano node and the exact newer Amaru node gave the expected answer for every saved message. They also stayed awake after 200 bad hello messages. The old Amaru failure stays visible because it found a real bug.
 
-The exact Amaru rehearsal is retained as failed run `20260920T135054Z-28289dcd`. It passed containment, progress, and round-trip assertions, but it failed outcome parity for the same 30 over-limit inputs.
+The exact old Amaru rehearsal is retained as failed run `20260920T135054Z-28289dcd`. It passed containment, progress, and round-trip assertions, but it failed outcome parity for the same 30 over-limit inputs. Exact fixed-revision run `20260920T235440Z-050046a4` passed all four assertions against the unchanged corpus.
 
 ## Exact run
 
@@ -40,6 +40,19 @@ The run retained 244 CPU samples and 245 resident-memory samples. Accepted codec
 
 `cardano-profile verify 20260920T132629Z-ea000d37` returned `OK`. Archive import recomputed and matched the signed manifest digest for all 70 files.
 
+## Exact fixed Amaru regression
+
+- Source revision: `d3a6dafcced78f5809a96619e883cf04911d2bdc`
+- Measurement revision: `nanoseconds-v2`
+- Patch set SHA-256: `4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0`
+- Executable digest: `sha256:2970fa583d53967c72fdacb7e61d2954e1fb8d1b56fc7a34590018551085184e`
+- Image digest: `sha256:c890ee54aad19fe36aa80efbdee2f8a155dd80b2207970e844c836d37d8c5932`
+- Manifest SHA-256: `3e7412574ddcda16aaa788b4c27a4bc74f9728dd1fcc381fd5d822611fb65871`
+- Assertions SHA-256: `545bb3ab6164782ba3aae56a95b9a9391f6170b1e0e80573873c96904c5f73ae`
+- Exported bundle SHA-256: `6fd2d11f9dcb17d181edc06e81983c3ff18968cfbc484fc20887ddbfc4513440`
+
+The fixed Amaru codec returned all 100 expected outcomes and retained stable second encodings. Its live target contained all 200 invalid protocol attempts and continued from block 615 to block 705 without a restart or fatal signal.
+
 ## Claim limit
 
-This run proves the Cardano-node functional and collection boundaries for the frozen corpus and live cases on this hardware. It is not full CBOR conformance. It does not establish a stable timing threshold. It is not an Amaru-versus-Cardano benchmark. The Amaru mismatch is retained separately in `findings/01-frozen-amaru-cbor-byte-string-bound.md` and prevents complete Card 01 acceptance.
+These runs prove the Cardano-node and fixed Amaru functional and collection boundaries for the frozen corpus and live cases on this hardware. They do not prove full CBOR conformance, establish a stable timing threshold, or form an Amaru-versus-Cardano benchmark. The old Amaru mismatch remains a separate completed finding in `findings/01-frozen-amaru-cbor-byte-string-bound.md`.

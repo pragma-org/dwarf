@@ -1,8 +1,8 @@
 # Card 01 frozen-target finding: Plutus byte-string bound
 
-Status: Card 01 cannot be accepted with the frozen Amaru revision.
+Status: The frozen Amaru revision has a completed security finding. The exact fixed-revision regression passed.
 
-Child explanation: Both nodes received the same 100 messages. Cardano rejected 30 broken messages that Amaru accepted. The Amaru version in this test does not check one required size limit.
+Child explanation: Both nodes received the same 100 messages. The old Amaru node accepted 30 broken messages. The exact newer Amaru node rejected them, so the saved test shows that the fix works.
 
 ## Exact boundary
 
@@ -36,7 +36,7 @@ The Amaru change that introduced the affected decoder is an ancestor of the froz
 - Cardano `inputs.ndjson` SHA-256: `b30467618d55da6b6b37128b2b152f976575d5c67aea431db868f5e73aaafea3`
 - Cardano `report.md` SHA-256: `b164007b641eae4a8b1af8696f7ade2e78500e60d7b60fea54f8fbd200ada5eb`
 
-These artifacts are diagnostic evidence. They are not accepted Gate 5 evidence. Card 01 remains incomplete. The frozen contract and Card 03 evidence are unchanged.
+These artifacts remain the accepted evidence for the old security finding. The failed assertion and its security meaning are unchanged. Card 03 evidence is unchanged.
 
 ## Formal DWARF rehearsal
 
@@ -59,3 +59,22 @@ This run is a completed execution with a node conformance finding. Its `cbor_con
 The regression target is exact Amaru revision `d3a6dafcced78f5809a96619e883cf04911d2bdc`, which contains the upstream fix at the same revision. The regression uses the unchanged frozen corpus and `nanoseconds-v2`. Its evidence must link back to this finding and identify both revisions.
 
 Child explanation: The old node finished the test and showed a real bug. A newer exact node must receive the same messages and show that the bug is fixed.
+
+## Accepted fixed-revision regression
+
+Run `20260920T235440Z-050046a4` used exact Amaru revision `d3a6dafcced78f5809a96619e883cf04911d2bdc`, which contains the upstream fix. It used the same dataset revision and selection. All four frozen assertions passed.
+
+The production codec processed 100 inputs: 25 were accepted and 75 were rejected. It had zero expected-outcome mismatches and zero round-trip failures. It retained raw integer nanoseconds and reported fractional microseconds. The real node also contained 100 unsupported-version cases and 100 malformed-CBOR cases. Its chain advanced from block 615 to block 705 during the workload. It stayed running, did not restart, did not report an out-of-memory condition, and emitted no fatal signal.
+
+- Manifest SHA-256: `3e7412574ddcda16aaa788b4c27a4bc74f9728dd1fcc381fd5d822611fb65871`
+- Assertions SHA-256: `545bb3ab6164782ba3aae56a95b9a9391f6170b1e0e80573873c96904c5f73ae`
+- Codec result SHA-256: `89ac73f932ec9dc1cca0b78a0ec52714b3579f5289d5aad4227a4a4c354cf733`
+- Codec raw inputs SHA-256: `1646e1b829640a104a86c5ee8cabe3df8410e734077bc461aa219e2dcb495118`
+- Measurement report SHA-256: `1d2f60b939b5a62d1b3d4f44704b5415dcf2bf834dc8af6a4231c948900473f0`
+- Live protocol result SHA-256: `9bd7645bf2e5e197c09dcd356bc7afd2aeb2bc78115e2b37d55f322769aa84a5`
+- Health-and-progress proof SHA-256: `b84a76832c19eb20b88cb3ff79418c1d6dd7b6757346d50ed5408bad178ab1e6`
+- Exported bundle SHA-256: `6fd2d11f9dcb17d181edc06e81983c3ff18968cfbc484fc20887ddbfc4513440`
+
+`cardano-profile verify 20260920T235440Z-050046a4` returned `OK`. Bundle verification passed for all 97 files. Import recomputed the same manifest digest. A forensic check of the isolated imported run correctly reported that its preceding chain entry was not present in the temporary directory.
+
+The old failed run and the new passing run are both retained. The new pass does not rewrite the old finding.

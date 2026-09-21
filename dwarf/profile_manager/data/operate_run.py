@@ -113,6 +113,13 @@ def _security_execution_section(
             "classification_source": "digest-locked-historical-run",
         }
     )
+    for field in (
+        "regression_run_id",
+        "regression_source_revision",
+        "regression_security_verdict",
+    ):
+        if record.get(field):
+            section[field] = record[field]
     return section
 
 

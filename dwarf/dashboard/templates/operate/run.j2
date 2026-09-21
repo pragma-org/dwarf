@@ -59,7 +59,12 @@
     <div><dt>finding</dt><dd><code>{{ run.security_execution.finding_id }}</code></dd></div>
     <div><dt>target revision</dt><dd><code class="run-chain-hash">{{ run.security_execution.target_source_revision }}</code></dd></div>
     <div><dt>classification source</dt><dd><code>{{ run.security_execution.classification_source or 'recorded-run-manifest' }}</code></dd></div>
+    {% if run.security_execution.regression_run_id %}
+    <div><dt>fixed regression</dt><dd><a href="/operate/runs/{{ run.security_execution.regression_run_id }}"><code>{{ run.security_execution.regression_run_id }}</code></a> · verdict <code>{{ run.security_execution.regression_security_verdict }}</code></dd></div>
+    <div><dt>fixed revision</dt><dd><code class="run-chain-hash">{{ run.security_execution.regression_source_revision }}</code></dd></div>
+    {% endif %}
   </dl>
+  {% if run.security_execution.regression_run_id %}<p>The old node showed the bug. The linked exact newer node passed the same frozen corpus.</p>{% endif %}
 </section>
 {% endif %}
 

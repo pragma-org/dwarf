@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-18T10:08:43Z",
+  "updated_at": "2026-09-21T00:01:14Z",
   "sources": {
     "amaru": "https://github.com/pragma-org/amaru",
     "amaru_wiki_revision": "4ff6cd8d4f0e723bcf60976ea3b68259e48e932c",
@@ -3364,6 +3364,37 @@
           "checked_at": "2026-09-18T04:08:53.185701Z",
           "reason": "No exact mixed-pair runtime qualification has been recorded.",
           "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "v10.11.20260912-30-gd3a6dafc",
+      "channel": "main",
+      "released_at": "2026-09-16T22:52:04Z",
+      "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+      "release_url": "https://github.com/pragma-org/amaru/commit/d3a6dafcced78f5809a96619e883cf04911d2bdc",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "dwarf/amaru-measurement@sha256:c890ee54aad19fe36aa80efbdee2f8a155dd80b2207970e844c836d37d8c5932",
+          "availability": "available",
+          "digest": "sha256:c890ee54aad19fe36aa80efbdee2f8a155dd80b2207970e844c836d37d8c5932"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "confirmed",
+          "default": false,
+          "checked_at": "2026-09-21T00:01:14Z",
+          "supporting_cardano_version": "10.7.1",
+          "reason": "The exact upstream-fixed commit passed the frozen 100-input Card 01 corpus with zero outcome mismatches and zero round-trip failures. The real patched Amaru target also contained all 200 invalid protocol cases, advanced its chain, stayed running, did not restart, and emitted no fatal signal.",
+          "evidence": [
+            "target:dwarf/targets/amaru/conformance-adapters/d3a6dafcced78f5809a96619e883cf04911d2bdc/build-evidence.json",
+            "target:dwarf/targets/amaru/measurement-patches-nanoseconds-v2/d3a6dafcced78f5809a96619e883cf04911d2bdc/build-evidence.json",
+            "run:20260920T235440Z-050046a4"
+          ],
           "issues": []
         }
       }

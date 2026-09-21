@@ -9,8 +9,11 @@
     "dataset_dir",
     "implementation",
     "source_revision",
-    "adapter_record",
     "output_dir"
+  ],
+  "oneOf": [
+    {"required": ["adapter_record"]},
+    {"required": ["adapter_manifest", "adapter_manifest_sha256"]}
   ],
   "properties": {
     "source_repository": {"const": "https://github.com/r2rationality/cardano-cbor-dataset.git"},
@@ -20,6 +23,9 @@
     "implementation": {"enum": ["amaru", "cardano-node"]},
     "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "adapter_record": {"type": "string", "minLength": 1},
+    "adapter_manifest": {"type": "string", "minLength": 1},
+    "adapter_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "adapter_registry_root": {"type": "string", "minLength": 1},
     "output_dir": {"type": "string", "minLength": 1},
     "per_input_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
     "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},

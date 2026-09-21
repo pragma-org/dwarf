@@ -4,19 +4,19 @@ This directory freezes the five smallest security-centered examples required by 
 The machine-readable cards are in `contracts/` and validate against
 `dwarf/spec/v1/client-example-acceptance-card.schema.json`.
 
-Technical status on 2026-09-20: all five contracts remain frozen. G3-A through G3-C are implemented. Card 03 has accepted evidence for both implementations on `whole-microseconds-v1`. Card 05 has accepted evidence for both implementations on `nanoseconds-v2`. Cards 01, 02, and 04 have accepted Cardano-node legs. The Amaru legs for Cards 01, 02, and 04 have retained blockers. Gates 4 and 5 are not complete.
+Technical status on 2026-09-20: all five contracts remain frozen. G3-A through G3-C are implemented. Cards 01 and 05 have accepted evidence for both implementations on `nanoseconds-v2`. Card 03 has accepted evidence for both implementations on `whole-microseconds-v1`. Cards 02 and 04 have accepted Cardano-node legs and retained Amaru work. Gates 4 and 5 are not complete.
 
-Child explanation: DWARF finished many parts of the five recipes. Three real Amaru limits stop the remaining parts. The proof that passed stays valid, and DWARF does not hide the blocked results.
+Child explanation: DWARF finished three of the five recipes for both nodes. Two Amaru parts still need work. The old Amaru bug stays visible beside the newer run that proves its fix.
 
 | Card | Exact current state | Measurement revision |
 |---|---|---|
-| 01 | Cardano-node accepted as run `20260920T132629Z-ea000d37`; Amaru rehearsal `20260920T135054Z-28289dcd` retained the frozen byte-string-bound failure | `nanoseconds-v2` |
+| 01 | Cardano-node accepted as run `20260920T132629Z-ea000d37`; fixed Amaru accepted as run `20260920T235440Z-050046a4`; old Amaru run `20260920T135054Z-28289dcd` remains a completed finding | `nanoseconds-v2` |
 | 02 | Cardano-node accepted as final run `20260920T135958Z-362eedc7`; Amaru blocked because the frozen chain has no Plutus V2 cost model | `nanoseconds-v2` |
 | 03 | both legs accepted: Amaru `20260920T072858Z-2cc3bb0c`, Cardano-node `20260920T073447Z-ab81bfb7` | `whole-microseconds-v1` |
 | 04 | Cardano-node accepted as run `20260920T125840Z-778a7cf7`; Amaru retained a real same-height fork finding | `nanoseconds-v2` |
 | 05 | both legs accepted: Amaru `20260920T122606Z-32c0e998`, Cardano-node `20260920T130232Z-2c68fb83` | `nanoseconds-v2` |
 
-The accepted labels are `framework proven` and `collection proven`. The full five-card client requirement remains partial because the retained blockers prevent ten accepted legs.
+The accepted labels are `framework proven` and `collection proven`. The full five-card client requirement remains partial because Cards 02 and 04 do not yet have accepted Amaru legs.
 
 | Card | Functional focus | Non-functional focus | Gate 1 state |
 |---|---|---|---|

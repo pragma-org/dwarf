@@ -1,0 +1,78 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-cbor-decoding-amaru-d3a6dafc-regression",
+  "title": "Client example 01 — Amaru byte-string-bound fix regression",
+  "authors": ["dwarf"],
+  "tags": ["client-example", "amaru", "regression", "cbor", "security", "nanoseconds-v2"],
+  "evidence_intent": "regression",
+  "related_milestones": ["G3-B", "Gate-4"],
+  "m1_trace": {
+    "finding_ids": ["amaru-plutus-data-byte-string-bound"],
+    "historical_run_ids": ["20260920T135054Z-28289dcd"],
+    "upstream_fix_revisions": ["d3a6dafcced78f5809a96619e883cf04911d2bdc"]
+  },
+  "promotion_blockers": [
+    "All four frozen Card 01 assertions must pass on the exact fixed revision.",
+    "The old b159172f failed run must remain linked as the security finding."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "v10.11.20260912-30-gd3a6dafc",
+    "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc"
+  },
+  "runtime": "devnet",
+  "profile": "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0xA7561CD0",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "amaru",
+      "version": "v10.11.20260912-30-gd3a6dafc",
+      "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+      "mode": "patched",
+      "image_digest": "sha256:c890ee54aad19fe36aa80efbdee2f8a155dd80b2207970e844c836d37d8c5932",
+      "executable_digest": "sha256:2970fa583d53967c72fdacb7e61d2954e1fb8d1b56fc7a34590018551085184e",
+      "patch_set_sha256": "4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_version_pinned_cbor_conformance",
+      "source_repository": "https://github.com/r2rationality/cardano-cbor-dataset.git",
+      "dataset_revision": "a7561cd063550c2218898571520f14c3674efe91",
+      "dataset_repo_dir": "/home/nigel/cardano-cbor-dataset",
+      "dataset_dir": "/home/nigel/cardano-cbor-dataset/dataset/conway-123-100",
+      "implementation": "amaru",
+      "source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+      "adapter_manifest": "targets/amaru/conformance-adapters/d3a6dafcced78f5809a96619e883cf04911d2bdc/manifest.json",
+      "adapter_manifest_sha256": "8877a4ae7f46521ae1a8bf6584e4092b39ef3f0f8acf93bbcc4e0bd551f1f685",
+      "output_dir": "outputs/cbor-conformance",
+      "per_input_timeout_seconds": 5,
+      "timeout_seconds": 1200,
+      "expect_exit": 0
+    },
+    {
+      "primitive": "runtime_protocol_decode_cases",
+      "profile_id": "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
+      "attempts_per_case": 100,
+      "duration_seconds": 240,
+      "workload_digest": "sha256:1ab6db08d45f22f42b1333c255ed07ac9dc57ecacb69ee7c645ecfd451c4225e",
+      "response_timeout_seconds": 2,
+      "progress_timeout_seconds": 120,
+      "timeout_seconds": 360,
+      "expected_helper_exit": 0
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {"primitive": "runtime_target_health_and_progress", "progress_reference": "load-start"}
+  ],
+  "assertions": [
+    {"primitive": "cbor_conformance_clean", "min_inputs_processed": 100},
+    {"primitive": "cbor_roundtrip_consistent", "min_inputs_processed": 100},
+    {"primitive": "invalid_protocol_cases_contained"},
+    {"primitive": "target_progress_continues"}
+  ],
+  "teardown": []
+}
