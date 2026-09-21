@@ -379,12 +379,12 @@ else
   echo "## tip"
   container="${project}-node1-1"
   socket="$env_root/socket/node1/sock"
-  if [ -S "$socket" ]; then
-    CARDANO_NODE_SOCKET_PATH="$socket" /home/dwarf/.local/bin/cardano-cli query tip --testnet-magic 42 2>/dev/null || echo "tip_query=failed"
-    echo
-  elif docker inspect "$container" >/dev/null 2>&1; then
+  if docker inspect "$container" >/dev/null 2>&1; then
     docker exec -e CARDANO_NODE_SOCKET_PATH=/env/socket/node1/sock "$container" \
       cardano-cli query tip --testnet-magic 42 2>/dev/null || echo "tip_query=failed"
+    echo
+  elif [ -S "$socket" ]; then
+    CARDANO_NODE_SOCKET_PATH="$socket" /home/dwarf/.local/bin/cardano-cli query tip --testnet-magic 42 2>/dev/null || echo "tip_query=failed"
     echo
   else
     echo "tip_query=missing_socket"

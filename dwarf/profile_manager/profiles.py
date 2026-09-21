@@ -210,7 +210,7 @@ def active_profile_command():
     which carry no docker label). The dashboard counts these lines to show the
     real substrate state; a non-empty stream also means "a devnet is active" for
     the deploy/remove pre-checks."""
-    return r"""docker ps --filter 'label=ada2.managed=dwarf' --format 'DWARF_NODE docker {{.Names}} {{.Status}}' 2>/dev/null || true
+    return r"""docker ps --filter 'label=ada2.managed=dwarf' --format 'DWARF_NODE docker {{.Label "ada2.profile"}} {{.Names}} {{.Status}}' 2>/dev/null || true
 tmux ls 2>/dev/null | grep -oE '^dwarf-profile-[^:]+' | sed 's/^/DWARF_NODE tmux /' || true"""
 
 

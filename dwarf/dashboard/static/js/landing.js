@@ -58,14 +58,14 @@ async function fetchTopology(url) {
 async function refreshTopology() {
   try {
     let payload = await fetchTopology(root.dataset.topologyUrl);
-    updatePill('topology', payload.state, payload.state === 'checking' ? 'Checking' : payload.state, 'Cardano + Amaru');
+    updatePill('topology', payload.state, payload.state === 'checking' ? 'Checking' : payload.state, 'Current managed profile');
     while (payload.state === 'checking') {
       await wait(500);
       payload = await fetchTopology('/api/topology/health');
     }
     const detail = payload.cached
       ? `Cached · ${payload.age_seconds ?? 'unknown'}s old`
-      : (payload.reason_code || 'Cardano + Amaru');
+      : (payload.reason_code || 'Current managed profile');
     updatePill('topology', payload.state, payload.state, detail);
   } catch (error) {
     updatePill('topology', 'unknown', 'Unknown', 'Topology check failed');

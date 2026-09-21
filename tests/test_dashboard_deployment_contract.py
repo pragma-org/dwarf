@@ -496,6 +496,27 @@ def test_control_shim_builds_read_only_topology_health_command(tmp_path):
     assert "redeploy" not in completed.stdout
 
 
+def test_control_shim_builds_profile_scoped_health_command(tmp_path):
+    shim = tmp_path / "dwarf-deploy-shim"
+    shutil.copy2(ROOT / "delivery/control-plane/dwarf-deploy-shim.py", shim)
+    (tmp_path / "dwarf-control.conf").write_text(
+        f"DWARF_ROOT={ROOT / 'dwarf'}\n", encoding="utf-8"
+    )
+    completed = subprocess.run(
+        [sys.executable, str(shim)], text=True, capture_output=True, check=False,
+        env={**dict(os.environ), "SSH_ORIGINAL_COMMAND": "profile-health profile-v-cardano-measurement-nanoseconds-v2 --dry-run"},
+    )
+    missing = subprocess.run(
+        [sys.executable, str(shim)], text=True, capture_output=True, check=False,
+        env={**dict(os.environ), "SSH_ORIGINAL_COMMAND": "profile-health --dry-run"},
+    )
+
+    assert completed.returncode == 0
+    assert "/opt/dwarf/cardano-profiles/profile-v-cardano-measurement-nanoseconds-v2" in completed.stdout
+    assert "## tip" in completed.stdout
+    assert missing.returncode == 77
+
+
 def test_control_shim_allows_only_fixed_topology_redeploy_id(tmp_path):
     shim = tmp_path / "dwarf-deploy-shim"
     shutil.copy2(ROOT / "delivery/control-plane/dwarf-deploy-shim.py", shim)

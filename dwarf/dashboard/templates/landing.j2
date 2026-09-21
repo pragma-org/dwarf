@@ -36,7 +36,7 @@
     </article>
     <article class="landing-status-pill" data-status="topology" data-state="{{ topology_health.state }}">
       <span>Active topology</span><strong>{{ topology_health.state|replace('_', ' ')|title }}</strong>
-      <small>{% if topology_health.cached %}Cached · {{ topology_health.age_seconds if topology_health.age_seconds is not none else 'unknown' }}s old{% else %}Cardano + Amaru{% endif %}</small>
+      <small>{% if topology_health.cached %}Cached · {{ topology_health.age_seconds if topology_health.age_seconds is not none else 'unknown' }}s old{% else %}Current managed profile{% endif %}</small>
     </article>
     <article class="landing-status-pill" data-status="versions" data-state="ready">
       <span>Node versions</span><strong>Confirmed defaults</strong><small>Cardano {{ version_defaults.cardano }} · Amaru {{ version_defaults.amaru }}</small>

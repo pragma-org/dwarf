@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -84,29 +85,91 @@ def _present_completed(
     return presented
 
 
-def _default_probe() -> dict[str, Any]:
-    from profile_manager.config import load_config
-    from profile_manager.remote import ssh_command
+def _integer(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
-    config = load_config()
-    result = ssh_command(
-        config,
-        "topology-health",
-        timeout=90,
-        verb=("topology-health",),
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            (result.stderr or result.stdout or "topology health command failed").strip()
-        )
-    for line in reversed(result.stdout.splitlines()):
-        try:
-            parsed = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict) and parsed.get("state"):
-            return parsed
-    raise RuntimeError("topology health command returned no JSON result")
+
+def classify_current_profile_health(
+    first: dict[str, Any], second: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Classify two exact-profile observations without masking failures."""
+    base = {
+        "checked_at": _utc_now(), "topology_kind": "managed_profile",
+        "profile_id": first.get("profile_id"), "redeploy_supported": False,
+        "evidence_scope": "current_active_profile",
+    }
+    if not first.get("enabled"):
+        state = first.get("state") or "unknown"
+        reason = "no_active_profile" if state == "no_active" else "active_profile_probe_failed"
+        return {
+            **base, "state": state, "reason_code": reason,
+            "detail": first.get("error") or "The active profile could not be observed.",
+            "observations": [first],
+        }
+    if second is None or not second.get("enabled"):
+        return {
+            **base, "state": "unknown", "reason_code": "active_profile_second_sample_failed",
+            "detail": (second or {}).get("error") or "The second progress sample is unavailable.",
+            "observations": [first] + ([second] if second else []),
+        }
+    if second.get("profile_id") != first.get("profile_id"):
+        return {
+            **base, "state": "unknown", "reason_code": "active_profile_changed",
+            "detail": "The active profile changed between health samples.", "observations": [first, second],
+        }
+    first_health = first.get("health") or {}
+    second_health = second.get("health") or {}
+    first_parsed = first_health.get("parsed") or {}
+    parsed = second_health.get("parsed") or {}
+    expected = _integer(second.get("expected_nodes"))
+    processes = _integer(parsed.get("cardano_node_processes"))
+    sockets = _integer(parsed.get("socket_count"))
+    listeners = _integer(parsed.get("listener_count"))
+    first_slot = _integer(first_parsed.get("tip_slot"))
+    second_slot = _integer(parsed.get("tip_slot"))
+    try:
+        sync = float(parsed.get("sync_progress"))
+    except (TypeError, ValueError):
+        sync = None
+    observation = {
+        "expected_nodes": expected, "node_processes": processes,
+        "socket_count": sockets, "listener_count": listeners,
+        "loopback_only": parsed.get("loopback_only"),
+        "first_tip_slot": first_slot, "tip_slot": second_slot,
+        "tip_block": parsed.get("tip_block"), "sync_progress": parsed.get("sync_progress"),
+    }
+    common = {**base, "observation": observation, "observations": [first, second]}
+    if first_health.get("returncode") != 0 or second_health.get("returncode") != 0:
+        return {**common, "state": "unknown", "reason_code": "active_profile_probe_failed",
+                "detail": second_health.get("stderr") or "The profile health command failed."}
+    if expected is None or processes != expected or sockets != expected or listeners != expected:
+        return {**common, "state": "unhealthy", "reason_code": "active_profile_readiness_failed",
+                "detail": "Process, socket, or listener counts do not match the active profile."}
+    if parsed.get("loopback_only") != "true":
+        return {**common, "state": "unhealthy", "reason_code": "active_profile_exposure_failed",
+                "detail": "The active profile is not restricted to loopback listeners."}
+    if first_slot is None or second_slot is None or second_slot <= first_slot:
+        return {**common, "state": "unhealthy", "reason_code": "active_profile_not_progressing",
+                "detail": "The active profile tip did not advance between bounded samples."}
+    if sync is None or sync < 99.0:
+        return {**common, "state": "catching_up", "reason_code": "active_profile_catching_up",
+                "detail": "The active profile is progressing but is not yet synchronized."}
+    return {**common, "state": "healthy", "reason_code": "active_profile_ready_and_progressing",
+            "detail": "The exact active profile passed readiness and bounded progress checks."}
+
+
+def _default_probe() -> dict[str, Any]:
+    from profile_manager.data.health import _live_health
+
+    first = _live_health(None)
+    if not first.get("enabled"):
+        return classify_current_profile_health(first, None)
+    time.sleep(10)
+    second = _live_health(first.get("profile_id"))
+    return classify_current_profile_health(first, second)
 
 
 def normalize_probe_failure(

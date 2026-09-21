@@ -3263,6 +3263,7 @@ body.product-landing {
 .landing-status-pill[data-state="unknown"],
 .landing-status-pill[data-state="unavailable"] { border-top-color: var(--crimson); }
 .landing-status-pill[data-state="checking"],
+.landing-status-pill[data-state="no_active"],
 .landing-status-pill[data-state="idle"] { border-top-color: var(--cork); }
 
 .product-landing__enter {
@@ -5702,6 +5703,7 @@ body {
 .topology-health[data-state="healthy"] { border-color: var(--cyan-trace); }
 .topology-health[data-state="unhealthy"] { border-color: rgba(192, 48, 48, 0.72); }
 .topology-health[data-state="catching_up"],
+.topology-health[data-state="no_active"],
 .topology-health[data-state="unknown"] { border-color: var(--cork); }
 .auto-repair-warning {
   padding: var(--space-3);

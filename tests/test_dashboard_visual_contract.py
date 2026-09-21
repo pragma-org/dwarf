@@ -179,12 +179,15 @@ def test_topology_health_panel_has_responsive_product_chrome():
     assert "dialog.scrollTop = 0" in script
 
 
-def test_mixed_topology_is_the_authoritative_substrate_health_surface():
+def test_current_managed_topology_is_the_authoritative_health_surface():
     template = (
         ROOT / "dwarf/dashboard/templates/operate/status.j2"
     ).read_text(encoding="utf-8")
     landing = (
         ROOT / "dwarf/dashboard/templates/landing.j2"
+    ).read_text(encoding="utf-8")
+    script = (
+        ROOT / "dwarf/dashboard/static/js/topology-health.js"
     ).read_text(encoding="utf-8")
 
     mixed_health = template.index('id="topology-health-panel"')
@@ -195,9 +198,9 @@ def test_mixed_topology_is_the_authoritative_substrate_health_surface():
 
     assert mixed_health < summary
     assert recovery_action < diagnostics
-    assert "Active substrate · Cardano + Amaru" in template
-    assert "Mixed topology health" in template
-    assert ">Fresh redeploy&hellip;</button>" in template
+    assert "Active substrate · current managed profile" in template
+    assert "Current managed topology health" in template
+    assert "redeploy_supported" in script
     assert 'src="/static/dwarf-logo.png"' in landing
     assert '<section class="flask-stage"' not in template
     assert "{% if not shim_enabled %}" in template[summary:legacy_substrate]

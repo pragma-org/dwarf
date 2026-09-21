@@ -199,7 +199,7 @@ class DashboardResult:
     url: str
 
 
-def build_dashboard_status_payload(live=True, profile_id="profile-a-haskell-peersharing-disabled"):
+def build_dashboard_status_payload(live=True, profile_id=None):
     health_path, health_body = _latest_profile_health()
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

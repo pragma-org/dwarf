@@ -43,6 +43,7 @@ READ_VERBS = {
     "moog-health",
     "moog-facts",
     "topology-health",
+    "profile-health",
     "launch-preflight",
 }
 WRITE_VERBS = {
@@ -213,6 +214,8 @@ def main() -> int:
         return _reject(conf, original, f"{verb}-does-not-accept-arg")
     if verb == "topology-health" and arg is not None:
         return _reject(conf, original, "topology-health-does-not-accept-arg")
+    if verb == "profile-health" and arg is None:
+        return _reject(conf, original, "profile-health-requires-profile")
     if verb == "topology-redeploy" and arg != "cardano_amaru":
         return _reject(conf, original, "unsupported-topology")
 
@@ -224,6 +227,7 @@ def main() -> int:
             remove_command,
             status_command,
         )
+        from profile_manager.inspect import inspect_health_command
         from profile_manager.config import load_config
         from profile_manager.moog import (
             build_moog_create_test_command,
@@ -285,6 +289,12 @@ def main() -> int:
             "--sample-seconds 10 "
             f"--output {shlex.quote(str(output))}"
         )
+    elif verb == "profile-health":
+        try:
+            profile = find_profile(arg)
+        except KeyError:
+            return _reject(conf, original, "unknown-profile")
+        script = inspect_health_command(profile.remote_runtime_root)
     elif verb == "topology-redeploy":
         state_dir = conf.get("STATE_DIR")
         if not state_dir:

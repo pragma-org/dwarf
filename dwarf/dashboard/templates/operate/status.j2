@@ -16,8 +16,8 @@
          aria-labelledby="topology-health-heading" aria-live="polite">
   <header class="topology-health__head">
     <div>
-      <span class="eyebrow">Active substrate · Cardano + Amaru</span>
-      <h2 id="topology-health-heading">Mixed topology health</h2>
+      <span class="eyebrow">Active substrate · current managed profile</span>
+      <h2 id="topology-health-heading">Current managed topology health</h2>
       <p class="page-subhero">A fresh read-only check starts whenever this page is opened. Viewing status never redeploys or mutates the topology.</p>
     </div>
     <div class="topology-health__actions">
@@ -36,7 +36,7 @@
   <div class="topology-health__grid">
     <article><span class="eyebrow">Checked</span><strong data-topology-field="checked-at">{{ topology_health.checked_at or topology_health.started_at or '—' }}</strong></article>
     <article><span class="eyebrow">Cardano reference</span><strong data-topology-field="reference-tip">—</strong></article>
-    <article><span class="eyebrow">Amaru-fed consumer lag</span><strong data-topology-field="consumer-lag">—</strong></article>
+    <article><span class="eyebrow">Readiness counts</span><strong data-topology-field="consumer-lag">—</strong></article>
     <article><span class="eyebrow">Classification</span><strong data-topology-field="reason">{{ topology_health.reason_code or 'pending' }}</strong></article>
   </div>
   <p class="topology-health__detail" data-topology-field="detail"></p>
