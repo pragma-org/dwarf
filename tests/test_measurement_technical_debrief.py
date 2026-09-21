@@ -92,6 +92,7 @@ def test_debrief_has_accessible_dependency_free_interactions():
     assert "overflow-x:clip" in html.replace(" ", "")
     assert "overflow-x:auto" in html.replace(" ", "")
     assert "details[open]" in html
+    assert "h1{overflow-wrap:anywhere" in html.replace(" ", "")
 
 
 def test_debrief_documents_health_repair_metric_limits_and_exact_recipes():
