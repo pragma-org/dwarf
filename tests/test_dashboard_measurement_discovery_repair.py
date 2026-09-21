@@ -85,8 +85,8 @@ def test_coverage_separates_inventory_from_accepted_runtime_evidence():
     for run_id in (
         "20260920T235440Z-050046a4",
         "20260920T132629Z-ea000d37",
-        "20260921T013953Z-565b77c3",
-        "20260920T135958Z-362eedc7",
+        "20260921T204537Z-ff5a800a",
+        "20260921T202611Z-27eeadb5",
         "20260920T072858Z-2cc3bb0c",
         "20260920T073447Z-ab81bfb7",
         "20260921T035546Z-9747122c",

@@ -22,8 +22,8 @@ _CARDS = (
         ("cardano-node", "client-example-cbor-decoding-cardano-patched", "20260920T132629Z-ea000d37"),
     )},
     {"id": "02", "title": "Plutus VM", "measurement_revision": "nanoseconds-v2", "legs": (
-        ("amaru", "client-example-plutus-vm-amaru-onchain-v2", "20260921T013953Z-565b77c3"),
-        ("cardano-node", "client-example-plutus-vm-cardano", "20260920T135958Z-362eedc7"),
+        ("amaru", "client-example-plutus-vm-amaru-onchain-v2", "20260921T204537Z-ff5a800a"),
+        ("cardano-node", "client-example-plutus-vm-cardano", "20260921T202611Z-27eeadb5"),
     )},
     {"id": "03", "title": "Invalid mini-protocol", "measurement_revision": "whole-microseconds-v1", "legs": (
         ("amaru", "client-example-invalid-mini-protocol-amaru", "20260920T072858Z-2cc3bb0c"),

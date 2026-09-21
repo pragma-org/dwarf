@@ -13,7 +13,7 @@ An additive sixth card measures simple signed payments without changing the acce
 | Card | Exact current state | Measurement revision |
 |---|---|---|
 | 01 | Cardano-node accepted as run `20260920T132629Z-ea000d37`; fixed Amaru accepted as run `20260920T235440Z-050046a4`; old Amaru run `20260920T135054Z-28289dcd` remains a completed finding | `nanoseconds-v2` |
-| 02 | both legs accepted: Cardano-node `20260920T135958Z-362eedc7`, Amaru additive on-chain V2 topology `20260921T013953Z-565b77c3`; the old topology finding remains retained | `nanoseconds-v2` |
+| 02 | both legs accepted; fresh accounting runs retain all 60 attempts: Cardano-node `20260921T202611Z-27eeadb5`, Amaru additive on-chain V2 topology `20260921T204537Z-ff5a800a`; original accepted runs Cardano-node `20260920T135958Z-362eedc7` and Amaru `20260921T013953Z-565b77c3`, plus the old topology finding, remain retained | `nanoseconds-v2` |
 | 03 | both legs accepted: Amaru `20260920T072858Z-2cc3bb0c`, Cardano-node `20260920T073447Z-ab81bfb7` | `whole-microseconds-v1` |
 | 04 | both canonical-progress legs accepted: Amaru `20260921T035546Z-9747122c`, Cardano-node `20260921T021935Z-3b58eafc`; the earlier same-height fork finding remains retained | Amaru `nanoseconds-v3`; Cardano-node `nanoseconds-v2` |
 | 05 | both run-relative restart and controlled-sync legs accepted: Amaru `20260921T045619Z-15e864a0`, Cardano-node `20260921T045807Z-8e2bbb0e` | `nanoseconds-v2` |

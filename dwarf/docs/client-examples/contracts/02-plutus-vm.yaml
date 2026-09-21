@@ -116,7 +116,48 @@ approved_resolution:
     health_progress_sha256: eec8329a68e6358ae5fef76b369e19ef85ee402a2dd6b799ea4fc2ed8e677f64
     bundle_sha256: bf5604de608889cabc4ea30242a2236aaccf12cd06c07999c14ee26a8a3c7ed0
     bundle_file_count: 575
+  external_workload_accounting_evidence:
+    amaru:
+      run_id: 20260921T204537Z-ff5a800a
+      framework_commit: 5951e695f8743c13567be4a31802a0796eb13632
+      scenario_sha256: 3dc7db5b24e3e6396cf6e25304db3c5a96469863be94d540ca2c3b468ed49b01
+      manifest_sha256: 0fcda961b91769276491a5d3bc7b10caac1057538bb890fe97d02e9e56591237
+      assertions_sha256: 47eb06c86080f950321b0b3b993ffd9d07d2559fd13c489bd25234236b274783
+      measurement_report_sha256: 198d9d524551b142224e371c2d6c39b2d123d8f47ec291411508ef9170ec4892
+      transaction_result_sha256: c1f0d3b83d98fb5198d207510c178d17f8ebc48010f835336c525342ffe28633
+      health_progress_sha256: fcf165b7baa08dc16cd6e403e3a5f7eaa2f7e692d1a47a2add3e82a9999a02be
+      bundle_sha256: 555c9c06415259e8cb6155c6941d728dd65ac6eeefe1907ccaf109703f00e466
+      bundle_file_count: 575
+      attempted: 60
+      accepted: 30
+      rejected: 30
+      timed_out: 0
+      duration_sample_count: 60
+      offered_bytes: 51300
+      unavailable_stages:
+        - submit-to-protocol-response at the Amaru boundary
+        - submit-to-chain-adoption on a shared monotonic clock
+    cardano-node:
+      run_id: 20260921T202611Z-27eeadb5
+      framework_commit: 5951e695f8743c13567be4a31802a0796eb13632
+      scenario_sha256: 0c594be0ba5deb2779d93d54bf9941fceac2acbe100673dcf364013fb05f2161
+      manifest_sha256: ebe2b00cbbe895b0819c457da01c338feb72d89f818f5fb4d851f60746c558df
+      assertions_sha256: 911faaeebcc6b194b3d3184a859c9d91b2bcf3b7ccc6958049b6a88cd92d8d52
+      measurement_report_sha256: 8d3209948c1c73f60cf3a63ebb4c39c478b6628d29794a9abcd9498bbd6eb66e
+      transaction_result_sha256: e2fa57de8ffbc17e0357ea9e3968cf1a4fd2925260fe2eb6918aded333ff997c
+      health_progress_sha256: 40370bed21f83dbb7e95aa219b97c23ee5c250bd8eafb20e9e2e122cdaee0a7e
+      bundle_sha256: 318bc04574a4a126052fc3af150c9ef83b90bc3d9c1846d80f6f2b31b92992e6
+      bundle_file_count: 552
+      attempted: 60
+      accepted: 30
+      rejected: 30
+      timed_out: 0
+      duration_sample_count: 60
+      offered_bytes: 50820
+      unavailable_stages:
+        - submit-to-mempool visibility
 implementation_gaps:
   - {id: GAP-PLUTUS-CONFORMANCE-ADAPTER, status: closed, required_change: "Exact-revision evaluator adapters retain result, CPU budget, memory budget, Plutus version, cost-model digest, integer nanoseconds, and fractional microseconds."}
   - {id: GAP-PLUTUS-AMARU-LIVE-WORKLOAD, status: closed, required_change: The additive topology activates the pinned cost model on chain and retains 30 included-valid plus 30 included-invalid Plutus V2 transactions through the exact Amaru target.}
+  - {id: GAP-PLUTUS-EXTERNAL-WORKLOAD-ACCOUNTING, status: closed, required_change: "Both retained real-node runs account for all 60 attempted transactions, offered bytes, known outcomes, and duration to known outcome without converting unavailable stages to zero."}
 deferred_scope: {presentation_walkthrough: true, mixed_node_comparison: true, weekly_automation: true, stable_release_thresholds: true}
