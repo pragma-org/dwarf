@@ -2,12 +2,19 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import yaml
 
 
 DWARF_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _run_manifest_path(run_id: str) -> Path:
+    """Resolve retained evidence from the configured runtime before source examples."""
+    runs_root = Path(os.environ.get("ADA2_DWARF_RUNS_DIR") or DWARF_ROOT / "runs")
+    return runs_root / run_id / "manifest.json"
 
 _CARDS = (
     {"id": "01", "title": "CBOR decoding", "measurement_revision": "nanoseconds-v2", "legs": (
@@ -45,7 +52,7 @@ def five_card_evidence() -> list[dict]:
         legs = []
         for implementation, scenario_id, run_id in definition["legs"]:
             scenario_path = DWARF_ROOT / "scenarios" / f"{scenario_id}.yaml"
-            manifest_path = DWARF_ROOT / "runs" / run_id / "manifest.json"
+            manifest_path = _run_manifest_path(run_id)
             proof_path = DWARF_ROOT / "docs/client-examples/03-INVALID-MINI-PROTOCOL-PROOF.md"
             run_available = manifest_path.is_file()
             proof_text = proof_path.read_text(encoding="utf-8") if proof_path.is_file() else ""
