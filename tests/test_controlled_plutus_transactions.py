@@ -1,8 +1,10 @@
 import json
 import hashlib
+import subprocess
 from contextlib import ExitStack
 
 from scripts import runtime_controlled_plutus_transactions as subject
+from profile_manager.primitives import RuntimeControlledPlutusTransactions
 
 
 def test_controlled_workload_retains_before_and_after_target_health(monkeypatch, tmp_path):
@@ -42,10 +44,10 @@ def test_controlled_workload_retains_before_and_after_target_health(monkeypatch,
         "run_plutus_workload",
         lambda **_kwargs: {
             "records": [
-                {"attempt_id": f"valid-{index}", "outcome": "accepted", "chain_outcome": "included-valid", "lock_transaction_id": f"lock-v-{index}", "spend_transaction_id": f"spend-v-{index}"}
+                {"attempt_id": f"valid-{index}", "outcome": "accepted", "chain_outcome": "included-valid", "lock_transaction_id": f"lock-v-{index}", "spend_transaction_id": f"spend-v-{index}", "transaction_bytes": 111, "elapsed_nanos": 2184 + index, "elapsed_micros": (2184 + index) / 1000, "submit_to_protocol_response_nanos": 1000, "submit_to_protocol_response_micros": 1.0, "submit_to_block_inclusion_nanos": 2000, "submit_to_block_inclusion_micros": 2.0, "submit_to_chain_adoption_nanos": 2000, "submit_to_chain_adoption_micros": 2.0}
                 for index in range(30)
             ] + [
-                {"attempt_id": f"invalid-{index}", "outcome": "rejected", "chain_outcome": "included-invalid", "lock_transaction_id": f"lock-i-{index}", "spend_transaction_id": f"spend-i-{index}"}
+                {"attempt_id": f"invalid-{index}", "outcome": "rejected", "chain_outcome": "included-invalid", "lock_transaction_id": f"lock-i-{index}", "spend_transaction_id": f"spend-i-{index}", "transaction_bytes": 111, "elapsed_nanos": 3184 + index, "elapsed_micros": (3184 + index) / 1000, "submit_to_protocol_response_nanos": 1000, "submit_to_protocol_response_micros": 1.0, "submit_to_block_inclusion_nanos": 3000, "submit_to_block_inclusion_micros": 3.0, "submit_to_chain_adoption_nanos": 3000, "submit_to_chain_adoption_micros": 3.0}
                 for index in range(30)
             ],
         },
@@ -68,7 +70,84 @@ def test_controlled_workload_retains_before_and_after_target_health(monkeypatch,
     assert result["checks"]["transaction_identifiers_retained"] is True
     assert result["checks"]["target_progress_continues"] is True
     assert result["checks"]["target_health_clean"] is True
+    assert result["accounting"]["attempted"] == 60
+    assert result["accounting"]["successful"] == 30
+    assert result["accounting"]["rejected"] == 30
+    assert result["accounting"]["timed_out"] == 0
+    assert result["accounting"]["bytes"] == 6660
+    assert len(result["accounting"]["attempts"]) == 60
+    assert result["accounting"]["attempts"][0]["elapsed_nanos"] == 2184
+    assert result["accounting"]["attempts"][0]["elapsed_micros"] == 2.184
+    assert result["accounting"]["attempts"][0]["submit_to_protocol_response_nanos"] == 1000
+    assert result["accounting"]["attempts"][0]["submit_to_chain_adoption_nanos"] == 2000
     assert json.loads((tmp_path / "out" / "result.json").read_text()) == result
+
+
+def test_amaru_accounting_does_not_claim_support_producer_response_or_adoption():
+    records = [{
+        "attempt_id": "plutus-0000",
+        "outcome": "accepted",
+        "spend_transaction_id": "tx-1",
+        "transaction_bytes": 222,
+        "elapsed_nanos": 2184,
+        "elapsed_micros": 2.184,
+        "submit_to_protocol_response_nanos": 1000,
+        "submit_to_protocol_response_micros": 1.0,
+        "submit_to_block_inclusion_nanos": 2000,
+        "submit_to_block_inclusion_micros": 2.0,
+        "submit_to_chain_adoption_nanos": 2000,
+        "submit_to_chain_adoption_micros": 2.0,
+    }]
+
+    accounting = subject._plutus_workload_accounting(records, "amaru")
+
+    attempt = accounting["attempts"][0]
+    assert attempt["elapsed_micros"] == 2.184
+    assert attempt["submit_to_block_inclusion_nanos"] == 2000
+    assert "submit_to_protocol_response_nanos" not in attempt
+    assert "submit_to_chain_adoption_nanos" not in attempt
+
+
+def test_primitive_emits_existing_workload_accounting_event(monkeypatch, tmp_path):
+    class Handle:
+        run_dir = tmp_path
+
+        def __init__(self):
+            self.events = []
+
+        def log(self, **event):
+            self.events.append(event)
+
+    accounting = {
+        "attempted": 60,
+        "successful": 30,
+        "rejected": 30,
+        "timed_out": 0,
+        "bytes": 6660,
+        "batches": 1,
+        "backlog": 0,
+        "attempts": [{"input_id": "plutus-0000", "outcome": "accepted", "elapsed_nanos": 2184, "elapsed_micros": 2.184, "bytes": 111}],
+    }
+
+    def run(command, **_kwargs):
+        output_dir = subject.Path(command[command.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True)
+        (output_dir / "result.json").write_text(
+            json.dumps({"accounting": accounting}), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    handle = Handle()
+    primitive = RuntimeControlledPlutusTransactions(params={
+        "profile_id": "profile-v-cardano-measurement-nanoseconds-v2",
+        "measurement_implementation": "cardano-node",
+    })
+
+    primitive.run(handle, None)
+
+    event = next(row for row in handle.events if row["event"] == "workload_accounting")
+    assert event["payload"] == accounting
 
 
 def test_health_target_selects_measured_amaru_instead_of_transaction_producer():

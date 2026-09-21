@@ -329,7 +329,8 @@ def run_plutus_workload(
             cli, "conway", "transaction", "submit", "--socket-path", socket_path,
             "--testnet-magic", str(network_magic), "--tx-file", str(spend_tx),
         ])
-        submit_us = (time.perf_counter_ns() - submit_started) / 1_000
+        submit_response_nanos = time.perf_counter_ns() - submit_started
+        submit_us = submit_response_nanos / 1_000
         spend_id = _transaction_id(cli, spend_tx)
         if expected_outcome == "accepted":
             _body, include_us = _wait_for_utxo(
@@ -346,6 +347,7 @@ def run_plutus_workload(
                 utxo_key=collateral,
             )
             chain_outcome = "included-invalid"
+        outcome_nanos = time.perf_counter_ns() - submit_started
         records.append({
             "attempt_id": f"plutus-{index:04d}",
             "outcome": expected_outcome,
@@ -357,6 +359,15 @@ def run_plutus_workload(
             "plutus_build_us": build_us,
             "plutus_submit_us": submit_us,
             "plutus_submit_to_include_us": include_us,
+            "transaction_bytes": spend_tx.stat().st_size,
+            "elapsed_nanos": outcome_nanos,
+            "elapsed_micros": outcome_nanos / 1_000,
+            "submit_to_protocol_response_nanos": submit_response_nanos,
+            "submit_to_protocol_response_micros": submit_response_nanos / 1_000,
+            "submit_to_block_inclusion_nanos": outcome_nanos,
+            "submit_to_block_inclusion_micros": outcome_nanos / 1_000,
+            "submit_to_chain_adoption_nanos": outcome_nanos,
+            "submit_to_chain_adoption_micros": outcome_nanos / 1_000,
         })
     result = {
         "scripts": {

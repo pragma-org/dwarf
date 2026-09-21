@@ -175,6 +175,55 @@ def _retain_plutus_v2_topology(runtime: dict, destination: Path) -> dict:
     return topology
 
 
+def _plutus_workload_accounting(records: list[dict], implementation: str) -> dict:
+    """Normalize every Plutus spend attempt for the existing external collector."""
+    attempts = []
+    for record in records:
+        required = (
+            "attempt_id", "outcome", "spend_transaction_id",
+            "transaction_bytes", "elapsed_nanos", "elapsed_micros",
+            "submit_to_block_inclusion_nanos", "submit_to_block_inclusion_micros",
+        )
+        missing = [key for key in required if record.get(key) is None]
+        if missing:
+            raise RuntimeError(
+                "Plutus workload accounting is incomplete for "
+                f"{record.get('attempt_id', '<unknown>')}: {', '.join(missing)}"
+            )
+        attempt = {
+            "input_id": str(record["attempt_id"]),
+            "tx_id": str(record["spend_transaction_id"]),
+            "outcome": str(record["outcome"]),
+            "bytes": int(record["transaction_bytes"]),
+            "elapsed_nanos": int(record["elapsed_nanos"]),
+            "elapsed_micros": float(record["elapsed_micros"]),
+            "submit_to_block_inclusion_nanos": int(
+                record["submit_to_block_inclusion_nanos"]
+            ),
+            "submit_to_block_inclusion_micros": float(
+                record["submit_to_block_inclusion_micros"]
+            ),
+        }
+        if implementation == "cardano-node":
+            for stage in ("submit_to_protocol_response", "submit_to_chain_adoption"):
+                attempt[f"{stage}_nanos"] = int(record[f"{stage}_nanos"])
+                attempt[f"{stage}_micros"] = float(record[f"{stage}_micros"])
+        attempts.append(attempt)
+    accepted = sum(row["outcome"] == "accepted" for row in attempts)
+    rejected = sum(row["outcome"] == "rejected" for row in attempts)
+    timed_out = sum(row["outcome"] in {"timeout", "timed_out"} for row in attempts)
+    return {
+        "attempted": len(attempts),
+        "successful": accepted,
+        "rejected": rejected,
+        "timed_out": timed_out,
+        "bytes": sum(row["bytes"] for row in attempts),
+        "batches": 1,
+        "backlog": 0,
+        "attempts": attempts,
+    }
+
+
 def run_controlled_plutus_transactions(
     *,
     runtime_root: Path,
@@ -266,6 +315,16 @@ def run_controlled_plutus_transactions(
         "target_health_clean": health_clean,
     }
     result["outcome_counts"] = {"accepted": accepted, "rejected": rejected}
+    result["accounting"] = _plutus_workload_accounting(
+        result["records"], measurement_implementation
+    )
+    result["checks"]["workload_accounting_complete"] = (
+        result["accounting"]["attempted"] == transaction_count
+        and len(result["accounting"]["attempts"]) == transaction_count
+        and result["accounting"]["successful"] == accepted
+        and result["accounting"]["rejected"] == rejected
+        and result["accounting"]["timed_out"] == 0
+    )
     (output_dir / "result.json").write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
