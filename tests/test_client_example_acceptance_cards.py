@@ -196,8 +196,8 @@ def test_card06_retains_both_real_simple_transfer_runs_and_complete_attempts():
     assert {leg["status"] for leg in card["scenario_legs"]} == {"accepted"}
     assert card["approved_resolution"]["kind"] == "simple-transfer-measurement-v1"
     assert {row["run_id"] for row in evidence.values()} == {
-        "20260921T192922Z-6cb70c72",
-        "20260921T191220Z-72151616",
+        "20260921T194749Z-26542a57",
+        "20260921T195334Z-e713d0de",
     }
     for row in evidence.values():
         assert row["attempted"] == 35

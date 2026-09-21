@@ -35,8 +35,8 @@ def test_measurement_guide_defines_sources_types_and_claim_boundaries():
     assert "The five frozen cards are complete" in html
     assert "/learn/coverage" in html
     assert "06 · Dedicated simple transfers" in html
-    assert "20260921T192922Z-6cb70c72" in html
-    assert "20260921T191220Z-72151616" in html
+    assert "20260921T194749Z-26542a57" in html
+    assert "20260921T195334Z-e713d0de" in html
     assert "not an automatic Amaru-versus-Cardano benchmark" not in html
     assert "did not turn the two runs into a race" in html
 
@@ -93,8 +93,8 @@ def test_coverage_separates_inventory_from_accepted_runtime_evidence():
         "20260921T021935Z-3b58eafc",
         "20260921T045619Z-15e864a0",
         "20260921T045807Z-8e2bbb0e",
-        "20260921T192922Z-6cb70c72",
-        "20260921T191220Z-72151616",
+        "20260921T194749Z-26542a57",
+        "20260921T195334Z-e713d0de",
     ):
         assert run_id in html
 

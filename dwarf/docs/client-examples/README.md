@@ -17,7 +17,7 @@ An additive sixth card measures simple signed payments without changing the acce
 | 03 | both legs accepted: Amaru `20260920T072858Z-2cc3bb0c`, Cardano-node `20260920T073447Z-ab81bfb7` | `whole-microseconds-v1` |
 | 04 | both canonical-progress legs accepted: Amaru `20260921T035546Z-9747122c`, Cardano-node `20260921T021935Z-3b58eafc`; the earlier same-height fork finding remains retained | Amaru `nanoseconds-v3`; Cardano-node `nanoseconds-v2` |
 | 05 | both run-relative restart and controlled-sync legs accepted: Amaru `20260921T045619Z-15e864a0`, Cardano-node `20260921T045807Z-8e2bbb0e` | `nanoseconds-v2` |
-| 06 | both simple-transfer legs accepted: Amaru `20260921T192922Z-6cb70c72`, Cardano-node `20260921T191220Z-72151616`; each retains 35 attempts and 35 duration samples | `nanoseconds-v2` |
+| 06 | both simple-transfer legs accepted: Amaru `20260921T194749Z-26542a57`, Cardano-node `20260921T195334Z-e713d0de`; each retains 35 attempts and 35 duration samples | `nanoseconds-v2` |
 
 The accepted labels are `framework proven`, `collection proven`, and `client requirement complete`. Use `client requirement partial` only for retained historical runs that did not satisfy a frozen card.
 

@@ -38,8 +38,8 @@ _CARDS = (
         ("cardano-node", "client-example-restart-recovery-sync-cardano", "20260921T045807Z-8e2bbb0e"),
     )},
     {"id": "06", "title": "Simple transfer measurement", "measurement_revision": "nanoseconds-v2", "legs": (
-        ("amaru", "client-example-simple-transfer-amaru", "20260921T192922Z-6cb70c72"),
-        ("cardano-node", "client-example-simple-transfer-cardano", "20260921T191220Z-72151616"),
+        ("amaru", "client-example-simple-transfer-amaru", "20260921T194749Z-26542a57"),
+        ("cardano-node", "client-example-simple-transfer-cardano", "20260921T195334Z-e713d0de"),
     )},
 )
 
