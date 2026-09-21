@@ -225,6 +225,7 @@
         "preserve_existing_topologies": {"type": "boolean"},
         "requirements": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "accepted_evidence": {"type": "object"},
+        "external_workload_accounting_evidence": {"type": "object"},
         "preserve_v1_runs": {"type": "boolean"},
         "scenario_ids": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
         "measurement_revisions": {"type": "object", "additionalProperties": {"enum": ["whole-microseconds-v1", "nanoseconds-v2", "nanoseconds-v3"]}},

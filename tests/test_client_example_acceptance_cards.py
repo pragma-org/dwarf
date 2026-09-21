@@ -309,6 +309,21 @@ def test_card02_requires_additive_topology_with_live_on_chain_plutus_v2():
         "bundle_file_count": 575,
     }
 
+    accounting = resolution["external_workload_accounting_evidence"]
+    assert set(accounting) == {"amaru", "cardano-node"}
+    assert {row["run_id"] for row in accounting.values()} == {
+        "20260921T202611Z-27eeadb5",
+        "20260921T204537Z-ff5a800a",
+    }
+    for row in accounting.values():
+        assert row["attempted"] == 60
+        assert row["accepted"] == 30
+        assert row["rejected"] == 30
+        assert row["timed_out"] == 0
+        assert row["duration_sample_count"] == 60
+        assert row["offered_bytes"] > 0
+        assert row["bundle_sha256"]
+
 
 def test_card04_replaces_raw_monotonicity_with_canonical_progress_v2():
     card = _card("client-example-04-block-application")

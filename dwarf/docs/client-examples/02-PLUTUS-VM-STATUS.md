@@ -4,6 +4,15 @@ Status: Both revision-locked legs have accepted evidence. Card 02 is complete.
 
 Child explanation: Both script engines gave the same answer and used the same fuel. Each real node ran 30 scripts that work and 30 scripts that fail. The new Amaru test chain put the required V2 price list into its real rule book before the test started.
 
+## Additive external workload accounting evidence
+
+Fresh separate real-node runs close the external workload accounting gap without changing the original accepted evidence below.
+
+- Cardano-node run `20260921T202611Z-27eeadb5`: 60 attempted, 30 accepted, 30 expected-invalid rejected, 0 timed out, 50,820 offered bytes, and 60 duration samples. Protocol response, block inclusion, and chain adoption each have 60 correlated samples. Mempool visibility is unavailable because this evidence path does not observe that boundary. Bundle SHA-256: `318bc04574a4a126052fc3af150c9ef83b90bc3d9c1846d80f6f2b31b92992e6` across 552 files.
+- Amaru run `20260921T204537Z-ff5a800a`: 60 attempted, 30 accepted, 30 expected-invalid rejected, 0 timed out, 51,300 offered bytes, and 60 duration and block-inclusion samples. Protocol response at the Amaru boundary and chain-adoption time on a shared monotonic clock are unavailable. Bundle SHA-256: `555c9c06415259e8cb6155c6941d728dd65ac6eeefe1907ccaf109703f00e466` across 575 files.
+
+Both accounting runs use framework commit `5951e695f8743c13567be4a31802a0796eb13632`. They prove complete attempt accounting for each exact workload. They do not establish a performance comparison between implementations.
+
 ## Exact Cardano-node run
 
 - Run ID: `20260920T135958Z-362eedc7`
