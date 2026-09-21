@@ -318,3 +318,61 @@ def test_card04_replaces_raw_monotonicity_with_canonical_progress_v2():
     assert resolution["accepted_evidence"]["amaru"]["bundle_sha256"] == (
         "f17b4892ca45d003a94b7c175d510cbd0890420bdf79420a46ed4dff79c0c808"
     )
+
+
+def test_card05_accepts_both_run_relative_restart_and_sync_legs():
+    card = _card("client-example-05-restart-recovery-sync")
+    resolution = card["approved_resolution"]
+
+    assert card["status"] == "accepted"
+    assert {leg["status"] for leg in card["scenario_legs"]} == {"accepted"}
+    assert resolution["kind"] == "real-restart-controlled-sync-v1"
+    assert resolution["clock_contract"] == "run-relative-monotonic-seconds"
+    assert resolution["measurement_revisions"] == {
+        "amaru": "nanoseconds-v2",
+        "cardano-node": "nanoseconds-v2",
+    }
+    assert resolution["accepted_evidence"] == {
+        "amaru": {
+            "run_id": "20260921T045619Z-15e864a0",
+            "framework_commit": "b009507629c02b3437d28981c77bc6641b2d290f",
+            "scenario_sha256": "41b89b052a2ed9ad2b7621f102c7e5edaff785d30d435593f07c8dd9437960f8",
+            "manifest_sha256": "e54c9f1434e5b59b9d18a5cb49dd88012a6d4fb7fd2053d052a8129b9eaceac3",
+            "assertions_sha256": "a6d56c4368cf23cf312cb3852667c5f70ce8a72fecb890178f3859f288df7470",
+            "measurement_report_sha256": "d3f5b0230bc422cf971bdf374161214e6f2ef578ac13bede9e0048498c7f650a",
+            "restart_proof_sha256": "2bd8b4b3dfcf970907dfd47b022dfb70d5ea34dc512d2a27b03225d7cd96d25f",
+            "sync_proof_sha256": "9bc2d79939afaa0b4767d62ee87e9c1dda7d8aa2594e28f30abc6562e84a5d5f",
+            "health_progress_sha256": "a35a0f94c799e8032bcbfa6ee6ec9999b08828615fab4c17baa1f0554cf6d1a0",
+            "resource_result_sha256": "b309293c8987eeb08d6f3040d8e820ecce27407fe321fa39c735209998a26a92",
+            "restart_window_resource_samples": 40,
+            "bundle_sha256": "d0b0bce35254094636c83e59d688bf7be894c9bc0da9fae99f1eda2089e22217",
+            "bundle_file_count": 85,
+        },
+        "cardano-node": {
+            "run_id": "20260921T045807Z-8e2bbb0e",
+            "framework_commit": "b009507629c02b3437d28981c77bc6641b2d290f",
+            "scenario_sha256": "76dfeba29356d08484bbcc2f91a2a4aff0598d63d86eae3e839bafa4dea1d2b1",
+            "manifest_sha256": "b21f5535993133b331f6e1d15b40c6c73a746ca2d9fe18d9caf28d241d771943",
+            "assertions_sha256": "311e25ae02bb746aeba106cc503a90a1d454259de334442616da606e06db7bbd",
+            "measurement_report_sha256": "c48f5781be30f54bf9e39e318238b5b73fb978abf2f2ccaa2b51001eb0cf4e23",
+            "restart_proof_sha256": "970558063400b4ad6a804e09e4d271b98c63d419b88d896882f17c6e5c04d2fd",
+            "sync_proof_sha256": "643260973cd015d83a0250a8a497ceb5a43b9b2ee12ae9dd622b01af34f8950c",
+            "health_progress_sha256": "d44e324116f08db6ca7b008de7d2583519d9cab4a01d685b64f0b43997c86dec",
+            "resource_result_sha256": "8e0265418aa3e077dc0e17e766b76ab2eb9d19c69d57d48968bb329bb0291e54",
+            "restart_window_resource_samples": 173,
+            "bundle_sha256": "0cf0d4e2d6eeb49a82c3b3053c2b2a5b0eb39e37c8489301df76b06a2a48cfce",
+            "bundle_file_count": 70,
+        },
+    }
+    assert card["implementation_gaps"] == [
+        {
+            "id": "GAP-REAL-RESTART-GATES",
+            "status": "closed",
+            "required_change": "The real target restart retains ordered restart, listener, chain-progress, and peer-role events in the run-relative monotonic clock domain.",
+        },
+        {
+            "id": "GAP-CONTROLLED-SYNC-RANGE",
+            "status": "closed",
+            "required_change": "The controlled range binds exact start and end heights, hashes, run-relative timestamps, and the implementation-specific peer policy.",
+        },
+    ]

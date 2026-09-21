@@ -6,27 +6,34 @@ Child explanation: DWARF restarted the real node. The listener, chain, and peer 
 
 ## Exact run
 
-- Run ID: `20260920T122606Z-32c0e998`
+- Run ID: `20260921T045619Z-15e864a0`
+- Framework commit: `b009507629c02b3437d28981c77bc6641b2d290f`
+- Scenario SHA-256: `41b89b052a2ed9ad2b7621f102c7e5edaff785d30d435593f07c8dd9437960f8`
 - Target: Amaru `10.11.20260912`
 - Source revision: `b159172f25a9c389f82f20bca4f15e3032791638`
 - Measurement revision: `nanoseconds-v2`
 - Patch set SHA-256: `4c22d7b0c29a705d1471dcfb6ee09a306c936ce83fd47f808fb2bbb8c2c75de0`
+- Executable digest: `sha256:05233bac96c1914a232a2d9c5a704f08401aff0b20356c015e848f295b919b78`
 - Image digest: `sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862`
 
-All four security assertions passed. The restart-readiness collector retained the listener, chain-progress, and peer-role gates in order. The controlled synchronization range advanced by at least five blocks. The target remained running, did not report an OOM, and had no unclassified fatal signal.
+All four security assertions passed. The restart event occurred at 22.848742977 run-relative seconds. The listener, chain-progress, and peer-role gates followed at 24.627932394, 28.107197208, and 28.176285019 seconds. The target advanced from block 701 before restart to block 702 at readiness.
 
-The process resource collector followed the target across two host PIDs. It retained 94 samples in total and 49 samples inside the exact `restart-recovery` window. The sample interval was 0.25 seconds, and the collector reported no sample errors. This exceeds the frozen minimum of 30 samples.
+The controlled synchronization range then advanced from block 702 to block 707 under the `single-controlled-producer` policy. Its run-relative events occurred at 28.395241286 and 33.062464060 seconds. The target remained running, did not report an OOM, and had no unclassified fatal signal.
+
+The process resource collector retained 134 samples in total and 40 samples inside the exact `restart-recovery` window at a 0.25-second interval. It reported no sample errors and exceeded the frozen minimum of 30 restart-window samples.
 
 ## Retained digests
 
-- Manifest: `1ead3c8e821723576c4b36da2ac29f1623e4179fb5e685e70c0f29c3a3d4edac`
+- Manifest: `e54c9f1434e5b59b9d18a5cb49dd88012a6d4fb7fd2053d052a8129b9eaceac3`
 - Assertions: `a6d56c4368cf23cf312cb3852667c5f70ce8a72fecb890178f3859f288df7470`
-- Measurement report: `e8a8feecd8aa360ccd00b4495b62cb4a0abac8a061f441fbeed7b00e68db8f75`
-- Resource result: `42ca061e9d1da163ac33179e12690f63efb35d4634213896651cadf2c33b83c1`
-- Restart-readiness result: `f0270b01ec8c373b35045e055a74d0399d02c46b75ffc87a0e865d60c7915412`
-- Synchronization-speed result: `53e8a8b78e5665a9b6613c7b677f758b598a56676b3af7992dfa901864abf67a`
+- Measurement report: `d3f5b0230bc422cf971bdf374161214e6f2ef578ac13bede9e0048498c7f650a`
+- Resource result: `b309293c8987eeb08d6f3040d8e820ecce27407fe321fa39c735209998a26a92`
+- Restart-readiness proof: `2bd8b4b3dfcf970907dfd47b022dfb70d5ea34dc512d2a27b03225d7cd96d25f`
+- Controlled-sync proof: `9bc2d79939afaa0b4767d62ee87e9c1dda7d8aa2594e28f30abc6562e84a5d5f`
+- Health and progress proof: `a35a0f94c799e8032bcbfa6ee6ec9999b08828615fab4c17baa1f0554cf6d1a0`
+- Exported bundle: `d0b0bce35254094636c83e59d688bf7be894c9bc0da9fae99f1eda2089e22217` (85 files)
 
-`cardano-profile verify 20260920T122606Z-32c0e998` returned `OK`.
+`cardano-profile verify 20260921T045619Z-15e864a0` returned `OK`. Isolated bundle import reproduced the signed manifest SHA-256 exactly.
 
 ## Claim limit
 

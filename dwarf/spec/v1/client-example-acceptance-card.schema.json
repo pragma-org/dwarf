@@ -213,7 +213,8 @@
           "enum": [
             "completed-security-finding-and-regression",
             "on-chain-plutus-v2-topology",
-            "canonical-progress-v2"
+            "canonical-progress-v2",
+            "real-restart-controlled-sync-v1"
           ]
         },
         "historical_finding": {"type": "object"},
@@ -229,7 +230,8 @@
         "raw_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "pass_conditions": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "fail_conditions": {"type": "array", "items": {"type": "string", "minLength": 1}},
-        "same_height_switch_alone_fails": {"type": "boolean"}
+        "same_height_switch_alone_fails": {"type": "boolean"},
+        "clock_contract": {"const": "run-relative-monotonic-seconds"}
       },
       "additionalProperties": false
     }
