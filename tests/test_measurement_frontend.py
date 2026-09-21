@@ -79,6 +79,29 @@ def test_measurement_learn_route_explains_modes_outcomes_and_claim_boundary():
     assert "does not bound internal hook cost" in html
     assert "all 12 collectors finalized" in html
     assert "Mixed-node measurement comparison has not started" in html
+    assert "Raw integer nanoseconds" in html
+    assert "fractional microseconds" in html
+    assert "legacy whole-microsecond" in html
+    assert "Card 03" in html
+    assert "whole-microseconds-v1" in html
+    assert "nanoseconds-v2" in html
+    assert "nanoseconds-v3" in html
+    assert "client requirement complete" in html
+    assert "Child explanation" in html
+    assert "d3a6dafcced78f5809a96619e883cf04911d2bdc" in html
+    for run_id in (
+        "20260920T235440Z-050046a4",
+        "20260920T132629Z-ea000d37",
+        "20260921T013953Z-565b77c3",
+        "20260920T135958Z-362eedc7",
+        "20260920T072858Z-2cc3bb0c",
+        "20260920T073447Z-ab81bfb7",
+        "20260921T035546Z-9747122c",
+        "20260921T021935Z-3b58eafc",
+        "20260921T045619Z-15e864a0",
+        "20260921T045807Z-8e2bbb0e",
+    ):
+        assert run_id in html
 
 
 def test_run_measurement_section_surfaces_identity_collectors_and_metrics(tmp_path: Path):
