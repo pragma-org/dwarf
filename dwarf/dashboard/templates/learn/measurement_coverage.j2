@@ -1,85 +1,154 @@
 {% extends "_base.j2" %}
+{% macro badge(value, kind) -%}<span class="measurement-coverage__badge" data-{{ kind }}="{{ value|lower }}">{{ value }}</span>{%- endmacro %}
+{% macro technical_id(label, value) -%}
+<details class="measurement-coverage__technical-id"><summary>{{ label }}</summary><code>{{ value }}</code></details>
+{%- endmacro %}
+{% macro result_card(row, section) -%}
+<details class="measurement-coverage__row" data-search="{{ row.search_text }}" data-implementations="{{ row.implementations|join(' ')|lower }}" data-sources="{{ row.sources|join(' ')|lower }}" data-status="{{ row.status|lower }}">
+  <summary class="measurement-coverage__row-summary">
+    <span class="measurement-coverage__row-lead">
+      <span class="measurement-coverage__human-id">{{ row.id }}</span>
+      <span class="measurement-coverage__row-title">{{ row.title }}</span>
+      <span class="measurement-coverage__meaning">{{ row.meaning }}</span>
+    </span>
+    <span class="measurement-coverage__row-facts">
+      {{ badge(row.status, 'state') }}
+      <span class="measurement-coverage__implementations">{% for implementation in row.implementations %}{{ badge(implementation, 'implementation') }}{% endfor %}</span>
+      <span>{{ row.tap_summary.applicable }} applicable · {{ row.tap_summary.verified }} verified</span>
+      <span>{{ row.scenario_count }} scenario{{ '' if row.scenario_count == 1 else 's' }}</span>
+    </span>
+    <span class="measurement-coverage__coverage-statement">{{ row.coverage_statement }}</span>
+    <span class="measurement-coverage__summary-links">
+      {% if section.id in ('threats', 'risks') %}<a href="/learn/threat-coverage">Open {{ 'threat' if section.id == 'threats' else 'risk' }} map</a>{% else %}<a href="/learn/coverage">Open scenario coverage</a>{% endif %}
+      <a href="/learn/measurements">Open measurement model</a>
+    </span>
+  </summary>
+  <div class="measurement-coverage__detail">
+    <details class="measurement-coverage__detail-section" data-detail="taps">
+      <summary>Measurement taps</summary>
+      {% for group in row.tap_groups %}
+      <details class="measurement-coverage__tap-group">
+        <summary><span>{{ group.title }}</span><span>{{ group.taps|length }} tap{{ '' if group.taps|length == 1 else 's' }}</span></summary>
+        <ul>
+          {% for tap in group.taps %}
+          <li>
+            <span class="measurement-coverage__tap-name"><a href="{{ tap.url }}">{{ tap.title }}</a></span>
+            {{ badge(tap.source, 'source') }} {{ badge(tap.status, 'state') }}
+            {{ technical_id('Technical identifier', tap.id) }}
+          </li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endfor %}
+    </details>
+
+    <details class="measurement-coverage__detail-section" data-detail="scenarios">
+      <summary>Scenarios</summary>
+      {% if row.scenarios %}
+      <ul class="measurement-coverage__initial-list">
+        {% for scenario in row.scenarios[:3] %}<li data-list-item="true"><a href="{{ scenario.url }}">{{ scenario.title }}</a>{{ technical_id('Scenario identifier', scenario.id) }}</li>{% endfor %}
+      </ul>
+      {% if row.scenarios|length > 3 %}
+      <template class="measurement-coverage__more-items">{% for scenario in row.scenarios[3:] %}<li data-list-item="true"><a href="{{ scenario.url }}">{{ scenario.title }}</a>{{ technical_id('Scenario identifier', scenario.id) }}</li>{% endfor %}</template>
+      <button type="button" class="measurement-coverage__show-all" data-action="show-all">Show all {{ row.scenario_count }} scenarios</button>
+      {% endif %}
+      {% else %}<p>No current scenario maps to this entry.</p>{% endif %}
+    </details>
+
+    <details class="measurement-coverage__detail-section" data-detail="evidence">
+      <summary>Evidence</summary>
+      {% if row.evidence %}
+      <div class="measurement-coverage__initial-list">
+        {% for item in row.evidence[:3] %}
+        <article class="measurement-coverage__evidence-card" data-list-item="true"><h4>Card {{ item.card_id }} · {{ item.implementation }}</h4><p><a href="{{ item.url }}">Open retained run evidence</a> · {{ item.measurement_count }} measurement{{ '' if item.measurement_count == 1 else 's' }}</p>{{ technical_id('Run and scenario identifiers', item.run_id ~ ' · ' ~ item.scenario_id) }}</article>
+        {% endfor %}
+      </div>
+      {% if row.evidence|length > 3 %}
+      <template class="measurement-coverage__more-items">{% for item in row.evidence[3:] %}<article class="measurement-coverage__evidence-card" data-list-item="true"><h4>Card {{ item.card_id }} · {{ item.implementation }}</h4><p><a href="{{ item.url }}">Open retained run evidence</a> · {{ item.measurement_count }} measurements</p>{{ technical_id('Run and scenario identifiers', item.run_id ~ ' · ' ~ item.scenario_id) }}</article>{% endfor %}</template>
+      <button type="button" class="measurement-coverage__show-all" data-action="show-all">Show all {{ row.evidence|length }} evidence records</button>
+      {% endif %}
+      {% else %}<p>No retained non-vacuous five-card evidence maps to this entry.</p>{% endif %}
+    </details>
+
+    <details class="measurement-coverage__detail-section" data-detail="workload">
+      <summary>Workload prerequisite</summary>
+      <ul><li>{{ row.prerequisite|truncate(220, True) }}</li></ul>
+      <details class="measurement-coverage__technical-text"><summary>Full technical text</summary><p>{{ row.prerequisite }}</p></details>
+    </details>
+
+    <details class="measurement-coverage__detail-section" data-detail="claims">
+      <summary>Claims and limits</summary>
+      <h4>What this measurement can prove</h4><ul><li>{{ row.coverage_statement }}</li></ul>
+      <h4>What it does not prove</h4><ul><li>{{ row.non_claims|truncate(220, True) }}</li></ul>
+      <details class="measurement-coverage__technical-text"><summary>Full technical text</summary><p><strong>Proof:</strong> {{ row.can_prove }}</p><p><strong>Non-claims:</strong> {{ row.non_claims }}</p></details>
+    </details>
+  </div>
+</details>
+{%- endmacro %}
+
 {% block main %}
-<div class="measurement-coverage">
+<div class="measurement-coverage" data-initial-page-size="10">
   <span class="eyebrow">Learn · Evidence-aware observability</span>
   <h1>Measurement coverage</h1>
-  <p class="lede">This page joins the current threat model, risk register, scenario catalog, measurement definitions, profiles, and retained five-card evidence. It separates what a tap can measure from what a real workload has proved.</p>
+  <p class="lede">See where DWARF measurements apply and where retained real-node evidence verifies them.</p>
   <p><a href="/learn/measurements">Measurement model</a> · <a href="/learn/coverage">Catalog coverage</a> · <a href="/learn/threat-coverage">Threat and risk map</a></p>
   <p><strong>Child-friendly explanation:</strong> A tool can fit a job without having been used. This page shows both the tools that fit and the saved tests that used them.</p>
 
-  <hr class="hairline">
-  <section aria-labelledby="coverage-state-title">
-    <span class="eyebrow">Evidence states</span>
-    <h2 id="coverage-state-title">Read each status as a separate claim</h2>
-    <div class="measurement-coverage__state-grid">
-      {% for name, definition in payload.state_definitions.items() %}
-      <article><h3>{{ name }}</h3><p>{{ definition }}</p></article>
+  <section class="measurement-coverage__overview" aria-labelledby="coverage-overview-title">
+    <h2 id="coverage-overview-title">Choose a coverage view</h2>
+    <div class="measurement-coverage__overview-grid">
+      {% for item in payload.overview %}
+      <button type="button" class="measurement-coverage__overview-tile" data-overview-id="{{ item.id }}" data-coverage-view="{{ item.id }}" aria-pressed="{{ 'true' if loop.first else 'false' }}" aria-label="Show {{ item.label }} view" aria-controls="measurement-coverage-results">
+        <span class="measurement-coverage__overview-label">{{ item.label }}</span>
+        <span class="measurement-coverage__overview-counts"><strong>{{ item.mapped }}</strong> mapped · <strong>{{ item.verified }}</strong> verified · <strong>{{ item.gaps }}</strong> gaps</span>
+      </button>
       {% endfor %}
     </div>
-    <p><strong>Child-friendly explanation:</strong> “Ready,” “switched on,” “used,” and “checked” are four different steps. DWARF does not skip a step.</p>
   </section>
 
-  <hr class="hairline">
-  <section aria-labelledby="coverage-explorer-title">
+  <section class="measurement-coverage__reading-key" aria-labelledby="coverage-key-title">
+    <h2 id="coverage-key-title">Status key</h2>
+    <div class="measurement-coverage__status-key" aria-label="Measurement evidence status key">
+      {% for name, definition in payload.state_definitions.items() %}<span class="measurement-coverage__badge" data-state="{{ name|lower }}" title="{{ definition }}">{{ name }}</span>{% endfor %}
+    </div>
+    <details class="measurement-coverage__how-to-read"><summary>How to read this page</summary>
+      <dl>{% for name, definition in payload.state_definitions.items() %}<div><dt>{{ name }}</dt><dd>{{ definition }}</dd></div>{% endfor %}</dl>
+      <p><strong>Child-friendly explanation:</strong> Ready, switched on, used, and checked are different steps. DWARF shows each step.</p>
+    </details>
+  </section>
+
+  <section class="measurement-coverage__explorer" aria-labelledby="coverage-explorer-title">
     <span class="eyebrow">Current join · {{ payload.mapping_id }}</span>
     <h2 id="coverage-explorer-title">Explore applicability and evidence</h2>
     <div class="measurement-coverage__controls">
-      <label>Search <input id="measurement-coverage-search" type="search" placeholder="ID, title, scenario, tap, or claim" autocomplete="off"></label>
+      <label>Search <input id="measurement-coverage-search" type="search" placeholder="Title, scenario, tap, or claim" autocomplete="off"></label>
       <label>Implementation <select id="measurement-coverage-implementation"><option value="">All implementations</option><option value="amaru">Amaru</option><option value="cardano-node">Cardano-node</option></select></label>
       <label>Source <select id="measurement-coverage-source"><option value="">All sources</option>{% for source in payload.sources %}<option value="{{ source|lower }}">{{ source }}</option>{% endfor %}</select></label>
       <label>Status <select id="measurement-coverage-status"><option value="">All statuses</option>{% for status in payload.statuses %}<option value="{{ status|lower }}">{{ status }}</option>{% endfor %}</select></label>
+      <button type="button" id="measurement-coverage-reset" aria-label="Clear search and filters">Clear</button>
     </div>
-    <fieldset class="measurement-coverage__views">
-      <legend>View coverage by</legend>
-      {% for section in view_sections %}<button type="button" data-coverage-view="{{ section.id }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ section.label }}</button>{% endfor %}
-    </fieldset>
-    <p id="measurement-coverage-result-status" role="status" aria-live="polite"></p>
+    <div class="measurement-coverage__result-line"><p id="measurement-coverage-result-status" role="status" aria-live="polite"></p></div>
 
-    {% for section in view_sections %}
-    <div class="measurement-coverage__view" data-coverage-panel="{{ section.id }}"{% if not loop.first %} hidden{% endif %}>
-      <h3>{{ section.label }}</h3>
-      <div class="measurement-coverage__rows">
-        {% for row in section.rows %}
-        <article class="measurement-coverage__row" data-search="{{ row.search_text }}" data-implementations="{{ row.implementations|join(' ')|lower }}" data-sources="{{ row.sources|join(' ')|lower }}" data-status="{{ row.status|lower }}">
-          <header>
-            <div><span class="eyebrow">{{ row.id }}</span><h4>{{ row.title }}</h4></div>
-            <span class="measurement-coverage__status" data-state="{{ row.status|lower }}">{{ row.status }}</span>
-          </header>
-          <p>{{ row.description }}</p>
-          <dl class="measurement-coverage__summary">
-            <div><dt>Implementation</dt><dd>{{ row.implementations|join(', ') }}</dd></div>
-            <div><dt>Scenario families</dt><dd>{{ row.scenario_families|join(', ') if row.scenario_families else 'No mapped scenario family' }}</dd></div>
-            <div><dt>Mapped scenarios</dt><dd>{{ row.scenario_count }}</dd></div>
-            <div><dt>Sources</dt><dd>{% for source in row.sources %}<span class="measurement-coverage__source" data-source="{{ source|lower }}">{{ source }}</span>{% endfor %}</dd></div>
-          </dl>
-          <details>
-            <summary>Technical detail</summary>
-            <div class="measurement-coverage__detail">
-              <h5>Applicable taps</h5>
-              <ul>{% for tap in row.measurements %}<li><a href="{{ tap.url }}"><code>{{ tap.id }}</code></a> — {{ tap.source }} · {{ tap.status }}</li>{% endfor %}</ul>
-              <h5>Required workload or event</h5><p>{{ row.prerequisite }}</p>
-              <h5>Mapped scenarios</h5>
-              {% if row.scenarios %}<ul>{% for scenario in row.scenarios %}<li><a href="{{ scenario.url }}"><code>{{ scenario.id }}</code></a> — {{ scenario.title }}</li>{% endfor %}</ul>{% else %}<p>No current scenario maps to this entry.</p>{% endif %}
-              <h5>Retained evidence</h5>
-              {% if row.evidence %}<ul>{% for item in row.evidence %}<li><a href="{{ item.url }}"><code>{{ item.run_id }}</code></a> — Card {{ item.card_id }}, {{ item.implementation }}, <code>{{ item.measurement_id }}</code></li>{% endfor %}</ul>{% else %}<p>No retained non-vacuous five-card measurement evidence maps to this entry.</p>{% endif %}
-              <h5>What it can prove</h5><p>{{ row.can_prove }}</p>
-              <h5>Explicit non-claims</h5><p>{{ row.non_claims }}</p>
-            </div>
-          </details>
-        </article>
-        {% endfor %}
-      </div>
+    <div id="measurement-coverage-results">
+      {% for section in view_sections %}
+      <section class="measurement-coverage__view" data-coverage-panel="{{ section.id }}" aria-labelledby="view-title-{{ section.id }}"{% if not loop.first %} hidden{% endif %}>
+        <h3 id="view-title-{{ section.id }}">{{ section.label }}</h3>
+        <div class="measurement-coverage__rows"></div>
+        <div class="measurement-coverage__row-templates">
+          {% for row in section.rows %}<template class="measurement-coverage__row-template" data-search="{{ row.search_text }}" data-implementations="{{ row.implementations|join(' ')|lower }}" data-sources="{{ row.sources|join(' ')|lower }}" data-status="{{ row.status|lower }}">{{ result_card(row, section) }}</template>{% endfor %}
+        </div>
+      </section>
+      {% endfor %}
     </div>
-    {% endfor %}
     <p id="measurement-coverage-empty" hidden>No entries match these filters.</p>
-    <p><strong>Child-friendly explanation:</strong> Pick a shelf, then narrow the cards. Open a card to see which real recipe, ruler, and saved result support it.</p>
+    <button type="button" id="measurement-coverage-show-more" aria-controls="measurement-coverage-results">Show 10 more</button>
+    <p><strong>Child-friendly explanation:</strong> Pick a shelf, then narrow the cards. Open one card and then open only the detail that you need.</p>
   </section>
 
-  <hr class="hairline">
-  <section aria-labelledby="coverage-boundary-title">
+  <section class="measurement-coverage__boundary" aria-labelledby="coverage-boundary-title">
     <span class="eyebrow">Claim boundary</span>
     <h2 id="coverage-boundary-title">Known gaps stay visible</h2>
-    <p><code>TM-030</code>, <code>TM-031</code>, and <code>RR-027</code> remain unavailable because the current repository evidence does not prove their required workload boundary. A catalog entry, configured collector, empty population, or zero value is not proof.</p>
+    <p><code>TM-030</code>, <code>TM-031</code>, and <code>RR-027</code> remain unavailable. Current repository evidence does not prove their required workload boundary. A catalog entry, configured collector, empty population, or zero value is not proof.</p>
     <p><strong>Child-friendly explanation:</strong> An empty notebook is not a passing test. DWARF says “not available” until it has real notes from the required test.</p>
   </section>
 </div>
