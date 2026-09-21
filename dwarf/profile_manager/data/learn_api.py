@@ -349,7 +349,7 @@ def html_route_groups() -> list[dict[str, Any]]:
         "/learn/walkthroughs", "/learn/architecture",
         "/learn/concepts", "/learn/glossary",
         "/learn/api", "/learn/faq", "/learn/troubleshooting",
-        "/learn/measurements", "/learn/coverage", "/learn/threat-coverage", "/learn/consensus",
+        "/learn/measurements", "/learn/measurement-coverage", "/learn/coverage", "/learn/threat-coverage", "/learn/consensus",
         "/learn/status", "/learn/cli", "/learn/overview",
         "/learn/attack-cost", "/learn/operator-runbook",
         "/learn/developer-onboarding", "/learn/plugin-authoring",

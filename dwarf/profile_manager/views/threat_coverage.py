@@ -90,11 +90,12 @@ def _reconcile_mapped_scenarios(data: dict, scenarios: list[dict]) -> None:
     data["five_card_evidence"] = evidence
 
 
-def render_learn_threat_coverage() -> str:
+def current_threat_coverage_data() -> dict:
+    """Return the threat/risk map reconciled with the current scenario catalog."""
     html = _PAGE.read_text(encoding="utf-8")
     match = re.search(r"const DATA = (\{.*\});\nconst TYPES", html)
     if match is None:
-        return html
+        return {}
     data = json.loads(match.group(1))
     baked = {item["id"]: item for item in data.get("scenarios") or []}
     current = []
@@ -148,5 +149,17 @@ def render_learn_threat_coverage() -> str:
         gaps = [row["id"] for row in rows if not row.get("scenarios")]
         meta[f"{prefix}_covered"] = len(rows) - len(gaps)
         meta[f"{prefix}_gaps"] = gaps
+    return data
+
+
+def render_learn_threat_coverage() -> str:
+    html = _PAGE.read_text(encoding="utf-8")
+    match = re.search(r"const DATA = (\{.*\});\nconst TYPES", html)
+    if match is None:
+        return html
+    data = current_threat_coverage_data()
     encoded = json.dumps(data, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/")
-    return html[:match.start(1)] + encoded + html[match.end(1):]
+    rendered = html[:match.start(1)] + encoded + html[match.end(1):]
+    marker = '<div class="substrate-motes"'
+    cross_link = '<p style="margin:12px 40px"><a href="/learn/measurement-coverage">Open the measurement coverage join</a></p>\n'
+    return rendered.replace(marker, cross_link + marker, 1)
