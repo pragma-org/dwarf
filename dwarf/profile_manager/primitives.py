@@ -13770,6 +13770,12 @@ class RuntimeControlledPlutusTransactions(LoadPrimitive):
         report_path = output_dir / "result.json"
         report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
         outcome = "ok" if proc.returncode == int(self.params.get("expect_exit", 0)) else "unexpected_exit"
+        accounting = report.get("accounting")
+        if isinstance(accounting, dict):
+            handle.log(
+                phase="load", primitive="runtime_controlled_plutus_transactions",
+                level="info", event="workload_accounting", payload=accounting,
+            )
         handle.log(phase="load", primitive="runtime_controlled_plutus_transactions",
                    level="info" if outcome == "ok" else "error", event="completed",
                    payload={"outcome": outcome, "exit_code": proc.returncode,
