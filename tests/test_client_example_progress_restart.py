@@ -910,7 +910,7 @@ def test_amaru_controlled_window_prefers_raw_block_apply_nanoseconds(monkeypatch
     ]
 
 
-def test_amaru_controlled_window_excludes_events_after_end_marker(monkeypatch):
+def test_amaru_controlled_window_excludes_events_after_end_marker(monkeypatch, tmp_path):
     before_end = {
         "timestamp": "2026-09-21T03:00:00.999999Z",
         "fields": {
@@ -974,6 +974,7 @@ def test_amaru_controlled_window_excludes_events_after_end_marker(monkeypatch):
         "container": "amaru",
         "window_started_at": "2026-09-21T03:00:00Z",
         "window_ended_at": "2026-09-21T03:00:01Z",
+        "measurement_capture_path": str(tmp_path / "amaru-relay-1.ndjson"),
     }
 
     adopted, applications, excluded = primitive_module._collect_controlled_block_evidence(
@@ -987,6 +988,11 @@ def test_amaru_controlled_window_excludes_events_after_end_marker(monkeypatch):
     assert [row["elapsed_nanos"] for row in applications] == [2184]
     assert excluded == []
     assert raw_chain_events == []
+    captured = [
+        json.loads(line)
+        for line in (tmp_path / "amaru-relay-1.ndjson").read_text().splitlines()
+    ]
+    assert captured == [before_end, precise_before_end]
 
 
 def test_amaru_controlled_window_keeps_legacy_span_fallback(monkeypatch):

@@ -14736,6 +14736,15 @@ def _collect_controlled_block_evidence(
             if isinstance(value, dict):
                 if _timestamp_in_controlled_window(value.get("timestamp"), target):
                     rows.append(value)
+        capture_value = target.get("measurement_capture_path")
+        if capture_value:
+            capture_path = Path(str(capture_value))
+            capture_path.parent.mkdir(parents=True, exist_ok=True)
+            with capture_path.open("a", encoding="utf-8") as stream:
+                for row in rows:
+                    stream.write(
+                        json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+                    )
         enters = {}
         patched_applications = []
         legacy_applications = []
@@ -15126,6 +15135,14 @@ class RuntimeControlledChainProgressWindow(LoadPrimitive):
         measurement_offset = measurement_path.stat().st_size if measurement_path.is_file() else 0
         runtime = _active_measurement_runtime(handle)
         target["window_started_at"] = window_started_at
+        if target.get("implementation") == "amaru":
+            target["measurement_capture_path"] = str(
+                handle.run_dir
+                / "outputs"
+                / "amaru-measurement-calibration"
+                / "raw"
+                / "amaru-relay-1.ndjson"
+            )
         start_marker = runtime.mark_phase("controlled-chain-progress", "start")
         try:
             time.sleep(duration)
