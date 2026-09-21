@@ -17,7 +17,7 @@ def test_public_tree_has_no_generated_or_private_tracked_content():
     assert report["forbidden_paths"] == []
     assert report["private_text"] == []
     assert report["secrets"] == []
-    assert len(report["intentional_private_text"]) == 9
+    assert len(report["intentional_private_text"]) == 10
     assert {
         item["reason"] for item in report["intentional_private_text"]
     } == {

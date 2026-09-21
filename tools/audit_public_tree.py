@@ -31,6 +31,7 @@ ACCEPTED_FINGERPRINT_PATHS = {
     "dwarf/docs/client-examples/contracts/03-invalid-mini-protocol.yaml",
     "dwarf/docs/client-examples/contracts/04-block-application.yaml",
     "dwarf/docs/client-examples/contracts/05-restart-recovery-sync.yaml",
+    "dwarf/docs/client-examples/contracts/06-simple-transfer.yaml",
     "dwarf/spec/v1/client-example-acceptance-card.schema.json",
     "tests/test_client_example_acceptance_cards.py",
 }
