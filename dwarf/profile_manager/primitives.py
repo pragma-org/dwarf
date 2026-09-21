@@ -15299,11 +15299,9 @@ def _client_peer_role_ready(target: dict[str, Any]) -> dict[str, Any]:
 
 
 def _emit_readiness_gate(handle, target_node: str, event: str, payload: dict[str, Any]) -> dict[str, Any]:
-    import time
-
     observed_at = _client_epoch()
-    monotonic_seconds = time.monotonic()
-    body = {"target_node": target_node, "elapsed_seconds": monotonic_seconds, "observed_at_epoch_seconds": observed_at, **payload}
+    elapsed_seconds = _active_measurement_runtime(handle).elapsed_seconds()
+    body = {"target_node": target_node, "elapsed_seconds": elapsed_seconds, "observed_at_epoch_seconds": observed_at, **payload}
     _append_target_hook_event(
         handle, primitive="runtime_real_target_restart_and_readiness", event=event, payload=body
     )
@@ -15391,7 +15389,7 @@ class RuntimeControlledSyncRange(LoadPrimitive):
         started_event = {
             "event": "sync_range_started",
             "target_node": target["id"],
-            "elapsed_seconds": time.monotonic(),
+            "elapsed_seconds": runtime.elapsed_seconds(),
             "observed_at_epoch_seconds": _client_epoch(),
             "tip": start,
             "peer_policy": policy,
@@ -15412,7 +15410,7 @@ class RuntimeControlledSyncRange(LoadPrimitive):
         completed_event = {
             "event": "sync_range_completed",
             "target_node": target["id"],
-            "elapsed_seconds": time.monotonic(),
+            "elapsed_seconds": runtime.elapsed_seconds(),
             "observed_at_epoch_seconds": _client_epoch(),
             "tip": end,
             "peer_policy": policy,

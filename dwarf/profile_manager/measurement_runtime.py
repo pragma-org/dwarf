@@ -152,6 +152,13 @@ class MeasurementRuntime:
             fp.write(json.dumps(marker, sort_keys=True) + "\n")
         return marker
 
+    def elapsed_seconds(self) -> float:
+        """Return run-relative elapsed time from the measurement monotonic clock."""
+        now_mono = float(self._monotonic_clock())
+        if self._run_started_mono is None:
+            self._run_started_mono = now_mono
+        return round(now_mono - self._run_started_mono, 9)
+
     def prepare(self) -> None:
         if self._prepared:
             return

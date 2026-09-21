@@ -120,6 +120,20 @@ def test_runtime_executes_lifecycle_and_retains_phase_windows(tmp_path):
     assert markers[-1]["elapsed_seconds"] == 12.0
 
 
+def test_runtime_elapsed_seconds_uses_the_run_monotonic_origin(tmp_path):
+    runtime = MeasurementRuntime(
+        run_dir=tmp_path,
+        resolution=_resolution(),
+        collector_factories={},
+        wall_clock=iter([100.0]).__next__,
+        monotonic_clock=iter([5000.0, 5002.184]).__next__,
+    )
+
+    runtime.prepare()
+
+    assert runtime.elapsed_seconds() == 2.184
+
+
 @pytest.mark.parametrize("path", ["../escape.json", "/tmp/escape.json", "a/../../escape"])
 def test_collector_artifacts_cannot_escape_their_bounded_directory(tmp_path, path):
     class EscapingCollector(RecordingCollector):

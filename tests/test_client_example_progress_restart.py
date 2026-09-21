@@ -9,11 +9,17 @@ from profile_manager import primitives as primitive_module
 class _Runtime:
     def __init__(self):
         self.markers = []
+        self._elapsed_seconds = 10.0
 
     def mark_phase(self, phase_id, state):
         marker = {"phase_id": phase_id, "state": state, "epoch_seconds": len(self.markers) + 1.0}
         self.markers.append(marker)
         return marker
+
+    def elapsed_seconds(self):
+        value = self._elapsed_seconds
+        self._elapsed_seconds += 1.0
+        return value
 
 
 class _Handle:
@@ -339,6 +345,7 @@ def test_real_restart_emits_three_ordered_observed_readiness_gates(monkeypatch, 
     assert proof["checks"]["readiness_gates_ordered"] is True
     hooks = [json.loads(line) for line in (handle.run_dir / "events/target-hooks.ndjson").read_text().splitlines()]
     assert [row["event"] for row in hooks] == ["restart_started", "listener_ready", "chain_progress_ready", "peer_role_ready"]
+    assert [row["payload"]["elapsed_seconds"] for row in hooks] == [10.0, 11.0, 12.0, 13.0]
 
 
 def test_controlled_sync_range_retains_exact_start_and_end(monkeypatch, tmp_path):
@@ -373,6 +380,7 @@ def test_controlled_sync_range_retains_exact_start_and_end(monkeypatch, tmp_path
     assert proof["range_events"][0]["tip"]["block_height"] == 200
     assert proof["range_events"][1]["tip"]["block_height"] == 205
     assert proof["range_events"][1]["elapsed_seconds"] > proof["range_events"][0]["elapsed_seconds"]
+    assert [row["elapsed_seconds"] for row in proof["range_events"]] == [10.0, 11.0]
 
     assert proof["target_health"]["before"]["restart_count"] == 1
 
