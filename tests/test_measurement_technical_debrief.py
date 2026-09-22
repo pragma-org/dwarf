@@ -17,6 +17,7 @@ SECTION_IDS = {
     "usage", "inventory", "coverage", "reproducibility", "health-repair",
     "full-metrics", "run-recipes", "next-work", "amaru-guide",
     "cardano-guide", "scenario-demos",
+    "client-readiness-summary",
 }
 
 
@@ -237,6 +238,22 @@ def test_debrief_does_not_turn_generic_topology_counts_into_scenario_readiness()
     assert "The generic topology count check is not a scenario readiness verdict." in html
     assert "Use the selected profile’s supported readiness contract before a run." in html
     assert "does not prove that a retained scenario failed" in html
+
+
+def test_debrief_links_to_the_single_authoritative_client_readiness_matrix():
+    html = source()
+    assert "Client category readiness" in html
+    assert "8 client requirement categories" in html
+    assert "Amaru: 3 Ready · 1 Almost ready · 4 Partial · 0 Not implemented" in html
+    assert "Cardano-node: 3 Ready · 1 Almost ready · 4 Partial · 0 Not implemented" in html
+    assert (
+        'href="https://dwarf.gainpalfam.com/learn/measurement-coverage?view=client_requirements"'
+        in html
+    )
+    assert "Open the authoritative Client requirements view" in html
+    assert "Best Amaru demo" in html
+    assert "Best Cardano demo" in html
+    assert "The full matrix is not duplicated in this debrief." in html
 
 
 def test_debrief_has_accessible_dependency_free_interactions():

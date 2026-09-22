@@ -29,7 +29,7 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <aside class="rail" aria-label="Debrief navigation">
 <div class="brand">DWARF / measurement evidence</div>
 <nav>
-<a href="#summary">Executive summary</a><a href="#traceability">Traceability</a><a href="#architecture">Tap architecture</a><a data-implementation-item="amaru" href="#amaru-guide">Amaru measurements</a><a data-implementation-item="cardano-node" href="#cardano-guide">Cardano-node measurements</a><a href="#scenario-demos">Scenario demonstrations</a><a href="#cards">Client cards</a><a href="#findings">Findings</a><a href="#usage">Use DWARF</a><a href="#inventory">Inventory</a><a href="#coverage">Coverage</a><a href="#reproducibility">Reproducibility</a><a href="#health-repair">Health repair</a><a href="#full-metrics">Full metrics</a><a href="#run-recipes">Run recipes</a><a href="#next-work">Next work</a>
+<a href="#summary">Executive summary</a><a href="#traceability">Traceability</a><a href="#architecture">Tap architecture</a><a data-implementation-item="amaru" href="#amaru-guide">Amaru measurements</a><a data-implementation-item="cardano-node" href="#cardano-guide">Cardano-node measurements</a><a href="#client-readiness-summary">Client readiness</a><a href="#scenario-demos">Scenario demonstrations</a><a href="#cards">Client cards</a><a href="#findings">Findings</a><a href="#usage">Use DWARF</a><a href="#inventory">Inventory</a><a href="#coverage">Coverage</a><a href="#reproducibility">Reproducibility</a><a href="#health-repair">Health repair</a><a href="#full-metrics">Full metrics</a><a href="#run-recipes">Run recipes</a><a href="#next-work">Next work</a>
 </nav>
 <small>Internal implementation debrief<br>Evidence cut: 2026-09-21<br>ASD-STE100 style</small>
 </aside>
@@ -147,6 +147,15 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <details class="tap-card"><summary>Cardano Production-path compiler coverage <code>cardano-coverage-production-paths</code> <span class="source-badge">Reserved</span></summary><div class="detail-body"><dl class="kv"><dt>Measures</dt><dd>Compiler-instrumented source paths for an exact coverage campaign.</dd><dt>Observation boundary</dt><dd>Coverage build, corpus, seed, and artifact identity.</dd><dt>Surface</dt><dd>Source-path execution, not a protocol metric.</dd><dt>Exact limitation</dt><dd>It is unprofiled for client runs and is not correctness or performance authority.</dd><dt>Evidence state</dt><dd>Reserved; separate coverage smoke scenarios are not client-card proof.</dd></dl></div></details>
 </div></section>
 <aside class="child-explanation"><b>Child-friendly explanation</b>Cardano-node has twelve rulers that DWARF can place now and three labels for rulers that do not exist in the current test box. A zero does not pretend that a missing ruler measured something.</aside>
+
+<section class="tech search-unit" id="client-readiness-summary" data-status="partial" data-implementation="both">
+<div class="eyebrow">Guide / Client category readiness</div><h2>One dashboard matrix is authoritative.</h2>
+<p>DWARF maps <strong>8 client requirement categories</strong> to exact scenarios, taps, and retained evidence. The full matrix is not duplicated in this debrief. Open the dashboard to inspect each implementation, limitation, missing step, metric source, and evidence link.</p>
+<div class="grid"><div class="card" data-implementation-item="amaru"><h3>Amaru overview</h3><p><strong>Amaru: 3 Ready · 1 Almost ready · 4 Partial · 0 Not implemented</strong></p><p>Best Amaru demo: canonical block progress with retained run <code>20260921T035546Z-9747122c</code>.</p></div><div class="card" data-implementation-item="cardano-node"><h3>Cardano-node overview</h3><p><strong>Cardano-node: 3 Ready · 1 Almost ready · 4 Partial · 0 Not implemented</strong></p><p>Best Cardano demo: CBOR conformance with retained run <code>20260920T132629Z-ea000d37</code>.</p></div></div>
+<p><a class="button" href="https://dwarf.gainpalfam.com/learn/measurement-coverage?view=client_requirements">Open the authoritative Client requirements view</a></p>
+<p><strong>Status rule:</strong> Ready requires a compatible real-node scenario, an applicable tap, retained non-vacuous evidence, and a documented run recipe. Catalog presence, configuration, or a zero event count is not proof. Separate Amaru and Cardano-node runs are not an automatic comparison benchmark.</p>
+</section>
+<aside class="child-explanation"><b>Child-friendly explanation</b>The dashboard keeps the full scorecard in one place. This page gives you the totals and points to the scorecard, so two copies cannot disagree.</aside>
 
 <section class="tech search-unit" id="scenario-demos" data-status="partial" data-implementation="both">
 <div class="eyebrow">06 / scenarios you can demonstrate now</div><h2>Compatibility is proven; readiness is profile-specific.</h2>
