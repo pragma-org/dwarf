@@ -23,6 +23,31 @@ env = Environment(
 env.globals["data_layer"] = data_layer
 
 
+import contextvars as _ctxvars
+
+# View toggle (Basic vs Advanced/Bento). Set per-request by the HTTP handler
+# from the dwarf_view cookie / ?view= query. Falls back to "bento" when unset
+# so non-HTTP renders and tests keep the committed Advanced behaviour.
+CURRENT_VIEW = _ctxvars.ContextVar("dwarf_view", default=None)
+CURRENT_PATH = _ctxvars.ContextVar("dwarf_path", default="/")
+
+
+def set_current_view(value):
+    CURRENT_VIEW.set(value if value in ("basic", "bento") else None)
+
+
+def current_view():
+    return CURRENT_VIEW.get() or "bento"
+
+
+def set_current_path(value):
+    CURRENT_PATH.set(value or "/")
+
+
+def current_path():
+    return CURRENT_PATH.get() or "/"
+
+
 def render(template_name: str, **context) -> str:
     """Render a template by name with the given context. Returns HTML string.
 
@@ -38,5 +63,7 @@ def render(template_name: str, **context) -> str:
     from profile_manager.data.dashboard_theme import current_theme
     context.setdefault("sub_nav", sub_nav_for(context.get("active")))
     context.setdefault("active_sub", None)
+    context.setdefault("ui", current_view())
+    context.setdefault("request_path", current_path())
     context.setdefault("theme", current_theme())
     return env.get_template(template_name).render(**context)

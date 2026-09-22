@@ -1,0 +1,110 @@
+/* ============================================================================
+   DWARF — BASIC VIEW  (default; Advanced/Bento is opt-in via the toggle)
+   All rules scoped to body[data-ui="basic"] so the Advanced skin is untouched.
+
+   Design rules applied (see workbench "Step 6 research"):
+   - Overview-first: verdict + coverage honesty + operator loop above the fold.
+   - Status = shape + label + colour, colour-blind-safe (WCAG 1.4.1 / 2.2 AA).
+   - Reserved status palette; neutral grey elsewhere; no decorative green/red.
+   - Targets >= 44px; single-column at <=768px; no horizontal scroll.
+   - Nothing removed is unreachable: every cut carries an "Open in Advanced".
+   ========================================================================== */
+
+body[data-ui="basic"] {
+  /* accessible status tokens — obsidian background (GitHub Primer dark lineage) */
+  --st-pass:#3FB950; --st-fail:#F85149; --st-error:#D29922; --st-neutral:#8B949E;
+  --basic-surface:#0D1117; --basic-line:#26303B; --basic-ink:#E6EDF3; --basic-muted:#9DA7B0;
+  --basic-page:1120px;
+}
+
+/* --- calm the chrome: drop the HUD motes + dense sub-nav in Basic --- */
+body[data-ui="basic"] .substrate-motes { display:none !important; }
+body[data-ui="basic"] .snav,
+body[data-ui="basic"] .adv-only { display:none !important; }
+
+/* --- readable measure --- */
+body[data-ui="basic"] .shell-main { width:min(100%, var(--basic-page)); }
+
+/* --- view toggle (in the header) --- */
+.view-toggle { display:inline-flex; gap:2px; margin-left:16px; border:1px solid var(--basic-line,#26303B);
+  border-radius:8px; overflow:hidden; }
+.view-toggle a { font:600 12px/1 var(--font-mono,ui-monospace,monospace); letter-spacing:.04em;
+  padding:9px 13px; min-height:36px; display:inline-flex; align-items:center; text-decoration:none;
+  color:var(--basic-muted,#9DA7B0); background:transparent; }
+.view-toggle a[aria-current="true"] { background:#2BE0E0; color:#06080B; }
+.view-toggle a:focus-visible { outline:2px solid #2BE0E0; outline-offset:2px; }
+body[data-ui="bento"] .view-toggle { border-color:rgba(43,224,224,.25); }
+body[data-ui="bento"] .view-toggle a[aria-current="true"] { background:#2BE0E0; color:#06080B; }
+
+/* ---------- BASIC operate home: verdict headline ---------- */
+body[data-ui="basic"] .basic-only { display:block; }
+body[data-ui="bento"] .basic-only { display:none !important; }
+
+.b-verdict { display:grid; gap:16px; grid-template-columns:1fr; margin:8px 0 28px; }
+@media (min-width:760px){ .b-verdict { grid-template-columns:1.3fr 1fr 1fr; } }
+.b-card { background:var(--basic-surface); border:1px solid var(--basic-line); border-radius:14px;
+  padding:20px 22px; }
+.b-card__k { font:600 11px/1 var(--font-mono,ui-monospace,monospace); letter-spacing:.14em;
+  text-transform:uppercase; color:var(--basic-muted); margin:0 0 12px; }
+.b-headline { display:flex; align-items:center; gap:14px; }
+.b-headline .glyph { font-size:26px; line-height:1; }
+.b-headline .n { font:700 40px/1 var(--font-mono,ui-monospace,monospace); font-variant-numeric:tabular-nums;
+  color:var(--basic-ink); }
+.b-headline .sub { font-size:13px; color:var(--basic-muted); margin-top:4px; }
+.st-pass{color:var(--st-pass);} .st-fail{color:var(--st-fail);} .st-error{color:var(--st-error);}
+.st-neutral{color:var(--st-neutral);}
+
+/* status distribution bar (stacked, not pie) */
+.b-mix { display:flex; height:14px; border-radius:7px; overflow:hidden; background:#1b232c; margin:6px 0 10px; }
+.b-mix i { display:block; height:100%; }
+.b-mix .p{background:var(--st-pass);} .b-mix .f{background:var(--st-fail);} .b-mix .e{background:var(--st-error);}
+.b-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:12.5px; color:var(--basic-muted); }
+.b-legend b { color:var(--basic-ink); font-variant-numeric:tabular-nums; }
+.b-legend span::before { content:""; display:inline-block; width:9px; height:9px; border-radius:2px;
+  margin-right:6px; vertical-align:1px; background:var(--c,#8B949E); }
+
+/* honesty note — the anti-overclaim frame */
+.b-note { font-size:13px; line-height:1.55; color:var(--basic-muted); border-left:2px solid var(--st-error);
+  padding-left:12px; margin:6px 0 0; }
+.b-note b { color:var(--basic-ink); }
+
+/* ---------- operator loop ---------- */
+.b-loop { display:grid; gap:12px; grid-template-columns:1fr; margin:26px 0; }
+@media (min-width:720px){ .b-loop { grid-template-columns:repeat(3,1fr); } }
+.b-step { background:var(--basic-surface); border:1px solid var(--basic-line); border-radius:14px;
+  padding:18px 18px 16px; display:flex; flex-direction:column; gap:6px; min-height:120px;
+  text-decoration:none; color:inherit; }
+.b-step:hover { border-color:#2BE0E0; }
+.b-step:focus-visible { outline:2px solid #2BE0E0; outline-offset:2px; }
+.b-step .num { font:700 12px/1 var(--font-mono,ui-monospace,monospace); color:#2BE0E0; letter-spacing:.1em; }
+.b-step h3 { margin:2px 0 0; font-size:17px; color:var(--basic-ink); }
+.b-step p { margin:0; font-size:13px; color:var(--basic-muted); line-height:1.5; }
+.b-step .cta { margin-top:auto; font:600 13px/1 var(--font-mono,ui-monospace,monospace); color:#2BE0E0; }
+
+/* ---------- section headings + "open in advanced" ---------- */
+.b-h2 { font-size:14px; letter-spacing:.12em; text-transform:uppercase; color:var(--basic-muted);
+  font-family:var(--font-mono,ui-monospace,monospace); margin:30px 0 12px; padding-bottom:8px;
+  border-bottom:1px solid var(--basic-line); display:flex; align-items:baseline; gap:12px; }
+.b-adv-link { margin-left:auto; font-size:12.5px; color:#2BE0E0; text-decoration:none; text-transform:none;
+  letter-spacing:0; min-height:24px; display:inline-flex; align-items:center; }
+.b-adv-link:hover { text-decoration:underline; }
+.b-adv-link:focus-visible { outline:2px solid #2BE0E0; outline-offset:2px; }
+
+/* compact catalogue chips (reachable, not counted-as-coverage) */
+.b-chips { display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 6px; }
+.b-chip { display:inline-flex; align-items:center; gap:7px; min-height:36px; padding:0 13px;
+  border:1px solid var(--basic-line); border-radius:9px; background:var(--basic-surface);
+  color:var(--basic-ink); text-decoration:none; font-size:13px; }
+.b-chip:hover { border-color:#2BE0E0; }
+.b-chip:focus-visible { outline:2px solid #2BE0E0; outline-offset:2px; }
+.b-chip b { color:var(--basic-muted); font:600 11px/1 var(--font-mono,ui-monospace,monospace);
+  font-variant-numeric:tabular-nums; }
+
+/* Basic keeps generic pages readable: soften bento-only flourishes leaking via base.css */
+body[data-ui="basic"] .hero-flask, body[data-ui="basic"] .scanline { display:none !important; }
+
+/* mobile: single column, comfortable targets */
+@media (max-width:768px){
+  body[data-ui="basic"] .b-verdict, body[data-ui="basic"] .b-loop { grid-template-columns:1fr; }
+  body[data-ui="basic"] .shell-nav a, body[data-ui="basic"] .view-toggle a { min-height:44px; }
+}

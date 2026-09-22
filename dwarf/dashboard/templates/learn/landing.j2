@@ -6,7 +6,26 @@
 
 <hr class="hairline">
 
-<div class="learn-tile-grid">
+{# ---- BASIC view: three essentials; full library in Advanced ---- #}
+<section class="basic-only" aria-label="Learn essentials">
+  <div class="b-loop">
+    <a class="b-step" href="/learn/getting-started"><span class="num">START HERE</span>
+      <h3>Getting started</h3><p>Install &rarr; run your first scenario &rarr; preserve a bundle &rarr; write your first assertion.</p>
+      <span class="cta">5-step walkthrough &rarr;</span></a>
+    <a class="b-step" href="/learn/overview"><span class="num">CONCEPTS</span>
+      <h3>What DWARF is</h3><p>How the substrate is structured, where coverage stands, and how to read a verdict.</p>
+      <span class="cta">Overview &rarr;</span></a>
+    <a class="b-step" href="/learn/glossary"><span class="num">REFERENCE</span>
+      <h3>Glossary</h3><p>The vocabulary — bucket, lifecycle, scenario, assertion, manifest hash chain.</p>
+      <span class="cta">Terms &rarr;</span></a>
+  </div>
+  <h2 class="b-h2">Full reference library
+    <a class="b-adv-link" href="?view=advanced">Open all {{ '' }}Learn pages in Advanced &rarr;</a></h2>
+  <p class="b-note">Advanced exposes the complete reference: threat/risk coverage map, worked examples,
+    primitive and measurement references, CLI/API docs, runbooks and troubleshooting.</p>
+</section>
+
+<div class="learn-tile-grid adv-only">
 
   <a class="learn-tile" href="/learn/overview">
     <span class="learn-tile__eyebrow">The whole workbench, one page</span>
@@ -187,7 +206,7 @@
 <hr class="hairline">
 
 <section class="learn-substrate">
-  <span class="eyebrow">Substrate at a glance</span>
+</div><section class="adv-only"><span class="eyebrow">Substrate at a glance</span>
   <p>Counts below and on the catalog tiles are loaded from the same source catalogs as Operate; this page does not maintain a second inventory.</p>
   <ul class="data-proof-list">
     <li class="data-proof-row">

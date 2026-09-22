@@ -6,7 +6,72 @@
 
 <hr class="hairline">
 
-<section class="landing-section" id="recent-activity">
+
+{# ---- BASIC view: operator-first summary (Advanced shows the full grid) ---- #}
+<section class="basic-only" aria-label="Run summary">
+  <div class="b-verdict">
+    <div class="b-card">
+      <p class="b-card__k">Latest verdicts · last {{ runs_window }} runs</p>
+      {% if runs_total %}
+      <div class="b-headline">
+        {% if fail_count %}<span class="glyph st-fail" aria-hidden="true">&#10007;</span>
+        {% elif other_count %}<span class="glyph st-error" aria-hidden="true">&#9650;</span>
+        {% else %}<span class="glyph st-pass" aria-hidden="true">&#10003;</span>{% endif %}
+        <div><span class="n">{{ pass_rate_pct }}%</span>
+          <div class="sub">{{ pass_count }} pass · {{ fail_count }} fail · {{ other_count }} error</div></div>
+      </div>
+      <div class="b-mix" role="img" aria-label="{{ pass_count }} pass, {{ fail_count }} fail, {{ other_count }} error">
+        {% if pass_count %}<i class="p" style="flex:{{ pass_count }}"></i>{% endif %}
+        {% if fail_count %}<i class="f" style="flex:{{ fail_count }}"></i>{% endif %}
+        {% if other_count %}<i class="e" style="flex:{{ other_count }}"></i>{% endif %}
+      </div>
+      <div class="b-legend">
+        <span style="--c:#3FB950">pass <b>{{ pass_count }}</b></span>
+        <span style="--c:#F85149">fail <b>{{ fail_count }}</b></span>
+        <span style="--c:#D29922">error <b>{{ other_count }}</b></span>
+      </div>
+      {% else %}
+      <div class="b-headline"><span class="glyph st-neutral" aria-hidden="true">&#8213;</span>
+        <div><span class="n">No runs yet</span><div class="sub">Start a run to produce a verdict</div></div></div>
+      {% endif %}
+    </div>
+    <div class="b-card">
+      <p class="b-card__k">Evidence preserved</p>
+      <div class="b-headline"><div><span class="n">{{ bundles_count }}</span>
+        <div class="sub">tamper-evident bundles retained</div></div></div>
+    </div>
+    <div class="b-card">
+      <p class="b-card__k">Node targets</p>
+      <div class="b-headline"><div><span class="n">{{ target_count if target_count is defined else '—' }}</span>
+        <div class="sub">Amaru + cardano-node under test</div></div></div>
+    </div>
+  </div>
+  <p class="b-note"><b>A count is not a verdict.</b> Scenario and primitive totals are inventory, not
+    coverage or security assurance. Each verdict above is scoped to one run's exact asserted property;
+    open a run to see its target identity, workload, assertion and evidence integrity.</p>
+
+  <div class="b-loop">
+    <a class="b-step" href="/run"><span class="num">01</span><h3>Start a run</h3>
+      <p>Pick a scenario and profile; DWARF checks versions and readiness first.</p><span class="cta">Start &rarr;</span></a>
+    <a class="b-step" href="/operate/runs"><span class="num">02</span><h3>Inspect results</h3>
+      <p>Open a run for its verdict, asserted property and target-node health.</p><span class="cta">Recent runs &rarr;</span></a>
+    <a class="b-step" href="/operate/bundles"><span class="num">03</span><h3>Export evidence</h3>
+      <p>Download the portable, hash-chained bundle for audit and replay.</p><span class="cta">Bundles &rarr;</span></a>
+  </div>
+
+  <h2 class="b-h2">Catalogues
+    <a class="b-adv-link" href="?view=advanced">Open the full substrate in Advanced &rarr;</a></h2>
+  <div class="b-chips">
+    <a class="b-chip" href="/operate/scenarios?view=advanced">Scenarios <b>{{ scenario_count if scenario_count is defined else '' }}</b></a>
+    <a class="b-chip" href="/operate/primitives?view=advanced">Primitives <b>{{ primitive_count if primitive_count is defined else '' }}</b></a>
+    <a class="b-chip" href="/operate/targets?view=advanced">Targets <b>{{ target_count if target_count is defined else '' }}</b></a>
+    <a class="b-chip" href="/operate/versions?view=advanced">Node versions</a>
+    <a class="b-chip" href="/operate/risk-packages?view=advanced">Risk packages</a>
+    <a class="b-chip" href="/operate/status?view=advanced">Substrate health</a>
+  </div>
+</section>
+
+<section class="landing-section adv-only" id="recent-activity">
   <span class="eyebrow">Recent activity</span>
   <div class="tile-grid">
 
@@ -57,7 +122,7 @@
   </div>
 </section>
 
-<section class="landing-section" id="substrate">
+<section class="landing-section adv-only" id="substrate">
   <span class="eyebrow">Substrate</span>
   <div class="tile-grid">
 
@@ -175,7 +240,7 @@
   </div>
 </section>
 
-<section class="landing-section" id="tools">
+<section class="landing-section adv-only" id="tools">
   <span class="eyebrow">Tools</span>
   <div class="tile-grid">
 

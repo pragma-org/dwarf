@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from profile_manager.templating import set_current_view, set_current_path
 from pathlib import Path
 from collections import Counter
 from urllib.parse import parse_qs, quote, urlsplit
@@ -3128,6 +3129,9 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             self.send_header("Content-Length", str(len(body)))
             for key, value in (extra_headers or {}).items():
                 self.send_header(key, value)
+            _vc = getattr(self, "_view_cookie", None)
+            if _vc:
+                self.send_header("Set-Cookie", _vc)
             self.end_headers()
             self.wfile.write(body)
             # Slice 44: feed the Prometheus request counter. Path-bucketing
@@ -3358,7 +3362,49 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             else:
                 self._send(status, ctype, body if isinstance(body, (bytes, bytearray)) else b"".join(body))
 
+
+        # Routes that have a purpose-built Basic layout. Any other path renders
+        # in Advanced even under a Basic cookie (dense catalogues/detail pages
+        # need the Advanced density treatment); the Basic preference persists.
+        BASIC_NATIVE_EXACT = {
+            "/", "/operate", "/operate/runs", "/operate/status",
+            "/learn", "/learn/getting-started", "/learn/overview", "/learn/glossary",
+            "/run",
+        }
+        BASIC_NATIVE_PREFIXES = ("/operate/runs/", "/runs/")
+
+        def _resolve_view(self):
+            """Basic-vs-Advanced view: ?view= overrides cookie; default basic.
+            Sets the render contextvar and, on explicit ?view=, a persisting cookie."""
+            from urllib.parse import urlsplit, parse_qs
+            from http.cookies import SimpleCookie
+            q = parse_qs(urlsplit(self.path).query)
+            view = None
+            if "view" in q and q["view"]:
+                v = q["view"][0].strip().lower()
+                if v in ("basic", "advanced", "bento"):
+                    view = "bento" if v in ("advanced", "bento") else "basic"
+                    self._view_cookie = ("dwarf_view=%s; Path=/; Max-Age=31536000; SameSite=Lax" % view)
+            if view is None:
+                c = SimpleCookie(self.headers.get("Cookie", ""))
+                if "dwarf_view" in c and c["dwarf_view"].value in ("basic", "bento"):
+                    view = c["dwarf_view"].value
+            if view is None:
+                view = "basic"
+            from urllib.parse import urlsplit as _us
+            _path = _us(self.path).path
+            set_current_path(_path)
+            if view == "basic" and not (
+                _path in self.BASIC_NATIVE_EXACT
+                or any(_path.startswith(pfx) for pfx in self.BASIC_NATIVE_PREFIXES)
+            ):
+                set_current_view("bento")
+                return "bento"
+            set_current_view(view)
+            return view
+
         def do_GET(self):
+            self._resolve_view()
             # Allow GET to show a 405 for every mutating endpoint (more informative than 404).
             mutating_paths = {
                 "/api/deploy", "/api/remove", "/api/fuzz/run", "/api/test/smoke/run",
