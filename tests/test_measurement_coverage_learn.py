@@ -62,8 +62,10 @@ def test_render_time_join_reconciles_current_authoritative_sources():
     assert {"chainsync", "cbor/parser", "resource/runtime"} <= {
         row["id"] for row in views["surfaces"]
     }
+    assert len(views["client_requirements"]) == 8
 
-    for view_rows in views.values():
+    for view_name in ("threats", "risks", "scenario_families", "surfaces"):
+        view_rows = views[view_name]
         for row in view_rows:
             assert row["id"]
             assert row["title"]
@@ -95,6 +97,8 @@ def test_render_time_join_reconciles_current_authoritative_sources():
 
     for overview in payload["overview"]:
         rows = views[overview["id"]]
+        if overview["id"] == "client_requirements":
+            continue
         assert overview["mapped"] == sum(row["scenario_count"] > 0 for row in rows)
         assert overview["verified"] == sum(row["status"] == "Verified" for row in rows)
         assert overview["gaps"] == sum(row["status"] == "Unavailable" for row in rows)
@@ -218,6 +222,7 @@ def test_route_has_compact_overview_filters_and_progressive_disclosure():
         ("risks", "Risks"),
         ("scenario_families", "Scenario families"),
         ("surfaces", "Node/protocol surfaces"),
+        ("client_requirements", "Client requirements"),
     ):
         assert f'data-coverage-view="{view}"' in html
         assert f">{label}<" in html
@@ -247,6 +252,87 @@ def test_route_has_compact_overview_filters_and_progressive_disclosure():
     assert "/learn/measurements" in html
     assert "client-card evidence" in html
     assert "five-card evidence" not in html
+
+
+def test_client_requirement_view_has_all_eight_categories_and_mechanical_statuses():
+    payload = measurement_coverage_payload()
+    rows = {row["title"]: row for row in payload["views"]["client_requirements"]}
+    expected = {
+        "Plutus Virtual Machine", "Ledger Rule Execution", "CBOR Decoding",
+        "Header Validation", "Chain Selection", "Epoch Stake Distribution",
+        "Stress Tests", "Critical Measures",
+    }
+    assert set(rows) == expected
+    assert payload["client_readiness_definitions"] == {
+        "Ready": "Compatible real-node scenario, applicable implemented taps, non-vacuous retained evidence, and a documented /run recipe.",
+        "Almost ready": "The scenario and taps exist, but one bounded integration, evidence, or recipe step is missing.",
+        "Partial": "Only part of the requested boundary is observable, or only indirect or proxy evidence exists.",
+        "Not implemented": "No honest compatible measurement path exists.",
+    }
+    measurement_ids = {path.stem for path in (ROOT / "dwarf/measurements").glob("*.yaml")}
+    for row in rows.values():
+        assert row["kind"] in {"Functional requirement", "Non-functional requirement"}
+        assert row["source_url"] == "https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792"
+        assert set(row["implementations"]) == {"amaru", "cardano-node"}
+        for implementation in row["implementations"].values():
+            assert implementation["status"] in payload["client_readiness_definitions"]
+            assert {tap["id"] for tap in implementation["measurements"]} <= measurement_ids
+            assert implementation["limitation"]
+            assert implementation["missing_step"]
+            if implementation["status"] == "Ready":
+                assert implementation["recipe_documented"] is True
+                assert implementation["evidence"]
+                assert any(tap["status"] == "Verified" for tap in implementation["measurements"])
+    assert rows["Critical Measures"]["interpretation"]
+    for measure in ("Simple Transfer", "Block Application", "Virtual Machine", "Time to restart", "Sync Speed", "Epoch Transition", "Header performances", "Deep chain-switch"):
+        assert measure in rows["Critical Measures"]["interpretation"]
+
+
+def test_client_requirement_ready_never_comes_from_catalog_presence_alone():
+    rows = measurement_coverage_payload()["views"]["client_requirements"]
+    for row in rows:
+        for implementation in row["implementations"].values():
+            if implementation["status"] == "Ready":
+                assert implementation["scenario_count"] > 0
+                assert implementation["evidence"]
+                assert implementation["recipe_documented"]
+            if implementation["scenario_count"] and not implementation["evidence"]:
+                assert implementation["status"] != "Ready"
+
+
+def test_threat_coverage_header_and_metrics_use_shared_measurement_states():
+    html = render_route_html("/learn/threat-coverage")
+    data = current_threat_coverage_data()
+    assert html.count("<thead>") == 2
+    assert html.index("<thead>") < html.index("<tbody>")
+    assert html.count("<th>Measurement metrics</th>") == 2
+    assert "<th>ID</th><th>Threat vector</th><th>Surface</th><th>Mapped</th><th>Scenarios</th><th>Measurement metrics</th>" in html
+    for label in ("Supported · verified", "Supported · unverified", "No supported metric"):
+        assert label in html
+    assert ".metric-state--verified" in html
+    assert ".metric-state--unverified" in html
+    assert ".metric-state--none" in html
+    assert 'metric-state metric-state--${metric.state}' in html
+    assert "Technical metric ID" in html
+    assert 'class="metric-disclosure"' in html
+    assert "Measurement metrics: ${summary}" in html
+    assert "/learn/measurement-coverage?view=threats" in html
+    by_id = {row["id"]: row for row in data["threats"]}
+    assert len(by_id) == data["meta"]["n_threats"]
+    assert all("measurement_metrics" in row for row in by_id.values())
+    for row in by_id.values():
+        for metric in row["measurement_metrics"]:
+            assert metric["state"] in {"verified", "unverified", "none"}
+            if metric["state"] == "verified":
+                assert metric["evidence"]
+            if metric["state"] == "unverified":
+                assert not metric["evidence"]
+    assert by_id["TM-035"]["scenarios"]
+    assert not any(metric["state"] == "verified" for metric in by_id["TM-035"]["measurement_metrics"])
+    assert "position:sticky;top:64px" not in html.replace(" ", "")
+    assert 'data-label="Measurement metrics"' in html
+    assert ".table-scroll td::before" in html
+    assert "grid-template-columns:minmax(94px,32%) minmax(0,1fr)" in html
 
 
 def test_collapsed_summaries_are_human_first_and_do_not_leak_raw_ids():
@@ -316,7 +402,14 @@ def test_links_are_relative_or_public_and_page_has_no_private_references():
     hrefs = re.findall(r'href="([^"]+)"', html)
     assert hrefs
     assert all(
-        href.startswith(("/", "#", "https://github.com/pragma-org/dwarf"))
+        href.startswith(
+            (
+                "/",
+                "#",
+                "https://github.com/pragma-org/dwarf",
+                "https://gist.github.com/",
+            )
+        )
         for href in hrefs
     )
     forbidden = "gain" + "palfam"

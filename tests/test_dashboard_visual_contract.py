@@ -409,10 +409,11 @@ def test_legacy_static_pages_obey_the_visual_contract():
     assert "--obsidian-0" in consensus
     assert "background:var(--obsidian-0)" in consensus
     assert "table{display:block;overflow-x:auto" in consensus
-    assert "table{display:block;overflow-x:auto" in threat_coverage
+    assert ".table-scroll td::before" in threat_coverage
+    assert "content:attr(data-label)" in threat_coverage
 
 
-def test_dense_mobile_tables_scroll_instead_of_collapsing_columns():
+def test_dense_mobile_tables_use_the_page_specific_accessible_layout():
     css = CSS.read_text(encoding="utf-8")
     runs = RUNS_TEMPLATE.read_text(encoding="utf-8")
     consensus = CONSENSUS.read_text(encoding="utf-8")
@@ -421,7 +422,9 @@ def test_dense_mobile_tables_scroll_instead_of_collapsing_columns():
     assert '<div class="responsive-table runs-table-wrap">' in runs
     assert ".runs-table-wrap .runs-table" in css
     assert consensus.count('<div class="table-scroll">') == 2
-    assert threat_coverage.count('<div class="table-scroll">') == 2
+    assert threat_coverage.count('class="table-scroll"') == 2
+    assert ".table-scroll tbody,.table-scroll tr,.table-scroll td{display:block" in threat_coverage
+    assert 'data-label="Measurement metrics"' in threat_coverage
 
 
 def test_runs_table_names_execution_and_workload_columns():

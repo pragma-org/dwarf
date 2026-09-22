@@ -3440,6 +3440,45 @@ body.product-landing {
   overflow-wrap: anywhere;
 }
 .run-wizard [data-run-action="start"] { margin-top: var(--space-4); min-width: 180px; }
+.run-wizard__canonical-select {
+  position: absolute;
+  width: 1px !important;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.scenario-picker__filters { display:flex; flex-wrap:wrap; gap:var(--space-2); margin:var(--space-4) 0; }
+.scenario-picker__filters button { min-height:40px; padding:8px 12px; color:var(--ink-secondary); background:var(--obsidian-1); border:1px solid var(--line); }
+.scenario-picker__filters button[aria-pressed="true"] { color:var(--ink-primary); border-color:var(--cyan-primary); box-shadow:inset 0 0 0 1px var(--cyan-primary); }
+.scenario-picker { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-2); max-height:520px; padding:var(--space-2); overflow:auto; border:1px solid var(--line); border-radius:var(--radius-md); }
+.scenario-picker__option { min-width:0; padding:var(--space-3); color:var(--ink-primary); text-align:left; background:var(--obsidian-1); border:1px solid var(--line); border-left-width:4px; border-radius:var(--radius-md); cursor:pointer; overflow-wrap:anywhere; }
+.scenario-picker__option:hover,.scenario-picker__option:focus-visible { background:var(--obsidian-3); }
+.scenario-picker__option[aria-selected="true"] { box-shadow:inset 0 0 0 2px var(--ink-primary); }
+.scenario-picker__option--amaru { border-left-color:#4299ff; }
+.scenario-picker__option--cardano { border-left-color:#a98bff; }
+.scenario-picker__option--mixed { border-left-color:#65d8cf; background:linear-gradient(110deg,rgba(66,153,255,.10),rgba(169,139,255,.10)); }
+.scenario-picker__option--neutral { border-left-color:var(--ink-tertiary); }
+.scenario-picker__title { display:block; font-weight:750; line-height:1.3; }
+.scenario-picker__badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.scenario-picker__badge { display:inline-flex; min-height:26px; align-items:center; padding:3px 7px; color:var(--ink-secondary); border:1px solid currentColor; border-radius:999px; font-size:.72rem; font-weight:700; line-height:1.2; }
+.scenario-picker__option--amaru .scenario-picker__badge--implementation { color:#82bdff; }
+.scenario-picker__option--cardano .scenario-picker__badge--implementation { color:#c4b3ff; }
+.scenario-picker__option--mixed .scenario-picker__badge--implementation { color:#86e9df; }
+.scenario-picker__badge--proof { color:#7cdb91; }
+.scenario-picker__badge--supported { color:#f0bd62; }
+.scenario-picker__badge--recommended { color:var(--cyan-primary); }
+.scenario-picker__badge--neutral { color:var(--ink-tertiary); }
+.scenario-picker__id { display:block; margin-top:9px; color:var(--ink-tertiary); font-size:.72rem; line-height:1.4; white-space:normal; overflow-wrap:anywhere; }
+.scenario-picker__count { color:var(--ink-tertiary); font-size:var(--type-small); }
+.scenario-selection { margin-top:var(--space-4); padding:var(--space-4); background:var(--obsidian-1); border:1px solid var(--line); border-radius:var(--radius-md); overflow-wrap:anywhere; }
+.scenario-selection[data-implementation="amaru"] { border-left:4px solid #4299ff; }
+.scenario-selection[data-implementation="cardano-node"] { border-left:4px solid #a98bff; }
+.scenario-selection[data-implementation="mixed"] { border-left:4px solid #65d8cf; }
+.scenario-selection h3 { margin-top:0; }
 
 @media (max-width: 900px) {
   .run-wizard__layout { grid-template-columns: 1fr; }
@@ -3450,6 +3489,8 @@ body.product-landing {
   .run-wizard__version-grid { grid-template-columns: 1fr; }
   .run-wizard__facts div { grid-template-columns: 1fr; gap: var(--space-1); }
   .run-wizard [data-run-action="start"] { width: 100%; min-height: 48px; }
+  .scenario-picker { grid-template-columns:1fr; max-height:420px; }
+  .scenario-picker__filters button { flex:1 1 42%; }
 }
 
 /* ---- Slice 28: /operate/status polish on top of slice 27 ----
@@ -5734,7 +5775,7 @@ body {
 .measurement-coverage__detail { min-width: 0; overflow-wrap: anywhere; }
 .measurement-coverage { font-size: 1rem; line-height: 1.62; }
 .measurement-coverage > section { margin-top: clamp(2rem, 5vw, 4rem); }
-.measurement-coverage__overview-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.measurement-coverage__overview-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; }
 .measurement-coverage__overview-tile { display:grid; gap:10px; min-height:112px; padding:16px; color:var(--text); text-align:left; background:var(--panel); border:1px solid var(--line); cursor:pointer; }
 .measurement-coverage__overview-tile:hover,
 .measurement-coverage__overview-tile:focus-visible { border-color:var(--accent); }
@@ -5774,6 +5815,12 @@ body {
 .measurement-coverage__row-facts { display:flex; flex-wrap:wrap; align-items:center; gap:7px 10px; font-size:.9rem; }
 .measurement-coverage__badge { display:inline-flex; align-items:center; min-height:28px; padding:3px 8px; border:1px solid var(--line); border-radius:999px; font-size:.79rem; font-weight:650; line-height:1.2; }
 .measurement-coverage__badge[data-state="verified"] { color:var(--accent); border-color:var(--accent); }
+.measurement-coverage__badge[data-state="ready"] { color:#7cdb91; border-color:#7cdb91; }
+.measurement-coverage__badge[data-state="almost ready"] { color:#f0bd62; border-color:#f0bd62; }
+.measurement-coverage__badge[data-state="partial"] { color:#f0bd62; border-color:#f0bd62; }
+.measurement-coverage__badge[data-state="not implemented"] { color:var(--text-muted); }
+.measurement-coverage__badge[data-implementation="amaru"] { color:#82bdff; border-color:#4299ff; }
+.measurement-coverage__badge[data-implementation="cardano-node"] { color:#c4b3ff; border-color:#a98bff; }
 .measurement-coverage__badge[data-state="unavailable"] { color:var(--hot); border-color:var(--hot); }
 .measurement-coverage__implementations { display:inline-flex; flex-wrap:wrap; gap:5px; }
 .measurement-coverage__coverage-statement { padding-top:12px; border-top:1px solid var(--line); }

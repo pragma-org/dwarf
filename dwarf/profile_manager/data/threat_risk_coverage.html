@@ -51,9 +51,9 @@
   .barrow .val{font-size:12px;color:var(--ink);font-weight:600}
   table{width:100%;border-collapse:collapse;font-size:13px}
   .table-scroll{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .table-scroll table{min-width:860px}
+  .table-scroll table{min-width:1120px}
   th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.7px;position:sticky;top:64px;background:var(--bg)}
+  th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.7px;background:var(--bg)}
   tr:hover td{background:color-mix(in srgb,var(--accent) 5%,transparent)}
   .id{font-family:"JetBrains Mono","IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;color:var(--accent);white-space:nowrap}
   .surf{display:inline-block;background:var(--panel2);border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:1px 7px;font-size:10.5px;margin:2px 4px 2px 0;font-family:"JetBrains Mono","IBM Plex Mono",ui-monospace,monospace}
@@ -64,6 +64,7 @@
   .chip.t-demo{border-color:color-mix(in srgb,var(--demo) 40%,transparent)}.chip.t-baseline{border-color:color-mix(in srgb,var(--baseline) 35%,transparent)}
   .cov{font-weight:700;font-size:15px}
   .cov.hot{color:var(--scripted)} .cov.warm{color:var(--smoke)} .cov.cold{color:var(--hot)}
+  .metric-disclosure{min-width:260px;margin:0;padding:5px 8px}.metric-disclosure>summary{font-size:12px}.metric-list{display:grid;gap:7px;margin-top:8px}.metric-item{padding:7px 8px;border-left:3px solid var(--dim);background:var(--panel2);border-radius:5px}.metric-item--verified{border-left-color:#7cdb91}.metric-item--unverified{border-left-color:#f0bd62}.metric-item b{display:block}.metric-state{display:inline-block;margin-top:3px;font-size:11px;font-weight:700}.metric-state--verified{color:#7cdb91}.metric-state--unverified{color:#f0bd62}.metric-state--none{color:var(--dim)}.metric-item details{margin:5px 0 0;padding:3px 7px}.metric-item code{overflow-wrap:anywhere;white-space:normal}.metric-empty{color:var(--dim)}
   .count-badge{display:inline-block;min-width:22px;text-align:center;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-weight:700;font-size:12px;font-family:"JetBrains Mono","IBM Plex Mono",ui-monospace,monospace}
   .muted{color:var(--dim)} .small{font-size:12px}
   details{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:10px 0;padding:6px 14px}
@@ -80,7 +81,14 @@
     .controls{position:static}
     .controls input[type=search]{min-width:100%}
     .barrow .lbl{width:120px}
-    table{display:block;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
+    .table-scroll{overflow:visible;border:0}
+    .table-scroll table{min-width:0}
+    .table-scroll thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+    .table-scroll tbody,.table-scroll tr,.table-scroll td{display:block;width:100%}
+    .table-scroll tr{margin:0 0 14px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+    .table-scroll td{display:grid;grid-template-columns:minmax(94px,32%) minmax(0,1fr);gap:10px;padding:8px;border:0}
+    .table-scroll td::before{content:attr(data-label);color:var(--dim);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px}
+    .metric-disclosure{min-width:0}
   }
 
   /* ---- Substrate atmosphere (matches the DWARF dashboard base.css) ----
@@ -231,12 +239,12 @@
 
   <section>
     <h2>Threat Model (TM) coverage</h2>
-    <div class="table-scroll"><table id="tm-table"><thead><tr><th>ID</th><th>Threat vector</th><th>Surface</th><th>Mapped</th><th>Scenarios</th></tr></thead><tbody></tbody></table></div>
+    <div class="table-scroll" role="region" aria-label="Threat coverage table" tabindex="0"><table id="tm-table"><thead><tr><th>ID</th><th>Threat vector</th><th>Surface</th><th>Mapped</th><th>Scenarios</th><th>Measurement metrics</th></tr></thead><tbody></tbody></table></div>
   </section>
 
   <section>
     <h2>Risk Register (RR) coverage</h2>
-    <div class="table-scroll"><table id="rr-table"><thead><tr><th>ID</th><th>Risk</th><th>Surface</th><th>Mapped</th><th>Scenarios</th></tr></thead><tbody></tbody></table></div>
+    <div class="table-scroll" role="region" aria-label="Risk coverage table" tabindex="0"><table id="rr-table"><thead><tr><th>ID</th><th>Risk</th><th>Surface</th><th>Mapped</th><th>Scenarios</th><th>Measurement metrics</th></tr></thead><tbody></tbody></table></div>
   </section>
 
   <section>
@@ -290,6 +298,17 @@ const active = new Set(TYPES);
 
 function chip(s){return `<span class="chip t-${s.type}" title="${(s.title||'').replace(/"/g,'&quot;')}"><span class="dot t-${s.type}" style="display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px"></span>${s.id}</span>`}
 function covClass(n){return n>=6?'hot':n>=1?'warm':'cold'}
+function metricCell(metrics){
+  if(!metrics || !metrics.length) return '<span class="metric-state metric-state--none">○ No supported metric</span>';
+  const supported=metrics.filter(metric=>metric.state!=='none');
+  const verified=supported.filter(metric=>metric.state==='verified').length;
+  const summary=supported.length?`${supported.length} supported · ${verified} verified`:'○ No supported metric';
+  return `<details class="metric-disclosure"><summary>Measurement metrics: ${summary}</summary><div class="metric-list">${metrics.map(metric=>{
+    const label=metric.state==='verified'?'✓ Supported · verified':metric.state==='unverified'?'◐ Supported · unverified':'○ No supported metric';
+    const links=(metric.evidence||[]).map(item=>`<a href="${item.url}">run ${item.run_id}</a>`).join(' · ');
+    return `<div class="metric-item metric-item--${metric.state}"><b><a href="/learn/measurement-coverage?view=threats&q=${encodeURIComponent(metric.title)}">${metric.title}</a></b><span class="metric-state metric-state--${metric.state}">${label}</span>${links?`<div class="small">${links}</div>`:''}<details><summary>Technical metric ID</summary><code>${metric.id}</code></details></div>`;
+  }).join('')}</div></details>`;
+}
 
 function renderTable(tblId, items, idKey, textKey, surfKey){
   const q=document.getElementById('q').value.toLowerCase();
@@ -305,8 +324,8 @@ function renderTable(tblId, items, idKey, textKey, surfKey){
     else { covCell=`<span class="cov ${covClass(sc.length)}">${sc.length}</span>`;
            chips=sc.length?`<div class="chips">${sc.map(chip).join('')}</div>`:'<span class="muted small">(filtered out)</span>'; }
     tb.insertAdjacentHTML('beforeend',
-      `<tr${all.length===0?' style="background:rgba(224,72,72,.07)"':''}><td class="id">${it[idKey]}</td><td>${it[textKey]}</td><td>${surfs}</td>
-       <td>${covCell}</td><td>${chips}</td></tr>`);
+      `<tr${all.length===0?' style="background:rgba(224,72,72,.07)"':''}><td class="id" data-label="ID">${it[idKey]}</td><td data-label="${textKey==='vector'?'Threat vector':'Risk'}">${it[textKey]}</td><td data-label="Surface">${surfs}</td>
+       <td data-label="Mapped">${covCell}</td><td data-label="Scenarios">${chips}</td><td data-label="Measurement metrics">${metricCell(it.measurement_metrics)}</td></tr>`);
   });
 }
 function renderIndex(){

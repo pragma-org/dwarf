@@ -96,6 +96,91 @@ def test_run_route_exposes_server_catalog_and_default_selection():
     assert "Primitives" in html
 
 
+def test_run_catalog_exposes_structured_scenario_presentation_metadata():
+    from profile_manager.data.operate_run_wizard import run_wizard_catalog
+
+    catalog = run_wizard_catalog()
+    assert len(catalog["scenarios"]) == 268
+    required = {
+        "short_title", "implementation", "implementation_key",
+        "measurement_state", "proof_state", "recommended_demo",
+        "measurement_profile", "deployment_profile", "target_version",
+        "purpose", "limitation", "retained_run_id", "evidence_url",
+        "filter_group",
+    }
+    assert all(required <= set(row) for row in catalog["scenarios"])
+    assert {row["filter_group"] for row in catalog["scenarios"]} >= {
+        "amaru", "cardano-node", "mixed", "other"
+    }
+    assert {row["proof_state"] for row in catalog["scenarios"]} == {
+        "retained-proof", "supported-without-retained-proof", "unconfirmed-unsupported"
+    }
+
+
+def test_run_catalog_classifies_all_accepted_measurement_cards_and_recommendations():
+    from profile_manager.data.operate_run_wizard import run_wizard_catalog
+
+    rows = {row["id"]: row for row in run_wizard_catalog()["scenarios"]}
+    accepted = {
+        "client-example-cbor-decoding-amaru-d3a6dafc-regression",
+        "client-example-cbor-decoding-cardano-patched",
+        "client-example-plutus-vm-amaru-onchain-v2",
+        "client-example-plutus-vm-cardano",
+        "client-example-invalid-mini-protocol-amaru",
+        "client-example-invalid-mini-protocol-cardano",
+        "client-example-block-application-amaru-canonical-v3",
+        "client-example-block-application-cardano-canonical-v2",
+        "client-example-restart-recovery-sync-amaru",
+        "client-example-restart-recovery-sync-cardano",
+        "client-example-simple-transfer-amaru",
+        "client-example-simple-transfer-cardano",
+    }
+    assert accepted <= set(rows)
+    for scenario_id in accepted:
+        row = rows[scenario_id]
+        assert row["measurement_state"] == "measurement-enabled"
+        assert row["proof_state"] == "retained-proof"
+        assert row["retained_run_id"]
+        assert row["evidence_url"] == f'/operate/runs/{row["retained_run_id"]}'
+        assert row["measurement_profile"] in {
+            "amaru-security-patched", "cardano-security-patched"
+        }
+    assert rows["client-example-block-application-amaru-canonical-v3"]["recommended_demo"] is True
+    assert rows["client-example-cbor-decoding-cardano-patched"]["recommended_demo"] is True
+    assert sum(row["recommended_demo"] for row in rows.values()) == 2
+
+
+def test_run_picker_uses_accessible_visual_options_and_keeps_canonical_value():
+    html = dashboard.render_route_html("/run", token="test-token")
+    template = RUN_WIZARD_TEMPLATE.read_text(encoding="utf-8")
+    script = RUN_WIZARD_SCRIPT.read_text(encoding="utf-8")
+    css = CSS.read_text(encoding="utf-8")
+
+    assert 'id="run-scenario" name="scenario_id"' in html
+    assert 'data-scenario-picker' in html
+    assert 'role="listbox"' in html
+    assert 'role="option"' in html
+    for group in ("recommended", "amaru", "cardano-node", "mixed", "other"):
+        assert f'data-scenario-filter="{group}"' in html
+    for label in (
+        "Amaru", "Cardano-node", "Mixed", "Measurement-enabled",
+        "Measurement proof", "Supported · no retained proof", "Unconfirmed / unsupported",
+    ):
+        assert label in html
+    for class_name in (
+        "scenario-picker__option--amaru", "scenario-picker__option--cardano",
+        "scenario-picker__option--mixed", "scenario-picker__option--neutral",
+        "scenario-picker__badge--proof",
+    ):
+        assert class_name in html or class_name in css
+    assert 'data-scenario-summary' in template
+    assert 'data-scenario-raw-id' in template
+    assert "selectScenario" in script
+    assert "scenarioSelect.value = scenarioId" in script
+    assert "ArrowDown" in script and "ArrowUp" in script and "Enter" in script
+    assert "full metrics" not in html.casefold()
+
+
 def test_run_catalog_profile_options_expose_evidence_qualification(monkeypatch):
     from profile_manager.data import operate_run_wizard
 

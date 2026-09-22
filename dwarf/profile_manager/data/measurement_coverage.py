@@ -27,6 +27,12 @@ STATE_DEFINITIONS = {
     "Unavailable": "The current catalog has no mapped scenario or the required evidence boundary is absent. DWARF does not substitute zero.",
     "Reserved": "The catalog keeps this future source slot, but it is not implemented evidence.",
 }
+CLIENT_READINESS_DEFINITIONS = {
+    "Ready": "Compatible real-node scenario, applicable implemented taps, non-vacuous retained evidence, and a documented /run recipe.",
+    "Almost ready": "The scenario and taps exist, but one bounded integration, evidence, or recipe step is missing.",
+    "Partial": "Only part of the requested boundary is observable, or only indirect or proxy evidence exists.",
+    "Not implemented": "No honest compatible measurement path exists.",
+}
 TAP_GROUPS = (
     ("workload-outcomes", "Workload and outcomes"),
     ("latency-processing", "Latency and processing"),
@@ -233,7 +239,7 @@ def _row(
 def measurement_coverage_payload() -> dict[str, Any]:
     """Join current catalogs, mappings, and accepted evidence without caching."""
     mapping = _load_mapping()
-    threat_data = current_threat_coverage_data()
+    threat_data = current_threat_coverage_data(include_measurements=False)
     scenarios = threat_data["scenarios"]
     scenario_by_id = {item["id"]: item for item in scenarios}
     measurement_defs = {
@@ -308,21 +314,118 @@ def measurement_coverage_payload() -> dict[str, Any]:
             measurement_defs=measurement_defs, configured=configured, evidence_index=evidence_index,
         ))
 
+    client_rows = []
+    for rule in mapping["client_requirement_rules"]:
+        implementation_rows = {}
+        all_scenarios = []
+        all_sources = set()
+        all_statuses = []
+        for implementation, config in rule["implementations"].items():
+            selected_scenarios = [
+                scenario_by_id[scenario_id]
+                for scenario_id in config["scenarios"]
+                if scenario_id in scenario_by_id
+            ]
+            linked_scenarios = [_scenario_link(item) for item in selected_scenarios]
+            all_scenarios.extend(linked_scenarios)
+            evidence_by_run = {}
+            taps = []
+            for measurement_id in config["measurements"]:
+                definition = measurement_defs[measurement_id]
+                source = _source(definition)
+                all_sources.add(source)
+                matching = [
+                    item for (scenario_id, tap_id), item in evidence_index.items()
+                    if scenario_id in config["scenarios"] and tap_id == measurement_id
+                ]
+                tap_status = "Verified" if any(item["verified"] for item in matching) else (
+                    "Reserved" if source == "Reserved" else "Applicable"
+                )
+                taps.append({
+                    "id": measurement_id,
+                    "title": definition.get("title") or measurement_id,
+                    "source": source,
+                    "status": tap_status,
+                    "url": f"/operate/measurements/{measurement_id}",
+                })
+                for item in matching:
+                    if item["verified"]:
+                        evidence_by_run[(item["run_id"], item["scenario_id"])] = item
+            evidence = sorted(evidence_by_run.values(), key=lambda item: item["run_id"])
+            implemented = any(tap["source"] != "Reserved" for tap in taps)
+            verified = any(tap["status"] == "Verified" for tap in taps)
+            if config["boundary"] == "none" or not selected_scenarios or not implemented:
+                readiness = "Not implemented"
+            elif config["boundary"] == "partial":
+                readiness = "Partial"
+            elif verified and config["recipe_documented"]:
+                readiness = "Ready"
+            else:
+                readiness = "Almost ready"
+            all_statuses.append(readiness)
+            implementation_rows[implementation] = {
+                "label": "Amaru" if implementation == "amaru" else "Cardano-node",
+                "status": readiness,
+                "measurements": taps,
+                "scenarios": linked_scenarios,
+                "scenario_count": len(linked_scenarios),
+                "evidence": evidence,
+                "recipe_documented": config["recipe_documented"],
+                "limitation": config["limitation"],
+                "missing_step": config["missing_step"],
+            }
+        status_rank = {"Ready": 3, "Almost ready": 2, "Partial": 1, "Not implemented": 0}
+        overall = min(all_statuses, key=lambda value: status_rank[value])
+        search_text = " ".join([
+            rule["id"], rule["title"], rule["kind"], rule["description"], rule["interpretation"],
+            *(scenario["id"] for scenario in all_scenarios),
+            *(tap["id"] for impl in implementation_rows.values() for tap in impl["measurements"]),
+        ]).lower()
+        client_rows.append({
+            "id": rule["id"], "title": rule["title"], "kind": rule["kind"],
+            "description": rule["description"], "meaning": _first_sentence(rule["description"]),
+            "source_url": rule["source_url"], "interpretation": rule["interpretation"],
+            "implementations": implementation_rows, "implementation_names": ["Amaru", "Cardano-node"],
+            "status": overall, "sources": sorted(all_sources), "search_text": search_text,
+            "scenario_count": len({item["id"] for item in all_scenarios}),
+            "measurement_count": len({
+                tap["id"]
+                for implementation in implementation_rows.values()
+                for tap in implementation["measurements"]
+            }),
+            "verified_measurement_count": len({
+                tap["id"]
+                for implementation in implementation_rows.values()
+                for tap in implementation["measurements"]
+                if tap["status"] == "Verified"
+            }),
+        })
+    views["client_requirements"] = client_rows
+
     labels = {
         "threats": "Threats",
         "risks": "Risks",
         "scenario_families": "Scenario families",
         "surfaces": "Node/protocol surfaces",
+        "client_requirements": "Client requirements",
     }
     overview = []
     for view_id, label in labels.items():
         rows = views[view_id]
+        if view_id == "client_requirements":
+            mapped = sum(any(impl["scenario_count"] for impl in row["implementations"].values()) for row in rows)
+            verified = sum(any(impl["status"] == "Ready" for impl in row["implementations"].values()) for row in rows)
+            gaps = sum(any(impl["status"] == "Not implemented" for impl in row["implementations"].values()) for row in rows)
+        else:
+            mapped = sum(row["scenario_count"] > 0 for row in rows)
+            verified = sum(row["status"] == "Verified" for row in rows)
+            gaps = sum(row["status"] == "Unavailable" for row in rows)
         overview.append({
             "id": view_id,
             "label": label,
-            "mapped": sum(row["scenario_count"] > 0 for row in rows),
-            "verified": sum(row["status"] == "Verified" for row in rows),
-            "gaps": sum(row["status"] == "Unavailable" for row in rows),
+            "mapped": mapped,
+            "verified": verified,
+            "gaps": gaps,
         })
 
     return {
@@ -333,5 +436,6 @@ def measurement_coverage_payload() -> dict[str, Any]:
         "statuses": list(STATUSES),
         "sources": list(SOURCES),
         "state_definitions": STATE_DEFINITIONS,
+        "client_readiness_definitions": CLIENT_READINESS_DEFINITIONS,
         "known_gaps": ["TM-030", "TM-031", "RR-027"],
     }

@@ -85,6 +85,31 @@
   </div>
 </details>
 {%- endmacro %}
+{% macro client_requirement_card(row) -%}
+<details class="measurement-coverage__row measurement-coverage__client-row" data-search="{{ row.search_text }}" data-implementations="amaru cardano-node" data-sources="{{ row.sources|join(' ')|lower }}" data-status="{{ row.status|lower }}">
+  <summary class="measurement-coverage__row-summary">
+    <span class="measurement-coverage__row-lead"><span class="measurement-coverage__human-id">{{ row.kind }}</span><span class="measurement-coverage__row-title">{{ row.title }}</span><span class="measurement-coverage__meaning">{{ row.meaning }}</span></span>
+    <span class="measurement-coverage__row-facts">{% for key, implementation in row.implementations.items() %}<span class="measurement-coverage__badge" data-implementation="{{ key }}">{{ implementation.label }} · {{ implementation.status }}</span>{% endfor %}<span class="measurement-coverage__badge">{{ row.measurement_count }} applicable · {{ row.verified_measurement_count }} verified taps</span><span class="measurement-coverage__badge">{{ row.scenario_count }} scenarios</span></span>
+    <span class="measurement-coverage__coverage-statement">{{ row.interpretation }}</span>
+    <span class="measurement-coverage__summary-links"><a href="{{ row.source_url }}">Client source</a><a href="/run">Open /run</a></span>
+  </summary>
+  <div class="measurement-coverage__detail">
+    {% for key, implementation in row.implementations.items() %}
+    <details class="measurement-coverage__detail-section" data-detail="{{ key }}">
+      <summary>{{ implementation.label }} · {{ implementation.status }}</summary>
+      <p>{{ payload.client_readiness_definitions[implementation.status] }}</p>
+      <h4>Measurement taps</h4><ul>{% for tap in implementation.measurements %}<li><a href="{{ tap.url }}">{{ tap.title }}</a> {{ badge(tap.source, 'source') }} {{ badge(tap.status, 'state') }}{{ technical_id('Technical identifier', tap.id) }}</li>{% endfor %}</ul>
+      <h4>Proven scenarios and retained evidence</h4>{% if implementation.evidence %}<ul>{% for item in implementation.evidence %}<li><a href="{{ item.url }}">Retained run {{ item.run_id }}</a>{{ technical_id('Scenario identifier', item.scenario_id) }}</li>{% endfor %}</ul>{% else %}<p>No retained non-vacuous evidence proves this exact category boundary.</p>{% endif %}
+      <h4>Compatible scenarios</h4><ul>{% for scenario in implementation.scenarios %}<li><a href="{{ scenario.url }}">{{ scenario.title }}</a>{{ technical_id('Scenario identifier', scenario.id) }}</li>{% endfor %}</ul>
+      <h4>What is measured now</h4><p>{{ row.description }}</p>
+      <h4>What is not measured or claimed</h4><p>{{ implementation.limitation }}</p>
+      <h4>Smallest next step</h4><p>{{ implementation.missing_step }}</p>
+      <p><a href="/run">Open the run wizard</a>{% if implementation.recipe_documented %} · Documented /run path available{% else %} · A concise recipe is still required{% endif %}</p>
+    </details>
+    {% endfor %}
+  </div>
+</details>
+{%- endmacro %}
 
 {% block main %}
 <div class="measurement-coverage" data-initial-page-size="10">
@@ -115,6 +140,10 @@
       <dl>{% for name, definition in payload.state_definitions.items() %}<div><dt>{{ name }}</dt><dd>{{ definition }}</dd></div>{% endfor %}</dl>
       <p><strong>Child-friendly explanation:</strong> Ready, switched on, used, and checked are different steps. DWARF shows each step.</p>
     </details>
+    <details class="measurement-coverage__how-to-read"><summary>Client readiness status rules</summary>
+      <dl>{% for name, definition in payload.client_readiness_definitions.items() %}<div><dt>{{ name }}</dt><dd>{{ definition }}</dd></div>{% endfor %}</dl>
+      <p>A mapped scenario, configured collector, zero event count, or available tap alone is not Ready.</p>
+    </details>
   </section>
 
   <section class="measurement-coverage__explorer" aria-labelledby="coverage-explorer-title">
@@ -124,7 +153,7 @@
       <label>Search <input id="measurement-coverage-search" type="search" placeholder="Title, scenario, tap, or claim" autocomplete="off"></label>
       <label>Implementation <select id="measurement-coverage-implementation"><option value="">All implementations</option><option value="amaru">Amaru</option><option value="cardano-node">Cardano-node</option></select></label>
       <label>Source <select id="measurement-coverage-source"><option value="">All sources</option>{% for source in payload.sources %}<option value="{{ source|lower }}">{{ source }}</option>{% endfor %}</select></label>
-      <label>Status <select id="measurement-coverage-status"><option value="">All statuses</option>{% for status in payload.statuses %}<option value="{{ status|lower }}">{{ status }}</option>{% endfor %}</select></label>
+      <label>Status <select id="measurement-coverage-status"><option value="">All statuses</option>{% for status in payload.statuses %}<option value="{{ status|lower }}">{{ status }}</option>{% endfor %}{% for status in payload.client_readiness_definitions %}<option value="{{ status|lower }}">{{ status }}</option>{% endfor %}</select></label>
       <button type="button" id="measurement-coverage-reset" aria-label="Clear search and filters">Clear</button>
     </div>
     <div class="measurement-coverage__result-line"><p id="measurement-coverage-result-status" role="status" aria-live="polite"></p></div>
@@ -135,7 +164,7 @@
         <h3 id="view-title-{{ section.id }}">{{ section.label }}</h3>
         <div class="measurement-coverage__rows"></div>
         <div class="measurement-coverage__row-templates">
-          {% for row in section.rows %}<template class="measurement-coverage__row-template" data-search="{{ row.search_text }}" data-implementations="{{ row.implementations|join(' ')|lower }}" data-sources="{{ row.sources|join(' ')|lower }}" data-status="{{ row.status|lower }}">{{ result_card(row, section) }}</template>{% endfor %}
+          {% for row in section.rows %}<template class="measurement-coverage__row-template" data-search="{{ row.search_text }}" data-implementations="{{ (row.implementation_names if section.id == 'client_requirements' else row.implementations)|join(' ')|lower }}" data-sources="{{ row.sources|join(' ')|lower }}" data-status="{{ row.status|lower }}">{% if section.id == 'client_requirements' %}{{ client_requirement_card(row) }}{% else %}{{ result_card(row, section) }}{% endif %}</template>{% endfor %}
         </div>
       </section>
       {% endfor %}

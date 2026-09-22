@@ -7,6 +7,81 @@ provenance:
   - dwarf/measurement-profiles/*.yaml
   - dwarf/docs/client-examples/contracts/*.yaml
   - docs/measurement-full-metrics-compatibility-audit.md
+  - https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792
+
+client_requirement_rules:
+  - id: plutus-virtual-machine
+    title: Plutus Virtual Machine
+    kind: Functional requirement
+    description: Execute selected serialized Plutus programs and retain outcomes, budgets, timing, and exact cost-model identity.
+    source_url: https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792
+    interpretation: The client asks for result, CPU budget, and memory budget agreement for selected Plutus versions and cost models.
+    implementations:
+      amaru: {boundary: complete, recipe_documented: true, measurements: [amaru-stock-plutus-execution, amaru-external-workload-accounting, amaru-stock-resources], scenarios: [client-example-plutus-vm-amaru-onchain-v2], limitation: "The run covers the retained Plutus V2 corpus and exact cost model, not all scripts or cost models.", missing_step: "Expand the frozen corpus only when a wider claim is required."}
+      cardano-node: {boundary: complete, recipe_documented: true, measurements: [cardano-stock-plutus-execution, cardano-patched-ledger-plutus-stages, cardano-external-workload-accounting, cardano-stock-resources], scenarios: [client-example-plutus-vm-cardano], limitation: "The run covers the retained Plutus V2 corpus and exact target, not all scripts or production performance.", missing_step: "Expand the frozen corpus only when a wider claim is required."}
+  - id: ledger-rule-execution
+    title: Ledger Rule Execution
+    kind: Functional requirement
+    description: Apply named ledger rules to controlled initial states and compare the resulting state or failure.
+    source_url: https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792
+    interpretation: The client asks for node-agnostic ledger scenarios with comparable final states and rule failures.
+    implementations:
+      amaru: {boundary: complete, recipe_documented: true, measurements: [amaru-stock-ledger-rules, amaru-stock-resources], scenarios: [client-example-plutus-vm-amaru-onchain-v2], limitation: "Current retained Plutus evidence does not prove a general ledger-rule scenario scoreboard.", missing_step: "Retain non-vacuous named ledger-rule events for the compatible real-node workload."}
+      cardano-node: {boundary: complete, recipe_documented: true, measurements: [cardano-patched-ledger-plutus-stages, cardano-stock-resources], scenarios: [client-example-plutus-vm-cardano], limitation: "Current proof covers the Plutus transaction path and does not cover every ledger rule.", missing_step: "Add broader named-rule cases only when a wider ledger claim is required."}
+  - id: cbor-decoding
+    title: CBOR Decoding
+    kind: Functional requirement
+    description: Decode valid and invalid CBOR at exact production boundaries and retain terminal outcomes and timing.
+    source_url: https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792
+    interpretation: The client asks for edge-decoder compliance, round-trip consistency, and per-object timing.
+    implementations:
+      amaru: {boundary: complete, recipe_documented: false, measurements: [amaru-patched-protocol-decode, amaru-external-workload-accounting, amaru-stock-resources], scenarios: [client-example-cbor-decoding-amaru-d3a6dafc-regression], limitation: "The corpus is a selected Plutus-data set, not every CBOR type or mini-protocol codec.", missing_step: "Add a concise documented /run recipe for the fixed Amaru regression."}
+      cardano-node: {boundary: complete, recipe_documented: true, measurements: [cardano-patched-protocol-decode, cardano-external-workload-accounting, cardano-stock-resources], scenarios: [client-example-cbor-decoding-cardano-patched], limitation: "The corpus is a selected Plutus-data set, not every CBOR type or mini-protocol codec.", missing_step: "Expand object coverage only when a broader decoder claim is required."}
+  - id: header-validation
+    title: Header Validation
+    kind: Functional requirement
+    description: Check valid and invalid header characteristics and retain header lifecycle and processing observations.
+    source_url: https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792
+    interpretation: The client asks for synthetic header validity scenarios while explicitly excluding stake-distribution computation.
+    implementations:
+      amaru: {boundary: partial, recipe_documented: true, measurements: [amaru-stock-header-lifecycle, amaru-patched-protocol-decode, amaru-stock-resources], scenarios: [client-example-block-application-amaru-canonical-v3], limitation: "Canonical progress observes header lifecycle but is not the complete synthetic validity suite requested.", missing_step: "Add and retain the bounded valid and invalid header-validation corpus at the real target."}
+      cardano-node: {boundary: partial, recipe_documented: false, measurements: [cardano-stock-chain-lifecycle, cardano-patched-protocol-decode, cardano-stock-resources], scenarios: [client-example-block-application-cardano-canonical-v2], limitation: "Canonical progress observes chain and header effects but not the complete synthetic validity suite.", missing_step: "Add the bounded header corpus and a documented /run recipe."}
+  - id: chain-selection
+    title: Chain Selection
+    kind: Functional requirement
+    description: Present controlled competing chains and retain raw selections, switches, canonical progress, and convergence.
+    source_url: https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792
+    interpretation: The client asks whether nodes make the same choices for the same generated header tree; separate runs are not automatic comparison proof.
+    implementations:
+      amaru: {boundary: complete, recipe_documented: true, measurements: [amaru-stock-header-lifecycle, amaru-stock-fork-switch, amaru-external-sync-speed, amaru-stock-resources], scenarios: [client-example-block-application-amaru-canonical-v3], limitation: "The retained run proves one bounded exact-target chain-selection workload, not global consensus equivalence.", missing_step: "Add further fork shapes only when a wider claim is required."}
+      cardano-node: {boundary: complete, recipe_documented: false, measurements: [cardano-stock-chain-lifecycle, cardano-external-sync-speed, cardano-stock-resources], scenarios: [client-example-block-application-cardano-canonical-v2], limitation: "The retained run proves one bounded exact-target workload, not an Amaru comparison.", missing_step: "Add a concise documented /run recipe for this Cardano-node scenario."}
+  - id: epoch-stake-distribution
+    title: Epoch Stake Distribution
+    kind: Functional requirement
+    description: Compare epoch stake distributions, pots, and delegation relations after the SNAP rule on real networks.
+    source_url: https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792
+    interpretation: The client asks for epoch-by-epoch state comparison over synced Preview, Preprod, or Mainnet periods.
+    implementations:
+      amaru: {boundary: partial, recipe_documented: false, measurements: [amaru-stock-block-epoch, amaru-stock-resources], scenarios: [consensus-epoch-boundary-differential], limitation: "Epoch events and resources are proxy observations; no retained stake-distribution comparison exists.", missing_step: "Implement and retain exact SNAP-state extraction and comparison for an Amaru real-node run."}
+      cardano-node: {boundary: partial, recipe_documented: false, measurements: [cardano-stock-ledger-block-epoch, cardano-stock-resources], scenarios: [consensus-epoch-boundary-differential], limitation: "Epoch events and resources are proxy observations; no retained stake-distribution comparison exists.", missing_step: "Implement and retain exact SNAP-state extraction and comparison for a Cardano-node real-node run."}
+  - id: stress-tests
+    title: Stress Tests
+    kind: Non-functional requirement
+    description: Push selected data, epoch, or block dimensions and measure CPU, memory, and processing-time overhead against a baseline.
+    source_url: https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792
+    interpretation: The client names large composite values, ratification-heavy epochs, and extreme block filling as stress families.
+    implementations:
+      amaru: {boundary: partial, recipe_documented: false, measurements: [amaru-stock-resources, amaru-external-workload-accounting], scenarios: [runtime-substrate-real-adapter-runtime-starvation-example-smoke], limitation: "Resource taps exist, but accepted client-card workloads are bounded conformance runs rather than the requested stress matrix.", missing_step: "Run one bounded real-node stress case with a matched baseline and retained non-vacuous resources."}
+      cardano-node: {boundary: partial, recipe_documented: false, measurements: [cardano-stock-resources, cardano-external-workload-accounting], scenarios: [runtime-substrate-runtime-starvation-example-smoke], limitation: "Resource taps exist, but no accepted retained run proves the requested stress dimension against a baseline.", missing_step: "Run one bounded real-node stress case with a matched baseline and retained non-vacuous resources."}
+  - id: critical-measures
+    title: Critical Measures
+    kind: Non-functional requirement
+    description: Report distributions for the concrete critical events named by the client request.
+    source_url: https://gist.github.com/KtorZ/9e5fd34eb993d0bbc5158984e8be5792
+    interpretation: "Interpretation used: Simple Transfer; Block Application; Virtual Machine; Time to restart; Sync Speed; Epoch Transition; Header performances (Observe, Select, Fetch, Adopt); Deep chain-switch."
+    implementations:
+      amaru: {boundary: partial, recipe_documented: true, measurements: [amaru-external-workload-accounting, amaru-stock-block-epoch, amaru-stock-plutus-execution, amaru-external-restart-readiness, amaru-external-sync-speed, amaru-stock-header-lifecycle, amaru-stock-fork-switch, amaru-stock-resources], scenarios: [client-example-simple-transfer-amaru, client-example-block-application-amaru-canonical-v3, client-example-plutus-vm-amaru-onchain-v2, client-example-restart-recovery-sync-amaru], limitation: "Several named events have retained evidence, but mainnet-scale epoch transition and deep k-range chain-switch distributions are not complete.", missing_step: "Add one retained exact-boundary epoch-transition or deep-chain-switch distribution without treating separate targets as a benchmark."}
+      cardano-node: {boundary: partial, recipe_documented: true, measurements: [cardano-external-workload-accounting, cardano-stock-ledger-block-epoch, cardano-stock-plutus-execution, cardano-external-restart-readiness, cardano-external-sync-speed, cardano-stock-chain-lifecycle, cardano-stock-resources], scenarios: [client-example-simple-transfer-cardano, client-example-block-application-cardano-canonical-v2, client-example-plutus-vm-cardano, client-example-restart-recovery-sync-cardano], limitation: "Several named events have retained evidence, but mainnet-scale epoch transition and deep k-range chain-switch distributions are not complete.", missing_step: "Add one retained exact-boundary epoch-transition or deep-chain-switch distribution without treating separate targets as a benchmark."}
 
 surface_rules:
   - id: chainsync
@@ -187,6 +262,9 @@ entry_rules:
     measurements: [amaru-stock-plutus-execution, amaru-external-workload-accounting, amaru-stock-resources, cardano-patched-ledger-plutus-stages, cardano-external-workload-accounting, cardano-stock-resources]
 
 evidence_rules:
+  - card_id: "01"
+    implementation: amaru
+    measurements: [amaru-external-workload-accounting, amaru-patched-protocol-decode, amaru-stock-resources]
   - card_id: "02"
     implementation: amaru
     measurements: [amaru-external-workload-accounting, amaru-stock-plutus-execution, amaru-stock-resources]
@@ -208,6 +286,15 @@ evidence_rules:
   - card_id: "01"
     implementation: cardano-node
     measurements: [cardano-stock-blockfetch, cardano-stock-chain-lifecycle, cardano-stock-ledger-block-epoch, cardano-stock-network, cardano-stock-resources, cardano-external-sync-speed, cardano-patched-protocol-decode, cardano-patched-ledger-plutus-stages]
+  - card_id: "03"
+    implementation: amaru
+    measurements: [amaru-external-workload-accounting, amaru-patched-protocol-decode, amaru-stock-network, amaru-stock-resources]
+  - card_id: "03"
+    implementation: cardano-node
+    measurements: [cardano-external-workload-accounting, cardano-patched-protocol-decode, cardano-stock-network, cardano-stock-resources]
+  - card_id: "04"
+    implementation: cardano-node
+    measurements: [cardano-stock-chain-lifecycle, cardano-stock-ledger-block-epoch, cardano-stock-network, cardano-stock-resources, cardano-external-sync-speed, cardano-patched-protocol-decode]
   - card_id: "05"
     implementation: cardano-node
     measurements: [cardano-external-restart-readiness]

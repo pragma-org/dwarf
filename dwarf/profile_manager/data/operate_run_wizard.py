@@ -22,9 +22,111 @@ from profile_manager.run_plan import (
 
 _PREFERRED_DEFAULT = "runtime-substrate-honest-baseline-docker-mode-example-smoke"
 
+_RETAINED_MEASUREMENT_PROOF = {
+    "client-example-cbor-decoding-amaru-d3a6dafc-regression": "20260920T235440Z-050046a4",
+    "client-example-cbor-decoding-cardano-patched": "20260920T132629Z-ea000d37",
+    "client-example-plutus-vm-amaru-onchain-v2": "20260921T204537Z-ff5a800a",
+    "client-example-plutus-vm-cardano": "20260921T202611Z-27eeadb5",
+    "client-example-invalid-mini-protocol-amaru": "20260920T072858Z-2cc3bb0c",
+    "client-example-invalid-mini-protocol-cardano": "20260920T073447Z-ab81bfb7",
+    "client-example-block-application-amaru-canonical-v3": "20260921T035546Z-9747122c",
+    "client-example-block-application-cardano-canonical-v2": "20260921T021935Z-3b58eafc",
+    "client-example-restart-recovery-sync-amaru": "20260921T045619Z-15e864a0",
+    "client-example-restart-recovery-sync-cardano": "20260921T045807Z-8e2bbb0e",
+    "client-example-simple-transfer-amaru": "20260921T194749Z-26542a57",
+    "client-example-simple-transfer-cardano": "20260921T195334Z-e713d0de",
+}
+_RECOMMENDED_DEMOS = {
+    "client-example-block-application-amaru-canonical-v3",
+    "client-example-cbor-decoding-cardano-patched",
+}
+_SHORT_TITLES = {
+    "client-example-cbor-decoding-amaru-d3a6dafc-regression": "CBOR decoding fix regression",
+    "client-example-cbor-decoding-cardano-patched": "CBOR decoding conformance",
+    "client-example-plutus-vm-amaru-onchain-v2": "Live Plutus V2 conformance",
+    "client-example-plutus-vm-cardano": "Plutus VM conformance",
+    "client-example-invalid-mini-protocol-amaru": "Invalid Handshake containment",
+    "client-example-invalid-mini-protocol-cardano": "Invalid Handshake containment",
+    "client-example-block-application-amaru-canonical-v3": "Canonical block progress",
+    "client-example-block-application-cardano-canonical-v2": "Canonical block progress",
+    "client-example-restart-recovery-sync-amaru": "Restart recovery and synchronization",
+    "client-example-restart-recovery-sync-cardano": "Restart recovery and synchronization",
+    "client-example-simple-transfer-amaru": "Simple transfer measurement",
+    "client-example-simple-transfer-cardano": "Simple transfer measurement",
+}
+
+
+def _short_title(row: dict[str, Any]) -> str:
+    if row["id"] in _SHORT_TITLES:
+        return _SHORT_TITLES[row["id"]]
+    title = str(row.get("title") or row["id"])
+    if " — " in title and title.casefold().startswith("client example"):
+        title = title.split(" — ", 1)[1]
+    return title
+
+
+def _scenario_presentation(
+    row: dict[str, Any], profile_shapes: dict[str, tuple[int, int]], measurement_ids: set[str]
+) -> dict[str, Any]:
+    profile_id = row.get("profile")
+    cardano_count, amaru_count = profile_shapes.get(profile_id, (0, 0))
+    if cardano_count and amaru_count:
+        implementation_key, implementation, filter_group = "mixed", "Mixed", "mixed"
+    elif row.get("runtime") != "devnet" and not profile_id:
+        implementation_key, implementation, filter_group = "other", "Framework / Other", "other"
+    elif row.get("target_impl") == "amaru":
+        implementation_key, implementation, filter_group = "amaru", "Amaru", "amaru"
+    else:
+        implementation_key, implementation, filter_group = "cardano-node", "Cardano-node", "cardano-node"
+    measurement_profile = row.get("measurement_profile")
+    if not measurement_profile or measurement_profile == "none":
+        measurement_state = "no-measurement-profile"
+    elif measurement_profile in measurement_ids:
+        measurement_state = "measurement-enabled"
+    else:
+        measurement_state = "measurement-compatibility-unknown"
+    retained_run_id = _RETAINED_MEASUREMENT_PROOF.get(row["id"])
+    if retained_run_id:
+        proof_state = "retained-proof"
+    elif measurement_state == "measurement-enabled" and profile_id in profile_shapes:
+        proof_state = "supported-without-retained-proof"
+    else:
+        proof_state = "unconfirmed-unsupported"
+    limitation = (
+        "This retained exact-target run is not an automatic Amaru-versus-Cardano benchmark."
+        if retained_run_id
+        else "No retained non-vacuous measurement proof is documented for this exact scenario."
+    )
+    return {
+        **row,
+        "short_title": _short_title(row),
+        "implementation": implementation,
+        "implementation_key": implementation_key,
+        "filter_group": filter_group,
+        "measurement_state": measurement_state,
+        "proof_state": proof_state,
+        "recommended_demo": row["id"] in _RECOMMENDED_DEMOS,
+        "deployment_profile": profile_id,
+        "purpose": str(row.get("title") or row["id"]),
+        "limitation": limitation,
+        "retained_run_id": retained_run_id,
+        "evidence_url": f"/operate/runs/{retained_run_id}" if retained_run_id else None,
+    }
+
 
 def run_wizard_catalog() -> dict[str, Any]:
-    scenarios = _list_scenarios_for_compare()
+    raw_scenarios = _list_scenarios_for_compare()
+    loaded_profiles = load_profiles()
+    profile_shapes = {
+        profile.id: (profile.node_count, profile.amaru_node_count)
+        for profile in loaded_profiles
+    }
+    measurement_records = list_definitions("measurement-profiles")
+    measurement_ids = {record.definition_id for record in measurement_records}
+    scenarios = [
+        _scenario_presentation(row, profile_shapes, measurement_ids)
+        for row in raw_scenarios
+    ]
     scenario_ids = {row["id"] for row in scenarios}
     requested_default = os.environ.get("ADA2_DWARF_RUN_DEFAULT_SCENARIO", "").strip()
     default_scenario_id = (
@@ -35,7 +137,7 @@ def run_wizard_catalog() -> dict[str, Any]:
         else (scenarios[0]["id"] if scenarios else None)
     )
     profiles = []
-    for profile in load_profiles():
+    for profile in loaded_profiles:
         try:
             qualification = profile_qualification(
                 profile_deployment_version_preview(profile.id)
@@ -60,7 +162,7 @@ def run_wizard_catalog() -> dict[str, Any]:
             "implementation": record.data.get("implementation"),
             "measurement_count": len(record.data.get("measurements") or []),
         }
-        for record in list_definitions("measurement-profiles")
+        for record in measurement_records
     ]
     default_plan = None
     default_error = None
