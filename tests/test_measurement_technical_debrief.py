@@ -9,6 +9,8 @@ RUN_IDS = {
     "20260920T072858Z-2cc3bb0c", "20260920T073447Z-ab81bfb7",
     "20260921T035546Z-9747122c", "20260921T021935Z-3b58eafc",
     "20260921T045619Z-15e864a0", "20260921T045807Z-8e2bbb0e",
+    "20260921T204537Z-ff5a800a", "20260921T202611Z-27eeadb5",
+    "20260921T194749Z-26542a57", "20260921T195334Z-e713d0de",
 }
 SECTION_IDS = {
     "summary", "traceability", "architecture", "cards", "findings",
@@ -53,6 +55,37 @@ def test_debrief_retains_exact_accepted_evidence_and_claim_limits():
     assert "not an Amaru-versus-Cardano performance benchmark" in html
     assert "No mixed-node comparison" in html
     assert "No stable release threshold" in html
+
+
+def test_debrief_documents_plutus_accounting_and_additive_card_six():
+    html = source()
+    for value in (
+        "five frozen cards",
+        "additive Card 06",
+        "60 attempted",
+        "30 accepted",
+        "30 expected-invalid",
+        "0 timed out",
+        "51,300 bytes",
+        "50,820 bytes",
+        "60 duration samples",
+        "35 attempted",
+        "5 rejected",
+        "35 duration samples",
+        "signed simple payment",
+        "submit-to-protocol-response",
+        "mempool visibility",
+        "chain adoption",
+        "unavailable rather than zero",
+        "not an automatic Amaru-versus-Cardano benchmark",
+        "555c9c06…0e466",
+        "318bc045…992e6",
+        "3242de23…ee67",
+        "feafaf46…128c1",
+    ):
+        assert value in html
+    assert ">Five cards<" not in html
+    assert "Five card contracts" not in html
 
 
 def test_debrief_links_inventory_and_workbench_evidence():

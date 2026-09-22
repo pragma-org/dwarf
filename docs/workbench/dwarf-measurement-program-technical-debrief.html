@@ -28,16 +28,16 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <aside class="rail" aria-label="Debrief navigation">
 <div class="brand">DWARF / measurement evidence</div>
 <nav>
-<a href="#summary">Executive summary</a><a href="#traceability">Traceability</a><a href="#architecture">Tap architecture</a><a href="#cards">Five cards</a><a href="#findings">Findings</a><a href="#usage">Use DWARF</a><a href="#inventory">Inventory</a><a href="#coverage">Coverage</a><a href="#reproducibility">Reproducibility</a><a href="#health-repair">Health repair</a><a href="#full-metrics">Full metrics</a><a href="#run-recipes">Run recipes</a><a href="#next-work">Next work</a>
+<a href="#summary">Executive summary</a><a href="#traceability">Traceability</a><a href="#architecture">Tap architecture</a><a href="#cards">Client cards</a><a href="#findings">Findings</a><a href="#usage">Use DWARF</a><a href="#inventory">Inventory</a><a href="#coverage">Coverage</a><a href="#reproducibility">Reproducibility</a><a href="#health-repair">Health repair</a><a href="#full-metrics">Full metrics</a><a href="#run-recipes">Run recipes</a><a href="#next-work">Next work</a>
 </nav>
 <small>Internal implementation debrief<br>Evidence cut: 2026-09-21<br>ASD-STE100 style</small>
 </aside>
 <main id="main">
 <header class="hero">
-<div class="kicker">Case file / five-card implementation / final evidence</div>
+<div class="kicker">Case file / five frozen cards + additive Card 06 / retained evidence</div>
 <h1>DWARF Measurement Program — Implementation Overview and Technical Debrief</h1>
 <p class="lede">DWARF now collects, correlates, reports, and exports security-centered measurements from exact Amaru and Cardano-node targets. This debrief maps the client request to the implementation and to the retained evidence. It also states every important claim limit.</p>
-<div class="stamp"><span class="pill proven">5 cards accepted</span><span class="pill proven">10 final legs</span><span class="pill partial">historical findings retained</span><span class="pill deferred">mixed comparison deferred</span></div>
+<div class="stamp"><span class="pill proven">5 frozen cards accepted</span><span class="pill proven">1 additive card complete</span><span class="pill proven">Plutus accounting complete</span><span class="pill deferred">mixed comparison deferred</span></div>
 </header>
 
 <div class="controls" aria-label="Debrief controls">
@@ -54,26 +54,27 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <div id="empty-state">No evidence matches the current search and filters.</div>
 
 <section class="tech search-unit" id="summary" data-status="proven">
-<div class="eyebrow">01 / executive summary</div><h2>The measurement foundation and all five frozen cards are complete.</h2>
+<div class="eyebrow">01 / executive summary</div><h2>The measurement foundation, five frozen cards, and additive Card 06 are complete.</h2>
 <div class="grid four">
-<div class="card"><span class="number">10</span><h3>accepted final legs</h3><p>One Amaru leg and one Cardano-node leg for each card.</p></div>
+<div class="card"><span class="number">6</span><h3>client cards</h3><p>The original five-card program stays frozen. Card 06 is a separate additive card with one Amaru run and one Cardano-node run.</p></div>
 <div class="card"><span class="number">4</span><h3>measurement revisions</h3><p>Stock and patched v1 evidence remains reproducible. Nanosecond v2 and Amaru canonical-progress v3 are additive.</p></div>
 <div class="card"><span class="number">1</span><h3>reporting system</h3><p>The same DWARF manifest, report, dashboard, SARIF, attestation, export, and import path is used.</p></div>
 <div class="card"><span class="number">0</span><h3>security semantics weakened</h3><p>The old Card 01 failure remains a failure and a completed finding.</p></div>
 </div>
-<p class="callout"><strong>Claim boundary.</strong> The evidence proves the frozen workloads on the exact targets, revisions, images, seeds, and hardware that the contracts name. It is not an Amaru-versus-Cardano performance benchmark. It does not prove all workloads, all hardware, or all future releases.</p>
+<p class="callout"><strong>Claim boundary.</strong> The evidence proves each frozen or additive workload on the exact target, revision, image, seed, and hardware that its contract names. Separate real-node runs are not an automatic Amaru-versus-Cardano benchmark and not an Amaru-versus-Cardano performance benchmark. They do not prove all workloads, all hardware, or all future releases. A missing stage stays unavailable rather than zero.</p>
 </section>
-<aside class="child-explanation"><b>Child-friendly explanation</b>We gave both kinds of node five exact tests. Each node finished all five tests. We kept the old broken result so nobody can pretend it never happened.</aside>
+<aside class="child-explanation"><b>Child-friendly explanation</b>We gave both kinds of node the original five exact tests, then added one simple payment test. Each saved result says exactly what it can prove. We kept the old broken result so nobody can pretend it never happened.</aside>
 
 <section class="tech search-unit" id="traceability" data-status="proven">
 <div class="eyebrow">02 / ask → tasks → proof</div><h2>Every client request ends at inspectable evidence.</h2>
 <div class="table-wrap"><table><thead><tr><th>Original client ask</th><th>Implementation task</th><th>Evidence and result</th></tr></thead><tbody>
-<tr><td>Measure real Amaru and Cardano-node behavior.</td><td>Pin exact targets; add reusable collectors and patched taps; keep scenario assertions authoritative.</td><td>Exact target identities are in each manifest. Ten accepted run reports and bundles are retained.</td></tr>
+<tr><td>Measure real Amaru and Cardano-node behavior.</td><td>Pin exact targets; add reusable collectors and patched taps; keep scenario assertions authoritative.</td><td>Exact target identities are in each manifest. The frozen five-card evidence stays retained, and four current Plutus-accounting and transfer runs are linked here.</td></tr>
 <tr><td>Show CBOR decode result and cost.</td><td>Build revision-locked codec adapters, live invalid cases, round-trip checks, and nanosecond timing.</td><td>Card 01 has a preserved frozen-release finding and an explicit fixed-revision pass.</td></tr>
-<tr><td>Show Plutus result, budgets, and cost.</td><td>Add evaluator adapters and an Amaru consumer topology with active on-chain Plutus V2 parameters.</td><td>Card 02 retains valid and expected-invalid transaction outcomes, inclusion evidence, budgets, and progress.</td></tr>
+<tr><td>Show Plutus result, budgets, cost, and workload accounting.</td><td>Add evaluator adapters and an Amaru consumer topology with active on-chain Plutus V2 parameters. Count every offered transaction, byte, outcome, and known-outcome duration.</td><td>Card 02 now retains 60 attempts and 60 duration samples in each separate implementation run, with exact accepted and expected-invalid outcomes.</td></tr>
 <tr><td>Contain invalid mini-protocol traffic.</td><td>Add baseline, hostile, and recovery windows; attribute process resources; check peers and progress.</td><td>Card 03 keeps its accepted v1 runs and whole-microsecond evidence unchanged.</td></tr>
 <tr><td>Measure block application without false fork failures.</td><td>Separate raw chain-selection history from derived canonical progress and convergence.</td><td>Card 04 preserves every switch and accepts bounded same-height switches when convergence succeeds.</td></tr>
 <tr><td>Measure restart and controlled resync.</td><td>Record restart, listener, progress, peer-role gates, exact range, and recovery resources.</td><td>Card 05 retains ordered readiness, exact sync endpoints, progress, and health evidence.</td></tr>
+<tr><td>Measure a simple signed payment workload.</td><td>Add separate version-pinned Amaru-only and Cardano-node-only scenarios. Reuse the existing workload, protocol, chain, and resource collectors.</td><td>Additive Card 06 retains 35 attempts for each implementation: 30 accepted, 5 expected rejections, 0 timed out, and 35 duration samples.</td></tr>
 </tbody></table></div>
 </section>
 <aside class="child-explanation"><b>Child-friendly explanation</b>Each promise has a job, and each job has a saved proof. You can follow the line from “please test this” to “here is the exact result.”</aside>
@@ -92,7 +93,7 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <aside class="child-explanation"><b>Child-friendly explanation</b>Some measuring marks are already on the machine, some sit outside it, and some were added inside an exact copy. All marks send notes to the same evidence box.</aside>
 
 <section class="tech search-unit" id="cards" data-status="proven">
-<div class="eyebrow">04 / five acceptance cards</div><h2>Versions, workloads, metrics, assertions, runs, meaning, and limits.</h2>
+<div class="eyebrow">04 / five frozen cards + additive Card 06</div><h2>Versions, workloads, metrics, assertions, runs, meaning, and limits.</h2>
 
 <details open data-status="proven"><summary>Card 01 — CBOR decoding conformance and decode cost</summary><div class="detail-body">
 <dl class="kv"><dt>Targets</dt><dd>Cardano-node 11.1.2 at <code>fef83fed01d7926f3de83b3b917be5a4a48768b5</code>; frozen Amaru 10.11.20260912 at <code>b159172f25a9c389f82f20bca4f15e3032791638</code>; fixed Amaru regression at <code>d3a6dafcced78f5809a96619e883cf04911d2bdc</code>.</dd>
@@ -106,10 +107,11 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <details data-status="proven"><summary>Card 02 — Plutus VM conformance and execution cost</summary><div class="detail-body">
 <dl class="kv"><dt>Targets</dt><dd>Amaru 10.11.20260912 and Cardano-node 11.1.2, exact revisions above, with <code>nanoseconds-v2</code> patched targets.</dd>
 <dt>Workload</dt><dd><code>dwarf-cardano-measurement-plutus-v2-v1</code>; seed <code>0x5107A502</code>; digest <code>0e7da742…6e3f8</code>; 30 valid and 30 expected-invalid Plutus V2 executions per outcome.</dd>
-<dt>Metrics</dt><dd><code>plutus_vm_by_outcome</code>, <code>plutus_cpu_budget</code>, and <code>plutus_memory_budget</code>.</dd>
+<dt>Metrics</dt><dd><code>plutus_vm_by_outcome</code>, <code>plutus_cpu_budget</code>, <code>plutus_memory_budget</code>, external offered transactions and bytes, known outcomes, and duration-to-known-outcome for every attempt.</dd>
 <dt>Assertions</dt><dd>Result and budget match; live accepted and rejected outcomes exist; the target continues progress.</dd></dl>
-<div class="run-links"><a href="http://127.0.0.1:8787/operate/runs/20260921T013953Z-565b77c3">Amaru run 20260921T013953Z-565b77c3</a><a href="http://127.0.0.1:8787/operate/runs/20260920T135958Z-362eedc7">Cardano run 20260920T135958Z-362eedc7</a></div>
-<p><strong>Meaning:</strong> the Amaru-specific producer/consumer topology used active on-chain Plutus V2 protocol parameters and cost model. It retained transaction hashes, inclusion or execution evidence, budgets where exposed, and chain progress. <strong>Limit:</strong> the VM timing excludes context fetch and wider ledger application. An off-chain cost-model file alone is not the proof.</p>
+<div class="run-links"><a href="http://127.0.0.1:8787/operate/runs/20260921T204537Z-ff5a800a">Current Amaru accounting run 20260921T204537Z-ff5a800a</a><a href="http://127.0.0.1:8787/operate/runs/20260921T202611Z-27eeadb5">Current Cardano accounting run 20260921T202611Z-27eeadb5</a><a href="http://127.0.0.1:8787/operate/runs/20260921T013953Z-565b77c3">Earlier accepted Amaru run 20260921T013953Z-565b77c3</a><a href="http://127.0.0.1:8787/operate/runs/20260920T135958Z-362eedc7">Earlier accepted Cardano run 20260920T135958Z-362eedc7</a></div>
+<p><strong>Current workload accounting:</strong> Amaru retained 60 attempted, 30 accepted, 30 expected-invalid, 0 timed out, 51,300 bytes, and 60 duration samples. Cardano-node retained 60 attempted, 30 accepted, 30 expected-invalid, 0 timed out, 50,820 bytes, and 60 duration samples.</p>
+<p><strong>Meaning:</strong> the Amaru-specific producer/consumer topology used active on-chain Plutus V2 protocol parameters and cost model. Both current runs account for every offered attempt and retain transaction outcome, byte, and duration evidence. Cardano-node also has 60 correlated submit-to-protocol-response, block-inclusion, and chain-adoption samples. Amaru has 60 correlated block-inclusion samples. <strong>Limit:</strong> Amaru submit-to-protocol-response and chain adoption are unavailable because the retained taps do not expose those correlated Amaru boundaries. Mempool visibility is unavailable in both runs. These stages are unavailable rather than zero. VM timing excludes context fetch and wider ledger application. An off-chain cost-model file alone is not the proof.</p>
 </div></details>
 
 <details data-status="proven"><summary>Card 03 — invalid mini-protocol containment and node cost</summary><div class="detail-body">
@@ -138,14 +140,23 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <div class="run-links"><a href="http://127.0.0.1:8787/operate/runs/20260921T045619Z-15e864a0">Amaru run 20260921T045619Z-15e864a0</a><a href="http://127.0.0.1:8787/operate/runs/20260921T045807Z-8e2bbb0e">Cardano run 20260921T045807Z-8e2bbb0e</a></div>
 <p><strong>Meaning:</strong> each real target restarted, passed its three readiness gates, reached exact retained endpoints, and kept health evidence. <strong>Limit:</strong> this is a controlled local recovery range, not a full historical sync benchmark.</p>
 </div></details>
+
+<details data-status="proven"><summary>Card 06 — additive simple-transfer measurement</summary><div class="detail-body">
+<dl class="kv"><dt>Targets</dt><dd>Separate real-node runs: Amaru at <code>d3a6dafcced78f5809a96619e883cf04911d2bdc</code> with <code>nanoseconds-v2</code>, and Cardano-node 11.1.2 at <code>fef83fed01d7926f3de83b3b917be5a4a48768b5</code>.</dd>
+<dt>Workload</dt><dd>Real signed simple payment transactions; seed <code>0x51A9E001</code>; 35 attempts per implementation. Each run offered 30 valid transfers and 5 deliberate duplicate rejections.</dd>
+<dt>Metrics</dt><dd>External attempt, byte, outcome, and duration accounting; protocol response where exposed; block inclusion and chain adoption where correlated; target CPU, RSS, disk I/O, and network activity.</dd>
+<dt>Assertions</dt><dd>35 attempted, 30 accepted, 5 rejected, 0 timed out, 35 duration samples, real-target correlation, continued progress, and no fatal target signal.</dd></dl>
+<div class="run-links"><a href="http://127.0.0.1:8787/operate/runs/20260921T194749Z-26542a57">Amaru transfer run 20260921T194749Z-26542a57</a><a href="http://127.0.0.1:8787/operate/runs/20260921T195334Z-e713d0de">Cardano transfer run 20260921T195334Z-e713d0de</a></div>
+<p><strong>Meaning:</strong> each exact real-node target received a non-vacuous signed simple payment workload through its separate supported topology. Every attempt has a retained known-outcome duration. <strong>Limit:</strong> this is not an automatic Amaru-versus-Cardano benchmark. Amaru submit-to-protocol-response, mempool visibility, and chain adoption are unavailable at a correlated Amaru boundary. Cardano-node mempool visibility and patched TxSubmission residence are unavailable. Missing stages stay unavailable rather than zero.</p>
+</div></details>
 </section>
-<aside class="child-explanation"><b>Child-friendly explanation</b>Each card is a recipe. It says which machine, which messages, which ruler, and which pass rules to use. The saved run links are the completed worksheets.</aside>
+<aside class="child-explanation"><b>Child-friendly explanation</b>Each card is a recipe. The first five recipes are locked. The sixth recipe adds simple payments without changing the first five. The saved run links are the completed worksheets.</aside>
 
 <section class="tech search-unit" id="findings" data-status="partial">
 <div class="eyebrow">05 / findings and resolutions</div><h2>Findings stay visible when later evidence resolves the test path.</h2>
 <div class="grid">
 <div class="card" data-status="partial"><h3>CBOR / preserved finding</h3><p>Frozen Amaru <code>b159172f…</code> failed the 64-byte bound in the exact corpus. DWARF classifies the completed run as a node conformance finding and keeps the failed assertion. The exact upstream fixed revision <code>d3a6dafc…</code> passes the same corpus.</p></div>
-<div class="card" data-status="proven"><h3>Plutus / active-chain resolution</h3><p>The first Amaru topology did not prove an active Plutus V2 cost model. The additive topology uses a Cardano producer and Amaru consumer, pins genesis and parameters, activates the model on chain, and retains real transaction evidence.</p></div>
+<div class="card" data-status="proven"><h3>Plutus / active-chain and accounting resolution</h3><p>The first Amaru topology did not prove an active Plutus V2 cost model. The additive topology uses a Cardano producer and Amaru consumer, pins genesis and parameters, activates the model on chain, and retains real transaction evidence. Fresh separate runs now also account for all 60 offered transactions, bytes, outcomes, and known-outcome durations on each implementation.</p></div>
 <div class="card" data-status="proven"><h3>Forks / semantic correction</h3><p>The old strict raw-event monotonic rule was incorrect because legitimate same-height switches can occur. The new model preserves raw history and evaluates bounded canonical progress, convergence, correlations, and health separately.</p></div>
 <div class="card" data-status="partial"><h3>What resolution does not mean</h3><p>A later pass does not rewrite an earlier failure. A topology repair does not prove every Plutus workload. A converged fork test does not prove freedom from all deep-chain behavior.</p></div>
 </div>
@@ -170,7 +181,7 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <div class="grid">
 <div class="card"><h3>Execution definitions</h3><p><a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/dwarf/profiles/">Profiles</a> · <a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/dwarf/scenarios/">Scenarios</a> · <a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/dwarf/primitives/">Primitives</a></p></div>
 <div class="card"><h3>Collection and targets</h3><p><a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/dwarf/measurements/">Collectors</a> · <a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/dwarf/targets/">Targets and patch manifests</a></p></div>
-<div class="card"><h3>Contracts and schemas</h3><p><a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/dwarf/docs/client-examples/contracts/">Five card contracts</a> · <a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/dwarf/spec/v1/">Schemas</a></p></div>
+<div class="card"><h3>Contracts and schemas</h3><p><a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/dwarf/docs/client-examples/contracts/">Five frozen contracts and additive Card 06</a> · <a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/dwarf/spec/v1/">Schemas</a></p></div>
 <div class="card"><h3>Verification and interface</h3><p><a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/tests/">Tests</a> · <a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/dwarf/dashboard/">Dashboard</a> · <a href="http://127.0.0.1:8787/operate/runs">Run catalog</a></p></div>
 </div>
 </section>
@@ -179,7 +190,7 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <section class="tech search-unit" id="coverage" data-status="partial">
 <div class="eyebrow">08 / coverage ledger</div><h2>Absence and deferral are explicit states, never zeros.</h2>
 <div class="table-wrap"><table><thead><tr><th>Status</th><th>Coverage</th><th>Meaning</th></tr></thead><tbody>
-<tr data-status="proven"><td><span class="pill proven">proven</span></td><td>Five frozen cards; exact independent Amaru and Cardano legs; collection, reporting, browser, export/import.</td><td>Retained accepted evidence exists for the stated boundary.</td></tr>
+<tr data-status="proven"><td><span class="pill proven">proven</span></td><td>Five frozen cards; additive Card 06; complete external workload accounting for the two current Plutus runs; exact separate Amaru and Cardano-node legs; collection, reporting, browser, export/import.</td><td>Retained accepted evidence exists for the stated boundary.</td></tr>
 <tr data-status="partial"><td><span class="pill partial">partial</span></td><td>Historical failed or superseded runs; very small or small distributions; broader workload families.</td><td>Evidence exists, but it cannot support the full claim.</td></tr>
 <tr data-status="unavailable"><td><span class="pill unavailable">unavailable</span></td><td>Metrics not exposed by a target or unrelated to a card can remain unavailable with a recorded reason.</td><td>Unavailable is not zero and is not silently estimated.</td></tr>
 <tr data-status="deferred"><td><span class="pill deferred">deferred</span></td><td>No mixed-node comparison; No stable release threshold; no weekly automation; no presentation walkthrough; no Antithesis or Moog launch.</td><td>No claim or evidence was created for deferred scope.</td></tr>
@@ -192,8 +203,8 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <div class="grid">
 <div class="card"><h3>Source and image identities</h3><p>Amaru v2 image <code>sha256:c3f139e87b4ada079a4dc5c656a2ca06c6dc30ea55719d54bedb772c836de862</code>; Amaru v3 image <code>sha256:d120f9515d5bcc6aa68629e0370fa7bdf5a5612e5d35005aa231d32ab2b7169a</code>; Cardano v2 image <code>sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370</code>.</p></div>
 <div class="card"><h3>Patch and executable identities</h3><p>Amaru v2 patch set <code>4c22d7b0…75de0</code>, executable <code>05233bac…19b78</code>; Amaru v3 patch set <code>042f6b18…aad00</code>, executable <code>6c33df93…dc94c</code>; Cardano v2 patch set <code>1c52fa42…d93c</code>, executable <code>3fb83f12…20eb</code>.</p></div>
-<div class="card"><h3>Seeds and environment</h3><p>Seeds: <code>0xA7561CD0</code>, <code>0x5107A502</code>, <code>0xBAD0C003</code>, <code>0xB10C0004</code>, <code>0x5E570005</code>. Hardware fingerprint: <code>cardano-box-2026-09-19</code>.</p></div>
-<div class="card"><h3>Accepted bundle digests</h3><p>Card 01: <code>6fd2d11f…13440</code>, <code>f856535b…2214</code>. Card 02: <code>bf5604de…7ed0</code>, <code>3a49f5cc…d920</code>. Card 03: <code>01313324…1b81</code>, <code>e2d8bb5b…e4a61</code>. Card 04: <code>f17b4892…c808</code>, <code>c02a192f…af28</code>. Card 05: <code>d0b0bce3…2217</code>, <code>0cf0d4e2…cfce</code>.</p></div>
+<div class="card"><h3>Seeds and environment</h3><p>Seeds: <code>0xA7561CD0</code>, <code>0x5107A502</code>, <code>0xBAD0C003</code>, <code>0xB10C0004</code>, <code>0x5E570005</code>, and Card 06 <code>0x51A9E001</code>. Hardware fingerprint: <code>cardano-box-2026-09-19</code>.</p></div>
+<div class="card"><h3>Accepted bundle digests</h3><p>Card 01: <code>6fd2d11f…13440</code>, <code>f856535b…2214</code>. Card 02 original: <code>bf5604de…7ed0</code>, <code>3a49f5cc…d920</code>. Card 02 accounting: <code>555c9c06…0e466</code>, <code>318bc045…992e6</code>. Card 03: <code>01313324…1b81</code>, <code>e2d8bb5b…e4a61</code>. Card 04: <code>f17b4892…c808</code>, <code>c02a192f…af28</code>. Card 05: <code>d0b0bce3…2217</code>, <code>0cf0d4e2…cfce</code>. Card 06: <code>3242de23…ee67</code>, <code>feafaf46…128c1</code>.</p></div>
 </div>
 <p>Each full run identity also includes scenario and resolved-profile snapshots, target manifest, exact patch manifest, workload digest, environment, raw sources, assertions, report, SARIF and attestation state, and export manifest.</p>
 </section>
@@ -219,6 +230,7 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <div class="card"><h3>Cardano-node highest coverage</h3><p><code>client-example-cbor-decoding-cardano-patched</code>, profile-v, and <code>cardano-security-patched</code> are the broadest single path. Run <a href="http://127.0.0.1:8787/operate/runs/20260920T132629Z-ea000d37"><code>20260920T132629Z-ea000d37</code></a> exercised <strong>8 of 12 configured collectors</strong>, or 8 of 15 implemented definitions with reserved/unprofiled definitions. Missing: restart readiness, workload accounting, Plutus execution, and TxSubmission/mempool.</p></div>
 </div>
 <p>No one scenario exercises every implemented metric. A report can say <strong>all collectors configured</strong> or all configured collectors finalized. It cannot say <strong>all metrics exercised</strong>. The complete 30-definition matrix is in <a href="https://git.gainpalfam.com/DWARF/V7-PRAGMA/src/branch/main/docs/measurement-full-metrics-compatibility-audit.md"><code>docs/measurement-full-metrics-compatibility-audit.md</code></a>.</p>
+<p><strong>Current exercise note:</strong> workload accounting is no longer a program-wide evidence gap. The two Plutus accounting runs and two Card 06 runs exercise it non-vacuously. It remains absent only from the broadest single-run examples above. No one run exercises all definitions.</p>
 </section>
 <aside class="child-explanation"><b>Child-friendly explanation</b>A box of fourteen rulers can be ready, but one test may touch only eight. DWARF says which eight moved and which six did not.</aside>
 
@@ -262,7 +274,7 @@ details{margin:.7rem 0;border:1px solid var(--line);border-radius:8px;background
 <li>Keep new target builds revision-locked with patch-set, executable, image, and manifest digests.</li>
 </ul>
 </section>
-<aside class="child-explanation"><b>Child-friendly explanation</b>The five promised tests are done. The next games need new rules before anyone starts the stopwatch.</aside>
+<aside class="child-explanation"><b>Child-friendly explanation</b>The five promised tests and the added simple-payment test are done. The next games need new rules before anyone starts the stopwatch.</aside>
 
 <footer class="footer">DWARF internal technical debrief · evidence cut 2026-09-21 · source retained in V7-PRAGMA · missing values are never reported as zero.</footer>
 </main></div>
