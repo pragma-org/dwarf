@@ -108,6 +108,23 @@ def test_debrief_links_inventory_and_workbench_evidence():
         assert object_id in html
 
 
+def test_debrief_uses_canonical_dashboard_urls_without_loopback_hosts():
+    html = source()
+    lowered = html.lower()
+    assert "127.0.0.1" not in lowered
+    assert "localhost" not in lowered
+    assert not re.search(r"https?://(?:\[?::1\]?|127(?:\.\d{1,3}){3})(?=[:/])", lowered)
+
+    dashboard_hrefs = re.findall(
+        r'href="([^"]+/(?:learn|operate)(?:/[^"#?]*)?)"', html
+    )
+    assert dashboard_hrefs
+    assert all(
+        href.startswith("https://dwarf.gainpalfam.com/")
+        for href in dashboard_hrefs
+    )
+
+
 def test_debrief_has_accessible_dependency_free_interactions():
     html = source()
     assert '<a class="skip-link" href="#main">' in html
