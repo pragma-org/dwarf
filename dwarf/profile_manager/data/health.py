@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import socket
 import subprocess
 
@@ -144,6 +145,40 @@ def _health_from_body(body, evidence_path=None, returncode=0, stderr=""):
     }
 
 
+def _topology_result_from_body(body):
+    """Return an exact Cardano/Amaru probe result from command output."""
+    for raw in reversed((body or "").splitlines()):
+        try:
+            value = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if (
+            isinstance(value, dict)
+            and value.get("topology_id") == "cardano_amaru"
+            and value.get("state")
+            and isinstance(value.get("observation"), dict)
+        ):
+            return value
+    return None
+
+
+def _amaru_control_health_command(cfg, profile):
+    dwarf_root = str(cfg.remote_dwarf_root or "").strip()
+    if not dwarf_root:
+        return "false # remote_dwarf_root is required for exact topology health"
+    probe = f"{dwarf_root.rstrip('/')}/scripts/check_cardano_amaru_topology.py"
+    output = f"{profile.remote_runtime_root}/evidence/dashboard-health-latest.json"
+    return " ".join([
+        f"cd {shlex.quote(dwarf_root)} &&",
+        "PYTHONPATH=. python3",
+        shlex.quote(probe),
+        "--topology cardano_amaru",
+        f"--project {shlex.quote(profile.compose_project)}",
+        "--sample-seconds 10",
+        f"--output {shlex.quote(output)}",
+    ])
+
+
 def _live_health(profile_id=None):
     if not config_exists():
         return {
@@ -190,7 +225,13 @@ def _live_health(profile_id=None):
             "error": f"profile not found: {profile_id}",
             "health": _health_from_body(""),
         }
-    command = inspect_health_command(profile.remote_runtime_root)
+    from profile_manager.profiles import deployment_adapter_for_profile
+    exact_topology = deployment_adapter_for_profile(profile) == "amaru-control"
+    command = (
+        _amaru_control_health_command(cfg, profile)
+        if exact_topology and not control_shim_enabled()
+        else inspect_health_command(profile.remote_runtime_root)
+    )
     if transport == "local":
         result = _local_command(command, timeout=30)
         health = _health_from_body(result.stdout, returncode=result.returncode, stderr=result.stderr)
@@ -204,7 +245,7 @@ def _live_health(profile_id=None):
     else:
         result = ssh_command(cfg, command, timeout=30)
         health = _health_from_body(result.stdout, returncode=result.returncode, stderr=result.stderr)
-    return {
+    response = {
         "enabled": True,
         "profile_id": profile.id,
         "runtime_root": profile.remote_runtime_root,
@@ -212,6 +253,17 @@ def _live_health(profile_id=None):
         "expected_nodes": profile.node_count + profile.amaru_node_count,
         "health": health,
     }
+    if exact_topology:
+        topology_result = _topology_result_from_body(result.stdout)
+        if topology_result is not None:
+            response["topology_result"] = topology_result
+        else:
+            response["health"] = _health_from_body(
+                result.stdout,
+                returncode=result.returncode or 1,
+                stderr=result.stderr or "The exact topology probe returned invalid JSON.",
+            )
+    return response
 
 
 def _count_active_nodes(stdout: str) -> int:

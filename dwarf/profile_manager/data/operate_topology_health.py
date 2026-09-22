@@ -101,6 +101,13 @@ def classify_current_profile_health(
         "profile_id": first.get("profile_id"), "redeploy_supported": False,
         "evidence_scope": "current_active_profile",
     }
+    topology_result = first.get("topology_result")
+    if isinstance(topology_result, dict) and topology_result.get("state"):
+        return {
+            **topology_result,
+            **base,
+            "observations": [first],
+        }
     if not first.get("enabled"):
         state = first.get("state") or "unknown"
         reason = "no_active_profile" if state == "no_active" else "active_profile_probe_failed"

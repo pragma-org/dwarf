@@ -517,6 +517,30 @@ def test_control_shim_builds_profile_scoped_health_command(tmp_path):
     assert missing.returncode == 77
 
 
+def test_control_shim_uses_exact_topology_probe_for_amaru_control_profile(tmp_path):
+    shim = tmp_path / "dwarf-deploy-shim"
+    shutil.copy2(ROOT / "delivery/control-plane/dwarf-deploy-shim.py", shim)
+    (tmp_path / "dwarf-control.conf").write_text(
+        f"DWARF_ROOT={ROOT / 'dwarf'}\n", encoding="utf-8"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, str(shim)], text=True, capture_output=True, check=False,
+        env={
+            **dict(os.environ),
+            "SSH_ORIGINAL_COMMAND": (
+                "profile-health profile-w-amaru-measurement-plutus-v2 --dry-run"
+            ),
+        },
+    )
+
+    assert completed.returncode == 0
+    assert "check_cardano_amaru_topology.py" in completed.stdout
+    assert "--project dwarf-profile-w-amaru-measurement-plutus-v2" in completed.stdout
+    assert "--sample-seconds 10" in completed.stdout
+    assert "dashboard-health-latest.json" in completed.stdout
+
+
 def test_control_shim_allows_only_fixed_topology_redeploy_id(tmp_path):
     shim = tmp_path / "dwarf-deploy-shim"
     shutil.copy2(ROOT / "delivery/control-plane/dwarf-deploy-shim.py", shim)

@@ -7,6 +7,7 @@ from profile_manager.data.coverage import scenario_census
 from profile_manager.data.learn_api import html_route_groups
 from profile_manager.dashboard import dashboard_serve_text, dispatch_api_request, render_dashboard_html
 from profile_manager.data import operate_topology_health
+from profile_manager.data import health as health_data
 from profile_manager.data.health import active_profile_ids
 from profile_manager.profiles import active_profile_command
 from profile_manager.inspect import inspect_health_command
@@ -300,6 +301,50 @@ def test_current_topology_health_requires_exact_readiness_and_progress():
     assert result["profile_id"] == "profile-v-cardano-measurement-nanoseconds-v2"
     assert result["reason_code"] == "active_profile_ready_and_progressing"
     assert result["redeploy_supported"] is False
+
+
+def test_current_topology_health_uses_exact_managed_topology_probe_result():
+    sample = {
+        "enabled": True,
+        "profile_id": "profile-w-amaru-measurement-plutus-v2",
+        "topology_result": {
+            "state": "healthy",
+            "reason_code": "all_mixed_readiness_gates_passed",
+            "checked_at": "2026-09-22T14:20:00Z",
+            "reference_tip": {"slot": 2000, "block": 400, "syncProgress": "100.00"},
+            "consumer_lag_slots": 0,
+            "sample_count": 2,
+            "evidence_path": "/opt/dwarf/cardano-profiles/profile-w/evidence/dashboard-health.json",
+        },
+    }
+
+    result = operate_topology_health.classify_current_profile_health(sample, None)
+
+    assert result["state"] == "healthy"
+    assert result["reason_code"] == "all_mixed_readiness_gates_passed"
+    assert result["profile_id"] == "profile-w-amaru-measurement-plutus-v2"
+    assert result["reference_tip"]["slot"] == 2000
+    assert result["consumer_lag_slots"] == 0
+    assert result["evidence_scope"] == "current_active_profile"
+    assert result["redeploy_supported"] is False
+
+
+def test_profile_health_parses_exact_topology_probe_json():
+    parser = getattr(health_data, "_topology_result_from_body", None)
+    assert parser is not None
+    body = "probe preface\n" + json.dumps({
+        "schema_version": 1,
+        "topology_id": "cardano_amaru",
+        "state": "healthy",
+        "reason_code": "all_mixed_readiness_gates_passed",
+        "observation": {"compose_project": "dwarf-profile-w"},
+    }) + "\n"
+
+    result = parser(body)
+
+    assert result["state"] == "healthy"
+    assert result["observation"]["compose_project"] == "dwarf-profile-w"
+    assert parser("INSPECT_VIEW=health\ncardano_node_processes=3\n") is None
 
 
 def test_current_topology_health_does_not_hide_no_active_or_stalled_state():

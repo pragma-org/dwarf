@@ -294,7 +294,25 @@ def main() -> int:
             profile = find_profile(arg)
         except KeyError:
             return _reject(conf, original, "unknown-profile")
-        script = inspect_health_command(profile.remote_runtime_root)
+        from profile_manager.profiles import deployment_adapter_for_profile
+
+        if deployment_adapter_for_profile(profile) == "amaru-control":
+            output = (
+                Path(profile.remote_runtime_root)
+                / "evidence"
+                / "dashboard-health-latest.json"
+            )
+            probe = Path(dwarf_root) / "scripts" / "check_cardano_amaru_topology.py"
+            script = (
+                f"cd {shlex.quote(str(dwarf_root))} && "
+                f"PYTHONPATH=. python3 {shlex.quote(str(probe))} "
+                "--topology cardano_amaru "
+                f"--project {shlex.quote(profile.compose_project)} "
+                "--sample-seconds 10 "
+                f"--output {shlex.quote(str(output))}"
+            )
+        else:
+            script = inspect_health_command(profile.remote_runtime_root)
     elif verb == "topology-redeploy":
         state_dir = conf.get("STATE_DIR")
         if not state_dir:
