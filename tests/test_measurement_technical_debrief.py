@@ -204,13 +204,10 @@ def test_debrief_classifies_live_demonstrations_and_exact_run_recipes():
         assert scenario_id in html
         assert f"https://dwarf.gainpalfam.com/operate/scenarios/{scenario_id}" in html
     for value in (
-        "Ready on the currently active topology now",
-        "No scenario is ready now",
-        "Ready after an explicit supported profile redeployment through /run",
+        "Check readiness for the selected profile before a run",
+        "Supported demonstrations; deploy the selected profile through /run when required",
         "Do not use for the live demonstration",
         "profile-w-amaru-measurement-plutus-v2",
-        "active_profile_readiness_failed",
-        "Process, socket, or listener counts do not match the active profile.",
         "Best Amaru demo",
         "Best Cardano demo",
         "profile-y-amaru-block-application-nanoseconds-v3",
@@ -218,12 +215,28 @@ def test_debrief_classifies_live_demonstrations_and_exact_run_recipes():
         "amaru-security-patched",
         "cardano-security-patched",
         "Scenario passed previously",
-        "does not mean ready on this active deployment now",
+        "does not replace the selected profile’s readiness contract",
     ):
         assert value in html
     for step in range(1, 11):
         assert html.count(f"Step {step:02d} —") >= 2
     assert html.count("Start local run") >= 2
+
+
+def test_debrief_does_not_turn_generic_topology_counts_into_scenario_readiness():
+    html = source()
+    for misleading_claim in (
+        "Ready on the currently active topology now",
+        "No scenario is ready now",
+        "No demonstration is ready until redeployment",
+        "active_profile_readiness_failed",
+        "Process, socket, or listener counts do not match the active profile.",
+        "expected one node but observed 12 processes",
+    ):
+        assert misleading_claim not in html
+    assert "The generic topology count check is not a scenario readiness verdict." in html
+    assert "Use the selected profile’s supported readiness contract before a run." in html
+    assert "does not prove that a retained scenario failed" in html
 
 
 def test_debrief_has_accessible_dependency_free_interactions():
