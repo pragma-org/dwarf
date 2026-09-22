@@ -3368,7 +3368,7 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
         # need the Advanced density treatment); the Basic preference persists.
         BASIC_NATIVE_EXACT = {
             "/", "/operate", "/operate/runs", "/operate/status",
-            "/learn", "/learn/getting-started", "/learn/overview", "/learn/glossary",
+            "/learn", "/learn/getting-started", "/learn/glossary",
             "/run",
         }
         BASIC_NATIVE_PREFIXES = ("/operate/runs/", "/runs/")

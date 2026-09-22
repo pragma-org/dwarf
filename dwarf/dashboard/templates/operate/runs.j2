@@ -7,7 +7,7 @@
 <hr class="hairline">
 
 {% if families %}
-<section class="issue-families" aria-labelledby="issue-families-heading">
+<section class="issue-families adv-only" aria-labelledby="issue-families-heading">
   <header class="issue-families__head">
     <span class="eyebrow">Issue families</span>
     <h2 id="issue-families-heading">Runtime-anomaly families across recent runs</h2>
@@ -70,6 +70,7 @@
 </form>
 
 <div class="responsive-table runs-table-wrap">
+{% if ui == "basic" %}<p class="b-note" style="margin:6px 0 14px">Recent runs, newest first. Filter by verdict above; open a run for its evidence. <a class="b-adv-link" href="/operate/runs?view=advanced">Anomaly-family analysis in Advanced &rarr;</a></p>{% endif %}
 <table class="runs-table" data-active-status="">
   <thead>
     <tr>

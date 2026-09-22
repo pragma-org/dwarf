@@ -189,7 +189,8 @@
 
 <hr class="hairline">
 
-<section class="status-wallets" aria-labelledby="wallets-heading">
+{% if ui == "basic" %}<p class="b-adv-status"><a class="b-adv-link" href="{{ request_path or '/' }}?view=advanced">Wallet, configuration runes, the full profile catalogue, backup &amp; teardown &mdash; in Advanced &rarr;</a></p>{% endif %}
+<section class="status-wallets adv-only" aria-labelledby="wallets-heading">
   <header><span class="eyebrow">Wallet</span><h2 id="wallets-heading">Connected wallet</h2>
     <p class="page-subhero">Public wallet telemetry for Moog/Cardano operations. Wallet secrets never appear here.</p>
   </header>
@@ -230,7 +231,7 @@
 
 <hr class="hairline">
 
-<section class="flask-runes" aria-labelledby="runes-heading">
+<section class="flask-runes adv-only" aria-labelledby="runes-heading">
   <header><span class="eyebrow">Inscriptions</span><h2 id="runes-heading">Configuration runes</h2>
     <p class="page-subhero">Etched into the chamber walls. Click a value to copy. To re-write the inscriptions, run <code>cardano-profile intake</code> from a terminal.</p>
   </header>
@@ -257,7 +258,7 @@
 {% if profiles %}
 <hr class="hairline">
 
-<section class="status-profiles" aria-labelledby="profiles-heading">
+<section class="status-profiles adv-only" aria-labelledby="profiles-heading">
   <header><span class="eyebrow">Profiles</span><h2 id="profiles-heading">Catalogued profiles</h2>
     <p class="page-subhero">Every profile <code>cardano-profile</code> can deploy. The active row glows.</p>
   </header>
@@ -287,7 +288,7 @@
 
 <hr class="hairline">
 
-<section class="maintenance" aria-labelledby="maint-heading">
+<section class="maintenance adv-only" aria-labelledby="maint-heading">
   <span class="eyebrow">Operate · Maintenance</span>
   <h2 id="maint-heading">Backup &amp; recovery</h2>
   <p class="page-subhero">Back up DWARF's own control-plane state — scenarios, target manifests, profiles, config, plugin roots. This is not blockchain data; it is what you'd restore to stand this framework back up on a new host or after a bad config change.</p>
