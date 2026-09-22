@@ -121,7 +121,9 @@
   --radius-lg: 8px;
 
   /* ---- Layout ------------------------------------------------------ */
-  --measure: 1080px;
+  --page:        1600px;
+  --page-gutter: clamp(16px, 3vw, 40px);
+  --measure:     72ch;
 
   /* ---- HUD trace overlay (page atmosphere) ------------------------- */
   /* Subtle: visible enough to register as "HUD", quiet enough that text
@@ -140,7 +142,7 @@ body[data-density="dense"] {
 body[data-density="reading"] {
   --type-base:       17px;
   --leading-default: 1.6;
-  --measure:         720px;
+  --measure:         68ch;
 }
 
-body[data-density="reading"][data-layout="wide"] { --measure: 1100px; }
+body[data-layout="wide"] { --page: 100%; }

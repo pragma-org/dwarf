@@ -1,0 +1,22 @@
+{# ============================================================
+   Bento Noir — section sub-navigation.
+
+   Renders the EXISTING sub_nav catalogue that templating.render()
+   already injects (profile_manager/data/sub_nav.py). That data was
+   built in slice 34 and highlighted by `active_sub`, but nothing
+   rendered it — this partial turns it on.
+
+   No new context is required. Views that don't set `active` get an
+   empty sub_nav and this renders nothing.
+   ============================================================ #}
+{% if sub_nav and sub_nav.chips %}
+<div class="snav">
+  <nav class="sitems" aria-label="{{ sub_nav.section|capitalize }} sections">
+    {% for item in sub_nav.chips %}
+      <a href="{{ item.url }}"
+         class="sn{{ ' on' if active_sub == item.slug }}"
+         {% if active_sub == item.slug %}aria-current="page"{% endif %}>{{ item.label }}</a>
+    {% endfor %}
+  </nav>
+</div>
+{% endif %}

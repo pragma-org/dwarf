@@ -1,0 +1,1259 @@
+/* ============================================================
+   BENTO NOIR — DWARF dashboard skin
+   ------------------------------------------------------------
+   This restyles the EXISTING markup. No template is rewritten, so
+   no content can be lost by adopting it.
+
+   Every rule is scoped to body[data-ui="bento"]. Without that
+   attribute the file is inert, which makes rollout per-route and
+   rollback a one-line revert.
+
+   Palette is dwarf/dashboard/static/css/tokens.css verbatim —
+   --obsidian-*, --cyan-*, --crimson-*, --cork, --ink-*.
+   The system has exactly three hues and no green, so PASS takes
+   the brand cyan and non-semantic figures separate by VALUE.
+   ============================================================ */
+
+body[data-ui="bento"] {
+  --bn-r:       18px;
+  --bn-r-sm:    10px;
+  --bn-r-xs:     6px;
+  --bn-gap:     12px;
+  --bn-line:    var(--cyan-trace);
+  --bn-line-2:  rgba(43, 224, 224, 0.34);
+  --bn-glow:    0 0 34px -14px rgba(43, 224, 224, 0.45);
+  --bn-pass:    var(--cyan-primary);
+  --bn-fail:    var(--crimson-glow);
+  --bn-error:   var(--cork);
+
+  background-color: var(--obsidian-0);
+  background-image:
+    repeating-linear-gradient(0deg, var(--hud-trace-color) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse 80% 55% at 50% -8%, rgba(21, 100, 105, 0.30), transparent 72%);
+  background-attachment: fixed;
+}
+
+/* ---------------------------------------------------------- hero */
+body[data-ui="bento"] .shell-main > h1,
+body[data-ui="bento"] .page-hero h1 {
+  font-size: clamp(25px, 3.4vw, 36px);
+  letter-spacing: -0.022em;
+  line-height: 1.1;
+  margin: 0 0 10px;
+}
+body[data-ui="bento"] .lede,
+body[data-ui="bento"] .page-subhero {
+  color: var(--ink-secondary);
+  font-size: 15px;
+  line-height: 1.62;
+  max-width: var(--measure);
+}
+body[data-ui="bento"] .eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--cyan-primary);
+  font-weight: 600;
+}
+/* a section eyebrow gets a trailing rule so bands read as bands */
+body[data-ui="bento"] .landing-section > .eyebrow,
+body[data-ui="bento"] section > .eyebrow:first-child {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 26px 0 12px;
+}
+body[data-ui="bento"] .landing-section > .eyebrow::after,
+body[data-ui="bento"] section > .eyebrow:first-child::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--bn-line);
+}
+body[data-ui="bento"] .hairline { display: none; }
+
+/* ---------------------------------------------------------- the bento grid */
+body[data-ui="bento"] .tile-grid,
+body[data-ui="bento"] .learn-tile-grid,
+body[data-ui="bento"] .status-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: var(--bn-gap);
+  align-items: stretch;
+}
+/* Tile AREA encodes importance. A data tile carries a metric, so it
+   claims more area than a navigation tile. This is the whole idea. */
+body[data-ui="bento"] .tile-grid > *        { grid-column: span 3; }
+body[data-ui="bento"] .tile-grid > .tile--data { grid-column: span 4; }
+body[data-ui="bento"] .tile-grid > .tile--data:first-child { grid-column: span 4; grid-row: span 2; }
+body[data-ui="bento"] .learn-tile-grid > *  { grid-column: span 4; }
+body[data-ui="bento"] .learn-tile-grid > :first-child { grid-column: span 6; }
+body[data-ui="bento"] .learn-tile-grid > :nth-child(2) { grid-column: span 6; }
+body[data-ui="bento"] .status-tile-grid > * { grid-column: span 3; }
+
+@media (max-width: 1180px) {
+  body[data-ui="bento"] .tile-grid > *,
+  body[data-ui="bento"] .learn-tile-grid > *,
+  body[data-ui="bento"] .status-tile-grid > * { grid-column: span 6; }
+  body[data-ui="bento"] .tile-grid > .tile--data:first-child,
+  body[data-ui="bento"] .learn-tile-grid > :first-child,
+  body[data-ui="bento"] .learn-tile-grid > :nth-child(2) { grid-column: span 12; grid-row: auto; }
+}
+@media (max-width: 720px) {
+  body[data-ui="bento"] .tile-grid > *,
+  body[data-ui="bento"] .learn-tile-grid > *,
+  body[data-ui="bento"] .status-tile-grid > * { grid-column: span 12; grid-row: auto; }
+}
+
+/* ---------------------------------------------------------- tiles */
+body[data-ui="bento"] .tile,
+body[data-ui="bento"] .learn-tile,
+body[data-ui="bento"] .status-tile {
+  display: flex;
+  flex-direction: column;
+  background: var(--obsidian-1);
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r);
+  padding: 19px 20px;
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+  transition: border-color 0.16s, transform 0.16s, box-shadow 0.16s;
+  min-width: 0;
+}
+body[data-ui="bento"] a.tile:hover,
+body[data-ui="bento"] a.learn-tile:hover,
+body[data-ui="bento"] a.status-tile:hover {
+  border-color: var(--bn-line-2);
+  transform: translateY(-2px);
+  box-shadow: var(--bn-glow);
+  text-decoration: none;
+}
+/* one accent glow, on the lead tile only */
+body[data-ui="bento"] .tile-grid > .tile--data:first-child::after {
+  content: "";
+  position: absolute;
+  inset: auto -28% -52% auto;
+  width: 210px; height: 210px;
+  border-radius: 50%;
+  background: var(--cyan-primary);
+  filter: blur(54px);
+  opacity: 0.26;
+  pointer-events: none;
+}
+
+body[data-ui="bento"] .tile__eyebrow,
+body[data-ui="bento"] .learn-tile__eyebrow,
+body[data-ui="bento"] .status-tile__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-tertiary);
+  margin-bottom: 10px;
+  display: block;
+}
+/* The figure is the display type. Nothing else is allowed to be large. */
+body[data-ui="bento"] .tile__metric,
+body[data-ui="bento"] .status-tile__metric {
+  font-family: var(--font-mono);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 0.94;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-primary);
+  display: block;
+}
+body[data-ui="bento"] .tile-grid > .tile--data:first-child .tile__metric {
+  font-size: clamp(42px, 5vw, 66px);
+  color: var(--cyan-primary);
+}
+/* a "metric" that is really a label must not pretend to be a number */
+body[data-ui="bento"] .tile__metric--label,
+body[data-ui="bento"] .tile__metric--code,
+body[data-ui="bento"] .status-tile__metric--label,
+body[data-ui="bento"] .status-tile__metric--code {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+  color: var(--ink-primary);
+  overflow-wrap: anywhere;
+}
+/* a code-shaped value stays monospace but never display-sized */
+body[data-ui="bento"] .tile__metric--code,
+body[data-ui="bento"] .status-tile__metric--code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--cyan-glow);
+}
+body[data-ui="bento"] .learn-tile__title {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.28;
+  letter-spacing: -0.008em;
+  color: var(--ink-primary);
+  margin: 0 0 6px;
+  display: block;
+}
+body[data-ui="bento"] .tile__sub,
+body[data-ui="bento"] .learn-tile__sub,
+body[data-ui="bento"] .status-tile__sub {
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  line-height: 1.48;
+  margin-top: 9px;
+  display: block;
+}
+body[data-ui="bento"] .tile__sub-pass  { color: var(--bn-pass); }
+body[data-ui="bento"] .tile__sub-fail  { color: var(--bn-fail); }
+body[data-ui="bento"] .tile__sub-muted { color: var(--ink-tertiary); }
+body[data-ui="bento"] .tile__sub-sep   { color: var(--ink-disabled); }
+
+body[data-ui="bento"] .tile__bar {
+  display: block;
+  height: 6px;
+  background: var(--obsidian-3);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+body[data-ui="bento"] .tile__bar-fill {
+  display: block; height: 100%;
+  background: var(--cyan-primary);
+  border-radius: 4px;
+}
+body[data-ui="bento"] .tile__bar-caption {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--ink-tertiary);
+  margin-top: 7px;
+  display: block;
+}
+body[data-ui="bento"] .status-tile__rows { margin-top: 10px; }
+
+/* ---------------------------------------------------------- status pills */
+body[data-ui="bento"] .pill,
+body[data-ui="bento"] .result-pill {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: var(--bn-r-xs);
+  white-space: nowrap;
+  display: inline-block;
+  background: var(--obsidian-3);
+  color: var(--ink-tertiary);
+  border: 0;
+}
+body[data-ui="bento"] .result-pill--pass,
+body[data-ui="bento"] .pill--pass,
+body[data-ui="bento"] .pill--ok {
+  background: rgba(43, 224, 224, 0.12); color: var(--bn-pass);
+}
+body[data-ui="bento"] .result-pill--fail,
+body[data-ui="bento"] .pill--fail,
+body[data-ui="bento"] .pill--danger {
+  background: rgba(192, 48, 48, 0.20); color: var(--bn-fail);
+}
+body[data-ui="bento"] .result-pill--error,
+body[data-ui="bento"] .pill--warn,
+body[data-ui="bento"] .pill--pending {
+  background: rgba(181, 138, 79, 0.16); color: var(--bn-error);
+}
+
+/* ---------------------------------------------------------- buttons */
+body[data-ui="bento"] .cta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 8px 14px;
+  border-radius: var(--bn-r-sm);
+  border: 1px solid var(--cyan-primary);
+  background: var(--cyan-primary);
+  color: var(--obsidian-0);
+  font-weight: 700;
+  text-decoration: none;
+  display: inline-block;
+}
+body[data-ui="bento"] .cta:hover { filter: brightness(1.08); text-decoration: none; }
+body[data-ui="bento"] .cta--ghost {
+  background: var(--obsidian-2);
+  border-color: var(--obsidian-4);
+  color: var(--ink-secondary);
+  font-weight: 400;
+}
+body[data-ui="bento"] .cta--ghost:hover {
+  border-color: var(--cyan-primary); color: var(--ink-primary); filter: none;
+}
+
+/* ---------------------------------------------------------- filter bar */
+body[data-ui="bento"] .filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  background: var(--obsidian-1);
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm);
+  padding: 12px 14px;
+  margin-bottom: var(--bn-gap);
+}
+body[data-ui="bento"] .filter-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--cyan-primary);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+body[data-ui="bento"] .filter-pills a,
+body[data-ui="bento"] .filter-bar a,
+body[data-ui="bento"] .filter-bar button {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--obsidian-4);
+  background: transparent;
+  color: var(--ink-tertiary);
+  text-decoration: none;
+}
+body[data-ui="bento"] .filter-bar a.active,
+body[data-ui="bento"] .filter-bar a[aria-current] {
+  background: var(--cyan-primary);
+  border-color: var(--cyan-primary);
+  color: var(--obsidian-0);
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------- tables */
+body[data-ui="bento"] .responsive-table,
+body[data-ui="bento"] .config-table {
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm);
+  /* overflow-x must stay scrollable — `overflow: hidden` here clips wide
+     tables on narrow screens instead of letting them scroll. */
+  overflow-x: auto;
+  overflow-y: visible;
+}
+body[data-ui="bento"] table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+body[data-ui="bento"] thead th {
+  background: var(--obsidian-2);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cyan-primary);
+  text-align: left;
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--bn-line);
+  font-weight: 600;
+  /* headers wrap: forcing nowrap widened dense matrix tables enough to
+     push one more of them into horizontal scroll. */
+}
+body[data-ui="bento"] tbody td {
+  padding: 9px 13px;
+  border-bottom: 1px solid rgba(43, 224, 224, 0.07);
+}
+body[data-ui="bento"] tbody tr:last-child td { border-bottom: 0; }
+body[data-ui="bento"] tbody tr:hover { background: var(--obsidian-2); }
+
+/* ---------------------------------------------------------- empty states */
+body[data-ui="bento"] .empty-section-statement {
+  background: var(--obsidian-1);
+  border: 1px solid var(--bn-line);
+  border-left: 2px solid var(--cork);
+  border-radius: 0 var(--bn-r-sm) var(--bn-r-sm) 0;
+  padding: 14px 17px;
+  color: var(--ink-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+body[data-ui="bento"] .empty-section-statement__cite {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-tertiary);
+  display: block;
+  margin-top: 6px;
+}
+
+/* ---------------------------------------------------------- forms */
+body[data-ui="bento"] .definition-field label,
+body[data-ui="bento"] .definition-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-tertiary);
+}
+body[data-ui="bento"] .shell-main input:not([type="checkbox"]):not([type="radio"]),
+body[data-ui="bento"] .shell-main select,
+body[data-ui="bento"] .shell-main textarea {
+  background: var(--obsidian-0);
+  border: 1px solid var(--obsidian-4);
+  color: var(--ink-primary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  padding: 8px 10px;
+  border-radius: var(--bn-r-sm);
+}
+body[data-ui="bento"] .shell-main input:focus,
+body[data-ui="bento"] .shell-main select:focus,
+body[data-ui="bento"] .shell-main textarea:focus {
+  outline: none; border-color: var(--cyan-primary);
+}
+body[data-ui="bento"] .definition-summary {
+  background: var(--obsidian-1);
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm);
+  padding: 14px 16px;
+}
+
+/* ---------------------------------------------------------- code */
+body[data-ui="bento"] pre,
+body[data-ui="bento"] .run-payload-pre {
+  background: var(--obsidian-0);
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm);
+  padding: 13px 15px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  overflow-x: auto;
+}
+
+/* ---------------------------------------------------------- chrome */
+body[data-ui="bento"] .shell-header {
+  background: rgba(6, 8, 11, 0.94);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--bn-line);
+}
+body[data-ui="bento"] .shell-nav a {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.07em;
+  padding: 6px 13px;
+  border-radius: var(--bn-r-sm);
+  border: 1px solid transparent;
+}
+body[data-ui="bento"] .shell-nav a.active {
+  color: var(--cyan-primary);
+  background: var(--cyan-tint);
+  border-color: var(--bn-line);
+  font-weight: 600;
+}
+/* the drifting motes belong to the old shell; the HUD trace replaces them */
+body[data-ui="bento"] .substrate-motes { display: none; }
+
+/* ---------------------------------------------------------- section sub-nav */
+body[data-ui="bento"] .snav {
+  position: sticky;
+  top: 0;
+  z-index: 35;
+  background: rgba(6, 8, 11, 0.94);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--bn-line);
+  margin-bottom: 8px;
+}
+body[data-ui="bento"] .sitems {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 7px var(--page-gutter);
+  width: min(100%, var(--page));
+  margin: 0 auto;
+}
+body[data-ui="bento"] .sitems::-webkit-scrollbar { display: none; }
+body[data-ui="bento"] .sn {
+  font-size: 12.5px;
+  padding: 6px 11px;
+  border-radius: var(--bn-r-sm);
+  color: var(--ink-tertiary);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-block;
+}
+body[data-ui="bento"] .sn:hover {
+  color: var(--ink-primary); background: var(--obsidian-1); text-decoration: none;
+}
+body[data-ui="bento"] .sn.on {
+  color: var(--cyan-primary); background: var(--cyan-tint); font-weight: 600;
+}
+body[data-ui="bento"] .sdiv {
+  width: 1px; height: 16px; background: var(--obsidian-4); margin: 0 8px; flex: 0 0 auto;
+}
+body[data-ui="bento"] .smenu { position: relative; flex: 0 0 auto; }
+body[data-ui="bento"] .smenu > summary { list-style: none; }
+body[data-ui="bento"] .smenu > summary::-webkit-details-marker { display: none; }
+body[data-ui="bento"] .smenu-p {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 210px;
+  background: var(--obsidian-2);
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm);
+  padding: 6px;
+  z-index: 50;
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.9);
+}
+body[data-ui="bento"] .smenu-p a {
+  display: block;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  border-radius: var(--bn-r-xs);
+  text-decoration: none;
+  white-space: nowrap;
+}
+body[data-ui="bento"] .smenu-p a:hover {
+  background: var(--obsidian-3); color: var(--ink-primary); text-decoration: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-ui="bento"] * { transition: none !important; }
+}
+
+/* ---------------------------------------------------------- narrow tables
+   Some tables (the coverage matrices) are not wrapped in a scroll
+   container, so on a phone they were clipped and their right-hand columns
+   were unreachable. This pre-dates Bento Noir; the skin fixes it by making
+   any unwrapped table its own scroll container below the tablet breakpoint. */
+@media (max-width: 860px) {
+  body[data-ui="bento"] .shell-main table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ============================================================
+   STATUS PILLS — colour by meaning
+   ------------------------------------------------------------
+   tokens.css ships three hues (cyan / crimson / cork) and no
+   green, which is not enough to separate six primitive families
+   from four validity states. These four extra hues are declared
+   here, inside the bento scope only, so tokens.css stays the
+   single source of truth for the product palette.
+   Each is tuned to sit on obsidian at the same perceived weight
+   as --cyan-primary.
+   ============================================================ */
+body[data-ui="bento"] {
+  --bn-jade:   #4FD9A0;  /* verified / valid            */
+  --bn-violet: #9B8CFF;  /* observation / probe         */
+  --bn-azure:  #5AA9FF;  /* load / traffic              */
+  --bn-slate:  #7C8B96;  /* inert / read-only           */
+}
+
+/* base tag: readable, not shouty */
+body[data-ui="bento"] .pill,
+body[data-ui="bento"] .result-pill {
+  background: rgba(124, 139, 150, 0.14);
+  color: var(--ink-secondary);
+  border: 1px solid transparent;
+}
+
+/* --- validity ------------------------------------------------ */
+body[data-ui="bento"] .pill--v-valid,
+body[data-ui="bento"] .pill--v-catalog-valid,
+body[data-ui="bento"] .pill--v-ok,
+body[data-ui="bento"] .pill--v-verified,
+body[data-ui="bento"] .pill--v-clear,
+body[data-ui="bento"] .pill--v-passed {
+  background: rgba(79, 217, 160, 0.14); color: var(--bn-jade);
+  border-color: rgba(79, 217, 160, 0.30);
+}
+/* --- problems ------------------------------------------------ */
+body[data-ui="bento"] .pill--v-unresolved,
+body[data-ui="bento"] .pill--v-missing,
+body[data-ui="bento"] .pill--v-invalid,
+body[data-ui="bento"] .pill--v-failed,
+body[data-ui="bento"] .pill--v-error {
+  background: rgba(192, 48, 48, 0.20); color: var(--crimson-glow);
+  border-color: rgba(224, 72, 72, 0.34);
+}
+/* --- attention / in flight ----------------------------------- */
+body[data-ui="bento"] .pill--v-blocked,
+body[data-ui="bento"] .pill--v-pending,
+body[data-ui="bento"] .pill--v-stale,
+body[data-ui="bento"] .pill--v-partial,
+body[data-ui="bento"] .pill--v-writable {
+  background: rgba(181, 138, 79, 0.18); color: var(--cork);
+  border-color: rgba(181, 138, 79, 0.34);
+}
+/* --- inert --------------------------------------------------- */
+body[data-ui="bento"] .pill--v-readonly,
+body[data-ui="bento"] .pill--v-shipped-read-only,
+body[data-ui="bento"] .pill--v-none,
+body[data-ui="bento"] .pill--v-inert {
+  background: rgba(124, 139, 150, 0.12); color: var(--bn-slate);
+}
+
+/* --- primitive families: six, each its own hue --------------- */
+body[data-ui="bento"] .pill--v-setup {
+  background: rgba(21, 100, 105, 0.34); color: var(--cyan-glow);
+  border-color: rgba(43, 224, 224, 0.28);
+}
+body[data-ui="bento"] .pill--v-load {
+  background: rgba(90, 169, 255, 0.16); color: var(--bn-azure);
+  border-color: rgba(90, 169, 255, 0.30);
+}
+body[data-ui="bento"] .pill--v-probe {
+  background: rgba(155, 140, 255, 0.16); color: var(--bn-violet);
+  border-color: rgba(155, 140, 255, 0.30);
+}
+body[data-ui="bento"] .pill--v-assertion {
+  background: rgba(79, 217, 160, 0.14); color: var(--bn-jade);
+  border-color: rgba(79, 217, 160, 0.30);
+}
+body[data-ui="bento"] .pill--v-fault {
+  background: rgba(192, 48, 48, 0.18); color: var(--crimson-glow);
+  border-color: rgba(224, 72, 72, 0.30);
+}
+body[data-ui="bento"] .pill--v-teardown {
+  background: rgba(124, 139, 150, 0.16); color: var(--bn-slate);
+  border-color: rgba(124, 139, 150, 0.28);
+}
+/* a family pill is the row's primary key — give it a touch more weight */
+body[data-ui="bento"] .pill--family { font-weight: 700; letter-spacing: 0.11em; }
+
+/* --- filter chips: pressed state reads as selected ----------- */
+body[data-ui="bento"] button.pill {
+  cursor: pointer;
+  border: 1px solid var(--obsidian-4);
+  background: transparent;
+  color: var(--ink-tertiary);
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+body[data-ui="bento"] button.pill:hover {
+  color: var(--ink-primary); border-color: var(--cyan-trace);
+}
+body[data-ui="bento"] button.pill[aria-pressed="true"] {
+  background: var(--cyan-primary);
+  border-color: var(--cyan-primary);
+  color: var(--obsidian-0);
+  font-weight: 700;
+}
+body[data-ui="bento"] .asset-pill-row {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+}
+
+/* ============================================================
+   SUBPAGE ROWS — catalogue lists were unstyled text
+   ============================================================ */
+body[data-ui="bento"] .scenario-row,
+body[data-ui="bento"] .profile-catalog__row,
+body[data-ui="bento"] .learn-trouble__item,
+body[data-ui="bento"] .plugin-card,
+body[data-ui="bento"] .plugin-primitive {
+  background: var(--obsidian-1);
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm);
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  transition: border-color 0.14s, background 0.14s;
+}
+body[data-ui="bento"] .scenario-row:hover,
+body[data-ui="bento"] .profile-catalog__row:hover,
+body[data-ui="bento"] .plugin-card:hover {
+  border-color: var(--bn-line-2);
+  background: var(--obsidian-2);
+}
+body[data-ui="bento"] .scenario-row__head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+body[data-ui="bento"] .scenario-row__id code,
+body[data-ui="bento"] .scenario-row__id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--cyan-glow);
+  background: var(--cyan-tint);
+  padding: 2px 7px;
+  border-radius: var(--bn-r-xs);
+}
+body[data-ui="bento"] .scenario-row__runtime {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--bn-r-xs);
+  background: rgba(90, 169, 255, 0.14);
+  color: var(--bn-azure);
+}
+body[data-ui="bento"] .scenario-row__title {
+  display: block;
+  margin-top: 7px;
+  color: var(--ink-primary);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+body[data-ui="bento"] .catalog-row-actions {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px;
+}
+body[data-ui="bento"] .catalog-row-actions a {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: var(--bn-r-xs);
+  border: 1px solid var(--obsidian-4);
+  color: var(--ink-secondary);
+  text-decoration: none;
+}
+body[data-ui="bento"] .catalog-row-actions a:hover {
+  border-color: var(--cyan-primary); color: var(--cyan-primary); text-decoration: none;
+}
+body[data-ui="bento"] .profile-catalog__mobile-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-tertiary);
+}
+body[data-ui="bento"] .learn-trouble__symptom {
+  color: var(--crimson-glow); font-weight: 600;
+}
+body[data-ui="bento"] .learn-trouble__fix { color: var(--bn-jade); }
+body[data-ui="bento"] .learn-glossary__see {
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-tertiary);
+}
+body[data-ui="bento"] .muted { color: var(--ink-tertiary); }
+
+/* ============================================================
+   PROSE / REFERENCE PAGES
+   Most /learn/* routes are bare semantic HTML — section, h2, dl,
+   details, code — so nothing above matched them and they were
+   inheriting base.css only. This gives them the same visual
+   language without touching a single template.
+   ============================================================ */
+body[data-ui="bento"] .shell-main section {
+  margin-bottom: 26px;
+}
+body[data-ui="bento"] .shell-main section > h2 {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  margin: 0 0 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--bn-line);
+}
+body[data-ui="bento"] .shell-main h3 {
+  font-size: 15.5px;
+  font-weight: 600;
+  margin: 20px 0 7px;
+  color: var(--ink-primary);
+}
+body[data-ui="bento"] .shell-main section > p,
+body[data-ui="bento"] .shell-main section > ul:not([class]),
+body[data-ui="bento"] .shell-main section > ol:not([class]) {
+  max-width: var(--measure);
+  line-height: 1.68;
+}
+
+/* definition lists become fact rows */
+body[data-ui="bento"] .shell-main dl {
+  background: var(--obsidian-1);
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm);
+  padding: 4px 16px;
+  margin: 12px 0;
+}
+body[data-ui="bento"] .shell-main dt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-tertiary);
+  padding-top: 11px;
+}
+body[data-ui="bento"] .shell-main dd {
+  margin: 3px 0 11px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid rgba(43, 224, 224, 0.07);
+  color: var(--ink-secondary);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+body[data-ui="bento"] .shell-main dd:last-child { border-bottom: 0; }
+
+/* disclosure */
+body[data-ui="bento"] .shell-main details {
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm);
+  background: var(--obsidian-1);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+body[data-ui="bento"] .shell-main details > summary {
+  cursor: pointer;
+  padding: 11px 15px;
+  font-size: 13px;
+  color: var(--ink-secondary);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+body[data-ui="bento"] .shell-main details > summary::-webkit-details-marker { display: none; }
+body[data-ui="bento"] .shell-main details > summary::before {
+  content: "\25B8";
+  color: var(--cyan-primary);
+  font-size: 10px;
+  transition: transform 0.12s;
+}
+body[data-ui="bento"] .shell-main details[open] > summary::before { transform: rotate(90deg); }
+body[data-ui="bento"] .shell-main details[open] > summary {
+  border-bottom: 1px solid var(--bn-line);
+  color: var(--ink-primary);
+}
+body[data-ui="bento"] .shell-main details > *:not(summary) { padding: 0 15px; }
+body[data-ui="bento"] .shell-main details > *:last-child { padding-bottom: 13px; }
+
+/* inline code reads as a chip, not as body text */
+body[data-ui="bento"] .shell-main :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  color: var(--cyan-glow);
+  background: var(--cyan-tint);
+  padding: 0.1em 0.38em;
+  border-radius: var(--bn-r-xs);
+  overflow-wrap: anywhere;
+}
+
+/* worked examples */
+body[data-ui="bento"] .learn-example,
+body[data-ui="bento"] .cli-example,
+body[data-ui="bento"] .learn-walkthrough,
+body[data-ui="bento"] .walkthrough {
+  background: var(--obsidian-1);
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm);
+  padding: 15px 17px;
+  margin-bottom: 10px;
+}
+body[data-ui="bento"] .learn-example__rows { margin-top: 8px; }
+
+/* ============================================================
+   CATALOGUE DENSITY
+   243 scenario rows at card padding made the page taller than
+   before the skin. Rows are a list, not a set of cards: keep the
+   containment, cut the padding, put actions on the same line.
+   ============================================================ */
+body[data-ui="bento"] .scenario-row {
+  padding: 9px 13px;
+  margin-bottom: 5px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: baseline;
+}
+body[data-ui="bento"] .scenario-row__head { grid-column: 1; }
+body[data-ui="bento"] .scenario-row__runtime { grid-column: 2; grid-row: 1; margin-left: 0; }
+body[data-ui="bento"] .scenario-row__title {
+  grid-column: 1; margin-top: 2px; font-size: 12.5px; color: var(--ink-secondary);
+}
+body[data-ui="bento"] .scenario-row .catalog-row-actions {
+  grid-column: 2; grid-row: 2; margin-top: 0; justify-content: flex-end;
+}
+body[data-ui="bento"] .scenario-row .catalog-row-actions a { padding: 2px 8px; font-size: 10px; }
+
+/* ============================================================
+   TABLE DENSITY
+   Row actions rendered as stacked chips inside a narrow column
+   were pushing every row to ~119px for single-word content.
+   Inside a table they must stay on one line.
+   ============================================================ */
+body[data-ui="bento"] .shell-main td.catalog-row-actions,
+body[data-ui="bento"] .shell-main td .catalog-row-actions,
+body[data-ui="bento"] .shell-main td.definition-actions,
+body[data-ui="bento"] .shell-main td .definition-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  margin-top: 0;
+  white-space: nowrap;
+}
+body[data-ui="bento"] .shell-main td.catalog-row-actions a,
+body[data-ui="bento"] .shell-main td .catalog-row-actions a,
+body[data-ui="bento"] .shell-main td.definition-actions a,
+body[data-ui="bento"] .shell-main td .definition-actions a {
+  padding: 2px 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+/* a cell is one line unless its content genuinely needs more */
+body[data-ui="bento"] .shell-main tbody td {
+  padding: 7px 9px;
+  line-height: 1.45;
+  vertical-align: top;
+}
+/* short, atomic values never wrap */
+body[data-ui="bento"] .shell-main tbody td > code:only-child,
+body[data-ui="bento"] .shell-main tbody td > .pill:only-child,
+body[data-ui="bento"] .shell-main tbody th[scope="row"] {
+  white-space: nowrap;
+}
+/* <br>-separated stacks (primitives) tighten up */
+body[data-ui="bento"] .shell-main tbody td > code,
+body[data-ui="bento"] .shell-main tbody td > .muted {
+  display: inline-block;
+  line-height: 1.4;
+}
+/* let the identifier column take the slack instead of wrapping while a
+   neighbouring column sits half-empty */
+body[data-ui="bento"] .shell-main table { table-layout: auto; }
+body[data-ui="bento"] .shell-main tbody td:first-child { min-width: 0; }
+body[data-ui="bento"] .shell-main tbody td:first-child a { overflow-wrap: anywhere; }
+
+/* a long unbreakable value (commit hash, long id) must not claim the whole
+   table width and squeeze the identifier column into three wrapped lines */
+body[data-ui="bento"] .shell-main tbody td code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+/* shrink-to-fit, but never clipped: nowrap makes the browser reserve
+   exactly the width the buttons need. */
+body[data-ui="bento"] .shell-main td.catalog-row-actions,
+body[data-ui="bento"] .shell-main th:last-child {
+  white-space: nowrap;
+  overflow: visible;
+}
+
+/* A long unbreakable token (commit hash, fully-qualified class) asks the
+   table for as much width as it wants, starving the identifier column.
+   Cap what any one code value may claim; it wraps inside that instead. */
+body[data-ui="bento"] .shell-main tbody td code {
+  display: inline-block;
+  vertical-align: top;
+}
+/* The first column is the identifier — it is what people scan, so it is
+   never capped and never broken mid-token. */
+body[data-ui="bento"] .shell-main tbody td:first-child code {
+  max-width: none;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+/* Secondary code values wrap at word boundaries first, and only break
+   inside a token as a last resort — never mid-word like "AflppSmokeExitClea/n". */
+body[data-ui="bento"] .shell-main tbody td:not(:first-child) code {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* Cells that stack values with <br> pay for a full line box per break.
+   Shrink the break itself rather than restructuring the template. */
+body[data-ui="bento"] .shell-main tbody td br { line-height: 0.45; }
+body[data-ui="bento"] .shell-main tbody td .muted,
+body[data-ui="bento"] .shell-main tbody td .eyebrow { line-height: 1.35; }
+
+/* Headers must not break mid-word ("IMPLEME / NTATION"). */
+body[data-ui="bento"] .shell-main thead th {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+/* Nothing may spill into the next column — but only where columns exist.
+   Below the table breakpoint the table becomes its own scroll container,
+   and clipping cells there hides content instead of letting it scroll. */
+@media (min-width: 861px) {
+  body[data-ui="bento"] .shell-main tbody td:not(.catalog-row-actions):not(.definition-actions) {
+    overflow: hidden;
+  }
+}
+
+/* Prose is capped wherever it sits, not only as a direct child of section.
+   Excluded: anything inside a tile, table or grid, where the container
+   already decides the width. */
+body[data-ui="bento"] .shell-main p,
+/* Only UNCLASSED list items are prose. A classed <li> is a layout row
+   (.scenario-row, .profile-catalog__row) and capping it to a reading
+   measure collapses the row to half the table width. */
+body[data-ui="bento"] .shell-main li:not([class]) {
+  max-width: var(--measure);
+}
+body[data-ui="bento"] .shell-main .tile p,
+body[data-ui="bento"] .shell-main .learn-tile p,
+body[data-ui="bento"] .shell-main .status-tile p,
+body[data-ui="bento"] .shell-main td p,
+body[data-ui="bento"] .shell-main td li,
+body[data-ui="bento"] .shell-main .asset-pill-row,
+body[data-ui="bento"] .shell-main .scenario-row p,
+body[data-ui="bento"] .shell-main dd p {
+  max-width: none;
+}
+
+/* boolean state + neutral counts */
+body[data-ui="bento"] .pill--v-on {
+  background: rgba(43, 224, 224, 0.12); color: var(--cyan-primary);
+  border-color: rgba(43, 224, 224, 0.28);
+}
+body[data-ui="bento"] .pill--v-off {
+  background: rgba(124, 139, 150, 0.12); color: var(--bn-slate);
+}
+/* a count is data, not a state — quiet, monospace, tabular */
+body[data-ui="bento"] .pill--v-count {
+  background: transparent;
+  border: 1px solid var(--obsidian-4);
+  color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------- paging */
+body[data-ui="bento"] .is-paged-out { display: none !important; }
+body[data-ui="bento"] .pager {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 12px 15px; margin-top: 10px;
+  background: var(--obsidian-1);
+  border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm);
+}
+body[data-ui="bento"] .pager__count {
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+body[data-ui="bento"] .pager__actions { margin-left: auto; display: flex; gap: 7px; }
+
+/* ---------------------------------------------------------- status hero
+   The flask is the product's mark and worth keeping, but at 799px tall it
+   pushed every health tile below the fold on a 1000px viewport — the same
+   "illustration instead of data" problem the old landing page had.
+   Keep it, size it to a header. */
+body[data-ui="bento"] .flask-stage {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 0 6px;
+  margin-bottom: 14px;
+}
+body[data-ui="bento"] .flask-logo-img {
+  width: clamp(96px, 12vw, 148px);
+  height: auto;
+  flex: 0 0 auto;
+}
+@media (max-width: 720px) {
+  body[data-ui="bento"] .flask-logo-img { width: 84px; }
+}
+
+/* ---------------------------------------------------------- bare buttons
+   27 controls across 8 routes carry no .cta class — Build, Validate,
+   Preflight, Save settings, Create backup. They are primary actions and
+   were rendering as unstyled boxes. Give every button the base treatment;
+   .cta and .pill above still win where they are applied. */
+body[data-ui="bento"] .shell-main button:not([class]),
+body[data-ui="bento"] .shell-main input[type="submit"]:not([class]) {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 8px 14px;
+  border-radius: var(--bn-r-sm);
+  border: 1px solid var(--obsidian-4);
+  background: var(--obsidian-2);
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+body[data-ui="bento"] .shell-main button:not([class]):hover,
+body[data-ui="bento"] .shell-main input[type="submit"]:not([class]):hover {
+  border-color: var(--cyan-primary);
+  color: var(--ink-primary);
+}
+/* a submit inside a form block is that block's primary action */
+body[data-ui="bento"] .shell-main form button[type="submit"]:not([class]),
+body[data-ui="bento"] .shell-main input[type="submit"]:not([class]) {
+  background: var(--cyan-primary);
+  border-color: var(--cyan-primary);
+  color: var(--obsidian-0);
+  font-weight: 700;
+}
+body[data-ui="bento"] .shell-main form button[type="submit"]:not([class]):hover,
+body[data-ui="bento"] .shell-main input[type="submit"]:not([class]):hover {
+  filter: brightness(1.08);
+  color: var(--obsidian-0);
+}
+
+/* PRE-EXISTING BUG (present with the skin off): base.css sets
+   `.shell-main button { background: var(--obsidian-2) }` at specificity
+   (0,1,1), which silently overrides a template's own button class at
+   (0,1,0). Primary actions — Build, Validate, Preflight, Save settings —
+   were therefore rendering as plain grey boxes. Restore the intent. */
+body[data-ui="bento"] .shell-main .at-run,
+body[data-ui="bento"] .shell-main button.primary,
+body[data-ui="bento"] .shell-main button[type="submit"]:not(.cta--ghost):not(.pill) {
+  background: var(--cyan-primary);
+  border: 1px solid var(--cyan-primary);
+  color: var(--obsidian-0);
+  font-weight: 700;
+  border-radius: var(--bn-r-sm);
+}
+body[data-ui="bento"] .shell-main .at-run:hover,
+body[data-ui="bento"] .shell-main button[type="submit"]:not(.cta--ghost):not(.pill):hover {
+  filter: brightness(1.08);
+  color: var(--obsidian-0);
+}
+/* a destructive action stays crimson */
+body[data-ui="bento"] .shell-main .at-danger .at-run,
+body[data-ui="bento"] .shell-main button.danger[type="submit"] {
+  background: var(--crimson);
+  border-color: var(--crimson);
+  color: #fff;
+}
+body[data-ui="bento"] .shell-main button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ============================================================
+   CATALOGUE COLUMN DISTRIBUTION
+   With table-layout:auto the browser hands all surplus width to whichever
+   column has the widest content, which left the identifier column 74%
+   empty (586px holding 154px) while the contract column was too narrow to
+   avoid breaking a class name mid-word. Fixed layout shares the width
+   evenly, then individual columns are nudged by role.
+   ============================================================ */
+@media (min-width: 861px) {
+  body[data-ui="bento"] .shell-main .asset-catalog-table,
+  body[data-ui="bento"] .shell-main .targets-table,
+  body[data-ui="bento"] .shell-main .bundles-table,
+  body[data-ui="bento"] .shell-main .runs-table {
+    table-layout: fixed;
+    width: 100%;
+  }
+  /* the actions column only needs its buttons */
+  body[data-ui="bento"] .shell-main .asset-catalog-table th:last-child,
+  body[data-ui="bento"] .shell-main .targets-table th:last-child,
+  body[data-ui="bento"] .shell-main .bundles-table th:last-child,
+  body[data-ui="bento"] .shell-main .runs-table th:last-child { width: 13rem; }
+  /* Columns get the share their content needs. Equal fifths left the
+     status column at 208px, too narrow for its pill plus trailer, so it
+     wrapped to a second line and set the height of EVERY row. */
+  body[data-ui="bento"] .shell-main .asset-catalog-table th:nth-child(1) { width: 19%; }
+  body[data-ui="bento"] .shell-main .asset-catalog-table th:nth-child(2) { width: 27%; }
+  body[data-ui="bento"] .shell-main .asset-catalog-table th:nth-child(3) { width: 24%; }
+  body[data-ui="bento"] .shell-main .asset-catalog-table th:nth-child(4) { width: 7%; }
+  body[data-ui="bento"] .shell-main .asset-catalog-table th:nth-child(5) { width: 23%; }
+}
+body[data-ui="bento"] .shell-main tbody td { overflow-wrap: break-word; }
+
+/* ============================================================
+   STACKED CELLS -> INLINE
+   These cells stack 3-4 values with <br>, so every row was ~93px tall
+   while 400px of horizontal space sat empty in the same row. Above the
+   table breakpoint, let the values flow inline and use that width; the
+   <br> comes back on narrow screens where stacking is correct.
+   ============================================================ */
+@media (min-width: 861px) {
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td br { display: none; }
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > .pill,
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > code,
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > .muted,
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > .eyebrow {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 7px;
+  }
+  /* The first in-cell label repeats the column header ("Targets") and is
+     pure width — 110px of a column that is already 280px short. Drop it
+     and keep only the labels that distinguish a SECOND value in the cell,
+     shown as a thin separator instead of a word. */
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > .eyebrow:first-child {
+    display: none;
+  }
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > .eyebrow {
+    vertical-align: baseline;
+    margin: 0 5px 0 12px;
+    color: var(--ink-disabled);
+    font-size: 8.5px;
+  }
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > .pill,
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > code,
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > .muted {
+    vertical-align: baseline;
+  }
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td { vertical-align: middle; }
+  /* status trailer reads as one secondary line, not a wrapped fragment */
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > .muted {
+    white-space: nowrap;
+  }
+}
+
+/* ============================================================
+   KEY/VALUE TABLES SIZE TO THEIR CONTENT
+   .config-table holds short key/value pairs. Stretched to the full
+   container they ran 72-85% empty — columns four times wider than
+   anything in them. Let them size to content instead, capped at the
+   container. Catalogue tables keep width:100%: their rows are scanned
+   in columns and need the alignment.
+   ============================================================ */
+@media (min-width: 861px) {
+  body[data-ui="bento"] .shell-main .config-table {
+    width: auto;
+    max-width: 100%;
+    min-width: min(100%, 44rem);
+  }
+  body[data-ui="bento"] .shell-main .config-table td,
+  body[data-ui="bento"] .shell-main .config-table th { padding-right: 26px; }
+}
+
+/* ============================================================
+   DENSE CATALOGUE ROWS
+   These rows need ~1630px of content in a 1420px container, so one or
+   two cells legitimately wrap. What made that read as "blank space" was
+   vertical-align:middle — a one-line cell floated in the centre of a
+   two-line row with a gap above AND below it. Align to the top and
+   tighten the leading so a two-line row costs two lines, not three.
+   ============================================================ */
+@media (min-width: 861px) {
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td,
+  body[data-ui="bento"] .shell-main .targets-table tbody td,
+  body[data-ui="bento"] .shell-main .config-table tbody td,
+  body[data-ui="bento"] .shell-main .runs-table tbody td {
+    vertical-align: top;
+    line-height: 1.32;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > .pill {
+    margin-top: 0;
+    line-height: 1.25;
+  }
+  /* Keep the secondary trailer INLINE. Putting it on its own line made
+     line 2 set the column width while line 1 sat nearly empty — 645px of
+     blank space across one row. Inline, it fills the width the column
+     already needs. */
+  body[data-ui="bento"] .shell-main .asset-catalog-table tbody td > .muted,
+  body[data-ui="bento"] .shell-main .targets-table tbody td > .muted {
+    display: inline;
+    margin-left: 7px;
+    font-size: 11px;
+    color: var(--ink-tertiary);
+    white-space: nowrap;
+  }
+}
+
+
+/* version catalogue cards + release badges */
+body[data-ui="bento"] .version-catalog { display: grid; gap: var(--bn-gap); }
+body[data-ui="bento"] .version-card {
+  background: var(--obsidian-1); border: 1px solid var(--bn-line);
+  border-radius: var(--bn-r-sm); padding: 14px 16px;
+}
+body[data-ui="bento"] .version-card__head strong { color: var(--ink-primary); }
+body[data-ui="bento"] .version-badge {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.09em; padding: 3px 8px; border-radius: var(--bn-r-xs);
+  background: rgba(124,139,150,0.14); color: var(--ink-tertiary);
+  display: inline-block; margin: 2px 4px 2px 0;
+}
+body[data-ui="bento"] .version-badge--confirmed { background: rgba(43,224,224,0.12); color: var(--cyan-primary); }
+body[data-ui="bento"] .version-badge--stable    { background: rgba(90,169,255,0.14); color: var(--bn-azure); }
+body[data-ui="bento"] .version-badge--unknown,
+body[data-ui="bento"] .version-badge--never     { background: rgba(181,138,79,0.16); color: var(--cork); }

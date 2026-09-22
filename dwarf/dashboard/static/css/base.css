@@ -366,9 +366,23 @@ code, pre {
 
 /* Page main area. */
 .shell-main {
-  padding: var(--space-12) var(--space-12) var(--space-24);
-  max-width: var(--measure);
+  padding-block: var(--space-12) var(--space-24);
+  padding-inline: var(--page-gutter);
+  width: min(100%, var(--page));
   margin: 0 auto;
+}
+
+.shell-main > p,
+.shell-main > blockquote,
+.shell-main > .prose,
+.shell-main > section > p,
+.shell-main > section > blockquote,
+.shell-main > ul:not([class]),
+.shell-main > ol:not([class]),
+.shell-main > dl:not([class]),
+.shell-main > section > ul:not([class]),
+.shell-main > section > ol:not([class]) {
+  max-width: var(--measure);
 }
 
 /* Eyebrow — tracked uppercase section label. Cyan in the new theme to
@@ -803,7 +817,7 @@ code, pre {
 /* Constrain prose paragraphs that lead reading-mode pages with wide layout
    (e.g. /learn/coverage). Matrices benefit from the wide measure;
    the intro paragraph keeps the slice-4-validated ~50ch measure. */
-body[data-layout="wide"] .shell-main > p:first-of-type { max-width: 720px; }
+/* superseded by the .shell-main prose cap above. */
 
 /* /learn/status (slice 6) — candidate-finding notes, recent-work list,
    carry-over list. Candidate notes structurally reuse the slice-4
