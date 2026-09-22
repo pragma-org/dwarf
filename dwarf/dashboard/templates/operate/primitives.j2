@@ -81,10 +81,10 @@
       {% for row in rows %}
         <tr data-primitive-row data-family="{{ row.family }}" data-runtimes="{{ row.runtimes|join(' ') }}" data-supports="{{ row.supports|join(' ') }}" data-search="{{ row.id }} {{ row.class_name }} {{ row.family }} {{ row.module }} {{ row.runtimes|join(' ') }} {{ row.supports|join(' ') }} {{ row.source_type }}">
           <td data-label="Primitive"><a href="/operate/primitives/{{ row.id }}"><strong><code>{{ row.id }}</code></strong></a><br><span class="muted">{{ row.source_type }}{% if row.plugin_id %} · {{ row.plugin_id }}{% endif %}</span></td>
-          <td data-label="Contract"><span class="pill">{{ row.family }}</span><br><code>{{ row.class_name }}</code><br><span class="muted">v{{ row.version }}</span></td>
+          <td data-label="Contract"><span class="pill pill--family pill--v-{{ row.family|lower }}">{{ row.family }}</span><br><code>{{ row.class_name }}</code><br><span class="muted">v{{ row.version }}</span></td>
           <td data-label="Targets / runtimes"><span class="eyebrow">Targets</span> {{ row.supports|join(', ') or 'none declared' }}<br><span class="eyebrow">Runtimes</span> {{ row.runtimes|join(', ') or 'none declared' }}</td>
           <td data-label="Usage"><strong>{{ row.referencing_scenario_count }}</strong> scenario{{ '' if row.referencing_scenario_count == 1 else 's' }}</td>
-          <td data-label="Status"><span class="pill">{{ row.status }}</span><br><span class="muted">{{ row.schema_status }} · {{ row.executor_status }}</span></td>
+          <td data-label="Status"><span class="pill pill--v-{{ row.status|lower|replace(" ","-") }}">{{ row.status }}</span><br><span class="muted">{{ row.schema_status }} · {{ row.executor_status }}</span></td>
         </tr>
       {% endfor %}
       </tbody>
@@ -140,5 +140,10 @@
   form.addEventListener('input', apply);
   form.addEventListener('submit', event => event.preventDefault());
 })();
+</script>
+
+<script type="module">
+  import {initPaginate} from "/static/js/paginate.js";
+  initPaginate({container: ".asset-catalog-table tbody", rows: "tr", pageSize: 50, label: "primitives"});
 </script>
 {% endblock %}

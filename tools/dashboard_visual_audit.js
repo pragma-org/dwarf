@@ -381,15 +381,29 @@ async function exerciseReadOnlyInteractions(page) {
       }
       continue;
     }
+    const initialVisible = await page.locator('[data-search]:visible').count();
+    const lastSearch = await rows.last().getAttribute('data-search');
+    if (initialVisible < baseline && lastSearch) {
+      await search.fill(lastSearch);
+      await page.waitForTimeout(50);
+      checks += 1;
+      if (!await rows.last().isVisible()) {
+        problems.push(`${route}: filtering did not reveal a row outside the first page`);
+      }
+      await search.fill('');
+      await page.waitForTimeout(50);
+    }
     await search.fill('__dwarf_visual_audit_no_match__');
+    await page.waitForTimeout(50);
     checks += 1;
     if (await page.locator('[data-search]:visible').count()) {
       problems.push(`${route}: no-match filter left rows visible`);
     }
     await search.fill('');
+    await page.waitForTimeout(50);
     checks += 1;
-    if (await page.locator('[data-search]:visible').count() !== baseline) {
-      problems.push(`${route}: clearing filter did not restore ${baseline} rows`);
+    if (await page.locator('[data-search]:visible').count() !== initialVisible) {
+      problems.push(`${route}: clearing filter did not restore ${initialVisible} visible rows`);
     }
   }
 

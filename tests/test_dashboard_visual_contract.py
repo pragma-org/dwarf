@@ -216,7 +216,10 @@ def test_definition_builders_and_profile_catalog_use_wide_reading_layout():
         html = dashboard.render_route_html(path)
 
         assert html is not None
-        assert '<body data-density="reading" data-layout="wide">' in html
+        assert (
+            '<body data-density="reading" data-layout="wide" data-ui="bento">'
+            in html
+        )
 
 
 def test_definition_field_grid_preserves_natural_control_height():

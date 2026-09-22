@@ -11,8 +11,9 @@
 <link rel="stylesheet" href="/static/css/tokens.css">
 <link rel="stylesheet" href="/static/css/themes.css">
 <link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/bento-noir.css">
 </head>
-<body data-density="{{ density }}"{% if layout %} data-layout="{{ layout }}"{% endif %}>
+<body data-density="{{ density }}"{% if layout %} data-layout="{{ layout }}"{% endif %} data-ui="{{ ui|default('bento') }}">
 {# Slice 50 — sparse drifting motes layer. Each dot is decorative,
    pure-CSS animated, behind page content via z-index: -1. #}
 <div class="substrate-motes" aria-hidden="true">
@@ -57,6 +58,7 @@
     <a href="/learn"   class="{{ 'active' if active == 'learn'   else '' }}">Learn</a>
   </nav>
 </header>
+{% include "_bento_chrome.j2" %}
 <main class="shell-main">
 {% block main %}{% endblock %}
 </main>

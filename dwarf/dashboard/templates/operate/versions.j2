@@ -78,4 +78,9 @@ if(vf){vf.addEventListener('input',function(){var q=this.value.trim().toLowerCas
 var vr=document.querySelector('[data-version-refresh]');
 if(vr){vr.addEventListener('click',async function(){var b=this;b.disabled=true;b.textContent='Checking…';try{var r=await fetch(b.dataset.endpoint,{method:'POST'});var p=await r.json();if(!r.ok&&r.status!==409){throw new Error(p.error||'refresh failed');}window.setTimeout(function(){window.location.reload();},900);}catch(e){b.disabled=false;b.textContent='Check for new versions';window.alert(e.message);}});}
 </script>
+
+<script type="module">
+  import {initPaginate} from "/static/js/paginate.js";
+  initPaginate({container: "[data-version-list]", rows: "article.version-card", pageSize: 30, label: "releases"});
+</script>
 {% endblock %}

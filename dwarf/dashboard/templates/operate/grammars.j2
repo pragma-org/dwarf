@@ -25,10 +25,10 @@
     <h2 class="learn-tile__title"><a href="/operate/grammars/{{ row.id }}"><code>{{ row.label }}</code></a></h2>
     <p class="learn-tile__sub">{{ row.target or 'target unavailable' }}</p>
     <p class="asset-pill-row">
-      <span class="pill">{{ row.token_count }} mutation tokens</span>
-      <span class="pill">structure {{ row.structure_status }}</span>
-      <span class="pill">dictionary {{ row.dictionary_status }}</span>
-      <span class="pill">{{ 'editable runtime clone' if row.writable else 'shipped read-only' }}</span>
+      <span class="pill pill--v-count">{{ row.token_count }} mutation tokens</span>
+      <span class="pill pill--v-{{ row.structure_status|lower }}">structure {{ row.structure_status }}</span>
+      <span class="pill pill--v-{{ row.dictionary_status|lower }}">dictionary {{ row.dictionary_status }}</span>
+      <span class="pill {{ 'pill--v-writable' if row.writable else 'pill--v-readonly' }}">{{ 'editable runtime clone' if row.writable else 'shipped read-only' }}</span>
     </p>
   </article>
   {% endfor %}

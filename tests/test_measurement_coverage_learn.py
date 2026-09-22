@@ -389,7 +389,9 @@ def test_landing_and_related_pages_cross_link_without_replacing_existing_routes(
     threats = render_route_html("/learn/threat-coverage")
     measurements = render_route_html("/learn/measurements")
 
-    assert landing.count('href="/learn/measurement-coverage"') == 1
+    # The Learn landing exposes this destination once in the section
+    # navigation and once in the page content.
+    assert landing.count('href="/learn/measurement-coverage"') == 2
     assert "Measurement coverage" in landing
     for html in (coverage, threats, measurements):
         assert 'href="/learn/measurement-coverage"' in html

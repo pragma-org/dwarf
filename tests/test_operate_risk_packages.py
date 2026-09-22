@@ -233,7 +233,8 @@ def test_ui_uses_risk_work_package_term_without_relabelling_forensic_bundles(tmp
     assert "Create" not in index and "data-definition-editor" not in detail
     assert "Risk Work Packages" in tests_page
     assert "evidence bundle" in tests_page.lower()
-    assert "Risk work package" not in bundles
+    bundles_main = bundles.split("<main", 1)[1].split("</main>", 1)[0]
+    assert "Risk work package" not in bundles_main
     assert 'class="risk-evidence-grid"' in detail
     assert 'class="asset-pill-row risk-candidate-pills"' in detail
     css = (ROOT / "dwarf" / "dashboard" / "static" / "css" / "base.css").read_text(encoding="utf-8")

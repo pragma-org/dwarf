@@ -33,7 +33,7 @@
   <ul class="asset-relationship-list">
     {% for relationship in item.relationships %}
     <li>
-      {% if relationship.resolved is sameas false %}<code>{{ relationship.label }}</code> <span class="pill">unresolved</span>{% else %}<a href="{{ relationship.url }}">{{ relationship.label }}</a>{% endif %}
+      {% if relationship.resolved is sameas false %}<code>{{ relationship.label }}</code> <span class="pill pill--v-unresolved">unresolved</span>{% else %}<a href="{{ relationship.url }}">{{ relationship.label }}</a>{% endif %}
       {% if relationship.relation %}<span> · {{ relationship.relation }}</span>{% endif %}
       {% if relationship.source_path %}<small><code>{{ relationship.source_path }}</code></small>{% endif %}
     </li>
