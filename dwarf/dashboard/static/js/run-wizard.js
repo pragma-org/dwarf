@@ -8,6 +8,7 @@ let bootstrap = {};
 let resolvedPlan = null;
 let resolvedPlanDigest = null;
 let resolveSequence = 0;
+let activeScenarioFilter = 'all';
 
 try { bootstrap = JSON.parse(bootstrapNode?.textContent || '{}'); } catch (_error) { bootstrap = {}; }
 
@@ -34,6 +35,42 @@ function replaceWithList(container, values, emptyText = 'None') {
   const list = make('ul');
   values.forEach((value) => list.append(make('li', value)));
   container.replaceChildren(list);
+}
+const scenarioSelect = wizard?.querySelector('#run-scenario');
+const scenarioOptions = [...(wizard?.querySelectorAll('[data-scenario-id]') || [])];
+const scenarioFilters = [...(wizard?.querySelectorAll('[data-scenario-filter]') || [])];
+const scenarioRecords = new Map((bootstrap.scenarios || []).map((item) => [item.id, item]));
+function renderScenarioSummary(record) {
+  if (!record) return;
+  const panel = wizard.querySelector('[data-scenario-summary]');
+  panel.dataset.implementation = record.implementation_key;
+  wizard.querySelector('[data-scenario-summary-title]').textContent = record.short_title;
+  replaceWithRows(wizard.querySelector('[data-scenario-summary-facts]'), [
+    ['Implementation', record.implementation],
+    ['Measurement', record.measurement_state === 'measurement-enabled' ? 'Measurement-enabled' : record.measurement_state === 'no-measurement-profile' ? 'No measurement profile' : 'Measurement compatibility unknown'],
+    ['Measurement profile', record.measurement_profile || 'None selected by scenario'],
+    ['Deployment profile', record.deployment_profile || 'No deployment profile'],
+    ['Target version', record.target_version || 'Scenario controlled'],
+    ['Evidence', record.proof_state === 'retained-proof' ? 'Retained measurement proof' : record.proof_state === 'supported-without-retained-proof' ? 'Supported · no retained proof' : 'Unconfirmed / unsupported'],
+  ]);
+  wizard.querySelector('[data-scenario-summary-purpose]').textContent = record.purpose;
+  wizard.querySelector('[data-scenario-summary-limit]').textContent = `Availability limit: ${record.limitation}`;
+  const evidence = wizard.querySelector('[data-scenario-summary-evidence]');
+  if (record.evidence_url) {
+    const link = make('a', `Open retained run ${record.retained_run_id}`);
+    link.href = record.evidence_url;
+    evidence.replaceChildren(link);
+  } else evidence.textContent = 'No retained run link is available for this exact scenario.';
+  wizard.querySelector('[data-scenario-raw-id]').textContent = record.id;
+}
+function selectScenario(scenarioId, {resolve = true, focus = false} = {}) {
+  const record = scenarioRecords.get(scenarioId);
+  if (!record || !scenarioSelect) return;
+  scenarioSelect.value = scenarioId;
+  scenarioOptions.forEach((option) => option.setAttribute('aria-selected', String(option.dataset.scenarioId === scenarioId)));
+  renderScenarioSummary(record);
+  if (focus) wizard.querySelector(`[data-scenario-id="${CSS.escape(scenarioId)}"]`)?.focus();
+  if (resolve) resolvePlan();
 }
 function requestBody() {
   const data = new FormData(form);
@@ -106,7 +143,14 @@ async function resolvePlan({focusOnError = false} = {}) {
 }
 function filterScenarios() {
   const query = String(wizard.querySelector('#run-scenario-search')?.value || '').trim().toLowerCase();
-  wizard.querySelectorAll('#run-scenario option').forEach((option) => { option.hidden = Boolean(query) && !String(option.dataset.search || '').toLowerCase().includes(query); });
+  let visible = 0;
+  scenarioOptions.forEach((option) => {
+    const groupMatch = activeScenarioFilter === 'all' || (activeScenarioFilter === 'recommended' ? option.dataset.recommended === 'true' : option.dataset.scenarioGroup === activeScenarioFilter);
+    const searchMatch = !query || String(option.dataset.search || '').toLowerCase().includes(query);
+    option.hidden = !(groupMatch && searchMatch);
+    if (!option.hidden) visible += 1;
+  });
+  wizard.querySelector('[data-scenario-picker-count]').textContent = `${visible} scenarios shown.`;
 }
 function appendLaunchLog(text) {
   const log = wizard.querySelector('[data-run-launch-log]');
@@ -173,8 +217,32 @@ async function startRun() {
 }
 if (wizard && form) {
   wizard.querySelector('#run-scenario-search')?.addEventListener('input', filterScenarios);
-  form.addEventListener('change', () => resolvePlan());
+  scenarioFilters.forEach((button) => button.addEventListener('click', () => {
+    activeScenarioFilter = button.dataset.scenarioFilter;
+    scenarioFilters.forEach((candidate) => candidate.setAttribute('aria-pressed', String(candidate === button)));
+    filterScenarios();
+  }));
+  scenarioOptions.forEach((option) => option.addEventListener('click', () => selectScenario(option.dataset.scenarioId)));
+  wizard.querySelector('[data-scenario-picker]')?.addEventListener('keydown', (event) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(event.key)) return;
+    const visible = scenarioOptions.filter((option) => !option.hidden);
+    if (!visible.length) return;
+    const current = visible.indexOf(document.activeElement);
+    if (event.key === 'Enter' || event.key === ' ') {
+      if (current >= 0) { event.preventDefault(); visible[current].click(); }
+      return;
+    }
+    event.preventDefault();
+    const index = event.key === 'Home' ? 0 : event.key === 'End' ? visible.length - 1 : event.key === 'ArrowDown' ? (current + 1 + visible.length) % visible.length : (current - 1 + visible.length) % visible.length;
+    visible[index].focus();
+  });
+  form.addEventListener('change', (event) => {
+    if (event.target === scenarioSelect) selectScenario(scenarioSelect.value, {resolve: false});
+    resolvePlan();
+  });
   form.addEventListener('submit', (event) => { event.preventDefault(); startRun(); });
+  selectScenario(scenarioSelect?.value, {resolve: false});
+  filterScenarios();
   if (bootstrap.default_plan) renderPlan(bootstrap.default_plan, bootstrap.default_plan_digest);
   else if (bootstrap.default_error) renderError(bootstrap.default_error, false);
   else resolvePlan();

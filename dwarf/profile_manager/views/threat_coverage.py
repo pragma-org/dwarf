@@ -90,7 +90,38 @@ def _reconcile_mapped_scenarios(data: dict, scenarios: list[dict]) -> None:
     data["client_card_evidence"] = evidence
 
 
-def current_threat_coverage_data() -> dict:
+def _attach_measurement_metrics(data: dict) -> None:
+    """Join the shared measurement coverage rows without treating scenarios as proof."""
+    from profile_manager.data.measurement_coverage import measurement_coverage_payload
+
+    coverage = measurement_coverage_payload()
+    for section in ("threats", "risks"):
+        coverage_by_id = {row["id"]: row for row in coverage["views"][section]}
+        for threat in data.get(section) or []:
+            row = coverage_by_id.get(threat["id"])
+            metrics = []
+            if row:
+                for tap in row["measurements"]:
+                    evidence = [
+                        item for item in row["evidence"]
+                        if any(measurement["id"] == tap["id"] for measurement in item["measurements"])
+                    ]
+                    if tap["status"] == "Verified" and evidence:
+                        state = "verified"
+                    elif tap["source"] != "Reserved" and tap["status"] not in {"Unavailable", "Reserved"}:
+                        state = "unverified"
+                    else:
+                        state = "none"
+                    metrics.append({
+                        "id": tap["id"], "title": tap["title"], "source": tap["source"],
+                        "state": state, "evidence": [
+                            {"run_id": item["run_id"], "url": item["url"]} for item in evidence
+                        ],
+                    })
+            threat["measurement_metrics"] = metrics
+
+
+def current_threat_coverage_data(*, include_measurements: bool = True) -> dict:
     """Return the threat/risk map reconciled with the current scenario catalog."""
     html = _PAGE.read_text(encoding="utf-8")
     match = re.search(r"const DATA = (\{.*\});\nconst TYPES", html)
@@ -149,6 +180,8 @@ def current_threat_coverage_data() -> dict:
         gaps = [row["id"] for row in rows if not row.get("scenarios")]
         meta[f"{prefix}_covered"] = len(rows) - len(gaps)
         meta[f"{prefix}_gaps"] = gaps
+    if include_measurements:
+        _attach_measurement_metrics(data)
     return data
 
 

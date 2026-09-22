@@ -18,11 +18,33 @@
       <p>Select the test recipe. This choice controls all later options.</p>
       <p class="run-wizard__plain"><strong>Plain meaning:</strong> Pick what DWARF will do.</p>
       <label for="run-scenario-search">Find a scenario <span class="field-optional">Optional</span></label>
-      <input id="run-scenario-search" type="search" autocomplete="off" placeholder="Search by name, target, or runtime">
-      <label for="run-scenario">Scenario <span class="field-required">Required</span></label>
-      <select id="run-scenario" name="scenario_id" required>
-        {% for scenario in wizard.scenarios %}<option value="{{ scenario.id }}" data-search="{{ scenario.id }} {{ scenario.title }} {{ scenario.runtime }} {{ scenario.target_impl or '' }}"{% if scenario.id == wizard.default_scenario_id %} selected{% endif %}>{{ scenario.title }} · {{ scenario.runtime }}</option>{% endfor %}
+      <input id="run-scenario-search" type="search" autocomplete="off" placeholder="Search by purpose, implementation, or exact ID">
+      <div class="scenario-picker__filters" role="group" aria-label="Filter scenarios">
+        {% for key, label in [('all', 'All'), ('recommended', 'Recommended'), ('amaru', 'Amaru'), ('cardano-node', 'Cardano-node'), ('mixed', 'Mixed'), ('other', 'Other')] %}<button type="button" data-scenario-filter="{{ key }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ label }}</button>{% endfor %}
+      </div>
+      <label id="run-scenario-picker-label" for="run-scenario">Scenario <span class="field-required">Required</span></label>
+      <select id="run-scenario" name="scenario_id" required class="run-wizard__canonical-select" tabindex="-1" aria-hidden="true">
+        {% for scenario in wizard.scenarios %}<option value="{{ scenario.id }}"{% if scenario.id == wizard.default_scenario_id %} selected{% endif %}>{{ scenario.short_title }}</option>{% endfor %}
       </select>
+      <div class="scenario-picker" data-scenario-picker role="listbox" aria-labelledby="run-scenario-picker-label" tabindex="0">
+        {% for scenario in wizard.scenarios %}
+        {% set visual_class = 'cardano' if scenario.implementation_key == 'cardano-node' else scenario.implementation_key if scenario.implementation_key in ['amaru', 'mixed'] else 'neutral' %}
+        <button type="button" role="option" class="scenario-picker__option scenario-picker__option--{{ visual_class }}" data-scenario-id="{{ scenario.id }}" data-scenario-group="{{ scenario.filter_group }}" data-recommended="{{ 'true' if scenario.recommended_demo else 'false' }}" data-search="{{ scenario.short_title }} {{ scenario.id }} {{ scenario.implementation }} {{ scenario.measurement_state }} {{ scenario.proof_state }}" aria-selected="{{ 'true' if scenario.id == wizard.default_scenario_id else 'false' }}">
+          <span class="scenario-picker__title">{{ scenario.short_title }}</span>
+          <span class="scenario-picker__badges"><span class="scenario-picker__badge scenario-picker__badge--implementation">{{ scenario.implementation }}</span>{% if scenario.measurement_state == 'measurement-enabled' %}<span class="scenario-picker__badge">Measurement-enabled</span>{% endif %}{% if scenario.proof_state == 'retained-proof' %}<span class="scenario-picker__badge scenario-picker__badge--proof">✓ Measurement proof</span>{% elif scenario.proof_state == 'supported-without-retained-proof' %}<span class="scenario-picker__badge scenario-picker__badge--supported">◐ Supported · no retained proof</span>{% else %}<span class="scenario-picker__badge scenario-picker__badge--neutral">○ Unconfirmed / unsupported</span>{% endif %}{% if scenario.recommended_demo %}<span class="scenario-picker__badge scenario-picker__badge--recommended">Recommended demo</span>{% endif %}</span>
+          <code class="scenario-picker__id">{{ scenario.id }}</code>
+        </button>
+        {% endfor %}
+      </div>
+      <p class="scenario-picker__count" data-scenario-picker-count aria-live="polite"></p>
+      <article class="scenario-selection" data-scenario-summary aria-live="polite">
+        <h3 data-scenario-summary-title>Selected scenario</h3>
+        <dl class="run-wizard__facts" data-scenario-summary-facts></dl>
+        <p data-scenario-summary-purpose></p>
+        <p data-scenario-summary-limit></p>
+        <p data-scenario-summary-evidence></p>
+        <details><summary>Technical scenario ID</summary><code data-scenario-raw-id></code></details>
+      </article>
     </section>
 
     <section id="run-stage-target" class="run-wizard__step" data-run-step="target" aria-labelledby="run-step-target">
