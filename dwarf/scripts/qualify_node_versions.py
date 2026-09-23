@@ -239,6 +239,42 @@ def _append_volume(service: dict[str, Any], source: str, target: str) -> None:
     )
 
 
+def cardano_experimental_protocols_policy(scope: str, cardano_version: str | None) -> bool | None:
+    """Return the ExperimentalProtocolsEnabled value a topology must pin, or None
+    to keep the baseline template's value.
+
+    Cardano-node 11.1+ offers NodeToNodeV_16 (five-field perasSupport version
+    data) when experimental protocols are enabled. Amaru decodes every offered
+    version's data as the four-field V11-V15 record and drops the whole
+    handshake, so Amaru-bearing topologies pin the public-network default
+    (false). Mainnet and preprod configs leave the key unset (false).
+    """
+    if scope == "cardano-only" or not cardano_version:
+        return None
+    match = re.match(r"v?(\d+)\.(\d+)", str(cardano_version))
+    if match is None:
+        return None
+    if (int(match.group(1)), int(match.group(2))) >= (11, 1):
+        return False
+    return None
+
+
+def _pin_experimental_protocols(configurator: dict[str, Any], enabled: bool) -> None:
+    command = configurator.get("command")
+    if not isinstance(command, list) or len(command) != 1:
+        raise QualificationError("configurator command must contain one shell program")
+    value = "true" if enabled else "false"
+    command[0] = command[0].rstrip() + f"""
+for dir in /configs/[123]; do
+  config="$$dir/configs/config.json"
+  jq '.ExperimentalProtocolsEnabled = {value}' "$$config" > "$$config.tmp"
+  mv "$$config.tmp" "$$config"
+  jq -e '.ExperimentalProtocolsEnabled == {value}' "$$config" >/dev/null
+done
+echo "pinned ExperimentalProtocolsEnabled={value} in every generated node config"
+"""
+
+
 def transform_compose_model(
     model: dict[str, Any],
     *,
@@ -249,6 +285,7 @@ def transform_compose_model(
     allowed_project_prefix: str = "dwarf-qual-",
     amaru_runtime_interface: str | None = None,
     amaru_json_traces: bool = False,
+    cardano_experimental_protocols: bool | None = None,
 ) -> dict[str, Any]:
     """Namespace a rendered baseline and replace only candidate node images."""
     if scope not in SCOPES:
@@ -342,6 +379,12 @@ def transform_compose_model(
         }
         transformed.setdefault("volumes", {})["amaru-target-bin"] = {}
 
+    if cardano_experimental_protocols is not None:
+        configurator = services.get("configurator")
+        if not isinstance(configurator, dict):
+            raise QualificationError("baseline is missing the configurator service")
+        _pin_experimental_protocols(configurator, cardano_experimental_protocols)
+
     if scope in {"amaru-only", "mixed"}:
         consumer = services.get("amaru-consumer")
         seed = services.get("amaru-consumer-seed")
@@ -363,6 +406,7 @@ def transform_compose_model(
         "contract": "cardano-devnet" if scope == "cardano-only" else "amaru-relay-consumer",
         "project": project,
         "fresh_state_required": True,
+        "cardano_experimental_protocols": cardano_experimental_protocols,
     }
     return transformed
 
@@ -857,6 +901,9 @@ def run_qualification(
         project=project,
         cardano_image=cardano_image,
         amaru_image=amaru_image,
+        cardano_experimental_protocols=cardano_experimental_protocols_policy(
+            scope, candidate.get("cardano_version")
+        ),
     )
     compose_file = evidence_root / "qualification-compose.json"
     compose_file.write_text(json.dumps(model, indent=2, sort_keys=True) + "\n", encoding="utf-8")
