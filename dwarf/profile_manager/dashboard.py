@@ -3374,7 +3374,7 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
         BASIC_NATIVE_PREFIXES = ("/operate/runs/", "/runs/")
 
         def _resolve_view(self):
-            """Basic-vs-Advanced view: ?view= overrides cookie; default basic.
+            """Basic-vs-Advanced view: ?view= overrides cookie; default advanced (bento).
             Sets the render contextvar and, on explicit ?view=, a persisting cookie."""
             from urllib.parse import urlsplit, parse_qs
             from http.cookies import SimpleCookie
@@ -3390,21 +3390,45 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 if "dwarf_view" in c and c["dwarf_view"].value in ("basic", "bento"):
                     view = c["dwarf_view"].value
             if view is None:
-                view = "basic"
+                view = "bento"
             from urllib.parse import urlsplit as _us
             _path = _us(self.path).path
             set_current_path(_path)
-            if view == "basic" and not (
-                _path in self.BASIC_NATIVE_EXACT
-                or any(_path.startswith(pfx) for pfx in self.BASIC_NATIVE_PREFIXES)
-            ):
-                set_current_view("bento")
-                return "bento"
+            # Every route renders the chosen view; Basic layouts are provided
+            # for all routes (generic reducer + per-family templates).
             set_current_view(view)
             return view
 
+
+        # Raw-HTML reference pages get a concise Basic stub (full page in Advanced).
+        BASIC_REFERENCE_STUBS = {
+            "/learn/overview": ("Learn", "Overview",
+                "The complete DWARF reference on one page — DSL, primitive catalogue, "
+                "Antithesis pipeline, coverage, evidence and attack-cost. It is long by design."),
+            "/learn/consensus": ("Learn", "Consensus differential",
+                "How the Haskell cardano-node and Amaru compare on the same chain under fault "
+                "— forks, k-recovery, epoch boundaries."),
+            "/learn/threat-coverage": ("Learn", "Threat / risk coverage map",
+                "Every scenario mapped to the Amaru Risk Register and Threat Model, with maturity "
+                "pills and coverage gaps. A very large matrix."),
+        }
+
+        def _basic_reference_stub(self, path):
+            from profile_manager.templating import render, current_view
+            if current_view() != "basic":
+                return None
+            spec = self.BASIC_REFERENCE_STUBS.get(path)
+            if not spec:
+                return None
+            eyebrow, title, summary = spec
+            return render("_basic_reference_stub.j2", page_title=title, eyebrow=eyebrow,
+                          summary=summary, active="learn")
+
         def do_GET(self):
             self._resolve_view()
+            _stub = self._basic_reference_stub(self.path.split("?",1)[0])
+            if _stub is not None:
+                self._send(200, "text/html; charset=utf-8", _stub.encode("utf-8")); return
             # Allow GET to show a 405 for every mutating endpoint (more informative than 404).
             mutating_paths = {
                 "/api/deploy", "/api/remove", "/api/fuzz/run", "/api/test/smoke/run",

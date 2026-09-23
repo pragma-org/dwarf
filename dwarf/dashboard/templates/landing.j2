@@ -11,11 +11,15 @@
 <link rel="stylesheet" href="/static/css/themes.css">
 <link rel="stylesheet" href="/static/css/base.css">
 </head>
-<body class="product-landing" data-page="landing" data-density="reading">
+<body class="product-landing" data-page="landing" data-density="reading" data-ui="{{ ui|default('bento') }}">
 <div class="substrate-motes" aria-hidden="true">
   {% for _ in range(18) %}<span class="substrate-motes__dot"></span>{% endfor %}
 </div>
 <main class="product-landing__main">
+  <div class="view-toggle" role="group" aria-label="View density" style="position:absolute;top:16px;right:16px">
+    <a href="{{ request_path or '/' }}?view=basic" {% if ui != 'bento' %}aria-current="true"{% endif %}>Basic</a>
+    <a href="{{ request_path or '/' }}?view=advanced" {% if ui == 'bento' %}aria-current="true"{% endif %}>Advanced</a>
+  </div>
   <h1 class="product-landing__wordmark" aria-label="DWARF">
     <span data-landing-wordmark aria-hidden="true">DWARF</span>
   </h1>
