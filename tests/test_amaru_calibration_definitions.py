@@ -189,6 +189,63 @@ def _boundary_result(
     )
 
 
+def _rewrite_decode_boundary(tmp_path, *, ingress_malformed, decode_malformed):
+    """Reshape the fixture the way 10.11.20260918 reports malformed CBOR."""
+    path = tmp_path / "outputs" / "amaru-measurement-calibration" / "result.json"
+    body = json.loads(path.read_text(encoding="utf-8"))
+    measurements = body["node_measurements"]["amaru-patched-protocol-decode"]["measurements"]
+    measurements["handshake_ingress_by_outcome"] = {
+        "framed": {"sample_count": 80 + decode_malformed},
+        **({"malformed": {"sample_count": ingress_malformed}} if ingress_malformed else {}),
+    }
+    measurements["handshake_decode_by_decode_outcome"]["malformed"] = {
+        "sample_count": decode_malformed
+    }
+    path.write_text(json.dumps(body), encoding="utf-8")
+
+
+def _evaluate_boundary(tmp_path):
+    handle = type("Handle", (), {"run_dir": tmp_path})()
+    return AmaruMeasurementBoundaryProven(
+        params={
+            "expected_mode": "patched",
+            "min_attempts_per_case": 40,
+            "min_internal_samples_per_outcome": 30,
+        }
+    ).evaluate(handle)
+
+
+def test_boundary_assertion_accepts_malformed_rejected_at_the_decode_boundary(tmp_path):
+    _boundary_result(tmp_path)
+    _rewrite_decode_boundary(tmp_path, ingress_malformed=0, decode_malformed=40)
+
+    result = _evaluate_boundary(tmp_path)
+
+    assert result["result"] == "pass"
+    assert result["evaluated_value"]["internal_malformed_samples"] == 40
+    assert result["evaluated_value"]["internal_malformed_boundary"] == "mini-protocol-decode"
+    assert result["evaluated_value"]["internal_framed_samples"] == 120
+
+
+def test_boundary_assertion_keeps_ingress_boundary_for_older_revisions(tmp_path):
+    _boundary_result(tmp_path)
+
+    result = _evaluate_boundary(tmp_path)
+
+    assert result["result"] == "pass"
+    assert result["evaluated_value"]["internal_malformed_boundary"] == "mux-cbor-item"
+
+
+def test_boundary_assertion_refuses_malformed_counted_at_both_boundaries(tmp_path):
+    _boundary_result(tmp_path)
+    _rewrite_decode_boundary(tmp_path, ingress_malformed=40, decode_malformed=40)
+
+    result = _evaluate_boundary(tmp_path)
+
+    assert result["result"] == "fail"
+    assert result["evaluated_value"]["internal_malformed_samples"] == 80
+
+
 def test_boundary_assertion_requires_external_health_and_internal_outcome_samples(tmp_path):
     _boundary_result(tmp_path)
     handle = type("Handle", (), {"run_dir": tmp_path})()

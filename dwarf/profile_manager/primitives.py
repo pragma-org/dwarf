@@ -16738,7 +16738,7 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
         framed_samples = int(
             (ingress_outcomes.get("framed") or {}).get("sample_count") or 0
         )
-        malformed_samples = int(
+        ingress_malformed_samples = int(
             (ingress_outcomes.get("malformed") or {}).get("sample_count") or 0
         )
         decode_outcomes = (
@@ -16749,6 +16749,24 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
         )
         decoded_samples = int(
             (decode_outcomes.get("decoded") or {}).get("sample_count") or 0
+        )
+        # Where malformed CBOR is rejected depends on the Amaru revision:
+        # b159172's mux framer (cbor_data checked_prefix) rejects it at
+        # ingress; from b97e58a1 (10.11.20260918) the iterative minicbor
+        # framer passes it through and the handshake decoder rejects it.
+        # Either boundary is valid, but each attempt must be counted once.
+        decode_malformed_samples = int(
+            (decode_outcomes.get("malformed") or {}).get("sample_count") or 0
+        )
+        malformed_samples = ingress_malformed_samples + decode_malformed_samples
+        malformed_boundary = (
+            "mux-cbor-item"
+            if ingress_malformed_samples and not decode_malformed_samples
+            else "mini-protocol-decode"
+            if decode_malformed_samples and not ingress_malformed_samples
+            else "mixed"
+            if malformed_samples
+            else None
         )
         state_outcomes = (
             (patched.get("measurements") or {}).get(
@@ -16789,7 +16807,7 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
                 and state_admitted_samples >= min_internal
                 and negotiation_accepted_samples >= min_internal
                 and negotiation_refused_samples >= min_internal
-                and framed_samples == decoded_attempts
+                and framed_samples == decoded_attempts + decode_malformed_samples
                 and decoded_samples == decoded_attempts
                 and state_admitted_samples == decoded_attempts
                 and negotiation_accepted_samples == supported_attempts
@@ -16820,6 +16838,7 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
             "internal_framed_samples": framed_samples,
             "internal_decoded_samples": decoded_samples,
             "internal_malformed_samples": malformed_samples,
+            "internal_malformed_boundary": malformed_boundary,
             "internal_state_admitted_samples": state_admitted_samples,
             "internal_negotiation_accepted_samples": negotiation_accepted_samples,
             "internal_negotiation_refused_samples": negotiation_refused_samples,
