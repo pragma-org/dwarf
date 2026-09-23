@@ -1,0 +1,9 @@
+DWARF V8 branch: feat/amaru-10.11.20260918-support @ 977a758a4d7c354879ee863842866894e4ce8b78
+Amaru target: v10.11.20260918 (aedfe797a5b8ef00d8b362be40b47a52c3b4a379) stock ghcr.io/pragma-org/amaru@sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60
+Amaru measurement build: dwarf/amaru-measurement@sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd (nanoseconds-v3, patch set 47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6)
+Cardano reference: cardano-node 11.1.2 (fef83fed01d7926f3de83b3b917be5a4a48768b5), stock ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f
+Profiles: profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3 (Amaru leg), profile-v-cardano-measurement-nanoseconds-v2 (reference leg)
+Network: testnet_42; Amaru N2N port 3000; Cardano N2N port 3001
+Runs: 20260923T145318Z-508a12bd (amaru), 20260923T150024Z-5ac32f61 (cardano-node)
+Qualifications: 20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd (incompatible, flag on), 20260923T140419Z-dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18 (passed, flag pinned off)
+Host: cardano-box Linux 6.8.0-138-generic

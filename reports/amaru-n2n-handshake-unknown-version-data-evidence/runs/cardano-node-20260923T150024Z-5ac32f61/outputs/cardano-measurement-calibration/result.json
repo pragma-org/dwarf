@@ -1,0 +1,139 @@
+{
+  "attempts": {
+    "artifact": "attempts.ndjson",
+    "outcomes": {
+      "accepted": 60
+    },
+    "total": 60
+  },
+  "created_at": "2026-09-23T15:00:26.581120Z",
+  "hardware": {
+    "architecture": "x86_64",
+    "kernel_release": "6.8.0-138-generic",
+    "logical_cpu_count": 16,
+    "physical_memory_bytes": 29193207808,
+    "system": "Linux"
+  },
+  "measurements": {
+    "handshake_rejection_roundtrip": {
+      "excluded_warmup_count": 0,
+      "maximum": 1819.0,
+      "mean": 277.31666666666666,
+      "median": 223.5,
+      "minimum": 164.0,
+      "p95": 292.0,
+      "p99": 1819.0,
+      "rejected_count": 0,
+      "rejection_reasons": {},
+      "sample_count": 60,
+      "status": "available",
+      "unit": "us"
+    }
+  },
+  "measurements_by_outcome": {
+    "handshake_rejection_roundtrip": {
+      "accepted": {
+        "excluded_warmup_count": 0,
+        "maximum": 1819.0,
+        "mean": 277.31666666666666,
+        "median": 223.5,
+        "minimum": 164.0,
+        "p95": 292.0,
+        "p99": 1819.0,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 60,
+        "status": "available",
+        "unit": "us"
+      }
+    }
+  },
+  "node_trace": {
+    "byte_count": 12420,
+    "minimum_observation_seconds": 2.0,
+    "namespaces": [
+      "BlockFetch.Client.AcknowledgedFetchRequest",
+      "BlockFetch.Client.AddedFetchRequest",
+      "BlockFetch.Client.CompletedBlockFetch",
+      "BlockFetch.Client.CompletedFetchBatch",
+      "BlockFetch.Client.SendFetchRequest",
+      "BlockFetch.Client.StartedFetchBatch",
+      "ChainDB.AddBlockEvent.AddBlockValidation.ValidCandidate",
+      "ChainDB.AddBlockEvent.AddedToCurrentChain",
+      "ChainSync.Client.DownloadedHeader",
+      "ChainSync.ServerHeader.Update",
+      "Forge.Loop.NodeNotLeader",
+      "Forge.Loop.StartLeadershipCheck",
+      "LedgerMetrics",
+      "Resources"
+    ],
+    "observation_timeout_seconds": 20.0,
+    "observed_seconds": 2.03327260306105,
+    "protocol_record_count": 12,
+    "record_count": 57
+  },
+  "plutus_workload": null,
+  "raw_trace": "raw/node1.ndjson",
+  "run_id": "cardano-measurement-calibration",
+  "runner": {
+    "script": "runtime_cardano_measurement_calibration.py",
+    "script_sha256": "sha256:d35012664f926b3565644ac1df171e91ddfa917e511a7e1bbdc65ce223f28471"
+  },
+  "schema_version": 1,
+  "target": {
+    "build_result_sha256": "sha256:f8f94f4068483e1f3a099b25b8bb534a691fcc402711a5fedc103a0ad5b9f524",
+    "executable_digest": "sha256:3fb83f12ac1152e96c884c756a505484a39d9200da6c59b24678ac61218220eb",
+    "image_digest": "sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370",
+    "image_reference": "dwarf/cardano-measurement@sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370",
+    "implementation": "cardano-node",
+    "mode": "patched",
+    "patch_set_sha256": "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c",
+    "runtime_probe_log_sha256": "sha256:4b4c9b0ec7dbcb776c81e2f2d7cc9b65335b6227603b2b4c9cec803127aa3c01",
+    "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+    "version": "11.1.2"
+  },
+  "timing_policy": {
+    "clock": "monotonic-perf-counter-ns",
+    "outcome_inclusion": "all",
+    "start": "before-tcp-connect",
+    "stop": "terminal-response-eof-timeout-or-disconnect",
+    "warmup": "none"
+  },
+  "workload_identity": {
+    "attempt_count": 60,
+    "case": "unsupported-version-refusal",
+    "case_set": "version-table-forward-compat-v1",
+    "cases": [
+      {
+        "attempt_count": 20,
+        "name": "v14-v15-offer",
+        "payload_hex": "8200a20e84182af401f40f84182af401f4"
+      },
+      {
+        "attempt_count": 20,
+        "name": "node-11-1-experimental-v16-offer",
+        "payload_hex": "8200a30e84182af401f40f84182af401f41085182af401f4f4"
+      },
+      {
+        "attempt_count": 20,
+        "name": "unknown-future-version-offer",
+        "payload_hex": "8200a30e84182af401f40f84182af401f4186382182a66667574757265"
+      }
+    ],
+    "epoch_observation_seconds": 0.0,
+    "implementation": "cardano-node",
+    "mini_protocol": "handshake",
+    "mux_direction_bit": 0,
+    "network_magic": 42,
+    "payload_hex": "8200a11903e784182af400f4",
+    "plutus_fail_script_sha256": null,
+    "plutus_script_sha256": null,
+    "plutus_transactions": 0,
+    "response_cap_bytes": 256,
+    "scenario_id": "cardano-measurement-calibration",
+    "seed": "0xCA4DA001",
+    "target_port": 3001,
+    "transport": "tcp",
+    "workload_digest": "sha256:d9a6bb78a6d802ba0874ba05ea25d9be6e8c36916de217a7ad3ffc866a792633"
+  }
+}

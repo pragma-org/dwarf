@@ -1,0 +1,8 @@
+== amaru 10.11.20260918
+   20  node-11-1-experimental-v16-offer     rejected  no reply (connection closed)
+   20  unknown-future-version-offer         rejected  no reply (connection closed)
+   20  v14-v15-offer                        accepted  MsgAcceptVersion v15
+== cardano-node 11.1.2
+   20  node-11-1-experimental-v16-offer     accepted  MsgAcceptVersion v16
+   20  unknown-future-version-offer         accepted  MsgAcceptVersion v15
+   20  v14-v15-offer                        accepted  MsgAcceptVersion v15

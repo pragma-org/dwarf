@@ -1,0 +1,17 @@
+{
+  "apply_automatically": false,
+  "candidate": {
+    "amaru_version": "10.11.20260912",
+    "cardano_version": "11.1.2"
+  },
+  "checked_at": "2026-09-18T10:08:43Z",
+  "classification": "runtime-contract-failed",
+  "evidence": [
+    "qualification:/home/nigel/.local/share/dwarf/state/version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd"
+  ],
+  "proposed_status": "unknown",
+  "reason": "runtime-contract-failed",
+  "review_required": true,
+  "schema_version": 1,
+  "scope": "mixed"
+}

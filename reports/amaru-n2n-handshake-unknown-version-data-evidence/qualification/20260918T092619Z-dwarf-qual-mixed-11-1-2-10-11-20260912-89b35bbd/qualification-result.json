@@ -1,0 +1,929 @@
+{
+  "candidate": {
+    "amaru_version": "10.11.20260912",
+    "cardano_version": "11.1.2"
+  },
+  "classification": "runtime-contract-failed",
+  "completed_at": "2026-09-18T10:08:43Z",
+  "error": null,
+  "events": [
+    {
+      "at": "2026-09-18T09:26:19Z",
+      "candidate": {
+        "amaru_version": "10.11.20260912",
+        "cardano_version": "11.1.2"
+      },
+      "evidence_root": "/home/nigel/.local/share/dwarf/state/version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd",
+      "project": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd",
+      "stage": "prepared"
+    },
+    {
+      "at": "2026-09-18T09:37:48Z",
+      "stage": "started"
+    },
+    {
+      "at": "2026-09-18T09:38:05Z",
+      "attempt": 1,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:38:37Z",
+      "attempt": 2,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:39:08Z",
+      "attempt": 3,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:39:40Z",
+      "attempt": 4,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:40:12Z",
+      "attempt": 5,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:40:44Z",
+      "attempt": 6,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:41:16Z",
+      "attempt": 7,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:41:48Z",
+      "attempt": 8,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:42:20Z",
+      "attempt": 9,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:42:53Z",
+      "attempt": 10,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:43:25Z",
+      "attempt": 11,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:43:57Z",
+      "attempt": 12,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:44:29Z",
+      "attempt": 13,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:45:01Z",
+      "attempt": 14,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:45:33Z",
+      "attempt": 15,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:46:05Z",
+      "attempt": 16,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:46:37Z",
+      "attempt": 17,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:47:10Z",
+      "attempt": 18,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:47:42Z",
+      "attempt": 19,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:48:14Z",
+      "attempt": 20,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:48:46Z",
+      "attempt": 21,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:49:18Z",
+      "attempt": 22,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:49:50Z",
+      "attempt": 23,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:50:22Z",
+      "attempt": 24,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:50:55Z",
+      "attempt": 25,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:51:27Z",
+      "attempt": 26,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:51:59Z",
+      "attempt": 27,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:52:31Z",
+      "attempt": 28,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:53:03Z",
+      "attempt": 29,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:53:35Z",
+      "attempt": 30,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:54:07Z",
+      "attempt": 31,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:54:39Z",
+      "attempt": 32,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:55:11Z",
+      "attempt": 33,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:55:44Z",
+      "attempt": 34,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:56:16Z",
+      "attempt": 35,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:56:48Z",
+      "attempt": 36,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:57:20Z",
+      "attempt": 37,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:57:52Z",
+      "attempt": 38,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:58:24Z",
+      "attempt": 39,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:58:56Z",
+      "attempt": 40,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T09:59:28Z",
+      "attempt": 41,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:00:01Z",
+      "attempt": 42,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:00:33Z",
+      "attempt": 43,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:01:05Z",
+      "attempt": 44,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:01:37Z",
+      "attempt": 45,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:02:09Z",
+      "attempt": 46,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:02:41Z",
+      "attempt": 47,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:03:13Z",
+      "attempt": 48,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:03:45Z",
+      "attempt": 49,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:04:17Z",
+      "attempt": 50,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:04:50Z",
+      "attempt": 51,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:05:22Z",
+      "attempt": 52,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:05:54Z",
+      "attempt": 53,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:06:26Z",
+      "attempt": 54,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:06:58Z",
+      "attempt": 55,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:07:30Z",
+      "attempt": 56,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:08:02Z",
+      "attempt": 57,
+      "ready": false,
+      "stage": "readiness",
+      "state": "unhealthy"
+    },
+    {
+      "at": "2026-09-18T10:08:43Z",
+      "passed": true,
+      "stage": "teardown"
+    }
+  ],
+  "evidence_root": "/home/nigel/.local/share/dwarf/state/version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd",
+  "failed_gates": [
+    "chain_progress",
+    "consumer_converged",
+    "peer_formation",
+    "required_services"
+  ],
+  "gates": {
+    "chain_progress": false,
+    "clean_teardown": true,
+    "consumer_amaru_only_path": true,
+    "consumer_converged": false,
+    "exact_identity": true,
+    "fresh_state": true,
+    "no_fatal_signatures": true,
+    "no_restart_loop": true,
+    "peer_formation": false,
+    "required_services": false
+  },
+  "identity": {
+    "matched": true,
+    "services": {
+      "amaru-consumer": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-consumer-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-consumer-1",
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-consumer-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      },
+      "amaru-relay-1": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-target-extract-1",
+        "artifact_image_id": "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-relay-1-1",
+        "expected_image": "ghcr.io/pragma-org/amaru@sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
+        "expected_image_id": "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
+        "expected_version": "10.11.20260912",
+        "matched": true,
+        "reported": "Amaru 10.11.20260912 (b159172)",
+        "running_image_id": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-relay-1-1",
+          "/target/amaru",
+          "--version"
+        ],
+        "wrapper_expected_image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "wrapper_expected_image_id": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "wrapper_matched": true
+      },
+      "amaru-relay-2": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-target-extract-1",
+        "artifact_image_id": "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-relay-2-1",
+        "expected_image": "ghcr.io/pragma-org/amaru@sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
+        "expected_image_id": "sha256:45d46a6ba7147bfa95d96c103820542a9e3ac3602c4c316cc0d04bbd6d71489e",
+        "expected_version": "10.11.20260912",
+        "matched": true,
+        "reported": "Amaru 10.11.20260912 (b159172)",
+        "running_image_id": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-relay-2-1",
+          "/target/amaru",
+          "--version"
+        ],
+        "wrapper_expected_image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "wrapper_expected_image_id": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "wrapper_matched": true
+      },
+      "p1": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p1-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p1-1",
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p1-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      },
+      "p2": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p2-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p2-1",
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p2-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      },
+      "p3": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p3-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p3-1",
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p3-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      },
+      "relay1": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-relay1-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-relay1-1",
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-relay1-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      },
+      "relay2": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-relay2-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-relay2-1",
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-relay2-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      }
+    }
+  },
+  "log_signals": {
+    "background": [],
+    "fatal": []
+  },
+  "observation": {
+    "affected": [
+      "amaru-consumer"
+    ],
+    "checked_at": "2026-09-18T10:08:02Z",
+    "consumer_lag_slots": 3639,
+    "detail": null,
+    "evidence_path": "/home/nigel/.local/share/dwarf/state/version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd/health-057.json",
+    "observation": {
+      "completed_at": "2026-09-18T10:08:02Z",
+      "compose_project": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd",
+      "containers": {
+        "amaru-consumer": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-consumer-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-18T09:37:48.706489519Z",
+          "status": "running"
+        },
+        "amaru-relay-1": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-relay-1-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+          "image_digest": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-18T09:26:22.850675044Z",
+          "status": "running"
+        },
+        "amaru-relay-2": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-amaru-relay-2-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+          "image_digest": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-18T09:26:22.879415296Z",
+          "status": "running"
+        },
+        "p1": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p1-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-18T09:26:22.162266175Z",
+          "status": "running"
+        },
+        "p2": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p2-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-18T09:26:22.164275881Z",
+          "status": "running"
+        },
+        "p3": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-p3-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-18T09:26:22.165129264Z",
+          "status": "running"
+        },
+        "relay1": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-relay1-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-18T09:26:22.157191814Z",
+          "status": "running"
+        },
+        "relay2": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd-relay2-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-18T09:26:22.161376462Z",
+          "status": "running"
+        }
+      },
+      "peer_contract": {
+        "amaru_consumer_only_amaru_upstreams": true
+      },
+      "required_services": [
+        "p1",
+        "p2",
+        "p3",
+        "relay1",
+        "relay2",
+        "amaru-relay-1",
+        "amaru-relay-2",
+        "amaru-consumer"
+      ],
+      "samples": [
+        {
+          "amaru_relays": {
+            "amaru-relay-1": {
+              "committed": false,
+              "current_block": 931,
+              "current_hash": "f5aa4181fa00b27fa6d5a79fb3658d76ab9f9f117113ef64a527357a3473b955",
+              "current_slot": 4970,
+              "exec_started": false,
+              "fatal_signatures": [],
+              "highest_block": 920,
+              "highest_hash": "962c978bbd38e0f4fa03f34001d1e8ebd07f38b5ce8f18e1b28cd9927985a696",
+              "highest_slot": 4894,
+              "target_slots": []
+            },
+            "amaru-relay-2": {
+              "committed": false,
+              "current_block": 931,
+              "current_hash": "f5aa4181fa00b27fa6d5a79fb3658d76ab9f9f117113ef64a527357a3473b955",
+              "current_slot": 4970,
+              "exec_started": false,
+              "fatal_signatures": [],
+              "highest_block": 920,
+              "highest_hash": "962c978bbd38e0f4fa03f34001d1e8ebd07f38b5ce8f18e1b28cd9927985a696",
+              "highest_slot": 4894,
+              "target_slots": []
+            }
+          },
+          "at": "2026-09-18T10:07:46Z",
+          "tips": {
+            "amaru-consumer": {
+              "block": 241,
+              "hash": "5fae3f5033421de38ab2ce68cedb6ae6eb843ede3add51a29dc525ce7acbe49c",
+              "slot": 1362,
+              "syncProgress": "51.57"
+            },
+            "p1": {
+              "block": 930,
+              "hash": "001f4679760b9a0ab4444effa2b1c4ed3cc6e088c55bc22d6baaea46da2fd35f",
+              "slot": 4969,
+              "syncProgress": "100.00"
+            },
+            "p2": {
+              "block": 931,
+              "hash": "f5aa4181fa00b27fa6d5a79fb3658d76ab9f9f117113ef64a527357a3473b955",
+              "slot": 4970,
+              "syncProgress": "100.00"
+            },
+            "p3": {
+              "block": 931,
+              "hash": "f5aa4181fa00b27fa6d5a79fb3658d76ab9f9f117113ef64a527357a3473b955",
+              "slot": 4970,
+              "syncProgress": "100.00"
+            },
+            "relay1": {
+              "block": 931,
+              "hash": "f5aa4181fa00b27fa6d5a79fb3658d76ab9f9f117113ef64a527357a3473b955",
+              "slot": 4970,
+              "syncProgress": "100.00"
+            },
+            "relay2": {
+              "block": 931,
+              "hash": "f5aa4181fa00b27fa6d5a79fb3658d76ab9f9f117113ef64a527357a3473b955",
+              "slot": 4970,
+              "syncProgress": "100.00"
+            }
+          }
+        },
+        {
+          "amaru_relays": {
+            "amaru-relay-1": {
+              "committed": false,
+              "current_block": 936,
+              "current_hash": "afc14b3467627fea9fd79fe3e9b1dc08fede5a6b153f476ab8b7401a9593f9dc",
+              "current_slot": 5001,
+              "exec_started": false,
+              "fatal_signatures": [],
+              "highest_block": 935,
+              "highest_hash": "bc847f21fa808cb41011d6742e52b754a356006d1977bf2cc0350a2f9bd50aa4",
+              "highest_slot": 5000,
+              "target_slots": []
+            },
+            "amaru-relay-2": {
+              "committed": false,
+              "current_block": 936,
+              "current_hash": "afc14b3467627fea9fd79fe3e9b1dc08fede5a6b153f476ab8b7401a9593f9dc",
+              "current_slot": 5001,
+              "exec_started": false,
+              "fatal_signatures": [],
+              "highest_block": 935,
+              "highest_hash": "bc847f21fa808cb41011d6742e52b754a356006d1977bf2cc0350a2f9bd50aa4",
+              "highest_slot": 5000,
+              "target_slots": []
+            }
+          },
+          "at": "2026-09-18T10:08:02Z",
+          "tips": {
+            "amaru-consumer": {
+              "block": 241,
+              "hash": "5fae3f5033421de38ab2ce68cedb6ae6eb843ede3add51a29dc525ce7acbe49c",
+              "slot": 1362,
+              "syncProgress": "51.24"
+            },
+            "p1": {
+              "block": 936,
+              "hash": "afc14b3467627fea9fd79fe3e9b1dc08fede5a6b153f476ab8b7401a9593f9dc",
+              "slot": 5001,
+              "syncProgress": "100.00"
+            },
+            "p2": {
+              "block": 936,
+              "hash": "afc14b3467627fea9fd79fe3e9b1dc08fede5a6b153f476ab8b7401a9593f9dc",
+              "slot": 5001,
+              "syncProgress": "100.00"
+            },
+            "p3": {
+              "block": 936,
+              "hash": "afc14b3467627fea9fd79fe3e9b1dc08fede5a6b153f476ab8b7401a9593f9dc",
+              "slot": 5001,
+              "syncProgress": "100.00"
+            },
+            "relay1": {
+              "block": 936,
+              "hash": "afc14b3467627fea9fd79fe3e9b1dc08fede5a6b153f476ab8b7401a9593f9dc",
+              "slot": 5001,
+              "syncProgress": "100.00"
+            },
+            "relay2": {
+              "block": 936,
+              "hash": "afc14b3467627fea9fd79fe3e9b1dc08fede5a6b153f476ab8b7401a9593f9dc",
+              "slot": 5001,
+              "syncProgress": "100.00"
+            }
+          }
+        }
+      ],
+      "schema_version": 1,
+      "started_at": "2026-09-18T10:07:45Z",
+      "tolerances": {
+        "producer_slot_spread": 6,
+        "slot_lag": 6
+      },
+      "topology_id": "cardano_amaru"
+    },
+    "reason_code": "amaru_consumer_stalled",
+    "reference_tip": {
+      "block": 936,
+      "hash": "afc14b3467627fea9fd79fe3e9b1dc08fede5a6b153f476ab8b7401a9593f9dc",
+      "slot": 5001,
+      "syncProgress": "100.00"
+    },
+    "sample_count": 2,
+    "schema_version": 1,
+    "state": "unhealthy",
+    "topology_id": "cardano_amaru"
+  },
+  "passed": false,
+  "project": "dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd",
+  "required_gates": [
+    "chain_progress",
+    "clean_teardown",
+    "consumer_amaru_only_path",
+    "consumer_converged",
+    "exact_identity",
+    "fresh_state",
+    "no_fatal_signatures",
+    "no_restart_loop",
+    "peer_formation",
+    "required_services"
+  ],
+  "schema_version": 1,
+  "scope": "mixed",
+  "started_at": "2026-09-18T09:26:19Z",
+  "terminal_failure": null
+}

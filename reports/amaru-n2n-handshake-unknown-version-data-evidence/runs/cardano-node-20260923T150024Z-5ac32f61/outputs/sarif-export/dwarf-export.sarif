@@ -1,0 +1,30 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "DWARF scenario assertions",
+          "version": "0.1.0",
+          "informationUri": "https://github.com/pragma-org/dwarf"
+        }
+      },
+      "automationDetails": {
+        "id": "20260923T150024Z-5ac32f61"
+      },
+      "results": [],
+      "properties": {
+        "dwarf.target_run_id": "20260923T150024Z-5ac32f61",
+        "dwarf.bundle_dir": "/home/nigel/.local/share/dwarf/runs/20260923T150024Z-5ac32f61",
+        "dwarf.scenario_id": "cardano-n2n-handshake-version-table-forward-compat-1112",
+        "dwarf.exit_status": "pass",
+        "dwarf.assertion_summary": {
+          "fail": 0,
+          "pass": 1,
+          "total": 1
+        }
+      }
+    }
+  ]
+}

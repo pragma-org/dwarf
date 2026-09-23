@@ -1,0 +1,276 @@
+{
+  "artifacts": {
+    "correlations": "measurements/collectors/amaru-patched-protocol-decode/correlations.json",
+    "normalized": "measurements/collectors/amaru-patched-protocol-decode/normalized.ndjson",
+    "raw_json": "measurements/collectors/amaru-patched-protocol-decode/raw/amaru-json.ndjson",
+    "result": "measurements/collectors/amaru-patched-protocol-decode/result.json"
+  },
+  "evidence_class": "patched-node",
+  "export": {
+    "ignored_record_count": 2810,
+    "incomplete": false,
+    "normalized_record_count": 189,
+    "rejected_record_count": 0,
+    "rejection_reasons": {},
+    "source_record_count": 2999,
+    "truncated_sources": []
+  },
+  "measurement_id": "amaru-patched-protocol-decode",
+  "measurement_revision": "nanoseconds-v3",
+  "measurements": {
+    "handshake_decode": {
+      "excluded_warmup_count": 0,
+      "maximum": 36.771,
+      "mean": 5.7964,
+      "median": 5.641,
+      "minimum": 2.074,
+      "p95": 10.079,
+      "p99": 36.771,
+      "rejected_count": 0,
+      "rejection_reasons": {},
+      "sample_count": 60,
+      "status": "available",
+      "unit": "us"
+    },
+    "handshake_decode_by_decode_outcome": {
+      "decoded": {
+        "excluded_warmup_count": 0,
+        "maximum": 5.681,
+        "mean": 3.27775,
+        "median": 3.1959999999999997,
+        "minimum": 2.074,
+        "p95": 4.538,
+        "p99": 5.681,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 20,
+        "status": "available",
+        "unit": "us"
+      },
+      "malformed": {
+        "excluded_warmup_count": 0,
+        "maximum": 36.771,
+        "mean": 7.055725,
+        "median": 6.0365,
+        "minimum": 3.747,
+        "p95": 12.043,
+        "p99": 36.771,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 40,
+        "status": "available",
+        "unit": "us"
+      }
+    },
+    "handshake_ingress": {
+      "excluded_warmup_count": 0,
+      "maximum": 45.897,
+      "mean": 4.1864333333333335,
+      "median": 3.041,
+      "minimum": 1.272,
+      "p95": 5.45,
+      "p99": 45.897,
+      "rejected_count": 0,
+      "rejection_reasons": {},
+      "sample_count": 60,
+      "status": "available",
+      "unit": "us"
+    },
+    "handshake_ingress_by_outcome": {
+      "framed": {
+        "excluded_warmup_count": 0,
+        "maximum": 45.897,
+        "mean": 4.1864333333333335,
+        "median": 3.041,
+        "minimum": 1.272,
+        "p95": 5.45,
+        "p99": 45.897,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 60,
+        "status": "available",
+        "unit": "us"
+      }
+    },
+    "handshake_negotiation": {
+      "excluded_warmup_count": 0,
+      "maximum": 1.763,
+      "mean": 0.6808,
+      "median": 0.526,
+      "minimum": 0.36,
+      "p95": 1.613,
+      "p99": 1.763,
+      "rejected_count": 0,
+      "rejection_reasons": {},
+      "sample_count": 20,
+      "status": "available",
+      "unit": "us"
+    },
+    "handshake_negotiation_by_outcome": {
+      "accepted": {
+        "excluded_warmup_count": 0,
+        "maximum": 1.763,
+        "mean": 0.6808,
+        "median": 0.526,
+        "minimum": 0.36,
+        "p95": 1.613,
+        "p99": 1.763,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 20,
+        "status": "available",
+        "unit": "us"
+      }
+    },
+    "handshake_state_by_outcome": {
+      "accepted": {
+        "excluded_warmup_count": 0,
+        "maximum": 6.442,
+        "mean": 3.68255,
+        "median": 3.552,
+        "minimum": 2.244,
+        "p95": 5.21,
+        "p99": 6.442,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 20,
+        "status": "available",
+        "unit": "us"
+      },
+      "not_attempted": {
+        "excluded_warmup_count": 0,
+        "maximum": 36.771,
+        "mean": 7.055725,
+        "median": 6.0365,
+        "minimum": 3.747,
+        "p95": 12.043,
+        "p99": 36.771,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 40,
+        "status": "available",
+        "unit": "us"
+      }
+    },
+    "protocol_decode": {
+      "excluded_warmup_count": 0,
+      "maximum": 36.771,
+      "mean": 4.719177215189873,
+      "median": 4.538,
+      "minimum": 0.1,
+      "p95": 10.079,
+      "p99": 36.771,
+      "rejected_count": 0,
+      "rejection_reasons": {},
+      "sample_count": 79,
+      "status": "available",
+      "unit": "us"
+    },
+    "protocol_decode_by_decode_outcome": {
+      "decoded": {
+        "excluded_warmup_count": 0,
+        "maximum": 5.681,
+        "mean": 2.3227179487179486,
+        "median": 2.405,
+        "minimum": 0.1,
+        "p95": 4.538,
+        "p99": 5.681,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 39,
+        "status": "available",
+        "unit": "us"
+      },
+      "malformed": {
+        "excluded_warmup_count": 0,
+        "maximum": 36.771,
+        "mean": 7.055725,
+        "median": 6.0365,
+        "minimum": 3.747,
+        "p95": 12.043,
+        "p99": 36.771,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 40,
+        "status": "available",
+        "unit": "us"
+      }
+    },
+    "protocol_total": {
+      "excluded_warmup_count": 0,
+      "maximum": 36.771,
+      "mean": 4.900025316455696,
+      "median": 4.579,
+      "minimum": 0.14,
+      "p95": 10.079,
+      "p99": 36.771,
+      "rejected_count": 0,
+      "rejection_reasons": {},
+      "sample_count": 79,
+      "status": "available",
+      "unit": "us"
+    },
+    "protocol_total_by_state_outcome": {
+      "accepted": {
+        "excluded_warmup_count": 0,
+        "maximum": 6.442,
+        "mean": 2.798918918918919,
+        "median": 2.896,
+        "minimum": 0.14,
+        "p95": 5.33,
+        "p99": 6.442,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 37,
+        "status": "available",
+        "unit": "us"
+      },
+      "not_attempted": {
+        "excluded_warmup_count": 0,
+        "maximum": 36.771,
+        "mean": 7.055725,
+        "median": 6.0365,
+        "minimum": 3.747,
+        "p95": 12.043,
+        "p99": 36.771,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 40,
+        "status": "available",
+        "unit": "us"
+      },
+      "rejected": {
+        "excluded_warmup_count": 0,
+        "maximum": 0.772,
+        "mean": 0.6565000000000001,
+        "median": 0.6565000000000001,
+        "minimum": 0.541,
+        "p95": 0.772,
+        "p99": 0.772,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 2,
+        "status": "available",
+        "unit": "us"
+      }
+    }
+  },
+  "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+  "performance_authority": "requires-paired-calibration",
+  "schema_version": "v1",
+  "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+  "target": {
+    "build_result_sha256": "sha256:5cd61d80f12a27e565926d8175c0c82a9e4d604d154821b32f08add5ba1b1f6b",
+    "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+    "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+    "image_reference": "dwarf/amaru-measurement@sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+    "implementation": "amaru",
+    "measurement_revision": "nanoseconds-v3",
+    "mode": "patched",
+    "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+    "runtime_probe_log_sha256": "sha256:b6bcec81129747eb68b9dde4c7218b836d548fb4fc4d50520f867bd3434475d3",
+    "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+    "version": "10.11.20260918",
+    "version_catalog_revision": "0a26e89e9ec8e7d234260be0c830185d363676fbaffb99384a27b70933236ddd"
+  }
+}

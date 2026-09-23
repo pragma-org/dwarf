@@ -1,0 +1,51 @@
+{
+  "spec_version": "v1",
+  "id": "cardano-n2n-handshake-version-table-forward-compat-1112",
+  "title": "Cardano-node N2N handshake version-table forward compatibility \u2014 11.1.2 reference responder",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "cardano",
+    "handshake",
+    "node-to-node",
+    "interop",
+    "measurement",
+    "security",
+    "reference"
+  ],
+  "evidence_intent": "finding-validation",
+  "promotion_blockers": [
+    "Each run proves one exact target and workload; the pair of runs is the differential.",
+    "Spec basis: a node-to-node responder must accept the greatest common version and ignore version numbers it does not know.",
+    "Reference leg runs on the Cardano-node 11.1.2 measurement profile; Cardano measurements cannot yet bind to the mixed amaru-control runtime."
+  ],
+  "target": {
+    "implementation": "cardano-node",
+    "version": "11.1.2"
+  },
+  "runtime": "devnet",
+  "profile": "profile-v-cardano-measurement-nanoseconds-v2",
+  "measurement_profile": "cardano-security-patched",
+  "seed": "0xA11CE516",
+  "load": [
+    {
+      "primitive": "runtime_cardano_measurement_calibration",
+      "profile_id": "profile-v-cardano-measurement-nanoseconds-v2",
+      "attempts": 60,
+      "case_set": "version-table-forward-compat-v1",
+      "response_timeout_seconds": 2,
+      "timeout_seconds": 300,
+      "expected_helper_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "handshake_cases_match_expected",
+      "implementation": "cardano-node",
+      "min_attempts_per_case": 20
+    }
+  ],
+  "teardown": []
+}
