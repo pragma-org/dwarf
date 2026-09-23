@@ -433,6 +433,31 @@ def test_20260918_build_evidence_retains_exact_artifact_digests():
     assert evidence["runtime_probe_smoke"] == "passed"
 
 
+def test_audited_revision_gate_accepts_every_checked_in_measurement_target():
+    audited = builder.audited_measurement_revisions()
+
+    assert {REVISION, FIXED_REVISION, RELEASE_20260918_REVISION} <= audited
+    for root, name in (
+        (Path("dwarf/targets/amaru/conformance-adapters") / RELEASE_20260918_REVISION, "plutus-manifest.json"),
+        (Path("dwarf/targets/amaru/coverage-targets") / RELEASE_20260918_REVISION, "manifest.json"),
+    ):
+        manifest = builder.load_manifest(root / name)
+        assert builder.require_audited_revision(root / name, manifest) == RELEASE_20260918_REVISION
+
+
+def test_audited_revision_gate_refuses_unaudited_or_misplaced_revisions(tmp_path):
+    unaudited = "c" * 40
+    manifest_path = tmp_path / unaudited / "manifest.json"
+    manifest_path.parent.mkdir()
+
+    with pytest.raises(builder.BuildContractError, match="no audited Amaru measurement target"):
+        builder.require_audited_revision(manifest_path, {"source": {"revision": unaudited}})
+    with pytest.raises(builder.BuildContractError, match="revision directory"):
+        builder.require_audited_revision(
+            manifest_path, {"source": {"revision": RELEASE_20260918_REVISION}}
+        )
+
+
 def test_measurement_manifest_revision_must_match_its_revision_directory(tmp_path):
     manifest_path = tmp_path / ("a" * 40) / "manifest.json"
     manifest_path.parent.mkdir()

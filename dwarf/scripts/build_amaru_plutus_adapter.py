@@ -26,7 +26,7 @@ def build_adapter(*, manifest_path, source_repository, output_dir, registry_root
     if output_dir.exists(): raise BuildContractError(f"output directory already exists: {output_dir}")
     manifest=exact_builder.load_manifest(manifest_path)
     if manifest.get("kind")!="production-plutus-v2-conformance" or manifest.get("implementation")!="amaru": raise BuildContractError("wrong adapter manifest")
-    if manifest["source"]["revision"] != REVISION: raise BuildContractError("wrong source revision")
+    exact_builder.require_audited_revision(manifest_path, manifest)
     files,set_digest=_verify(manifest_path,manifest)
     source=exact_builder.clone_exact_source(source_repository,output_dir/"work"/"source",REVISION)
     stage=source/"dwarf-conformance-adapters"/"amaru-plutus"

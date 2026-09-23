@@ -84,10 +84,8 @@ def verify_harness_set(root: Path, manifest: Mapping[str, Any]) -> dict[str, Any
     return {"coverage_harness_sha256": digest, "files": verified}
 
 
-def _verify_manifest_contract(manifest: Mapping[str, Any]) -> None:
-    source = manifest.get("source")
-    if not isinstance(source, Mapping) or source.get("revision") != DEFAULT_REVISION:
-        raise BuildContractError("coverage manifest is not pinned to the audited Amaru revision")
+def _verify_manifest_contract(manifest_path: Path, manifest: Mapping[str, Any]) -> None:
+    exact_builder.require_audited_revision(manifest_path, manifest)
     if manifest.get("engine") != "cargo-fuzz/libFuzzer":
         raise BuildContractError("coverage target must reuse cargo-fuzz/libFuzzer")
     if manifest.get("performance_authority") != "non-authoritative":
@@ -197,7 +195,7 @@ def build_target(
     evidence.mkdir()
 
     manifest = load_manifest(manifest_path)
-    _verify_manifest_contract(manifest)
+    _verify_manifest_contract(manifest_path, manifest)
     harness_root = manifest_path.parent
     harness = verify_harness_set(harness_root, manifest)
     revision = str(manifest["source"]["revision"])
