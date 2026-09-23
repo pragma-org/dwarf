@@ -13553,9 +13553,11 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             str(response_timeout_seconds),
             "--case-set",
             case_set,
-            "--progress-timeout-seconds",
-            str(progress_timeout_seconds),
         ]
+        if not self._CARDANO_NODE_WORKLOAD:
+            # Only the Amaru helper waits for post-workload chain progress; the
+            # Cardano helper rejects this flag.
+            command.extend(["--progress-timeout-seconds", str(progress_timeout_seconds)])
         if observation_seconds is not None:
             command.extend(["--observation-seconds", str(observation_seconds)])
         if trace_timeout_seconds is not None:

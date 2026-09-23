@@ -62,3 +62,42 @@ def test_cardano_calibration_primitive_passes_node_workload_parameters(tmp_path,
     command = calls[0]
     assert command[command.index("--plutus-transactions") + 1] == "2"
     assert command[command.index("--epoch-observation-seconds") + 1] == "55.0"
+
+
+def test_cardano_calibration_command_is_accepted_by_the_cardano_helper(monkeypatch, tmp_path):
+    from scripts import runtime_cardano_measurement_calibration as helper
+
+    calls = []
+
+    class Handle:
+        run_dir = tmp_path
+
+        def log(self, **_kwargs):
+            pass
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        (output_dir / "result.json").write_text(
+            json.dumps({"attempts": {"total": 60}}), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    RuntimeCardanoMeasurementCalibration(params={
+        "runtime_root": "/runtime",
+        "attempts": 60,
+        "case_set": "version-table-forward-compat-v1",
+    }).run(Handle(), None)
+
+    command = calls[0]
+    assert "--progress-timeout-seconds" not in command
+    received = {}
+
+    def run_leg(**kwargs):
+        received.update(kwargs)
+        return {"node_trace": {"record_count": 1, "protocol_record_count": 1}}
+
+    monkeypatch.setattr(helper, "run_leg", run_leg)
+    assert helper.main(command[2:]) == 0
+    assert received["case_set"] == "version-table-forward-compat-v1"
