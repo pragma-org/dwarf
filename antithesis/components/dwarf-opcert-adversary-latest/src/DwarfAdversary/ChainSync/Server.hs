@@ -12,6 +12,7 @@
 module DwarfAdversary.ChainSync.Server
     ( chainSyncServer
     , advancingChainSyncServer
+    , caseInjectingChainSyncServer
     , deepRollbackChainSyncServer
     , tipFromHeaders
     ) where
@@ -391,6 +392,116 @@ deepRollbackChainSyncServer log_ onServe chainVar depth minTip firedVar =
                 pure
                     ( SendMsgRollForward
                         h
+                        (chainTip c)
+                        (ChainSyncServer (pure (idle (push (castPoint (headerPoint h)) served))))
+                    )
+            Left c -> do
+                let served' = case dropWhile (not . onChain c) served of
+                        [] -> [Net.genesisPoint]
+                        ps -> ps
+                pure
+                    ( SendMsgRollBackward
+                        (head served')
+                        (chainTip c)
+                        (ChainSyncServer (pure (idle served')))
+                    )
+    awaitNext [] = awaitNext [Net.genesisPoint]
+
+-- | Like 'advancingChainSyncServer', but each header is passed through a
+-- caller-supplied @transform@ before it is served. The 'Bool' tells the
+-- transform whether the header is a FRESH live header served after the node has
+-- caught up to our tip (True, from the await path) or a historical header
+-- served during the initial catch-up (False). This is the seam at which the
+-- opcert case runner injects exactly ONE mutated header at the live tip while
+-- serving every other header byte-identically (valid-control).
+caseInjectingChainSyncServer
+    :: (String -> IO ())
+    -> (Bool -> Header -> IO Header)
+    -> StrictTVar IO (Chain Header)
+    -> ChainSyncServer Header Point Tip IO ()
+caseInjectingChainSyncServer log_ transform chainVar =
+    ChainSyncServer (pure (idle [Net.genesisPoint]))
+  where
+    chainTip :: Chain Header -> Tip
+    chainTip = tipFromHeaders . Chain.toOldestFirst
+
+    onChain :: Chain Header -> Point -> Bool
+    onChain c p = Chain.pointOnChain (castPoint p) c
+
+    servedCap :: Int
+    servedCap = 2200
+
+    push :: Point -> [Point] -> [Point]
+    push p served = take servedCap (p : served)
+
+    idle :: [Point] -> ServerStIdle Header Point Tip IO ()
+    idle [] = idle [Net.genesisPoint]
+    idle served@(readPtr : _) =
+        ServerStIdle
+            { recvMsgRequestNext = do
+                c <- atomically (readTVar chainVar)
+                if not (onChain c readPtr)
+                    then do
+                        let served' = case dropWhile (not . onChain c) served of
+                                [] -> [Net.genesisPoint]
+                                ps -> ps
+                        log_ ("chain-sync(case): reorg; RollBackward to " <> show (head served'))
+                        pure
+                            ( Left
+                                ( SendMsgRollBackward
+                                    (head served')
+                                    (chainTip c)
+                                    (ChainSyncServer (pure (idle served')))
+                                )
+                            )
+                    else case Chain.successorBlock (castPoint readPtr) c of
+                        Just h -> do
+                            h' <- transform False h
+                            pure
+                                ( Left
+                                    ( SendMsgRollForward
+                                        h'
+                                        (chainTip c)
+                                        (ChainSyncServer (pure (idle (push (castPoint (headerPoint h)) served))))
+                                    )
+                                )
+                        Nothing -> pure (Right (awaitNext served))
+            , recvMsgFindIntersect = \points -> do
+                log_ "chain-sync(case): node sent MsgFindIntersect"
+                c <- atomically (readTVar chainVar)
+                case Chain.findFirstPoint (map castPoint points) c of
+                    Just p ->
+                        pure
+                            ( SendMsgIntersectFound
+                                (castPoint p)
+                                (chainTip c)
+                                (ChainSyncServer (pure (idle [castPoint p, Net.genesisPoint])))
+                            )
+                    Nothing ->
+                        pure
+                            ( SendMsgIntersectNotFound
+                                (chainTip c)
+                                (ChainSyncServer (pure (idle served)))
+                            )
+            , recvMsgDoneClient = log_ "chain-sync(case): node sent MsgDone"
+            }
+
+    awaitNext :: [Point] -> IO (ServerStNext Header Point Tip IO ())
+    awaitNext served@(readPtr : _) = do
+        res <- atomically $ do
+            c <- readTVar chainVar
+            if not (onChain c readPtr)
+                then pure (Left c)
+                else case Chain.successorBlock (castPoint readPtr) c of
+                    Just h' -> pure (Right h')
+                    Nothing -> retry
+        case res of
+            Right h -> do
+                h' <- transform True h
+                c <- atomically (readTVar chainVar)
+                pure
+                    ( SendMsgRollForward
+                        h'
                         (chainTip c)
                         (ChainSyncServer (pure (idle (push (castPoint (headerPoint h)) served))))
                     )

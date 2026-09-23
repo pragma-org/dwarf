@@ -13,7 +13,7 @@ import Control.Monad (forM_, forever)
 import Data.Aeson (Value, encode, object, (.=))
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Lazy.Char8 qualified as LBS8
-import Data.IORef (IORef, atomicModifyIORef', newIORef)
+import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef, writeIORef)
 import Data.Set qualified as Set
 import DwarfAdversary (originPoint)
 import DwarfAdversary.Application (Limit (..), runChainProducerInto, syncHeaders)
@@ -23,15 +23,23 @@ import DwarfAdversary.ChainSync.Connection
     , plainBlockFetchCodec
     , runChainSyncServer
     )
-import DwarfAdversary.ChainSync.Server (advancingChainSyncServer)
+import DwarfAdversary.ChainSync.Server (advancingChainSyncServer, caseInjectingChainSyncServer)
 import DwarfAdversary.SDK qualified as SDK
 import DwarfOpcertAdversary
-    ( ReSignOutcome (..)
+    ( CaseResult (..)
+    , KeySet (..)
+    , ReSignOutcome (..)
     , ReSignParams (..)
+    , applyCase
+    , caseEligible
+    , caseMutationName
+    , loadColdSignKey
     , loadKesSignKey
+    , plainCodec
     , reSignHeader
     , resignCodec
     )
+import Cardano.Slotting.Slot (SlotNo (..))
 import Ouroboros.Network.Block (HeaderFields (..), getHeaderFields)
 import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
@@ -63,6 +71,20 @@ main = do
                     (Just (host, upstreamPort), Just listenPort, Just slots) ->
                         runLive host upstreamPort listenPort kesSkey slots evidence
                     _ -> usage
+        ("serve-case" : rest) ->
+            let flags = parseFlags rest
+             in case ( lookupFlag "--case" flags
+                     , lookupFlag "--upstream" flags >>= parseHostPort
+                     , lookupFlag "--listen-port" flags >>= readMaybe
+                     , lookupFlag "--kes-skey" flags
+                     , lookupFlag "--cold-skey" flags
+                     , lookupFlag "--slots-per-kes" flags >>= readMaybe
+                     , lookupFlag "--evidence" flags
+                     ) of
+                    (Just caseId, Just (host, upstreamPort), Just listenPort, Just kesSkey, Just coldSkey, Just slots, Just evidence) ->
+                        let maxEvo = maybe 60 id (lookupFlag "--max-kes-evo" flags >>= readMaybe)
+                         in runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence
+                    _ -> usage
         _ -> usage
 
 
@@ -71,7 +93,8 @@ usage =
     error
         "usage:\n\
         \  dwarf-opcert-adversary verify-resign HOST PORT COUNT KES_SKEY SLOTS_PER_KES\n\
-        \  dwarf-opcert-adversary live-proxy --upstream HOST:PORT --listen-port PORT --kes-skey FILE --slots-per-kes N --evidence FILE"
+        \  dwarf-opcert-adversary live-proxy --upstream HOST:PORT --listen-port PORT --kes-skey FILE --slots-per-kes N --evidence FILE\n\
+        \  dwarf-opcert-adversary serve-case --case CASE_ID --upstream HOST:PORT --listen-port PORT --kes-skey FILE --cold-skey FILE --slots-per-kes N --max-kes-evo N --evidence FILE"
 
 
 parseHostPort :: String -> Maybe (String, Int)
@@ -205,3 +228,93 @@ appendEvidence path value = do
     if size >= 4 * 1024 * 1024
         then pure ()
         else withBinaryFile path AppendMode $ \handle -> LBS8.hPutStrLn handle (encode value)
+
+
+-- | Serve a single opcert CASE against an isolated victim relay: relay the
+-- honest advancing chain (byte-identical valid-control) to advance the victim
+-- to the live tip, then inject EXACTLY ONE header for the case at the live tip
+-- (valid-control serves the real header unchanged; a rule case serves a real
+-- pool1 header with ONLY its opcert field mutated + re-signed), append one
+-- evidence line, and keep relaying the honest chain so the relay stays alive.
+runCase
+    :: String -> String -> Int -> Int
+    -> FilePath -> FilePath -> Word -> Word -> FilePath -> IO ()
+runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence = do
+    kesKey <- loadKesSignKey kesSkey
+    coldKey <- loadColdSignKey coldSkey
+    let ks = KeySet kesKey coldKey slots maxEvo
+        magic = NetworkMagic 42
+    chainVar <- newTVarIO Chain.Genesis
+    firedRef <- newIORef False
+    appendEvidence evidence $
+        object ["kind" .= ("opcert_case_started" :: String), "case" .= caseId, "slots_per_kes" .= slots]
+    _ <- forkIO $ forever $ do
+        result <- runChainProducerInto chainVar magic host (fromIntegral upstreamPort)
+        case result of
+            Left exception -> putStrLn ("opcert-case: upstream ended: " <> show exception)
+            Right () -> putStrLn "opcert-case: upstream ended cleanly"
+        threadDelay 1_000_000
+    let transform live h
+            | not live = pure h
+            | otherwise = do
+                fired <- readIORef firedRef
+                if fired
+                    then pure h
+                    else if not (caseEligible ks h)
+                        then pure h
+                        else case applyCase ks caseId h of
+                            Left reason -> do
+                                writeIORef firedRef True
+                                putStrLn ("opcert-case: FINDING " <> caseId <> ": " <> reason)
+                                appendEvidence evidence $
+                                    object
+                                        [ "kind" .= ("opcert_case_unreachable" :: String)
+                                        , "case" .= caseId
+                                        , "reason" .= reason
+                                        ]
+                                pure h
+                            Right cr -> do
+                                writeIORef firedRef True
+                                let HeaderFields (SlotNo slotW) _ hash = getHeaderFields (crHeader cr)
+                                putStrLn
+                                    ( "opcert-case: INJECT " <> caseId
+                                        <> " mutation=" <> caseMutationName (crMutation cr)
+                                        <> " verdict=" <> crExpectedVerdict cr
+                                        <> " slot=" <> show slotW
+                                        <> " hash=" <> show hash
+                                    )
+                                appendEvidence evidence $
+                                    object
+                                        [ "kind" .= ("opcert_case_served" :: String)
+                                        , "case" .= caseId
+                                        , "mutation" .= caseMutationName (crMutation cr)
+                                        , "header_hash" .= show hash
+                                        , "slot" .= slotW
+                                        , "pool" .= ("pool1" :: String)
+                                        , "expected_verdict" .= crExpectedVerdict cr
+                                        ]
+                                pure (crHeader cr)
+        onAccept peer = putStrLn ("opcert-case: accepted " <> peer)
+        server = caseInjectingChainSyncServer putStrLn transform chainVar
+    forever $
+        ( runChainSyncServer
+            magic
+            (fromIntegral listenPort)
+            onAccept
+            plainCodec
+            server
+            plainBlockFetchCodec
+            (onDemandBlockFetchResponder putStrLn (const (pure ())) magic (host, upstreamPort) chainVar)
+            >> pure ()
+        ) `catch` \(exception :: SomeException) -> do
+            putStrLn ("opcert-case: server restart after: " <> show exception)
+            threadDelay 1_000_000
+
+
+-- | Parse @--flag value@ pairs (order-independent) into an assoc list.
+parseFlags :: [String] -> [(String, String)]
+parseFlags (flag@('-':'-':_) : value : rest) = (flag, value) : parseFlags rest
+parseFlags _ = []
+
+lookupFlag :: String -> [(String, String)] -> Maybe String
+lookupFlag = lookup

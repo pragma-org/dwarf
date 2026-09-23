@@ -62,6 +62,7 @@ library
     , base16-bytestring
     , bytestring
     , cardano-crypto-class
+    , cardano-ledger-core
     , cardano-ledger-byron
     , cardano-protocol
     , cardano-slotting
@@ -95,6 +96,7 @@ executable dwarf-opcert-adversary-latest
   build-depends:
     , aeson
     , base
+    , cardano-slotting
     , bytestring
     , cborg
     , containers

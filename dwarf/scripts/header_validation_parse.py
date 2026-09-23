@@ -54,6 +54,17 @@ def parse_cardano_header_events(lines: Iterable[str]) -> list[dict]:
             if header_hash:
                 out.append({"header_hash": str(header_hash), "verdict": "rejected",
                             "reason": match.group(1) if match else None, "at": document.get("at")})
+        elif namespace.endswith("ChainSync.Client.Exception") or "ChainSyncClient" in namespace:
+            # Praos header validation runs in the ChainSync client: an invalid
+            # header raises a HeaderError there (not a ChainDB InvalidBlock),
+            # naming the header via blockPointHash inside the exception text.
+            blob = json.dumps(data)
+            if "HeaderError" in blob:
+                hash_match = re.search(r"blockPointHash = ([0-9a-fA-F]{64})", blob)
+                reason = _OCERT.search(blob)
+                if hash_match:
+                    out.append({"header_hash": hash_match.group(1), "verdict": "rejected",
+                                "reason": reason.group(1) if reason else None, "at": document.get("at")})
     return out
 
 
