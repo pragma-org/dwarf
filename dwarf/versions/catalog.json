@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-21T00:01:14Z",
+  "updated_at": "2026-09-23T11:01:09.598991Z",
   "sources": {
     "amaru": "https://github.com/pragma-org/amaru",
     "amaru_wiki_revision": "4ff6cd8d4f0e723bcf60976ea3b68259e48e932c",
@@ -3362,6 +3362,40 @@
           "status": "unknown",
           "default": false,
           "checked_at": "2026-09-18T04:08:53.185701Z",
+          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "evidence": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "implementation": "amaru",
+      "version": "10.11.20260918",
+      "channel": "stable",
+      "released_at": "2026-09-19T06:26:05Z",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "release_url": "https://github.com/pragma-org/amaru/releases/tag/v10.11.20260918",
+      "artifacts": [
+        {
+          "kind": "oci",
+          "reference": "ghcr.io/pragma-org/amaru:v10.11.20260918",
+          "availability": "available",
+          "digest": "sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60"
+        }
+      ],
+      "verification": {
+        "amaru-only": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-23T11:01:09.598991Z",
+          "reason": "Discovered from the official release feed; real-node qualification is pending.",
+          "evidence": [],
+          "issues": []
+        },
+        "mixed": {
+          "status": "unknown",
+          "default": false,
+          "checked_at": "2026-09-23T11:01:09.598991Z",
           "reason": "No exact mixed-pair runtime qualification has been recorded.",
           "evidence": [],
           "issues": []
