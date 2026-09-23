@@ -10,8 +10,128 @@
 <link rel="stylesheet" href="/static/css/tokens.css">
 <link rel="stylesheet" href="/static/css/themes.css">
 <link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/basic.css">
+<link rel="stylesheet" href="/static/css/deck.css">
 </head>
 <body class="product-landing" data-page="landing" data-density="reading" data-ui="{{ ui|default('bento') }}">
+{% if ui == 'basic' %}
+{% set c = deck.runs.counts %}
+<main class="dk-landing dk">
+  <div class="dk-row" style="justify-content:space-between">
+    <div class="dk-landing__brand"><img src="/static/dwarf-logo.png" alt=""><b>DWARF</b>
+      <span class="dk-note">Evidence deck · Owned by <a href="https://pragma.io/" target="_blank" rel="noreferrer">PRAGMA</a></span></div>
+    <div class="view-toggle" role="group" aria-label="View density">
+      <a href="{{ request_path or '/' }}?view=basic" aria-current="true">Basic</a>
+      <a href="{{ request_path or '/' }}?view=advanced">Advanced</a>
+    </div>
+  </div>
+  <p class="eyebrow" style="margin-top:28px">Home · three-card reading</p>
+  {% set unhealthy = topology_health.state not in ('healthy', 'ready', 'ok') %}
+  <h1 class="dk-lead">{% if unhealthy %}Not all clear: active topology is {{ topology_health.state|replace('_',' ') }}.{% else %}The lab is up. Read what the evidence proves.{% endif %}</h1>
+  <p class="dk-plain">Evidence is only collectible when it is real: runs backed by a verified hash chain are holographic, catalog mappings are plain card backs, and gaps stay empty slots. Tap a card to flip it.</p>
+
+  <div class="dk-spread">
+    <div>
+      <div class="dk-card dk-card--flip dk-deal" style="--i:0" tabindex="0" role="button" aria-pressed="false" data-dk-flip aria-label="Past: recent runs. Flip for detail">
+        <div class="dk-card__inner">
+          <div class="dk-face dk-face--front"><div class="dk-face__body">
+            <div class="dk-kicker"><span>I · Past</span><span>{{ deck.runs.total }} runs</span></div>
+            <div class="dk-title">Recent runs</div>
+            <p class="dk-sub">Outcome records — a pass is not yet a verdict.</p>
+            <div class="dk-bigsuits">
+              <div class="dk-g-pass"><b>{{ c.pass }}</b> ♦ pass</div>
+              <div class="dk-g-fail"><b>{{ c.fail }}</b> ▲ fail</div>
+              <div class="dk-g-error"><b>{{ c.error }}</b> ✕ error</div>
+              {% if c.other %}<div class="dk-g-other"><b>{{ c.other }}</b> ■ other</div>{% endif %}
+            </div>
+            <div class="dk-pips" role="img" aria-label="Last {{ deck.runs.total }} runs, oldest to newest">
+              {% for r in deck.runs.rows|reverse %}<i class="{{ r.exit_status or 'other' }}"></i>{% endfor %}
+            </div>
+            <div class="dk-cue">oldest → newest · tap to flip ↻</div>
+          </div></div>
+          <div class="dk-face dk-face--rear dk-rear"><div class="dk-face__body">
+            <div class="dk-kicker"><span>Past · detail</span><span>↻</span></div>
+            <dl>
+              <dt>Window</dt><dd>last {{ deck.runs.total }} runs</dd>
+              <dt>Pass</dt><dd>{{ c.pass }}</dd><dt>Fail</dt><dd>{{ c.fail }}</dd><dt>Error</dt><dd>{{ c.error }}</dd>
+            </dl>
+            <p class="dk-sub">A pass is the recorded result only. Open a run to check its hash-chain integrity before you trust it.</p>
+            <a class="dk-btn" href="/operate/runs" style="margin-top:auto">Open the runs →</a>
+          </div></div>
+        </div>
+      </div>
+      <div class="dk-pos">Past · runs</div>
+    </div>
+
+    <div>
+      <div class="dk-card dk-card--flip dk-deal {% if unhealthy %}dk-warnface{% endif %}" style="--i:1" tabindex="0" role="button" aria-pressed="false" data-dk-flip aria-label="Present: system status. Flip for detail">
+        <div class="dk-card__inner">
+          <div class="dk-face dk-face--front"><div class="dk-face__body">
+            <div class="dk-kicker"><span>II · Present</span><span>System</span></div>
+            {% if unhealthy %}<div class="dk-warnsuit" aria-hidden="true">▲</div>{% else %}<div class="dk-warnsuit dk-g-pass" aria-hidden="true">♦</div>{% endif %}
+            <div class="dk-title" style="text-align:center">Active topology</div>
+            <p class="dk-sub" style="text-align:center;font:700 13px var(--dk-mono);letter-spacing:.2em;text-transform:uppercase;color:{{ 'var(--dk-warn)' if unhealthy else 'var(--dk-pass)' }}">{{ topology_health.state|replace('_',' ') }}</p>
+            <section class="product-landing__status dk-statusrows" aria-label="Deployment status"
+                     data-framework-url="/healthz" data-topology-url="/api/topology/health?fresh=1">
+              <article class="landing-status-pill" data-status="framework" data-state="checking">
+                <span>Framework</span><strong>Checking</strong><small>Dashboard service</small></article>
+              <article class="landing-status-pill" data-status="control" data-state="{{ 'ready' if control_enabled else 'unavailable' }}">
+                <span>Control channel</span><strong>{{ 'Ready' if control_enabled else 'Unavailable' }}</strong><small>Restricted host commands</small></article>
+              <article class="landing-status-pill" data-status="topology" data-state="{{ topology_health.state }}">
+                <span>Topology</span><strong>{{ topology_health.state|replace('_', ' ') }}</strong><small>Current managed profile</small></article>
+              <article class="landing-status-pill" data-status="versions" data-state="ready">
+                <span>Node versions</span><strong>Confirmed</strong><small>Cardano {{ version_defaults.cardano }} · Amaru {{ version_defaults.amaru }}</small></article>
+            </section>
+          </div></div>
+          <div class="dk-face dk-face--rear dk-rear"><div class="dk-face__body">
+            <div class="dk-kicker"><span>Present · detail</span><span>↻</span></div>
+            <dl>
+              <dt>Topology</dt><dd>{{ topology_health.state|replace('_',' ') }}</dd>
+              <dt>Cached</dt><dd>{{ 'yes · ' ~ (topology_health.age_seconds if topology_health.age_seconds is not none else '?') ~ 's old' if topology_health.cached else 'no' }}</dd>
+              <dt>Cardano-node</dt><dd>{{ version_defaults.cardano }}</dd>
+              <dt>Amaru</dt><dd>{{ version_defaults.amaru }}</dd>
+            </dl>
+            <p class="dk-sub">Runs launched while the topology is unhealthy may be observing a degraded network — read their integrity, not just their result.</p>
+            <a class="dk-btn" href="/operate/status" style="margin-top:auto">Substrate health →</a>
+          </div></div>
+        </div>
+      </div>
+      <div class="dk-pos">Present · system</div>
+    </div>
+
+    <div>
+      <div class="dk-card dk-card--flip dk-deal" style="--i:2" tabindex="0" role="button" aria-pressed="false" data-dk-flip aria-label="Future: open gaps. Flip for detail">
+        <div class="dk-card__inner">
+          <div class="dk-face dk-face--front"><div class="dk-face__body">
+            <div class="dk-kicker"><span>III · Future</span><span>{{ deck.gaps|length }} gap{{ '' if deck.gaps|length == 1 else 's' }}</span></div>
+            <div class="dk-title">Open gaps</div>
+            <p class="dk-sub">Empty slots: no scenario is mapped, so there is nothing to prove yet.</p>
+            <div class="dk-gapslots">
+              {% for g in deck.gaps %}<a class="dk-gapslot" href="/learn/threat-coverage#dk-{{ g.id }}"><b>{{ g.id }}</b><span>GAP</span></a>
+              {% else %}<p class="dk-sub">No unmapped threats or risks.</p>{% endfor %}
+            </div>
+            <div class="dk-cue" style="margin-top:auto">tap to flip ↻</div>
+          </div></div>
+          <div class="dk-face dk-face--rear dk-rear"><div class="dk-face__body">
+            <div class="dk-kicker"><span>Future · detail</span><span>↻</span></div>
+            {% for g in deck.gaps %}<p class="dk-sub"><b style="color:var(--dk-ink)">{{ g.id }}</b> — {{ g.title }}</p>{% endfor %}
+            <a class="dk-btn" href="/learn/threat-coverage" style="margin-top:auto">Open the binder →</a>
+          </div></div>
+        </div>
+      </div>
+      <div class="dk-pos">Future · gaps</div>
+    </div>
+  </div>
+
+  <div class="dk-row dk-center" style="margin-top:18px">
+    <a class="dk-btn dk-btn--solid" href="/operate">Enter the lab →</a>
+    <a class="dk-btn" href="/learn/measurement-coverage#tier-verified">What is actually verified?</a>
+    <a class="dk-btn" href="/run">Start a run</a>
+  </div>
+  <p class="dk-landing__foot"><a href="https://gainsec.com" target="_blank" rel="noreferrer">Created by Jon &quot;GainSec&quot; Gaines</a> · <a href="https://github.com/pragma-org/dwarf" target="_blank" rel="noreferrer">Open Source</a></p>
+</main>
+<script src="/static/js/deck.js" defer></script>
+{% else %}
 <div class="substrate-motes" aria-hidden="true">
   {% for _ in range(18) %}<span class="substrate-motes__dot"></span>{% endfor %}
 </div>
@@ -54,6 +174,7 @@
   <span aria-hidden="true">·</span>
   <a href="https://github.com/pragma-org/dwarf" target="_blank" rel="noreferrer">Open Source</a>
 </footer>
+{% endif %}
 <script type="module" src="/static/js/landing.js"></script>
 </body>
 </html>

@@ -3408,15 +3408,24 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             "/learn/consensus": ("Learn", "Consensus differential",
                 "How the Haskell cardano-node and Amaru compare on the same chain under fault "
                 "— forks, k-recovery, epoch boundaries."),
-            "/learn/threat-coverage": ("Learn", "Threat / risk coverage map",
-                "Every scenario mapped to the Amaru Risk Register and Threat Model, with maturity "
-                "pills and coverage gaps. A very large matrix."),
+        }
+
+        # Basic "Evidence Deck" binder replaces the two very large coverage pages.
+        BASIC_BINDER_PAGES = {
+            "/learn/threat-coverage": ("threats", "Threat & risk binder"),
+            "/learn/measurement-coverage": ("measurement", "Measurement coverage"),
         }
 
         def _basic_reference_stub(self, path):
             from profile_manager.templating import render, current_view
             if current_view() != "basic":
                 return None
+            binder = self.BASIC_BINDER_PAGES.get(path)
+            if binder:
+                from profile_manager.data.basic_deck import deck_binder
+                mode, title = binder
+                return render("learn/basic_binder.j2", page_title=title, active="learn",
+                              mode=mode, binder=deck_binder())
             spec = self.BASIC_REFERENCE_STUBS.get(path)
             if not spec:
                 return None

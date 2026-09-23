@@ -33,7 +33,67 @@
 </section>
 {% endif %}
 
-<div class="run-status-banner run-status-banner--{{ run.exit_status or 'unknown' }}">
+{% if ui == "basic" %}
+{% set st = run.exit_status or 'unknown' %}
+{% set verified = run.verify.status == 'verified' %}
+{% set suit = {'pass':'♦','fail':'▲','error':'✕'}.get(st, '■') %}
+{% set tone = {'pass':'dk-g-pass','fail':'dk-g-fail','error':'dk-g-error'}.get(st, 'dk-g-other') %}
+<section class="basic-only dk" aria-label="Run card">
+  <h2 class="dk-lead" style="margin-top:0">
+    {% if st == 'precondition_failed' %}Not run — the topology gate stopped this run before any assertion.
+    {% elif verified %}Recorded {{ st }}{% if run.assertion_summary.total %} · {{ run.assertion_summary.pass }}/{{ run.assertion_summary.total }} assertions{% endif %}, and the bundle's hash chain verifies.
+    {% else %}Recorded {{ st }}, but evidence integrity is {{ run.verify.label|lower }} — treat this card as unproven.{% endif %}
+  </h2>
+  <div class="dk-runlay">
+    <div class="dk-card dk-card--flip {{ 'dk-holo' if verified else 'dk-back' }}" data-dk-seed="{{ run.chain.manifest_hash or run.run_id }}" tabindex="0" role="button" aria-pressed="false" data-dk-flip aria-label="Run card for {{ run.run_id }}. Flip for manifest, hash chain and commands">
+      <div class="dk-card__inner">
+        <div class="dk-face dk-face--front">
+          {% if verified %}<div class="dk-foil"></div><div class="dk-glare"></div>{% endif %}
+          <div class="dk-face__body">
+            <div class="dk-kicker"><span>Run · {{ run.target_implementation or '—' }}</span><span>{{ run.runtime or '' }}</span></div>
+            <div class="dk-verdict"><span class="v {{ tone }}">{{ suit }} {{ st|replace('_',' ') }}</span></div>
+            {% if verified %}<span class="dk-holo-tag">◆ INTEGRITY VERIFIED</span>{% else %}<span class="dk-stamp" style="align-self:flex-start;margin:6px 0">{{ run.verify.label|upper }}</span>{% endif %}
+            <p class="dk-sub" style="word-break:break-all;margin-top:8px"><code>{{ run.scenario_id or '—' }}</code></p>
+            <div class="dk-statgrid">
+              <div><small>Assertions</small><b>{% if st == 'precondition_failed' %}not run{% else %}{{ run.assertion_summary.pass }} / {{ run.assertion_summary.total }}{% endif %}</b></div>
+              <div><small>Integrity</small><b>{{ run.verify.label }}</b></div>
+              <div><small>Wall time</small><b>{% if run.wall_time_seconds is not none %}{{ '%.2f'|format(run.wall_time_seconds) }}s{% else %}—{% endif %}</b></div>
+              <div><small>Chain</small><b>{{ run.chain.continuity or '—' }}</b></div>
+            </div>
+            <div class="dk-cue">tap to flip ↻</div>
+          </div>
+        </div>
+        <div class="dk-face dk-face--rear dk-rear"><div class="dk-face__body">
+          <div class="dk-kicker"><span>Manifest</span><span>↻</span></div>
+          <small class="dk-note">manifest hash</small><div class="dk-hash">{{ run.chain.manifest_hash or '—' }}</div>
+          <small class="dk-note">previous hash</small><div class="dk-hash">{{ run.chain.prev_hash or '—' }}</div>
+          <small class="dk-note">chain · {{ run.chain.continuity or '—' }}</small>
+          {% if run.phase_inventory %}<div class="dk-phases">{% for ph in run.phase_inventory %}<div><b>{{ ph.count }}</b>{{ ph.label }}</div>{% endfor %}</div>{% endif %}
+          {% for slug in ['replay', 'verify_chain'] %}{% set a = run.actions[slug] if run.actions and slug in run.actions else none %}
+          {% if a %}{% set cmd = a.command if a.command else a.command_template %}<div class="dk-cmd"><code>{{ cmd }}</code><button type="button" class="dk-copy" data-dk-copy="{{ cmd }}">copy</button></div>{% endif %}{% endfor %}
+        </div></div>
+      </div>
+    </div>
+    <div>
+      <div class="dk-panel">
+        <h3>What this run shows</h3>
+        <p style="margin:0 0 8px">{{ run.explanation.summary }}</p>
+        <ul>{% for item in run.explanation.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
+      </div>
+      <div class="dk-panel">
+        <h3>Take it with you</h3>
+        <div class="dk-row">
+          <a class="dk-btn dk-btn--solid" href="{{ run.bundle_url }}" download>Export bundle (.tar.gz)</a>
+          <a class="dk-btn" href="/operate/runs/{{ run.run_id }}/live">Live tail</a>
+          <a class="dk-btn" href="{{ request_path or '/' }}?view=advanced">Full evidence in Advanced →</a>
+        </div>
+        <p class="dk-note" style="margin:10px 0 0">The card flips to show the manifest hash, previous hash, phases and the replay / verify commands. Manifest, provenance, SARIF, recorded assertions and logs are in Advanced.</p>
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
+<div class="run-status-banner run-status-banner--{{ run.exit_status or 'unknown' }} adv-only">
   <div class="run-status-banner__primary">
     {% if run.exit_status %}
     <span class="result-pill result-pill--{{ run.exit_status }}">{{ run.exit_status }}</span>
@@ -83,7 +143,7 @@
 </section>
 {% endif %}
 
-<section class="run-explainer" aria-labelledby="run-explainer-heading">
+<section class="run-explainer adv-only" aria-labelledby="run-explainer-heading">
   <header>
     <span class="eyebrow">Guide</span>
     <h2 id="run-explainer-heading">{{ run.explanation.title }}</h2>
@@ -106,7 +166,7 @@
 
 <hr class="hairline">
 
-<section class="run-tile-grid" aria-label="Run summary tiles">
+<section class="run-tile-grid adv-only" aria-label="Run summary tiles">
   <article class="status-tile status-tile--state-{{ 'stale' if run.exit_status == 'precondition_failed' else 'ok' if run.assertion_summary.fail == 0 and run.assertion_summary.total else 'stale' if run.assertion_summary.total else 'error' }}">
     <span class="eyebrow" title="{{ run.explanation.field_help['assertions'] }}">Assertions</span>
     {% if run.exit_status == 'precondition_failed' %}
