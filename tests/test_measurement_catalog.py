@@ -287,6 +287,7 @@ def test_seed_catalog_is_exactly_version_pinned_and_modes_are_not_conflated():
                     "source_revision": AMARU_FIXED_REVISION,
                 }
             )
+        if record.definition_id in expected_amaru:
             expected_versions.append(
                 {
                     "version": AMARU_20260918_VERSION,
