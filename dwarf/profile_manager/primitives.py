@@ -20453,6 +20453,19 @@ class PraosHeaderAssertionRejected(AssertionPrimitive):
     def evaluate(self, handle):
         latest, payload = _latest_completed_payload(handle, phase="load", primitive="runtime_praos_header_assertion_probe")
         result_body = payload.get("result") or {}
+        if result_body.get("status") == "unavailable":
+            # The probe was retired to a fail-closed stub; real Praos header
+            # rejection is proven by the opcert header scenarios. Report a
+            # non-vacuous fail (never a fabricated pass).
+            return {
+                "primitive": "praos_header_assertion_rejected",
+                "params": dict(self.params),
+                "evaluated_value": {"completed": 1 if latest is not None else 0,
+                                    "status": "unavailable"},
+                "data_points_used": [payload] if latest is not None else [],
+                "result": "fail",
+                "note": str(result_body.get("reason") or "praos header probe unavailable"),
+            }
         header_rejected = bool(result_body.get("header_rejected", False))
         assertion_boundary_preserved = bool(result_body.get("assertion_boundary_preserved", False))
         enough = latest is not None and payload.get("outcome") == "ok" and header_rejected and assertion_boundary_preserved
