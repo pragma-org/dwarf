@@ -37,17 +37,14 @@
           "issues": []
         },
         "mixed": {
-          "status": "unknown",
+          "status": "confirmed",
           "default": false,
-          "checked_at": "2026-09-18T10:08:43Z",
-          "reason": "Cardano-node 11.1.2 remains pair-specific for mixed use. Its exact pairing with Amaru 10.11.20260912 failed the isolated serve-through contract while both implementations stayed live and advanced; see the compatibility-pair record.",
+          "checked_at": "2026-09-23T14:30:00Z",
+          "reason": "Confirmed as the exact pair cardano-11.1.2__amaru-10.11.20260918 with ExperimentalProtocolsEnabled pinned false; mixed compatibility remains pair-specific.",
           "evidence": [
-            "state:version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd"
+            "state:version-qualifications/20260923T140419Z-dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18"
           ],
-          "issues": [
-            "https://github.com/cardano-foundation/cardano-node-antithesis/issues/182",
-            "https://github.com/cardano-foundation/cardano-node-antithesis/issues/236"
-          ]
+          "issues": []
         }
       }
     },
@@ -3404,11 +3401,13 @@
           "issues": []
         },
         "mixed": {
-          "status": "unknown",
+          "status": "confirmed",
           "default": false,
-          "checked_at": "2026-09-23T11:01:09.598991Z",
-          "reason": "The release is confirmed for the Amaru-target scope with Cardano-node 10.7.1 support. No exact mixed-pair qualification with Cardano-node 11.1.x has been recorded; see the V16 handshake interop blocker.",
-          "evidence": [],
+          "checked_at": "2026-09-23T14:30:00Z",
+          "reason": "Confirmed as the exact pair cardano-11.1.2__amaru-10.11.20260918 with ExperimentalProtocolsEnabled pinned false; mixed compatibility remains pair-specific.",
+          "evidence": [
+            "state:version-qualifications/20260923T140419Z-dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18"
+          ],
           "issues": []
         }
       }
@@ -3937,6 +3936,21 @@
   ],
   "compatibility_pairs": [
     {
+      "id": "cardano-11.1.2__amaru-10.11.20260918",
+      "cardano_version": "11.1.2",
+      "amaru_version": "10.11.20260918",
+      "status": "confirmed",
+      "default": false,
+      "checked_at": "2026-09-23T14:30:00Z",
+      "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
+      "dwarf_revision": "a9f4de0945f5893e78413c7b54027a9edaa5e0ac",
+      "reason": "The exact fresh-volume pair passed every mixed readiness, exact-identity, convergence, fatal-signal and clean-teardown gate, including the isolated Cardano-node 11.1.2 consumer fed only by Amaru. The topology pins ExperimentalProtocolsEnabled=false (the mainnet/preprod default) because Cardano-node 11.1+ otherwise offers NodeToNodeV_16, whose five-field version data Amaru rejects by dropping the whole handshake.",
+      "evidence": [
+        "state:version-qualifications/20260923T140419Z-dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18"
+      ],
+      "issues": []
+    },
+    {
       "id": "cardano-11.1.2__amaru-10.11.20260912",
       "cardano_version": "11.1.2",
       "amaru_version": "10.11.20260912",
@@ -3945,7 +3959,7 @@
       "checked_at": "2026-09-18T10:08:43Z",
       "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
       "dwarf_revision": "15aad96a348d57ae98f7c8037caddf8d327d0479",
-      "reason": "The exact fresh-volume pair failed DWARF's mixed serve-through contract after the full 30-minute recovery window. Cardano producers and both exact Amaru relays advanced to slot 5001 without fatal signals or restarts, while the isolated Cardano-node consumer whose only upstreams were Amaru remained at its seeded slot 1362 and ended 3639 slots behind. Exact identity, fresh state, path isolation, no-fatal, no-restart, and clean-teardown gates passed; consumer progress, convergence, peer formation, and required-service gates did not. This classifies the pair/topology contract without assigning an unproven root cause to either implementation.",
+      "reason": "The exact fresh-volume pair failed DWARF's mixed serve-through contract after the full 30-minute recovery window. Cardano producers and both exact Amaru relays advanced to slot 5001 without fatal signals or restarts, while the isolated Cardano-node consumer whose only upstreams were Amaru remained at its seeded slot 1362 and ended 3639 slots behind. Exact identity, fresh state, path isolation, no-fatal, no-restart, and clean-teardown gates passed; consumer progress, convergence, peer formation, and required-service gates did not. This classifies the pair/topology contract without assigning an unproven root cause to either implementation. Root cause identified 2026-09-23: the topology left ExperimentalProtocolsEnabled=true, so Cardano-node 11.1.2 offered NodeToNodeV_16 and Amaru dropped the handshake (see cardano-11.1.2__amaru-10.11.20260918).",
       "evidence": [
         "state:version-qualifications/20260918T092619Z-dwarf-qual-mixed-11-1-2-10-11-20260912-89b35bbd"
       ],
