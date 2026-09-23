@@ -1,5 +1,61 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% set invalid = plugin.status == 'invalid' or plugin.errors %}
+{% set attention = not invalid and (plugin.status == 'attention' or plugin.discrepancies) %}
+{% set facts = [
+  ('Status', plugin.status),
+  ('Load mode', plugin.load_mode),
+  ('API version', plugin.dwarf_api_version or 'missing'),
+  ('Version', plugin.version or 'undeclared'),
+  ('Static primitives', plugin.static_primitive_count),
+] %}
+{% call deck_detail('Plugin · ' ~ plugin.load_mode, plugin.plugin_id, tier=('warn' if invalid or attention else 'back'), facts=facts,
+    suit=('✕' if invalid else ('▲' if attention else '')), tone=('dk-g-error' if invalid else 'dk-g-warn'),
+    stamp=plugin.status|upper, sub=(plugin.description or 'No description is declared in the manifest.'), back=('Plugins', '/operate/plugins')) %}
+  <div class="dk-panel dkb-diag" role="note">
+    <h3>▲ Trust boundary</h3>
+    <p class="dkb-p">{{ plugin.trust_warning }}</p>
+  </div>
+  {% if plugin.errors %}
+  <div class="dk-panel dkb-diag" role="alert">
+    <h3>✕ Errors</h3>
+    <ul>{% for error in plugin.errors %}<li>{{ error }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if plugin.discrepancies %}
+  <div class="dk-panel dkb-diag">
+    <h3>▲ Discrepancies</h3>
+    <ul>{% for item in plugin.discrepancies %}<li>{{ item }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if plugin.warnings %}
+  <div class="dk-panel">
+    <h3>■ Boundary notes</h3>
+    <ul>{% for warning in plugin.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  <div class="dk-panel">
+    <h3>Primitives it declares</h3>
+    {% if plugin.primitives %}
+    <ul class="dk-list">{% for primitive in plugin.primitives %}<li>{% if primitive.url and primitive.resolved %}<a href="{{ primitive.url }}"><code>{{ primitive.id }}</code></a>{% else %}<code>{{ primitive.id }}</code> <span class="dkb-unres">▲ unresolved</span>{% endif %} <span class="dk-note">· {{ primitive.status }}</span></li>{% endfor %}</ul>
+    {% else %}
+    <p class="dkb-p dk-note">○ No statically knowable primitive declarations.{% if plugin.runtime_contributions_unknown %} The entrypoint may register more at runtime; this read-only view does not execute plugin code.{% endif %}</p>
+    {% endif %}
+  </div>
+  <div class="dk-panel">
+    <h3>Actions</h3>
+    <div class="dk-row">
+      <a class="dk-btn dk-btn--solid" href="/api/plugins/{{ plugin.catalog_id }}/export" download>Export catalog sources</a>
+      <a class="dk-btn" href="/learn/plugin-authoring" target="_blank" rel="noopener">Authoring and trust model</a>
+      <a class="dk-btn" href="/operate/primitives">Primitive catalog</a>
+    </div>
+  </div>
+{% endcall %}
+{{ deck_more('Manifest paths, primitive reconciliation and manifest source in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <p class="breadcrumb"><a href="/operate/plugins">Plugins</a> <span>/</span> <code>{{ plugin.plugin_id }}</code></p>
 <header class="definition-header"><div><span class="eyebrow">{{ plugin.status }} · {{ plugin.load_mode }}</span><h1>{{ plugin.plugin_id }}</h1><p class="page-hero">{{ plugin.description or 'No description is declared in the manifest.' }}</p></div><div class="definition-actions"><a class="cta cta--ghost" href="/api/plugins/{{ plugin.catalog_id }}/export" download>Export catalog sources</a><a class="cta cta--ghost" href="/learn/plugin-authoring" target="_blank" rel="noopener">Authoring and trust model</a><a class="cta cta--ghost" href="/operate/primitives">Primitive catalog</a></div></header>
 <section class="asset-diagnostics"><strong>Trust boundary</strong><p>{{ plugin.trust_warning }}</p></section>
@@ -17,4 +73,5 @@
 {% if plugin.primitives %}<div class="plugin-primitive-list">{% for primitive in plugin.primitives %}<article class="plugin-primitive"><span class="eyebrow">{{ primitive.status }}{% if primitive.family %} · {{ primitive.family }}{% endif %}</span><h3>{% if primitive.url and primitive.resolved %}<a href="{{ primitive.url }}"><code>{{ primitive.id }}</code></a>{% else %}<code>{{ primitive.id }}</code> <span class="pill pill--v-unresolved">unresolved</span>{% endif %}</h3><p><code>{{ primitive.module or 'module missing' }}.{{ primitive.class_name or 'class missing' }}</code></p>{% if primitive.errors %}<ul>{% for error in primitive.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}</article>{% endfor %}</div>{% else %}<p class="empty-section-statement">No statically knowable primitive declarations. {% if plugin.runtime_contributions_unknown %}The entrypoint may register runtime contributions, but this read-only view does not execute it.{% endif %}</p>{% endif %}</section>
 
 <section><span class="eyebrow">Exact metadata</span><h2>Manifest source</h2>{% if plugin.manifest_source %}<pre class="asset-source plugin-manifest-source"><code>{{ plugin.manifest_source|tojson(indent=2) }}</code></pre>{% else %}<p class="empty-section-statement">No parseable manifest source is available.</p>{% endif %}</section>
+</div>
 {% endblock %}

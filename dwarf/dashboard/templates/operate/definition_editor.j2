@@ -1,5 +1,12 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head with context %}
+{% set _what = {'profiles': ('deployment profile', 'A profile is the group of real nodes DWARF deploys and the exact node versions they run.'), 'targets': ('test target', 'A target names the implementation surface a test points at; it is not a deployment pin.'), 'measurements': ('measurement', 'A measurement is one tap DWARF can record during a run.'), 'measurement-profiles': ('measurement profile', 'A measurement profile is a named set of measurement taps.')}.get(catalog, (catalog_label|lower, '')) %}
+{% if create %}
+{{ deck_head(catalog_label ~ ' · New', 'Define a new ' ~ _what[0] ~ '.', _what[1] ~ ' Fill the fields (or paste the whole definition in the raw tab), then press Validate. Save stays disabled until it passes the ' ~ catalog_label|lower ~ ' schema; Save checks it again and writes a new definition file — it never overwrites an existing id. Saving deploys and runs nothing, and a definition is not evidence.') }}
+{% else %}
+{{ deck_head(catalog_label ~ ' · Edit', 'Change the ' ~ _what[0] ~ ' “' ~ definition_id ~ '”.', _what[1] ~ ' Edit the fields, then press Validate. Save stays disabled until it passes the schema; Save checks it again and replaces this definition file in place. Saving deploys and runs nothing.') }}
+{% endif %}
 <nav class="definition-breadcrumb" aria-label="Breadcrumb">
   <a href="/operate/{{ catalog }}">{{ catalog | title }}</a><span aria-hidden="true">/</span><span>{{ 'New' if create else definition_id }}</span>
 </nav>

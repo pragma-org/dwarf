@@ -1,0 +1,70 @@
+/* Evidence Deck — Operate tool pages II (Basic view only). Scope every rule to body[data-ui="basic"]. */
+/* static-analysis · config · notifications · antithesis · compare · contract · compare/runs */
+
+/* Section headings + helpers used by the deck sections on these pages */
+body[data-ui="basic"] .dk-op-section { margin-top:26px; }
+body[data-ui="basic"] .dk-op-h { font:500 22px/1.2 var(--dk-serif); color:var(--dk-ink); margin:0 0 10px; letter-spacing:0; text-transform:none; }
+body[data-ui="basic"] .dk-op-section .dk-plain { margin-bottom:6px; }
+body[data-ui="basic"] .dk-op-note { margin:10px 0 0; }
+body[data-ui="basic"] .dk-op-actions { display:flex; flex-wrap:wrap; gap:10px; }
+body[data-ui="basic"] .dk-op-alert { margin:0 0 14px; padding:10px 14px; max-width:72ch; border:1px solid var(--dk-warn); border-left-width:4px;
+  border-radius:10px; background:rgba(255,178,92,.08); color:var(--dk-ink); }
+body[data-ui="basic"] .dk-op-alert span { color:var(--dk-warn); margin-right:6px; }
+
+/* Long values in facts (commands, paths) must wrap instead of overflowing the card */
+body[data-ui="basic"] .dk-facts dd { overflow-wrap:anywhere; word-break:break-word; }
+
+/* ---------- Config: Moog + Antithesis setup form (shared markup, deck palette) ---------- */
+body[data-ui="basic"] .moog-setup-form__group { border-color:var(--dk-line2); border-radius:14px;
+  background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)); }
+body[data-ui="basic"] .moog-setup-form__group legend { color:var(--dk-gold); font-family:var(--dk-mono); }
+body[data-ui="basic"] .moog-setup-form__field input[type="text"],
+body[data-ui="basic"] .moog-setup-form__field input[type="password"] { background:var(--dk-table2); border-color:var(--dk-line2); color:var(--dk-ink); max-width:100%; }
+body[data-ui="basic"] .moog-setup-form__field input:focus { border-color:var(--dk-gold); outline:none; }
+body[data-ui="basic"] .moog-setup-form__field input[type="checkbox"] { accent-color:var(--dk-gold); }
+body[data-ui="basic"] .moog-setup-form__meta code { color:var(--dk-gold); background:none; }
+body[data-ui="basic"] .moog-setup-form__help { color:var(--dk-muted); }
+body[data-ui="basic"] .moog-setup-form__actions button { background:var(--dk-gold); color:#1a1224; border:1px solid var(--dk-gold); border-radius:9px; font-weight:700; padding:9px 16px; cursor:pointer; }
+body[data-ui="basic"] .moog-setup-form__actions .button-link { color:var(--dk-gold); }
+body[data-ui="basic"] .moog-setup-form__commands pre { background:var(--dk-table2); border:1px solid var(--dk-line); border-radius:10px; overflow-x:auto; }
+body[data-ui="basic"] .moog-setup-form__grid { min-width:0; }
+
+/* ---------- Antithesis: stage forms restyled as deck faces (ids/scripts untouched) ---------- */
+body[data-ui="basic"] .at-card { background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)); border-color:var(--dk-line2); min-width:0; }
+body[data-ui="basic"] .at-card h3 { font:500 18px/1.2 var(--dk-serif); color:var(--dk-ink); }
+body[data-ui="basic"] .at-card h3 .at-n { background:var(--dk-gold); color:#1a1224; font-family:var(--dk-mono); }
+body[data-ui="basic"] .at-card .sub { color:var(--dk-muted); }
+body[data-ui="basic"] .at-card label { color:var(--dk-faint); font-family:var(--dk-mono); }
+body[data-ui="basic"] .at-card input[type=text] { background:var(--dk-table2); border-color:var(--dk-line2); color:var(--dk-ink); }
+body[data-ui="basic"] .at-card input:focus { border-color:var(--dk-gold); }
+body[data-ui="basic"] .at-card input[type=checkbox] { accent-color:var(--dk-gold); }
+body[data-ui="basic"] .at-hint { color:var(--dk-gold); }
+body[data-ui="basic"] .at-run { background:var(--dk-gold); color:#1a1224; border:1px solid var(--dk-gold); }
+body[data-ui="basic"] .at-card.at-danger { border-color:var(--dk-err); }
+body[data-ui="basic"] .at-card.at-danger .at-run { background:var(--dk-err); border-color:var(--dk-err); color:#1a1224; }
+body[data-ui="basic"] .at-warn { color:var(--dk-warn); }
+body[data-ui="basic"] .at-card:target { outline:2px solid var(--dk-gold); outline-offset:3px; }
+body[data-ui="basic"] .at-logwrap h3 { color:var(--dk-gold); font-family:var(--dk-mono); }
+body[data-ui="basic"] #at-log { background:var(--dk-table); border-color:var(--dk-line2); color:var(--dk-ink); }
+
+/* ---------- Compare: runner (shared markup) ---------- */
+body[data-ui="basic"] .compare-runner > .compare-runner__heading { display:none; } /* the deck section heading replaces it */
+body[data-ui="basic"] .compare-runner__layout { min-width:0; }
+body[data-ui="basic"] .scenario-picker,
+body[data-ui="basic"] .run-card { background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)); border:1px solid var(--dk-line2); border-radius:14px; min-width:0; }
+/* another page's .scenario-picker grid rule must not reshape this picker: force a simple column */
+body[data-ui="basic"] .compare-runner .scenario-picker { display:flex; flex-direction:column; gap:10px; padding:12px; max-height:none; overflow:visible; }
+body[data-ui="basic"] .compare-runner .scenario-picker__list { min-height:280px; max-height:460px; overflow-y:auto; }
+body[data-ui="basic"] .scenario-picker__row { flex-shrink:0; }
+body[data-ui="basic"] .scenario-picker__row[aria-selected="true"] { border-color:var(--dk-gold); background:rgba(230,198,127,.1); }
+body[data-ui="basic"] .scenario-picker__id code { color:var(--dk-gold); background:none; }
+body[data-ui="basic"] .scenario-picker__search input { background:var(--dk-table2); border-color:var(--dk-line2); color:var(--dk-ink); }
+body[data-ui="basic"] .compare-runner .pill[aria-pressed="true"] { border-color:var(--dk-gold); color:var(--dk-gold); }
+body[data-ui="basic"] .live-output__pre { background:var(--dk-table); border-color:var(--dk-line2); max-width:100%; overflow-x:auto; }
+
+/* ---------- Narrow screens ---------- */
+@media (max-width:640px) {
+  body[data-ui="basic"] .at-card { flex-basis:100%; }
+  body[data-ui="basic"] .moog-setup-form__grid { grid-template-columns:1fr; }
+  body[data-ui="basic"] .compare-runner__layout { grid-template-columns:1fr; display:grid; }
+}

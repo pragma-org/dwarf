@@ -1,5 +1,41 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% set n_on = rules|selectattr('configured')|list|length %}
+{% set n_email = rules|selectattr('configured')|selectattr('type', 'equalto', 'email')|list|length %}
+{% set cards = [] %}
+{% for rule in rules %}
+  {% if rule.configured %}
+    {% set skip = rule.type == 'email' and not smtp_configured %}
+    {% set _ = cards.append({'title': rule.event, 'kicker': rule.type ~ ' handler', 'group': 'configured',
+        'tier': 'warn' if skip else 'face', 'suit': '▲' if skip else '♦', 'tone': 'dk-g-warn' if skip else 'dk-g-pass',
+        'sub': ('Email handler set, but SMTP is not configured — this alert will be skipped.' if skip else 'Sends a ' ~ rule.type ~ ' notification when this event happens.'),
+        'facts': [('Endpoint', rule.summary or '—'), ('Last fired', rule.last_fired or 'never')], 'search': rule.type}) %}
+  {% else %}
+    {% set _ = cards.append({'title': rule.event, 'kicker': 'No handler', 'group': 'unconfigured', 'tier': 'gap', 'suit': '○', 'tone': 'dk-g-other',
+        'sub': 'Nothing is sent when this event happens.',
+        'facts': [('Last fired', rule.last_fired or 'never')]}) %}
+  {% endif %}
+{% endfor %}
+{% set _ = cards.append({'title': 'SMTP (email)', 'kicker': 'Mail server', 'group': 'smtp',
+    'tier': 'face' if smtp_configured else 'gap', 'suit': '♦' if smtp_configured else '○', 'tone': 'dk-g-pass' if smtp_configured else 'dk-g-other',
+    'sub': ('Email handlers can send through this server.' if smtp_configured else 'Not set — email handlers will skip until smtp.host is set.'),
+    'facts': [('Server', (smtp_host ~ ':' ~ (smtp_port or '25')) if smtp_configured else 'not set')]}) %}
+{% if not rules %}
+  {% set answer = 'No notification events are defined.' %}
+{% elif n_on == 0 %}
+  {% set answer = 'No alerts will be sent — none of the ' ~ rules|length ~ ' events has a handler.' %}
+{% else %}
+  {% set answer = n_on ~ ' of ' ~ rules|length ~ ' events will send an alert' ~ ('; SMTP is not set, so email alerts will be skipped.' if n_email and not smtp_configured else '.') %}
+{% endif %}
+{{ deck_head('Operate · Notifications', answer,
+   'One card per event DWARF can alert on. Handlers are set in state/config.yaml (edit the file, then restart the dashboard); there is no send or test control on this page. Endpoint URLs are masked to host-only so a screenshot cannot leak a webhook secret.') }}
+{{ deck_grid(cards, label='rules', groups=[('configured', 'Has handler'), ('unconfigured', 'No handler'), ('smtp', 'SMTP')], search=false) }}
+<p class="basic-only dk-note dk-op-note">Delivery outcomes are appended to <code>{{ log_path }}</code>.</p>
+{{ deck_more('Handler table and log path in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Notifications</span>
 <h1>Notifications</h1>
 <p class="page-hero">Read-only view of webhook / notification handlers configured in <code>state/config.yaml</code>. Edit via the file directly; restart the dashboard to apply. Outcomes are appended to <code>{{ log_path }}</code> as ndjson.</p>
@@ -50,4 +86,5 @@
   </table>
   <p class="page-subhero"><small>URLs are masked to host-only so a screenshot of this page can't leak a webhook secret. Full URL lives only in <code>state/config.yaml</code>.</small></p>
 </section>
+</div>
 {% endblock %}

@@ -1,5 +1,52 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% set sa = namespace(ran=0, clean=0, attn=0, unavail=0, names_attn=[], names_none=[]) %}
+{% set cards = [] %}
+{% for tool in tools %}
+  {% set t = latest[tool] %}
+  {% if not t %}
+    {% set _ = sa.names_none.append(tool) %}
+    {% set _ = cards.append({'title': 'cargo ' ~ tool, 'id': 'runtime_static_analysis_' ~ tool, 'kicker': 'Not run yet', 'tier': 'gap', 'suit': '○', 'tone': 'dk-g-other', 'group': 'none',
+        'sub': 'No ' ~ tool ~ ' run has been recorded, so there is no result to show.',
+        'facts': [('To run', 'cardano-profile scenario run dwarf/scenarios/runtime-static-analysis-' ~ tool ~ '-example-smoke.yaml')]}) %}
+  {% else %}
+    {% set sa.ran = sa.ran + 1 %}
+    {% set has_findings = (t.findings_count is not none and t.findings_count > 0) %}
+    {% if t.pill_state == 'stale' %}
+      {% set sa.unavail = sa.unavail + 1 %}
+      {% set tier, suit, tone, kick, grp = 'gap', '○', 'dk-g-other', 'Tool unavailable', 'attention' %}
+      {% set _ = sa.names_attn.append(tool) %}
+    {% elif t.pill_state == 'error' or has_findings %}
+      {% set sa.attn = sa.attn + 1 %}
+      {% set tier, suit, tone, kick, grp = 'warn', '▲', 'dk-g-warn', ('Findings' if has_findings else 'Failed'), 'attention' %}
+      {% set _ = sa.names_attn.append(tool) %}
+    {% else %}
+      {% set sa.clean = sa.clean + 1 %}
+      {% set tier, suit, tone, kick, grp = 'face', '♦', 'dk-g-pass', 'Clean', 'clean' %}
+    {% endif %}
+    {% set _ = cards.append({'title': 'cargo ' ~ tool, 'id': 'runtime_static_analysis_' ~ tool, 'href': t.run_url, 'kicker': kick, 'tier': tier, 'suit': suit, 'tone': tone, 'group': grp,
+        'sub': 'Tool reported: ' ~ (t.tool_status or 'unknown') ~ '.',
+        'facts': [('Findings', t.findings_count if t.findings_count is not none else '—'), ('Exit code', t.tool_exit_code if t.tool_exit_code is not none else '—'), ('Checked', t.executed_at_utc or '—'), ('Crate', t.crate_dir or '—')] + ([('Parse error', t.parse_error)] if t.parse_error else []),
+        'search': (t.run_id or '') ~ ' ' ~ (t.tool_status or '')}) %}
+  {% endif %}
+{% endfor %}
+{% if sa.ran == 0 %}
+  {% set answer = 'No static-analysis results yet — clippy, audit and deny have never been run.' %}
+{% elif sa.names_attn %}
+  {% set answer = sa.names_attn|length ~ ' of ' ~ tools|length ~ ' checks need attention on their latest run (' ~ sa.names_attn|join(', ') ~ ').' %}
+{% elif sa.names_none %}
+  {% set answer = sa.clean ~ ' of ' ~ tools|length ~ ' checks came back clean; ' ~ sa.names_none|join(', ') ~ ' has not been run.' %}
+{% else %}
+  {% set answer = 'All ' ~ tools|length ~ ' Rust checks came back clean on their latest run.' %}
+{% endif %}
+{{ deck_head('Operate · Static analysis', answer,
+   'One card per tool — clippy (lints), audit (known security advisories) and deny (licences and banned crates). Each shows only what the tool itself reported on its most recent run; a clean result means that tool found nothing, not that the code is proven safe.') }}
+{{ deck_grid(cards, label='tools', search=false, empty='No static-analysis tools are configured.') }}
+{{ deck_more('Logs, stderr and run history in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Static Analysis</span>
 <h1>clippy / audit / deny status</h1>
 <p class="page-hero">Operator-readable view of the three static-analysis primitives ada3 ships: <code>runtime_static_analysis_clippy</code> (lints), <code>runtime_static_analysis_audit</code> (advisory database checks), and <code>runtime_static_analysis_deny</code> (license + policy + banned-crate checks). The page mirrors each tool's most recent run on disk — the count, the verbatim status string, the crate that was checked, and the raw stderr tail — without re-categorizing what those tools reported.</p>
@@ -89,4 +136,5 @@
   </article>
   {% endfor %}
 </section>
+</div>
 {% endblock %}

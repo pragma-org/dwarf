@@ -46,6 +46,24 @@
   <span class="empty-section-statement__cite">scanned <code>dwarf/runs/</code>, 0 runs with manifests</span>
 </p>
 {% else %}
+{% if ui == "basic" %}
+{% set np = rows|selectattr('exit_status','equalto','pass')|list|length %}
+{% set nf = rows|selectattr('exit_status','equalto','fail')|list|length %}
+{% set ne = rows|selectattr('exit_status','equalto','error')|list|length %}
+<section class="basic-only dk" aria-label="Runs as a hand of cards">
+  <h2 class="dk-lead" style="margin-top:0">{{ np }} passed, {{ nf }} failed, {{ ne }} errored{% if rows|length - np - nf - ne > 0 %}, {{ rows|length - np - nf - ne }} other{% endif %}.</h2>
+  <p class="dk-plain">One card per run, newest first. The suit is the recorded result; open a run to see whether its evidence bundle verifies before trusting it.</p>
+  <div class="dk-hand-wrap">
+    <div class="dk-hand">
+      {% for r in rows %}{% set st = r.exit_status if r.exit_status in ('pass','fail','error') else 'other' %}
+      <a class="dk-mini {{ st }}" href="{{ r.run_url if r.is_local else '#' }}" aria-label="{{ st }} · {{ r.target_implementation or '—' }} · {{ r.scenario_id or '—' }} · {{ r.ended_at or '' }} · {{ r.run_id }}">{{ {'pass':'♦','fail':'▲','error':'✕'}.get(st, '■') }}</a>
+      {% endfor %}
+    </div>
+    <p class="dk-readout" data-dk-readout aria-live="polite">Hover or focus a card to read it · newest on the left</p>
+    <div class="dk-hand-legend"><span class="dk-g-pass"><b>♦</b> pass</span><span class="dk-g-fail"><b>▲</b> fail</span><span class="dk-g-error"><b>✕</b> error</span><span><b>■</b> other</span></div>
+  </div>
+</section>
+{% endif %}
 <form class="filter-bar runs-filter-bar" method="get" action="/operate/runs" role="search">
   <span class="eyebrow">Result</span>
   <div class="filter-pills" role="group" aria-label="Filter by result">

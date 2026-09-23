@@ -1,5 +1,16 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{{ deck_head('Operate · Evidence bundles', ((rows|length) ~ ' evidence bundles are preserved.') if not empty else 'No evidence bundles are preserved yet.', 'A bundle is a portable tar.gz of one run: manifest, events, outputs and resource snapshots. The suit is the recorded run result; the hash chain is checked when a bundle is opened or imported.') }}
+{% set cards = [] %}{% for row in rows %}{% set st = row.exit_status if row.exit_status in ('pass','fail','error') else 'other' %}
+{% set _ = cards.append({'title': row.run_id, 'href': row.run_url, 'kicker': row.created,
+  'tier': 'warn' if st in ('fail','error') else 'back', 'suit': {'pass':'♦','fail':'▲','error':'✕'}.get(st,'■'),
+  'tone': {'pass':'dk-g-pass','fail':'dk-g-fail','error':'dk-g-error'}.get(st,'dk-g-other'), 'group': st, 'sub': row.scenario_id or '',
+  'facts': [('Result', row.exit_status or 'not recorded'), ('Size', row.size_display), ('Profile', row.profile_id or '—')]}) %}{% endfor %}
+{{ deck_grid(cards, label='bundles', groups=[('pass','♦ pass'),('fail','▲ fail'),('error','✕ error')], empty='No bundles preserved yet. Bundle a run with cardano-profile bundle <run-id>.') }}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate</span>
 <h1>Bundles</h1>
 <p>Forensic bundles preserved by operator action. Each bundle is a tar.gz archive of a run's full evidence (manifest, events, captured stdout/stderr, resource snapshots) at <code>dwarf/bundles/&lt;run_id&gt;.tar.gz</code>. Click a Run ID to open the per-run inspector. Filter by result to narrow the list; the filter is client-side and refresh resets it.</p>
@@ -47,6 +58,7 @@
 </script>
 {% endif %}
 
+</div>
 <hr class="hairline">
 
 <section aria-labelledby="import-heading">

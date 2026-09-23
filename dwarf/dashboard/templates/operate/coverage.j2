@@ -1,5 +1,96 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{%- set _bestx = namespace(v=none) -%}
+{%- if not trend.empty -%}{%- for t in trend.targets -%}{%- if _bestx.v is none or t.latest > _bestx.v -%}{%- set _bestx.v = t.latest -%}{%- endif -%}{%- endfor -%}{%- endif -%}
+{%- if latest -%}
+  {%- if latest.rollup.mode == 'per-target-rollup' and latest.rollup.max_bitmap_cvg is not none -%}
+    {%- set _lead = 'The latest coverage report reached ' ~ ('%.1f'|format(latest.rollup.max_bitmap_cvg)) ~ '% at best — a reading of how much code the fuzzers touched, not proof of anything.' -%}
+  {%- else -%}
+    {%- set _lead = 'There is a coverage report on disk — it shows how much code the fuzzers touched, not proof of anything.' -%}
+  {%- endif -%}
+{%- elif not trend.empty -%}
+  {%- set _lead = 'No coverage report yet — ' ~ trend.total_targets ~ ' fuzz target' ~ ('' if trend.total_targets == 1 else 's') ~ ' have raw readings, the best at ' ~ ('%.2f'|format(_bestx.v)) ~ '% of the code map.' -%}
+{%- else -%}
+  {%- set _lead = 'No coverage has been measured yet.' -%}
+{%- endif -%}
+{{ deck_head('Operate · Coverage', _lead,
+   'Coverage says how much of a program the fuzzers reached. Every card here is a card back: a number the harness wrote down, mirrored as-is. DWARF does not re-score or verify these reports, so none of them is evidence on its own — verified run bundles are.') }}
+
+{#- trend: raw per-target readings from fuzzer_stats -#}
+{% set tcards = [] %}
+{% if not trend.empty %}{% for t in trend.targets %}
+  {% if t.delta is none %}{% set _d = '—' %}{% elif t.direction == 'up' %}{% set _d = '+' ~ ('%.2f'|format(t.delta)) ~ ' pp' %}{% elif t.direction == 'down' %}{% set _d = ('%.2f'|format(t.delta)) ~ ' pp' %}{% else %}{% set _d = '±0.00 pp' %}{% endif %}
+  {% set _ = tcards.append({'title': t.label, 'id': t.scenario_id, 'kicker': 'Fuzz target · ' ~ t.engine, 'tier': 'back', 'suit': '■', 'tone': 'dk-g-other',
+     'sub': 'Share of the code map this harness has reached, read from fuzzer_stats.',
+     'facts': [('latest', ('%.2f'|format(t.latest)) ~ ' %'), ('peak', ('%.2f'|format(t.peak)) ~ ' %'), ('runs', t.point_count), ('last step', _d)],
+     'tags': [t.engine], 'group': t.engine}) %}
+{% endfor %}{% endif %}
+<h2 class="basic-only b-h2 dkc-h2">Fuzz targets <span class="dk-note">· raw bitmap readings{% if not trend.empty %}, {{ trend.total_runs }} run{{ '' if trend.total_runs == 1 else 's' }} scanned{% endif %}</span></h2>
+{{ deck_grid(tcards, label='targets', search=(tcards|length > 6), empty='No AFL/AFL++ runs on disk yet — a reading needs at least one fuzzer_stats file with a bitmap_cvg line.') }}
+
+{#- latest roll-up report -#}
+<h2 class="basic-only b-h2 dkc-h2">Latest coverage report</h2>
+{% set rcards = [] %}
+{% if latest %}
+  {% set r = latest.rollup %}
+  {% if r.mode == 'per-target-rollup' %}
+    {% set _f = [('max bitmap', ('%.1f'|format(r.max_bitmap_cvg) ~ ' %') if r.max_bitmap_cvg is not none else '—'),
+                 ('queued inputs', r.queue_count if r.queue_count is not none else '—'),
+                 ('executions', '{:,}'.format(r.exec_count) if r.exec_count is not none else '—'),
+                 ('novel inputs', r.novel_queue_sha256_count if r.novel_queue_sha256_count is not none else '—')] %}
+  {% else %}
+    {% set _f = [('unique edges', r.total_unique_edges if r.total_unique_edges is not none else '—'),
+                 ('functions', r.covered_functions if r.covered_functions is not none else '—'),
+                 ('lines', r.covered_lines if r.covered_lines is not none else '—'),
+                 ('regions', r.covered_regions if r.covered_regions is not none else '—')] %}
+  {% endif %}
+  {% set _ = rcards.append({'title': 'Coverage report', 'id': latest.run_id, 'href': latest.run_url, 'kicker': ('Per-target roll-up' if r.mode == 'per-target-rollup' else 'File-level merge'), 'tier': 'back', 'suit': '■', 'tone': 'dk-g-other', 'stamp': 'REPORT',
+     'sub': 'Generated ' ~ (r.generated_at_utc or '—') ~ ((' · ' ~ r.bundle_count ~ ' bundle' ~ ('' if r.bundle_count == 1 else 's') ~ ' processed') if r.bundle_count else '') ~ '. Mirrored verbatim; not re-scored.',
+     'facts': _f}) %}
+  {% for t in latest.per_target_rows %}
+    {% set _ = rcards.append({'title': t.target_label, 'id': t.bundle_id or '', 'href': t.bundle_url or '', 'kicker': 'In this report · ' ~ t.engine, 'tier': 'back', 'suit': '■', 'tone': 'dk-g-other',
+       'sub': ('subcampaign ' ~ t.subcampaign_id) if t.subcampaign_id else '',
+       'facts': [('bitmap', ('%.1f'|format(t.bitmap_cvg) ~ ' %') if t.bitmap_cvg is not none else '—'), ('queue', t.queue_count if t.queue_count is not none else '—'),
+                 ('executions', '{:,}'.format(t.exec_count) if t.exec_count is not none else '—'), ('rate', ('{:,.0f}'.format(t.exec_rate) ~ '/s') if t.exec_rate is not none else '—')]}) %}
+  {% endfor %}
+  {% for b in latest.per_bundle_rows %}
+    {% set _skip = b.status == 'skipped' %}
+    {% set _ = rcards.append({'title': b.target_slug or b.bundle_id or 'Bundle', 'id': b.bundle_id or '', 'href': b.bundle_url or '', 'kicker': 'Merged bundle · ' ~ (b.status or '—'),
+       'tier': 'gap' if _skip else 'back', 'suit': '○' if _skip else '■', 'tone': 'dk-g-other',
+       'sub': (('Skipped: ' ~ b.skip_reason) if b.skip_reason else ('Skipped — not counted in the merge.' if _skip else '')),
+       'facts': [('edges', b.unique_edges_observed if b.unique_edges_observed is not none else '—'), ('functions', b.covered_functions if b.covered_functions is not none else '—'),
+                 ('lines', b.covered_lines if b.covered_lines is not none else '—'), ('inputs', b.input_count if b.input_count is not none else '—')],
+       'tags': [b.engine] if b.engine else []}) %}
+  {% endfor %}
+{% endif %}
+{{ deck_grid(rcards, label='report cards', search=(rcards|length > 6), empty='No coverage roll-up has been generated yet — no run on disk has an outputs/coverage-report/ folder.') }}
+{% if latest %}
+  {% if latest.html_url %}<p class="basic-only dk-row dkc-links"><a class="dk-btn" href="{{ latest.html_url }}">Open the rendered report</a><a class="dk-btn" href="{{ latest.summary_url }}">JSON summary</a></p>
+  {% elif latest.file_level_md_url %}<p class="basic-only dk-row dkc-links"><a class="dk-btn" href="{{ latest.file_level_json_url }}">coverage-report-file-level.json</a><a class="dk-btn" href="{{ latest.file_level_md_url }}">coverage-file-level.md</a></p>{% endif %}
+{% else %}
+<div class="basic-only">
+  <p class="dk-note">To produce one, aggregate the per-bundle bitmaps:</p>
+  <pre class="dkc-cmd"><code>cardano-profile coverage aggregate</code></pre>
+</div>
+{% endif %}
+
+{#- history -#}
+{% if history %}
+{% set hcards = [] %}
+{% for h in history %}
+  {% set _ = hcards.append({'title': 'Coverage report', 'id': h.run_id, 'href': h.run_url, 'kicker': h.mode or 'report', 'tier': 'back', 'suit': '■', 'tone': 'dk-g-other',
+     'sub': 'Generated ' ~ (h.generated_at_utc or '—'),
+     'facts': [('bundles', h.bundle_count if h.bundle_count is not none else '—'), ('max bitmap', ('%.1f'|format(h.max_bitmap_cvg) ~ ' %') if h.max_bitmap_cvg is not none else '—'),
+               ('edges', h.total_unique_edges if h.total_unique_edges is not none else '—'), ('functions', h.covered_functions if h.covered_functions is not none else '—')]}) %}
+{% endfor %}
+<h2 class="basic-only b-h2 dkc-h2">Past coverage reports <span class="dk-note">· newest first</span></h2>
+{{ deck_grid(hcards, label='reports', search=(hcards|length > 6)) }}
+{% endif %}
+{{ deck_more('Trend sparklines, the embedded report and full tables — in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Coverage</span>
 <h1>Cross-bundle coverage roll-up</h1>
 <p class="page-hero">The most recent <code>runtime_coverage_report</code> bundle on disk, surfaced at the top of the dashboard so operators don't have to drill through individual runs to see current coverage. Below: a rolling history of past coverage bundles. The report itself is rendered verbatim — Dwarf does not re-score; it only mirrors what the harness emitted.</p>
@@ -280,4 +371,5 @@ cardano-profile coverage aggregate</code></pre>
 </section>
 {% endif %}
 
+</div>
 {% endblock %}

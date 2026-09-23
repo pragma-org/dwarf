@@ -1,5 +1,18 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{{ deck_head('Operate · Generation grammars', (rows|length) ~ ' grammar sets expose ' ~ token_count ~ ' mutation tokens — ' ~ ready_count ~ ' validate cleanly.', 'Grammars shape what fuzzers generate. A valid grammar is a definition, not evidence that anything was found.') }}
+{% set cards = [] %}{% for row in rows %}{% set ok = row.status in ['valid','ok','ready','available'] %}
+{% set _ = cards.append({'title': row.label, 'id': row.id if row.id != row.label else '', 'href': '/operate/grammars/' ~ row.id, 'kicker': row.root_kind ~ ' · ' ~ (row.format or 'unknown format'),
+  'tier': 'back' if ok else 'warn', 'suit': '' if ok else '▲', 'tone': '' if ok else 'dk-g-warn', 'group': row.status, 'sub': row.target or 'target unavailable',
+  'facts': [('Tokens', row.token_count), ('Structure', row.structure_status), ('Dictionary', row.dictionary_status)], 'tags': ['editable clone' if row.writable else 'shipped read-only'],
+  'search': (row.scenario_ids|join(' ')) ~ ' ' ~ (row.target_ids|join(' ')) ~ ' ' ~ (row.corpus_ids|join(' '))}) %}{% endfor %}
+{% set groups = [] %}{% for k in rows|map(attribute='status')|unique %}{% set _ = groups.append((k, k)) %}{% endfor %}
+{{ deck_grid(cards, label='grammar sets', groups=groups if groups|length > 1 else none, empty='No generation grammar roots are available.') }}
+{{ deck_more('Structures, dictionaries and cloning in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header">
   <div>
     <span class="eyebrow">Operate · generation assets</span>
@@ -37,4 +50,5 @@
 <p class="empty-section-statement">No generation grammar roots are available from the two explicitly configured locations.</p>
 {% endif %}
 <script>(()=>{const input=document.getElementById('grammar-search');const rows=[...document.querySelectorAll('[data-grammar-row]')];const count=document.querySelector('[data-grammar-count]');if(!input||!count)return;input.addEventListener('input',()=>{const needle=input.value.trim().toLowerCase();let visible=0;for(const row of rows){const show=!needle||row.dataset.search.toLowerCase().includes(needle);row.hidden=!show;if(show)visible+=1;}count.textContent=String(visible);});})();</script>
+</div>
 {% endblock %}

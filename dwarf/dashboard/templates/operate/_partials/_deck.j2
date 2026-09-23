@@ -1,0 +1,95 @@
+{#- Evidence Deck macros for the Basic view (see static/css/deck.css).
+    Tier vocabulary — use the one the data can honestly support:
+      holo : verified by retained, hash-chained evidence (a verified run/bundle, accepted evidence)
+      back : a definition / inventory / mapping only — exists, is not proof
+      face : neutral operational item (a tool, a setting, a schedule entry)
+      warn : needs attention now (failure, error, unhealthy, invalid)
+      gap  : missing / empty / unresolved
+    Suits never rely on colour alone: ♦ ok · ▲ attention · ✕ error · ■ other · ○ pending -#}
+
+{% macro deck_head(eyebrow, answer, plain='') -%}
+<section class="basic-only dk dk-head" aria-label="Summary">
+  <span class="eyebrow">{{ eyebrow }}</span>
+  <h1 class="dk-lead">{{ answer }}</h1>
+  {% if plain %}<p class="dk-plain">{{ plain }}</p>{% endif %}
+  {% if caller is defined %}{{ caller() }}{% endif %}
+</section>
+{%- endmacro %}
+
+{#- One card. c = {title, href?, id?, sub?, tier?, suit?, tone?, kicker?, facts?: [(k, v)], tags?: [str], stamp?} -#}
+{% macro deck_card(c) -%}
+{% set tier = c.tier or 'back' %}
+{% set tag = 'a' if c.href else 'div' %}
+<{{ tag }} class="dk-card dk-item {{ 'dk-holo' if tier == 'holo' else ('dk-gap' if tier == 'gap' else ('dk-warnface' if tier == 'warn' else ('dk-back' if tier == 'back' else ''))) }}"
+  {% if c.href %}href="{{ c.href }}"{% endif %} data-dk-item data-group="{{ c.group or '' }}"
+  data-search="{{ ((c.title or '') ~ ' ' ~ (c.id or '') ~ ' ' ~ (c.sub or '') ~ ' ' ~ (c.search or '') ~ ' ' ~ (c.tags or [])|join(' '))|lower }}"
+  {% if tier == 'holo' %}data-dk-seed="{{ c.id or c.title }}"{% endif %}>
+  <div class="dk-face dk-face--front">
+    {% if tier == 'holo' %}<div class="dk-foil"></div><div class="dk-glare"></div>{% endif %}
+    <div class="dk-face__body">
+      <div class="dk-kicker"><span>{{ c.kicker or '' }}</span><span class="{{ c.tone or '' }}" aria-hidden="true">{{ c.suit or '' }}</span></div>
+      <div class="dk-item__title">{{ c.title }}</div>
+      {% if c.id and c.id != c.title %}<code class="dk-item__id">{{ c.id }}</code>{% endif %}
+      {% if c.sub %}<p class="dk-sub">{{ c.sub }}</p>{% endif %}
+      {% if c.stamp %}<span class="dk-stamp dk-item__stamp">{{ c.stamp }}</span>{% endif %}
+      {% if c.facts %}<dl class="dk-facts">{% for k, v in c.facts %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
+      {% if c.tags %}<div class="dk-tags">{% for t in c.tags %}<span>{{ t }}</span>{% endfor %}</div>{% endif %}
+    </div>
+  </div>
+</{{ tag }}>
+{%- endmacro %}
+
+{#- A searchable, filterable grid of cards. groups = [(value, label)] for filter chips. -#}
+{% macro deck_grid(cards, label='items', groups=none, empty='Nothing here yet.', search=true) -%}
+<section class="basic-only dk" aria-label="{{ label|capitalize }}">
+{% if cards %}
+<div data-dk-grid>
+  {% if search or groups %}
+  <div class="dk-filters">
+    {% if groups %}
+    <div class="dk-seg" role="group" aria-label="Filter {{ label }}">
+      <button type="button" data-dk-grid-filter data-value="" aria-pressed="true">All</button>
+      {% for value, glabel in groups %}<button type="button" data-dk-grid-filter data-value="{{ value }}" aria-pressed="false">{{ glabel }}</button>{% endfor %}
+    </div>
+    {% endif %}
+    {% if search %}<input class="dk-search" type="search" data-dk-grid-search placeholder="Search {{ label }}…" aria-label="Search {{ label }}">{% endif %}
+    <span class="dk-count" data-dk-grid-count aria-live="polite">{{ cards|length }} {{ label }}</span>
+  </div>
+  {% endif %}
+  <div class="dk-grid">
+    {% for c in cards %}{{ deck_card(c) }}{% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="dk-grid"><div class="dk-card dk-gap"><div class="dk-face"><div class="dk-face__body"><div class="dk-item__title">Empty slot</div><p class="dk-sub">{{ empty }}</p></div></div></div></div>
+{% endif %}
+</section>
+{%- endmacro %}
+
+{#- Detail page hero: one card (left) + caller() panel (right). -#}
+{% macro deck_detail(kicker, title, id='', tier='back', facts=[], suit='', tone='', stamp='', sub='', back=none) -%}
+<section class="basic-only dk" aria-label="{{ title }}">
+  {% if back %}<p class="dk-crumb"><a href="{{ back[1] }}">← {{ back[0] }}</a></p>{% endif %}
+  <div class="dk-detail">
+    <div class="dk-card {{ 'dk-holo' if tier == 'holo' else ('dk-gap' if tier == 'gap' else ('dk-warnface' if tier == 'warn' else ('dk-back' if tier == 'back' else ''))) }}"{% if tier == 'holo' %} data-dk-seed="{{ id or title }}"{% endif %}>
+      <div class="dk-face dk-face--front">
+        {% if tier == 'holo' %}<div class="dk-foil"></div><div class="dk-glare"></div>{% endif %}
+        <div class="dk-face__body">
+          <div class="dk-kicker"><span>{{ kicker }}</span><span class="{{ tone }}" aria-hidden="true">{{ suit }}</span></div>
+          <div class="dk-title">{{ title }}</div>
+          {% if id and id != title %}<code class="dk-item__id">{{ id }}</code>{% endif %}
+          {% if sub %}<p class="dk-sub">{{ sub }}</p>{% endif %}
+          {% if stamp %}<span class="dk-stamp dk-item__stamp">{{ stamp }}</span>{% endif %}
+          {% if facts %}<dl class="dk-facts dk-facts--detail">{% for k, v in facts %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div>{% if caller is defined %}{{ caller() }}{% endif %}</div>
+  </div>
+</section>
+{%- endmacro %}
+
+{#- "Everything else lives in Advanced" footer link. -#}
+{% macro deck_more(text='Open the full view in Advanced') -%}
+<p class="basic-only dk-more"><a class="dk-btn" href="{{ request_path or '/' }}?view=advanced">{{ text }} →</a></p>
+{%- endmacro %}

@@ -1,9 +1,24 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% set rel_state = {} %}{% set n_conf = namespace(v=0) %}{% set n_inc = namespace(v=0) %}
+{% for release in releases %}{% set sts = release.scope_statuses.values()|map(attribute='status')|list %}
+{% set st = 'incompatible' if 'incompatible' in sts else ('confirmed' if 'confirmed' in sts else 'unknown') %}
+{% set _ = rel_state.update({loop.index0: st}) %}
+{% if st == 'confirmed' %}{% set n_conf.v = n_conf.v + 1 %}{% elif st == 'incompatible' %}{% set n_inc.v = n_inc.v + 1 %}{% endif %}{% endfor %}
+{% call deck_head('Operate · Node versions',
+   releases|length ~ ' node releases tracked — ' ~ n_conf.v ~ ' confirmed in at least one deployment scope' ~ (', ' ~ n_inc.v ~ ' incompatible' if n_inc.v else '') ~ '; the rest are not yet qualified.',
+   'Each card is a catalog record. ♦ confirmed is a qualification record for one named deployment scope, not a test verdict; ○ means nobody has qualified it yet.') %}
+<div class="dk-row"><button class="dk-btn" type="button" data-dk-version-refresh>Check for new versions</button><a class="dk-btn" href="/operate/profiles/new">Create profile →</a><a class="dk-btn" href="/learn/versions">How qualification works →</a></div>
+{% endcall %}
+{% endif %}
+<div class="adv-only">
 <header class="definition-header">
   <div><span class="eyebrow">Operate</span><h1>Node versions</h1><p class="page-subhero">Released implementations, exact artifacts, scoped runtime status, and mixed compatibility evidence.</p></div>
   <div class="definition-actions"><a class="cta cta--ghost" href="/learn/versions">How qualification works</a><button class="cta cta--ghost" type="button" data-version-refresh data-endpoint="{{ refresh_endpoint }}">Check for new versions</button><a class="cta" href="/operate/profiles/new">Create profile</a></div>
 </header>
+</div>
 
 <aside class="catalog-callout"><strong>Stable is not the same as confirmed.</strong> Stable comes from the upstream release feed. Confirmed means this exact release or pair passed DWARF's real-node runtime contract for the named deployment scope.</aside>
 <aside class="catalog-callout"><strong>Amaru target means real Amaru operation.</strong> DWARF proves Amaru relay and consumer behavior with the exact supporting Cardano-node producer disclosed below; it does not claim standalone Amaru block production.</aside>
@@ -17,10 +32,49 @@
     <div><dt>Cardano-node source</dt><dd>{{ refresh.source_status.get('cardano-node', 'not-checked') }}</dd></div>
     <div><dt>Amaru source</dt><dd>{{ refresh.source_status.get('amaru', 'not-checked') }}</dd></div>
   </dl>
-  {% if refresh.error %}<p class="inline-warning"><strong>Refresh failed:</strong> {{ refresh.error }}. Retained catalog evidence and defaults remain active.</p>{% endif %}
+  {% if refresh.error %}<p class="inline-warning dk-op-warn"><strong>Refresh failed:</strong> {{ refresh.error }}. Retained catalog evidence and defaults remain active.</p>{% endif %}
   <div><strong>New fully identified releases</strong>{% if refresh.new_versions %}<ul>{% for item in refresh.new_versions %}<li>{{ item.implementation }} {{ item.version }} · unknown until qualified</li>{% endfor %}</ul>{% else %}<p>No newly discovered, fully identified releases.</p>{% endif %}</div>
 </section>
 
+{% if ui == "basic" %}
+{% set cards = [] %}{% set impls = [] %}
+{% for release in releases %}{% set st = rel_state[loop.index0] %}
+{% if release.implementation not in impls %}{% set _ = impls.append(release.implementation) %}{% endif %}
+{% set facts = [] %}{% for scope, record in release.scope_statuses.items() %}{% set _ = facts.append((scope, record.status ~ (' · default' if record.default else ''))) %}{% endfor %}
+{% set _ = facts.append(('Digest', release.artifact_digest[:19] ~ '…' if release.artifact_digest else release.artifact_availability)) %}
+{% set _ = cards.append({
+  'title': release.implementation ~ ' ' ~ release.version, 'kicker': release.channel ~ ' · ' ~ release.released_at,
+  'tier': 'warn' if st == 'incompatible' else ('face' if st == 'confirmed' else 'back'),
+  'suit': '▲' if st == 'incompatible' else ('♦' if st == 'confirmed' else '○'),
+  'tone': 'dk-g-warn' if st == 'incompatible' else ('dk-g-pass' if st == 'confirmed' else 'dk-g-other'),
+  'group': release.implementation ~ ' ' ~ st, 'facts': facts,
+  'search': st ~ ' ' ~ release.source_revision ~ ' ' ~ (release.artifact_digest or '')}) %}{% endfor %}
+{% set groups = [] %}{% for i in impls|sort %}{% set _ = groups.append((i, i)) %}{% endfor %}
+{% set _ = groups.append(('confirmed', '♦ confirmed · ' ~ n_conf.v)) %}
+{% if n_inc.v %}{% set _ = groups.append(('incompatible', '▲ incompatible · ' ~ n_inc.v)) %}{% endif %}
+{% set _ = groups.append(('unknown', '○ not qualified · ' ~ (releases|length - n_conf.v - n_inc.v))) %}
+<h2 class="b-h2 basic-only">Released versions · catalog records</h2>
+{{ deck_grid(cards, label='releases', groups=groups, empty='No releases are recorded in the version catalog.') }}
+{% set pcards = [] %}
+{% for pair in pairs %}{% set _ = pcards.append({
+  'title': pair.id, 'kicker': 'node ' ~ pair.cardano_version ~ ' + amaru ' ~ pair.amaru_version ~ (' · default' if pair.default else ''),
+  'sub': pair.reason,
+  'tier': 'warn' if pair.status == 'incompatible' else ('face' if pair.status == 'confirmed' else 'back'),
+  'suit': '▲' if pair.status == 'incompatible' else ('♦' if pair.status == 'confirmed' else '○'),
+  'tone': 'dk-g-warn' if pair.status == 'incompatible' else ('dk-g-pass' if pair.status == 'confirmed' else 'dk-g-other'),
+  'facts': [('Status', pair.status), ('Evidence', pair.evidence|length ~ ' record' ~ ('' if pair.evidence|length == 1 else 's'))],
+  'search': pair.status ~ ' ' ~ pair.reason}) %}{% endfor %}
+<h2 class="b-h2 basic-only">Compatibility pairs · mixed topology</h2>
+{{ deck_grid(pcards, label='pairs', search=false, empty='No mixed compatibility evidence has been recorded.') }}
+{{ deck_more('Artifacts, source revisions and per-scope evidence in Advanced') }}
+<script>
+(function(){var b=document.querySelector('[data-dk-version-refresh]'),o=document.querySelector('[data-version-refresh]');if(!b||!o)return;
+b.addEventListener('click',function(){b.disabled=true;b.textContent='Checking…';o.click();
+var t=setInterval(function(){if(!o.disabled){clearInterval(t);b.disabled=false;b.textContent='Check for new versions';}},500);});})();
+</script>
+{% endif %}
+
+<div class="adv-only">
 <dl class="definition-summary">
   <div><dt>Catalog updated</dt><dd><code>{{ updated_at }}</code></dd></div>
   <div><dt>Catalog revision</dt><dd><code>{{ catalog_revision }}</code></dd></div>
@@ -72,6 +126,7 @@
   {% else %}<p class="empty-section-statement">No mixed compatibility evidence has been recorded.</p>{% endfor %}
   </div>
 </section>
+</div>
 <script>
 var vf=document.querySelector('[data-version-filter]');
 if(vf){vf.addEventListener('input',function(){var q=this.value.trim().toLowerCase();document.querySelectorAll('[data-version-search]').forEach(function(row){row.hidden=Boolean(q&&!row.dataset.versionSearch.toLowerCase().includes(q));});});}

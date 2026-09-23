@@ -1,5 +1,19 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_card, deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% set bad = rows|rejectattr('status','in',['valid','ok','available','ready','active'])|list %}
+{{ deck_head('Operate · ' ~ catalog.label, (rows|length) ~ ' ' ~ catalog.label|lower ~ ' in the catalog' ~ ((' — ' ~ bad|length ~ ' need attention') if bad else '') ~ '.',
+   catalog.description ~ ' Catalog entries are definitions — inventory, not runtime proof.') }}
+{% set cards = [] %}
+{% for row in rows %}{% set ok = row.status in ['valid','ok','available','ready','active'] %}
+{% set _ = cards.append({'title': row.label, 'id': row.id, 'href': row.url, 'sub': row.summary, 'kicker': catalog.singular_label if catalog.singular_label is defined else catalog.label,
+  'tier': 'back' if ok else 'warn', 'suit': '♦' if ok else '▲', 'tone': 'dk-g-pass' if ok else 'dk-g-warn', 'group': row.status,
+  'tags': [row.status] + (row.facets|map(attribute='label')|list)[:3], 'search': row.source_path}) %}{% endfor %}
+{{ deck_grid(cards, label=catalog.label|lower, empty='No ' ~ catalog.label|lower ~ ' are available from the configured source.') }}
+{{ deck_more('Source paths and capability facets in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header" data-asset-catalog="{{ catalog.slug }}">
   <div>
     <span class="eyebrow">Operate · reusable assets</span>
@@ -63,4 +77,5 @@
 })();
 </script>
 {% endif %}
+</div>
 {% endblock %}

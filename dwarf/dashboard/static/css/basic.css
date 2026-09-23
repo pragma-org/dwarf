@@ -108,3 +108,8 @@ body[data-ui="basic"] .hero-flask, body[data-ui="basic"] .scanline { display:non
   body[data-ui="basic"] .b-verdict, body[data-ui="basic"] .b-loop { grid-template-columns:1fr; }
   body[data-ui="basic"] .shell-nav a, body[data-ui="basic"] .view-toggle a { min-height:44px; }
 }
+
+
+/* generic Basic reducer: hidden overflow rows/sections + the 'show all in Advanced' link */
+body[data-ui="basic"] .is-basic-capped { display: none !important; }
+body[data-ui="basic"] .b-reduce-more { display: inline-flex; margin: 14px 0 4px; align-items: center; min-height: 24px; }

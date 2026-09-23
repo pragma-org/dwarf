@@ -1,5 +1,33 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{%- if empty -%}
+  {%- set _lead = 'No crashes have been recorded.' -%}
+  {%- set _plain = 'No fuzzing run on disk has left a crash file yet. That only means none were found in the runs DWARF has — it is not a guarantee that none exist. Crash triage fills in as soon as a campaign writes a crashes/ folder.' -%}
+{%- else -%}
+  {%- set _lead = total_crashes ~ ' crash' ~ ('' if total_crashes == 1 else 'es') ~ ' recorded, grouped into ' ~ total_signatures ~ ' likely bug' ~ ('' if total_signatures == 1 else 's') ~ '.' -%}
+  {%- set _plain = 'Crashes are grouped by the signal that killed the program and the mutation that triggered it — same pair, very likely the same underlying bug. Found in ' ~ sources_observed ~ ' run' ~ ('' if sources_observed == 1 else 's') ~ '. Each group needs triage; the grouping is a cheap heuristic, not a confirmed diagnosis.' -%}
+{%- endif -%}
+{{ deck_head('Operate · Crashes', _lead, _plain) }}
+{% set cards = [] %}
+{% set sigs = [] %}
+{% for g in groups %}
+  {% if g.signal_label not in sigs %}{% set _ = sigs.append(g.signal_label) %}{% endif %}
+  {% set _srcs = [] %}{% for src in g.contributing_sources %}{% set _ = _srcs.append(src.kind ~ ':' ~ src.id) %}{% endfor %}
+  {% set _ = cards.append({'title': g.count ~ ' crash' ~ ('' if g.count == 1 else 'es'), 'id': g.signature_key, 'href': '?view=advanced#' ~ g.signature_key,
+     'kicker': g.signal_label ~ ' · op ' ~ g.op, 'tier': 'warn', 'suit': '✕', 'tone': 'dk-g-error',
+     'sub': 'Exemplar input ' ~ g.exemplar_filename ~ ((' · ' ~ g.exemplar_size_bytes ~ ' byte' ~ ('' if g.exemplar_size_bytes == 1 else 's')) if g.exemplar_size_bytes is not none else ''),
+     'facts': [('first find', (('t+' ~ g.first_time_ms ~ 'ms') if g.first_time_ms is not none else '—')), ('last find', (('t+' ~ g.last_time_ms ~ 'ms') if g.last_time_ms is not none else '—')),
+               ('sources', g.contributing_count), ('op', g.op)],
+     'tags': _srcs[:4], 'group': g.signal_label, 'search': g.op ~ ' ' ~ _srcs|join(' ')}) %}
+{% endfor %}
+{% set cgroups = [] %}{% for sg in sigs %}{% set _ = cgroups.append((sg, sg)) %}{% endfor %}
+{{ deck_grid(cards, label='signatures', groups=(cgroups if cgroups|length > 1 else none), search=(cards|length > 6),
+   empty='No crash files found in the recorded runs (scanned for the AFL++ crash filename pattern).') }}
+{{ deck_more('Exemplar previews and full per-signature tables — in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Crashes</span>
 <h1>Crash triage</h1>
 <p class="page-hero">AFL++ crashes from recorded runs, deduped by <code>(signal, op)</code> signature. The cheapest stable signature: same mutation operator + same POSIX signal is very likely the same underlying bug. Stack-hash dedup is finer-grained but requires running the binary against each input — out of scope for the read-only data layer. Each row links the exemplar input (first crash by campaign clock).</p>
@@ -94,4 +122,5 @@
 
 {% endif %}
 
+</div>
 {% endblock %}

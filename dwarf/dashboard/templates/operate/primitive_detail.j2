@@ -1,5 +1,49 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% set has_errors = primitive.errors|length > 0 %}
+{% set facts = [
+  ('Family', primitive.family),
+  ('Version', primitive.version),
+  ('Targets', primitive.supports|join(', ') or 'none declared'),
+  ('Runtimes', primitive.runtimes|join(', ') or 'none declared'),
+  ('Schema', primitive.schema_status),
+  ('Executor', primitive.executor_status),
+  ('Source', primitive.source_type ~ (' · ' ~ primitive.plugin_id if primitive.plugin_id else '')),
+] %}
+{% call deck_detail(primitive.family ~ ' primitive', primitive.id, tier=('warn' if has_errors else 'back'), facts=facts,
+    suit=('✕' if has_errors else ''), tone=('dk-g-error' if has_errors else ''), stamp=('DIAGNOSTICS' if has_errors else 'REGISTERED'),
+    sub=primitive.summary, back=('Primitives', '/operate/primitives')) %}
+  {% if has_errors %}
+  <div class="dk-panel dkb-diag" role="alert">
+    <h3>✕ Diagnostics</h3>
+    <ul>{% for error in primitive.errors %}<li><code>{{ error }}</code></li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  <div class="dk-panel">
+    <h3>What this card is</h3>
+    <p class="dkb-p">A registered building block that scenarios call. This record is structurally loadable{% if primitive.source_type == 'built-in' %} and its executor class exists{% endif %} — that is <b>not</b> proof it behaves correctly against a real node. Only retained scenario evidence can show that.</p>
+  </div>
+  <div class="dk-panel">
+    <h3>Used by {{ primitive.referencing_scenarios|length }} scenario{{ '' if primitive.referencing_scenarios|length == 1 else 's' }}</h3>
+    {% if primitive.referencing_scenarios %}
+    <ul class="dk-list">{% for scenario_id in primitive.referencing_scenarios[:6] %}<li><a href="/operate/scenarios/{{ scenario_id }}"><code>{{ scenario_id }}</code></a></li>{% endfor %}</ul>
+    {% if primitive.referencing_scenarios|length > 6 %}<p class="dk-note">+{{ primitive.referencing_scenarios|length - 6 }} more in Advanced.</p>{% endif %}
+    {% else %}<p class="dkb-p dk-note">○ No configured scenario references this primitive.</p>{% endif %}
+  </div>
+  <div class="dk-panel">
+    <h3>Actions</h3>
+    <div class="dk-row">
+      <a class="dk-btn dk-btn--solid" href="/api/assets/primitives/{{ primitive.id }}/export" download>Export with manifest</a>
+      <a class="dk-btn" href="/api/assets/primitives/{{ primitive.id }}/download" download>Download record</a>
+      <a class="dk-btn" href="/learn/primitives" target="_blank" rel="noopener">Learn the contract</a>
+    </div>
+  </div>
+{% endcall %}
+{{ deck_more('Executor, parameter schema and exact registry record in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <nav class="definition-breadcrumb" aria-label="Breadcrumb"><a href="/operate/primitives">Primitives</a><span aria-hidden="true">/</span><span>{{ primitive.id }}</span></nav>
 
 <header class="definition-header">
@@ -71,4 +115,5 @@
 .primitive-reference-list{columns:2;gap:24px;padding-left:20px}.primitive-reference-list li{break-inside:avoid;margin:0 0 7px}.primitive-reference-list code{overflow-wrap:anywhere}
 @media(max-width:760px){.primitive-reference-list{columns:1}}
 </style>
+</div>
 {% endblock %}

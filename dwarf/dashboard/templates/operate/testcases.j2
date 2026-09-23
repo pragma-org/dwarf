@@ -1,5 +1,16 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{{ deck_head('Operate · Testcases', (rows|length) ~ ' retained testcase record' ~ ('' if rows|length == 1 else 's') ~ (' — ' ~ malformed_count ~ ' malformed' if malformed_count else '') ~ '.', 'A testcase is a lead retained for triage, replay and comparison — not a confirmed finding.') }}
+{% set cards = [] %}{% for row in rows %}
+{% set _ = cards.append({'title': row.id, 'href': '/operate/testcases/' ~ row.id, 'kicker': row.classification ~ ' · ' ~ row.target_implementation,
+  'tier': 'warn', 'suit': '▲', 'tone': 'dk-g-warn', 'group': row.target_implementation, 'sub': row.triage_reason,
+  'facts': [('Status', row.status), ('Replay', row.replay_state), ('Compare', row.compare_state)], 'search': row.bucket_id ~ ' ' ~ (row.source_run_id or '')}) %}{% endfor %}
+{{ deck_grid(cards, label='testcases', empty='No testcase records are retained in the configured state directory.') }}
+{{ deck_more('Buckets, provenance and downloads in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header">
   <div><span class="eyebrow">Operate · retained lifecycle</span><h1>Testcases</h1><p class="page-hero"><strong>{{ rows|length }} records</strong> project the canonical testcase state without changing it. Inspect provenance, replay, minimization, comparison, promotion, and retained artifacts.</p></div>
   <div class="definition-actions"><a class="cta cta--ghost" href="/operate/testcase-buckets">View buckets</a><a class="cta cta--ghost" href="/learn/testcases" target="_blank" rel="noopener">Learn the lifecycle</a><a class="cta cta--ghost" href="/api/assets/testcases/export" download>Download records</a></div>
@@ -41,4 +52,5 @@
   });
 })();
 </script>
+</div>
 {% endblock %}

@@ -1,5 +1,20 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% call deck_detail(catalog_label, singular_label ~ ' not found', id=item_id, tier='gap', suit='○', tone='dk-g-other', stamp='NO RECORD',
+    sub='No catalogue record exists for this identifier.', back=(catalog_label, '/operate/' ~ catalog_slug)) %}
+  <div class="dk-panel dkb-gapnote">
+    <h3>○ Why this can happen</h3>
+    <p class="dkb-p">The identifier may be mistyped, or the source record may have been removed from this DWARF revision.</p>
+  </div>
+  <div class="dk-panel">
+    <h3>Way back</h3>
+    <div class="dk-row"><a class="dk-btn dk-btn--solid" href="/operate/{{ catalog_slug }}">Browse {{ catalog_label|lower }}</a></div>
+  </div>
+{% endcall %}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · {{ catalog_label }}</span>
 <h1>{{ singular_label }} not found</h1>
 <p class="page-hero">No catalog record exists for <code>{{ item_id }}</code>.</p>
@@ -8,4 +23,5 @@
 
 <p>The identifier may be mistyped, or the source record may have been removed from this DWARF revision.</p>
 <p>Browse <a href="/operate/{{ catalog_slug }}">the {{ catalog_label|lower }} catalog</a> to select an available record.</p>
+</div>
 {% endblock %}

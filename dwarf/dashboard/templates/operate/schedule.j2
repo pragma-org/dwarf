@@ -1,5 +1,54 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_more with context %}
+{% if ui == "basic" %}
+{%- set _active = entries|selectattr('enabled')|list|length -%}
+{%- if empty -%}
+  {%- set _lead = 'Nothing is scheduled — no scenario runs on its own.' -%}
+{%- elif _active == 0 -%}
+  {%- set _lead = entries|length ~ ' scheduled entr' ~ ('y' if entries|length == 1 else 'ies') ~ ', all paused — nothing will fire on its own.' -%}
+{%- else -%}
+  {%- set _lead = _active ~ ' of ' ~ entries|length ~ ' scheduled entr' ~ ('y is' if entries|length == 1 else 'ies are') ~ ' active and will fire on their cron.' -%}
+{%- endif -%}
+{{ deck_head('Operate · Schedule', _lead,
+   'A schedule entry fires a scenario run on a timer, exactly like starting it by hand, and each fire leaves its own run bundle. An entry is a plan, not a result — look at the run it produced. Every change here asks for the dashboard token.') }}
+<section class="basic-only dk" aria-label="Scheduled entries">
+  <div class="dk-grid">
+  {% for e in entries %}
+    {% set _paused = e.status == 'paused' %}
+    {% set _running = e.status == 'running' %}
+    <div class="dk-card dk-item dkc-sched{{ ' dkc-sched--paused' if _paused else '' }}" data-dk-item>
+      <div class="dk-face dk-face--front"><div class="dk-face__body">
+        <div class="dk-kicker"><span>Schedule · {{ 'running' if _running else ('paused' if _paused else 'pending') }}</span><span class="{{ 'dk-g-gold' if _running else 'dk-g-other' }}" aria-hidden="true">{{ '■' if _running else '○' }}</span></div>
+        <div class="dk-item__title">{{ e.name }}</div>
+        <code class="dk-item__id">{{ e.scenario_id }}</code>
+        {% if _paused %}<span class="dk-stamp dk-item__stamp">PAUSED</span>{% endif %}
+        <dl class="dk-facts">
+          <div><dt>cron</dt><dd><code>{{ e.cron }}</code></dd></div>
+          <div><dt>fires</dt><dd>{{ e.fire_count }}</dd></div>
+          <div><dt>last fired</dt><dd>{{ e.last_fired_at or '—' }}</dd></div>
+          <div><dt>next fire</dt><dd>{{ e.next_fire_at if (e.next_fire_at and not _paused) else ('— (paused)' if _paused else '—') }}</dd></div>
+        </dl>
+        {% if e.last_run_id %}<p class="dk-sub">Last run · <a href="/operate/runs/{{ e.last_run_id }}"><code>{{ e.last_run_id }}</code></a></p>{% endif %}
+        <div class="dkc-sched__actions">
+          {% if e.enabled %}
+          <button type="button" class="schedule-btn schedule-btn--pause" data-action="pause" data-id="{{ e.id }}">Pause</button>
+          {% else %}
+          <button type="button" class="schedule-btn schedule-btn--resume" data-action="resume" data-id="{{ e.id }}">Resume</button>
+          {% endif %}
+          <button type="button" class="schedule-btn schedule-btn--run" data-action="run-now" data-id="{{ e.id }}">Run now</button>
+          <button type="button" class="schedule-btn schedule-btn--delete" data-action="delete" data-id="{{ e.id }}">Delete</button>
+        </div>
+      </div></div>
+    </div>
+  {% else %}
+    <div class="dk-card dk-gap"><div class="dk-face"><div class="dk-face__body"><div class="dk-item__title">Empty slot</div><p class="dk-sub">No scheduled entries yet. Add one below.</p></div></div></div>
+  {% endfor %}
+  </div>
+</section>
+<h2 class="basic-only b-h2 dkc-h2">New scheduled entry</h2>
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Schedule</span>
 <h1>Scheduled scenario runs</h1>
 <p class="page-hero">Cron-driven scenario fires. Each entry produces a real bundle just like a manual <code>cardano-profile scenario run</code> — the schedule layer is a thin orchestrator over the same mutating endpoint, gated by the same dashboard token.</p>
@@ -76,7 +125,8 @@
 </div>
 {% endif %}
 
-<hr class="hairline">
+</div>
+<hr class="hairline adv-only">
 
 <section class="schedule-create" aria-labelledby="create-heading">
   <header><span class="eyebrow">Create</span><h2 id="create-heading">New scheduled entry</h2></header>
@@ -150,4 +200,5 @@
 })();
 </script>
 
+{% if ui == "basic" %}{{ deck_more('Totals and the full schedule table — in Advanced') }}{% endif %}
 {% endblock %}

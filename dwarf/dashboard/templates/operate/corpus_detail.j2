@@ -1,11 +1,65 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% set rels = (corpus.target_relationships or []) + (corpus.grammar_relationships or []) %}
+{% set unresolved = rels|rejectattr('resolved')|list %}
+{% set needs_attention = corpus.diagnostics or unresolved %}
+{% set tier = 'warn' if needs_attention else ('gap' if corpus.input_count == 0 else 'back') %}
+{% set facts = [
+  ('Inputs', corpus.input_count),
+  ('Bytes', corpus.size_bytes),
+  ('Duplicate inputs', corpus.duplicate_input_count),
+  ('Metadata', corpus.metadata_status),
+  ('Last input update', corpus.latest_update or 'not available'),
+  ('Write policy', 'runtime overlay' if corpus.writable else 'shipped read-only'),
+] %}
+{% call deck_detail(corpus.root_kind ~ ' · ' ~ corpus.role ~ ' corpus', corpus.label, id=corpus.id, tier=tier, facts=facts,
+    suit=('▲' if needs_attention else ('○' if tier == 'gap' else '')), tone=('dk-g-warn' if needs_attention else 'dk-g-other'),
+    stamp=corpus.status|upper, sub=corpus.source_path, back=('Fuzz corpora', '/operate/corpora')) %}
+  {% if needs_attention %}
+  <div class="dk-panel dkb-diag" role="alert">
+    <h3>▲ Needs attention</h3>
+    <ul>
+      {% for diagnostic in corpus.diagnostics %}<li>{{ diagnostic }}</li>{% endfor %}
+      {% for relationship in unresolved %}<li>Referenced <code>{{ relationship.id }}</code> does not resolve to a catalogued object.</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  <div class="dk-panel">
+    <h3>What this card is</h3>
+    <p class="dkb-p">A set of {{ corpus.input_count }} seed input{{ '' if corpus.input_count == 1 else 's' }} a fuzzer starts from — {{ corpus.provenance }}{% if corpus.source_campaign %} · {{ corpus.source_campaign }}{% endif %}. An inventory of inputs, not evidence that any run used them.</p>
+    {% if corpus.input_count == 0 %}<p class="dkb-p dk-note">○ This corpus is empty.</p>{% endif %}
+  </div>
+  <div class="dk-panel">
+    <h3>Related</h3>
+    <div class="dkb-rel">
+      <div><strong>Targets</strong>{% if corpus.target_relationships %}<ul class="dk-list">{% for r in corpus.target_relationships %}<li>{% if r.resolved and r.url %}<a href="{{ r.url }}"><code>{{ r.id }}</code></a>{% else %}<code>{{ r.id }}</code> <span class="dkb-unres">▲ unresolved</span>{% endif %}</li>{% endfor %}</ul>{% else %}<p class="dkb-p dk-note">None referenced.</p>{% endif %}</div>
+      <div><strong>Scenarios</strong>{% if corpus.scenario_ids %}<ul class="dk-list">{% for id in corpus.scenario_ids[:6] %}<li><a href="/operate/scenarios/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% if corpus.scenario_ids|length > 6 %}<p class="dk-note">+{{ corpus.scenario_ids|length - 6 }} more in Advanced.</p>{% endif %}{% else %}<p class="dkb-p dk-note">None referenced.</p>{% endif %}</div>
+      <div><strong>Grammars</strong>{% if corpus.grammar_relationships %}<ul class="dk-list">{% for r in corpus.grammar_relationships %}<li>{% if r.resolved and r.url %}<a href="{{ r.url }}"><code>{{ r.id }}</code></a>{% else %}<code>{{ r.id }}</code> <span class="dkb-unres">▲ unresolved</span>{% endif %}</li>{% endfor %}</ul>{% else %}<p class="dkb-p dk-note">None declared.</p>{% endif %}</div>
+    </div>
+  </div>
+  <div class="dk-panel">
+    <h3>Actions</h3>
+    <div class="dk-row">
+      <a class="dk-btn dk-btn--solid" href="/api/corpora/{{ corpus.id }}/export" download>Export this corpus</a>
+      <a class="dk-btn" href="/api/corpora/export" download>Download all corpora</a>
+      <a class="dk-btn" href="/learn/corpora" target="_blank" rel="noopener">Schema and lifecycle</a>
+    </div>
+  </div>
+{% endcall %}
+{% endif %}
+<div class="adv-only">
 <p class="breadcrumb"><a href="/operate/corpora">Fuzz corpora</a> <span>/</span> <code>{{ corpus.id }}</code></p>
 <header class="definition-header"><div><span class="eyebrow">{{ corpus.root_kind }} · {{ corpus.role }} · {{ corpus.status }}</span><h1>{{ corpus.label }}</h1><p class="page-hero"><code>{{ corpus.source_path }}</code></p></div><div class="definition-actions"><a class="cta cta--ghost" href="/api/corpora/{{ corpus.id }}/export" download>Export this corpus</a><a class="cta cta--ghost" href="/api/corpora/export" download>Download all corpora</a><a class="cta cta--ghost" href="/learn/corpora" target="_blank" rel="noopener">Schema and lifecycle</a></div></header>
 <dl class="definition-summary corpus-summary"><div><dt>Inputs</dt><dd>{{ corpus.input_count }}</dd></div><div><dt>Bytes</dt><dd>{{ corpus.size_bytes }}</dd></div><div><dt>Duplicate inputs</dt><dd>{{ corpus.duplicate_input_count }}</dd></div><div><dt>Metadata</dt><dd>{{ corpus.metadata_status }}</dd></div><div><dt>Last input update</dt><dd>{{ corpus.latest_update or 'not available' }}</dd></div><div><dt>Write policy</dt><dd>{{ 'runtime overlay' if corpus.writable else 'shipped read-only' }}</dd></div></dl>
 {% if corpus.diagnostics %}<section><span class="eyebrow">Diagnostics</span><h2>Inventory exceptions</h2><ul>{% for diagnostic in corpus.diagnostics %}<li>{{ diagnostic }}</li>{% endfor %}</ul></section>{% endif %}
 <section><span class="eyebrow">Provenance</span><h2>Where these inputs came from</h2><p>{{ corpus.provenance }}{% if corpus.source_campaign %} · {{ corpus.source_campaign }}{% endif %}</p>{% if corpus.provenance_files %}<ul>{% for path in corpus.provenance_files %}<li><code>{{ path }}</code></li>{% endfor %}</ul>{% endif %}<div class="relationship-grid"><div><strong>Targets</strong>{% if corpus.target_relationships %}<ul>{% for relationship in corpus.target_relationships %}<li>{% if relationship.resolved and relationship.url %}<a href="{{ relationship.url }}"><code>{{ relationship.id }}</code></a>{% else %}<code>{{ relationship.id }}</code> <span class="pill pill--v-unresolved">unresolved</span>{% endif %}</li>{% endfor %}</ul>{% else %}<p>None explicitly referenced.</p>{% endif %}</div><div><strong>Scenarios</strong>{% if corpus.scenario_ids %}<ul>{% for id in corpus.scenario_ids %}<li><a href="/operate/scenarios/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% else %}<p>None explicitly referenced.</p>{% endif %}</div><div><strong>Generation grammars</strong>{% if corpus.grammar_relationships %}<ul>{% for relationship in corpus.grammar_relationships %}<li>{% if relationship.resolved and relationship.url %}<a href="{{ relationship.url }}"><code>{{ relationship.id }}</code></a>{% else %}<code>{{ relationship.id }}</code> <span class="pill pill--v-unresolved">unresolved</span>{% endif %}</li>{% endfor %}</ul>{% else %}<p>None declared in metadata.</p>{% endif %}</div></div></section>
+</div>
 {% if corpus.writable %}<section class="corpus-management" data-corpus-management data-corpus-id="{{ corpus.id }}" data-control-token="{{ control_token }}"><span class="eyebrow">Token-gated management</span><h2>Runtime overlay controls</h2><p>Imports are bounded to 1 MiB, written atomically, and deduplicated by SHA-256. Removal and deduplication move bytes into <code>.trash/</code> for recovery. Shipped corpora never expose these controls.</p><div class="corpus-action-grid"><form data-corpus-upload><label for="corpus-upload">Import an input</label><input id="corpus-upload" name="input" type="file" required><button class="cta" type="submit">Import</button></form><form data-corpus-promote><label for="corpus-case-id">Promote retained testcase</label><input id="corpus-case-id" name="case_id" pattern="[A-Za-z0-9][A-Za-z0-9._\-]*" placeholder="tc-…" required><button class="cta" type="submit">Promote</button></form><div><button class="cta cta--ghost" type="button" data-corpus-action="deduplicate">Deduplicate</button> <button class="cta cta--ghost" type="button" data-corpus-action="{{ 'enable' if corpus.status == 'disabled' else 'disable' }}">{{ 'Enable overlay' if corpus.status == 'disabled' else 'Disable overlay' }}</button></div></div><p class="form-message" data-corpus-message aria-live="polite"></p></section>{% endif %}
+<div class="adv-only">
 <section><span class="eyebrow">Inputs</span><h2>Hashes and bounded previews</h2><p>Previews read at most 256 bytes. Text is escaped before rendering; binary data is hexadecimal. Downloads preserve exact bytes.</p>{% if corpus.inputs %}<div class="corpus-input-grid">{% for input in corpus.inputs %}<article class="learn-tile" data-corpus-input><span class="learn-tile__eyebrow">{{ input.preview_kind }} · {{ input.size_bytes }} bytes{% if input.duplicate %} · duplicate ×{{ input.duplicate_count }}{% endif %}</span><h3 class="learn-tile__title"><code>{{ input.name }}</code></h3><p class="small">SHA-256 <code>{{ input.sha256 }}</code></p><pre class="corpus-preview"><code>{{ input.preview|safe }}{% if input.preview_truncated %} …{% endif %}</code></pre><div class="definition-actions"><a class="cta cta--ghost" href="/api/corpora/{{ corpus.id }}/inputs/{{ input.name }}/download" download>Download</a>{% if corpus.writable %}<button class="cta cta--ghost" type="button" data-corpus-remove="{{ input.name }}">Remove</button>{% endif %}</div></article>{% endfor %}</div>{% else %}<p class="empty-section-statement">This corpus is empty. Use the bounded import control above to add the first runtime input.</p>{% endif %}</section>
 {% if corpus.writable %}<script src="/static/js/corpus-manager.js" defer></script>{% endif %}
+</div>
+{{ deck_more('Input hashes, previews and per-input downloads in Advanced') }}
 {% endblock %}

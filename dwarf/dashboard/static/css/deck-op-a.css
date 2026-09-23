@@ -1,0 +1,25 @@
+/* Evidence Deck — Operate catalog lists (Basic view only). Scope every rule to body[data-ui="basic"]. */
+
+/* Solid deck buttons inside .shell-main lose to the generic `.shell-main button` rule; restore them. */
+body[data-ui="basic"] .shell-main button.dk-btn { border:1px solid var(--dk-gold2); background:rgba(230,198,127,.06); color:var(--dk-gold) !important; font:600 13.5px system-ui,sans-serif; border-radius:8px; }
+body[data-ui="basic"] .shell-main button.dk-btn--solid,
+body[data-ui="basic"] .shell-main button.dk-btn--solid:hover:not(:disabled) { background:var(--dk-gold); color:#1a1224 !important; border-color:var(--dk-gold); }
+body[data-ui="basic"] .shell-main button.dk-btn:hover:not(:disabled):not(.dk-btn--solid) { background:rgba(230,198,127,.14); border-color:var(--dk-gold2); }
+
+/* Operational panels (deploy preview, version check, bundle import) under the card grids. */
+body[data-ui="basic"] .dk-op-panel { margin:26px 0 8px; padding:16px 18px; border:1px solid var(--dk-line2); border-radius:12px; background:rgba(0,0,0,.18); }
+body[data-ui="basic"] .dk-op-panel .b-h2 { margin-top:0; }
+body[data-ui="basic"] .dk-op-panel select.dk-search { max-width:520px; min-width:0; width:100%; color:var(--dk-ink, inherit); }
+body[data-ui="basic"] .dk-op-panel .profile-catalog__output { max-width:100%; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; margin:12px 0 0; padding:12px; border:1px solid var(--dk-line2); border-radius:8px; background:rgba(0,0,0,.3); font-size:12.5px; }
+body[data-ui="basic"] .dk-op-panel .profile-deploy-actions:not(:empty) { margin-top:10px; }
+
+/* Warning banners kept visible in Basic: pair the colour with the ▲ suit. */
+body[data-ui="basic"] .dk-op-warn > strong:first-child::before,
+body[data-ui="basic"] .dk-op-warn > h2:first-child::before { content:"▲ "; color:var(--dk-warn); }
+
+/* Bundle import form sits under the deck; keep it within the page width. */
+body[data-ui="basic"] .bundle-import-form { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+body[data-ui="basic"] .bundle-import-form input[type="file"] { max-width:100%; min-width:0; }
+
+/* Long identifiers in card facts must never force horizontal scroll. */
+body[data-ui="basic"] .dk-grid .dk-facts dd { overflow-wrap:anywhere; min-width:0; }

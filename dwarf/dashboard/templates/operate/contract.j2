@@ -1,5 +1,48 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% set smap = {'Finalized': ('face', '♦', 'dk-g-pass'), 'Draft': ('face', '■', 'dk-g-other'), 'In progress': ('face', '○', 'dk-g-other'), 'Not started': ('gap', '○', 'dk-g-other')} %}
+{% set wcards = [] %}
+{% for row in work_goals %}
+  {% set s = smap.get(row.status, ('back', '■', 'dk-g-other')) %}
+  {% set _ = wcards.append({'title': row.title, 'id': row.id, 'kicker': row.status, 'tier': s[0], 'suit': s[1], 'tone': s[2], 'group': row.status|lower|replace(' ', '-'),
+      'facts': [('Where', row.canonical_location)]}) %}
+{% endfor %}
+{% set dcards = [] %}
+{% for row in deliverables %}
+  {% set s = smap.get(row.status, ('back', '■', 'dk-g-other')) %}
+  {% set _ = dcards.append({'title': row.title, 'id': row.id, 'kicker': row.status, 'tier': s[0], 'suit': s[1], 'tone': s[2], 'group': row.status|lower|replace(' ', '-'),
+      'facts': [('Group', row.group), ('Where', row.canonical_location)]}) %}
+{% endfor %}
+{% set mcards = [] %}
+{% set mt = namespace(items=0, done=0) %}
+{% for milestone in future_milestones %}
+  {% set total = milestone['items']|length %}
+  {% set done = milestone['items']|selectattr('checked')|list|length %}
+  {% set mt.items = mt.items + total %}{% set mt.done = mt.done + done %}
+  {% set _ = mcards.append({'title': milestone.label, 'id': milestone.id, 'kicker': 'Target ' ~ (milestone.target_date or '—'),
+      'tier': 'gap' if total == 0 else 'face', 'suit': '○' if total == 0 or done < total else '♦', 'tone': 'dk-g-pass' if total and done == total else 'dk-g-other',
+      'sub': ('No items listed.' if total == 0 else done ~ ' of ' ~ total ~ ' items ticked off.'),
+      'group': 'done' if total and done == total else 'open'}) %}
+{% endfor %}
+{% set n_final = deliverables|selectattr('status', 'equalto', 'Finalized')|list|length %}
+{% if not work_goals and not deliverables and not future_milestones %}
+  {% set answer = 'No contract progress to show — the milestone status files were not found or have no readable rows.' %}
+{% else %}
+  {% set answer = 'M1: ' ~ n_final ~ ' of ' ~ deliverables|length ~ ' deliverables finalized' ~ ('; later milestones: ' ~ mt.done ~ ' of ' ~ mt.items ~ ' items ticked off.' if future_milestones else '.') %}
+{% endif %}
+{{ deck_head('Operate · Contract', answer,
+   'Progress on the Cardano security-testing engagement (Amaru and the Haskell node, April–December 2026, 9 monthly milestones). Statuses are copied from the project’s own milestone notes — a “Finalized” status is a self-reported label, not verified evidence.') }}
+<section class="basic-only dk dk-op-section"><h2 class="dk-op-h">M1 work goals</h2></section>
+{{ deck_grid(wcards, label='work goals', search=false, empty='No work goals found in user/milestones/milestone-1-deliverable-status.md.') }}
+<section class="basic-only dk dk-op-section"><h2 class="dk-op-h">M1 deliverables</h2></section>
+{{ deck_grid(dcards, label='deliverables', search=false, empty='No deliverables found in user/milestones/milestone-1-deliverable-status.md.') }}
+<section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Milestones M2–M9</h2></section>
+{{ deck_grid(mcards, label='milestones', search=false, empty='No future milestones found in user/milestones/contract-milestones-tasklist.md.') }}
+{{ deck_more('Milestone item lists and sources in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate</span>
 <h1>Contract progress</h1>
 <p>Cardano white-hacking, security assessment &amp; testing engagement covering Amaru and the Haskell Cardano node. Contract scope: April–December 2026 across 9 monthly milestones.</p>
@@ -87,4 +130,5 @@
     <code>user/milestones/contract-milestones-tasklist.md</code> (milestone framing + M2–M9 items).
   </p>
 </footer>
+</div>
 {% endblock %}
