@@ -16906,13 +16906,35 @@ class HandshakeCasesMatchExpected(AssertionPrimitive):
                 "note": "the retained handshake calibration report is unavailable or invalid",
             }
         workload = report.get("workload_identity") or {}
-        by_case = (report.get("attempts") or {}).get("by_case") or {}
+        attempts_info = report.get("attempts") or {}
+        by_case = attempts_info.get("by_case") or {}
+        # Both helpers retain one row per attempt (case, expected and observed
+        # outcome); prefer it, since the Cardano leg does not write by_case.
+        expected_by_case: dict[str, str] = {}
+        artifact = report_path.parent / str(attempts_info.get("artifact") or "attempts.ndjson")
+        if artifact.is_file():
+            by_case = {}
+            for line in artifact.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                name = str(row.get("case") or "")
+                slot = by_case.setdefault(name, {"total": 0, "outcomes": {}})
+                slot["total"] += 1
+                outcome = str(row.get("outcome") or "unclassified")
+                slot["outcomes"][outcome] = slot["outcomes"].get(outcome, 0) + 1
+                if row.get("expected_external_outcome"):
+                    expected_by_case[name] = str(row["expected_external_outcome"])
         cases = []
         for case in workload.get("cases") or []:
             row = by_case.get(case.get("name")) or {}
             outcomes = row.get("outcomes") or {}
             total = int(row.get("total") or 0)
-            expected = str(case.get("expected_external_outcome") or "")
+            expected = str(
+                case.get("expected_external_outcome")
+                or expected_by_case.get(str(case.get("name")))
+                or ""
+            )
             matching = int(outcomes.get(expected) or 0)
             cases.append(
                 {

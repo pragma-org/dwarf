@@ -524,3 +524,35 @@ def test_handshake_cases_fail_closed_without_a_report(tmp_path):
 
     assert result["result"] == "fail"
     assert "unavailable" in result["note"]
+
+
+def test_handshake_cases_read_the_retained_attempt_rows_when_by_case_is_absent(tmp_path):
+    output = tmp_path / "outputs" / "cardano-measurement-calibration"
+    output.mkdir(parents=True)
+    names = ["v14-v15-offer", "node-11-1-experimental-v16-offer", "unknown-future-version-offer"]
+    (output / "attempts.ndjson").write_text(
+        "".join(
+            json.dumps({"case": name, "outcome": "accepted", "expected_external_outcome": "accepted"}) + "\n"
+            for name in names
+            for _ in range(20)
+        ),
+        encoding="utf-8",
+    )
+    (output / "result.json").write_text(
+        json.dumps(
+            {
+                "target": {"implementation": "cardano-node"},
+                "workload_identity": {
+                    "case_set": "version-table-forward-compat-v1",
+                    "cases": [{"name": name, "attempt_count": 20} for name in names],
+                },
+                "attempts": {"artifact": "attempts.ndjson", "total": 60, "outcomes": {"accepted": 60}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _handshake_cases(tmp_path, "cardano-node")
+
+    assert result["result"] == "pass"
+    assert [row["matching"] for row in result["evaluated_value"]["cases"]] == [20, 20, 20]
