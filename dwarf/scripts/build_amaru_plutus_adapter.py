@@ -26,9 +26,9 @@ def build_adapter(*, manifest_path, source_repository, output_dir, registry_root
     if output_dir.exists(): raise BuildContractError(f"output directory already exists: {output_dir}")
     manifest=exact_builder.load_manifest(manifest_path)
     if manifest.get("kind")!="production-plutus-v2-conformance" or manifest.get("implementation")!="amaru": raise BuildContractError("wrong adapter manifest")
-    exact_builder.require_audited_revision(manifest_path, manifest)
+    revision=exact_builder.require_audited_revision(manifest_path, manifest)
     files,set_digest=_verify(manifest_path,manifest)
-    source=exact_builder.clone_exact_source(source_repository,output_dir/"work"/"source",REVISION)
+    source=exact_builder.clone_exact_source(source_repository,output_dir/"work"/"source",revision)
     stage=source/"dwarf-conformance-adapters"/"amaru-plutus"
     for item in files:
         rel=Path(item["path"]).relative_to("plutus"); dest=stage/rel
@@ -39,7 +39,7 @@ def build_adapter(*, manifest_path, source_repository, output_dir, registry_root
     executable=stage/"target"/"release"/"dwarf-amaru-plutus-conformance"
     if not executable.is_file(): raise BuildContractError("Amaru Plutus adapter executable was not produced")
     result={"schema_version":1,"created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
-      "kind":manifest["kind"],"implementation":"amaru","source_revision":REVISION,"source_release":manifest["source"]["release"],
+      "kind":manifest["kind"],"implementation":"amaru","source_revision":revision,"source_release":manifest["source"]["release"],
       "measurement_boundary":manifest["measurement_boundary"],"production_entrypoint":manifest["production_entrypoint"],
       "toolchain":{"rustc":subprocess.check_output([str(rustc_binary),f"+{manifest['toolchain']}","--version"],text=True).strip(),
       "cargo":subprocess.check_output([str(cargo_binary),f"+{manifest['toolchain']}","--version"],text=True).strip()},
@@ -48,7 +48,7 @@ def build_adapter(*, manifest_path, source_repository, output_dir, registry_root
     evidence=output_dir/"evidence"/"build-result.json"; evidence.parent.mkdir(parents=True)
     evidence.write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
     result["build_result_sha256"]=exact_builder.sha256_file(evidence)
-    record=registry_root/"amaru"/"plutus-conformance"/REVISION/f"{set_digest}.json"; record.parent.mkdir(parents=True,exist_ok=True)
+    record=registry_root/"amaru"/"plutus-conformance"/revision/f"{set_digest}.json"; record.parent.mkdir(parents=True,exist_ok=True)
     record.write_text(json.dumps(result,indent=2,sort_keys=True)+"\n"); result["record_path"]=str(record)
     return result
 
