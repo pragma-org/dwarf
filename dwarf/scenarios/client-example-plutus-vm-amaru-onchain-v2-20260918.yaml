@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
-  "id": "client-example-plutus-vm-amaru-20260918",
-  "title": "Client example 02 \u2014 Plutus VM conformance \u2014 Amaru \u2014 10.11.20260918",
+  "id": "client-example-plutus-vm-amaru-onchain-v2-20260918",
+  "title": "Client example 02 \u2014 live Plutus V2 conformance \u2014 Amaru \u2014 10.11.20260918",
   "authors": [
     "dwarf"
   ],
@@ -14,15 +14,17 @@
   ],
   "evidence_intent": "candidate",
   "promotion_blockers": [
+    "This additive topology proves that the live chain uses the pinned Plutus V2 cost model. It does not change older topology evidence.",
     "This separate execution is not a mixed-node performance comparison.",
     "Security assertions are authoritative; measurements do not gate by default."
   ],
   "target": {
     "implementation": "amaru",
-    "version": "10.11.20260918"
+    "version": "10.11.20260918",
+    "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
   },
   "runtime": "devnet",
-  "profile": "profile-z-amaru-20260918-nanoseconds-v3",
+  "profile": "profile-za-amaru-20260918-plutus-v2",
   "measurement_profile": "amaru-security-patched",
   "seed": "0x5107A502",
   "setup": [
@@ -58,7 +60,7 @@
     },
     {
       "primitive": "runtime_controlled_plutus_transactions",
-      "profile_id": "profile-z-amaru-20260918-nanoseconds-v3",
+      "profile_id": "profile-za-amaru-20260918-plutus-v2",
       "measurement_implementation": "amaru",
       "output_dir": "outputs/controlled-plutus-transactions",
       "timeout_seconds": 3600,
