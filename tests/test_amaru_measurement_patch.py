@@ -375,6 +375,64 @@ def test_fixed_revision_nanosecond_manifest_is_exact_and_self_consistent():
     assert verified["patch_set_sha256"] == manifest["patch_set_sha256"]
 
 
+RELEASE_20260918_REVISION = "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+RELEASE_20260918_NANOSECOND_V3_PATCH_ROOT = (
+    Path("dwarf/targets/amaru/measurement-patches-nanoseconds-v3")
+    / RELEASE_20260918_REVISION
+)
+
+
+def test_20260918_nanosecond_v3_manifest_is_exact_and_self_consistent():
+    manifest_path = RELEASE_20260918_NANOSECOND_V3_PATCH_ROOT / "manifest.json"
+    manifest = builder.load_manifest(manifest_path)
+    original = builder.load_manifest(
+        BLOCK_APPLICATION_NANOSECOND_PATCH_ROOT / "manifest.json"
+    )
+
+    assert builder.manifest_revision(manifest_path, manifest) == RELEASE_20260918_REVISION
+    assert manifest["measurement_revision"] == "nanoseconds-v3"
+    assert manifest["source"]["release"] == "10.11.20260918"
+    assert manifest["source"]["tag"] == "v10.11.20260918"
+    assert manifest["base_image"] == (
+        "ghcr.io/pragma-org/amaru@sha256:"
+        "2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60"
+    )
+    # Same instrumentation, rebased: identical touched files and toolchain.
+    assert manifest["changed_paths"] == original["changed_paths"]
+    assert manifest["instrumentation"] == original["instrumentation"]
+    assert manifest["toolchain"] == original["toolchain"]
+    verified = builder.verify_patch_set(RELEASE_20260918_NANOSECOND_V3_PATCH_ROOT, manifest)
+    assert verified["patch_set_sha256"] == (
+        "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6"
+    )
+
+
+def test_20260918_build_evidence_retains_exact_artifact_digests():
+    evidence = builder.load_manifest(
+        RELEASE_20260918_NANOSECOND_V3_PATCH_ROOT / "build-evidence.json"
+    )
+    manifest_bytes = (RELEASE_20260918_NANOSECOND_V3_PATCH_ROOT / "manifest.json").read_bytes()
+
+    assert evidence["source_revision"] == RELEASE_20260918_REVISION
+    assert evidence["measurement_revision"] == "nanoseconds-v3"
+    assert evidence["manifest_sha256"] == hashlib.sha256(manifest_bytes).hexdigest()
+    assert evidence["patch_set_sha256"] == (
+        "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6"
+    )
+    assert evidence["executable_digest"] == (
+        "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a"
+    )
+    assert evidence["image_digest"] == (
+        "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd"
+    )
+    assert evidence["build_result_sha256"] == (
+        "sha256:5cd61d80f12a27e565926d8175c0c82a9e4d604d154821b32f08add5ba1b1f6b"
+    )
+    assert evidence["static_linkage"] is True
+    assert evidence["image_smoke"] == "passed"
+    assert evidence["runtime_probe_smoke"] == "passed"
+
+
 def test_measurement_manifest_revision_must_match_its_revision_directory(tmp_path):
     manifest_path = tmp_path / ("a" * 40) / "manifest.json"
     manifest_path.parent.mkdir()

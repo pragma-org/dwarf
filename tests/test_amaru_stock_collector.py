@@ -285,6 +285,30 @@ def test_collector_retains_bounded_raw_normalized_correlation_and_result_artifac
     assert retained == result
 
 
+def test_stock_collector_reports_the_bound_target_source_revision(tmp_path):
+    revision = "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+    factories = build_amaru_stock_factories(
+        json_trace_paths=[FIXTURES / "amaru-b159-stock-traces.ndjson"],
+        otlp_trace_paths=[FIXTURES / "amaru-b159-otlp-traces.json"],
+        include_existing=True,
+        source_revision=revision,
+    )
+    collector = factories["amaru-stock-mempool"]({"id": "amaru-stock-mempool"})
+    context = CollectorContext(
+        measurement_id="amaru-stock-mempool",
+        definition={"id": "amaru-stock-mempool"},
+        parameters={},
+        run_dir=tmp_path,
+        collector_dir=tmp_path / "measurements/collectors/amaru-stock-mempool",
+    )
+
+    collector.prepare(context)
+    collector.start(context)
+    result = collector.finalize(context)
+
+    assert result["source_revision"] == revision
+
+
 def test_factory_registry_uses_runtime_owned_paths_not_scenario_parameters(tmp_path):
     factories = build_amaru_stock_factories(
         json_trace_paths=[FIXTURES / "amaru-b159-stock-traces.ndjson"],
