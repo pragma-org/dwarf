@@ -1,0 +1,98 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-cbor-decoding-amaru-patched-20260918-mixed-1112",
+  "title": "Client example 01 \u2014 CBOR decoding conformance \u2014 Amaru \u2014 10.11.20260918 \u2014 mixed with Cardano-node 11.1.2",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "client-example",
+    "amaru",
+    "measurement",
+    "cbor",
+    "security",
+    "mixed"
+  ],
+  "evidence_intent": "finding-validation",
+  "promotion_blockers": [
+    "Keep the failed conformance assertion visible in every report.",
+    "Use the version-pinned fixed revision for the passing regression leg."
+  ],
+  "expected_security_finding": {
+    "finding_id": "amaru-plutus-data-byte-string-bound",
+    "failed_assertion": "cbor_conformance_clean",
+    "target_source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+  },
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260918",
+    "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+  },
+  "runtime": "devnet",
+  "profile": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0xA7561CD0",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "amaru",
+      "version": "10.11.20260918",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "mode": "patched",
+      "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+      "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+      "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_version_pinned_cbor_conformance",
+      "source_repository": "https://github.com/r2rationality/cardano-cbor-dataset.git",
+      "dataset_revision": "a7561cd063550c2218898571520f14c3674efe91",
+      "dataset_repo_dir": "/home/nigel/cardano-cbor-dataset",
+      "dataset_dir": "/home/nigel/cardano-cbor-dataset/dataset/conway-123-100",
+      "implementation": "amaru",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "adapter_record": "/home/nigel/.local/share/dwarf/state/measurement-targets/amaru/conformance/aedfe797a5b8ef00d8b362be40b47a52c3b4a379/ebe45e62397c39fb45bf01226e42d2c40c21e22cb46e9386fda006e229017bb5.json",
+      "output_dir": "outputs/cbor-conformance",
+      "per_input_timeout_seconds": 5,
+      "timeout_seconds": 1200,
+      "expect_exit": 0
+    },
+    {
+      "primitive": "runtime_protocol_decode_cases",
+      "profile_id": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+      "attempts_per_case": 100,
+      "duration_seconds": 240,
+      "workload_digest": "sha256:1ab6db08d45f22f42b1333c255ed07ac9dc57ecacb69ee7c645ecfd451c4225e",
+      "response_timeout_seconds": 2,
+      "progress_timeout_seconds": 120,
+      "timeout_seconds": 360,
+      "expected_helper_exit": 0
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {
+      "primitive": "runtime_target_health_and_progress",
+      "progress_reference": "load-start"
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "cbor_conformance_clean",
+      "min_inputs_processed": 100
+    },
+    {
+      "primitive": "cbor_roundtrip_consistent",
+      "min_inputs_processed": 100
+    },
+    {
+      "primitive": "invalid_protocol_cases_contained"
+    },
+    {
+      "primitive": "target_progress_continues"
+    }
+  ],
+  "teardown": []
+}

@@ -95,10 +95,11 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
         "profile-y-amaru-block-application-nanoseconds-v3": "amaru-control",
         "profile-z-amaru-20260918-nanoseconds-v3": "amaru-control",
         "profile-za-amaru-20260918-plutus-v2": "amaru-control",
+        "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3": "amaru-control",
     }
     profiles = load_profiles()
 
-    assert len(profiles) == 27
+    assert len(profiles) == 28
     assert {profile.id for profile in profiles} == set(expected_adapters)
     for profile in profiles:
         source = next(
@@ -119,6 +120,7 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
                 "profile-y-amaru-block-application-nanoseconds-v3",
                 "profile-z-amaru-20260918-nanoseconds-v3",
                 "profile-za-amaru-20260918-plutus-v2",
+                "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
             }
             else "latest-confirmed"
         )

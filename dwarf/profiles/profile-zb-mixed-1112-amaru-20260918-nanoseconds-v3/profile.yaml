@@ -1,5 +1,5 @@
 {
-  "id": "profile-zb-mixed-11.1.2-amaru-20260918-nanoseconds-v3",
+  "id": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
   "label": "Mixed devnet \u2014 Cardano-node 11.1.2 + Amaru 10.11.20260918 nanosecond measurement target",
   "haskell_count": 2,
   "amaru_count": 1,

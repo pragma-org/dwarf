@@ -1,0 +1,89 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-simple-transfer-amaru-20260918-mixed-1112",
+  "title": "Client example 06 \u2014 simple transfer measurement \u2014 Amaru \u2014 10.11.20260918 \u2014 mixed with Cardano-node 11.1.2",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "client-example",
+    "amaru",
+    "measurement",
+    "simple-transfer",
+    "txsubmission",
+    "mixed"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This run measures only the exact Amaru target. Its qualified Cardano producer is transaction-delivery infrastructure.",
+    "This separate execution is not an automatic Amaru-versus-Cardano benchmark.",
+    "Measurements do not gate by default."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260918",
+    "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+  },
+  "runtime": "devnet",
+  "profile": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+  "measurement_profile": "amaru-security-patched",
+  "measurements": [
+    {
+      "id": "amaru-stock-resources",
+      "enabled": true,
+      "parameters": {
+        "sample_interval_seconds": 0.25
+      },
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    }
+  ],
+  "seed": "0x51A9E001",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "amaru",
+      "version": "10.11.20260918",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "mode": "patched",
+      "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+      "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+      "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_controlled_simple_transfers",
+      "profile_id": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+      "measurement_implementation": "amaru",
+      "attempt_count": 35,
+      "outcome_timeout_seconds": 90,
+      "output_dir": "outputs/controlled-simple-transfers",
+      "timeout_seconds": 3600,
+      "expect_exit": 0
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {
+      "primitive": "runtime_target_health_and_progress",
+      "report_path": "outputs/controlled-simple-transfers/result.json",
+      "progress_reference": "load-start"
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "simple_transfers_observed",
+      "minimum_attempts": 30
+    },
+    {
+      "primitive": "target_progress_continues"
+    },
+    {
+      "primitive": "no_target_fatal_signal"
+    }
+  ],
+  "teardown": []
+}
