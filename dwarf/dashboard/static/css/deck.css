@@ -237,7 +237,7 @@ body[data-ui="basic"] .result-pill--error::before { content:"✕ "; }
 .dk-stat b { font:600 26px/1 var(--dk-serif); } .dk-stat b small { font-size:14px; color:var(--dk-muted); }
 .dk-stat span { display:block; font:11.5px var(--dk-mono); color:var(--dk-muted); margin-top:4px; }
 .dk-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 14px; }
-.dk-seg { display:inline-flex; border:1px solid var(--dk-line2); border-radius:8px; overflow:hidden; }
+.dk-seg { display:inline-flex; flex-wrap:wrap; max-width:100%; border:1px solid var(--dk-line2); border-radius:8px; overflow:hidden; }
 .dk-seg button { font:600 12.5px system-ui,sans-serif; border:0; background:transparent; color:var(--dk-muted); padding:9px 12px; min-height:38px; cursor:pointer; }
 .dk-seg button + button { border-left:1px solid var(--dk-line2); }
 .dk-seg button[aria-pressed="true"] { background:var(--dk-gold); color:#1a1224; }
@@ -277,6 +277,40 @@ body[data-ui="basic"] .result-pill--error::before { content:"✕ "; }
 .dk-dialog .dk-entry { border:0; background:none; padding:0; }
 .dk-dialog .dk-entry summary { list-style:none; cursor:default; }
 .dk-dialog .dk-entry summary::-webkit-details-marker { display:none; }
+
+
+/* ---- generic card grid + detail (Operate sub-pages) ---- */
+.dk-head { margin-bottom:6px; }
+.dk-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; margin:4px 0 22px; perspective:1200px; }
+.dk-grid .dk-card { min-height:168px; }
+.dk-grid [hidden] { display:none !important; }
+.dk-item__title { font:500 19px/1.2 var(--dk-serif); overflow-wrap:anywhere; }
+.dk-item__id { font:11.5px/1.35 var(--dk-mono); color:var(--dk-gold); overflow-wrap:anywhere; background:none; padding:0; }
+.dk-item__stamp { align-self:flex-start; margin:6px 0 2px; }
+.dk-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 12px; margin:auto 0 0; padding-top:8px; font-size:12.5px; }
+.dk-facts div { border-top:1px solid rgba(255,255,255,.12); padding-top:4px; min-width:0; }
+.dk-facts dt { font:10.5px var(--dk-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--dk-muted); }
+.dk-facts dd { margin:0; font-weight:600; overflow-wrap:anywhere; }
+.dk-facts--detail { grid-template-columns:repeat(2,minmax(0,1fr)); font-size:13.5px; }
+.dk-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+.dk-tags span { font:10.5px var(--dk-mono); border:1px solid rgba(255,255,255,.2); border-radius:4px; padding:1px 6px; background:rgba(10,8,18,.5); color:var(--dk-muted); }
+.dk-detail { display:grid; grid-template-columns:minmax(0,360px) minmax(0,1fr); gap:30px; align-items:start; margin:8px 0 18px; perspective:1400px; }
+.dk-detail > .dk-card { min-height:360px; }
+.dk-more { margin:18px 0 8px; }
+.dk-list { display:grid; gap:6px; margin:0; padding:0; list-style:none; }
+.dk-list li { border-top:1px solid var(--dk-line); padding:6px 0 0; overflow-wrap:anywhere; }
+@media (max-width:900px) { .dk-detail { grid-template-columns:minmax(0,1fr); } .dk-detail > .dk-card { min-height:0; } }
+@media (max-width:520px) { .dk-grid { grid-template-columns:minmax(0,1fr); } }
+
+.dk-crumb { margin:0 0 10px; font:600 12.5px var(--dk-mono); }
+.dk-crumb a { text-decoration:none; }
+/* legacy operational tool boxes (run a scenario, coverage runner, forms) inside Basic */
+body[data-ui="basic"] .run-scenario, body[data-ui="basic"] .run-coverage { background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)) !important; border-color:var(--dk-line2) !important; }
+body[data-ui="basic"] .run-scenario button, body[data-ui="basic"] .run-coverage button, body[data-ui="basic"] .cta--primary, body[data-ui="basic"] button.cta:not(.cta--ghost) {
+  background:var(--dk-gold) !important; color:#1a1224 !important; border-color:var(--dk-gold) !important; }
+body[data-ui="basic"] .cta--ghost { color:var(--dk-gold); border-color:var(--dk-gold2); }
+body[data-ui="basic"] input:not([type="checkbox"]):not([type="radio"]), body[data-ui="basic"] select, body[data-ui="basic"] textarea {
+  background:rgba(0,0,0,.28) !important; border-color:var(--dk-line2) !important; color:var(--dk-ink) !important; }
 
 /* ---- responsive ---- */
 @media (max-width:900px) {

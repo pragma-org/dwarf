@@ -1,5 +1,29 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{%- set _sb = counts['still-broken'] -%}{%- set _bd = counts['broken-differently'] -%}
+{%- if empty -%}
+  {%- set _lead = 'There are no preserved runs to audit yet.' -%}
+{%- elif _sb + _bd > 0 -%}
+  {%- set _lead = (_sb + _bd) ~ ' of ' ~ all_count ~ ' preserved runs look thinner than their pass suggests.' -%}
+{%- else -%}
+  {%- set _lead = 'No preserved run trips a thinness rule — ' ~ counts['unknown'] ~ ' of ' ~ all_count ~ ' simply show no signal either way.' -%}
+{%- endif -%}
+{{ deck_head('Operate · Audit', _lead,
+   'This page re-reads every preserved run against the tightened "is this test too thin?" rules. It is a heuristic second look: it changes nothing, rewrites no result, and is not authoritative. A card with a rule tag means a rule fired — that run passed on too little real work.') }}
+{% if not empty %}
+<div class="basic-only"><div class="dk-stats">
+  <div class="dk-stat"><b class="dk-g-error">✕ {{ _sb }}</b><span>still broken · would fail today</span></div>
+  <div class="dk-stat"><b class="dk-g-warn">▲ {{ _bd }}</b><span>broken differently</span></div>
+  <div class="dk-stat"><b class="dk-g-other">■ {{ counts['unknown'] }}</b><span>unknown · no signal</span></div>
+  <div class="dk-stat"><b class="dk-g-pass">♦ {{ counts['fixed'] }}</b><span>fixed · real work seen</span></div>
+</div></div>
+{% else %}
+{{ deck_grid([], label='runs', empty='No preserved bundles in the runs directory.') }}
+{% endif %}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Audit</span>
 <h1>Retro-classification</h1>
 <p class="page-hero">Heuristic re-classification of every preserved bundle on disk against the item-A thinness rules. <strong>This page is lossless on the run history</strong> — it does not change pass/fail color, does not modify any assertion outcome, does not write anywhere. It surfaces which currently-green bundles would be rejected by the tightened floors landed in the 2026-04-30 audit cascade. Live floor re-evaluation is design-option C and is intentionally NOT done here — classifications below are heuristic, not authoritative.</p>
@@ -31,8 +55,9 @@
 
 <hr class="hairline">
 
+</div>
 {% if empty %}
-<p class="empty-section-statement">
+<p class="empty-section-statement adv-only">
   No preserved bundles in the runs directory.
   <span class="empty-section-statement__cite">scanned <code>$ADA2_DWARF_RUNS_DIR</code> (or <code>dwarf/runs/</code>)</span>
 </p>
@@ -60,6 +85,22 @@
   <p class="filter-count" aria-live="polite">{{ filtered_count }} of {{ all_count }} bundles</p>
 </form>
 
+
+{% if ui == "basic" and not empty %}
+{% set cards = [] %}
+{% for r in rows %}
+  {% if r.rules_fired or r.classification in ['still-broken', 'broken-differently'] %}
+    {% set _t = ('warn', '✕' if r.classification == 'still-broken' else '▲', 'dk-g-error' if r.classification == 'still-broken' else 'dk-g-warn') %}
+  {% elif r.classification == 'fixed' %}{% set _t = ('face', '♦', 'dk-g-pass') %}
+  {% else %}{% set _t = ('gap', '■', 'dk-g-other') %}{% endif %}
+  {% set _ = cards.append({'title': r.scenario_id or r.run_id, 'id': r.run_id, 'href': r.run_url, 'kicker': r.classification, 'tier': _t[0], 'suit': _t[1], 'tone': _t[2],
+     'sub': r.telemetry_summary or '', 'tags': (r.rules_fired or []) if r.rules_fired else (['no signal'] if r.classification == 'unknown' else []),
+     'facts': [('family', r.assertion_family or '—'), ('manifest exit', r.exit_status or '—')], 'group': r.classification}) %}
+{% endfor %}
+{{ deck_grid(cards, label='runs', empty='No runs match this filter.') }}
+{{ deck_more('The compact audit table — in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <table class="config-table audit-table">
   <thead>
     <tr>
@@ -103,6 +144,8 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 
 {% endif %}
+{% if ui == "basic" and empty %}{{ deck_more('Open the audit page in Advanced') }}{% endif %}
 {% endblock %}

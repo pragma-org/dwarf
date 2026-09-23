@@ -1,5 +1,13 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% set n_bad = rows|rejectattr('status', 'equalto', 'catalog-valid')|list|length %}
+{{ deck_head('Operate · Primitives',
+   rows|length ~ ' primitives registered across ' ~ family_counts|length ~ ' famil' ~ ('y' if family_counts|length == 1 else 'ies') ~ (' — ' ~ n_bad ~ ' fail catalog checks.' if n_bad else ' — all pass catalog checks.'),
+   'Catalog-valid means the registration, schema and executor class check out. It is inventory, not proof: it does not say a primitive has ever run successfully.') }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header">
   <div>
     <span class="eyebrow">Operate · reusable assets</span>
@@ -32,14 +40,32 @@
     {% endfor %}
   </div>
 </section>
+</div>
 
 {% if errors %}
-<section class="callout callout--warning" aria-labelledby="primitive-diagnostics-heading">
+<section class="callout callout--warning dk-op-warn" aria-labelledby="primitive-diagnostics-heading">
   <h2 id="primitive-diagnostics-heading">Catalog diagnostics</h2>
   <ul>{% for error in errors %}<li><code>{{ error }}</code></li>{% endfor %}</ul>
 </section>
 {% endif %}
 
+{% if ui == "basic" %}
+{% set cards = [] %}
+{% for row in rows %}{% set ok = row.status == 'catalog-valid' %}{% set _ = cards.append({
+  'title': row.id, 'href': '/operate/primitives/' ~ row.id,
+  'kicker': row.family ~ ' · v' ~ row.version, 'sub': row.class_name,
+  'tier': 'back' if ok else 'warn', 'suit': '♦' if ok else '▲', 'tone': 'dk-g-pass' if ok else 'dk-g-warn',
+  'group': row.family,
+  'facts': [('Targets', row.supports|join(', ') or 'none declared'), ('Runtimes', row.runtimes|join(', ') or 'none declared'), ('Used by', row.referencing_scenario_count ~ ' scenario' ~ ('' if row.referencing_scenario_count == 1 else 's'))],
+  'tags': [row.status, row.source_type] + ([row.plugin_id] if row.plugin_id else []),
+  'search': row.module ~ ' ' ~ row.runtimes|join(' ') ~ ' ' ~ row.supports|join(' ')}) %}{% endfor %}
+{% set groups = [] %}{% for family, count in family_counts.items() %}{% set _ = groups.append((family, family ~ ' · ' ~ count)) %}{% endfor %}
+<h2 class="b-h2 basic-only">Catalog · card backs (registered, not proven)</h2>
+{{ deck_grid(cards, label='primitives', groups=groups, empty='No primitives are available from the configured registry or plugin roots.') }}
+{{ deck_more('Filter by runtime and target, scaffold or download primitives in Advanced') }}
+{% endif %}
+
+<div class="adv-only">
 <section aria-labelledby="primitive-catalog-heading">
   <span class="eyebrow">Catalog</span>
   <h2 id="primitive-catalog-heading">Primitive catalog</h2>
@@ -94,6 +120,7 @@
   <p class="empty-section-statement">No primitives are available from the configured registry or plugin roots.</p>
   {% endif %}
 </section>
+</div>
 
 <style>
 .primitive-filter-bar{display:grid;grid-template-columns:minmax(16rem,2fr) repeat(3,minmax(10rem,1fr));gap:12px;align-items:end;margin:18px 0}

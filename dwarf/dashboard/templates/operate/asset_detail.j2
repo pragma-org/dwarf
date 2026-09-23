@@ -1,5 +1,43 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% set unresolved = (item.relationships or [])|selectattr('resolved', 'sameas', false)|list %}
+{% set bad = item.status in ['invalid', 'malformed', 'error', 'diagnostic', 'unsafe', 'unsafe-path', 'artifact-missing'] %}
+{% set facts = [('Status', item.status)] %}{% for field in fields[:5] %}{% set _ = facts.append((field.key, field.value)) %}{% endfor %}
+{% call deck_detail(catalog.singular_label, item.label, id=item.item_id, tier=('warn' if bad or unresolved else 'back'), facts=facts,
+    suit=('✕' if bad else ('▲' if unresolved else '')), tone=('dk-g-error' if bad else 'dk-g-warn'),
+    stamp=item.status|upper, sub=item.summary, back=(catalog.label, '/operate/' ~ catalog.slug)) %}
+  {% if bad or unresolved %}
+  <div class="dk-panel dkb-diag" role="alert">
+    <h3>{{ '✕' if bad else '▲' }} Needs attention</h3>
+    <ul>
+      {% if bad %}<li>Record status is <code>{{ item.status }}</code>.</li>{% endif %}
+      {% for relationship in unresolved %}<li><code>{{ relationship.label }}</code> does not resolve{% if relationship.relation %} ({{ relationship.relation }}){% endif %}.</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  <div class="dk-panel">
+    <h3>What this card is</h3>
+    <p class="dkb-p">A {{ catalog.singular_label|lower }} record from <code>{{ item.source_path }}</code>. A catalogue entry says what exists — it is not evidence that anything ran.</p>
+  </div>
+  <div class="dk-panel">
+    <h3>Related</h3>
+    {% if item.relationships %}
+    <ul class="dk-list">{% for relationship in item.relationships %}<li>{% if relationship.resolved is sameas false %}<code>{{ relationship.label }}</code> <span class="dkb-unres">▲ unresolved</span>{% else %}<a href="{{ relationship.url }}">{{ relationship.label }}</a>{% endif %}{% if relationship.relation %} <span class="dk-note">· {{ relationship.relation }}</span>{% endif %}</li>{% endfor %}</ul>
+    {% else %}<p class="dkb-p dk-note">○ No source-backed relationships are recorded.</p>{% endif %}
+  </div>
+  <div class="dk-panel">
+    <h3>Downloads</h3>
+    <div class="dk-row">
+      <a class="dk-btn dk-btn--solid" href="{{ export_url }}" download>Export with manifest</a>
+      <a class="dk-btn" href="{{ download_url }}" download>Download source</a>
+    </div>
+  </div>
+{% endcall %}
+{{ deck_more('All fields and the complete source in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <nav class="definition-breadcrumb" aria-label="Breadcrumb">
   <a href="/operate/{{ catalog.slug }}">{{ catalog.label }}</a>
   <span aria-hidden="true">/</span>
@@ -54,4 +92,5 @@
   </div>
   <pre><code>{{ item.raw_text }}</code></pre>
 </section>
+</div>
 {% endblock %}

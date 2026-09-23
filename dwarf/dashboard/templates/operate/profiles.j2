@@ -1,5 +1,15 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% set n_conf = entries|selectattr('version_status', 'equalto', 'confirmed')|list|length %}
+{% set types = {} %}{% for e in entries %}{% set _ = types.update({e.node_type: types.get(e.node_type, 0) + 1}) %}{% endfor %}
+{% set parts = [] %}{% for t, n in types|dictsort %}{% set _ = parts.append(n ~ ' ' ~ t) %}{% endfor %}
+{{ deck_head('Operate · Profiles',
+   (entries|length ~ ' runtime profile' ~ ('' if entries|length == 1 else 's') ~ ' — ' ~ ('all' if n_conf == entries|length else n_conf ~ ' of ' ~ entries|length) ~ ' resolve to a confirmed node version.') if not empty else 'No runtime profiles are defined yet.',
+   'A profile says how nodes are deployed for a run: implementation, node count, network and version policy. It is configuration; "confirmed" refers to the node version, not to any test result.') }}
+{% endif %}
+<div class="adv-only">
 <div class="scenarios-header">
   <div>
     <span class="eyebrow">Operate</span>
@@ -28,6 +38,46 @@
 <ul class="profile-catalog" data-profile-list>
   {% for entry in entries %}{% include "operate/_partials/_profile_entry.j2" %}{% endfor %}
 </ul>
+{% endif %}
+</div>
+{% if ui == "basic" %}
+{% set cards = [] %}
+{% for e in entries %}{% set vs = e.version_status %}{% set bad = vs in ['blocked', 'incompatible', 'invalid', 'error'] %}{% set _ = cards.append({
+  'title': e.label, 'id': e.id, 'href': e.url, 'kicker': e.node_type,
+  'tier': 'warn' if bad else 'back',
+  'suit': '♦' if vs == 'confirmed' else ('▲' if bad else '○'), 'tone': 'dk-g-pass' if vs == 'confirmed' else ('dk-g-warn' if bad else 'dk-g-other'),
+  'group': e.node_type,
+  'facts': [('Nodes', e.node_mix), ('Network', e.network_label), ('Peer sharing', 'enabled' if e.peer_sharing else 'disabled'), ('Version', vs ~ ' · ' ~ e.version_policy)],
+  'sub': e.version_summary, 'search': vs ~ ' ' ~ e.version_policy ~ ' ' ~ e.network_label}) %}{% endfor %}
+{% set groups = [] %}{% for t, n in types|dictsort %}{% set _ = groups.append((t, t ~ ' · ' ~ n)) %}{% endfor %}
+<h2 class="b-h2 basic-only">Catalog · card backs (configuration, not proof)</h2>
+{{ deck_grid(cards, label='profiles', groups=groups, empty='No profiles found — scanned dwarf/profiles/, 0 profile.yaml files.') }}
+{% if entries %}
+<section class="basic-only dk dk-op-panel" aria-labelledby="dk-deploy-heading">
+  <h2 class="b-h2" id="dk-deploy-heading">Preview a deployment</h2>
+  <p class="dk-plain">Resolves the exact node versions a profile would deploy. Nothing is deployed until you confirm the next step.</p>
+  <div class="dk-filters">
+    <label class="visually-hidden" for="dk-deploy-profile">Profile</label>
+    <select id="dk-deploy-profile" class="dk-search">{% for e in entries %}<option value="{{ e.id }}">{{ e.label }} · {{ e.id }}</option>{% endfor %}</select>
+    <button type="button" class="dk-btn dk-btn--solid" id="dk-deploy-btn"{% if not shim_enabled %} data-copy-only="1"{% endif %}>Preview deploy</button>
+  </div>
+  <div data-dk-deploy-slot></div>
+</section>
+<script>
+(function(){
+  var sel=document.getElementById('dk-deploy-profile'), btn=document.getElementById('dk-deploy-btn');
+  var slot=document.querySelector('[data-dk-deploy-slot]'); if(!sel||!btn||!slot) return;
+  var moved=[];
+  btn.addEventListener('click',function(){
+    moved.forEach(function(m){m.home.appendChild(m.node);}); moved=[];
+    var id=sel.value; btn.setAttribute('data-profile',id);
+    ['deploy-actions-'+id,'deploy-out-'+id].forEach(function(k){var n=document.getElementById(k); if(n){moved.push({node:n,home:n.parentNode}); slot.appendChild(n);}});
+    previewDeploy(btn);
+  });
+})();
+</script>
+{% endif %}
+{{ deck_more('Download and edit profiles in Advanced') }}
 {% endif %}
 <script>
 function copyDeploy(btn){

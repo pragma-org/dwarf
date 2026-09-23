@@ -1,5 +1,61 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% set problem = testcase.diagnostic or testcase.status in ['malformed', 'artifact-missing', 'unsafe-path'] %}
+{% set unresolved = (testcase.source_run_id and not testcase.source_run_resolved) or (testcase.scenario_id and not testcase.scenario_resolved) %}
+{% set facts = [
+  ('Status', testcase.status),
+  ('Bucket', testcase.bucket_id),
+  ('Producer', testcase.producer),
+  ('Implementation', testcase.target_implementation),
+  ('Replay', testcase.replay_state),
+  ('Compare', testcase.compare_state),
+  ('Minimization', testcase.minimization_state),
+  ('Promotion', testcase.promotion_state),
+] %}
+{% call deck_detail(testcase.classification ~ ' testcase', testcase.id, tier=('warn' if problem or unresolved else 'back'), facts=facts,
+    suit=('✕' if problem else ('▲' if unresolved else '')), tone=('dk-g-error' if problem else 'dk-g-warn'),
+    stamp=testcase.promotion_state|upper, sub=testcase.triage_reason, back=('Testcases', '/operate/testcases')) %}
+  {% if problem %}
+  <div class="dk-panel dkb-diag" role="alert">
+    <h3>✕ Record diagnostic</h3>
+    <p class="dkb-p">{{ testcase.diagnostic or ('Record status is ' ~ testcase.status ~ '.') }}</p>
+    {% if testcase.source_artifact_path %}<p class="dkb-p"><code>{{ testcase.source_artifact_path }}</code></p>{% endif %}
+  </div>
+  {% endif %}
+  <div class="dk-panel">
+    <h3>What this card is</h3>
+    <p class="dkb-p">An input a fuzzer or test flagged, kept so it can be replayed, compared and minimised. Its promotion state is <b>{{ testcase.promotion_state }}</b> — a retained testcase is a lead, not a confirmed finding.</p>
+  </div>
+  <div class="dk-panel">
+    <h3>Where it came from</h3>
+    <ul class="dk-list">
+      <li>Run: {% if testcase.source_run_url and testcase.source_run_resolved %}<a href="{{ testcase.source_run_url }}"><code>{{ testcase.source_run_id }}</code></a>{% elif testcase.source_run_id %}<code>{{ testcase.source_run_id }}</code> <span class="dkb-unres">▲ unresolved</span>{% else %}<span class="dk-note">○ not recorded</span>{% endif %}</li>
+      <li>Scenario: {% if testcase.scenario_url and testcase.scenario_resolved %}<a href="{{ testcase.scenario_url }}"><code>{{ testcase.scenario_id }}</code></a>{% elif testcase.scenario_id %}<code>{{ testcase.scenario_id }}</code> <span class="dkb-unres">▲ unresolved</span>{% else %}<span class="dk-note">○ not recorded</span>{% endif %}</li>
+      <li>Bucket: {% if testcase.bucket_id != 'unbucketed' %}<a href="/operate/testcase-buckets/{{ testcase.bucket_id }}"><code>{{ testcase.bucket_id }}</code></a>{% else %}<span class="dk-note">unbucketed</span>{% endif %}</li>
+      {% if testcase.sha256 %}<li>SHA-256 <code class="dk-hash">{{ testcase.sha256 }}</code>{% if testcase.size_bytes is not none %} · {{ testcase.size_bytes }} bytes{% endif %}</li>{% endif %}
+    </ul>
+  </div>
+  {% if testcase.cli_commands %}
+  <div class="dk-panel">
+    <h3>Next steps (from a trusted shell)</h3>
+    <p class="dkb-p dk-note" style="margin-bottom:8px">The dashboard does not change lifecycle state; run these yourself.</p>
+    <div class="dkb-cmds">{% for command in testcase.cli_commands %}<div class="dk-cmd"><code>{{ command }}</code></div>{% endfor %}</div>
+  </div>
+  {% endif %}
+  <div class="dk-panel">
+    <h3>Downloads</h3>
+    <div class="dk-row">
+      {% if testcase.artifact_available %}<a class="dk-btn dk-btn--solid" href="/api/assets/testcases/{{ testcase.id }}/artifact" download>Download artifact</a>{% endif %}
+      <a class="dk-btn" href="/api/assets/testcases/{{ testcase.id }}/download" download>Download record</a>
+      <a class="dk-btn" href="/api/assets/testcases/{{ testcase.id }}/export" download>Export with manifest</a>
+    </div>
+  </div>
+{% endcall %}
+{{ deck_more('Retained files, lifecycle history and the complete record in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <nav class="definition-breadcrumb" aria-label="Breadcrumb"><a href="/operate/testcases">Testcases</a><span aria-hidden="true">/</span><span>{{ testcase.id }}</span></nav>
 <header class="definition-header">
   <div><span class="eyebrow">{{ testcase.classification }} · {{ testcase.target_implementation }}</span><h1>{{ testcase.id }}</h1><p class="page-hero">{{ testcase.triage_reason }}</p></div>
@@ -15,4 +71,5 @@
 <section><span class="eyebrow">State machine</span><h2>Lifecycle history</h2><div class="definition-summary"><div><dt>Replay results</dt><dd><code>{{ testcase.replay_results|length }}</code></dd></div><div><dt>Minimization results</dt><dd><code>{{ testcase.minimization_results|length }}</code></dd></div><div><dt>Comparison</dt><dd><code>{{ 'recorded' if testcase.compare_result else 'none' }}</code></dd></div><div><dt>Promotion entries</dt><dd><code>{{ testcase.promotion_history|length }}</code></dd></div></div></section>
 {% if testcase.cli_commands %}<section><span class="eyebrow">Explicit mutations</span><h2>CLI actions</h2><p>The dashboard is read-only for lifecycle transitions. Review the record, then run an exact command from a trusted shell.</p>{% for command in testcase.cli_commands %}<pre><code>{{ command }}</code></pre>{% endfor %}</section>{% endif %}
 <section class="definition-source"><div class="definition-source__head"><div><span class="eyebrow">Persisted source</span><h2>Complete lifecycle record</h2></div><code>{{ testcase.source_path }}</code></div><pre><code>{{ testcase.raw_source }}</code></pre></section>
+</div>
 {% endblock %}

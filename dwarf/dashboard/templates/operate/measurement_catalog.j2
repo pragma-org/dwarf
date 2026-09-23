@@ -1,5 +1,19 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% set n = rows|length %}
+{% if catalog == 'measurements' %}
+{% set n_def = rows|selectattr('default_enabled')|list|length %}
+{% set lead = (n ~ ' measurement tap' ~ ('' if n == 1 else 's') ~ ' defined — ' ~ n_def ~ ' on by default, ' ~ (n - n_def) ~ ' optional.') if not empty else 'No measurement taps are defined yet.' %}
+{% set plain = 'A tap is a definition of what DWARF can observe during a run. Being listed here means it can be collected, not that it has been.' %}
+{% else %}
+{% set lead = (n ~ ' measurement profile' ~ ('' if n == 1 else 's') ~ ' — reusable selections of taps for a run.') if not empty else 'No measurement profiles are defined yet.' %}
+{% set plain = 'A measurement profile only selects which taps to collect. It is configuration, not evidence.' %}
+{% endif %}
+{% call deck_head('Operate · ' ~ eyebrow, lead, plain) %}<p><a class="dk-btn" href="{{ other_url }}">{{ other_label }} →</a></p>{% endcall %}
+{% endif %}
+<div class="adv-only">
 <div class="scenarios-header">
   <div>
     <span class="eyebrow">Operate · {{ eyebrow }}</span>
@@ -51,6 +65,26 @@
   </article>
   {% endfor %}
 </div>
+{% endif %}
+</div>
+{% if ui == "basic" %}
+{% set cards = [] %}{% set impls = [] %}
+{% for row in rows %}
+{% if row.implementation not in impls %}{% set _ = impls.append(row.implementation) %}{% endif %}
+{% set facts = [] %}
+{% if row.collection_mode %}{% set _ = facts.append(('Collection', row.collection_mode)) %}{% endif %}
+{% if row.overhead_class %}{% set _ = facts.append(('Overhead', row.overhead_class)) %}{% endif %}
+{% if catalog != 'measurements' %}{% set _ = facts.append(('Taps', row.measurement_count)) %}{% endif %}
+{% set _ = cards.append({
+  'title': row.title, 'id': row.id, 'href': '/operate/' ~ catalog ~ '/' ~ row.id,
+  'kicker': row.implementation ~ (' · ' ~ ('default' if row.default_enabled else 'optional') if catalog == 'measurements' else ''),
+  'sub': row.description, 'tier': 'back', 'group': row.implementation, 'facts': facts,
+  'tags': row.modes or [], 'search': row.search}) %}
+{% endfor %}
+{% set groups = [] %}{% for i in impls|sort %}{% set _ = groups.append((i, i ~ ' · ' ~ rows|selectattr('implementation', 'equalto', i)|list|length)) %}{% endfor %}
+<h2 class="b-h2 basic-only">Catalog · card backs (defined, not collected)</h2>
+{{ deck_grid(cards, label=heading|lower, groups=groups, empty='No ' ~ heading|lower ~ ' found.') }}
+{{ deck_more(create_label ~ ', edit and download in Advanced') }}
 {% endif %}
 
 <script>

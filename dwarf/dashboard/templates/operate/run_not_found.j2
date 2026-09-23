@@ -1,5 +1,24 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% call deck_detail('Run', 'Run not found', id=run_id, tier='gap', suit='○', tone='dk-g-other', stamp='NO BUNDLE',
+    sub='No evidence bundle is on disk for this run id, so there is nothing to inspect.', back=('Runs', '/operate/runs')) %}
+  <div class="dk-panel dkb-gapnote">
+    <h3>○ Possible reasons</h3>
+    <ul>
+      <li>The run id was mistyped.</li>
+      <li>The bundle was preserved on a remote source and is not synced locally yet.</li>
+      <li>The runs directory was rotated.</li>
+    </ul>
+  </div>
+  <div class="dk-panel">
+    <h3>Way back</h3>
+    <div class="dk-row"><a class="dk-btn dk-btn--solid" href="/operate/runs">Browse recent runs</a></div>
+  </div>
+{% endcall %}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Run</span>
 <h1>Run not found</h1>
 <p class="page-hero">No bundle on disk for run id <code>{{ run_id }}</code>.</p>
@@ -13,4 +32,5 @@
   <li>The runs directory was rotated.</li>
 </ul>
 <p>Browse <a href="/operate/runs">/operate/runs</a> for the recent runs index.</p>
+</div>
 {% endblock %}

@@ -1,5 +1,26 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% set facts = [] %}{% for f in (summary_fields or [])[:6] %}{% set _ = facts.append((f.key, f.value)) %}{% endfor %}
+{% call deck_detail(catalog_label, title, id=definition_id, tier='back', facts=facts, stamp='DEFINED', back=(catalog|replace('-', ' ')|capitalize, catalog_url)) %}
+  <div class="dk-panel">
+    <h3>What this card is</h3>
+    <p style="margin:0">A {{ catalog_label|lower }} definition from <code>{{ source_path }}</code>. A definition says what can run — it is not evidence that it ran. Open Runs for results.</p>
+    {% if catalog == 'targets' %}<p class="b-note" style="margin-top:10px"><b>Target identity is not a deployment pin.</b> Deployment profiles select the exact node artifacts. <a href="/operate/profiles">Profiles</a> · <a href="/operate/versions">Node versions</a></p>{% endif %}
+  </div>
+  <div class="dk-panel">
+    <h3>Actions</h3>
+    <div class="dk-row">
+      <a class="dk-btn dk-btn--solid" href="{{ edit_url }}">Edit</a>
+      <a class="dk-btn" href="{{ download_url }}" download>Download source</a>
+      <a class="dk-btn" href="{{ catalog_url }}">Back to {{ catalog|replace('-', ' ') }}</a>
+    </div>
+  </div>
+{% endcall %}
+{{ deck_more('Complete definition source in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <nav class="definition-breadcrumb" aria-label="Breadcrumb">
   <a href="{{ catalog_url }}">{{ catalog|capitalize }}</a>
   <span aria-hidden="true">/</span>
@@ -47,4 +68,5 @@
   </div>
   <pre><code>{{ raw_source }}</code></pre>
 </section>
+</div>
 {% endblock %}

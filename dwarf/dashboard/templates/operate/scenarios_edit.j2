@@ -1,8 +1,10 @@
 {% extends "_base.j2" %}
 {% block main %}
-<span class="eyebrow">Operate · Scenarios · Editor</span>
-<h1>{% if scenario_id %}Edit scenario <code>{{ scenario_id }}</code>{% else %}New scenario (editor){% endif %}</h1>
-<p class="page-hero">In-browser editor for the canonical scenario JSON-shaped YAML. Validate-on-blur runs the same schema check <code>cardano-profile scenario validate</code> applies; save persists to <code>{{ scenarios_dir }}/&lt;id&gt;.yaml</code>. The body's own <code>id</code> field drives the filename — pick it carefully because save is overwrite.</p>
+{% from "operate/_partials/_deck.j2" import deck_head with context %}
+{{ deck_head('Scenarios · YAML editor', ('Edit the raw YAML for “' ~ scenario_id ~ '”.') if scenario_id else 'Write a new scenario as raw YAML.', 'Enter the dashboard token; the body is schema-checked as you type (validate). Save is enabled only after a valid check and writes ' ~ scenarios_dir ~ '/<id>.yaml, named by the body’s own id field — it overwrites any file with that id. Saving runs nothing.') }}
+<span class="eyebrow adv-only">Operate · Scenarios · Editor</span>
+<h1 class="adv-only">{% if scenario_id %}Edit scenario <code>{{ scenario_id }}</code>{% else %}New scenario (editor){% endif %}</h1>
+<p class="page-hero adv-only">In-browser editor for the canonical scenario JSON-shaped YAML. Validate-on-blur runs the same schema check <code>cardano-profile scenario validate</code> applies; save persists to <code>{{ scenarios_dir }}/&lt;id&gt;.yaml</code>. The body's own <code>id</code> field drives the filename — pick it carefully because save is overwrite.</p>
 
 <hr class="hairline">
 

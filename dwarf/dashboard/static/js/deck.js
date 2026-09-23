@@ -66,6 +66,33 @@
     });
   });
 
+
+  /* Generic card grids: optional group chips + search. */
+  document.querySelectorAll("[data-dk-grid]").forEach(function (grid) {
+    var items = Array.prototype.slice.call(grid.querySelectorAll("[data-dk-item]"));
+    var count = grid.querySelector("[data-dk-grid-count]");
+    var label = count ? count.textContent.replace(/^\d+\s*/, "") : "";
+    var st = { group: "", q: "" };
+    function apply() {
+      var n = 0;
+      items.forEach(function (it) {
+        var ok = (!st.group || (" " + it.getAttribute("data-group") + " ").indexOf(" " + st.group + " ") !== -1) &&
+                 (!st.q || (it.getAttribute("data-search") || "").indexOf(st.q) !== -1);
+        it.hidden = !ok; if (ok) n++;
+      });
+      if (count) count.textContent = n + (n === items.length ? " " : " of " + items.length + " ") + label;
+    }
+    grid.querySelectorAll("[data-dk-grid-filter]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        st.group = b.getAttribute("data-value") || "";
+        b.parentNode.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+        apply();
+      });
+    });
+    var s = grid.querySelector("[data-dk-grid-search]");
+    if (s) s.addEventListener("input", function () { st.q = s.value.trim().toLowerCase(); apply(); });
+  });
+
   /* Runs hand: hover/focus readout. */
   var readout = document.querySelector("[data-dk-readout]");
   if (readout) {

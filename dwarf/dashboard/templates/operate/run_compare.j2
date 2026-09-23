@@ -1,5 +1,82 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% if not diff.left_present or not diff.right_present %}
+  {% set missing = [] %}
+  {% if not diff.left_present %}{% set _ = missing.append(left_id) %}{% endif %}
+  {% if not diff.right_present %}{% set _ = missing.append(right_id) %}{% endif %}
+  {% call deck_head('Operate · Compare runs', 'Can’t compare: ' ~ (missing|length == 2 and 'neither run was found on disk' or 'one run was not found on disk') ~ '.',
+     'Both runs need a readable evidence bundle for a side-by-side.') %}
+    <p class="dk-op-actions"><a class="dk-btn" href="/operate/compare/runs">Pick a different pair →</a> <a class="dk-btn" href="/operate/runs">Recent runs →</a></p>
+  {% endcall %}
+  {% set mc = [] %}
+  {% for side, rid, ok in [('Left · baseline', left_id, diff.left_present), ('Right · variant', right_id, diff.right_present)] %}
+    {% set _ = mc.append({'title': rid or '—', 'kicker': side, 'tier': 'face' if ok else 'warn', 'suit': '♦' if ok else '✕', 'tone': 'dk-g-pass' if ok else 'dk-g-error', 'sub': 'Found on disk.' if ok else 'Not on disk.'}) %}
+  {% endfor %}
+  {{ deck_grid(mc, label='runs', search=false) }}
+{% else %}
+  {% set L = diff.headlines.left %}{% set R = diff.headlines.right %}
+  {% set A = diff.assertions %}
+  {% set tl = namespace(flipped=[]) %}
+  {% for key in (diff.tile_order or []) %}{% if key in diff.tiles and diff.tiles[key].verdict_changed %}{% set _ = tl.flipped.append(key) %}{% endif %}{% endfor %}
+  {% set same_exit = (L.exit_status or '') == (R.exit_status or '') %}
+  {% if A.flipped or not same_exit or tl.flipped %}
+    {% set answer = 'The runs differ: ' ~ ([('exit ' ~ (L.exit_status or '—') ~ ' → ' ~ (R.exit_status or '—')) if not same_exit else none, (A.flipped ~ ' assertion' ~ ('' if A.flipped == 1 else 's') ~ ' flipped') if A.flipped else none, (tl.flipped|length ~ ' substrate verdict' ~ ('' if tl.flipped|length == 1 else 's') ~ ' changed') if tl.flipped else none]|select|join(', ')) ~ '.' %}
+  {% else %}
+    {% set answer = 'No verdict changes: both runs ended ' ~ (L.exit_status or 'unknown') ~ ' and no assertion flipped.' %}
+  {% endif %}
+  {{ deck_head('Operate · Compare runs', answer,
+     'Left is the baseline, right is the variant. Cards marked ▲ changed between the two runs. Matching verdicts only mean these two runs behaved alike — not that either is correct.') }}
+  {% set hc = [] %}
+  {% for side, h, rid in [('Left · baseline', L, left_id), ('Right · variant', R, right_id)] %}
+    {% set bad = not h.verify_ok %}
+    {% set _ = hc.append({'title': (h.exit_status or '—')|upper, 'id': rid, 'href': h.bundle_url, 'kicker': side,
+        'tier': 'warn' if bad else 'face', 'suit': '✕' if bad else '■', 'tone': 'dk-g-error' if bad else 'dk-g-other',
+        'sub': ('Bundle verification FAILED — treat this run’s evidence with care.' if bad else 'Bundle verification passed.'),
+        'facts': [('Scenario', h.scenario_id or '—'), ('Target', (h.target_implementation or '—') ~ ((' @ ' ~ h.target_version) if h.target_version else '')), ('Runtime', h.runtime or '—'),
+                  ('Assertions', (h.assertion_summary.pass or 0) ~ ' / ' ~ (h.assertion_summary.total or 0) ~ ' pass (' ~ (h.assertion_summary.fail or 0) ~ ' fail)'),
+                  ('Wall time', ('%.2f'|format(h.wall_time_seconds) ~ 's') if h.wall_time_seconds is not none else '—')]}) %}
+  {% endfor %}
+  <section class="basic-only dk dk-op-section"><h2 class="dk-op-h">The two runs</h2></section>
+  {{ deck_grid(hc, label='runs', search=false) }}
+  {% set labels = {'topology': 'Topology', 'multi_node_observation': 'Multi-node observation', 'byzantine_peer': 'Byzantine peer', 'hf_boundary': 'HF boundary', 'era_transition': 'Era transition', 'genesis_mode': 'Genesis mode'} %}
+  {% set tc = [] %}
+  {% for key in (diff.tile_order or []) %}{% if key in diff.tiles %}
+    {% set tt = diff.tiles[key] %}
+    {% set changed = tt.verdict_changed or (tt.left_verdict != tt.right_verdict) %}
+    {% set _ = tc.append({'title': labels.get(key, key), 'kicker': 'Substrate evidence', 'group': 'changed' if changed else 'same',
+        'tier': 'warn' if changed else 'face', 'suit': '▲' if changed else '♦', 'tone': 'dk-g-warn' if changed else 'dk-g-pass',
+        'sub': ('Verdict changed.' if changed else 'Same verdict on both sides.'),
+        'facts': [('Left', tt.left_verdict or '—'), ('Right', tt.right_verdict or '—')]}) %}
+  {% endif %}{% endfor %}
+  {% if tc %}
+  <section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Substrate evidence, tile by tile</h2></section>
+  {{ deck_grid(tc, label='tiles', search=false) }}
+  {% endif %}
+  {% set ac = [] %}
+  {% for r in A.rows %}
+    {% set flip = r.kind == 'flipped' or ((r.left_result == 'pass') != (r.right_result == 'pass')) %}
+    {% set _ = ac.append({'title': r.primitive, 'kicker': r.kind|replace('_', ' '), 'group': 'flipped' if flip else 'same',
+        'tier': 'warn' if flip else 'face', 'suit': '▲' if flip else ('♦' if r.left_result == 'pass' else '■'), 'tone': 'dk-g-warn' if flip else ('dk-g-pass' if r.left_result == 'pass' else 'dk-g-other'),
+        'facts': [('Left', r.left_result or '—'), ('Right', r.right_result or '—')], 'search': r.params_json}) %}
+  {% endfor %}
+  <section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Assertions</h2>
+    <p class="dk-plain">{{ A.flipped }} flipped · {{ A.both_pass }} both pass · {{ A.both_fail }} both fail · {{ A.only_left }} only left · {{ A.only_right }} only right.</p></section>
+  {{ deck_grid(ac, label='assertions', groups=[('flipped', 'Flipped'), ('same', 'Unchanged')], empty='Neither run recorded any assertions.') }}
+  {% if field_diff and field_diff.found %}
+  {% set o = field_diff.overall %}
+  {% set fdiff = not field_diff.identical %}
+  <section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Field-level diff</h2></section>
+  {{ deck_grid([{'title': ('Bundles differ field by field' if fdiff else 'Bundles are field-identical'), 'kicker': 'Manifest, assertion stats, AFL telemetry',
+      'tier': 'warn' if fdiff and (o.semantic or o.drift) else 'face', 'suit': ('▲' if fdiff else '♦'), 'tone': ('dk-g-warn' if fdiff else 'dk-g-pass'),
+      'sub': ('Leaves that changed between left and right; per-field table in Advanced.' if fdiff else 'No additions, removals or mutations across the curated fields.'),
+      'facts': [('Mutated', o.mutated), ('Added · removed', (o.added or 0) ~ ' · ' ~ (o.removed or 0)), ('Telemetry drift', o.drift), ('Semantic flags', o.semantic)] if fdiff else [('Same', o.same)]}], label='field diff', search=false) }}
+  {% endif %}
+{% endif %}
+{{ deck_more('Node-by-node tables and per-field diff in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Compare</span>
 <h1 class="run-compare-heading">
   <code>{{ left_id }}</code>
@@ -260,4 +337,5 @@
 {% endif %}
 
 {% endif %}
+</div>
 {% endblock %}

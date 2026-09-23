@@ -1,6 +1,11 @@
 {% extends "_base.j2" %}
 {% block main %}
-<div class="scenarios-header">
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{{ deck_head('Operate · Scenarios', total ~ ' scenarios in the catalog — each is a recipe, not a result.',
+   'A scenario card says a test is defined and runnable. Only a run with a verified evidence bundle proves anything; open Runs for that.') }}
+{% endif %}
+<div class="scenarios-header adv-only">
   <div>
     <span class="eyebrow">Operate</span>
     <h1>Scenarios</h1>
@@ -10,7 +15,7 @@
     <a class="cta" href="/operate/scenarios/new">+ New scenario</a>
   </div>
 </div>
-<p>All scenarios visible to the dashboard, derived from <code>dwarf/scenarios/*.yaml</code> at request time. Filter by family to narrow the list; the filter is client-side and refresh resets it.</p>
+<p class="adv-only">All scenarios visible to the dashboard, derived from <code>dwarf/scenarios/*.yaml</code> at request time. Filter by family to narrow the list; the filter is client-side and refresh resets it.</p>
 
 <div class="run-scenario" style="margin:14px 0;background:var(--obsidian-2);border:1px solid var(--rule);border-radius:12px;padding:14px 16px">
   <span class="eyebrow">Run a scenario</span>
@@ -75,7 +80,7 @@ async function runCov(){
 </script>
 {% endif %}
 
-<details class="paste-scenario" id="paste-scenario">
+<details class="paste-scenario adv-only" id="paste-scenario">
   <summary class="paste-scenario__summary">
     <span class="eyebrow">Paste a scenario</span>
     <span class="paste-scenario__hint">Drop YAML in to validate and stage as a pending scenario</span>
@@ -94,6 +99,17 @@ async function runCov(){
   </div>
 </details>
 
+{% if ui == "basic" %}
+{% set fam = {} %}{% for f in families %}{% set _ = fam.update({f.slug: f.label}) %}{% endfor %}
+{% set cards = [] %}
+{% for row in rows %}{% set _ = cards.append({'title': row.title, 'id': row.id, 'href': row.url, 'kicker': row.runtime or 'scenario',
+  'tier': 'back', 'group': row.family, 'tags': [fam.get(row.family, row.family)]}) %}{% endfor %}
+<h2 class="b-h2 basic-only">Catalog · card backs (defined, not proven)</h2>
+{% set groups = [] %}{% for f in families %}{% set _ = groups.append((f.slug, f.label)) %}{% endfor %}
+{{ deck_grid(cards, label='scenarios', groups=groups) }}
+{{ deck_more('Paste YAML, edit and download scenarios in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <hr class="hairline">
 
 <div class="filter-bar">
@@ -112,6 +128,7 @@ async function runCov(){
 {% include "operate/_partials/_scenario_row.j2" %}
 {% endfor %}
 </ul>
+</div>
 
 <script type="module" src="/static/js/scenario-filter.js"></script>
 <script type="module" src="/static/js/paste-scenario.js"></script>

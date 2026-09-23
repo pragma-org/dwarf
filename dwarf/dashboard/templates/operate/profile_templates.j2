@@ -1,5 +1,30 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% set types = {} %}{% for r in rows %}{% set _ = types.update({r.node_type: types.get(r.node_type, 0) + 1}) %}{% endfor %}
+{{ deck_head('Operate · Profile templates',
+   (rows|length ~ ' profile template' ~ ('' if rows|length == 1 else 's') ~ ' ship with this DWARF revision.') if rows else 'No shipped profile templates are available.',
+   'A template is an immutable starting point for a new runtime profile. Open one to read it or start a profile from it; it proves nothing on its own.') }}
+{% set cards = [] %}
+{% for row in rows %}{% set _ = cards.append({
+  'title': row.id, 'href': '/operate/profile-templates/' ~ row.id,
+  'kicker': row.node_type ~ ' · ' ~ row.node_total ~ ' node' ~ ('' if row.node_total == 1 else 's'),
+  'sub': row.summary, 'tier': 'back', 'group': row.node_type,
+  'facts': [('Topology', row.topology_pattern), ('Network', row.network_magic), ('Peer sharing', 'on' if row.peer_sharing else 'off')],
+  'tags': [row.status], 'search': row.assumptions|join(' ')}) %}{% endfor %}
+{% set groups = [] %}{% for t, n in types|dictsort %}{% set _ = groups.append((t, t ~ ' · ' ~ n)) %}{% endfor %}
+<h2 class="b-h2 basic-only">Templates · card backs (scaffolds, not proof)</h2>
+{{ deck_grid(cards, label='templates', groups=groups, empty='No shipped profile templates are available.') }}
+{% if rows %}
+<section class="basic-only dk dk-op-panel" aria-label="Use a template">
+  <h2 class="b-h2">Start a profile from a template</h2>
+  <div class="dk-row">{% for row in rows %}<a class="dk-btn" href="{{ row.use_url }}">Use {{ row.id }}</a>{% endfor %}</div>
+</section>
+{% endif %}
+{{ deck_more('Download templates and read the contract in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header">
   <div><span class="eyebrow">Operate · profile authoring</span><h1>Profile templates</h1><p class="page-hero"><strong>{{ rows|length }} templates</strong> ship with this DWARF revision. Templates are immutable source scaffolds; use one to seed the existing validated profile builder.</p></div>
   <div class="definition-actions" aria-label="Profile-template catalog actions">
@@ -29,6 +54,7 @@
   {% endfor %}
 </div>
 {% else %}<p class="empty-section-statement">No shipped profile templates are available.</p>{% endif %}
+</div>
 
 <script>
 (() => {

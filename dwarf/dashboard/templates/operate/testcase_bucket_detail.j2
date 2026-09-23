@@ -1,8 +1,45 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% set empty = bucket.case_count == 0 %}
+{% set facts = [
+  ('Cases', bucket.case_count),
+  ('Classification', bucket.classification),
+  ('Target', bucket.target_implementation),
+  ('Promotion', bucket.promotion_state),
+  ('Replay pending', bucket.pending_replay_count),
+  ('Compare pending', bucket.pending_compare_count),
+] %}
+{% call deck_detail('Testcase bucket · ' ~ bucket.classification, bucket.id, tier=('gap' if empty else 'back'), facts=facts,
+    suit=('○' if empty else ''), tone='dk-g-other', stamp=bucket.promotion_state|upper,
+    sub=bucket.triage_reason ~ ' · ' ~ bucket.target_implementation, back=('Testcase buckets', '/operate/testcase-buckets')) %}
+  <div class="dk-panel">
+    <h3>What this card is</h3>
+    <p class="dkb-p">A group of testcases that share one signature (classification, triage reason and target), so duplicates are reviewed once. Grouping is bookkeeping — it does not confirm a finding.</p>
+    {% if bucket.pending_replay_count or bucket.pending_compare_count %}<p class="dkb-p" style="margin-top:8px">○ {{ bucket.pending_replay_count }} replay and {{ bucket.pending_compare_count }} comparison pending.</p>{% endif %}
+  </div>
+  <div class="dk-panel">
+    <h3>{{ bucket.case_count }} case{{ '' if bucket.case_count == 1 else 's' }}</h3>
+    {% if bucket.members %}
+    <ul class="dk-list">{% for member in bucket.members %}<li><a href="/operate/testcases/{{ member.id }}"><code>{{ member.id }}</code></a> <span class="dk-note">· {{ member.status }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="dkb-p dk-note">○ No member testcase records were found.</p>{% endif %}
+  </div>
+  <div class="dk-panel">
+    <h3>Downloads</h3>
+    <div class="dk-row">
+      <a class="dk-btn dk-btn--solid" href="/api/assets/testcase-buckets/{{ bucket.id }}/export" download>Export with manifest</a>
+      <a class="dk-btn" href="/api/assets/testcase-buckets/{{ bucket.id }}/download" download>Download bucket</a>
+    </div>
+  </div>
+{% endcall %}
+{{ deck_more('Bucket signature in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <nav class="definition-breadcrumb" aria-label="Breadcrumb"><a href="/operate/testcase-buckets">Testcase buckets</a><span aria-hidden="true">/</span><span>{{ bucket.id }}</span></nav>
 <header class="definition-header"><div><span class="eyebrow">{{ bucket.classification }} · {{ bucket.case_count }} case{{ '' if bucket.case_count == 1 else 's' }}</span><h1>{{ bucket.id }}</h1><p class="page-hero">{{ bucket.triage_reason }} · {{ bucket.target_implementation }}</p></div><div class="definition-actions"><a class="cta cta--ghost" href="/api/assets/testcase-buckets/{{ bucket.id }}/export" download>Export with manifest</a><a class="cta cta--ghost" href="/api/assets/testcase-buckets/{{ bucket.id }}/download" download>Download bucket</a></div></header>
 <dl class="definition-summary"><div><dt>Cases</dt><dd><code>{{ bucket.case_count }}</code></dd></div><div><dt>Classification</dt><dd><code>{{ bucket.classification }}</code></dd></div><div><dt>Target</dt><dd><code>{{ bucket.target_implementation }}</code></dd></div><div><dt>Promotion</dt><dd><code>{{ bucket.promotion_state }}</code></dd></div><div><dt>Replay pending</dt><dd><code>{{ bucket.pending_replay_count }}</code></dd></div><div><dt>Compare pending</dt><dd><code>{{ bucket.pending_compare_count }}</code></dd></div></dl>
 <section><span class="eyebrow">Membership</span><h2>Cases in this bucket</h2><div class="learn-tile-grid">{% for member in bucket.members %}<article class="learn-tile"><span class="learn-tile__eyebrow">{{ member.classification }} · {{ member.target_implementation }}</span><h3 class="learn-tile__title"><a href="/operate/testcases/{{ member.id }}"><code>{{ member.id }}</code></a></h3><p class="learn-tile__sub">{{ member.triage_reason }} · {{ member.status }}</p></article>{% endfor %}</div></section>
 <section class="definition-source"><div class="definition-source__head"><div><span class="eyebrow">Grouping key</span><h2>Bucket signature</h2></div></div><pre><code>{{ bucket.bucket_signature|tojson(indent=2) }}</code></pre></section>
+</div>
 {% endblock %}

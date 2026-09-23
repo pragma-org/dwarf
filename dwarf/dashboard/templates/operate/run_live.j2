@@ -1,11 +1,32 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% call deck_detail('Run · live log', 'Live run log', id=run_id, tier='face',
+    facts=[('Streams', 'log.ndjson'), ('Closes when', 'manifest.json is written'), ('Or after', '10 min of silence')],
+    sub='Lines appear below as the run writes them. Watching a log is not a verdict — the run inspector shows the result once the bundle is complete.',
+    back=('Run inspector', '/operate/runs/' ~ run_id)) %}
+  <div class="dk-panel">
+    <h3>What you are looking at</h3>
+    <p class="dkb-p">A live tail of this run&#39;s event log. The status line below says whether the stream is connected, closed, or retrying.</p>
+  </div>
+  <div class="dk-panel">
+    <h3>Actions</h3>
+    <div class="dk-row">
+      <a class="dk-btn dk-btn--solid" href="/operate/runs/{{ run_id }}">Open run inspector</a>
+      <a class="dk-btn" href="/operate/runs">All runs</a>
+    </div>
+  </div>
+{% endcall %}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Run · Live</span>
 <h1 class="run-id-heading"><code>{{ run_id }}</code></h1>
 <p class="page-hero">Streaming the run's <code>log.ndjson</code> in real time. The stream closes automatically when the framework writes <code>manifest.json</code> (final phase complete) or after 10 minutes of idle silence. <a href="/operate/runs/{{ run_id }}">↩ inspector</a></p>
 
 <hr class="hairline">
 
+</div>
 <section class="run-live" aria-labelledby="live-heading">
   <header>
     <span class="eyebrow">Status</span>

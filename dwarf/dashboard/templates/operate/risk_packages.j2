@@ -1,5 +1,18 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% call deck_head('Operate · Risk work packages', (rows|length) ~ ' planning groups link ' ~ candidate_count ~ ' candidate risks to ' ~ evidence_count ~ ' evidence references — ' ~ available_evidence_count ~ ' of those files exist here.') %}
+<p class="b-note"><b>Planning records, not proof.</b> These are not run evidence bundles, testcase buckets, findings, or accepted risks.</p>{% endcall %}
+{% set cards = [] %}{% for row in rows %}{% set blocked = row.blockers|length > 0 %}
+{% set _ = cards.append({'title': row.label, 'id': row.id, 'href': '/operate/risk-packages/' ~ row.id, 'kicker': row.run_state ~ ' · ' ~ row.status,
+  'tier': 'warn' if blocked else 'back', 'suit': '▲' if blocked else '', 'tone': 'dk-g-warn' if blocked else '', 'group': row.run_state, 'sub': row.status_text,
+  'facts': [('Candidate risks', row.candidate_ids|length), ('Evidence refs', row.evidence|length), ('Blockers', row.blockers|length)],
+  'search': (row.candidate_ids|join(' ')) ~ ' ' ~ (row.scenario_ids|join(' ')) ~ ' ' ~ (row.profile_id or '')}) %}{% endfor %}
+{{ deck_grid(cards, label='work packages', empty='No risk work-package sources are available.') }}
+{{ deck_more('Full package traceability in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header">
   <div>
     <span class="eyebrow">Operate · security planning</span>
@@ -27,4 +40,5 @@
   </article>{% endfor %}
 </div>{% else %}<p class="empty-section-statement">No risk work-package sources are available from the explicit package root.</p>{% endif %}
 <script>(()=>{const input=document.getElementById('risk-package-search');const rows=[...document.querySelectorAll('[data-risk-package-row]')];const count=document.querySelector('[data-risk-package-count]');if(!input||!count)return;input.addEventListener('input',()=>{const needle=input.value.trim().toLowerCase();let visible=0;for(const row of rows){const show=!needle||row.dataset.search.toLowerCase().includes(needle);row.hidden=!show;if(show)visible+=1;}count.textContent=String(visible);});})();</script>
+</div>
 {% endblock %}

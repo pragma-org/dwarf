@@ -1,19 +1,42 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_grid, deck_more with context %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Status</span>
 <h1>The flask</h1>
 <p class="page-hero">You are looking <em>into</em> the flask. Inside lives the framework — small, contained, observational. Outside, <code>cardano-node</code> processes are bound to loopback and reachable only through conduits the framework has earned.</p>
 
 <hr class="hairline">
+</div>
 
 {% set _no_substrate = (substrate.source == 'missing' or (substrate.source != 'live' and substrate.source != 'cached')) %}
+{% if ui == "basic" %}
+{%- set _ts = topology_health.state or 'unknown' -%}
+{%- if _ts == 'checking' and topology_health.previous and topology_health.previous.state -%}{%- set _ts = topology_health.previous.state -%}{%- endif -%}
+{%- set _ts_lines = {
+  'healthy': 'The current topology is ready and progressing.',
+  'unhealthy': 'The current topology is not healthy — do not start attached scenarios against it.',
+  'catching_up': 'The current topology is still catching up — wait before starting attached scenarios.',
+  'no_active': 'No managed topology is active right now.',
+  'checking': 'Checking topology health…',
+  'idle': 'Checking topology health…',
+} -%}
+<section class="basic-only dk dk-head" aria-label="Summary">
+  <span class="eyebrow">Operate · Status</span>
+  <h1 class="dk-lead" data-dk-status-lead>{{ _ts_lines.get(_ts, 'Topology health is unknown — treat it as not ready.') }}</h1>
+  <p class="dk-plain">This page is a live read-only health check of the node topology DWARF manages, then the facts about what is deployed. Opening it never redeploys or changes anything. A healthy topology is an operating condition, not evidence — proof lives in verified run bundles.</p>
+  <p class="dk-note" data-dk-status-rechecking hidden>A fresh check is running; the card below shows the previous result until it finishes.</p>
+</section>
+<h2 class="basic-only b-h2 dkc-h2">Topology health <span class="dk-note">· live</span></h2>
+{% endif %}
 
-<section id="topology-health-panel" class="topology-health"
+<section id="topology-health-panel" class="topology-health"{% if ui == "basic" %} data-state="{{ topology_health.state or 'unknown' }}"{% endif %}
          data-health-url="/api/topology/health"
          data-evidence-url="/api/topology/health/evidence"
          data-redeploy-url="/api/topology/redeploy"
          data-dashboard-token="{{ token or '' }}"
          aria-labelledby="topology-health-heading" aria-live="polite">
+  {% if ui == "basic" %}<div class="basic-only dk-kicker dkc-topo__kicker"><span>Topology · current managed profile</span><span class="dkc-topo__suit" aria-hidden="true"></span></div>{% endif %}
   <header class="topology-health__head">
     <div>
       <span class="eyebrow">Active substrate · current managed profile</span>
@@ -73,7 +96,67 @@
     </div>
   </form>
 </dialog>
-<hr class="hairline">
+<hr class="hairline adv-only">
+
+{% if ui == "basic" %}
+{#- ---- Basic: at-a-glance facts as cards ---- -#}
+{% set glance = [] %}
+{% if not shim_enabled %}
+  {% if _no_substrate %}
+    {% set _sub = {'tier': 'gap', 'suit': '○', 'tone': 'dk-g-other', 'stamp': 'IDLE', 'sub': 'No substrate composed yet. Run a scenario to compose one; this card will reflect node health once nodes are running.'} %}
+  {% elif substrate.state == 'ok' %}
+    {% set _sub = {'tier': 'face', 'suit': '♦', 'tone': 'dk-g-pass', 'stamp': 'OK', 'sub': 'Live poll succeeded.'} %}
+  {% elif substrate.state == 'stale' %}
+    {% if substrate.node_processes is not none and substrate.expected_nodes is not none and substrate.node_processes != substrate.expected_nodes %}
+      {% set _cap = 'Live poll found ' ~ substrate.node_processes ~ ' cardano-node processes; the active profile expects ' ~ substrate.expected_nodes ~ '.' %}
+    {% elif substrate.source == 'cached' %}
+      {% set _cap = 'No live poll — showing the most recent on-disk evidence.' %}
+    {% else %}
+      {% set _cap = 'The substrate reading is stale.' %}
+    {% endif %}
+    {% set _sub = {'tier': 'warn', 'suit': '▲', 'tone': 'dk-g-warn', 'stamp': 'STALE', 'sub': _cap} %}
+  {% else %}
+    {% set _sub = {'tier': 'warn', 'suit': '✕', 'tone': 'dk-g-error', 'stamp': 'ERROR', 'sub': 'Live poll could not complete and no cached evidence is available. Check the dashboard process logs.'} %}
+  {% endif %}
+  {% set _ = glance.append({'title': 'Substrate', 'kicker': 'Substrate', 'tier': _sub.tier, 'suit': _sub.suit, 'tone': _sub.tone, 'stamp': _sub.stamp, 'sub': _sub.sub,
+     'facts': [('processes', (substrate.node_processes if substrate.node_processes is not none else '—') ~ ' / ' ~ (substrate.expected_nodes if substrate.expected_nodes is not none else '—')),
+               ('sockets', substrate.socket_count if substrate.socket_count is not none else '—'),
+               ('listeners', substrate.listener_count if substrate.listener_count is not none else '—'),
+               ('loopback only', substrate.loopback_only), ('tip block', substrate.tip_block), ('sync', substrate.sync_progress)]}) %}
+{% endif %}
+{% set _ = glance.append({'title': active_profile.label or 'Active profile', 'id': active_profile.id if active_profile.id and active_profile.id != '—' else '', 'kicker': 'Active profile · config', 'tier': 'back', 'suit': '■', 'tone': 'dk-g-other',
+   'sub': 'What DWARF is set up to deploy. Configuration, not proof.',
+   'facts': [('node type', active_profile.node_type), ('node count', active_profile.node_count), ('peer sharing', 'enabled' if active_profile.peer_sharing else 'disabled'), ('runtime root', active_profile.remote_runtime_root)]}) %}
+{% set _ = glance.append({'title': 'Live' if last_sync.live_enabled else 'Cached', 'kicker': 'Last sync', 'tier': 'face', 'suit': '♦' if last_sync.live_enabled else '■', 'tone': 'dk-g-pass' if last_sync.live_enabled else 'dk-g-other',
+   'sub': 'Generated ' ~ last_sync.generated_at ~ ('' if last_sync.live_enabled else ' — no live poll; values come from the last on-disk reading.'),
+   'facts': [('evidence file', last_sync.evidence_path)]}) %}
+{% set _tok = ('set (' ~ serving.token_length ~ ' char' ~ ('' if serving.token_length == 1 else 's') ~ ')') if serving.token_set else 'unset' %}
+{% set _ = glance.append({'title': serving.bind ~ ':' ~ serving.port, 'kicker': 'Dashboard serving', 'tier': 'face' if serving.token_set else 'warn', 'suit': '♦' if serving.token_set else '▲', 'tone': 'dk-g-pass' if serving.token_set else 'dk-g-warn',
+   'sub': 'Where this dashboard listens.' if serving.token_set else 'No dashboard token is set — state-changing actions are not gated.',
+   'facts': [('token', _tok), ('bind', serving.bind), ('port', serving.port)]}) %}
+<h2 class="basic-only b-h2 dkc-h2">At a glance</h2>
+{{ deck_grid(glance, label='facts', search=false) }}
+
+{#- ---- Basic: Moog deployment health as cards ---- -#}
+{% set moogc = [] %}
+{% if moog.state == 'ok' %}{% set _m = ('face', '♦', 'dk-g-pass') %}
+{% elif moog.state == 'warn' %}{% set _m = ('warn', '▲', 'dk-g-warn') %}
+{% elif moog.state == 'error' %}{% set _m = ('warn', '✕', 'dk-g-error') %}
+{% else %}{% set _m = ('gap', '○', 'dk-g-other') %}{% endif %}
+{% set _ = moogc.append({'title': moog.metric, 'kicker': 'Moog status', 'tier': _m[0], 'suit': _m[1], 'tone': _m[2], 'sub': moog.error or '',
+   'facts': [('checks', moog.ok_count ~ ' ok · ' ~ moog.warn_count ~ ' warn · ' ~ moog.error_count ~ ' error'), ('deploy root', moog.deploy_root), ('mpfs host', moog.mpfs_host), ('oracle service', moog.oracle_service)]}) %}
+{% set _ = moogc.append({'title': moog.linkage_state|capitalize, 'kicker': 'Preprod linkage', 'tier': 'back' if moog.linkage_state == 'linked' else 'gap', 'suit': '■' if moog.linkage_state == 'linked' else '○', 'tone': 'dk-g-other',
+   'sub': 'A requester token is bound. Linkage is configuration, not proof.' if moog.linkage_state == 'linked' else 'No requester token is bound in this deployment.',
+   'facts': [('asset id', moog.token_id), ('requester', moog.requester_address), ('oracle', moog.oracle_address)]}) %}
+{% for check in moog.checks %}
+  {% set _ = moogc.append({'title': check.id, 'kicker': 'Deployment check · ' ~ check.state, 'tier': 'face' if check.state == 'ok' else 'warn',
+     'suit': '♦' if check.state == 'ok' else ('✕' if check.state == 'error' else '▲'), 'tone': 'dk-g-pass' if check.state == 'ok' else ('dk-g-error' if check.state == 'error' else 'dk-g-warn'),
+     'sub': check.detail}) %}
+{% endfor %}
+<h2 class="basic-only b-h2 dkc-h2">Deployment health <span class="dk-note">· Moog, read-only</span></h2>
+<p class="basic-only dk-note dkc-note">Public metadata only; wallet secrets and access tokens are never inspected here.</p>
+{{ deck_grid(moogc, label='checks', search=false) }}
+{% endif %}
 
 <section class="status-summary" aria-labelledby="summary-heading">
   <header><span class="eyebrow">Tiles</span><h2 id="summary-heading">At a glance</h2></header>
@@ -141,9 +224,9 @@
   </div>
 </section>
 
-<hr class="hairline">
+<hr class="hairline adv-only">
 
-<section class="status-moog" aria-labelledby="moog-heading">
+<section class="status-moog adv-only" aria-labelledby="moog-heading">
   <header><span class="eyebrow">Moog</span><h2 id="moog-heading">Deployment health</h2>
     <p class="page-subhero">Read-only Moog deployment checks. Public metadata only; wallet secrets and PATs are not inspected here.</p>
   </header>
@@ -187,9 +270,8 @@
   {% endif %}
 </section>
 
-<hr class="hairline">
+<hr class="hairline adv-only">
 
-{% if ui == "basic" %}<p class="b-adv-status"><a class="b-adv-link" href="{{ request_path or '/' }}?view=advanced">Wallet, configuration runes, the full profile catalogue, backup &amp; teardown &mdash; in Advanced &rarr;</a></p>{% endif %}
 <section class="status-wallets adv-only" aria-labelledby="wallets-heading">
   <header><span class="eyebrow">Wallet</span><h2 id="wallets-heading">Connected wallet</h2>
     <p class="page-subhero">Public wallet telemetry for Moog/Cardano operations. Wallet secrets never appear here.</p>
@@ -229,7 +311,7 @@
   {% endif %}
 </section>
 
-<hr class="hairline">
+<hr class="hairline adv-only">
 
 <section class="flask-runes adv-only" aria-labelledby="runes-heading">
   <header><span class="eyebrow">Inscriptions</span><h2 id="runes-heading">Configuration runes</h2>
@@ -256,7 +338,7 @@
 </section>
 
 {% if profiles %}
-<hr class="hairline">
+<hr class="hairline adv-only">
 
 <section class="status-profiles adv-only" aria-labelledby="profiles-heading">
   <header><span class="eyebrow">Profiles</span><h2 id="profiles-heading">Catalogued profiles</h2>
@@ -286,7 +368,7 @@
 </section>
 {% endif %}
 
-<hr class="hairline">
+<hr class="hairline adv-only">
 
 <section class="maintenance adv-only" aria-labelledby="maint-heading">
   <span class="eyebrow">Operate · Maintenance</span>
@@ -366,6 +448,29 @@ async function runBackup(){
 }
 </script>
 
+{% if ui == "basic" %}
+{{ deck_more('Wallet, configuration runes, the full profile catalogue and backup — in Advanced') }}
+<script>
+(function(){
+  var panel=document.getElementById('topology-health-panel');
+  var lead=document.querySelector('[data-dk-status-lead]');
+  var note=document.querySelector('[data-dk-status-rechecking]');
+  if(!panel||!lead||!window.MutationObserver)return;
+  var lines={healthy:'The current topology is ready and progressing.',
+    unhealthy:'The current topology is not healthy — do not start attached scenarios against it.',
+    catching_up:'The current topology is still catching up — wait before starting attached scenarios.',
+    no_active:'No managed topology is active right now.'};
+  function sync(){
+    var st=panel.getAttribute('data-state')||'unknown';
+    if(st==='checking'||st==='idle'){ if(note) note.hidden=false; return; }
+    if(note) note.hidden=true;
+    lead.textContent=lines[st]||'Topology health is unknown — treat it as not ready.';
+  }
+  new MutationObserver(sync).observe(panel,{attributes:true,attributeFilter:['data-state']});
+  sync();
+})();
+</script>
+{% endif %}
 <script type="module" src="/static/js/copy-cell.js"></script>
 <script type="module" src="/static/js/topology-health.js"></script>
 {% endblock %}

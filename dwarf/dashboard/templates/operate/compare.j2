@@ -1,10 +1,51 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% set diverged = strip.total - strip.agreed %}
+{% if empty %}
+  {% set answer = 'No cross-implementation comparisons yet — pick a scenario below and run one.' %}
+{% elif diverged > 0 %}
+  {% set answer = diverged ~ ' of ' ~ strip.total ~ ' scenarios currently disagree between Amaru and cardano-node.' %}
+{% else %}
+  {% set answer = 'Amaru and cardano-node agree on all ' ~ strip.total ~ ' compared scenarios (latest run each).' %}
+{% endif %}
+{{ deck_head('Operate · Compare', answer,
+   'A compare runs the same scenario with the same seed through both implementations and diffs the outcome. A disagreement is the interesting signal; agreement on one run is not proof the two are equivalent. ' ~ strip.runs_24h ~ ' compare runs in the last 24 hours.') }}
+{% set cards = [] %}
+{% for group in families %}
+  {% for entry in group["items"] %}
+    {% set ns = namespace(div=0, tot=0) %}
+    {% for wk in ['whole_run', 'fault_window', 'postfault_window'] %}{% set w = entry.windows[wk] %}{% if w %}{% set ns.div = ns.div + (w.divergent_count or 0) %}{% set ns.tot = ns.tot + (w.total_count or 0) %}{% endif %}{% endfor %}
+    {% set _ = cards.append({'title': entry.scenario_id, 'href': entry.cardano_node.run_id_url or entry.amaru.run_id_url or none,
+        'kicker': group.family, 'group': 'agree' if entry.agreed else 'diverge',
+        'tier': 'face' if entry.agreed else 'warn', 'suit': '♦' if entry.agreed else '▲', 'tone': 'dk-g-pass' if entry.agreed else 'dk-g-warn',
+        'sub': 'Result: ' ~ entry.result ~ '.',
+        'facts': [('Metrics diverged', ns.div ~ ' of ' ~ ns.tot ~ ' (all windows)'), ('amaru run', entry.amaru.run_id or '—'), ('cardano-node run', entry.cardano_node.run_id or '—')] + ([('Seed', entry.seed)] if entry.seed is not none else []),
+        'search': group.family ~ ' ' ~ entry.result}) %}
+  {% endfor %}
+{% endfor %}
+<section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Latest result per scenario</h2></section>
+{{ deck_grid(cards, label='comparisons', groups=[('agree', 'Agree'), ('diverge', 'Disagree')], empty='No compare runs recorded yet — nothing has been compared.') }}
+{% set rcards = [] %}
+{% for r in recents %}
+  {% set _ = rcards.append({'title': r.scenario_id or r.run_id, 'id': r.run_id, 'href': r.run_url, 'kicker': r.family ~ ' · ' ~ (r.ended_at or '—'),
+      'group': 'agree' if r.agreed else 'diverge',
+      'tier': 'face' if r.agreed else 'warn', 'suit': '♦' if r.agreed else '▲', 'tone': 'dk-g-pass' if r.agreed else 'dk-g-warn',
+      'sub': 'Result: ' ~ r.result ~ '.',
+      'facts': [('amaru run', r.amaru_run_id or '—'), ('cardano-node run', r.cardano_node_run_id or '—')]}) %}
+{% endfor %}
+<section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Recent compare runs</h2></section>
+{{ deck_grid(rcards, label='runs', groups=[('agree', 'Agree'), ('diverge', 'Disagree')], empty='No compare runs recorded yet.') }}
+<section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Run a compare</h2></section>
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Compare</span>
 <h1>Compare implementations</h1>
 <p class="page-hero">Run a scenario through both Amaru and cardano-node with the same seed, then diff the outcomes. Divergence between two implementations on identical inputs is the signal — when one parser accepts what the other rejects, or two consensus paths disagree on a block.</p>
 
 <hr class="hairline">
+</div>
 
 <section class="compare-runner" aria-labelledby="runner-heading">
   <header class="compare-runner__heading">
@@ -90,6 +131,7 @@
   </div>
 </section>
 
+<div class="adv-only">
 <hr class="hairline">
 
 <section class="recent-compares" aria-labelledby="recents-heading">
@@ -168,6 +210,8 @@
   {% endfor %}
   {% endif %}
 </section>
+</div>
+{{ deck_more('Per-window metric detail in Advanced') }}
 
 <script type="module" src="/static/js/compare-runner.js"></script>
 {% endblock %}
