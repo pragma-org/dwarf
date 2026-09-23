@@ -1,0 +1,105 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-restart-recovery-sync-amaru-20260918",
+  "title": "Client example 05 \u2014 restart recovery and synchronization \u2014 amaru \u2014 10.11.20260918",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "client-example",
+    "amaru",
+    "measurement",
+    "restart",
+    "synchronization",
+    "security"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "One restart proves collection and recovery for this run only.",
+    "This separate execution is not a mixed-node comparison."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260918"
+  },
+  "runtime": "devnet",
+  "profile": "profile-z-amaru-20260918-nanoseconds-v3",
+  "measurement_profile": "amaru-security-patched",
+  "measurements": [
+    {
+      "id": "amaru-stock-resources",
+      "enabled": true,
+      "parameters": {
+        "sample_interval_seconds": 0.25
+      },
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    }
+  ],
+  "seed": "0x5E570005",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "amaru",
+      "version": "10.11.20260918",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "mode": "patched",
+      "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+      "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+      "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6"
+    },
+    {
+      "primitive": "runtime_wait_for_chain_progress",
+      "profile_id": "profile-z-amaru-20260918-nanoseconds-v3",
+      "minimum_blocks": 5,
+      "timeout_seconds": 120,
+      "poll_interval_seconds": 1
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_real_target_restart_and_readiness",
+      "profile_id": "profile-z-amaru-20260918-nanoseconds-v3",
+      "timeout_seconds": 240,
+      "poll_interval_seconds": 1
+    },
+    {
+      "primitive": "runtime_controlled_sync_range",
+      "profile_id": "profile-z-amaru-20260918-nanoseconds-v3",
+      "minimum_blocks": 5,
+      "timeout_seconds": 180,
+      "poll_interval_seconds": 1,
+      "peer_policy": "single-controlled-producer"
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {
+      "primitive": "runtime_target_health_and_progress",
+      "report_path": "outputs/client-example-proof/controlled-sync-range.json",
+      "progress_reference": "load-start"
+    },
+    {
+      "primitive": "runtime_peer_session_health",
+      "report_path": "outputs/client-example-proof/controlled-sync-range.json"
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "restart_readiness_complete"
+    },
+    {
+      "primitive": "controlled_sync_range_complete",
+      "minimum_blocks": 5
+    },
+    {
+      "primitive": "target_progress_continues"
+    },
+    {
+      "primitive": "no_target_fatal_signal"
+    }
+  ],
+  "teardown": []
+}
