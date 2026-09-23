@@ -34,7 +34,8 @@
     "amaru_json_traces": {"type": "boolean", "default": false, "description": "Enable Amaru's native structured JSON trace output so stock and patched measurement collectors can retain typed node events. Intended for additive measurement profiles; existing profiles default to false."},
     "plutus_v2_genesis": {"type": "boolean", "default": false, "description": "Add the pinned Plutus V2 cost model to generated Alonzo genesis files before any producer starts. Existing profiles stay unchanged."},
     "plutus_v2_cost_model_path": {"type": "string", "minLength": 1, "description": "DWARF-relative or absolute path to the exact Plutus V2 cost-model array used by the additive topology."},
-    "plutus_v2_cost_model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 digest of the exact pinned Plutus V2 cost-model file."}
+    "plutus_v2_cost_model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 digest of the exact pinned Plutus V2 cost-model file."},
+    "cardano_experimental_protocols": {"type": ["boolean", "null"], "default": null, "description": "Pin ExperimentalProtocolsEnabled in every generated Cardano-node config of an Amaru control topology. Null applies the version policy: false for Cardano-node 11.1+ with Amaru (NodeToNodeV_16 interop), otherwise the template value. Set true only to reproduce the V16 handshake defect."}
   },
   "additionalProperties": true
 }
