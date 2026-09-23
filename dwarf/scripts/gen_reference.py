@@ -260,6 +260,7 @@ DESC = {
 "runtime_blocking_work_starvation":"Inject blocking work to probe runtime-liveness starvation bounds.",
 "runtime_inject_hot_warm_churn":"Inject hot/warm peer churn to probe governor churn bounds.",
 "runtime_handshake_version_negotiation_pressure":"Pressure handshake version negotiation to probe downgrade handling.",
+"handshake_cases_match_expected":"Assert every retained handshake case (e.g. the version-table forward-compatibility set) ended in its declared outcome on the Amaru or Cardano-node target.",
 "runtime_overlay_slot_forging":"Attempt overlay-slot forging to test rejection of the forged block.",
 "runtime_malformed_input_differential":"Feed malformed input to Amaru and cardano-node and compare handling (differential).",
 "runtime_validation_path_differential":"Compare validation-path behaviour across implementations (differential).",

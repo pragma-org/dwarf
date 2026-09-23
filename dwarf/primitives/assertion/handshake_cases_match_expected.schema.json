@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "handshake_cases_match_expected params",
+  "type": "object",
+  "required": ["implementation"],
+  "properties": {
+    "implementation": {"type": "string", "enum": ["amaru", "cardano-node"]},
+    "min_attempts_per_case": {"type": "integer", "minimum": 1}
+  },
+  "additionalProperties": false
+}

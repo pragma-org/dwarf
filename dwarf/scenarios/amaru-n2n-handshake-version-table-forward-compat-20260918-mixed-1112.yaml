@@ -1,0 +1,59 @@
+{
+  "spec_version": "v1",
+  "id": "amaru-n2n-handshake-version-table-forward-compat-20260918-mixed-1112",
+  "title": "Amaru N2N handshake version-table forward compatibility \u2014 10.11.20260918 vs Cardano-node 11.1.2 offers",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "amaru",
+    "handshake",
+    "node-to-node",
+    "interop",
+    "measurement",
+    "patched",
+    "security",
+    "mixed"
+  ],
+  "evidence_intent": "finding-validation",
+  "promotion_blockers": [
+    "Each run proves one exact target and workload; the pair of runs is the differential.",
+    "Spec basis: a node-to-node responder must accept the greatest common version and ignore version numbers it does not know.",
+    "Patched-only behavior is not an Amaru vulnerability unless it reproduces against stock Amaru; the rejection path (version_data.rs four-field decode) is unchanged stock source at aedfe797, and stock 10.11.20260903 and 10.11.20260912 were observed dropping the same offer."
+  ],
+  "expected_security_finding": {
+    "finding_id": "amaru-n2n-handshake-unknown-version-data",
+    "failed_assertion": "handshake_cases_match_expected",
+    "target_source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+  },
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260918",
+    "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+  },
+  "runtime": "devnet",
+  "profile": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0xA11CE516",
+  "load": [
+    {
+      "primitive": "runtime_amaru_measurement_calibration",
+      "profile_id": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+      "attempts": 60,
+      "case_set": "version-table-forward-compat-v1",
+      "response_timeout_seconds": 2,
+      "progress_timeout_seconds": 120,
+      "timeout_seconds": 300,
+      "expected_helper_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "handshake_cases_match_expected",
+      "implementation": "amaru",
+      "min_attempts_per_case": 20
+    }
+  ],
+  "teardown": []
+}

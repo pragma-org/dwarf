@@ -441,3 +441,86 @@ def test_calibration_primitive_emits_outcome_independent_workload_accounting(
             {"input_id": "b", "outcome": "timeout", "elapsed_micros": 34},
         ],
     }
+
+
+def _forward_compat_result(tmp_path, *, implementation, v16_outcomes, future_outcomes):
+    subdir = {
+        "amaru": "amaru-measurement-calibration",
+        "cardano-node": "cardano-measurement-calibration",
+    }[implementation]
+    path = tmp_path / "outputs" / subdir / "result.json"
+    path.parent.mkdir(parents=True)
+    cases = [
+        ("v14-v15-offer", {"accepted": 20}),
+        ("node-11-1-experimental-v16-offer", v16_outcomes),
+        ("unknown-future-version-offer", future_outcomes),
+    ]
+    path.write_text(
+        json.dumps(
+            {
+                "target": {"implementation": implementation, "mode": "patched"},
+                "workload_identity": {
+                    "case_set": "version-table-forward-compat-v1",
+                    "workload_digest": "sha256:" + "b" * 64,
+                    "cases": [
+                        {"name": case, "payload_hex": "82", "expected_external_outcome": "accepted"}
+                        for case, _ in cases
+                    ],
+                },
+                "attempts": {
+                    "by_case": {
+                        case: {"total": sum(outcomes.values()), "outcomes": outcomes}
+                        for case, outcomes in cases
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _handshake_cases(tmp_path, implementation):
+    from profile_manager.primitives import HandshakeCasesMatchExpected
+
+    handle = type("Handle", (), {"run_dir": tmp_path})()
+    return HandshakeCasesMatchExpected(
+        params={"implementation": implementation, "min_attempts_per_case": 20}
+    ).evaluate(handle)
+
+
+def test_handshake_cases_fail_when_amaru_drops_v16_and_future_offers(tmp_path):
+    _forward_compat_result(
+        tmp_path,
+        implementation="amaru",
+        v16_outcomes={"rejected": 20},
+        future_outcomes={"rejected": 20},
+    )
+
+    result = _handshake_cases(tmp_path, "amaru")
+
+    assert result["result"] == "fail"
+    assert result["evaluated_value"]["mismatched_cases"] == [
+        "node-11-1-experimental-v16-offer",
+        "unknown-future-version-offer",
+    ]
+
+
+def test_handshake_cases_pass_when_every_offer_is_accepted(tmp_path):
+    _forward_compat_result(
+        tmp_path,
+        implementation="cardano-node",
+        v16_outcomes={"accepted": 20},
+        future_outcomes={"accepted": 20},
+    )
+
+    result = _handshake_cases(tmp_path, "cardano-node")
+
+    assert result["result"] == "pass"
+    assert result["evaluated_value"]["case_set"] == "version-table-forward-compat-v1"
+
+
+def test_handshake_cases_fail_closed_without_a_report(tmp_path):
+    result = _handshake_cases(tmp_path, "amaru")
+
+    assert result["result"] == "fail"
+    assert "unavailable" in result["note"]

@@ -17,6 +17,7 @@ from typing import Any
 from scripts.runtime_amaru_measurement_calibration import (
     CLIENT_INVALID_CASE_SET,
     DEFAULT_CASE_SET,
+    VERSION_TABLE_FORWARD_COMPAT_CASE_SET,
     HANDSHAKE_UNSUPPORTED_VERSION_HEX,
     RESPONSE_CAP_BYTES,
     build_attempt_record,
@@ -822,7 +823,7 @@ def main(argv: list[str] | None = None) -> int:
     leg.add_argument("--output-dir", type=Path, required=True)
     leg.add_argument("--attempts", type=int, default=100)
     leg.add_argument("--timeout-seconds", type=float, default=2.0)
-    leg.add_argument("--case-set", choices=[DEFAULT_CASE_SET, CLIENT_INVALID_CASE_SET], default=DEFAULT_CASE_SET)
+    leg.add_argument("--case-set", choices=[DEFAULT_CASE_SET, CLIENT_INVALID_CASE_SET, VERSION_TABLE_FORWARD_COMPAT_CASE_SET], default=DEFAULT_CASE_SET)
     leg.add_argument("--observation-seconds", type=float, default=2.0)
     leg.add_argument("--trace-timeout-seconds", type=float, default=20.0)
     leg.add_argument("--plutus-transactions", type=int, default=0)

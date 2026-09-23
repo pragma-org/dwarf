@@ -66,6 +66,20 @@
       ],
       "version": "0.1.0"
     },
+    "handshake_cases_match_expected": {
+      "class": "HandshakeCasesMatchExpected",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/handshake_cases_match_expected.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "amaru",
+        "cardano-node"
+      ],
+      "version": "0.1.0"
+    },
     "big_ledger_peer_quorum_intact": {
       "class": "BigLedgerPeerQuorumIntact",
       "family": "assertion",

@@ -14,6 +14,7 @@
     "runtime_root": {"type": "string", "minLength": 1},
     "output_dir": {"type": "string", "minLength": 1},
     "attempts": {"type": "integer", "minimum": 30, "maximum": 10000},
+    "case_set": {"type": "string", "enum": ["unsupported-version-only-v1", "fixed-handshake-invalid-cases-v1", "version-table-forward-compat-v1"]},
     "response_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
     "observation_seconds": {"type": "number", "minimum": 0.5, "maximum": 30},
     "trace_timeout_seconds": {"type": "number", "minimum": 0.5, "maximum": 120},

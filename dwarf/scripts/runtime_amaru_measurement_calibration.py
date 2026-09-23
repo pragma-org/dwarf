@@ -33,9 +33,44 @@ HANDSHAKE_MALFORMED_HEX = "ff"
 DEFAULT_CASE_SET = "unsupported-version-only-v1"
 ACCEPTANCE_CASE_SET = "accepted-and-rejected-v1"
 CLIENT_INVALID_CASE_SET = "fixed-handshake-invalid-cases-v1"
+VERSION_TABLE_FORWARD_COMPAT_CASE_SET = "version-table-forward-compat-v1"
+# MsgProposeVersions offers built with corpus_synthesizer.cbor_encode.
+# Record for V11-V15: [networkMagic=42, initiatorOnly=false, peerSharing=1, query=false].
+HANDSHAKE_V14_V15_OFFER_HEX = "8200a20e84182af401f40f84182af401f4"
+# Exact Cardano-node 11.1.x ExperimentalProtocolsEnabled offer: NodeToNodeV_16
+# appends perasSupport, so its record has five fields.
+HANDSHAKE_NODE_11_1_V16_OFFER_HEX = (
+    "8200a30e84182af401f40f84182af401f41085182af401f4f4"
+)
+# V14/V15 plus an unknown future version whose data no current node can parse.
+HANDSHAKE_UNKNOWN_FUTURE_VERSION_OFFER_HEX = (
+    "8200a30e84182af401f40f84182af401f4186382182a66667574757265"
+)
 RESPONSE_CAP_BYTES = 256
 
 _CASE_SETS = {
+    # A responder must accept the greatest common version and ignore version
+    # numbers it does not know; every case here therefore expects acceptance.
+    VERSION_TABLE_FORWARD_COMPAT_CASE_SET: (
+        {
+            "name": "v14-v15-offer",
+            "payload_hex": HANDSHAKE_V14_V15_OFFER_HEX,
+            "expected_external_outcome": "accepted",
+            "expected_decode_outcome": "decoded",
+        },
+        {
+            "name": "node-11-1-experimental-v16-offer",
+            "payload_hex": HANDSHAKE_NODE_11_1_V16_OFFER_HEX,
+            "expected_external_outcome": "accepted",
+            "expected_decode_outcome": "decoded",
+        },
+        {
+            "name": "unknown-future-version-offer",
+            "payload_hex": HANDSHAKE_UNKNOWN_FUTURE_VERSION_OFFER_HEX,
+            "expected_external_outcome": "accepted",
+            "expected_decode_outcome": "decoded",
+        },
+    ),
     DEFAULT_CASE_SET: (
         {
             "name": "unsupported-version-refusal",

@@ -16864,6 +16864,113 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
         }
 
 
+class HandshakeCasesMatchExpected(AssertionPrimitive):
+    """Every retained handshake case must end in its declared external outcome.
+
+    Reads the measurement-calibration leg written by
+    runtime_{amaru,cardano}_measurement_calibration. Expected outcomes come
+    from the leg's own workload identity, so any case set is evaluated the
+    same way. Patched decode/negotiation counts are carried as data points.
+    """
+
+    _OUTPUT_SUBDIRS = {
+        "amaru": "amaru-measurement-calibration",
+        "cardano-node": "cardano-measurement-calibration",
+    }
+    _PATCHED_MEASUREMENT = {
+        "amaru": "amaru-patched-protocol-decode",
+        "cardano-node": "cardano-patched-protocol-decode",
+    }
+
+    def evaluate(self, handle):
+        name = "handshake_cases_match_expected"
+        implementation = str(self.params.get("implementation", "amaru"))
+        min_per_case = int(self.params.get("min_attempts_per_case", 20))
+        report_path = (
+            Path(handle.run_dir)
+            / "outputs"
+            / self._OUTPUT_SUBDIRS[implementation]
+            / "result.json"
+        )
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            return {
+                "primitive": name,
+                "params": dict(self.params),
+                "evaluated_value": {"report": str(report_path), "error": str(exc)},
+                "data_points_used": [],
+                "result": "fail",
+                "note": "the retained handshake calibration report is unavailable or invalid",
+            }
+        workload = report.get("workload_identity") or {}
+        by_case = (report.get("attempts") or {}).get("by_case") or {}
+        cases = []
+        for case in workload.get("cases") or []:
+            row = by_case.get(case.get("name")) or {}
+            outcomes = row.get("outcomes") or {}
+            total = int(row.get("total") or 0)
+            expected = str(case.get("expected_external_outcome") or "")
+            matching = int(outcomes.get(expected) or 0)
+            cases.append(
+                {
+                    "case": case.get("name"),
+                    "payload_hex": case.get("payload_hex"),
+                    "expected_outcome": expected,
+                    "total": total,
+                    "matching": matching,
+                    "observed_outcomes": outcomes,
+                    "matched": total >= min_per_case and matching == total,
+                }
+            )
+        mismatched = [row["case"] for row in cases if not row["matched"]]
+        patched = (report.get("node_measurements") or {}).get(
+            self._PATCHED_MEASUREMENT[implementation]
+        ) or {}
+        measurements = patched.get("measurements") or {}
+        internal = {
+            key: {
+                outcome: (value or {}).get("sample_count")
+                for outcome, value in (measurements.get(key) or {}).items()
+            }
+            for key in (
+                "handshake_ingress_by_outcome",
+                "handshake_decode_by_decode_outcome",
+                "handshake_negotiation_by_outcome",
+                "handshake_state_by_outcome",
+            )
+        }
+        target = report.get("target") or {}
+        passed = bool(cases) and not mismatched
+        return {
+            "primitive": name,
+            "params": dict(self.params),
+            "evaluated_value": {
+                "implementation": implementation,
+                "case_set": workload.get("case_set"),
+                "cases": cases,
+                "mismatched_cases": mismatched,
+                "internal_handshake_outcomes": internal,
+                "target": {
+                    key: target.get(key)
+                    for key in ("implementation", "version", "source_revision", "mode")
+                },
+            },
+            "data_points_used": [
+                {
+                    "report": report_path.relative_to(handle.run_dir).as_posix(),
+                    "workload_digest": workload.get("workload_digest"),
+                }
+            ],
+            "result": "pass" if passed else "fail",
+            "note": (
+                "every handshake case ended in its declared outcome"
+                if passed
+                else f"handshake cases diverged from their declared outcome: {mismatched}"
+            ),
+        }
+
+
 class AmaruPreviewProofOfLife(AssertionPrimitive):
     """Pass iff the preview proof emitted real progress and a live listener signal."""
 

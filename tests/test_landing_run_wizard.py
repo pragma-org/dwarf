@@ -100,7 +100,7 @@ def test_run_catalog_exposes_structured_scenario_presentation_metadata():
     from profile_manager.data.operate_run_wizard import run_wizard_catalog
 
     catalog = run_wizard_catalog()
-    assert len(catalog["scenarios"]) == 268
+    assert len(catalog["scenarios"]) == 283
     required = {
         "short_title", "implementation", "implementation_key",
         "measurement_state", "proof_state", "recommended_demo",
