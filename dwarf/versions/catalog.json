@@ -32,7 +32,13 @@
           "checked_at": "2026-09-18T03:24:23Z",
           "reason": "Newest stable release passed the isolated fresh-volume Cardano devnet contract with five exact-version producers/relays, sustained block progress, converged tips, clean process health, and clean teardown.",
           "evidence": [
-            "state:version-qualifications/20260918T032343Z-dwarf-qual-cardano-11-1-2-b1f28ed0"
+            "state:version-qualifications/20260918T032343Z-dwarf-qual-cardano-11-1-2-b1f28ed0",
+            "run:20260923T140226Z-7399c992",
+            "run:20260923T140631Z-e869e198",
+            "run:20260923T141121Z-f6f08af9",
+            "run:20260923T141509Z-121bc388",
+            "run:20260923T141847Z-1f42e7e8",
+            "run:20260923T142008Z-704a87f7"
           ],
           "issues": []
         },
