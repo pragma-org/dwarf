@@ -41,3 +41,15 @@ def test_verdict_by_hash_last_wins():
 def test_unparseable_lines_are_skipped():
     assert hv.parse_cardano_header_events(["not json", ""]) == []
     assert hv.parse_amaru_header_events(["not json", ""]) == []
+
+
+def test_cardano_accept_with_bare_string_block_does_not_crash():
+    line = ('{"at":"t","ns":"ChainDB.AddBlockEvent.SwitchedToAFork",'
+            '"data":{"block":"9f9f"}}')
+    assert hv.parse_cardano_header_events([line]) == [
+        {"header_hash": "9f9f", "verdict": "accepted", "reason": None, "at": "t"}]
+
+
+def test_cardano_non_dict_data_is_skipped():
+    line = '{"at":"t","ns":"ChainDB.AddBlockEvent.AddedToCurrentChain","data":["x"]}'
+    assert hv.parse_cardano_header_events([line]) == []

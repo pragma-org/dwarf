@@ -38,9 +38,12 @@ def parse_cardano_header_events(lines: Iterable[str]) -> list[dict]:
         if not isinstance(document, dict):
             continue
         namespace = str(document.get("ns", ""))
-        data = document.get("data") or {}
+        data = document.get("data")
+        if not isinstance(data, dict):
+            continue
         if namespace.endswith("AddedToCurrentChain") or namespace.endswith("SwitchedToAFork"):
-            header_hash = data.get("newtip") or (data.get("block") or {}).get("hash")
+            block = data.get("block")
+            header_hash = data.get("newtip") or (block.get("hash") if isinstance(block, dict) else block)
             if header_hash:
                 out.append({"header_hash": str(header_hash), "verdict": "accepted",
                             "reason": None, "at": document.get("at")})
