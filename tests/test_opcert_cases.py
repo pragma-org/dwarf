@@ -38,3 +38,15 @@ def test_validate_rejects_duplicate_ids():
            "expected_verdict": "accept", "expected_reason": {"cardano-node": None, "amaru": None}}
     with pytest.raises(ValueError, match="duplicate"):
         opcert_cases.validate_cases([row, dict(row)])
+
+
+def test_validate_rejects_missing_field():
+    with pytest.raises(ValueError, match="missing fields"):
+        opcert_cases.validate_cases([{"id": "x", "family": "rule", "mutation": "NoMutation"}])
+
+
+def test_validate_rejects_unknown_family():
+    with pytest.raises(ValueError, match="bad family"):
+        opcert_cases.validate_cases([{"id": "x", "family": "banana", "mutation": "NoMutation",
+                                      "rule": "r", "expected_verdict": "accept",
+                                      "expected_reason": {"cardano-node": None, "amaru": None}}])

@@ -31,13 +31,22 @@ def load_cases(path=None) -> list[dict]:
     return cases
 
 
+_REQUIRED = ("id", "family", "mutation", "rule", "expected_verdict", "expected_reason")
+_FAMILIES = frozenset({"rule", "boundary"})
+
+
 def validate_cases(cases: list[dict]) -> None:
     seen: set[str] = set()
-    for case in cases:
+    for index, case in enumerate(cases):
+        missing = [key for key in _REQUIRED if key not in case]
+        if missing:
+            raise ValueError(f"case[{index}] missing fields: {', '.join(missing)}")
         cid = case["id"]
         if cid in seen:
             raise ValueError(f"duplicate case id: {cid}")
         seen.add(cid)
+        if case["family"] not in _FAMILIES:
+            raise ValueError(f"bad family for {cid}: {case['family']}")
         if case["mutation"] not in MUTATIONS:
             raise ValueError(f"unknown mutation: {case['mutation']}")
         if case["expected_verdict"] not in ("accept", "reject"):
