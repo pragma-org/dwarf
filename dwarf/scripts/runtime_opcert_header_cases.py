@@ -45,3 +45,40 @@ def join_cases(cases, served_hash_by_case, observed_by_hash, implementation):
             "status": status,
         })
     return rows
+
+
+def evaluate_match(cases_rows):
+    """Assertion decision: every case must be 'matched' (fail-closed).
+
+    A 'mismatch' (wrong verdict, wrong reason, or an accepted bad case) fails;
+    an 'inconclusive' (case never served or verdict never observed) also fails.
+    """
+    mismatched = [r["case"] for r in cases_rows if r.get("status") == "mismatch"]
+    inconclusive = [r["case"] for r in cases_rows if r.get("status") == "inconclusive"]
+    passed = bool(cases_rows) and not mismatched and not inconclusive
+    return {
+        "result": "pass" if passed else "fail",
+        "mismatched": mismatched,
+        "inconclusive": inconclusive,
+        "case_count": len(cases_rows),
+    }
+
+
+def evaluate_agree(rows_a, rows_b):
+    """Cross-node agreement: both targets must reach the same verdict per case.
+
+    Fails closed if a case is missing on either side (no verdict to compare).
+    """
+    by_a = {r["case"]: r.get("observed_verdict") for r in rows_a}
+    by_b = {r["case"]: r.get("observed_verdict") for r in rows_b}
+    cases = sorted(set(by_a) | set(by_b))
+    disagreements = []
+    for case in cases:
+        if case not in by_a or case not in by_b or by_a[case] != by_b[case]:
+            disagreements.append(case)
+    passed = bool(cases) and not disagreements
+    return {
+        "result": "pass" if passed else "fail",
+        "disagreements": disagreements,
+        "case_count": len(cases),
+    }
