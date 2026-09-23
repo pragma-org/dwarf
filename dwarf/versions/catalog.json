@@ -3385,18 +3385,21 @@
       ],
       "verification": {
         "amaru-only": {
-          "status": "unknown",
+          "status": "confirmed",
           "default": false,
-          "checked_at": "2026-09-23T11:01:09.598991Z",
-          "reason": "Discovered from the official release feed; real-node qualification is pending.",
-          "evidence": [],
+          "checked_at": "2026-09-23T11:16:25Z",
+          "supporting_cardano_version": "10.7.1",
+          "reason": "The exact 10.11.20260918 release passed the fresh-volume Amaru-target contract with Cardano-node 10.7.1 disclosed as support: both exact Amaru binaries (extracted from ghcr.io/pragma-org/amaru@sha256:2176f120) bootstrapped from the live-producer snapshot, advanced, served the isolated Amaru-fed Cardano consumer to convergence, stayed restart-free, emitted no fatal signal, and tore down cleanly.",
+          "evidence": [
+            "state:version-qualifications/20260923T110135Z-dwarf-qual-amaru-10-7-1-10-11-20260918-9e89ca8e"
+          ],
           "issues": []
         },
         "mixed": {
           "status": "unknown",
           "default": false,
           "checked_at": "2026-09-23T11:01:09.598991Z",
-          "reason": "No exact mixed-pair runtime qualification has been recorded.",
+          "reason": "The release is confirmed for the Amaru-target scope with Cardano-node 10.7.1 support. No exact mixed-pair qualification with Cardano-node 11.1.x has been recorded; see the V16 handshake interop blocker.",
           "evidence": [],
           "issues": []
         }

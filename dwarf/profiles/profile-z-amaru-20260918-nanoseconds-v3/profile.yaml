@@ -1,0 +1,17 @@
+{
+  "id": "profile-z-amaru-20260918-nanoseconds-v3",
+  "label": "Amaru 10.11.20260918 — nanosecond measurement target",
+  "haskell_count": 0,
+  "amaru_count": 1,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "exact",
+  "amaru_version": "10.11.20260918",
+  "topology_pattern": "local-mesh",
+  "shared_genesis": true,
+  "measurement_target_mode": "patched",
+  "measurement_revision": "nanoseconds-v3",
+  "measurement_patch_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+  "measurement_patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+  "amaru_json_traces": true
+}
