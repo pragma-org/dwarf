@@ -14010,6 +14010,55 @@ class RuntimeOpcertHeaderSoak(LoadPrimitive):
                             "stdout": (proc.stdout or "")[-4096:], "stderr": (proc.stderr or "")[-4096:]})
 
 
+
+class OpcertSoakInvariantHolds(AssertionPrimitive):
+    """Pass iff the soak found no invariant violation and had >0 conclusive iterations."""
+
+    def evaluate(self, handle):
+        name = "opcert_soak_invariant_holds"
+        relative = str(self.params.get("report_path", "outputs/opcert-soak/result.json"))
+        try:
+            path, report = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="the opcert soak result is unavailable")
+        from scripts.opcert_soak_result import evaluate_soak_invariant
+
+        decision = evaluate_soak_invariant(report)
+        passed = decision["result"] == "pass"
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={"conclusive": decision["conclusive"],
+                       "mismatches": decision["mismatches"]},
+            data_points=[{"report": path.relative_to(handle.run_dir).as_posix()}],
+            note="the opcert soak recorded an invariant violation or was vacuous (zero conclusive)")
+
+
+class OpcertSoakVerdictsAgree(AssertionPrimitive):
+    """Differential families: pass iff both nodes agreed on every conclusive iteration."""
+
+    def evaluate(self, handle):
+        name = "opcert_soak_verdicts_agree"
+        relative = str(self.params.get("report_path", "outputs/opcert-soak/result.json"))
+        try:
+            path, report = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="the opcert soak result is unavailable")
+        from scripts.opcert_soak_result import evaluate_soak_agree
+
+        decision = evaluate_soak_agree(report)
+        passed = decision["result"] == "pass"
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={"conclusive": decision["conclusive"],
+                       "disagreements": decision["disagreements"]},
+            data_points=[{"report": path.relative_to(handle.run_dir).as_posix()}],
+            note="the two nodes disagreed on at least one conclusive opcert soak iteration")
+
+
 class RuntimeVerifyExactTarget(LoadPrimitive):
     """Fail closed unless the deployed measurement target matches every frozen field."""
 
