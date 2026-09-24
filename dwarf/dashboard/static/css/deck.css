@@ -319,6 +319,22 @@ body[data-ui="basic"] input:not([type="checkbox"]):not([type="radio"]), body[dat
 .dk-tags span[data-tag="cardano-node"], .dk-tags span[data-tag="cardano"] { color:#dbeaff; background:rgba(60,120,235,.28); border-color:rgba(110,165,255,.7); }
 .dk-tags span[data-tag="mixed"] { color:#f0e9ff; background:linear-gradient(90deg,rgba(150,95,235,.4),rgba(60,120,235,.4)); border-color:rgba(140,150,255,.7); }
 
+/* runtime pills */
+.dk-tags span[data-tag="devnet"] { color:#d6fff3; background:rgba(40,170,140,.25); border-color:rgba(80,210,175,.65); }
+.dk-tags span[data-tag="library"] { color:#fff1cf; background:rgba(210,160,60,.22); border-color:rgba(230,190,110,.65); }
+.dk-tags span[data-tag="single-node"] { color:#ece6f5; background:rgba(160,150,180,.2); border-color:rgba(190,180,210,.55); }
+/* version pills take their implementation colour */
+.dk-tags span[data-tag^="amaru "] { color:#e9dcff; border-color:rgba(176,130,255,.7); border-style:dashed; }
+.dk-tags span[data-tag^="node "] { color:#dbeaff; border-color:rgba(110,165,255,.7); border-style:dashed; }
+/* compact titles */
+.dk-grid .dk-item__title { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
+.dk-grid .dk-item .dk-sub { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; font-size:12.5px; }
+.dk-grid .dk-tags { margin-top:auto; padding-top:8px; }
+.dk-seg__label { align-self:center; padding:0 10px; font:600 10.5px var(--dk-mono); letter-spacing:.12em; text-transform:uppercase; color:var(--dk-muted); }
+
+body[data-ui="basic"] .dk-seg button[aria-pressed="true"], body[data-ui="basic"] .dk-seg button[aria-pressed="true"]:focus,
+body[data-ui="basic"] .dk-seg button[aria-pressed="true"]:hover { background:var(--dk-gold) !important; color:#1a1224 !important; }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }

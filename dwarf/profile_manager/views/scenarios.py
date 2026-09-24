@@ -33,6 +33,7 @@ def render_operate_scenarios(token: str | None = None) -> str:
     from profile_manager.config import DeploymentConfig, load_config
     from profile_manager.remote import control_shim_enabled
     from profile_manager.templating import render
+    from profile_manager.data.scenario_cards import scenario_card
 
     scenarios_dir = os.environ.get("ADA2_DWARF_SCENARIOS_DIR") or "dwarf/scenarios"
 
@@ -46,6 +47,7 @@ def render_operate_scenarios(token: str | None = None) -> str:
             "runtime": entry.get("runtime") or "",
             "family": family,
             "target_impl": entry.get("target_impl") or "",
+            "card": scenario_card(entry),
             "url": f"/operate/scenarios/{entry['id']}",
             "edit_url": f"/operate/scenarios/{entry['id']}/edit",
             "download_url": f"/api/catalog/scenarios/{entry['id']}/download",

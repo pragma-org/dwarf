@@ -23,13 +23,13 @@
 <{{ tag }} class="dk-card dk-item {{ 'dk-holo' if tier == 'holo' else ('dk-gap' if tier == 'gap' else ('dk-warnface' if tier == 'warn' else ('dk-back' if tier == 'back' else ''))) }}"
   {% if c.href %}href="{{ c.href }}"{% endif %} data-dk-item data-group="{{ c.group or '' }}"
   data-search="{{ ((c.title or '') ~ ' ' ~ (c.id or '') ~ ' ' ~ (c.sub or '') ~ ' ' ~ (c.search or '') ~ ' ' ~ (c.tags or [])|join(' '))|lower }}"
-  {% if tier == 'holo' %}data-dk-seed="{{ c.id or c.title }}"{% endif %}>
+  {% if tier == 'holo' %}data-dk-seed="{{ c.id or c.title }}"{% endif %}{% if c.full_title %} title="{{ c.full_title }}"{% endif %}>
   <div class="dk-face dk-face--front">
     {% if tier == 'holo' %}<div class="dk-foil"></div><div class="dk-glare"></div>{% endif %}
     <div class="dk-face__body">
       <div class="dk-kicker"><span>{{ c.kicker or '' }}</span><span class="{{ c.tone or '' }}" aria-hidden="true">{{ c.suit or '' }}</span></div>
       <div class="dk-item__title">{{ c.title }}</div>
-      {% if c.id and c.id != c.title %}<code class="dk-item__id">{{ c.id }}</code>{% endif %}
+      {% if c.id and c.id != c.title and not c.hide_id %}<code class="dk-item__id">{{ c.id }}</code>{% endif %}
       {% if c.sub %}<p class="dk-sub">{{ c.sub }}</p>{% endif %}
       {% if c.stamp %}<span class="dk-stamp dk-item__stamp">{{ c.stamp }}</span>{% endif %}
       {% if c.facts %}<dl class="dk-facts">{% for k, v in c.facts %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
@@ -40,11 +40,11 @@
 {%- endmacro %}
 
 {#- A searchable, filterable grid of cards. groups = [(value, label)] for filter chips. -#}
-{% macro deck_grid(cards, label='items', groups=none, empty='Nothing here yet.', search=true) -%}
+{% macro deck_grid(cards, label='items', groups=none, empty='Nothing here yet.', search=true, facets=none) -%}
 <section class="basic-only dk" aria-label="{{ label|capitalize }}">
 {% if cards %}
 <div data-dk-grid>
-  {% if search or groups %}
+  {% if search or groups or facets %}
   <div class="dk-filters">
     {% if groups %}
     <div class="dk-seg" role="group" aria-label="Filter {{ label }}">
@@ -52,6 +52,13 @@
       {% for value, glabel in groups %}<button type="button" data-dk-grid-filter data-value="{{ value }}" aria-pressed="false">{{ glabel }}</button>{% endfor %}
     </div>
     {% endif %}
+    {% for key, flabel, options in (facets or []) %}
+    <div class="dk-seg" role="group" aria-label="{{ flabel }}" data-dk-facet="{{ key }}">
+      <span class="dk-seg__label">{{ flabel }}</span>
+      <button type="button" data-dk-grid-filter data-value="" aria-pressed="true">All</button>
+      {% for value, olabel in options %}<button type="button" data-dk-grid-filter data-value="{{ key }}:{{ value }}" aria-pressed="false">{{ olabel }}</button>{% endfor %}
+    </div>
+    {% endfor %}
     {% if search %}<input class="dk-search" type="search" data-dk-grid-search placeholder="Search {{ label }}…" aria-label="Search {{ label }}">{% endif %}
     <span class="dk-count" data-dk-grid-count aria-live="polite">{{ cards|length }} {{ label }}</span>
   </div>

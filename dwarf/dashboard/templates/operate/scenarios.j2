@@ -102,11 +102,14 @@ async function runCov(){
 {% if ui == "basic" %}
 {% set fam = {} %}{% for f in families %}{% set _ = fam.update({f.slug: f.label}) %}{% endfor %}
 {% set cards = [] %}
-{% for row in rows %}{% set _ = cards.append({'title': row.title, 'id': row.id, 'href': row.url, 'kicker': row.runtime or 'scenario',
-  'tier': 'back', 'group': row.family, 'tags': (['mixed'] if 'mixed' in row.id else ([row.target_impl] if row.target_impl and row.target_impl != 'unknown' else [])) + ([fam.get(row.family, row.family)] if row.family != row.target_impl else [])}) %}{% endfor %}
-<h2 class="b-h2 basic-only">Catalog · card backs (defined, not proven)</h2>
-{% set groups = [] %}{% for f in families %}{% set _ = groups.append((f.slug, f.label)) %}{% endfor %}
-{{ deck_grid(cards, label='scenarios', groups=groups) }}
+{% for row in rows %}{% set k = row.card %}
+{% set _ = cards.append({'title': k.title, 'full_title': k.full_title, 'id': row.id, 'hide_id': true, 'href': row.url, 'sub': k.subtitle,
+  'kicker': k.flags|join(' · '), 'tier': 'back', 'group': 'impl:' ~ (k.implementation or 'unknown') ~ ' rt:' ~ (k.runtime or 'unknown'),
+  'tags': ([k.implementation] if k.implementation else []) + ([k.runtime] if k.runtime else []) + k.versions,
+  'search': k.full_title ~ ' ' ~ row.family ~ ' ' ~ k.flags|join(' ')}) %}{% endfor %}
+{% set impls = [] %}{% for v in ['amaru', 'cardano-node', 'mixed'] %}{% if rows|selectattr('card.implementation', 'equalto', v)|list %}{% set _ = impls.append((v, v)) %}{% endif %}{% endfor %}
+{% set rts = [] %}{% for v in rows|map(attribute='card.runtime')|reject('equalto', '')|unique|sort %}{% set _ = rts.append((v, v)) %}{% endfor %}
+{{ deck_grid(cards, label='scenarios', facets=[('impl', 'Implementation', impls), ('rt', 'Runtime', rts)]) }}
 {{ deck_more('Paste YAML, edit and download scenarios in Advanced') }}
 {% endif %}
 <div class="adv-only">

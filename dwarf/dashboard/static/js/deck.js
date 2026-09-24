@@ -72,20 +72,23 @@
     var items = Array.prototype.slice.call(grid.querySelectorAll("[data-dk-item]"));
     var count = grid.querySelector("[data-dk-grid-count]");
     var label = count ? count.textContent.replace(/^\d+\s*/, "") : "";
-    var st = { group: "", q: "" };
+    var st = { facets: {}, q: "" };
     function apply() {
       var n = 0;
       items.forEach(function (it) {
-        var ok = (!st.group || (" " + it.getAttribute("data-group") + " ").indexOf(" " + st.group + " ") !== -1) &&
-                 (!st.q || (it.getAttribute("data-search") || "").indexOf(st.q) !== -1);
+        var toks = " " + (it.getAttribute("data-group") || "") + " ";
+        var ok = !st.q || (it.getAttribute("data-search") || "").indexOf(st.q) !== -1;
+        for (var f in st.facets) { if (st.facets[f] && toks.indexOf(" " + st.facets[f] + " ") === -1) { ok = false; } }
         it.hidden = !ok; if (ok) n++;
       });
       if (count) count.textContent = n + (n === items.length ? " " : " of " + items.length + " ") + label;
     }
     grid.querySelectorAll("[data-dk-grid-filter]").forEach(function (b) {
       b.addEventListener("click", function () {
-        st.group = b.getAttribute("data-value") || "";
-        b.parentNode.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+        var seg = b.closest(".dk-seg");
+        var facet = (seg && seg.getAttribute("data-dk-facet")) || "_group";
+        st.facets[facet] = b.getAttribute("data-value") || "";
+        seg.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
         apply();
       });
     });
