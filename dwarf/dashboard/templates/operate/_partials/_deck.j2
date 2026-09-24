@@ -33,7 +33,7 @@
       {% if c.sub %}<p class="dk-sub">{{ c.sub }}</p>{% endif %}
       {% if c.stamp %}<span class="dk-stamp dk-item__stamp">{{ c.stamp }}</span>{% endif %}
       {% if c.facts %}<dl class="dk-facts">{% for k, v in c.facts %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
-      {% if c.tags %}<div class="dk-tags">{% for t in c.tags %}<span>{{ t }}</span>{% endfor %}</div>{% endif %}
+      {% if c.tags %}<div class="dk-tags">{% for t in c.tags %}<span data-tag="{{ t|lower }}">{{ t }}</span>{% endfor %}</div>{% endif %}
     </div>
   </div>
 </{{ tag }}>

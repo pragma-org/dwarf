@@ -45,6 +45,7 @@ def render_operate_scenarios(token: str | None = None) -> str:
             "title": entry.get("title") or entry["id"],
             "runtime": entry.get("runtime") or "",
             "family": family,
+            "target_impl": entry.get("target_impl") or "",
             "url": f"/operate/scenarios/{entry['id']}",
             "edit_url": f"/operate/scenarios/{entry['id']}/edit",
             "download_url": f"/api/catalog/scenarios/{entry['id']}/download",

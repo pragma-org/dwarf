@@ -103,7 +103,7 @@ async function runCov(){
 {% set fam = {} %}{% for f in families %}{% set _ = fam.update({f.slug: f.label}) %}{% endfor %}
 {% set cards = [] %}
 {% for row in rows %}{% set _ = cards.append({'title': row.title, 'id': row.id, 'href': row.url, 'kicker': row.runtime or 'scenario',
-  'tier': 'back', 'group': row.family, 'tags': [fam.get(row.family, row.family)]}) %}{% endfor %}
+  'tier': 'back', 'group': row.family, 'tags': (['mixed'] if 'mixed' in row.id else ([row.target_impl] if row.target_impl and row.target_impl != 'unknown' else [])) + ([fam.get(row.family, row.family)] if row.family != row.target_impl else [])}) %}{% endfor %}
 <h2 class="b-h2 basic-only">Catalog · card backs (defined, not proven)</h2>
 {% set groups = [] %}{% for f in families %}{% set _ = groups.append((f.slug, f.label)) %}{% endfor %}
 {{ deck_grid(cards, label='scenarios', groups=groups) }}

@@ -312,6 +312,13 @@ body[data-ui="basic"] .cta--ghost { color:var(--dk-gold); border-color:var(--dk-
 body[data-ui="basic"] input:not([type="checkbox"]):not([type="radio"]), body[data-ui="basic"] select, body[data-ui="basic"] textarea {
   background:rgba(0,0,0,.28) !important; border-color:var(--dk-line2) !important; color:var(--dk-ink) !important; }
 
+/* catalog grid cards: plain card back (no diagonal hatch) */
+.dk-grid .dk-back .dk-face { background:linear-gradient(160deg,var(--dk-back),var(--dk-back2)); }
+/* implementation tags: amaru purple, cardano-node blue, mixed = both */
+.dk-tags span[data-tag="amaru"] { color:#e9dcff; background:rgba(150,95,235,.28); border-color:rgba(176,130,255,.7); }
+.dk-tags span[data-tag="cardano-node"], .dk-tags span[data-tag="cardano"] { color:#dbeaff; background:rgba(60,120,235,.28); border-color:rgba(110,165,255,.7); }
+.dk-tags span[data-tag="mixed"] { color:#f0e9ff; background:linear-gradient(90deg,rgba(150,95,235,.4),rgba(60,120,235,.4)); border-color:rgba(140,150,255,.7); }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }
