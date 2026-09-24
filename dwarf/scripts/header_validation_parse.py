@@ -99,6 +99,15 @@ def parse_cardano_header_events(lines: Iterable[str]) -> list[dict]:
             if header_hash:
                 out.append({"header_hash": str(header_hash), "verdict": "accepted",
                             "reason": None, "at": document.get("at")})
+        elif namespace.endswith("AddBlockValidation.ValidCandidate") or namespace.endswith("ValidCandidate"):
+            # Every fully validated block emits ValidCandidate with data.block
+            # "<hash>@<slot>". AddedToCurrentChain only names the *selected* tip,
+            # so a valid header that the honest chain immediately extends past is
+            # still recorded here as accepted (the per-header accept signal).
+            header_hash = _norm_hash(data.get("block"))
+            if header_hash:
+                out.append({"header_hash": str(header_hash), "verdict": "accepted",
+                            "reason": None, "at": document.get("at")})
         elif "InvalidBlock" in namespace:
             block = data.get("block")
             header_hash = _norm_hash(block.get("hash") if isinstance(block, dict) else block)
