@@ -50,19 +50,31 @@
 {% endif %}
 
 {% if ui == "basic" %}
+{%- set ACR = {'aflpp': 'AFL++', 'cbor': 'CBOR', 'n2n': 'N2N', 'n2c': 'N2C', 'kes': 'KES', 'rss': 'RSS', 'tx': 'tx', 'utxo': 'UTxO',
+  'ghc': 'GHC', 'vrf': 'VRF', 'blp': 'BLP', 'gdd': 'GDD', 'hfc': 'HFC', 'sarif': 'SARIF', 'id': 'ID', 'ids': 'IDs', 'plutus': 'Plutus',
+  'amaru': 'Amaru', 'cardano': 'Cardano', 'chainsync': 'ChainSync', 'blockfetch': 'BlockFetch', 'txsubmission': 'TxSubmission', 'keepalive': 'KeepAlive'} -%}
 {% set cards = [] %}
-{% for row in rows %}{% set ok = row.status == 'catalog-valid' %}{% set _ = cards.append({
-  'title': row.id, 'href': '/operate/primitives/' ~ row.id,
-  'kicker': row.family ~ ' · v' ~ row.version, 'sub': row.class_name,
-  'tier': 'back' if ok else 'warn', 'suit': '♦' if ok else '▲', 'tone': 'dk-g-pass' if ok else 'dk-g-warn',
-  'group': row.family,
-  'facts': [('Targets', row.supports|join(', ') or 'none declared'), ('Runtimes', row.runtimes|join(', ') or 'none declared'), ('Used by', row.referencing_scenario_count ~ ' scenario' ~ ('' if row.referencing_scenario_count == 1 else 's'))],
-  'tags': [row.status, row.source_type] + ([row.plugin_id] if row.plugin_id else []),
-  'search': row.module ~ ' ' ~ row.runtimes|join(' ') ~ ' ' ~ row.supports|join(' ')}) %}{% endfor %}
-{% set groups = [] %}{% for family, count in family_counts.items() %}{% set _ = groups.append((family, family ~ ' · ' ~ count)) %}{% endfor %}
+{% for row in rows %}{% set ok = row.status == 'catalog-valid' %}
+{%- set words = [] %}{% for w in row.id.split('_') %}{% set _ = words.append(ACR.get(w, w)) %}{% endfor %}
+{%- set nice = words|join(' ') %}{% set nice = nice[:1]|upper ~ nice[1:] %}
+{%- set sup = row.supports or [] %}
+{%- set impl = 'mixed' if ('amaru' in sup and 'cardano-node' in sup) else (sup[0] if sup|length == 1 else '') %}
+{%- set impl_tok = 'both' if impl == 'mixed' else (impl or 'none') %}
+{%- set rts = row.runtimes or [] %}
+{% set _ = cards.append({
+  'title': nice, 'full_title': row.id ~ ' — ' ~ row.summary, 'id': row.id, 'hide_id': true, 'href': '/operate/primitives/' ~ row.id,
+  'kicker': row.family ~ ((' · v' ~ row.version) if row.version and row.version != '0.1.0' else ''),
+  'sub': ('used by ' ~ row.referencing_scenario_count ~ ' scenario' ~ ('' if row.referencing_scenario_count == 1 else 's')) if row.referencing_scenario_count else 'not used by any scenario yet',
+  'tier': 'back' if ok else 'warn', 'suit': '' if ok else '▲', 'tone': '' if ok else 'dk-g-warn', 'accent': impl,
+  'group': 'fam:' ~ row.family ~ ' impl:' ~ impl_tok ~ (' rt:' ~ rts|join(' rt:') if rts else ''),
+  'tags': sup + rts + ([] if ok else [row.status]) + ([row.plugin_id] if row.plugin_id else []),
+  'search': row.id ~ ' ' ~ row.module ~ ' ' ~ row.class_name ~ ' ' ~ row.summary}) %}{% endfor %}
+{% set fams = [] %}{% for family, count in family_counts.items() %}{% set _ = fams.append((family, family ~ ' · ' ~ count)) %}{% endfor %}
+{% set allrt = [] %}{% for r in rows %}{% for x in (r.runtimes or []) %}{% if x not in allrt %}{% set _ = allrt.append(x) %}{% endif %}{% endfor %}{% endfor %}
+{% set rtopts = [] %}{% for x in allrt|sort %}{% set _ = rtopts.append((x, x)) %}{% endfor %}
 <h2 class="b-h2 basic-only">Catalog · card backs (registered, not proven)</h2>
-{{ deck_grid(cards, label='primitives', groups=groups, empty='No primitives are available from the configured registry or plugin roots.') }}
-{{ deck_more('Filter by runtime and target, scaffold or download primitives in Advanced') }}
+{{ deck_grid(cards, label='primitives', facets=[('fam', 'Family', fams), ('impl', 'Implementation', [('amaru', 'amaru'), ('cardano-node', 'cardano-node'), ('both', 'both')]), ('rt', 'Runtime', rtopts)], empty='No primitives are available from the configured registry or plugin roots.') }}
+{{ deck_more('Schemas, modules, scaffolding and downloads in Advanced') }}
 {% endif %}
 
 <div class="adv-only">
