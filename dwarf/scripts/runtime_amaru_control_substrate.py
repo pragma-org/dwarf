@@ -148,6 +148,20 @@ def validate_runtime_request(config: dict[str, Any]) -> None:
             raise RuntimeControlError("PlutusV2 cost model sha256 is required")
         if hashlib.sha256(model_path.read_bytes()).hexdigest() != expected:
             raise RuntimeControlError("PlutusV2 cost model sha256 does not match")
+    override = config.get("kes_genesis_override")
+    if override is not None:
+        if not isinstance(override, dict):
+            raise RuntimeControlError("kes_genesis_override must be an object")
+        try:
+            slots = int(override["slots_per_kes_period"])
+            evolutions = int(override["max_kes_evolutions"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeControlError(
+                "kes_genesis_override needs integer slots_per_kes_period and "
+                "max_kes_evolutions"
+            ) from error
+        if slots < 1 or evolutions < 1:
+            raise RuntimeControlError("kes_genesis_override values must be >= 1")
 
 
 def _plutus_v2_model_path(config: dict[str, Any]) -> Path:
@@ -249,8 +263,77 @@ def verify_plutus_v2_evidence(
     }
 
 
+def _shelley_override_doc_line(text: str) -> int:
+    """Return the 0-based index of the ``activeSlotsCoeff`` line in the Shelley
+    override document of the base testnet.yaml. Fails closed when the anchor is
+    absent so a short-KES override never silently lands in the wrong document."""
+    for index, line in enumerate(text.splitlines()):
+        if line.startswith("activeSlotsCoeff:"):
+            return index
+    raise RuntimeControlError(
+        "base testnet.yaml has no activeSlotsCoeff anchor for the KES override"
+    )
+
+
+def apply_kes_genesis_override(
+    model: dict[str, Any], config: dict[str, Any], *, base_package: Path
+) -> dict[str, Any] | None:
+    """Write a short-KES copy of the base testnet.yaml into the runtime root and
+    repoint the configurator bind mount at it. The two keys are injected into
+    the Shelley override document (the one merged into shelley-genesis) so the
+    configurator issues every pool opcert against the short-KES window."""
+    override = config.get("kes_genesis_override")
+    if not override:
+        return None
+    slots = int(override["slots_per_kes_period"])
+    evolutions = int(override["max_kes_evolutions"])
+    source = Path(base_package) / "testnet.yaml"
+    text = source.read_text(encoding="utf-8")
+    if "slotsPerKESPeriod:" in text or "maxKESEvolutions:" in text:
+        raise RuntimeControlError(
+            "base testnet.yaml already pins KES parameters; refusing to override"
+        )
+    lines = text.splitlines()
+    anchor = _shelley_override_doc_line(text)
+    lines.insert(anchor + 1, f"slotsPerKESPeriod: {slots}")
+    lines.insert(anchor + 2, f"maxKESEvolutions: {evolutions}")
+    injected = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+    runtime_root = Path(str(config["runtime_root"]))
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    target = runtime_root / "testnet.yaml"
+    target.write_text(injected, encoding="utf-8")
+    configurator = model.get("services", {}).get("configurator")
+    if not isinstance(configurator, dict):
+        raise RuntimeControlError("baseline is missing the configurator service")
+    volumes = configurator.get("volumes")
+    if not isinstance(volumes, list):
+        raise RuntimeControlError("configurator has no volumes to repoint")
+    repointed = False
+    for volume in volumes:
+        if isinstance(volume, dict) and volume.get("target") == "/testnet.yaml":
+            volume["source"] = str(target)
+            repointed = True
+        elif isinstance(volume, str) and volume.split(":")[1:2] == ["/testnet.yaml"]:
+            idx = volumes.index(volume)
+            suffix = volume.split(":", 2)[2] if volume.count(":") >= 2 else "ro"
+            volumes[idx] = f"{target}:/testnet.yaml:{suffix}"
+            repointed = True
+    if not repointed:
+        raise RuntimeControlError("configurator has no /testnet.yaml mount to override")
+    return {
+        "slots_per_kes_period": slots,
+        "max_kes_evolutions": evolutions,
+        "window_slots": slots * evolutions,
+        "testnet_yaml_path": str(target),
+    }
+
+
+
 def prepare_runtime_model(
-    baseline: dict[str, Any], config: dict[str, Any]
+    baseline: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    base_package: Path = BASE_PACKAGE,
 ) -> dict[str, Any]:
     validate_runtime_request(config)
     model = transform_compose_model(
@@ -428,6 +511,11 @@ jq -n --arg tx_id "$$tx_id" --arg address "$$address" \
     }
     if config.get("plutus_v2_genesis") is True:
         retained_runtime["plutus_v2_genesis"] = True
+    kes_override = apply_kes_genesis_override(
+        model, config, base_package=base_package
+    )
+    if kes_override is not None:
+        retained_runtime["kes_genesis_override"] = kes_override
     model["x-dwarf-retained-runtime"] = retained_runtime
     return model
 
@@ -618,7 +706,9 @@ def deploy(config: dict[str, Any], *, base_package: Path = BASE_PACKAGE) -> dict
     if not _project_is_fresh(project):
         raise RuntimeControlError(f"compose project is not fresh: {project}")
     evidence_root.mkdir(parents=True, exist_ok=True)
-    model = prepare_runtime_model(_render_baseline(base_package), config)
+    model = prepare_runtime_model(
+        _render_baseline(base_package), config, base_package=base_package
+    )
     _write_json(compose_file, model)
 
     events: list[dict[str, Any]] = []

@@ -157,6 +157,40 @@ def test_plutus_v2_profile_propagates_pinned_model_to_additive_runtime():
     assert "/home/nigel/dwarf-pragma/dwarf/corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json" in command
 
 
+def test_kes_genesis_override_propagates_only_when_set():
+    base = dict(
+        id="profile-opcert-aged-kes",
+        node_type="mixed",
+        node_count=2,
+        amaru_node_count=1,
+        version_policy="exact",
+        cardano_version="11.1.2",
+        amaru_version="10.11.20260918",
+    )
+    aged = _profile(
+        **base,
+        kes_genesis_override={"slots_per_kes_period": 100, "max_kes_evolutions": 12},
+    )
+    default = _profile(**base)
+
+    assert versioned_substrate_for_profile(aged, _preview(aged))[
+        "kes_genesis_override"
+    ] == {"slots_per_kes_period": 100, "max_kes_evolutions": 12}
+    assert (
+        versioned_substrate_for_profile(default, _preview(default))[
+            "kes_genesis_override"
+        ]
+        is None
+    )
+
+    aged_command = deploy_command(aged, version_preview=_preview(aged))
+    default_command = deploy_command(default, version_preview=_preview(default))
+    assert '"slots_per_kes_period": 100' in aged_command
+    assert '"max_kes_evolutions": 12' in aged_command
+    assert '"kes_genesis_override": null' in default_command
+    assert '"slots_per_kes_period"' not in default_command
+
+
 def test_experimental_protocols_override_propagates_only_when_set():
     base = dict(
         id="profile-v16-repro",

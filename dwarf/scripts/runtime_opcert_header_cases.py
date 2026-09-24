@@ -749,6 +749,10 @@ def _run_amaru_control_cardano(
     }
     (cfg / "consumer-topology.json").write_text(json.dumps(topo), encoding="utf-8")
 
+    shelley_cfg = json.loads((cfg / "shelley-genesis.json").read_text(encoding="utf-8"))
+    slots_per_kes = int(shelley_cfg["slotsPerKESPeriod"])
+    max_kes_evo = int(shelley_cfg["maxKESEvolutions"])
+
     magic = int(runtime.get("network_magic") or 42)
 
     def _producer_tip():
@@ -802,7 +806,7 @@ def _run_amaru_control_cardano(
                 "--upstream", f"{up_ip}:3001", "--listen-port", str(listen_port),
                 "--kes-skey", f"/tmp/opcert-amaru/keys/kes.skey",
                 "--cold-skey", f"/tmp/opcert-amaru/keys/cold.skey",
-                "--slots-per-kes", "129600", "--max-kes-evo", "62",
+                "--slots-per-kes", str(slots_per_kes), "--max-kes-evo", str(max_kes_evo),
                 "--evidence", str(evidence),
             ]
             # Re-extract keys next to the config to be self-contained.

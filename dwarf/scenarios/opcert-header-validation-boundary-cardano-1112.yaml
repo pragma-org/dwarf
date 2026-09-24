@@ -1,0 +1,53 @@
+{
+  "spec_version": "v1",
+  "id": "opcert-header-validation-boundary-cardano-1112",
+  "title": "Opcert header validation boundary cases (aged short-KES) — Cardano-node 11.1.2",
+  "authors": ["dwarf"],
+  "tags": ["opcert", "header-validation", "cardano-node", "praos", "kes-window", "counter-monotonicity", "boundary", "finding-validation"],
+  "evidence_intent": "finding-validation",
+  "target": {
+    "implementation": "cardano-node",
+    "version": "11.1.2",
+    "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+  },
+  "runtime": "devnet",
+  "profile": "profile-opcert-aged-kes-cardano-1112",
+  "measurement_profile": "cardano-security-patched",
+  "measurements": [{
+    "id": "cardano-stock-resources",
+    "enabled": true,
+    "parameters": {"sample_interval_seconds": 0.25},
+    "threshold_gate": {"enabled": false, "thresholds": []}
+  }],
+  "seed": "0x0FCEA6ED",
+  "setup": [{
+    "primitive": "runtime_verify_exact_target",
+    "implementation": "cardano-node",
+    "version": "11.1.2",
+    "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+    "mode": "patched",
+    "image_digest": "sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370",
+    "executable_digest": "sha256:3fb83f12ac1152e96c884c756a505484a39d9200da6c59b24678ac61218220eb",
+    "patch_set_sha256": "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c"
+  }],
+  "load": [{
+    "primitive": "runtime_opcert_header_cases",
+    "profile_id": "profile-opcert-aged-kes-cardano-1112",
+    "target_node": "node1",
+    "case_ids": ["valid-control", "counter-behind", "kes-after-window"],
+    "output_dir": "outputs/opcert-header-cases",
+    "timeout_seconds": 3600,
+    "expect_exit": 0
+  }],
+  "faults": [],
+  "probes": [{
+    "primitive": "runtime_target_health_and_progress",
+    "report_path": "outputs/opcert-header-cases/result.json",
+    "progress_reference": "load-start"
+  }],
+  "assertions": [
+    {"primitive": "opcert_case_verdicts_match_expected"},
+    {"primitive": "target_progress_continues"}
+  ],
+  "teardown": []
+}

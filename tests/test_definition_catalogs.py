@@ -212,6 +212,7 @@ def test_profile_schema_covers_every_bundled_profile_field():
         "measurement_patch_set_sha256", "amaru_json_traces",
         "plutus_v2_genesis", "plutus_v2_cost_model_path",
         "plutus_v2_cost_model_sha256", "cardano_experimental_protocols",
+            "kes_genesis_override",
     }
     assert set(schema["properties"]) == expected
     assert schema["properties"]["node_type"]["enum"] == ["cardano-node", "amaru", "mixed"]
