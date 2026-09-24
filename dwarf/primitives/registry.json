@@ -893,6 +893,15 @@
       ],
       "version": "0.1.0"
     },
+    "opcert_case_verdicts_match_expected": {
+      "class": "OpcertCaseVerdictsMatchExpected",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/opcert_case_verdicts_match_expected.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
     "overlay_slot_forging_rejected": {
       "class": "OverlaySlotForgingRejected",
       "family": "assertion",
@@ -2163,6 +2172,15 @@
         "cardano-node",
         "amaru"
       ],
+      "version": "0.1.0"
+    },
+    "runtime_opcert_header_cases": {
+      "class": "RuntimeOpcertHeaderCases",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_opcert_header_cases.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
       "version": "0.1.0"
     },
     "runtime_observability_log_baseline": {

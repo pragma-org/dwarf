@@ -13838,6 +13838,116 @@ class RuntimeControlledSimpleTransfers(LoadPrimitive):
             },
         )
 
+class RuntimeOpcertHeaderCases(LoadPrimitive):
+    """Serve one mutated opcert header per case to an isolated copy of the target and record each verdict."""
+
+    def run(self, handle, rng):
+        import os
+        from profile_manager.profiles import remote_base
+
+        profile_id = self.params.get("profile_id")
+        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        output_dir = _resolve_output_path(
+            handle, self.params.get("output_dir", "outputs/opcert-header-cases")
+        )
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            str(self.params.get("python_bin", "python3")),
+            str(DWARF_ROOT / "scripts" / "runtime_opcert_header_cases.py"),
+            "--runtime-root", str(runtime_root),
+            "--target-node", str(self.params["target_node"]),
+            "--output-dir", str(output_dir),
+        ]
+        case_ids = self.params.get("case_ids")
+        if case_ids:
+            command += ["--case-ids", ",".join(str(c) for c in case_ids)]
+        if self.params.get("peer_bin"):
+            command += ["--peer-bin", str(self.params["peer_bin"])]
+        if self.params.get("listen_port"):
+            command += ["--listen-port", str(int(self.params["listen_port"]))]
+        if self.params.get("consumer_port"):
+            command += ["--consumer-port", str(int(self.params["consumer_port"]))]
+        if self.params.get("per_case_timeout"):
+            command += ["--per-case-timeout", str(int(self.params["per_case_timeout"]))]
+        handle.log(phase="load", primitive="runtime_opcert_header_cases",
+                   level="info", event="started",
+                   payload={"profile_id": profile_id, "runtime_root": str(runtime_root), "command": command})
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value)
+        proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True, text=True,
+                              timeout=float(self.params.get("timeout_seconds", 3600)),
+                              check=False, env=env)
+        report_path = output_dir / "result.json"
+        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
+        outcome = "ok" if proc.returncode == int(self.params.get("expect_exit", 0)) else "unexpected_exit"
+        summary = report.get("summary")
+        if isinstance(summary, dict):
+            handle.log(phase="load", primitive="runtime_opcert_header_cases",
+                       level="info", event="opcert_summary", payload=summary)
+        handle.log(phase="load", primitive="runtime_opcert_header_cases",
+                   level="info" if outcome == "ok" else "error", event="completed",
+                   payload={"outcome": outcome, "exit_code": proc.returncode,
+                            "report": report, "output_dir": str(output_dir),
+                            "stdout": (proc.stdout or "")[-4096:], "stderr": (proc.stderr or "")[-4096:]})
+
+
+class OpcertCaseVerdictsMatchExpected(AssertionPrimitive):
+    """Pass iff every opcert header case reached its declared verdict (and reason)."""
+
+    def evaluate(self, handle):
+        name = "opcert_case_verdicts_match_expected"
+        relative = str(self.params.get("report_path", "outputs/opcert-header-cases/result.json"))
+        try:
+            path, report = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="the opcert header-case result is unavailable")
+        from scripts.runtime_opcert_header_cases import evaluate_match
+
+        rows = report.get("cases") or []
+        decision = evaluate_match(rows)
+        passed = decision["result"] == "pass"
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={
+                "case_count": decision["case_count"],
+                "matched": [r["case"] for r in rows if r.get("status") == "matched"],
+                "mismatched": decision["mismatched"],
+                "inconclusive": decision["inconclusive"],
+            },
+            data_points=[{"report": path.relative_to(handle.run_dir).as_posix()}],
+            note="one or more opcert header cases did not reach the expected verdict")
+
+
+class OpcertVerdictsAgree(AssertionPrimitive):
+    """Cross-node: pass iff both nodes reached the same verdict on every opcert case."""
+
+    def evaluate(self, handle):
+        name = "opcert_verdicts_agree"
+        cardano_rel = str(self.params.get("cardano_report_path", "outputs/opcert-header-cases-cardano/result.json"))
+        amaru_rel = str(self.params.get("amaru_report_path", "outputs/opcert-header-cases-amaru/result.json"))
+        try:
+            cardano_path, cardano_report = _read_client_proof(handle, cardano_rel)
+            amaru_path, amaru_report = _read_client_proof(handle, amaru_rel)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="a per-node opcert result is unavailable")
+        from scripts.runtime_opcert_header_cases import evaluate_agree
+
+        decision = evaluate_agree(cardano_report.get("cases") or [], amaru_report.get("cases") or [])
+        passed = decision["result"] == "pass"
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={"case_count": decision["case_count"], "disagreements": decision["disagreements"]},
+            data_points=[
+                {"cardano": cardano_path.relative_to(handle.run_dir).as_posix()},
+                {"amaru": amaru_path.relative_to(handle.run_dir).as_posix()},
+            ],
+            note="the two nodes disagreed on at least one opcert header case")
+
+
 class RuntimeVerifyExactTarget(LoadPrimitive):
     """Fail closed unless the deployed measurement target matches every frozen field."""
 
