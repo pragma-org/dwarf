@@ -96,6 +96,19 @@
 </section>
 {%- endmacro %}
 
+{#- Readable title from a catalog id: strips an implementation prefix, splits on - and _, fixes acronyms. -#}
+{% macro deck_nice(id, strip_impl=true) -%}
+{%- set ACR = {'aflpp': 'AFL++', 'afl': 'AFL', 'cbor': 'CBOR', 'n2n': 'N2N', 'n2c': 'N2C', 'kes': 'KES', 'rss': 'RSS', 'utxo': 'UTxO', 'ghc': 'GHC',
+  'vrf': 'VRF', 'sarif': 'SARIF', 'id': 'ID', 'plutus': 'Plutus', 'amaru': 'Amaru', 'cardano': 'Cardano', 'chainsync': 'ChainSync', 'blockfetch': 'BlockFetch',
+  'txsubmission': 'TxSubmission', 'keepalive': 'KeepAlive', 'peersharing': 'PeerSharing', 'tx': 'tx', 'ns': 'ns', 'v2': 'v2', 'v3': 'v3', 'haskell': 'Haskell',
+  'devnet': 'devnet', 'cddl': 'CDDL', 'sancov': 'SanCov', 'ledger': 'ledger', 'localtxsubmission': 'LocalTxSubmission', 'localtxmonitor': 'LocalTxMonitor',
+  'localstatequery': 'LocalStateQuery', 'handshake': 'Handshake', 'txsub': 'TxSubmission', 'applytx': 'applyTx', 'applyblock': 'applyBlock', 'minfee': 'min-fee',
+  'api': 'API', 'mux': 'Mux', 'pallas': 'Pallas'} -%}
+{%- set ns = namespace(s=id) %}{% if strip_impl %}{% for p in ['cardano-node-', 'amaru-'] %}{% if ns.s.startswith(p) %}{% set ns.s = ns.s[p|length:] %}{% endif %}{% endfor %}{% endif %}
+{%- set words = [] %}{% for w in ns.s.replace('_', '-').split('-') if w %}{% set _ = words.append(ACR.get(w, w)) %}{% endfor %}
+{%- set out = words|join(' ') %}{{ out[:1]|upper ~ out[1:] }}
+{%- endmacro %}
+
 {#- "Everything else lives in Advanced" footer link. -#}
 {% macro deck_more(text='Open the full view in Advanced') -%}
 <p class="basic-only dk-more"><a class="dk-btn" href="{{ request_path or '/' }}?view=advanced">{{ text }} →</a></p>

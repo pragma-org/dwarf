@@ -347,6 +347,11 @@ body[data-ui="basic"] .dk-seg button[aria-pressed="true"]:hover { background:var
 .dk-grid .dk-accent-mixed .dk-face { background:linear-gradient(135deg,rgba(150,95,235,.5),rgba(60,120,235,.5)); }
 .dk-grid [class*="dk-accent-"] .dk-face::after { background:linear-gradient(160deg,var(--dk-back),var(--dk-back2)); border-radius:9px; }
 
+/* decoder-type pills (targets) */
+.dk-tags span[data-tag="cbor codec"] { color:#ffe0ec; background:rgba(220,90,140,.22); border-color:rgba(240,130,175,.6); }
+.dk-tags span[data-tag="mini-protocol decoder"] { color:#d6fff3; background:rgba(40,170,140,.22); border-color:rgba(80,210,175,.6); }
+.dk-tags span[data-tag^="coverage-guided"], .dk-tags span[data-tag^="afl++"] { color:#fff1cf; background:rgba(210,160,60,.22); border-color:rgba(230,190,110,.6); }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }

@@ -1,6 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice with context %}
 {% if ui == "basic" %}
 {% set parts = [] %}{% for pill in pills if pill.slug %}{% set _ = parts.append(pill.count ~ ' ' ~ pill.label) %}{% endfor %}
 {{ deck_head('Operate · Targets',
@@ -26,16 +26,19 @@
 </aside>
 
 {% if ui == "basic" %}
-{% set cards = [] %}
-{% for row in rows %}{% set _ = cards.append({
-  'title': row.id, 'href': row.url, 'kicker': row.implementation or 'unassigned',
-  'sub': row.decoder_type or 'decoder type not declared', 'tier': 'back', 'group': row.implementation or 'unassigned',
-  'facts': [('Invariants', (row.invariants|length) if row.invariants else '—'), ('Upstream', (row.upstream_commit or '—')[:12])],
-  'tags': row.invariants or [], 'search': row.upstream_commit or ''}) %}{% endfor %}
-{% set groups = [] %}{% for pill in pills if pill.slug %}{% set _ = groups.append((pill.slug, pill.label ~ ' · ' ~ pill.count)) %}{% endfor %}
-{% if rows|selectattr('implementation', 'equalto', '')|list or rows|selectattr('implementation', 'none')|list %}{% set _ = groups.append(('unassigned', 'unassigned')) %}{% endif %}
+{% set cards = [] %}{% set decs = [] %}
+{% for row in rows %}{% set impl = row.implementation or '' %}{% set dec = row.decoder_type or 'undeclared' %}
+{% set short_dec = 'AFL++ harness' if dec.startswith('Coverage-guided') else dec %}
+{% if short_dec not in decs %}{% set _ = decs.append(short_dec) %}{% endif %}
+{% set _ = cards.append({
+  'title': (deck_nice(row.id)|trim)|replace('CBOR decode ', 'CBOR decode · ')|replace('Mini protocol decode ', 'Mini-protocol · ')|replace('Mini protocol ', 'Mini-protocol · ')|replace('Cov ', 'Coverage · ')|replace('keep alive', 'KeepAlive'), 'full_title': row.id ~ ' — ' ~ dec, 'id': row.id, 'hide_id': true, 'href': row.url, 'accent': impl,
+  'sub': (row.invariants_count or (row.invariants|length)) ~ ' invariants' ~ ((' · upstream ' ~ row.upstream_commit[:12]) if row.upstream_commit and row.upstream_commit not in ('local', 'unbuilt') else ''),
+  'tier': 'back', 'group': 'impl:' ~ (impl or 'unassigned') ~ ' dec:' ~ short_dec|replace(' ', '_'),
+  'tags': ([impl] if impl else []) + [short_dec], 'search': (row.invariants or [])|join(' ') ~ ' ' ~ (row.upstream_commit or '')}) %}{% endfor %}
+{% set impls = [] %}{% for pill in pills if pill.slug %}{% set _ = impls.append((pill.slug, pill.label ~ ' · ' ~ pill.count)) %}{% endfor %}
+{% set decopts = [] %}{% for d in decs|sort %}{% set _ = decopts.append((d|replace(' ', '_'), d)) %}{% endfor %}
 <h2 class="b-h2 basic-only">Catalog · card backs (defined, not proven)</h2>
-{{ deck_grid(cards, label='targets', groups=groups, empty='No target manifests found. Create the first target in Advanced.') }}
+{{ deck_grid(cards, label='targets', facets=[('impl', 'Implementation', impls), ('dec', 'Decoder', decopts)], empty='No target manifests found. Create the first target in Advanced.') }}
 {{ deck_more('Create, edit and download targets in Advanced') }}
 {% endif %}
 <div class="adv-only">
