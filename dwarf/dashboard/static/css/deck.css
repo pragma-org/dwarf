@@ -367,6 +367,8 @@ body[data-ui="basic"] .dk-seg button[aria-pressed="true"]:hover { background:var
 .dk-tags span[data-tag$=" overhead"] { color:var(--dk-muted); background:transparent; border-color:var(--dk-line2); }
 .dk-tags span[data-tag="high overhead"] { color:#ffd9b0; border-color:rgba(255,178,92,.55); }
 
+.dk-tags span[data-tag$=" blocker"], .dk-tags span[data-tag$=" blockers"] { color:#ffd9b0; background:rgba(255,178,92,.14); border-color:rgba(255,178,92,.55); }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }
