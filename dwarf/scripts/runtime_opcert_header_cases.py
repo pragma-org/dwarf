@@ -98,6 +98,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from scripts.header_validation_parse import (
+    parse_amaru_header_events,
+    parse_cardano_header_events,
+    verdict_by_hash,
+)
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 DWARF_ROOT = SCRIPT_DIR.parent
 
@@ -228,6 +234,48 @@ def _consumer_topology(peer_host, peer_port):
     }
 
 
+def _container_state(container):
+    proc = _docker("inspect", container, check=False)
+    if proc.returncode != 0:
+        return {"running": None, "status": None, "exit_code": None,
+                "oom_killed": None, "restart_count": None}
+    body = json.loads(proc.stdout)[0]
+    state = body.get("State") or {}
+    return {
+        "running": state.get("Running") is True,
+        "status": state.get("Status"),
+        "exit_code": state.get("ExitCode"),
+        "oom_killed": state.get("OOMKilled") is True,
+        "restart_count": int(body.get("RestartCount") or 0),
+    }
+
+
+def _cardano_tip(container, socket_path, magic):
+    proc = _docker(
+        "exec", container, "cardano-cli", "query", "tip",
+        "--socket-path", socket_path, "--testnet-magic", str(magic), check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    try:
+        body = json.loads(proc.stdout)
+    except (ValueError, TypeError):
+        return None
+    height = body.get("block")
+    if isinstance(height, bool) or not isinstance(height, int):
+        return None
+    return {"block_height": height, "hash": body.get("hash"), "slot": body.get("slot")}
+
+
+def _target_log_signals(container, since):
+    try:
+        from scripts.runtime_cardano_measurement_calibration import classify_log_signals
+    except Exception:  # pragma: no cover - defensive
+        return {}
+    proc = _docker("logs", "--since", since, container, check=False)
+    return classify_log_signals(proc.stdout + "\n" + proc.stderr)
+
+
 def _read_consumer_events(consumer_name, since, implementation):
     proc = _docker("logs", "--since", since, consumer_name, check=False)
     lines = (proc.stdout + "\n" + proc.stderr).splitlines()
@@ -286,8 +334,16 @@ def run_opcert_header_cases(
     shelley = json.loads((env_dir / "shelley-genesis.json").read_text(encoding="utf-8"))
     slots_per_kes = int(shelley["slotsPerKESPeriod"])
     max_kes_evo = int(shelley["maxKESEvolutions"])
+    magic = int(runtime.get("network_magic") or shelley.get("networkMagic") or 42)
+    target_container = target["container_name"]
+    target_socket = target.get("container_socket_path") or f"/env/socket/{target_node}/sock"
+
+    health_started_at = _now_docker_ts()
+    state_before = _container_state(target_container)
+    tip_before = _cardano_tip(target_container, target_socket, magic)
 
     consumer_name = f"opcert-consumer-{runtime.get('compose_project', 'devnet')}"[:100]
+    consumer_volume = f"{consumer_name}-db"[:100]
     work = output_dir / "harness"
     work.mkdir(parents=True, exist_ok=True)
     topo_path = work / "consumer-topology.json"
@@ -301,11 +357,9 @@ def run_opcert_header_cases(
         attempts.append(event)
 
     # Start a single isolated consumer (fresh db) that only follows the peer.
+    # A docker-managed named volume avoids root-owned bind-mount cleanup issues.
     _docker("rm", "-f", consumer_name, check=False)
-    consumer_db = work / "consumer-db"
-    if consumer_db.exists():
-        _docker("run", "--rm", "-v", f"{consumer_db}:/db", "busybox", "rm", "-rf", "/db", check=False)
-    consumer_db.mkdir(parents=True, exist_ok=True)
+    _docker("volume", "rm", "-f", consumer_volume, check=False)
     consumer_cmd = (
         "mkdir -p /consumer && exec cardano-node run "
         "--config /env/configuration.yaml "
@@ -317,7 +371,7 @@ def run_opcert_header_cases(
         "run", "-d", "--name", consumer_name, "--network", "host",
         "-v", f"{env_dir}:/env:ro",
         "-v", f"{topo_path.parent}:{topo_path.parent.as_posix()}:ro",
-        "-v", f"{consumer_db}:/consumer",
+        "-v", f"{consumer_volume}:/consumer",
         "--entrypoint", "bash", image, "-lc", consumer_cmd,
     )
     record({"kind": "consumer_started", "container": consumer_name, "image": image})
@@ -384,6 +438,10 @@ def run_opcert_header_cases(
         logs = _docker("logs", consumer_name, check=False)
         (work / "consumer.log").write_text(logs.stdout + "\n" + logs.stderr, encoding="utf-8")
         _docker("rm", "-f", consumer_name, check=False)
+        _docker("volume", "rm", "-f", consumer_volume, check=False)
+
+    state_after = _container_state(target_container)
+    tip_after = _cardano_tip(target_container, target_socket, magic)
 
     result = build_result(
         cases, served_map, observed_by_hash, implementation,
@@ -391,6 +449,15 @@ def run_opcert_header_cases(
     )
     result["runtime_root"] = str(runtime_root)
     result["compose_project"] = runtime.get("compose_project")
+    # target_health lets runtime_target_health_and_progress / target_progress_continues
+    # confirm the honest producer kept advancing while the isolated copy was probed.
+    result["target_health"] = {
+        "before": state_before,
+        "after": state_after,
+        "tip_before": tip_before or {},
+        "tip_after": tip_after or {},
+        "log_signals": _target_log_signals(target_container, health_started_at),
+    }
     result_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     return result
 
