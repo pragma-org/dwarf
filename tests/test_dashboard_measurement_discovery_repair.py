@@ -20,7 +20,7 @@ def test_learn_landing_has_one_authoritative_measurements_card():
 
     assert len(cards) == 1
     assert "Measurements" in cards[0]
-    assert "30 measurement definitions" in cards[0]
+    assert "34 measurement definitions" in cards[0]
     assert "4 profiles" in cards[0]
 
 
