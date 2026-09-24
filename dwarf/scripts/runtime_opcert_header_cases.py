@@ -327,6 +327,7 @@ def run_opcert_header_cases(
         return _run_amaru_control(
             runtime, output_dir, attempts_path, result_path, cases, wanted,
             target_node=target_node, peer_bin=peer_bin, listen_port=listen_port,
+            consumer_port=consumer_port,
             per_case_timeout=per_case_timeout, settle_seconds=settle_seconds,
         )
     nodes = runtime.get("haskell_nodes") or []
@@ -529,11 +530,21 @@ def _amaru_extract_keys(project, work):
 
 def _run_amaru_control(
     runtime, output_dir, attempts_path, result_path, cases, wanted,
-    *, target_node, peer_bin, listen_port, per_case_timeout, settle_seconds,
+    *, target_node, peer_bin, listen_port, consumer_port=34072,
+    per_case_timeout, settle_seconds,
 ):
     project = runtime.get("compose_project")
     if not project:
         raise RuntimeError("amaru-control runtime has no compose_project")
+    # A cardano-node target in the amaru-control substrate is served by an
+    # isolated cardano consumer (the amaru path serves an amaru consumer).
+    if not str(target_node).startswith("amaru"):
+        return _run_amaru_control_cardano(
+            runtime, output_dir, attempts_path, result_path, cases, wanted,
+            target_node=target_node, peer_bin=peer_bin, listen_port=listen_port,
+            consumer_port=consumer_port, per_case_timeout=per_case_timeout,
+            settle_seconds=settle_seconds,
+        )
 
     work = output_dir / "harness"
     work.mkdir(parents=True, exist_ok=True)
@@ -681,6 +692,178 @@ def _run_amaru_control(
         "tip_before": tip_before,
         "tip_after": tip_after,
         "log_signals": {"fatal": list((runtime.get("log_signals") or {}).get("fatal") or [])},
+    }
+    result_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    return result
+
+
+
+def _run_amaru_control_cardano(
+    runtime, output_dir, attempts_path, result_path, cases, wanted,
+    *, target_node, peer_bin, listen_port, consumer_port,
+    per_case_timeout, settle_seconds,
+):
+    """Serve the mutated headers to an isolated cardano-node consumer inside the
+    amaru-control substrate and read its verdicts (Phase 1 join, amaru-control
+    topology). The stock producer config traces at Critical, so the consumer
+    config root namespace is lowered to Info as machine JSON so the header
+    lifecycle events the cardano parser reads are emitted."""
+    project = runtime.get("compose_project")
+    work = output_dir / "harness"
+    work.mkdir(parents=True, exist_ok=True)
+    attempts = []
+
+    def record(event):
+        with attempts_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event) + "\n")
+        attempts.append(event)
+
+    upstream_container = f"{project}-p3-1"
+    up_ip, gateway = _amaru_project_ip(upstream_container)
+    net = f"{project}-default"
+    image = _container_image(f"{project}-p1-1")
+
+    # Materialise a consumer config dir (config + genesis) with tracing raised
+    # and a topology that points only at the host peer via the docker gateway.
+    cfg = work / "cardano-config"
+    cfg.mkdir(parents=True, exist_ok=True)
+    _docker(
+        "run", "--rm", "-v", f"{project}_p1-configs:/c:ro", "-v", f"{cfg}:/out",
+        "busybox", "sh", "-c", "cp /c/configs/*.json /out/ && chmod -R a+rw /out",
+    )
+    config = json.loads((cfg / "config.json").read_text(encoding="utf-8"))
+    config["UseTraceDispatcher"] = True
+    config["minSeverity"] = "Info"
+    config["TraceOptions"] = {
+        "": {"severity": "Info", "detail": "DNormal", "backends": ["Stdout MachineFormat"]},
+    }
+    (cfg / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    topo = {
+        "localRoots": [{
+            "accessPoints": [{"address": gateway, "port": listen_port}],
+            "advertise": False, "trustable": True, "valency": 1,
+            "hotValency": 1, "warmValency": 1, "diffusionMode": "InitiatorAndResponder",
+        }],
+        "publicRoots": [{"accessPoints": [], "advertise": False}],
+        "useLedgerAfterSlot": -1,
+    }
+    (cfg / "consumer-topology.json").write_text(json.dumps(topo), encoding="utf-8")
+
+    magic = int(runtime.get("network_magic") or 42)
+
+    def _producer_tip():
+        proc = _docker(
+            "exec", f"{project}-p1-1", "cardano-cli", "query", "tip",
+            "--testnet-magic", str(magic), "--socket-path", "/state/node.socket", check=False,
+        )
+        try:
+            body = json.loads(proc.stdout)
+            h = body.get("block")
+            if isinstance(h, int) and not isinstance(h, bool):
+                return {"block_height": h, "hash": body.get("hash"), "slot": body.get("slot")}
+        except (ValueError, TypeError):
+            pass
+        return {}
+
+    consumer = "opcert-cardano-consumer"
+    consumer_vol = "opcert-cardano-consumer-db"
+    _docker("rm", "-f", consumer, check=False)
+    _docker("volume", "rm", "-f", consumer_vol, check=False)
+    consumer_cmd = (
+        "exec cardano-node run --config /cfg/config.json "
+        "--topology /cfg/consumer-topology.json "
+        "--database-path /consumer/db --socket-path /consumer/sock "
+        f"--port {consumer_port} --host-addr 0.0.0.0"
+    )
+    _docker(
+        "run", "-d", "--name", consumer, "--network", net,
+        "-v", f"{cfg}:/cfg:ro", "-v", f"{consumer_vol}:/consumer",
+        "--entrypoint", "bash", image, "-lc", consumer_cmd,
+    )
+    record({"kind": "consumer_started", "container": consumer, "image": image,
+            "peer": f"{gateway}:{listen_port}", "upstream": f"{up_ip}:3001", "impl": "cardano-node"})
+
+    state_before = _container_state(f"{project}-p1-1")
+    tip_before = _producer_tip()
+
+    served_map = {}
+    observed_by_hash = {}
+    try:
+        for cid in wanted:
+            case = next((c for c in cases if c["id"] == cid), None)
+            if case is None:
+                record({"kind": "case_skipped", "case": cid, "reason": "not in corpus"})
+                continue
+            evidence = work / f"evidence-{cid}.ndjson"
+            evidence.write_text("", encoding="utf-8")
+            since = _now_docker_ts()
+            peer_cmd = [
+                str(peer_bin), "serve-case", "--case", cid,
+                "--upstream", f"{up_ip}:3001", "--listen-port", str(listen_port),
+                "--kes-skey", f"/tmp/opcert-amaru/keys/kes.skey",
+                "--cold-skey", f"/tmp/opcert-amaru/keys/cold.skey",
+                "--slots-per-kes", "129600", "--max-kes-evo", "62",
+                "--evidence", str(evidence),
+            ]
+            # Re-extract keys next to the config to be self-contained.
+            keys = work / "keys"
+            if not (keys / "kes.skey").is_file():
+                keys.mkdir(parents=True, exist_ok=True)
+                _docker("run", "--rm", "-v", f"{project}_p1-configs:/c:ro", "-v", f"{keys}:/out",
+                        "busybox", "sh", "-c",
+                        "cp /c/keys/kes.skey /c/keys/cold.skey /out/ && chmod -R a+r /out")
+            peer_cmd[peer_cmd.index("/tmp/opcert-amaru/keys/kes.skey")] = str(keys / "kes.skey")
+            peer_cmd[peer_cmd.index("/tmp/opcert-amaru/keys/cold.skey")] = str(keys / "cold.skey")
+            record({"kind": "case_started", "case": cid, "command": peer_cmd})
+            peer = subprocess.Popen(peer_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            served_hash = None
+            observed = None
+            deadline = time.time() + per_case_timeout
+            try:
+                while time.time() < deadline:
+                    time.sleep(3)
+                    if evidence.is_file():
+                        served = served_hash_by_case(evidence.read_text(encoding="utf-8").splitlines())
+                        if cid in served:
+                            served_hash = served[cid]
+                    if served_hash is not None:
+                        proc = _docker("logs", "--since", since, consumer, check=False)
+                        events = parse_cardano_header_events((proc.stdout + "\n" + proc.stderr).splitlines())
+                        vmap = verdict_by_hash(events)
+                        if served_hash in vmap:
+                            observed = vmap[served_hash]
+                            break
+            finally:
+                peer.terminate()
+                try:
+                    peer.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    peer.kill()
+            if served_hash is not None:
+                served_map[cid] = served_hash
+                if observed is not None:
+                    observed_by_hash[served_hash] = observed
+            record({"kind": "case_observed", "case": cid, "served_hash": served_hash,
+                    "observed_verdict": (observed or {}).get("verdict"),
+                    "observed_reason": (observed or {}).get("reason")})
+            time.sleep(settle_seconds)
+    finally:
+        logs = _docker("logs", consumer, check=False)
+        (work / "consumer.log").write_text(logs.stdout + "\n" + logs.stderr, encoding="utf-8")
+        _docker("rm", "-f", consumer, check=False)
+        _docker("volume", "rm", "-f", consumer_vol, check=False)
+
+    state_after = _container_state(f"{project}-p1-1")
+    tip_after = _producer_tip()
+
+    result = build_result(cases, served_map, observed_by_hash, "cardano-node",
+                          target_node=target_node, case_set=wanted)
+    result["runtime_root"] = str(runtime.get("runtime_root") or "")
+    result["compose_project"] = project
+    result["target_health"] = {
+        "before": state_before, "after": state_after,
+        "tip_before": tip_before, "tip_after": tip_after,
+        "log_signals": {"fatal": []},
     }
     result_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     return result
