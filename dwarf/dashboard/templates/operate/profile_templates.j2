@@ -1,25 +1,32 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice with context %}
 {% if ui == "basic" %}
 {% set types = {} %}{% for r in rows %}{% set _ = types.update({r.node_type: types.get(r.node_type, 0) + 1}) %}{% endfor %}
 {{ deck_head('Operate · Profile templates',
    (rows|length ~ ' profile template' ~ ('' if rows|length == 1 else 's') ~ ' ship with this DWARF revision.') if rows else 'No shipped profile templates are available.',
    'A template is an immutable starting point for a new runtime profile. Open one to read it or start a profile from it; it proves nothing on its own.') }}
-{% set cards = [] %}
-{% for row in rows %}{% set _ = cards.append({
-  'title': row.id, 'href': '/operate/profile-templates/' ~ row.id,
-  'kicker': row.node_type ~ ' · ' ~ row.node_total ~ ' node' ~ ('' if row.node_total == 1 else 's'),
-  'sub': row.summary, 'tier': 'back', 'group': row.node_type,
-  'facts': [('Topology', row.topology_pattern), ('Network', row.network_magic), ('Peer sharing', 'on' if row.peer_sharing else 'off')],
-  'tags': [row.status], 'search': row.assumptions|join(' ')}) %}{% endfor %}
-{% set groups = [] %}{% for t, n in types|dictsort %}{% set _ = groups.append((t, t ~ ' · ' ~ n)) %}{% endfor %}
+{% set cards = [] %}{% set nets = [] %}
+{% for row in rows %}{% set mg = row.network_magic|string %}
+{% set net = 'preview' if mg == '2' else ('preprod' if mg == '1' else ('mainnet' if mg == '764824073' else 'devnet ' ~ mg)) %}
+{% if net not in nets %}{% set _ = nets.append(net) %}{% endif %}
+{% set n = row.node_total|int %}
+{% set ok = row.status in ['valid', 'ok', 'ready'] %}
+{% set _ = cards.append({'title': deck_nice(row.id, false)|trim|replace('Peersharing', 'PeerSharing'), 'full_title': row.id ~ ' — ' ~ row.summary, 'id': row.id, 'hide_id': true,
+  'href': '/operate/profile-templates/' ~ row.id, 'accent': row.node_type,
+  'kicker': row.topology_pattern ~ ('' if ok else ' · ▲ ' ~ row.status),
+  'sub': n ~ ' node' ~ ('' if n == 1 else 's') ~ ' · ' ~ (row.required_substitutions|length) ~ ' substitutions to fill',
+  'tier': 'back' if ok else 'warn', 'group': 'impl:' ~ row.node_type ~ ' net:' ~ net|replace(' ', '_'),
+  'tags': [row.node_type, net] + (['peer sharing'] if row.peer_sharing else []),
+  'search': row.assumptions|join(' ') ~ ' ' ~ row.summary}) %}{% endfor %}
+{% set impls = [] %}{% for t, c in types|dictsort %}{% set _ = impls.append((t, t ~ ' · ' ~ c)) %}{% endfor %}
+{% set netopts = [] %}{% for x in nets|sort %}{% set _ = netopts.append((x|replace(' ', '_'), x)) %}{% endfor %}
 <h2 class="b-h2 basic-only">Templates · card backs (scaffolds, not proof)</h2>
-{{ deck_grid(cards, label='templates', groups=groups, empty='No shipped profile templates are available.') }}
+{{ deck_grid(cards, label='templates', facets=[('impl', 'Implementation', impls), ('net', 'Network', netopts)], empty='No shipped profile templates are available.') }}
 {% if rows %}
 <section class="basic-only dk dk-op-panel" aria-label="Use a template">
   <h2 class="b-h2">Start a profile from a template</h2>
-  <div class="dk-row">{% for row in rows %}<a class="dk-btn" href="{{ row.use_url }}">Use {{ row.id }}</a>{% endfor %}</div>
+  <div class="dk-row">{% for row in rows %}<a class="dk-btn" href="{{ row.use_url }}" title="{{ row.id }}">Use · {{ deck_nice(row.id, false)|trim|replace('Peersharing', 'PeerSharing') }}</a>{% endfor %}</div>
 </section>
 {% endif %}
 {{ deck_more('Download templates and read the contract in Advanced') }}
