@@ -13,7 +13,10 @@ from profile_manager.measurement_collectors.cardano_resources import CardanoReso
 from profile_manager.measurement_collectors.cardano_patched import (
     build_cardano_patched_factories,
 )
-from profile_manager.measurement_collectors.cardano_stock import build_cardano_stock_factories
+from profile_manager.measurement_collectors.cardano_stock import (
+    build_cardano_stock_factories,
+    CardanoHeaderValidationCollector,
+)
 
 
 def build_cardano_measurement_factories(
@@ -58,6 +61,9 @@ def build_cardano_measurement_factories(
         return CardanoResourceCollector(entry, **options)
 
     factories["cardano-stock-resources"] = build_resource_collector
+    factories["cardano-stock-header-validation"] = lambda entry: CardanoHeaderValidationCollector(
+        entry, trace_paths=paths, allow_missing_at_start=allow_missing_trace_sources
+    )
     factories["cardano-external-workload-accounting"] = (
         lambda entry: WorkloadAccountingCollector(entry)
     )
