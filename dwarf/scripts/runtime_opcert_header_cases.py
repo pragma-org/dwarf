@@ -552,6 +552,147 @@ def _amaru_extract_keys(project, work):
     return keys, shelley
 
 
+def open_amaru_consumer(runtime, work, *, listen_port, name_suffix=""):
+    """Open one isolated amaru consumer cloned from the relay, peering the host
+    forger over the docker gateway.
+
+    Returns a uniform consumer-context dict shared by the deterministic driver
+    and the soak driver (single source of truth for the amaru-control lifecycle).
+    ``name_suffix`` gives each of a differential run's two consumers a distinct
+    container/volume name so they never collide.
+    """
+    project = runtime.get("compose_project")
+    if not project:
+        raise RuntimeError("amaru-control runtime has no compose_project")
+    work = Path(work)
+    work.mkdir(parents=True, exist_ok=True)
+    # An unused producer (p3) relays the honest chain to the peer; the relays
+    # peer with p1/p2 so p3 is free. It is reachable from the host over the
+    # docker bridge; the isolated consumer reaches the host peer via the gateway.
+    upstream_container = f"{project}-p3-1"
+    up_ip, gateway = _amaru_project_ip(upstream_container)
+    net = f"{project}-default"
+
+    keys, shelley = _amaru_extract_keys(project, work)
+    slots_per_kes = int(shelley["slotsPerKESPeriod"])
+    max_kes_evo = int(shelley["maxKESEvolutions"])
+
+    # Clone the amaru relay image for the isolated consumer.
+    relay = f"{project}-amaru-relay-1-1"
+    image = _container_image(relay)
+    runtime_bind = "/home/nigel/dwarf-pragma/antithesis/cardano_amaru_relay_bootstrap_control/amaru-runtime"
+
+    consumer = f"opcert-amaru-consumer{name_suffix}"
+    startup_vol = f"opcert-amaru-startup{name_suffix}"
+    state_vol = f"opcert-amaru-state{name_suffix}"
+    _docker("rm", "-f", consumer, check=False)
+    _docker("volume", "rm", "-f", startup_vol, state_vol, check=False)
+    peer_addr = f"{gateway}:{listen_port}"
+    _docker(
+        "run", "-d", "--name", consumer, "--network", net,
+        "-e", "AMARU_BIN=/target/amaru", "-e", "AMARU_POLL_INTERVAL_SECONDS=5",
+        "-e", "AMARU_NETWORK=testnet_42", "-e", "AMARU_WAIT_DEADLINE_SECONDS=30",
+        "-e", "AMARU_MIGRATE_CHAIN_DB=true", "-e", "AMARU_WITH_JSON_TRACES=true",
+        "-e", f"AMARU_PEER={peer_addr}", "-e", "AMARU_CLUSTER_READY_DEADLINE_SECONDS=30",
+        "-e", "AMARU_COLOR=never", "-e", f"RELAY_NAME={consumer}",
+        "-e", "AMARU_LOG=debug", "-e", "AMARU_BOOTSTRAP_RETRY_SECONDS=5",
+        "-v", f"{project}_p1-state:/live:ro", "-v", f"{project}_p1-configs:/cardano/config:ro",
+        "-v", f"{runtime_bind}:/amaru-runtime:ro",
+        "-v", f"{startup_vol}:/startup", "-v", f"{state_vol}:/srv/amaru",
+        "-v", f"{project}_amaru-target-bin:/target:ro",
+        "--entrypoint", "amaru-relay-bootstrap", image,
+    )
+    return {
+        "name": consumer, "image": image, "net": net,
+        "listen_port": listen_port, "peer": peer_addr,
+        "upstream": f"{up_ip}:3001", "up_ip": up_ip, "gateway": gateway,
+        "kes_skey": keys / "kes.skey", "cold_skey": keys / "cold.skey",
+        "slots_per_kes": slots_per_kes, "max_kes_evo": max_kes_evo,
+        "implementation": "amaru", "volumes": [startup_vol, state_vol],
+        "relay": relay, "project": project, "keys_dir": keys,
+    }
+
+
+def open_amaru_control_cardano_consumer(
+    runtime, work, *, listen_port, consumer_port, name_suffix="",
+):
+    """Open one isolated cardano-node consumer inside the amaru-control substrate
+    (config tracing raised to Info machine-JSON so the header lifecycle events the
+    cardano parser reads are emitted; topology points only at the host forger via
+    the docker gateway). Returns the same uniform consumer-context dict shape as
+    ``open_amaru_consumer``. Shared by the deterministic and soak drivers.
+    """
+    project = runtime.get("compose_project")
+    if not project:
+        raise RuntimeError("amaru-control runtime has no compose_project")
+    work = Path(work)
+    work.mkdir(parents=True, exist_ok=True)
+    upstream_container = f"{project}-p3-1"
+    up_ip, gateway = _amaru_project_ip(upstream_container)
+    net = f"{project}-default"
+    image = _container_image(f"{project}-p1-1")
+
+    cfg = work / f"cardano-config{name_suffix}"
+    cfg.mkdir(parents=True, exist_ok=True)
+    _docker(
+        "run", "--rm", "-v", f"{project}_p1-configs:/c:ro", "-v", f"{cfg}:/out",
+        "busybox", "sh", "-c", "cp /c/configs/*.json /out/ && chmod -R a+rw /out",
+    )
+    config = json.loads((cfg / "config.json").read_text(encoding="utf-8"))
+    config["UseTraceDispatcher"] = True
+    config["minSeverity"] = "Info"
+    config["TraceOptions"] = {
+        "": {"severity": "Info", "detail": "DNormal", "backends": ["Stdout MachineFormat"]},
+    }
+    (cfg / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    topo = {
+        "localRoots": [{
+            "accessPoints": [{"address": gateway, "port": listen_port}],
+            "advertise": False, "trustable": True, "valency": 1,
+            "hotValency": 1, "warmValency": 1, "diffusionMode": "InitiatorAndResponder",
+        }],
+        "publicRoots": [{"accessPoints": [], "advertise": False}],
+        "useLedgerAfterSlot": -1,
+    }
+    (cfg / "consumer-topology.json").write_text(json.dumps(topo), encoding="utf-8")
+
+    shelley_cfg = json.loads((cfg / "shelley-genesis.json").read_text(encoding="utf-8"))
+    slots_per_kes = int(shelley_cfg["slotsPerKESPeriod"])
+    max_kes_evo = int(shelley_cfg["maxKESEvolutions"])
+
+    keys = work / f"keys{name_suffix}"
+    if not (keys / "kes.skey").is_file():
+        keys.mkdir(parents=True, exist_ok=True)
+        _docker("run", "--rm", "-v", f"{project}_p1-configs:/c:ro", "-v", f"{keys}:/out",
+                "busybox", "sh", "-c",
+                "cp /c/keys/kes.skey /c/keys/cold.skey /out/ && chmod -R a+r /out")
+
+    consumer = f"opcert-cardano-consumer{name_suffix}"
+    consumer_vol = f"opcert-cardano-consumer-db{name_suffix}"
+    _docker("rm", "-f", consumer, check=False)
+    _docker("volume", "rm", "-f", consumer_vol, check=False)
+    consumer_cmd = (
+        "exec cardano-node run --config /cfg/config.json "
+        "--topology /cfg/consumer-topology.json "
+        "--database-path /consumer/db --socket-path /consumer/sock "
+        f"--port {consumer_port} --host-addr 0.0.0.0"
+    )
+    _docker(
+        "run", "-d", "--name", consumer, "--network", net,
+        "-v", f"{cfg}:/cfg:ro", "-v", f"{consumer_vol}:/consumer",
+        "--entrypoint", "bash", image, "-lc", consumer_cmd,
+    )
+    return {
+        "name": consumer, "image": image, "net": net,
+        "listen_port": listen_port, "peer": f"{gateway}:{listen_port}",
+        "upstream": f"{up_ip}:3001", "up_ip": up_ip, "gateway": gateway,
+        "kes_skey": keys / "kes.skey", "cold_skey": keys / "cold.skey",
+        "slots_per_kes": slots_per_kes, "max_kes_evo": max_kes_evo,
+        "implementation": "cardano-node", "volumes": [consumer_vol],
+        "project": project, "config_dir": cfg, "keys_dir": keys,
+    }
+
+
 def _run_amaru_control(
     runtime, output_dir, attempts_path, result_path, cases, wanted,
     *, target_node, peer_bin, listen_port, consumer_port=34072,
@@ -579,44 +720,21 @@ def _run_amaru_control(
             fh.write(json.dumps(event) + "\n")
         attempts.append(event)
 
-    # An unused producer (p3) relays the honest chain to the peer; the relays
-    # peer with p1/p2 so p3 is free. It is reachable from the host over the
-    # docker bridge; the isolated consumer reaches the host peer via the gateway.
-    upstream_container = f"{project}-p3-1"
-    up_ip, gateway = _amaru_project_ip(upstream_container)
-    net = f"{project}-default"
-
-    keys, shelley = _amaru_extract_keys(project, work)
-    slots_per_kes = int(shelley["slotsPerKESPeriod"])
-    max_kes_evo = int(shelley["maxKESEvolutions"])
-
-    # Clone the amaru relay image for the isolated consumer.
-    relay = f"{project}-amaru-relay-1-1"
-    image = _container_image(relay)
-    runtime_bind = "/home/nigel/dwarf-pragma/antithesis/cardano_amaru_relay_bootstrap_control/amaru-runtime"
-
-    consumer = "opcert-amaru-consumer"
-    startup_vol = "opcert-amaru-startup"
-    state_vol = "opcert-amaru-state"
-    _docker("rm", "-f", consumer, check=False)
-    _docker("volume", "rm", "-f", startup_vol, state_vol, check=False)
-    peer_addr = f"{gateway}:{listen_port}"
-    _docker(
-        "run", "-d", "--name", consumer, "--network", net,
-        "-e", "AMARU_BIN=/target/amaru", "-e", "AMARU_POLL_INTERVAL_SECONDS=5",
-        "-e", "AMARU_NETWORK=testnet_42", "-e", "AMARU_WAIT_DEADLINE_SECONDS=30",
-        "-e", "AMARU_MIGRATE_CHAIN_DB=true", "-e", "AMARU_WITH_JSON_TRACES=true",
-        "-e", f"AMARU_PEER={peer_addr}", "-e", "AMARU_CLUSTER_READY_DEADLINE_SECONDS=30",
-        "-e", "AMARU_COLOR=never", "-e", "RELAY_NAME=opcert-amaru-consumer",
-        "-e", "AMARU_LOG=debug", "-e", "AMARU_BOOTSTRAP_RETRY_SECONDS=5",
-        "-v", f"{project}_p1-state:/live:ro", "-v", f"{project}_p1-configs:/cardano/config:ro",
-        "-v", f"{runtime_bind}:/amaru-runtime:ro",
-        "-v", f"{startup_vol}:/startup", "-v", f"{state_vol}:/srv/amaru",
-        "-v", f"{project}_amaru-target-bin:/target:ro",
-        "--entrypoint", "amaru-relay-bootstrap", image,
-    )
+    # Open the isolated amaru consumer (cloned relay, peering the host forger
+    # over the docker gateway) through the shared helper — the same helper the
+    # soak driver imports, so there is one source of truth for the lifecycle.
+    ctx = open_amaru_consumer(runtime, work, listen_port=listen_port)
+    consumer = ctx["name"]
+    image = ctx["image"]
+    net = ctx["net"]
+    up_ip = ctx["up_ip"]
+    relay = ctx["relay"]
+    keys = ctx["keys_dir"]
+    slots_per_kes = ctx["slots_per_kes"]
+    max_kes_evo = ctx["max_kes_evo"]
+    startup_vol, state_vol = ctx["volumes"]
     record({"kind": "consumer_started", "container": consumer, "image": image,
-            "peer": peer_addr, "upstream": f"{up_ip}:3001"})
+            "peer": ctx["peer"], "upstream": f"{up_ip}:3001"})
 
     def _relay_tip():
         proc = _docker("logs", "--tail", "4000", relay, check=False)
@@ -742,40 +860,19 @@ def _run_amaru_control_cardano(
             fh.write(json.dumps(event) + "\n")
         attempts.append(event)
 
-    upstream_container = f"{project}-p3-1"
-    up_ip, gateway = _amaru_project_ip(upstream_container)
-    net = f"{project}-default"
-    image = _container_image(f"{project}-p1-1")
-
-    # Materialise a consumer config dir (config + genesis) with tracing raised
-    # and a topology that points only at the host peer via the docker gateway.
-    cfg = work / "cardano-config"
-    cfg.mkdir(parents=True, exist_ok=True)
-    _docker(
-        "run", "--rm", "-v", f"{project}_p1-configs:/c:ro", "-v", f"{cfg}:/out",
-        "busybox", "sh", "-c", "cp /c/configs/*.json /out/ && chmod -R a+rw /out",
+    ctx = open_amaru_control_cardano_consumer(
+        runtime, work, listen_port=listen_port, consumer_port=consumer_port,
     )
-    config = json.loads((cfg / "config.json").read_text(encoding="utf-8"))
-    config["UseTraceDispatcher"] = True
-    config["minSeverity"] = "Info"
-    config["TraceOptions"] = {
-        "": {"severity": "Info", "detail": "DNormal", "backends": ["Stdout MachineFormat"]},
-    }
-    (cfg / "config.json").write_text(json.dumps(config), encoding="utf-8")
-    topo = {
-        "localRoots": [{
-            "accessPoints": [{"address": gateway, "port": listen_port}],
-            "advertise": False, "trustable": True, "valency": 1,
-            "hotValency": 1, "warmValency": 1, "diffusionMode": "InitiatorAndResponder",
-        }],
-        "publicRoots": [{"accessPoints": [], "advertise": False}],
-        "useLedgerAfterSlot": -1,
-    }
-    (cfg / "consumer-topology.json").write_text(json.dumps(topo), encoding="utf-8")
-
-    shelley_cfg = json.loads((cfg / "shelley-genesis.json").read_text(encoding="utf-8"))
-    slots_per_kes = int(shelley_cfg["slotsPerKESPeriod"])
-    max_kes_evo = int(shelley_cfg["maxKESEvolutions"])
+    consumer = ctx["name"]
+    image = ctx["image"]
+    net = ctx["net"]
+    up_ip = ctx["up_ip"]
+    gateway = ctx["gateway"]
+    cfg = ctx["config_dir"]
+    keys = ctx["keys_dir"]
+    consumer_vol = ctx["volumes"][0]
+    slots_per_kes = ctx["slots_per_kes"]
+    max_kes_evo = ctx["max_kes_evo"]
 
     magic = int(runtime.get("network_magic") or 42)
 
@@ -793,21 +890,6 @@ def _run_amaru_control_cardano(
             pass
         return {}
 
-    consumer = "opcert-cardano-consumer"
-    consumer_vol = "opcert-cardano-consumer-db"
-    _docker("rm", "-f", consumer, check=False)
-    _docker("volume", "rm", "-f", consumer_vol, check=False)
-    consumer_cmd = (
-        "exec cardano-node run --config /cfg/config.json "
-        "--topology /cfg/consumer-topology.json "
-        "--database-path /consumer/db --socket-path /consumer/sock "
-        f"--port {consumer_port} --host-addr 0.0.0.0"
-    )
-    _docker(
-        "run", "-d", "--name", consumer, "--network", net,
-        "-v", f"{cfg}:/cfg:ro", "-v", f"{consumer_vol}:/consumer",
-        "--entrypoint", "bash", image, "-lc", consumer_cmd,
-    )
     record({"kind": "consumer_started", "container": consumer, "image": image,
             "peer": f"{gateway}:{listen_port}", "upstream": f"{up_ip}:3001", "impl": "cardano-node"})
 
@@ -828,20 +910,11 @@ def _run_amaru_control_cardano(
             peer_cmd = [
                 str(peer_bin), "serve-case", "--case", cid,
                 "--upstream", f"{up_ip}:3001", "--listen-port", str(listen_port),
-                "--kes-skey", f"/tmp/opcert-amaru/keys/kes.skey",
-                "--cold-skey", f"/tmp/opcert-amaru/keys/cold.skey",
+                "--kes-skey", str(keys / "kes.skey"),
+                "--cold-skey", str(keys / "cold.skey"),
                 "--slots-per-kes", str(slots_per_kes), "--max-kes-evo", str(max_kes_evo),
                 "--evidence", str(evidence),
             ]
-            # Re-extract keys next to the config to be self-contained.
-            keys = work / "keys"
-            if not (keys / "kes.skey").is_file():
-                keys.mkdir(parents=True, exist_ok=True)
-                _docker("run", "--rm", "-v", f"{project}_p1-configs:/c:ro", "-v", f"{keys}:/out",
-                        "busybox", "sh", "-c",
-                        "cp /c/keys/kes.skey /c/keys/cold.skey /out/ && chmod -R a+r /out")
-            peer_cmd[peer_cmd.index("/tmp/opcert-amaru/keys/kes.skey")] = str(keys / "kes.skey")
-            peer_cmd[peer_cmd.index("/tmp/opcert-amaru/keys/cold.skey")] = str(keys / "cold.skey")
             record({"kind": "case_started", "case": cid, "command": peer_cmd})
             peer = subprocess.Popen(peer_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             served_hash = None

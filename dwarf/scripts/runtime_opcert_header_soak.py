@@ -71,13 +71,67 @@ def _find_node(runtime, node_id):
     return None
 
 
-def _open_consumers(runtime, nodes, *, peer_bin=None, output_dir=None):
-    """Start one isolated fresh-DB consumer per target node (live path).
+def _is_amaru_control(runtime):
+    return (runtime or {}).get("lifecycle") == "cardano_amaru_relay_bootstrap_control"
 
-    Each consumer follows only the per-node forger listen port; the forger
-    (started per iteration by ``_serve_one``/``_serve_one_node``) serves the
-    generated case header into it. Returns ``{node: consumer_context}``.
+
+def _open_consumers(runtime, nodes, *, peer_bin=None, output_dir=None):
+    """Start one isolated fresh-DB consumer per target node, dispatching on the
+    runtime shape exactly like the deterministic sibling.
+
+    - ``cardano_amaru_relay_bootstrap_control`` runtimes (profile-zb mixed,
+      profile-z amaru) → the amaru-control lifecycle: a cloned amaru consumer for
+      the ``amaru-*`` leg and a fresh-DB cardano consumer for the ``node1`` leg,
+      both from the shared deterministic-driver helpers (imported, not forked).
+    - otherwise (profile-v generated-cardano-local) → the local fresh-DB cardano
+      consumer path.
+
+    Returns ``{node: consumer_context}`` with a uniform ctx shape so
+    ``_serve_case_spec`` is substrate-agnostic.
     """
+    if _is_amaru_control(runtime):
+        return _open_amaru_control_consumers(runtime, nodes, output_dir=output_dir)
+    return _open_local_cardano_consumers(runtime, nodes, output_dir=output_dir)
+
+
+def _open_amaru_control_consumers(runtime, nodes, *, output_dir):
+    """Open one isolated consumer per target on the amaru-control substrate,
+    reusing the deterministic driver's proven consumer lifecycle by import."""
+    work = Path(output_dir) / "harness"
+    work.mkdir(parents=True, exist_ok=True)
+    consumers = {}
+    for index, node_id in enumerate(nodes):
+        listen_port = _PORT_BASE["listen"] + index * 2
+        consumer_port = _PORT_BASE["consumer"] + index * 2
+        suffix = f"-{node_id}"
+        if str(node_id).startswith("amaru"):
+            ctx = det.open_amaru_consumer(runtime, work, listen_port=listen_port, name_suffix=suffix)
+            _wait_amaru_consumer_ready(ctx, deadline=time.time() + 300)
+        else:
+            ctx = det.open_amaru_control_cardano_consumer(
+                runtime, work, listen_port=listen_port, consumer_port=consumer_port,
+                name_suffix=suffix,
+            )
+        consumers[node_id] = ctx
+    return consumers
+
+
+def _wait_amaru_consumer_ready(ctx, *, deadline):
+    """Poll the cloned amaru consumer's logs until it has attempted to peer with
+    the host forger (fail-open: returns after the deadline either way; the
+    per-iteration timeout still fail-closes any never-observed header)."""
+    while time.time() < deadline:
+        proc = det._docker("logs", "--tail", "200", ctx["name"], check=False)
+        blob = proc.stdout + "\n" + proc.stderr
+        if "manager.peer.connect" in blob or "tip.adopt" in blob or "connect_failed" in blob:
+            return True
+        time.sleep(5)
+    return False
+
+
+def _open_local_cardano_consumers(runtime, nodes, *, output_dir):
+    """Start one isolated fresh-DB cardano consumer per target node on a
+    generated-cardano-local runtime (profile-v)."""
     consumers = {}
     work = Path(output_dir) / "harness"
     work.mkdir(parents=True, exist_ok=True)
@@ -113,8 +167,9 @@ def _open_consumers(runtime, nodes, *, peer_bin=None, output_dir=None):
         shelley = json.loads((env_dir / "shelley-genesis.json").read_text(encoding="utf-8"))
         listen_addr = node.get("listen_address") or f"127.0.0.1:{node.get('port')}"
         consumers[node_id] = {
-            "name": consumer_name, "volume": consumer_volume, "work": work,
-            "listen_port": listen_port, "implementation": node.get("impl") or "cardano-node",
+            "name": consumer_name, "volume": consumer_volume, "volumes": [consumer_volume],
+            "work": work, "listen_port": listen_port,
+            "implementation": node.get("impl") or "cardano-node",
             "kes_skey": pool_dir / "kes.skey", "cold_skey": pool_dir / "cold.skey",
             "slots_per_kes": int(shelley["slotsPerKESPeriod"]),
             "max_kes_evo": int(shelley["maxKESEvolutions"]),
@@ -126,7 +181,9 @@ def _open_consumers(runtime, nodes, *, peer_bin=None, output_dir=None):
 def _close_consumers(consumers):
     for ctx in (consumers or {}).values():
         det._docker("rm", "-f", ctx["name"], check=False)
-        det._docker("volume", "rm", "-f", ctx["volume"], check=False)
+        volumes = ctx.get("volumes") or ([ctx["volume"]] if ctx.get("volume") else [])
+        for vol in volumes:
+            det._docker("volume", "rm", "-f", vol, check=False)
 
 
 def _serve_case_spec(spec, ctx, *, peer_bin, per_iteration_timeout, output_dir, iteration):
@@ -143,11 +200,11 @@ def _serve_case_spec(spec, ctx, *, peer_bin, per_iteration_timeout, output_dir, 
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
     evidence = work / f"evidence-{spec['family']}-{iteration:06d}.ndjson"
     evidence.write_text("", encoding="utf-8")
-    peer = Path(peer_bin or det.DEFAULT_PEER_BIN)
+    peer_path = Path(peer_bin or det.DEFAULT_PEER_BIN)
     up_host, up_port = ctx["upstream"].split(":")
     since = det._now_docker_ts()
     peer_cmd = [
-        str(peer), "serve-case",
+        str(peer_path), "serve-case",
         "--case", spec["base_case"],
         "--case-spec", str(spec_path),
         "--upstream", f"{up_host}:{up_port}",
@@ -176,11 +233,11 @@ def _serve_case_spec(spec, ctx, *, peer_bin, per_iteration_timeout, output_dir, 
                     observed = vmap[served_hash]
                     break
     finally:
-        peer.terminate()
+        proc.terminate()
         try:
-            peer.wait(timeout=10)
+            proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            peer.kill()
+            proc.kill()
     return served_hash, observed
 
 
@@ -204,7 +261,44 @@ def _serve_one_node(spec, *, node, consumers=None, peer_bin=None,
                             output_dir=output_dir, iteration=iteration)
 
 
+def _amaru_control_producer_tip(project, magic):
+    proc = det._docker(
+        "exec", f"{project}-p1-1", "cardano-cli", "query", "tip",
+        "--testnet-magic", str(magic), "--socket-path", "/state/node.socket", check=False,
+    )
+    try:
+        body = json.loads(proc.stdout)
+        h = body.get("block")
+        if isinstance(h, int) and not isinstance(h, bool):
+            return {"block_height": h, "hash": body.get("hash"), "slot": body.get("slot")}
+    except (ValueError, TypeError):
+        pass
+    return {}
+
+
+def _amaru_relay_tip(project):
+    proc = det._docker("logs", "--tail", "4000", f"{project}-amaru-relay-1-1", check=False)
+    best = None
+    for line in (proc.stdout + "\n" + proc.stderr).splitlines():
+        try:
+            doc = json.loads(line.strip())
+        except (ValueError, TypeError):
+            continue
+        f = (doc or {}).get("fields") or {}
+        if f.get("message") == "tip.adopt" and f.get("block_height") is not None:
+            best = {"block_height": int(f["block_height"]), "slot": f.get("slot")}
+    return best or {}
+
+
 def _node_tip(runtime, node_id):
+    if _is_amaru_control(runtime):
+        project = runtime.get("compose_project")
+        try:
+            if str(node_id).startswith("amaru"):
+                return _amaru_relay_tip(project)
+            return _amaru_control_producer_tip(project, int(runtime.get("network_magic") or 42))
+        except Exception:
+            return {}
     node = _find_node(runtime, node_id)
     if not node:
         return {}
@@ -242,10 +336,16 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
 
     runtime, implementation = _load_runtime_root(runtime_root)
     compose_project = (runtime or {}).get("compose_project")
-    if not differential:
-        implementation = _node_impl(runtime, nodes[0]) or implementation
 
     consumers = _open_consumers(runtime, nodes, peer_bin=peer_bin, output_dir=output_dir)
+
+    if not differential:
+        # Prefer the opened consumer's implementation: it is the robust source
+        # across substrates (haskell_nodes is absent on the amaru-control
+        # lifecycle, so _node_impl would return None there).
+        ctx0 = consumers.get(nodes[0])
+        implementation = ((ctx0.get("implementation") if isinstance(ctx0, dict) else None)
+                          or _node_impl(runtime, nodes[0]) or implementation)
 
     tip_before = _node_tip(runtime, nodes[0])
     records = []
