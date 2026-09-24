@@ -1,15 +1,23 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice with context %}
 {% if ui == "basic" %}
 {{ deck_head('Operate · Generation grammars', (rows|length) ~ ' grammar sets expose ' ~ token_count ~ ' mutation tokens — ' ~ ready_count ~ ' validate cleanly.', 'Grammars shape what fuzzers generate. A valid grammar is a definition, not evidence that anything was found.') }}
-{% set cards = [] %}{% for row in rows %}{% set ok = row.status in ['valid','ok','ready','available'] %}
-{% set _ = cards.append({'title': row.label, 'id': row.id if row.id != row.label else '', 'href': '/operate/grammars/' ~ row.id, 'kicker': row.root_kind ~ ' · ' ~ (row.format or 'unknown format'),
-  'tier': 'back' if ok else 'warn', 'suit': '' if ok else '▲', 'tone': '' if ok else 'dk-g-warn', 'group': row.status, 'sub': row.target or 'target unavailable',
-  'facts': [('Tokens', row.token_count), ('Structure', row.structure_status), ('Dictionary', row.dictionary_status)], 'tags': ['editable clone' if row.writable else 'shipped read-only'],
-  'search': (row.scenario_ids|join(' ')) ~ ' ' ~ (row.target_ids|join(' ')) ~ ' ' ~ (row.corpus_ids|join(' '))}) %}{% endfor %}
-{% set groups = [] %}{% for k in rows|map(attribute='status')|unique %}{% set _ = groups.append((k, k)) %}{% endfor %}
-{{ deck_grid(cards, label='grammar sets', groups=groups if groups|length > 1 else none, empty='No generation grammar roots are available.') }}
+{% set cards = [] %}
+{% for row in rows %}{% set lab = row.label %}
+{% set impl = 'amaru' if lab.startswith('amaru') else ('cardano-node' if lab.startswith('cardano') else '') %}
+{% set fuzzer = 'cargo-fuzz' if 'cargo-fuzz' in lab else ('AFL++' if 'afl' in lab else '') %}
+{% set shape = lab.replace('amaru-cargo-fuzz-', '').replace('cardano-node-', '') %}
+{% set ok = row.status in ['valid','ok','ready','available'] and row.structure_status in ['valid', 'ok'] and row.dictionary_status in ['valid', 'ok'] %}
+{% set issues = [] %}{% if row.structure_status not in ['valid', 'ok'] %}{% set _ = issues.append('structure ' ~ row.structure_status) %}{% endif %}{% if row.dictionary_status not in ['valid', 'ok'] %}{% set _ = issues.append('dictionary ' ~ row.dictionary_status) %}{% endif %}
+{% set _ = cards.append({'title': deck_nice(shape, false)|trim, 'full_title': lab ~ ' — ' ~ (row.decoder_entrypoint or ''), 'id': row.id, 'hide_id': true,
+  'href': '/operate/grammars/' ~ row.id, 'accent': impl,
+  'kicker': ('editable clone' if row.writable else 'shipped') ~ ((' · ▲ ' ~ issues|join(', ')) if issues else ''),
+  'tier': 'back' if ok else 'warn', 'tone': '' if ok else 'dk-g-warn',
+  'sub': row.token_count ~ ' mutation token' ~ ('' if row.token_count == 1 else 's'),
+  'tags': ([impl] if impl else []) + ([(row.format or '')|upper] if row.format else []) + ([fuzzer] if fuzzer else []),
+  'search': lab ~ ' ' ~ (row.target or '') ~ ' ' ~ (row.scenario_ids|join(' ')) ~ ' ' ~ (row.corpus_ids|join(' '))}) %}{% endfor %}
+{{ deck_grid(cards, label='grammar sets', empty='No generation grammar roots are available.') }}
 {{ deck_more('Structures, dictionaries and cloning in Advanced') }}
 {% endif %}
 <div class="adv-only">
