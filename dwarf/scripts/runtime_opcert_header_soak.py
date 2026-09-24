@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -311,6 +312,188 @@ def _node_tip(runtime, node_id):
 
 
 # --------------------------------------------------------------------------- #
+# Family C (restart-persistence): legitimate opcert rotation + producer restart.
+#
+# Each iteration issues a fresh cold-key-signed opcert that raises the pool's
+# on-chain counter by one (the same issuance mechanism the aged profile used —
+# cardano-cli conway node issue-op-cert), installs it on the producer, restarts
+# the producer, waits for it to forge a block under the new counter, then serves
+# a replay header (base case ``counter-behind`` serves recorded-1) to the target's
+# isolated consumer. REJECT (counter-too-small) is the pass; accept-after-restart
+# is the finding. A cycle that never completes the rotation/restart/forge is
+# fail-closed inconclusive (never a pass). The original opcert is backed up and
+# restored, leaving the devnet consistent.
+# --------------------------------------------------------------------------- #
+
+_OPCERT_FILES = ("opcert.cert", "opcert.counter")
+
+
+def _read_counter_next(counter_json_text):
+    try:
+        doc = json.loads(counter_json_text)
+        for tok in str(doc.get("description") or "").replace(":", " ").split():
+            if tok.isdigit():
+                return int(tok)
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def _rotation_context(runtime, node_id):
+    """Everything needed to rotate the pool opcert counter and restart the
+    producer that forges the chain the target validates."""
+    magic = int(runtime.get("network_magic") or 42)
+    if _is_amaru_control(runtime):
+        project = runtime.get("compose_project")
+        image = det._container_image(f"{project}-p1-1")
+        shelley = json.loads(det._docker(
+            "run", "--rm", "-v", f"{project}_p1-configs:/c:ro", "busybox",
+            "cat", "/c/configs/shelley-genesis.json").stdout)
+        return {
+            "mode": "volume", "project": project, "producer": f"{project}-p1-1",
+            "image": image, "keys_mount": (f"{project}_p1-configs", "/vol"),
+            "keys_in": "/vol/keys", "socket_in": "/state/node.socket", "magic": magic,
+            "slots_per_kes": int(shelley["slotsPerKESPeriod"]),
+            "restart_targets": [f"{project}-p1-1"],
+        }
+    node = _find_node(runtime, node_id)
+    if node is None:
+        raise RuntimeError(f"family-C rotation: node {node_id!r} not in runtime")
+    container = node["container_name"]
+    env_dir = det._host_env_dir(container)
+    pool_dir = env_dir / "pools-keys" / "pool1"
+    image = det._container_image(container)
+    shelley = json.loads((env_dir / "shelley-genesis.json").read_text(encoding="utf-8"))
+    socket = node.get("container_socket_path") or f"/env/socket/{node_id}/sock"
+    return {
+        "mode": "hostdir", "producer": container, "image": image, "pool_dir": pool_dir,
+        "keys_mount": (str(pool_dir), "/keys"), "keys_in": "/keys",
+        "socket_in": socket, "magic": magic,
+        "slots_per_kes": int(shelley["slotsPerKESPeriod"]),
+        "restart_targets": [container],
+    }
+
+
+def _backup_opcert(rot):
+    if rot["mode"] == "hostdir":
+        pd = rot["pool_dir"]
+        for f in _OPCERT_FILES:
+            src, bak = pd / f, pd / (f + ".soak-orig")
+            if src.is_file() and not bak.is_file():
+                shutil.copy2(src, bak)
+    else:
+        vol, _ = rot["keys_mount"]
+        det._docker("run", "--rm", "-v", f"{vol}:/vol", "busybox", "sh", "-c",
+                    "for f in opcert.cert opcert.counter; do "
+                    "[ -f /vol/keys/$f ] && [ ! -f /vol/keys/$f.soak-orig ] && "
+                    "cp /vol/keys/$f /vol/keys/$f.soak-orig; done; true", check=False)
+
+
+def _restore_opcert(rot):
+    try:
+        if rot["mode"] == "hostdir":
+            pd = rot["pool_dir"]
+            for f in _OPCERT_FILES:
+                bak = pd / (f + ".soak-orig")
+                if bak.is_file():
+                    shutil.copy2(bak, pd / f)
+        else:
+            vol, _ = rot["keys_mount"]
+            det._docker("run", "--rm", "-v", f"{vol}:/vol", "busybox", "sh", "-c",
+                        "for f in opcert.cert opcert.counter; do "
+                        "[ -f /vol/keys/$f.soak-orig ] && cp /vol/keys/$f.soak-orig /vol/keys/$f; "
+                        "done; true", check=False)
+        _restart_producer(rot)
+    except Exception:
+        pass
+
+
+def _producer_tip_slot(rot):
+    proc = det._docker("exec", rot["producer"], "cardano-cli", "query", "tip",
+                       "--testnet-magic", str(rot["magic"]),
+                       "--socket-path", rot["socket_in"], check=False)
+    try:
+        body = json.loads(proc.stdout)
+        return body.get("block"), body.get("slot")
+    except (ValueError, TypeError):
+        return None, None
+
+
+def _restart_producer(rot):
+    for c in rot["restart_targets"]:
+        det._docker("restart", c, check=False)
+
+
+def _wait_for_forge(rot, baseline_height, deadline):
+    while time.time() < deadline:
+        height, _slot = _producer_tip_slot(rot)
+        if isinstance(height, int) and not isinstance(height, bool):
+            if baseline_height is None or height > baseline_height:
+                return height
+        time.sleep(5)
+    return None
+
+
+def _rotate_producer(rot):
+    """Issue one fresh cold-key-signed opcert (counter += 1), installing it in
+    place. Returns the counter the just-issued cert carries, or ``None`` if the
+    producer tip / issuance could not be driven (fail-closed upstream)."""
+    _height, slot = _producer_tip_slot(rot)
+    if slot is None:
+        return None
+    kes_period = int(slot) // int(rot["slots_per_kes"])
+    src, dst = rot["keys_mount"]
+    kdir = rot["keys_in"]
+    cmd = (
+        "set -e; cd " + kdir + "; "
+        "if [ ! -f kes.vkey ]; then cardano-cli key verification-key "
+        "--signing-key-file kes.skey --verification-key-file kes.vkey; fi; "
+        "cardano-cli conway node issue-op-cert "
+        "--kes-verification-key-file kes.vkey "
+        "--cold-signing-key-file cold.skey "
+        "--operational-certificate-issue-counter-file opcert.counter "
+        f"--kes-period {kes_period} "
+        "--out-file opcert.cert; "
+        "cat opcert.counter"
+    )
+    proc = det._docker("run", "--rm", "-v", f"{src}:{dst}", "--entrypoint", "bash",
+                       rot["image"], "-lc", cmd, check=False)
+    if proc.returncode != 0:
+        return None
+    nxt = _read_counter_next(proc.stdout)
+    return (nxt - 1) if isinstance(nxt, int) and nxt >= 1 else None
+
+
+def _family_c_iteration(rot, spec, consumer_ctx, node, implementation, *, peer_bin,
+                        per_iteration_timeout, output_dir, iteration,
+                        restart_forge_timeout=300):
+    """One real rotate→restart→forge→replay cycle. Fail-closed inconclusive if
+    the cycle does not complete the rotation, restart, and a forged block."""
+    spec = dict(spec)
+    spec["params"] = dict(spec.get("params") or {})
+    baseline_height, _slot = _producer_tip_slot(rot)
+    achieved = _rotate_producer(rot)
+    forged = None
+    if achieved is not None:
+        _restart_producer(rot)
+        forged = _wait_for_forge(rot, baseline_height, time.time() + restart_forge_timeout)
+    spec["params"]["rotated_to_counter_actual"] = achieved
+    cycle = {"rotated_to_counter": achieved, "forged_height": forged,
+             "baseline_height": baseline_height}
+    if achieved is None or forged is None:
+        return {"outcome": "inconclusive", "spec": spec, "served_hash": None,
+                "observed_verdict": None, "observed_reason": None, "cycle": cycle}
+    served_hash, observed = _serve_one(
+        spec, consumer=consumer_ctx, node=node, peer_bin=peer_bin,
+        per_iteration_timeout=per_iteration_timeout, output_dir=output_dir,
+        iteration=iteration)
+    outcome = R.classify_iteration(spec, served_hash, observed, implementation)
+    return {"outcome": outcome, "spec": spec, "served_hash": served_hash,
+            "observed_verdict": (observed or {}).get("verdict"),
+            "observed_reason": (observed or {}).get("reason"), "cycle": cycle}
+
+
+# --------------------------------------------------------------------------- #
 # The soak loop.
 # --------------------------------------------------------------------------- #
 
@@ -347,6 +530,12 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
         implementation = ((ctx0.get("implementation") if isinstance(ctx0, dict) else None)
                           or _node_impl(runtime, nodes[0]) or implementation)
 
+    family_c = family == "restart-persistence"
+    rot = None
+    if family_c:
+        rot = _rotation_context(runtime, nodes[0])
+        _backup_opcert(rot)
+
     tip_before = _node_tip(runtime, nodes[0])
     records = []
     start = clock()
@@ -367,6 +556,11 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
                     "outcome": _OUTCOME_FOR_DIFF[diff], "differential": diff,
                     "spec": spec, "verdicts": verdicts,
                 }
+            elif family_c:
+                record = _family_c_iteration(
+                    rot, spec, consumers.get(nodes[0]), nodes[0], implementation,
+                    peer_bin=peer_bin, per_iteration_timeout=per_iteration_timeout,
+                    output_dir=output_dir, iteration=iteration)
             else:
                 served_hash, observed = _serve_one(
                     spec, consumer=consumers.get(nodes[0]), node=nodes[0], peer_bin=peer_bin,
@@ -383,6 +577,8 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
             records.append(record)
             iteration += 1
     finally:
+        if rot is not None:
+            _restore_opcert(rot)
         _close_consumers(consumers)
 
     tip_after = _node_tip(runtime, nodes[0])

@@ -156,6 +156,71 @@ def test_differential_amaru_control_opens_both_consumers(monkeypatch, tmp_path):
     assert consumers["node1"]["listen_port"] != consumers["amaru-relay-1"]["listen_port"]
 
 
+def test_family_c_rotate_restart_replay_and_finding(monkeypatch, tmp_path):
+    """Fix 2: the family-C path performs a real rotate→restart→forge→replay each
+    iteration and scores accept-after-restart as a finding carrying the
+    reproducing seed; the original opcert is restored."""
+    _patch_substrate(monkeypatch)
+    monkeypatch.setattr(soak, "_load_runtime_root",
+                        lambda root: ({"compose_project": "p", "network_magic": 42}, "cardano-node"))
+    events = {"rotate": 0, "restart": 0, "serve": 0, "backup": 0, "restore": 0}
+    monkeypatch.setattr(soak, "_rotation_context", lambda runtime, node: {"mode": "hostdir"})
+    monkeypatch.setattr(soak, "_backup_opcert", lambda rot: events.__setitem__("backup", events["backup"] + 1))
+    monkeypatch.setattr(soak, "_restore_opcert", lambda rot: events.__setitem__("restore", events["restore"] + 1))
+    monkeypatch.setattr(soak, "_producer_tip_slot", lambda rot: (100, 5000))
+
+    def fake_rotate(rot):
+        events["rotate"] += 1
+        return 2  # achieved counter N=2
+
+    def fake_restart(rot):
+        events["restart"] += 1
+
+    def fake_forge(rot, baseline, deadline):
+        return (baseline or 0) + 3  # a block was forged under the new counter
+
+    def fake_serve(spec, **k):
+        events["serve"] += 1
+        # Amaru/cardano ACCEPTS a replay below the rotated counter -> the finding.
+        return ("h%d" % spec["iteration"], {"verdict": "accepted", "reason": None})
+
+    monkeypatch.setattr(soak, "_rotate_producer", fake_rotate)
+    monkeypatch.setattr(soak, "_restart_producer", fake_restart)
+    monkeypatch.setattr(soak, "_wait_for_forge", fake_forge)
+    monkeypatch.setattr(soak, "_serve_one", fake_serve)
+
+    out = tmp_path / "o"
+    r = soak.run_opcert_header_soak(str(tmp_path), "restart-persistence", 4242, str(out),
+                                    target_node="node1", time_budget_seconds=3,
+                                    clock=FakeClock(budget=3))
+    assert events["rotate"] >= 1 and events["restart"] >= 1 and events["serve"] >= 1
+    assert events["backup"] == 1 and events["restore"] == 1
+    # accept-after-restart is a mismatch finding, and the finding carries the seed
+    assert r["counters"]["mismatch"] >= 1 and r["pass"] is False
+    finding = r["mismatches"][0]
+    assert finding["spec"]["seed"] == 4242
+    assert finding["spec"]["params"]["rotated_to_counter_actual"] == 2
+
+
+def test_family_c_incomplete_cycle_is_inconclusive(monkeypatch, tmp_path):
+    """Fix 2: a cycle that never completes the restart/forge is fail-closed
+    inconclusive (never a pass)."""
+    _patch_substrate(monkeypatch)
+    monkeypatch.setattr(soak, "_load_runtime_root",
+                        lambda root: ({"compose_project": "p", "network_magic": 42}, "cardano-node"))
+    monkeypatch.setattr(soak, "_rotation_context", lambda runtime, node: {"mode": "hostdir"})
+    monkeypatch.setattr(soak, "_backup_opcert", lambda rot: None)
+    monkeypatch.setattr(soak, "_restore_opcert", lambda rot: None)
+    monkeypatch.setattr(soak, "_producer_tip_slot", lambda rot: (100, 5000))
+    monkeypatch.setattr(soak, "_rotate_producer", lambda rot: 2)
+    monkeypatch.setattr(soak, "_restart_producer", lambda rot: None)
+    monkeypatch.setattr(soak, "_wait_for_forge", lambda rot, b, d: None)  # never forged
+    served = {"n": 0}
+    monkeypatch.setattr(soak, "_serve_one", lambda spec, **k: served.__setitem__("n", served["n"] + 1) or ("h", None))
+    r = soak.run_opcert_header_soak(str(tmp_path), "restart-persistence", 7, str(tmp_path / "o"),
+                                    target_node="node1", time_budget_seconds=3,
+                                    clock=FakeClock(budget=3))
+    assert r["conclusive"] == 0 and r["pass"] is False and served["n"] == 0
 
 
 def test_result_written_with_seed_and_duration(monkeypatch, tmp_path):
