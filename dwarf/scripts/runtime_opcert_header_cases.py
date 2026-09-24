@@ -318,6 +318,17 @@ def run_opcert_header_cases(
     cases = [all_cases[cid] for cid in wanted if cid in all_cases]
 
     runtime, runtime_path = _load_runtime(runtime_root)
+    if runtime.get("lifecycle") == "cardano_amaru_relay_bootstrap_control":
+        # The amaru-control substrate has a different topology than the
+        # generated-cardano-local one: producers/relays are docker-network-only
+        # and the amaru measurement node bootstraps from a producer snapshot.
+        # Serve the mutated headers to an isolated amaru consumer (a clone of
+        # the amaru relay whose upstream is the peer) and read its JSON traces.
+        return _run_amaru_control(
+            runtime, output_dir, attempts_path, result_path, cases, wanted,
+            target_node=target_node, peer_bin=peer_bin, listen_port=listen_port,
+            per_case_timeout=per_case_timeout, settle_seconds=settle_seconds,
+        )
     nodes = runtime.get("haskell_nodes") or []
     target = next((n for n in nodes if n.get("id") == target_node), None)
     if target is None:
@@ -486,6 +497,193 @@ def main(argv=None):
     )
     print(json.dumps(result["summary"], indent=2))
     return 0 if result["summary"]["all_matched"] else 1
+
+
+
+# =====================================================================
+# Amaru-control substrate path (Phase 2a/2b)
+# =====================================================================
+
+def _amaru_project_ip(container):
+    proc = _docker("inspect", container, "--format",
+                   "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{.Gateway}}{{println}}{{end}}",
+                   check=False)
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0]:
+            return parts[0], parts[1]
+    raise RuntimeError(f"no network IP for {container}")
+
+
+def _amaru_extract_keys(project, work):
+    keys = work / "keys"
+    keys.mkdir(parents=True, exist_ok=True)
+    _docker(
+        "run", "--rm", "-v", f"{project}_p1-configs:/c:ro", "-v", f"{keys}:/out",
+        "busybox", "sh", "-c",
+        "cp /c/keys/kes.skey /c/keys/cold.skey /c/configs/shelley-genesis.json /out/ && chmod -R a+r /out",
+    )
+    shelley = json.loads((keys / "shelley-genesis.json").read_text(encoding="utf-8"))
+    return keys, shelley
+
+
+def _run_amaru_control(
+    runtime, output_dir, attempts_path, result_path, cases, wanted,
+    *, target_node, peer_bin, listen_port, per_case_timeout, settle_seconds,
+):
+    project = runtime.get("compose_project")
+    if not project:
+        raise RuntimeError("amaru-control runtime has no compose_project")
+
+    work = output_dir / "harness"
+    work.mkdir(parents=True, exist_ok=True)
+    attempts = []
+
+    def record(event):
+        with attempts_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event) + "\n")
+        attempts.append(event)
+
+    # An unused producer (p3) relays the honest chain to the peer; the relays
+    # peer with p1/p2 so p3 is free. It is reachable from the host over the
+    # docker bridge; the isolated consumer reaches the host peer via the gateway.
+    upstream_container = f"{project}-p3-1"
+    up_ip, gateway = _amaru_project_ip(upstream_container)
+    net = f"{project}-default"
+
+    keys, shelley = _amaru_extract_keys(project, work)
+    slots_per_kes = int(shelley["slotsPerKESPeriod"])
+    max_kes_evo = int(shelley["maxKESEvolutions"])
+
+    # Clone the amaru relay image for the isolated consumer.
+    relay = f"{project}-amaru-relay-1-1"
+    image = _container_image(relay)
+    runtime_bind = "/home/nigel/dwarf-pragma/antithesis/cardano_amaru_relay_bootstrap_control/amaru-runtime"
+
+    consumer = "opcert-amaru-consumer"
+    startup_vol = "opcert-amaru-startup"
+    state_vol = "opcert-amaru-state"
+    _docker("rm", "-f", consumer, check=False)
+    _docker("volume", "rm", "-f", startup_vol, state_vol, check=False)
+    peer_addr = f"{gateway}:{listen_port}"
+    _docker(
+        "run", "-d", "--name", consumer, "--network", net,
+        "-e", "AMARU_BIN=/target/amaru", "-e", "AMARU_POLL_INTERVAL_SECONDS=5",
+        "-e", "AMARU_NETWORK=testnet_42", "-e", "AMARU_WAIT_DEADLINE_SECONDS=30",
+        "-e", "AMARU_MIGRATE_CHAIN_DB=true", "-e", "AMARU_WITH_JSON_TRACES=true",
+        "-e", f"AMARU_PEER={peer_addr}", "-e", "AMARU_CLUSTER_READY_DEADLINE_SECONDS=30",
+        "-e", "AMARU_COLOR=never", "-e", "RELAY_NAME=opcert-amaru-consumer",
+        "-e", "AMARU_LOG=debug", "-e", "AMARU_BOOTSTRAP_RETRY_SECONDS=5",
+        "-v", f"{project}_p1-state:/live:ro", "-v", f"{project}_p1-configs:/cardano/config:ro",
+        "-v", f"{runtime_bind}:/amaru-runtime:ro",
+        "-v", f"{startup_vol}:/startup", "-v", f"{state_vol}:/srv/amaru",
+        "-v", f"{project}_amaru-target-bin:/target:ro",
+        "--entrypoint", "amaru-relay-bootstrap", image,
+    )
+    record({"kind": "consumer_started", "container": consumer, "image": image,
+            "peer": peer_addr, "upstream": f"{up_ip}:3001"})
+
+    def _relay_tip():
+        proc = _docker("logs", "--tail", "4000", relay, check=False)
+        best = None
+        for line in (proc.stdout + "\n" + proc.stderr).splitlines():
+            doc = None
+            try:
+                doc = json.loads(line.strip())
+            except (ValueError, TypeError):
+                continue
+            f = (doc or {}).get("fields") or {}
+            if f.get("message") == "tip.adopt" and f.get("block_height") is not None:
+                best = {"block_height": int(f["block_height"]), "slot": f.get("slot")}
+        return best or {}
+
+    def _consumer_ready(deadline):
+        while time.time() < deadline:
+            proc = _docker("logs", "--tail", "200", consumer, check=False)
+            blob = proc.stdout + "\n" + proc.stderr
+            if "manager.peer.connect" in blob or "tip.adopt" in blob or "connect_failed" in blob:
+                return True
+            time.sleep(5)
+        return False
+
+    state_before = _container_state(relay)
+    tip_before = _relay_tip()
+
+    served_map = {}
+    observed_by_hash = {}
+    try:
+        if not _consumer_ready(time.time() + 300):
+            record({"kind": "consumer_not_ready"})
+        for cid in wanted:
+            case = next((c for c in cases if c["id"] == cid), None)
+            if case is None:
+                record({"kind": "case_skipped", "case": cid, "reason": "not in corpus"})
+                continue
+            evidence = work / f"evidence-{cid}.ndjson"
+            evidence.write_text("", encoding="utf-8")
+            since = _now_docker_ts()
+            peer_cmd = [
+                str(peer_bin), "serve-case", "--case", cid,
+                "--upstream", f"{up_ip}:3001", "--listen-port", str(listen_port),
+                "--kes-skey", str(keys / "kes.skey"), "--cold-skey", str(keys / "cold.skey"),
+                "--slots-per-kes", str(slots_per_kes), "--max-kes-evo", str(max_kes_evo),
+                "--evidence", str(evidence),
+            ]
+            record({"kind": "case_started", "case": cid, "command": peer_cmd})
+            peer = subprocess.Popen(peer_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            served_hash = None
+            observed = None
+            deadline = time.time() + per_case_timeout
+            try:
+                while time.time() < deadline:
+                    time.sleep(3)
+                    if evidence.is_file():
+                        served = served_hash_by_case(evidence.read_text(encoding="utf-8").splitlines())
+                        if cid in served:
+                            served_hash = served[cid]
+                    if served_hash is not None:
+                        proc = _docker("logs", "--since", since, consumer, check=False)
+                        events = parse_amaru_header_events((proc.stdout + "\n" + proc.stderr).splitlines())
+                        vmap = verdict_by_hash(events)
+                        if served_hash in vmap:
+                            observed = vmap[served_hash]
+                            break
+            finally:
+                peer.terminate()
+                try:
+                    peer.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    peer.kill()
+            if served_hash is not None:
+                served_map[cid] = served_hash
+                if observed is not None:
+                    observed_by_hash[served_hash] = observed
+            record({"kind": "case_observed", "case": cid, "served_hash": served_hash,
+                    "observed_verdict": (observed or {}).get("verdict"),
+                    "observed_reason": (observed or {}).get("reason")})
+            time.sleep(settle_seconds)
+    finally:
+        logs = _docker("logs", consumer, check=False)
+        (work / "consumer.log").write_text(logs.stdout + "\n" + logs.stderr, encoding="utf-8")
+        _docker("rm", "-f", consumer, check=False)
+        _docker("volume", "rm", "-f", startup_vol, state_vol, check=False)
+
+    state_after = _container_state(relay)
+    tip_after = _relay_tip()
+
+    result = build_result(cases, served_map, observed_by_hash, "amaru",
+                          target_node=target_node, case_set=wanted)
+    result["runtime_root"] = str(runtime.get("runtime_root") or "")
+    result["compose_project"] = project
+    result["target_health"] = {
+        "before": state_before,
+        "after": state_after,
+        "tip_before": tip_before,
+        "tip_after": tip_after,
+        "log_signals": {"fatal": list((runtime.get("log_signals") or {}).get("fatal") or [])},
+    }
+    result_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    return result
 
 
 if __name__ == "__main__":

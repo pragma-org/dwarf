@@ -15,10 +15,45 @@ _OCERT = re.compile(
     r"(KESBeforeStartOCERT|KESAfterEndOCERT|CounterTooSmallOCERT|"
     r"CounterOverIncrementedOCERT|InvalidKesSignatureOCERT|InvalidSignatureOCERT)"
 )
-_AMARU = re.compile(
+# Amaru logs the *Display* of the header-validation error (thiserror
+# #[error(...)]) in the trace "error" field, not the enum variant name. Each
+# entry below maps a distinctive Display phrase (lower-cased) to the canonical
+# reason token the opcert case table declares. The variant name itself is also
+# accepted, so a future Amaru that serializes the variant still matches. Order
+# matters: more specific phrases first.
+_AMARU_REASON_PHRASES = (
+    ("InvalidKesSignature", "invalid kes signature from leader"),
+    ("InvalidSignature", "invalid operational certificate signature from issuer"),
+    ("SequenceNumberTooFarAhead", "is too far ahead of the latest known sequence number"),
+    ("SequenceNumberTooSmall", "is less than the latest known sequence number"),
+    ("OpCertKesPeriodTooLarge", "is greater than the block slot kes period"),
+)
+_AMARU_VARIANT = re.compile(
     r"(OpCertKesPeriodTooLarge|OpCertKesPeriodTooOld|InvalidKesSignature|"
     r"SequenceNumberTooSmall|SequenceNumberTooFarAhead|InvalidSignature)"
 )
+
+
+def amaru_reason(error):
+    """Map an Amaru header-validation error Display string to a canonical token.
+
+    Returns None when no known reason is recognised (the caller then treats the
+    rejection as reason-unknown, which fails a reason-sensitive case closed).
+    """
+    if not error:
+        return None
+    variant = _AMARU_VARIANT.search(error)
+    if variant:
+        return variant.group(1)
+    text = error.lower()
+    # OpCertKesPeriodTooOld shares the "kes period" prefix with TooLarge, so it
+    # is matched on its own "is too old" phrase first.
+    if "kes period" in text and "is too old" in text:
+        return "OpCertKesPeriodTooOld"
+    for token, phrase in _AMARU_REASON_PHRASES:
+        if phrase in text:
+            return token
+    return None
 
 
 def _loads(line: str):
@@ -97,13 +132,23 @@ def parse_amaru_header_events(lines: Iterable[str]) -> list[dict]:
             continue
         message = str(fields.get("message", ""))
         error = str(fields.get("error", ""))
-        if fields.get("outcome") == "new_tip" or message == "chain.tip_accepted":
+        outcome = fields.get("outcome")
+        # Accept: the header is adopted as the new tip (INFO "tip.adopt") or the
+        # header lifecycle records a valid outcome ("perf.header.lifecycle").
+        if (
+            message == "tip.adopt"
+            or (message == "perf.header.lifecycle" and outcome == "valid")
+            or outcome == "new_tip"
+            or message == "chain.tip_accepted"
+        ):
             out.append({"header_hash": str(header_hash), "verdict": "accepted",
                         "reason": None, "at": document.get("timestamp")})
-        elif fields.get("outcome") == "invalid_header" or "header_rejected" in message or "validation failed" in error:
-            match = _AMARU.search(error)
+        # Reject: header validation failed ("perf.header.lifecycle" with
+        # outcome "invalid_header"); the Display of the validation error is in
+        # the "error" field. _AMARU maps that Display to a canonical reason token.
+        elif outcome == "invalid_header" or "header_rejected" in message or "validation failed" in error:
             out.append({"header_hash": str(header_hash), "verdict": "rejected",
-                        "reason": match.group(1) if match else None, "at": document.get("timestamp")})
+                        "reason": amaru_reason(error), "at": document.get("timestamp")})
     return out
 
 
