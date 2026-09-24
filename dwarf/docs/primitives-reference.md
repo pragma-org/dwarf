@@ -387,7 +387,7 @@ What a scenario *proves*. Each is evaluated after load; the **pass condition** i
 | `minimum_adopted_block_range_observed` | *(minimum adopted block range observed)* | dev | full · cn+amaru | — |
 | `no_target_fatal_signal` | *(no target fatal signal)* | dev | full · cn+amaru | — |
 | `opcert_case_verdicts_match_expected` | PASS iff every served opcert header case reached its declared verdict (accept for the valid control; reject with the exact expected OCERT reason for each broken rule); any wrong-reason rejection, accepted bad case, unserved case, or unobserved verdict fails closed. | dev | full · cn+amaru | — |
-| `opcert_verdicts_agree` | PASS iff both nodes reached the same verdict on every opcert header case (fail-closed if a case is missing on either side). | dev | not yet exercised | — |
+| `opcert_verdicts_agree` | PASS iff both nodes reached the same verdict on every opcert header case (fail-closed if a case is missing on either side). | dev | full · amaru | — |
 | `restart_readiness_complete` | *(restart readiness complete)* | dev | full · cn+amaru | — |
 | `simple_transfers_observed` | *(simple transfers observed)* | dev | full · cn+amaru | — |
 | `target_progress_continues` | *(target progress continues)* | dev | full · cn+amaru | — |
