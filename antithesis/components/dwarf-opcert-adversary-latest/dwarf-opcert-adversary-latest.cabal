@@ -107,4 +107,19 @@ executable dwarf-opcert-adversary-latest
     , ouroboros-consensus:cardano
     , ouroboros-network:api
     , ouroboros-network:api-tests-lib
+    , ouroboros-network:protocols
+    , serialise
+    , typed-protocols
     , io-classes:strict-stm
+
+test-suite opcert-soak-spec
+  import: settings
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: OpcertSoakSpec.hs
+  build-depends:
+    , base
+    , bytestring
+    , cborg
+    , dwarf-opcert-adversary-latest
+    , hspec

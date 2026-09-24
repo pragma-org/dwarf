@@ -39,13 +39,27 @@ module DwarfOpcertAdversary
     , caseEligible
     , caseMutationName
     , singleTargetServer
+    , CaseSpec (..)
+    , parseCaseSpec
+    , applyCaseSpec
+    , reEncodeOpcert
     ) where
 
 import Codec.CBOR.Read (deserialiseFromBytes)
 import Codec.Serialise (DeserialiseFailure)
 import Control.Concurrent (threadDelay)
-import Data.Aeson (eitherDecodeFileStrict, (.:))
+import Data.Aeson (eitherDecode, eitherDecodeFileStrict, (.:), (.:?), (.!=))
+import Data.Aeson qualified as A
+import Data.Aeson.Key qualified as AKey
+import Data.Aeson.KeyMap qualified as AKM
+import Codec.CBOR.Term (Term (..), decodeTerm, encodeTerm)
+import Codec.CBOR.Write (toLazyByteString)
+import Data.Bits (shiftL, shiftR, (.&.), (.|.))
+import Data.Maybe (fromMaybe)
+import Data.Word (Word8)
+import System.Random (mkStdGen, randomR, randomRs)
 import Data.Aeson.Types (parseEither, withObject)
+import Data.Aeson.Types qualified as AesonTypes
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Lazy qualified as LBS
@@ -459,3 +473,178 @@ singleTargetServer log_ parentPoint target tip = ChainSyncServer (pure (idle Fal
     foreverAwait served = do
         threadDelay 1_000_000
         foreverAwait served
+
+
+-- ===================================================================
+-- Soak mode: seed-derived case-spec override + encoding-form re-encoder
+-- ===================================================================
+
+-- | A seed-derived spec parsed from a @--case-spec@ JSON file. When present it
+-- deterministically overrides the hard-coded per-caseId behaviour of
+-- 'applyCase'; absent, the forger keeps its current deterministic behaviour so
+-- the fixed (non-soak) scenarios are unchanged.
+data CaseSpec = CaseSpec
+    { csBaseCase       :: !String
+    , csSeed           :: !Int
+    , csEncodingForm   :: !(Maybe String)
+    , csTrailingLen    :: !(Maybe Int)
+    , csCounterDelta   :: !(Maybe Integer)
+    , csKesPeriodFrac  :: !(Maybe Double)
+    , csReplayCounter  :: !(Maybe Word)
+    , csSlotOffsetFrac :: !(Maybe Double)
+    }
+    deriving (Eq, Show)
+
+-- | The structural CBOR deviations the encoding-form family may request. Raw
+-- byte fuzzing is deliberately NOT here (owned by the CBOR fuzzers), so an
+-- unknown form fails closed in 'parseCaseSpec'.
+encodingForms :: [String]
+encodingForms =
+    [ "noncanonical-int", "definite-array", "indefinite-array"
+    , "extra-map-key", "duplicate-map-key", "missing-optional-key", "trailing-bytes" ]
+
+-- | Parse a @--case-spec@ JSON document @{base_case, seed, params}@.
+parseCaseSpec :: LBS.ByteString -> Either String CaseSpec
+parseCaseSpec raw = do
+    value <- eitherDecode raw
+    spec <- parseEither specParser value
+    case csEncodingForm spec of
+        Just form | form `notElem` encodingForms -> Left ("unknown encoding form: " <> form)
+        _ -> Right spec
+  where
+    specParser = withObject "CaseSpec" $ \o -> do
+        base    <- o .: "base_case"
+        seed    <- o .: "seed"
+        mparams <- o .:? "params"
+        let paramsObj = case mparams of
+                Just (A.Object km) -> km
+                _ -> AKM.empty
+            getP :: A.FromJSON a => String -> AesonTypes.Parser (Maybe a)
+            getP k = case AKM.lookup (AKey.fromString k) paramsObj of
+                Nothing -> pure Nothing
+                Just A.Null -> pure Nothing
+                Just v -> Just <$> A.parseJSON v
+        form   <- getP "encoding_form"
+        tlen   <- getP "trailing_len"
+        cdelta <- getP "counter_delta"
+        kfrac  <- getP "kes_period_fraction"
+        replay <- getP "replay_counter"
+        soff   <- getP "slot_offset_fraction"
+        pure (CaseSpec base seed form tlen cdelta kfrac replay soff)
+
+-- | Deterministic override of 'applyCase'. When the spec is 'Nothing' the
+-- forger keeps its current per-caseId behaviour. When a spec is present the
+-- base_case selects the typed opcert mutation (the encoding-form byte deviation
+-- is applied separately, on the served header bytes, by 'reEncodeOpcert'); the
+-- numeric fields are echoed into evidence so a finding row is replayable.
+applyCaseSpec :: KeySet -> Maybe CaseSpec -> String -> Header -> Either String CaseResult
+applyCaseSpec ks Nothing    caseId hdr = applyCase ks caseId hdr
+applyCaseSpec ks (Just spec) _     hdr = applyCase ks (csBaseCase spec) hdr
+
+-- | Structural CBOR re-encoding of an otherwise-valid header's wire bytes. The
+-- logical header (and therefore its hash + KES signature) is unchanged; only
+-- the serialization deviates, so the re-encoded bytes reach the target's header
+-- decoder. Every choice is driven by @seed@ so the exact bytes are reproducible.
+reEncodeOpcert :: Int -> String -> Maybe Int -> LBS.ByteString -> LBS.ByteString
+reEncodeOpcert seed form mTrailing bytes = case form of
+    "trailing-bytes" ->
+        let n = max 1 (fromMaybe 1 mTrailing)
+            extra = BS.pack (take n (randomRs (0, 255) (mkStdGen seed))) :: BS.ByteString
+        in bytes <> LBS.fromStrict extra
+    "noncanonical-int" -> nonCanonicalOuter bytes
+    _ -> case deserialiseFromBytes decodeTerm bytes of
+        Left _ -> bytes
+        Right (_, term) -> toLazyByteString (encodeTerm (deviateTerm seed form term))
+
+-- | Widen the outermost CBOR length header to a non-canonical 1-byte argument
+-- (a genuine non-minimal length encoding that decodes to the same value). Only
+-- byte 0 is touched, so this is unambiguous and never corrupts a payload byte.
+nonCanonicalOuter :: LBS.ByteString -> LBS.ByteString
+nonCanonicalOuter bytes = case LBS.uncons bytes of
+    Just (b, rest)
+        | ai <= 23 && major <= 6 ->
+            LBS.pack [(major `shiftL` 5) .|. 0x18, ai] <> rest
+      where
+        major = b `shiftR` 5 :: Word8
+        ai = b .&. 0x1f :: Word8
+    _ -> bytes
+
+-- | Does this Term match the requested structural deviation?
+matchesForm :: String -> Term -> Bool
+matchesForm form t = case (form, t) of
+    ("definite-array", TListI _)      -> True
+    ("indefinite-array", TList _)     -> True
+    ("extra-map-key", TMap _)         -> True
+    ("extra-map-key", TMapI _)        -> True
+    ("duplicate-map-key", TMap (_:_)) -> True
+    ("duplicate-map-key", TMapI (_:_))-> True
+    ("missing-optional-key", TMap ps) -> length ps >= 2
+    ("missing-optional-key", TMapI ps)-> length ps >= 2
+    _ -> False
+
+-- | Apply the deviation to a single matched node.
+deviateNode :: String -> Term -> Term
+deviateNode form t = case (form, t) of
+    ("definite-array", TListI xs)    -> TList xs
+    ("indefinite-array", TList xs)   -> TListI xs
+    ("extra-map-key", TMap ps)       -> TMap (ps ++ [(TInt 987654321, TNull)])
+    ("extra-map-key", TMapI ps)      -> TMapI (ps ++ [(TInt 987654321, TNull)])
+    ("duplicate-map-key", TMap (p:ps))  -> TMap (p : p : ps)
+    ("duplicate-map-key", TMapI (p:ps)) -> TMapI (p : p : ps)
+    ("missing-optional-key", TMap ps)   -> TMap (init ps)
+    ("missing-optional-key", TMapI ps)  -> TMapI (init ps)
+    _ -> t
+
+-- | Count nodes matching @form@ (pre-order).
+countMatching :: String -> Term -> Int
+countMatching form = go
+  where
+    go t = (if matchesForm form t then 1 else 0) + sum (map go (termChildren t))
+
+termChildren :: Term -> [Term]
+termChildren t = case t of
+    TList xs    -> xs
+    TListI xs   -> xs
+    TMap ps     -> concatMap (\(k, v) -> [k, v]) ps
+    TMapI ps    -> concatMap (\(k, v) -> [k, v]) ps
+    TTagged _ x -> [x]
+    _ -> []
+
+-- | Transform the seed-chosen matching node in the Term tree.
+deviateTerm :: Int -> String -> Term -> Term
+deviateTerm seed form term =
+    let n = countMatching form term
+    in if n <= 0
+        then term
+        else let idx = fst (randomR (0, n - 1) (mkStdGen seed))
+             in transformNth form idx term
+
+-- | Transform the @target@-th (pre-order, 0-based) matching node.
+transformNth :: String -> Int -> Term -> Term
+transformNth form target root = snd (walk 0 root)
+  where
+    walk :: Int -> Term -> (Int, Term)
+    walk i t =
+        let matchedHere = matchesForm form t
+            i' = if matchedHere then i + 1 else i
+        in if matchedHere && (i == target)
+            then (i', deviateNode form t)
+            else recurse i' t
+    recurse i t = case t of
+        TList xs    -> let (i', xs') = mapAcc i xs in (i', TList xs')
+        TListI xs   -> let (i', xs') = mapAcc i xs in (i', TListI xs')
+        TMap ps     -> let (i', ps') = mapAccPairs i ps in (i', TMap ps')
+        TMapI ps    -> let (i', ps') = mapAccPairs i ps in (i', TMapI ps')
+        TTagged w x -> let (i', x') = walk i x in (i', TTagged w x')
+        _ -> (i, t)
+    mapAcc i [] = (i, [])
+    mapAcc i (x:xs) =
+        let (i1, x1) = walk i x
+            (i2, xs1) = mapAcc i1 xs
+        in (i2, x1 : xs1)
+    mapAccPairs i [] = (i, [])
+    mapAccPairs i ((k, v):ps) =
+        let (i1, k1) = walk i k
+            (i2, v1) = walk i1 v
+            (i3, ps1) = mapAccPairs i2 ps
+        in (i3, (k1, v1) : ps1)

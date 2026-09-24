@@ -150,6 +150,30 @@ def served_hash_by_case(evidence_lines):
     return served
 
 
+def served_records_by_case(evidence_lines):
+    """Map each case id to the full opcert_case_served record.
+
+    Unlike served_hash_by_case (which keeps only the hash), this preserves
+    the whole evidence record, including the seed-derived spec the soak
+    forger echoes, so a finding row can be replayed from the served evidence.
+    """
+    records = {}
+    for line in evidence_lines:
+        line = (line or "").strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(record, dict) or record.get("kind") != "opcert_case_served":
+            continue
+        case = record.get("case")
+        if case and record.get("header_hash"):
+            records[str(case)] = record
+    return records
+
+
 def build_result(cases, served_map, observed_by_hash, target, *, target_node=None, case_set=None):
     """Assemble the primitive's ``result.json`` body from joined evidence.
 

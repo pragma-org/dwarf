@@ -10,14 +10,24 @@ import Control.Concurrent (forkIO, threadDelay)
 import Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
 import Control.Exception (SomeException, catch)
 import Control.Monad (forM_, forever)
-import Data.Aeson (Value, encode, object, (.=))
+import Data.Aeson (Value, eitherDecode, encode, object, (.=))
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Lazy.Char8 qualified as LBS8
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef, writeIORef)
 import Data.Set qualified as Set
 import DwarfAdversary (originPoint)
 import DwarfAdversary.Application (Limit (..), runChainProducerInto, syncHeaders)
-import DwarfAdversary.ChainSync.Codec (Header, encHeader)
+import DwarfAdversary.ChainSync.Codec
+    ( Header
+    , Point
+    , Tip
+    , decHeader
+    , decPoint
+    , decTip
+    , encHeader
+    , encPoint
+    , encTip
+    )
 import DwarfAdversary.ChainSync.Connection
     ( onDemandBlockFetchResponder
     , plainBlockFetchCodec
@@ -30,7 +40,11 @@ import DwarfOpcertAdversary
     , KeySet (..)
     , ReSignOutcome (..)
     , ReSignParams (..)
+    , CaseSpec (..)
     , applyCase
+    , applyCaseSpec
+    , parseCaseSpec
+    , reEncodeOpcert
     , caseEligible
     , caseMutationName
     , loadColdSignKey
@@ -40,6 +54,13 @@ import DwarfOpcertAdversary
     , resignCodec
     )
 import Cardano.Slotting.Slot (SlotNo (..))
+import Codec.CBOR.Encoding (encodePreEncoded)
+import Codec.Serialise (DeserialiseFailure)
+import Data.IORef (IORef)
+import Network.TypedProtocol.Codec (Codec)
+import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSyncCodec
+import Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
+import System.IO.Unsafe (unsafePerformIO)
 import Ouroboros.Network.Block (HeaderFields (..), getHeaderFields)
 import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
@@ -83,7 +104,8 @@ main = do
                      ) of
                     (Just caseId, Just (host, upstreamPort), Just listenPort, Just kesSkey, Just coldSkey, Just slots, Just evidence) ->
                         let maxEvo = maybe 60 id (lookupFlag "--max-kes-evo" flags >>= readMaybe)
-                         in runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence
+                            caseSpecPath = lookupFlag "--case-spec" flags
+                         in runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence caseSpecPath
                     _ -> usage
         _ -> usage
 
@@ -94,7 +116,7 @@ usage =
         "usage:\n\
         \  dwarf-opcert-adversary verify-resign HOST PORT COUNT KES_SKEY SLOTS_PER_KES\n\
         \  dwarf-opcert-adversary live-proxy --upstream HOST:PORT --listen-port PORT --kes-skey FILE --slots-per-kes N --evidence FILE\n\
-        \  dwarf-opcert-adversary serve-case --case CASE_ID --upstream HOST:PORT --listen-port PORT --kes-skey FILE --cold-skey FILE --slots-per-kes N --max-kes-evo N --evidence FILE"
+        \  dwarf-opcert-adversary serve-case --case CASE_ID --upstream HOST:PORT --listen-port PORT --kes-skey FILE --cold-skey FILE --slots-per-kes N --max-kes-evo N --evidence FILE [--case-spec FILE]"
 
 
 parseHostPort :: String -> Maybe (String, Int)
@@ -238,16 +260,19 @@ appendEvidence path value = do
 -- evidence line, and keep relaying the honest chain so the relay stays alive.
 runCase
     :: String -> String -> Int -> Int
-    -> FilePath -> FilePath -> Word -> Word -> FilePath -> IO ()
-runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence = do
+    -> FilePath -> FilePath -> Word -> Word -> FilePath -> Maybe FilePath -> IO ()
+runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence mCaseSpecPath = do
     kesKey <- loadKesSignKey kesSkey
     coldKey <- loadColdSignKey coldSkey
+    (mSpec, mSpecValue) <- loadCaseSpec mCaseSpecPath
     let ks = KeySet kesKey coldKey slots maxEvo
         magic = NetworkMagic 42
+        specField = maybe [] (\v -> ["spec" .= v]) mSpecValue
     chainVar <- newTVarIO Chain.Genesis
     firedRef <- newIORef False
+    deviantRef <- newIORef (Nothing :: Maybe (String, LBS.ByteString))
     appendEvidence evidence $
-        object ["kind" .= ("opcert_case_started" :: String), "case" .= caseId, "slots_per_kes" .= slots]
+        object (["kind" .= ("opcert_case_started" :: String), "case" .= caseId, "slots_per_kes" .= slots] ++ specField)
     _ <- forkIO $ forever $ do
         result <- runChainProducerInto chainVar magic host (fromIntegral upstreamPort)
         case result of
@@ -262,20 +287,27 @@ runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo eviden
                     then pure h
                     else if not (caseEligible ks h)
                         then pure h
-                        else case applyCase ks caseId h of
+                        else case applyCaseSpec ks mSpec caseId h of
                             Left reason -> do
                                 writeIORef firedRef True
                                 putStrLn ("opcert-case: FINDING " <> caseId <> ": " <> reason)
                                 appendEvidence evidence $
                                     object
-                                        [ "kind" .= ("opcert_case_unreachable" :: String)
+                                        ([ "kind" .= ("opcert_case_unreachable" :: String)
                                         , "case" .= caseId
                                         , "reason" .= reason
-                                        ]
+                                        ] ++ specField)
                                 pure h
                             Right cr -> do
                                 writeIORef firedRef True
                                 let HeaderFields (SlotNo slotW) _ hash = getHeaderFields (crHeader cr)
+                                encInfo <- case mSpec >>= csEncodingForm of
+                                    Just form -> do
+                                        let canonical = toLazyByteString (encHeader (crHeader cr))
+                                            deviant = reEncodeOpcert (maybe 0 csSeed mSpec) form (mSpec >>= csTrailingLen) canonical
+                                        writeIORef deviantRef (Just (show hash, deviant))
+                                        pure ["encoding_form" .= form, "deviant_bytes" .= LBS.length deviant]
+                                    Nothing -> pure []
                                 putStrLn
                                     ( "opcert-case: INJECT " <> caseId
                                         <> " mutation=" <> caseMutationName (crMutation cr)
@@ -285,14 +317,14 @@ runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo eviden
                                     )
                                 appendEvidence evidence $
                                     object
-                                        [ "kind" .= ("opcert_case_served" :: String)
+                                        ([ "kind" .= ("opcert_case_served" :: String)
                                         , "case" .= caseId
                                         , "mutation" .= caseMutationName (crMutation cr)
                                         , "header_hash" .= show hash
                                         , "slot" .= slotW
                                         , "pool" .= ("pool1" :: String)
                                         , "expected_verdict" .= crExpectedVerdict cr
-                                        ]
+                                        ] ++ encInfo ++ specField)
                                 pure (crHeader cr)
         onAccept peer = putStrLn ("opcert-case: accepted " <> peer)
         server = caseInjectingChainSyncServer putStrLn transform chainVar
@@ -301,7 +333,7 @@ runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo eviden
             magic
             (fromIntegral listenPort)
             onAccept
-            plainCodec
+            (deviantCodec deviantRef)
             server
             plainBlockFetchCodec
             (onDemandBlockFetchResponder putStrLn (const (pure ())) magic (host, upstreamPort) chainVar)
@@ -318,3 +350,38 @@ parseFlags _ = []
 
 lookupFlag :: String -> [(String, String)] -> Maybe String
 lookupFlag = lookup
+
+
+-- | Load the optional seed-derived case spec (soak mode). Returns the parsed
+-- 'CaseSpec' (for the deterministic override) and the raw JSON 'Value' (echoed
+-- verbatim into evidence so a finding row is replayable).
+loadCaseSpec :: Maybe FilePath -> IO (Maybe CaseSpec, Maybe Value)
+loadCaseSpec Nothing = pure (Nothing, Nothing)
+loadCaseSpec (Just path) = do
+    raw <- LBS.readFile path
+    case parseCaseSpec raw of
+        Left err -> error ("case-spec parse: " <> err)
+        Right spec ->
+            let mv = either (const Nothing) Just (eitherDecode raw :: Either String Value)
+             in pure (Just spec, mv)
+
+-- | A ChainSync codec that serves the seed-derived encoding-form deviant wire
+-- bytes for the ONE fired case header (matched by hash), and every other header
+-- canonically. The deviation lives in the IORef the case transform writes; the
+-- pure encode path reads it via 'unsafePerformIO' (adversary-only). When the
+-- ref is empty this is byte-identical to 'plainCodec'.
+deviantCodec
+    :: IORef (Maybe (String, LBS.ByteString))
+    -> Codec (ChainSync Header Point Tip) DeserialiseFailure IO LBS.ByteString
+deviantCodec ref =
+    ChainSyncCodec.codecChainSync enc decHeader encPoint decPoint encTip decTip
+  where
+    enc h = unsafePerformIO $ do
+        m <- readIORef ref
+        pure $ case m of
+            Just (hh, dev)
+                | hh == headerHashString h -> encodePreEncoded (LBS.toStrict dev)
+            _ -> encHeader h
+
+headerHashString :: Header -> String
+headerHashString h = let HeaderFields _ _ hh = getHeaderFields h in show hh
