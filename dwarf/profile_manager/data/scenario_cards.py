@@ -33,7 +33,7 @@ _REWRITES = [
 
 # Implementation words that the implementation pill already states.
 _IMPL_WORDS = re.compile(
-    r"\s*[—-]\s*(amaru|cardano-node)\s*$"          # trailing "— Amaru"
+    r"\s*[—-]\s*(amaru|cardano-node|cardano node)\s*$"   # trailing "— Amaru"
     r"|\b(the\s+)?haskell\s+cardano-node\s+"       # "Haskell cardano-node "
     r"|(?<=· )(amaru|cardano-node)\s+"              # "CBOR fuzz · amaru block parser"
     , re.IGNORECASE)
