@@ -352,6 +352,11 @@ body[data-ui="basic"] .dk-seg button[aria-pressed="true"]:hover { background:var
 .dk-tags span[data-tag="mini-protocol decoder"] { color:#d6fff3; background:rgba(40,170,140,.22); border-color:rgba(80,210,175,.6); }
 .dk-tags span[data-tag^="coverage-guided"], .dk-tags span[data-tag^="afl++"] { color:#fff1cf; background:rgba(210,160,60,.22); border-color:rgba(230,190,110,.6); }
 
+/* corpus source pills */
+.dk-tags span[data-tag="afl++"] { color:#fff1cf; background:rgba(210,160,60,.22); border-color:rgba(230,190,110,.6); }
+.dk-tags span[data-tag="cargo-fuzz"] { color:#ffe3d1; background:rgba(220,120,60,.22); border-color:rgba(240,150,100,.6); }
+.dk-tags span[data-tag="cuddle · cddl"] { color:#d6fff3; background:rgba(40,170,140,.22); border-color:rgba(80,210,175,.6); }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }

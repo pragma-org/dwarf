@@ -1,15 +1,31 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice with context %}
 {% if ui == "basic" %}
 {{ deck_head('Operate · Fuzz corpora', (rows|length) ~ ' corpus units hold ' ~ input_count ~ ' retained inputs.', 'Corpora are the exact inputs fuzzers replay — inventory, not findings. Shipped roots are read-only; the runtime overlay is writable.') }}
-{% set cards = [] %}{% for row in rows %}{% set ok = row.status in ['valid','ok','ready','available'] %}
-{% set _ = cards.append({'title': row.label, 'id': row.id, 'href': '/operate/corpora/' ~ row.id, 'kicker': row.root_kind ~ ' · ' ~ row.role,
-  'tier': 'back' if ok else 'warn', 'suit': '' if ok else '▲', 'tone': '' if ok else 'dk-g-warn', 'group': row.root_kind,
-  'facts': [('Inputs', row.input_count), ('Bytes', row.size_bytes)], 'tags': [row.status, 'writable overlay' if row.writable else 'shipped read-only'],
-  'search': (row.target_ids|join(' ')) ~ ' ' ~ (row.scenario_ids|join(' '))}) %}{% endfor %}
-{% set groups = [] %}{% for k in rows|map(attribute='root_kind')|unique %}{% set _ = groups.append((k, k)) %}{% endfor %}
-{{ deck_grid(cards, label='corpus units', groups=groups if groups|length > 1 else none, empty='No configured corpus roots are available.') }}
+{% set cards = [] %}{% set srcs = [] %}
+{% for row in rows %}{% set lab = row.label %}
+{% if lab.startswith('afl/') %}{% set src = 'AFL++' %}{% set shape = lab.split('/')[-1] %}{% set impl = '' %}
+{% elif lab.startswith('amaru-cargo-fuzz-') %}{% set src = 'cargo-fuzz' %}{% set shape = lab[17:] %}{% set impl = 'amaru' %}
+{% elif lab.startswith('cargo-fuzz/') %}{% set src = 'cargo-fuzz' %}{% set shape = lab.split('/')[-1] %}{% set impl = '' %}
+{% elif lab.startswith('cuddle-generated/') %}{% set src = 'cuddle · CDDL' %}{% set shape = lab.split('/')[-1] %}{% set impl = '' %}
+{% else %}{% set src = 'runtime overlay' if row.root_kind == 'runtime' else row.root_kind %}{% set shape = lab %}{% set impl = '' %}{% endif %}
+{% if src not in srcs %}{% set _ = srcs.append(src) %}{% endif %}
+{% set pkg = lab.split('/')[1] if lab.count('/') == 2 else '' %}
+{% set title = (deck_nice(shape, false)|trim)|replace(' stage1', ' · stage 1')|replace('Stage1', 'stage 1') %}
+{% set empty_unit = (row.input_count|int) == 0 %}
+{% set ok = row.status in ['valid','ok','ready','available','empty'] %}
+{% set b = row.size_bytes|int %}{% set kb = (b ~ ' B') if b < 1024 else (((b / 1024)|round(1)) ~ ' KiB') %}
+{% set _ = cards.append({'title': title, 'full_title': row.label ~ ' — ' ~ row.provenance, 'id': row.id, 'hide_id': true, 'href': '/operate/corpora/' ~ row.id,
+  'accent': impl, 'kicker': row.role ~ ((' · ' ~ pkg) if pkg else ''),
+  'tier': 'gap' if empty_unit else ('back' if ok else 'warn'), 'suit': '' if ok else '▲', 'tone': '' if ok else 'dk-g-warn',
+  'sub': ('no inputs yet' if empty_unit else (row.input_count ~ ' input' ~ ('' if row.input_count|int == 1 else 's') ~ ' · ' ~ kb)) ~ ((' · ' ~ row.duplicate_input_count ~ ' duplicate') if row.duplicate_input_count else ''),
+  'group': 'src:' ~ src|replace(' ', '_') ~ ' role:' ~ row.role,
+  'tags': ([impl] if impl else []) + [src] + (['writable overlay'] if row.writable else []) + row.grammar_ids,
+  'search': row.label ~ ' ' ~ (row.target_ids|join(' ')) ~ ' ' ~ (row.scenario_ids|join(' ')) ~ ' ' ~ row.provenance}) %}{% endfor %}
+{% set srcopts = [] %}{% for s in srcs %}{% set _ = srcopts.append((s|replace(' ', '_'), s)) %}{% endfor %}
+{% set roleopts = [] %}{% for r in rows|map(attribute='role')|unique|sort %}{% set _ = roleopts.append((r, r)) %}{% endfor %}
+{{ deck_grid(cards, label='corpus units', facets=[('src', 'Source', srcopts), ('role', 'Role', roleopts)], empty='No configured corpus roots are available.') }}
 {{ deck_more('Import, promote and deduplicate corpora in Advanced') }}
 {% endif %}
 <div class="adv-only">
