@@ -31,6 +31,20 @@ def _loads(line: str):
         return None
 
 
+def _norm_hash(value):
+    """Normalise a cardano-node hash field to a bare 64-hex string.
+
+    Real 11.1.2 logs render ``newtip`` as ``"<hash>@<slot>"`` and
+    ``headers[].hash`` as a JSON-quoted ``"\\"<hash>\\""``; ``tipBlockHash`` is
+    already bare. Strip any surrounding quotes and a trailing ``@slot``.
+    """
+    if value is None:
+        return None
+    text = str(value).strip().strip('"')
+    text = text.split("@", 1)[0]
+    return text or None
+
+
 def parse_cardano_header_events(lines: Iterable[str]) -> list[dict]:
     out: list[dict] = []
     for line in lines:
@@ -43,13 +57,16 @@ def parse_cardano_header_events(lines: Iterable[str]) -> list[dict]:
             continue
         if namespace.endswith("AddedToCurrentChain") or namespace.endswith("SwitchedToAFork"):
             block = data.get("block")
-            header_hash = data.get("newtip") or (block.get("hash") if isinstance(block, dict) else block)
+            block_hash = block.get("hash") if isinstance(block, dict) else block
+            header_hash = _norm_hash(
+                data.get("tipBlockHash") or data.get("newtip") or block_hash
+            )
             if header_hash:
                 out.append({"header_hash": str(header_hash), "verdict": "accepted",
                             "reason": None, "at": document.get("at")})
         elif "InvalidBlock" in namespace:
             block = data.get("block")
-            header_hash = block.get("hash") if isinstance(block, dict) else block
+            header_hash = _norm_hash(block.get("hash") if isinstance(block, dict) else block)
             match = _OCERT.search(json.dumps(data))
             if header_hash:
                 out.append({"header_hash": str(header_hash), "verdict": "rejected",

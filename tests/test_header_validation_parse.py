@@ -53,3 +53,14 @@ def test_cardano_accept_with_bare_string_block_does_not_crash():
 def test_cardano_non_dict_data_is_skipped():
     line = '{"at":"t","ns":"ChainDB.AddBlockEvent.AddedToCurrentChain","data":["x"]}'
     assert hv.parse_cardano_header_events([line]) == []
+
+
+def test_cardano_accepted_real_shape_strips_slot_and_quotes():
+    # Real cardano-node 11.1.2 AddedToCurrentChain: newtip carries "@slot",
+    # tipBlockHash is bare; the parser must return the bare 64-hex hash.
+    line = ('{"at":"2026-09-24T10:50:46Z","ns":"ChainDB.AddBlockEvent.AddedToCurrentChain",'
+            '"data":{"newtip":"644a813052a20a5fa9a1be3d12351da0881fe55986a9aa875492dba0ba10009f@111000",'
+            '"tipBlockHash":"644a813052a20a5fa9a1be3d12351da0881fe55986a9aa875492dba0ba10009f"}}')
+    events = hv.parse_cardano_header_events([line])
+    assert events == [{"header_hash": "644a813052a20a5fa9a1be3d12351da0881fe55986a9aa875492dba0ba10009f",
+                       "verdict": "accepted", "reason": None, "at": "2026-09-24T10:50:46Z"}]

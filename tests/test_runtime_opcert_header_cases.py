@@ -116,3 +116,42 @@ def test_evaluate_agree_fails_closed_on_missing_case():
     a = _rows(("counter-behind", "matched", "rejected"))
     b = _rows()
     assert ohc.evaluate_agree(a, b)["result"] == "fail"
+
+
+# --- Task 4 driver helpers: served_hash_by_case + build_result ---
+
+def test_served_hash_by_case_maps_only_served_lines():
+    lines = [
+        '{"kind":"opcert_case_started","case":"counter-jump","slots_per_kes":129600}',
+        '{"kind":"opcert_case_served","case":"counter-jump","mutation":"MutateCounterOver1","header_hash":"deadbeef","slot":42,"pool":"pool1","expected_verdict":"reject"}',
+        'not json',
+        '{"kind":"opcert_case_unreachable","case":"kes-before-window","reason":"no leader slot"}',
+    ]
+    served = ohc.served_hash_by_case(lines)
+    assert served == {"counter-jump": "deadbeef"}
+
+
+def test_served_hash_by_case_ignores_started_only():
+    lines = ['{"kind":"opcert_case_started","case":"valid-control"}']
+    assert ohc.served_hash_by_case(lines) == {}
+
+
+def test_build_result_all_matched_summary_pass():
+    cases = [_case("valid-control", "accept", None),
+             _case("counter-jump", "reject", "CounterOverIncrementedOCERT")]
+    served = {"valid-control": "h0", "counter-jump": "h1"}
+    observed = {"h0": {"verdict": "accepted", "reason": None},
+                "h1": {"verdict": "rejected", "reason": "CounterOverIncrementedOCERT"}}
+    result = ohc.build_result(cases, served, observed, "cardano-node", target_node="node1")
+    assert result["summary"]["result"] == "pass"
+    assert result["summary"]["all_matched"] is True
+    assert result["target"] == "cardano-node"
+    assert result["target_node"] == "node1"
+    assert {r["case"] for r in result["cases"]} == {"valid-control", "counter-jump"}
+
+
+def test_build_result_inconclusive_fails_closed():
+    cases = [_case("counter-jump", "reject", "CounterOverIncrementedOCERT")]
+    result = ohc.build_result(cases, {}, {}, "cardano-node")
+    assert result["summary"]["result"] == "fail"
+    assert result["summary"]["inconclusive"] == ["counter-jump"]
