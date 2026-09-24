@@ -41,17 +41,25 @@
 {% endif %}
 </div>
 {% if ui == "basic" %}
-{% set cards = [] %}
-{% for e in entries %}{% set vs = e.version_status %}{% set bad = vs in ['blocked', 'incompatible', 'invalid', 'error'] %}{% set _ = cards.append({
-  'title': e.label, 'id': e.id, 'href': e.url, 'kicker': e.node_type,
-  'tier': 'warn' if bad else 'back',
-  'suit': '♦' if vs == 'confirmed' else ('▲' if bad else '○'), 'tone': 'dk-g-pass' if vs == 'confirmed' else ('dk-g-warn' if bad else 'dk-g-other'),
-  'group': e.node_type,
-  'facts': [('Nodes', e.node_mix), ('Network', e.network_label), ('Peer sharing', 'enabled' if e.peer_sharing else 'disabled'), ('Version', vs ~ ' · ' ~ e.version_policy)],
-  'sub': e.version_summary, 'search': vs ~ ' ' ~ e.version_policy ~ ' ' ~ e.network_label}) %}{% endfor %}
-{% set groups = [] %}{% for t, n in types|dictsort %}{% set _ = groups.append((t, t ~ ' · ' ~ n)) %}{% endfor %}
+{% set cards = [] %}{% set nets = [] %}
+{% for e in entries %}{% set vs = e.version_status %}{% set bad = vs in ['blocked', 'incompatible', 'invalid', 'error'] %}
+{% set net = ('devnet ' ~ e.network_label) if (e.network_label|string).isdigit() else e.network_label %}
+{% if net not in nets %}{% set _ = nets.append(net) %}{% endif %}
+{% set vtags = [] %}{% for part in (e.version_summary or '').split(' + ') if part %}{% set bits = part.split(' ') %}{% if bits|length == 2 %}{% set _ = vtags.append(('amaru ' if bits[0] == 'amaru' else 'node ') ~ bits[1]) %}{% endif %}{% endfor %}
+{% set cn = e.node_count|int %}{% set an = (e.amaru_node_count or 0)|int %}
+{% set parts = [] %}{% if cn %}{% set _ = parts.append(cn ~ ' Cardano') %}{% endif %}{% if an %}{% set _ = parts.append(an ~ ' Amaru') %}{% endif %}
+{% set nodemix = parts|join(' + ') ~ (' node' if cn + an == 1 else ' nodes') if parts else e.node_mix %}
+{% set _ = cards.append({
+  'title': e.label, 'full_title': e.id ~ ' — ' ~ e.label, 'id': e.id, 'hide_id': true, 'href': e.url, 'accent': e.node_type,
+  'kicker': ('pinned' if e.version_policy == 'exact' else 'latest') ~ ('' if vs == 'confirmed' else (' · ▲ ' if bad else ' · ○ ') ~ vs),
+  'sub': nodemix,
+  'tier': 'warn' if bad else 'back', 'group': 'impl:' ~ e.node_type ~ ' net:' ~ net|replace(' ', '_') ~ (' ps:on' if e.peer_sharing else ' ps:off'),
+  'tags': [e.node_type, net] + vtags + (['peer sharing'] if e.peer_sharing else []),
+  'search': e.id ~ ' ' ~ vs ~ ' ' ~ e.version_policy ~ ' ' ~ (e.version_summary or '')}) %}{% endfor %}
+{% set impls = [] %}{% for t, n in types|dictsort %}{% set _ = impls.append((t, t ~ ' · ' ~ n)) %}{% endfor %}
+{% set netopts = [] %}{% for n in nets|sort %}{% set _ = netopts.append((n|replace(' ', '_'), n)) %}{% endfor %}
 <h2 class="b-h2 basic-only">Catalog · card backs (configuration, not proof)</h2>
-{{ deck_grid(cards, label='profiles', groups=groups, empty='No profiles found — scanned dwarf/profiles/, 0 profile.yaml files.') }}
+{{ deck_grid(cards, label='profiles', facets=[('impl', 'Implementation', impls), ('net', 'Network', netopts), ('ps', 'Peer sharing', [('on', 'on'), ('off', 'off')])], empty='No profiles found — scanned dwarf/profiles/, 0 profile.yaml files.') }}
 {% if entries %}
 <section class="basic-only dk dk-op-panel" aria-labelledby="dk-deploy-heading">
   <h2 class="b-h2" id="dk-deploy-heading">Preview a deployment</h2>
