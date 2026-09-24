@@ -161,6 +161,33 @@ boundary), KES period uniform in `[start, start + maxKESEvolutions]`.
 - Base case: `counter-plus-one` extended with the sampled in-window KES period.
 - Invariant: **ACCEPTED**. Any rejection ⇒ over-rejection finding (`mismatches`).
 
+> **Family B observability limitation — NON-SOAKABLE (excluded from the 3h
+> campaign).** Verified live on `profile-v` (2026-09-24): family B is served
+> correctly (the `counter-plus-one` header is delivered, `opcert_case_served`
+> recorded) but the accept is **never observable**, so every iteration is
+> fail-closed `inconclusive` (0 conclusive over repeated iterations). Root
+> cause is structural, not a driver bug: cardano-node (and Amaru) emit **no**
+> trace for a header that merely passes ChainSync validation — an accept only
+> surfaces once the **block** is adopted (`ValidCandidate` /
+> `AddedToCurrentChain`, or Amaru `tip.adopt`). To adopt the block the consumer
+> must BlockFetch its body, and the forger's on-demand BlockFetch responder
+> (`onDemandBlockFetchResponder`) fetches bodies from the **upstream real node
+> by point**. A `counter-plus-one` header is re-signed and therefore has a
+> **new hash absent upstream**, so the body-fetch misses (`"body miss;
+> skipping"`) and the isolated consumer can never adopt the block. Reject cases
+> stay observable because header validation fails in the ChainSync client and
+> raises a traced exception; `valid-control` stays observable because it is a
+> byte-identical **real** block whose body IS upstream. A synthetic valid
+> accept is thus not attributable in this isolated-consumer header-server soak.
+> Making B observable would require the forger to synthesize and serve a full
+> valid block body under the bumped opcert (a substantial forger change with
+> its own correctness risk); its marginal value is low because `valid-control`
+> in the deterministic opcert case set already proves "a valid header is
+> accepted". **Decision:** the two `opcert-soak-accept-boundary-{cardano,amaru}-*`
+> scenarios are kept on disk but tagged `non-soakable` / `campaign-excluded`
+> and carry a `promotion_blockers` note; they are **not** part of the 3h
+> campaign. Families A, C, D remain soakable.
+
 ### C `restart-persistence` (single-target)
 
 Rotate the pool to a random counter `N ∈ [1, k]` (reuses the opcert-rotation
@@ -226,14 +253,14 @@ An accepted invalid case or a cross-node disagreement classifies as
 budget so the primitive is never killed mid-drain). `evidence_intent:
 finding-validation`.
 
-| Scenario id | Family | Profile | Target(s) | Assertions |
-|---|---|---|---|---|
-| `opcert-soak-encoding-mixed-*` | A | `profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3` | `node1` + `amaru-relay-1` | invariant_holds, verdicts_agree, progress |
-| `opcert-soak-kes-period-mixed-*` | D | `profile-zb-…` | `node1` + `amaru-relay-1` | invariant_holds, verdicts_agree, progress |
-| `opcert-soak-accept-boundary-cardano-*` | B | `profile-v-cardano-measurement-nanoseconds-v2` | `node1` | invariant_holds, progress |
-| `opcert-soak-accept-boundary-amaru-*` | B | `profile-z-amaru-20260918-nanoseconds-v3` | `amaru-relay-1` | invariant_holds, progress |
-| `opcert-soak-restart-persistence-cardano-*` | C | `profile-v-…` | `node1` | invariant_holds, progress |
-| `opcert-soak-restart-persistence-amaru-*` | C | `profile-z-…` | `amaru-relay-1` | invariant_holds, progress |
+| Scenario id | Family | Profile | Target(s) | Assertions | Campaign status |
+|---|---|---|---|---|---|
+| `opcert-soak-encoding-mixed-*` | A | `profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3` | `node1` + `amaru-relay-1` | invariant_holds, verdicts_agree, progress | GO |
+| `opcert-soak-kes-period-mixed-*` | D | `profile-zb-…` | `node1` + `amaru-relay-1` | invariant_holds, verdicts_agree, progress | GO |
+| `opcert-soak-accept-boundary-cardano-*` | B | `profile-v-cardano-measurement-nanoseconds-v2` | `node1` | invariant_holds, progress | **EXCLUDED — non-soakable (Family B observability limitation)** |
+| `opcert-soak-accept-boundary-amaru-*` | B | `profile-z-amaru-20260918-nanoseconds-v3` | `amaru-relay-1` | invariant_holds, progress | **EXCLUDED — non-soakable (Family B observability limitation)** |
+| `opcert-soak-restart-persistence-cardano-*` | C | `profile-v-…` | `node1` | invariant_holds, progress | GO (adopt-gated) |
+| `opcert-soak-restart-persistence-amaru-*` | C | `profile-z-…` | `amaru-relay-1` | invariant_holds, progress | GO (adopt-gated) |
 
 ## Stop conditions
 

@@ -11,7 +11,12 @@
     "soak",
     "accept-boundary",
     "amaru",
-    "finding-validation"
+    "finding-validation",
+    "non-soakable",
+    "campaign-excluded"
+  ],
+  "promotion_blockers": [
+    "EXCLUDED from the 3h opcert-soak campaign: family B (accept-boundary) is non-soakable in the isolated-consumer header-server setup. An accepted valid header emits no adoption trace unless its full block body is served, and the forger's on-demand BlockFetch responder fetches bodies from the upstream real node by point -- a re-signed counter+1 header has a hash absent upstream, so the body-fetch misses and the isolated amaru consumer never adopts the block (no tip.adopt). Rejects trace via the header-validation error; valid-control traces because it is a real block. See docs/plans/2026-09-24-opcert-derived-soaks-design.md (Family B observability limitation). valid-control in the deterministic opcert set already proves 'valid header accepted', so B's marginal value is low. Do not run this cell in the campaign."
   ],
   "evidence_intent": "finding-validation",
   "target": {
