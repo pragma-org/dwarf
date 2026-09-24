@@ -335,6 +335,18 @@ body[data-ui="basic"] input:not([type="checkbox"]):not([type="radio"]), body[dat
 body[data-ui="basic"] .dk-seg button[aria-pressed="true"], body[data-ui="basic"] .dk-seg button[aria-pressed="true"]:focus,
 body[data-ui="basic"] .dk-seg button[aria-pressed="true"]:hover { background:var(--dk-gold) !important; color:#1a1224 !important; }
 
+/* tighter catalog cards: no forced height, content-sized rows */
+.dk-grid { align-items:start; }
+.dk-grid .dk-card { min-height:0; }
+.dk-grid .dk-face__body { padding:14px 16px; gap:4px; }
+.dk-grid .dk-tags { margin-top:6px; padding-top:0; }
+.dk-grid .dk-kicker:empty, .dk-grid .dk-kicker:has(span:empty + span:empty) { display:none; }
+/* implementation ring: the band outside the inner gold frame takes the implementation colour */
+.dk-grid .dk-accent-amaru .dk-face { background:rgba(150,95,235,.42); }
+.dk-grid .dk-accent-cardano-node .dk-face { background:rgba(60,120,235,.42); }
+.dk-grid .dk-accent-mixed .dk-face { background:linear-gradient(135deg,rgba(150,95,235,.5),rgba(60,120,235,.5)); }
+.dk-grid [class*="dk-accent-"] .dk-face::after { background:linear-gradient(160deg,var(--dk-back),var(--dk-back2)); border-radius:9px; }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }

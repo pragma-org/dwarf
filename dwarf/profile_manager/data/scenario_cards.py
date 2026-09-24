@@ -86,7 +86,9 @@ def scenario_card(entry: dict) -> dict:
     sub = ""
     if len(short) > 60 and " — " in short:
         short, sub = (part.strip() for part in short.split(" — ", 1))
-        sub = sub[0].upper() + sub[1:] if sub else ""
+        # Keep only a subtitle that explains something; short fragments such as
+        # "Reference responder" stay in the full title (tooltip / detail page).
+        sub = (sub[0].upper() + sub[1:]) if len(sub) >= 40 else ""
 
     implementation = "mixed" if "mixed" in lowered else (impl if impl and impl != "unknown" else "")
     return {

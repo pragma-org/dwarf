@@ -20,7 +20,7 @@
 {% macro deck_card(c) -%}
 {% set tier = c.tier or 'back' %}
 {% set tag = 'a' if c.href else 'div' %}
-<{{ tag }} class="dk-card dk-item {{ 'dk-holo' if tier == 'holo' else ('dk-gap' if tier == 'gap' else ('dk-warnface' if tier == 'warn' else ('dk-back' if tier == 'back' else ''))) }}"
+<{{ tag }} class="dk-card dk-item{% if c.accent %} dk-accent-{{ c.accent }}{% endif %} {{ 'dk-holo' if tier == 'holo' else ('dk-gap' if tier == 'gap' else ('dk-warnface' if tier == 'warn' else ('dk-back' if tier == 'back' else ''))) }}"
   {% if c.href %}href="{{ c.href }}"{% endif %} data-dk-item data-group="{{ c.group or '' }}"
   data-search="{{ ((c.title or '') ~ ' ' ~ (c.id or '') ~ ' ' ~ (c.sub or '') ~ ' ' ~ (c.search or '') ~ ' ' ~ (c.tags or [])|join(' '))|lower }}"
   {% if tier == 'holo' %}data-dk-seed="{{ c.id or c.title }}"{% endif %}{% if c.full_title %} title="{{ c.full_title }}"{% endif %}>

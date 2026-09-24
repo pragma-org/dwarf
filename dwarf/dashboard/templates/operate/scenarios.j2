@@ -104,7 +104,7 @@ async function runCov(){
 {% set cards = [] %}
 {% for row in rows %}{% set k = row.card %}
 {% set _ = cards.append({'title': k.title, 'full_title': k.full_title, 'id': row.id, 'hide_id': true, 'href': row.url, 'sub': k.subtitle,
-  'kicker': k.flags|join(' · '), 'tier': 'back', 'group': 'impl:' ~ (k.implementation or 'unknown') ~ ' rt:' ~ (k.runtime or 'unknown'),
+  'kicker': k.flags|join(' · '), 'tier': 'back', 'accent': k.implementation, 'group': 'impl:' ~ (k.implementation or 'unknown') ~ ' rt:' ~ (k.runtime or 'unknown'),
   'tags': ([k.implementation] if k.implementation else []) + ([k.runtime] if k.runtime else []) + k.versions,
   'search': k.full_title ~ ' ' ~ row.family ~ ' ' ~ k.flags|join(' ')}) %}{% endfor %}
 {% set impls = [] %}{% for v in ['amaru', 'cardano-node', 'mixed'] %}{% if rows|selectattr('card.implementation', 'equalto', v)|list %}{% set _ = impls.append((v, v)) %}{% endif %}{% endfor %}
