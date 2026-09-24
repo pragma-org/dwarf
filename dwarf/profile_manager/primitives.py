@@ -13948,6 +13948,68 @@ class OpcertVerdictsAgree(AssertionPrimitive):
             note="the two nodes disagreed on at least one opcert header case")
 
 
+class RuntimeOpcertHeaderSoak(LoadPrimitive):
+    """Run a randomized differential opcert-header SOAK: generate a fresh
+    seed-deterministic case each iteration, serve it through the opcert forger,
+    and evaluate a per-family invariant until a wall-clock budget is spent."""
+
+    def _build_command(self, *, runtime_root, output_dir):
+        command = [
+            str(self.params.get("python_bin", "python3")),
+            str(DWARF_ROOT / "scripts" / "runtime_opcert_header_soak.py"),
+            "--runtime-root", str(runtime_root),
+            "--family", str(self.params["family"]),
+            "--seed", str(int(self.params["seed"])),
+            "--output-dir", str(output_dir),
+            "--time-budget-seconds", str(int(self.params.get("time_budget_seconds", 10800))),
+        ]
+        if self.params.get("target_nodes"):
+            command += ["--target-nodes", ",".join(str(n) for n in self.params["target_nodes"])]
+        if self.params.get("target_node"):
+            command += ["--target-node", str(self.params["target_node"])]
+        if self.params.get("peer_bin"):
+            command += ["--peer-bin", str(self.params["peer_bin"])]
+        if self.params.get("per_iteration_timeout"):
+            command += ["--per-iteration-timeout", str(int(self.params["per_iteration_timeout"]))]
+        if self.params.get("restart_k"):
+            command += ["--restart-k", str(int(self.params["restart_k"]))]
+        return command
+
+    def run(self, handle, rng):
+        import os
+        from profile_manager.profiles import remote_base
+
+        profile_id = self.params.get("profile_id")
+        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        output_dir = _resolve_output_path(handle, self.params.get("output_dir", "outputs/opcert-soak"))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        command = self._build_command(runtime_root=runtime_root, output_dir=output_dir)
+        handle.log(phase="load", primitive="runtime_opcert_header_soak",
+                   level="info", event="started",
+                   payload={"profile_id": profile_id, "runtime_root": str(runtime_root),
+                            "family": self.params.get("family"), "seed": self.params.get("seed"),
+                            "command": command})
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value)
+        proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True, text=True,
+                              timeout=float(self.params.get("timeout_seconds", 11700)),
+                              check=False, env=env)
+        report_path = output_dir / "result.json"
+        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
+        outcome = "ok" if proc.returncode == int(self.params.get("expect_exit", 0)) else "unexpected_exit"
+        if isinstance(report, dict) and report:
+            handle.log(phase="load", primitive="runtime_opcert_header_soak",
+                       level="info", event="opcert_soak_summary",
+                       payload={k: report.get(k) for k in
+                                ("family", "seed", "iterations", "conclusive", "inconclusive",
+                                 "pass", "counters", "duration_seconds")})
+        handle.log(phase="load", primitive="runtime_opcert_header_soak",
+                   level="info" if outcome == "ok" else "error", event="completed",
+                   payload={"outcome": outcome, "exit_code": proc.returncode,
+                            "report": report, "output_dir": str(output_dir),
+                            "stdout": (proc.stdout or "")[-4096:], "stderr": (proc.stderr or "")[-4096:]})
+
+
 class RuntimeVerifyExactTarget(LoadPrimitive):
     """Fail closed unless the deployed measurement target matches every frozen field."""
 
