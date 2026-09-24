@@ -86,3 +86,13 @@ Stop and report if: the forger cannot produce a validly-signed header the honest
 
 Encoding, state and generated case families; phase-2 mesh injection; patched-mode header-validation taps (scaffolded only); the transaction-validation foundation and surfaces B–D.
 
+
+## Addendum (2026-09-24): live-devnet reachability + aged/pre-rotated profile
+
+Task 3 proved 5/6 opcert rules reject live on cardano-node 11.1.2 (cold-key `InvalidSignatureOCERT`, counter-jump `CounterOverIncrementedOCERT`, counter-behind `CounterTooSmallOCERT` after rotation, kes-before-window `KESBeforeStartOCERT`, hot-key-mismatch `InvalidKesSignatureOCERT`); valid-control accepted across the KES-period rollover (fix: step the on-disk period-0 KES key forward with `unsoundPureUpdateKES` before signing).
+
+Two rules are not reachable on a fresh standard-genesis devnet and get a SEPARATE profile + scenario (user-approved 2026-09-24), not forced onto profile-z/v/zb:
+- `counter-behind` (`CounterTooSmallOCERT`) needs the pool's on-chain opcert counter >= 1. Reach it by a legitimate opcert rotation of a devnet pool (sign a counter-1 opcert with the pool cold key, install, let it forge counter-1 blocks) then inject the counter-0 header. This also demonstrates the counter-plus-one ACCEPT boundary.
+- `kes-after-window` (`KESAfterEndOCERT`) needs the chain aged >= maxKESEvolutions KES periods. On standard genesis (slotsPerKESPeriod=129600) that is ~90 days wall-clock. The aged profile uses a CUSTOM genesis with a small `slotsPerKESPeriod` and `maxKESEvolutions` so the window is crossed in minutes.
+
+New deliverable: profile `profile-opcert-aged-kes-*` (custom short-KES genesis, pre-rotated pool) + scenario `opcert-header-validation-boundary-*` exercising `counter-behind` and `kes-after-window`. The standard-profile scenarios (Task 8) cover valid-control + the other four rules on profile-z/v/zb. profile-v is redeployed fresh (user-approved) before the Task 8 runs to reset the pool1 rotation left from Task 3.

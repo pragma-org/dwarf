@@ -64,3 +64,20 @@ def test_cardano_accepted_real_shape_strips_slot_and_quotes():
     events = hv.parse_cardano_header_events([line])
     assert events == [{"header_hash": "644a813052a20a5fa9a1be3d12351da0881fe55986a9aa875492dba0ba10009f",
                        "verdict": "accepted", "reason": None, "at": "2026-09-24T10:50:46Z"}]
+
+
+def test_cardano_chainsync_headererror_ocert_rejection():
+    # Praos header rejections surface in the ChainSync client, not ChainDB.
+    line = ('{"at":"2026-09-23T00:00:05Z","ns":"ChainSync.Client.Exception",'
+            '"data":{"kind":"HeaderError","error":"HeaderError (BlockPoint (SlotNo 210310) '
+            '(blockPointHash = f90ac6570000000000000000000000000000000000000000000000000000abcd)) '
+            '(unwrapValidationErr = CounterTooSmallOCERT 1 0)"}}')
+    events = hv.parse_cardano_header_events([line])
+    assert events == [{
+        "header_hash": "f90ac6570000000000000000000000000000000000000000000000000000abcd",
+        "verdict": "rejected", "reason": "CounterTooSmallOCERT", "at": "2026-09-23T00:00:05Z"}]
+
+def test_cardano_chainsync_headererror_without_hash_is_skipped():
+    line = ('{"at":"t","ns":"ChainSync.Client.Exception",'
+            '"data":{"kind":"HeaderError","error":"HeaderError something with no hash"}}')
+    assert hv.parse_cardano_header_events([line]) == []
