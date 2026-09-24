@@ -1,0 +1,77 @@
+{
+  "spec_version": "v1",
+  "id": "opcert-soak-kes-period-mixed-1112-amaru-20260918",
+  "title": "Opcert KES-period soak (3h differential) \u2014 mixed Cardano-node 11.1.2 + Amaru 10.11.20260918",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "opcert",
+    "header-validation",
+    "soak",
+    "kes-period-differential",
+    "differential",
+    "mixed",
+    "finding-validation"
+  ],
+  "evidence_intent": "finding-validation",
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260918",
+    "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+  },
+  "runtime": "devnet",
+  "profile": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0x50AC0D24",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "amaru",
+      "version": "10.11.20260918",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "mode": "patched",
+      "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+      "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+      "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_opcert_header_soak",
+      "profile_id": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+      "family": "kes-period-differential",
+      "seed": 887654321,
+      "target_nodes": [
+        "node1",
+        "amaru-relay-1"
+      ],
+      "time_budget_seconds": 10800,
+      "output_dir": "outputs/opcert-soak",
+      "timeout_seconds": 11700,
+      "expect_exit": 0
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {
+      "primitive": "runtime_target_health_and_progress",
+      "report_path": "outputs/opcert-soak/result.json",
+      "progress_reference": "load-start"
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "opcert_soak_invariant_holds",
+      "report_path": "outputs/opcert-soak/result.json"
+    },
+    {
+      "primitive": "opcert_soak_verdicts_agree",
+      "report_path": "outputs/opcert-soak/result.json"
+    },
+    {
+      "primitive": "target_progress_continues"
+    }
+  ],
+  "teardown": []
+}
