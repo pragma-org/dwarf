@@ -55,7 +55,7 @@ def test_render_time_join_reconciles_current_authoritative_sources():
 
     assert len(views["threats"]) == 36
     assert len(views["risks"]) == 35
-    assert sum(row["scenario_count"] for row in views["scenario_families"]) == 284
+    assert sum(row["scenario_count"] for row in views["scenario_families"]) == 286
     assert len({row["id"] for row in views["scenario_families"]}) == len(
         views["scenario_families"]
     )

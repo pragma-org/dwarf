@@ -902,6 +902,15 @@
       "supports": ["cardano-node", "amaru"],
       "version": "0.1.0"
     },
+    "opcert_verdicts_agree": {
+      "class": "OpcertVerdictsAgree",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/opcert_verdicts_agree.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["cardano-node", "amaru"],
+      "version": "0.1.0"
+    },
     "overlay_slot_forging_rejected": {
       "class": "OverlaySlotForgingRejected",
       "family": "assertion",

@@ -1,8 +1,8 @@
 # DWARF Primitives Reference
 
-The complete catalogue of the **243** primitives a scenario can reference — every *strategy* (what a scenario can do) and every *oracle* (what it can assert). Generated from `primitives/registry.json`; purposes/pass-conditions are curated. A scenario may only reference names listed here. Many primitives operate on CBOR (Concise Binary Object Representation), Cardano's binary wire and ledger encoding. The **Antithesis** column marks the primitives the DWARF&rarr;Antithesis generator can carry onto the Antithesis backend (CBOR-only by design &mdash; `cbor_fuzz_*` strategies, the `runtime_aflpp_campaign` coverage surface, and the assertions mapped to native SDK checks); everything else runs on the local backend only.
+The complete catalogue of the **244** primitives a scenario can reference — every *strategy* (what a scenario can do) and every *oracle* (what it can assert). Generated from `primitives/registry.json`; purposes/pass-conditions are curated. A scenario may only reference names listed here. Many primitives operate on CBOR (Concise Binary Object Representation), Cardano's binary wire and ledger encoding. The **Antithesis** column marks the primitives the DWARF&rarr;Antithesis generator can carry onto the Antithesis backend (CBOR-only by design &mdash; `cbor_fuzz_*` strategies, the `runtime_aflpp_campaign` coverage surface, and the assertions mapped to native SDK checks); everything else runs on the local backend only.
 
-> Coverage: 211/243 primitives carry a curated description (87%). Any without one is still listed with its registry metadata. Regenerate with `scripts/gen_reference.py`.
+> Coverage: 212/244 primitives carry a curated description (87%). Any without one is still listed with its registry metadata. Regenerate with `scripts/gen_reference.py`.
 
 The browser catalog at `/operate/primitives` is the source-backed inventory for registry metadata, parameter schemas, executor provenance, scenario references, and deterministic source export. `/learn/primitives` documents the code-change lifecycle. A primitive is executable code; it is not a corpus, generation grammar, target, profile, or scenario.
 
@@ -169,7 +169,7 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_mempool_relay_pressure` | Apply mempool-relay pressure to probe budget and memory ceiling. | dev | smoke · cn | — |
 | `runtime_mux_ingress_overrun` | Overrun a mux bearer's ingress to test per-bearer scoping. | dev | smoke · cn | — |
 | `runtime_network_impairment` | Impair the link between two nodes (latency/jitter/loss/partition). | dev | full · cn | — |
-| `runtime_opcert_header_cases` | Serves one mutated operational-certificate header per case (each preceded by a valid control) to an isolated copy of the target, records the peer ground truth and the target observed verdict/reason, and writes result.json joined per case (matched \| mismatch \| inconclusive). | dev | full · cn | — |
+| `runtime_opcert_header_cases` | Serves one mutated operational-certificate header per case (each preceded by a valid control) to an isolated copy of the target, records the peer ground truth and the target observed verdict/reason, and writes result.json joined per case (matched \| mismatch \| inconclusive). | dev | full · cn+amaru | — |
 | `runtime_overlay_slot_forging` | Attempt overlay-slot forging to test rejection of the forged block. | dev | smoke · cn | — |
 | `runtime_partition_rejoin` | Partition then rejoin nodes to test convergence/recovery. | dev | full · cn | — |
 | `runtime_peersharing_fault` | Inject a PeerSharing fault (adversarial address exchange). | dev | smoke · cn | — |
@@ -263,7 +263,7 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_txsubmission_window_pressure` | Push the TxSubmission txid inflight window past its negotiated bound. | dev | smoke · cn | — |
 
 
-## Assertion primitives — oracles (94)
+## Assertion primitives — oracles (95)
 
 What a scenario *proves*. Each is evaluated after load; the **pass condition** is the expected outcome. Thresholds shown are the tunable params.
 
@@ -386,7 +386,8 @@ What a scenario *proves*. Each is evaluated after load; the **pass condition** i
 | `invalid_protocol_cases_contained` | *(invalid protocol cases contained)* | dev | full · cn+amaru | — |
 | `minimum_adopted_block_range_observed` | *(minimum adopted block range observed)* | dev | full · cn+amaru | — |
 | `no_target_fatal_signal` | *(no target fatal signal)* | dev | full · cn+amaru | — |
-| `opcert_case_verdicts_match_expected` | PASS iff every served opcert header case reached its declared verdict (accept for the valid control; reject with the exact expected OCERT reason for each broken rule); any wrong-reason rejection, accepted bad case, unserved case, or unobserved verdict fails closed. | dev | full · cn | — |
+| `opcert_case_verdicts_match_expected` | PASS iff every served opcert header case reached its declared verdict (accept for the valid control; reject with the exact expected OCERT reason for each broken rule); any wrong-reason rejection, accepted bad case, unserved case, or unobserved verdict fails closed. | dev | full · cn+amaru | — |
+| `opcert_verdicts_agree` | PASS iff both nodes reached the same verdict on every opcert header case (fail-closed if a case is missing on either side). | dev | not yet exercised | — |
 | `restart_readiness_complete` | *(restart readiness complete)* | dev | full · cn+amaru | — |
 | `simple_transfers_observed` | *(simple transfers observed)* | dev | full · cn+amaru | — |
 | `target_progress_continues` | *(target progress continues)* | dev | full · cn+amaru | — |
