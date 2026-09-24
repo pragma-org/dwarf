@@ -187,13 +187,25 @@ def _close_consumers(consumers):
             det._docker("volume", "rm", "-f", vol, check=False)
 
 
-def _serve_case_spec(spec, ctx, *, peer_bin, per_iteration_timeout, output_dir, iteration):
+def _serve_case_spec(spec, ctx, *, peer_bin, per_iteration_timeout, output_dir, iteration,
+                     adopt_hash=None, adopt_impl=None):
     """Serve one generated spec through the forger and read the verdict.
 
     Writes ``case-spec-<n>.json``, runs ``serve-case --case-spec`` against the
     node's consumer, and returns ``(served_hash | None, observed | None)``.
     Fail-closed: no served hash or no observed verdict within the timeout ⇒
     ``(served_hash_or_None, None)``.
+
+    Adopt gate (family C): when ``adopt_hash`` is given it is the header hash of
+    the just-forged counter-N producer block. The loop then also watches the
+    isolated consumer for adoption of that block (its hash observed ``accepted``
+    in the consumer's own log — the same by-hash confirmation the deterministic
+    driver uses). With the gate on, the serve does not conclude on an *accepted*
+    replay until the consumer has actually adopted counter-N (so a stale-view
+    accept never terminates early); a *rejected* replay is conclusive
+    immediately. The return is a 3-tuple ``(served_hash, observed, adopted)``.
+    Gate off (``adopt_hash is None``) keeps the 2-tuple contract every other
+    caller relies on.
     """
     work = Path(output_dir) / "harness"
     work.mkdir(parents=True, exist_ok=True)
@@ -219,6 +231,8 @@ def _serve_case_spec(spec, ctx, *, peer_bin, per_iteration_timeout, output_dir, 
     proc = subprocess.Popen(peer_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     served_hash = None
     observed = None
+    adopted = False
+    adopt_key = str(adopt_hash).lower() if adopt_hash else None
     deadline = time.time() + per_iteration_timeout
     try:
         while time.time() < deadline:
@@ -227,18 +241,35 @@ def _serve_case_spec(spec, ctx, *, peer_bin, per_iteration_timeout, output_dir, 
                 served = det.served_hash_by_case(evidence.read_text(encoding="utf-8").splitlines())
                 if spec["base_case"] in served:
                     served_hash = served[spec["base_case"]]
-            if served_hash is not None:
+            if served_hash is not None or adopt_key is not None:
                 events = det._read_consumer_events(ctx["name"], since, ctx["implementation"])
                 vmap = det.verdict_by_hash(events)
-                if served_hash in vmap:
+                if served_hash is not None and served_hash in vmap:
                     observed = vmap[served_hash]
-                    break
+                if adopt_key is not None and not adopted:
+                    # Confirm the isolated consumer actually adopted the rotated
+                    # counter-N block (its hash observed accepted in the
+                    # consumer's own AddedToCurrentChain / tip.adopt trace).
+                    ev = vmap.get(adopt_key) or vmap.get(str(adopt_hash))
+                    if ev is not None and ev.get("verdict") == "accepted":
+                        adopted = True
+                if observed is not None:
+                    if adopt_key is None:
+                        break
+                    # Gate on: an accepted replay is only conclusive once the
+                    # consumer has adopted counter-N; a rejected replay is
+                    # conclusive immediately (a stale consumer would accept, not
+                    # reject, so a reject already implies it knows counter-N).
+                    if adopted or observed.get("verdict") != "accepted":
+                        break
     finally:
         proc.terminate()
         try:
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+    if adopt_hash is not None:
+        return served_hash, observed, adopted
     return served_hash, observed
 
 
@@ -260,6 +291,19 @@ def _serve_one_node(spec, *, node, consumers=None, peer_bin=None,
     return _serve_case_spec(spec, ctx, peer_bin=peer_bin,
                             per_iteration_timeout=per_iteration_timeout,
                             output_dir=output_dir, iteration=iteration)
+
+
+def _serve_one_gated(spec, *, consumer=None, consumers=None, node=None, adopt_hash=None,
+                     adopt_impl=None, peer_bin=None, per_iteration_timeout=240,
+                     output_dir=None, iteration=0, **_kw):
+    """Family-C serve with the consumer-adopt gate armed. Returns the 3-tuple
+    ``(served_hash, observed, adopted)`` (see ``_serve_case_spec``). This is the
+    seam family-C substrate tests patch."""
+    ctx = consumer if isinstance(consumer, dict) else (consumers or {}).get(node)
+    return _serve_case_spec(spec, ctx, peer_bin=peer_bin,
+                            per_iteration_timeout=per_iteration_timeout,
+                            output_dir=output_dir, iteration=iteration,
+                            adopt_hash=adopt_hash, adopt_impl=adopt_impl)
 
 
 def _amaru_control_producer_tip(project, magic):
@@ -320,9 +364,13 @@ def _node_tip(runtime, node_id):
 # the producer, waits for it to forge a block under the new counter, then serves
 # a replay header (base case ``counter-behind`` serves recorded-1) to the target's
 # isolated consumer. REJECT (counter-too-small) is the pass; accept-after-restart
-# is the finding. A cycle that never completes the rotation/restart/forge is
-# fail-closed inconclusive (never a pass). The original opcert is backed up and
-# restored, leaving the devnet consistent.
+# is the finding — but ONLY once the consumer has adopted the rotated counter-N
+# block (the adopt gate): an accept from a consumer still on its stale
+# pre-rotation view is a false positive, scored inconclusive, never a finding. A
+# cycle that never completes the rotation/restart/forge, or whose consumer never
+# adopts counter-N before the replay accept is read, is fail-closed inconclusive
+# (never a pass). The original opcert is backed up and restored, leaving the
+# devnet consistent.
 # --------------------------------------------------------------------------- #
 
 _OPCERT_FILES = ("opcert.cert", "opcert.counter")
@@ -408,15 +456,22 @@ def _restore_opcert(rot):
         pass
 
 
-def _producer_tip_slot(rot):
+def _producer_tip(rot):
+    """Return ``(block_height, slot, block_hash)`` for the producer that forges
+    the chain the target validates, or ``(None, None, None)``."""
     proc = det._docker("exec", rot["producer"], "cardano-cli", "query", "tip",
                        "--testnet-magic", str(rot["magic"]),
                        "--socket-path", rot["socket_in"], check=False)
     try:
         body = json.loads(proc.stdout)
-        return body.get("block"), body.get("slot")
+        return body.get("block"), body.get("slot"), body.get("hash")
     except (ValueError, TypeError):
-        return None, None
+        return None, None, None
+
+
+def _producer_tip_slot(rot):
+    height, slot, _hash = _producer_tip(rot)
+    return height, slot
 
 
 def _restart_producer(rot):
@@ -425,13 +480,17 @@ def _restart_producer(rot):
 
 
 def _wait_for_forge(rot, baseline_height, deadline):
+    """Wait until the producer forges a block past ``baseline_height`` under the
+    freshly rotated counter. Returns ``(forged_height, forged_hash)`` (the hash
+    is what the isolated consumer's adopt gate later confirms), or
+    ``(None, None)`` if no block was forged before the deadline."""
     while time.time() < deadline:
-        height, _slot = _producer_tip_slot(rot)
+        height, _slot, block_hash = _producer_tip(rot)
         if isinstance(height, int) and not isinstance(height, bool):
             if baseline_height is None or height > baseline_height:
-                return height
+                return height, block_hash
         time.sleep(5)
-    return None
+    return None, None
 
 
 def _rotate_producer(rot):
@@ -467,27 +526,47 @@ def _rotate_producer(rot):
 def _family_c_iteration(rot, spec, consumer_ctx, node, implementation, *, peer_bin,
                         per_iteration_timeout, output_dir, iteration,
                         restart_forge_timeout=300):
-    """One real rotate→restart→forge→replay cycle. Fail-closed inconclusive if
-    the cycle does not complete the rotation, restart, and a forged block."""
+    """One real rotate→restart→forge→replay cycle with the consumer-adopt gate.
+
+    Fail-closed inconclusive if the cycle does not complete the rotation,
+    restart, and a forged block — and also if the isolated consumer never adopts
+    the rotated counter-N block before the replay verdict is read (an accept
+    from that stale view is not a finding). Only an accept the consumer reaches
+    *after* adopting counter-N is scored as accept-after-restart."""
     spec = dict(spec)
     spec["params"] = dict(spec.get("params") or {})
     baseline_height, _slot = _producer_tip_slot(rot)
     achieved = _rotate_producer(rot)
-    forged = None
+    forged_height = None
+    forged_hash = None
     if achieved is not None:
         _restart_producer(rot)
-        forged = _wait_for_forge(rot, baseline_height, time.time() + restart_forge_timeout)
+        forged_height, forged_hash = _wait_for_forge(
+            rot, baseline_height, time.time() + restart_forge_timeout)
     spec["params"]["rotated_to_counter_actual"] = achieved
-    cycle = {"rotated_to_counter": achieved, "forged_height": forged,
-             "baseline_height": baseline_height}
-    if achieved is None or forged is None:
+    cycle = {"rotated_to_counter": achieved, "forged_height": forged_height,
+             "forged_hash": forged_hash, "baseline_height": baseline_height,
+             "consumer_adopted_counter_n": None}
+    if achieved is None or forged_height is None:
         return {"outcome": "inconclusive", "spec": spec, "served_hash": None,
                 "observed_verdict": None, "observed_reason": None, "cycle": cycle}
-    served_hash, observed = _serve_one(
-        spec, consumer=consumer_ctx, node=node, peer_bin=peer_bin,
+    served_hash, observed, adopted = _serve_one_gated(
+        spec, consumer=consumer_ctx, node=node, adopt_hash=forged_hash,
+        adopt_impl=implementation, peer_bin=peer_bin,
         per_iteration_timeout=per_iteration_timeout, output_dir=output_dir,
         iteration=iteration)
-    outcome = R.classify_iteration(spec, served_hash, observed, implementation)
+    cycle["consumer_adopted_counter_n"] = adopted
+    # Adopt gate: fail-closed. A served-and-observed *accept* is only a real
+    # accept-after-restart finding once the consumer has adopted counter-N; an
+    # accept from a consumer still on its stale pre-rotation view is
+    # inconclusive (never a pass, never a finding). Reject / never-observed keep
+    # the deterministic driver's semantics.
+    if served_hash is None or observed is None:
+        outcome = "inconclusive"
+    elif observed.get("verdict") == "accepted" and not adopted:
+        outcome = "inconclusive"
+    else:
+        outcome = R.classify_iteration(spec, served_hash, observed, implementation)
     return {"outcome": outcome, "spec": spec, "served_hash": served_hash,
             "observed_verdict": (observed or {}).get("verdict"),
             "observed_reason": (observed or {}).get("reason"), "cycle": cycle}

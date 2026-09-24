@@ -99,6 +99,55 @@ def test_serve_case_spec_terminates_the_forger_process(monkeypatch, tmp_path):
     assert proc.terminated is True
 
 
+def _gate_proc(monkeypatch):
+    class FakeProc:
+        def terminate(self):
+            self.terminated = True
+        def wait(self, timeout=None):
+            return 0
+        def kill(self):
+            pass
+    proc = FakeProc()
+    monkeypatch.setattr(soak.subprocess, "Popen", lambda *a, **k: proc)
+    monkeypatch.setattr(soak.det, "_now_docker_ts", lambda: "T")
+    monkeypatch.setattr(soak.det, "served_hash_by_case", lambda lines: {"counter-behind": "hh"})
+    monkeypatch.setattr(soak.det, "_read_consumer_events", lambda *a, **k: [])
+    return proc
+
+
+def _gate_ctx():
+    return {"name": "c", "listen_port": 1, "upstream": "1.2.3.4:3001",
+            "kes_skey": "k", "cold_skey": "c", "slots_per_kes": 100, "max_kes_evo": 15,
+            "implementation": "cardano-node"}
+
+
+def test_serve_case_spec_adopt_gate_confirms_adoption(monkeypatch, tmp_path):
+    """Fix 1: with the gate armed, the served replay hash AND the counter-N block
+    hash both observed accepted -> returns (served, observed, adopted=True)."""
+    _gate_proc(monkeypatch)
+    monkeypatch.setattr(soak.det, "verdict_by_hash",
+                        lambda ev: {"hh": {"verdict": "accepted", "reason": None},
+                                    "ff": {"verdict": "accepted", "reason": None}})
+    spec = {"family": "restart-persistence", "base_case": "counter-behind", "iteration": 0}
+    served, observed, adopted = soak._serve_case_spec(
+        spec, _gate_ctx(), peer_bin="/bin/true", per_iteration_timeout=5,
+        output_dir=str(tmp_path), iteration=0, adopt_hash="ff", adopt_impl="cardano-node")
+    assert served == "hh" and observed["verdict"] == "accepted" and adopted is True
+
+
+def test_serve_case_spec_adopt_gate_stale_returns_not_adopted(monkeypatch, tmp_path):
+    """Fix 1: replay accepted but the counter-N block hash never observed on the
+    consumer -> returns adopted=False (the driver then scores inconclusive)."""
+    _gate_proc(monkeypatch)
+    monkeypatch.setattr(soak.det, "verdict_by_hash",
+                        lambda ev: {"hh": {"verdict": "accepted", "reason": None}})
+    spec = {"family": "restart-persistence", "base_case": "counter-behind", "iteration": 0}
+    served, observed, adopted = soak._serve_case_spec(
+        spec, _gate_ctx(), peer_bin="/bin/true", per_iteration_timeout=4,
+        output_dir=str(tmp_path), iteration=0, adopt_hash="ff", adopt_impl="cardano-node")
+    assert served == "hh" and observed["verdict"] == "accepted" and adopted is False
+
+
 def test_dispatch_picks_amaru_control_when_lifecycle(monkeypatch):
     """Fix 1: a runtime with the amaru-control lifecycle / actual_topology takes
     the amaru-control consumer path, not the haskell_nodes path."""
@@ -177,17 +226,18 @@ def test_family_c_rotate_restart_replay_and_finding(monkeypatch, tmp_path):
         events["restart"] += 1
 
     def fake_forge(rot, baseline, deadline):
-        return (baseline or 0) + 3  # a block was forged under the new counter
+        return ((baseline or 0) + 3, "forgedhash")  # a counter-N block was forged
 
     def fake_serve(spec, **k):
         events["serve"] += 1
-        # Amaru/cardano ACCEPTS a replay below the rotated counter -> the finding.
-        return ("h%d" % spec["iteration"], {"verdict": "accepted", "reason": None})
+        # Amaru/cardano ACCEPTS a replay below the rotated counter AND the
+        # consumer HAS adopted counter-N (adopt gate satisfied) -> real finding.
+        return ("h%d" % spec["iteration"], {"verdict": "accepted", "reason": None}, True)
 
     monkeypatch.setattr(soak, "_rotate_producer", fake_rotate)
     monkeypatch.setattr(soak, "_restart_producer", fake_restart)
     monkeypatch.setattr(soak, "_wait_for_forge", fake_forge)
-    monkeypatch.setattr(soak, "_serve_one", fake_serve)
+    monkeypatch.setattr(soak, "_serve_one_gated", fake_serve)
 
     out = tmp_path / "o"
     r = soak.run_opcert_header_soak(str(tmp_path), "restart-persistence", 4242, str(out),
@@ -214,13 +264,64 @@ def test_family_c_incomplete_cycle_is_inconclusive(monkeypatch, tmp_path):
     monkeypatch.setattr(soak, "_producer_tip_slot", lambda rot: (100, 5000))
     monkeypatch.setattr(soak, "_rotate_producer", lambda rot: 2)
     monkeypatch.setattr(soak, "_restart_producer", lambda rot: None)
-    monkeypatch.setattr(soak, "_wait_for_forge", lambda rot, b, d: None)  # never forged
+    monkeypatch.setattr(soak, "_wait_for_forge", lambda rot, b, d: (None, None))  # never forged
     served = {"n": 0}
-    monkeypatch.setattr(soak, "_serve_one", lambda spec, **k: served.__setitem__("n", served["n"] + 1) or ("h", None))
+    monkeypatch.setattr(soak, "_serve_one_gated",
+                        lambda spec, **k: served.__setitem__("n", served["n"] + 1) or ("h", None, False))
     r = soak.run_opcert_header_soak(str(tmp_path), "restart-persistence", 7, str(tmp_path / "o"),
                                     target_node="node1", time_budget_seconds=3,
                                     clock=FakeClock(budget=3))
     assert r["conclusive"] == 0 and r["pass"] is False and served["n"] == 0
+
+
+def test_family_c_adopt_gate_stale_view_is_inconclusive(monkeypatch, tmp_path):
+    """Fix 1 (adopt gate): an iteration whose consumer has NOT yet adopted the
+    rotated counter-N block accepts the replay from its stale view — this must be
+    classified inconclusive (fail-closed), never accept-after-restart."""
+    _patch_substrate(monkeypatch)
+    monkeypatch.setattr(soak, "_load_runtime_root",
+                        lambda root: ({"compose_project": "p", "network_magic": 42}, "cardano-node"))
+    monkeypatch.setattr(soak, "_rotation_context", lambda runtime, node: {"mode": "hostdir"})
+    monkeypatch.setattr(soak, "_backup_opcert", lambda rot: None)
+    monkeypatch.setattr(soak, "_restore_opcert", lambda rot: None)
+    monkeypatch.setattr(soak, "_producer_tip_slot", lambda rot: (100, 5000))
+    monkeypatch.setattr(soak, "_rotate_producer", lambda rot: 2)
+    monkeypatch.setattr(soak, "_restart_producer", lambda rot: None)
+    monkeypatch.setattr(soak, "_wait_for_forge", lambda rot, b, d: ((b or 0) + 3, "forgedhash"))
+    # Replay ACCEPTED but consumer never adopted counter-N (adopted=False).
+    monkeypatch.setattr(soak, "_serve_one_gated",
+                        lambda spec, **k: ("h%d" % spec["iteration"],
+                                           {"verdict": "accepted", "reason": None}, False))
+    r = soak.run_opcert_header_soak(str(tmp_path), "restart-persistence", 99, str(tmp_path / "o"),
+                                    target_node="node1", time_budget_seconds=3,
+                                    clock=FakeClock(budget=3))
+    # No mismatch finding, no pass: every accept-without-adoption is inconclusive.
+    assert r["counters"]["mismatch"] == 0
+    assert r["counters"]["inconclusive"] >= 1
+    assert r["conclusive"] == 0 and r["pass"] is False
+
+
+def test_family_c_adopt_gate_reject_is_conclusive_pass(monkeypatch, tmp_path):
+    """A replay REJECTED (counter-too-small) is conclusive regardless of the
+    adopt flag — a stale consumer would accept, not reject, so a reject already
+    implies it knows counter-N; reason-matched reject is a pass."""
+    _patch_substrate(monkeypatch)
+    monkeypatch.setattr(soak, "_load_runtime_root",
+                        lambda root: ({"compose_project": "p", "network_magic": 42}, "cardano-node"))
+    monkeypatch.setattr(soak, "_rotation_context", lambda runtime, node: {"mode": "hostdir"})
+    monkeypatch.setattr(soak, "_backup_opcert", lambda rot: None)
+    monkeypatch.setattr(soak, "_restore_opcert", lambda rot: None)
+    monkeypatch.setattr(soak, "_producer_tip_slot", lambda rot: (100, 5000))
+    monkeypatch.setattr(soak, "_rotate_producer", lambda rot: 2)
+    monkeypatch.setattr(soak, "_restart_producer", lambda rot: None)
+    monkeypatch.setattr(soak, "_wait_for_forge", lambda rot, b, d: ((b or 0) + 3, "forgedhash"))
+    monkeypatch.setattr(soak, "_serve_one_gated",
+                        lambda spec, **k: ("h%d" % spec["iteration"],
+                                           {"verdict": "rejected", "reason": "CounterTooSmallOCERT"}, False))
+    r = soak.run_opcert_header_soak(str(tmp_path), "restart-persistence", 11, str(tmp_path / "o"),
+                                    target_node="node1", time_budget_seconds=3,
+                                    clock=FakeClock(budget=3))
+    assert r["counters"]["pass"] >= 1 and r["counters"]["mismatch"] == 0 and r["pass"] is True
 
 
 def test_result_written_with_seed_and_duration(monkeypatch, tmp_path):
