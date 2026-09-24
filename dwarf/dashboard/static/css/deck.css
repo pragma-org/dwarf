@@ -357,6 +357,16 @@ body[data-ui="basic"] .dk-seg button[aria-pressed="true"]:hover { background:var
 .dk-tags span[data-tag="cargo-fuzz"] { color:#ffe3d1; background:rgba(220,120,60,.22); border-color:rgba(240,150,100,.6); }
 .dk-tags span[data-tag="cuddle · cddl"] { color:#d6fff3; background:rgba(40,170,140,.22); border-color:rgba(80,210,175,.6); }
 
+/* measurement collection pills */
+.dk-tags span[data-tag="stock telemetry"] { color:#d6fff3; background:rgba(40,170,140,.22); border-color:rgba(80,210,175,.6); }
+.dk-tags span[data-tag="patched node"], .dk-tags span[data-tag="patched"] { color:#ffe3d1; background:rgba(220,120,60,.22); border-color:rgba(240,150,100,.6); }
+.dk-tags span[data-tag="external"] { color:#e6ecff; background:rgba(120,140,200,.22); border-color:rgba(160,180,235,.6); }
+.dk-tags span[data-tag="compiler coverage"], .dk-tags span[data-tag="coverage"] { color:#fff1cf; background:rgba(210,160,60,.22); border-color:rgba(230,190,110,.6); }
+.dk-tags span[data-tag="stock"] { color:#d6fff3; background:rgba(40,170,140,.22); border-color:rgba(80,210,175,.6); }
+
+.dk-tags span[data-tag$=" overhead"] { color:var(--dk-muted); background:transparent; border-color:var(--dk-line2); }
+.dk-tags span[data-tag="high overhead"] { color:#ffd9b0; border-color:rgba(255,178,92,.55); }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }
