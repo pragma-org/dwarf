@@ -1,0 +1,53 @@
+{
+  "target_nodes": [
+    "amaru-relay-1",
+    "node1"
+  ],
+  "reason_mismatch_count": 3,
+  "combos": [
+    {
+      "combo": [
+        "cold-key-unauthorized",
+        "counter-jump"
+      ],
+      "count": 1,
+      "reported": {
+        "node1": "cold-key-unauthorized",
+        "amaru-relay-1": "counter-too-large"
+      }
+    },
+    {
+      "combo": [
+        "counter-jump",
+        "kes-before-window"
+      ],
+      "count": 2,
+      "reported": {
+        "node1": "kes-before-window",
+        "amaru-relay-1": "counter-too-large"
+      }
+    }
+  ],
+  "precedence_edges": {
+    "amaru-relay-1": [
+      [
+        "counter-too-large",
+        "cold-key-unauthorized"
+      ],
+      [
+        "counter-too-large",
+        "kes-before-window"
+      ]
+    ],
+    "node1": [
+      [
+        "cold-key-unauthorized",
+        "counter-too-large"
+      ],
+      [
+        "kes-before-window",
+        "counter-too-large"
+      ]
+    ]
+  }
+}

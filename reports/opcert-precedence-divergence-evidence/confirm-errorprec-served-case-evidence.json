@@ -1,0 +1,68 @@
+[
+  {
+    "node": "node1",
+    "served_index": 0,
+    "header_hash": "9d24a90e4a19ef1ad4228de4d55f9a2bbb48078f76c73e165d2429ce447c3d47",
+    "slot": 4633,
+    "mutation": "MutateErrorPrecedence",
+    "rules": [
+      "cold-key-unauthorized",
+      "counter-jump"
+    ]
+  },
+  {
+    "node": "node1",
+    "served_index": 5,
+    "header_hash": "6106752a70fe6c0601a161105f733d0a9ee6ea7fcfb01ada675afe79418d5f54",
+    "slot": 4875,
+    "mutation": "MutateErrorPrecedence",
+    "rules": [
+      "counter-jump",
+      "kes-before-window"
+    ]
+  },
+  {
+    "node": "node1",
+    "served_index": 6,
+    "header_hash": "45b594b6bbbeea42e4b99d5a8cd7b97bfccd6d6360cc2a4a6be5733d20e0175e",
+    "slot": 4901,
+    "mutation": "MutateErrorPrecedence",
+    "rules": [
+      "counter-jump",
+      "kes-before-window"
+    ]
+  },
+  {
+    "node": "amaru-relay-1",
+    "served_index": 0,
+    "header_hash": "d1964e892785eb1f365a3addd4971e54c841392cb9d6cede6b98034926100501",
+    "slot": 4591,
+    "mutation": "MutateErrorPrecedence",
+    "rules": [
+      "cold-key-unauthorized",
+      "counter-jump"
+    ]
+  },
+  {
+    "node": "amaru-relay-1",
+    "served_index": 5,
+    "header_hash": "0e0ca1e33f94c61a74c65ceb1968045803b0a88e20e583a698f9c071e12d1478",
+    "slot": 4759,
+    "mutation": "MutateErrorPrecedence",
+    "rules": [
+      "counter-jump",
+      "kes-before-window"
+    ]
+  },
+  {
+    "node": "amaru-relay-1",
+    "served_index": 6,
+    "header_hash": "bf0d0c17ab367e3c89c2fa5e7b95a7540adbb4fe4a264d41861a43e99cb9874e",
+    "slot": 4795,
+    "mutation": "MutateErrorPrecedence",
+    "rules": [
+      "counter-jump",
+      "kes-before-window"
+    ]
+  }
+]

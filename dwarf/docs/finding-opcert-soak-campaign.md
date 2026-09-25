@@ -12,11 +12,15 @@ added on top of the original encoding / kes-period / restart-persistence soaks.
 
 ## Headline
 
-**Zero cross-implementation cardano-node-vs-Amaru divergences across every tested opcert
-surface.** Across the retained mixed differential soaks the two implementations agreed on
-the accept/reject verdict for every conclusive attempt (645 conclusive mixed attempts,
-0 disagreements, 0 reason mismatches), and every cardano-only rejection family fired the
-expected `*OCERT` reason.
+**Zero cross-implementation cardano-node-vs-Amaru VERDICT (consensus) divergences across every
+tested opcert surface**, and one reported-reason (validation-order) divergence. Across the
+retained mixed differential soaks the two implementations agreed on the accept/reject verdict for
+every conclusive attempt (0 verdict disagreements), and every cardano-only rejection family fired
+the expected `*OCERT` reason. The single divergence is behavioural/diagnostic, not a consensus
+risk: when a header breaks **two** opcert rules at once, cardano-node and Amaru both reject but
+report **different rules** because they validate opcert rules in a different order — found and
+reproduced by the error-precedence family (see
+`dwarf/docs/finding-opcert-precedence-divergence.md`).
 
 ## Original soak families
 
@@ -95,7 +99,13 @@ evolved to the wrong step for its slot's KES period (`kes_evolution_delta`).
 | **total mixed** | **645** | **0** | **0** |
 
 No mixed soak produced a single case where cardano-node accepted a header Amaru rejected (or
-vice-versa). The cardano-only families (cross-pool, kes-evolution over-evolution,
+vice-versa). The subsequently-added **error-precedence** differential family (family #4,
+`dwarf/docs/finding-opcert-precedence-divergence.md`) likewise produced **0 verdict
+disagreements** — but it is the one family that surfaced a **reported-reason (validation-order)
+divergence**: on a header that breaks two opcert rules at once, the two nodes reject on a
+different rule (Amaru checks counter-monotonicity first, cardano-node last). That is the
+campaign's single divergence, and it is diagnostic/behavioural, not a consensus split (both
+nodes reject). The cardano-only families (cross-pool, kes-evolution over-evolution,
 restart-persistence) each rejected / passed exactly as expected with the correct `*OCERT`
 reason; they are cardano-only because Amaru cannot be aged via a custom short-KES genesis
 (see the aging sub-finding in `dwarf/docs/finding-opcert-header-validation.md`).

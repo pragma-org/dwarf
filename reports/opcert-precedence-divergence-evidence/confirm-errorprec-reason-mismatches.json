@@ -1,0 +1,109 @@
+[
+  {
+    "canonical_a": "cold-key-unauthorized",
+    "canonical_b": "counter-too-large",
+    "case_id": "error-precedence-000000",
+    "iteration": 0,
+    "node_a": "node1",
+    "node_b": "amaru-relay-1",
+    "reason_a": "InvalidSignatureOCERT",
+    "reason_b": "SequenceNumberTooFarAhead",
+    "reasons": {
+      "amaru-relay-1": "SequenceNumberTooFarAhead",
+      "node1": "InvalidSignatureOCERT"
+    },
+    "spec": {
+      "base_case": "error-precedence",
+      "case_id": "error-precedence-000000",
+      "expected_reason": null,
+      "expected_verdict": "reject",
+      "family": "error-precedence",
+      "iteration": 0,
+      "params": {
+        "byte_seed": 1305024425,
+        "counter_jump": 250,
+        "rules": [
+          "cold-key-unauthorized",
+          "counter-jump"
+        ]
+      },
+      "seed": 20260925
+    },
+    "verdicts": {
+      "amaru-relay-1": "rejected",
+      "node1": "rejected"
+    }
+  },
+  {
+    "canonical_a": "kes-before-window",
+    "canonical_b": "counter-too-large",
+    "case_id": "error-precedence-000005",
+    "iteration": 5,
+    "node_a": "node1",
+    "node_b": "amaru-relay-1",
+    "reason_a": "KESBeforeStartOCERT",
+    "reason_b": "SequenceNumberTooFarAhead",
+    "reasons": {
+      "amaru-relay-1": "SequenceNumberTooFarAhead",
+      "node1": "KESBeforeStartOCERT"
+    },
+    "spec": {
+      "base_case": "error-precedence",
+      "case_id": "error-precedence-000005",
+      "expected_reason": null,
+      "expected_verdict": "reject",
+      "family": "error-precedence",
+      "iteration": 5,
+      "params": {
+        "byte_seed": 377607595,
+        "counter_jump": 13,
+        "kes_periods_ahead": 2,
+        "rules": [
+          "counter-jump",
+          "kes-before-window"
+        ]
+      },
+      "seed": 20260925
+    },
+    "verdicts": {
+      "amaru-relay-1": "rejected",
+      "node1": "rejected"
+    }
+  },
+  {
+    "canonical_a": "kes-before-window",
+    "canonical_b": "counter-too-large",
+    "case_id": "error-precedence-000006",
+    "iteration": 6,
+    "node_a": "node1",
+    "node_b": "amaru-relay-1",
+    "reason_a": "KESBeforeStartOCERT",
+    "reason_b": "SequenceNumberTooFarAhead",
+    "reasons": {
+      "amaru-relay-1": "SequenceNumberTooFarAhead",
+      "node1": "KESBeforeStartOCERT"
+    },
+    "spec": {
+      "base_case": "error-precedence",
+      "case_id": "error-precedence-000006",
+      "expected_reason": null,
+      "expected_verdict": "reject",
+      "family": "error-precedence",
+      "iteration": 6,
+      "params": {
+        "byte_seed": 1780108950,
+        "counter_jump": 13,
+        "kes_periods_ahead": 4,
+        "rules": [
+          "counter-jump",
+          "kes-before-window"
+        ]
+      },
+      "seed": 20260925
+    },
+    "verdicts": {
+      "amaru-relay-1": "rejected",
+      "node1": "rejected"
+    }
+  }
+]
