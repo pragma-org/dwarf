@@ -100,3 +100,54 @@ def scenario_card(entry: dict) -> dict:
         "versions": [_version_tag(v) for v in versions],
         "flags": flags,
     }
+
+
+def _humanize(stem: str) -> str:
+    words = [w for w in re.split(r"[-_]", stem) if w]
+    acr = {"cbor": "CBOR", "n2n": "N2N", "kes": "KES", "plutus": "Plutus", "amaru": "Amaru", "cardano": "Cardano",
+           "opcert": "OpCert", "vm": "VM", "v2": "v2", "v3": "v3", "zb": "zb", "za": "za"}
+    text = " ".join(acr.get(w, w) for w in words)
+    return text[:1].upper() + text[1:]
+
+
+def run_card(scenario_id: str | None, run_id: str, cards_by_id: dict) -> dict:
+    """Card facts for a run/bundle: title by what ran, implementation, runtime and version pills.
+
+    Uses the scenario's short card title when the scenario is in the catalog;
+    otherwise names profile deploys, teardowns and client examples plainly.
+    """
+    sid = scenario_id or ""
+    card = cards_by_id.get(sid) if sid else None
+    if card:
+        return {"title": card["title"], "full_title": card["full_title"], "implementation": card["implementation"],
+                "runtime": card["runtime"], "versions": card["versions"]}
+    stem = sid or (run_id.split("-20")[0] if "-20" in run_id else run_id)
+    probe = f"{run_id} {stem}".lower()
+
+    # Ids compress versions ("1112" = cardano-node 11.1.2, "20260918" = Amaru 10.11.20260918)
+    # and repeat implementation words; lift both into pills.
+    versions = []
+    kept = []
+    for token in stem.split("-"):
+        if re.fullmatch(r"1\d{3}", token):
+            versions.append(f"node {token[:2]}.{token[2]}.{token[3]}")
+        elif re.fullmatch(r"20\d{6}", token):
+            versions.append(f"amaru 10.11.{token}")
+        elif re.fullmatch(r"\d+\.\d+\.\d+", token):
+            versions.append(_version_tag(token))
+        elif token.lower() not in ("mixed", "amaru", "cardano", "haskell", "node"):
+            kept.append(token)
+    versions = list(dict.fromkeys(versions))
+
+    if stem == "remove":
+        title = "Teardown · remove deployed profile"
+    elif stem.startswith("profile-"):
+        code = stem.split("-")[1] if stem.count("-") >= 1 else ""
+        rest = "-".join(t for t in kept[2:]) if len(kept) > 2 else ""
+        title = f"Profile {code} deploy" + (f" · {_humanize(rest)}" if rest else "")
+    elif stem.startswith("client-example-"):
+        title = "Client example · " + _humanize("-".join(kept[2:]))
+    else:
+        title = _humanize("-".join(kept)) or _humanize(stem)
+    impl = "mixed" if "mixed" in probe else ("amaru" if "amaru" in probe else ("cardano-node" if ("cardano" in probe or "haskell" in probe) else ""))
+    return {"title": title, "full_title": sid or run_id, "implementation": impl, "runtime": "", "versions": versions}

@@ -421,6 +421,16 @@ body[data-ui="basic"] .scenario-phase__list:empty { display:none; }
 
 .dk-actions { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 18px; }
 
+.dk-tags span[data-tag="thin pass"] { color:#ffd9b0; background:rgba(255,178,92,.14); border-color:rgba(255,178,92,.55); }
+
+/* accent ring also for warning cards: fill the inner frame so only the band is tinted */
+.dk-grid .dk-warnface[class*="dk-accent-"] .dk-face::after, .dk-detail .dk-warnface[class*="dk-accent-"] .dk-face::after {
+  content:""; position:absolute; inset:7px; border-radius:9px; pointer-events:none; border:1px solid rgba(255,178,92,.35);
+  background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)); }
+
+/* runs: the table and server filter bar keep their exact markup (visual-contract tests); Basic shows run cards instead */
+body[data-ui="basic"] .runs-table-wrap, body[data-ui="basic"] .runs-filter-bar { display:none !important; }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }
