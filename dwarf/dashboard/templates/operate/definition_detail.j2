@@ -3,7 +3,7 @@
 {% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
 {% if ui == "basic" %}
 {% set facts = [] %}{% for f in (summary_fields or [])[:6] %}{% set _ = facts.append((f.key, f.value)) %}{% endfor %}
-{% call deck_detail(catalog_label, title, id=definition_id, tier='back', facts=facts, stamp='DEFINED', back=(catalog|replace('-', ' ')|capitalize, catalog_url)) %}
+{% call deck_detail(catalog_label, title, id=definition_id, tier='back', facts=facts, stamp='DEFINED', back=(catalog|replace('-', ' ')|capitalize, catalog_url), rows=deck_facts.rows if deck_facts else none, flags=deck_facts.flags if deck_facts else none, accent=deck_facts.accent if deck_facts else '') %}
   <div class="dk-panel">
     <h3>What this card is</h3>
     <p style="margin:0">A {{ catalog_label|lower }} definition from <code>{{ source_path }}</code>. A definition says what can run — it is not evidence that it ran. Open Runs for results.</p>

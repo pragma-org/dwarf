@@ -74,11 +74,11 @@
 {%- endmacro %}
 
 {#- Detail page hero: one card (left) + caller() panel (right). -#}
-{% macro deck_detail(kicker, title, id='', tier='back', facts=[], suit='', tone='', stamp='', sub='', back=none) -%}
+{% macro deck_detail(kicker, title, id='', tier='back', facts=[], suit='', tone='', stamp='', sub='', back=none, rows=none, flags=none, accent='') -%}
 <section class="basic-only dk" aria-label="{{ title }}">
   {% if back %}<p class="dk-crumb"><a href="{{ back[1] }}">← {{ back[0] }}</a></p>{% endif %}
   <div class="dk-detail">
-    <div class="dk-card {{ 'dk-holo' if tier == 'holo' else ('dk-gap' if tier == 'gap' else ('dk-warnface' if tier == 'warn' else ('dk-back' if tier == 'back' else ''))) }}"{% if tier == 'holo' %} data-dk-seed="{{ id or title }}"{% endif %}>
+    <div class="dk-card{% if accent %} dk-accent-{{ accent }}{% endif %} {{ 'dk-holo' if tier == 'holo' else ('dk-gap' if tier == 'gap' else ('dk-warnface' if tier == 'warn' else ('dk-back' if tier == 'back' else ''))) }}"{% if tier == 'holo' %} data-dk-seed="{{ id or title }}"{% endif %}>
       <div class="dk-face dk-face--front">
         {% if tier == 'holo' %}<div class="dk-foil"></div><div class="dk-glare"></div>{% endif %}
         <div class="dk-face__body">
@@ -87,7 +87,16 @@
           {% if id and id != title %}<code class="dk-item__id">{{ id }}</code>{% endif %}
           {% if sub %}<p class="dk-sub">{{ sub }}</p>{% endif %}
           {% if stamp %}<span class="dk-stamp dk-item__stamp">{{ stamp }}</span>{% endif %}
-          {% if facts %}<dl class="dk-facts dk-facts--detail">{% for k, v in facts %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
+          {% if flags %}<div class="dk-flags">{% for label, on in flags %}<span class="dk-flag {{ 'dk-flag--on' if on else 'dk-flag--off' }}" title="{{ label }}: {{ 'yes' if on else 'no' }}">{{ '●' if on else '○' }} {{ label }}</span>{% endfor %}</div>{% endif %}
+          {% if rows %}
+          <dl class="dk-factlist">
+            {% for r in rows %}<div><dt>{{ r.label }}</dt><dd>
+              {% if r.kind == 'pills' %}<span class="dk-tags">{% for p in r.pills %}<span data-tag="{{ p|lower }}">{{ p }}</span>{% endfor %}</span>
+              {% elif r.kind == 'versions' %}<span class="dk-tags">{% for v in r.versions %}<span data-tag="{{ v.pill|lower }}"{% if v.detail %} title="{{ v.detail }}"{% endif %}>{{ v.pill }}</span>{% endfor %}</span>
+              {% else %}{{ r.value }}{% endif %}
+            </dd></div>{% endfor %}
+          </dl>
+          {% elif facts %}<dl class="dk-facts dk-facts--detail">{% for k, v in facts %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
         </div>
       </div>
     </div>

@@ -7,6 +7,7 @@ from profile_manager.data.catalog_definitions import (
     catalog_label,
     load_definition,
 )
+from profile_manager.data.definition_facts import definition_facts
 from profile_manager.templating import render
 
 
@@ -53,6 +54,7 @@ def render_operate_definition(catalog: str, definition_id: str) -> str:
         source_path=str(record.path),
         raw_source=record.source.decode("utf-8", errors="replace"),
         summary_fields=_summary_fields(catalog, record.data),
+        deck_facts=definition_facts(catalog, record.data),
         catalog_url=f"/operate/{catalog}",
         edit_url=f"/operate/{catalog}/{definition_id}/edit",
         download_url=f"/api/catalog/{catalog}/{definition_id}/download",
