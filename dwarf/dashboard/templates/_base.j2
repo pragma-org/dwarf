@@ -12,13 +12,13 @@
 <link rel="stylesheet" href="/static/css/themes.css">
 <link rel="stylesheet" href="/static/css/base.css">
 <link rel="stylesheet" href="/static/css/bento-noir.css">
-<link rel="stylesheet" href="/static/css/basic.css">
-<link rel="stylesheet" href="/static/css/deck.css">
-<link rel="stylesheet" href="/static/css/deck-op-a.css">
-<link rel="stylesheet" href="/static/css/deck-op-b.css">
-<link rel="stylesheet" href="/static/css/deck-op-c.css">
-<link rel="stylesheet" href="/static/css/deck-op-d.css">
-<link rel="stylesheet" href="/static/css/deck-op-e.css">
+<link rel="stylesheet" href="/static/css/basic.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/css/deck.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/css/deck-op-a.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/css/deck-op-b.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/css/deck-op-c.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/css/deck-op-d.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/css/deck-op-e.css?v={{ asset_v }}">
 </head>
 <body data-density="{{ density }}"{% if layout %} data-layout="{{ layout }}"{% endif %} data-ui="{{ ui|default('bento') }}">
 {# Slice 50 — sparse drifting motes layer. Each dot is decorative,
@@ -74,7 +74,7 @@
 {% block main %}{% endblock %}
 </main>
 <script type="module" src="/static/js/responsive-tables.js"></script>
-<script src="/static/js/basic-reduce.js" defer></script>
-<script src="/static/js/deck.js" defer></script>
+<script src="/static/js/basic-reduce.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/deck.js?v={{ asset_v }}" defer></script>
 </body>
 </html>

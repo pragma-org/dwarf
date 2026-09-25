@@ -22,6 +22,11 @@ env = Environment(
 )
 env.globals["data_layer"] = data_layer
 
+# Cache-busting token for /static assets: changes with every image build, so a
+# deploy never leaves browsers on stale CSS/JS (static files carry no cache headers).
+import os as _os
+env.globals["asset_v"] = (_os.environ.get("DWARF_SOURCE_REVISION") or "dev")[:12]
+
 
 import contextvars as _ctxvars
 

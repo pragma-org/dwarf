@@ -1,4 +1,24 @@
 <section aria-labelledby="measurement-report-heading" class="measurement-report" data-measurement-report>
+  {% if ui == "basic" %}
+  {% set mm = run.measurements %}{% set ti = mm.target_identity or {} %}
+  <div class="dk-mrep__head basic-only">
+    <h2 class="dk-mrep__title">Measurements</h2>
+    <div class="dk-tags dk-mrep__counts">
+      <span data-tag="measured">{{ mm.summary.available_count or 0 }} measured</span>
+      <span data-tag="unavailable">{{ mm.summary.unavailable_count or 0 }} unavailable</span>
+      <span data-tag="collectors">{{ mm.collector_counts.finalized or 0 }} collectors</span>
+      {% if mm.collector_counts.error %}<span data-tag="collector errors">▲ {{ mm.collector_counts.error }} collector error{{ '' if mm.collector_counts.error == 1 else 's' }}</span>{% endif %}
+    </div>
+    <div class="dk-tags dk-mrep__identity">
+      {% if mm.profile_id %}<span data-tag="profile">{{ mm.profile_id }}</span>{% endif %}
+      {% if ti.implementation %}<span data-tag="{{ ti.implementation }}">{{ ti.implementation }}</span>{% endif %}
+      {% if ti.version %}<span data-tag="{{ ('amaru ' if ti.implementation == 'amaru' else 'node ') ~ ti.version }}" title="source {{ ti.source_revision or 'unknown' }}">{{ ('amaru ' if ti.implementation == 'amaru' else 'node ') ~ ti.version }}</span>{% endif %}
+      {% if ti.mode %}<span data-tag="{{ ti.mode }}">{{ ti.mode }}</span>{% endif %}
+      {% if mm.duration_seconds is not none %}<span data-tag="duration">{{ (mm.duration_seconds / 60)|round(1) }} min</span>{% endif %}
+    </div>
+    <p class="dk-mrep__note">Observed collection for this exact target and workload — not a benchmark, and not the pass/fail verdict.</p>
+  </div>
+  {% endif %}
   <header>
     <span class="eyebrow">Independent taps</span>
     <h2 id="measurement-report-heading">Measurement report</h2>
@@ -89,7 +109,7 @@
 
   <div class="measurement-groups">
     {% for group in run.measurements.presentation.groups %}
-    <details class="measurement-group" data-measurement-group="{{ group.id }}">
+    <details class="measurement-group" data-measurement-group="{{ group.id }}"{% if ui == "basic" and group.id != 'unavailable' %} open{% endif %}>
       <summary class="measurement-group__summary" aria-labelledby="measurement-group-{{ group.id }}">
         <div>
           <span class="eyebrow">{{ group.count }} concept{{ '' if group.count == 1 else 's' }}</span>

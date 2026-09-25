@@ -10,8 +10,8 @@
 <link rel="stylesheet" href="/static/css/tokens.css">
 <link rel="stylesheet" href="/static/css/themes.css">
 <link rel="stylesheet" href="/static/css/base.css">
-<link rel="stylesheet" href="/static/css/basic.css">
-<link rel="stylesheet" href="/static/css/deck.css">
+<link rel="stylesheet" href="/static/css/basic.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/css/deck.css?v={{ asset_v }}">
 </head>
 <body class="product-landing" data-page="landing" data-density="reading" data-ui="{{ ui|default('bento') }}">
 {% if ui == 'basic' %}
@@ -130,7 +130,7 @@
   </div>
   <p class="dk-landing__foot"><a href="https://gainsec.com" target="_blank" rel="noreferrer">Created by Jon &quot;GainSec&quot; Gaines</a> · <a href="https://github.com/pragma-org/dwarf" target="_blank" rel="noreferrer">Open Source</a></p>
 </main>
-<script src="/static/js/deck.js" defer></script>
+<script src="/static/js/deck.js?v={{ asset_v }}" defer></script>
 {% else %}
 <div class="substrate-motes" aria-hidden="true">
   {% for _ in range(18) %}<span class="substrate-motes__dot"></span>{% endfor %}

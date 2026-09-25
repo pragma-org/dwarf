@@ -1906,6 +1906,8 @@ def dispatch_static_request(path):
     """
     if not path.startswith("/static/"):
         return None
+    # Ignore the query string (templates append ?v=<revision> for cache busting).
+    path = path.split("?", 1)[0]
     subpath = path[len("/static/"):]
     if not subpath or ".." in subpath or subpath.startswith("/"):
         return (400, "text/plain; charset=utf-8", b"invalid path\n")
