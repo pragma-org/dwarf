@@ -49,3 +49,29 @@ def test_soak_command_build(tmp_path):
     assert "--family" in cmd and "encoding-form" in cmd
     assert "--time-budget-seconds" in cmd and "10800" in cmd
     assert "--target-nodes" in cmd
+
+
+def test_soak_schema_accepts_kes_evolution_aged():
+    v = _validator()
+    ok = {"family": "kes-evolution", "seed": 5, "profile_id": "p",
+          "target_node": "node1", "output_dir": "o", "kes_evolution_aged": True}
+    assert list(v.iter_errors(ok)) == []
+    bad = {"family": "kes-evolution", "seed": 5, "profile_id": "p",
+           "target_node": "node1", "output_dir": "o", "kes_evolution_aged": "yes"}
+    assert list(v.iter_errors(bad)) != []
+
+
+def test_soak_command_emits_kes_evolution_aged_flag(tmp_path):
+    from profile_manager.primitives import RuntimeOpcertHeaderSoak
+    aged = RuntimeOpcertHeaderSoak(params={
+        "family": "kes-evolution", "seed": 5, "profile_id": "p",
+        "target_node": "node1", "output_dir": "outputs/soak",
+        "kes_evolution_aged": True})
+    cmd = aged._build_command(runtime_root=str(tmp_path), output_dir=tmp_path / "o")
+    assert "--kes-evolution-aged" in cmd
+    # default (fresh) omits the flag -> over-evolution only
+    fresh = RuntimeOpcertHeaderSoak(params={
+        "family": "kes-evolution", "seed": 5, "profile_id": "p",
+        "target_node": "node1", "output_dir": "outputs/soak"})
+    cmd2 = fresh._build_command(runtime_root=str(tmp_path), output_dir=tmp_path / "o")
+    assert "--kes-evolution-aged" not in cmd2

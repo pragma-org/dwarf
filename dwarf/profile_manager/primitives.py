@@ -13973,6 +13973,8 @@ class RuntimeOpcertHeaderSoak(LoadPrimitive):
             command += ["--per-iteration-timeout", str(int(self.params["per_iteration_timeout"]))]
         if self.params.get("restart_k"):
             command += ["--restart-k", str(int(self.params["restart_k"]))]
+        if self.params.get("kes_evolution_aged"):
+            command += ["--kes-evolution-aged"]
         return command
 
     def run(self, handle, rng):

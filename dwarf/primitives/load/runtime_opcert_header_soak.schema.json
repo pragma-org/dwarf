@@ -36,7 +36,8 @@
     "restart_k": {"type": "integer", "minimum": 1},
     "python_bin": {"type": "string", "minLength": 1},
     "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
-    "expect_exit": {"type": "integer"}
+    "expect_exit": {"type": "integer"},
+    "kes_evolution_aged": {"type": "boolean", "default": false, "description": "kes-evolution only: when true, draw both signs (under+over evolution) -- needs an aged-KES devnet. Default false draws over-evolution only (always reachable on a fresh devnet)."}
   },
   "additionalProperties": false
 }

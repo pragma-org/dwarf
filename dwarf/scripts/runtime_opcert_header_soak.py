@@ -401,7 +401,7 @@ def _amaru_probe_gate(spec, consumer_ctx, node, implementation, *, peer_bin,
 _SPEC_LOOKAHEAD = 512
 
 
-def _ensure_specs(family, seed, spec_dir, upto, *, restart_k=4, _state={}):
+def _ensure_specs(family, seed, spec_dir, upto, *, restart_k=4, kes_evolution_aged=False, _state={}):
     """Materialise ``spec-<n>.json`` for every ``n`` in ``0..upto`` (inclusive)
     that is not present yet, each ``families.generate_case(family, seed, n)`` —
     the single seed-deterministic source of truth (same stream the driver's
@@ -412,7 +412,7 @@ def _ensure_specs(family, seed, spec_dir, upto, *, restart_k=4, _state={}):
     key = (str(spec_dir), family, seed)
     have = _state.get(key, -1)
     for n in range(have + 1, upto + 1):
-        spec = families.generate_case(family, seed, n, restart_k=restart_k)
+        spec = families.generate_case(family, seed, n, restart_k=restart_k, kes_evolution_aged=kes_evolution_aged)
         (spec_dir / f"spec-{n:06d}.json").write_text(json.dumps(spec), encoding="utf-8")
     _state[key] = max(have, upto)
 
@@ -896,7 +896,7 @@ def _family_c_iteration(rot, spec, consumer_ctx, node, implementation, *, peer_b
 
 def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_node=None,
                            target_nodes=None, time_budget_seconds=5400, peer_bin=None,
-                           per_iteration_timeout=240, restart_k=4, clock=time.monotonic):
+                           per_iteration_timeout=240, restart_k=4, kes_evolution_aged=False, clock=time.monotonic):
     if family not in families.FAMILIES:
         raise ValueError(f"unknown family: {family!r}")
     differential = family in families.DIFFERENTIAL_FAMILIES
@@ -942,7 +942,7 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
         spec_dir = output_dir / "harness" / "specs"
         _ensure_specs(family, seed, spec_dir,
                       min(20000, max(_SPEC_LOOKAHEAD, int(time_budget_seconds * 0.5)) + _SPEC_LOOKAHEAD),
-                      restart_k=restart_k)
+                      restart_k=restart_k, kes_evolution_aged=kes_evolution_aged)
         forgers = {
             node: _launch_persistent_forger(spec_dir, consumers[node], peer_bin=peer_bin,
                                             output_dir=output_dir, node=node)
@@ -955,13 +955,13 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
     iteration = 0
     try:
         while clock() - start < time_budget_seconds:
-            spec = families.generate_case(family, seed, iteration, restart_k=restart_k)
+            spec = families.generate_case(family, seed, iteration, restart_k=restart_k, kes_evolution_aged=kes_evolution_aged)
             if differential:
                 # Keep the spec stream ahead of both forgers, then correlate this
                 # index's served case + verdict on each side (fail-closed: a side
                 # that never served/observed index ``iteration`` is None ⇒ the
                 # iteration is inconclusive, never agree).
-                _ensure_specs(family, seed, spec_dir, iteration + _SPEC_LOOKAHEAD, restart_k=restart_k)
+                _ensure_specs(family, seed, spec_dir, iteration + _SPEC_LOOKAHEAD, restart_k=restart_k, kes_evolution_aged=kes_evolution_aged)
                 verdicts = {}
                 served = {}
                 reasons = {}
@@ -1049,6 +1049,8 @@ def main(argv=None):
     parser.add_argument("--peer-bin", default="")
     parser.add_argument("--per-iteration-timeout", type=int, default=240)
     parser.add_argument("--restart-k", type=int, default=4)
+    parser.add_argument("--kes-evolution-aged", action="store_true",
+                        help="kes-evolution: draw both signs (under+over evolution); needs an aged-KES devnet")
     args = parser.parse_args(argv)
     target_nodes = [n for n in args.target_nodes.split(",") if n] or None
     result = run_opcert_header_soak(
@@ -1056,7 +1058,7 @@ def main(argv=None):
         output_dir=args.output_dir, target_node=args.target_node or None,
         target_nodes=target_nodes, time_budget_seconds=args.time_budget_seconds,
         peer_bin=args.peer_bin or None, per_iteration_timeout=args.per_iteration_timeout,
-        restart_k=args.restart_k)
+        restart_k=args.restart_k, kes_evolution_aged=args.kes_evolution_aged)
     print(json.dumps({k: result[k] for k in ("family", "seed", "iterations", "conclusive",
                                              "inconclusive", "pass", "counters")}, indent=2))
     return 0 if result["pass"] else 1
