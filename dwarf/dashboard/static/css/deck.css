@@ -386,6 +386,21 @@ body[data-ui="basic"] .dk-seg button[aria-pressed="true"]:hover { background:var
 .dk-flag--on { color:#d9ffe9; background:rgba(60,200,130,.2); border-color:rgba(95,214,164,.7); }
 .dk-flag--off { color:#ffd9de; background:rgba(230,80,100,.18); border-color:rgba(255,122,142,.65); }
 
+/* compact form controls (editors, wizard, config) */
+body[data-ui="basic"] .shell-main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]),
+body[data-ui="basic"] .shell-main select {
+  min-height:36px !important; height:36px; padding:6px 10px !important; font-size:14px !important; line-height:1.3 !important; border-radius:8px; }
+body[data-ui="basic"] .shell-main select { padding-right:30px !important; }
+body[data-ui="basic"] .shell-main textarea { font-size:13.5px !important; line-height:1.45 !important; padding:8px 10px !important; }
+body[data-ui="basic"] .shell-main form label, body[data-ui="basic"] .shell-main .scenario-builder label,
+body[data-ui="basic"] .shell-main .definition-editor label { font-size:13px; }
+body[data-ui="basic"] .shell-main form small, body[data-ui="basic"] .shell-main form .hint,
+body[data-ui="basic"] .shell-main .field-help, body[data-ui="basic"] .shell-main [class*="__help"] { font-size:12px; }
+@media (max-width:640px) {
+  body[data-ui="basic"] .shell-main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]),
+  body[data-ui="basic"] .shell-main select { min-height:40px !important; height:40px; font-size:16px !important; }
+}
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }
