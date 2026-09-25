@@ -1,0 +1,104 @@
+{
+  "case_set": [
+    "valid-control",
+    "cold-key-unauthorized",
+    "counter-jump",
+    "kes-before-window",
+    "hot-key-mismatch"
+  ],
+  "cases": [
+    {
+      "case": "valid-control",
+      "expected_reason": null,
+      "expected_verdict": "accept",
+      "observed_reason": null,
+      "observed_verdict": "accepted",
+      "served_hash": "aa605b0cba71bb1a29f99659b11a77c233a92e037db5a5e40daeacf4187ddd29",
+      "status": "matched"
+    },
+    {
+      "case": "cold-key-unauthorized",
+      "expected_reason": "InvalidSignatureOCERT",
+      "expected_verdict": "reject",
+      "observed_reason": "InvalidSignatureOCERT",
+      "observed_verdict": "rejected",
+      "served_hash": "7bec9af4e1c03e497133c920e16b17842898320bd9cea4ae29b39f6a6cf030e4",
+      "status": "matched"
+    },
+    {
+      "case": "counter-jump",
+      "expected_reason": "CounterOverIncrementedOCERT",
+      "expected_verdict": "reject",
+      "observed_reason": "CounterOverIncrementedOCERT",
+      "observed_verdict": "rejected",
+      "served_hash": "02b76ea3d5ba20ef360622277a79459f0a30cc283bc37c01c4143ce1049785b1",
+      "status": "matched"
+    },
+    {
+      "case": "kes-before-window",
+      "expected_reason": "KESBeforeStartOCERT",
+      "expected_verdict": "reject",
+      "observed_reason": "KESBeforeStartOCERT",
+      "observed_verdict": "rejected",
+      "served_hash": "a16a5a49b04ee4ffbad4a2da71de524f16b3bbd6a00af802252877425987d8fc",
+      "status": "matched"
+    },
+    {
+      "case": "hot-key-mismatch",
+      "expected_reason": "InvalidKesSignatureOCERT",
+      "expected_verdict": "reject",
+      "observed_reason": "InvalidKesSignatureOCERT",
+      "observed_verdict": "rejected",
+      "served_hash": "9e37d34eca3e9ea68d7810351598206b3cb5bfb9fbeaa320501bf3e554ccd96f",
+      "status": "matched"
+    }
+  ],
+  "compose_project": "dwarf-profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+  "runtime_root": "",
+  "schema_version": "v1",
+  "summary": {
+    "all_matched": true,
+    "case_count": 5,
+    "inconclusive": [],
+    "matched": [
+      "valid-control",
+      "cold-key-unauthorized",
+      "counter-jump",
+      "kes-before-window",
+      "hot-key-mismatch"
+    ],
+    "mismatched": [],
+    "result": "pass"
+  },
+  "target": "cardano-node",
+  "target_health": {
+    "after": {
+      "exit_code": 0,
+      "oom_killed": false,
+      "restart_count": 0,
+      "running": true,
+      "status": "running"
+    },
+    "before": {
+      "exit_code": 0,
+      "oom_killed": false,
+      "restart_count": 0,
+      "running": true,
+      "status": "running"
+    },
+    "log_signals": {
+      "fatal": []
+    },
+    "tip_after": {
+      "block_height": 670,
+      "hash": "8058636d23ce00d17c388df1f7dabc0481911c83f529efc8e2d9923b54c77252",
+      "slot": 3406
+    },
+    "tip_before": {
+      "block_height": 625,
+      "hash": "47c1dbc48b14d2178333eac1756b816f553cbc6cf620b568b7dc4f9bfa8e523c",
+      "slot": 3183
+    }
+  },
+  "target_node": "node1"
+}

@@ -29,6 +29,31 @@ REMOTE_SOURCE_PATH = "/home/dwarf/cardano-node"
 REMOTE_DOCKERFILE_PATH = "/home/dwarf/dwarf-fw/devnet-build/cardano-node.Dockerfile"
 
 
+def _normalize_kes_genesis_override(value):
+    """Validate and normalize an optional short-KES genesis override.
+
+    Returns None (leave baseline KES parameters unchanged) or a dict with
+    exactly ``slots_per_kes_period`` and ``max_kes_evolutions`` positive ints.
+    Fails closed on a malformed override rather than silently deploying a
+    devnet whose opcert boundary rules would stay unreachable.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("kes_genesis_override must be an object or null")
+    try:
+        slots = int(value["slots_per_kes_period"])
+        evolutions = int(value["max_kes_evolutions"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            "kes_genesis_override requires integer slots_per_kes_period and "
+            "max_kes_evolutions"
+        ) from error
+    if slots < 1 or evolutions < 1:
+        raise ValueError("kes_genesis_override values must be >= 1")
+    return {"slots_per_kes_period": slots, "max_kes_evolutions": evolutions}
+
+
 @dataclass(frozen=True)
 class Profile:
     id: str
@@ -63,6 +88,7 @@ class Profile:
     plutus_v2_cost_model_path: str | None = None
     plutus_v2_cost_model_sha256: str | None = None
     cardano_experimental_protocols: bool | None = None
+    kes_genesis_override: dict | None = None
 
     @classmethod
     def from_dict(cls, data):
@@ -109,6 +135,9 @@ class Profile:
                 None
                 if data.get("cardano_experimental_protocols") is None
                 else bool(data.get("cardano_experimental_protocols"))
+            ),
+            kes_genesis_override=_normalize_kes_genesis_override(
+                data.get("kes_genesis_override")
             ),
         )
 
@@ -174,6 +203,7 @@ def profile_diff_text(left_id, right_id):
         "plutus_v2_cost_model_path",
         "plutus_v2_cost_model_sha256",
         "cardano_experimental_protocols",
+        "kes_genesis_override",
     )
     lines = [
         "Profile diff",
@@ -476,6 +506,7 @@ def versioned_substrate_for_profile(profile, version_preview):
         "plutus_v2_cost_model_path": profile.plutus_v2_cost_model_path,
         "plutus_v2_cost_model_sha256": profile.plutus_v2_cost_model_sha256,
         "cardano_experimental_protocols": profile.cardano_experimental_protocols,
+        "kes_genesis_override": profile.kes_genesis_override,
         "nodes": nodes,
         "topology": {"edges": edges},
     }
@@ -546,6 +577,10 @@ def _versioned_deploy_command(profile, version_preview, remote_dwarf_root=None):
         if substrate.get("cardano_experimental_protocols") is not None:
             config_body["cardano_experimental_protocols"] = bool(
                 substrate["cardano_experimental_protocols"]
+            )
+        if substrate.get("kes_genesis_override"):
+            config_body["kes_genesis_override"] = dict(
+                substrate["kes_genesis_override"]
             )
         if substrate["plutus_v2_genesis"]:
             cost_model_path = Path(str(substrate["plutus_v2_cost_model_path"]))

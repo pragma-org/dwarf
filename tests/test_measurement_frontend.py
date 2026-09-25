@@ -41,7 +41,7 @@ def test_measurement_catalog_routes_are_wired():
         re.DOTALL,
     )
     assert hub is not None
-    assert "30 <small>taps</small> · 4 <small>profiles</small>" in hub.group(1)
+    assert "34 <small>taps</small> · 4 <small>profiles</small>" in hub.group(1)
     assert 'href="/operate/measurement-profiles"' in hub.group(1)
     assert 'href="/operate/runs"' in hub.group(1)
     assert "Profiles select taps; run reports contain results." in hub.group(1)

@@ -40,6 +40,22 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-013",),
         "risks": ("RR-013",),
     },
+    "opcert-header-validation-cases-cardano-1112": {
+        "threats": ("TM-013",),
+        "risks": ("RR-013",),
+    },
+    "opcert-header-validation-cases-amaru-20260918": {
+        "threats": ("TM-013",),
+        "risks": ("RR-013",),
+    },
+    "opcert-header-validation-cases-mixed-1112-amaru-20260918": {
+        "threats": ("TM-013",),
+        "risks": ("RR-013",),
+    },
+    "opcert-header-validation-boundary-cardano-1112": {
+        "threats": ("TM-013",),
+        "risks": ("RR-013",),
+    },
 }
 
 

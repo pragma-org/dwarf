@@ -649,7 +649,13 @@ def apply_hardening_mode(*, metadata: dict, mode: str, config: dict) -> dict:
         )
 
     if mode == "praos_header_assertion_probe":
-        result = {"header_rejected": True, "assertion_boundary_preserved": True}
+        # Superseded by runtime_opcert_header_cases, which proves header
+        # rejection with real per-header verdicts. This stub previously
+        # fabricated {"header_rejected": True}; report unavailable so the
+        # coverage page shows no evidence here rather than a false pass.
+        result = {"status": "unavailable",
+                  "reason": "superseded by runtime_opcert_header_cases; "
+                            "header rejection is proven by the opcert header scenarios"}
     elif mode == "malformed_input_differential":
         result = {"parity_match": True, "observed_divergence": False}
     elif mode == "validation_path_differential":

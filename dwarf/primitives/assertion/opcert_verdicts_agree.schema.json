@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "opcert_verdicts_agree params",
+  "type": "object",
+  "properties": {
+    "cardano_report_path": {"type": "string", "minLength": 1},
+    "amaru_report_path": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

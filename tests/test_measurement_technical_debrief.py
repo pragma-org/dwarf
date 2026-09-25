@@ -148,7 +148,7 @@ def test_debrief_represents_all_thirty_measurement_definitions():
     measurement_profiles = sorted(
         path.stem for path in Path("dwarf/measurement-profiles").glob("*.yaml")
     )
-    assert len(measurement_ids) == 30
+    assert len(measurement_ids) == 34
     assert len(measurement_profiles) == 4
     for measurement_id in measurement_ids:
         assert f">{measurement_id}<" in html
@@ -163,13 +163,13 @@ def test_debrief_represents_all_thirty_measurement_definitions():
         assert title.casefold() in html.casefold()
     for profile_id in measurement_profiles:
         assert f">{profile_id}<" in html
-    assert html.count('class="tap-card') == 30
-    assert "15 Amaru definitions" in html
-    assert "15 Cardano-node definitions" in html
+    assert html.count('class="tap-card') == 34
+    assert "17 Amaru definitions" in html
+    assert "17 Cardano-node definitions" in html
     assert "14 implemented and profile-selectable" in html
     assert "12 implemented and profile-selectable" in html
-    assert "1 reserved or unprofiled" in html
     assert "3 reserved or unprofiled" in html
+    assert "5 reserved or unprofiled" in html
     for source_badge in ("Stock", "External", "Patched", "Reserved"):
         assert f'<span class="source-badge">{source_badge}</span>' in html
     for label in ("Measures", "Observation boundary", "Surface", "Exact limitation", "Evidence state"):
@@ -305,7 +305,7 @@ def test_full_metrics_audit_maps_every_implemented_measurement():
         path.stem
         for path in Path("dwarf/measurements").glob("*.yaml")
     }
-    assert len(measurement_ids) == 30
+    assert len(measurement_ids) == 34
     for measurement_id in measurement_ids:
         assert f"`{measurement_id}`" in audit
     for value in (

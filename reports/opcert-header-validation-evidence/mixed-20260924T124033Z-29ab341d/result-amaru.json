@@ -1,0 +1,102 @@
+{
+  "case_set": [
+    "valid-control",
+    "cold-key-unauthorized",
+    "counter-jump",
+    "kes-before-window",
+    "hot-key-mismatch"
+  ],
+  "cases": [
+    {
+      "case": "valid-control",
+      "expected_reason": null,
+      "expected_verdict": "accept",
+      "observed_reason": null,
+      "observed_verdict": "accepted",
+      "served_hash": "e545d092ef670c771052b90b4f35305c942330d64bd84239f1e3e53088ee53ef",
+      "status": "matched"
+    },
+    {
+      "case": "cold-key-unauthorized",
+      "expected_reason": "InvalidSignature",
+      "expected_verdict": "reject",
+      "observed_reason": "InvalidSignature",
+      "observed_verdict": "rejected",
+      "served_hash": "db2dbf38fd28491fe7fdf3716d9eb68c4ff739885580ccc3823b82bb2c95d1a2",
+      "status": "matched"
+    },
+    {
+      "case": "counter-jump",
+      "expected_reason": "SequenceNumberTooFarAhead",
+      "expected_verdict": "reject",
+      "observed_reason": "SequenceNumberTooFarAhead",
+      "observed_verdict": "rejected",
+      "served_hash": "1ebb7583dec7ca6c2087e17d5e829a44394953e7b93c206760bc2231d531a6b1",
+      "status": "matched"
+    },
+    {
+      "case": "kes-before-window",
+      "expected_reason": "OpCertKesPeriodTooLarge",
+      "expected_verdict": "reject",
+      "observed_reason": "OpCertKesPeriodTooLarge",
+      "observed_verdict": "rejected",
+      "served_hash": "919dc19e567c787b4e38ad4cf00209c686c662c4aa9e933bcf83f29d05830d79",
+      "status": "matched"
+    },
+    {
+      "case": "hot-key-mismatch",
+      "expected_reason": "InvalidKesSignature",
+      "expected_verdict": "reject",
+      "observed_reason": "InvalidKesSignature",
+      "observed_verdict": "rejected",
+      "served_hash": "fd070dd0bccf16d444561afd372cfb51772d2ee9a278897642d1534feb321129",
+      "status": "matched"
+    }
+  ],
+  "compose_project": "dwarf-profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+  "runtime_root": "",
+  "schema_version": "v1",
+  "summary": {
+    "all_matched": true,
+    "case_count": 5,
+    "inconclusive": [],
+    "matched": [
+      "valid-control",
+      "cold-key-unauthorized",
+      "counter-jump",
+      "kes-before-window",
+      "hot-key-mismatch"
+    ],
+    "mismatched": [],
+    "result": "pass"
+  },
+  "target": "amaru",
+  "target_health": {
+    "after": {
+      "exit_code": 0,
+      "oom_killed": false,
+      "restart_count": 0,
+      "running": true,
+      "status": "running"
+    },
+    "before": {
+      "exit_code": 0,
+      "oom_killed": false,
+      "restart_count": 0,
+      "running": true,
+      "status": "running"
+    },
+    "log_signals": {
+      "fatal": []
+    },
+    "tip_after": {
+      "block_height": 730,
+      "slot": 3703
+    },
+    "tip_before": {
+      "block_height": 671,
+      "slot": 3412
+    }
+  },
+  "target_node": "amaru-relay-1"
+}

@@ -414,7 +414,7 @@ class PreparedScenarioMeasurements:
                 / "raw"
                 / "node1.ndjson",
             )
-            return build_cardano_measurement_factories(
+            all_factories = build_cardano_measurement_factories(
                 runtime_metadata_path=self.runtime_metadata_path,
                 target_node=self.target_node,
                 trace_paths=traces,
@@ -424,6 +424,7 @@ class PreparedScenarioMeasurements:
                 patched_trace_paths=self.patched_trace_paths,
                 target_identity=self.resolution["target_identity"],
             )
+            return self._resolved_factories(all_factories)
         traces = (
             run_path
             / "outputs"
@@ -436,7 +437,7 @@ class PreparedScenarioMeasurements:
             / "raw"
             / "amaru-relay-1.ndjson",
         )
-        return build_amaru_measurement_factories(
+        all_factories = build_amaru_measurement_factories(
             runtime_metadata_path=self.runtime_metadata_path,
             target_node=self.target_node,
             json_trace_paths=traces,
@@ -446,6 +447,24 @@ class PreparedScenarioMeasurements:
             target_identity=self.resolution["target_identity"],
             allow_missing_trace_sources=True,
         )
+        return self._resolved_factories(all_factories)
+
+    def _resolved_factories(self, all_factories: dict[str, Any]) -> dict[str, Any]:
+        """Expose factories for exactly the resolved taps.
+
+        The builders register every version-pinned collector the target can
+        support; a tap only runs when the resolved measurement selection
+        includes it. Returning the resolved-and-registered intersection keeps
+        the registered factories and the resolved selection consistent, while a
+        resolved tap without a registered collector stays absent here so callers
+        still report it as unavailable.
+        """
+        return {
+            entry["id"]: all_factories[entry["id"]]
+            for entry in self.resolution.get("resolved", [])
+            if entry["id"] in all_factories
+        }
+
 
 
 def prepare_scenario_measurements(

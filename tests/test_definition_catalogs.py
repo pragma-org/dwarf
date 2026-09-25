@@ -212,6 +212,7 @@ def test_profile_schema_covers_every_bundled_profile_field():
         "measurement_patch_set_sha256", "amaru_json_traces",
         "plutus_v2_genesis", "plutus_v2_cost_model_path",
         "plutus_v2_cost_model_sha256", "cardano_experimental_protocols",
+            "kes_genesis_override",
     }
     assert set(schema["properties"]) == expected
     assert schema["properties"]["node_type"]["enum"] == ["cardano-node", "amaru", "mixed"]
@@ -681,10 +682,10 @@ def test_scenario_editor_descriptor_covers_every_registered_primitive_schema():
     assert descriptor["primitive_count"] == len(registry)
     assert descriptor["family_counts"] == {
         "setup": 7,
-            "load": 132,
+            "load": 134,
         "fault": 5,
         "probe": 3,
-            "assertion": 93,
+            "assertion": 97,
         "teardown": 1,
     }
     for name, entry in primitives.items():

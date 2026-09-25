@@ -13,7 +13,10 @@ from profile_manager.measurement_collectors.amaru_resources import AmaruResource
 from profile_manager.measurement_collectors.amaru_patched import (
     build_amaru_patched_factories,
 )
-from profile_manager.measurement_collectors.amaru_stock import build_amaru_stock_factories
+from profile_manager.measurement_collectors.amaru_stock import (
+    build_amaru_stock_factories,
+    AmaruHeaderValidationCollector,
+)
 
 
 def build_amaru_measurement_factories(
@@ -75,6 +78,9 @@ def build_amaru_measurement_factories(
         return AmaruResourceCollector(entry, **options)
 
     factories["amaru-stock-resources"] = build_resource_collector
+    factories["amaru-stock-header-validation"] = lambda entry: AmaruHeaderValidationCollector(
+        entry, trace_paths=json_paths, allow_missing_at_start=allow_missing_trace_sources
+    )
     factories["amaru-external-workload-accounting"] = (
         lambda entry: WorkloadAccountingCollector(entry)
     )

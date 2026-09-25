@@ -1,0 +1,17 @@
+schema_version: v1
+id: amaru-patched-header-validation
+title: Amaru header validation verdicts (patched)
+description: Scaffold only. A patched-node header-validation instrumentation tap is not built; this definition reserves the id and reports unavailable until the patched instrumentation lands.
+output_schema: dwarf/spec/v1/measurement-result.schema.json
+compatibility:
+  implementation: amaru
+  versions: [{version: 10.11.20260912, source_revision: b159172f25a9c389f82f20bca4f15e3032791638}, {version: v10.11.20260912-30-gd3a6dafc, source_revision: d3a6dafcced78f5809a96619e883cf04911d2bdc}, {version: 10.11.20260918, source_revision: aedfe797a5b8ef00d8b362be40b47a52c3b4a379}]
+  target_modes: [patched]
+collection_mode: patched-node
+required_capabilities: [amaru-patched-header-validation-instrumentation]
+default_enabled: false
+overhead_class: low
+collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
+emitted_artifacts: [measurements/amaru-patched-header-validation/result.json]
+correlation_identifiers: [run_id, workload_phase, header_hash]
+threshold_gate: {supported: true, default_enabled: false}

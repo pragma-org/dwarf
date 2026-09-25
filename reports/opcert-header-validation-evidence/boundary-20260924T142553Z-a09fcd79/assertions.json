@@ -1,0 +1,42 @@
+[
+  {
+    "data_points_used": [
+      {
+        "report": "outputs/opcert-header-cases/result.json"
+      }
+    ],
+    "evaluated_value": {
+      "case_count": 3,
+      "inconclusive": [],
+      "matched": [
+        "valid-control",
+        "counter-behind",
+        "kes-after-window"
+      ],
+      "mismatched": []
+    },
+    "params": {},
+    "primitive": "opcert_case_verdicts_match_expected",
+    "result": "pass"
+  },
+  {
+    "data_points_used": [
+      {
+        "proof": "outputs/client-example-proof/target-health-and-progress.json"
+      }
+    ],
+    "evaluated_value": {
+      "checks": {
+        "no_fatal_signals": true,
+        "target_not_oom_killed": true,
+        "target_progressed": true,
+        "target_restart_count_unchanged": true,
+        "target_running_after": true,
+        "target_running_before": true
+      }
+    },
+    "params": {},
+    "primitive": "target_progress_continues",
+    "result": "pass"
+  }
+]

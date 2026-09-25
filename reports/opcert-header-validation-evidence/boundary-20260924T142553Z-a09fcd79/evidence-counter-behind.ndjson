@@ -1,0 +1,2 @@
+{"case":"counter-behind","kind":"opcert_case_started","slots_per_kes":100}
+{"case":"counter-behind","expected_verdict":"reject","header_hash":"7a4516cf48e250a967bdf2d7d82137b5a8c9c7f3f28ee2951b165c39434b1b6e","kind":"opcert_case_served","mutation":"MutateCounterUnder","pool":"pool1","slot":2162}

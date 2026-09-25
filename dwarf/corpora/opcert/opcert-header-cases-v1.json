@@ -1,0 +1,90 @@
+[
+  {
+    "id": "valid-control",
+    "family": "rule",
+    "mutation": "NoMutation",
+    "rule": "none",
+    "expected_verdict": "accept",
+    "expected_reason": {
+      "cardano-node": null,
+      "amaru": null
+    }
+  },
+  {
+    "id": "cold-key-unauthorized",
+    "family": "rule",
+    "mutation": "MutateColdKey",
+    "rule": "cold-key-authorization",
+    "expected_verdict": "reject",
+    "expected_reason": {
+      "cardano-node": "InvalidSignatureOCERT",
+      "amaru": "InvalidSignature"
+    }
+  },
+  {
+    "id": "counter-behind",
+    "family": "rule",
+    "mutation": "MutateCounterUnder",
+    "rule": "counter-monotonicity",
+    "expected_verdict": "reject",
+    "expected_reason": {
+      "cardano-node": "CounterTooSmallOCERT",
+      "amaru": "SequenceNumberTooSmall"
+    }
+  },
+  {
+    "id": "counter-jump",
+    "family": "rule",
+    "mutation": "MutateCounterOver1",
+    "rule": "counter-monotonicity",
+    "expected_verdict": "reject",
+    "expected_reason": {
+      "cardano-node": "CounterOverIncrementedOCERT",
+      "amaru": "SequenceNumberTooFarAhead"
+    }
+  },
+  {
+    "id": "counter-plus-one",
+    "family": "boundary",
+    "mutation": "NoMutation",
+    "rule": "counter-monotonicity",
+    "expected_verdict": "accept",
+    "expected_reason": {
+      "cardano-node": null,
+      "amaru": null
+    }
+  },
+  {
+    "id": "kes-before-window",
+    "family": "rule",
+    "mutation": "MutateKESPeriod",
+    "rule": "kes-window",
+    "expected_verdict": "reject",
+    "expected_reason": {
+      "cardano-node": "KESBeforeStartOCERT",
+      "amaru": "OpCertKesPeriodTooLarge"
+    }
+  },
+  {
+    "id": "kes-after-window",
+    "family": "rule",
+    "mutation": "MutateKESPeriodBefore",
+    "rule": "kes-window",
+    "expected_verdict": "reject",
+    "expected_reason": {
+      "cardano-node": "KESAfterEndOCERT",
+      "amaru": "OpCertKesPeriodTooOld"
+    }
+  },
+  {
+    "id": "hot-key-mismatch",
+    "family": "rule",
+    "mutation": "MutateKESKey",
+    "rule": "kes-hot-key-binding",
+    "expected_verdict": "reject",
+    "expected_reason": {
+      "cardano-node": "InvalidKesSignatureOCERT",
+      "amaru": "InvalidKesSignature"
+    }
+  }
+]

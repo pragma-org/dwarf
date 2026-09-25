@@ -132,6 +132,9 @@ def render_html(title, subtitle, favicon_kicker, blocks):
 # ---------------------------------------------------------------- curated descriptions
 # assertions: the pass condition (the "expected outcome"). load/etc: the purpose.
 DESC = {
+"opcert_case_verdicts_match_expected":"PASS iff every served opcert header case reached its declared verdict (accept for the valid control; reject with the exact expected OCERT reason for each broken rule); any wrong-reason rejection, accepted bad case, unserved case, or unobserved verdict fails closed.",
+"opcert_verdicts_agree":"PASS iff both nodes reached the same verdict on every opcert header case (fail-closed if a case is missing on either side).",
+"runtime_opcert_header_cases":"Serves one mutated operational-certificate header per case (each preceded by a valid control) to an isolated copy of the target, records the peer ground truth and the target observed verdict/reason, and writes result.json joined per case (matched | mismatch | inconclusive).",
 # ---- assertions (oracle / pass condition) ----
 "canonical_chain_progress_complete":"PASS iff lossless raw chain-selection evidence derives at least the required final height progress, reaches the exact final tip after bounded oscillation, retains the required application correlations, and has no fatal health signal.",
 "parse_succeeds_or_clean_error":"PASS iff no parse outcome is a crash (every input is `ok` or `clean_error`) over >= min_outcomes_count inputs.",

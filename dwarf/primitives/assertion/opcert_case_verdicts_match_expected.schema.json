@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "opcert_case_verdicts_match_expected params",
+  "type": "object",
+  "properties": {
+    "report_path": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

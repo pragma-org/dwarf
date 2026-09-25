@@ -1,0 +1,90 @@
+[
+  {
+    "data_points_used": [
+      {
+        "report": "outputs/opcert-header-cases-cardano/result.json"
+      }
+    ],
+    "evaluated_value": {
+      "case_count": 5,
+      "inconclusive": [],
+      "matched": [
+        "valid-control",
+        "cold-key-unauthorized",
+        "counter-jump",
+        "kes-before-window",
+        "hot-key-mismatch"
+      ],
+      "mismatched": []
+    },
+    "params": {
+      "report_path": "outputs/opcert-header-cases-cardano/result.json"
+    },
+    "primitive": "opcert_case_verdicts_match_expected",
+    "result": "pass"
+  },
+  {
+    "data_points_used": [
+      {
+        "report": "outputs/opcert-header-cases-amaru/result.json"
+      }
+    ],
+    "evaluated_value": {
+      "case_count": 5,
+      "inconclusive": [],
+      "matched": [
+        "valid-control",
+        "cold-key-unauthorized",
+        "counter-jump",
+        "kes-before-window",
+        "hot-key-mismatch"
+      ],
+      "mismatched": []
+    },
+    "params": {
+      "report_path": "outputs/opcert-header-cases-amaru/result.json"
+    },
+    "primitive": "opcert_case_verdicts_match_expected",
+    "result": "pass"
+  },
+  {
+    "data_points_used": [
+      {
+        "cardano": "outputs/opcert-header-cases-cardano/result.json"
+      },
+      {
+        "amaru": "outputs/opcert-header-cases-amaru/result.json"
+      }
+    ],
+    "evaluated_value": {
+      "case_count": 5,
+      "disagreements": []
+    },
+    "params": {
+      "amaru_report_path": "outputs/opcert-header-cases-amaru/result.json",
+      "cardano_report_path": "outputs/opcert-header-cases-cardano/result.json"
+    },
+    "primitive": "opcert_verdicts_agree",
+    "result": "pass"
+  },
+  {
+    "data_points_used": [
+      {
+        "proof": "outputs/client-example-proof/target-health-and-progress.json"
+      }
+    ],
+    "evaluated_value": {
+      "checks": {
+        "no_fatal_signals": true,
+        "target_not_oom_killed": true,
+        "target_progressed": true,
+        "target_restart_count_unchanged": true,
+        "target_running_after": true,
+        "target_running_before": true
+      }
+    },
+    "params": {},
+    "primitive": "target_progress_continues",
+    "result": "pass"
+  }
+]

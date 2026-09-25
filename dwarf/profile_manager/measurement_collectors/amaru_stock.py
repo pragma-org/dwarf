@@ -812,3 +812,93 @@ def build_amaru_stock_factories(
         )
 
     return {measurement_id: factory for measurement_id in STOCK_MEASUREMENT_IDS}
+
+
+class AmaruHeaderValidationCollector:
+    """Report per-header validation verdict counts and reasons from stock traces.
+
+    Fail-closed: when no header-validation verdict is present in the telemetry
+    window, the measurement is ``unavailable`` with a reason, never a zero pass.
+    """
+
+    def __init__(
+        self,
+        entry: dict[str, Any],
+        *,
+        trace_paths: Iterable[str | Path],
+        allow_missing_at_start: bool = False,
+        max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
+    ) -> None:
+        self.entry = entry
+        self.measurement_id = entry["id"]
+        self.trace_paths = [Path(path) for path in trace_paths]
+        self.allow_missing_at_start = allow_missing_at_start
+        self.max_source_bytes = max_source_bytes
+        self._offsets: dict[Path, int] = {}
+
+    def prepare(self, context) -> None:
+        for path in self.trace_paths:
+            if not path.is_file():
+                if not self.allow_missing_at_start:
+                    raise FileNotFoundError(f"Amaru telemetry source is unavailable: {path}")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+        context.collector_dir.mkdir(parents=True, exist_ok=True)
+
+    def start(self, context) -> None:
+        self._offsets = {path: path.stat().st_size for path in self.trace_paths}
+
+    def on_marker(self, marker, context) -> None:
+        return None
+
+    def stop(self, context) -> None:
+        return None
+
+    def finalize(self, context) -> dict[str, Any]:
+        from scripts.header_validation_parse import parse_amaru_header_events, verdict_by_hash
+
+        lines: list[str] = []
+        for path in self.trace_paths:
+            body, _truncated = _bounded_read(
+                path, start=self._offsets.get(path, 0), max_bytes=self.max_source_bytes
+            )
+            lines.extend(body.decode("utf-8", "replace").splitlines())
+        events = parse_amaru_header_events(lines)
+        latest = list(verdict_by_hash(events).values())
+        if not latest:
+            result = {
+                "schema_version": "v1",
+                "measurement_id": self.measurement_id,
+                "source_revision": AMARU_SOURCE_REVISION,
+                "measurements": {
+                    "header_validation": {
+                        "status": "unavailable",
+                        "reason": "no header-validation verdict observed in telemetry",
+                        "unit": "count",
+                        "value": None,
+                    }
+                },
+                "verdicts": {"accepted": 0, "rejected": 0},
+                "by_reason": {},
+                "events": [],
+            }
+        else:
+            verdicts = Counter(event["verdict"] for event in latest)
+            by_reason = Counter(
+                event["reason"] for event in latest
+                if event["verdict"] == "rejected" and event["reason"]
+            )
+            counts = {"accepted": verdicts.get("accepted", 0), "rejected": verdicts.get("rejected", 0)}
+            result = {
+                "schema_version": "v1",
+                "measurement_id": self.measurement_id,
+                "source_revision": AMARU_SOURCE_REVISION,
+                "measurements": {
+                    "header_validation": {"status": "available", "unit": "count", "value": counts}
+                },
+                "verdicts": counts,
+                "by_reason": dict(by_reason),
+                "events": latest[:500],
+            }
+        context.write_json("result.json", result)
+        return result

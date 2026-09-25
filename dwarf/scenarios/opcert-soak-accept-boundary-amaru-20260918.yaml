@@ -1,0 +1,74 @@
+{
+  "spec_version": "v1",
+  "id": "opcert-soak-accept-boundary-amaru-20260918",
+  "title": "Opcert accept-boundary soak (3h) \u2014 Amaru 10.11.20260918",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "opcert",
+    "header-validation",
+    "soak",
+    "accept-boundary",
+    "amaru",
+    "finding-validation",
+    "non-soakable",
+    "campaign-excluded"
+  ],
+  "promotion_blockers": [
+    "EXCLUDED from the 3h opcert-soak campaign: family B (accept-boundary) is non-soakable in the isolated-consumer header-server setup. An accepted valid header emits no adoption trace unless its full block body is served, and the forger's on-demand BlockFetch responder fetches bodies from the upstream real node by point -- a re-signed counter+1 header has a hash absent upstream, so the body-fetch misses and the isolated amaru consumer never adopts the block (no tip.adopt). Rejects trace via the header-validation error; valid-control traces because it is a real block. See docs/plans/2026-09-24-opcert-derived-soaks-design.md (Family B observability limitation). valid-control in the deterministic opcert set already proves 'valid header accepted', so B's marginal value is low. Do not run this cell in the campaign."
+  ],
+  "evidence_intent": "finding-validation",
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260918",
+    "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+  },
+  "runtime": "devnet",
+  "profile": "profile-z-amaru-20260918-nanoseconds-v3",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0x50AC0B09",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "amaru",
+      "version": "10.11.20260918",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "mode": "patched",
+      "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+      "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+      "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_opcert_header_soak",
+      "profile_id": "profile-z-amaru-20260918-nanoseconds-v3",
+      "family": "accept-boundary",
+      "seed": 525252525,
+      "target_node": "amaru-relay-1",
+      "time_budget_seconds": 5400,
+      "output_dir": "outputs/opcert-soak",
+      "timeout_seconds": 6300,
+      "expect_exit": 0
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {
+      "primitive": "runtime_target_health_and_progress",
+      "report_path": "outputs/opcert-soak/result.json",
+      "progress_reference": "load-start"
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "opcert_soak_invariant_holds",
+      "report_path": "outputs/opcert-soak/result.json"
+    },
+    {
+      "primitive": "target_progress_continues"
+    }
+  ],
+  "teardown": []
+}
