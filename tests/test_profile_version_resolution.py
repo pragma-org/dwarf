@@ -97,10 +97,11 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
         "profile-za-amaru-20260918-plutus-v2": "amaru-control",
         "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3": "amaru-control",
         "profile-zc-mixed-1112-amaru-20260918-v16-repro": "amaru-control",
+        "profile-opcert-aged-kes-cardano-1112": "generated-cardano-local",
     }
     profiles = load_profiles()
 
-    assert len(profiles) == 29
+    assert len(profiles) == 30
     assert {profile.id for profile in profiles} == set(expected_adapters)
     for profile in profiles:
         source = next(
@@ -123,6 +124,7 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
                 "profile-za-amaru-20260918-plutus-v2",
                 "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
                 "profile-zc-mixed-1112-amaru-20260918-v16-repro",
+                "profile-opcert-aged-kes-cardano-1112",
             }
             else "latest-confirmed"
         )

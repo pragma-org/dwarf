@@ -1,0 +1,126 @@
+cabal-version: 3.0
+name: dwarf-opcert-adversary-latest
+version: 0.1.0.0
+build-type: Simple
+license: Apache-2.0
+synopsis: Newer-pinned (cardano-node 11.1.2) build of the opcert header peer.
+
+-- Self-contained sibling of dwarf-opcert-adversary. It vendors a minimal fork
+-- of the dwarf-adversary ChainSync capture/serve + header-codec modules,
+-- adapted to the 11.1.2 stack (Dijkstra era in the codec config; the Praos
+-- header module moved to Cardano.Protocol.Praos.BlockHeader). The original
+-- older-pinned dwarf-adversary / dwarf-kes-adversary / dwarf-opcert-adversary
+-- packages are left untouched.
+
+common settings
+  default-language: GHC2021
+  ghc-options: -Wall
+  default-extensions:
+    BangPatterns
+    DataKinds
+    DeriveAnyClass
+    DeriveGeneric
+    DerivingStrategies
+    DerivingVia
+    DuplicateRecordFields
+    FlexibleContexts
+    FlexibleInstances
+    GADTs
+    GeneralizedNewtypeDeriving
+    ImportQualifiedPost
+    LambdaCase
+    MultiParamTypeClasses
+    NamedFieldPuns
+    NumericUnderscores
+    OverloadedStrings
+    PatternSynonyms
+    RankNTypes
+    RecordWildCards
+    ScopedTypeVariables
+    StandaloneDeriving
+    StrictData
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+
+library
+  import: settings
+  hs-source-dirs: src
+  exposed-modules:
+    DwarfAdversary
+    DwarfAdversary.SDK
+    DwarfAdversary.Application
+    DwarfAdversary.ChainSync.Codec
+    DwarfAdversary.ChainSync.Connection
+    DwarfAdversary.ChainSync.Server
+    DwarfOpcertAdversary
+  build-depends:
+    , aeson
+    , async
+    , base
+    , base16-bytestring
+    , bytestring
+    , cardano-crypto-class
+    , cardano-ledger-core
+    , cardano-ledger-byron
+    , cardano-protocol
+    , cardano-slotting
+    , cborg
+    , containers
+    , contra-tracer
+    , deepseq
+    , directory
+    , filepath
+    , io-classes
+    , network
+    , network-mux
+    , ouroboros-consensus
+    , ouroboros-consensus:cardano
+    , cardano-diffusion
+    , ouroboros-network:api
+    , ouroboros-network:api-tests-lib
+    , ouroboros-network:framework
+    , ouroboros-network:protocols
+    , random
+    , serialise
+    , io-classes:strict-stm
+    , text
+    , time
+    , typed-protocols
+
+executable dwarf-opcert-adversary-latest
+  import: settings
+  hs-source-dirs: app
+  main-is: Main.hs
+  build-depends:
+    , aeson
+    , base
+    , cardano-slotting
+    , bytestring
+    , cborg
+    , containers
+    , directory
+    , dwarf-opcert-adversary-latest
+    , filepath
+    , ouroboros-consensus
+    , ouroboros-consensus:cardano
+    , ouroboros-network:api
+    , ouroboros-network:api-tests-lib
+    , ouroboros-network:protocols
+    , serialise
+    , text
+    , typed-protocols
+    , io-classes:strict-stm
+
+test-suite opcert-soak-spec
+  import: settings
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: OpcertSoakSpec.hs
+  build-depends:
+    , base
+    , bytestring
+    , cborg
+    , dwarf-opcert-adversary-latest
+    , hspec

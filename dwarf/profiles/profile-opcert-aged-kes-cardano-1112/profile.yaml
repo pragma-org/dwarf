@@ -1,0 +1,20 @@
+{
+  "id": "profile-opcert-aged-kes-cardano-1112",
+  "label": "Opcert aged/short-KES boundary — Cardano-node 11.1.2 cardano-only short operational-KES window",
+  "haskell_count": 3,
+  "amaru_count": 0,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "exact",
+  "cardano_version": "11.1.2",
+  "topology_pattern": "local-mesh",
+  "shared_genesis": true,
+  "measurement_target_mode": "patched",
+  "measurement_revision": "nanoseconds-v2",
+  "measurement_patch_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+  "measurement_patch_set_sha256": "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c",
+  "kes_genesis_override": {
+    "slots_per_kes_period": 100,
+    "max_kes_evolutions": 15
+  }
+}

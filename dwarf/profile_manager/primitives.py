@@ -13838,6 +13838,257 @@ class RuntimeControlledSimpleTransfers(LoadPrimitive):
             },
         )
 
+class RuntimeOpcertHeaderCases(LoadPrimitive):
+    """Serve one mutated opcert header per case to an isolated copy of the target and record each verdict."""
+
+    def run(self, handle, rng):
+        import os
+        from profile_manager.profiles import remote_base
+
+        profile_id = self.params.get("profile_id")
+        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        output_dir = _resolve_output_path(
+            handle, self.params.get("output_dir", "outputs/opcert-header-cases")
+        )
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            str(self.params.get("python_bin", "python3")),
+            str(DWARF_ROOT / "scripts" / "runtime_opcert_header_cases.py"),
+            "--runtime-root", str(runtime_root),
+            "--target-node", str(self.params["target_node"]),
+            "--output-dir", str(output_dir),
+        ]
+        case_ids = self.params.get("case_ids")
+        if case_ids:
+            command += ["--case-ids", ",".join(str(c) for c in case_ids)]
+        if self.params.get("peer_bin"):
+            command += ["--peer-bin", str(self.params["peer_bin"])]
+        if self.params.get("listen_port"):
+            command += ["--listen-port", str(int(self.params["listen_port"]))]
+        if self.params.get("consumer_port"):
+            command += ["--consumer-port", str(int(self.params["consumer_port"]))]
+        if self.params.get("per_case_timeout"):
+            command += ["--per-case-timeout", str(int(self.params["per_case_timeout"]))]
+        handle.log(phase="load", primitive="runtime_opcert_header_cases",
+                   level="info", event="started",
+                   payload={"profile_id": profile_id, "runtime_root": str(runtime_root), "command": command})
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value)
+        proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True, text=True,
+                              timeout=float(self.params.get("timeout_seconds", 3600)),
+                              check=False, env=env)
+        report_path = output_dir / "result.json"
+        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
+        outcome = "ok" if proc.returncode == int(self.params.get("expect_exit", 0)) else "unexpected_exit"
+        summary = report.get("summary")
+        if isinstance(summary, dict):
+            handle.log(phase="load", primitive="runtime_opcert_header_cases",
+                       level="info", event="opcert_summary", payload=summary)
+        handle.log(phase="load", primitive="runtime_opcert_header_cases",
+                   level="info" if outcome == "ok" else "error", event="completed",
+                   payload={"outcome": outcome, "exit_code": proc.returncode,
+                            "report": report, "output_dir": str(output_dir),
+                            "stdout": (proc.stdout or "")[-4096:], "stderr": (proc.stderr or "")[-4096:]})
+
+
+class OpcertCaseVerdictsMatchExpected(AssertionPrimitive):
+    """Pass iff every opcert header case reached its declared verdict (and reason)."""
+
+    def evaluate(self, handle):
+        name = "opcert_case_verdicts_match_expected"
+        relative = str(self.params.get("report_path", "outputs/opcert-header-cases/result.json"))
+        try:
+            path, report = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="the opcert header-case result is unavailable")
+        from scripts.runtime_opcert_header_cases import evaluate_match
+
+        rows = report.get("cases") or []
+        decision = evaluate_match(rows)
+        passed = decision["result"] == "pass"
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={
+                "case_count": decision["case_count"],
+                "matched": [r["case"] for r in rows if r.get("status") == "matched"],
+                "mismatched": decision["mismatched"],
+                "inconclusive": decision["inconclusive"],
+            },
+            data_points=[{"report": path.relative_to(handle.run_dir).as_posix()}],
+            note="one or more opcert header cases did not reach the expected verdict")
+
+
+class OpcertVerdictsAgree(AssertionPrimitive):
+    """Cross-node: pass iff both nodes reached the same verdict on every opcert case."""
+
+    def evaluate(self, handle):
+        name = "opcert_verdicts_agree"
+        cardano_rel = str(self.params.get("cardano_report_path", "outputs/opcert-header-cases-cardano/result.json"))
+        amaru_rel = str(self.params.get("amaru_report_path", "outputs/opcert-header-cases-amaru/result.json"))
+        try:
+            cardano_path, cardano_report = _read_client_proof(handle, cardano_rel)
+            amaru_path, amaru_report = _read_client_proof(handle, amaru_rel)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="a per-node opcert result is unavailable")
+        from scripts.runtime_opcert_header_cases import evaluate_agree
+
+        decision = evaluate_agree(cardano_report.get("cases") or [], amaru_report.get("cases") or [])
+        passed = decision["result"] == "pass"
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={"case_count": decision["case_count"], "disagreements": decision["disagreements"]},
+            data_points=[
+                {"cardano": cardano_path.relative_to(handle.run_dir).as_posix()},
+                {"amaru": amaru_path.relative_to(handle.run_dir).as_posix()},
+            ],
+            note="the two nodes disagreed on at least one opcert header case")
+
+
+class RuntimeOpcertHeaderSoak(LoadPrimitive):
+    """Run a randomized differential opcert-header SOAK: generate a fresh
+    seed-deterministic case each iteration, serve it through the opcert forger,
+    and evaluate a per-family invariant until a wall-clock budget is spent."""
+
+    def _build_command(self, *, runtime_root, output_dir):
+        command = [
+            str(self.params.get("python_bin", "python3")),
+            str(DWARF_ROOT / "scripts" / "runtime_opcert_header_soak.py"),
+            "--runtime-root", str(runtime_root),
+            "--family", str(self.params["family"]),
+            "--seed", str(int(self.params["seed"])),
+            "--output-dir", str(output_dir),
+            "--time-budget-seconds", str(int(self.params.get("time_budget_seconds", 5400))),
+        ]
+        if self.params.get("target_nodes"):
+            command += ["--target-nodes", ",".join(str(n) for n in self.params["target_nodes"])]
+        if self.params.get("target_node"):
+            command += ["--target-node", str(self.params["target_node"])]
+        if self.params.get("peer_bin"):
+            command += ["--peer-bin", str(self.params["peer_bin"])]
+        if self.params.get("per_iteration_timeout"):
+            command += ["--per-iteration-timeout", str(int(self.params["per_iteration_timeout"]))]
+        if self.params.get("restart_k"):
+            command += ["--restart-k", str(int(self.params["restart_k"]))]
+        if self.params.get("kes_evolution_aged"):
+            command += ["--kes-evolution-aged"]
+        return command
+
+    def run(self, handle, rng):
+        import os
+        from profile_manager.profiles import remote_base
+
+        profile_id = self.params.get("profile_id")
+        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        output_dir = _resolve_output_path(handle, self.params.get("output_dir", "outputs/opcert-soak"))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        command = self._build_command(runtime_root=runtime_root, output_dir=output_dir)
+        handle.log(phase="load", primitive="runtime_opcert_header_soak",
+                   level="info", event="started",
+                   payload={"profile_id": profile_id, "runtime_root": str(runtime_root),
+                            "family": self.params.get("family"), "seed": self.params.get("seed"),
+                            "command": command})
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value)
+        proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True, text=True,
+                              timeout=float(self.params.get("timeout_seconds", 6300)),
+                              check=False, env=env)
+        report_path = output_dir / "result.json"
+        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
+        outcome = "ok" if proc.returncode == int(self.params.get("expect_exit", 0)) else "unexpected_exit"
+        if isinstance(report, dict) and report:
+            handle.log(phase="load", primitive="runtime_opcert_header_soak",
+                       level="info", event="opcert_soak_summary",
+                       payload={k: report.get(k) for k in
+                                ("family", "seed", "iterations", "conclusive", "inconclusive",
+                                 "pass", "counters", "duration_seconds")})
+        handle.log(phase="load", primitive="runtime_opcert_header_soak",
+                   level="info" if outcome == "ok" else "error", event="completed",
+                   payload={"outcome": outcome, "exit_code": proc.returncode,
+                            "report": report, "output_dir": str(output_dir),
+                            "stdout": (proc.stdout or "")[-4096:], "stderr": (proc.stderr or "")[-4096:]})
+
+
+
+class OpcertSoakInvariantHolds(AssertionPrimitive):
+    """Pass iff the soak found no invariant violation and had >0 conclusive iterations."""
+
+    def evaluate(self, handle):
+        name = "opcert_soak_invariant_holds"
+        relative = str(self.params.get("report_path", "outputs/opcert-soak/result.json"))
+        try:
+            path, report = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="the opcert soak result is unavailable")
+        from scripts.opcert_soak_result import evaluate_soak_invariant
+
+        decision = evaluate_soak_invariant(report)
+        passed = decision["result"] == "pass"
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={"conclusive": decision["conclusive"],
+                       "mismatches": decision["mismatches"]},
+            data_points=[{"report": path.relative_to(handle.run_dir).as_posix()}],
+            note="the opcert soak recorded an invariant violation or was vacuous (zero conclusive)")
+
+
+class OpcertSoakVerdictsAgree(AssertionPrimitive):
+    """Differential families: pass iff both nodes agreed on every conclusive iteration."""
+
+    def evaluate(self, handle):
+        name = "opcert_soak_verdicts_agree"
+        relative = str(self.params.get("report_path", "outputs/opcert-soak/result.json"))
+        try:
+            path, report = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="the opcert soak result is unavailable")
+        from scripts.opcert_soak_result import evaluate_soak_agree
+
+        decision = evaluate_soak_agree(report)
+        passed = decision["result"] == "pass"
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={"conclusive": decision["conclusive"],
+                       "disagreements": decision["disagreements"]},
+            data_points=[{"report": path.relative_to(handle.run_dir).as_posix()}],
+            note="the two nodes disagreed on at least one conclusive opcert soak iteration")
+
+
+class OpcertSoakReasonsAgree(AssertionPrimitive):
+    """Differential families: pass iff every both-reject iteration also agreed on
+    the CANONICAL rejection rule (no reason divergences) and there was at least
+    one conclusive iteration. A both-reject-but-different-canonical-reason case is
+    recorded in ``result.json`` ``reason_mismatches`` and fails this assertion; it
+    is DISTINCT from a verdict-level disagreement (``opcert_soak_verdicts_agree``)."""
+
+    def evaluate(self, handle):
+        name = "opcert_soak_reasons_agree"
+        relative = str(self.params.get("report_path", "outputs/opcert-soak/result.json"))
+        try:
+            path, report = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="the opcert soak result is unavailable")
+        from scripts.opcert_soak_result import evaluate_soak_reasons_agree
+
+        decision = evaluate_soak_reasons_agree(report)
+        passed = decision["result"] == "pass"
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={"conclusive": decision["conclusive"],
+                       "reason_mismatches": decision["reason_mismatches"]},
+            data_points=[{"report": path.relative_to(handle.run_dir).as_posix()}],
+            note="the two nodes rejected for a different canonical rule on at least one conclusive opcert soak iteration")
+
+
 class RuntimeVerifyExactTarget(LoadPrimitive):
     """Fail closed unless the deployed measurement target matches every frozen field."""
 
@@ -20453,6 +20704,19 @@ class PraosHeaderAssertionRejected(AssertionPrimitive):
     def evaluate(self, handle):
         latest, payload = _latest_completed_payload(handle, phase="load", primitive="runtime_praos_header_assertion_probe")
         result_body = payload.get("result") or {}
+        if result_body.get("status") == "unavailable":
+            # The probe was retired to a fail-closed stub; real Praos header
+            # rejection is proven by the opcert header scenarios. Report a
+            # non-vacuous fail (never a fabricated pass).
+            return {
+                "primitive": "praos_header_assertion_rejected",
+                "params": dict(self.params),
+                "evaluated_value": {"completed": 1 if latest is not None else 0,
+                                    "status": "unavailable"},
+                "data_points_used": [payload] if latest is not None else [],
+                "result": "fail",
+                "note": str(result_body.get("reason") or "praos header probe unavailable"),
+            }
         header_rejected = bool(result_body.get("header_rejected", False))
         assertion_boundary_preserved = bool(result_body.get("assertion_boundary_preserved", False))
         enough = latest is not None and payload.get("outcome") == "ok" and header_rejected and assertion_boundary_preserved

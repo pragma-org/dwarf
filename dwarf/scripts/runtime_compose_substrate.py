@@ -419,6 +419,30 @@ def _wait_for_amaru_progress(
         time.sleep(sample_interval_seconds)
 
 
+def _apply_kes_genesis_override_to_shelley(*, genesis_path: Path, override: dict | None) -> dict | None:
+    """Inject a short operational-KES window into a generated Shelley genesis so
+    the aged/short-KES opcert boundary rules become reachable on a cardano-only
+    devnet. The pool opcerts created by cardano-testnet start at KES period 0 and
+    stay valid under the shortened window; the change only shortens the
+    slot->KES-period mapping and the evolution ceiling. Fails closed on a
+    malformed override. Returns the applied values, or None when not requested."""
+    if not override:
+        return None
+    slots = int(override["slots_per_kes_period"])
+    evolutions = int(override["max_kes_evolutions"])
+    if slots < 1 or evolutions < 1:
+        raise RuntimeError("kes_genesis_override values must be >= 1")
+    body = json.loads(genesis_path.read_text(encoding="utf-8"))
+    body["slotsPerKESPeriod"] = slots
+    body["maxKESEvolutions"] = evolutions
+    genesis_path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+    return {
+        "slots_per_kes_period": slots,
+        "max_kes_evolutions": evolutions,
+        "window_slots": slots * evolutions,
+    }
+
+
 def _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(*, genesis_path: Path, nodes: list[dict]) -> bool:
     if not any(
         node.get("impl") == "cardano-node"
@@ -1007,6 +1031,10 @@ def _compose_substrate_docker(
         _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(
             genesis_path=env_root / "shelley-genesis.json",
             nodes=haskell_nodes,
+        )
+        _apply_kes_genesis_override_to_shelley(
+            genesis_path=env_root / "shelley-genesis.json",
+            override=plan.get("kes_genesis_override"),
         )
         measurement_trace_config = (
             _enable_cardano_measurement_traces(env_root / "configuration.yaml")
@@ -1615,6 +1643,8 @@ def compose_substrate(
             )
         if not node["resolved_binary"] and not image_backed:
             raise RuntimeError(f"missing resolved binary for {node['id']}")
+
+    plan["kes_genesis_override"] = substrate.get("kes_genesis_override")
 
     if compose_mode == "docker":
         if plan.get("host_strategy") == "explicit":

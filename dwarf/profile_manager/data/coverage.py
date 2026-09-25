@@ -108,6 +108,9 @@ def _protocols_in_text(text: str | None) -> set[str]:
         found.add("blockfetch")
     if "chainsync" in tn:
         found.add("chainsync")
+    if "opcert-header-validation" in tn:
+        # Opcert/KES header validation runs over the ChainSync header path.
+        found.add("chainsync")
     if "peersharing" in tn:
         found.add("peersharing")
     if "handshake" in tn:

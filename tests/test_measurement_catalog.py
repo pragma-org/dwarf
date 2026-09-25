@@ -232,6 +232,8 @@ def test_measurement_catalog_rejects_unsafe_ids(tmp_path, monkeypatch, bad_id):
 
 def test_seed_catalog_is_exactly_version_pinned_and_modes_are_not_conflated():
     expected_amaru = {
+        "amaru-stock-header-validation",
+        "amaru-patched-header-validation",
         "amaru-stock-header-lifecycle",
         "amaru-stock-fork-switch",
         "amaru-stock-mempool",
@@ -249,6 +251,8 @@ def test_seed_catalog_is_exactly_version_pinned_and_modes_are_not_conflated():
         "amaru-patched-txsubmission-residence",
     }
     expected_cardano = {
+        "cardano-stock-header-validation",
+        "cardano-patched-header-validation",
         "cardano-stock-chain-lifecycle",
         "cardano-stock-blockfetch",
         "cardano-stock-txsubmission-mempool",

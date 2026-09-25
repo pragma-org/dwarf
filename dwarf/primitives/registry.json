@@ -66,20 +66,6 @@
       ],
       "version": "0.1.0"
     },
-    "handshake_cases_match_expected": {
-      "class": "HandshakeCasesMatchExpected",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/handshake_cases_match_expected.schema.json",
-      "runtimes": [
-        "devnet"
-      ],
-      "supports": [
-        "amaru",
-        "cardano-node"
-      ],
-      "version": "0.1.0"
-    },
     "big_ledger_peer_quorum_intact": {
       "class": "BigLedgerPeerQuorumIntact",
       "family": "assertion",
@@ -88,6 +74,20 @@
       "runtimes": [
         "devnet",
         "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "block_application_samples_correlated": {
+      "class": "BlockApplicationSamplesCorrelated",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/block_application_samples_correlated.schema.json",
+      "runtimes": [
+        "devnet"
       ],
       "supports": [
         "cardano-node",
@@ -302,6 +302,20 @@
       ],
       "version": "0.1.0"
     },
+    "canonical_chain_progress_complete": {
+      "class": "CanonicalChainProgressComplete",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/canonical_chain_progress_complete.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.2.0"
+    },
     "cardano_cbor_dataset_differential_clean": {
       "class": "CardanoCborDatasetDifferentialClean",
       "family": "assertion",
@@ -329,48 +343,6 @@
         "cardano-node",
         "amaru"
       ],
-      "version": "0.1.0"
-    },
-    "cbor_roundtrip_consistent": {
-      "class": "CborRoundtripConsistent",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/cbor_roundtrip_consistent.schema.json",
-      "runtimes": [
-        "single-node",
-        "devnet"
-      ],
-      "supports": [
-        "cardano-node",
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
-    "plutus_result_and_budget_match": {
-      "class": "PlutusResultAndBudgetMatch",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/plutus_result_and_budget_match.schema.json",
-      "runtimes": ["single-node", "devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "plutus_live_outcomes_observed": {
-      "class": "PlutusLiveOutcomesObserved",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/plutus_live_outcomes_observed.schema.json",
-      "runtimes": ["single-node", "devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "simple_transfers_observed": {
-      "class": "SimpleTransfersObserved",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/simple_transfers_observed.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
       "version": "0.1.0"
     },
     "cbor_edge_cases": {
@@ -408,6 +380,21 @@
       "params_schema": "primitives/load/cbor_fuzz_target.schema.json",
       "runtimes": [
         "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "cbor_roundtrip_consistent": {
+      "class": "CborRoundtripConsistent",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/cbor_roundtrip_consistent.schema.json",
+      "runtimes": [
+        "single-node",
+        "devnet"
       ],
       "supports": [
         "cardano-node",
@@ -535,6 +522,20 @@
       ],
       "version": "0.1.0"
     },
+    "controlled_sync_range_complete": {
+      "class": "ControlledSyncRangeComplete",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/controlled_sync_range_complete.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "credential_ceremony_recorded_clean": {
       "class": "CredentialCeremonyRecordedClean",
       "family": "assertion",
@@ -636,6 +637,20 @@
       ],
       "version": "0.1.0"
     },
+    "handshake_cases_match_expected": {
+      "class": "HandshakeCasesMatchExpected",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/handshake_cases_match_expected.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "amaru",
+        "cardano-node"
+      ],
+      "version": "0.1.0"
+    },
     "hf_boundary_rule_consistent": {
       "class": "HfBoundaryRuleConsistent",
       "family": "assertion",
@@ -689,6 +704,20 @@
       "runtimes": [
         "devnet",
         "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "invalid_protocol_cases_contained": {
+      "class": "InvalidProtocolCasesContained",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/invalid_protocol_cases_contained.schema.json",
+      "runtimes": [
+        "devnet"
       ],
       "supports": [
         "cardano-node",
@@ -863,6 +892,20 @@
       ],
       "version": "0.1.0"
     },
+    "minimum_adopted_block_range_observed": {
+      "class": "MinimumAdoptedBlockRangeObserved",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/minimum_adopted_block_range_observed.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "mode_switch_genesis_observed": {
       "class": "ModeSwitchGenesisObserved",
       "family": "assertion",
@@ -886,6 +929,90 @@
       "runtimes": [
         "devnet",
         "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "no_target_fatal_signal": {
+      "class": "NoTargetFatalSignal",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/no_target_fatal_signal.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "opcert_case_verdicts_match_expected": {
+      "class": "OpcertCaseVerdictsMatchExpected",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/opcert_case_verdicts_match_expected.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "opcert_soak_invariant_holds": {
+      "class": "OpcertSoakInvariantHolds",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/opcert_soak_invariant_holds.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "opcert_soak_verdicts_agree": {
+      "class": "OpcertSoakVerdictsAgree",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/opcert_soak_verdicts_agree.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "opcert_soak_reasons_agree": {
+      "class": "OpcertSoakReasonsAgree",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/opcert_soak_reasons_agree.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "opcert_verdicts_agree": {
+      "class": "OpcertVerdictsAgree",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/opcert_verdicts_agree.schema.json",
+      "runtimes": [
+        "devnet"
       ],
       "supports": [
         "cardano-node",
@@ -996,6 +1123,21 @@
       ],
       "version": "0.1.0"
     },
+    "plutus_live_outcomes_observed": {
+      "class": "PlutusLiveOutcomesObserved",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/plutus_live_outcomes_observed.schema.json",
+      "runtimes": [
+        "single-node",
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "plutus_phase2_differential_equivalent": {
       "class": "PlutusPhase2DifferentialEquivalent",
       "family": "assertion",
@@ -1056,6 +1198,21 @@
       ],
       "version": "0.1.0"
     },
+    "plutus_result_and_budget_match": {
+      "class": "PlutusResultAndBudgetMatch",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/plutus_result_and_budget_match.schema.json",
+      "runtimes": [
+        "single-node",
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "praos_header_assertion_rejected": {
       "class": "PraosHeaderAssertionRejected",
       "family": "assertion",
@@ -1094,6 +1251,20 @@
       "runtimes": [
         "devnet",
         "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "restart_readiness_complete": {
+      "class": "RestartReadinessComplete",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/restart_readiness_complete.schema.json",
+      "runtimes": [
+        "devnet"
       ],
       "supports": [
         "cardano-node",
@@ -1140,6 +1311,19 @@
       ],
       "supports": [
         "cardano-node"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_amaru_measurement_calibration": {
+      "class": "RuntimeAmaruMeasurementCalibration",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_amaru_measurement_calibration.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "amaru"
       ],
       "version": "0.1.0"
     },
@@ -1529,30 +1713,6 @@
       ],
       "version": "0.1.0"
     },
-    "runtime_version_pinned_plutus_conformance": {
-      "class": "RuntimeVersionPinnedPlutusConformance",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_version_pinned_plutus_conformance.schema.json",
-      "runtimes": ["single-node", "devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "runtime_version_pinned_cbor_conformance": {
-      "class": "RuntimeVersionPinnedCborConformance",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_version_pinned_cbor_conformance.schema.json",
-      "runtimes": [
-        "single-node",
-        "devnet"
-      ],
-      "supports": [
-        "cardano-node",
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
     "runtime_cardano_lsq_extract": {
       "class": "RuntimeCardanoLsqExtract",
       "family": "load",
@@ -1565,6 +1725,19 @@
       "supports": [
         "cardano-node",
         "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_cardano_measurement_calibration": {
+      "class": "RuntimeCardanoMeasurementCalibration",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_cardano_measurement_calibration.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node"
       ],
       "version": "0.1.0"
     },
@@ -1722,6 +1895,62 @@
       "family": "load",
       "module": "profile_manager.primitives",
       "params_schema": "primitives/load/runtime_container_runtime_inspect.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_controlled_chain_progress_window": {
+      "class": "RuntimeControlledChainProgressWindow",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_controlled_chain_progress_window.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_controlled_plutus_transactions": {
+      "class": "RuntimeControlledPlutusTransactions",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_controlled_plutus_transactions.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_controlled_simple_transfers": {
+      "class": "RuntimeControlledSimpleTransfers",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_controlled_simple_transfers.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_controlled_sync_range": {
+      "class": "RuntimeControlledSyncRange",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_controlled_sync_range.schema.json",
       "runtimes": [
         "devnet"
       ],
@@ -1980,50 +2209,6 @@
       ],
       "version": "0.1.0"
     },
-    "runtime_amaru_measurement_calibration": {
-      "class": "RuntimeAmaruMeasurementCalibration",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_amaru_measurement_calibration.schema.json",
-      "runtimes": [
-        "devnet"
-      ],
-      "supports": [
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
-    "runtime_cardano_measurement_calibration": {
-      "class": "RuntimeCardanoMeasurementCalibration",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_cardano_measurement_calibration.schema.json",
-      "runtimes": [
-        "devnet"
-      ],
-      "supports": [
-        "cardano-node"
-      ],
-      "version": "0.1.0"
-    },
-    "runtime_controlled_plutus_transactions": {
-      "class": "RuntimeControlledPlutusTransactions",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_controlled_plutus_transactions.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "runtime_controlled_simple_transfers": {
-      "class": "RuntimeControlledSimpleTransfers",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_controlled_simple_transfers.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
     "runtime_local_query_stress": {
       "class": "RuntimeLocalQueryStress",
       "family": "load",
@@ -2071,6 +2256,48 @@
       "family": "load",
       "module": "profile_manager.primitives",
       "params_schema": "primitives/load/runtime_hardening_probe.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_mark_baseline_window": {
+      "class": "RuntimeMarkBaselineWindow",
+      "family": "setup",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/setup/runtime_mark_baseline_window.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_mark_hostile_window": {
+      "class": "RuntimeMarkHostileWindow",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_mark_hostile_window.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_mark_recovery_window": {
+      "class": "RuntimeMarkRecoveryWindow",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_mark_recovery_window.schema.json",
       "runtimes": [
         "devnet"
       ],
@@ -2191,6 +2418,34 @@
       ],
       "version": "0.1.0"
     },
+    "runtime_opcert_header_cases": {
+      "class": "RuntimeOpcertHeaderCases",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_opcert_header_cases.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_opcert_header_soak": {
+      "class": "RuntimeOpcertHeaderSoak",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_opcert_header_soak.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "runtime_overlay_slot_forging": {
       "class": "RuntimeOverlaySlotForging",
       "family": "load",
@@ -2233,216 +2488,6 @@
       ],
       "version": "0.1.0"
     },
-    "runtime_wait_for_chain_progress": {
-      "class": "RuntimeWaitForChainProgress",
-      "family": "setup",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/setup/runtime_wait_for_chain_progress.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "runtime_controlled_chain_progress_window": {
-      "class": "RuntimeControlledChainProgressWindow",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_controlled_chain_progress_window.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "runtime_real_target_restart_and_readiness": {
-      "class": "RuntimeRealTargetRestartAndReadiness",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_real_target_restart_and_readiness.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "runtime_controlled_sync_range": {
-      "class": "RuntimeControlledSyncRange",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_controlled_sync_range.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "minimum_adopted_block_range_observed": {
-      "class": "MinimumAdoptedBlockRangeObserved",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/minimum_adopted_block_range_observed.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "canonical_chain_progress_complete": {
-      "class": "CanonicalChainProgressComplete",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/canonical_chain_progress_complete.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.2.0"
-    },
-    "block_application_samples_correlated": {
-      "class": "BlockApplicationSamplesCorrelated",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/block_application_samples_correlated.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "restart_readiness_complete": {
-      "class": "RestartReadinessComplete",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/restart_readiness_complete.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "controlled_sync_range_complete": {
-      "class": "ControlledSyncRangeComplete",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/controlled_sync_range_complete.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "runtime_verify_exact_target": {
-      "class": "RuntimeVerifyExactTarget",
-      "family": "setup",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/setup/runtime_verify_exact_target.schema.json",
-      "runtimes": [
-        "devnet"
-      ],
-      "supports": [
-        "cardano-node",
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
-    "runtime_mark_baseline_window": {
-      "class": "RuntimeMarkBaselineWindow",
-      "family": "setup",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/setup/runtime_mark_baseline_window.schema.json",
-      "runtimes": [
-        "devnet"
-      ],
-      "supports": [
-        "cardano-node",
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
-    "runtime_mark_hostile_window": {
-      "class": "RuntimeMarkHostileWindow",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_mark_hostile_window.schema.json",
-      "runtimes": [
-        "devnet"
-      ],
-      "supports": [
-        "cardano-node",
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
-    "runtime_mark_recovery_window": {
-      "class": "RuntimeMarkRecoveryWindow",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_mark_recovery_window.schema.json",
-      "runtimes": [
-        "devnet"
-      ],
-      "supports": [
-        "cardano-node",
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
-    "runtime_protocol_decode_cases": {
-      "class": "RuntimeProtocolDecodeCases",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_protocol_decode_cases.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "invalid_protocol_cases_contained": {
-      "class": "InvalidProtocolCasesContained",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/invalid_protocol_cases_contained.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "target_progress_continues": {
-      "class": "TargetProgressContinues",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/target_progress_continues.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "unrelated_peer_session_usable": {
-      "class": "UnrelatedPeerSessionUsable",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/unrelated_peer_session_usable.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "no_target_fatal_signal": {
-      "class": "NoTargetFatalSignal",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/no_target_fatal_signal.schema.json",
-      "runtimes": ["devnet"],
-      "supports": ["cardano-node", "amaru"],
-      "version": "0.1.0"
-    },
-    "runtime_target_health_and_progress": {
-      "class": "RuntimeTargetHealthAndProgress",
-      "family": "probe",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/probe/runtime_target_health_and_progress.schema.json",
-      "runtimes": [
-        "devnet"
-      ],
-      "supports": [
-        "cardano-node",
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
-    "runtime_peer_session_health": {
-      "class": "RuntimePeerSessionHealth",
-      "family": "probe",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/probe/runtime_peer_session_health.schema.json",
-      "runtimes": [
-        "devnet"
-      ],
-      "supports": [
-        "cardano-node",
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
     "runtime_partition_rejoin": {
       "class": "RuntimePartitionRejoin",
       "family": "load",
@@ -2466,6 +2511,20 @@
       ],
       "supports": [
         "cardano-node"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_peer_session_health": {
+      "class": "RuntimePeerSessionHealth",
+      "family": "probe",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/probe/runtime_peer_session_health.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
       ],
       "version": "0.1.0"
     },
@@ -2684,6 +2743,34 @@
       ],
       "supports": [
         "cardano-node"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_protocol_decode_cases": {
+      "class": "RuntimeProtocolDecodeCases",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_protocol_decode_cases.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_real_target_restart_and_readiness": {
+      "class": "RuntimeRealTargetRestartAndReadiness",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_real_target_restart_and_readiness.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
       ],
       "version": "0.1.0"
     },
@@ -2924,6 +3011,20 @@
       ],
       "version": "0.1.0"
     },
+    "runtime_target_health_and_progress": {
+      "class": "RuntimeTargetHealthAndProgress",
+      "family": "probe",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/probe/runtime_target_health_and_progress.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "runtime_teardown_substrate": {
       "class": "RuntimeTeardownSubstrate",
       "family": "teardown",
@@ -3036,6 +3137,64 @@
       ],
       "version": "0.1.0"
     },
+    "runtime_verify_exact_target": {
+      "class": "RuntimeVerifyExactTarget",
+      "family": "setup",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/setup/runtime_verify_exact_target.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_version_pinned_cbor_conformance": {
+      "class": "RuntimeVersionPinnedCborConformance",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_version_pinned_cbor_conformance.schema.json",
+      "runtimes": [
+        "single-node",
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_version_pinned_plutus_conformance": {
+      "class": "RuntimeVersionPinnedPlutusConformance",
+      "family": "load",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/load/runtime_version_pinned_plutus_conformance.schema.json",
+      "runtimes": [
+        "single-node",
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_wait_for_chain_progress": {
+      "class": "RuntimeWaitForChainProgress",
+      "family": "setup",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/setup/runtime_wait_for_chain_progress.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "shim_peer_invalid_cbor": {
       "class": "ShimPeerInvalidCbor",
       "family": "load",
@@ -3116,6 +3275,20 @@
       ],
       "supports": [
         "cardano-node"
+      ],
+      "version": "0.1.0"
+    },
+    "simple_transfers_observed": {
+      "class": "SimpleTransfersObserved",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/simple_transfers_observed.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
       ],
       "version": "0.1.0"
     },
@@ -3219,6 +3392,20 @@
       ],
       "version": "0.1.0"
     },
+    "target_progress_continues": {
+      "class": "TargetProgressContinues",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/target_progress_continues.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "tip_convergence_clean": {
       "class": "TipConvergenceClean",
       "family": "assertion",
@@ -3302,6 +3489,20 @@
       "runtimes": [
         "devnet",
         "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "unrelated_peer_session_usable": {
+      "class": "UnrelatedPeerSessionUsable",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/unrelated_peer_session_usable.schema.json",
+      "runtimes": [
+        "devnet"
       ],
       "supports": [
         "cardano-node",

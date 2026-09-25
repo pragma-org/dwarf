@@ -1,0 +1,83 @@
+{
+  "case_set": [
+    "valid-control",
+    "counter-behind",
+    "kes-after-window"
+  ],
+  "cases": [
+    {
+      "case": "valid-control",
+      "expected_reason": null,
+      "expected_verdict": "accept",
+      "observed_reason": null,
+      "observed_verdict": "accepted",
+      "served_hash": "216910eb0374e4934744ee581368374982d542a02c6179fea63d0639612fe1f1",
+      "status": "matched"
+    },
+    {
+      "case": "counter-behind",
+      "expected_reason": "CounterTooSmallOCERT",
+      "expected_verdict": "reject",
+      "observed_reason": "CounterTooSmallOCERT",
+      "observed_verdict": "rejected",
+      "served_hash": "7a4516cf48e250a967bdf2d7d82137b5a8c9c7f3f28ee2951b165c39434b1b6e",
+      "status": "matched"
+    },
+    {
+      "case": "kes-after-window",
+      "expected_reason": "KESAfterEndOCERT",
+      "expected_verdict": "reject",
+      "observed_reason": "KESAfterEndOCERT",
+      "observed_verdict": "rejected",
+      "served_hash": "8f8e00ec5285d1f28bde8af1c110a211bda0537039595d14eda96e04658ed85b",
+      "status": "matched"
+    }
+  ],
+  "compose_project": "dwarf-profile-opcert-aged-kes-cardano-1112",
+  "runtime_root": "/opt/dwarf/cardano-profiles/profile-opcert-aged-kes-cardano-1112",
+  "schema_version": "v1",
+  "summary": {
+    "all_matched": true,
+    "case_count": 3,
+    "inconclusive": [],
+    "matched": [
+      "valid-control",
+      "counter-behind",
+      "kes-after-window"
+    ],
+    "mismatched": [],
+    "result": "pass"
+  },
+  "target": "cardano-node",
+  "target_health": {
+    "after": {
+      "exit_code": 0,
+      "oom_killed": false,
+      "restart_count": 0,
+      "running": true,
+      "status": "running"
+    },
+    "before": {
+      "exit_code": 0,
+      "oom_killed": false,
+      "restart_count": 0,
+      "running": true,
+      "status": "running"
+    },
+    "log_signals": {
+      "background": [],
+      "fatal": []
+    },
+    "tip_after": {
+      "block_height": 108,
+      "hash": "ddad5ae15b16e4d1dffdc5304c8e806f101022710bca9b6f2141d38e30ccf5f0",
+      "slot": 2623
+    },
+    "tip_before": {
+      "block_height": 79,
+      "hash": "029a2a841165dd1905a2317ed692ae05afaa89129a1ff5cea4eece4376a37613",
+      "slot": 1868
+    }
+  },
+  "target_node": "node1"
+}

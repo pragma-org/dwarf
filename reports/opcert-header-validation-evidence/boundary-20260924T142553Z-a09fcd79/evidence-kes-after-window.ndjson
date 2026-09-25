@@ -1,0 +1,2 @@
+{"case":"kes-after-window","kind":"opcert_case_started","slots_per_kes":100}
+{"case":"kes-after-window","expected_verdict":"reject","header_hash":"8f8e00ec5285d1f28bde8af1c110a211bda0537039595d14eda96e04658ed85b","kind":"opcert_case_served","mutation":"MutateKESPeriodBefore","pool":"pool1","slot":2535}

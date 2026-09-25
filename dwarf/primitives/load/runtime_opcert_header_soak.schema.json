@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime_opcert_header_soak params",
+  "type": "object",
+  "required": ["family", "seed"],
+  "allOf": [
+    {
+      "oneOf": [
+        {"required": ["profile_id"], "not": {"required": ["runtime_root"]}},
+        {"required": ["runtime_root"], "not": {"required": ["profile_id"]}}
+      ]
+    },
+    {
+      "oneOf": [
+        {"required": ["target_node"], "not": {"required": ["target_nodes"]}},
+        {"required": ["target_nodes"], "not": {"required": ["target_node"]}}
+      ]
+    },
+    {
+      "if": {"properties": {"family": {"enum": ["encoding-form", "kes-period-differential", "rules-differential", "error-precedence"]}}},
+      "then": {"required": ["target_nodes"]},
+      "else": {"required": ["target_node"]}
+    }
+  ],
+  "properties": {
+    "family": {"type": "string", "enum": ["encoding-form", "accept-boundary", "restart-persistence", "kes-period-differential", "cross-pool-confusion", "rules-differential", "kes-evolution", "error-precedence"]},
+    "seed": {"type": "integer"},
+    "time_budget_seconds": {"type": "number", "exclusiveMinimum": 0, "default": 5400},
+    "profile_id": {"type": "string", "minLength": 1},
+    "runtime_root": {"type": "string", "minLength": 1},
+    "target_node": {"type": "string", "minLength": 1},
+    "target_nodes": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 2, "maxItems": 2},
+    "output_dir": {"type": "string", "minLength": 1},
+    "peer_bin": {"type": "string", "minLength": 1},
+    "per_iteration_timeout": {"type": "number", "exclusiveMinimum": 0},
+    "restart_k": {"type": "integer", "minimum": 1},
+    "python_bin": {"type": "string", "minLength": 1},
+    "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "expect_exit": {"type": "integer"},
+    "kes_evolution_aged": {"type": "boolean", "default": false, "description": "kes-evolution only: when true, draw both signs (under+over evolution) -- needs an aged-KES devnet. Default false draws over-evolution only (always reachable on a fresh devnet)."}
+  },
+  "additionalProperties": false
+}

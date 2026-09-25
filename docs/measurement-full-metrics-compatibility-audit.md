@@ -48,6 +48,8 @@ The following supported client scenarios are the workload candidates in this aud
 | `amaru-patched-blockfetch-queues` | Revision-locked BlockFetch enqueue, dequeue, or residence events | A4, A5 | Exercised in A4 |
 | `amaru-patched-txsubmission-residence` | Revision-locked TxSubmission2 queue/residence events correlated to transactions | A2 | Not non-vacuous in retained client runs |
 | `amaru-coverage-production-paths` | An Amaru coverage build, coverage campaign ID, corpus IDs, and retained coverage artifacts | No supported client scenario | Reserved/unprofiled; not exercised by the five client scenarios |
+| `amaru-stock-header-validation` | Stock consensus traces with per-header accepted/rejected verdicts or opcert rejection reasons in the window | No profile selects it this cycle | Implemented stock collector, unprofiled; not exercised by the five client scenarios |
+| `amaru-patched-header-validation` | A future revision-locked header-validation patch | No supported client scenario | Reserved scaffold; returns unavailable with a reason, not exercised |
 
 ## Cardano-node mechanical compatibility map
 
@@ -68,13 +70,15 @@ The following supported client scenarios are the workload candidates in this aud
 | `cardano-patched-blockfetch-handler-queue` | Revision-locked BlockFetch handler queue records | C4, C5 | Reserved/unprofiled for the current target; not exercised |
 | `cardano-patched-txsubmission-residence` | Revision-locked TxSubmission queue/residence records | C2 | Reserved/unprofiled for the current target; not exercised |
 | `cardano-coverage-production-paths` | A coverage target, campaign and corpus IDs, and retained coverage artifacts | Coverage smoke scenarios, not C1–C5 | Reserved/unprofiled; not exercised by the five client scenarios |
+| `cardano-stock-header-validation` | Stock ChainSync and ChainDB traces with per-header accepted/rejected verdicts or OCERT rejection reasons in the window | No profile selects it this cycle | Implemented stock collector, unprofiled; not exercised by the five client scenarios |
+| `cardano-patched-header-validation` | A future revision-locked header-validation patch | No supported client scenario | Reserved scaffold; returns unavailable with a reason, not exercised |
 
 ## Highest-coverage real-node client paths
 
 No single retained scenario exercises every implemented metric.
 
-- Amaru recommendation: A4 with `profile-y-amaru-block-application-nanoseconds-v3`, `amaru-security-patched`, and run `20260921T035546Z-9747122c`. It exercised 8 of 14 configured collectors, or 8 of 15 implemented Amaru definitions when the unprofiled coverage definition is included. Missing configured collectors are restart readiness, workload accounting, mempool, ledger rules, TxSubmission residence, and Plutus execution. A5 adds restart readiness but does not make one run complete.
-- Cardano-node recommendation: C1 with `profile-v-cardano-measurement-nanoseconds-v2`, `cardano-security-patched`, and run `20260920T132629Z-ea000d37`. It exercised 8 of 12 configured collectors, or 8 of 15 implemented Cardano definitions when three reserved/unprofiled definitions are included. Missing configured collectors are restart readiness, workload accounting, Plutus execution, and TxSubmission/mempool. C5 adds restart readiness but does not make one run complete.
+- Amaru recommendation: A4 with `profile-y-amaru-block-application-nanoseconds-v3`, `amaru-security-patched`, and run `20260921T035546Z-9747122c`. It exercised 8 of 14 configured collectors, or 8 of 17 implemented Amaru definitions when the unprofiled coverage and header-validation definitions are included. Missing configured collectors are restart readiness, workload accounting, mempool, ledger rules, TxSubmission residence, and Plutus execution. A5 adds restart readiness but does not make one run complete.
+- Cardano-node recommendation: C1 with `profile-v-cardano-measurement-nanoseconds-v2`, `cardano-security-patched`, and run `20260920T132629Z-ea000d37`. It exercised 8 of 12 configured collectors, or 8 of 17 implemented Cardano definitions when five reserved/unprofiled definitions are included. Missing configured collectors are restart readiness, workload accounting, Plutus execution, and TxSubmission/mempool. C5 adds restart readiness but does not make one run complete.
 
 The reports can truthfully say **all collectors configured** or **all configured collectors finalized**. They cannot say **all metrics exercised**.
 

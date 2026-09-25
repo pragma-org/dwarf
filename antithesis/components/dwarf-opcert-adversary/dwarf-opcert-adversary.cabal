@@ -1,0 +1,63 @@
+cabal-version: 3.0
+name: dwarf-opcert-adversary
+version: 0.1.0.0
+build-type: Simple
+license: Apache-2.0
+
+common settings
+  default-language: GHC2021
+  ghc-options: -Wall -Werror
+
+library
+  import: settings
+  hs-source-dirs: src
+  exposed-modules: DwarfOpcertAdversary
+  build-depends:
+    , aeson
+    , base
+    , base16-bytestring
+    , bytestring
+    , cardano-crypto-class
+    , cardano-protocol-tpraos
+    , ouroboros-consensus-protocol
+    , cardano-slotting
+    , cborg
+    , dwarf-adversary
+    , ouroboros-consensus-cardano
+    , ouroboros-network
+    , ouroboros-network-api
+    , ouroboros-network-protocols
+    , serialise
+    , text
+    , typed-protocols
+
+executable dwarf-opcert-adversary
+  import: settings
+  hs-source-dirs: app
+  main-is: Main.hs
+  build-depends:
+    , aeson
+    , base
+    , bytestring
+    , cborg
+    , containers
+    , directory
+    , dwarf-adversary
+    , dwarf-opcert-adversary
+    , filepath
+    , ouroboros-consensus
+    , ouroboros-consensus-cardano
+    , ouroboros-network
+    , ouroboros-network-api
+    , ouroboros-network-mock
+    , strict-stm
+
+test-suite dwarf-opcert-adversary-test
+  import: settings
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  build-depends:
+    , base
+    , bytestring
+    , dwarf-opcert-adversary
