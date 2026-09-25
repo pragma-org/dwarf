@@ -43,6 +43,7 @@ module DwarfOpcertAdversary
     , parseCaseSpec
     , caseSpecByteSeed
     , applyCaseSpec
+    , applyKesEvolution
     , reEncodeOpcert
     ) where
 
@@ -254,6 +255,30 @@ signAtEvolution
     -> KES.SignedKES (KES StandardCrypto) a
 signAtEvolution key evol msg =
     KES.SignedKES (KES.unsoundPureSignKES () evol msg (evolveKesTo evol key))
+
+
+-- | Like 'evolveKesTo' but 'Nothing' instead of crashing when the key is
+-- exhausted before @target@ (used by the kes-evolution family, which must
+-- fail-close an unreachable target rather than error).
+evolveKesToMaybe :: Word -> KES.UnsoundPureSignKeyKES (KES StandardCrypto) -> Maybe (KES.UnsoundPureSignKeyKES (KES StandardCrypto))
+evolveKesToMaybe target = go 0
+  where
+    go p k
+        | p >= target = Just k
+        | otherwise = case KES.unsoundPureUpdateKES () k p of
+            Just k' -> go (p + 1) k'
+            Nothing -> Nothing
+
+
+-- | Like 'signAtEvolution' but 'Nothing' when the key cannot evolve to @evol@.
+signAtEvolutionMaybe
+    :: KES.Signable (KES StandardCrypto) a
+    => KES.UnsoundPureSignKeyKES (KES StandardCrypto)
+    -> Word
+    -> a
+    -> Maybe (KES.SignedKES (KES StandardCrypto) a)
+signAtEvolutionMaybe key evol msg =
+    fmap (\k -> KES.SignedKES (KES.unsoundPureSignKES () evol msg k)) (evolveKesToMaybe evol key)
 
 
 -- | Re-sign a single header if (and only if) it is a current-era (Conway)
@@ -515,6 +540,7 @@ data CaseSpec = CaseSpec
     , csReplayCounter  :: !(Maybe Word)
     , csSlotOffsetFrac :: !(Maybe Double)
     , csForeignPool    :: !(Maybe String)
+    , csKesEvoDelta    :: !(Maybe Integer)
     }
     deriving (Eq, Show)
 
@@ -555,7 +581,8 @@ parseCaseSpec raw = do
         replay <- getP "replay_counter"
         soff   <- getP "slot_offset_fraction"
         fpool  <- getP "foreign_pool"
-        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool)
+        kevo   <- getP "kes_evolution_delta"
+        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo)
 
 -- | The seed that drives the encoding-form byte re-encoding for THIS case. The
 -- generator derives a distinct per-iteration @byte_seed@ (in @params@) from
@@ -573,7 +600,47 @@ caseSpecByteSeed spec = fromMaybe (csSeed spec) (csByteSeed spec)
 -- numeric fields are echoed into evidence so a finding row is replayable.
 applyCaseSpec :: KeySet -> Maybe CaseSpec -> String -> Header -> Either String CaseResult
 applyCaseSpec ks Nothing    caseId hdr = applyCase ks caseId hdr
-applyCaseSpec ks (Just spec) _     hdr = applyCase ks (csBaseCase spec) hdr
+applyCaseSpec ks (Just spec) _     hdr = case csBaseCase spec of
+    "kes-evolution" -> applyKesEvolution ks spec hdr
+    other           -> applyCase ks other hdr
+
+
+-- | Re-sign a real pool1 header's body with OUR KES key but evolved to the
+-- WRONG number of steps for the header's KES period: the target evolution is
+-- @correctEvol + delta@ (from @kes_evolution_delta@, delta /= 0), while the
+-- opcert (period, counter, cold signature, hot vkey) is left valid. The node
+-- verifies the KES signature at the expected evolution @t = kp - c0@; a
+-- period-bound KES signature produced at any other evolution fails there
+-- (InvalidKesSignatureOCERT). Fail-closed: a target evolution below 0 (header
+-- period too early to under-evolve), above @maxKESEvolutions@, or beyond the
+-- key's usable lifetime returns 'Left' (the driver scores that iteration
+-- inconclusive), never a valid header that would be falsely accepted.
+applyKesEvolution :: KeySet -> CaseSpec -> Header -> Either String CaseResult
+applyKesEvolution ks spec hdr = case hdr of
+    HeaderConway shelleyHdr ->
+        let praosHdr = shelleyHeaderRaw shelleyHdr
+            body = Praos.headerBody praosHdr
+            ocert = Praos.hbOCert body
+            ourHot = kesHotVerKeyBytes (ksKesSignKey ks)
+            theirHot = KES.rawSerialiseVerKeyKES (ocertVkHot ocert)
+        in  if ourHot /= theirHot
+                then Left "kes-evolution: captured header is not from our pool (hot-key mismatch)"
+                else
+                    let correctEvol = kesEvolutions (ksSlotsPerKESPeriod ks) (Praos.hbSlotNo body) (ocertKESPeriod ocert)
+                        delta = maybe 0 fromInteger (csKesEvoDelta spec) :: Int
+                        targetI = fromIntegral correctEvol + delta :: Int
+                    in  if delta == 0
+                            then Left "kes-evolution unreachable: kes_evolution_delta is 0 (that is the correct evolution, an accepted header)"
+                        else if targetI < 0
+                            then Left ("kes-evolution unreachable: target evolution " <> show targetI
+                                       <> " < 0 (correctEvol=" <> show correctEvol <> "; header period too early to under-evolve by " <> show delta <> ")")
+                        else if fromIntegral targetI > ksMaxKESEvo ks
+                            then Left ("kes-evolution unreachable: target evolution " <> show targetI
+                                       <> " > maxKESEvolutions " <> show (ksMaxKESEvo ks))
+                        else case signAtEvolutionMaybe (ksKesSignKey ks) (fromIntegral targetI) body of
+                                Nothing   -> Left ("kes-evolution unreachable: KES key exhausted before evolution " <> show targetI)
+                                Just sig' -> Right (CaseResult (HeaderConway (mkShelleyHeader (Praos.Header body sig'))) MutateKESKey "reject")
+    _ -> Left "kes-evolution: captured header is not a Conway header"
 
 -- | Structural CBOR re-encoding of an otherwise-valid header's wire bytes. The
 -- logical header (and therefore its hash + KES signature) is unchanged; only

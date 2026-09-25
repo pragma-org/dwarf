@@ -1,8 +1,8 @@
 from pathlib import Path
 
 
-def test_scenario_count_is_295():
-    assert len(list(Path("dwarf/scenarios").glob("*.yaml"))) == 295
+def test_scenario_count_is_296():
+    assert len(list(Path("dwarf/scenarios").glob("*.yaml"))) == 296
 
 
 def test_soak_scenarios_present():
@@ -16,4 +16,5 @@ def test_soak_scenarios_present():
         "opcert-soak-restart-persistence-amaru-20260918",
         "opcert-soak-crosspool-cardano-1112",
         "opcert-soak-rules-differential-mixed-1112-amaru-20260918",
+        "opcert-soak-kesevo-cardano-1112",
     }

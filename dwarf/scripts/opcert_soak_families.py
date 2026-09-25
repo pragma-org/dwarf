@@ -23,6 +23,7 @@ FAMILIES: tuple[str, ...] = (
     "kes-period-differential",
     "cross-pool-confusion",
     "rules-differential",
+    "kes-evolution",
 )
 
 DIFFERENTIAL_FAMILIES: frozenset[str] = frozenset({"encoding-form", "kes-period-differential", "rules-differential"})
@@ -134,6 +135,9 @@ def generate_case(family: str, seed: int, iteration: int, *, restart_k: int = 4)
                     params=params)
         return base
 
+    if family == "kes-evolution":
+        return _kes_evolution_case(base, rng)
+
     # kes-period-differential
     base.update(base_case="valid-control", expected_verdict="accept",
                 expected_reason=None,
@@ -185,4 +189,52 @@ def _crosspool_confusion_case(base: dict, rng: random.Random) -> dict:
                 expected_reason=dict(_CROSSPOOL_REJECT_REASON),
                 params={"foreign_pool": foreign,
                         "variant": "foreign-cold-authorization"})
+    return base
+
+
+# --------------------------------------------------------------------------- #
+# Family #3: KES-evolution (single-target). Serve a real pool1 header whose KES
+# signature is produced with the key evolved to the WRONG number of steps for
+# the header's KES period: sign at evolution ``correctEvol + delta`` (delta != 0)
+# while the opcert period/counter/cold-signature stay valid (the period itself
+# is inside the valid window). The node verifies the KES signature at the
+# expected evolution ``t = kp - c0`` and it fails, because a KES signature is
+# period-bound: InvalidKesSignatureOCERT (cardano) / InvalidKesSignature
+# (amaru). The invariant is REJECTED; an ACCEPT means the node accepted a KES
+# signature whose evolution count does not match the header's period -- a real
+# finding.
+#
+# ``delta`` is drawn from both signs so a soak exercises under- and
+# over-evolution. A negative delta is only reachable when ``correctEvol`` is
+# large enough (an early-slot header has correctEvol == 0 and cannot be
+# under-evolved); the forger fail-closes an out-of-range target evolution to an
+# ``unreachable`` (inconclusive) iteration, never a false finding, so positive
+# deltas always keep the conclusive count non-zero.
+# --------------------------------------------------------------------------- #
+KESEVO_DELTAS: tuple[int, ...] = (-2, -1, 1, 2)
+
+# Per-node expected rejection reason: the KES signature does not verify at the
+# header's expected evolution. Same tokens the opcert case table uses for a KES
+# signature failure (hot-key-mismatch).
+_KESEVO_REJECT_REASON = {
+    "cardano-node": "InvalidKesSignatureOCERT",
+    "amaru": "InvalidKesSignature",
+}
+
+
+def _kes_evolution_case(base: dict, rng: random.Random) -> dict:
+    """Populate ``base`` for one kes-evolution iteration.
+
+    Seed+iteration deterministic: the only structured variation is the nonzero
+    evolution delta (drawn from ``KESEVO_DELTAS``), so replay from
+    ``(seed, iteration)`` reproduces the exact delta. The delta is never 0 -- a
+    zero delta is the *correct* evolution, which is a valid header the node
+    accepts, so the family must always mutate. The expected verdict is a
+    per-node ``reject`` keyed by the KES-signature rule token; an observed
+    ``accept`` is scored a mismatch (finding) by the soak result layer.
+    """
+    delta = rng.choice(KESEVO_DELTAS)
+    base.update(base_case="kes-evolution", expected_verdict="reject",
+                expected_reason=dict(_KESEVO_REJECT_REASON),
+                params={"kes_evolution_delta": delta})
     return base

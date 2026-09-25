@@ -80,6 +80,11 @@ main = hspec $ do
             parseCaseSpec js `shouldSatisfy` \case
                 Right sp -> csBaseCase sp == "cross-pool" && csForeignPool sp == Just "pool2"
                 _ -> False
+        it "parses a kes-evolution spec (kes_evolution_delta, incl. negative)" $ do
+            let js = "{\"base_case\":\"kes-evolution\",\"seed\":5,\"params\":{\"kes_evolution_delta\":-2}}"
+            parseCaseSpec js `shouldSatisfy` \case
+                Right sp -> csBaseCase sp == "kes-evolution" && csKesEvoDelta sp == Just (-2)
+                _ -> False
 
     describe "reEncodeOpcert" $ do
         it "trailing-bytes re-encoding still decodes to the same term (reaches decoder)" $
