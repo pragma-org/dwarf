@@ -424,19 +424,39 @@ def _served_records_by_index(handle):
     return out
 
 
+def _ts_ago(seconds):
+    """A docker ``--since`` timestamp ``seconds`` in the past (small overlap so
+    an incremental read never drops a line straddling the poll boundary)."""
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _refresh_vmap(handle):
+    """Incrementally fold this consumer's NEW verdict events into the handle's
+    accumulated ``verdict_by_hash`` map. Reads only the log lines since the last
+    refresh (``docker logs --since <last>``), never the whole window — so each
+    poll stays cheap for the full multi-hour run even against a debug-verbose
+    amaru consumer, and the map still holds every verdict ever observed (so a
+    correlation that briefly falls behind the forger never loses old verdicts)."""
+    ctx = handle["ctx"]
+    vmap = handle.setdefault("vmap", {})
+    since = handle.get("log_since") or handle["since"]
+    # Fetch new lines first, THEN advance the cursor (with a 3s overlap) so a
+    # line written between fetch and cursor-set is re-read next time, not lost.
+    events = det._read_consumer_events(ctx["name"], since, ctx["implementation"])
+    handle["log_since"] = _ts_ago(3)
+    vmap.update(det.verdict_by_hash(events))
+    return vmap
+
+
 def _await_indexed_verdict(handle, ix, *, timeout, poll=3.0):
     """Wait until the forger has served index ``ix`` AND that node's isolated
     consumer has emitted a verdict for the served header. Returns
     ``(served_hash | None, observed | None)``. Fail-closed: never served, or
     served but never observed within ``timeout`` seconds, ⇒ ``None`` on the
     missing part. This is the seam the differential unit tests patch."""
-    ctx = handle["ctx"]
     served_hash = None
     observed = None
-    # A verdict for a just-served header appears within seconds, so read a
-    # bounded recent window of the consumer's log rather than everything since
-    # the forger started — keeps each poll cheap even on a multi-hour run.
-    since = f"{int(timeout) + 900}s"
     end = time.monotonic() + timeout
     while True:
         if served_hash is None:
@@ -444,8 +464,9 @@ def _await_indexed_verdict(handle, ix, *, timeout, poll=3.0):
             if rec is not None:
                 served_hash = str(rec["header_hash"])
         if served_hash is not None:
-            events = det._read_consumer_events(ctx["name"], since, ctx["implementation"])
-            vmap = det.verdict_by_hash(events)
+            vmap = handle.get("vmap")
+            if vmap is None or served_hash not in vmap:
+                vmap = _refresh_vmap(handle)
             if served_hash in vmap:
                 observed = vmap[served_hash]
                 break
