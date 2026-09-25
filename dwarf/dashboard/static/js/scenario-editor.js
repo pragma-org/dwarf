@@ -399,6 +399,13 @@
     const picker = section.querySelector('[data-phase-picker]'); picker.replaceChildren();
     const names = familyNames(section.dataset.primitiveFamily).filter((name) => eligible(name, section.dataset.primitiveFamily));
     names.forEach((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name; option.dataset.optionHelp = `${name}: ${registry[name].family} primitive for ${registry[name].supports.join(', ')}.`; picker.append(option); });
+    if (names.length === 0) {
+      // Say why the picker is empty instead of showing a blank box.
+      const option = document.createElement('option'); option.value = '';
+      option.textContent = `No ${section.dataset.primitiveFamily} primitives for ${currentRuntime()} · ${currentImplementation()}`;
+      picker.append(option);
+    }
+    picker.disabled = names.length === 0;
     updateSelectedOptionHelp(picker);
     section.querySelector('[data-phase-add]').disabled = names.length === 0;
   }
@@ -408,7 +415,7 @@
     const blocks = Array.isArray(model[phase]) ? model[phase] : [];
     const list = section.querySelector('[data-phase-list]'); list.replaceChildren();
     blocks.forEach((block, index) => list.append(makePrimitiveCard(phase, family, block, index)));
-    section.querySelector('[data-phase-summary]').textContent = `${blocks.length} primitive${blocks.length === 1 ? '' : 's'}.`;
+    section.querySelector('[data-phase-summary]').textContent = blocks.length ? `${blocks.length} primitive${blocks.length === 1 ? '' : 's'}` : 'none yet';
     populatePicker(section);
   }
   function renderAllPhases() { phaseSections.forEach(renderPhase); }

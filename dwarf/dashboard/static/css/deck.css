@@ -401,6 +401,24 @@ body[data-ui="basic"] .shell-main .field-help, body[data-ui="basic"] .shell-main
   body[data-ui="basic"] .shell-main select { min-height:40px !important; height:40px; font-size:16px !important; }
 }
 
+/* scenario builder: compact lifecycle phase rows */
+body[data-ui="basic"] .scenario-phase { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,520px); gap:8px 16px; align-items:center; padding:12px 16px !important; margin-bottom:10px !important; }
+body[data-ui="basic"] .scenario-phase .scenario-builder__section-head { display:flex; align-items:baseline; gap:12px; margin:0; }
+body[data-ui="basic"] .scenario-phase .scenario-builder__section-head .eyebrow { display:none; }
+body[data-ui="basic"] .scenario-phase .scenario-builder__section-head h2 { font:500 18px/1.2 var(--dk-serif); margin:0; }
+body[data-ui="basic"] .scenario-phase [data-phase-summary] { margin:0; font:12px var(--dk-mono); color:var(--dk-muted); }
+body[data-ui="basic"] .scenario-phase__add { grid-column:2; grid-row:1; display:flex; gap:8px; align-items:center; margin:0; }
+body[data-ui="basic"] .scenario-phase__add label { flex:1; min-width:0; margin:0; }
+body[data-ui="basic"] .scenario-phase__add select { width:100%; }
+body[data-ui="basic"] .scenario-phase__add select:disabled { color:var(--dk-muted) !important; font-style:italic; }
+body[data-ui="basic"] .scenario-phase__add button { min-height:36px; padding:0 12px; white-space:nowrap; font-size:12.5px; }
+body[data-ui="basic"] .scenario-phase__list { grid-column:1 / -1; }
+body[data-ui="basic"] .scenario-phase__list:empty { display:none; }
+@media (max-width:760px) {
+  body[data-ui="basic"] .scenario-phase { grid-template-columns:minmax(0,1fr); }
+  body[data-ui="basic"] .scenario-phase__add { grid-column:1; grid-row:auto; }
+}
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }
