@@ -80,6 +80,16 @@
         <p style="margin:0 0 8px">{{ run.explanation.summary }}</p>
         <ul>{% for item in run.explanation.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
       </div>
+      {% if run.measurements and run.measurements.present %}
+      {% set mm = run.measurements %}{% set ti = mm.target_identity or {} %}
+      <div class="dk-panel dk-meas-panel">
+        <h3>Measurements · independent taps</h3>
+        <p style="margin:0 0 8px">{{ mm.summary.available_count or 0 }} metrics measured · {{ mm.summary.unavailable_count or 0 }} unavailable · {{ mm.collector_counts.finalized or 0 }} collectors finalized{% if mm.collector_counts.error %} · <span class="dk-g-warn">▲ {{ mm.collector_counts.error }} collector error{{ '' if mm.collector_counts.error == 1 else 's' }}</span>{% endif %}</p>
+        <span class="dk-tags" style="margin:0 0 10px">{% if mm.profile_id %}<span data-tag="profile">{{ mm.profile_id }}</span>{% endif %}{% if ti.implementation %}<span data-tag="{{ ti.implementation }}">{{ ti.implementation }}</span>{% endif %}{% if ti.version %}<span data-tag="{{ ('amaru ' if ti.implementation == 'amaru' else 'node ') ~ ti.version }}">{{ ('amaru ' if ti.implementation == 'amaru' else 'node ') ~ ti.version }}</span>{% endif %}{% if ti.mode %}<span data-tag="{{ ti.mode }}">{{ ti.mode }}</span>{% endif %}</span>
+        <div class="dk-row"><a class="dk-btn dk-btn--solid" href="#measurement-report-heading">Jump to measurement report ↓</a><a class="dk-btn" href="{{ mm.raw_url }}">Raw data</a></div>
+        <p class="dk-note" style="margin:8px 0 0">Measurements show what was observed in this run; they are not the pass/fail verdict.</p>
+      </div>
+      {% endif %}
       <div class="dk-panel">
         <h3>Take it with you</h3>
         <div class="dk-row">

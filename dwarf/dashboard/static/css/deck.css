@@ -484,6 +484,43 @@ code.dk-live__val { display:inline-block; }
 .dk-live__empty { color:var(--dk-muted); font-size:13px; }
 @media (max-width:640px) { .dk-live__field { grid-template-columns:minmax(0,1fr); } .dk-live__chips { margin-left:0; } }
 
+.dk-tags span[data-tag="measured"] { color:#d6fff3; background:rgba(40,170,140,.18); border-color:rgba(80,210,175,.6); }
+.dk-tags span[data-tag="profile"] { color:var(--dk-ink); }
+
+/* measurement report (Basic): deck styling over the shared markup */
+body[data-ui="basic"] .measurement-report { border:1px solid var(--dk-line); border-radius:16px; padding:20px; background:rgba(21,16,31,.6); scroll-margin-top:80px; }
+body[data-ui="basic"] .measurement-report h2 { font:500 24px/1.2 var(--dk-serif); color:var(--dk-ink); }
+body[data-ui="basic"] .measurement-claim-boundary { background:rgba(255,178,92,.07) !important; border:0 !important; border-left:3px solid var(--dk-warn) !important; border-radius:0 10px 10px 0; }
+body[data-ui="basic"] .measurement-claim-boundary .eyebrow { color:var(--dk-warn); }
+body[data-ui="basic"] .measurement-summary__item { background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)) !important; border:1px solid var(--dk-line2) !important; border-radius:12px; }
+body[data-ui="basic"] .measurement-summary__item strong { font:500 30px/1.1 var(--dk-serif); color:var(--dk-ink); }
+body[data-ui="basic"] .measurement-summary__item .eyebrow { color:var(--dk-muted); }
+body[data-ui="basic"] .measurement-glossary, body[data-ui="basic"] .measurement-identity { background:transparent !important; border-color:var(--dk-line) !important; }
+body[data-ui="basic"] .measurement-glossary summary { color:var(--dk-gold); }
+body[data-ui="basic"] .measurement-identity code { background:none; color:var(--dk-gold); padding:0; }
+body[data-ui="basic"] .measurement-filter { border:1px solid var(--dk-line2) !important; background:var(--dk-table2) !important; color:var(--dk-muted) !important; border-radius:8px; font-size:13px; min-height:34px; padding:4px 12px; }
+body[data-ui="basic"] .measurement-filter.is-active, body[data-ui="basic"] .measurement-filter[aria-pressed="true"] { background:var(--dk-gold) !important; color:#1a1224 !important; border-color:var(--dk-gold) !important; }
+body[data-ui="basic"] .measurement-controls__search { font-size:13px; color:var(--dk-muted); }
+body[data-ui="basic"] .measurement-group { border:1px solid var(--dk-line2) !important; border-radius:14px; background:rgba(21,16,31,.72) !important; margin-bottom:10px; }
+body[data-ui="basic"] .measurement-group__summary h3 { font:500 19px/1.2 var(--dk-serif); color:var(--dk-ink); }
+body[data-ui="basic"] .measurement-group__summary p { color:var(--dk-muted); }
+body[data-ui="basic"] .measurement-group__summary .eyebrow { color:var(--dk-gold); }
+body[data-ui="basic"] .measurement-card { background:linear-gradient(160deg,var(--dk-back),var(--dk-back2)) !important; border:1px solid var(--dk-line2) !important; border-radius:12px; box-shadow:0 12px 26px -16px rgba(0,0,0,.7); }
+body[data-ui="basic"] .measurement-card h4 { font:500 17px/1.25 var(--dk-serif); color:var(--dk-ink); }
+body[data-ui="basic"] .measurement-card__result strong { font:500 28px/1.1 var(--dk-serif); color:var(--dk-ink); }
+body[data-ui="basic"] .measurement-card__result span { color:var(--dk-muted); }
+body[data-ui="basic"] .measurement-card--unavailable, body[data-ui="basic"] .measurement-card--reserved {
+  background:repeating-linear-gradient(135deg, rgba(255,255,255,.02) 0 6px, transparent 6px 12px) !important; border:1px dashed #8f86a6 !important; box-shadow:none; }
+body[data-ui="basic"] .measurement-card__unavailable strong { color:var(--dk-muted); font:600 12px var(--dk-mono); letter-spacing:.08em; text-transform:uppercase; }
+body[data-ui="basic"] .measurement-badge { font:10.5px var(--dk-mono); border:1px solid rgba(255,255,255,.2); border-radius:4px; padding:1px 6px; background:rgba(10,8,18,.5); color:var(--dk-muted); }
+body[data-ui="basic"] .measurement-badge--stock { color:#d6fff3; border-color:rgba(80,210,175,.6); }
+body[data-ui="basic"] .measurement-badge--patched { color:#ffe3d1; border-color:rgba(240,150,100,.6); }
+body[data-ui="basic"] .measurement-badge--external { color:#e6ecff; border-color:rgba(160,180,235,.6); }
+body[data-ui="basic"] .measurement-badge--coverage { color:#fff1cf; border-color:rgba(230,190,110,.6); }
+body[data-ui="basic"] .measurement-card__details summary { color:var(--dk-gold); font-size:12.5px; }
+body[data-ui="basic"] .measurement-card__meta { color:var(--dk-muted); font-size:12px; }
+body[data-ui="basic"] .measurement-actions .cta--primary { background:var(--dk-gold) !important; color:#1a1224 !important; }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }
