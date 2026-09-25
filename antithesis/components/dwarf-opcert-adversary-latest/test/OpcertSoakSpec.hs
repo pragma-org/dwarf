@@ -15,9 +15,11 @@ import Codec.CBOR.Read (deserialiseFromBytes)
 import Codec.CBOR.Term (Term (..), decodeTerm, encodeTerm)
 import Codec.CBOR.Write (toLazyByteString)
 import Data.ByteString.Lazy qualified as LBS
+import Data.ByteString.Lazy.Char8 qualified as LBC
 import DwarfOpcertAdversary
     ( CaseSpec (..)
     , parseCaseSpec
+    , caseSpecByteSeed
     , reEncodeOpcert
     )
 import Test.Hspec
@@ -93,3 +95,27 @@ main = hspec $ do
             let dev = reEncodeOpcert 1 "noncanonical-int" Nothing sampleBody
             dev `shouldNotBe` sampleBody
             decodeTop dev `shouldBe` decodeTop sampleBody
+
+    describe "caseSpecByteSeed (per-iteration randomization)" $ do
+        let specFor bs =
+                "{\"base_case\":\"valid-control\",\"seed\":1000,                \"params\":{\"encoding_form\":\"trailing-bytes\",                \"trailing_len\":6,\"byte_seed\":" ++ show (bs :: Int) ++ "}}"
+            parsedSeed bs = case parseCaseSpec (LBC.pack (specFor bs)) of
+                Right sp -> Just (caseSpecByteSeed sp)
+                Left _ -> Nothing
+        it "reads the per-iteration byte_seed from params (not the campaign seed)" $ do
+            parsedSeed 11111 `shouldBe` Just 11111
+            parsedSeed 22222 `shouldBe` Just 22222
+        it "distinct byte_seeds produce DISTINCT served bytes (real randomization)" $ do
+            let a = reEncodeOpcert 11111 "trailing-bytes" (Just 6) sampleBody
+                b = reEncodeOpcert 22222 "trailing-bytes" (Just 6) sampleBody
+            a `shouldNotBe` b
+        it "the SAME byte_seed reproduces identical bytes (replayable)" $ do
+            let a = reEncodeOpcert 33333 "trailing-bytes" (Just 6) sampleBody
+                b = reEncodeOpcert 33333 "trailing-bytes" (Just 6) sampleBody
+            a `shouldBe` b
+        it "falls back to the campaign seed only when byte_seed is absent" $ do
+            let js = "{\"base_case\":\"valid-control\",\"seed\":777,                     \"params\":{\"encoding_form\":\"trailing-bytes\"}}"
+            case parseCaseSpec (LBC.pack js) of
+                Right sp -> caseSpecByteSeed sp `shouldBe` 777
+                Left e -> expectationFailure e
+

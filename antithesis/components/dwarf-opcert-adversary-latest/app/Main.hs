@@ -49,6 +49,7 @@ import DwarfOpcertAdversary
     , applyCase
     , applyCaseSpec
     , parseCaseSpec
+    , caseSpecByteSeed
     , reEncodeOpcert
     , caseEligible
     , caseMutationName
@@ -316,7 +317,7 @@ runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo eviden
                     encInfo <- case mSp >>= csEncodingForm of
                         Just form -> do
                             let canonical = toLazyByteString (encHeader (crHeader cr))
-                                deviant = reEncodeOpcert (maybe 0 csSeed mSp) form (mSp >>= csTrailingLen) canonical
+                                deviant = reEncodeOpcert (maybe 0 caseSpecByteSeed mSp) form (mSp >>= csTrailingLen) canonical
                             modifyIORef' deviants (pruneInsert (show hash) deviant)
                             pure ["encoding_form" .= form, "deviant_bytes" .= LBS.length deviant]
                         Nothing -> pure []

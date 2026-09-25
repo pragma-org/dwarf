@@ -41,6 +41,7 @@ module DwarfOpcertAdversary
     , singleTargetServer
     , CaseSpec (..)
     , parseCaseSpec
+    , caseSpecByteSeed
     , applyCaseSpec
     , reEncodeOpcert
     ) where
@@ -486,6 +487,7 @@ singleTargetServer log_ parentPoint target tip = ChainSyncServer (pure (idle Fal
 data CaseSpec = CaseSpec
     { csBaseCase       :: !String
     , csSeed           :: !Int
+    , csByteSeed       :: !(Maybe Int)
     , csEncodingForm   :: !(Maybe String)
     , csTrailingLen    :: !(Maybe Int)
     , csCounterDelta   :: !(Maybe Integer)
@@ -524,13 +526,23 @@ parseCaseSpec raw = do
                 Nothing -> pure Nothing
                 Just A.Null -> pure Nothing
                 Just v -> Just <$> A.parseJSON v
+        bseed  <- getP "byte_seed"
         form   <- getP "encoding_form"
         tlen   <- getP "trailing_len"
         cdelta <- getP "counter_delta"
         kfrac  <- getP "kes_period_fraction"
         replay <- getP "replay_counter"
         soff   <- getP "slot_offset_fraction"
-        pure (CaseSpec base seed form tlen cdelta kfrac replay soff)
+        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff)
+
+-- | The seed that drives the encoding-form byte re-encoding for THIS case. The
+-- generator derives a distinct per-iteration @byte_seed@ (in @params@) from
+-- @seed+iteration@, so each iteration of a form varies its re-encoding while
+-- staying replayable. Falls back to the campaign @seed@ only when a spec omits
+-- @byte_seed@ (older single-spec scenarios), never to a hard-coded constant.
+caseSpecByteSeed :: CaseSpec -> Int
+caseSpecByteSeed spec = fromMaybe (csSeed spec) (csByteSeed spec)
+
 
 -- | Deterministic override of 'applyCase'. When the spec is 'Nothing' the
 -- forger keeps its current per-caseId behaviour. When a spec is present the
