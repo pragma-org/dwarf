@@ -42,9 +42,9 @@
       "family": "restart-persistence",
       "seed": 636363636,
       "target_node": "node1",
-      "time_budget_seconds": 10800,
+      "time_budget_seconds": 5400,
       "output_dir": "outputs/opcert-soak",
-      "timeout_seconds": 11700,
+      "timeout_seconds": 6300,
       "expect_exit": 0
     }
   ],

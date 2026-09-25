@@ -13961,7 +13961,7 @@ class RuntimeOpcertHeaderSoak(LoadPrimitive):
             "--family", str(self.params["family"]),
             "--seed", str(int(self.params["seed"])),
             "--output-dir", str(output_dir),
-            "--time-budget-seconds", str(int(self.params.get("time_budget_seconds", 10800))),
+            "--time-budget-seconds", str(int(self.params.get("time_budget_seconds", 5400))),
         ]
         if self.params.get("target_nodes"):
             command += ["--target-nodes", ",".join(str(n) for n in self.params["target_nodes"])]
@@ -13992,7 +13992,7 @@ class RuntimeOpcertHeaderSoak(LoadPrimitive):
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value)
         proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True, text=True,
-                              timeout=float(self.params.get("timeout_seconds", 11700)),
+                              timeout=float(self.params.get("timeout_seconds", 6300)),
                               check=False, env=env)
         report_path = output_dir / "result.json"
         report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}

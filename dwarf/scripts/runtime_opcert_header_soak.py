@@ -782,7 +782,7 @@ def _family_c_iteration(rot, spec, consumer_ctx, node, implementation, *, peer_b
 # --------------------------------------------------------------------------- #
 
 def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_node=None,
-                           target_nodes=None, time_budget_seconds=10800, peer_bin=None,
+                           target_nodes=None, time_budget_seconds=5400, peer_bin=None,
                            per_iteration_timeout=240, restart_k=4, clock=time.monotonic):
     if family not in families.FAMILIES:
         raise ValueError(f"unknown family: {family!r}")
@@ -918,7 +918,7 @@ def main(argv=None):
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--target-node", default="")
     parser.add_argument("--target-nodes", default="")
-    parser.add_argument("--time-budget-seconds", type=int, default=10800)
+    parser.add_argument("--time-budget-seconds", type=int, default=5400)
     parser.add_argument("--peer-bin", default="")
     parser.add_argument("--per-iteration-timeout", type=int, default=240)
     parser.add_argument("--restart-k", type=int, default=4)

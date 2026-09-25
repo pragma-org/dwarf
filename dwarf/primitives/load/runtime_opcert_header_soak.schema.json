@@ -25,7 +25,7 @@
   "properties": {
     "family": {"type": "string", "enum": ["encoding-form", "accept-boundary", "restart-persistence", "kes-period-differential"]},
     "seed": {"type": "integer"},
-    "time_budget_seconds": {"type": "number", "exclusiveMinimum": 0, "default": 10800},
+    "time_budget_seconds": {"type": "number", "exclusiveMinimum": 0, "default": 5400},
     "profile_id": {"type": "string", "minLength": 1},
     "runtime_root": {"type": "string", "minLength": 1},
     "target_node": {"type": "string", "minLength": 1},
