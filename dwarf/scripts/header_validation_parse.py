@@ -195,3 +195,48 @@ def merge_verdicts_sticky(accumulator: dict, events: list[dict]) -> dict:
             continue  # reject is terminal for this hash; never overwritten
         accumulator[header_hash] = event
     return accumulator
+
+
+# --------------------------------------------------------------------------- #
+# Canonical opcert reject-rule mapping (differential reason parity).
+#
+# cardano-node and Amaru name the SAME opcert rejection rule with DIFFERENT
+# tokens (cardano `*OCERT`; amaru a distinct enum/Display token). The two token
+# namespaces are disjoint, so a single flat map is unambiguous: it takes either
+# implementation's reject reason token to the one canonical rule it means. Two
+# nodes that both reject a served deviant header AGREE on the reason iff their
+# tokens map to the SAME canonical rule; a both-reject-but-different-canonical
+# case is a REASON-DIVERGENCE finding (distinct from a verdict disagreement).
+# --------------------------------------------------------------------------- #
+CANONICAL_OCERT_REASON = {
+    # cold-key authorization (opcert signed by the wrong cold key)
+    "InvalidSignatureOCERT": "cold-key-unauthorized",
+    "InvalidSignature": "cold-key-unauthorized",
+    # counter monotonicity: replayed below the recorded counter
+    "CounterTooSmallOCERT": "counter-too-small",
+    "SequenceNumberTooSmall": "counter-too-small",
+    # counter monotonicity: jumped more than +1 over the recorded counter
+    "CounterOverIncrementedOCERT": "counter-too-large",
+    "SequenceNumberTooFarAhead": "counter-too-large",
+    # KES window: opcert start period AFTER the block slot period
+    "KESBeforeStartOCERT": "kes-before-window",
+    "OpCertKesPeriodTooLarge": "kes-before-window",
+    # KES window: opcert start period aged past the end of the window
+    "KESAfterEndOCERT": "kes-after-window",
+    "OpCertKesPeriodTooOld": "kes-after-window",
+    # KES hot-key binding: body signed by a KES key not bound in the opcert
+    "InvalidKesSignatureOCERT": "hot-key-mismatch",
+    "InvalidKesSignature": "hot-key-mismatch",
+}
+
+
+def canonical_reason(token):
+    """Map a per-implementation opcert reject reason token to its canonical rule.
+
+    Returns ``None`` for a missing / empty / unrecognised token (the caller then
+    treats the reason as unknown, which fails a reason-parity check closed --
+    two rejects cannot be shown to agree on a rule that is not recognised).
+    """
+    if not token:
+        return None
+    return CANONICAL_OCERT_REASON.get(token)

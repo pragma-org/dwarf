@@ -134,6 +134,7 @@ def render_html(title, subtitle, favicon_kicker, blocks):
 DESC = {
 "opcert_case_verdicts_match_expected":"PASS iff every served opcert header case reached its declared verdict (accept for the valid control; reject with the exact expected OCERT reason for each broken rule); any wrong-reason rejection, accepted bad case, unserved case, or unobserved verdict fails closed.",
 "opcert_verdicts_agree":"PASS iff both nodes reached the same verdict on every opcert header case (fail-closed if a case is missing on either side).",
+"opcert_soak_reasons_agree":"PASS iff every both-reject soak iteration also agreed on the CANONICAL opcert rejection rule (cardano *OCERT token and Amaru token mapped to one rule); a both-reject-but-different-rule iteration is a reason divergence, recorded distinctly from a verdict disagreement.",
 "runtime_opcert_header_cases":"Serves one mutated operational-certificate header per case (each preceded by a valid control) to an isolated copy of the target, records the peer ground truth and the target observed verdict/reason, and writes result.json joined per case (matched | mismatch | inconclusive).",
 # ---- assertions (oracle / pass condition) ----
 "canonical_chain_progress_complete":"PASS iff lossless raw chain-selection evidence derives at least the required final height progress, reaches the exact final tip after bounded oscillation, retains the required application correlations, and has no fatal health signal.",

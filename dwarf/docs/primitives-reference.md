@@ -1,8 +1,8 @@
 # DWARF Primitives Reference
 
-The complete catalogue of the **247** primitives a scenario can reference — every *strategy* (what a scenario can do) and every *oracle* (what it can assert). Generated from `primitives/registry.json`; purposes/pass-conditions are curated. A scenario may only reference names listed here. Many primitives operate on CBOR (Concise Binary Object Representation), Cardano's binary wire and ledger encoding. The **Antithesis** column marks the primitives the DWARF&rarr;Antithesis generator can carry onto the Antithesis backend (CBOR-only by design &mdash; `cbor_fuzz_*` strategies, the `runtime_aflpp_campaign` coverage surface, and the assertions mapped to native SDK checks); everything else runs on the local backend only.
+The complete catalogue of the **248** primitives a scenario can reference — every *strategy* (what a scenario can do) and every *oracle* (what it can assert). Generated from `primitives/registry.json`; purposes/pass-conditions are curated. A scenario may only reference names listed here. Many primitives operate on CBOR (Concise Binary Object Representation), Cardano's binary wire and ledger encoding. The **Antithesis** column marks the primitives the DWARF&rarr;Antithesis generator can carry onto the Antithesis backend (CBOR-only by design &mdash; `cbor_fuzz_*` strategies, the `runtime_aflpp_campaign` coverage surface, and the assertions mapped to native SDK checks); everything else runs on the local backend only.
 
-> Coverage: 212/247 primitives carry a curated description (86%). Any without one is still listed with its registry metadata. Regenerate with `scripts/gen_reference.py`.
+> Coverage: 213/248 primitives carry a curated description (86%). Any without one is still listed with its registry metadata. Regenerate with `scripts/gen_reference.py`.
 
 The browser catalog at `/operate/primitives` is the source-backed inventory for registry metadata, parameter schemas, executor provenance, scenario references, and deterministic source export. `/learn/primitives` documents the code-change lifecycle. A primitive is executable code; it is not a corpus, generation grammar, target, profile, or scenario.
 
@@ -264,7 +264,7 @@ What a scenario *does*. These run in the `load` phase.
 | `runtime_txsubmission_window_pressure` | Push the TxSubmission txid inflight window past its negotiated bound. | dev | smoke · cn | — |
 
 
-## Assertion primitives — oracles (97)
+## Assertion primitives — oracles (98)
 
 What a scenario *proves*. Each is evaluated after load; the **pass condition** is the expected outcome. Thresholds shown are the tunable params.
 
@@ -389,6 +389,7 @@ What a scenario *proves*. Each is evaluated after load; the **pass condition** i
 | `no_target_fatal_signal` | *(no target fatal signal)* | dev | full · cn+amaru | — |
 | `opcert_case_verdicts_match_expected` | PASS iff every served opcert header case reached its declared verdict (accept for the valid control; reject with the exact expected OCERT reason for each broken rule); any wrong-reason rejection, accepted bad case, unserved case, or unobserved verdict fails closed. | dev | full · cn+amaru | — |
 | `opcert_soak_invariant_holds` | *(opcert soak invariant holds)* | dev | full · cn+amaru | — |
+| `opcert_soak_reasons_agree` | PASS iff every both-reject soak iteration also agreed on the CANONICAL opcert rejection rule (cardano *OCERT token and Amaru token mapped to one rule); a both-reject-but-different-rule iteration is a reason divergence, recorded distinctly from a verdict disagreement. | dev | full · amaru | — |
 | `opcert_soak_verdicts_agree` | *(opcert soak verdicts agree)* | dev | full · amaru | — |
 | `opcert_verdicts_agree` | PASS iff both nodes reached the same verdict on every opcert header case (fail-closed if a case is missing on either side). | dev | full · amaru | — |
 | `restart_readiness_complete` | *(restart readiness complete)* | dev | full · cn+amaru | — |

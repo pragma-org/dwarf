@@ -4,7 +4,9 @@ from scripts import opcert_soak_families as F
 
 def test_families_and_differential_sets():
     assert set(F.DIFFERENTIAL_FAMILIES) <= set(F.FAMILIES)
-    assert F.DIFFERENTIAL_FAMILIES == {"encoding-form", "kes-period-differential"}
+    # The three DWARF-owned differential families; peers may append more,
+    # so assert presence + the FAMILIES subset invariant rather than equality.
+    assert {"encoding-form", "kes-period-differential", "rules-differential"} <= set(F.DIFFERENTIAL_FAMILIES)
 
 
 @pytest.mark.parametrize("family", F.FAMILIES)

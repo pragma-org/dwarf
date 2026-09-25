@@ -964,6 +964,7 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
                 _ensure_specs(family, seed, spec_dir, iteration + _SPEC_LOOKAHEAD, restart_k=restart_k)
                 verdicts = {}
                 served = {}
+                reasons = {}
                 for node in nodes:
                     served_hash, observed = _await_indexed_verdict(
                         forgers[node], iteration, timeout=per_iteration_timeout)
@@ -975,10 +976,23 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
                     else:
                         verdicts[node] = None
                     served[node] = served_hash
+                    reasons[node] = (observed or {}).get("reason")
                 diff = R.classify_differential(verdicts[nodes[0]], verdicts[nodes[1]])
+                # Reason parity: only when the two nodes AGREE on the verdict
+                # ``rejected`` do we compare their canonical rejection rules. A
+                # both-reject-but-different-canonical case is a REASON-DIVERGENCE
+                # finding, DISTINCT from the verdict-level score (which stays
+                # ``agree``). conclusive_verdict already guarantees a ``rejected``
+                # side carries an attributable reason token.
+                reason_mismatch = None
+                if diff == "agree" and verdicts[nodes[0]] == "rejected":
+                    reason_mismatch = R.classify_reason_parity(
+                        reasons[nodes[0]], reasons[nodes[1]],
+                        node_a=nodes[0], node_b=nodes[1])
                 record = {
                     "outcome": _OUTCOME_FOR_DIFF[diff], "differential": diff,
                     "spec": spec, "verdicts": verdicts, "served_hashes": served,
+                    "reasons": reasons, "reason_mismatch": reason_mismatch,
                 }
             elif family_c:
                 record = _family_c_iteration(

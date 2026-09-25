@@ -22,9 +22,10 @@ FAMILIES: tuple[str, ...] = (
     "restart-persistence",
     "kes-period-differential",
     "cross-pool-confusion",
+    "rules-differential",
 )
 
-DIFFERENTIAL_FAMILIES: frozenset[str] = frozenset({"encoding-form", "kes-period-differential"})
+DIFFERENTIAL_FAMILIES: frozenset[str] = frozenset({"encoding-form", "kes-period-differential", "rules-differential"})
 
 ENCODING_FORMS: tuple[str, ...] = (
     "noncanonical-int",
@@ -43,6 +44,27 @@ _RESTART_REJECT_REASON = {
     "cardano-node": "CounterTooSmallOCERT",
     "amaru": "SequenceNumberTooSmall",
 }
+
+
+# Per-node expected rejection reason for the rules-differential family. Each key
+# is a corpus reject-rule case id (== the forger `serve-case --case` id); the
+# value is the per-implementation reason token the opcert case table declares
+# (mirrors dwarf/corpora/opcert/opcert-header-cases-v1.json). ONLY the rules
+# reachable on a plain mixed devnet are included: counter-behind (needs a prior
+# opcert rotation so recorded>=1) and kes-after-window (needs the chain aged past
+# maxKESEvolutions) are EXCLUDED -- the forger itself fails those closed on a
+# fresh devnet -- so they are owned by the restart/aging families, not here.
+_RULES_DIFFERENTIAL_REASON = {
+    "cold-key-unauthorized": {"cardano-node": "InvalidSignatureOCERT",
+                              "amaru": "InvalidSignature"},
+    "counter-jump": {"cardano-node": "CounterOverIncrementedOCERT",
+                     "amaru": "SequenceNumberTooFarAhead"},
+    "kes-before-window": {"cardano-node": "KESBeforeStartOCERT",
+                          "amaru": "OpCertKesPeriodTooLarge"},
+    "hot-key-mismatch": {"cardano-node": "InvalidKesSignatureOCERT",
+                         "amaru": "InvalidKesSignature"},
+}
+RULES_DIFFERENTIAL_RULES: tuple[str, ...] = tuple(_RULES_DIFFERENTIAL_REASON)
 
 
 def iter_rng(family: str, seed: int, iteration: int) -> random.Random:
@@ -91,6 +113,26 @@ def generate_case(family: str, seed: int, iteration: int, *, restart_k: int = 4)
 
     if family == "cross-pool-confusion":
         return _crosspool_confusion_case(base, rng)
+
+    if family == "rules-differential":
+        # Pick one reachable reject rule per iteration (the rule choice IS the
+        # cross-iteration randomization). ``byte_seed`` is recorded for replay
+        # provenance; a randomized-within-family boundary is recorded for the two
+        # magnitude rules. NOTE: the current forger applies a FIXED magnitude for
+        # counter-jump (+2) and kes-before-window (+1 period) and hard-coded wrong
+        # keys for the cold-/hot-key rules, so the recorded boundary is
+        # provenance-only until the forger is taught to consume it; the served
+        # header still differs per iteration (a fresh live tip each leader slot).
+        rule = rng.choice(RULES_DIFFERENTIAL_RULES)
+        params = {"rule": rule, "byte_seed": rng.randrange(2**31)}
+        if rule == "counter-jump":
+            params["counter_jump"] = rng.randint(2, 8)
+        elif rule == "kes-before-window":
+            params["kes_periods_ahead"] = rng.randint(1, 8)
+        base.update(base_case=rule, expected_verdict="reject",
+                    expected_reason=dict(_RULES_DIFFERENTIAL_REASON[rule]),
+                    params=params)
+        return base
 
     # kes-period-differential
     base.update(base_case="valid-control", expected_verdict="accept",

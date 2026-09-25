@@ -992,6 +992,20 @@
       ],
       "version": "0.1.0"
     },
+    "opcert_soak_reasons_agree": {
+      "class": "OpcertSoakReasonsAgree",
+      "family": "assertion",
+      "module": "profile_manager.primitives",
+      "params_schema": "primitives/assertion/opcert_soak_reasons_agree.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "opcert_verdicts_agree": {
       "class": "OpcertVerdictsAgree",
       "family": "assertion",

@@ -14059,6 +14059,34 @@ class OpcertSoakVerdictsAgree(AssertionPrimitive):
             note="the two nodes disagreed on at least one conclusive opcert soak iteration")
 
 
+class OpcertSoakReasonsAgree(AssertionPrimitive):
+    """Differential families: pass iff every both-reject iteration also agreed on
+    the CANONICAL rejection rule (no reason divergences) and there was at least
+    one conclusive iteration. A both-reject-but-different-canonical-reason case is
+    recorded in ``result.json`` ``reason_mismatches`` and fails this assertion; it
+    is DISTINCT from a verdict-level disagreement (``opcert_soak_verdicts_agree``)."""
+
+    def evaluate(self, handle):
+        name = "opcert_soak_reasons_agree"
+        relative = str(self.params.get("report_path", "outputs/opcert-soak/result.json"))
+        try:
+            path, report = _read_client_proof(handle, relative)
+        except RuntimeError as exc:
+            return _client_assertion_result(
+                name, self.params, passed=False, evaluated={"error": str(exc)},
+                data_points=[], note="the opcert soak result is unavailable")
+        from scripts.opcert_soak_result import evaluate_soak_reasons_agree
+
+        decision = evaluate_soak_reasons_agree(report)
+        passed = decision["result"] == "pass"
+        return _client_assertion_result(
+            name, self.params, passed=passed,
+            evaluated={"conclusive": decision["conclusive"],
+                       "reason_mismatches": decision["reason_mismatches"]},
+            data_points=[{"report": path.relative_to(handle.run_dir).as_posix()}],
+            note="the two nodes rejected for a different canonical rule on at least one conclusive opcert soak iteration")
+
+
 class RuntimeVerifyExactTarget(LoadPrimitive):
     """Fail closed unless the deployed measurement target matches every frozen field."""
 

@@ -19,6 +19,8 @@ module is the pure decision layer:
 """
 from __future__ import annotations
 
+from scripts.header_validation_parse import canonical_reason
+
 
 def conclusive_verdict(observed):
     """Reduce a raw per-hash verdict event to a *conclusive* verdict token, or
@@ -84,6 +86,30 @@ def classify_differential(verdict_a, verdict_b):
     return "agree" if verdict_a == verdict_b else "disagree"
 
 
+def classify_reason_parity(reason_a, reason_b, *, node_a=None, node_b=None):
+    """Reason-parity for a BOTH-REJECT differential iteration.
+
+    The caller invokes this only when the two nodes already AGREE on the verdict
+    ``rejected`` (a verdict-level agreement). It maps each node's observed reason
+    token to its canonical opcert rule (``header_validation_parse.canonical_reason``,
+    which is implementation-agnostic because the cardano ``*OCERT`` and amaru
+    token namespaces are disjoint). Returns ``None`` when both reasons map to the
+    SAME non-None canonical rule (reasons agree); otherwise a REASON-DIVERGENCE
+    finding dict -- both rejected, but for a different (or unrecognised) rule.
+    This is DISTINCT from a verdict disagreement: the verdict-level score stays
+    ``agree`` while this surfaces the subtler reason divergence.
+    """
+    canon_a = canonical_reason(reason_a)
+    canon_b = canonical_reason(reason_b)
+    if canon_a is not None and canon_b is not None and canon_a == canon_b:
+        return None
+    return {
+        "node_a": node_a, "node_b": node_b,
+        "reason_a": reason_a, "reason_b": reason_b,
+        "canonical_a": canon_a, "canonical_b": canon_b,
+    }
+
+
 def build_soak_result(*, family, seed, differential, target_nodes, records,
                       duration_seconds, runtime_root, compose_project, target_health):
     """Assemble the soak ``result.json`` body from per-iteration ``records``.
@@ -101,6 +127,7 @@ def build_soak_result(*, family, seed, differential, target_nodes, records,
 
     mismatches = []
     disagreements = []
+    reason_mismatches = []
     conclusive = 0
 
     for record in records:
@@ -131,6 +158,19 @@ def build_soak_result(*, family, seed, differential, target_nodes, records,
                     "spec": spec,
                     "verdicts": record.get("verdicts") or {},
                 })
+            # A both-reject-but-different-canonical-reason iteration is a REASON
+            # divergence: recorded here, DISTINCT from a verdict disagreement (the
+            # iteration is still scored verdict-level ``agree`` above).
+            reason_mismatch = record.get("reason_mismatch")
+            if reason_mismatch:
+                reason_mismatches.append({
+                    "iteration": iteration,
+                    "case_id": spec.get("case_id"),
+                    "spec": spec,
+                    "verdicts": record.get("verdicts") or {},
+                    "reasons": record.get("reasons") or {},
+                    **reason_mismatch,
+                })
 
     passed = conclusive > 0 and not mismatches and not disagreements
 
@@ -147,6 +187,7 @@ def build_soak_result(*, family, seed, differential, target_nodes, records,
         "counters": counters,
         "mismatches": mismatches,
         "disagreements": disagreements,
+        "reason_mismatches": reason_mismatches,
         "duration_seconds": duration_seconds,
         "runtime_root": runtime_root,
         "compose_project": compose_project,
@@ -171,3 +212,15 @@ def evaluate_soak_agree(result):
     passed = not disagreements and conclusive > 0
     return {"result": "pass" if passed else "fail",
             "disagreements": disagreements, "conclusive": conclusive}
+
+
+def evaluate_soak_reasons_agree(result):
+    """Differential families: PASS iff ``reason_mismatches == []`` and
+    ``conclusive > 0`` (fail-closed vacuous). Verdict-level agreement is checked
+    separately by ``evaluate_soak_agree``; this asserts that every both-reject
+    iteration also agreed on the CANONICAL rejection rule."""
+    reason_mismatches = result.get("reason_mismatches") or []
+    conclusive = int(result.get("conclusive") or 0)
+    passed = not reason_mismatches and conclusive > 0
+    return {"result": "pass" if passed else "fail",
+            "reason_mismatches": reason_mismatches, "conclusive": conclusive}

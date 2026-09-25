@@ -499,7 +499,7 @@ def test_learn_separates_shipped_scenarios_from_runtime_extensions(tmp_path, mon
     runtime = tmp_path / "scenarios"
     runtime.mkdir()
     packaged = _list_packaged_scenarios_for_compare()
-    assert len(packaged) == 294
+    assert len(packaged) == 295
 
     source = ROOT / "dwarf/scenarios" / "client-example-simple-transfer-amaru.yaml"
     (runtime / source.name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
@@ -515,10 +515,10 @@ def test_learn_separates_shipped_scenarios_from_runtime_extensions(tmp_path, mon
     landing = render_learn_landing()
     census = scenario_census()
 
-    assert "294 shipped" in landing
+    assert "295 shipped" in landing
     assert "2 active" in landing
     assert "All 2 scenarios are in the active scenario catalog" in census["caption"]
-    assert "The shipped repository catalog has 294 scenarios" in census["caption"]
+    assert "The shipped repository catalog has 295 scenarios" in census["caption"]
     assert "All 2 scenarios in <code>dwarf/scenarios/</code>" not in census["caption"]
 
 
