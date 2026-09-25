@@ -25,6 +25,8 @@ AMARU_VERSION = "10.11.20260912"
 AMARU_REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
 AMARU_FIXED_VERSION = "v10.11.20260912-30-gd3a6dafc"
 AMARU_FIXED_REVISION = "d3a6dafcced78f5809a96619e883cf04911d2bdc"
+AMARU_20260918_VERSION = "10.11.20260918"
+AMARU_20260918_REVISION = "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
 
 
 def _measurement(
@@ -283,6 +285,13 @@ def test_seed_catalog_is_exactly_version_pinned_and_modes_are_not_conflated():
                 {
                     "version": AMARU_FIXED_VERSION,
                     "source_revision": AMARU_FIXED_REVISION,
+                }
+            )
+        if record.definition_id in expected_amaru:
+            expected_versions.append(
+                {
+                    "version": AMARU_20260918_VERSION,
+                    "source_revision": AMARU_20260918_REVISION,
                 }
             )
         assert versions == expected_versions

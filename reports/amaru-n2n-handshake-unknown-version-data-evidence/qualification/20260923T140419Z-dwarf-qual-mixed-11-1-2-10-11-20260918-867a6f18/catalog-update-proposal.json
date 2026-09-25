@@ -1,0 +1,17 @@
+{
+  "apply_automatically": false,
+  "candidate": {
+    "amaru_version": "10.11.20260918",
+    "cardano_version": "11.1.2"
+  },
+  "checked_at": "2026-09-23T14:18:13Z",
+  "classification": "passed-all-gates",
+  "evidence": [
+    "qualification:/home/nigel/.local/share/dwarf/state/version-qualifications/20260923T140419Z-dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18"
+  ],
+  "proposed_status": "confirmed",
+  "reason": "passed-all-gates",
+  "review_required": true,
+  "schema_version": 1,
+  "scope": "mixed"
+}

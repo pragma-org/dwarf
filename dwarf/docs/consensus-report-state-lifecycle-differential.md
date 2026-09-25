@@ -11,8 +11,8 @@ fresh-bootstrapped a real Amaru node and drove it across epoch boundaries · **D
 > `N-2` stake-distribution dependency is **real and load-bearing** (visible in the logs), but the
 > bundle satisfies it, so there is no crash on the normal path. The failure mode requires a
 > bootstrap that *lacks* the aligned snapshot history. The recovery/lifecycle differences below
-> stand; the "valid block fails at first boundary" claim is corrected accordingly. The raw
-> operator log is intentionally not distributed in the public source tree.
+> stand; the "valid block fails at first boundary" claim is corrected accordingly. See
+> `reports/consensus-state-lifecycle-evidence/logs/live-run-2026-07-18.txt`.
 
 ## What it tests
 
@@ -116,8 +116,8 @@ sync from ~epoch 2.
   control `amaru-relay-1` (intact stores) also sat at the frozen tip.
 
 **Net:** the normal bootstrap path is robust; the recovery-model and no-from-genesis differences
-below are the durable findings. This report retains the reviewed public conclusion, not the
-raw operator log.
+below are the durable findings. Raw log excerpts:
+`reports/consensus-state-lifecycle-evidence/logs/live-run-2026-07-18.txt`.
 
 ## What DWARF should add
 

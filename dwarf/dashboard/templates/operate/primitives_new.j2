@@ -1,8 +1,10 @@
 {% extends "_base.j2" %}
 {% block main %}
-<span class="eyebrow">Operate · Primitives · New primitive</span>
-<h1>Scaffold a new primitive</h1>
-<p class="page-hero">Generate starter files for a primitive (executor, JSON Schema, test, and registry entry)—the same source scaffold as <code>cardano-profile primitive new</code>. A scaffold requires implementation, tests, registry merge, image rebuild, and deployment before it becomes live.</p>
+{% from "operate/_partials/_deck.j2" import deck_head with context %}
+{{ deck_head('Primitives · New', 'Generate starter files for a new primitive.', 'Pick a family and a name, then Scaffold: DWARF writes an executor, JSON Schema, test and registry entry into a scratch scaffold folder. Nothing becomes live — the scaffold still has to be implemented, tested, merged into the registry, rebuilt into the image and deployed.') }}
+<span class="eyebrow adv-only">Operate · Primitives · New primitive</span>
+<h1 class="adv-only">Scaffold a new primitive</h1>
+<p class="page-hero adv-only">Generate starter files for a primitive (executor, JSON Schema, test, and registry entry)—the same source scaffold as <code>cardano-profile primitive new</code>. A scaffold requires implementation, tests, registry merge, image rebuild, and deployment before it becomes live.</p>
 <p><a href="/learn/primitives#authoring" target="_blank" rel="noopener">Read the primitive authoring contract</a> or <a href="/operate/primitives">browse registered primitives</a>.</p>
 
 <style>

@@ -1,6 +1,6 @@
 # Safe Version Defaults and Version-Aware UX Implementation Plan
 
-> **For Codex:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. The user explicitly requires direct work on `dwarf-host-a:$HOME/dwarf-pragma` `main`, no worktree, and no subagents.
+> **For Codex:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. The user explicitly requires direct work on `cardano-box:/home/nigel/dwarf-pragma` `main`, no worktree, and no subagents.
 
 **Goal:** Eliminate ambient/unpinned profile deployment, preserve every existing topology contract, and expose complete version selection and qualification throughout the DWARF UI.
 
@@ -193,7 +193,7 @@
 3. Verify the image revision label equals Git HEAD.
 4. Confirm both landing cards and all relevant routes return 200.
 5. Confirm cached automatic refresh and authenticated manual refresh still work.
-6. Repeat the complete desktop/mobile Playwright matrix against the deployed dashboard base URL.
+6. Repeat the complete desktop/mobile Playwright matrix against `https://dwarf.gainpalfam.com`.
 7. Crawl internal Operate/Learn links and fix any confirmed failure.
 8. Run the complete automated suite again after any repair.
 
@@ -203,7 +203,7 @@
 - Update project notes and existing documentation only; do not add secrets or runtime evidence to Git.
 
 **Steps:**
-1. Read `the repository contribution conventions`.
+1. Read `https://bench.gainpalfam.com/api/agent/conventions`.
 2. Add evidence-backed status to `dwarf-latest` and `moog`, including defaults, migration, tested/untested boundaries, topology preservation, runtime evidence, and remaining public-network limits.
 3. Run final `git diff --check`, full pytest, schema validation, scenario validation, Compose rendering, route crawl, and repository hygiene checks.
 4. Secret-scan the intended public payload.
@@ -212,3 +212,4 @@
 7. Produce a minimal tar.gz from the exact `origin/main..HEAD` intended file set.
 8. Prove the archive has no `.git`, `._*`, `.DS_Store`, caches, build outputs, runtime state, secrets, absolute paths, or parent traversal.
 9. Copy the archive to a user-accessible local path and report its full path and SHA-256.
+

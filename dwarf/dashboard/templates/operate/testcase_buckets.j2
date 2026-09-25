@@ -1,8 +1,19 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{{ deck_head('Operate · Testcase buckets', (rows|length) ~ ' bucket' ~ ('' if rows|length == 1 else 's') ~ ' group ' ~ case_count ~ ' retained case' ~ ('' if case_count == 1 else 's') ~ '.', 'Buckets group cases with the same lifecycle signature. They organise leads; they are not findings.') }}
+{% set cards = [] %}{% for row in rows %}
+{% set _ = cards.append({'title': row.id, 'href': '/operate/testcase-buckets/' ~ row.id, 'kicker': row.classification, 'tier': 'back', 'sub': row.triage_reason ~ ' · ' ~ row.target_implementation,
+  'facts': [('Cases', row.case_count), ('Promotion', row.promotion_state), ('Replay pending', row.pending_replay_count), ('Compare pending', row.pending_compare_count)]}) %}{% endfor %}
+{{ deck_grid(cards, label='buckets', empty='No testcase buckets exist in the configured lifecycle state.') }}
+{{ deck_more('Bucket exports in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header"><div><span class="eyebrow">Operate · testcase grouping</span><h1>Testcase buckets</h1><p class="page-hero"><strong>{{ rows|length }} buckets</strong> group {{ case_count }} retained case{{ '' if case_count == 1 else 's' }} with the same lifecycle signature.</p></div><div class="definition-actions"><a class="cta cta--ghost" href="/operate/testcases">View cases</a><a class="cta cta--ghost" href="/learn/testcases" target="_blank" rel="noopener">Learn the lifecycle</a><a class="cta cta--ghost" href="/api/assets/testcase-buckets/export" download>Download buckets</a></div></header>
 <hr class="hairline">
 <div class="filter-bar"><label for="testcase-bucket-search" class="eyebrow">Search</label><input id="testcase-bucket-search" type="search" aria-label="Search testcase buckets" placeholder="Bucket, classification, implementation, reason, or promotion"><p class="filter-count" aria-live="polite"><span data-bucket-count>{{ rows|length }}</span> buckets</p></div>
 {% if rows %}<div class="learn-tile-grid">{% for row in rows %}<article class="learn-tile" data-bucket-row data-search="{{ row.id }} {{ row.classification }} {{ row.triage_reason }} {{ row.target_implementation }} {{ row.promotion_state }}"><span class="learn-tile__eyebrow">{{ row.classification }} · {{ row.case_count }} case{{ '' if row.case_count == 1 else 's' }}</span><h2 class="learn-tile__title"><a href="/operate/testcase-buckets/{{ row.id }}"><code>{{ row.id }}</code></a></h2><p class="learn-tile__sub">{{ row.triage_reason }} · {{ row.target_implementation }}</p><p class="asset-pill-row"><span class="pill">{{ row.promotion_state }}</span><span class="pill">{{ row.pending_replay_count }} replay pending</span><span class="pill">{{ row.pending_compare_count }} compare pending</span></p></article>{% endfor %}</div>{% else %}<p class="empty-section-statement">No testcase buckets exist in the configured lifecycle state.</p>{% endif %}
 <script>(()=>{const input=document.getElementById('testcase-bucket-search');const rows=[...document.querySelectorAll('[data-bucket-row]')];const count=document.querySelector('[data-bucket-count]');if(!input||!count)return;input.addEventListener('input',()=>{const needle=input.value.trim().toLowerCase();let visible=0;for(const row of rows){const show=!needle||row.dataset.search.toLowerCase().includes(needle);row.hidden=!show;if(show)visible+=1;}count.textContent=String(visible);});})();</script>
+</div>
 {% endblock %}

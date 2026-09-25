@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/pragma-org/dwarf/main/dwarf/spec/v1/measurement-result.schema.json",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/measurement-result.schema.json",
   "title": "DWARF measurement result",
   "description": "One evidence-backed result emitted by a measurement tap into an existing DWARF run bundle.",
   "type": "object",

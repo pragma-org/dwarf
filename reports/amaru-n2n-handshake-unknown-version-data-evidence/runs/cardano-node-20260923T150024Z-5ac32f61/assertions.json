@@ -1,0 +1,69 @@
+[
+  {
+    "data_points_used": [
+      {
+        "report": "outputs/cardano-measurement-calibration/result.json",
+        "workload_digest": "sha256:d9a6bb78a6d802ba0874ba05ea25d9be6e8c36916de217a7ad3ffc866a792633"
+      }
+    ],
+    "evaluated_value": {
+      "case_set": "version-table-forward-compat-v1",
+      "cases": [
+        {
+          "case": "v14-v15-offer",
+          "expected_outcome": "accepted",
+          "matched": true,
+          "matching": 20,
+          "observed_outcomes": {
+            "accepted": 20
+          },
+          "payload_hex": "8200a20e84182af401f40f84182af401f4",
+          "total": 20
+        },
+        {
+          "case": "node-11-1-experimental-v16-offer",
+          "expected_outcome": "accepted",
+          "matched": true,
+          "matching": 20,
+          "observed_outcomes": {
+            "accepted": 20
+          },
+          "payload_hex": "8200a30e84182af401f40f84182af401f41085182af401f4f4",
+          "total": 20
+        },
+        {
+          "case": "unknown-future-version-offer",
+          "expected_outcome": "accepted",
+          "matched": true,
+          "matching": 20,
+          "observed_outcomes": {
+            "accepted": 20
+          },
+          "payload_hex": "8200a30e84182af401f40f84182af401f4186382182a66667574757265",
+          "total": 20
+        }
+      ],
+      "implementation": "cardano-node",
+      "internal_handshake_outcomes": {
+        "handshake_decode_by_decode_outcome": {},
+        "handshake_ingress_by_outcome": {},
+        "handshake_negotiation_by_outcome": {},
+        "handshake_state_by_outcome": {}
+      },
+      "mismatched_cases": [],
+      "target": {
+        "implementation": "cardano-node",
+        "mode": "patched",
+        "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "version": "11.1.2"
+      }
+    },
+    "note": "every handshake case ended in its declared outcome",
+    "params": {
+      "implementation": "cardano-node",
+      "min_attempts_per_case": 20
+    },
+    "primitive": "unknown-future-version-offer",
+    "result": "pass"
+  }
+]

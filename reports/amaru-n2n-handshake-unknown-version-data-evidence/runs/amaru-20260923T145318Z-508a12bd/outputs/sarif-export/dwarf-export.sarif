@@ -1,0 +1,126 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "DWARF scenario assertions",
+          "version": "0.1.0",
+          "informationUri": "https://github.com/pragma-org/dwarf"
+        }
+      },
+      "automationDetails": {
+        "id": "20260923T145318Z-508a12bd"
+      },
+      "results": [
+        {
+          "ruleId": "dwarf.assertion.handshake_cases_match_expected",
+          "level": "error",
+          "message": {
+            "text": "handshake_cases_match_expected: handshake cases diverged from their declared outcome: ['node-11-1-experimental-v16-offer', 'unknown-future-version-offer']"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/nigel/.local/share/dwarf/runs/20260923T145318Z-508a12bd/assertions.json"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "dwarf.assertion_index": 0,
+            "dwarf.primitive": "handshake_cases_match_expected",
+            "dwarf.params": {
+              "implementation": "amaru",
+              "min_attempts_per_case": 20
+            },
+            "dwarf.evaluated_value": {
+              "case_set": "version-table-forward-compat-v1",
+              "cases": [
+                {
+                  "case": "v14-v15-offer",
+                  "expected_outcome": "accepted",
+                  "matched": true,
+                  "matching": 20,
+                  "observed_outcomes": {
+                    "accepted": 20
+                  },
+                  "payload_hex": "8200a20e84182af401f40f84182af401f4",
+                  "total": 20
+                },
+                {
+                  "case": "node-11-1-experimental-v16-offer",
+                  "expected_outcome": "accepted",
+                  "matched": false,
+                  "matching": 0,
+                  "observed_outcomes": {
+                    "rejected": 20
+                  },
+                  "payload_hex": "8200a30e84182af401f40f84182af401f41085182af401f4f4",
+                  "total": 20
+                },
+                {
+                  "case": "unknown-future-version-offer",
+                  "expected_outcome": "accepted",
+                  "matched": false,
+                  "matching": 0,
+                  "observed_outcomes": {
+                    "rejected": 20
+                  },
+                  "payload_hex": "8200a30e84182af401f40f84182af401f4186382182a66667574757265",
+                  "total": 20
+                }
+              ],
+              "implementation": "amaru",
+              "internal_handshake_outcomes": {
+                "handshake_decode_by_decode_outcome": {
+                  "decoded": 20,
+                  "malformed": 40
+                },
+                "handshake_ingress_by_outcome": {
+                  "framed": 60
+                },
+                "handshake_negotiation_by_outcome": {
+                  "accepted": 20
+                },
+                "handshake_state_by_outcome": {
+                  "accepted": 20,
+                  "not_attempted": 40
+                }
+              },
+              "mismatched_cases": [
+                "node-11-1-experimental-v16-offer",
+                "unknown-future-version-offer"
+              ],
+              "target": {
+                "implementation": "amaru",
+                "mode": "patched",
+                "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+                "version": "10.11.20260918"
+              }
+            },
+            "dwarf.data_points_used": [
+              {
+                "report": "outputs/amaru-measurement-calibration/result.json",
+                "workload_digest": "sha256:97cf371b5f725cd0030b7808df9776662bd49742d5636b6993a41ed947d2bd16"
+              }
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "dwarf.target_run_id": "20260923T145318Z-508a12bd",
+        "dwarf.bundle_dir": "/home/nigel/.local/share/dwarf/runs/20260923T145318Z-508a12bd",
+        "dwarf.scenario_id": "amaru-n2n-handshake-version-table-forward-compat-20260918-mixed-1112",
+        "dwarf.exit_status": "fail",
+        "dwarf.assertion_summary": {
+          "fail": 1,
+          "pass": 0,
+          "total": 1
+        }
+      }
+    }
+  ]
+}

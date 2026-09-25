@@ -1,11 +1,9 @@
 """Additive merge of may primitive registry entries into the v4 registry."""
 import json
-import os
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-MAY_REG = Path(os.environ.get("DWARF_MAY_ROOT", REPO_ROOT)) / "dwarf/primitives/registry.json"
-V4_REG = Path(os.environ.get("DWARF_CURRENT_ROOT", REPO_ROOT)) / "dwarf/primitives/registry.json"
+MAY_REG = Path("/Users/operator/dwarf-project/dwarf-deploypackage-may/dwarf/primitives/registry.json")
+V4_REG = Path("/Users/operator/dwarf-project/dwarf-v4/dwarf/primitives/registry.json")
 
 
 def merge_registry(v4: dict, may: dict, names: list[str]) -> tuple[dict, list[str]]:

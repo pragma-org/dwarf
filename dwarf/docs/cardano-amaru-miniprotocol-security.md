@@ -3,7 +3,7 @@
 ## Current result
 
 The additive `cardano_amaru_miniprotocol_security` package passed an exact,
-fresh-volume, end-to-end run through DWARF on `dwarf-host-a` using the dedicated
+fresh-volume, end-to-end run through DWARF on `cardano-box` using the dedicated
 mini-protocol workload image. This is local runtime proof, not an Antithesis
 campaign result and not authorization for another paid submission.
 
@@ -13,8 +13,8 @@ campaign result and not authorization for another paid submission.
 - Explicit seed: `0x20260907`
 - Dedicated workload image:
   `ghcr.io/j-gainsec/dwarf-sm@sha256:9fcea8709a6426c84fca6008435ae26a292734484b2006db6f99a331110bfb5a`
-- Evidence directory on `dwarf-host-a`:
-  `dwarf/runs/20260908T100054Z-80498541/outputs/cardano-amaru-miniprotocol-security`
+- Evidence directory on `cardano-box`:
+  `/home/nigel/dwarf-v4/dwarf/runs/20260908T100054Z-80498541/outputs/cardano-amaru-miniprotocol-security`
 - Further Antithesis submission authorized: `false`
 
 ## What was mechanically proved

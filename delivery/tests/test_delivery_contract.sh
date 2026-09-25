@@ -20,6 +20,7 @@ required_files=(
   "infrastructure/docker/dwarf-fw.Dockerfile"
   "infrastructure/docker/dwarf-fw-entrypoint.sh"
   "dwarf/cardano-profile"
+  "dwarf/bundles/20260419T020533Z-aa19a2d4.tar.gz"
 )
 
 forbidden_paths=(
@@ -27,9 +28,6 @@ forbidden_paths=(
   "dist"
   "dwarf/fuzz-tests"
   "dwarf/tests"
-  "dwarf/state"
-  "dwarf/runs"
-  "dwarf/bundles"
   "dwarf/docs/fuzz-framework-pattern-mapping.md"
   "dwarf/docs/production-target.md"
   "dwarf/docs/web-ui.md"
@@ -44,7 +42,7 @@ forbidden_paths=(
   "dwarf/scripts/deploy-dashboard.sh"
   "dwarf-uptodatemay"
   "dwarf-v55"
-  "infrastructure/dwarf-host-a"
+  "infrastructure/cardano-box"
   "infrastructure/docker/amaru-0.1.2.Dockerfile"
   "infrastructure/docker/cardano-node-10.7.1.Dockerfile"
   "infrastructure/docker/docker-compose.yml"
@@ -96,8 +94,7 @@ trap 'rm -rf "${test_runtime_root}"' EXIT
   DWARF_SSH_KNOWN_HOSTS="${test_runtime_root}/state/ssh_known_hosts"
   ensure_runtime_dirs
   seed_example_runs
-  seed_example_bundles
-  test -z "$(find "${test_runtime_root}/runs" "${test_runtime_root}/bundles" -mindepth 1 -print -quit)"
+  test -f "${test_runtime_root}/runs/20260419T020533Z-aa19a2d4/manifest.json"
 )
 
 grep -q "dwarf/framework:current" "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
@@ -125,8 +122,8 @@ if grep -q '\\\"false\\\"' "${PACKAGE_ROOT}/infrastructure/docker/dwarf-fw.Docke
   echo "Dockerfile apt config contains escaped quotes that apt will not parse as intended" >&2
   exit 1
 fi
-if grep -q 'infrastructure/dwarf-host-a' "${PACKAGE_ROOT}/infrastructure/docker/dwarf-fw.Dockerfile"; then
-  echo "Dockerfile depends on dwarf-host-a helper files that are not part of the delivery package" >&2
+if grep -q 'infrastructure/cardano-box' "${PACKAGE_ROOT}/infrastructure/docker/dwarf-fw.Dockerfile"; then
+  echo "Dockerfile depends on cardano-box helper files that are not part of the delivery package" >&2
   exit 1
 fi
 if grep -Eq 'dwarf-v55|dwarf-uptodatemay|Selected audit/research evidence|May continuation notes|Source-of-truth and requirements docs|dist/' "${PACKAGE_ROOT}/README.md"; then
@@ -137,8 +134,8 @@ fi
 manifest_count=$(
   find "${PACKAGE_ROOT}/dwarf/targets/manifests" -type f -name '*.yaml' | wc -l | tr -d '[:space:]'
 )
-if [[ "${manifest_count}" != "40" ]]; then
-  echo "expected 40 shipped target manifests, found ${manifest_count}" >&2
+if [[ "${manifest_count}" != "38" ]]; then
+  echo "expected 38 shipped target manifests, found ${manifest_count}" >&2
   exit 1
 fi
 
@@ -170,7 +167,7 @@ if find "${PACKAGE_ROOT}/dwarf/grammars" -mindepth 1 -maxdepth 1 -type d \
   exit 1
 fi
 
-if grep -R -E '/Users/operator|/home/dwarf|dwarf-host-a|192\.168\.30\.16' "${PACKAGE_ROOT}/dwarf/targets/manifests" "${PACKAGE_ROOT}/dwarf/targets/README.md" "${PACKAGE_ROOT}/dwarf/grammars/README.md"; then
+if grep -R -E '/Users/operator|/home/dwarf|cardano-box|192\.168\.30\.16' "${PACKAGE_ROOT}/dwarf/targets/manifests" "${PACKAGE_ROOT}/dwarf/targets/README.md" "${PACKAGE_ROOT}/dwarf/grammars/README.md"; then
   echo "public target or grammar catalog contains local host paths" >&2
   exit 1
 fi

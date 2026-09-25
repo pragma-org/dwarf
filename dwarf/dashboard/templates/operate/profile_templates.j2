@@ -1,5 +1,38 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice, deck_actions with context %}
+{% if ui == "basic" %}
+{% set types = {} %}{% for r in rows %}{% set _ = types.update({r.node_type: types.get(r.node_type, 0) + 1}) %}{% endfor %}
+{{ deck_head('Operate · Profile templates',
+   (rows|length ~ ' profile template' ~ ('' if rows|length == 1 else 's') ~ ' ship with this DWARF revision.') if rows else 'No shipped profile templates are available.',
+   'A template is an immutable starting point for a new runtime profile. Open one to read it or start a profile from it; it proves nothing on its own.') }}
+{% set cards = [] %}{% set nets = [] %}
+{% for row in rows %}{% set mg = row.network_magic|string %}
+{% set net = 'preview' if mg == '2' else ('preprod' if mg == '1' else ('mainnet' if mg == '764824073' else 'devnet ' ~ mg)) %}
+{% if net not in nets %}{% set _ = nets.append(net) %}{% endif %}
+{% set n = row.node_total|int %}
+{% set ok = row.status in ['valid', 'ok', 'ready'] %}
+{% set _ = cards.append({'title': deck_nice(row.id, false)|trim|replace('Peersharing', 'PeerSharing'), 'full_title': row.id ~ ' — ' ~ row.summary, 'id': row.id, 'hide_id': true,
+  'href': '/operate/profile-templates/' ~ row.id, 'accent': row.node_type,
+  'kicker': row.topology_pattern ~ ('' if ok else ' · ▲ ' ~ row.status),
+  'sub': n ~ ' node' ~ ('' if n == 1 else 's') ~ ' · ' ~ (row.required_substitutions|length) ~ ' substitutions to fill',
+  'tier': 'back' if ok else 'warn', 'group': 'impl:' ~ row.node_type ~ ' net:' ~ net|replace(' ', '_'),
+  'tags': [row.node_type, net] + (['peer sharing'] if row.peer_sharing else []),
+  'search': row.assumptions|join(' ') ~ ' ' ~ row.summary}) %}{% endfor %}
+{% set impls = [] %}{% for t, c in types|dictsort %}{% set _ = impls.append((t, t ~ ' · ' ~ c)) %}{% endfor %}
+{% set netopts = [] %}{% for x in nets|sort %}{% set _ = netopts.append((x|replace(' ', '_'), x)) %}{% endfor %}
+<h2 class="b-h2 basic-only">Templates · card backs (scaffolds, not proof)</h2>
+{{ deck_grid(cards, label='templates', facets=[('impl', 'Implementation', impls), ('net', 'Network', netopts)], empty='No shipped profile templates are available.') }}
+{% if rows %}
+<section class="basic-only dk dk-op-panel" aria-label="Use a template">
+  <h2 class="b-h2">Start a profile from a template</h2>
+  <div class="dk-row">{% for row in rows %}<a class="dk-btn" href="{{ row.use_url }}" title="{{ row.id }}">Use · {{ deck_nice(row.id, false)|trim|replace('Peersharing', 'PeerSharing') }}</a>{% endfor %}</div>
+</section>
+{{ deck_actions([('Download all', '/api/assets/profile-templates/export', false, true)]) }}
+{% endif %}
+{{ deck_more('Download templates and read the contract in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header">
   <div><span class="eyebrow">Operate · profile authoring</span><h1>Profile templates</h1><p class="page-hero"><strong>{{ rows|length }} templates</strong> ship with this DWARF revision. Templates are immutable source scaffolds; use one to seed the existing validated profile builder.</p></div>
   <div class="definition-actions" aria-label="Profile-template catalog actions">
@@ -29,6 +62,7 @@
   {% endfor %}
 </div>
 {% else %}<p class="empty-section-statement">No shipped profile templates are available.</p>{% endif %}
+</div>
 
 <script>
 (() => {

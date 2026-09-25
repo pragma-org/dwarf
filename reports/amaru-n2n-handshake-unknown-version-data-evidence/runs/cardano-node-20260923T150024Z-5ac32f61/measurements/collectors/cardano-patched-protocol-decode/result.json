@@ -1,0 +1,70 @@
+{
+  "artifacts": {
+    "correlations": "measurements/collectors/cardano-patched-protocol-decode/correlations.json",
+    "normalized": "measurements/collectors/cardano-patched-protocol-decode/normalized.ndjson",
+    "raw_json": "measurements/collectors/cardano-patched-protocol-decode/raw/cardano-measurement.ndjson",
+    "result": "measurements/collectors/cardano-patched-protocol-decode/result.json"
+  },
+  "evidence_class": "patched-node",
+  "export": {
+    "ignored_record_count": 0,
+    "incomplete": false,
+    "normalized_record_count": 72,
+    "rejected_record_count": 0,
+    "rejection_reasons": {},
+    "source_record_count": 72,
+    "truncated_sources": []
+  },
+  "measurement_id": "cardano-patched-protocol-decode",
+  "measurement_revision": "nanoseconds-v2",
+  "measurements": {
+    "protocol_receive_decode": {
+      "excluded_warmup_count": 0,
+      "maximum": 2599069.13,
+      "mean": 73285.87690140845,
+      "median": 21.852,
+      "minimum": 3.778,
+      "p95": 1147.065,
+      "p99": 2599069.13,
+      "rejected_count": 0,
+      "rejection_reasons": {},
+      "sample_count": 71,
+      "status": "available",
+      "unit": "us"
+    },
+    "protocol_receive_decode_by_outcome": {
+      "accepted": {
+        "excluded_warmup_count": 0,
+        "maximum": 2599069.13,
+        "mean": 73285.87690140845,
+        "median": 21.852,
+        "minimum": 3.778,
+        "p95": 1147.065,
+        "p99": 2599069.13,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 71,
+        "status": "available",
+        "unit": "us"
+      }
+    }
+  },
+  "patch_set_sha256": "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c",
+  "performance_authority": "requires-paired-calibration",
+  "schema_version": "v1",
+  "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+  "target": {
+    "build_result_sha256": "sha256:f8f94f4068483e1f3a099b25b8bb534a691fcc402711a5fedc103a0ad5b9f524",
+    "executable_digest": "sha256:3fb83f12ac1152e96c884c756a505484a39d9200da6c59b24678ac61218220eb",
+    "image_digest": "sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370",
+    "image_reference": "dwarf/cardano-measurement@sha256:956ae21cf9141a7149692392453ea31ece00e33960c2cca0f79548beeacf7370",
+    "implementation": "cardano-node",
+    "measurement_revision": "nanoseconds-v2",
+    "mode": "patched",
+    "patch_set_sha256": "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c",
+    "runtime_probe_log_sha256": "sha256:4b4c9b0ec7dbcb776c81e2f2d7cc9b65335b6227603b2b4c9cec803127aa3c01",
+    "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+    "version": "11.1.2",
+    "version_catalog_revision": "0a26e89e9ec8e7d234260be0c830185d363676fbaffb99384a27b70933236ddd"
+  }
+}

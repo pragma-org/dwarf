@@ -231,7 +231,7 @@ iterations remain excluded.
 - “All networking or mini-protocol behavior is covered.”
 - “DWARF currently measures node-level throughput or internal validation
   latency.”
-- “The public GitHub revision is the exact revision running on `dwarf-host-a`.”
+- “The public GitHub revision is the exact revision running on `cardano-box`.”
 
 ## Immediate evidence action
 

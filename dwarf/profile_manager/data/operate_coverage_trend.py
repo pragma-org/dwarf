@@ -196,7 +196,7 @@ def _sparkline_svg(points: list[dict[str, Any]], *, width: int = 220, height: in
         cx = width / 2
         cy = height / 2
         return (
-            f'<svg viewBox="0 0 {width} {height}" class="cvg-dwarf-host-c" '
+            f'<svg viewBox="0 0 {width} {height}" class="cvg-spark" '
             f'role="img" aria-label="single point at {points[0]["bitmap_cvg"]:.2f}%">'
             f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="3" class="cvg-spark__dot"/>'
             f'</svg>'
@@ -214,7 +214,7 @@ def _sparkline_svg(points: list[dict[str, Any]], *, width: int = 220, height: in
         f"{points[-1]['bitmap_cvg']:.2f}% across {n} runs"
     )
     return (
-        f'<svg viewBox="0 0 {width} {height}" class="cvg-dwarf-host-c" '
+        f'<svg viewBox="0 0 {width} {height}" class="cvg-spark" '
         f'role="img" aria-label="{aria}">'
         f'<polyline points="{poly}" class="cvg-spark__line" '
         f'fill="none" stroke-width="1.5"/>'

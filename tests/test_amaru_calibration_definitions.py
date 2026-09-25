@@ -189,6 +189,63 @@ def _boundary_result(
     )
 
 
+def _rewrite_decode_boundary(tmp_path, *, ingress_malformed, decode_malformed):
+    """Reshape the fixture the way 10.11.20260918 reports malformed CBOR."""
+    path = tmp_path / "outputs" / "amaru-measurement-calibration" / "result.json"
+    body = json.loads(path.read_text(encoding="utf-8"))
+    measurements = body["node_measurements"]["amaru-patched-protocol-decode"]["measurements"]
+    measurements["handshake_ingress_by_outcome"] = {
+        "framed": {"sample_count": 80 + decode_malformed},
+        **({"malformed": {"sample_count": ingress_malformed}} if ingress_malformed else {}),
+    }
+    measurements["handshake_decode_by_decode_outcome"]["malformed"] = {
+        "sample_count": decode_malformed
+    }
+    path.write_text(json.dumps(body), encoding="utf-8")
+
+
+def _evaluate_boundary(tmp_path):
+    handle = type("Handle", (), {"run_dir": tmp_path})()
+    return AmaruMeasurementBoundaryProven(
+        params={
+            "expected_mode": "patched",
+            "min_attempts_per_case": 40,
+            "min_internal_samples_per_outcome": 30,
+        }
+    ).evaluate(handle)
+
+
+def test_boundary_assertion_accepts_malformed_rejected_at_the_decode_boundary(tmp_path):
+    _boundary_result(tmp_path)
+    _rewrite_decode_boundary(tmp_path, ingress_malformed=0, decode_malformed=40)
+
+    result = _evaluate_boundary(tmp_path)
+
+    assert result["result"] == "pass"
+    assert result["evaluated_value"]["internal_malformed_samples"] == 40
+    assert result["evaluated_value"]["internal_malformed_boundary"] == "mini-protocol-decode"
+    assert result["evaluated_value"]["internal_framed_samples"] == 120
+
+
+def test_boundary_assertion_keeps_ingress_boundary_for_older_revisions(tmp_path):
+    _boundary_result(tmp_path)
+
+    result = _evaluate_boundary(tmp_path)
+
+    assert result["result"] == "pass"
+    assert result["evaluated_value"]["internal_malformed_boundary"] == "mux-cbor-item"
+
+
+def test_boundary_assertion_refuses_malformed_counted_at_both_boundaries(tmp_path):
+    _boundary_result(tmp_path)
+    _rewrite_decode_boundary(tmp_path, ingress_malformed=40, decode_malformed=40)
+
+    result = _evaluate_boundary(tmp_path)
+
+    assert result["result"] == "fail"
+    assert result["evaluated_value"]["internal_malformed_samples"] == 80
+
+
 def test_boundary_assertion_requires_external_health_and_internal_outcome_samples(tmp_path):
     _boundary_result(tmp_path)
     handle = type("Handle", (), {"run_dir": tmp_path})()
@@ -384,3 +441,118 @@ def test_calibration_primitive_emits_outcome_independent_workload_accounting(
             {"input_id": "b", "outcome": "timeout", "elapsed_micros": 34},
         ],
     }
+
+
+def _forward_compat_result(tmp_path, *, implementation, v16_outcomes, future_outcomes):
+    subdir = {
+        "amaru": "amaru-measurement-calibration",
+        "cardano-node": "cardano-measurement-calibration",
+    }[implementation]
+    path = tmp_path / "outputs" / subdir / "result.json"
+    path.parent.mkdir(parents=True)
+    cases = [
+        ("v14-v15-offer", {"accepted": 20}),
+        ("node-11-1-experimental-v16-offer", v16_outcomes),
+        ("unknown-future-version-offer", future_outcomes),
+    ]
+    path.write_text(
+        json.dumps(
+            {
+                "target": {"implementation": implementation, "mode": "patched"},
+                "workload_identity": {
+                    "case_set": "version-table-forward-compat-v1",
+                    "workload_digest": "sha256:" + "b" * 64,
+                    "cases": [
+                        {"name": case, "payload_hex": "82", "expected_external_outcome": "accepted"}
+                        for case, _ in cases
+                    ],
+                },
+                "attempts": {
+                    "by_case": {
+                        case: {"total": sum(outcomes.values()), "outcomes": outcomes}
+                        for case, outcomes in cases
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _handshake_cases(tmp_path, implementation):
+    from profile_manager.primitives import HandshakeCasesMatchExpected
+
+    handle = type("Handle", (), {"run_dir": tmp_path})()
+    return HandshakeCasesMatchExpected(
+        params={"implementation": implementation, "min_attempts_per_case": 20}
+    ).evaluate(handle)
+
+
+def test_handshake_cases_fail_when_amaru_drops_v16_and_future_offers(tmp_path):
+    _forward_compat_result(
+        tmp_path,
+        implementation="amaru",
+        v16_outcomes={"rejected": 20},
+        future_outcomes={"rejected": 20},
+    )
+
+    result = _handshake_cases(tmp_path, "amaru")
+
+    assert result["result"] == "fail"
+    assert result["evaluated_value"]["mismatched_cases"] == [
+        "node-11-1-experimental-v16-offer",
+        "unknown-future-version-offer",
+    ]
+
+
+def test_handshake_cases_pass_when_every_offer_is_accepted(tmp_path):
+    _forward_compat_result(
+        tmp_path,
+        implementation="cardano-node",
+        v16_outcomes={"accepted": 20},
+        future_outcomes={"accepted": 20},
+    )
+
+    result = _handshake_cases(tmp_path, "cardano-node")
+
+    assert result["result"] == "pass"
+    assert result["evaluated_value"]["case_set"] == "version-table-forward-compat-v1"
+
+
+def test_handshake_cases_fail_closed_without_a_report(tmp_path):
+    result = _handshake_cases(tmp_path, "amaru")
+
+    assert result["result"] == "fail"
+    assert "unavailable" in result["note"]
+
+
+def test_handshake_cases_read_the_retained_attempt_rows_when_by_case_is_absent(tmp_path):
+    output = tmp_path / "outputs" / "cardano-measurement-calibration"
+    output.mkdir(parents=True)
+    names = ["v14-v15-offer", "node-11-1-experimental-v16-offer", "unknown-future-version-offer"]
+    (output / "attempts.ndjson").write_text(
+        "".join(
+            json.dumps({"case": name, "outcome": "accepted", "expected_external_outcome": "accepted"}) + "\n"
+            for name in names
+            for _ in range(20)
+        ),
+        encoding="utf-8",
+    )
+    (output / "result.json").write_text(
+        json.dumps(
+            {
+                "target": {"implementation": "cardano-node"},
+                "workload_identity": {
+                    "case_set": "version-table-forward-compat-v1",
+                    "cases": [{"name": name, "attempt_count": 20} for name in names],
+                },
+                "attempts": {"artifact": "attempts.ndjson", "total": 60, "outcomes": {"accepted": 60}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _handshake_cases(tmp_path, "cardano-node")
+
+    assert result["result"] == "pass"
+    assert [row["matching"] for row in result["evaluated_value"]["cases"]] == [20, 20, 20]

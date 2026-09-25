@@ -1,6 +1,6 @@
 # DWARF full-metrics compatibility audit and run recipes
 
-Evidence cut: 2026-09-21. This audit applies to Amaru 10.11.20260912 and Cardano-node 11.1.2 measurement definitions in the verified DWARF product revision.
+Evidence cut: 2026-09-21. This audit applies to Amaru 10.11.20260912 and Cardano-node 11.1.2 measurement definitions in V7-PRAGMA.
 
 ## What “full metrics” means
 

@@ -1,0 +1,120 @@
+/* Evidence Deck — Operate tool pages I (Basic view only). Scope every rule to body[data-ui="basic"].
+   Pages: status, coverage, crashes, schedule, audit, timeline. Own classes are prefixed dkc-. */
+
+/* ---- shared ---- */
+body[data-ui="basic"] .dkc-h2 { margin:22px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--dk-line); }
+body[data-ui="basic"] .dkc-h2 .dk-note { font:500 13px system-ui,sans-serif; }
+body[data-ui="basic"] .dkc-note { margin:-4px 0 12px; }
+body[data-ui="basic"] .dk-face .dk-sub { overflow-wrap:anywhere; }
+body[data-ui="basic"] .dk-face .dk-item__title { overflow-wrap:anywhere; }
+body[data-ui="basic"] .dkc-cmd { margin:0 0 16px; max-width:100%; overflow-x:auto; border:1px solid var(--dk-line); border-radius:10px;
+  background:rgba(10,8,18,.6); padding:10px 12px; font:12.5px/1.5 var(--dk-mono); color:var(--dk-ink); white-space:pre; }
+body[data-ui="basic"] .dkc-cmd code { background:none; color:inherit; padding:0; }
+
+/* ---- STATUS: the live topology-health panel restyled as one wide card ---- */
+body[data-ui="basic"] #topology-health-panel {
+  position:relative; margin:0 0 8px; padding:16px 18px; border-radius:14px; color:var(--dk-ink);
+  background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)); border:1px solid var(--dk-line2);
+  box-shadow:0 18px 40px -12px rgba(0,0,0,.75), 0 2px 0 rgba(255,255,255,.04) inset; }
+/* anything but a confirmed healthy result wears the warning face — never green */
+body[data-ui="basic"] #topology-health-panel:not([data-state="healthy"]):not([data-state="idle"]) {
+  border-color:var(--dk-warn);
+  box-shadow:0 0 0 1px rgba(255,178,92,.35), 0 0 50px -8px rgba(255,140,60,.35), 0 18px 40px -12px rgba(0,0,0,.75); }
+/* a re-check shows the previous result, so it keeps the warning face; only a never-checked panel is an empty slot */
+body[data-ui="basic"] #topology-health-panel[data-state="idle"] { border-style:dashed; border-color:#8f86a6; }
+body[data-ui="basic"] .dkc-topo__kicker { display:flex; margin-bottom:10px; }
+body[data-ui="basic"] .dkc-topo__suit { font-size:16px; letter-spacing:0; color:var(--dk-warn); }
+body[data-ui="basic"] .dkc-topo__suit::after { content:"▲"; }
+body[data-ui="basic"] #topology-health-panel[data-state="healthy"] .dkc-topo__suit { color:var(--dk-pass); }
+body[data-ui="basic"] #topology-health-panel[data-state="healthy"] .dkc-topo__suit::after { content:"♦"; }
+body[data-ui="basic"] #topology-health-panel[data-state="checking"] .dkc-topo__suit,
+body[data-ui="basic"] #topology-health-panel[data-state="idle"] .dkc-topo__suit { color:var(--dk-muted); }
+body[data-ui="basic"] #topology-health-panel[data-state="checking"] .dkc-topo__suit::after,
+body[data-ui="basic"] #topology-health-panel[data-state="idle"] .dkc-topo__suit::after { content:"○"; }
+body[data-ui="basic"] #topology-health-panel .topology-health__head .eyebrow { display:none; }
+body[data-ui="basic"] #topology-health-panel .topology-health__head h2 { font:500 22px/1.2 var(--dk-serif); margin:0 0 4px; color:var(--dk-ink); }
+body[data-ui="basic"] #topology-health-panel .page-subhero { color:var(--dk-muted); font-size:13px; margin:0; }
+body[data-ui="basic"] #topology-health-panel .topology-health__state {
+  font:800 12px/1 var(--dk-mono); letter-spacing:.2em; color:var(--dk-warn); border:2px solid var(--dk-warn);
+  padding:6px 9px; border-radius:4px; background:rgba(14,11,22,.75); transform:rotate(-4deg); }
+body[data-ui="basic"] #topology-health-panel[data-state="healthy"] .topology-health__state { color:var(--dk-gold); border-color:var(--dk-gold); }
+body[data-ui="basic"] #topology-health-panel[data-state="checking"] .topology-health__state,
+body[data-ui="basic"] #topology-health-panel[data-state="idle"] .topology-health__state { color:var(--dk-muted); border-color:var(--dk-line2); }
+body[data-ui="basic"] #topology-health-panel .cta {
+  display:inline-flex; align-items:center; min-height:40px; border:1px solid var(--dk-gold2); color:var(--dk-gold);
+  background:rgba(230,198,127,.06); padding:8px 14px; border-radius:8px; font:600 13.5px system-ui,sans-serif; cursor:pointer; }
+body[data-ui="basic"] #topology-health-panel .cta:hover { background:rgba(230,198,127,.14); }
+body[data-ui="basic"] #topology-health-panel .topology-health__repair { border-color:var(--dk-err); color:var(--dk-err); }
+body[data-ui="basic"] #topology-health-panel .topology-health__notice,
+body[data-ui="basic"] #topology-health-panel .topology-health__detail { color:var(--dk-ink); font-size:14px; }
+body[data-ui="basic"] #topology-health-panel .topology-health__detail:empty { display:none; }
+body[data-ui="basic"] #topology-health-panel .topology-health__footer { margin:0 0 10px; justify-content:flex-start; }
+body[data-ui="basic"] #topology-health-panel .topology-health__footer:not(:has(:not([hidden]))) { display:none; }
+body[data-ui="basic"] #topology-health-panel .topology-health__grid { gap:6px 12px; }
+body[data-ui="basic"] #topology-health-panel .topology-health__grid article {
+  background:none; border:0; border-top:1px solid rgba(255,255,255,.12); border-radius:0; padding:5px 0 0; }
+body[data-ui="basic"] #topology-health-panel .topology-health__grid .eyebrow {
+  font:10.5px var(--dk-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--dk-muted); }
+body[data-ui="basic"] #topology-health-panel .topology-health__grid strong { font:600 13.5px var(--dk-mono); color:var(--dk-ink); }
+body[data-ui="basic"] #topology-health-panel .topology-health__nodes-wrap {
+  max-width:100%; overflow-x:auto; border:1px solid var(--dk-line); border-radius:10px; background:rgba(10,8,18,.45); }
+body[data-ui="basic"] #topology-health-panel .topology-health__nodes { font-size:12.5px; margin:0; }
+body[data-ui="basic"] #topology-health-panel .topology-health__nodes th {
+  font:10.5px var(--dk-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--dk-muted); }
+body[data-ui="basic"] #topology-health-panel .topology-redeploy__status { background:rgba(10,8,18,.5); border-color:var(--dk-line); }
+body[data-ui="basic"] .topology-redeploy { background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)); border-color:var(--dk-err); color:var(--dk-ink); }
+body[data-ui="basic"] .topology-redeploy__impact { background:rgba(10,8,18,.5); border-left-color:var(--dk-err); }
+@media (max-width:640px) {
+  body[data-ui="basic"] #topology-health-panel { padding:14px; }
+  body[data-ui="basic"] #topology-health-panel .topology-health__grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+/* STATUS: teardown control (shim hosts) keeps working; just wears deck styling */
+body[data-ui="basic"] .substrate-control h2 { font:500 20px/1.2 var(--dk-serif); color:var(--dk-ink); }
+body[data-ui="basic"] .substrate-control > div { background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)) !important; border:1px solid var(--dk-err) !important; border-radius:14px !important; }
+body[data-ui="basic"] .substrate-control .page-subhero { color:var(--dk-muted); }
+
+/* ---- COVERAGE ---- */
+body[data-ui="basic"] .dkc-links { margin:-8px 0 18px; }
+
+/* ---- SCHEDULE: face cards with working controls; the create form stays live ---- */
+body[data-ui="basic"] .dkc-sched--paused .dk-face { border-style:dashed; }
+body[data-ui="basic"] .dkc-sched .dk-item__stamp { align-self:flex-start; }
+body[data-ui="basic"] .dkc-sched__actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; padding-top:10px; border-top:1px solid rgba(255,255,255,.12); }
+body[data-ui="basic"] .dkc-sched__actions .schedule-btn,
+body[data-ui="basic"] .schedule-create .schedule-btn {
+  min-height:36px; border:1px solid var(--dk-gold2); color:var(--dk-gold); background:rgba(230,198,127,.06);
+  padding:6px 12px; border-radius:8px; font:600 13px system-ui,sans-serif; cursor:pointer; }
+body[data-ui="basic"] .dkc-sched__actions .schedule-btn:hover { background:rgba(230,198,127,.14); }
+body[data-ui="basic"] .dkc-sched__actions .schedule-btn--delete { border-color:rgba(255,122,142,.6); color:var(--dk-err); }
+body[data-ui="basic"] .schedule-create > header { display:none; }
+body[data-ui="basic"] .schedule-create { border:1px solid var(--dk-line2); border-radius:14px; padding:16px 18px;
+  background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)); max-width:100%; }
+body[data-ui="basic"] .schedule-create .page-subhero { color:var(--dk-muted); font-size:13.5px; margin-top:0; }
+body[data-ui="basic"] .schedule-form input,
+body[data-ui="basic"] .schedule-form select { min-height:38px; max-width:100%; border:1px solid var(--dk-line2); border-radius:8px;
+  background:rgba(0,0,0,.25); color:var(--dk-ink); padding:7px 10px; font:13px system-ui,sans-serif; }
+body[data-ui="basic"] .schedule-form__row span { color:var(--dk-muted); font:11.5px var(--dk-mono); text-transform:uppercase; letter-spacing:.08em; }
+body[data-ui="basic"] .schedule-create .schedule-btn--primary { background:var(--dk-gold); color:#1a1224; border-color:var(--dk-gold); }
+
+/* ---- AUDIT: keep the server-side filter bar, in deck dress ---- */
+body[data-ui="basic"] .audit-filter-bar { border:1px solid var(--dk-line); border-radius:12px; background:rgba(21,16,31,.72); padding:12px 14px; margin:0 0 16px; }
+body[data-ui="basic"] .audit-filter-bar .pill { border-color:var(--dk-line2); color:var(--dk-muted); }
+body[data-ui="basic"] .audit-filter-bar .pill--active { background:var(--dk-gold); color:#1a1224; border-color:var(--dk-gold); }
+body[data-ui="basic"] .audit-filter-bar input[type="search"] { min-height:38px; border:1px solid var(--dk-line2); border-radius:8px; background:rgba(0,0,0,.25); color:var(--dk-ink); padding:7px 10px; max-width:100%; }
+body[data-ui="basic"] .audit-filter-bar .cta { border:1px solid var(--dk-gold2); color:var(--dk-gold); background:rgba(230,198,127,.06); border-radius:8px; min-height:38px; }
+body[data-ui="basic"] .audit-filter-bar .filter-count { color:var(--dk-muted); }
+
+/* ---- TIMELINE: a vertical run of small cards, newest first ---- */
+body[data-ui="basic"] .dkc-tl__meta { margin:0 0 14px; overflow-wrap:anywhere; }
+body[data-ui="basic"] .dkc-tl { list-style:none; margin:0 0 22px; padding:0 0 0 18px; border-left:2px solid var(--dk-line2); display:grid; gap:14px; max-width:760px; }
+body[data-ui="basic"] .dkc-tl__item { position:relative; display:grid; grid-template-columns:minmax(0,170px) minmax(0,1fr); gap:14px; align-items:start; }
+body[data-ui="basic"] .dkc-tl__item::before { content:""; position:absolute; left:-25px; top:14px; width:10px; height:10px; border-radius:50%; background:var(--dk-gold); box-shadow:0 0 0 3px var(--dk-table); }
+body[data-ui="basic"] .dkc-tl__when { font:12px var(--dk-mono); color:var(--dk-muted); padding-top:10px; overflow-wrap:anywhere; }
+body[data-ui="basic"] .dkc-tl__card .dk-face__body { padding:12px 14px; }
+@media (max-width:640px) {
+  body[data-ui="basic"] .dkc-tl__item { grid-template-columns:minmax(0,1fr); gap:4px; }
+  body[data-ui="basic"] .dkc-tl__when { padding-top:0; }
+}
+
+/* status-summary keeps its exact tag (visual-contract test); the Basic cards replace it. */
+body[data-ui="basic"] .status-summary { display:none !important; }

@@ -1,8 +1,36 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% if moog_configured %}
+  {% set answer = 'Credentials are set — you can build, validate and launch an Antithesis campaign from this page.' %}
+{% else %}
+  {% set answer = 'Not ready to launch: Moog / Antithesis credentials are not fully set yet.' %}
+{% endif %}
+{% call deck_head('Operate · Antithesis', answer,
+   'Three stages, in order. Build turns a profile and scenario into a self-contained bundle; validate and preflight check it; launch submits it through Moog to Antithesis. Every button below runs a real command and streams its output into the log at the bottom.') %}
+  {% if not moog_configured %}<p class="dk-op-alert" role="alert"><span aria-hidden="true">▲</span> Moog / Antithesis credentials are not fully set yet — <a href="/operate/config">configure them first</a>.</p>{% endif %}
+{% endcall %}
+{% set stages = [
+  {'title': 'Build the bundle', 'href': '#card-build', 'kicker': 'Stage 1', 'tier': 'face', 'suit': '■', 'tone': 'dk-g-other',
+   'sub': 'Render a profile + scenario into a hermetic Antithesis bundle.', 'facts': [('Command', 'antithesis build'), ('Writes to', build_out_root ~ '/…'), ('Profiles available', profiles|length)]},
+  {'title': 'Validate & preflight', 'href': '#card-validate', 'kicker': 'Stage 2', 'tier': 'face', 'suit': '■', 'tone': 'dk-g-other',
+   'sub': 'Check the bundle is well-formed and self-contained, then run the combined readiness check.', 'facts': [('Commands', 'moog asset validate · moog preflight'), ('Bundles on disk', asset_dirs|length)]},
+  {'title': 'Launch on Antithesis', 'href': '#card-launch', 'kicker': 'Stage 3',
+   'tier': 'face' if moog_configured else 'warn', 'suit': '▲', 'tone': 'dk-g-warn',
+   'sub': ('Dry-run by default. Only with “Approve live on-chain launch” ticked does it submit a real test, which spends Preprod tADA.' if moog_configured else 'Credentials are not fully set — launch will not work until they are configured.'),
+   'facts': [('Commands', 'moog create-test · moog test-status'), ('Default', 'dry-run, --no-faults smoke')]},
+] %}
+{{ deck_grid(stages, label='stages', search=false) }}
+<section class="basic-only dk dk-op-section" aria-labelledby="dk-op-at-h">
+  <h2 id="dk-op-at-h" class="dk-op-h">Run a stage</h2>
+</section>
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Antithesis</span>
 <h1>Antithesis campaigns</h1>
 <p class="page-hero">Build a fuzz scenario into a hermetic Antithesis bundle, validate it, run preflight, and launch it on Antithesis through the Moog requester flow — end to end from the dashboard. Each stage streams live output below. Credentials come from <a href="/operate/config">/operate/config</a>.{% if not moog_configured %} <strong>Moog / Antithesis credentials are not fully set yet</strong> — configure them first.{% endif %}</p>
+</div>
 
 <style>
 .at-grid{display:flex;flex-wrap:wrap;gap:14px;margin:14px 0 8px}
@@ -149,4 +177,5 @@ async function runStage(stage){
   finally{btns.forEach(b=>b.disabled=false);}
 }
 </script>
+{{ deck_more('Open the full view in Advanced') }}
 {% endblock %}

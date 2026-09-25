@@ -182,7 +182,7 @@ def test_coverage_result_links_build_campaign_corpus_and_every_retained_input(tm
 
 def test_coverage_result_refuses_a_machine_specific_target_identity(tmp_path):
     identity = _identity()
-    identity["working_dir"] = "/opt/operator/source"
+    identity["working_dir"] = "/home/nigel/source"
 
     with pytest.raises(ValueError, match="machine-specific|bounded relative"):
         cargo_fuzz_campaign.write_coverage_measurement_result(

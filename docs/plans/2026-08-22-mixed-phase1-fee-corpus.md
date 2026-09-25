@@ -170,7 +170,7 @@ files or command output.
 
 **Step 2:** Render Compose with `INTERNAL_NETWORK=false docker compose ... config --quiet`.
 
-**Step 3:** Run official `$HOME/.local/bin/snouty validate ... --timeout 180`.
+**Step 3:** Run official `/home/nigel/.local/bin/snouty validate ... --timeout 180`.
 
 **Step 4:** Scan the exact Git diff and tracked tree for signing-key markers,
 credentials, `.env`, absolute temporary paths, `._*`, and oversized unintended files.

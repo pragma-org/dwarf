@@ -15,7 +15,7 @@
 # soak with it (no per-timeline seed explosion — that is Antithesis's job). The
 # local value is a long soak against EVOLVING real-chain content + crash watch.
 #
-# Run on dwarf-host-a. Args: TAG (default 0.11.0) HOURS (default 8).
+# Run on cardano-box. Args: TAG (default 0.11.0) HOURS (default 8).
 set -uo pipefail
 TAG="${1:-0.11.0}"
 HOURS="${2:-8}"

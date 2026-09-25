@@ -681,9 +681,11 @@ class AmaruStockCollector:
         include_existing: bool = False,
         allow_missing_at_start: bool = False,
         max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
+        source_revision: str = AMARU_SOURCE_REVISION,
     ) -> None:
         self.entry = entry
         self.measurement_id = entry["id"]
+        self.source_revision = source_revision
         self.json_paths = [Path(path) for path in json_trace_paths]
         self.otlp_paths = [Path(path) for path in otlp_trace_paths]
         if len(self.json_paths) + len(self.otlp_paths) > MAX_SOURCE_PATHS:
@@ -735,6 +737,7 @@ class AmaruStockCollector:
         loaded = _load_amaru_telemetry_bytes(
             json_sources=json_sources, otlp_sources=otlp_sources
         )
+        loaded["source_revision"] = self.source_revision
         raw_sources = loaded.pop("_raw_sources")
         raw_dir = context.artifact_path("raw")
         raw_dir.mkdir(parents=True, exist_ok=True)
@@ -757,7 +760,7 @@ class AmaruStockCollector:
         result = {
             "schema_version": "v1",
             "measurement_id": self.measurement_id,
-            "source_revision": AMARU_SOURCE_REVISION,
+            "source_revision": self.source_revision,
             "measurements": measurements,
             "claims": claims,
             "export": {
@@ -791,6 +794,7 @@ def build_amaru_stock_factories(
     include_existing: bool = False,
     allow_missing_at_start: bool = False,
     max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
+    source_revision: str = AMARU_SOURCE_REVISION,
 ) -> dict[str, Any]:
     """Bind trusted deployment-owned inputs to each stock collector factory."""
     json_paths = tuple(Path(path) for path in json_trace_paths)
@@ -804,6 +808,7 @@ def build_amaru_stock_factories(
             include_existing=include_existing,
             allow_missing_at_start=allow_missing_at_start,
             max_source_bytes=max_source_bytes,
+            source_revision=source_revision,
         )
 
     return {measurement_id: factory for measurement_id in STOCK_MEASUREMENT_IDS}

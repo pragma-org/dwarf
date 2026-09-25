@@ -62,6 +62,7 @@ class Profile:
     plutus_v2_genesis: bool = False
     plutus_v2_cost_model_path: str | None = None
     plutus_v2_cost_model_sha256: str | None = None
+    cardano_experimental_protocols: bool | None = None
 
     @classmethod
     def from_dict(cls, data):
@@ -104,6 +105,11 @@ class Profile:
             plutus_v2_genesis=bool(data.get("plutus_v2_genesis", False)),
             plutus_v2_cost_model_path=data.get("plutus_v2_cost_model_path"),
             plutus_v2_cost_model_sha256=data.get("plutus_v2_cost_model_sha256"),
+            cardano_experimental_protocols=(
+                None
+                if data.get("cardano_experimental_protocols") is None
+                else bool(data.get("cardano_experimental_protocols"))
+            ),
         )
 
 
@@ -167,6 +173,7 @@ def profile_diff_text(left_id, right_id):
         "plutus_v2_genesis",
         "plutus_v2_cost_model_path",
         "plutus_v2_cost_model_sha256",
+        "cardano_experimental_protocols",
     )
     lines = [
         "Profile diff",
@@ -468,6 +475,7 @@ def versioned_substrate_for_profile(profile, version_preview):
         "plutus_v2_genesis": profile.plutus_v2_genesis,
         "plutus_v2_cost_model_path": profile.plutus_v2_cost_model_path,
         "plutus_v2_cost_model_sha256": profile.plutus_v2_cost_model_sha256,
+        "cardano_experimental_protocols": profile.cardano_experimental_protocols,
         "nodes": nodes,
         "topology": {"edges": edges},
     }
@@ -535,6 +543,10 @@ def _versioned_deploy_command(profile, version_preview, remote_dwarf_root=None):
                 "healthy_timeout_seconds": 1800,
             }
         )
+        if substrate.get("cardano_experimental_protocols") is not None:
+            config_body["cardano_experimental_protocols"] = bool(
+                substrate["cardano_experimental_protocols"]
+            )
         if substrate["plutus_v2_genesis"]:
             cost_model_path = Path(str(substrate["plutus_v2_cost_model_path"]))
             if not cost_model_path.is_absolute() and remote_dwarf_root:

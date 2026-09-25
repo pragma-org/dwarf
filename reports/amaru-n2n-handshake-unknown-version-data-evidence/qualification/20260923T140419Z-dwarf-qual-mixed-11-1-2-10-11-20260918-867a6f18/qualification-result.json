@@ -1,0 +1,605 @@
+{
+  "candidate": {
+    "amaru_version": "10.11.20260918",
+    "cardano_version": "11.1.2"
+  },
+  "classification": "passed-all-gates",
+  "completed_at": "2026-09-23T14:18:13Z",
+  "error": null,
+  "events": [
+    {
+      "at": "2026-09-23T14:04:19Z",
+      "candidate": {
+        "amaru_version": "10.11.20260918",
+        "cardano_version": "11.1.2"
+      },
+      "evidence_root": "/home/nigel/.local/share/dwarf/state/version-qualifications/20260923T140419Z-dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18",
+      "project": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18",
+      "stage": "prepared"
+    },
+    {
+      "at": "2026-09-23T14:15:49Z",
+      "stage": "started"
+    },
+    {
+      "at": "2026-09-23T14:16:01Z",
+      "attempt": 1,
+      "ready": false,
+      "stage": "readiness",
+      "state": "healthy"
+    },
+    {
+      "at": "2026-09-23T14:16:22Z",
+      "attempt": 2,
+      "ready": false,
+      "stage": "readiness",
+      "state": "healthy"
+    },
+    {
+      "at": "2026-09-23T14:16:44Z",
+      "attempt": 3,
+      "ready": false,
+      "stage": "readiness",
+      "state": "healthy"
+    },
+    {
+      "at": "2026-09-23T14:17:06Z",
+      "attempt": 4,
+      "ready": false,
+      "stage": "readiness",
+      "state": "healthy"
+    },
+    {
+      "at": "2026-09-23T14:17:27Z",
+      "attempt": 5,
+      "ready": false,
+      "stage": "readiness",
+      "state": "healthy"
+    },
+    {
+      "at": "2026-09-23T14:17:49Z",
+      "attempt": 6,
+      "ready": true,
+      "stage": "readiness",
+      "state": "healthy"
+    },
+    {
+      "at": "2026-09-23T14:18:13Z",
+      "passed": true,
+      "stage": "teardown"
+    }
+  ],
+  "evidence_root": "/home/nigel/.local/share/dwarf/state/version-qualifications/20260923T140419Z-dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18",
+  "failed_gates": [],
+  "gates": {
+    "chain_progress": true,
+    "clean_teardown": true,
+    "consumer_amaru_only_path": true,
+    "consumer_converged": true,
+    "exact_identity": true,
+    "fresh_state": true,
+    "no_fatal_signatures": true,
+    "no_restart_loop": true,
+    "peer_formation": true,
+    "required_services": true
+  },
+  "identity": {
+    "matched": true,
+    "services": {
+      "amaru-consumer": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-consumer-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-consumer-1",
+        "executable_digest_matched": null,
+        "executable_digest_reported": null,
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "reported_source_matched": null,
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-consumer-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      },
+      "amaru-relay-1": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-target-extract-1",
+        "artifact_image_id": "sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-relay-1-1",
+        "executable_digest_matched": null,
+        "executable_digest_reported": null,
+        "expected_image": "ghcr.io/pragma-org/amaru@sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60",
+        "expected_image_id": "sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60",
+        "expected_version": "10.11.20260918",
+        "matched": true,
+        "reported": "Amaru 10.11.20260918 (aedfe79)",
+        "reported_source_matched": null,
+        "running_image_id": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-relay-1-1",
+          "/target/amaru",
+          "--version"
+        ],
+        "wrapper_expected_image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "wrapper_expected_image_id": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "wrapper_matched": true
+      },
+      "amaru-relay-2": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-target-extract-1",
+        "artifact_image_id": "sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-relay-2-1",
+        "executable_digest_matched": null,
+        "executable_digest_reported": null,
+        "expected_image": "ghcr.io/pragma-org/amaru@sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60",
+        "expected_image_id": "sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60",
+        "expected_version": "10.11.20260918",
+        "matched": true,
+        "reported": "Amaru 10.11.20260918 (aedfe79)",
+        "reported_source_matched": null,
+        "running_image_id": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-relay-2-1",
+          "/target/amaru",
+          "--version"
+        ],
+        "wrapper_expected_image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "wrapper_expected_image_id": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+        "wrapper_matched": true
+      },
+      "p1": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p1-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p1-1",
+        "executable_digest_matched": null,
+        "executable_digest_reported": null,
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "reported_source_matched": null,
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p1-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      },
+      "p2": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p2-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p2-1",
+        "executable_digest_matched": null,
+        "executable_digest_reported": null,
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "reported_source_matched": null,
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p2-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      },
+      "p3": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p3-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p3-1",
+        "executable_digest_matched": null,
+        "executable_digest_reported": null,
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "reported_source_matched": null,
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p3-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      },
+      "relay1": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-relay1-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-relay1-1",
+        "executable_digest_matched": null,
+        "executable_digest_reported": null,
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "reported_source_matched": null,
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-relay1-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      },
+      "relay2": {
+        "artifact_container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-relay2-1",
+        "artifact_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "container": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-relay2-1",
+        "executable_digest_matched": null,
+        "executable_digest_reported": null,
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "expected_version": "11.1.2",
+        "matched": true,
+        "reported": "cardano-node 11.1.2 - linux-x86_64 - ghc-9.6\ngit rev fef83fed01d7926f3de83b3b917be5a4a48768b5",
+        "reported_source_matched": null,
+        "running_image_id": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+        "version_command": [
+          "docker",
+          "exec",
+          "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-relay2-1",
+          "cardano-node",
+          "--version"
+        ],
+        "wrapper_expected_image": null,
+        "wrapper_expected_image_id": null,
+        "wrapper_matched": true
+      }
+    }
+  },
+  "log_signals": {
+    "background": [],
+    "fatal": []
+  },
+  "observation": {
+    "affected": [],
+    "checked_at": "2026-09-23T14:17:49Z",
+    "consumer_lag_slots": 0,
+    "detail": null,
+    "evidence_path": "/home/nigel/.local/share/dwarf/state/version-qualifications/20260923T140419Z-dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18/health-006.json",
+    "observation": {
+      "completed_at": "2026-09-23T14:17:49Z",
+      "compose_project": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18",
+      "containers": {
+        "amaru-consumer": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-consumer-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-23T14:15:49.335225625Z",
+          "status": "running"
+        },
+        "amaru-relay-1": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-relay-1-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+          "image_digest": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-23T14:04:23.509471365Z",
+          "status": "running"
+        },
+        "amaru-relay-2": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-amaru-relay-2-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+          "image_digest": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-23T14:04:23.532149562Z",
+          "status": "running"
+        },
+        "p1": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p1-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-23T14:04:22.852474515Z",
+          "status": "running"
+        },
+        "p2": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p2-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-23T14:04:22.856888573Z",
+          "status": "running"
+        },
+        "p3": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-p3-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-23T14:04:22.8578065Z",
+          "status": "running"
+        },
+        "relay1": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-relay1-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-23T14:04:22.855122052Z",
+          "status": "running"
+        },
+        "relay2": {
+          "container_name": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18-relay2-1",
+          "fatal_signatures": [],
+          "finished_at": "0001-01-01T00:00:00Z",
+          "image": "ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+          "oom_killed": false,
+          "present": true,
+          "restart_count": 0,
+          "running": true,
+          "started_at": "2026-09-23T14:04:22.854288126Z",
+          "status": "running"
+        }
+      },
+      "peer_contract": {
+        "amaru_consumer_only_amaru_upstreams": true
+      },
+      "required_services": [
+        "p1",
+        "p2",
+        "p3",
+        "relay1",
+        "relay2",
+        "amaru-relay-1",
+        "amaru-relay-2",
+        "amaru-consumer"
+      ],
+      "samples": [
+        {
+          "amaru_relays": {
+            "amaru-relay-1": {
+              "committed": true,
+              "current_block": 296,
+              "current_hash": "a6803b07afd97b89df71656943ac685c954d2ebc2725617a619a430c74dcdd53",
+              "current_slot": 1593,
+              "exec_started": true,
+              "fatal_signatures": [],
+              "highest_block": 281,
+              "highest_hash": "7d805a69372a11a25c599c4581d8df2ce6ad9e574cd5073ef1fffece6c2e27f4",
+              "highest_slot": 1511,
+              "target_slots": [
+                398,
+                799,
+                1196
+              ]
+            },
+            "amaru-relay-2": {
+              "committed": true,
+              "current_block": 296,
+              "current_hash": "a6803b07afd97b89df71656943ac685c954d2ebc2725617a619a430c74dcdd53",
+              "current_slot": 1593,
+              "exec_started": true,
+              "fatal_signatures": [],
+              "highest_block": 281,
+              "highest_hash": "7d805a69372a11a25c599c4581d8df2ce6ad9e574cd5073ef1fffece6c2e27f4",
+              "highest_slot": 1511,
+              "target_slots": [
+                398,
+                799,
+                1196
+              ]
+            }
+          },
+          "at": "2026-09-23T14:17:38Z",
+          "tips": {
+            "amaru-consumer": {
+              "block": 296,
+              "hash": "a6803b07afd97b89df71656943ac685c954d2ebc2725617a619a430c74dcdd53",
+              "slot": 1593,
+              "syncProgress": "100.00"
+            },
+            "p1": {
+              "block": 295,
+              "hash": "148ef94eb85c1b877583c371e9a39792fcc5cf53cfb2140511aa57b85b2d2e27",
+              "slot": 1586,
+              "syncProgress": "100.00"
+            },
+            "p2": {
+              "block": 295,
+              "hash": "148ef94eb85c1b877583c371e9a39792fcc5cf53cfb2140511aa57b85b2d2e27",
+              "slot": 1586,
+              "syncProgress": "100.00"
+            },
+            "p3": {
+              "block": 295,
+              "hash": "148ef94eb85c1b877583c371e9a39792fcc5cf53cfb2140511aa57b85b2d2e27",
+              "slot": 1586,
+              "syncProgress": "100.00"
+            },
+            "relay1": {
+              "block": 295,
+              "hash": "148ef94eb85c1b877583c371e9a39792fcc5cf53cfb2140511aa57b85b2d2e27",
+              "slot": 1586,
+              "syncProgress": "100.00"
+            },
+            "relay2": {
+              "block": 295,
+              "hash": "148ef94eb85c1b877583c371e9a39792fcc5cf53cfb2140511aa57b85b2d2e27",
+              "slot": 1586,
+              "syncProgress": "100.00"
+            }
+          }
+        },
+        {
+          "amaru_relays": {
+            "amaru-relay-1": {
+              "committed": true,
+              "current_block": 300,
+              "current_hash": "47a8bdb1305807cdd9da8ea009e21134fadda4850fb0e88ba3a893793bcb7322",
+              "current_slot": 1613,
+              "exec_started": true,
+              "fatal_signatures": [],
+              "highest_block": 281,
+              "highest_hash": "7d805a69372a11a25c599c4581d8df2ce6ad9e574cd5073ef1fffece6c2e27f4",
+              "highest_slot": 1511,
+              "target_slots": [
+                398,
+                799,
+                1196
+              ]
+            },
+            "amaru-relay-2": {
+              "committed": true,
+              "current_block": 300,
+              "current_hash": "47a8bdb1305807cdd9da8ea009e21134fadda4850fb0e88ba3a893793bcb7322",
+              "current_slot": 1613,
+              "exec_started": true,
+              "fatal_signatures": [],
+              "highest_block": 281,
+              "highest_hash": "7d805a69372a11a25c599c4581d8df2ce6ad9e574cd5073ef1fffece6c2e27f4",
+              "highest_slot": 1511,
+              "target_slots": [
+                398,
+                799,
+                1196
+              ]
+            }
+          },
+          "at": "2026-09-23T14:17:49Z",
+          "tips": {
+            "amaru-consumer": {
+              "block": 300,
+              "hash": "47a8bdb1305807cdd9da8ea009e21134fadda4850fb0e88ba3a893793bcb7322",
+              "slot": 1613,
+              "syncProgress": "100.00"
+            },
+            "p1": {
+              "block": 300,
+              "hash": "47a8bdb1305807cdd9da8ea009e21134fadda4850fb0e88ba3a893793bcb7322",
+              "slot": 1613,
+              "syncProgress": "100.00"
+            },
+            "p2": {
+              "block": 300,
+              "hash": "47a8bdb1305807cdd9da8ea009e21134fadda4850fb0e88ba3a893793bcb7322",
+              "slot": 1613,
+              "syncProgress": "100.00"
+            },
+            "p3": {
+              "block": 300,
+              "hash": "47a8bdb1305807cdd9da8ea009e21134fadda4850fb0e88ba3a893793bcb7322",
+              "slot": 1613,
+              "syncProgress": "100.00"
+            },
+            "relay1": {
+              "block": 300,
+              "hash": "47a8bdb1305807cdd9da8ea009e21134fadda4850fb0e88ba3a893793bcb7322",
+              "slot": 1613,
+              "syncProgress": "100.00"
+            },
+            "relay2": {
+              "block": 300,
+              "hash": "47a8bdb1305807cdd9da8ea009e21134fadda4850fb0e88ba3a893793bcb7322",
+              "slot": 1613,
+              "syncProgress": "100.00"
+            }
+          }
+        }
+      ],
+      "schema_version": 1,
+      "started_at": "2026-09-23T14:17:37Z",
+      "tolerances": {
+        "producer_slot_spread": 6,
+        "slot_lag": 6
+      },
+      "topology_id": "cardano_amaru"
+    },
+    "reason_code": "all_mixed_readiness_gates_passed",
+    "reference_tip": {
+      "block": 300,
+      "hash": "47a8bdb1305807cdd9da8ea009e21134fadda4850fb0e88ba3a893793bcb7322",
+      "slot": 1613,
+      "syncProgress": "100.00"
+    },
+    "sample_count": 2,
+    "schema_version": 1,
+    "state": "healthy",
+    "topology_id": "cardano_amaru"
+  },
+  "passed": true,
+  "project": "dwarf-qual-mixed-11-1-2-10-11-20260918-867a6f18",
+  "required_gates": [
+    "chain_progress",
+    "clean_teardown",
+    "consumer_amaru_only_path",
+    "consumer_converged",
+    "exact_identity",
+    "fresh_state",
+    "no_fatal_signatures",
+    "no_restart_loop",
+    "peer_formation",
+    "required_services"
+  ],
+  "schema_version": 1,
+  "scope": "mixed",
+  "started_at": "2026-09-23T14:04:19Z",
+  "terminal_failure": null
+}

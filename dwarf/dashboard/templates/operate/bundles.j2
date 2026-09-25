@@ -1,5 +1,33 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice with context %}
+{% if ui == "basic" %}
+{{ deck_head('Operate · Evidence bundles', ((rows|length) ~ ' evidence bundles are preserved.') if not empty else 'No evidence bundles are preserved yet.', 'A bundle is a portable tar.gz of one run: manifest, events, outputs and resource snapshots. The suit is the recorded run result; the hash chain is checked when a bundle is opened or imported.') }}
+{% set cards = [] %}
+{% for row in rows %}{% set st = row.exit_status if row.exit_status in ('pass','fail','error') else 'none' %}
+{% set k = scenario_cards.get(row.scenario_id) if row.scenario_id else none %}
+{% if k %}{% set title = k.title %}{% set impl = k.implementation %}{% set rt = k.runtime %}{% set vtags = k.versions %}
+{% else %}{% set stem = row.run_id.split('-20')[0] if '-20' in row.run_id else (row.scenario_id or row.run_id) %}
+{% if stem == 'remove' %}{% set title = 'Teardown · remove deployed profile' %}
+{% elif stem.startswith('profile-') %}{% set pstem = stem.split('-', 2)[2] if stem.count('-') >= 2 else stem %}{% set title = 'Profile deploy · ' ~ ((deck_nice(pstem)|trim)|replace('Cardano ', '', 1) if (deck_nice(pstem)|trim).startswith('Cardano ') else (deck_nice(pstem)|trim)) %}
+{% elif stem.startswith('client-example-') %}{% set title = 'Client example · ' ~ (deck_nice(stem[15:])|trim) %}
+{% else %}{% set title = deck_nice(stem, false)|trim %}{% endif %}{% set rt = '' %}{% set vtags = [] %}
+{% set probe = row.run_id ~ ' ' ~ stem %}{% set impl = 'amaru' if 'amaru' in probe else ('cardano-node' if 'cardano' in probe or 'haskell' in probe else '') %}
+{% set tn = namespace(t=title) %}{% for suf in [' Cardano node', ' Amaru', ' Cardano'] %}{% if tn.t.endswith(suf) %}{% set tn.t = tn.t[:-(suf|length)] %}{% endif %}{% endfor %}{% set title = tn.t %}{% endif %}
+{% set _ = cards.append({
+  'title': title, 'full_title': (k.full_title if k else (row.scenario_id or row.run_id)) ~ ' — run ' ~ row.run_id, 'id': row.run_id, 'hide_id': true,
+  'href': row.run_url, 'accent': impl,
+  'kicker': {'pass': '♦ pass', 'fail': '▲ fail', 'error': '✕ error'}.get(st, '■ result not recorded'),
+  'tone': {'pass': 'dk-g-pass', 'fail': 'dk-g-fail', 'error': 'dk-g-error'}.get(st, 'dk-g-other'),
+  'sub': row.created[:16]|replace('T', ' ') ~ ' UTC · ' ~ row.size_display,
+  'tier': 'warn' if st in ('fail', 'error') else 'back', 'group': 'res:' ~ st ~ ' impl:' ~ (impl or 'unknown'),
+  'tags': ([impl] if impl else []) + ([rt] if rt else []) + vtags,
+  'search': row.run_id ~ ' ' ~ (row.scenario_id or '') ~ ' ' ~ (row.profile_id or '')}) %}{% endfor %}
+{% set counts = {} %}{% for c in cards %}{% set r = c.group.split(' ')[0][4:] %}{% set _ = counts.update({r: counts.get(r, 0) + 1}) %}{% endfor %}
+{% set resopts = [] %}{% for r, lab in [('pass', '♦ pass'), ('fail', '▲ fail'), ('error', '✕ error'), ('none', '■ not recorded')] %}{% if counts.get(r) %}{% set _ = resopts.append((r, lab ~ ' · ' ~ counts[r])) %}{% endif %}{% endfor %}
+{{ deck_grid(cards, label='bundles', facets=[('res', 'Result', resopts), ('impl', 'Implementation', [('amaru', 'amaru'), ('cardano-node', 'cardano-node'), ('mixed', 'mixed')])], empty='No bundles preserved yet. Bundle a run with cardano-profile bundle <run-id>.') }}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate</span>
 <h1>Bundles</h1>
 <p>Forensic bundles preserved by operator action. Each bundle is a tar.gz archive of a run's full evidence (manifest, events, captured stdout/stderr, resource snapshots) at <code>dwarf/bundles/&lt;run_id&gt;.tar.gz</code>. Click a Run ID to open the per-run inspector. Filter by result to narrow the list; the filter is client-side and refresh resets it.</p>
@@ -47,6 +75,7 @@
 </script>
 {% endif %}
 
+</div>
 <hr class="hairline">
 
 <section aria-labelledby="import-heading">

@@ -1,5 +1,19 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% call deck_head('Operate · Plugins', (plugins|length) ~ ' plugin candidate' ~ ('' if plugins|length == 1 else 's') ~ ' declare ' ~ total_primitives ~ ' primitives' ~ (' — ' ~ invalid_count ~ ' invalid' if invalid_count else '') ~ '.') %}
+<p class="b-note"><b>Trust boundary.</b> {{ trust_warning }}</p>
+{% if global_errors %}<p class="b-note"><b>▲ Registry diagnostics.</b> {{ global_errors|join(' · ') }}</p>{% endif %}{% endcall %}
+{% set cards = [] %}{% for p in plugins %}{% set bad = p.errors|length > 0 %}
+{% set _ = cards.append({'title': p.plugin_id, 'href': '/operate/plugins/' ~ p.catalog_id, 'kicker': p.status ~ ' · ' ~ p.load_mode, 'sub': p.description,
+  'tier': 'warn' if bad else 'back', 'suit': '▲' if bad else '', 'tone': 'dk-g-warn' if bad else '',
+  'facts': [('Static primitives', p.static_primitive_count), ('API', p.dwarf_api_version or 'missing'), ('Version', p.version or 'undeclared'), ('Errors', p.errors|length)],
+  'tags': ['runtime-unknown'] if p.runtime_contributions_unknown else []}) %}{% endfor %}
+{{ deck_grid(cards, label='plugins', empty='No plugin candidate directories were found.') }}
+{{ deck_more('Discovery roots and manifests in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header">
   <div><span class="eyebrow">Operate · extension inventory</span><h1>Plugins</h1><p class="page-hero"><strong>{{ plugins|length }} candidates</strong> expose {{ total_primitives }} statically declared primitives. {{ runtime_unknown_count }} candidates also use runtime registration that this safe inventory does not execute.</p></div>
   <div class="definition-actions"><a class="cta cta--ghost" href="/api/plugins/export" download>Export catalog sources</a><a class="cta cta--ghost" href="/learn/plugin-authoring" target="_blank" rel="noopener">Authoring and trust model</a><a class="cta cta--ghost" href="/operate/primitives">Primitive catalog</a></div>
@@ -23,4 +37,5 @@
   </article>{% endfor %}
 </div>{% else %}<p class="empty-section-statement">No plugin candidate directories were found. The configured roots are still shown above so deployment configuration can be verified.</p>{% endif %}
 <script>(()=>{const input=document.getElementById('plugin-search');const rows=[...document.querySelectorAll('[data-plugin-row]')];const count=document.querySelector('[data-plugin-count]');if(!input||!count)return;input.addEventListener('input',()=>{const needle=input.value.trim().toLowerCase();let visible=0;for(const row of rows){const show=!needle||row.dataset.search.toLowerCase().includes(needle);row.hidden=!show;if(show)visible+=1;}count.textContent=String(visible);});})();</script>
+</div>
 {% endblock %}

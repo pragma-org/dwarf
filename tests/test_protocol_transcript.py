@@ -90,3 +90,4 @@ def test_transcript_redacts_sensitive_structured_fields_recursively(tmp_path):
     }
     assert record["redacted_fields"] == ["authorization", "nested.token"]
     assert "private" not in path.read_text()
+

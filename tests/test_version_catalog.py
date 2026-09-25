@@ -217,4 +217,4 @@ def test_catalog_serializes_without_private_or_runtime_values():
     encoded = json.dumps(catalog, sort_keys=True)
 
     assert "password" not in encoded.lower()
-    assert "$HOME" not in encoded
+    assert "/home/nigel" not in encoded

@@ -54,7 +54,7 @@ OK: SP3a seam fired under TOPOLOGY eclipse on a single network (Antithesis-compa
    …
 11:42:37 iter=328 wit=3266  mempoolReject=3266  mempoolAdd=0 relay2_crit=0 relay2_restart=0
 witness soak end 2026-06-17T11:43:22Z</pre>
-  <div class="card"><b>Result:</b> across 328 iterations / <b>3,266 witness-tampered txs</b> over 8h, every one reached relay2's mempool and was <b>ledger-rejected</b> (<code>MempoolRejectedByLedger</code>); <b><code>mempoolAdd=0</code> the entire run</b> (none ever accepted), <code>relay2_crit=0</code>, <code>relay2_restart=0</code>. The reject-oracle now spans the <b>decoder layer AND the ledger/mempool layer</b> — the node runs full ledger validation on adversarial input and correctly rejects it, adopting none. This closes the "correctness, not just crash-robustness" gap for the tx path. <span class="prov">The public source retains the reviewed result, not the raw operator log.</span></div>
+  <div class="card"><b>Result:</b> across 328 iterations / <b>3,266 witness-tampered txs</b> over 8h, every one reached relay2's mempool and was <b>ledger-rejected</b> (<code>MempoolRejectedByLedger</code>); <b><code>mempoolAdd=0</code> the entire run</b> (none ever accepted), <code>relay2_crit=0</code>, <code>relay2_restart=0</code>. The reject-oracle now spans the <b>decoder layer AND the ledger/mempool layer</b> — the node runs full ledger validation on adversarial input and correctly rejects it, adopting none. This closes the "correctness, not just crash-robustness" gap for the tx path. <span class="prov">Raw: <code>logs/witness_soak.log</code> (mempoolAdd never exceeds 0 — verified across all 328 lines).</span></div>
 
   <h2>3 — Validation-bypass battery: each ledger rule, correctly rejected <span class="chip note">notes</span></h2>
   <p>A battery of Conway txs, each with valid <em>unspent</em> inputs but violating exactly one ledger rule, built via <code>cardano-cli build-raw</code> (<code>scripts/build_battery.sh</code>, <code>build_battery2.sh</code>) and served to the eclipsed node over the real N2N protocol — a malicious peer, not local submit.</p>
@@ -68,7 +68,7 @@ witness soak end 2026-06-17T11:43:22Z</pre>
   <div class="card">Each tx was ledger-rejected <b>at its exact rule</b>; <b>0 accepted</b> (<code>TraceMempoolAddedTx=0</code>), no crash. <b>No validation bypass found</b> — and this is the genuine ledger-correctness probe that would catch one. <span class="prov">The battery build scripts are shipped in the tarball; the per-rule rejection results were observed live (cardano-cli submit + tracer) and recorded in the engineering note — the per-run output was not persisted to a standalone log.</span></div>
 
   <h2>4 — High-volume in-process decoder fuzzing <span class="chip evi">raw log</span></h2>
-  <p>The wire path does ~1–2 tx/min; this calls the real Conway <code>GenTx</code> decoder in a tight in-process loop at <b>~100–400k decodes/sec</b>, closing the volume/metrics gap. The reviewed 15M-decode result was:</p>
+  <p>The wire path does ~1–2 tx/min; this calls the real Conway <code>GenTx</code> decoder in a tight in-process loop at <b>~100–400k decodes/sec</b>, closing the volume/metrics gap. Captured 15M-decode result set (<code>decoder_fuzz_results.txt</code>):</p>
   <pre>=== bytes (5M) ===    {"cleanReject":4346924,"decodedOk":653076,"exception":0,"execPerSec":287010,"timeout":0,...}
 === struct (5M) ===   {"cleanReject":5000000,"decodedOk":0,     "exception":0,"execPerSec":384065,"timeout":0,...}
 === semantic (5M) === {"cleanReject":1960412,"decodedOk":3039588,"exception":0,"execPerSec":86954, "timeout":0,...}</pre>
@@ -89,7 +89,10 @@ seed-corpus soak end 2026-06-17T01:15:37Z</pre>
 
   <h2>Bundled evidence (<code>fuzzing-correctness-evidence.tar.gz</code>)</h2>
   <ul>
-    <li>Raw local soak and decoder logs are intentionally not distributed in the public source tree.</li>
+    <li><code>logs/witness_soak.log</code> — 8h ledger-layer reach soak (§2)</li>
+    <li><code>logs/decoder_fuzz_results.txt</code> — 15M in-process decoder-fuzz result set (§4)</li>
+    <li><code>logs/fu1_struct.log</code> — reject-oracle / topology-eclipse seam (§1)</li>
+    <li><code>logs/seed_soak_8h.log</code>, <code>logs/cert_soak_8h.log</code> — certificate/seed-corpus soaks (§5)</li>
     <li><code>scripts/</code> — the harnesses: <code>reject_oracle.sh</code>, <code>witness_soak.sh</code>, <code>seed_soak_8h.sh</code>, <code>cert_soak_8h.sh</code>, <code>build_battery.sh</code>, <code>build_battery2.sh</code></li>
   </ul>
 </div>

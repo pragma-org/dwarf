@@ -1,8 +1,10 @@
 {% extends "_base.j2" %}
 {% block main %}
-<span class="eyebrow">Operate · Profiles · New</span>
-<h1>Create a deployment profile</h1>
-<p class="page-hero">Render a profile template into <code>{{ profile_root }}/&lt;name&gt;/profile.yaml</code>. It appears in <a href="/operate/profiles?token={{ token }}">/operate/profiles</a>; edit host-specific values, then deploy.</p>
+{% from "operate/_partials/_deck.j2" import deck_head with context %}
+{{ deck_head('Profiles · New', 'Create a deployment profile from a template.', 'Pick a template and a name, then Create: DWARF renders ' ~ profile_root ~ '/<name>/profile.yaml. Nothing is deployed — edit host-specific values, then deploy as a separate step.') }}
+<span class="eyebrow adv-only">Operate · Profiles · New</span>
+<h1 class="adv-only">Create a deployment profile</h1>
+<p class="page-hero adv-only">Render a profile template into <code>{{ profile_root }}/&lt;name&gt;/profile.yaml</code>. It appears in <a href="/operate/profiles?token={{ token }}">/operate/profiles</a>; edit host-specific values, then deploy.</p>
 
 <style>
 .pn-form{max-width:560px;margin:18px 0}

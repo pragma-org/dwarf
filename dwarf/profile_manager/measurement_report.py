@@ -324,3 +324,4 @@ def write_measurement_reports(
         _readable_report(report, rows), encoding="utf-8"
     )
     return artifacts
+

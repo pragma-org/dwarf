@@ -1,11 +1,9 @@
 import json
-import hashlib
 from pathlib import Path
 
 from jsonschema import validate
 
 from profile_manager import forensic, testcase_lifecycle
-from profile_manager.data import operate_run as operate_run_data
 from profile_manager.data.operate_run import operate_run_detail
 from profile_manager.templating import render
 
@@ -180,68 +178,53 @@ def test_completed_failed_run_retains_failed_verdict_and_gets_finding_classifica
     assert detail["security_execution"] == manifest["execution"]
 
 
-def _digest_locked_historical_run(tmp_path, monkeypatch):
-    revision = "b159172f25a9c389f82f20bca4f15e3032791638"
-    runs_dir, _state_dir, run_id = _finished_run(
-        tmp_path,
-        assertion_result="fail",
-        assertion_primitive="cbor_conformance_clean",
-        target_source_revision=revision,
-    )
-    run_dir = runs_dir / run_id
-    manifest_path = run_dir / "manifest.json"
-    manifest = json.loads(manifest_path.read_text())
-    manifest.pop("execution", None)
-    manifest["measurements"] = {"target_identity": {"source_revision": revision}}
-    manifest_path.write_text(json.dumps(manifest, sort_keys=True) + "\n")
-    exact_target = run_dir / "outputs/client-example-proof/exact-target.json"
-    exact_target.parent.mkdir(parents=True)
-    exact_target.write_text(
-        json.dumps({"matched": True, "observed": {"source_revision": revision}})
-        + "\n"
-    )
-    digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
-    registry = tmp_path / "run-classifications.json"
-    registry.write_text(json.dumps({"classifications": [{
-        "run_id": run_id,
-        "manifest_sha256": digest(manifest_path),
-        "assertions_sha256": digest(run_dir / "assertions.json"),
-        "exact_target_path": "outputs/client-example-proof/exact-target.json",
-        "exact_target_sha256": digest(exact_target),
-        "finding_id": "amaru-plutus-data-byte-string-bound",
-        "failed_assertion": "cbor_conformance_clean",
-        "target_source_revision": revision,
-        "regression_run_id": "documented-regression-run",
-        "regression_source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
-        "regression_security_verdict": "pass",
-    }]}))
-    monkeypatch.setattr(operate_run_data, "_HISTORICAL_RUN_CLASSIFICATIONS", registry)
-    return runs_dir, run_id
-
-
-def test_digest_locked_historical_finding_classification_uses_public_safe_fixture(
-    tmp_path, monkeypatch
-):
-    runs_dir, run_id = _digest_locked_historical_run(tmp_path, monkeypatch)
-
-    detail = operate_run_detail(run_id, runs_dir=runs_dir)
+def test_accepted_historical_card_01_run_gets_digest_locked_finding_classification():
+    run_id = "20260920T135054Z-28289dcd"
+    detail = operate_run_detail(run_id, runs_dir=ROOT / "dwarf/runs")
 
     assert detail is not None
-    assert detail["security_execution"]["classification"] == "completed_with_security_finding"
-    assert detail["security_execution"]["classification_source"] == "digest-locked-historical-run"
-    assert detail["security_execution"]["regression_security_verdict"] == "pass"
+    assert detail["exit_status"] == "fail"
+    assert detail["assertion_summary"] == {"total": 4, "pass": 3, "fail": 1}
+    assert detail["security_execution"] == {
+        "state": "completed",
+        "classification": "completed_with_security_finding",
+        "security_verdict": "fail",
+        "finding_id": "amaru-plutus-data-byte-string-bound",
+        "failed_assertion": "cbor_conformance_clean",
+        "target_source_revision": "b159172f25a9c389f82f20bca4f15e3032791638",
+        "classification_source": "digest-locked-historical-run",
+        "regression_run_id": "20260920T235440Z-050046a4",
+        "regression_source_revision": "d3a6dafcced78f5809a96619e883cf04911d2bdc",
+        "regression_security_verdict": "pass",
+    }
+    html = render(
+        "operate/run.j2",
+        page_title=f"Run · {run_id}",
+        density="reading",
+        active="operate",
+        active_sub="runs",
+        run=detail,
+    )
+    assert "Completed run with security finding" in html
+    assert "The security verdict remains" in html
+    assert "b159172f25a9c389f82f20bca4f15e3032791638" in html
+    assert "20260920T235440Z-050046a4" in html
+    assert "d3a6dafcced78f5809a96619e883cf04911d2bdc" in html
+    assert "The old node showed the bug" in html
 
 
-def test_historical_finding_classification_refuses_digest_mismatch(
-    tmp_path, monkeypatch
-):
-    runs_dir, run_id = _digest_locked_historical_run(tmp_path, monkeypatch)
-    assertions_path = runs_dir / run_id / "assertions.json"
-    assertions = json.loads(assertions_path.read_text())
+def test_historical_finding_classification_refuses_digest_mismatch(tmp_path):
+    run_id = "20260920T135054Z-28289dcd"
+    source = ROOT / "dwarf/runs" / run_id
+    target = tmp_path / run_id
+    target.mkdir()
+    for name in ("manifest.json", "assertions.json", "chain.json", "scenario.yaml"):
+        (target / name).write_bytes((source / name).read_bytes())
+    assertions = json.loads((target / "assertions.json").read_text())
     assertions[0]["note"] = "changed after acceptance"
-    assertions_path.write_text(json.dumps(assertions))
+    (target / "assertions.json").write_text(json.dumps(assertions))
 
-    detail = operate_run_detail(run_id, runs_dir=runs_dir)
+    detail = operate_run_detail(run_id, runs_dir=tmp_path)
 
     assert detail is not None
     assert detail["security_execution"]["classification"] == "completed"

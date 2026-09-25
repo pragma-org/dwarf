@@ -132,10 +132,10 @@ def main(argv=None) -> int:
     parser.add_argument("--source-repository", default="https://github.com/pragma-org/amaru.git")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
-        "--cargo", type=Path, default=Path.home() / ".cargo/bin/cargo"
+        "--cargo", type=Path, default=Path("/home/nigel/.cargo/bin/cargo")
     )
     parser.add_argument(
-        "--rustc", type=Path, default=Path.home() / ".cargo/bin/rustc"
+        "--rustc", type=Path, default=Path("/home/nigel/.cargo/bin/rustc")
     )
     parser.add_argument(
         "--target-registry",

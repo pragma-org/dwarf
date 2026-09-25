@@ -1,0 +1,739 @@
+{
+  "attempts": {
+    "artifact": "attempts.ndjson",
+    "by_case": {
+      "node-11-1-experimental-v16-offer": {
+        "outcomes": {
+          "rejected": 20
+        },
+        "total": 20
+      },
+      "unknown-future-version-offer": {
+        "outcomes": {
+          "rejected": 20
+        },
+        "total": 20
+      },
+      "v14-v15-offer": {
+        "outcomes": {
+          "accepted": 20
+        },
+        "total": 20
+      }
+    },
+    "outcomes": {
+      "accepted": 20,
+      "rejected": 40
+    },
+    "total": 60,
+    "unexpected_count": 40
+  },
+  "created_at": "2026-09-23T14:53:24.910021Z",
+  "hardware": {
+    "architecture": "x86_64",
+    "kernel_release": "6.8.0-138-generic",
+    "logical_cpu_count": 16,
+    "physical_memory_bytes": 29193207808,
+    "system": "Linux"
+  },
+  "measurements": {
+    "handshake_rejection_roundtrip": {
+      "excluded_warmup_count": 0,
+      "maximum": 102292.0,
+      "mean": 99584.75,
+      "median": 101133.5,
+      "minimum": 1631.0,
+      "p95": 102084.0,
+      "p99": 102292.0,
+      "rejected_count": 0,
+      "rejection_reasons": {},
+      "sample_count": 60,
+      "status": "available",
+      "unit": "us"
+    }
+  },
+  "measurements_by_outcome": {
+    "handshake_rejection_roundtrip": {
+      "accepted": {
+        "excluded_warmup_count": 0,
+        "maximum": 102292.0,
+        "mean": 96200.65,
+        "median": 101181.0,
+        "minimum": 1631.0,
+        "p95": 101867.0,
+        "p99": 102292.0,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 20,
+        "status": "available",
+        "unit": "us"
+      },
+      "rejected": {
+        "excluded_warmup_count": 0,
+        "maximum": 102222.0,
+        "mean": 101276.8,
+        "median": 101133.5,
+        "minimum": 100352.0,
+        "p95": 102084.0,
+        "p99": 102222.0,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 40,
+        "status": "available",
+        "unit": "us"
+      }
+    }
+  },
+  "node_measurements": {
+    "amaru-patched-blockfetch-queues": {
+      "artifacts": {
+        "correlations": "measurements/collectors/amaru-patched-blockfetch-queues/correlations.json",
+        "normalized": "measurements/collectors/amaru-patched-blockfetch-queues/normalized.ndjson",
+        "raw_json": "measurements/collectors/amaru-patched-blockfetch-queues/raw/amaru-json.ndjson",
+        "result": "measurements/collectors/amaru-patched-blockfetch-queues/result.json"
+      },
+      "evidence_class": "patched-node",
+      "export": {
+        "ignored_record_count": 2810,
+        "incomplete": false,
+        "normalized_record_count": 189,
+        "rejected_record_count": 0,
+        "rejection_reasons": {},
+        "source_record_count": 2999,
+        "truncated_sources": []
+      },
+      "measurement_id": "amaru-patched-blockfetch-queues",
+      "measurement_revision": "nanoseconds-v3",
+      "measurements": {
+        "block_decode": {
+          "excluded_warmup_count": 0,
+          "maximum": 3.787,
+          "mean": 2.69,
+          "median": 2.69,
+          "minimum": 1.593,
+          "p95": 3.787,
+          "p99": 3.787,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 2,
+          "status": "available",
+          "unit": "us"
+        },
+        "block_decode_by_outcome": {
+          "accepted": {
+            "excluded_warmup_count": 0,
+            "maximum": 3.787,
+            "mean": 2.69,
+            "median": 2.69,
+            "minimum": 1.593,
+            "p95": 3.787,
+            "p99": 3.787,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 2,
+            "status": "available",
+            "unit": "us"
+          }
+        },
+        "handler": {
+          "excluded_warmup_count": 0,
+          "maximum": 52.791,
+          "mean": 22.380090909090907,
+          "median": 21.892,
+          "minimum": 1.943,
+          "p95": 52.791,
+          "p99": 52.791,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 11,
+          "status": "available",
+          "unit": "us"
+        },
+        "handler_by_outcome": {
+          "completed": {
+            "excluded_warmup_count": 0,
+            "maximum": 52.791,
+            "mean": 22.380090909090907,
+            "median": 21.892,
+            "minimum": 1.943,
+            "p95": 52.791,
+            "p99": 52.791,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 11,
+            "status": "available",
+            "unit": "us"
+          }
+        },
+        "inflight_depth": {
+          "excluded_warmup_count": 0,
+          "maximum": 1.0,
+          "mean": 0.7272727272727273,
+          "median": 1.0,
+          "minimum": 0.0,
+          "p95": 1.0,
+          "p99": 1.0,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 11,
+          "status": "available",
+          "unit": "requests"
+        },
+        "pending_depth": {
+          "excluded_warmup_count": 0,
+          "maximum": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "minimum": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 11,
+          "status": "available",
+          "unit": "requests"
+        },
+        "queue_residence": {
+          "excluded_warmup_count": 0,
+          "maximum": null,
+          "mean": null,
+          "median": null,
+          "minimum": null,
+          "p95": null,
+          "p99": null,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 0,
+          "status": "unavailable",
+          "unit": "us"
+        },
+        "queue_residence_by_outcome": {}
+      },
+      "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+      "performance_authority": "requires-paired-calibration",
+      "schema_version": "v1",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "target": {
+        "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+        "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+        "implementation": "amaru",
+        "mode": "patched",
+        "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+        "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+        "version": "10.11.20260918"
+      }
+    },
+    "amaru-patched-protocol-decode": {
+      "artifacts": {
+        "correlations": "measurements/collectors/amaru-patched-protocol-decode/correlations.json",
+        "normalized": "measurements/collectors/amaru-patched-protocol-decode/normalized.ndjson",
+        "raw_json": "measurements/collectors/amaru-patched-protocol-decode/raw/amaru-json.ndjson",
+        "result": "measurements/collectors/amaru-patched-protocol-decode/result.json"
+      },
+      "evidence_class": "patched-node",
+      "export": {
+        "ignored_record_count": 2810,
+        "incomplete": false,
+        "normalized_record_count": 189,
+        "rejected_record_count": 0,
+        "rejection_reasons": {},
+        "source_record_count": 2999,
+        "truncated_sources": []
+      },
+      "measurement_id": "amaru-patched-protocol-decode",
+      "measurement_revision": "nanoseconds-v3",
+      "measurements": {
+        "handshake_decode": {
+          "excluded_warmup_count": 0,
+          "maximum": 36.771,
+          "mean": 5.7964,
+          "median": 5.641,
+          "minimum": 2.074,
+          "p95": 10.079,
+          "p99": 36.771,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 60,
+          "status": "available",
+          "unit": "us"
+        },
+        "handshake_decode_by_decode_outcome": {
+          "decoded": {
+            "excluded_warmup_count": 0,
+            "maximum": 5.681,
+            "mean": 3.27775,
+            "median": 3.1959999999999997,
+            "minimum": 2.074,
+            "p95": 4.538,
+            "p99": 5.681,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 20,
+            "status": "available",
+            "unit": "us"
+          },
+          "malformed": {
+            "excluded_warmup_count": 0,
+            "maximum": 36.771,
+            "mean": 7.055725,
+            "median": 6.0365,
+            "minimum": 3.747,
+            "p95": 12.043,
+            "p99": 36.771,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 40,
+            "status": "available",
+            "unit": "us"
+          }
+        },
+        "handshake_ingress": {
+          "excluded_warmup_count": 0,
+          "maximum": 45.897,
+          "mean": 4.1864333333333335,
+          "median": 3.041,
+          "minimum": 1.272,
+          "p95": 5.45,
+          "p99": 45.897,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 60,
+          "status": "available",
+          "unit": "us"
+        },
+        "handshake_ingress_by_outcome": {
+          "framed": {
+            "excluded_warmup_count": 0,
+            "maximum": 45.897,
+            "mean": 4.1864333333333335,
+            "median": 3.041,
+            "minimum": 1.272,
+            "p95": 5.45,
+            "p99": 45.897,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 60,
+            "status": "available",
+            "unit": "us"
+          }
+        },
+        "handshake_negotiation": {
+          "excluded_warmup_count": 0,
+          "maximum": 1.763,
+          "mean": 0.6808,
+          "median": 0.526,
+          "minimum": 0.36,
+          "p95": 1.613,
+          "p99": 1.763,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 20,
+          "status": "available",
+          "unit": "us"
+        },
+        "handshake_negotiation_by_outcome": {
+          "accepted": {
+            "excluded_warmup_count": 0,
+            "maximum": 1.763,
+            "mean": 0.6808,
+            "median": 0.526,
+            "minimum": 0.36,
+            "p95": 1.613,
+            "p99": 1.763,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 20,
+            "status": "available",
+            "unit": "us"
+          }
+        },
+        "handshake_state_by_outcome": {
+          "accepted": {
+            "excluded_warmup_count": 0,
+            "maximum": 6.442,
+            "mean": 3.68255,
+            "median": 3.552,
+            "minimum": 2.244,
+            "p95": 5.21,
+            "p99": 6.442,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 20,
+            "status": "available",
+            "unit": "us"
+          },
+          "not_attempted": {
+            "excluded_warmup_count": 0,
+            "maximum": 36.771,
+            "mean": 7.055725,
+            "median": 6.0365,
+            "minimum": 3.747,
+            "p95": 12.043,
+            "p99": 36.771,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 40,
+            "status": "available",
+            "unit": "us"
+          }
+        },
+        "protocol_decode": {
+          "excluded_warmup_count": 0,
+          "maximum": 36.771,
+          "mean": 4.719177215189873,
+          "median": 4.538,
+          "minimum": 0.1,
+          "p95": 10.079,
+          "p99": 36.771,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 79,
+          "status": "available",
+          "unit": "us"
+        },
+        "protocol_decode_by_decode_outcome": {
+          "decoded": {
+            "excluded_warmup_count": 0,
+            "maximum": 5.681,
+            "mean": 2.3227179487179486,
+            "median": 2.405,
+            "minimum": 0.1,
+            "p95": 4.538,
+            "p99": 5.681,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 39,
+            "status": "available",
+            "unit": "us"
+          },
+          "malformed": {
+            "excluded_warmup_count": 0,
+            "maximum": 36.771,
+            "mean": 7.055725,
+            "median": 6.0365,
+            "minimum": 3.747,
+            "p95": 12.043,
+            "p99": 36.771,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 40,
+            "status": "available",
+            "unit": "us"
+          }
+        },
+        "protocol_total": {
+          "excluded_warmup_count": 0,
+          "maximum": 36.771,
+          "mean": 4.900025316455696,
+          "median": 4.579,
+          "minimum": 0.14,
+          "p95": 10.079,
+          "p99": 36.771,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 79,
+          "status": "available",
+          "unit": "us"
+        },
+        "protocol_total_by_state_outcome": {
+          "accepted": {
+            "excluded_warmup_count": 0,
+            "maximum": 6.442,
+            "mean": 2.798918918918919,
+            "median": 2.896,
+            "minimum": 0.14,
+            "p95": 5.33,
+            "p99": 6.442,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 37,
+            "status": "available",
+            "unit": "us"
+          },
+          "not_attempted": {
+            "excluded_warmup_count": 0,
+            "maximum": 36.771,
+            "mean": 7.055725,
+            "median": 6.0365,
+            "minimum": 3.747,
+            "p95": 12.043,
+            "p99": 36.771,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 40,
+            "status": "available",
+            "unit": "us"
+          },
+          "rejected": {
+            "excluded_warmup_count": 0,
+            "maximum": 0.772,
+            "mean": 0.6565000000000001,
+            "median": 0.6565000000000001,
+            "minimum": 0.541,
+            "p95": 0.772,
+            "p99": 0.772,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "sample_count": 2,
+            "status": "available",
+            "unit": "us"
+          }
+        }
+      },
+      "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+      "performance_authority": "requires-paired-calibration",
+      "schema_version": "v1",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "target": {
+        "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+        "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+        "implementation": "amaru",
+        "mode": "patched",
+        "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+        "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+        "version": "10.11.20260918"
+      }
+    },
+    "amaru-patched-txsubmission-residence": {
+      "artifacts": {
+        "correlations": "measurements/collectors/amaru-patched-txsubmission-residence/correlations.json",
+        "normalized": "measurements/collectors/amaru-patched-txsubmission-residence/normalized.ndjson",
+        "raw_json": "measurements/collectors/amaru-patched-txsubmission-residence/raw/amaru-json.ndjson",
+        "result": "measurements/collectors/amaru-patched-txsubmission-residence/result.json"
+      },
+      "evidence_class": "patched-node",
+      "export": {
+        "ignored_record_count": 2810,
+        "incomplete": false,
+        "normalized_record_count": 189,
+        "rejected_record_count": 0,
+        "rejection_reasons": {},
+        "source_record_count": 2999,
+        "truncated_sources": []
+      },
+      "measurement_id": "amaru-patched-txsubmission-residence",
+      "measurement_revision": "nanoseconds-v3",
+      "measurements": {
+        "advertised_to_body": {
+          "excluded_warmup_count": 0,
+          "maximum": null,
+          "mean": null,
+          "median": null,
+          "minimum": null,
+          "p95": null,
+          "p99": null,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 0,
+          "status": "unavailable",
+          "unit": "us"
+        },
+        "advertised_to_terminal": {
+          "excluded_warmup_count": 0,
+          "maximum": null,
+          "mean": null,
+          "median": null,
+          "minimum": null,
+          "p95": null,
+          "p99": null,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 0,
+          "status": "unavailable",
+          "unit": "us"
+        },
+        "advertised_to_terminal_by_outcome": {},
+        "blocking_residence": {
+          "excluded_warmup_count": 0,
+          "maximum": null,
+          "mean": null,
+          "median": null,
+          "minimum": null,
+          "p95": null,
+          "p99": null,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 0,
+          "status": "unavailable",
+          "unit": "us"
+        },
+        "blocking_residence_by_outcome": {},
+        "body_to_terminal": {
+          "excluded_warmup_count": 0,
+          "maximum": null,
+          "mean": null,
+          "median": null,
+          "minimum": null,
+          "p95": null,
+          "p99": null,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 0,
+          "status": "unavailable",
+          "unit": "us"
+        },
+        "inflight_depth": {
+          "excluded_warmup_count": 0,
+          "maximum": null,
+          "mean": null,
+          "median": null,
+          "minimum": null,
+          "p95": null,
+          "p99": null,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 0,
+          "status": "unavailable",
+          "unit": "transactions"
+        },
+        "pending_depth": {
+          "excluded_warmup_count": 0,
+          "maximum": null,
+          "mean": null,
+          "median": null,
+          "minimum": null,
+          "p95": null,
+          "p99": null,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 0,
+          "status": "unavailable",
+          "unit": "transactions"
+        },
+        "unacked_depth": {
+          "excluded_warmup_count": 0,
+          "maximum": null,
+          "mean": null,
+          "median": null,
+          "minimum": null,
+          "p95": null,
+          "p99": null,
+          "rejected_count": 0,
+          "rejection_reasons": {},
+          "sample_count": 0,
+          "status": "unavailable",
+          "unit": "transactions"
+        }
+      },
+      "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+      "performance_authority": "requires-paired-calibration",
+      "schema_version": "v1",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "target": {
+        "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+        "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+        "implementation": "amaru",
+        "mode": "patched",
+        "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+        "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+        "version": "10.11.20260918"
+      }
+    }
+  },
+  "raw_trace": "raw/amaru-relay-1.ndjson",
+  "run_id": "amaru-measurement-calibration",
+  "runner": {
+    "script": "runtime_amaru_measurement_calibration.py",
+    "script_sha256": "sha256:383ba3569dfc0b977c9438ab4a7e25a4fc75b240f66aa888604cd99599ed6d78"
+  },
+  "schema_version": 1,
+  "status": "unavailable",
+  "target": {
+    "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+    "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+    "implementation": "amaru",
+    "mode": "patched",
+    "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+    "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+    "version": "10.11.20260918"
+  },
+  "target_health": {
+    "after": {
+      "exit_code": 0,
+      "oom_killed": false,
+      "restart_count": 0,
+      "running": true,
+      "status": "running"
+    },
+    "before": {
+      "exit_code": 0,
+      "oom_killed": false,
+      "restart_count": 0,
+      "running": true,
+      "status": "running"
+    },
+    "checks": {
+      "all_attempts_classified_as_expected": false,
+      "honest_chain_progressed": true,
+      "no_fatal_signals": true,
+      "target_not_oom_killed": true,
+      "target_restart_count_unchanged": true,
+      "target_running_after": true,
+      "target_running_before": true
+    },
+    "log_signals": {
+      "background": [],
+      "fatal": []
+    },
+    "observer": {
+      "container": "f732108a9680",
+      "implementation": "amaru",
+      "started_at": "2026-09-23T14:53:18.496719Z"
+    },
+    "tip_after": {
+      "block_hash": "9269c689184de15cccd31c28dd55820a1e8d5c6786634454e5c6e046f7ae1430",
+      "block_height": 762,
+      "hash": "9269c689184de15cccd31c28dd55820a1e8d5c6786634454e5c6e046f7ae1430",
+      "slot": 3833
+    },
+    "tip_before": {
+      "block_hash": "3d829301bf23f5ea7bb58d74f22418b3c2044f5a7a48cd018c0ee44d9c38b61b",
+      "block_height": 760,
+      "hash": "3d829301bf23f5ea7bb58d74f22418b3c2044f5a7a48cd018c0ee44d9c38b61b",
+      "slot": 3821
+    }
+  },
+  "timing_policy": {
+    "clock": "monotonic-perf-counter-ns",
+    "outcome_inclusion": "all",
+    "start": "before-tcp-connect",
+    "stop": "terminal-response-eof-timeout-or-disconnect",
+    "warmup": "none"
+  },
+  "workload_identity": {
+    "attempt_count": 60,
+    "case_set": "version-table-forward-compat-v1",
+    "cases": [
+      {
+        "attempt_count": 20,
+        "expected_decode_outcome": "decoded",
+        "expected_external_outcome": "accepted",
+        "name": "v14-v15-offer",
+        "payload_hex": "8200a20e84182af401f40f84182af401f4"
+      },
+      {
+        "attempt_count": 20,
+        "expected_decode_outcome": "decoded",
+        "expected_external_outcome": "accepted",
+        "name": "node-11-1-experimental-v16-offer",
+        "payload_hex": "8200a30e84182af401f40f84182af401f41085182af401f4f4"
+      },
+      {
+        "attempt_count": 20,
+        "expected_decode_outcome": "decoded",
+        "expected_external_outcome": "accepted",
+        "name": "unknown-future-version-offer",
+        "payload_hex": "8200a30e84182af401f40f84182af401f4186382182a66667574757265"
+      }
+    ],
+    "mini_protocol": "handshake",
+    "mux_direction_bit": 0,
+    "network_magic": 42,
+    "response_cap_bytes": 256,
+    "scenario_id": "amaru-measurement-overhead-calibration",
+    "seed": "0xA11CE501",
+    "target_port": 3000,
+    "transport": "tcp",
+    "workload_digest": "sha256:97cf371b5f725cd0030b7808df9776662bd49742d5636b6993a41ed947d2bd16"
+  }
+}

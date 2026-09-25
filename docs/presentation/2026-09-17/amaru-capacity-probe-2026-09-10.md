@@ -2,7 +2,7 @@
 
 ## Conclusion
 
-On `dwarf-host-a`, 100 additional real Amaru relay/consumer processes ran concurrently and continued applying blocks while the existing DWARF mixed network remained available. A 150-process population crossed the host's 16-thread load guardrail during concurrent catch-up. The defensible quick estimate for this workload is therefore:
+On `cardano-box`, 100 additional real Amaru relay/consumer processes ran concurrently and continued applying blocks while the existing DWARF mixed network remained available. A 150-process population crossed the host's 16-thread load guardrail during concurrent catch-up. The defensible quick estimate for this workload is therefore:
 
 - tested operating level: 100 Amaru relay/consumer nodes;
 - estimated operating range: approximately 100–125 nodes during concurrent catch-up;
@@ -13,7 +13,7 @@ This is a capacity probe, not a formal DWARF scenario result.
 
 ## Test boundary
 
-- Host: `dwarf-host-a`, AMD Ryzen 7 6800U, 8 cores / 16 threads, 27.19 GiB RAM, 8 GiB swap.
+- Host: `cardano-box`, AMD Ryzen 7 6800U, 8 cores / 16 threads, 27.19 GiB RAM, 8 GiB swap.
 - Amaru: `Amaru 10.10.0`.
 - Image: `ghcr.io/lambdasistemi/amaru-bootstrap-producer:03d2727b71e8d1fe7c793d5036dce3c3ce294f6c`.
 - Image digest: `sha256:02e9d88dc144ed86009ed82d57014cdde404cccb1e33b152515f7c5539b19630`.
@@ -47,7 +47,7 @@ Docker CPU percentages use 100% for one logical CPU. The values above therefore 
 
 ## What this supports
 
-- `dwarf-host-a` can run at least 100 additional real Amaru relay/consumer processes under active local-devnet catch-up alongside the existing mixed deployment.
+- `cardano-box` can run at least 100 additional real Amaru relay/consumer processes under active local-devnet catch-up alongside the existing mixed deployment.
 - Amaru's measured memory footprint in this test was far below the one-GiB-per-node planning assumption used by the older Cardano large-node scenarios.
 - For this topology and workload, concurrent synchronization pressure reaches the CPU/scheduler boundary before RAM is exhausted.
 

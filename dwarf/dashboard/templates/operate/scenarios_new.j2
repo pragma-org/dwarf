@@ -1,8 +1,10 @@
 {% extends "_base.j2" %}
 {% block main %}
-<span class="eyebrow">Operate · Scenarios · New</span>
-<h1>New scenario from template</h1>
-<p class="page-hero">Pick one of the bundled templates, give the scenario a name, preview the rendered YAML, then click Create. The new file lands at <code>dwarf/scenarios/&lt;name&gt;.yaml</code> and the hot-reload cache picks it up on the next /operate/scenarios request.</p>
+{% from "operate/_partials/_deck.j2" import deck_head with context %}
+{{ deck_head('Scenarios · New from template', 'Copy a bundled template into a new scenario file.', 'Pick a template and a name, refresh the preview, then Create: DWARF writes dwarf/scenarios/<name>.yaml. Existing files are never overwritten, and creating a scenario runs nothing.') }}
+<span class="eyebrow adv-only">Operate · Scenarios · New</span>
+<h1 class="adv-only">New scenario from template</h1>
+<p class="page-hero adv-only">Pick one of the bundled templates, give the scenario a name, preview the rendered YAML, then click Create. The new file lands at <code>dwarf/scenarios/&lt;name&gt;.yaml</code> and the hot-reload cache picks it up on the next /operate/scenarios request.</p>
 
 <hr class="hairline">
 

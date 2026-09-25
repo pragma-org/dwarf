@@ -93,10 +93,14 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
         "profile-w-amaru-measurement-plutus-v2": "amaru-control",
         "profile-x-amaru-cbor-fix-regression-nanoseconds-v2": "amaru-control",
         "profile-y-amaru-block-application-nanoseconds-v3": "amaru-control",
+        "profile-z-amaru-20260918-nanoseconds-v3": "amaru-control",
+        "profile-za-amaru-20260918-plutus-v2": "amaru-control",
+        "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3": "amaru-control",
+        "profile-zc-mixed-1112-amaru-20260918-v16-repro": "amaru-control",
     }
     profiles = load_profiles()
 
-    assert len(profiles) == 25
+    assert len(profiles) == 29
     assert {profile.id for profile in profiles} == set(expected_adapters)
     for profile in profiles:
         source = next(
@@ -115,6 +119,10 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
                 "profile-w-amaru-measurement-plutus-v2",
                 "profile-x-amaru-cbor-fix-regression-nanoseconds-v2",
                 "profile-y-amaru-block-application-nanoseconds-v3",
+                "profile-z-amaru-20260918-nanoseconds-v3",
+                "profile-za-amaru-20260918-plutus-v2",
+                "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+                "profile-zc-mixed-1112-amaru-20260918-v16-repro",
             }
             else "latest-confirmed"
         )
@@ -346,3 +354,32 @@ def test_amaru_block_application_v3_profile_pins_new_exact_artifact():
     assert body["measurement_patch_set_sha256"] == (
         "042f6b1840bc6a30e65d77ce702e1be9967b77564ecfb9c77c1e5c25520aad00"
     )
+
+
+def test_amaru_20260918_profile_resolves_exact_confirmed_release():
+    body = json.loads(
+        (
+            CATALOG_PATH.parents[1]
+            / "profiles/profile-z-amaru-20260918-nanoseconds-v3/profile.yaml"
+        ).read_text()
+    )
+
+    resolved = resolve_profile_versions(body, load_version_catalog(CATALOG_PATH))
+
+    assert resolved["status"] == "confirmed"
+    assert resolved["requires_acknowledgement"] is False
+    assert resolved["resolved"]["amaru"]["version"] == "10.11.20260918"
+    assert resolved["resolved"]["amaru"]["source_revision"] == (
+        "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+    )
+    assert resolved["supporting"]["cardano-node"]["version"] == "10.7.1"
+    assert body["measurement_revision"] == "nanoseconds-v3"
+    assert body["measurement_patch_revision"] == (
+        "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+    )
+    assert body["measurement_patch_set_sha256"] == (
+        "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6"
+    )
+    verification = resolved["resolved"]["amaru"]["verification"]["amaru-only"]
+    assert verification["default"] is False
+    assert any("dwarf-qual-amaru-10-7-1-10-11-20260918" in item for item in verification["evidence"])

@@ -226,10 +226,10 @@ def main(argv=None) -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--target-registry", type=Path, default=_registry_root())
     parser.add_argument(
-        "--cabal", type=Path, default=Path.home() / ".ghcup/bin/cabal-3.16.0.0"
+        "--cabal", type=Path, default=Path("/home/nigel/.ghcup/bin/cabal-3.16.0.0")
     )
     parser.add_argument(
-        "--ghc", type=Path, default=Path.home() / ".ghcup/bin/ghc-9.6.7"
+        "--ghc", type=Path, default=Path("/home/nigel/.ghcup/bin/ghc-9.6.7")
     )
     args = parser.parse_args(argv)
     try:

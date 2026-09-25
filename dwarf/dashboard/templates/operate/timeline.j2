@@ -1,5 +1,54 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{%- if latest -%}
+  {%- set _n = latest.summary.event_count if latest.summary.event_count is not none else latest.events|length -%}
+  {%- set _lead = _n ~ ' recorded run' ~ ('' if _n == 1 else 's') ~ ' in the latest timeline' ~ ((', newest ' ~ latest.summary.last_seen_at) if latest.summary.last_seen_at else '') ~ '.' -%}
+{%- else -%}
+  {%- set _lead = 'No timeline has been built yet.' -%}
+{%- endif -%}
+{{ deck_head('Operate · Timeline', _lead,
+   'The timeline lists runs that left a bundle, newest first, so repeats of the same outcome are easy to spot. It mirrors what the harness recorded; a row being here means a bundle exists, not that its chain has been checked — open the bundle for that.') }}
+{% if latest %}
+<section class="basic-only dk" aria-label="Events">
+  <p class="dk-note dkc-tl__meta">Timeline bundle <a href="{{ latest.run_url }}"><code>{{ latest.run_id }}</code></a> · generated {{ latest.generated_at_utc or '—' }}
+    · {{ latest.summary.signature_count if latest.summary.signature_count is not none else '—' }} signatures{% if latest.summary.applied_scenario_filters or latest.summary.applied_signature_filters %} · filters applied{% endif %}
+    {% if latest.json_url %} · <a href="{{ latest.json_url }}">timeline.json</a>{% endif %}{% if latest.md_url %} · <a href="{{ latest.md_url }}">summary</a>{% endif %}</p>
+  <ol class="dkc-tl">
+  {% for ev in latest.events %}
+    {% set _x = ev.exit_status or 'unknown' %}
+    {% if _x == 'pass' %}{% set _t = ('', '♦', 'dk-g-pass') %}
+    {% elif _x == 'fail' %}{% set _t = ('dk-warnface', '▲', 'dk-g-fail') %}
+    {% elif _x == 'error' %}{% set _t = ('dk-warnface', '✕', 'dk-g-error') %}
+    {% else %}{% set _t = ('dk-gap', '■', 'dk-g-other') %}{% endif %}
+    <li class="dkc-tl__item">
+      <time class="dkc-tl__when" datetime="{{ ev.timestamp }}">{{ ev.timestamp or '—' }}</time>
+      <{{ 'a' if ev.bundle_url else 'div' }} class="dk-card {{ _t[0] }} dkc-tl__card"{% if ev.bundle_url %} href="{{ ev.bundle_url }}"{% endif %}>
+        <div class="dk-face"><div class="dk-face__body">
+          <div class="dk-kicker"><span>{{ _x }}</span><span class="{{ _t[2] }}" aria-hidden="true">{{ _t[1] }}</span></div>
+          <div class="dk-item__title">{{ ev.scenario_id or '—' }}</div>
+          {% if ev.bundle_id %}<code class="dk-item__id">{{ ev.bundle_id }}</code>{% endif %}
+          {% if ev.evidence_tokens %}<div class="dk-tags">{% for tok in ev.evidence_tokens %}<span>{{ tok }}</span>{% endfor %}</div>{% endif %}
+          <p class="dk-sub">signature <code title="{{ ev.signature_label }}">{{ ev.signature_id[:16] if ev.signature_id else '—' }}…</code></p>
+        </div></div>
+      </{{ 'a' if ev.bundle_url else 'div' }}>
+    </li>
+  {% else %}
+    <li class="dkc-tl__item"><span class="dkc-tl__when">—</span><div class="dk-card dk-gap dkc-tl__card"><div class="dk-face"><div class="dk-face__body"><div class="dk-item__title">Empty slot</div><p class="dk-sub">This timeline has no events.</p></div></div></div></li>
+  {% endfor %}
+  </ol>
+</section>
+{% else %}
+{{ deck_grid([], label='events', empty='No run on disk has an outputs/bundle-timeline/ folder yet.') }}
+<div class="basic-only">
+  <p class="dk-note">Preserve a run into the timeline corpus with:</p>
+  <pre class="dkc-cmd"><code>cardano-profile bundle export &lt;run-id&gt;</code></pre>
+</div>
+{% endif %}
+{{ deck_more('Per-signature breakdown and past timelines — in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Timeline</span>
 <h1>Cross-bundle evidence chronology</h1>
 <p class="page-hero">Operator-readable view of <code>runtime_bundle_timeline</code> output: each scenario execution that left a tamper-evident bundle, plotted in time, keyed by signature so recurrence is visible at a glance. Dwarf does not interpret the events — the page mirrors what the harness recorded.</p>
@@ -180,4 +229,5 @@ cardano-profile bundle export &lt;run-id&gt;</code></pre>
 </section>
 {% endif %}
 
+</div>
 {% endblock %}

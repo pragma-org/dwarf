@@ -30,15 +30,15 @@ background signal. Reproducing it is not a new finding.
 
 ## Local proof
 
-Build the workload runtime on `dwarf-host-a`, then run the scenario through DWARF:
+Build the workload runtime on `cardano-box`, then run the scenario through DWARF:
 
 ```bash
 docker build -t dwarf-miniprotocol-workload:local \
   -f antithesis/cardano_amaru_miniprotocol_security/workload/Dockerfile \
   antithesis/cardano_amaru_miniprotocol_security
 
-dwarf/cardano-profile scenario run \
-  dwarf/scenarios/cardano-amaru-miniprotocol-security-local.yaml
+/home/nigel/dwarf-v4/dwarf/cardano-profile scenario run \
+  /home/nigel/dwarf-v4/dwarf/scenarios/cardano-amaru-miniprotocol-security-local.yaml
 ```
 
 Static validation, Compose rendering, and container startup are not runtime

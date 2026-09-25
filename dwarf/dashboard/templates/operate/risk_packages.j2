@@ -1,5 +1,22 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_actions with context %}
+{% if ui == "basic" %}
+{% call deck_head('Operate · Risk work packages', (rows|length) ~ ' planning groups link ' ~ candidate_count ~ ' candidate risks to ' ~ evidence_count ~ ' evidence references — ' ~ available_evidence_count ~ ' of those files exist here.') %}
+<p class="b-note"><b>Planning records, not proof.</b> These are not run evidence bundles, testcase buckets, findings, or accepted risks.</p>{% endcall %}
+{% set cards = [] %}
+{% for row in rows %}{% set nb = row.blockers|length %}
+{% set t = row.label|lower|replace(', and ', ' and ')|replace('chainsync', 'ChainSync')|replace('blockfetch', 'BlockFetch')|replace('txsubmission', 'TxSubmission')|replace('keepalive', 'KeepAlive')|replace(' api ', ' API ') %}{% set title = t[:1]|upper ~ t[1:] %}
+{% set _ = cards.append({'title': title, 'full_title': row.label ~ ' — ' ~ row.id, 'id': row.id, 'hide_id': true, 'href': '/operate/risk-packages/' ~ row.id,
+  'kicker': (row.id|replace('-', ' '))|title, 'sub': row.status_text,
+  'tier': 'back', 'group': row.run_state,
+  'tags': [(row.candidate_ids|length) ~ ' candidate risks', (row.evidence|length) ~ ' evidence refs'] + ([nb ~ ' blocker' ~ ('' if nb == 1 else 's')] if nb else []) + [row.run_state],
+  'search': (row.candidate_ids|join(' ')) ~ ' ' ~ (row.scenario_ids|join(' ')) ~ ' ' ~ (row.profile_id or '') ~ ' ' ~ (row.blockers|join(' '))}) %}{% endfor %}
+{{ deck_grid(cards, label='work packages', empty='No risk work-package sources are available.') }}
+{{ deck_more('Full package traceability in Advanced') }}
+{{ deck_actions([('Download all', '/api/risk-packages/export', false, true)]) }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header">
   <div>
     <span class="eyebrow">Operate · security planning</span>
@@ -27,4 +44,5 @@
   </article>{% endfor %}
 </div>{% else %}<p class="empty-section-statement">No risk work-package sources are available from the explicit package root.</p>{% endif %}
 <script>(()=>{const input=document.getElementById('risk-package-search');const rows=[...document.querySelectorAll('[data-risk-package-row]')];const count=document.querySelector('[data-risk-package-count]');if(!input||!count)return;input.addEventListener('input',()=>{const needle=input.value.trim().toLowerCase();let visible=0;for(const row of rows){const show=!needle||row.dataset.search.toLowerCase().includes(needle);row.hidden=!show;if(show)visible+=1;}count.textContent=String(visible);});})();</script>
+</div>
 {% endblock %}

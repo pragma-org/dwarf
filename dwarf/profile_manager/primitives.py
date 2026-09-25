@@ -13553,9 +13553,11 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             str(response_timeout_seconds),
             "--case-set",
             case_set,
-            "--progress-timeout-seconds",
-            str(progress_timeout_seconds),
         ]
+        if not self._CARDANO_NODE_WORKLOAD:
+            # Only the Amaru helper waits for post-workload chain progress; the
+            # Cardano helper rejects this flag.
+            command.extend(["--progress-timeout-seconds", str(progress_timeout_seconds)])
         if observation_seconds is not None:
             command.extend(["--observation-seconds", str(observation_seconds)])
         if trace_timeout_seconds is not None:
@@ -16738,7 +16740,7 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
         framed_samples = int(
             (ingress_outcomes.get("framed") or {}).get("sample_count") or 0
         )
-        malformed_samples = int(
+        ingress_malformed_samples = int(
             (ingress_outcomes.get("malformed") or {}).get("sample_count") or 0
         )
         decode_outcomes = (
@@ -16749,6 +16751,24 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
         )
         decoded_samples = int(
             (decode_outcomes.get("decoded") or {}).get("sample_count") or 0
+        )
+        # Where malformed CBOR is rejected depends on the Amaru revision:
+        # b159172's mux framer (cbor_data checked_prefix) rejects it at
+        # ingress; from b97e58a1 (10.11.20260918) the iterative minicbor
+        # framer passes it through and the handshake decoder rejects it.
+        # Either boundary is valid, but each attempt must be counted once.
+        decode_malformed_samples = int(
+            (decode_outcomes.get("malformed") or {}).get("sample_count") or 0
+        )
+        malformed_samples = ingress_malformed_samples + decode_malformed_samples
+        malformed_boundary = (
+            "mux-cbor-item"
+            if ingress_malformed_samples and not decode_malformed_samples
+            else "mini-protocol-decode"
+            if decode_malformed_samples and not ingress_malformed_samples
+            else "mixed"
+            if malformed_samples
+            else None
         )
         state_outcomes = (
             (patched.get("measurements") or {}).get(
@@ -16789,7 +16809,7 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
                 and state_admitted_samples >= min_internal
                 and negotiation_accepted_samples >= min_internal
                 and negotiation_refused_samples >= min_internal
-                and framed_samples == decoded_attempts
+                and framed_samples == decoded_attempts + decode_malformed_samples
                 and decoded_samples == decoded_attempts
                 and state_admitted_samples == decoded_attempts
                 and negotiation_accepted_samples == supported_attempts
@@ -16820,6 +16840,7 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
             "internal_framed_samples": framed_samples,
             "internal_decoded_samples": decoded_samples,
             "internal_malformed_samples": malformed_samples,
+            "internal_malformed_boundary": malformed_boundary,
             "internal_state_admitted_samples": state_admitted_samples,
             "internal_negotiation_accepted_samples": negotiation_accepted_samples,
             "internal_negotiation_refused_samples": negotiation_refused_samples,
@@ -16842,6 +16863,135 @@ class AmaruMeasurementBoundaryProven(AssertionPrimitive):
             ],
             "result": "pass" if passed else "fail",
             "note": None if passed else "the real-node boundary proof did not satisfy every required gate",
+        }
+
+
+class HandshakeCasesMatchExpected(AssertionPrimitive):
+    """Every retained handshake case must end in its declared external outcome.
+
+    Reads the measurement-calibration leg written by
+    runtime_{amaru,cardano}_measurement_calibration. Expected outcomes come
+    from the leg's own workload identity, so any case set is evaluated the
+    same way. Patched decode/negotiation counts are carried as data points.
+    """
+
+    _OUTPUT_SUBDIRS = {
+        "amaru": "amaru-measurement-calibration",
+        "cardano-node": "cardano-measurement-calibration",
+    }
+    _PATCHED_MEASUREMENT = {
+        "amaru": "amaru-patched-protocol-decode",
+        "cardano-node": "cardano-patched-protocol-decode",
+    }
+
+    def evaluate(self, handle):
+        name = "handshake_cases_match_expected"
+        implementation = str(self.params.get("implementation", "amaru"))
+        min_per_case = int(self.params.get("min_attempts_per_case", 20))
+        report_path = (
+            Path(handle.run_dir)
+            / "outputs"
+            / self._OUTPUT_SUBDIRS[implementation]
+            / "result.json"
+        )
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            return {
+                "primitive": name,
+                "params": dict(self.params),
+                "evaluated_value": {"report": str(report_path), "error": str(exc)},
+                "data_points_used": [],
+                "result": "fail",
+                "note": "the retained handshake calibration report is unavailable or invalid",
+            }
+        workload = report.get("workload_identity") or {}
+        attempts_info = report.get("attempts") or {}
+        by_case = attempts_info.get("by_case") or {}
+        # Both helpers retain one row per attempt (case, expected and observed
+        # outcome); prefer it, since the Cardano leg does not write by_case.
+        expected_by_case: dict[str, str] = {}
+        artifact = report_path.parent / str(attempts_info.get("artifact") or "attempts.ndjson")
+        if artifact.is_file():
+            by_case = {}
+            for line in artifact.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                name = str(row.get("case") or "")
+                slot = by_case.setdefault(name, {"total": 0, "outcomes": {}})
+                slot["total"] += 1
+                outcome = str(row.get("outcome") or "unclassified")
+                slot["outcomes"][outcome] = slot["outcomes"].get(outcome, 0) + 1
+                if row.get("expected_external_outcome"):
+                    expected_by_case[name] = str(row["expected_external_outcome"])
+        cases = []
+        for case in workload.get("cases") or []:
+            row = by_case.get(case.get("name")) or {}
+            outcomes = row.get("outcomes") or {}
+            total = int(row.get("total") or 0)
+            expected = str(
+                case.get("expected_external_outcome")
+                or expected_by_case.get(str(case.get("name")))
+                or ""
+            )
+            matching = int(outcomes.get(expected) or 0)
+            cases.append(
+                {
+                    "case": case.get("name"),
+                    "payload_hex": case.get("payload_hex"),
+                    "expected_outcome": expected,
+                    "total": total,
+                    "matching": matching,
+                    "observed_outcomes": outcomes,
+                    "matched": total >= min_per_case and matching == total,
+                }
+            )
+        mismatched = [row["case"] for row in cases if not row["matched"]]
+        patched = (report.get("node_measurements") or {}).get(
+            self._PATCHED_MEASUREMENT[implementation]
+        ) or {}
+        measurements = patched.get("measurements") or {}
+        internal = {
+            key: {
+                outcome: (value or {}).get("sample_count")
+                for outcome, value in (measurements.get(key) or {}).items()
+            }
+            for key in (
+                "handshake_ingress_by_outcome",
+                "handshake_decode_by_decode_outcome",
+                "handshake_negotiation_by_outcome",
+                "handshake_state_by_outcome",
+            )
+        }
+        target = report.get("target") or {}
+        passed = bool(cases) and not mismatched
+        return {
+            "primitive": name,
+            "params": dict(self.params),
+            "evaluated_value": {
+                "implementation": implementation,
+                "case_set": workload.get("case_set"),
+                "cases": cases,
+                "mismatched_cases": mismatched,
+                "internal_handshake_outcomes": internal,
+                "target": {
+                    key: target.get(key)
+                    for key in ("implementation", "version", "source_revision", "mode")
+                },
+            },
+            "data_points_used": [
+                {
+                    "report": report_path.relative_to(handle.run_dir).as_posix(),
+                    "workload_digest": workload.get("workload_digest"),
+                }
+            ],
+            "result": "pass" if passed else "fail",
+            "note": (
+                "every handshake case ended in its declared outcome"
+                if passed
+                else f"handshake cases diverged from their declared outcome: {mismatched}"
+            ),
         }
 
 

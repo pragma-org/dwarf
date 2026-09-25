@@ -37,10 +37,14 @@ def build_amaru_measurement_factories(
     metadata_path = Path(runtime_metadata_path)
     json_paths = tuple(Path(path) for path in json_trace_paths)
     otlp_paths = tuple(Path(path) for path in otlp_trace_paths)
+    stock_options: dict[str, Any] = {}
+    if target_identity is not None and target_identity.get("source_revision"):
+        stock_options["source_revision"] = str(target_identity["source_revision"])
     factories = build_amaru_stock_factories(
         json_trace_paths=json_paths,
         otlp_trace_paths=otlp_paths,
         allow_missing_at_start=allow_missing_trace_sources,
+        **stock_options,
     )
     if target_identity is not None and target_identity.get("mode") == "patched":
         factories.update(

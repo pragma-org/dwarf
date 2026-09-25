@@ -19,7 +19,7 @@
     "attempts": {"type": "integer", "minimum": 30, "maximum": 10000},
     "case_set": {
       "type": "string",
-      "enum": ["unsupported-version-only-v1", "accepted-and-rejected-v1"]
+      "enum": ["unsupported-version-only-v1", "accepted-and-rejected-v1", "version-table-forward-compat-v1"]
     },
     "response_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
     "progress_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},

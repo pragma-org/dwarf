@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/pragma-org/dwarf/main/dwarf/spec/v1/measurement.schema.json",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/measurement.schema.json",
   "title": "DWARF measurement definition",
   "description": "A reusable, version-qualified observation tap independent from scenario security semantics.",
   "type": "object",

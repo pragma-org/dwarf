@@ -14,9 +14,9 @@ illegitimate (too-large) leader value and serve them to both `cardano-node` and 
 
 ## Result — AGREE (no vulnerability)
 
-- **cardano-node** rejects with `VRFLeaderValueTooBig`.
+- **cardano-node** rejects with `VRFLeaderValueTooBig` (see `logs/cardano-node-vrf-rejection.txt`).
 - **Amaru** rejects with `Insufficient leader stake` at slot 649, adopting nothing past
-  its start tip 646.
+  its start tip 646 (see `logs/amaru-false-leadership.log`).
 
 Both enforce the threshold; both accept only the genuinely-winnable early slots and reject
 the first illegitimate block. **Amaru is secure against this attack.**
@@ -45,10 +45,12 @@ forges **27** blocks, patched forges **320**.
   build the Amaru bundle from the honest chain, the Amaru victim, and the cardano-node
   control.
 
-## Public evidence boundary
+## `logs/`
 
-The report keeps the reviewed result and reproduction scripts. Raw operator logs are not
-part of the public source tree.
+- `amaru-false-leadership.log` — full Amaru run: boots at the bundle tip, begins sync,
+  fails header validation at slot 649 with `Insufficient leader stake`, drops the peer.
+- `cardano-node-vrf-rejection.txt` — the cardano-node chain-sync client rejection
+  (`VRFLeaderValueTooBig <leaderVal> (σ=1/5) (ActiveSlotCoeff f)`).
 
 ## Notes / gotchas (non-obvious)
 
@@ -64,4 +66,4 @@ part of the public source tree.
   blocks within one epoch. Reported as a robustness finding.
 
 No credentials present (operator keys stay on the build host; only forged public chain data,
-the patch and harness scripts are here).
+the patch, harness scripts, and node logs are here).

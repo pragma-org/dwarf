@@ -12,7 +12,7 @@ A new differential *class* for DWARF: the **genesis both nodes ingest at startup
 and Amaru **accept or reject** — a config one accepts and the other rejects/crashes on is a
 semantic divergence at the configuration layer, before any block.
 
-## Results
+## Results (see `logs/differential-table.txt`)
 
 - **Finding 1 (confirmed):** cardano-node crashes with an uncaught arithmetic exception on
   `epochLength=0` (`divide by zero`) and `slotLength=0` (`Ratio has zero denominator`) instead
@@ -35,7 +35,7 @@ Beyond the hand-picked battery, `scripts/gen_matrix.py` + `scripts/sweep_cardano
 **417-mutation** sweep (every numeric top-level and `protocolParams` field × a 15-value edge
 palette) through cardano-node, classified by **timing** (clean REJECT ~20 ms; CRASH ~140 ms;
 ACCEPT = not-rejected within a 3 s cap — the reliable discriminator, since the node takes
-seconds to fully start even on a valid genesis). The reviewed result was:
+seconds to fully start even on a valid genesis). Result in `logs/sweep-417-classified.tsv`:
 **339 REJECT, 75 ACCEPT, 3 CRASH.** The 3 crashes are the only ones — all division-reaching-zero
 on time parameters (`epochLength=0`, `slotLength=0`, `slotLength=1e-300`). Note: this is
 cardano-node-only (Amaru's path is too slow/flaky to sweep — see Finding 3).
@@ -47,10 +47,10 @@ cardano-node-only (Amaru's path is too slow/flaky to sweep — see Finding 3).
 - `sweep_cardano_node.sh` — the timing-classified sweep runner (cap 3 s; CRASH/REJECT/ACCEPT).
 - `run_cardano_node.sh` / `run_amaru.sh` — the per-mutation both-node runners (Amaru unreliable).
 
-## Public evidence boundary
+## `logs/`
 
-The report keeps the reviewed counts and reproduction scripts. Raw operator sweep output is
-not part of the public source tree.
+- `differential-table.txt` — the consolidated cardano-node vs Amaru table with confidence levels.
+- `sweep-417-classified.tsv` — the full systematic sweep output (`name  class  rc  dur  msg`).
 
 ## Setup notes
 

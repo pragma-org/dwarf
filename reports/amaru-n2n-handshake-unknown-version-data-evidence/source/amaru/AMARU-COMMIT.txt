@@ -1,0 +1,5 @@
+release v10.11.20260918 = aedfe797a5b8ef00d8b362be40b47a52c3b4a379
+main = 5a2a08bc7ad2bd23367dfcf1d06c71cb2a7e96cd
+version_data.rs decoder (lines 193-212) sha256 at release and main:
+c69b37f0b19a68e56aaa6288c2bc6e1f91a6b2453bf254c4c4b1c633ade03e78  -
+c69b37f0b19a68e56aaa6288c2bc6e1f91a6b2453bf254c4c4b1c633ade03e78  -

@@ -10,7 +10,7 @@
 # SP3a fuzzing seam that approach-B dual-peer could not fire (relay2 fetched
 # bodies only from the trusted producers). SUCCESS = dwarf_served_mutated_block
 # > 0 with RestartCount 0 and relay2 reaching exactly 1 peer (the adversary).
-# Run on dwarf-host-a. Arg: adversary image tag (default 0.8.0).
+# Run on cardano-box. Arg: adversary image tag (default 0.8.0).
 set -uo pipefail
 TAG="${1:-0.9.0}"
 cd /home/dwarf/dwarf-v4/antithesis/cardano_node_dwarf

@@ -54,7 +54,7 @@ def test_registry_record_is_portable_and_revision_locked(tmp_path):
         "production_entrypoint": "decodeFullAnnotator",
         "adapter_set_sha256": "a" * 64,
         "adapter_files": [],
-        "build_command": ["$HOME/.ghcup/bin/cabal-3.16.0.0", "build", "-w", "$HOME/.ghcup/bin/ghc-9.6.7"],
+        "build_command": ["/home/nigel/.ghcup/bin/cabal-3.16.0.0", "build", "-w", "/home/nigel/.ghcup/bin/ghc-9.6.7"],
         "build_log_sha256": "b" * 64,
         "executable": "/disposable/source/dist-newstyle/adapter",
         "executable_sha256": "c" * 64,

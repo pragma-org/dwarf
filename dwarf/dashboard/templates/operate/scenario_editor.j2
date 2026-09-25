@@ -1,5 +1,11 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_more with context %}
+{% if create %}
+{{ deck_head('Scenarios · New', 'Write a new test recipe for DWARF to run.', 'Fill the scenario contract and add primitives to each lifecycle phase, then press Validate. Save stays disabled until the definition passes the scenario schema; Save checks it again and writes a new definition file (it never overwrites an existing id). Saving does not run anything and is not evidence.') }}
+{% else %}
+{{ deck_head('Scenarios · Edit', 'Change the recipe for “' ~ definition_id ~ '”.', 'Edit the fields, then press Validate. Save stays disabled until the definition passes the scenario schema; Save checks it again and replaces this definition file in place. Saving does not run the scenario and does not change any evidence already recorded.') }}
+{% endif %}
 <nav class="definition-breadcrumb" aria-label="Breadcrumb">
   <a href="/operate/scenarios">Scenarios</a><span aria-hidden="true">/</span><span>{{ 'New' if create else definition_id }}</span>
 </nav>
@@ -58,6 +64,7 @@
       </aside>
     </section>
 
+    {% if ui == "basic" %}<details class="dke-fold"><summary>Optional · traceability metadata (authors, tags, milestones, evidence intent)</summary>{% endif %}
     <section class="scenario-builder__section">
       <div class="scenario-builder__section-head"><div><span class="eyebrow">Traceability</span><h2>Index and evidence intent</h2></div><p>Optional catalog metadata retained in evidence bundles.</p></div>
       <div class="definition-editor__fields">
@@ -70,6 +77,7 @@
         <label class="definition-field definition-field--object"><span>Testcase candidate</span><textarea rows="5" data-scenario-field="testcase_candidate" data-value-type="json" placeholder="{ }"></textarea></label>
       </div>
     </section>
+    {% if ui == "basic" %}</details>{% endif %}
 
     {% set phase_rows = [('setup', 'Setup', 'setup'), ('load', 'Load', 'load'), ('faults', 'Faults', 'fault'), ('probes', 'Probes', 'probe'), ('assertions', 'Assertions', 'assertion'), ('teardown', 'Teardown', 'teardown')] %}
     {% for phase, label, family in phase_rows %}

@@ -10,7 +10,7 @@
 #
 # SUCCESS = RequestTxIds-received > 0 with RestartCount 0. Before this fix
 # (5-header static chain) it was 0 (relay2 looped FindIntersect->reset, never
-# CaughtUp). Run on dwarf-host-a.
+# CaughtUp). Run on cardano-box.
 set -uo pipefail
 TAG="${1:-0.8.0}"
 cd /home/dwarf/dwarf-v4/antithesis/cardano_node_dwarf

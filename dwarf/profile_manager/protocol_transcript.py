@@ -116,3 +116,4 @@ class ProtocolTranscriptWriter:
             fp.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n")
         self.record_count += 1
         return record
+

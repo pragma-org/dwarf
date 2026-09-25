@@ -1,8 +1,13 @@
 {% extends "_base.j2" %}
 {% block main %}
-<span class="eyebrow">Operate · Settings</span>
-<h1>Edit deployment settings</h1>
-<p class="page-hero">Every field in <code>{{ config_path }}</code>. Changes are written to the config overlay and take effect immediately. Fields marked <span class="cfg-warn">control channel</span> steer SSH / privileges — a bad edit can break deploy &amp; coverage, so change them with care. The <code>moog</code> block holds secrets (GitHub PAT etc.) and is <strong>not</strong> shown here — edit it via the secret-aware Moog panel on <a href="/operate/config?token={{ token }}">Config</a>.</p>
+{% from "operate/_partials/_deck.j2" import deck_head with context %}
+{% set _cc = fields|selectattr('sensitive')|list|length %}
+{% call deck_head('Settings · Edit', 'Change the ' ~ (fields|length) ~ ' deployment settings DWARF uses.', 'Save writes every value below to the config overlay and takes effect immediately — there is no staging or undo step. ' ~ ((_cc ~ ' fields are marked control channel: they steer SSH and privileges, and a bad value can break deploy and coverage. ') if _cc else '') ~ 'Secrets (the moog block) are not shown here.') %}
+<p class="dk-note"><a href="/operate/config?token={{ token }}">Edit moog secrets on the Config page →</a></p>
+{% endcall %}
+<span class="eyebrow adv-only">Operate · Settings</span>
+<h1 class="adv-only">Edit deployment settings</h1>
+<p class="page-hero adv-only">Every field in <code>{{ config_path }}</code>. Changes are written to the config overlay and take effect immediately. Fields marked <span class="cfg-warn">control channel</span> steer SSH / privileges — a bad edit can break deploy &amp; coverage, so change them with care. The <code>moog</code> block holds secrets (GitHub PAT etc.) and is <strong>not</strong> shown here — edit it via the secret-aware Moog panel on <a href="/operate/config?token={{ token }}">Config</a>.</p>
 
 <style>
 .cfg-form{max-width:720px;margin:20px 0;display:flex;flex-direction:column;gap:16px}

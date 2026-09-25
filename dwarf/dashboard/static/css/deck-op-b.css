@@ -1,0 +1,26 @@
+/* Evidence Deck — Operate detail pages (Basic view only). Scope every rule to body[data-ui="basic"]. */
+body[data-ui="basic"] .dkb-p { margin:0; line-height:1.5; }
+body[data-ui="basic"] .dkb-p + .dkb-p { margin-top:8px; }
+body[data-ui="basic"] .dk-panel code { overflow-wrap:anywhere; }
+body[data-ui="basic"] .dkb-diag { border-color:var(--dk-warn); border-left-width:4px; }
+body[data-ui="basic"] .dkb-diag h3 { color:var(--dk-warn); }
+body[data-ui="basic"] .dkb-gapnote { border-style:dashed; }
+body[data-ui="basic"] .dkb-unres { font:600 11px var(--dk-mono); color:var(--dk-warn); letter-spacing:.04em; white-space:nowrap; }
+body[data-ui="basic"] .dkb-rel { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
+body[data-ui="basic"] .dkb-rel strong { display:block; font:600 11px var(--dk-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--dk-muted); margin-bottom:4px; }
+body[data-ui="basic"] .dkb-cmds { display:grid; gap:6px; }
+body[data-ui="basic"] .dkb-pills { display:flex; flex-wrap:wrap; gap:6px; margin:0; padding:0; list-style:none; }
+body[data-ui="basic"] .dkb-pills li { border:1px solid var(--dk-line2); border-radius:999px; padding:2px 9px; font:11.5px var(--dk-mono); }
+body[data-ui="basic"] .dk-detail .dk-facts--detail dd { overflow-wrap:anywhere; }
+/* live run stream: the original section stays shared; give it deck framing in Basic */
+body[data-ui="basic"] .run-live { border:1px solid var(--dk-line); border-radius:14px; background:rgba(21,16,31,.72); padding:18px; margin:0 0 18px; }
+body[data-ui="basic"] .run-live h2 { font:500 20px/1.2 var(--dk-serif); margin:4px 0 10px; }
+body[data-ui="basic"] .run-live__pre { max-width:100%; overflow:auto; }
+/* token-gated management sections stay usable in Basic */
+body[data-ui="basic"] .corpus-management, body[data-ui="basic"] .grammar-management { border:1px solid var(--dk-line); border-radius:14px; background:rgba(21,16,31,.72); padding:18px; margin:0 0 18px; max-width:100%; overflow-x:auto; }
+body[data-ui="basic"] .grammar-management textarea, body[data-ui="basic"] .grammar-management input, body[data-ui="basic"] .grammar-management select { max-width:100%; box-sizing:border-box; }
+body[data-ui="basic"] .dk-panel .dk-list { padding-left:0; }
+body[data-ui="basic"] .dk-panel .dk-list code { font-size:12.5px; }
+body[data-ui="basic"] .dk-panel .dk-list li { font-size:14px; line-height:1.4; }
+body[data-ui="basic"] .dk-panel .dk-list code, body[data-ui="basic"] .dkb-p code { padding:0 3px; line-height:1.4; }
+body[data-ui="basic"] .dkb-rel { grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }

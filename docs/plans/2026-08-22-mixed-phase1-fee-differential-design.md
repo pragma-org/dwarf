@@ -1,6 +1,6 @@
 # Mixed Cardano/Amaru Phase-1 Fee Differential Design
 
-**Status:** implemented and locally validated on `dwarf-host-a` on 2026-08-22; public commit and MOOG launch remain.
+**Status:** implemented and locally validated on `cardano-box` on 2026-08-22; public commit and MOOG launch remain.
 
 ## Goal
 
@@ -29,7 +29,7 @@ state that produced the baked Amaru store:
 - a 493-byte statically signed transaction envelope plus public fee metadata.
 
 The recovered genesis signing key was used once in a mode-700 temporary directory on
-`dwarf-host-a` and discarded. It is not in Git, the build contexts, the images, Compose,
+`cardano-box` and discarded. It is not in Git, the build contexts, the images, Compose,
 or the fixture. A signed invalid testnet transaction is public data and cannot reveal
 the signing key.
 

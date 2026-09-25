@@ -1,5 +1,60 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% set has_diag = package.diagnostics|length > 0 %}
+{% set ev_total = package.evidence|length %}
+{% set ev_avail = package.available_evidence_count %}
+{% set facts = [
+  ('Candidate risks', package.candidate_ids|length),
+  ('Evidence references', ev_total),
+  ('Available here', ev_avail ~ ' of ' ~ ev_total),
+  ('Scenarios', package.scenario_ids|length),
+  ('Legacy action state', package.run_state),
+  ('Write policy', 'read-only catalog'),
+] %}
+{% call deck_detail('Milestone-1 planning group', package.label, id=package.id, tier=('warn' if has_diag else 'back'), facts=facts,
+    suit=('✕' if has_diag else ('▲' if ev_avail < ev_total else '')), tone=('dk-g-error' if has_diag else 'dk-g-warn'),
+    stamp=('DIAGNOSTIC' if has_diag else 'PLANNING'), sub=package.status_text, back=('Risk work packages', '/operate/risk-packages')) %}
+  {% if has_diag %}
+  <div class="dk-panel dkb-diag" role="alert">
+    <h3>✕ Schema or identity exceptions</h3>
+    <ul>{% for diagnostic in package.diagnostics %}<li>{{ diagnostic }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  <div class="dk-panel{{ ' dkb-diag' if ev_avail < ev_total else '' }}">
+    <h3>{{ '▲ ' if ev_avail < ev_total else '♦ ' }}Evidence in this deployment</h3>
+    <p class="dkb-p">{% if ev_total == 0 %}○ No evidence paths are declared.{% elif ev_avail == 0 %}None of the {{ ev_total }} referenced evidence files exist here — the references are listed, but nothing can be downloaded or checked from this deployment.{% elif ev_avail < ev_total %}{{ ev_avail }} of {{ ev_total }} referenced evidence files exist here; the rest are missing.{% else %}All {{ ev_total }} referenced evidence files exist here. Existing is not the same as verified.{% endif %}</p>
+  </div>
+  <div class="dk-panel">
+    <h3>What this card is</h3>
+    <p class="dkb-p">A planning record that groups candidate risks with the scenarios and evidence meant to address them. It does not change any risk's classification.</p>
+    <ul class="dkb-pills" style="margin-top:10px">{% for id in package.candidate_ids %}<li>{{ id }}</li>{% else %}<li>no candidate risks declared</li>{% endfor %}</ul>
+  </div>
+  <div class="dk-panel">
+    <h3>Blockers</h3>
+    <ul>{% for blocker in package.blockers %}<li>{{ blocker }}</li>{% else %}<li>No blockers declared.</li>{% endfor %}</ul>
+  </div>
+  <div class="dk-panel">
+    <h3>Related</h3>
+    <div class="dkb-rel">
+      <div><strong>Scenarios</strong>{% if package.scenario_ids %}<ul class="dk-list">{% for id in package.scenario_ids[:6] %}<li><a href="/operate/scenarios/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% if package.scenario_ids|length > 6 %}<p class="dk-note">+{{ package.scenario_ids|length - 6 }} more in Advanced.</p>{% endif %}{% else %}<p class="dkb-p dk-note">No current scenario declares one of these risk IDs.</p>{% endif %}</div>
+      <div><strong>Runtime profile</strong>{% if package.profile_id and package.profile_available %}<p class="dkb-p"><a href="/operate/profiles/{{ package.profile_id }}"><code>{{ package.profile_id }}</code></a></p>{% elif package.profile_id %}<p class="dkb-p"><code>{{ package.profile_id }}</code> <span class="dkb-unres">▲ unavailable here</span></p>{% else %}<p class="dkb-p dk-note">None declared.</p>{% endif %}</div>
+    </div>
+    <p class="dkb-p" style="margin-top:10px"><a href="/learn/threat-coverage">Threat / risk coverage map →</a></p>
+  </div>
+  <div class="dk-panel">
+    <h3>Actions</h3>
+    <div class="dk-row">
+      <a class="dk-btn dk-btn--solid" href="/api/risk-packages/{{ package.id }}/export" download>Export package</a>
+      <a class="dk-btn" href="/api/risk-packages/{{ package.id }}/download" download>Download source</a>
+      <a class="dk-btn" href="/learn/risk-packages" target="_blank" rel="noopener">Schema and lifecycle</a>
+    </div>
+  </div>
+{% endcall %}
+{{ deck_more('Every evidence reference, recorded scope and source record in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <p class="breadcrumb"><a href="/operate/risk-packages">Risk work packages</a> <span>/</span> <code>{{ package.id }}</code></p>
 <header class="definition-header">
   <div><span class="eyebrow">Milestone-1 planning group · {{ package.status }}</span><h1>{{ package.label }}</h1><p class="page-hero">{{ package.status_text }}</p></div>
@@ -28,4 +83,5 @@
 <section><span class="eyebrow">Remaining work</span><h2>Blockers</h2><ul>{% for blocker in package.blockers %}<li>{{ blocker }}</li>{% else %}<li>No blockers declared.</li>{% endfor %}</ul></section>
 <section><span class="eyebrow">Recorded scope</span><h2>Read-only actions and observations</h2><ul>{% for action in package.read_only_actions %}<li>{{ action }}</li>{% else %}<li>No read-only actions declared.</li>{% endfor %}</ul>{% if package.runnable %}<p><strong>Legacy CLI:</strong> <code>cardano-profile evidence run {{ package.id }} --dry-run</code>. This dashboard does not execute the action.</p>{% endif %}</section>
 <section><span class="eyebrow">Provenance</span><h2>Compatible source record</h2><p><code>{{ package.source_path }}</code></p><pre class="asset-source"><code>{{ package.raw_text }}</code></pre></section>
+</div>
 {% endblock %}

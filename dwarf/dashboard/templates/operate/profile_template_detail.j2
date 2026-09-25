@@ -1,5 +1,46 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_detail, deck_more with context %}
+{% if ui == "basic" %}
+{% set invalid = template.validation_error or template.status != 'valid' %}
+{% set facts = [
+  ('Status', template.status),
+  ('Node type', template.node_type),
+  ('Cardano nodes', template.node_mix['cardano-node']),
+  ('Amaru nodes', template.node_mix.amaru),
+  ('Network magic', template.network_magic),
+  ('Peer sharing', template.peer_sharing),
+] %}
+{% call deck_detail(template.node_type ~ ' profile template', template.id, tier=('warn' if invalid else 'back'), facts=facts,
+    suit=('✕' if invalid else ''), tone=('dk-g-error' if invalid else ''), stamp=('INVALID' if invalid else 'TEMPLATE'),
+    sub=template.summary, back=('Profile templates', '/operate/profile-templates')) %}
+  {% if invalid %}
+  <div class="dk-panel dkb-diag" role="alert">
+    <h3>✕ Template diagnostic</h3>
+    <p class="dkb-p">{% if template.validation_error %}<code>{{ template.validation_error }}</code>{% else %}Template status is <code>{{ template.status }}</code>.{% endif %}</p>
+  </div>
+  {% endif %}
+  <div class="dk-panel">
+    <h3>What this card is</h3>
+    <p class="dkb-p">A scaffold for creating a deployment profile. A template is <b>not</b> a deployed profile — review host paths, network, ports, topology, node counts and revisions in the generated profile before deploying.</p>
+    {% if template.assumptions %}<ul class="dk-list" style="margin-top:10px">{% for assumption in template.assumptions %}<li>{{ assumption }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  <div class="dk-panel">
+    <h3>You will be asked for</h3>
+    {% if template.required_substitutions %}<ul class="dkb-pills">{% for name in template.required_substitutions %}<li>{{ name }}</li>{% endfor %}</ul>{% else %}<p class="dkb-p dk-note">No substitutions declared.</p>{% endif %}
+  </div>
+  <div class="dk-panel">
+    <h3>Actions</h3>
+    <div class="dk-row">
+      <a class="dk-btn dk-btn--solid" href="{{ template.use_url }}">Use template</a>
+      <a class="dk-btn" href="/api/assets/profile-templates/{{ template.id }}/export" download>Export with manifest</a>
+      <a class="dk-btn" href="/api/assets/profile-templates/{{ template.id }}/download" download>Download source</a>
+    </div>
+  </div>
+{% endcall %}
+{{ deck_more('Rendered preview and complete template source in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <nav class="definition-breadcrumb" aria-label="Breadcrumb"><a href="/operate/profile-templates">Profile templates</a><span aria-hidden="true">/</span><span>{{ template.id }}</span></nav>
 <header class="definition-header">
   <div><span class="eyebrow">{{ template.node_type }} profile scaffold</span><h1>{{ template.id }}</h1><p class="page-hero">{{ template.summary }}</p></div>
@@ -23,4 +64,5 @@
 
 <section class="definition-source" aria-labelledby="template-preview-heading"><div class="definition-source__head"><div><span class="eyebrow">In-memory render</span><h2 id="template-preview-heading">Rendered preview</h2></div><code>profile id: preview-{{ template.id }}</code></div><pre><code>{{ template.rendered_source }}</code></pre></section>
 <section class="definition-source" aria-labelledby="template-source-heading"><div class="definition-source__head"><div><span class="eyebrow">Immutable source</span><h2 id="template-source-heading">Complete template source</h2></div><code>{{ template.source_path }}</code></div><pre><code>{{ template.raw_source }}</code></pre></section>
+</div>
 {% endblock %}

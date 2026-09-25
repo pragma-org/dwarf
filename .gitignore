@@ -7,8 +7,6 @@ __pycache__/
 
 # outputs / tooling / sensitive — never commit
 dwarf/runs/
-dwarf/state/
-dwarf/bundles/
 dwarf/evidence/
 evidence/
 sp1-closure/

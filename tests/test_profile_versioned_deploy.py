@@ -148,13 +148,36 @@ def test_plutus_v2_profile_propagates_pinned_model_to_additive_runtime():
     command = deploy_command(
         profile,
         version_preview=_preview(profile),
-        remote_dwarf_root="dwarf",
+        remote_dwarf_root="/home/nigel/dwarf-pragma/dwarf",
     )
 
     assert substrate["plutus_v2_genesis"] is True
     assert substrate["plutus_v2_cost_model_sha256"] == profile.plutus_v2_cost_model_sha256
     assert '"plutus_v2_genesis": true' in command
-    assert "dwarf/corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json" in command
+    assert "/home/nigel/dwarf-pragma/dwarf/corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json" in command
+
+
+def test_experimental_protocols_override_propagates_only_when_set():
+    base = dict(
+        id="profile-v16-repro",
+        node_type="amaru",
+        node_count=0,
+        amaru_node_count=1,
+        version_policy="exact",
+        amaru_version="10.11.20260912",
+    )
+    pinned = _profile(**base, cardano_experimental_protocols=True)
+    default = _profile(**base)
+
+    pinned_command = deploy_command(pinned, version_preview=_preview(pinned))
+    default_command = deploy_command(default, version_preview=_preview(default))
+
+    assert versioned_substrate_for_profile(pinned, _preview(pinned))[
+        "cardano_experimental_protocols"
+    ] is True
+    assert '"cardano_experimental_protocols": true' in pinned_command
+    assert '"cardano_experimental_protocols": true' not in default_command
+    assert '"cardano_experimental_protocols": null' in default_command
 
 
 def test_versioned_mixed_deploy_uses_live_producer_control_adapter():

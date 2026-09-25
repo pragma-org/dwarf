@@ -40,7 +40,7 @@ def build_adapter(*,manifest_path,source_repository,output_dir,registry_root,cab
     return result
 
 def main(argv=None):
-    p=argparse.ArgumentParser(); p.add_argument("--manifest",type=Path,default=DEFAULT_MANIFEST); p.add_argument("--source-repository",default="https://github.com/IntersectMBO/cardano-node.git"); p.add_argument("--output-dir",type=Path,required=True); p.add_argument("--target-registry",type=Path,default=common._registry_root()); p.add_argument("--cabal",type=Path,default=Path.home() / ".ghcup/bin/cabal-3.16.0.0"); p.add_argument("--ghc",type=Path,default=Path.home() / ".ghcup/bin/ghc-9.6.7")
+    p=argparse.ArgumentParser(); p.add_argument("--manifest",type=Path,default=DEFAULT_MANIFEST); p.add_argument("--source-repository",default="https://github.com/IntersectMBO/cardano-node.git"); p.add_argument("--output-dir",type=Path,required=True); p.add_argument("--target-registry",type=Path,default=common._registry_root()); p.add_argument("--cabal",type=Path,default=Path("/home/nigel/.ghcup/bin/cabal-3.16.0.0")); p.add_argument("--ghc",type=Path,default=Path("/home/nigel/.ghcup/bin/ghc-9.6.7"))
     a=p.parse_args(argv)
     try: result=build_adapter(manifest_path=a.manifest.resolve(),source_repository=a.source_repository,output_dir=a.output_dir.resolve(),registry_root=a.target_registry.resolve(),cabal_binary=a.cabal.resolve(),ghc_binary=a.ghc.resolve())
     except BuildContractError as e: print(f"error: {e}",file=sys.stderr); return 2

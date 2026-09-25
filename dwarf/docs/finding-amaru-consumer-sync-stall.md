@@ -25,12 +25,12 @@ peer keeps producing (observed advancing to slot 12,197+). Reproduced twice at t
 With `AMARU_LOG=debug`, the stall coincides with a **peer connection reset**:
 
 ```
-DEBUG amaru_pure_stage::tokio: stage `reader-1-44`/`writer-1-43` external effect: Recv/SendEffect conn=ConnectionId(1) peer=192.0.2.5:3001
+DEBUG amaru_pure_stage::tokio: stage `reader-1-44`/`writer-1-43` external effect: Recv/SendEffect conn=ConnectionId(1) peer=192.168.0.5:3001
 ERROR amaru_protocols::mux: failed to receive segment header from network role=responder
       err=ReceiveError on ConnectionId(1): Connection reset by peer (os error 104)
 WARN  stage `reader-1-44` terminated → stage `mux-39` terminated
-INFO  amaru_protocols::connection: connection child died child=Mux peer=192.0.2.5:3001 conn_id=1
-INFO  manager.peer.connection_died: inbound connection died, removing peer peer=192.0.2.5
+INFO  amaru_protocols::connection: connection child died child=Mux peer=192.168.0.5:3001 conn_id=1
+INFO  manager.peer.connection_died: inbound connection died, removing peer peer=192.168.0.5
 ```
 
 After this, Amaru **re-establishes a connection** (`ConnectionId(2)` seen exchanging keepalive-sized 5–8

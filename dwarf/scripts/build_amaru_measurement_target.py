@@ -86,6 +86,26 @@ def manifest_revision(manifest_path: Path, manifest: Mapping[str, Any]) -> str:
     return revision
 
 
+def audited_measurement_revisions(targets_root: Path | None = None) -> frozenset[str]:
+    """Amaru source revisions with a checked-in measurement-target manifest."""
+    root = targets_root or (DWARF_ROOT / "targets" / "amaru")
+    return frozenset(
+        path.parent.name
+        for path in root.glob("measurement-patches*/*/manifest.json")
+    )
+
+
+def require_audited_revision(manifest_path: Path, manifest: Mapping[str, Any]) -> str:
+    """Fail closed unless the manifest sits in its revision directory and that
+    revision has an audited measurement target."""
+    revision = manifest_revision(manifest_path, manifest)
+    if revision not in audited_measurement_revisions():
+        raise BuildContractError(
+            f"source revision {revision} has no audited Amaru measurement target"
+        )
+    return revision
+
+
 def _safe_relative_path(value: str, *, field: str) -> Path:
     path = Path(value)
     if path.is_absolute() or ".." in path.parts or not path.parts:

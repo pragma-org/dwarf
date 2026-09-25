@@ -4,7 +4,7 @@ from profile_manager.remote import render_ssh_command
 
 def test_render_ssh_command_resolves_container_key_path_on_host(tmp_path, monkeypatch):
     host_home = tmp_path / "nigel"
-    host_key = host_home / ".ssh" / "dwarf-host-a"
+    host_key = host_home / ".ssh" / "cardano-box"
     host_key.parent.mkdir(parents=True)
     host_key.write_text("private key placeholder", encoding="utf-8")
     monkeypatch.setenv("HOME", str(host_home))
@@ -12,7 +12,7 @@ def test_render_ssh_command_resolves_container_key_path_on_host(tmp_path, monkey
     config = DeploymentConfig.from_dict({
         "ssh_user": "nigel",
         "host": "127.0.0.1",
-        "ssh_key_path": "/home/dwarf/.ssh/dwarf-host-a",
+        "ssh_key_path": "/home/dwarf/.ssh/cardano-box",
     })
 
     argv = render_ssh_command(config, "true")
@@ -24,7 +24,7 @@ def test_render_ssh_command_maps_host_home_key_to_container_home(
     tmp_path, monkeypatch
 ):
     container_home = tmp_path / "dwarf"
-    mounted_key = container_home / ".ssh" / "dwarf-host-a"
+    mounted_key = container_home / ".ssh" / "cardano-box"
     mounted_key.parent.mkdir(parents=True)
     mounted_key.write_text("private key placeholder", encoding="utf-8")
     monkeypatch.setenv("HOME", str(container_home))
@@ -32,7 +32,7 @@ def test_render_ssh_command_maps_host_home_key_to_container_home(
     config = DeploymentConfig.from_dict({
         "ssh_user": "nigel",
         "host": "127.0.0.1",
-        "ssh_key_path": "/home/host-user/.ssh/dwarf-host-a",
+        "ssh_key_path": "/home/host-user/.ssh/cardano-box",
     })
 
     argv = render_ssh_command(config, "true")

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/pragma-org/dwarf/main/dwarf/spec/v1/patched-timing-event.schema.json",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/patched-timing-event.schema.json",
   "title": "DWARF patched-node timing event compatibility envelope",
   "description": "Accepts retained whole-microsecond v1 events and additive nanosecond-v2 events.",
   "oneOf": [

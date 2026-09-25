@@ -49,7 +49,7 @@ current bundle fails the contract, then rerun it after the Compose change.
 ## Verification and rollout
 
 Run the complete workload unit suite, Compose rendering, whitespace checks,
-and the existing secret/key scans on `dwarf-host-a`. Commit and push only the
+and the existing secret/key scans on `cardano-box`. Commit and push only the
 intended public-safe files. Submit a new one-hour `try 1` through release MOOG
 with faults enabled, then confirm in Antithesis logs that both Amaru processes
 start and that the mixed classifiability assertion is reachable.

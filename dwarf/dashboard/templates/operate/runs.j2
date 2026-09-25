@@ -7,7 +7,7 @@
 <hr class="hairline">
 
 {% if families %}
-<section class="issue-families" aria-labelledby="issue-families-heading">
+<section class="issue-families adv-only" aria-labelledby="issue-families-heading">
   <header class="issue-families__head">
     <span class="eyebrow">Issue families</span>
     <h2 id="issue-families-heading">Runtime-anomaly families across recent runs</h2>
@@ -46,6 +46,24 @@
   <span class="empty-section-statement__cite">scanned <code>dwarf/runs/</code>, 0 runs with manifests</span>
 </p>
 {% else %}
+{% if ui == "basic" %}
+{% set np = rows|selectattr('exit_status','equalto','pass')|list|length %}
+{% set nf = rows|selectattr('exit_status','equalto','fail')|list|length %}
+{% set ne = rows|selectattr('exit_status','equalto','error')|list|length %}
+<section class="basic-only dk" aria-label="Runs as a hand of cards">
+  <h2 class="dk-lead" style="margin-top:0">{{ np }} passed, {{ nf }} failed, {{ ne }} errored{% if rows|length - np - nf - ne > 0 %}, {{ rows|length - np - nf - ne }} other{% endif %}.</h2>
+  <p class="dk-plain">One card per run, newest first. The suit is the recorded result; open a run to see whether its evidence bundle verifies before trusting it.</p>
+  <div class="dk-hand-wrap">
+    <div class="dk-hand">
+      {% for r in rows %}{% set st = r.exit_status if r.exit_status in ('pass','fail','error') else 'other' %}
+      <a class="dk-mini {{ st }}" href="{{ r.run_url if r.is_local else '#' }}" aria-label="{{ st }} · {{ r.target_implementation or '—' }} · {{ r.scenario_id or '—' }} · {{ r.ended_at or '' }} · {{ r.run_id }}">{{ {'pass':'♦','fail':'▲','error':'✕'}.get(st, '■') }}</a>
+      {% endfor %}
+    </div>
+    <p class="dk-readout" data-dk-readout aria-live="polite">Hover or focus a card to read it · newest on the left</p>
+    <div class="dk-hand-legend"><span class="dk-g-pass"><b>♦</b> pass</span><span class="dk-g-fail"><b>▲</b> fail</span><span class="dk-g-error"><b>✕</b> error</span><span><b>■</b> other</span></div>
+  </div>
+</section>
+{% endif %}
 <form class="filter-bar runs-filter-bar" method="get" action="/operate/runs" role="search">
   <span class="eyebrow">Result</span>
   <div class="filter-pills" role="group" aria-label="Filter by result">
@@ -69,7 +87,27 @@
   <p class="filter-count" aria-live="polite">{{ filtered_count if filtered_count is defined else rows|length }} of {{ all_count if all_count is defined else rows|length }} runs</p>
 </form>
 
+{% if ui == "basic" %}
+{% from "operate/_partials/_deck.j2" import deck_grid with context %}
+{% set cards = [] %}
+{% for r in all_rows %}{% set k = run_cards.get(r.run_id) %}{% set st = r.exit_status if r.exit_status in ('pass','fail','error') else 'none' %}
+{% set ended = (r.ended_at or '')[:16]|replace('T', ' ') %}
+{% set exe = r.execution.value if r.execution and r.execution.value else '' %}
+{% set _ = cards.append({'title': k.title, 'full_title': k.full_title ~ ' — run ' ~ r.run_id, 'id': r.run_id, 'hide_id': true,
+  'href': r.run_url if r.is_local else none, 'accent': k.implementation,
+  'kicker': {'pass': '♦ pass', 'fail': '▲ fail', 'error': '✕ error'}.get(st, '■ no result'),
+  'tone': {'pass': 'dk-g-pass', 'fail': 'dk-g-fail', 'error': 'dk-g-error'}.get(st, 'dk-g-other'),
+  'kicker_tone': {'pass': 'dk-g-pass', 'fail': 'dk-g-fail', 'error': 'dk-g-error'}.get(st, 'dk-g-other'),
+  'sub': (ended ~ ' UTC' if ended else 'end time not recorded') ~ ((' · ' ~ r.workload_label) if r.workload_label and r.workload_label != '—' else ''),
+  'tier': 'warn' if st in ('fail', 'error') else 'back', 'group': 'res:' ~ st ~ ' impl:' ~ (k.implementation or 'unknown') ~ ' meas:' ~ ('yes' if measured.get(r.run_id) else 'no'),
+  'tags': ([k.implementation] if k.implementation else []) + ([r.runtime] if r.runtime else ([k.runtime] if k.runtime else [])) + k.versions + (['measured'] if measured.get(r.run_id) else []) + (['thin pass'] if r.thinness_signals else []),
+  'search': r.run_id ~ ' ' ~ (r.scenario_id or '') ~ ' ' ~ exe ~ ' ' ~ (r.target_implementation or '')}) %}{% endfor %}
+{% set counts = {} %}{% for c in cards %}{% set g = c.group.split(' ')[0][4:] %}{% set _ = counts.update({g: counts.get(g, 0) + 1}) %}{% endfor %}
+{% set resopts = [] %}{% for v, lab in [('pass', '♦ pass'), ('fail', '▲ fail'), ('error', '✕ error'), ('none', '■ no result')] %}{% if counts.get(v) %}{% set _ = resopts.append((v, lab ~ ' · ' ~ counts[v])) %}{% endif %}{% endfor %}
+{{ deck_grid(cards, label='runs', facets=[('res', 'Result', resopts), ('impl', 'Implementation', [('amaru', 'amaru'), ('cardano-node', 'cardano-node'), ('mixed', 'mixed')]), ('meas', 'Measurements', [('yes', 'measured'), ('no', 'not measured')])], empty='No forensic runs recorded yet.', layout='list') }}
+{% endif %}
 <div class="responsive-table runs-table-wrap">
+{% if ui == "basic" %}<p class="b-note" style="margin:6px 0 14px">Recent runs, newest first. Filter by verdict above; open a run for its evidence. <a class="b-adv-link" href="/operate/runs?view=advanced">Anomaly-family analysis in Advanced &rarr;</a></p>{% endif %}
 <table class="runs-table" data-active-status="">
   <thead>
     <tr>

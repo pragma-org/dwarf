@@ -6,7 +6,72 @@
 
 <hr class="hairline">
 
-<section class="landing-section" id="recent-activity">
+
+{# ---- BASIC view: operator-first summary (Advanced shows the full grid) ---- #}
+<section class="basic-only dk" aria-label="The deck box">
+  {% set total = (pass_count or 0) + (fail_count or 0) + (other_count or 0) %}
+  <h2 class="dk-lead" style="margin-top:0">{% if runs_total %}{{ pass_rate_pct }}% of the last {{ runs_total }} runs passed — {{ bundles_count }} evidence bundles are preserved.{% else %}No runs yet — start one to deal the first card.{% endif %}</h2>
+  <p class="dk-plain"><b>A count is not a verdict.</b> {{ fail_count }} failed and {{ other_count }} ended in error. Catalog stacks below are inventory, not coverage or security assurance — open a run to check what it asserted and whether its hash chain verifies.</p>
+  <div class="dk-box">
+    <div>
+      {% set C = 502.65 %}
+      <svg class="dk-dial" viewBox="0 0 200 200" role="img" aria-label="{{ pass_count }} pass, {{ fail_count }} fail, {{ other_count }} error of {{ runs_total }} runs">
+        <circle cx="100" cy="100" r="80" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="16"/>
+        {% if total %}
+        {% set p = C * pass_count / total %}{% set f = C * fail_count / total %}{% set o = C * other_count / total %}
+        <circle cx="100" cy="100" r="80" fill="none" stroke="var(--dk-pass)" stroke-width="16" stroke-dasharray="{{ p }} {{ C }}" transform="rotate(-90 100 100)"/>
+        <circle cx="100" cy="100" r="80" fill="none" stroke="var(--dk-fail)" stroke-width="16" stroke-dasharray="{{ f }} {{ C }}" stroke-dashoffset="{{ -p }}" transform="rotate(-90 100 100)"/>
+        <circle cx="100" cy="100" r="80" fill="none" stroke="var(--dk-err)" stroke-width="16" stroke-dasharray="{{ o }} {{ C }}" stroke-dashoffset="{{ -(p + f) }}" transform="rotate(-90 100 100)"/>
+        {% endif %}
+        <circle cx="100" cy="100" r="62" fill="none" stroke="rgba(230,198,127,.35)" stroke-width="1"/>
+        <text x="100" y="98" text-anchor="middle" fill="var(--dk-ink)" style="font:600 36px var(--dk-serif)">{{ pass_rate_pct if pass_rate_pct is not none else '—' }}{% if pass_rate_pct is not none %}%{% endif %}</text>
+        <text x="100" y="122" text-anchor="middle" fill="var(--dk-muted)" style="font:10px var(--dk-mono);letter-spacing:.14em">PASS · LAST {{ runs_window }}</text>
+      </svg>
+      <div class="dk-dial-legend"><span class="dk-g-pass">♦ {{ pass_count }} pass</span><span class="dk-g-fail">▲ {{ fail_count }} fail</span><span class="dk-g-error">✕ {{ other_count }} error</span></div>
+    </div>
+    <div>
+      <p class="eyebrow" style="margin:0 0 14px">Catalog · card backs (inventory, not proof)</p>
+      <div class="dk-stacks">
+        {% for label, count, href in [
+          ('Scenarios', scenario_count, '/operate/scenarios'), ('Primitives', primitive_count, '/operate/primitives'),
+          ('Targets', target_count, '/operate/targets'), ('Profiles', profile_count, '/operate/profiles'),
+          ('Evidence bundles', bundles_count, '/operate/bundles'), ('Corpus inputs', corpus_input_count, '/operate/corpora'),
+          ('Grammar tokens', grammar_token_count, '/operate/grammars'), ('Measurement taps', measurement_count, '/operate/measurements'),
+          ('Risk candidates', risk_candidate_count, '/operate/risk-packages'), ('Profile templates', profile_template_count, '/operate/profile-templates')] %}
+        {% if count is not none and count is defined %}
+        {% set n = [((count|string)|length) + 1, 6]|min %}
+        <a class="dk-stack" href="{{ href }}?view=advanced" style="--n:{{ n }}">
+          <span class="dk-stack__pile" aria-hidden="true">{% for k in range(n) %}<i style="--k:{{ k }}"></i>{% endfor %}</span>
+          <b>{{ count }}</b><small>{{ label }}</small></a>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="dk-loop">
+    <a class="dk-card" href="/run"><div class="dk-face"><div class="dk-face__body">
+      <div class="dk-kicker"><span>01</span><span>♦</span></div><div class="dk-title">Start a run</div>
+      <p class="dk-sub">Pick a scenario and profile; DWARF checks versions and readiness first.</p></div></div></a>
+    <a class="dk-card" href="/operate/runs"><div class="dk-face"><div class="dk-face__body">
+      <div class="dk-kicker"><span>02</span><span>♦</span></div><div class="dk-title">Inspect results</div>
+      <p class="dk-sub">Open a run for its verdict, asserted property and hash-chain integrity.</p></div></div></a>
+    <a class="dk-card" href="/operate/bundles"><div class="dk-face"><div class="dk-face__body">
+      <div class="dk-kicker"><span>03</span><span>♦</span></div><div class="dk-title">Export evidence</div>
+      <p class="dk-sub">Download the portable, hash-chained bundle for audit and replay.</p></div></div></a>
+  </div>
+
+  <h2 class="b-h2">What is proven vs mapped
+    <a class="b-adv-link" href="?view=advanced">Open the full substrate in Advanced &rarr;</a></h2>
+  <div class="b-chips">
+    <a class="b-chip" href="/learn/threat-coverage">Threat &amp; risk binder</a>
+    <a class="b-chip" href="/learn/measurement-coverage">Measurement coverage</a>
+    <a class="b-chip" href="/operate/status">Substrate health</a>
+    <a class="b-chip" href="/operate/versions?view=advanced">Node versions</a>
+  </div>
+</section>
+
+<section class="landing-section adv-only" id="recent-activity">
   <span class="eyebrow">Recent activity</span>
   <div class="tile-grid">
 
@@ -57,7 +122,7 @@
   </div>
 </section>
 
-<section class="landing-section" id="substrate">
+<section class="landing-section adv-only" id="substrate">
   <span class="eyebrow">Substrate</span>
   <div class="tile-grid">
 
@@ -175,7 +240,7 @@
   </div>
 </section>
 
-<section class="landing-section" id="tools">
+<section class="landing-section adv-only" id="tools">
   <span class="eyebrow">Tools</span>
   <div class="tile-grid">
 

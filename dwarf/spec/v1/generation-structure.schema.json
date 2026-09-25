@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/pragma-org/dwarf/main/dwarf/spec/v1/generation-structure.schema.json",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/generation-structure.schema.json",
   "title": "DWARF generation structure",
   "description": "Descriptive input-shape metadata paired with a mutation-token dictionary.",
   "type": "object",

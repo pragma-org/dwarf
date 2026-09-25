@@ -39,6 +39,7 @@ from qualify_node_versions import (  # noqa: E402
     _project_is_fresh,
     _render_baseline,
     _run,
+    cardano_experimental_protocols_policy,
     classify_log_signals,
     classify_terminal_runtime_failure,
     transform_compose_model,
@@ -261,6 +262,13 @@ def prepare_runtime_model(
         allowed_project_prefix="dwarf-profile-",
         amaru_runtime_interface=config.get("amaru_runtime_interface"),
         amaru_json_traces=bool(config.get("amaru_json_traces", False)),
+        cardano_experimental_protocols=(
+            bool(config["cardano_experimental_protocols"])
+            if config.get("cardano_experimental_protocols") is not None
+            else cardano_experimental_protocols_policy(
+                str(config["scope"]), config.get("supporting_cardano_version")
+            )
+        ),
     )
     if config.get("plutus_v2_genesis") is True:
         configurator = model["services"]["configurator"]

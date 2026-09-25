@@ -1,0 +1,97 @@
+{% extends "_base.j2" %}
+{% block main %}
+{% set tiers = binder.tiers %}
+<section class="basic-only dk" aria-label="Threat and risk binder">
+<span class="eyebrow">Learn · {{ 'Measurement coverage' if mode == 'measurement' else 'Threat & risk coverage' }}</span>
+{% if mode == 'measurement' %}
+<h1 class="dk-lead">Only {{ tiers.verified }} of {{ binder.entries|length }} threat and risk entries are verified by retained evidence.</h1>
+<p class="dk-plain">{{ tiers.mapped }} are configured — a measurement profile selects the taps, but no retained evidence shows the workload exercised them. {{ tiers.gap }} have no evidence boundary at all. Configuration is not proof.</p>
+<div class="dk-ladder">
+  {% for s in ['Applicable', 'Configured', 'Exercised', 'Verified', 'Unavailable'] %}
+  {% if s in binder.state_definitions %}<div><b>{{ s }}</b>{{ binder.state_definitions[s] }}</div>{% endif %}
+  {% endfor %}
+</div>
+{% else %}
+<h1 class="dk-lead">{{ tiers.gap }} empty slot{{ '' if tiers.gap == 1 else 's' }}{% if binder.gaps %}: {{ binder.gaps|map(attribute='id')|join(', ') }}{% endif %} — no scenario mapped.</h1>
+<p class="dk-plain">Mapped catalog coverage is not runtime proof. {{ binder.tm_mapped }} of {{ binder.threats|length }} threats and {{ binder.rr_mapped }} of {{ binder.risks|length }} risks have a scenario mapped — a card back only says a scenario exists. Holo cards are the {{ tiers.verified }} entries whose measurements are verified by retained evidence.</p>
+{% endif %}
+
+<div class="dk-stats">
+  <div class="dk-stat"><b>{{ binder.tm_mapped }}<small>/{{ binder.threats|length }}</small></b><span>threats mapped (TM)</span></div>
+  <div class="dk-stat"><b>{{ binder.rr_mapped }}<small>/{{ binder.risks|length }}</small></b><span>risks mapped (RR)</span></div>
+  <div class="dk-stat"><b class="dk-g-gold">◆ {{ tiers.verified }}</b><span>verified (holo)</span></div>
+  <div class="dk-stat"><b>▭ {{ tiers.mapped }}</b><span>mapped only (card back)</span></div>
+  <div class="dk-stat"><b>⬚ {{ tiers.gap }}</b><span>GAP slots</span></div>
+</div>
+
+<div data-dk-binder>
+  <div class="dk-filters">
+    <div class="dk-seg" role="group" aria-label="Filter by evidence">
+      <button type="button" data-dk-filter="tier" data-value="all" aria-pressed="true">All</button>
+      <button type="button" data-dk-filter="tier" data-value="verified" aria-pressed="false">◆ Verified</button>
+      <button type="button" data-dk-filter="tier" data-value="mapped" aria-pressed="false">▭ Mapped</button>
+      <button type="button" data-dk-filter="tier" data-value="gap" aria-pressed="false">⬚ GAP</button>
+    </div>
+    <div class="dk-seg" role="group" aria-label="Filter by kind">
+      <button type="button" data-dk-filter="kind" data-value="all" aria-pressed="true">TM + RR</button>
+      <button type="button" data-dk-filter="kind" data-value="TM" aria-pressed="false">Threats</button>
+      <button type="button" data-dk-filter="kind" data-value="RR" aria-pressed="false">Risks</button>
+    </div>
+    <input class="dk-search" type="search" data-dk-search placeholder="Search id, title, scenario…" aria-label="Search the binder">
+    <span class="dk-count" data-dk-count aria-live="polite">{{ binder.entries|length }} of {{ binder.entries|length }} shown</span>
+  </div>
+
+  {% for group_label, group in [('Threat model · TM', binder.threats), ('Risk register · RR', binder.risks)] %}
+  <div class="dk-binder" data-dk-group>
+    <div class="dk-binder__head"><span>{{ group_label }}</span><span>{{ group|length }} slots</span></div>
+    <div class="dk-slots">
+      {% for e in group %}
+      <a class="dk-card {{ 'dk-holo' if e.tier == 'verified' else ('dk-gap' if e.tier == 'gap' else 'dk-back') }}" href="#dk-{{ e.id }}"
+         data-dk-slot data-tier="{{ e.tier }}" data-kind="{{ e.kind }}" data-dk-seed="{{ e.id }}"
+         data-search="{{ (e.id ~ ' ' ~ e.title ~ ' ' ~ e.scenarios|join(' '))|lower }}"
+         aria-label="{{ e.id }} — {{ e.title }} — {{ 'verified by retained evidence' if e.tier == 'verified' else ('GAP: nothing mapped' if e.tier == 'gap' else 'mapped only, not proven') }}">
+        <div class="dk-face dk-face--front">
+          {% if e.tier == 'verified' %}<div class="dk-foil"></div><div class="dk-glare"></div>{% endif %}
+          <div class="dk-face__body">
+            <span class="dk-slot__id">{{ e.id }}</span>
+            {% if e.tier == 'verified' %}<span class="dk-slot__tag dk-g-gold">◆ VERIFIED</span>
+            <div class="dk-slot__mid"></div>
+            {% if mode == 'measurement' %}<div class="dk-slot__bar" aria-hidden="true"><i style="width:{{ (100 * e.verified / e.applicable)|round|int if e.applicable else 0 }}%"></i></div>{% endif %}
+            <span class="dk-slot__foot">{{ e.verified }}/{{ e.applicable }} taps</span>
+            {% elif e.tier == 'gap' %}<div class="dk-slot__mid">GAP</div>
+            {% else %}<div class="dk-slot__mid"><span class="dk-stamp">MAPPED</span></div>
+            <span class="dk-slot__foot">{{ e.scenario_count }} scen.</span>{% endif %}
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<h2 class="b-h2">Every entry, in words</h2>
+<div class="dk-index">
+  {% for e in binder.entries %}
+  <details class="dk-entry" id="dk-{{ e.id }}">
+    <summary><code>{{ e.id }}</code>
+      <span class="{{ 'dk-g-gold' if e.tier == 'verified' else ('dk-g-warn' if e.tier == 'gap' else '') }}">{{ '◆ Verified' if e.tier == 'verified' else ('⬚ GAP' if e.tier == 'gap' else '▭ ' ~ e.status) }}</span>
+      <span>{{ e.title }}</span></summary>
+    <dl>
+      {% if e.description %}<dt>Why</dt><dd>{{ e.description }}</dd>{% endif %}
+      <dt>Evidence</dt><dd>{% if e.tier == 'verified' %}{{ e.verified }} of {{ e.applicable }} applicable taps verified by accepted, retained evidence.{% elif e.tier == 'gap' %}No mapped scenario or no evidence boundary — DWARF does not substitute zero.{% else %}{{ e.applicable }} applicable taps, {{ e.verified }} verified. Mapped / configured is not proof.{% endif %}</dd>
+      <dt>Scenarios</dt><dd>{% if e.scenarios %}{% for s in e.scenarios %}<code>{{ s }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if e.scenario_count > e.scenarios|length %} … ({{ e.scenario_count }} total){% endif %}{% else %}none mapped{% endif %}</dd>
+      {% if e.can_prove and e.tier != 'gap' %}<dt>Can show</dt><dd>{{ e.can_prove }}</dd>{% endif %}
+      {% if e.non_claims %}<dt>Does not prove</dt><dd>{{ e.non_claims }}</dd>{% endif %}
+    </dl>
+  </details>
+  {% endfor %}
+</div>
+<p class="b-note" style="margin-top:20px">The full matrices — scenario-by-scenario mapping, maturity pills and tap-level evidence — are in
+  <a class="b-adv-link" style="display:inline" href="{{ request_path or '/' }}?view=advanced">Advanced &rarr;</a></p>
+</section>
+
+<dialog class="dk-dialog" data-dk-dialog aria-label="Entry detail">
+  <div class="dk-dialog__body"><button type="button" class="dk-btn dk-dialog__close" data-dk-close>Close</button><div data-dk-dialog-body></div></div>
+</dialog>
+{% endblock %}

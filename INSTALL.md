@@ -216,12 +216,11 @@ export DWARF_IMAGE=dwarf/framework:current
 export DWARF_CONTAINER_NAME=dwarf-fw
 export DWARF_DASHBOARD_BIND=0.0.0.0
 export DWARF_DASHBOARD_PORT=8787
-export DWARF_NETWORK_SUBNET=10.201.0.0/24
 export DWARF_RUNTIME_ROOT=/absolute/path/to/var
 export ADA2_DWARF_TOKEN=dwarf
 ```
 
-Most operators only need `DWARF_DASHBOARD_PORT`. By default, persistent runtime data is stored under `~/.local/share/dwarf/` (or `$XDG_DATA_HOME/dwarf/` when `XDG_DATA_HOME` is set), independently of the source checkout. Set `DWARF_RUNTIME_ROOT` to use another location. Set `DWARF_DASHBOARD_BIND=127.0.0.1` only when you want loopback-only access. Set `DWARF_NETWORK_SUBNET` only when the default private subnet overlaps another Docker or local network.
+Most operators only need `DWARF_DASHBOARD_PORT`. By default, persistent runtime data is stored under `~/.local/share/dwarf/` (or `$XDG_DATA_HOME/dwarf/` when `XDG_DATA_HOME` is set), independently of the source checkout. Set `DWARF_RUNTIME_ROOT` to use another location. Set `DWARF_DASHBOARD_BIND=127.0.0.1` only when you want loopback-only access.
 
 ## Moog, GitHub, And Antithesis Setup Values
 

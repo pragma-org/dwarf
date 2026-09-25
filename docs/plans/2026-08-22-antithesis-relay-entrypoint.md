@@ -111,7 +111,7 @@ the public `main` branch using the existing non-printing credential flow.
 
 **Step 3: Submit a replacement one-hour run**
 
-Use release `$HOME/bin/moog`, the new commit, `--try 1`, `-t 1`, and omit
+Use release `/home/nigel/bin/moog`, the new commit, `--try 1`, `-t 1`, and omit
 `--no-faults`.
 
 **Step 4: Verify live behavior**

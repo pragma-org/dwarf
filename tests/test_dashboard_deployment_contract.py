@@ -38,14 +38,8 @@ def test_default_ssh_key_matches_container_mount():
     config = DeploymentConfig.from_dict({})
     compose = (ROOT / "delivery/docker-compose.dwarf.yml").read_text(encoding="utf-8")
 
-    assert config.ssh_key_path == "~/.ssh/id_ed25519"
-    assert ":/home/dwarf/.ssh/id_ed25519:ro" in compose
-
-
-def test_delivery_network_subnet_can_be_isolated_per_deployment():
-    compose = (ROOT / "delivery/docker-compose.dwarf.yml").read_text(encoding="utf-8")
-
-    assert "${DWARF_NETWORK_SUBNET:-10.201.0.0/24}" in compose
+    assert config.ssh_key_path == "~/.ssh/cardano-box"
+    assert ":/home/dwarf/.ssh/cardano-box:ro" in compose
 
 
 def test_control_shim_executes_large_generated_script_without_argv_limit():
@@ -345,7 +339,7 @@ def test_smoke_run_uses_one_fixed_control_verb_in_shim_mode(monkeypatch):
 
     def fake_ssh(config, remote_command, timeout=None, dry_run=False, verb=None):
         calls.append((remote_command, verb))
-        return CommandResult(0, "ok\n", "", "ssh dwarf-host-a smoke environment-smoke")
+        return CommandResult(0, "ok\n", "", "ssh cardano-box smoke environment-smoke")
 
     monkeypatch.setenv("ADA2_DWARF_CONTROL_SHIM", "1")
     monkeypatch.setattr(cli, "ssh_command", fake_ssh)
@@ -618,7 +612,7 @@ def test_topology_redeploy_endpoint_is_confirmed_token_gated_and_streamed():
     commands = []
 
     def build_command():
-        command = ["ssh", "dwarf-host-a", "topology-redeploy cardano_amaru"]
+        command = ["ssh", "cardano-box", "topology-redeploy cardano_amaru"]
         commands.append(command)
         return command
 
@@ -643,7 +637,7 @@ def test_topology_redeploy_endpoint_is_confirmed_token_gated_and_streamed():
     assert status == 200
     assert content_type.startswith("text/event-stream")
     assert b"capture_complete" in b"".join(body)
-    assert commands == [["ssh", "dwarf-host-a", "topology-redeploy cardano_amaru"]]
+    assert commands == [["ssh", "cardano-box", "topology-redeploy cardano_amaru"]]
 
 
 def test_topology_redeploy_endpoint_rejects_every_unconfirmed_or_variable_target():

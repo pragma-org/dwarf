@@ -6,7 +6,37 @@
 
 <hr class="hairline">
 
-<div class="learn-tile-grid">
+{# ---- BASIC view: three essentials; full library in Advanced ---- #}
+<section class="basic-only dk" aria-label="Learn essentials">
+  <div class="dk-learn">
+    <a class="dk-card" href="/learn/getting-started"><div class="dk-face"><div class="dk-face__body">
+      <div class="dk-kicker"><span>I · Start here</span><span>♦</span></div>
+      <div class="dk-title">Getting started</div>
+      <p class="dk-sub">Install → run your first scenario → preserve a bundle → write your first assertion.</p>
+      <div class="dk-big" aria-hidden="true">♦</div><div class="dk-cue">5-step walkthrough →</div></div></div></a>
+    <a class="dk-card" href="/learn/overview"><div class="dk-face"><div class="dk-face__body">
+      <div class="dk-kicker"><span>II · Concepts</span><span>◆</span></div>
+      <div class="dk-title">What DWARF is</div>
+      <p class="dk-sub">How the substrate is structured and how to read a verdict.</p>
+      <div class="dk-big" aria-hidden="true">◆</div><div class="dk-cue">Overview →</div></div></div></a>
+    <a class="dk-card" href="/learn/glossary"><div class="dk-face"><div class="dk-face__body">
+      <div class="dk-kicker"><span>III · Reference</span><span>§</span></div>
+      <div class="dk-title">Glossary</div>
+      <p class="dk-sub">Bucket, lifecycle, scenario, assertion, manifest hash chain.</p>
+      <div class="dk-big" aria-hidden="true">§</div><div class="dk-cue">Terms →</div></div></div></a>
+    <a class="dk-card" href="/learn/threat-coverage"><div class="dk-face"><div class="dk-face__body">
+      <div class="dk-kicker"><span>IV · Coverage</span><span>◆</span></div>
+      <div class="dk-title">Threat &amp; risk binder</div>
+      <p class="dk-sub">Holo = verified evidence · card back = mapped only · empty slot = gap.</p>
+      <div class="dk-big" aria-hidden="true">▦</div><div class="dk-cue">Open the binder →</div></div></div></a>
+  </div>
+  <h2 class="b-h2">Full reference library
+    <a class="b-adv-link" href="?view=advanced">Open all Learn pages in Advanced &rarr;</a></h2>
+  <p class="b-note">Advanced exposes the complete reference: worked examples, primitive and measurement
+    references, CLI/API docs, runbooks and troubleshooting.</p>
+</section>
+
+<div class="learn-tile-grid adv-only">
 
   <a class="learn-tile" href="/learn/overview">
     <span class="learn-tile__eyebrow">The whole workbench, one page</span>
@@ -187,7 +217,7 @@
 <hr class="hairline">
 
 <section class="learn-substrate">
-  <span class="eyebrow">Substrate at a glance</span>
+</div><section class="adv-only"><span class="eyebrow">Substrate at a glance</span>
   <p>Counts below and on the catalog tiles are loaded from the same source catalogs as Operate; this page does not maintain a second inventory.</p>
   <ul class="data-proof-list">
     <li class="data-proof-row">

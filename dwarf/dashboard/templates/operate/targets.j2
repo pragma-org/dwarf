@@ -1,5 +1,14 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice, deck_actions with context %}
+{% if ui == "basic" %}
+{% set parts = [] %}{% for pill in pills if pill.slug %}{% set _ = parts.append(pill.count ~ ' ' ~ pill.label) %}{% endfor %}
+{{ deck_head('Operate · Targets',
+   (rows|length ~ ' decode target' ~ ('' if rows|length == 1 else 's') ~ ' defined' ~ (' — ' ~ parts|join(', ') if parts else '') ~ '.') if not empty else 'No decode targets are defined yet.',
+   'A target is a harness around one implementation\'s CBOR or mini-protocol decoder. It describes what can be tested, not whether anything passed.') }}
+{{ deck_actions([('+ New target', '/operate/targets/new?token=' ~ (token or ''), true, false), ('Download all', '/api/catalog/targets/export', false, true)]) }}
+{% endif %}
+<div class="adv-only">
 <div class="scenarios-header">
   <div>
     <span class="eyebrow">Operate</span>
@@ -10,12 +19,30 @@
     <a class="cta" href="/operate/targets/new?token={{ token }}">+ New target</a>
   </div>
 </div>
-<p>Decode-target catalog. Each target is a per-implementation shim around an Amaru or cardano-node Concise Binary Object Representation (CBOR) or mini-protocol decoder/parser, defined by a manifest.</p>
+</div>
+<p class="adv-only">Decode-target catalog. Each target is a per-implementation shim around an Amaru or cardano-node Concise Binary Object Representation (CBOR) or mini-protocol decoder/parser, defined by a manifest.</p>
 <aside class="version-authority-note" data-target-version-boundary>
   <strong>Targets describe test surfaces; profiles select deployed versions.</strong>
   <p>A target's upstream revision documents the harnessed implementation. The scenario's deployment profile remains the sole authority for exact runtime Cardano-node and Amaru artifacts. See <a href="/operate/profiles">profiles</a> and the <a href="/learn/versions">version guide</a>.</p>
 </aside>
 
+{% if ui == "basic" %}
+{% set cards = [] %}{% set decs = [] %}
+{% for row in rows %}{% set impl = row.implementation or '' %}{% set dec = row.decoder_type or 'undeclared' %}
+{% set short_dec = 'AFL++ harness' if dec.startswith('Coverage-guided') else dec %}
+{% if short_dec not in decs %}{% set _ = decs.append(short_dec) %}{% endif %}
+{% set _ = cards.append({
+  'title': (deck_nice(row.id)|trim)|replace('CBOR decode ', 'CBOR decode · ')|replace('Mini protocol decode ', 'Mini-protocol · ')|replace('Mini protocol ', 'Mini-protocol · ')|replace('Cov ', 'Coverage · ')|replace('keep alive', 'KeepAlive'), 'full_title': row.id ~ ' — ' ~ dec, 'id': row.id, 'hide_id': true, 'href': row.url, 'accent': impl,
+  'sub': (row.invariants_count or (row.invariants|length)) ~ ' invariants' ~ ((' · upstream ' ~ row.upstream_commit[:12]) if row.upstream_commit and row.upstream_commit not in ('local', 'unbuilt') else ''),
+  'tier': 'back', 'group': 'impl:' ~ (impl or 'unassigned') ~ ' dec:' ~ short_dec|replace(' ', '_'),
+  'tags': ([impl] if impl else []) + [short_dec], 'search': (row.invariants or [])|join(' ') ~ ' ' ~ (row.upstream_commit or '')}) %}{% endfor %}
+{% set impls = [] %}{% for pill in pills if pill.slug %}{% set _ = impls.append((pill.slug, pill.label ~ ' · ' ~ pill.count)) %}{% endfor %}
+{% set decopts = [] %}{% for d in decs|sort %}{% set _ = decopts.append((d|replace(' ', '_'), d)) %}{% endfor %}
+<h2 class="b-h2 basic-only">Catalog · card backs (defined, not proven)</h2>
+{{ deck_grid(cards, label='targets', facets=[('impl', 'Implementation', impls), ('dec', 'Decoder', decopts)], empty='No target manifests found. Create the first target in Advanced.') }}
+{{ deck_more('Create, edit and download targets in Advanced') }}
+{% endif %}
+<div class="adv-only">
 <hr class="hairline">
 
 {% if empty %}
@@ -57,4 +84,5 @@
   initFilter({table: ".targets-table", axis: "implementation", label: "targets"});
 </script>
 {% endif %}
+</div>
 {% endblock %}

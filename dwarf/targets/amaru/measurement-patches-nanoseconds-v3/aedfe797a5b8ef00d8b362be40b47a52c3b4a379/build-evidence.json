@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "measurement_revision": "nanoseconds-v3",
+  "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+  "manifest_sha256": "7aedbd89a2685fe265994c98596c62ce170f09b0cf90aa17851f8291be3537a2",
+  "patch_sha256": "ab1b1e3d803276870b3fbaca2b35640edd2d5c8c7881c175bfbac86f490f0de0",
+  "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+  "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+  "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+  "build_result_sha256": "sha256:5cd61d80f12a27e565926d8175c0c82a9e4d604d154821b32f08add5ba1b1f6b",
+  "cargo_build_log_sha256": "8dcac97e1290cd608bff64053488315ca249b746caf8888360ac3ac8651075e2",
+  "image_build_log_sha256": "8b07e38981745a84964e1216011fbda2dcf831cfcba70e046a27c5b894e1a8c2",
+  "runtime_probe_log_sha256": "b6bcec81129747eb68b9dde4c7218b836d548fb4fc4d50520f867bd3434475d3",
+  "static_linkage": true,
+  "image_smoke": "passed",
+  "runtime_probe_smoke": "passed"
+}

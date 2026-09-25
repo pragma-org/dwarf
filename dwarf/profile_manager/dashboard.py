@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from profile_manager.templating import set_current_view, set_current_path
 from pathlib import Path
 from collections import Counter
 from urllib.parse import parse_qs, quote, urlsplit
@@ -160,12 +161,12 @@ def _pick_dashboard_root(project_root: Path) -> Path:
     Two candidate layouts:
     - ``project_root/dwarf/dashboard``  (local Mac dev checkout: dwarf/ is the
       app subdir under the parent ada2 repo)
-    - ``project_root/dashboard``        (dwarf-host-a flattened layout: rsync
+    - ``project_root/dashboard``        (cardano-box flattened layout: rsync
       from sync-dwarf-fw.sh strips the dwarf/ wrapper, putting dashboard/ +
       profile_manager/ at top level)
 
     Pre-slice-19 logic checked only that ``project_root/dwarf`` *existed*,
-    which on dwarf-host-a was true but stale -- a leftover ``dwarf/`` directory
+    which on cardano-box was true but stale -- a leftover ``dwarf/`` directory
     from an old layout containing only an ``index.html``, no ``static/``.
     Result: the picker selected ``project_root/dwarf/dashboard`` (which had
     no ``static/``), so ``/static/css/base.css`` returned 404 and all
@@ -916,7 +917,7 @@ def render_command_center_html():
     <div class="flow" id="deployment-flow">
       <div class="flow-step"><strong>Browser / CLI</strong>Local operator view and command entry point.</div>
       <div class="flow-step"><strong>SSH</strong>Read-only health polling and explicit CLI operations.</div>
-      <div class="flow-step"><strong>dwarf-host-a</strong>Ubuntu host for local Cardano profile runtime.</div>
+      <div class="flow-step"><strong>cardano-box</strong>Ubuntu host for local Cardano profile runtime.</div>
       <div class="flow-step"><strong>Profile Runtime</strong>Managed local testnet profile under `/opt/dwarf/cardano-profiles`.</div>
       <div class="flow-step"><strong>node1 / node2 / node3</strong>Loopback node-to-node listeners, sockets, logs, and DB state.</div>
     </div>
@@ -1091,7 +1092,7 @@ function drawDeploymentFlow(payload, active, parsed) {
     <line class="edge" x1="154" y1="119" x2="238" y2="119"/>
     <rect class="node" x="248" y="86" width="110" height="66" rx="8"/><text x="303" y="114" text-anchor="middle" font-weight="700">SSH</text><text class="muted" x="303" y="136" text-anchor="middle">read-only poll</text>
     <line class="edge" x1="358" y1="119" x2="438" y2="119"/>
-    <rect class="node" x="448" y="66" width="146" height="106" rx="8"/><text x="521" y="102" text-anchor="middle" font-weight="700">dwarf-host-a</text><text class="muted" x="521" y="126" text-anchor="middle">${esc((payload.config || {}).host || "unknown")}</text><text class="muted" x="521" y="150" text-anchor="middle">Ubuntu host</text>
+    <rect class="node" x="448" y="66" width="146" height="106" rx="8"/><text x="521" y="102" text-anchor="middle" font-weight="700">cardano-box</text><text class="muted" x="521" y="126" text-anchor="middle">${esc((payload.config || {}).host || "unknown")}</text><text class="muted" x="521" y="150" text-anchor="middle">Ubuntu host</text>
     <line class="edge" x1="594" y1="119" x2="674" y2="119"/>
     <rect class="node" x="684" y="46" width="190" height="146" rx="8"/><text x="779" y="76" text-anchor="middle" font-weight="700">${esc(active.id || "active profile")}</text>
     <circle class="${processClass}" cx="729" cy="124" r="22"/><text x="729" y="130" text-anchor="middle">n1</text>
@@ -1905,6 +1906,8 @@ def dispatch_static_request(path):
     """
     if not path.startswith("/static/"):
         return None
+    # Ignore the query string (templates append ?v=<revision> for cache busting).
+    path = path.split("?", 1)[0]
     subpath = path[len("/static/"):]
     if not subpath or ".." in subpath or subpath.startswith("/"):
         return (400, "text/plain; charset=utf-8", b"invalid path\n")
@@ -3128,6 +3131,9 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             self.send_header("Content-Length", str(len(body)))
             for key, value in (extra_headers or {}).items():
                 self.send_header(key, value)
+            _vc = getattr(self, "_view_cookie", None)
+            if _vc:
+                self.send_header("Set-Cookie", _vc)
             self.end_headers()
             self.wfile.write(body)
             # Slice 44: feed the Prometheus request counter. Path-bucketing
@@ -3358,7 +3364,82 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             else:
                 self._send(status, ctype, body if isinstance(body, (bytes, bytearray)) else b"".join(body))
 
+
+        # Routes that have a purpose-built Basic layout. Any other path renders
+        # in Advanced even under a Basic cookie (dense catalogues/detail pages
+        # need the Advanced density treatment); the Basic preference persists.
+        BASIC_NATIVE_EXACT = {
+            "/", "/operate", "/operate/runs", "/operate/status",
+            "/learn", "/learn/getting-started", "/learn/glossary",
+            "/run",
+        }
+        BASIC_NATIVE_PREFIXES = ("/operate/runs/", "/runs/")
+
+        def _resolve_view(self):
+            """Basic-vs-Advanced view: ?view= overrides cookie; default advanced (bento).
+            Sets the render contextvar and, on explicit ?view=, a persisting cookie."""
+            from urllib.parse import urlsplit, parse_qs
+            from http.cookies import SimpleCookie
+            q = parse_qs(urlsplit(self.path).query)
+            view = None
+            if "view" in q and q["view"]:
+                v = q["view"][0].strip().lower()
+                if v in ("basic", "advanced", "bento"):
+                    view = "bento" if v in ("advanced", "bento") else "basic"
+                    self._view_cookie = ("dwarf_view=%s; Path=/; Max-Age=31536000; SameSite=Lax" % view)
+            if view is None:
+                c = SimpleCookie(self.headers.get("Cookie", ""))
+                if "dwarf_view" in c and c["dwarf_view"].value in ("basic", "bento"):
+                    view = c["dwarf_view"].value
+            if view is None:
+                view = "bento"
+            from urllib.parse import urlsplit as _us
+            _path = _us(self.path).path
+            set_current_path(_path)
+            # Every route renders the chosen view; Basic layouts are provided
+            # for all routes (generic reducer + per-family templates).
+            set_current_view(view)
+            return view
+
+
+        # Raw-HTML reference pages get a concise Basic stub (full page in Advanced).
+        BASIC_REFERENCE_STUBS = {
+            "/learn/overview": ("Learn", "Overview",
+                "The complete DWARF reference on one page — DSL, primitive catalogue, "
+                "Antithesis pipeline, coverage, evidence and attack-cost. It is long by design."),
+            "/learn/consensus": ("Learn", "Consensus differential",
+                "How the Haskell cardano-node and Amaru compare on the same chain under fault "
+                "— forks, k-recovery, epoch boundaries."),
+        }
+
+        # Basic "Evidence Deck" binder replaces the two very large coverage pages.
+        BASIC_BINDER_PAGES = {
+            "/learn/threat-coverage": ("threats", "Threat & risk binder"),
+            "/learn/measurement-coverage": ("measurement", "Measurement coverage"),
+        }
+
+        def _basic_reference_stub(self, path):
+            from profile_manager.templating import render, current_view
+            if current_view() != "basic":
+                return None
+            binder = self.BASIC_BINDER_PAGES.get(path)
+            if binder:
+                from profile_manager.data.basic_deck import deck_binder
+                mode, title = binder
+                return render("learn/basic_binder.j2", page_title=title, active="learn",
+                              mode=mode, binder=deck_binder())
+            spec = self.BASIC_REFERENCE_STUBS.get(path)
+            if not spec:
+                return None
+            eyebrow, title, summary = spec
+            return render("_basic_reference_stub.j2", page_title=title, eyebrow=eyebrow,
+                          summary=summary, active="learn")
+
         def do_GET(self):
+            self._resolve_view()
+            _stub = self._basic_reference_stub(self.path.split("?",1)[0])
+            if _stub is not None:
+                self._send(200, "text/html; charset=utf-8", _stub.encode("utf-8")); return
             # Allow GET to show a 405 for every mutating endpoint (more informative than 404).
             mutating_paths = {
                 "/api/deploy", "/api/remove", "/api/fuzz/run", "/api/test/smoke/run",

@@ -28,7 +28,7 @@ operators can compare the live revision with GitHub.
 
 Keep mutable runs, bundles, state, and the SSH key outside the image. Align the
 portable default SSH path with the Compose mount at
-`/home/dwarf/.ssh/dwarf-host-a`; retain the host-side `~/.ssh/dwarf-host-a`
+`/home/dwarf/.ssh/cardano-box`; retain the host-side `~/.ssh/cardano-box`
 fallback.
 
 Make Learn pages honest about their sources. Runtime inventory counts come

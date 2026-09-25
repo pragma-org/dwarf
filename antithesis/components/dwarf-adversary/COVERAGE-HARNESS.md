@@ -104,10 +104,10 @@ GHC emits no SanitizerCoverage natively. The whole dep tree is compiled with
 `-fllvm` + a new-PM LLVM pass plugin that injects `trace-pc-guard` edge coverage,
 linked against AFL's `afl-compiler-rt.o`. Recipe + fixes:
 `docs/superpowers/specs/2026-06-17-coverage-guided-haskell-decoder-fuzzing.md`
-and memory `ghc-sancov-coverage-recipe`. Toolchain lives on dwarf-host-a at
+and memory `ghc-sancov-coverage-recipe`. Toolchain lives on cardano-box at
 `~/dwarf-sancov/` (plugin, opt/link wrappers, `with-compiler` ghcw.sh, libsancovrt).
 
-## Build (dwarf-host-a, GHC 9.6.7 + LLVM-15)
+## Build (cardano-box, GHC 9.6.7 + LLVM-15)
 ```bash
 cd antithesis/components/dwarf-adversary
 export PATH=$HOME/.ghcup/bin:$PATH LD_PRELOAD=/home/dwarf/dwarf-sancov/libsancovrt.so

@@ -8,7 +8,7 @@ source, not a substitute for individual run evidence.
 
 ## Bottom line
 
-The current `dwarf-host-a` dashboard is live and the full implemented Learn and
+The current `cardano-box` dashboard is live and the full implemented Learn and
 Operate route set renders successfully. The strongest product claim is that
 DWARF can select and execute real-node scenarios, stream the action through the
 dashboard, retain run evidence, inspect/export bundles, compare implementations,
@@ -40,7 +40,7 @@ the dashboard derives inventory from the mounted source catalogs.
 
 | Item | Verified value | Evidence |
 |---|---|---|
-| Host | `dwarf-host-a`, Linux `6.8.0-138-generic`, x86_64 | `uname -srmo` on 2026-09-10 |
+| Host | `cardano-box`, Linux `6.8.0-138-generic`, x86_64 | `uname -srmo` on 2026-09-10 |
 | Processor | AMD Ryzen 7 6800U, 8 cores / 16 threads, 16 MiB L3 | `lscpu` |
 | Memory | 27 GiB RAM, 8 GiB swap | `free -h` |
 | Storage | 915 GiB root filesystem, 473 GiB available at audit | `df -h /` |

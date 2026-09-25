@@ -116,12 +116,6 @@ def test_threat_coverage_labels_mapping_and_runtime_evidence_separately():
     assert "five_card_evidence" not in data
     assert len(data["client_card_evidence"]) == 6
     assert {card["state"] for card in data["client_card_evidence"]} == {"accepted"}
-    assert all(
-        leg["evidence_basis"] == "documented-accepted-result"
-        and leg["artifact_bundled"] is False
-        for card in data["client_card_evidence"]
-        for leg in card["legs"]
-    )
     card_three = next(card for card in data["client_card_evidence"] if card["id"] == "03")
     assert all(leg["run_url"] is None for leg in card_three["legs"])
     assert ".legend .pill{white-space:normal;max-width:100%}" in html

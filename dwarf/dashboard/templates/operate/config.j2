@@ -1,13 +1,63 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% if ui == "basic" %}
+{% set groupdefs = [
+  ('deployment', 'Deployment & access', ['deployment_name', 'host', 'ssh_user', 'ssh_key_path', 'remote_base_path', 'remote_dwarf_root', 'docker_registry']),
+  ('safety', 'Safety switches', ['allow_prereq_install', 'allow_sudo', 'auto_redeploy_unhealthy_topology']),
+  ('retention', 'Retention', ['runs_retention_days', 'bundles_retention_days']),
+  ('output', 'Logging & output', ['log_level', 'output_format', 'sarif_rules']),
+  ('integrations', 'Integrations', ['moog', 'wallets']),
+] %}
+{% set known = [] %}{% for g, gl, keys in groupdefs %}{% for k in keys %}{% set _ = known.append(k) %}{% endfor %}{% endfor %}
+{% set groups = [] %}{% for g, gl, keys in groupdefs %}{% set _ = groups.append((g, gl)) %}{% endfor %}
+{% set cfg = namespace(changed=0, secrets=0) %}
+{% set cards = [] %}
+{% for row in rows %}
+  {% set ns = namespace(grp='other', glabel='Other') %}
+  {% for g, gl, keys in groupdefs %}{% if row.key in keys %}{% set ns.grp = g %}{% set ns.glabel = gl %}{% endif %}{% endfor %}
+  {% set raw = row.value or '' %}
+  {% set is_struct = row.type.startswith('object') or row.type.startswith('array') %}
+  {% set redacted = '***redacted***' in raw %}
+  {% if redacted %}{% set cfg.secrets = cfg.secrets + 1 %}{% endif %}
+  {% if is_struct %}
+    {% if raw in ('', '[]', '{}') %}{% set shown = 'empty' %}
+    {% elif row.type.startswith('object') %}{% set shown = (raw.count('": ')) ~ ' fields' %}
+    {% else %}{% set shown = 'list (' ~ (raw.count('}, {') + 1 if raw.startswith('[{') else raw.count(',') + 1) ~ ')' %}{% endif %}
+  {% else %}{% set shown = raw or '—' %}{% endif %}
+  {% set is_default = (row.value or '') == (row.default or '') %}
+  {% if not is_default %}{% set cfg.changed = cfg.changed + 1 %}{% endif %}
+  {% set on = row.type == 'boolean' and raw == 'true' %}
+  {% set tags = [row.source, row.type] + (['changed from default'] if not is_default else []) + (['secrets redacted'] if redacted else []) %}
+  {% set _ = cards.append({'title': row.key, 'kicker': ns.glabel, 'tier': 'face', 'group': ns.grp,
+      'suit': ('▲' if on and ns.grp == 'safety' else '■'), 'tone': ('dk-g-warn' if on and ns.grp == 'safety' else 'dk-g-other'),
+      'sub': row.description,
+      'facts': [('Value', shown), ('Default', ('empty' if (row.default or '') in ('', '[]', '{}') and is_struct else (row.default or '—') if not is_struct else 'see Advanced'))],
+      'tags': tags, 'search': row.source ~ ' ' ~ row.type}) %}
+{% endfor %}
+{% set _ = groups.append(('other', 'Other')) if rows|rejectattr('key', 'in', known)|list else none %}
+{% set answer = (rows|length ~ ' settings; ' ~ cfg.changed ~ ' differ from the default.') if config_present else ('Config file missing — all ' ~ rows|length ~ ' settings are running on defaults.') %}
+{% call deck_head('Operate · Config', answer,
+   'A read-only snapshot of ' ~ config_path ~ ', grouped by what each setting controls. Secret values (passwords, tokens, keys) are shown only as “***redacted***” and are never echoed here. Nested blocks such as moog are summarised; the full values are in Advanced.') %}
+  <p><a class="dk-btn dk-btn--solid" href="/operate/config/edit?token={{ token }}">Edit settings →</a></p>
+{% endcall %}
+{% set sorted_cards = [] %}{% for g, gl in groups %}{% for c in cards if c.group == g %}{% set _ = sorted_cards.append(c) %}{% endfor %}{% endfor %}
+{{ deck_grid(sorted_cards, label='settings', groups=groups, empty='No settings found.') }}
+<section class="basic-only dk dk-op-section" aria-labelledby="dk-op-moog-h">
+  <h2 id="dk-op-moog-h" class="dk-op-h">Moog + Antithesis setup</h2>
+  <p class="dk-plain">This form saves real values. Leave a secret field blank to keep its current value.</p>
+</section>
+{% endif %}
+<div class="adv-only">
 <span class="eyebrow">Operate · Config</span>
 <h1>Config <a class="cta" style="float:right;font-size:.8rem" href="/operate/config/edit?token={{ token }}">Edit settings &rarr;</a></h1>
 <p class="page-hero">Config view for <code>{{ config_path }}</code>{% if not config_present %} (file missing — every row falls back to its default){% endif %}. This table is a read-only snapshot; <a href="/operate/config/edit?token={{ token }}"><strong>Edit settings</strong></a> opens an editable form for every field. The Moog + Antithesis setup panel below can also save values into the Dwarf <code>moog</code> config block.</p>
 
 <hr class="hairline">
+</div>
 
 <section aria-labelledby="moog-setup-heading">
-  <header>
+  <header class="adv-only">
     <span class="eyebrow">Moog</span>
     <h2 id="moog-setup-heading">Moog + Antithesis setup</h2>
   </header>
@@ -52,6 +102,7 @@
   </div>
 </section>
 
+<div class="adv-only">
 <hr class="hairline">
 
 <section aria-labelledby="config-heading">
@@ -76,4 +127,6 @@
     </tbody>
   </table>
 </section>
+</div>
+{{ deck_more('Full values, defaults and descriptions in Advanced') }}
 {% endblock %}

@@ -57,14 +57,14 @@
 
 ### Task 7: Exact-revision live deployment
 
-1. Fetch the published public commit on `dwarf-host-a` into a clean release
+1. Fetch the published public commit on `cardano-box` into a clean release
    directory and build with its revision.
 2. Deploy through checked-in Compose without the source bind mount while
    preserving runs, bundles, state, and SSH material.
 3. Prove the running image revision equals public GitHub main and inspect all
    container mounts.
 4. Repeat the complete route, visual, functional, freshness, and secret audit
-   against the deployed dashboard base URL.
+   against `https://dwarf.gainpalfam.com`.
 
 ### Post-deployment verification correction (2026-09-09)
 

@@ -6,7 +6,10 @@ from profile_manager.measurement_collectors.amaru_patched import (
     AMARU_MEASUREMENT_PATCH_SHA256,
     AMARU_NANOSECOND_PATCH_SHA256,
     AMARU_BLOCK_APPLICATION_NANOSECOND_PATCH_SHA256,
+    AMARU_20260918_NANOSECOND_V3_PATCH_SHA256,
+    AMARU_20260918_SOURCE_REVISION,
     AMARU_SOURCE_REVISION,
+    resolve_amaru_measurement_revision,
     AmaruPatchedCollector,
     build_amaru_patched_factories,
     load_amaru_patched_telemetry,
@@ -76,6 +79,40 @@ def test_nanosecond_collector_preserves_fixed_target_source_revision(tmp_path):
     result = collector.finalize(context)
 
     assert result["source_revision"] == AMARU_FIXED_REVISION
+
+
+def test_20260918_nanosecond_v3_target_identity_is_accepted_and_reported(tmp_path):
+    identity = _identity()
+    identity["version"] = "10.11.20260918"
+    identity["source_revision"] = AMARU_20260918_SOURCE_REVISION
+    identity["patch_set_sha256"] = AMARU_20260918_NANOSECOND_V3_PATCH_SHA256
+    collector = AmaruPatchedCollector(
+        {"id": "amaru-patched-protocol-decode"},
+        json_trace_paths=[FIXTURE],
+        target_identity=identity,
+        include_existing=True,
+    )
+    context = _context(tmp_path, "amaru-patched-protocol-decode")
+
+    collector.prepare(context)
+    collector.start(context)
+    result = collector.finalize(context)
+
+    assert result["source_revision"] == AMARU_20260918_SOURCE_REVISION
+    assert result["patch_set_sha256"] == AMARU_20260918_NANOSECOND_V3_PATCH_SHA256
+    assert result["measurement_revision"] == "nanoseconds-v3"
+
+
+def test_20260918_patch_set_is_bound_only_to_its_own_source_revision():
+    assert resolve_amaru_measurement_revision(
+        AMARU_20260918_SOURCE_REVISION, AMARU_20260918_NANOSECOND_V3_PATCH_SHA256
+    ) == "nanoseconds-v3"
+    assert resolve_amaru_measurement_revision(
+        AMARU_SOURCE_REVISION, AMARU_20260918_NANOSECOND_V3_PATCH_SHA256
+    ) is None
+    assert resolve_amaru_measurement_revision(
+        AMARU_20260918_SOURCE_REVISION, AMARU_BLOCK_APPLICATION_NANOSECOND_PATCH_SHA256
+    ) is None
 
 
 def _identity(mode="patched"):

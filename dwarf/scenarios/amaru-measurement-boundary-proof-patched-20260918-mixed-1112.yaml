@@ -1,0 +1,52 @@
+{
+  "spec_version": "v1",
+  "id": "amaru-measurement-boundary-proof-patched-20260918-mixed-1112",
+  "title": "Amaru patched measurement boundary proof \u2014 10.11.20260918 \u2014 mixed with Cardano-node 11.1.2",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "amaru",
+    "measurement",
+    "patched",
+    "real-node",
+    "security",
+    "boundary-proof",
+    "mixed"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This proves collection for the exact target and workload; it does not establish a stable performance threshold.",
+    "Patched-only behavior is not an Amaru vulnerability unless it reproduces against stock Amaru."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260918"
+  },
+  "runtime": "devnet",
+  "profile": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0xA11CE502",
+  "load": [
+    {
+      "primitive": "runtime_amaru_measurement_calibration",
+      "profile_id": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+      "attempts": 120,
+      "case_set": "accepted-and-rejected-v1",
+      "response_timeout_seconds": 2,
+      "progress_timeout_seconds": 120,
+      "timeout_seconds": 300,
+      "expected_helper_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "amaru_measurement_boundary_proven",
+      "expected_mode": "patched",
+      "min_attempts_per_case": 40,
+      "min_internal_samples_per_outcome": 30
+    }
+  ],
+  "teardown": []
+}

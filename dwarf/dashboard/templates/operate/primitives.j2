@@ -1,5 +1,14 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_actions with context %}
+{% if ui == "basic" %}
+{% set n_bad = rows|rejectattr('status', 'equalto', 'catalog-valid')|list|length %}
+{{ deck_head('Operate · Primitives',
+   rows|length ~ ' primitives registered across ' ~ family_counts|length ~ ' famil' ~ ('y' if family_counts|length == 1 else 'ies') ~ (' — ' ~ n_bad ~ ' fail catalog checks.' if n_bad else ' — all pass catalog checks.'),
+   'Catalog-valid means the registration, schema and executor class check out. It is inventory, not proof: it does not say a primitive has ever run successfully.') }}
+{{ deck_actions([('+ Scaffold primitive', '/operate/primitives/new', true, false), ('Download all', '/api/assets/primitives/export', false, true)]) }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header">
   <div>
     <span class="eyebrow">Operate · reusable assets</span>
@@ -32,14 +41,44 @@
     {% endfor %}
   </div>
 </section>
+</div>
 
 {% if errors %}
-<section class="callout callout--warning" aria-labelledby="primitive-diagnostics-heading">
+<section class="callout callout--warning dk-op-warn" aria-labelledby="primitive-diagnostics-heading">
   <h2 id="primitive-diagnostics-heading">Catalog diagnostics</h2>
   <ul>{% for error in errors %}<li><code>{{ error }}</code></li>{% endfor %}</ul>
 </section>
 {% endif %}
 
+{% if ui == "basic" %}
+{%- set ACR = {'aflpp': 'AFL++', 'cbor': 'CBOR', 'n2n': 'N2N', 'n2c': 'N2C', 'kes': 'KES', 'rss': 'RSS', 'tx': 'tx', 'utxo': 'UTxO',
+  'ghc': 'GHC', 'vrf': 'VRF', 'blp': 'BLP', 'gdd': 'GDD', 'hfc': 'HFC', 'sarif': 'SARIF', 'id': 'ID', 'ids': 'IDs', 'plutus': 'Plutus',
+  'amaru': 'Amaru', 'cardano': 'Cardano', 'chainsync': 'ChainSync', 'blockfetch': 'BlockFetch', 'txsubmission': 'TxSubmission', 'keepalive': 'KeepAlive'} -%}
+{% set cards = [] %}
+{% for row in rows %}{% set ok = row.status == 'catalog-valid' %}
+{%- set words = [] %}{% for w in row.id.split('_') %}{% set _ = words.append(ACR.get(w, w)) %}{% endfor %}
+{%- set nice = words|join(' ') %}{% set nice = nice[:1]|upper ~ nice[1:] %}
+{%- set sup = row.supports or [] %}
+{%- set impl = 'mixed' if ('amaru' in sup and 'cardano-node' in sup) else (sup[0] if sup|length == 1 else '') %}
+{%- set impl_tok = 'both' if impl == 'mixed' else (impl or 'none') %}
+{%- set rts = row.runtimes or [] %}
+{% set _ = cards.append({
+  'title': nice, 'full_title': row.id ~ ' — ' ~ row.summary, 'id': row.id, 'hide_id': true, 'href': '/operate/primitives/' ~ row.id,
+  'kicker': row.family ~ ((' · v' ~ row.version) if row.version and row.version != '0.1.0' else ''),
+  'sub': ('used by ' ~ row.referencing_scenario_count ~ ' scenario' ~ ('' if row.referencing_scenario_count == 1 else 's')) if row.referencing_scenario_count else 'not used by any scenario yet',
+  'tier': 'back' if ok else 'warn', 'suit': '' if ok else '▲', 'tone': '' if ok else 'dk-g-warn', 'accent': impl,
+  'group': 'fam:' ~ row.family ~ ' impl:' ~ impl_tok ~ (' rt:' ~ rts|join(' rt:') if rts else ''),
+  'tags': sup + rts + ([] if ok else [row.status]) + ([row.plugin_id] if row.plugin_id else []),
+  'search': row.id ~ ' ' ~ row.module ~ ' ' ~ row.class_name ~ ' ' ~ row.summary}) %}{% endfor %}
+{% set fams = [] %}{% for family, count in family_counts.items() %}{% set _ = fams.append((family, family ~ ' · ' ~ count)) %}{% endfor %}
+{% set allrt = [] %}{% for r in rows %}{% for x in (r.runtimes or []) %}{% if x not in allrt %}{% set _ = allrt.append(x) %}{% endif %}{% endfor %}{% endfor %}
+{% set rtopts = [] %}{% for x in allrt|sort %}{% set _ = rtopts.append((x, x)) %}{% endfor %}
+<h2 class="b-h2 basic-only">Catalog · card backs (registered, not proven)</h2>
+{{ deck_grid(cards, label='primitives', facets=[('fam', 'Family', fams), ('impl', 'Implementation', [('amaru', 'amaru'), ('cardano-node', 'cardano-node'), ('both', 'both')]), ('rt', 'Runtime', rtopts)], empty='No primitives are available from the configured registry or plugin roots.') }}
+{{ deck_more('Schemas, modules, scaffolding and downloads in Advanced') }}
+{% endif %}
+
+<div class="adv-only">
 <section aria-labelledby="primitive-catalog-heading">
   <span class="eyebrow">Catalog</span>
   <h2 id="primitive-catalog-heading">Primitive catalog</h2>
@@ -94,6 +133,7 @@
   <p class="empty-section-statement">No primitives are available from the configured registry or plugin roots.</p>
   {% endif %}
 </section>
+</div>
 
 <style>
 .primitive-filter-bar{display:grid;grid-template-columns:minmax(16rem,2fr) repeat(3,minmax(10rem,1fr));gap:12px;align-items:end;margin:18px 0}

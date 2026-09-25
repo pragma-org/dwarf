@@ -547,3 +547,65 @@ def test_transform_refuses_protected_projects(project):
             cardano_image="cardano",
             amaru_image="amaru",
         )
+
+
+@pytest.mark.parametrize(
+    ("scope", "cardano_version", "expected"),
+    [
+        ("mixed", "11.1.2", False),
+        ("amaru-only", "11.1.0", False),
+        ("mixed", "12.0.0", False),
+        ("mixed", "10.7.1", None),
+        ("mixed", "11.0.1", None),
+        ("cardano-only", "11.1.2", None),
+        ("mixed", None, None),
+    ],
+)
+def test_experimental_protocols_policy_pins_false_only_for_amaru_with_node_11_1(
+    scope, cardano_version, expected
+):
+    assert (
+        qualification.cardano_experimental_protocols_policy(scope, cardano_version)
+        is expected
+    )
+
+
+def _compose_model_with_configurator_command():
+    model = _compose_model()
+    model["services"]["configurator"]["command"] = ["set -euo pipefail\n/configurator.sh\n"]
+    return model
+
+
+def test_transform_pins_experimental_protocols_in_every_generated_config():
+    transformed = transform_compose_model(
+        _compose_model_with_configurator_command(),
+        scope="mixed",
+        project="dwarf-qual-mixed-demo",
+        cardano_image="new-cardano",
+        amaru_image=None,
+        cardano_experimental_protocols=False,
+    )
+
+    command = transformed["services"]["configurator"]["command"]
+    assert len(command) == 1
+    assert command[0].startswith("set -euo pipefail\n/configurator.sh")
+    assert "jq '.ExperimentalProtocolsEnabled = false'" in command[0]
+    assert "jq -e '.ExperimentalProtocolsEnabled == false'" in command[0]
+    assert "/configs/[123]" in command[0]
+    assert transformed["x-dwarf-qualification"]["cardano_experimental_protocols"] is False
+
+
+def test_transform_leaves_configurator_untouched_without_a_pin():
+    model = _compose_model_with_configurator_command()
+    transformed = transform_compose_model(
+        model,
+        scope="mixed",
+        project="dwarf-qual-mixed-demo",
+        cardano_image="new-cardano",
+        amaru_image=None,
+    )
+
+    assert transformed["services"]["configurator"]["command"] == [
+        "set -euo pipefail\n/configurator.sh\n"
+    ]
+    assert transformed["x-dwarf-qualification"]["cardano_experimental_protocols"] is None

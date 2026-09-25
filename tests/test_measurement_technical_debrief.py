@@ -9,11 +9,15 @@ RUN_IDS = {
     "20260920T072858Z-2cc3bb0c", "20260920T073447Z-ab81bfb7",
     "20260921T035546Z-9747122c", "20260921T021935Z-3b58eafc",
     "20260921T045619Z-15e864a0", "20260921T045807Z-8e2bbb0e",
+    "20260921T204537Z-ff5a800a", "20260921T202611Z-27eeadb5",
+    "20260921T194749Z-26542a57", "20260921T195334Z-e713d0de",
 }
 SECTION_IDS = {
     "summary", "traceability", "architecture", "cards", "findings",
     "usage", "inventory", "coverage", "reproducibility", "health-repair",
-    "full-metrics", "run-recipes", "next-work",
+    "full-metrics", "run-recipes", "next-work", "amaru-guide",
+    "cardano-guide", "scenario-demos",
+    "client-readiness-summary",
 }
 
 
@@ -55,6 +59,37 @@ def test_debrief_retains_exact_accepted_evidence_and_claim_limits():
     assert "No stable release threshold" in html
 
 
+def test_debrief_documents_plutus_accounting_and_additive_card_six():
+    html = source()
+    for value in (
+        "five frozen cards",
+        "additive Card 06",
+        "60 attempted",
+        "30 accepted",
+        "30 expected-invalid",
+        "0 timed out",
+        "51,300 bytes",
+        "50,820 bytes",
+        "60 duration samples",
+        "35 attempted",
+        "5 rejected",
+        "35 duration samples",
+        "signed simple payment",
+        "submit-to-protocol-response",
+        "mempool visibility",
+        "chain adoption",
+        "unavailable rather than zero",
+        "not an automatic Amaru-versus-Cardano benchmark",
+        "555c9c06…0e466",
+        "318bc045…992e6",
+        "3242de23…ee67",
+        "feafaf46…128c1",
+    ):
+        assert value in html
+    assert ">Five cards<" not in html
+    assert "Five card contracts" not in html
+
+
 def test_debrief_links_inventory_and_workbench_evidence():
     html = source()
     paths = (
@@ -75,6 +110,152 @@ def test_debrief_links_inventory_and_workbench_evidence():
         assert object_id in html
 
 
+def test_debrief_uses_canonical_dashboard_urls_without_loopback_hosts():
+    html = source()
+    lowered = html.lower()
+    assert "127.0.0.1" not in lowered
+    assert "localhost" not in lowered
+    assert not re.search(r"https?://(?:\[?::1\]?|127(?:\.\d{1,3}){3})(?=[:/])", lowered)
+
+    dashboard_hrefs = re.findall(
+        r'href="([^"]+/(?:learn|operate)(?:/[^"#?]*)?)"', html
+    )
+    assert dashboard_hrefs
+    assert all(
+        href.startswith("https://dwarf.gainpalfam.com/")
+        for href in dashboard_hrefs
+    )
+
+
+def test_debrief_has_accessible_implementation_filtering_contract():
+    html = source()
+    assert 'aria-label="Filter by node implementation"' in html
+    assert 'data-implementation-filter="all"' in html
+    assert 'data-implementation-filter="amaru"' in html
+    assert 'data-implementation-filter="cardano-node"' in html
+    assert 'id="implementation-status"' in html
+    assert "implementation-unit" in html
+    assert 'data-implementation="amaru"' in html
+    assert 'data-implementation="cardano-node"' in html
+    assert "activeImplementation" in html
+    assert "implementationMatch" in html
+    assert "aria-pressed" in html
+
+
+def test_debrief_represents_all_thirty_measurement_definitions():
+    html = source()
+    measurement_ids = sorted(path.stem for path in Path("dwarf/measurements").glob("*.yaml"))
+    measurement_profiles = sorted(
+        path.stem for path in Path("dwarf/measurement-profiles").glob("*.yaml")
+    )
+    assert len(measurement_ids) == 30
+    assert len(measurement_profiles) == 4
+    for measurement_id in measurement_ids:
+        assert f">{measurement_id}<" in html
+        definition = Path("dwarf/measurements", f"{measurement_id}.yaml").read_text(
+            encoding="utf-8"
+        )
+        title = next(
+            line.removeprefix("title: ")
+            for line in definition.splitlines()
+            if line.startswith("title: ")
+        )
+        assert title.casefold() in html.casefold()
+    for profile_id in measurement_profiles:
+        assert f">{profile_id}<" in html
+    assert html.count('class="tap-card') == 30
+    assert "15 Amaru definitions" in html
+    assert "15 Cardano-node definitions" in html
+    assert "14 implemented and profile-selectable" in html
+    assert "12 implemented and profile-selectable" in html
+    assert "1 reserved or unprofiled" in html
+    assert "3 reserved or unprofiled" in html
+    for source_badge in ("Stock", "External", "Patched", "Reserved"):
+        assert f'<span class="source-badge">{source_badge}</span>' in html
+    for label in ("Measures", "Observation boundary", "Surface", "Exact limitation", "Evidence state"):
+        assert f"<dt>{label}</dt>" in html
+    for limitation in (
+        "no authoritative Amaru protocol-response boundary",
+        "no shared-clock Amaru chain-adoption duration",
+        "mempool-visibility timing is unavailable",
+        "A process-resource tap is not a mini-protocol measurement",
+        "Configured is not exercised",
+        "Unavailable is not zero",
+    ):
+        assert limitation in html
+
+
+def test_debrief_classifies_live_demonstrations_and_exact_run_recipes():
+    html = source()
+    supported = {
+        "client-example-cbor-decoding-amaru-d3a6dafc-regression",
+        "client-example-cbor-decoding-cardano-patched",
+        "client-example-plutus-vm-amaru-onchain-v2",
+        "client-example-plutus-vm-cardano",
+        "client-example-invalid-mini-protocol-amaru",
+        "client-example-invalid-mini-protocol-cardano",
+        "client-example-block-application-amaru-canonical-v3",
+        "client-example-block-application-cardano-canonical-v2",
+        "client-example-restart-recovery-sync-amaru",
+        "client-example-restart-recovery-sync-cardano",
+        "client-example-simple-transfer-amaru",
+        "client-example-simple-transfer-cardano",
+    }
+    for scenario_id in supported:
+        assert scenario_id in html
+        assert f"https://dwarf.gainpalfam.com/operate/scenarios/{scenario_id}" in html
+    for value in (
+        "Check readiness for the selected profile before a run",
+        "Supported demonstrations; deploy the selected profile through /run when required",
+        "Do not use for the live demonstration",
+        "profile-w-amaru-measurement-plutus-v2",
+        "Best Amaru demo",
+        "Best Cardano demo",
+        "profile-y-amaru-block-application-nanoseconds-v3",
+        "profile-v-cardano-measurement-nanoseconds-v2",
+        "amaru-security-patched",
+        "cardano-security-patched",
+        "Scenario passed previously",
+        "does not replace the selected profile’s readiness contract",
+    ):
+        assert value in html
+    for step in range(1, 11):
+        assert html.count(f"Step {step:02d} —") >= 2
+    assert html.count("Start local run") >= 2
+
+
+def test_debrief_does_not_turn_generic_topology_counts_into_scenario_readiness():
+    html = source()
+    for misleading_claim in (
+        "Ready on the currently active topology now",
+        "No scenario is ready now",
+        "No demonstration is ready until redeployment",
+        "active_profile_readiness_failed",
+        "Process, socket, or listener counts do not match the active profile.",
+        "expected one node but observed 12 processes",
+    ):
+        assert misleading_claim not in html
+    assert "The generic topology count check is not a scenario readiness verdict." in html
+    assert "Use the selected profile’s supported readiness contract before a run." in html
+    assert "does not prove that a retained scenario failed" in html
+
+
+def test_debrief_links_to_the_single_authoritative_client_readiness_matrix():
+    html = source()
+    assert "Client category readiness" in html
+    assert "8 client requirement categories" in html
+    assert "Amaru: 3 Ready · 1 Almost ready · 4 Partial · 0 Not implemented" in html
+    assert "Cardano-node: 3 Ready · 1 Almost ready · 4 Partial · 0 Not implemented" in html
+    assert (
+        'href="https://dwarf.gainpalfam.com/learn/measurement-coverage?view=client_requirements"'
+        in html
+    )
+    assert "Open the authoritative Client requirements view" in html
+    assert "Best Amaru demo" in html
+    assert "Best Cardano demo" in html
+    assert "The full matrix is not duplicated in this debrief." in html
+
+
 def test_debrief_has_accessible_dependency_free_interactions():
     html = source()
     assert '<a class="skip-link" href="#main">' in html
@@ -93,6 +274,7 @@ def test_debrief_has_accessible_dependency_free_interactions():
     assert "overflow-x:auto" in html.replace(" ", "")
     assert "details[open]" in html
     assert "h1{overflow-wrap:anywhere" in html.replace(" ", "")
+    assert "scroll-margin-top:190px" in html.replace(" ", "")
 
 
 def test_debrief_documents_health_repair_metric_limits_and_exact_recipes():

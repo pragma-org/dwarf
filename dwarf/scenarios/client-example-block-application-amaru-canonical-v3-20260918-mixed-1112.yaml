@@ -1,0 +1,90 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-block-application-amaru-canonical-v3-20260918-mixed-1112",
+  "title": "Client example 04 \u2014 canonical block progress \u2014 Amaru nanoseconds v3 \u2014 10.11.20260918 \u2014 mixed with Cardano-node 11.1.2",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "client-example",
+    "amaru",
+    "measurement",
+    "block-application",
+    "security",
+    "mixed"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This separate execution is not a mixed-node comparison.",
+    "Security assertions are authoritative; measurements do not gate by default."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260918"
+  },
+  "runtime": "devnet",
+  "profile": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0xB10C0004",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "amaru",
+      "version": "10.11.20260918",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "mode": "patched",
+      "image_digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+      "executable_digest": "sha256:45c96358f1033629e6f0b7d91f306176fde07e35a9f23d2bd4001dc8b841d17a",
+      "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6"
+    },
+    {
+      "primitive": "runtime_wait_for_chain_progress",
+      "profile_id": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+      "minimum_blocks": 5,
+      "timeout_seconds": 120,
+      "poll_interval_seconds": 1
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_controlled_chain_progress_window",
+      "profile_id": "profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3",
+      "progress_contract": "canonical-progress-v2",
+      "warm_up_seconds": 30,
+      "duration_seconds": 180,
+      "minimum_adopted_blocks": 30,
+      "max_oscillation_episodes": 3,
+      "max_oscillation_transitions": 8,
+      "minimum_convergence_blocks": 3
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {
+      "primitive": "runtime_target_health_and_progress",
+      "report_path": "outputs/client-example-proof/controlled-chain-progress.json",
+      "progress_reference": "load-start"
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "canonical_chain_progress_complete",
+      "minimum_adopted_blocks": 30,
+      "minimum_correlations": 30,
+      "max_oscillation_episodes": 3,
+      "max_oscillation_transitions": 8,
+      "minimum_convergence_blocks": 3
+    },
+    {
+      "primitive": "block_application_samples_correlated",
+      "minimum_samples": 30
+    },
+    {
+      "primitive": "target_progress_continues"
+    },
+    {
+      "primitive": "no_target_fatal_signal"
+    }
+  ],
+  "teardown": []
+}

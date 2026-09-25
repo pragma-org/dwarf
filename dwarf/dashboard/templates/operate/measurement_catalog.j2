@@ -1,5 +1,20 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_actions with context %}
+{% if ui == "basic" %}
+{% set n = rows|length %}
+{% if catalog == 'measurements' %}
+{% set n_def = rows|selectattr('default_enabled')|list|length %}
+{% set lead = (n ~ ' measurement tap' ~ ('' if n == 1 else 's') ~ ' defined — ' ~ n_def ~ ' on by default, ' ~ (n - n_def) ~ ' optional.') if not empty else 'No measurement taps are defined yet.' %}
+{% set plain = 'A tap is a definition of what DWARF can observe during a run. Being listed here means it can be collected, not that it has been.' %}
+{% else %}
+{% set lead = (n ~ ' measurement profile' ~ ('' if n == 1 else 's') ~ ' — reusable selections of taps for a run.') if not empty else 'No measurement profiles are defined yet.' %}
+{% set plain = 'A measurement profile only selects which taps to collect. It is configuration, not evidence.' %}
+{% endif %}
+{% call deck_head('Operate · ' ~ eyebrow, lead, plain) %}<p><a class="dk-btn" href="{{ other_url }}">{{ other_label }} →</a></p>{% endcall %}
+{{ deck_actions([(create_label, '/operate/' ~ catalog ~ '/new', true, false), ('Download all', '/api/catalog/' ~ catalog ~ '/export', false, true)]) }}
+{% endif %}
+<div class="adv-only">
 <div class="scenarios-header">
   <div>
     <span class="eyebrow">Operate · {{ eyebrow }}</span>
@@ -51,6 +66,40 @@
   </article>
   {% endfor %}
 </div>
+{% endif %}
+</div>
+{% if ui == "basic" %}
+{% set cards = [] %}{% set impls = [] %}{% set colls = [] %}
+{% for row in rows %}{% set impl = row.implementation %}
+{% if impl not in impls %}{% set _ = impls.append(impl) %}{% endif %}
+{% set coll = (row.collection_mode or '')|replace('-', ' ') %}
+{% if coll and coll not in colls %}{% set _ = colls.append(coll) %}{% endif %}
+{% set tn = namespace(t=row.title) %}
+{% for pre in ['Amaru ', 'Cardano-node ', 'Cardano ', 'DWARF '] %}{% if tn.t.startswith(pre) %}{% set tn.t = tn.t[pre|length:] %}{% endif %}{% endfor %}
+{% for suf in [' for Amaru', ' for Cardano-node', ' for Cardano'] %}{% if tn.t.endswith(suf) %}{% set tn.t = tn.t[:-(suf|length)] %}{% endif %}{% endfor %}
+{% if catalog != 'measurements' %}{% set tn.t = tn.t|replace('security measurements — ', 'Security · ') %}{% endif %}
+{% set title = tn.t[:1]|upper ~ tn.t[1:] %}
+{% if catalog == 'measurements' %}
+{% set kick = 'default' if row.default_enabled else 'optional' %}
+{% set sub = row.description %}
+{% set grp = 'impl:' ~ impl ~ ' coll:' ~ coll|replace(' ', '_') ~ ' def:' ~ ('on' if row.default_enabled else 'off') %}
+{% else %}
+{% set kick = (row.modes or [])|join(' + ') %}
+{% set sub = row.measurement_count ~ ' tap' ~ ('' if row.measurement_count == 1 else 's') ~ ' · ' ~ row.description %}
+{% set grp = 'impl:' ~ impl %}
+{% endif %}
+{% set _ = cards.append({
+  'title': title, 'full_title': row.title ~ ' — ' ~ row.id, 'id': row.id, 'hide_id': true, 'href': '/operate/' ~ catalog ~ '/' ~ row.id,
+  'accent': impl, 'kicker': kick, 'sub': sub, 'tier': 'back', 'group': grp,
+  'tags': [impl] + ([coll] if coll and catalog == 'measurements' else []) + ([row.overhead_class ~ ' overhead'] if row.overhead_class and catalog == 'measurements' else []) + ([] if catalog == 'measurements' else (row.modes or [])),
+  'search': row.search}) %}
+{% endfor %}
+{% set implopts = [] %}{% for i in impls|sort %}{% set _ = implopts.append((i, i ~ ' · ' ~ rows|selectattr('implementation', 'equalto', i)|list|length)) %}{% endfor %}
+{% set collopts = [] %}{% for c in colls|sort %}{% set _ = collopts.append((c|replace(' ', '_'), c)) %}{% endfor %}
+{% set facets = [('impl', 'Implementation', implopts)] %}
+{% if catalog == 'measurements' %}{% set facets = facets + [('coll', 'Collection', collopts), ('def', 'Enabled', [('on', 'default'), ('off', 'optional')])] %}{% endif %}
+{{ deck_grid(cards, label=heading|lower, facets=facets, empty='No ' ~ heading|lower ~ ' found.') }}
+{{ deck_more(create_label ~ ', edit and download in Advanced') }}
 {% endif %}
 
 <script>

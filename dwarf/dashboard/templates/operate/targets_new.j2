@@ -1,8 +1,10 @@
 {% extends "_base.j2" %}
 {% block main %}
-<span class="eyebrow">Operate · Targets · Register</span>
-<h1>Register a decode target</h1>
-<p class="page-hero">Write a target manifest so the decoder appears in the <a href="/operate/targets?token={{ token }}">targets catalog</a>. The manifest lands in <code>{{ manifests_dir }}</code>. Running the target additionally needs its <code>binary</code> present.</p>
+{% from "operate/_partials/_deck.j2" import deck_head with context %}
+{{ deck_head('Targets · Register', 'Register a decoder as a test target.', 'Fill the fields, then Register: DWARF writes a target manifest into ' ~ manifests_dir ~ ' so it appears in the targets catalog. Registering runs nothing; running the target also needs its binary present.') }}
+<span class="eyebrow adv-only">Operate · Targets · Register</span>
+<h1 class="adv-only">Register a decode target</h1>
+<p class="page-hero adv-only">Write a target manifest so the decoder appears in the <a href="/operate/targets?token={{ token }}">targets catalog</a>. The manifest lands in <code>{{ manifests_dir }}</code>. Running the target additionally needs its <code>binary</code> present.</p>
 
 <style>
 .tn-form{max-width:640px;margin:18px 0}

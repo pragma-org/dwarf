@@ -19,7 +19,7 @@
   ],
   "evidence_intent": "risk-support",
   "promotion_blockers": [
-    "dwarf-host-c is aarch64 and current dwarf/cardano-node:10.7.1 image is amd64-only",
+    "spark is aarch64 and current dwarf/cardano-node:10.7.1 image is amd64-only",
     "current three-host fleet does not have enough aggregate RAM headroom for a 100-node mesh under observation",
     "runtime_multi_node_observation needs summarization or sharding for 100-node campaigns"
   ],
@@ -34,22 +34,22 @@
     "network": "preview",
     "hosts": [
       {
-        "id": "dwarf-host-a",
-        "ssh_target": "dwarf-host-a",
+        "id": "cardano-box",
+        "ssh_target": "cardano-box",
         "remote_runtime_base": "~/cardano-profiles",
         "published_host": "127.0.0.1"
       },
       {
-        "id": "dwarf-host-b",
-        "ssh_target": "dwarf-host-b",
+        "id": "brabox",
+        "ssh_target": "brabox",
         "remote_runtime_base": "~/cardano-profiles",
-        "published_host": "192.0.2.15"
+        "published_host": "192.168.30.15"
       },
       {
-        "id": "dwarf-host-c",
-        "ssh_target": "dwarf-host-c",
+        "id": "spark",
+        "ssh_target": "spark",
         "remote_runtime_base": "~/cardano-profiles",
-        "published_host": "192.0.2.152"
+        "published_host": "192.168.30.152"
       }
     ],
     "nodes": [
@@ -58,700 +58,700 @@
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node3",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node4",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node5",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node6",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node7",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node8",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node9",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node10",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node11",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node12",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node13",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node14",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node15",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node16",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node17",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node18",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node19",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node20",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node21",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node22",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node23",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node24",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node25",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node26",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node27",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node28",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node29",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node30",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node31",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node32",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node33",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node34",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-a"
+        "host": "cardano-box"
       },
       {
         "id": "node35",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node36",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node37",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node38",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node39",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node40",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node41",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node42",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node43",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node44",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node45",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node46",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node47",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node48",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node49",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node50",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node51",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node52",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node53",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node54",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node55",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node56",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node57",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node58",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node59",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node60",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node61",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node62",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node63",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node64",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node65",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node66",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node67",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-b"
+        "host": "brabox"
       },
       {
         "id": "node68",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node69",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node70",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node71",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node72",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node73",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node74",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node75",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node76",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node77",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node78",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node79",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node80",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node81",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node82",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node83",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node84",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node85",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node86",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node87",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node88",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node89",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node90",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node91",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node92",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node93",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node94",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node95",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node96",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node97",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node98",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node99",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       },
       {
         "id": "node100",
         "impl": "cardano-node",
         "version": "10.7.1",
         "role": "honest",
-        "host": "dwarf-host-c"
+        "host": "spark"
       }
     ],
     "topology": {

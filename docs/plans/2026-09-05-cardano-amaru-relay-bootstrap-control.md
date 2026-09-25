@@ -4,7 +4,7 @@
 
 **Goal:** Build and mechanically prove a new additive DWARF mixed Cardano-node/Amaru control scenario using the current upstream `amaru-relay-bootstrap` image before adding adversarial workloads or requesting an Antithesis run.
 
-**Architecture:** Preserve every existing scenario and create a new package modeled on the Cardano Foundation's proven `cardano_amaru` topology. Each Amaru relay bootstraps independently from its paired live Cardano ChainDB using the upstream long-running relay entrypoint; an isolated Cardano consumer has only the two Amaru relays as upstream peers. Readiness, participation, and progress are separate fail-closed gates, and all local execution goes through DWARF on `dwarf-host-a` without a worktree.
+**Architecture:** Preserve every existing scenario and create a new package modeled on the Cardano Foundation's proven `cardano_amaru` topology. Each Amaru relay bootstraps independently from its paired live Cardano ChainDB using the upstream long-running relay entrypoint; an isolated Cardano consumer has only the two Amaru relays as upstream peers. Readiness, participation, and progress are separate fail-closed gates, and all local execution goes through DWARF on `cardano-box` without a worktree.
 
 **Tech Stack:** Docker Compose, Cardano node 10.7.1, Amaru, `amaru-bootstrap-producer`, `db-analyser`, DWARF scenario/runtime engine, Python/pytest, shell-based OCI and runtime probes.
 
@@ -99,7 +99,7 @@
 **Steps:**
 
 1. Write a scenario test that fails until DWARF discovers the new scenario by its unique identifier.
-2. Configure the scenario to invoke the new package through the normal DWARF runtime path on `dwarf-host-a`.
+2. Configure the scenario to invoke the new package through the normal DWARF runtime path on `cardano-box`.
 3. Make the probe query real Cardano tips with `cardano-cli`; never infer chain progress from node stdout configuration dumps.
 4. Require nonempty `db-analyser` target rows for three consecutive completed epochs.
 5. Require a bootstrap-complete sentinel or equivalent upstream completion record for both relays.
@@ -111,7 +111,7 @@
 
 **Pass condition:** The new scenario is discoverable and the probe fails closed for missing targets, incomplete bootstrap, dead/stalled relays, incorrect consumer topology, or lack of Amaru-served progress.
 
-### Task 5: Run a fresh end-to-end control through DWARF on `dwarf-host-a`
+### Task 5: Run a fresh end-to-end control through DWARF on `cardano-box`
 
 **Files:**
 - Create after execution: `reports/cardano-amaru-relay-bootstrap-control-<run-id>/README.md`
@@ -121,7 +121,7 @@
 **Steps:**
 
 1. Confirm SSH access, disk space, Docker health, and the active DWARF deployment without changing unrelated containers.
-2. Sync only the new package, scenario, tests, and probe to the established `dwarf-host-a` DWARF tree.
+2. Sync only the new package, scenario, tests, and probe to the established `cardano-box` DWARF tree.
 3. Pull and inspect every exact image before runtime.
 4. Start the scenario through DWARF with a unique Compose project name and fresh dedicated volumes.
 5. Observe the ChainDB becoming sufficiently mature and both relays independently completing bootstrap.
@@ -170,7 +170,7 @@
 
 ## Completion definition
 
-This goal is complete only when Tasks 1–6 pass and the new baseline is mechanically proven through DWARF on `dwarf-host-a`. Task 7 is the next gated phase toward the broader security-testing objective. A Compose parse, image pull, container start, setup marker, or `snouty validate` result alone cannot complete the goal.
+This goal is complete only when Tasks 1–6 pass and the new baseline is mechanically proven through DWARF on `cardano-box`. Task 7 is the next gated phase toward the broader security-testing objective. A Compose parse, image pull, container start, setup marker, or `snouty validate` result alone cannot complete the goal.
 
 ## Implementation status — 2026-09-05
 

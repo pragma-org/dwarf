@@ -1,8 +1,39 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice, deck_actions with context %}
+{% if ui == "basic" %}
+{{ deck_head('Operate · Fuzz corpora', (rows|length) ~ ' corpus units hold ' ~ input_count ~ ' retained inputs.', 'Corpora are the exact inputs fuzzers replay — inventory, not findings. Shipped roots are read-only; the runtime overlay is writable.') }}
+{% set cards = [] %}{% set srcs = [] %}
+{% for row in rows %}{% set lab = row.label %}
+{% if lab.startswith('afl/') %}{% set src = 'AFL++' %}{% set shape = lab.split('/')[-1] %}{% set impl = '' %}
+{% elif lab.startswith('amaru-cargo-fuzz-') %}{% set src = 'cargo-fuzz' %}{% set shape = lab[17:] %}{% set impl = 'amaru' %}
+{% elif lab.startswith('cargo-fuzz/') %}{% set src = 'cargo-fuzz' %}{% set shape = lab.split('/')[-1] %}{% set impl = '' %}
+{% elif lab.startswith('cuddle-generated/') %}{% set src = 'cuddle · CDDL' %}{% set shape = lab.split('/')[-1] %}{% set impl = '' %}
+{% else %}{% set src = 'runtime overlay' if row.root_kind == 'runtime' else row.root_kind %}{% set shape = lab %}{% set impl = '' %}{% endif %}
+{% if src not in srcs %}{% set _ = srcs.append(src) %}{% endif %}
+{% set pkg = lab.split('/')[1] if lab.count('/') == 2 else '' %}
+{% set title = (deck_nice(shape, false)|trim)|replace(' stage1', ' · stage 1')|replace('Stage1', 'stage 1') %}
+{% set empty_unit = (row.input_count|int) == 0 %}
+{% set ok = row.status in ['valid','ok','ready','available','empty'] %}
+{% set b = row.size_bytes|int %}{% set kb = (b ~ ' B') if b < 1024 else (((b / 1024)|round(1)) ~ ' KiB') %}
+{% set _ = cards.append({'title': title, 'full_title': row.label ~ ' — ' ~ row.provenance, 'id': row.id, 'hide_id': true, 'href': '/operate/corpora/' ~ row.id,
+  'accent': impl, 'kicker': row.role ~ ((' · ' ~ pkg) if pkg else ''),
+  'tier': 'gap' if empty_unit else ('back' if ok else 'warn'), 'suit': '' if ok else '▲', 'tone': '' if ok else 'dk-g-warn',
+  'sub': ('no inputs yet' if empty_unit else (row.input_count ~ ' input' ~ ('' if row.input_count|int == 1 else 's') ~ ' · ' ~ kb)) ~ ((' · ' ~ row.duplicate_input_count ~ ' duplicate') if row.duplicate_input_count else ''),
+  'group': 'src:' ~ src|replace(' ', '_') ~ ' role:' ~ row.role,
+  'tags': ([impl] if impl else []) + [src] + (['writable overlay'] if row.writable else []) + row.grammar_ids,
+  'search': row.label ~ ' ' ~ (row.target_ids|join(' ')) ~ ' ' ~ (row.scenario_ids|join(' ')) ~ ' ' ~ row.provenance}) %}{% endfor %}
+{% set srcopts = [] %}{% for s in srcs %}{% set _ = srcopts.append((s|replace(' ', '_'), s)) %}{% endfor %}
+{% set roleopts = [] %}{% for r in rows|map(attribute='role')|unique|sort %}{% set _ = roleopts.append((r, r)) %}{% endfor %}
+{{ deck_grid(cards, label='corpus units', facets=[('src', 'Source', srcopts), ('role', 'Role', roleopts)], empty='No configured corpus roots are available.') }}
+{{ deck_more('Import, promote and deduplicate corpora in Advanced') }}
+{{ deck_actions([('Download all', '/api/corpora/export', false, true)]) }}
+{% endif %}
+<div class="adv-only">
 <header class="scenarios-header"><div><span class="eyebrow">Operate · generation assets</span><h1>Fuzz corpora</h1><p class="page-hero"><strong>{{ rows|length }} corpus units</strong> contain {{ input_count }} retained inputs ({{ size_bytes }} bytes) across immutable shipped roots and the explicit runtime overlay.</p></div><div class="definition-actions"><a class="cta cta--ghost" href="/learn/corpora" target="_blank" rel="noopener">Learn corpus roles</a><a class="cta cta--ghost" href="/api/corpora/export" download>Download all</a></div></header>
 <hr class="hairline">
 <div class="filter-bar"><label for="corpus-search" class="eyebrow">Search</label><input id="corpus-search" type="search" aria-label="Search corpora" placeholder="Corpus, role, target, scenario, source, or status"><p class="filter-count" aria-live="polite"><span data-corpus-count>{{ rows|length }}</span> corpus units</p></div>
 {% if rows %}<div class="learn-tile-grid">{% for row in rows %}<article class="learn-tile" data-corpus-row data-search="{{ row.id }} {{ row.label }} {{ row.role }} {{ row.status }} {{ row.root_kind }} {{ row.target_ids|join(' ') }} {{ row.scenario_ids|join(' ') }}"><span class="learn-tile__eyebrow">{{ row.root_kind }} · {{ row.role }} · {{ row.status }}</span><h2 class="learn-tile__title"><a href="/operate/corpora/{{ row.id }}"><code>{{ row.id }}</code></a></h2><p class="learn-tile__sub">{{ row.label }}</p><p class="asset-pill-row"><span class="pill pill--v-count">{{ row.input_count }} inputs</span><span class="pill">{{ row.size_bytes }} bytes</span>{% if row.duplicate_input_count %}<span class="pill">{{ row.duplicate_input_count }} duplicate</span>{% endif %}<span class="pill {{ 'pill--v-writable' if row.writable else 'pill--v-readonly' }}">{{ 'writable overlay' if row.writable else 'shipped read-only' }}</span></p></article>{% endfor %}</div>{% else %}<p class="empty-section-statement">No configured corpus roots are available.</p>{% endif %}
 <script>(()=>{const input=document.getElementById('corpus-search');const rows=[...document.querySelectorAll('[data-corpus-row]')];const count=document.querySelector('[data-corpus-count]');if(!input||!count)return;input.addEventListener('input',()=>{const needle=input.value.trim().toLowerCase();let visible=0;for(const row of rows){const show=!needle||row.dataset.search.toLowerCase().includes(needle);row.hidden=!show;if(show)visible+=1;}count.textContent=String(visible);});})();</script>
+</div>
 {% endblock %}

@@ -12,7 +12,7 @@ CONFIG_FIELDS = {
     "deployment_name": {"type": "string", "default": "dwarf-devnet", "description": "Human-readable deployment label."},
     "host": {"type": "string", "default": "127.0.0.1", "description": "Remote SSH host or IP."},
     "ssh_user": {"type": "string", "default": "dwarf", "description": "Remote SSH username."},
-    "ssh_key_path": {"type": "string", "default": "~/.ssh/id_ed25519", "description": "SSH private-key path used for remote commands."},
+    "ssh_key_path": {"type": "string", "default": "~/.ssh/cardano-box", "description": "SSH private-key path used for remote commands."},
     "remote_base_path": {"type": "string", "default": "/opt/dwarf/cardano-profiles", "description": "Remote base directory for deployment artifacts."},
     "remote_dwarf_root": {"type": "string", "default": "", "description": "Installed DWARF Python source root on the deployment host (the directory containing scripts/)."},
     "allow_prereq_install": {"type": "boolean", "default": False, "description": "Allow prerequisite installation via CLI."},

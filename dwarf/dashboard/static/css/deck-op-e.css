@@ -1,0 +1,110 @@
+/* Evidence Deck — Operate forms and editors (Basic view only). Scope every rule to body[data-ui="basic"]. */
+
+/* ---- shared: a form presented as a deck panel ---- */
+body[data-ui="basic"] .dke-panel,
+body[data-ui="basic"] .pn-form, body[data-ui="basic"] .tn-form, body[data-ui="basic"] .mn-form,
+body[data-ui="basic"] .scenario-new-form, body[data-ui="basic"] .scenario-editor {
+  border:1px solid var(--dk-line2); border-radius:14px; padding:18px 20px;
+  background:linear-gradient(160deg,var(--dk-face2),var(--dk-face));
+  box-shadow:0 18px 40px -14px rgba(0,0,0,.75); max-width:760px; box-sizing:border-box; }
+body[data-ui="basic"] .pn-form label, body[data-ui="basic"] .tn-form label, body[data-ui="basic"] .mn-form label {
+  font:600 11px/1.2 var(--dk-mono); letter-spacing:.12em; color:var(--dk-gold); }
+body[data-ui="basic"] .pn-hint, body[data-ui="basic"] .tn-hint, body[data-ui="basic"] .mn-hint { color:var(--dk-muted); }
+body[data-ui="basic"] .pn-submit, body[data-ui="basic"] .tn-submit, body[data-ui="basic"] .mn-submit, body[data-ui="basic"] .cfg-save {
+  background:var(--dk-gold); color:#1a1224; border:1px solid var(--dk-gold); min-height:42px; }
+body[data-ui="basic"] .dke-note { font-size:13px; color:var(--dk-muted); margin:6px 0 14px; max-width:72ch; }
+body[data-ui="basic"] .dke-note b { color:var(--dk-ink); }
+body[data-ui="basic"] details.dke-fold { border:1px dashed var(--dk-line2); border-radius:12px; padding:10px 14px; margin:14px 0; }
+body[data-ui="basic"] details.dke-fold > summary { cursor:pointer; font:600 12px/1.4 var(--dk-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--dk-muted); }
+body[data-ui="basic"] details.dke-fold[open] > summary { margin-bottom:10px; color:var(--dk-gold); }
+
+/* ---- /run: the wizard as a numbered sequence of cards ---- */
+body[data-ui="basic"] .run-wizard__progress ol { background:none; gap:6px; }
+body[data-ui="basic"] .run-wizard__progress a { border:1px solid var(--dk-line2); border-radius:8px; background:var(--dk-table2); color:var(--dk-muted); }
+body[data-ui="basic"] .run-wizard__progress a span { color:var(--dk-gold); }
+body[data-ui="basic"] .run-wizard__progress a[aria-current="step"] { border-color:var(--dk-gold); color:var(--dk-ink); box-shadow:none; }
+body[data-ui="basic"] .run-wizard__layout { display:grid; grid-template-columns:minmax(0,1fr); gap:18px; max-width:880px; counter-reset:none; }
+body[data-ui="basic"] .run-wizard__step { position:relative; border:1px solid var(--dk-line2); border-top:1px solid var(--dk-line2); border-radius:14px;
+  background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)); box-shadow:0 18px 40px -14px rgba(0,0,0,.75); padding:18px 20px 20px; }
+body[data-ui="basic"] .run-wizard__step > header { display:flex; align-items:center; gap:14px; margin-bottom:6px; }
+body[data-ui="basic"] .run-wizard__step > header > span { flex:none; display:inline-flex; align-items:center; justify-content:center; width:42px; height:58px;
+  border-radius:7px; border:1px solid rgba(230,198,127,.45); color:var(--dk-gold); font:600 20px/1 var(--dk-serif);
+  background:repeating-linear-gradient(45deg, rgba(230,198,127,.10) 0 1px, transparent 1px 7px), linear-gradient(160deg,var(--dk-back),var(--dk-back2)); }
+body[data-ui="basic"] .run-wizard__step h2 { font:500 22px/1.15 var(--dk-serif); color:var(--dk-ink); }
+body[data-ui="basic"] .run-wizard__step header small { color:var(--dk-muted); font-family:var(--dk-mono); }
+body[data-ui="basic"] .run-wizard__plain { color:var(--dk-ink); font-size:14px; }
+body[data-ui="basic"] .run-wizard__plain strong { color:var(--dk-gold); }
+body[data-ui="basic"] .run-wizard__step:focus-within { border-color:var(--dk-gold2); }
+body[data-ui="basic"] .run-wizard__step label:not(.run-wizard__check) { color:var(--dk-muted); }
+body[data-ui="basic"] .run-wizard__facts div { border-color:var(--dk-line); }
+body[data-ui="basic"] .run-wizard__facts dt { color:var(--dk-muted); }
+body[data-ui="basic"] .run-wizard__selection, body[data-ui="basic"] .run-wizard__list,
+body[data-ui="basic"] .run-wizard__review, body[data-ui="basic"] .run-wizard__launch-status {
+  background:rgba(0,0,0,.22); border:1px solid var(--dk-line); border-radius:10px; }
+body[data-ui="basic"] .run-wizard__errors { border-color:var(--dk-warn); }
+body[data-ui="basic"] .run-wizard__errors:not([hidden])::before { content:"▲ "; color:var(--dk-warn); }
+body[data-ui="basic"] #run-stage-launch { border-color:var(--dk-gold2); }
+/* scenario picker: each option reads as a small card */
+body[data-ui="basic"] .scenario-picker { grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; padding:10px;
+  border-color:var(--dk-line); background:rgba(0,0,0,.18); border-radius:12px; }
+body[data-ui="basic"] .scenario-picker__option { border-radius:10px; border-top-color:var(--dk-line2); border-right-color:var(--dk-line2); border-bottom-color:var(--dk-line2);
+  background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)); color:var(--dk-ink); opacity:1; }
+body[data-ui="basic"] .scenario-picker__title { color:var(--dk-ink); font-family:var(--dk-serif); font-weight:500; font-size:15px; }
+body[data-ui="basic"] .scenario-picker__option--neutral { border-left-color:var(--dk-line2); }
+body[data-ui="basic"] .scenario-picker__option:hover { border-color:var(--dk-gold2); }
+body[data-ui="basic"] .scenario-picker__option[aria-selected="true"] { border-color:var(--dk-gold); box-shadow:0 0 0 2px var(--dk-gold); }
+body[data-ui="basic"] .scenario-picker__option[aria-selected="true"] .scenario-picker__title::before { content:"♦ "; color:var(--dk-gold); }
+body[data-ui="basic"] .scenario-picker__filters button { border-color:var(--dk-line2); background:var(--dk-table2); color:var(--dk-muted); border-radius:8px; }
+body[data-ui="basic"] .scenario-picker__filters button[aria-pressed="true"] { background:var(--dk-gold); color:#1a1224; border-color:var(--dk-gold); box-shadow:none; }
+body[data-ui="basic"] .scenario-selection { background:rgba(0,0,0,.22); border-top-color:var(--dk-line); border-right-color:var(--dk-line); border-bottom-color:var(--dk-line); border-radius:10px; }
+body[data-ui="basic"] .scenario-selection h3 { font:500 18px/1.25 var(--dk-serif); color:var(--dk-ink); }
+
+/* ---- structured definition / scenario editors ---- */
+body[data-ui="basic"] .definition-editor .definition-header { align-items:flex-start; }
+body[data-ui="basic"] .definition-editor .definition-header h1 { display:none; }   /* the deck head already names the page */
+body[data-ui="basic"] .definition-editor .definition-header .eyebrow { display:none; }
+body[data-ui="basic"] .definition-editor__tabs button { font-family:var(--dk-mono); }
+body[data-ui="basic"] .definition-editor__tabs button[aria-selected="true"] { color:#1a1224; background:var(--dk-gold); border-color:var(--dk-gold); }
+body[data-ui="basic"] .definition-editor [data-editor-panel="structured"] > .definition-editor__fields,
+body[data-ui="basic"] .scenario-builder__section, body[data-ui="basic"] .profile-version-panel {
+  border:1px solid var(--dk-line2); border-radius:14px; padding:18px 20px;
+  background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)); box-shadow:0 18px 40px -14px rgba(0,0,0,.75); }
+body[data-ui="basic"] .scenario-builder__section-head h2, body[data-ui="basic"] .profile-version-panel h2 { font:500 21px/1.2 var(--dk-serif); color:var(--dk-ink); }
+body[data-ui="basic"] .scenario-builder__section-head .eyebrow { color:var(--dk-gold); }
+body[data-ui="basic"] .scenario-builder__inventory span, body[data-ui="basic"] .scenario-builder__inventory strong { border-color:var(--dk-line2); color:var(--dk-muted); }
+body[data-ui="basic"] .scenario-builder__inventory strong { color:var(--dk-gold); }
+body[data-ui="basic"] .definition-field > span, body[data-ui="basic"] .definition-field__name { color:var(--dk-muted); }
+body[data-ui="basic"] .version-authority-note { border-color:var(--dk-gold2); background:rgba(230,198,127,.05); }
+body[data-ui="basic"] .version-authority-note strong::before { content:"■ "; color:var(--dk-gold); }
+body[data-ui="basic"] .definition-editor__report { border:1px solid var(--dk-line); border-radius:10px; background:rgba(0,0,0,.25); color:var(--dk-ink); }
+body[data-ui="basic"] .scenario-builder__section.dke-fold-wrap { padding:0; border:0; background:none; box-shadow:none; }
+body[data-ui="basic"] details.dke-fold > .scenario-builder__section { margin-top:4px; }
+
+/* ---- raw YAML scenario editor (/operate/scenarios/edit/<id>) ---- */
+body[data-ui="basic"] .scenario-editor { max-width:none; }
+body[data-ui="basic"] .scenario-editor .coverage-rollup__head h2 { font:500 21px/1.2 var(--dk-serif); }
+body[data-ui="basic"] .scenario-editor__status[data-kind="ok"]::before { content:"♦ "; }
+body[data-ui="basic"] .scenario-editor__status[data-kind="err"]::before { content:"✕ "; }
+body[data-ui="basic"] .scenario-editor__status[data-kind="pending"]::before { content:"○ "; }
+
+/* ---- settings editor: each setting is a small card ---- */
+body[data-ui="basic"] .cfg-form { max-width:none; display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; align-items:start; }
+body[data-ui="basic"] .cfg-field { border:1px solid var(--dk-line2); border-radius:12px; padding:14px 16px;
+  background:repeating-linear-gradient(45deg, rgba(230,198,127,.05) 0 1px, transparent 1px 9px), linear-gradient(160deg,var(--dk-back),var(--dk-back2)); }
+body[data-ui="basic"] .cfg-field:has(.cfg-warn) { border-color:rgba(255,178,92,.55); }
+body[data-ui="basic"] .cfg-field:has(.cfg-danger) { border-color:var(--dk-warn); }
+body[data-ui="basic"] .cfg-key { color:var(--dk-ink); overflow-wrap:anywhere; }
+body[data-ui="basic"] .cfg-warn::before { content:"▲ "; }
+body[data-ui="basic"] .cfg-desc { color:var(--dk-muted); }
+body[data-ui="basic"] .cfg-save { grid-column:1 / -1; justify-self:start; }
+
+@media (max-width:640px) {
+  body[data-ui="basic"] .run-wizard__progress ol { min-width:0; grid-template-columns:repeat(5,minmax(0,1fr)); }
+  body[data-ui="basic"] .run-wizard__progress a { font-size:.6rem; overflow-wrap:anywhere; text-align:center; }
+  body[data-ui="basic"] .run-wizard__step { padding:14px; }
+  body[data-ui="basic"] .run-wizard__step > header > span { width:34px; height:48px; font-size:17px; }
+  body[data-ui="basic"] .scenario-picker { grid-template-columns:minmax(0,1fr); }
+  body[data-ui="basic"] .cfg-form { grid-template-columns:minmax(0,1fr); }
+  body[data-ui="basic"] .definition-editor [data-editor-panel="structured"] > .definition-editor__fields,
+  body[data-ui="basic"] .scenario-builder__section, body[data-ui="basic"] .profile-version-panel { padding:14px; }
+}

@@ -69,7 +69,7 @@
     <tr><td>6h</td><td class="num">1,791</td><td class="num">5,373</td><td class="ok">running/0</td><td class="ok">running/0</td><td class="num">0</td></tr>
     <tr><td>8h (final)</td><td class="num">2,386</td><td class="num">7,158</td><td class="ok">running/0</td><td class="ok">running/0</td><td class="num">0</td></tr>
   </table>
-  <p class="muted">The public source retains this reviewed 32-sample summary, not the raw local log.</p>
+  <p class="muted">Full 32-sample table in <code>sp4-statemachine-evidence/logs/statemachine-soak-summary.txt</code>.</p>
 
   <h2>The node-side finding, characterized at volume</h2>
   <p>When the node rejects an illegal chain-sync sequence, its unexpected-message <b>error-formatting</b> path throws (from the <code>relay2</code> tracer, <code>node.json</code>):</p>
@@ -93,7 +93,10 @@ fail (printf "codecChainSync (%s) unexpected key (%d, %d)"
   <h2>Evidence &amp; reproducibility</h2>
   <ul>
     <li><code>sp4-statemachine-evidence/StateMachine.hs</code> — the adversary responder (exact ChainSync wire frames + the six scenarios).</li>
-    <li>Raw local adversary logs, node traces, and build-bundle mirrors are intentionally not distributed in the public source tree.</li>
+    <li><code>…/logs/statemachine-soak-adversary.log</code> — full 8h adversary stdout (every injection, with its scenario).</li>
+    <li><code>…/logs/statemachine-soak-node-tracer.json.gz</code> — full 8h <code>relay2</code> tracer: <b>0</b> Error/Critical lines, <b>7,158</b> <code>bad formatting char</code> lines (both independently verified).</li>
+    <li><code>…/logs/statemachine-soak-summary.txt</code> — the 32-sample table + scenario breakdown + final state.</li>
+    <li>Raw adversary log also mirrored at <code>raw/logs/statemachine.log</code> for the build bundle.</li>
   </ul>
   <p class="muted">Determinism: scenario = f(seed, connection-index); the soak rebuilds from the documented isolated-compose setup. No credentials in any evidence file.</p>
 

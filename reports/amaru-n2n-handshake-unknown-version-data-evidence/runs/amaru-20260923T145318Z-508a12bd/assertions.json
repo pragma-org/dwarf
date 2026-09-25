@@ -1,0 +1,82 @@
+[
+  {
+    "data_points_used": [
+      {
+        "report": "outputs/amaru-measurement-calibration/result.json",
+        "workload_digest": "sha256:97cf371b5f725cd0030b7808df9776662bd49742d5636b6993a41ed947d2bd16"
+      }
+    ],
+    "evaluated_value": {
+      "case_set": "version-table-forward-compat-v1",
+      "cases": [
+        {
+          "case": "v14-v15-offer",
+          "expected_outcome": "accepted",
+          "matched": true,
+          "matching": 20,
+          "observed_outcomes": {
+            "accepted": 20
+          },
+          "payload_hex": "8200a20e84182af401f40f84182af401f4",
+          "total": 20
+        },
+        {
+          "case": "node-11-1-experimental-v16-offer",
+          "expected_outcome": "accepted",
+          "matched": false,
+          "matching": 0,
+          "observed_outcomes": {
+            "rejected": 20
+          },
+          "payload_hex": "8200a30e84182af401f40f84182af401f41085182af401f4f4",
+          "total": 20
+        },
+        {
+          "case": "unknown-future-version-offer",
+          "expected_outcome": "accepted",
+          "matched": false,
+          "matching": 0,
+          "observed_outcomes": {
+            "rejected": 20
+          },
+          "payload_hex": "8200a30e84182af401f40f84182af401f4186382182a66667574757265",
+          "total": 20
+        }
+      ],
+      "implementation": "amaru",
+      "internal_handshake_outcomes": {
+        "handshake_decode_by_decode_outcome": {
+          "decoded": 20,
+          "malformed": 40
+        },
+        "handshake_ingress_by_outcome": {
+          "framed": 60
+        },
+        "handshake_negotiation_by_outcome": {
+          "accepted": 20
+        },
+        "handshake_state_by_outcome": {
+          "accepted": 20,
+          "not_attempted": 40
+        }
+      },
+      "mismatched_cases": [
+        "node-11-1-experimental-v16-offer",
+        "unknown-future-version-offer"
+      ],
+      "target": {
+        "implementation": "amaru",
+        "mode": "patched",
+        "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+        "version": "10.11.20260918"
+      }
+    },
+    "note": "handshake cases diverged from their declared outcome: ['node-11-1-experimental-v16-offer', 'unknown-future-version-offer']",
+    "params": {
+      "implementation": "amaru",
+      "min_attempts_per_case": 20
+    },
+    "primitive": "handshake_cases_match_expected",
+    "result": "fail"
+  }
+]

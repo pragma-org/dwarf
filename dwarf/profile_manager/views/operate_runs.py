@@ -29,12 +29,22 @@ def render_operate_runs(*, outcome: str = "", q: str = "") -> str:
     pills = status_pill_inventory(all_rows, active_outcome=outcome)
     lifecycle = _local_testcase_lifecycle_summary()
     families = issue_families(lifecycle)
+    from profile_manager.data.scenario_cards import run_card, scenario_card
+    from profile_manager.data.scenarios import _list_scenarios_for_compare
+    scenario_cards = {s["id"]: scenario_card(s) for s in _list_scenarios_for_compare()}
+    run_cards = {r["run_id"]: run_card(r.get("scenario_id"), r["run_id"], scenario_cards) for r in all_rows}
+    from profile_manager.data.runs import _forensic_runs_dir
+    runs_base = _forensic_runs_dir()
+    measured = {r["run_id"]: (runs_base / r["run_id"] / "measurements" / "report.json").is_file() for r in all_rows}
     return render(
         "operate/runs.j2",
         page_title="Runs",
         density="dense",        active="operate",
         active_sub="runs",
         rows=filtered,
+        all_rows=all_rows,
+        run_cards=run_cards,
+        measured=measured,
         all_count=len(all_rows),
         filtered_count=len(filtered),
         pills=pills,

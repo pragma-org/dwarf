@@ -2,7 +2,7 @@
 #
 # build-image.sh — stage the host-built binary + IOG libs into ./dist and
 # build the thin dwarf-adversary runtime image. Run on the build host
-# (dwarf-host-a) after `cabal build exe:dwarf-adversary`.
+# (cardano-box) after `cabal build exe:dwarf-adversary`.
 #
 # Usage: ./build-image.sh [image-tag]   (default: ghcr.io/j-gainsec/dwarf-adversary:dev)
 set -euo pipefail

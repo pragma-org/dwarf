@@ -45,10 +45,8 @@ _CARDS = (
 
 
 def client_card_evidence() -> list[dict]:
-    """Return the public card ledger without requiring private retained run data."""
+    """Return all accepted client-card evidence, including additive cards."""
     rows = []
-    accepted_ledger_path = DWARF_ROOT / "docs/client-examples/README.md"
-    accepted_ledger = accepted_ledger_path.read_text(encoding="utf-8")
     for definition in _CARDS:
         contract_path = DWARF_ROOT / "docs/client-examples/contracts" / f"{definition['id']}-{_contract_slug(definition['id'])}.yaml"
         contract = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
@@ -66,8 +64,7 @@ def client_card_evidence() -> list[dict]:
                 and "whole-microseconds-v1" in proof_text
                 and "Exported bundle" in proof_text
             )
-            documented_result = run_id in accepted_ledger or retained_proof
-            verified = scenario_path.is_file() and (run_available or documented_result)
+            verified = scenario_path.is_file() and (run_available or retained_proof)
             manifest = {}
             if run_available:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -81,17 +78,6 @@ def client_card_evidence() -> list[dict]:
                 "run_url": f"/operate/runs/{run_id}" if run_available else None,
                 "evidence_url": f"/operate/runs/{run_id}" if run_available else "/learn/measurements#five-client-examples",
                 "verified": verified,
-                "evidence_basis": (
-                    "retained-run-manifest"
-                    if run_available
-                    else "documented-accepted-result"
-                ),
-                "artifact_bundled": run_available,
-                "artifact_note": (
-                    None
-                    if run_available
-                    else "The public source records the accepted result identity, but it does not bundle the retained run artifact."
-                ),
                 "exit_status": manifest.get("exit_status"),
             })
         rows.append({
