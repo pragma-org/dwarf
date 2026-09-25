@@ -306,6 +306,155 @@ def _serve_one_gated(spec, *, consumer=None, consumers=None, node=None, adopt_ha
                             adopt_hash=adopt_hash, adopt_impl=adopt_impl)
 
 
+# --------------------------------------------------------------------------- #
+# Persistent differential serving.
+#
+# The differential (encoding-form / kes-period) families are served by ONE
+# long-lived forger per compared node instead of a fresh reconnect-and-wait
+# forger per iteration. A per-iteration forger must, on every iteration,
+# re-follow the chain from genesis and wait for its pool to be elected leader
+# *again* before it can inject at the live tip; the isolated amaru consumer,
+# bootstrapped once to a high snapshot tip, sees each freshly-reconnected forger
+# lag its tip and pauses (``blocks.paused``), so the case almost never reaches it
+# in the window ("started, never served"). A persistent forger stays caught up
+# and injects a FRESH seed-derived case at every one of its pool's live leader
+# slots, converting throughput to the pool's natural leader rate (many
+# conclusive iterations per connection). The driver pre-generates the same
+# seed-deterministic spec stream both forgers consume (``spec-<n>.json``) and
+# correlates the two sides by served index — the encoding deviation is a pure
+# function of the spec, so index (= same spec) is the correct differential key.
+#
+# Fail-closed is preserved: an index one side never serves, or serves but whose
+# verdict is never observed within the window, is inconclusive on both sides
+# (never agree); zero conclusive over the whole budget ⇒ the run FAILS.
+# --------------------------------------------------------------------------- #
+
+_SPEC_LOOKAHEAD = 512
+
+
+def _ensure_specs(family, seed, spec_dir, upto, *, restart_k=4, _state={}):
+    """Materialise ``spec-<n>.json`` for every ``n`` in ``0..upto`` (inclusive)
+    that is not present yet, each ``families.generate_case(family, seed, n)`` —
+    the single seed-deterministic source of truth (same stream the driver's
+    attempt records use), so a persistent-mode finding is replayable from
+    ``(family, seed, index)``."""
+    spec_dir = Path(spec_dir)
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    key = (str(spec_dir), family, seed)
+    have = _state.get(key, -1)
+    for n in range(have + 1, upto + 1):
+        spec = families.generate_case(family, seed, n, restart_k=restart_k)
+        (spec_dir / f"spec-{n:06d}.json").write_text(json.dumps(spec), encoding="utf-8")
+    _state[key] = max(have, upto)
+
+
+def _launch_persistent_forger(spec_dir, ctx, *, peer_bin, output_dir, node):
+    """Start ONE long-lived ``serve-case --case-spec-dir`` forger for ``node``,
+    streaming the shared spec dir to that node's isolated consumer. Returns a
+    handle carrying the process, its evidence path and the docker ``since``
+    stamp the consumer verdicts are read from."""
+    work = Path(output_dir) / "harness"
+    work.mkdir(parents=True, exist_ok=True)
+    evidence = work / f"evidence-persistent-{node}.ndjson"
+    evidence.write_text("", encoding="utf-8")
+    peer_path = Path(peer_bin or det.DEFAULT_PEER_BIN)
+    up_host, up_port = ctx["upstream"].split(":")
+    since = det._now_docker_ts()
+    peer_cmd = [
+        str(peer_path), "serve-case",
+        "--case", "valid-control",
+        "--case-spec-dir", str(spec_dir),
+        "--upstream", f"{up_host}:{up_port}",
+        "--listen-port", str(ctx["listen_port"]),
+        "--kes-skey", str(ctx["kes_skey"]),
+        "--cold-skey", str(ctx["cold_skey"]),
+        "--slots-per-kes", str(ctx["slots_per_kes"]),
+        "--max-kes-evo", str(ctx["max_kes_evo"]),
+        "--evidence", str(evidence),
+    ]
+    # The forger is long-lived and chatty (a header line per RollForward during
+    # the consumer's catch-up). Its stdout MUST go to a file, never an unread
+    # PIPE: an unread OS pipe fills at ~64 KiB and blocks the forger's next
+    # write, wedging it so it stops serving. Redirect to a per-node log.
+    log_path = work / f"forger-{node}.log"
+    log_fh = open(log_path, "w", encoding="utf-8")  # noqa: SIM115 (closed in _stop_forger)
+    proc = subprocess.Popen(peer_cmd, stdout=log_fh, stderr=subprocess.STDOUT, text=True)
+    return {"proc": proc, "evidence": evidence, "since": since, "ctx": ctx,
+            "node": node, "log": log_path, "log_fh": log_fh}
+
+
+def _stop_forger(handle):
+    if not handle:
+        return
+    proc = handle.get("proc")
+    if proc is not None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    fh = handle.get("log_fh")
+    if fh is not None:
+        try:
+            fh.close()
+        except OSError:
+            pass
+
+
+def _served_records_by_index(handle):
+    """Map ``served_index -> opcert_case_served record`` from a forger's
+    evidence stream (persistent mode tags every served line with its index)."""
+    out = {}
+    ev = handle.get("evidence")
+    try:
+        lines = Path(ev).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(rec, dict) and rec.get("kind") == "opcert_case_served" \
+                and rec.get("served_index") is not None and rec.get("header_hash"):
+            out[int(rec["served_index"])] = rec
+    return out
+
+
+def _await_indexed_verdict(handle, ix, *, timeout, poll=3.0):
+    """Wait until the forger has served index ``ix`` AND that node's isolated
+    consumer has emitted a verdict for the served header. Returns
+    ``(served_hash | None, observed | None)``. Fail-closed: never served, or
+    served but never observed within ``timeout`` seconds, ⇒ ``None`` on the
+    missing part. This is the seam the differential unit tests patch."""
+    ctx = handle["ctx"]
+    served_hash = None
+    observed = None
+    # A verdict for a just-served header appears within seconds, so read a
+    # bounded recent window of the consumer's log rather than everything since
+    # the forger started — keeps each poll cheap even on a multi-hour run.
+    since = f"{int(timeout) + 900}s"
+    end = time.monotonic() + timeout
+    while True:
+        if served_hash is None:
+            rec = _served_records_by_index(handle).get(ix)
+            if rec is not None:
+                served_hash = str(rec["header_hash"])
+        if served_hash is not None:
+            events = det._read_consumer_events(ctx["name"], since, ctx["implementation"])
+            vmap = det.verdict_by_hash(events)
+            if served_hash in vmap:
+                observed = vmap[served_hash]
+                break
+        if time.monotonic() >= end:
+            break
+        time.sleep(poll)
+    return served_hash, observed
+
+
 def _amaru_control_producer_tip(project, magic):
     proc = det._docker(
         "exec", f"{project}-p1-1", "cardano-cli", "query", "tip",
@@ -615,6 +764,22 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
         rot = _rotation_context(runtime, nodes[0])
         _backup_opcert(rot)
 
+    # Differential families are served by one PERSISTENT forger per node that
+    # streams the shared seed-deterministic spec dir; the loop below correlates
+    # the two sides by served index rather than spawning a forger per iteration.
+    spec_dir = None
+    forgers = None
+    if differential:
+        spec_dir = output_dir / "harness" / "specs"
+        _ensure_specs(family, seed, spec_dir,
+                      min(20000, max(_SPEC_LOOKAHEAD, int(time_budget_seconds * 0.5)) + _SPEC_LOOKAHEAD),
+                      restart_k=restart_k)
+        forgers = {
+            node: _launch_persistent_forger(spec_dir, consumers[node], peer_bin=peer_bin,
+                                            output_dir=output_dir, node=node)
+            for node in nodes
+        }
+
     tip_before = _node_tip(runtime, nodes[0])
     records = []
     start = clock()
@@ -623,17 +788,22 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
         while clock() - start < time_budget_seconds:
             spec = families.generate_case(family, seed, iteration, restart_k=restart_k)
             if differential:
+                # Keep the spec stream ahead of both forgers, then correlate this
+                # index's served case + verdict on each side (fail-closed: a side
+                # that never served/observed index ``iteration`` is None ⇒ the
+                # iteration is inconclusive, never agree).
+                _ensure_specs(family, seed, spec_dir, iteration + _SPEC_LOOKAHEAD, restart_k=restart_k)
                 verdicts = {}
+                served = {}
                 for node in nodes:
-                    _hash, observed = _serve_one_node(
-                        spec, node=node, consumers=consumers, peer_bin=peer_bin,
-                        per_iteration_timeout=per_iteration_timeout, output_dir=output_dir,
-                        iteration=iteration)
+                    served_hash, observed = _await_indexed_verdict(
+                        forgers[node], iteration, timeout=per_iteration_timeout)
                     verdicts[node] = observed["verdict"] if observed else None
+                    served[node] = served_hash
                 diff = R.classify_differential(verdicts[nodes[0]], verdicts[nodes[1]])
                 record = {
                     "outcome": _OUTCOME_FOR_DIFF[diff], "differential": diff,
-                    "spec": spec, "verdicts": verdicts,
+                    "spec": spec, "verdicts": verdicts, "served_hashes": served,
                 }
             elif family_c:
                 record = _family_c_iteration(
@@ -656,6 +826,9 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
             records.append(record)
             iteration += 1
     finally:
+        if forgers is not None:
+            for handle in forgers.values():
+                _stop_forger(handle)
         if rot is not None:
             _restore_opcert(rot)
         _close_consumers(consumers)

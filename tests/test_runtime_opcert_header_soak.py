@@ -20,6 +20,15 @@ def _patch_substrate(monkeypatch):
     monkeypatch.setattr(soak, "_load_runtime_root", lambda root: ({"compose_project": "p"}, "cardano-node"))
 
 
+def _patch_persistent(monkeypatch):
+    """Stub the persistent-forger lifecycle (spec pre-gen, launch, stop) so the
+    differential loop can be exercised with a fake ``_await_indexed_verdict``."""
+    monkeypatch.setattr(soak, "_ensure_specs", lambda *a, **k: None)
+    monkeypatch.setattr(soak, "_launch_persistent_forger",
+                        lambda spec_dir, ctx, **k: {"node": k.get("node"), "ctx": ctx, "proc": None})
+    monkeypatch.setattr(soak, "_stop_forger", lambda handle: None)
+
+
 def test_budget_bounds_loop(monkeypatch, tmp_path):
     _patch_substrate(monkeypatch)
     calls = {"n": 0}
@@ -47,15 +56,103 @@ def test_budget_loop_all_inconclusive_fails(monkeypatch, tmp_path):
 
 def test_differential_missing_side_not_counted_agree(monkeypatch, tmp_path):
     _patch_substrate(monkeypatch)
+    _patch_persistent(monkeypatch)
 
-    def fake_serve_node(spec, *, node, **k):
-        return ("h", {"verdict": "accepted", "reason": None}) if node == "node1" else (None, None)
+    def fake_await(handle, ix, *, timeout):
+        return ("h", {"verdict": "accepted", "reason": None}) if handle["node"] == "node1" else (None, None)
 
-    monkeypatch.setattr(soak, "_serve_one_node", fake_serve_node)
+    monkeypatch.setattr(soak, "_await_indexed_verdict", fake_await)
     r = soak.run_opcert_header_soak(str(tmp_path), "encoding-form", 5, str(tmp_path / "o"),
                                     target_nodes=["node1", "amaru-relay-1"], time_budget_seconds=3,
                                     clock=FakeClock(budget=3))
     assert r["counters"]["agree"] == 0 and r["conclusive"] == 0 and r["pass"] is False
+
+
+def test_differential_persistent_emits_many_cases_one_connection(monkeypatch, tmp_path):
+    """The persistent path yields one conclusive iteration per served index from
+    a single long-lived forger per node — many cases per connection — and both
+    sides agreeing is a pass. Proves throughput is NOT one-case-per-reconnect."""
+    _patch_substrate(monkeypatch)
+    _patch_persistent(monkeypatch)
+    launched = {"n": 0}
+    real_launch = lambda spec_dir, ctx, **k: launched.__setitem__("n", launched["n"] + 1) or {"node": k.get("node"), "ctx": ctx, "proc": None}
+    monkeypatch.setattr(soak, "_launch_persistent_forger", real_launch)
+    monkeypatch.setattr(soak, "_await_indexed_verdict",
+                        lambda handle, ix, *, timeout: ("h%d" % ix, {"verdict": "accepted", "reason": None}))
+    out = tmp_path / "o"
+    r = soak.run_opcert_header_soak(str(tmp_path), "encoding-form", 5, str(out),
+                                    target_nodes=["node1", "amaru-relay-1"], time_budget_seconds=8,
+                                    clock=FakeClock(budget=8))
+    assert launched["n"] == 2  # exactly one long-lived forger per node, not per iteration
+    assert r["iterations"] >= 5
+    assert r["counters"]["agree"] == r["iterations"] and r["conclusive"] == r["iterations"]
+    assert r["pass"] is True
+    lines = [json.loads(l) for l in (out / "attempts.ndjson").read_text().splitlines()]
+    # every attempt carries its seed-derived spec (replayable) and both served hashes
+    assert all(l["spec"]["family"] == "encoding-form" for l in lines)
+    assert all(set(l["served_hashes"]) == {"node1", "amaru-relay-1"} for l in lines)
+
+
+def test_differential_persistent_zero_conclusive_fails(monkeypatch, tmp_path):
+    """Fail-closed: if no index is ever served/observed, the run has zero
+    conclusive iterations and FAILS (never a vacuous pass)."""
+    _patch_substrate(monkeypatch)
+    _patch_persistent(monkeypatch)
+    monkeypatch.setattr(soak, "_await_indexed_verdict", lambda handle, ix, *, timeout: (None, None))
+    r = soak.run_opcert_header_soak(str(tmp_path), "encoding-form", 5, str(tmp_path / "o"),
+                                    target_nodes=["node1", "amaru-relay-1"], time_budget_seconds=4,
+                                    clock=FakeClock(budget=4))
+    assert r["conclusive"] == 0 and r["counters"]["agree"] == 0 and r["pass"] is False
+
+
+def test_differential_persistent_disagree_is_finding(monkeypatch, tmp_path):
+    """The differential still scores disagree (both consumers reached, verdicts
+    differ) and records a replayable disagreement."""
+    _patch_substrate(monkeypatch)
+    _patch_persistent(monkeypatch)
+
+    def fake_await(handle, ix, *, timeout):
+        verdict = "accepted" if handle["node"] == "node1" else "rejected"
+        return ("h%d" % ix, {"verdict": verdict, "reason": None})
+
+    monkeypatch.setattr(soak, "_await_indexed_verdict", fake_await)
+    r = soak.run_opcert_header_soak(str(tmp_path), "encoding-form", 5, str(tmp_path / "o"),
+                                    target_nodes=["node1", "amaru-relay-1"], time_budget_seconds=4,
+                                    clock=FakeClock(budget=4))
+    assert r["counters"]["disagree"] >= 1 and r["pass"] is False
+    assert r["disagreements"][0]["spec"]["family"] == "encoding-form"
+
+
+def test_served_records_by_index_parses_persistent_stream(tmp_path):
+    ev = tmp_path / "e.ndjson"
+    ev.write_text("\n".join(json.dumps(r) for r in [
+        {"kind": "opcert_case_started", "persistent": True},
+        {"kind": "opcert_case_served", "served_index": 0, "header_hash": "h0", "case": "encoding-form-000000"},
+        {"kind": "opcert_case_served", "served_index": 2, "header_hash": "h2", "case": "encoding-form-000002"},
+    ]) + "\n", encoding="utf-8")
+    recs = soak._served_records_by_index({"evidence": ev})
+    assert set(recs) == {0, 2} and recs[2]["header_hash"] == "h2"
+
+
+def test_await_indexed_verdict_fail_closed_when_unserved(monkeypatch, tmp_path):
+    ev = tmp_path / "e.ndjson"
+    ev.write_text("", encoding="utf-8")
+    handle = {"evidence": ev, "since": "T", "ctx": {"name": "c", "implementation": "cardano-node"}}
+    monkeypatch.setattr(soak.det, "_read_consumer_events", lambda *a, **k: [])
+    monkeypatch.setattr(soak.det, "verdict_by_hash", lambda ev: {})
+    served, observed = soak._await_indexed_verdict(handle, 0, timeout=0.0)
+    assert served is None and observed is None
+
+
+def test_await_indexed_verdict_reads_verdict_for_served(monkeypatch, tmp_path):
+    ev = tmp_path / "e.ndjson"
+    ev.write_text(json.dumps({"kind": "opcert_case_served", "served_index": 0, "header_hash": "hh"}) + "\n",
+                  encoding="utf-8")
+    handle = {"evidence": ev, "since": "T", "ctx": {"name": "c", "implementation": "cardano-node"}}
+    monkeypatch.setattr(soak.det, "_read_consumer_events", lambda *a, **k: [])
+    monkeypatch.setattr(soak.det, "verdict_by_hash", lambda ev: {"hh": {"verdict": "accepted", "reason": None}})
+    served, observed = soak._await_indexed_verdict(handle, 0, timeout=1.0)
+    assert served == "hh" and observed["verdict"] == "accepted"
 
 
 def test_every_iteration_appended_to_attempts(monkeypatch, tmp_path):
