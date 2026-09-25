@@ -188,7 +188,7 @@ def _close_consumers(consumers):
 
 
 def _serve_case_spec(spec, ctx, *, peer_bin, per_iteration_timeout, output_dir, iteration,
-                     adopt_hash=None, adopt_impl=None):
+                     adopt_hash=None, adopt_impl=None, label=None):
     """Serve one generated spec through the forger and read the verdict.
 
     Writes ``case-spec-<n>.json``, runs ``serve-case --case-spec`` against the
@@ -209,9 +209,10 @@ def _serve_case_spec(spec, ctx, *, peer_bin, per_iteration_timeout, output_dir, 
     """
     work = Path(output_dir) / "harness"
     work.mkdir(parents=True, exist_ok=True)
-    spec_path = work / f"case-spec-{spec['family']}-{iteration:06d}.json"
+    tag = f"-{label}" if label else ""
+    spec_path = work / f"case-spec-{spec['family']}-{iteration:06d}{tag}.json"
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
-    evidence = work / f"evidence-{spec['family']}-{iteration:06d}.ndjson"
+    evidence = work / f"evidence-{spec['family']}-{iteration:06d}{tag}.ndjson"
     evidence.write_text("", encoding="utf-8")
     peer_path = Path(peer_bin or det.DEFAULT_PEER_BIN)
     up_host, up_port = ctx["upstream"].split(":")
@@ -304,6 +305,74 @@ def _serve_one_gated(spec, *, consumer=None, consumers=None, node=None, adopt_ha
                             per_iteration_timeout=per_iteration_timeout,
                             output_dir=output_dir, iteration=iteration,
                             adopt_hash=adopt_hash, adopt_impl=adopt_impl)
+
+
+def _serve_probe(spec, *, consumer=None, consumers=None, node=None, peer_bin=None,
+                 per_iteration_timeout=60, output_dir=None, iteration=0, probe_index=0, **_kw):
+    """Serve ONE throwaway positive-control probe header and read its verdict.
+
+    The probe reuses the family-C ``counter-behind`` case, so it carries the
+    same replay counter the real replay carries: ``recorded-1`` = ``N-1`` (one
+    below the just-rotated counter ``N``, since the producer's chain records the
+    forged counter-N block). No adopt gate is involved; the probe's verdict IS
+    the readiness signal (see ``_amaru_probe_gate``). Distinct on-disk artifacts
+    (``label='probe-<k>'``) keep the real replay's evidence pristine and
+    replayable. Returns the 2-tuple ``(served_hash | None, observed | None)``.
+    This is the seam the amaru probe-gate tests patch."""
+    ctx = consumer if isinstance(consumer, dict) else (consumers or {}).get(node)
+    return _serve_case_spec(spec, ctx, peer_bin=peer_bin,
+                            per_iteration_timeout=per_iteration_timeout,
+                            output_dir=output_dir, iteration=iteration,
+                            label=f"probe-{probe_index}")
+
+
+# Probe-gate pacing (overridable in tests). ``_PROBE_POLL_INTERVAL`` is the wait
+# between successive probe re-serves; ``_PROBE_PER_SERVE_TIMEOUT`` bounds a single
+# probe serve so many polls fit inside the per-iteration budget.
+_PROBE_POLL_INTERVAL = 3.0
+_PROBE_PER_SERVE_TIMEOUT = 60
+
+
+def _amaru_probe_gate(spec, consumer_ctx, node, implementation, *, peer_bin,
+                      per_iteration_timeout, output_dir, iteration,
+                      clock=time.monotonic, sleep=time.sleep):
+    """Log-independent readiness gate for the amaru family-C path.
+
+    amaru's ``tip.adopt`` fires BEFORE it commits the rotated opcert sequence
+    number into its ledger state, and it emits no distinct opcert-commit log
+    signal, so the block-adopt gate is insufficient: a replay served right after
+    adopt is judged against stale (pre-N) state and is falsely ACCEPTED. This
+    gate instead uses amaru's OWN verdict as the readiness signal, via opcert
+    counter monotonicity:
+
+    - probe (counter ``N-1``) ACCEPTED  ⇒ recorded counter still ``N-1``
+      (``N-1 == recorded`` accepts) ⇒ commit not yet applied ⇒ NOT ready ⇒ wait
+      and re-serve the probe;
+    - probe (counter ``N-1``) REJECTED  ⇒ recorded counter advanced to ``N``
+      (``N-1 < recorded`` rejects as too-small) ⇒ state committed ⇒ READY.
+
+    Bounded by ``per_iteration_timeout``. If the probe never rejects within the
+    budget the gate reports NOT ready and the caller scores the iteration
+    fail-closed inconclusive (never accept, never a finding). Returns
+    ``(ready: bool, polls: int)``."""
+    deadline = clock() + per_iteration_timeout
+    per_serve = min(per_iteration_timeout, _PROBE_PER_SERVE_TIMEOUT)
+    polls = 0
+    while clock() < deadline:
+        polls += 1
+        served_hash, observed = _serve_probe(
+            spec, consumer=consumer_ctx, node=node, peer_bin=peer_bin,
+            per_iteration_timeout=per_serve, output_dir=output_dir,
+            iteration=iteration, probe_index=polls)
+        if (served_hash is not None and observed is not None
+                and R.conclusive_verdict(observed) == "rejected"):
+            # Recorded counter has advanced to N (probe N-1 rejected too-small):
+            # the opcert commit is applied. Ready.
+            return True, polls
+        # Probe accepted (recorded still N-1) or not observed: not ready yet.
+        if clock() < deadline:
+            sleep(_PROBE_POLL_INTERVAL)
+    return False, polls
 
 
 # --------------------------------------------------------------------------- #
@@ -731,13 +800,24 @@ def _rotate_producer(rot):
 def _family_c_iteration(rot, spec, consumer_ctx, node, implementation, *, peer_bin,
                         per_iteration_timeout, output_dir, iteration,
                         restart_forge_timeout=300):
-    """One real rotate→restart→forge→replay cycle with the consumer-adopt gate.
+    """One real rotate→restart→forge→replay cycle with the readiness gate.
 
     Fail-closed inconclusive if the cycle does not complete the rotation,
-    restart, and a forged block — and also if the isolated consumer never adopts
-    the rotated counter-N block before the replay verdict is read (an accept
-    from that stale view is not a finding). Only an accept the consumer reaches
-    *after* adopting counter-N is scored as accept-after-restart."""
+    restart, and a forged block.
+
+    Readiness gate — two paths:
+
+    - cardano (``cardano-node``): the existing block-adopt gate. cardano's
+      adoption of the counter-N block implies its opcert state is updated, so an
+      accept is only a finding once the isolated consumer has adopted counter-N;
+      an accept from a stale pre-rotation view is inconclusive.
+    - amaru: the positive-control PROBE gate (``_amaru_probe_gate``). amaru's
+      ``tip.adopt`` fires BEFORE it commits the rotated opcert sequence number
+      and it emits no opcert-commit log, so block-adopt is insufficient. The
+      gate serves a throwaway counter-(N-1) probe and waits until amaru's OWN
+      verdict flips from accept to reject (recorded advanced N-1→N) before the
+      real replay is served and scored. If the probe never rejects within the
+      per-iteration budget the iteration is fail-closed inconclusive."""
     spec = dict(spec)
     spec["params"] = dict(spec.get("params") or {})
     baseline_height, _slot = _producer_tip_slot(rot)
@@ -751,19 +831,52 @@ def _family_c_iteration(rot, spec, consumer_ctx, node, implementation, *, peer_b
     spec["params"]["rotated_to_counter_actual"] = achieved
     cycle = {"rotated_to_counter": achieved, "forged_height": forged_height,
              "forged_hash": forged_hash, "baseline_height": baseline_height,
-             "consumer_adopted_counter_n": None}
+             "consumer_adopted_counter_n": None, "probe_ready": None, "probe_polls": None}
     if achieved is None or forged_height is None:
         return {"outcome": "inconclusive", "spec": spec, "served_hash": None,
                 "observed_verdict": None, "observed_reason": None, "cycle": cycle}
+
+    if str(implementation) == "amaru":
+        # Positive-control probe gate: use amaru's own verdict as the readiness
+        # signal (log-independent). Only once the probe rejects (recorded==N) do
+        # we serve + score the real replay; an accept then is a genuine
+        # accept-after-restart finding (the state IS committed). A probe that
+        # never rejects within the budget is fail-closed inconclusive.
+        ready, polls = _amaru_probe_gate(
+            spec, consumer_ctx, node, implementation, peer_bin=peer_bin,
+            per_iteration_timeout=per_iteration_timeout, output_dir=output_dir,
+            iteration=iteration)
+        cycle["probe_ready"] = ready
+        cycle["probe_polls"] = polls
+        if not ready:
+            return {"outcome": "inconclusive", "spec": spec, "served_hash": None,
+                    "observed_verdict": None, "observed_reason": None, "cycle": cycle}
+        served_hash, observed, adopted = _serve_one_gated(
+            spec, consumer=consumer_ctx, node=node, adopt_hash=forged_hash,
+            adopt_impl=implementation, peer_bin=peer_bin,
+            per_iteration_timeout=per_iteration_timeout, output_dir=output_dir,
+            iteration=iteration)
+        cycle["consumer_adopted_counter_n"] = adopted
+        # Readiness already proven by the probe: score the real replay directly
+        # (never/reason-less => inconclusive via classify_iteration; accepted =>
+        # the accept-after-restart finding; reject-with-reason => pass).
+        if served_hash is None or observed is None:
+            outcome = "inconclusive"
+        else:
+            outcome = R.classify_iteration(spec, served_hash, observed, implementation)
+        return {"outcome": outcome, "spec": spec, "served_hash": served_hash,
+                "observed_verdict": (observed or {}).get("verdict"),
+                "observed_reason": (observed or {}).get("reason"), "cycle": cycle}
+
     served_hash, observed, adopted = _serve_one_gated(
         spec, consumer=consumer_ctx, node=node, adopt_hash=forged_hash,
         adopt_impl=implementation, peer_bin=peer_bin,
         per_iteration_timeout=per_iteration_timeout, output_dir=output_dir,
         iteration=iteration)
     cycle["consumer_adopted_counter_n"] = adopted
-    # Adopt gate: fail-closed. A served-and-observed *accept* is only a real
-    # accept-after-restart finding once the consumer has adopted counter-N; an
-    # accept from a consumer still on its stale pre-rotation view is
+    # Adopt gate (cardano): fail-closed. A served-and-observed *accept* is only a
+    # real accept-after-restart finding once the consumer has adopted counter-N;
+    # an accept from a consumer still on its stale pre-rotation view is
     # inconclusive (never a pass, never a finding). Reject / never-observed keep
     # the deterministic driver's semantics.
     if served_hash is None or observed is None:

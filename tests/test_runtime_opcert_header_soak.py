@@ -425,6 +425,128 @@ def test_family_c_adopt_gate_reject_is_conclusive_pass(monkeypatch, tmp_path):
     assert r["counters"]["pass"] >= 1 and r["counters"]["mismatch"] == 0 and r["pass"] is True
 
 
+def _patch_family_c_common(monkeypatch, implementation):
+    """Stub a completed rotate→restart→forge cycle (counter N=2) for the family-C
+    path, with the given target ``implementation`` selecting the readiness gate."""
+    _patch_substrate(monkeypatch)
+    monkeypatch.setattr(soak, "_load_runtime_root",
+                        lambda root: ({"compose_project": "p", "network_magic": 42}, implementation))
+    monkeypatch.setattr(soak, "_rotation_context", lambda runtime, node: {"mode": "hostdir"})
+    monkeypatch.setattr(soak, "_backup_opcert", lambda rot: None)
+    monkeypatch.setattr(soak, "_restore_opcert", lambda rot: None)
+    monkeypatch.setattr(soak, "_producer_tip_slot", lambda rot: (100, 5000))
+    monkeypatch.setattr(soak, "_rotate_producer", lambda rot: 2)                       # N = 2
+    monkeypatch.setattr(soak, "_restart_producer", lambda rot: None)
+    monkeypatch.setattr(soak, "_wait_for_forge", lambda rot, b, d: ((b or 0) + 3, "forgedhash"))
+    monkeypatch.setattr(soak, "_PROBE_POLL_INTERVAL", 0)
+
+
+def test_family_c_amaru_probe_gate_waits_for_commit_then_replay_pass(monkeypatch, tmp_path):
+    """Probe gate: the counter-(N-1) probe is ACCEPTED on the first poll (recorded
+    still N-1, opcert commit not yet applied) then REJECTED on a later poll
+    (recorded advanced to N). The gate MUST wait (re-serve the probe, not conclude
+    the iteration early) and only serve the real replay once the probe rejects;
+    the real replay's reject-with-reason then scores a conclusive pass."""
+    _patch_family_c_common(monkeypatch, "amaru")
+    probe_verdicts = [
+        {"verdict": "accepted", "reason": None},                      # recorded still N-1
+        {"verdict": "rejected", "reason": "SequenceNumberTooSmall"},  # committed => ready
+    ]
+    probe = {"n": 0}
+
+    def fake_probe(spec, **k):
+        i = probe["n"]
+        probe["n"] += 1
+        return ("probe%d" % i, probe_verdicts[min(i, len(probe_verdicts) - 1)])
+
+    replay = {"n": 0, "probe_n_at_serve": None}
+
+    def fake_replay(spec, **k):
+        replay["n"] += 1
+        replay["probe_n_at_serve"] = probe["n"]
+        return ("h%d" % spec["iteration"],
+                {"verdict": "rejected", "reason": "SequenceNumberTooSmall"}, True)
+
+    monkeypatch.setattr(soak, "_serve_probe", fake_probe)
+    monkeypatch.setattr(soak, "_serve_one_gated", fake_replay)
+    r = soak.run_opcert_header_soak(str(tmp_path), "restart-persistence", 4242, str(tmp_path / "o"),
+                                    target_node="node1", time_budget_seconds=2,
+                                    per_iteration_timeout=5, clock=FakeClock(budget=2))
+    # Gate WAITED: probe re-served after the first accept (>=2 polls), real replay
+    # served exactly once and only AFTER the probe had rejected (ready).
+    assert probe["n"] == 2 and replay["n"] == 1 and replay["probe_n_at_serve"] == 2
+    # Reject-with-reason after ready is a conclusive pass; no false finding.
+    assert r["counters"]["pass"] >= 1 and r["counters"]["mismatch"] == 0 and r["pass"] is True
+
+
+def test_family_c_amaru_accept_after_ready_is_finding(monkeypatch, tmp_path):
+    """Probe gate: once the probe rejects (READY = recorded==N), a real replay
+    (counter<N) that is ACCEPTED is a genuine accept-after-restart finding — the
+    state IS committed, so the accept is not a stale-view false positive."""
+    _patch_family_c_common(monkeypatch, "amaru")
+    probe = {"n": 0}
+    probe_verdicts = [
+        {"verdict": "accepted", "reason": None},
+        {"verdict": "rejected", "reason": "SequenceNumberTooSmall"},
+    ]
+
+    def fake_probe(spec, **k):
+        i = probe["n"]
+        probe["n"] += 1
+        return ("probe%d" % i, probe_verdicts[min(i, len(probe_verdicts) - 1)])
+
+    monkeypatch.setattr(soak, "_serve_probe", fake_probe)
+    monkeypatch.setattr(soak, "_serve_one_gated",
+                        lambda spec, **k: ("h%d" % spec["iteration"],
+                                           {"verdict": "accepted", "reason": None}, True))
+    r = soak.run_opcert_header_soak(str(tmp_path), "restart-persistence", 4242, str(tmp_path / "o"),
+                                    target_node="node1", time_budget_seconds=2,
+                                    per_iteration_timeout=5, clock=FakeClock(budget=2))
+    assert r["counters"]["mismatch"] >= 1 and r["pass"] is False
+    finding = r["mismatches"][0]
+    assert finding["spec"]["seed"] == 4242
+    assert finding["spec"]["params"]["rotated_to_counter_actual"] == 2
+
+
+def test_family_c_amaru_probe_never_rejected_is_inconclusive(monkeypatch, tmp_path):
+    """Probe gate fail-closed: if the counter-(N-1) probe is NEVER rejected within
+    the per-iteration budget (recorded never observed to advance to N), the
+    iteration is inconclusive — the real replay is never served, never accepted,
+    never a finding."""
+    _patch_family_c_common(monkeypatch, "amaru")
+    monkeypatch.setattr(soak, "_PROBE_POLL_INTERVAL", 0.01)
+    monkeypatch.setattr(soak, "_serve_probe",
+                        lambda spec, **k: ("probe", {"verdict": "accepted", "reason": None}))
+    replay = {"n": 0}
+    monkeypatch.setattr(soak, "_serve_one_gated",
+                        lambda spec, **k: replay.__setitem__("n", replay["n"] + 1)
+                        or ("h", {"verdict": "accepted", "reason": None}, True))
+    r = soak.run_opcert_header_soak(str(tmp_path), "restart-persistence", 99, str(tmp_path / "o"),
+                                    target_node="node1", time_budget_seconds=2,
+                                    per_iteration_timeout=0.2, clock=FakeClock(budget=2))
+    assert replay["n"] == 0
+    assert r["counters"]["mismatch"] == 0 and r["counters"]["inconclusive"] >= 1
+    assert r["conclusive"] == 0 and r["pass"] is False
+
+
+def test_family_c_cardano_path_unchanged_no_probe_gate(monkeypatch, tmp_path):
+    """cardano-C is unchanged: it uses the existing block-adopt gate and MUST NOT
+    invoke the amaru probe gate. A reason-matched reject still scores a pass."""
+    _patch_family_c_common(monkeypatch, "cardano-node")
+
+    def boom(*a, **k):
+        raise AssertionError("cardano-C must not invoke the amaru probe gate")
+
+    monkeypatch.setattr(soak, "_serve_probe", boom)
+    monkeypatch.setattr(soak, "_serve_one_gated",
+                        lambda spec, **k: ("h%d" % spec["iteration"],
+                                           {"verdict": "rejected", "reason": "CounterTooSmallOCERT"}, False))
+    r = soak.run_opcert_header_soak(str(tmp_path), "restart-persistence", 11, str(tmp_path / "o"),
+                                    target_node="node1", time_budget_seconds=2,
+                                    clock=FakeClock(budget=2))
+    assert r["counters"]["pass"] >= 1 and r["counters"]["mismatch"] == 0 and r["pass"] is True
+
+
 def test_result_written_with_seed_and_duration(monkeypatch, tmp_path):
     _patch_substrate(monkeypatch)
     monkeypatch.setattr(soak, "_serve_one", lambda spec, **k: ("h", {"verdict": "accepted", "reason": None}))
