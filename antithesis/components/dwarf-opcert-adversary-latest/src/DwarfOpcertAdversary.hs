@@ -44,6 +44,13 @@ module DwarfOpcertAdversary
     , caseSpecByteSeed
     , applyCaseSpec
     , applyKesEvolution
+    , RuleParams (..)
+    , defaultRuleParams
+    , ruleParamsFromSpec
+    , applyCaseWith
+    , seedBytes
+    , wrongColdKeyRaw
+    , wrongKesKeyRaw
     , reEncodeOpcert
     ) where
 
@@ -70,7 +77,7 @@ import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word64)
 
-import Cardano.Crypto.DSIGN (Ed25519DSIGN, SignKeyDSIGN, decodeSignKeyDSIGN, genKeyDSIGN)
+import Cardano.Crypto.DSIGN (Ed25519DSIGN, SignKeyDSIGN, decodeSignKeyDSIGN, deriveVerKeyDSIGN, genKeyDSIGN, rawSerialiseVerKeyDSIGN)
 import Cardano.Crypto.KES qualified as KES
 import Cardano.Crypto.Seed (mkSeedFromBytes)
 import Cardano.Ledger.Keys (signedDSIGN)
@@ -364,7 +371,60 @@ caseMutationName = \case
 -- header's own @ocertN@); it decides whether the counter mutations can reach
 -- their rule.
 applyCase :: KeySet -> String -> Header -> Either String CaseResult
-applyCase ks caseId hdr = case hdr of
+applyCase ks caseId hdr = applyCaseWith ks defaultRuleParams caseId hdr
+
+
+-- | Per-iteration boundary magnitudes for the rules-differential sweep. The
+-- forger consumes these so the served header's rule violation varies its
+-- MAGNITUDE across iterations (not just which rule), hunting magnitude-dependent
+-- cardano-vs-amaru divergences. 'Nothing' everywhere reproduces the historic
+-- fixed behaviour (counter jump +2, kes period +1 ahead, fixed wrong keys), so
+-- the fixed (non-soak) scenarios are byte-identical.
+data RuleParams = RuleParams
+    { rpCounterJump     :: !(Maybe Integer)
+    , rpKesPeriodsAhead :: !(Maybe Integer)
+    , rpWrongKeySeed    :: !(Maybe Int)
+    }
+    deriving (Eq, Show)
+
+defaultRuleParams :: RuleParams
+defaultRuleParams = RuleParams Nothing Nothing Nothing
+
+-- | Build the sweep params from a case spec. The wrong-key seed reuses the
+-- per-iteration @byte_seed@ the generator already records, so the cold-/hot-key
+-- rules vary their unauthorized key without a new spec field.
+ruleParamsFromSpec :: CaseSpec -> RuleParams
+ruleParamsFromSpec spec =
+    RuleParams (csCounterJump spec) (csKesPeriodsAhead spec) (csByteSeed spec)
+
+-- | 32 deterministic bytes from a seed and a domain tag (distinct tags give
+-- independent streams so the cold-key and KES-key wrong keys never coincide).
+seedBytes :: Int -> Word8 -> BS.ByteString
+seedBytes s tag = BS.pack (take 32 (randomRs (0, 255) (mkStdGen (s * 131 + fromIntegral tag))))
+
+-- | The WRONG cold key for the cold-key-unauthorized rule: per-iteration
+-- (seed-derived) when a seed is given, else the historic fixed key.
+wrongColdKeyFor :: Maybe Int -> SignKeyDSIGN Ed25519DSIGN
+wrongColdKeyFor ms =
+    genKeyDSIGN (mkSeedFromBytes (maybe (BS.replicate 32 0x11) (\s -> seedBytes s 0xC0) ms))
+
+-- | The WRONG KES key for the hot-key-mismatch rule: per-iteration when a seed
+-- is given, else the historic fixed key.
+wrongKesKeyFor :: Maybe Int -> KES.UnsoundPureSignKeyKES (KES StandardCrypto)
+wrongKesKeyFor ms =
+    KES.unsoundPureGenKeyKES (mkSeedFromBytes (maybe (BS.replicate 32 0x22) (\s -> seedBytes s 0x8E) ms))
+
+-- | Raw-serialised verification key of the wrong cold key (for tests: distinct
+-- seeds must give distinct keys, hence distinct served bytes).
+wrongColdKeyRaw :: Maybe Int -> BS.ByteString
+wrongColdKeyRaw = rawSerialiseVerKeyDSIGN . deriveVerKeyDSIGN . wrongColdKeyFor
+
+-- | Raw-serialised hot verification key of the wrong KES key (for tests).
+wrongKesKeyRaw :: Maybe Int -> BS.ByteString
+wrongKesKeyRaw = kesHotVerKeyBytes . wrongKesKeyFor
+
+applyCaseWith :: KeySet -> RuleParams -> String -> Header -> Either String CaseResult
+applyCaseWith ks rp caseId hdr = case hdr of
     HeaderConway shelleyHdr ->
         let praosHdr = shelleyHeaderRaw shelleyHdr
             body = Praos.headerBody praosHdr
@@ -419,13 +479,17 @@ applyCase ks caseId hdr = case hdr of
                                          MutateCounterUnder "reject"
         "counter-jump" ->
             -- ocertN more than +1 over recorded -> CounterOverIncrementedOCERT.
-            Right $ finishOCert body (ocert{ ocertN = realN + 2
-                                           , ocertSigma = coldSig (ocertVkHot ocert) (realN + 2) (ocertKESPeriod ocert) })
-                                     MutateCounterOver1 "reject"
+            -- The jump magnitude is per-iteration (rules-differential sweep):
+            -- rpCounterJump, default +2, clamped >= 2 (never the accepted +1).
+            let jumpedN = realN + counterJumpN
+            in  Right $ finishOCert body (ocert{ ocertN = jumpedN
+                                               , ocertSigma = coldSig (ocertVkHot ocert) jumpedN (ocertKESPeriod ocert) })
+                                         MutateCounterOver1 "reject"
         "kes-before-window" ->
-            -- ocert start KES period AFTER the header's slot period (c0 > kp)
-            -- -> KESBeforeStartOCERT.
-            let newC0 = KESPeriod (currentKES + 1)
+            -- ocert start KES period AHEAD of the header's slot period (c0 > kp)
+            -- -> KESBeforeStartOCERT. The periods-ahead magnitude is
+            -- per-iteration (sweep): rpKesPeriodsAhead, default +1, clamped >= 1.
+            let newC0 = KESPeriod (currentKES + kesAheadW)
             in  Right $ finishOCert body (ocert{ ocertKESPeriod = newC0
                                                , ocertSigma = coldSig (ocertVkHot ocert) realN newC0 })
                                          MutateKESPeriod "reject"
@@ -459,15 +523,19 @@ applyCase ks caseId hdr = case hdr of
         kesEvol s c0' = let cur = fromIntegral s `div` ksSlotsPerKESPeriod ks :: Word
                         in if cur >= c0' then cur - c0' else 0
 
+        -- Per-iteration sweep magnitudes (default to the historic fixed values).
+        counterJumpN = fromIntegral (max 2 (fromMaybe 2 (rpCounterJump rp))) :: Word64
+        kesAheadW    = fromIntegral (max 1 (fromMaybe 1 (rpKesPeriodsAhead rp))) :: Word
         -- A valid opcert signature by the REAL pool cold key.
         coldSig vkHot n p = signedDSIGN (ksColdSignKey ks) (OCertSignable vkHot n p)
-        -- An opcert signature by a fresh WRONG cold key (deterministic seed).
+        -- An opcert signature by a fresh WRONG cold key; the wrong-key seed is
+        -- per-iteration (rpWrongKeySeed, from byte_seed) so the sweep varies the
+        -- unauthorized key, falling back to the historic fixed key when absent.
         wrongColdSig vkHot n p =
-            signedDSIGN (genKeyDSIGN (mkSeedFromBytes (BS.replicate 32 0x11)) :: SignKeyDSIGN Ed25519DSIGN)
-                        (OCertSignable vkHot n p)
+            signedDSIGN (wrongColdKeyFor (rpWrongKeySeed rp)) (OCertSignable vkHot n p)
         -- An opcert signature by a DIFFERENT REAL pool's cold key (cross-pool).
         foreignColdSig fcold vkHot n p = signedDSIGN fcold (OCertSignable vkHot n p)
-        wrongKesKey = KES.unsoundPureGenKeyKES (mkSeedFromBytes (BS.replicate 32 0x22))
+        wrongKesKey = wrongKesKeyFor (rpWrongKeySeed rp)
 
 
 -- | Offer exactly one target header, and only after the client proves it has
@@ -541,6 +609,8 @@ data CaseSpec = CaseSpec
     , csSlotOffsetFrac :: !(Maybe Double)
     , csForeignPool    :: !(Maybe String)
     , csKesEvoDelta    :: !(Maybe Integer)
+    , csCounterJump    :: !(Maybe Integer)
+    , csKesPeriodsAhead :: !(Maybe Integer)
     }
     deriving (Eq, Show)
 
@@ -582,7 +652,9 @@ parseCaseSpec raw = do
         soff   <- getP "slot_offset_fraction"
         fpool  <- getP "foreign_pool"
         kevo   <- getP "kes_evolution_delta"
-        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo)
+        cjump  <- getP "counter_jump"
+        kahead <- getP "kes_periods_ahead"
+        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo cjump kahead)
 
 -- | The seed that drives the encoding-form byte re-encoding for THIS case. The
 -- generator derives a distinct per-iteration @byte_seed@ (in @params@) from
@@ -602,7 +674,7 @@ applyCaseSpec :: KeySet -> Maybe CaseSpec -> String -> Header -> Either String C
 applyCaseSpec ks Nothing    caseId hdr = applyCase ks caseId hdr
 applyCaseSpec ks (Just spec) _     hdr = case csBaseCase spec of
     "kes-evolution" -> applyKesEvolution ks spec hdr
-    other           -> applyCase ks other hdr
+    other           -> applyCaseWith ks (ruleParamsFromSpec spec) other hdr
 
 
 -- | Re-sign a real pool1 header's body with OUR KES key but evolved to the

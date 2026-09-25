@@ -16,11 +16,14 @@ import Codec.CBOR.Term (Term (..), decodeTerm, encodeTerm)
 import Codec.CBOR.Write (toLazyByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Lazy.Char8 qualified as LBC
+import Data.ByteString qualified as BS
 import DwarfOpcertAdversary
     ( CaseSpec (..)
     , parseCaseSpec
     , caseSpecByteSeed
     , reEncodeOpcert
+    , wrongColdKeyRaw
+    , wrongKesKeyRaw
     )
 import Test.Hspec
 
@@ -129,3 +132,26 @@ main = hspec $ do
                 Right sp -> caseSpecByteSeed sp `shouldBe` 777
                 Left e -> expectationFailure e
 
+    describe "rules-differential magnitude sweep" $ do
+        it "parses per-iteration counter_jump / kes_periods_ahead" $ do
+            let js = "{\"base_case\":\"counter-jump\",\"seed\":5,\"params\":{\"counter_jump\":250,\"byte_seed\":42}}"
+            parseCaseSpec (LBC.pack js) `shouldSatisfy` \case
+                Right sp -> csCounterJump sp == Just 250 && csByteSeed sp == Just 42
+                _ -> False
+            let js2 = "{\"base_case\":\"kes-before-window\",\"seed\":5,\"params\":{\"kes_periods_ahead\":100}}"
+            parseCaseSpec (LBC.pack js2) `shouldSatisfy` \case
+                Right sp -> csKesPeriodsAhead sp == Just 100
+                _ -> False
+        it "distinct byte_seed -> distinct wrong cold key (hence distinct served bytes)" $
+            wrongColdKeyRaw (Just 11111) `shouldNotBe` wrongColdKeyRaw (Just 22222)
+        it "distinct byte_seed -> distinct wrong KES key" $
+            wrongKesKeyRaw (Just 11111) `shouldNotBe` wrongKesKeyRaw (Just 22222)
+        it "same byte_seed reproduces identical wrong keys (replayable)" $ do
+            wrongColdKeyRaw (Just 33333) `shouldBe` wrongColdKeyRaw (Just 33333)
+            wrongKesKeyRaw (Just 33333) `shouldBe` wrongKesKeyRaw (Just 33333)
+        it "the seed-derived wrong key differs from the historic fixed key" $ do
+            wrongColdKeyRaw (Just 33333) `shouldNotBe` wrongColdKeyRaw Nothing
+            wrongKesKeyRaw (Just 33333) `shouldNotBe` wrongKesKeyRaw Nothing
+        it "the cold-key and KES-key streams do not coincide" $
+            (BS.length (wrongColdKeyRaw (Just 7)) > 0 && BS.length (wrongKesKeyRaw (Just 7)) > 0)
+                `shouldBe` True

@@ -67,6 +67,15 @@ _RULES_DIFFERENTIAL_REASON = {
 }
 RULES_DIFFERENTIAL_RULES: tuple[str, ...] = tuple(_RULES_DIFFERENTIAL_REASON)
 
+# Seed-deterministic magnitude sweeps for the two magnitude rules. Both span
+# small and LARGE values so the soak hunts a magnitude-dependent cardano-vs-amaru
+# divergence (e.g. a node with a different "too far ahead" / "period too large"
+# threshold). All magnitudes still trigger the SAME rule (counter-jump: any
+# jump >= 2 over-increments; kes-before-window: any period >= 1 ahead is before
+# the window), so the expected reject reason per node is unchanged.
+COUNTER_JUMP_MAGNITUDES: tuple[int, ...] = (2, 3, 5, 13, 50, 250)
+KES_PERIODS_AHEAD_MAGNITUDES: tuple[int, ...] = (1, 2, 4, 9, 25, 100)
+
 
 def iter_rng(family: str, seed: int, iteration: int) -> random.Random:
     """A deterministic RNG unique to ``(family, seed, iteration)``."""
@@ -116,20 +125,20 @@ def generate_case(family: str, seed: int, iteration: int, *, restart_k: int = 4)
         return _crosspool_confusion_case(base, rng)
 
     if family == "rules-differential":
-        # Pick one reachable reject rule per iteration (the rule choice IS the
-        # cross-iteration randomization). ``byte_seed`` is recorded for replay
-        # provenance; a randomized-within-family boundary is recorded for the two
-        # magnitude rules. NOTE: the current forger applies a FIXED magnitude for
-        # counter-jump (+2) and kes-before-window (+1 period) and hard-coded wrong
-        # keys for the cold-/hot-key rules, so the recorded boundary is
-        # provenance-only until the forger is taught to consume it; the served
-        # header still differs per iteration (a fresh live tip each leader slot).
+        # Pick one reachable reject rule per iteration (the rule choice IS one
+        # axis of randomization). The forger now CONSUMES the recorded boundary:
+        # ``counter_jump`` and ``kes_periods_ahead`` are seed-deterministic
+        # magnitude SWEEPS (small..large) for the two magnitude rules, and
+        # ``byte_seed`` seeds the forger's wrong cold-/hot-key derivation for the
+        # cold-key-unauthorized / hot-key-mismatch rules -- so the served header
+        # varies its violation magnitude / wrong key per iteration, hunting a
+        # magnitude-dependent cardano-vs-amaru divergence.
         rule = rng.choice(RULES_DIFFERENTIAL_RULES)
         params = {"rule": rule, "byte_seed": rng.randrange(2**31)}
         if rule == "counter-jump":
-            params["counter_jump"] = rng.randint(2, 8)
+            params["counter_jump"] = rng.choice(COUNTER_JUMP_MAGNITUDES)
         elif rule == "kes-before-window":
-            params["kes_periods_ahead"] = rng.randint(1, 8)
+            params["kes_periods_ahead"] = rng.choice(KES_PERIODS_AHEAD_MAGNITUDES)
         base.update(base_case=rule, expected_verdict="reject",
                     expected_reason=dict(_RULES_DIFFERENTIAL_REASON[rule]),
                     params=params)
