@@ -521,6 +521,30 @@ body[data-ui="basic"] .measurement-card__details summary { color:var(--dk-gold);
 body[data-ui="basic"] .measurement-card__meta { color:var(--dk-muted); font-size:12px; }
 body[data-ui="basic"] .measurement-actions .cta--primary { background:var(--dk-gold) !important; color:#1a1224 !important; }
 
+/* measurement metric cards (Basic): title, compact value, pills; explanation behind Details */
+body[data-ui="basic"] .measurement-card-grid { grid-template-columns:repeat(auto-fill,minmax(250px,1fr)) !important; gap:10px !important; }
+body[data-ui="basic"] .dk-mcard { display:flex; flex-direction:column; gap:6px; padding:12px 14px !important; }
+.dk-mcard__kind { font:600 10.5px var(--dk-mono); letter-spacing:.12em; text-transform:uppercase; color:var(--dk-gold); }
+.dk-mcard--unavailable .dk-mcard__kind, .dk-mcard.measurement-card--unavailable .dk-mcard__kind, .dk-mcard.measurement-card--reserved .dk-mcard__kind { color:var(--dk-muted); }
+body[data-ui="basic"] .dk-mcard__title { margin:0; font:500 16px/1.25 var(--dk-serif); color:var(--dk-ink); }
+.dk-mcard__value { display:flex; align-items:baseline; gap:6px; }
+.dk-mcard__value strong { font:600 19px/1.15 var(--dk-mono); color:var(--dk-ink); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.dk-mcard__value span { font:12px var(--dk-mono); color:var(--dk-muted); }
+.dk-mcard__pills { margin:2px 0 0 !important; padding:0 !important; }
+.dk-tags span[data-tag="unavailable"] { color:var(--dk-muted); border-style:dashed; }
+.dk-tags span[data-tag="metric type"] { color:var(--dk-muted); }
+.dk-tags span[data-tag^="evidence "] { color:var(--dk-ink); }
+.dk-tags span[data-tag="evidence strong"], .dk-tags span[data-tag="evidence good"] { color:#d9ffe9; border-color:rgba(95,214,164,.6); }
+body[data-ui="basic"] .dk-mcard__details { margin-top:2px; }
+body[data-ui="basic"] .dk-mcard__details summary { font:600 11px var(--dk-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--dk-gold); cursor:pointer; }
+body[data-ui="basic"] .dk-mcard__details p { font-size:12.5px; color:var(--dk-muted); margin:6px 0; }
+body[data-ui="basic"] .dk-mcard__details dl { display:grid; gap:4px; margin:6px 0 0; font-size:12px; }
+body[data-ui="basic"] .dk-mcard__details dl > div { display:grid; grid-template-columns:minmax(80px,34%) 1fr; gap:8px; }
+body[data-ui="basic"] .dk-mcard__details dt { color:var(--dk-muted); font:600 10px var(--dk-mono); text-transform:uppercase; letter-spacing:.06em; }
+body[data-ui="basic"] .dk-mcard__details dd { margin:0; overflow-wrap:anywhere; }
+body[data-ui="basic"] .dk-mcard__details code { background:none; color:var(--dk-gold); padding:0; font-size:11px; }
+.dk-mcard__outcomes { margin:6px 0 0; padding-left:16px; font-size:12px; color:var(--dk-muted); }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }
