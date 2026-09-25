@@ -484,6 +484,33 @@ def _await_indexed_verdict(handle, ix, *, timeout, poll=3.0):
     return served_hash, observed
 
 
+def _consumer_alive(handle):
+    """Liveness gate for an isolated consumer during a differential iteration.
+
+    A wedged consumer -- its container exited / OOM-killed, i.e. its verdict
+    stream has gone dark -- must not have a (possibly reason-less) reject scored
+    as a hard rejection (the iter-243 false divergence). Returns ``False`` ONLY
+    when the consumer is *positively* determined dead: the container reports
+    not-running or was OOM-killed. An indeterminate probe (no docker / container
+    absent -> ``running is None``) returns ``True`` -- the reason-attribution gate
+    in ``R.conclusive_verdict`` still fails a reason-less reject closed. Substrate
+    seam: patched out in unit tests.
+    """
+    ctx = handle.get("ctx") if isinstance(handle, dict) else None
+    name = (ctx or {}).get("name") if isinstance(ctx, dict) else None
+    if not name:
+        return True
+    try:
+        state = det._container_state(name)
+    except Exception:
+        return True
+    if state.get("running") is False:
+        return False
+    if state.get("oom_killed") is True:
+        return False
+    return True
+
+
 def _amaru_control_producer_tip(project, magic):
     proc = det._docker(
         "exec", f"{project}-p1-1", "cardano-cli", "query", "tip",
@@ -827,7 +854,13 @@ def run_opcert_header_soak(runtime_root, family, seed, output_dir, *, target_nod
                 for node in nodes:
                     served_hash, observed = _await_indexed_verdict(
                         forgers[node], iteration, timeout=per_iteration_timeout)
-                    verdicts[node] = observed["verdict"] if observed else None
+                    # Fail-closed: a wedged (dark) consumer, or a reason-less
+                    # reject (transport wedge), is inconclusive on that side --
+                    # never a false hard reject / disagreement (iter-243 fix).
+                    if _consumer_alive(forgers[node]):
+                        verdicts[node] = R.conclusive_verdict(observed)
+                    else:
+                        verdicts[node] = None
                     served[node] = served_hash
                 diff = R.classify_differential(verdicts[nodes[0]], verdicts[nodes[1]])
                 record = {

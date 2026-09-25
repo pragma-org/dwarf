@@ -20,6 +20,32 @@ module is the pure decision layer:
 from __future__ import annotations
 
 
+def conclusive_verdict(observed):
+    """Reduce a raw per-hash verdict event to a *conclusive* verdict token, or
+    ``None`` (inconclusive).
+
+    Fail-closed attribution (the iter-243 false-divergence fix): a ``rejected``
+    verdict counts as a genuine header-validation rejection ONLY when it carries
+    an attributable reason token. A reason-less / ``null``-reason reject is not a
+    hard rejection -- it is how a transport wedge, a dropped connection, or a
+    consumer going dark mid-stream surfaces on the wire -- so it downgrades to
+    ``None`` and the iteration is excluded from agree/disagree rather than scored
+    a false disagreement. ``accepted`` is always conclusive; ``None`` observed
+    (never observed) stays ``None``.
+    """
+    if observed is None:
+        return None
+    verdict = observed.get("verdict")
+    if verdict == "rejected":
+        reason = observed.get("reason")
+        if reason is None or reason == "":
+            return None
+        return "rejected"
+    if verdict == "accepted":
+        return "accepted"
+    return None
+
+
 def classify_iteration(spec, served_hash, observed, implementation):
     """Classify one iteration as ``pass`` | ``mismatch`` | ``inconclusive``.
 
@@ -31,12 +57,17 @@ def classify_iteration(spec, served_hash, observed, implementation):
     """
     if served_hash is None or observed is None:
         return "inconclusive"
+    verdict = conclusive_verdict(observed)
+    # A reason-less reject (transport wedge / dark consumer) is not a genuine
+    # header-validation outcome: fail-closed inconclusive, never a mismatch.
+    if verdict is None:
+        return "inconclusive"
     expected_verdict = spec.get("expected_verdict")
     if expected_verdict == "accept":
-        return "pass" if observed.get("verdict") == "accepted" else "mismatch"
+        return "pass" if verdict == "accepted" else "mismatch"
     # reject: verdict AND reason must match the per-implementation expectation.
     expected_reason = (spec.get("expected_reason") or {}).get(implementation)
-    if observed.get("verdict") == "rejected" and observed.get("reason") == expected_reason:
+    if verdict == "rejected" and observed.get("reason") == expected_reason:
         return "pass"
     return "mismatch"
 

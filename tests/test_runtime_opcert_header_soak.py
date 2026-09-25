@@ -112,8 +112,10 @@ def test_differential_persistent_disagree_is_finding(monkeypatch, tmp_path):
     _patch_persistent(monkeypatch)
 
     def fake_await(handle, ix, *, timeout):
-        verdict = "accepted" if handle["node"] == "node1" else "rejected"
-        return ("h%d" % ix, {"verdict": verdict, "reason": None})
+        if handle["node"] == "node1":
+            return ("h%d" % ix, {"verdict": "accepted", "reason": None})
+        # A GENUINE reject carries an attributable reason token.
+        return ("h%d" % ix, {"verdict": "rejected", "reason": "InvalidKesSignatureOCERT"})
 
     monkeypatch.setattr(soak, "_await_indexed_verdict", fake_await)
     r = soak.run_opcert_header_soak(str(tmp_path), "encoding-form", 5, str(tmp_path / "o"),
@@ -522,3 +524,73 @@ def test_differential_amaru_reject_node1_accept_scored_disagree_not_masked(monke
     assert r["counters"]["disagree"] >= 1 and r["counters"]["agree"] == 0
     verdicts = r["disagreements"][0]["verdicts"]
     assert verdicts["node1"] == "accepted" and verdicts["amaru-relay-1"] == "rejected"
+
+
+def test_differential_reasonless_reject_is_inconclusive_not_disagree(monkeypatch, tmp_path):
+    """Iter-243 shape: node1 ACCEPTS the served header (real hash); amaru's
+    stream goes dark / yields a reason-LESS reject (observed_reason=null, the
+    transport/liveness wedge). The iteration MUST score inconclusive -- never a
+    disagree, never a hard reject."""
+    _patch_substrate(monkeypatch)
+    _patch_persistent(monkeypatch)
+
+    def fake_await(handle, ix, *, timeout):
+        if handle["node"] == "node1":
+            return ("h%d" % ix, {"verdict": "accepted", "reason": None})
+        # Reason-less reject == transport wedge, NOT a validation rejection.
+        return ("h%d" % ix, {"verdict": "rejected", "reason": None})
+
+    monkeypatch.setattr(soak, "_await_indexed_verdict", fake_await)
+    r = soak.run_opcert_header_soak(str(tmp_path), "encoding-form", 5, str(tmp_path / "o"),
+                                    target_nodes=["node1", "amaru-relay-1"], time_budget_seconds=3,
+                                    clock=FakeClock(budget=3))
+    assert r["counters"]["disagree"] == 0
+    assert r["counters"]["agree"] == 0
+    assert r["conclusive"] == 0
+    assert r["counters"]["inconclusive"] >= 1
+
+
+def test_differential_real_amaru_reject_with_reason_is_disagree(monkeypatch, tmp_path):
+    """The other half of the fix: a REAL amaru reject (served hash + attributable
+    reason token) opposite a node1 accept is STILL a genuine disagreement."""
+    _patch_substrate(monkeypatch)
+    _patch_persistent(monkeypatch)
+
+    def fake_await(handle, ix, *, timeout):
+        if handle["node"] == "node1":
+            return ("h%d" % ix, {"verdict": "accepted", "reason": None})
+        return ("h%d" % ix, {"verdict": "rejected", "reason": "InvalidKesSignatureOCERT"})
+
+    monkeypatch.setattr(soak, "_await_indexed_verdict", fake_await)
+    r = soak.run_opcert_header_soak(str(tmp_path), "encoding-form", 5, str(tmp_path / "o"),
+                                    target_nodes=["node1", "amaru-relay-1"], time_budget_seconds=3,
+                                    clock=FakeClock(budget=3))
+    assert r["counters"]["disagree"] >= 1
+    assert r["pass"] is False
+    verdicts = r["disagreements"][0]["verdicts"]
+    assert verdicts["node1"] == "accepted" and verdicts["amaru-relay-1"] == "rejected"
+
+
+def test_differential_dark_consumer_is_inconclusive(monkeypatch, tmp_path):
+    """Consumer-liveness signal: if a node's isolated consumer is positively
+    dead during the iteration window, its verdict is inconclusive even when a
+    (stale) reject was recorded -- so the iteration is excluded, not scored a
+    disagreement."""
+    _patch_substrate(monkeypatch)
+    _patch_persistent(monkeypatch)
+
+    def fake_await(handle, ix, *, timeout):
+        if handle["node"] == "node1":
+            return ("h%d" % ix, {"verdict": "accepted", "reason": None})
+        # Even a reason-BEARING reject must be discarded when the consumer is dead.
+        return ("h%d" % ix, {"verdict": "rejected", "reason": "InvalidKesSignatureOCERT"})
+
+    monkeypatch.setattr(soak, "_await_indexed_verdict", fake_await)
+    monkeypatch.setattr(soak, "_consumer_alive",
+                        lambda handle: handle.get("node") != "amaru-relay-1")
+    r = soak.run_opcert_header_soak(str(tmp_path), "encoding-form", 5, str(tmp_path / "o"),
+                                    target_nodes=["node1", "amaru-relay-1"], time_budget_seconds=3,
+                                    clock=FakeClock(budget=3))
+    assert r["counters"]["disagree"] == 0
+    assert r["conclusive"] == 0
+    assert r["counters"]["inconclusive"] >= 1
