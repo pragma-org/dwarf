@@ -86,7 +86,8 @@ def _case_id(family: str, iteration: int) -> str:
     return f"{family}-{iteration:06d}"
 
 
-def generate_case(family: str, seed: int, iteration: int, *, restart_k: int = 4) -> dict:
+def generate_case(family: str, seed: int, iteration: int, *, restart_k: int = 4,
+                  kes_evolution_aged: bool = False) -> dict:
     """Return a seed+iteration deterministic ``SoakCaseSpec`` dict."""
     if family not in FAMILIES:
         raise ValueError(f"unknown family: {family!r}")
@@ -145,7 +146,7 @@ def generate_case(family: str, seed: int, iteration: int, *, restart_k: int = 4)
         return base
 
     if family == "kes-evolution":
-        return _kes_evolution_case(base, rng)
+        return _kes_evolution_case(base, rng, aged=kes_evolution_aged)
 
     # kes-period-differential
     base.update(base_case="valid-control", expected_verdict="accept",
@@ -213,14 +214,23 @@ def _crosspool_confusion_case(base: dict, rng: random.Random) -> dict:
 # signature whose evolution count does not match the header's period -- a real
 # finding.
 #
-# ``delta`` is drawn from both signs so a soak exercises under- and
-# over-evolution. A negative delta is only reachable when ``correctEvol`` is
-# large enough (an early-slot header has correctEvol == 0 and cannot be
-# under-evolved); the forger fail-closes an out-of-range target evolution to an
-# ``unreachable`` (inconclusive) iteration, never a false finding, so positive
-# deltas always keep the conclusive count non-zero.
+# Reachability note (live-confirmed): a NEGATIVE delta (under-evolution) is only
+# reachable when ``correctEvol`` is large enough. On a fresh/young devnet the
+# live tip's ``correctEvol == 0``, so under-evolution can never be served -- the
+# forger correctly fail-closes it to an ``unreachable`` (inconclusive) iteration
+# (never a false finding), but such iterations are wasted and an all-negative
+# draw would make a run vacuous (0 conclusive -> the fail-closed soak FAILS).
+# Therefore the generator emits POSITIVE-ONLY deltas by default
+# (``KESEVO_POSITIVE_DELTAS``) so a fresh-devnet run is always conclusive; full
+# under+over coverage requires an AGED-KES devnet profile (same aging
+# requirement as kes-after-window), selected via ``kes_evolution_aged=True``
+# (then ``KESEVO_DELTAS``, both signs).
 # --------------------------------------------------------------------------- #
+# Both signs -- for an AGED-KES devnet where under-evolution is reachable.
 KESEVO_DELTAS: tuple[int, ...] = (-2, -1, 1, 2)
+# Over-evolution only -- always reachable, so a fresh/young-devnet run is never
+# vacuous. The default.
+KESEVO_POSITIVE_DELTAS: tuple[int, ...] = (1, 2)
 
 # Per-node expected rejection reason: the KES signature does not verify at the
 # header's expected evolution. Same tokens the opcert case table uses for a KES
@@ -231,18 +241,23 @@ _KESEVO_REJECT_REASON = {
 }
 
 
-def _kes_evolution_case(base: dict, rng: random.Random) -> dict:
+def _kes_evolution_case(base: dict, rng: random.Random, *, aged: bool = False) -> dict:
     """Populate ``base`` for one kes-evolution iteration.
 
     Seed+iteration deterministic: the only structured variation is the nonzero
-    evolution delta (drawn from ``KESEVO_DELTAS``), so replay from
-    ``(seed, iteration)`` reproduces the exact delta. The delta is never 0 -- a
-    zero delta is the *correct* evolution, which is a valid header the node
-    accepts, so the family must always mutate. The expected verdict is a
-    per-node ``reject`` keyed by the KES-signature rule token; an observed
-    ``accept`` is scored a mismatch (finding) by the soak result layer.
+    evolution delta, so replay from ``(seed, iteration)`` reproduces the exact
+    delta. The delta is never 0 -- a zero delta is the *correct* evolution, which
+    is a valid header the node accepts, so the family must always mutate.
+
+    ``aged`` selects the delta set: the default (fresh/young devnet) draws
+    POSITIVE-ONLY deltas (``KESEVO_POSITIVE_DELTAS``, over-evolution, always
+    reachable) so a run is never vacuous; ``aged=True`` (an aged-KES devnet where
+    under-evolution is reachable) draws both signs (``KESEVO_DELTAS``). The
+    expected verdict is a per-node ``reject`` keyed by the KES-signature rule
+    token; an observed ``accept`` is scored a mismatch (finding) by the soak
+    result layer.
     """
-    delta = rng.choice(KESEVO_DELTAS)
+    delta = rng.choice(KESEVO_DELTAS if aged else KESEVO_POSITIVE_DELTAS)
     base.update(base_case="kes-evolution", expected_verdict="reject",
                 expected_reason=dict(_KESEVO_REJECT_REASON),
                 params={"kes_evolution_delta": delta})

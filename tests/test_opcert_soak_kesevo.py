@@ -49,15 +49,36 @@ def test_case_shape_is_reject_with_per_node_kes_reasons():
         "cardano-node": "InvalidKesSignatureOCERT",
         "amaru": "InvalidKesSignature",
     }
-    assert c["params"]["kes_evolution_delta"] in F.KESEVO_DELTAS
+    assert c["params"]["kes_evolution_delta"] in F.KESEVO_POSITIVE_DELTAS
 
 
-def test_delta_is_never_zero_and_covers_both_signs():
-    deltas = [F.generate_case(FAMILY, 5, i)["params"]["kes_evolution_delta"] for i in range(80)]
-    assert 0 not in deltas, "delta 0 is the correct evolution (accepted) -- must never be emitted"
-    assert any(d < 0 for d in deltas), "no under-evolution generated"
-    assert any(d > 0 for d in deltas), "no over-evolution generated"
+def test_fresh_default_deltas_are_positive_only_never_vacuous():
+    # Fresh/young devnet: under-evolution is unreachable (correctEvol==0), so the
+    # default emits POSITIVE-ONLY deltas -- every iteration is reachable and a run
+    # is never vacuous. An all-negative draw (which would fail the soak) is
+    # impossible by construction.
+    deltas = [F.generate_case(FAMILY, s, i)["params"]["kes_evolution_delta"]
+              for s in range(30) for i in range(30)]
+    assert 0 not in deltas, "delta 0 is the correct (accepted) evolution -- never emit"
+    assert all(d > 0 for d in deltas), "fresh default must be over-evolution only"
+    assert set(deltas) == set(F.KESEVO_POSITIVE_DELTAS), "positive sweep incomplete"
+
+
+def test_aged_profile_covers_both_signs():
+    # An aged-KES devnet makes under-evolution reachable; aged=True draws both
+    # signs so under+over are both exercised.
+    deltas = [F.generate_case(FAMILY, s, i, kes_evolution_aged=True)["params"]["kes_evolution_delta"]
+              for s in range(30) for i in range(30)]
+    assert 0 not in deltas
+    assert any(d < 0 for d in deltas), "aged run must exercise under-evolution"
+    assert any(d > 0 for d in deltas), "aged run must exercise over-evolution"
     assert set(deltas) <= set(F.KESEVO_DELTAS)
+
+
+def test_aged_flag_is_seed_iteration_deterministic():
+    a = F.generate_case(FAMILY, 7, 3, kes_evolution_aged=True)
+    b = F.generate_case(FAMILY, 7, 3, kes_evolution_aged=True)
+    assert a == b
 
 
 def test_delta_is_attributable_in_spec_for_finding_traceability():
@@ -79,14 +100,17 @@ def _served(reason=None, verdict="rejected"):
 
 def test_under_evolved_reject_scores_pass():
     # under-evolved (delta < 0) rejected with the KES reason -> invariant holds.
-    spec = F.generate_case(FAMILY, 5, 0)  # delta -1
+    # under-evolution only exists on the aged profile.
+    spec = next(c for i in range(200)
+                if (c := F.generate_case(FAMILY, 5, i, kes_evolution_aged=True))
+                ["params"]["kes_evolution_delta"] < 0)
     assert spec["params"]["kes_evolution_delta"] < 0
     assert R.classify_iteration(spec, "abc", _served("InvalidKesSignatureOCERT"),
                                 "cardano-node") == "pass"
 
 
 def test_over_evolved_reject_scores_pass_amaru():
-    spec = F.generate_case(FAMILY, 5, 1)  # delta 1
+    spec = F.generate_case(FAMILY, 5, 1)  # default: over-evolution
     assert spec["params"]["kes_evolution_delta"] > 0
     assert R.classify_iteration(spec, "abc", _served("InvalidKesSignature"),
                                 "amaru") == "pass"
