@@ -1,0 +1,22 @@
+{
+  "run": "confirm-errorprec",
+  "counters": {
+    "family": "error-precedence",
+    "seed": 20260925,
+    "iterations": 10,
+    "conclusive": 8,
+    "inconclusive": 2,
+    "pass": true,
+    "counters": {
+      "agree": 8,
+      "disagree": 0,
+      "inconclusive": 2,
+      "mismatch": 0,
+      "pass": 8
+    },
+    "target_nodes": [
+      "node1",
+      "amaru-relay-1"
+    ]
+  }
+}

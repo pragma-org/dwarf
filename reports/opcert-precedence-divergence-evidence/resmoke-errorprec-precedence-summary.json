@@ -1,0 +1,91 @@
+{
+  "target_nodes": [
+    "amaru-relay-1",
+    "node1"
+  ],
+  "reason_mismatch_count": 6,
+  "combos": [
+    {
+      "combo": [
+        "cold-key-unauthorized",
+        "counter-jump"
+      ],
+      "count": 1,
+      "reported": {
+        "node1": "cold-key-unauthorized",
+        "amaru-relay-1": "counter-too-large"
+      }
+    },
+    {
+      "combo": [
+        "cold-key-unauthorized",
+        "kes-before-window"
+      ],
+      "count": 1,
+      "reported": {
+        "node1": "kes-before-window",
+        "amaru-relay-1": "cold-key-unauthorized"
+      }
+    },
+    {
+      "combo": [
+        "counter-jump",
+        "hot-key-mismatch"
+      ],
+      "count": 1,
+      "reported": {
+        "node1": "hot-key-mismatch",
+        "amaru-relay-1": "counter-too-large"
+      }
+    },
+    {
+      "combo": [
+        "counter-jump",
+        "kes-before-window"
+      ],
+      "count": 3,
+      "reported": {
+        "node1": "kes-before-window",
+        "amaru-relay-1": "counter-too-large"
+      }
+    }
+  ],
+  "precedence_edges": {
+    "amaru-relay-1": [
+      [
+        "cold-key-unauthorized",
+        "kes-before-window"
+      ],
+      [
+        "counter-too-large",
+        "cold-key-unauthorized"
+      ],
+      [
+        "counter-too-large",
+        "hot-key-mismatch"
+      ],
+      [
+        "counter-too-large",
+        "kes-before-window"
+      ]
+    ],
+    "node1": [
+      [
+        "cold-key-unauthorized",
+        "counter-too-large"
+      ],
+      [
+        "hot-key-mismatch",
+        "counter-too-large"
+      ],
+      [
+        "kes-before-window",
+        "cold-key-unauthorized"
+      ],
+      [
+        "kes-before-window",
+        "counter-too-large"
+      ]
+    ]
+  }
+}

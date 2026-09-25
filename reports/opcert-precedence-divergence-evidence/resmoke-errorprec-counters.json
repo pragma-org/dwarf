@@ -1,0 +1,22 @@
+{
+  "run": "resmoke-errorprec",
+  "counters": {
+    "family": "error-precedence",
+    "seed": 20260925,
+    "iterations": 16,
+    "conclusive": 13,
+    "inconclusive": 3,
+    "pass": true,
+    "counters": {
+      "agree": 13,
+      "disagree": 0,
+      "inconclusive": 3,
+      "mismatch": 0,
+      "pass": 13
+    },
+    "target_nodes": [
+      "node1",
+      "amaru-relay-1"
+    ]
+  }
+}

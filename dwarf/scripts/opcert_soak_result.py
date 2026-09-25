@@ -214,6 +214,73 @@ def evaluate_soak_agree(result):
             "disagreements": disagreements, "conclusive": conclusive}
 
 
+def summarize_precedence(result):
+    """Characterise the error-precedence divergences in a differential ``result``.
+
+    A ``reason_mismatch`` in a differential result is a both-reject-but-different-
+    canonical-rule iteration: when a header breaks TWO opcert rules at once, each
+    node reports whichever rule its validator checks FIRST, and this records the
+    two nodes disagreeing on that order. This helper aggregates those records
+    (result.json only -- no re-run) into a per-combo table plus the per-node
+    precedence edges they imply, so a finding table builds programmatically.
+
+    Returns::
+
+        {
+          "target_nodes": [nodeA, nodeB],
+          "reason_mismatch_count": int,
+          "combos": [
+            {"combo": [ruleX, ruleY], "count": n,
+             "reported": {nodeA: canonicalX, nodeB: canonicalY}},
+            ...  # one per distinct 2-rule combo that diverged, sorted
+          ],
+          "precedence_edges": {
+            node: [[higher_canonical, lower_canonical], ...],  # node reported higher first
+          },
+        }
+
+    ``precedence_edges`` are the pairwise "checked before" relations each node
+    revealed: for a divergent combo, the rule a node reported is the one it
+    ranked ABOVE the co-broken rule. Aggregated across combos they give each
+    node's (partial) opcert check order. Pure and deterministic; empty input
+    yields empty tables.
+    """
+    mismatches = result.get("reason_mismatches") or []
+    nodes = set()
+    combos = {}
+    edges = {}
+    for rm in mismatches:
+        node_a = rm.get("node_a")
+        node_b = rm.get("node_b")
+        canon_a = rm.get("canonical_a")
+        canon_b = rm.get("canonical_b")
+        spec = rm.get("spec") or {}
+        rules = tuple(sorted((spec.get("params") or {}).get("rules") or []))
+        if node_a is not None:
+            nodes.add(node_a)
+        if node_b is not None:
+            nodes.add(node_b)
+        entry = combos.setdefault(rules, {"combo": list(rules), "count": 0, "reported": {}})
+        entry["count"] += 1
+        if node_a is not None:
+            entry["reported"][node_a] = canon_a
+        if node_b is not None:
+            entry["reported"][node_b] = canon_b
+        # Each node ranked the rule it reported ABOVE the one the other reported.
+        if node_a is not None and canon_a is not None and canon_b is not None:
+            edges.setdefault(node_a, set()).add((canon_a, canon_b))
+        if node_b is not None and canon_b is not None and canon_a is not None:
+            edges.setdefault(node_b, set()).add((canon_b, canon_a))
+    return {
+        "target_nodes": sorted(nodes),
+        "reason_mismatch_count": len(mismatches),
+        "combos": [combos[k] for k in sorted(combos)],
+        "precedence_edges": {
+            node: sorted([list(e) for e in edges[node]]) for node in sorted(edges)
+        },
+    }
+
+
 def evaluate_soak_reasons_agree(result):
     """Differential families: PASS iff ``reason_mismatches == []`` and
     ``conclusive > 0`` (fail-closed vacuous). Verdict-level agreement is checked
