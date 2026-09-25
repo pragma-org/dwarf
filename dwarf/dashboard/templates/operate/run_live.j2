@@ -33,6 +33,12 @@
     <h2 id="live-heading"><span class="run-live__state" data-run-live-state>connecting…</span></h2>
   </header>
   <pre class="run-live__pre" data-run-live-output></pre>
+  {% if ui == "basic" %}
+  <p class="dk-live__status basic-only" data-dk-live-status>○ Connecting to the run log…</p>
+  <ol class="dk-live basic-only" data-dk-live-events aria-live="polite"></ol>
+  <p class="dk-live__empty basic-only" data-dk-live-empty>No events yet — lines appear here as the run writes them.</p>
+  <button type="button" class="dk-btn basic-only" data-dk-live-raw aria-pressed="false">Show raw log</button>
+  {% endif %}
 </section>
 
 <script type="module">
@@ -51,13 +57,78 @@
   es.addEventListener('hello', (e) => {
     state.textContent = "live · streaming " + e.data;
   });
-  es.addEventListener('log', (e) => append(e.data));
+  es.addEventListener('log', (e) => { append(e.data); renderEvent(e.data); });
   es.addEventListener('end', (e) => {
     state.textContent = "closed · " + e.data;
+    setStatus(e.data === 'manifest' ? '■ Closed — the run finished and wrote its manifest.' : '■ Closed — ' + e.data + '.');
     es.close();
   });
   es.addEventListener('error', () => {
     state.textContent = "stream error · auto-retry";
+    setStatus('▲ Stream interrupted — retrying automatically.');
   });
+
+  // ---- Basic view: readable event timeline (the raw <pre> above stays the source of truth) ----
+  const list = document.querySelector('[data-dk-live-events]');
+  const statusEl = document.querySelector('[data-dk-live-status]');
+  const emptyEl = document.querySelector('[data-dk-live-empty]');
+  const rawBtn = document.querySelector('[data-dk-live-raw]');
+  function setStatus(text) { if (statusEl) statusEl.textContent = text; }
+  es.addEventListener('hello', () => setStatus('● Live — streaming events as the run writes them.'));
+  if (rawBtn) rawBtn.addEventListener('click', () => {
+    const on = document.querySelector('.run-live').classList.toggle('dk-live--raw');
+    rawBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    rawBtn.textContent = on ? 'Hide raw log' : 'Show raw log';
+  });
+  const nice = (s) => String(s || '').replace(/_/g, ' ');
+  const time = (ts) => { const m = String(ts || '').match(/T(\d\d:\d\d:\d\d(?:\.\d+)?)/); return m ? m[1] : (ts || ''); };
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+  function parsePayload(p) {
+    if (p && typeof p === 'object') return p;
+    if (typeof p !== 'string') return null;
+    try { return JSON.parse(p); } catch (_) {}
+    try { return JSON.parse(p.replace(/'/g, '"').replace(/\bNone\b/g, 'null').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false')); } catch (_) {}
+    return null;
+  }
+  function renderEvent(line) {
+    if (!list) return;
+    let ev; try { ev = JSON.parse(line); } catch (_) { ev = { event: 'line', payload: line }; }
+    const payload = parsePayload(ev.payload);
+    const li = el('li', 'dk-live__row');
+    const head = el('div', 'dk-live__head');
+    head.append(el('time', 'dk-live__ts', time(ev.ts)));
+    if (ev.phase) { const ph = el('span', 'dk-live__phase', ev.phase); ph.dataset.phase = ev.phase; head.append(ph); }
+    head.append(el('span', 'dk-live__prim', nice(ev.primitive || ev.source || '')));
+    const evName = String(ev.event || '');
+    const tone = /fail|error/i.test(evName) || (ev.level === 'error') ? 'bad' : (/pass|complete|executed|ok/i.test(evName) ? 'good' : 'neutral');
+    const badge = el('span', 'dk-live__event dk-live__event--' + tone, nice(evName));
+    head.append(badge);
+    const chips = el('span', 'dk-live__chips');
+    if (payload) {
+      if (payload.exit_code !== undefined) chips.append(el('span', 'dk-live__chip ' + (payload.exit_code === 0 ? 'ok' : 'bad'), 'exit ' + payload.exit_code + (payload.exit_code === 0 ? ' ♦' : ' ▲')));
+      ['outcome', 'status', 'result', 'verdict'].forEach((k) => { if (payload[k] !== undefined && typeof payload[k] !== 'object') chips.append(el('span', 'dk-live__chip', k + ' ' + payload[k])); });
+      if (payload.duration_seconds !== undefined) chips.append(el('span', 'dk-live__chip', Number(payload.duration_seconds).toFixed(2) + ' s'));
+    }
+    head.append(chips);
+    li.append(head);
+    if (ev.payload !== undefined && ev.payload !== null && ev.payload !== '') {
+      const det = el('details', 'dk-live__details');
+      det.append(el('summary', '', 'details'));
+      if (payload) {
+        Object.entries(payload).forEach(([k, v]) => {
+          const text = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+          const block = el('div', 'dk-live__field');
+          block.append(el('span', 'dk-live__key', nice(k)));
+          block.append(el(text.includes('\n') || text.length > 90 ? 'pre' : 'code', 'dk-live__val', text));
+          det.append(block);
+        });
+      } else {
+        det.append(el('pre', 'dk-live__val', String(ev.payload)));
+      }
+      li.append(det);
+    }
+    list.append(li);
+    if (emptyEl) emptyEl.hidden = true;
+  }
 </script>
 {% endblock %}
