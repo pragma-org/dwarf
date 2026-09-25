@@ -27,7 +27,7 @@
   <div class="dk-face dk-face--front">
     {% if tier == 'holo' %}<div class="dk-foil"></div><div class="dk-glare"></div>{% endif %}
     <div class="dk-face__body">
-      <div class="dk-kicker"><span>{{ c.kicker or '' }}</span><span class="{{ c.tone or '' }}" aria-hidden="true">{{ c.suit or '' }}</span></div>
+      <div class="dk-kicker"><span{% if c.kicker_tone %} class="{{ c.kicker_tone }}"{% endif %}>{{ c.kicker or '' }}</span><span class="{{ c.tone or '' }}" aria-hidden="true">{{ c.suit or '' }}</span></div>
       <div class="dk-item__title">{{ c.title }}</div>
       {% if c.id and c.id != c.title and not c.hide_id %}<code class="dk-item__id">{{ c.id }}</code>{% endif %}
       {% if c.sub %}<p class="dk-sub">{{ c.sub }}</p>{% endif %}
@@ -40,7 +40,7 @@
 {%- endmacro %}
 
 {#- A searchable, filterable grid of cards. groups = [(value, label)] for filter chips. -#}
-{% macro deck_grid(cards, label='items', groups=none, empty='Nothing here yet.', search=true, facets=none) -%}
+{% macro deck_grid(cards, label='items', groups=none, empty='Nothing here yet.', search=true, facets=none, layout='grid') -%}
 <section class="basic-only dk" aria-label="{{ label|capitalize }}">
 {% if cards %}
 <div data-dk-grid>
@@ -63,7 +63,7 @@
     <span class="dk-count" data-dk-grid-count aria-live="polite">{{ cards|length }} {{ label }}</span>
   </div>
   {% endif %}
-  <div class="dk-grid">
+  <div class="dk-grid{% if layout == 'list' %} dk-grid--list{% endif %}">
     {% for c in cards %}{{ deck_card(c) }}{% endfor %}
   </div>
 </div>

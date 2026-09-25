@@ -97,13 +97,14 @@
   'href': r.run_url if r.is_local else none, 'accent': k.implementation,
   'kicker': {'pass': '♦ pass', 'fail': '▲ fail', 'error': '✕ error'}.get(st, '■ no result'),
   'tone': {'pass': 'dk-g-pass', 'fail': 'dk-g-fail', 'error': 'dk-g-error'}.get(st, 'dk-g-other'),
+  'kicker_tone': {'pass': 'dk-g-pass', 'fail': 'dk-g-fail', 'error': 'dk-g-error'}.get(st, 'dk-g-other'),
   'sub': (ended ~ ' UTC' if ended else 'end time not recorded') ~ ((' · ' ~ r.workload_label) if r.workload_label and r.workload_label != '—' else ''),
   'tier': 'warn' if st in ('fail', 'error') else 'back', 'group': 'res:' ~ st ~ ' impl:' ~ (k.implementation or 'unknown'),
   'tags': ([k.implementation] if k.implementation else []) + ([r.runtime] if r.runtime else ([k.runtime] if k.runtime else [])) + k.versions + (['thin pass'] if r.thinness_signals else []),
   'search': r.run_id ~ ' ' ~ (r.scenario_id or '') ~ ' ' ~ exe ~ ' ' ~ (r.target_implementation or '')}) %}{% endfor %}
 {% set counts = {} %}{% for c in cards %}{% set g = c.group.split(' ')[0][4:] %}{% set _ = counts.update({g: counts.get(g, 0) + 1}) %}{% endfor %}
 {% set resopts = [] %}{% for v, lab in [('pass', '♦ pass'), ('fail', '▲ fail'), ('error', '✕ error'), ('none', '■ no result')] %}{% if counts.get(v) %}{% set _ = resopts.append((v, lab ~ ' · ' ~ counts[v])) %}{% endif %}{% endfor %}
-{{ deck_grid(cards, label='runs', facets=[('res', 'Result', resopts), ('impl', 'Implementation', [('amaru', 'amaru'), ('cardano-node', 'cardano-node'), ('mixed', 'mixed')])], empty='No forensic runs recorded yet.') }}
+{{ deck_grid(cards, label='runs', facets=[('res', 'Result', resopts), ('impl', 'Implementation', [('amaru', 'amaru'), ('cardano-node', 'cardano-node'), ('mixed', 'mixed')])], empty='No forensic runs recorded yet.', layout='list') }}
 {% endif %}
 <div class="responsive-table runs-table-wrap">
 {% if ui == "basic" %}<p class="b-note" style="margin:6px 0 14px">Recent runs, newest first. Filter by verdict above; open a run for its evidence. <a class="b-adv-link" href="/operate/runs?view=advanced">Anomaly-family analysis in Advanced &rarr;</a></p>{% endif %}

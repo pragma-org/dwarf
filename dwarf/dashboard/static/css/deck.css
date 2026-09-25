@@ -431,6 +431,30 @@ body[data-ui="basic"] .scenario-phase__list:empty { display:none; }
 /* runs: the table and server filter bar keep their exact markup (visual-contract tests); Basic shows run cards instead */
 body[data-ui="basic"] .runs-table-wrap, body[data-ui="basic"] .runs-filter-bar { display:none !important; }
 
+/* list layout: one full-width row per item (runs) */
+.dk-grid--list { grid-template-columns:minmax(0,1fr) !important; gap:6px; }
+.dk-grid--list .dk-card { min-height:0; }
+.dk-grid--list .dk-face { background:linear-gradient(160deg,var(--dk-face2),var(--dk-face)) !important; border-radius:10px; }
+.dk-grid--list .dk-face::after { display:none !important; }
+.dk-grid--list .dk-face__body { display:grid; grid-template-columns:104px minmax(0,1fr) auto; grid-template-areas:"kick title tags" "kick sub tags";
+  column-gap:16px; row-gap:2px; align-items:center; padding:9px 14px 9px 18px; }
+.dk-grid--list .dk-kicker { grid-area:kick; display:block; font-size:11px; letter-spacing:.14em; }
+.dk-grid--list .dk-kicker span:last-child { display:none; }
+.dk-grid--list .dk-item__title { grid-area:title; font-size:16.5px; -webkit-line-clamp:1; }
+.dk-grid--list .dk-sub { grid-area:sub; font-size:12.5px; margin:0; -webkit-line-clamp:1; }
+.dk-grid--list .dk-tags { grid-area:tags; margin:0 !important; padding:0 !important; justify-content:flex-end; max-width:420px; }
+.dk-grid--list .dk-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:5px; border-radius:10px 0 0 10px; z-index:3; background:var(--dk-line2); }
+.dk-grid--list .dk-accent-amaru::before { background:rgb(160,110,245); }
+.dk-grid--list .dk-accent-cardano-node::before { background:rgb(80,140,245); }
+.dk-grid--list .dk-accent-mixed::before { background:linear-gradient(180deg,rgb(160,110,245),rgb(80,140,245)); }
+.dk-grid--list .dk-warnface .dk-face { border-color:rgba(255,178,92,.6); box-shadow:none; }
+.dk-grid--list a.dk-card:hover .dk-face { border-color:var(--dk-gold2); }
+@media (max-width:760px) {
+  .dk-grid--list .dk-face__body { grid-template-columns:minmax(0,1fr); grid-template-areas:"kick" "title" "sub" "tags"; row-gap:4px; }
+  .dk-grid--list .dk-tags { justify-content:flex-start; max-width:none; }
+  .dk-grid--list .dk-item__title { -webkit-line-clamp:2; }
+}
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }
