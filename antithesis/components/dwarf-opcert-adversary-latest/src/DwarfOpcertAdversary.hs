@@ -151,6 +151,11 @@ data KeySet = KeySet
     , ksColdSignKey :: !(SignKeyDSIGN Ed25519DSIGN)
     , ksSlotsPerKESPeriod :: !Word
     , ksMaxKESEvo :: !Word
+    , ksForeignColdSignKey :: !(Maybe (SignKeyDSIGN Ed25519DSIGN))
+    -- ^ A DIFFERENT real devnet pool's cold key, loaded only for the
+    -- cross-pool-confusion family. Signs the @cross-pool@ case's opcert so the
+    -- certificate is authorized by the wrong pool; 'Nothing' for every other
+    -- case (the field is unused there).
     }
 
 
@@ -365,6 +370,19 @@ applyCase ks caseId hdr = case hdr of
             -- ocert signature fails: InvalidSignatureOCERT.
             Right $ finishOCert body (ocert{ ocertSigma = wrongColdSig (ocertVkHot ocert) realN (ocertKESPeriod ocert) })
                                      MutateColdKey "reject"
+        "cross-pool" ->
+            -- Cross-pool confusion: sign the opcert with a DIFFERENT REAL pool's
+            -- cold key (loaded into ksForeignColdSignKey), leaving hbVk (the
+            -- header issuer cold vkey the node verifies the opcert signature
+            -- against) as our pool's. A node that scopes opcert authorization
+            -- per pool rejects it (the signature is by another pool's cold key):
+            -- InvalidSignatureOCERT. An ACCEPT would mean the node accepted
+            -- another pool's authorization -- a cross-pool-confusion finding.
+            case ksForeignColdSignKey ks of
+                Nothing -> Left "cross-pool unreachable: no foreign cold key loaded (--foreign-cold-skey / foreign_pool param missing)"
+                Just fcold ->
+                    Right $ finishOCert body (ocert{ ocertSigma = foreignColdSig fcold (ocertVkHot ocert) realN (ocertKESPeriod ocert) })
+                                             MutateColdKey "reject"
         "counter-behind"
             | realN < 1 ->
                 Left $ "counter-behind unreachable: recorded pool counter is "
@@ -422,6 +440,8 @@ applyCase ks caseId hdr = case hdr of
         wrongColdSig vkHot n p =
             signedDSIGN (genKeyDSIGN (mkSeedFromBytes (BS.replicate 32 0x11)) :: SignKeyDSIGN Ed25519DSIGN)
                         (OCertSignable vkHot n p)
+        -- An opcert signature by a DIFFERENT REAL pool's cold key (cross-pool).
+        foreignColdSig fcold vkHot n p = signedDSIGN fcold (OCertSignable vkHot n p)
         wrongKesKey = KES.unsoundPureGenKeyKES (mkSeedFromBytes (BS.replicate 32 0x22))
 
 
@@ -494,6 +514,7 @@ data CaseSpec = CaseSpec
     , csKesPeriodFrac  :: !(Maybe Double)
     , csReplayCounter  :: !(Maybe Word)
     , csSlotOffsetFrac :: !(Maybe Double)
+    , csForeignPool    :: !(Maybe String)
     }
     deriving (Eq, Show)
 
@@ -533,7 +554,8 @@ parseCaseSpec raw = do
         kfrac  <- getP "kes_period_fraction"
         replay <- getP "replay_counter"
         soff   <- getP "slot_offset_fraction"
-        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff)
+        fpool  <- getP "foreign_pool"
+        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool)
 
 -- | The seed that drives the encoding-form byte re-encoding for THIS case. The
 -- generator derives a distinct per-iteration @byte_seed@ (in @params@) from

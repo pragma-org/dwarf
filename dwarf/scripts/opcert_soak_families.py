@@ -21,6 +21,7 @@ FAMILIES: tuple[str, ...] = (
     "accept-boundary",
     "restart-persistence",
     "kes-period-differential",
+    "cross-pool-confusion",
 )
 
 DIFFERENTIAL_FAMILIES: frozenset[str] = frozenset({"encoding-form", "kes-period-differential"})
@@ -88,8 +89,58 @@ def generate_case(family: str, seed: int, iteration: int, *, restart_k: int = 4)
                     params={"rotate_to_counter": rotate_to, "replay_counter": replay})
         return base
 
+    if family == "cross-pool-confusion":
+        return _crosspool_confusion_case(base, rng)
+
     # kes-period-differential
     base.update(base_case="valid-control", expected_verdict="accept",
                 expected_reason=None,
                 params={"slot_offset_fraction": rng.random()})
+    return base
+
+
+# --------------------------------------------------------------------------- #
+# Family #2: cross-pool confusion (single-target). Serve a real pool1 header
+# whose operational certificate is authorized by the WRONG pool -- its opcert
+# signature (``ocertSigma``) is made by a DIFFERENT real devnet pool's cold key
+# (pool2/pool3), while the header issuer cold vkey (``hbVk``) stays pool1. A
+# node that scopes opcert authorization PER POOL verifies ``ocertSigma`` against
+# pool1's cold vkey and rejects it (the signature is by another pool's key), so
+# the invariant is REJECTED; an ACCEPT means the node treated another pool's
+# authorization as valid for pool1 -- cross-pool confusion, a real finding.
+#
+# Unlike ``cold-key-unauthorized`` (which signs with a synthetic throwaway key),
+# the wrong key here is a legitimate, network-authorized OTHER pool's cold key,
+# so the test isolates *pool-scoped* authorization rather than merely "unknown
+# key". The reject reason is the same opcert-signature rule token on each node.
+# The forger derives the foreign pool's ``cold.skey`` from the sibling of the
+# ``--cold-skey`` it is already given plus this ``foreign_pool`` param, so no
+# driver change is needed to route a second pool's key.
+# --------------------------------------------------------------------------- #
+CROSSPOOL_FOREIGN_POOLS: tuple[str, ...] = ("pool2", "pool3")
+
+# Per-node expected rejection reason for the cross-pool family: the opcert
+# signature does not verify against the header issuer (pool1) cold vkey. Same
+# tokens the opcert case table uses for an issuer-signature failure.
+_CROSSPOOL_REJECT_REASON = {
+    "cardano-node": "InvalidSignatureOCERT",
+    "amaru": "InvalidSignature",
+}
+
+
+def _crosspool_confusion_case(base: dict, rng: random.Random) -> dict:
+    """Populate ``base`` for one cross-pool-confusion iteration.
+
+    Seed+iteration deterministic: the only structured variation is which real
+    foreign pool authorizes the opcert (drawn from ``CROSSPOOL_FOREIGN_POOLS``),
+    so replay from ``(seed, iteration)`` reproduces the exact foreign pool. The
+    expected verdict is a per-node ``reject`` keyed by the issuer-signature rule
+    token; an observed ``accept`` is scored a mismatch (finding) by the soak
+    result layer.
+    """
+    foreign = rng.choice(CROSSPOOL_FOREIGN_POOLS)
+    base.update(base_case="cross-pool", expected_verdict="reject",
+                expected_reason=dict(_CROSSPOOL_REJECT_REASON),
+                params={"foreign_pool": foreign,
+                        "variant": "foreign-cold-authorization"})
     return base

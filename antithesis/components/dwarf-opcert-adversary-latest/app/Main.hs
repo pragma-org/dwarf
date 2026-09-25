@@ -250,6 +250,38 @@ emitHeaderEvidence params seenHeaders evidence header = do
         PassthroughNonConway -> "passthrough_non_conway"
 
 
+-- | Derive a foreign pool's @cold.skey@ path from our own @--cold-skey@ path.
+-- Our cold key lives at @.../pools-keys/<ourPool>/cold.skey@; the foreign pool's
+-- is the sibling @.../pools-keys/<foreignPool>/cold.skey@.
+foreignColdPath :: FilePath -> String -> FilePath
+foreignColdPath ourCold foreignPool =
+    takeDirectory (takeDirectory ourCold) </> foreignPool </> "cold.skey"
+
+-- | Load a foreign pool's cold signing key when a foreign pool is named, else
+-- 'Nothing'. Fails loudly (fail-closed) if the named pool's key is absent.
+loadForeignColdMaybe _ Nothing = pure Nothing
+loadForeignColdMaybe ourCold (Just foreignPool) = do
+    let path = foreignColdPath ourCold foreignPool
+    exists <- doesFileExist path
+    if exists
+        then Just <$> loadColdSignKey path
+        else error ("cross-pool: foreign cold key not found: " <> path)
+
+-- | The effective KeySet for a given served spec: for the cross-pool family the
+-- per-index spec's @foreign_pool@ selects which pool's cold key signs the
+-- opcert, so (in persistent mode, where many specs stream through one forger)
+-- the foreign key must track the current spec rather than the one loaded at
+-- startup. When the spec names the same (or no) foreign pool the base KeySet is
+-- reused unchanged.
+ksForSpec :: KeySet -> FilePath -> Maybe CaseSpec -> IO KeySet
+ksForSpec base _ Nothing = pure base
+ksForSpec base ourCold (Just spec) = case csForeignPool spec of
+    Nothing -> pure base
+    Just _  -> do
+        mFc <- loadForeignColdMaybe ourCold (csForeignPool spec)
+        pure base { ksForeignColdSignKey = mFc }
+
+
 appendEvidence :: FilePath -> Value -> IO ()
 appendEvidence path value = do
     createDirectoryIfMissing True (takeDirectory path)
@@ -281,7 +313,14 @@ runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo eviden
     kesKey <- loadKesSignKey kesSkey
     coldKey <- loadColdSignKey coldSkey
     (mSpec, mSpecValue) <- loadCaseSpec mCaseSpecPath
-    let ks = KeySet kesKey coldKey slots maxEvo
+    -- Cross-pool family: the case-spec (single-spec mode) may name a foreign
+    -- pool whose cold key authorizes the opcert. Derive its cold.skey from the
+    -- sibling directory of our own --cold-skey (.../pools-keys/<pool>/cold.skey)
+    -- so no extra flag/driver change is needed. In persistent (spec-dir) mode
+    -- the per-index spec supplies foreign_pool; we then load it lazily below via
+    -- the same derivation keyed on that spec (handled in serveCaseOn).
+    mForeignCold <- loadForeignColdMaybe coldSkey (mSpec >>= csForeignPool)
+    let ks = KeySet kesKey coldKey slots maxEvo mForeignCold
         magic = NetworkMagic 42
         specField = maybe [] (\v -> ["spec" .= v]) mSpecValue
         persistent = maybe False (const True) mCaseSpecDir
@@ -304,15 +343,16 @@ runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo eviden
     -- by the served header hash so the codec serves them for exactly that
     -- header), emit one served/unreachable evidence line (with @extra@ fields),
     -- and return the header to roll forward.
-    let serveCaseOn mSp mv cid extra h =
-            case applyCaseSpec ks mSp (maybe cid csBaseCase mSp) h of
-                Left reason -> do
+    let serveCaseOn mSp mv cid extra h = do
+          ksEff <- ksForSpec ks coldSkey mSp
+          case applyCaseSpec ksEff mSp (maybe cid csBaseCase mSp) h of
+            Left reason -> do
                     putStrLn ("opcert-case: FINDING " <> cid <> ": " <> reason)
                     appendEvidence evidence $
                         object ([ "kind" .= ("opcert_case_unreachable" :: String)
                                 , "case" .= cid, "reason" .= reason ] ++ extra ++ specOf mv)
                     pure h
-                Right cr -> do
+            Right cr -> do
                     let HeaderFields (SlotNo slotW) _ hash = getHeaderFields (crHeader cr)
                     encInfo <- case mSp >>= csEncodingForm of
                         Just form -> do

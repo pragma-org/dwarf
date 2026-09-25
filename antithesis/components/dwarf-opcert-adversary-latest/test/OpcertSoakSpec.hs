@@ -75,6 +75,11 @@ main = hspec $ do
         it "rejects an unknown encoding form (raw-bytes is out of scope)" $
             parseCaseSpec "{\"base_case\":\"valid-control\",\"seed\":1,\
                 \\"params\":{\"encoding_form\":\"raw-bytes\"}}" `shouldSatisfy` isLeft
+        it "parses a cross-pool-confusion spec (foreign_pool)" $ do
+            let js = "{\"base_case\":\"cross-pool\",\"seed\":5,\"params\":{\"foreign_pool\":\"pool2\",\"variant\":\"foreign-cold-authorization\"}}"
+            parseCaseSpec js `shouldSatisfy` \case
+                Right sp -> csBaseCase sp == "cross-pool" && csForeignPool sp == Just "pool2"
+                _ -> False
 
     describe "reEncodeOpcert" $ do
         it "trailing-bytes re-encoding still decodes to the same term (reaches decoder)" $
