@@ -437,7 +437,15 @@ def _refresh_vmap(handle):
     refresh (``docker logs --since <last>``), never the whole window — so each
     poll stays cheap for the full multi-hour run even against a debug-verbose
     amaru consumer, and the map still holds every verdict ever observed (so a
-    correlation that briefly falls behind the forger never loses old verdicts)."""
+    correlation that briefly falls behind the forger never loses old verdicts).
+
+    Reject-sticky (merge_verdicts_sticky): a reject on a served header hash
+    is terminal and is NEVER overwritten by a later accept on that same
+    hash. This closes the deviant-header masking -- a strict decoder that
+    rejects a served deviant then accepts a canonical re-serve of the same
+    hash (both lines can land in one lagging poll) stays recorded as
+    rejected, so a one-node-reject/other-accept case scores as a
+    disagreement, never agree."""
     ctx = handle["ctx"]
     vmap = handle.setdefault("vmap", {})
     since = handle.get("log_since") or handle["since"]
@@ -445,7 +453,7 @@ def _refresh_vmap(handle):
     # line written between fetch and cursor-set is re-read next time, not lost.
     events = det._read_consumer_events(ctx["name"], since, ctx["implementation"])
     handle["log_since"] = _ts_ago(3)
-    vmap.update(det.verdict_by_hash(events))
+    det.merge_verdicts_sticky(vmap, events)
     return vmap
 
 

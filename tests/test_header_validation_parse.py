@@ -81,3 +81,37 @@ def test_cardano_chainsync_headererror_without_hash_is_skipped():
     line = ('{"at":"t","ns":"ChainSync.Client.Exception",'
             '"data":{"kind":"HeaderError","error":"HeaderError something with no hash"}}')
     assert hv.parse_cardano_header_events([line]) == []
+
+
+def test_merge_verdicts_sticky_reject_not_overwritten_by_later_accept():
+    # A served deviant header hash rejected, then accepted on a canonical
+    # re-serve of the SAME hash (both land in one lagging poll): reject sticks.
+    acc = {}
+    hv.merge_verdicts_sticky(acc, [
+        {"header_hash": "H", "verdict": "rejected", "reason": "DecodeError"},
+        {"header_hash": "H", "verdict": "accepted", "reason": None},
+    ])
+    assert acc["H"]["verdict"] == "rejected"
+
+
+def test_merge_verdicts_sticky_reject_wins_regardless_of_order_and_across_calls():
+    acc = {}
+    # accept first, reject later (still reject wins)
+    hv.merge_verdicts_sticky(acc, [{"header_hash": "H", "verdict": "accepted", "reason": None}])
+    hv.merge_verdicts_sticky(acc, [{"header_hash": "H", "verdict": "rejected", "reason": "e"}])
+    # and a subsequent accept on the same hash never revives it
+    hv.merge_verdicts_sticky(acc, [{"header_hash": "H", "verdict": "accepted", "reason": None}])
+    assert acc["H"]["verdict"] == "rejected"
+
+
+def test_merge_verdicts_sticky_accept_last_wins_and_distinct_hashes_independent():
+    acc = {}
+    hv.merge_verdicts_sticky(acc, [
+        {"header_hash": "A", "verdict": "accepted", "reason": None},
+        {"header_hash": "B", "verdict": "rejected", "reason": "e"},
+        {"header_hash": "A", "verdict": "accepted", "reason": None},
+    ])
+    assert acc["A"]["verdict"] == "accepted" and acc["B"]["verdict"] == "rejected"
+    # a canonical (different) header accept never touches the deviant reject B
+    hv.merge_verdicts_sticky(acc, [{"header_hash": "C", "verdict": "accepted", "reason": None}])
+    assert acc["B"]["verdict"] == "rejected"

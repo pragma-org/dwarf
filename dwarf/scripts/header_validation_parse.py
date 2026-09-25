@@ -167,3 +167,31 @@ def verdict_by_hash(events: list[dict]) -> dict[str, dict]:
     for event in events:
         result[event["header_hash"]] = event
     return result
+
+
+def merge_verdicts_sticky(accumulator: dict, events: list[dict]) -> dict:
+    """Fold verdict ``events`` into ``accumulator`` IN PLACE, reject-sticky.
+
+    A ``rejected`` verdict for a header hash is TERMINAL: once a node has
+    rejected a specific header hash, no later event may overwrite it -- neither a
+    canonical re-serve of the same hash that the node then accepts, nor a
+    re-follow. This closes the family-A differential masking where a strict
+    decoder rejects a served deviant header and a subsequent accept on the SAME
+    hash would otherwise flip the recorded verdict to ``accepted`` (the plain
+    last-wins ``verdict_by_hash`` did exactly that), scoring a real
+    reject-vs-accept disagreement as agreement.
+
+    A served deviant header has its own unique hash, so a verdict on a DIFFERENT
+    (canonical / real-pool) header -- a different key -- never touches it. Accept
+    events keep last-wins among themselves (a normal adoption still records
+    ``accepted``); a reject wins over an accept regardless of arrival order. A
+    hash never seen stays absent (the caller treats absent as ``inconclusive``,
+    never an implicit accept). Returns ``accumulator``.
+    """
+    for event in events:
+        header_hash = event["header_hash"]
+        existing = accumulator.get(header_hash)
+        if existing is not None and existing.get("verdict") == "rejected":
+            continue  # reject is terminal for this hash; never overwritten
+        accumulator[header_hash] = event
+    return accumulator

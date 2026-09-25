@@ -99,6 +99,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.header_validation_parse import (
+    merge_verdicts_sticky,
     parse_amaru_header_events,
     parse_cardano_header_events,
     verdict_by_hash,

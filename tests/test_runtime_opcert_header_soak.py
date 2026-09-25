@@ -149,8 +149,10 @@ def test_await_indexed_verdict_reads_verdict_for_served(monkeypatch, tmp_path):
     ev.write_text(json.dumps({"kind": "opcert_case_served", "served_index": 0, "header_hash": "hh"}) + "\n",
                   encoding="utf-8")
     handle = {"evidence": ev, "since": "T", "ctx": {"name": "c", "implementation": "cardano-node"}}
-    monkeypatch.setattr(soak.det, "_read_consumer_events", lambda *a, **k: [])
-    monkeypatch.setattr(soak.det, "verdict_by_hash", lambda ev: {"hh": {"verdict": "accepted", "reason": None}})
+    # _refresh_vmap folds real parsed events reject-sticky; feed the verdict
+    # through the consumer-events seam (not the removed verdict_by_hash stub).
+    monkeypatch.setattr(soak.det, "_read_consumer_events",
+                        lambda *a, **k: [{"header_hash": "hh", "verdict": "accepted", "reason": None}])
     served, observed = soak._await_indexed_verdict(handle, 0, timeout=1.0)
     assert served == "hh" and observed["verdict"] == "accepted"
 
@@ -430,3 +432,93 @@ def test_result_written_with_seed_and_duration(monkeypatch, tmp_path):
     disk = json.loads((out / "result.json").read_text())
     assert disk["seed"] == 5 and disk["family"] == "accept-boundary" and "duration_seconds" in disk
     assert disk == r
+
+
+# --------------------------------------------------------------------------- #
+# Deviant-header verdict masking (family A validity). A strict decoder that
+# REJECTS a served deviant header and then, on a canonical re-serve of the SAME
+# header hash, accepts it, must be recorded as REJECTED for that served index:
+# the later accept on the same hash must never overwrite the reject (last-wins
+# verdict_by_hash did). Otherwise a real one-node-reject/other-accept
+# disagreement is masked as agreement and a "0 disagreements" run is worthless.
+# --------------------------------------------------------------------------- #
+
+def _diff_handle(node, tmp_path):
+    ev = tmp_path / f"ev-{node}.ndjson"
+    ev.write_text(json.dumps({"kind": "opcert_case_served", "served_index": 0,
+                              "header_hash": f"H-{node}"}) + "\n", encoding="utf-8")
+    return {"node": node, "since": "T", "evidence": ev,
+            "ctx": {"name": node, "implementation": "cardano-node"}}
+
+
+def test_await_indexed_verdict_reject_is_sticky_not_masked_by_canonical_accept(monkeypatch, tmp_path):
+    handle = _diff_handle("node1", tmp_path)
+    # A single incremental poll returns BOTH the deviant reject and a later
+    # canonical accept for the SAME served hash (the correlator lagged the
+    # forger, exactly what the throughput fix makes common).
+    monkeypatch.setattr(soak.det, "_read_consumer_events", lambda *a, **k: [
+        {"header_hash": "H-node1", "verdict": "rejected", "reason": "DecodeError"},
+        {"header_hash": "H-node1", "verdict": "accepted", "reason": None},
+    ])
+    served, observed = soak._await_indexed_verdict(handle, 0, timeout=0.0)
+    assert served == "H-node1"
+    assert observed["verdict"] == "rejected"  # NOT masked to accepted
+
+
+def _run_masking_diff(monkeypatch, tmp_path, node1_events, amaru_events):
+    _patch_substrate(monkeypatch)
+    _patch_persistent(monkeypatch)
+
+    def fake_launch(spec_dir, ctx, **k):
+        return _diff_handle(k.get("node"), tmp_path)
+
+    monkeypatch.setattr(soak, "_launch_persistent_forger", fake_launch)
+
+    def fake_read(name, since, implementation):
+        return list(node1_events if name == "node1" else amaru_events)
+
+    monkeypatch.setattr(soak.det, "_read_consumer_events", fake_read)
+    return soak.run_opcert_header_soak(
+        str(tmp_path), "encoding-form", 5, str(tmp_path / "o"),
+        target_nodes=["node1", "amaru-relay-1"], time_budget_seconds=2,
+        per_iteration_timeout=0, clock=FakeClock(budget=2))
+
+
+def test_differential_node1_reject_amaru_accept_scored_disagree_not_masked(monkeypatch, tmp_path):
+    """node1 rejects the served deviant header then canonical-accepts the same
+    hash; amaru accepts; both accept the later canonical header. The served
+    index must score DISAGREE (node1 rejected / amaru accepted), never agree."""
+    r = _run_masking_diff(
+        monkeypatch, tmp_path,
+        node1_events=[
+            {"header_hash": "H-node1", "verdict": "rejected", "reason": "DecodeError"},
+            {"header_hash": "H-node1", "verdict": "accepted", "reason": None},
+            {"header_hash": "canonical", "verdict": "accepted", "reason": None},
+        ],
+        amaru_events=[
+            {"header_hash": "H-amaru-relay-1", "verdict": "accepted", "reason": None},
+            {"header_hash": "canonical", "verdict": "accepted", "reason": None},
+        ])
+    assert r["counters"]["disagree"] >= 1 and r["counters"]["agree"] == 0
+    assert r["pass"] is False
+    verdicts = r["disagreements"][0]["verdicts"]
+    assert verdicts["node1"] == "rejected" and verdicts["amaru-relay-1"] == "accepted"
+
+
+def test_differential_amaru_reject_node1_accept_scored_disagree_not_masked(monkeypatch, tmp_path):
+    """Symmetric: amaru rejects the served deviant then canonical-accepts the
+    same hash; node1 accepts. Still a disagreement, not agree."""
+    r = _run_masking_diff(
+        monkeypatch, tmp_path,
+        node1_events=[
+            {"header_hash": "H-node1", "verdict": "accepted", "reason": None},
+            {"header_hash": "canonical", "verdict": "accepted", "reason": None},
+        ],
+        amaru_events=[
+            {"header_hash": "H-amaru-relay-1", "verdict": "rejected", "reason": "DecodeError"},
+            {"header_hash": "H-amaru-relay-1", "verdict": "accepted", "reason": None},
+            {"header_hash": "canonical", "verdict": "accepted", "reason": None},
+        ])
+    assert r["counters"]["disagree"] >= 1 and r["counters"]["agree"] == 0
+    verdicts = r["disagreements"][0]["verdicts"]
+    assert verdicts["node1"] == "accepted" and verdicts["amaru-relay-1"] == "rejected"
