@@ -1,11 +1,12 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_actions with context %}
 {% if ui == "basic" %}
 {% set n_bad = rows|rejectattr('status', 'equalto', 'catalog-valid')|list|length %}
 {{ deck_head('Operate · Primitives',
    rows|length ~ ' primitives registered across ' ~ family_counts|length ~ ' famil' ~ ('y' if family_counts|length == 1 else 'ies') ~ (' — ' ~ n_bad ~ ' fail catalog checks.' if n_bad else ' — all pass catalog checks.'),
    'Catalog-valid means the registration, schema and executor class check out. It is inventory, not proof: it does not say a primitive has ever run successfully.') }}
+{{ deck_actions([('+ Scaffold primitive', '/operate/primitives/new', true, false), ('Download all', '/api/assets/primitives/export', false, true)]) }}
 {% endif %}
 <div class="adv-only">
 <header class="scenarios-header">

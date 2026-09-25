@@ -1,11 +1,12 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice, deck_actions with context %}
 {% if ui == "basic" %}
 {% set parts = [] %}{% for pill in pills if pill.slug %}{% set _ = parts.append(pill.count ~ ' ' ~ pill.label) %}{% endfor %}
 {{ deck_head('Operate · Targets',
    (rows|length ~ ' decode target' ~ ('' if rows|length == 1 else 's') ~ ' defined' ~ (' — ' ~ parts|join(', ') if parts else '') ~ '.') if not empty else 'No decode targets are defined yet.',
    'A target is a harness around one implementation\'s CBOR or mini-protocol decoder. It describes what can be tested, not whether anything passed.') }}
+{{ deck_actions([('+ New target', '/operate/targets/new?token=' ~ (token or ''), true, false), ('Download all', '/api/catalog/targets/export', false, true)]) }}
 {% endif %}
 <div class="adv-only">
 <div class="scenarios-header">

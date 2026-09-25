@@ -1,9 +1,10 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_actions with context %}
 {% if ui == "basic" %}
 {{ deck_head('Operate · Scenarios', total ~ ' scenarios in the catalog — each is a recipe, not a result.',
    'A scenario card says a test is defined and runnable. Only a run with a verified evidence bundle proves anything; open Runs for that.') }}
+{{ deck_actions([('+ New scenario', '/operate/scenarios/new', true, false), ('Download all', '/api/catalog/scenarios/export', false, true)]) }}
 {% endif %}
 <div class="scenarios-header adv-only">
   <div>

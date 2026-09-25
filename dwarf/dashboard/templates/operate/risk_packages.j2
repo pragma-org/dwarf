@@ -1,6 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_actions with context %}
 {% if ui == "basic" %}
 {% call deck_head('Operate · Risk work packages', (rows|length) ~ ' planning groups link ' ~ candidate_count ~ ' candidate risks to ' ~ evidence_count ~ ' evidence references — ' ~ available_evidence_count ~ ' of those files exist here.') %}
 <p class="b-note"><b>Planning records, not proof.</b> These are not run evidence bundles, testcase buckets, findings, or accepted risks.</p>{% endcall %}
@@ -14,6 +14,7 @@
   'search': (row.candidate_ids|join(' ')) ~ ' ' ~ (row.scenario_ids|join(' ')) ~ ' ' ~ (row.profile_id or '') ~ ' ' ~ (row.blockers|join(' '))}) %}{% endfor %}
 {{ deck_grid(cards, label='work packages', empty='No risk work-package sources are available.') }}
 {{ deck_more('Full package traceability in Advanced') }}
+{{ deck_actions([('Download all', '/api/risk-packages/export', false, true)]) }}
 {% endif %}
 <div class="adv-only">
 <header class="scenarios-header">

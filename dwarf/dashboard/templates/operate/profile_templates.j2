@@ -1,6 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice, deck_actions with context %}
 {% if ui == "basic" %}
 {% set types = {} %}{% for r in rows %}{% set _ = types.update({r.node_type: types.get(r.node_type, 0) + 1}) %}{% endfor %}
 {{ deck_head('Operate · Profile templates',
@@ -28,6 +28,7 @@
   <h2 class="b-h2">Start a profile from a template</h2>
   <div class="dk-row">{% for row in rows %}<a class="dk-btn" href="{{ row.use_url }}" title="{{ row.id }}">Use · {{ deck_nice(row.id, false)|trim|replace('Peersharing', 'PeerSharing') }}</a>{% endfor %}</div>
 </section>
+{{ deck_actions([('Download all', '/api/assets/profile-templates/export', false, true)]) }}
 {% endif %}
 {{ deck_more('Download templates and read the contract in Advanced') }}
 {% endif %}

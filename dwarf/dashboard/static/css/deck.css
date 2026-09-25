@@ -419,6 +419,8 @@ body[data-ui="basic"] .scenario-phase__list:empty { display:none; }
   body[data-ui="basic"] .scenario-phase__add { grid-column:1; grid-row:auto; }
 }
 
+.dk-actions { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 18px; }
+
 /* ---- responsive ---- */
 @media (max-width:900px) {
   .dk-spread { grid-template-columns:minmax(0,320px); }

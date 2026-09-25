@@ -1,6 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice, deck_actions with context %}
 {% if ui == "basic" %}
 {{ deck_head('Operate · Fuzz corpora', (rows|length) ~ ' corpus units hold ' ~ input_count ~ ' retained inputs.', 'Corpora are the exact inputs fuzzers replay — inventory, not findings. Shipped roots are read-only; the runtime overlay is writable.') }}
 {% set cards = [] %}{% set srcs = [] %}
@@ -27,6 +27,7 @@
 {% set roleopts = [] %}{% for r in rows|map(attribute='role')|unique|sort %}{% set _ = roleopts.append((r, r)) %}{% endfor %}
 {{ deck_grid(cards, label='corpus units', facets=[('src', 'Source', srcopts), ('role', 'Role', roleopts)], empty='No configured corpus roots are available.') }}
 {{ deck_more('Import, promote and deduplicate corpora in Advanced') }}
+{{ deck_actions([('Download all', '/api/corpora/export', false, true)]) }}
 {% endif %}
 <div class="adv-only">
 <header class="scenarios-header"><div><span class="eyebrow">Operate · generation assets</span><h1>Fuzz corpora</h1><p class="page-hero"><strong>{{ rows|length }} corpus units</strong> contain {{ input_count }} retained inputs ({{ size_bytes }} bytes) across immutable shipped roots and the explicit runtime overlay.</p></div><div class="definition-actions"><a class="cta cta--ghost" href="/learn/corpora" target="_blank" rel="noopener">Learn corpus roles</a><a class="cta cta--ghost" href="/api/corpora/export" download>Download all</a></div></header>

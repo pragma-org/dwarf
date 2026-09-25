@@ -1,6 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_actions with context %}
 {% if ui == "basic" %}
 {% set n = rows|length %}
 {% if catalog == 'measurements' %}
@@ -12,6 +12,7 @@
 {% set plain = 'A measurement profile only selects which taps to collect. It is configuration, not evidence.' %}
 {% endif %}
 {% call deck_head('Operate · ' ~ eyebrow, lead, plain) %}<p><a class="dk-btn" href="{{ other_url }}">{{ other_label }} →</a></p>{% endcall %}
+{{ deck_actions([(create_label, '/operate/' ~ catalog ~ '/new', true, false), ('Download all', '/api/catalog/' ~ catalog ~ '/export', false, true)]) }}
 {% endif %}
 <div class="adv-only">
 <div class="scenarios-header">

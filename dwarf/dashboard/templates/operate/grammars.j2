@@ -1,6 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_nice, deck_actions with context %}
 {% if ui == "basic" %}
 {{ deck_head('Operate · Generation grammars', (rows|length) ~ ' grammar sets expose ' ~ token_count ~ ' mutation tokens — ' ~ ready_count ~ ' validate cleanly.', 'Grammars shape what fuzzers generate. A valid grammar is a definition, not evidence that anything was found.') }}
 {% set cards = [] %}
@@ -19,6 +19,7 @@
   'search': lab ~ ' ' ~ (row.target or '') ~ ' ' ~ (row.scenario_ids|join(' ')) ~ ' ' ~ (row.corpus_ids|join(' '))}) %}{% endfor %}
 {{ deck_grid(cards, label='grammar sets', empty='No generation grammar roots are available.') }}
 {{ deck_more('Structures, dictionaries and cloning in Advanced') }}
+{{ deck_actions([('Download all', '/api/grammars/export', false, true)]) }}
 {% endif %}
 <div class="adv-only">
 <header class="scenarios-header">

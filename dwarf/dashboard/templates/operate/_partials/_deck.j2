@@ -118,6 +118,11 @@
 {%- set out = words|join(' ') %}{{ out[:1]|upper ~ out[1:] }}
 {%- endmacro %}
 
+{#- Catalog action row under the headline: [(label, href, primary?, download?)]. -#}
+{% macro deck_actions(actions) -%}
+<div class="basic-only dk-actions">{% for label, href, primary, dl in actions %}<a class="dk-btn{% if primary %} dk-btn--solid{% endif %}" href="{{ href }}"{% if dl %} download{% endif %}>{{ label }}</a>{% endfor %}</div>
+{%- endmacro %}
+
 {#- "Everything else lives in Advanced" footer link. -#}
 {% macro deck_more(text='Open the full view in Advanced') -%}
 <p class="basic-only dk-more"><a class="dk-btn" href="{{ request_path or '/' }}?view=advanced">{{ text }} →</a></p>

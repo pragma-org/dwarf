@@ -1,6 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more, deck_actions with context %}
 {% if ui == "basic" %}
 {% set n_conf = entries|selectattr('version_status', 'equalto', 'confirmed')|list|length %}
 {% set types = {} %}{% for e in entries %}{% set _ = types.update({e.node_type: types.get(e.node_type, 0) + 1}) %}{% endfor %}
@@ -8,6 +8,7 @@
 {{ deck_head('Operate · Profiles',
    (entries|length ~ ' runtime profile' ~ ('' if entries|length == 1 else 's') ~ ' — ' ~ ('all' if n_conf == entries|length else n_conf ~ ' of ' ~ entries|length) ~ ' resolve to a confirmed node version.') if not empty else 'No runtime profiles are defined yet.',
    'A profile says how nodes are deployed for a run: implementation, node count, network and version policy. It is configuration; "confirmed" refers to the node version, not to any test result.') }}
+{{ deck_actions([('+ New profile', '/operate/profiles/new', true, false), ('Download all', '/api/catalog/profiles/export', false, true)]) }}
 {% endif %}
 <div class="adv-only">
 <div class="scenarios-header">
