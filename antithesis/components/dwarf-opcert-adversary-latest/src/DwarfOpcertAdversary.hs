@@ -44,6 +44,7 @@ module DwarfOpcertAdversary
     , caseSpecByteSeed
     , applyCaseSpec
     , applyKesEvolution
+    , applyErrorPrecedence
     , RuleParams (..)
     , defaultRuleParams
     , ruleParamsFromSpec
@@ -147,6 +148,7 @@ data Mutation
     | MutateKESPeriod
     | MutateKESPeriodBefore
     | MutateKESKey
+    | MutateErrorPrecedence
     deriving (Eq, Show)
 
 
@@ -358,6 +360,7 @@ caseMutationName = \case
     MutateKESPeriod -> "MutateKESPeriod"
     MutateKESPeriodBefore -> "MutateKESPeriodBefore"
     MutateKESKey -> "MutateKESKey"
+    MutateErrorPrecedence -> "MutateErrorPrecedence"
 
 
 -- | Prepare the case header from a REAL captured pool1 Conway header. Changes
@@ -611,6 +614,7 @@ data CaseSpec = CaseSpec
     , csKesEvoDelta    :: !(Maybe Integer)
     , csCounterJump    :: !(Maybe Integer)
     , csKesPeriodsAhead :: !(Maybe Integer)
+    , csRules          :: !(Maybe [String])
     }
     deriving (Eq, Show)
 
@@ -654,7 +658,8 @@ parseCaseSpec raw = do
         kevo   <- getP "kes_evolution_delta"
         cjump  <- getP "counter_jump"
         kahead <- getP "kes_periods_ahead"
-        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo cjump kahead)
+        rules  <- getP "rules"
+        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo cjump kahead rules)
 
 -- | The seed that drives the encoding-form byte re-encoding for THIS case. The
 -- generator derives a distinct per-iteration @byte_seed@ (in @params@) from
@@ -673,8 +678,62 @@ caseSpecByteSeed spec = fromMaybe (csSeed spec) (csByteSeed spec)
 applyCaseSpec :: KeySet -> Maybe CaseSpec -> String -> Header -> Either String CaseResult
 applyCaseSpec ks Nothing    caseId hdr = applyCase ks caseId hdr
 applyCaseSpec ks (Just spec) _     hdr = case csBaseCase spec of
-    "kes-evolution" -> applyKesEvolution ks spec hdr
-    other           -> applyCaseWith ks (ruleParamsFromSpec spec) other hdr
+    "kes-evolution"    -> applyKesEvolution ks spec hdr
+    "error-precedence" -> applyErrorPrecedence ks spec hdr
+    other              -> applyCaseWith ks (ruleParamsFromSpec spec) other hdr
+
+
+-- | Break TWO opcert rules in a SINGLE header (family #4 error-precedence). The
+-- combo is @csRules@ (exactly two of cold-key-unauthorized, counter-jump,
+-- kes-before-window, hot-key-mismatch -- all reachable on a fresh mixed devnet).
+-- Each rule\'s mutation is stacked into one header, then the header is signed, so
+-- BOTH violations are present and each node reports whichever rule its validator
+-- checks FIRST. The driver compares the two nodes\' canonical reported rules
+-- (reason parity): same rule => precedence agrees; different rule => a
+-- precedence-divergence finding (a both-reject reason_mismatch). Magnitudes
+-- (counter_jump / kes_periods_ahead) and the wrong-key seed (byte_seed) are the
+-- same per-iteration params the single-rule sweep uses. Fail-closed: a combo
+-- that is not exactly two recognised rules returns Left (inconclusive), never a
+-- valid header that could be falsely accepted.
+applyErrorPrecedence :: KeySet -> CaseSpec -> Header -> Either String CaseResult
+applyErrorPrecedence ks spec hdr = case hdr of
+    HeaderConway shelleyHdr ->
+        let praosHdr = shelleyHeaderRaw shelleyHdr
+            body = Praos.headerBody praosHdr
+            ocert = Praos.hbOCert body
+            SlotNo slot = Praos.hbSlotNo body
+            currentKES = fromIntegral slot `div` ksSlotsPerKESPeriod ks :: Word
+            realN = ocertN ocert
+            ourHot = kesHotVerKeyBytes (ksKesSignKey ks)
+            theirHot = KES.rawSerialiseVerKeyKES (ocertVkHot ocert)
+            rules = fromMaybe [] (csRules spec)
+            hasCounterJump = "counter-jump" `elem` rules
+            hasKesBefore   = "kes-before-window" `elem` rules
+            hasColdKey     = "cold-key-unauthorized" `elem` rules
+            hasHotKey      = "hot-key-mismatch" `elem` rules
+            recognised = length (filter id [hasCounterJump, hasKesBefore, hasColdKey, hasHotKey])
+        in  if ourHot /= theirHot
+                then Left "error-precedence: captured header is not from our pool (hot-key mismatch)"
+            else if recognised /= 2
+                then Left ("error-precedence unreachable: need exactly two of "
+                           <> "{cold-key-unauthorized,counter-jump,kes-before-window,hot-key-mismatch}, got "
+                           <> show rules)
+            else
+                let jumpN  = fromIntegral (max 2 (fromMaybe 2 (csCounterJump spec))) :: Word64
+                    aheadW = fromIntegral (max 1 (fromMaybe 1 (csKesPeriodsAhead spec))) :: Word
+                    newN = if hasCounterJump then realN + jumpN else realN
+                    newPeriod = if hasKesBefore then KESPeriod (currentKES + aheadW) else ocertKESPeriod ocert
+                    coldKey = if hasColdKey then wrongColdKeyFor (csByteSeed spec) else ksColdSignKey ks
+                    sigma = signedDSIGN coldKey (OCertSignable (ocertVkHot ocert) newN newPeriod)
+                    newOcert = ocert { ocertN = newN, ocertKESPeriod = newPeriod, ocertSigma = sigma }
+                    newBody = body { Praos.hbOCert = newOcert }
+                    KESPeriod c0' = newPeriod
+                    evol = if currentKES >= c0' then currentKES - c0' else 0
+                    kesKey = if hasHotKey then wrongKesKeyFor (csByteSeed spec) else ksKesSignKey ks
+                    kesSig = signAtEvolution kesKey evol newBody
+                in  Right (CaseResult (HeaderConway (mkShelleyHeader (Praos.Header newBody kesSig)))
+                                      MutateErrorPrecedence "reject")
+    _ -> Left "error-precedence: captured header is not a Conway header"
 
 
 -- | Re-sign a real pool1 header's body with OUR KES key but evolved to the

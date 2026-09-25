@@ -24,9 +24,10 @@ FAMILIES: tuple[str, ...] = (
     "cross-pool-confusion",
     "rules-differential",
     "kes-evolution",
+    "error-precedence",
 )
 
-DIFFERENTIAL_FAMILIES: frozenset[str] = frozenset({"encoding-form", "kes-period-differential", "rules-differential"})
+DIFFERENTIAL_FAMILIES: frozenset[str] = frozenset({"encoding-form", "kes-period-differential", "rules-differential", "error-precedence"})
 
 ENCODING_FORMS: tuple[str, ...] = (
     "noncanonical-int",
@@ -148,6 +149,9 @@ def generate_case(family: str, seed: int, iteration: int, *, restart_k: int = 4,
     if family == "kes-evolution":
         return _kes_evolution_case(base, rng, aged=kes_evolution_aged)
 
+    if family == "error-precedence":
+        return _error_precedence_case(base, rng)
+
     # kes-period-differential
     base.update(base_case="valid-control", expected_verdict="accept",
                 expected_reason=None,
@@ -261,4 +265,67 @@ def _kes_evolution_case(base: dict, rng: random.Random, *, aged: bool = False) -
     base.update(base_case="kes-evolution", expected_verdict="reject",
                 expected_reason=dict(_KESEVO_REJECT_REASON),
                 params={"kes_evolution_delta": delta})
+    return base
+
+
+# --------------------------------------------------------------------------- #
+# Family #4: error-precedence (DIFFERENTIAL, mixed). Break TWO opcert rules in a
+# SINGLE header and check which error each node reports and whether the two nodes
+# AGREE on that precedence. When a header violates two rules at once, each
+# validator reports whichever rule it checks FIRST -- an implementation choice
+# that is not fixed by the spec. cardano-node and Amaru agreeing on that order is
+# the property under test.
+#
+# The combo is two distinct rules drawn (seed-deterministically) from the rules
+# reachable on a FRESH mixed devnet -- cold-key-unauthorized, counter-jump,
+# kes-before-window, hot-key-mismatch (counter-behind / kes-after-window are
+# EXCLUDED: they need a prior rotation / an aged chain). Magnitudes
+# (counter_jump / kes_periods_ahead) and the wrong-key seed (byte_seed) are swept
+# exactly as the single-rule family does, and the forger stacks both mutations
+# into one header.
+#
+# Oracle = precedence PARITY (reused from the rules-differential reason-parity
+# machinery): both nodes must REJECT (verdict parity) AND map their reported
+# reason to the SAME canonical rule (reason parity). A both-reject-but-different-
+# canonical-rule iteration is a ``precedence_divergence`` -- recorded as a
+# ``reason_mismatch`` by the driver / result layer (opcert_soak_reasons_agree),
+# DISTINCT from a verdict disagreement. Because precedence is intentionally
+# ambiguous, there is NO predicted per-node reason (``expected_reason`` is None);
+# the test asserts agreement, not a specific winner.
+# --------------------------------------------------------------------------- #
+ERROR_PRECEDENCE_RULES: tuple[str, ...] = (
+    "cold-key-unauthorized",
+    "counter-jump",
+    "kes-before-window",
+    "hot-key-mismatch",
+)
+
+# All 6 unordered pairs of distinct reachable rules.
+ERROR_PRECEDENCE_COMBOS: tuple[tuple[str, str], ...] = tuple(
+    (a, b)
+    for i, a in enumerate(ERROR_PRECEDENCE_RULES)
+    for b in ERROR_PRECEDENCE_RULES[i + 1:]
+)
+
+
+def _error_precedence_case(base: dict, rng: random.Random) -> dict:
+    """Populate ``base`` for one error-precedence iteration.
+
+    Seed+iteration deterministic: the structured variation is which 2-rule combo
+    is served (plus the swept magnitudes / wrong-key seed for the rules that use
+    them), so replay from ``(seed, iteration)`` reproduces the exact combo. The
+    expected verdict is ``reject`` on both nodes, with NO predicted reason
+    (``expected_reason`` None): precedence is intentionally ambiguous, so the
+    oracle is agreement (verdict + canonical-reason parity), scored by the
+    differential driver -- a both-reject-but-different-rule iteration is a
+    precedence divergence (``reason_mismatch``).
+    """
+    combo = rng.choice(ERROR_PRECEDENCE_COMBOS)
+    params = {"rules": list(combo), "byte_seed": rng.randrange(2**31)}
+    if "counter-jump" in combo:
+        params["counter_jump"] = rng.choice(COUNTER_JUMP_MAGNITUDES)
+    if "kes-before-window" in combo:
+        params["kes_periods_ahead"] = rng.choice(KES_PERIODS_AHEAD_MAGNITUDES)
+    base.update(base_case="error-precedence", expected_verdict="reject",
+                expected_reason=None, params=params)
     return base

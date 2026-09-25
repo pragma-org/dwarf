@@ -155,3 +155,22 @@ main = hspec $ do
         it "the cold-key and KES-key streams do not coincide" $
             (BS.length (wrongColdKeyRaw (Just 7)) > 0 && BS.length (wrongKesKeyRaw (Just 7)) > 0)
                 `shouldBe` True
+
+
+    describe "error-precedence combo spec" $ do
+        it "parses a 2-rule combo with both magnitudes" $ do
+            let js = "{\"base_case\":\"error-precedence\",\"seed\":5,\"params\":{\"rules\":[\"counter-jump\",\"kes-before-window\"],\"counter_jump\":250,\"kes_periods_ahead\":100,\"byte_seed\":42}}"
+            parseCaseSpec (LBC.pack js) `shouldSatisfy` \case
+                Right sp -> csBaseCase sp == "error-precedence"
+                              && csRules sp == Just ["counter-jump", "kes-before-window"]
+                              && csCounterJump sp == Just 250
+                              && csKesPeriodsAhead sp == Just 100
+                              && csByteSeed sp == Just 42
+                _ -> False
+        it "parses a cold-key + hot-key combo (no magnitudes)" $ do
+            let js = "{\"base_case\":\"error-precedence\",\"seed\":5,\"params\":{\"rules\":[\"cold-key-unauthorized\",\"hot-key-mismatch\"],\"byte_seed\":9}}"
+            parseCaseSpec (LBC.pack js) `shouldSatisfy` \case
+                Right sp -> csRules sp == Just ["cold-key-unauthorized", "hot-key-mismatch"]
+                              && csCounterJump sp == Nothing
+                              && csKesPeriodsAhead sp == Nothing
+                _ -> False
