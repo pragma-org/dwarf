@@ -109,6 +109,7 @@ executable dwarf-opcert-adversary-latest
     , ouroboros-network:api-tests-lib
     , ouroboros-network:protocols
     , serialise
+    , text
     , typed-protocols
     , io-classes:strict-stm
 

@@ -11,9 +11,14 @@ import Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
 import Control.Exception (SomeException, catch)
 import Control.Monad (forM_, forever)
 import Data.Aeson (Value, eitherDecode, encode, object, (.=))
+import Data.Aeson qualified as A
+import Data.Aeson.KeyMap qualified as AKM
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Lazy.Char8 qualified as LBS8
-import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef, writeIORef)
+import Data.IORef (IORef, atomicModifyIORef', modifyIORef', newIORef, readIORef, writeIORef)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Text qualified as T
 import Data.Set qualified as Set
 import DwarfAdversary (originPoint)
 import DwarfAdversary.Application (Limit (..), runChainProducerInto, syncHeaders)
@@ -66,8 +71,9 @@ import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import System.Directory (createDirectoryIfMissing, doesFileExist, getFileSize)
 import System.Environment (getArgs)
-import System.FilePath (takeDirectory)
+import System.FilePath (takeDirectory, (</>))
 import System.IO (BufferMode (LineBuffering), IOMode (AppendMode), hSetBuffering, stdout, withBinaryFile)
+import Text.Printf (printf)
 import Text.Read (readMaybe)
 
 
@@ -105,7 +111,8 @@ main = do
                     (Just caseId, Just (host, upstreamPort), Just listenPort, Just kesSkey, Just coldSkey, Just slots, Just evidence) ->
                         let maxEvo = maybe 60 id (lookupFlag "--max-kes-evo" flags >>= readMaybe)
                             caseSpecPath = lookupFlag "--case-spec" flags
-                         in runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence caseSpecPath
+                            caseSpecDir = lookupFlag "--case-spec-dir" flags
+                         in runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence caseSpecPath caseSpecDir
                     _ -> usage
         _ -> usage
 
@@ -116,7 +123,7 @@ usage =
         "usage:\n\
         \  dwarf-opcert-adversary verify-resign HOST PORT COUNT KES_SKEY SLOTS_PER_KES\n\
         \  dwarf-opcert-adversary live-proxy --upstream HOST:PORT --listen-port PORT --kes-skey FILE --slots-per-kes N --evidence FILE\n\
-        \  dwarf-opcert-adversary serve-case --case CASE_ID --upstream HOST:PORT --listen-port PORT --kes-skey FILE --cold-skey FILE --slots-per-kes N --max-kes-evo N --evidence FILE [--case-spec FILE]"
+        \  dwarf-opcert-adversary serve-case --case CASE_ID --upstream HOST:PORT --listen-port PORT --kes-skey FILE --cold-skey FILE --slots-per-kes N --max-kes-evo N --evidence FILE [--case-spec FILE] [--case-spec-dir DIR]"
 
 
 parseHostPort :: String -> Maybe (String, Int)
@@ -258,74 +265,110 @@ appendEvidence path value = do
 -- (valid-control serves the real header unchanged; a rule case serves a real
 -- pool1 header with ONLY its opcert field mutated + re-signed), append one
 -- evidence line, and keep relaying the honest chain so the relay stays alive.
+-- When @mCaseSpecDir@ is given the forger runs in PERSISTENT multi-serve mode
+-- (soak): it stays connected, follows the tip, and at EVERY one of its pool's
+-- live leader-slot headers it consumes the next @spec-<n>.json@ from the dir,
+-- serves that seed-derived case, emits one @opcert_case_served@ line tagged with
+-- its @served_index@, and re-arms for the next leader slot. This converts the
+-- serve throughput to the pool's natural leader rate (many cases per single
+-- long-lived connection) instead of one case per reconnect. When absent the
+-- forger keeps its original one-shot behaviour (fixed + single-spec scenarios).
 runCase
     :: String -> String -> Int -> Int
-    -> FilePath -> FilePath -> Word -> Word -> FilePath -> Maybe FilePath -> IO ()
-runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence mCaseSpecPath = do
+    -> FilePath -> FilePath -> Word -> Word -> FilePath -> Maybe FilePath -> Maybe FilePath -> IO ()
+runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence mCaseSpecPath mCaseSpecDir = do
     kesKey <- loadKesSignKey kesSkey
     coldKey <- loadColdSignKey coldSkey
     (mSpec, mSpecValue) <- loadCaseSpec mCaseSpecPath
     let ks = KeySet kesKey coldKey slots maxEvo
         magic = NetworkMagic 42
         specField = maybe [] (\v -> ["spec" .= v]) mSpecValue
+        persistent = maybe False (const True) mCaseSpecDir
     chainVar <- newTVarIO Chain.Genesis
     firedRef <- newIORef False
-    deviantRef <- newIORef (Nothing :: Maybe (String, LBS.ByteString))
+    nextIxRef <- newIORef (0 :: Int)
+    deviants <- newIORef (Map.empty :: Map String LBS.ByteString)
     appendEvidence evidence $
-        object (["kind" .= ("opcert_case_started" :: String), "case" .= caseId, "slots_per_kes" .= slots] ++ specField)
+        object (["kind" .= ("opcert_case_started" :: String), "case" .= caseId
+                , "slots_per_kes" .= slots, "persistent" .= persistent]
+               ++ maybe [] (\d -> ["case_spec_dir" .= d]) mCaseSpecDir ++ specField)
     _ <- forkIO $ forever $ do
         result <- runChainProducerInto chainVar magic host (fromIntegral upstreamPort)
         case result of
             Left exception -> putStrLn ("opcert-case: upstream ended: " <> show exception)
             Right () -> putStrLn "opcert-case: upstream ended cleanly"
         threadDelay 1_000_000
-    let transform live h
+    -- Serve ONE case (spec-driven override or fixed caseId) against header @h@:
+    -- apply the opcert mutation, register the encoding-form deviant bytes (keyed
+    -- by the served header hash so the codec serves them for exactly that
+    -- header), emit one served/unreachable evidence line (with @extra@ fields),
+    -- and return the header to roll forward.
+    let serveCaseOn mSp mv cid extra h =
+            case applyCaseSpec ks mSp (maybe cid csBaseCase mSp) h of
+                Left reason -> do
+                    putStrLn ("opcert-case: FINDING " <> cid <> ": " <> reason)
+                    appendEvidence evidence $
+                        object ([ "kind" .= ("opcert_case_unreachable" :: String)
+                                , "case" .= cid, "reason" .= reason ] ++ extra ++ specOf mv)
+                    pure h
+                Right cr -> do
+                    let HeaderFields (SlotNo slotW) _ hash = getHeaderFields (crHeader cr)
+                    encInfo <- case mSp >>= csEncodingForm of
+                        Just form -> do
+                            let canonical = toLazyByteString (encHeader (crHeader cr))
+                                deviant = reEncodeOpcert (maybe 0 csSeed mSp) form (mSp >>= csTrailingLen) canonical
+                            modifyIORef' deviants (pruneInsert (show hash) deviant)
+                            pure ["encoding_form" .= form, "deviant_bytes" .= LBS.length deviant]
+                        Nothing -> pure []
+                    putStrLn
+                        ( "opcert-case: INJECT " <> cid
+                            <> " mutation=" <> caseMutationName (crMutation cr)
+                            <> " verdict=" <> crExpectedVerdict cr
+                            <> " slot=" <> show slotW <> " hash=" <> show hash )
+                    appendEvidence evidence $
+                        object ([ "kind" .= ("opcert_case_served" :: String), "case" .= cid
+                                , "mutation" .= caseMutationName (crMutation cr)
+                                , "header_hash" .= show hash, "slot" .= slotW
+                                , "pool" .= ("pool1" :: String)
+                                , "expected_verdict" .= crExpectedVerdict cr
+                                ] ++ encInfo ++ extra ++ specOf mv)
+                    pure (crHeader cr)
+        specOf mv = maybe [] (\v -> ["spec" .= v]) mv
+        -- One-shot transform: fire exactly one case at the first eligible live
+        -- header, then pass everything through (fixed + single-spec scenarios).
+        oneShotTransform live h
             | not live = pure h
             | otherwise = do
                 fired <- readIORef firedRef
-                if fired
+                if fired || not (caseEligible ks h)
                     then pure h
-                    else if not (caseEligible ks h)
-                        then pure h
-                        else case applyCaseSpec ks mSpec caseId h of
-                            Left reason -> do
-                                writeIORef firedRef True
-                                putStrLn ("opcert-case: FINDING " <> caseId <> ": " <> reason)
-                                appendEvidence evidence $
-                                    object
-                                        ([ "kind" .= ("opcert_case_unreachable" :: String)
-                                        , "case" .= caseId
-                                        , "reason" .= reason
-                                        ] ++ specField)
+                    else do
+                        writeIORef firedRef True
+                        serveCaseOn mSpec mSpecValue caseId [] h
+        -- Persistent transform: at each eligible live header consume the next
+        -- spec-<n>.json and serve it, tagging the served line with served_index.
+        persistentTransform dir live h
+            | not live = pure h
+            | not (caseEligible ks h) = pure h
+            | otherwise = do
+                ix <- readIORef nextIxRef
+                let f = dir </> (printf "spec-%06d.json" ix :: String)
+                exists <- doesFileExist f
+                if not exists
+                    then pure h  -- next case not written yet; wait for a later leader slot
+                    else do
+                        raw <- LBS.readFile f
+                        case parseCaseSpec raw of
+                            Left _ -> do
+                                -- malformed: skip this index so we never wedge
+                                modifyIORef' nextIxRef (+ 1)
                                 pure h
-                            Right cr -> do
-                                writeIORef firedRef True
-                                let HeaderFields (SlotNo slotW) _ hash = getHeaderFields (crHeader cr)
-                                encInfo <- case mSpec >>= csEncodingForm of
-                                    Just form -> do
-                                        let canonical = toLazyByteString (encHeader (crHeader cr))
-                                            deviant = reEncodeOpcert (maybe 0 csSeed mSpec) form (mSpec >>= csTrailingLen) canonical
-                                        writeIORef deviantRef (Just (show hash, deviant))
-                                        pure ["encoding_form" .= form, "deviant_bytes" .= LBS.length deviant]
-                                    Nothing -> pure []
-                                putStrLn
-                                    ( "opcert-case: INJECT " <> caseId
-                                        <> " mutation=" <> caseMutationName (crMutation cr)
-                                        <> " verdict=" <> crExpectedVerdict cr
-                                        <> " slot=" <> show slotW
-                                        <> " hash=" <> show hash
-                                    )
-                                appendEvidence evidence $
-                                    object
-                                        ([ "kind" .= ("opcert_case_served" :: String)
-                                        , "case" .= caseId
-                                        , "mutation" .= caseMutationName (crMutation cr)
-                                        , "header_hash" .= show hash
-                                        , "slot" .= slotW
-                                        , "pool" .= ("pool1" :: String)
-                                        , "expected_verdict" .= crExpectedVerdict cr
-                                        ] ++ encInfo ++ specField)
-                                pure (crHeader cr)
+                            Right spec -> do
+                                let mv = either (const Nothing) Just (eitherDecode raw :: Either String Value)
+                                    cid = maybe (printf "case-%06d" ix :: String) id (mv >>= caseIdFromValue)
+                                modifyIORef' nextIxRef (+ 1)
+                                serveCaseOn (Just spec) mv cid ["served_index" .= ix] h
+        transform = maybe oneShotTransform persistentTransform mCaseSpecDir
         onAccept peer = putStrLn ("opcert-case: accepted " <> peer)
         server = caseInjectingChainSyncServer putStrLn transform chainVar
     forever $
@@ -333,7 +376,7 @@ runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo eviden
             magic
             (fromIntegral listenPort)
             onAccept
-            (deviantCodec deviantRef)
+            (deviantCodec deviants)
             server
             plainBlockFetchCodec
             (onDemandBlockFetchResponder putStrLn (const (pure ())) magic (host, upstreamPort) chainVar)
@@ -366,22 +409,51 @@ loadCaseSpec (Just path) = do
              in pure (Just spec, mv)
 
 -- | A ChainSync codec that serves the seed-derived encoding-form deviant wire
--- bytes for the ONE fired case header (matched by hash), and every other header
--- canonically. The deviation lives in the IORef the case transform writes; the
--- pure encode path reads it via 'unsafePerformIO' (adversary-only). When the
--- ref is empty this is byte-identical to 'plainCodec'.
+-- bytes for any fired case header (matched by hash), and every other header
+-- canonically. The deviations live in the IORef map the case transform writes
+-- (one entry per served case header — persistent mode serves many); the pure
+-- encode path reads it via 'unsafePerformIO' (adversary-only). When the map has
+-- no entry for a header this is byte-identical to 'plainCodec'.
+--
+-- SERVE-ONCE: the deviant bytes are popped from the map the first time that
+-- header is encoded, so the ONE intended injection reaches the victim once and
+-- any later re-serve of the same header (e.g. after the victim rejects the
+-- malformed bytes, disconnects and re-syncs) is canonical. Without this, a
+-- rejected deviant would be re-served on every reconnect, wedging the victim in
+-- a reconnect loop that never advances past the poisoned header (persistent
+-- mode's long-lived connection makes that loop permanent).
 deviantCodec
-    :: IORef (Maybe (String, LBS.ByteString))
+    :: IORef (Map String LBS.ByteString)
     -> Codec (ChainSync Header Point Tip) DeserialiseFailure IO LBS.ByteString
 deviantCodec ref =
     ChainSyncCodec.codecChainSync enc decHeader encPoint decPoint encTip decTip
   where
     enc h = unsafePerformIO $ do
-        m <- readIORef ref
+        let key = headerHashString h
+        m <- atomicModifyIORef' ref $ \mp ->
+            case Map.lookup key mp of
+                Just dev -> (Map.delete key mp, Just dev)
+                Nothing  -> (mp, Nothing)
         pure $ case m of
-            Just (hh, dev)
-                | hh == headerHashString h -> encodePreEncoded (LBS.toStrict dev)
-            _ -> encHeader h
+            Just dev -> encodePreEncoded (LBS.toStrict dev)
+            Nothing  -> encHeader h
+
+-- | Insert a deviant header's bytes, keeping the map bounded (the currently
+-- served header is always the freshly inserted one, so a bound never drops a
+-- header we are about to encode).
+pruneInsert :: String -> LBS.ByteString -> Map String LBS.ByteString -> Map String LBS.ByteString
+pruneInsert k v m =
+    let m' = Map.insert k v m
+    in if Map.size m' > 512 then Map.deleteMin m' else m'
+
+-- | Extract the deterministic @case_id@ from a seed-derived spec's raw JSON, so
+-- a persistent-mode served line carries the same case id the driver generated.
+caseIdFromValue :: Value -> Maybe String
+caseIdFromValue v = case v of
+    A.Object o -> case AKM.lookup "case_id" o of
+        Just (A.String t) -> Just (T.unpack t)
+        _ -> Nothing
+    _ -> Nothing
 
 headerHashString :: Header -> String
 headerHashString h = let HeaderFields _ _ hh = getHeaderFields h in show hh
