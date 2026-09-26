@@ -116,10 +116,23 @@ def validate_version_catalog(data: Any) -> dict[str, Any]:
                 raise CatalogError(
                     f"{artifact_context}.availability must be one of {sorted(ARTIFACT_AVAILABILITY)}"
                 )
-            if artifact.get("kind") == "oci" and availability == "available":
+            if artifact.get("kind") in {"oci", "oci-derived"} and availability == "available":
                 digest = artifact.get("digest")
                 if not isinstance(digest, str) or not DIGEST.fullmatch(digest):
                     raise CatalogError(f"{artifact_context} requires an immutable sha256 digest")
+            # A derived image (DWARF-built, binary copied over a base) records the
+            # commit its binary REPORTS; it must be the release it is filed under.
+            binary_commit = artifact.get("binary_git_commit")
+            if artifact.get("kind") == "oci-derived" and binary_commit is None:
+                raise CatalogError(f"{artifact_context} is oci-derived but has no binary_git_commit")
+            if binary_commit is not None:
+                if not isinstance(binary_commit, str) or not SHA40.fullmatch(binary_commit):
+                    raise CatalogError(f"{artifact_context}.binary_git_commit must be an exact 40-character Git revision")
+                if binary_commit != revision:
+                    raise CatalogError(
+                        f"{artifact_context}.binary_git_commit {binary_commit[:12]} is not "
+                        f"{implementation} {version} ({revision[:12]})"
+                    )
         verification = _require_mapping(release.get("verification", {}), f"{context}.verification")
         for scope, record in verification.items():
             if scope not in SCOPES:
@@ -195,6 +208,25 @@ def validate_version_catalog(data: Any) -> dict[str, Any]:
     for scope, records in default_scopes.items():
         if len(records) > 1:
             raise CatalogError(f"multiple defaults declared for {scope}: {', '.join(records)}")
+
+    # Pinned node-named images whose binary reports NO node commit (or that
+    # contain no node binary). Recorded explicitly, with evidence, instead of
+    # inventing a binary_git_commit; the provenance gate then stops warning.
+    exemptions = catalog.get("identity_exemptions", [])
+    if not isinstance(exemptions, list):
+        raise CatalogError("catalog.identity_exemptions must be a list")
+    exempt_digests: set[str] = set()
+    for index, item in enumerate(exemptions):
+        context = f"catalog.identity_exemptions[{index}]"
+        record = _require_mapping(item, context)
+        digest = _require_text(record, "digest", context)
+        if not DIGEST.fullmatch(digest):
+            raise CatalogError(f"{context}.digest must be an immutable sha256 digest")
+        if digest in exempt_digests:
+            raise CatalogError(f"duplicate identity exemption {digest}")
+        exempt_digests.add(digest)
+        for key in ("reference", "reason", "evidence"):
+            _require_text(record, key, context)
     return catalog
 
 

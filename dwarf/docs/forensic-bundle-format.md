@@ -90,6 +90,7 @@ Single JSON object. Written once at run end. Contents:
   - `process_rss` — object with `start_bytes`, `end_bytes`, `delta_bytes` for the system-under-test process. For library-runtime runs this is the harness process; for single-node and devnet runs this is the node process. Null if the process could not be measured (e.g. exited too quickly).
   - `data_dir_disk` — object with `path`, `start_bytes`, `end_bytes`, `delta_bytes` for the node's data directory. Null for library-runtime runs.
   - `host_load` — optional object with 1-minute system load average at start and end, when available cheaply. Null otherwise.
+- `provenance` — whether the target's version label names the binary that ran (`profile_manager/version_provenance.py`): `claimed_label`, `resolved_tag` and `catalog_revision` from `dwarf/versions/catalog.json`, `declared_source_revision`, `observations` (binary identities recorded via `RunHandle.record_binary_identity` or found in retained run logs — Amaru `build.version`, `amaru --version`, `cardano-node --version`), and `status`: `verified` (the claimed commit was observed running) | `declared` (label and declared revision agree; no binary observed) | `mismatch` | `unobserved` | `unknown`.
 
 The manifest is hashed (sha256 over canonical JSON) and that hash becomes `manifest_hash` in the chain entry.
 
@@ -116,6 +117,7 @@ Top-level shape:
 - `actor`
 - `resource_snapshot`
 - `telemetry`
+- `provenance`
 
 The current implementation writes this shape in [forensic.py](dwarf/profile_manager/forensic.py).
 

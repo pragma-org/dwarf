@@ -1,0 +1,213 @@
+{
+ "description": "Conway stake/pool certificate + reward-withdrawal phase-1 differential family (cardano-node vs Amaru). Fresh credentials only (not-registered is the correct pre-state), so each violation hits exactly the targeted rule. All cases spend the committed funding UTxO; fee 300000 >> min, no validity interval. Violations idempotent; controls single-use. See dwarf/docs/stake-pool-withdrawal-phase1-differential-family.md.",
+ "cases": [
+  {
+   "case_id": "stakereg-missing-witness",
+   "tx_file": "stakereg-missing-witness.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 245,
+   "cbor_sha256": "16f73d695fe9a4cffa063fd53fb51570b9e26efe63dabc0c49daa4b295d31432",
+   "rule": "UTXOW MissingVKeyWitness (stake credential)",
+   "reason_classes": [
+    "missing_witness"
+   ],
+   "note": "Conway reg cert (tag 7), stake witness omitted",
+   "credential": "3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab"
+  },
+  {
+   "case_id": "stakereg-wrong-key",
+   "tx_file": "stakereg-wrong-key.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 346,
+   "cbor_sha256": "0e12ca8da6c1324eac9252e86706193f249841e75cd6bfd285996862af2d52f9",
+   "rule": "UTXOW MissingVKeyWitness (stake credential)",
+   "reason_classes": [
+    "missing_witness"
+   ],
+   "note": "Conway reg cert signed by an unrelated stake key",
+   "credential": "3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab"
+  },
+  {
+   "case_id": "stakereg-bad-deposit",
+   "tx_file": "stakereg-bad-deposit.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 346,
+   "cbor_sha256": "876f48b4962c2cd4be2ab0562526e6355b9ce14c5fe4e2c2b926e08aea52ad51",
+   "rule": "DELEG IncorrectDeposit",
+   "reason_classes": [
+    "incorrect_deposit"
+   ],
+   "note": "Conway reg cert declaring 1 ADA vs pparam 2 ADA; witnessed"
+  },
+  {
+   "case_id": "regvote-missing-witness",
+   "tx_file": "regvote-missing-witness.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 247,
+   "cbor_sha256": "f078fe0914be9b10e839d5d1c26b35b5ef67d04fca9280cc777ba2efab281afa",
+   "rule": "UTXOW MissingVKeyWitness (stake credential)",
+   "reason_classes": [
+    "missing_witness"
+   ],
+   "note": "reg + vote-deleg to AlwaysAbstain (tag 12), stake witness omitted",
+   "credential": "3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab"
+  },
+  {
+   "case_id": "regdeleg-missing-witness",
+   "tx_file": "regdeleg-missing-witness.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 275,
+   "cbor_sha256": "219262aa8b75f82e63e947ef19106db16d77ddc68f81ddf4da7da37408d35877",
+   "rule": "UTXOW MissingVKeyWitness (stake credential)",
+   "reason_classes": [
+    "missing_witness"
+   ],
+   "note": "reg + stake-deleg to a registered genesis pool (tag 11), stake witness omitted",
+   "credential": "3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab"
+  },
+  {
+   "case_id": "regdeleg-unknown-pool",
+   "tx_file": "regdeleg-unknown-pool.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 376,
+   "cbor_sha256": "46d08a6f1409aa08c944c5399058fb7dfa4ffe271316da8c1bbc6a91429d2ce7",
+   "rule": "DELEG DelegateeStakePoolNotRegistered",
+   "reason_classes": [
+    "unknown_pool"
+   ],
+   "note": "reg + stake-deleg to an unregistered pool; witnessed"
+  },
+  {
+   "case_id": "poolreg-missing-cold",
+   "tx_file": "poolreg-missing-cold.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 467,
+   "cbor_sha256": "b71ae8b8f6f0ff759ebd2a5a53f5f1c932734430e9322771685320ba8be1fc88",
+   "rule": "UTXOW MissingVKeyWitness (pool cold key)",
+   "reason_classes": [
+    "missing_witness"
+   ],
+   "note": "pool registration, cold-key witness omitted (owner signs)",
+   "credential": "b2e434417a56bc3686fc084036680266559411cf88f986632e70a040"
+  },
+  {
+   "case_id": "poolreg-missing-owner",
+   "tx_file": "poolreg-missing-owner.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 467,
+   "cbor_sha256": "4addca8c78423231c6db2629a374c034a652ce81e677dbaead86c9d7c4fb4e14",
+   "rule": "UTXOW MissingVKeyWitness (pool owner)",
+   "reason_classes": [
+    "missing_witness"
+   ],
+   "note": "pool registration, owner witness omitted (cold signs)",
+   "credential": "b0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11"
+  },
+  {
+   "case_id": "poolreg-cost-too-low",
+   "tx_file": "poolreg-cost-too-low.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 568,
+   "cbor_sha256": "98fd2694afab124c23eadb19e89c06506d1e89a6246ca3d951c5f65fd76f2436",
+   "rule": "POOL StakePoolCostTooLow",
+   "reason_classes": [
+    "pool_cost_too_low"
+   ],
+   "note": "pool cost minPoolCost-1; cold + owner witnessed"
+  },
+  {
+   "case_id": "poolreg-wrong-network",
+   "tx_file": "poolreg-wrong-network.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 568,
+   "cbor_sha256": "1ac726ffebbc30ab40d9fc16132f95882f8bfd7ae7e52c071810934b44879124",
+   "rule": "POOL WrongNetwork",
+   "reason_classes": [
+    "wrong_network"
+   ],
+   "note": "pool reward account on Mainnet; cold + owner witnessed"
+  },
+  {
+   "case_id": "wdrl-unregistered",
+   "tx_file": "wdrl-unregistered.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 336,
+   "cbor_sha256": "12d6e3feca366ef8749aac6292346c31831bc41a6e96dd863183c2e9b5004d0d",
+   "rule": "CERTS WithdrawalsNotInRewards",
+   "reason_classes": [
+    "wdrl_not_registered"
+   ],
+   "note": "withdraw 0 from a never-registered account; witnessed"
+  },
+  {
+   "case_id": "wdrl-genesis-no-witness",
+   "tx_file": "wdrl-genesis-no-witness.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 235,
+   "cbor_sha256": "6f9423a086e63502b274f3ca68043848aec65b357dacdf994f6e1eb668ecdd14",
+   "rule": "UTXOW MissingVKeyWitness and/or pv10 ConwayWdrlNotDelegatedToDRep (co-occurring)",
+   "reason_classes": [
+    "missing_witness",
+    "wdrl_not_drep_delegated"
+   ],
+   "note": "withdraw 0 from a genesis-registered delegator (no key, no DRep delegation): two rules apply, so the reported reason is a PRECEDENCE observation",
+   "credential": "3e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b0"
+  },
+  {
+   "case_id": "stakereg-present",
+   "tx_file": "stakereg-present.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 346,
+   "cbor_sha256": "e3778ebdfaec667c66c48cc120d1c7ca9e7490b881ecb2cf215be832c96c854c",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "Conway reg cert with stake witness"
+  },
+  {
+   "case_id": "stakereg-legacy-no-witness",
+   "tx_file": "stakereg-legacy-no-witness.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 240,
+   "cbor_sha256": "47dbbf59207fe55ba21fc99e003a059d1fb57ef52f3ca8fc761974b7ae70bb7a",
+   "rule": "control (over-strictness)",
+   "reason_classes": [],
+   "note": "legacy Shelley reg cert (tag 0) with NO stake witness: the ledger requires none"
+  },
+  {
+   "case_id": "regvote-present",
+   "tx_file": "regvote-present.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 348,
+   "cbor_sha256": "65c76be37a18572498eb0e10002ce279a5abc52c85ee0b13dea163b8aa7a7454",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "reg + vote-deleg AlwaysAbstain, stake witness"
+  },
+  {
+   "case_id": "poolreg-present",
+   "tx_file": "poolreg-present.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 568,
+   "cbor_sha256": "f6b97fada382bf6830578c3bc6f31a4e6370a738428f6a7fd59892dcfca1df48",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "pool registration, cold + owner witnessed"
+  }
+ ]
+}

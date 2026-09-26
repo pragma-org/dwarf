@@ -14115,6 +14115,14 @@ class RuntimeVerifyExactTarget(LoadPrimitive):
             for field, value in expected.items()
             if observed.get(field) != value
         }
+        if expected.get("version") and expected.get("source_revision"):
+            from profile_manager.version_provenance import ProvenanceIndex
+
+            status, message = ProvenanceIndex.load().check_pair(
+                expected.get("implementation"), expected["version"], expected["source_revision"]
+            )
+            if status == "mismatch":
+                mismatches["catalog_provenance"] = {"expected": message, "observed": None}
         proof = {
             "schema_version": "v1",
             "matched": not missing and not mismatches,

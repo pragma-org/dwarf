@@ -163,6 +163,16 @@
           "reference": "ghcr.io/intersectmbo/cardano-node@sha256:3275d357053d21f3220f74b0854fd584e1fe322dfa1bbb78effd760c3191d14c",
           "availability": "available",
           "digest": "sha256:3275d357053d21f3220f74b0854fd584e1fe322dfa1bbb78effd760c3191d14c"
+        },
+        {
+          "kind": "oci-derived",
+          "reference": "ghcr.io/intersectmbo/cardano-node@sha256:45857be8d86b314a05cd46d310b74b24e5f5870469f90c6464994a7f78142271",
+          "availability": "available",
+          "digest": "sha256:45857be8d86b314a05cd46d310b74b24e5f5870469f90c6464994a7f78142271",
+          "binary_git_commit": "045bc187a36ef0cbd236db902b85dd8f202fb059",
+          "binary_dirty": false,
+          "binary_version_text": "cardano-node 10.7.1 git rev 045bc187a36ef0cbd236db902b85dd8f202fb059",
+          "note": "Second pinned digest of stock 10.7.1 used by the cardano_node_dwarf Antithesis bundle."
         }
       ],
       "verification": {
@@ -3378,6 +3388,16 @@
           "reference": "ghcr.io/pragma-org/amaru:v10.11.20260918",
           "availability": "available",
           "digest": "sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60"
+        },
+        {
+          "kind": "oci-derived",
+          "reference": "dwarf/amaru-measurement:10.11.20260918-aedfe79-ns-v3@sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+          "availability": "available",
+          "digest": "sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd",
+          "binary_git_commit": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+          "binary_dirty": true,
+          "binary_version_text": "Amaru 10.11.0 (aedfe797a+dirty)",
+          "note": "DWARF patched measurement target (nanoseconds-v3) built from v10.11.20260918; used by the opcert 20260918 scenarios."
         }
       ],
       "verification": {
@@ -3608,6 +3628,26 @@
           "reference": "ghcr.io/pragma-org/amaru:v10.11.20260807",
           "availability": "available",
           "digest": "sha256:582dafdd16990ef16c54e5abb7f1f5f861847e5a1b6ea16f1ef975f74bfbb6f7"
+        },
+        {
+          "kind": "oci-derived",
+          "reference": "ghcr.io/j-gainsec/amaru-adv@sha256:e7d3aa4ce3bd14bd08a08b998b6486fbe13cfd4430aa0c9489ab4de5e8e6934c",
+          "availability": "available",
+          "digest": "sha256:e7d3aa4ce3bd14bd08a08b998b6486fbe13cfd4430aa0c9489ab4de5e8e6934c",
+          "binary_git_commit": "493bffba0cc4db2291643cdd6698197c374958b3",
+          "binary_dirty": true,
+          "binary_version_text": "Amaru 10.11.0 (493bffb+dirty)",
+          "note": "DWARF adversarial relay image (tag 807-k20): patched binary COPY'd over the v10.11.20260807 base; identity read from the binary, not the base tag."
+        },
+        {
+          "kind": "oci-derived",
+          "reference": "ghcr.io/j-gainsec/dwarf-amaru-807-runtime@sha256:7512e0cca44682ce5b6780c49c0e670d1befa85bfbc4e93abb8ba8001060e221",
+          "availability": "available",
+          "digest": "sha256:7512e0cca44682ce5b6780c49c0e670d1befa85bfbc4e93abb8ba8001060e221",
+          "binary_git_commit": "493bffba0cc4db2291643cdd6698197c374958b3",
+          "binary_dirty": true,
+          "binary_version_text": "Amaru 10.11.0 (493bffb+dirty)",
+          "note": "DWARF Antithesis runtime image with a patched 807 binary."
         }
       ],
       "verification": {
@@ -4039,6 +4079,20 @@
         "state:version-qualifications/20260918T085655Z-dwarf-qual-mixed-10-7-1-10-11-0-cffd4b7c"
       ],
       "issues": []
+    }
+  ],
+  "identity_exemptions": [
+    {
+      "digest": "sha256:72906da307862ee5652a35d2e6569fcd929ddd5785ad6d633b42e4912faef147",
+      "reference": "ghcr.io/lambdasistemi/amaru-bootstrap-producer:cf657b918787c213c09ffef3879ac4a2552dd680",
+      "reason": "Binary reports no Amaru git commit: `amaru --version` prints only 'Amaru 10.11.0'; /bin/amaru is the nix package amaru-0.1.2 (lambdasistemi bootstrap-producer tool), not a pragma-org/amaru release tag.",
+      "evidence": "2026-09-26: the only 40-hex strings in /bin/amaru are the rustc commit (7af3402c), the LLD commit (1cb4e383) and 410c5623; none is a pragma-org/amaru commit (GitHub commits API 422). Image has no OCI revision label."
+    },
+    {
+      "digest": "sha256:10b5e15dbae7e9d0a2fa0cb5f62485082cd864727c2c0aa9bdbdeffa9729d431",
+      "reference": "ghcr.io/j-gainsec/dwarf-amaru-runtime-oracle",
+      "reason": "Not a node image: a Python oracle (entrypoint python /opt/antithesis/catalog/oracle.py) with no amaru or cardano-node binary; matched only by its name.",
+      "evidence": "2026-09-26: no amaru*/cardano* file in the image filesystem; entrypoint and labels inspected."
     }
   ]
 }

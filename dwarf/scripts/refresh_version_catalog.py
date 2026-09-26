@@ -335,10 +335,52 @@ def write_catalog_candidate(
     return output
 
 
+def _release_tag(implementation: str, version: str) -> str:
+    return f"v{version}" if implementation == "amaru" and not version.startswith("v") else version
+
+
+def verify_upstream_tags(
+    catalog: dict[str, Any], tag_revisions: dict[str, dict[str, str]]
+) -> tuple[list[str], int]:
+    """Cross-check every tagged catalog release against upstream Git tags.
+
+    Returns (problems, checked).  A release tag that upstream resolves to a
+    different commit than ``source_revision`` is a provenance failure; a tag
+    upstream does not have is reported too.  ``main``-channel builds are not
+    tags and are skipped.
+    """
+    problems: list[str] = []
+    checked = 0
+    for release in catalog.get("releases", []):
+        if release.get("channel") == "main":
+            continue
+        implementation = release.get("implementation")
+        repository = REPOSITORIES.get(implementation)
+        if repository is None:
+            continue
+        tags = tag_revisions.get(repository, {})
+        tag = _release_tag(implementation, str(release.get("version")))
+        upstream = tags.get(tag)
+        checked += 1
+        if upstream is None:
+            problems.append(f"{implementation} {release.get('version')}: tag {repository}@{tag} not found upstream")
+        elif upstream != release.get("source_revision"):
+            problems.append(
+                f"{implementation} {release.get('version')}: catalog source_revision "
+                f"{str(release.get('source_revision'))[:12]} but upstream tag {tag} is {upstream[:12]}"
+            )
+    return problems, checked
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog", default=str(DEFAULT_CATALOG_PATH))
-    parser.add_argument("--output", required=True, help="Reviewable candidate path; cannot equal --catalog")
+    parser.add_argument("--output", help="Reviewable candidate path; cannot equal --catalog")
+    parser.add_argument(
+        "--verify-upstream",
+        action="store_true",
+        help="Only cross-check every catalog tag -> commit against upstream Git tags; exit 1 on drift",
+    )
     parser.add_argument(
         "--registry-limit",
         type=int,
@@ -346,12 +388,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Inspect OCI metadata for only the newest N releases per implementation (default: 3)",
     )
     args = parser.parse_args(argv)
+    if not args.verify_upstream and not args.output:
+        parser.error("--output is required unless --verify-upstream is given")
     source_path = Path(args.catalog)
     source = json.loads(source_path.read_text(encoding="utf-8"))
     tag_revisions = {
         repository: load_git_tag_revisions(repository)
         for repository in REPOSITORIES.values()
     }
+    if args.verify_upstream:
+        problems, checked = verify_upstream_tags(source, tag_revisions)
+        for problem in problems:
+            print(f"  ✗ {problem}")
+        print(f"upstream tag provenance: {checked} releases checked, {len(problems)} problems")
+        return 1 if problems else 0
 
     def resolve_tag(repository: str, tag: str) -> str:
         revision = tag_revisions.get(repository, {}).get(tag)

@@ -35,6 +35,7 @@ ACCEPTED = "accepted"
 PHASE1_REJECT = "phase1_reject"
 DECODE_REJECT = "decode_reject"
 UNAVAILABLE = "unavailable"
+MASKED = "masked"
 UNKNOWN = "unknown"
 
 _DECODE_MARKERS = (
@@ -46,6 +47,15 @@ _DECODE_MARKERS = (
     "expected/found mismatch",
 )
 
+# The funding input is already consumed (a pending tx in the node's mempool, or
+# on-ledger drift), so the node never reached the rule under test. Such a
+# response is inconclusive, never a phase-1 verdict: checked BEFORE the phase-1
+# markers, which would otherwise match the "conwaymempoolfailure" wrapper.
+_MASKED_MARKERS = (
+    "all inputs are spent",
+    "badinputsutxo",
+)
+
 _PHASE1_MARKERS = (
     "feetosmallutxo",
     "fee too small",
@@ -55,6 +65,9 @@ _PHASE1_MARKERS = (
     "conwaymempoolfailure",
     "submitvalidationerror",
     "txvalidationerror",
+    # amaru 10.11.20260918+ emits verbose phase-1 errors (fees/native-script/validity)
+    # under this umbrella phrase; 807 used the coarse _AMARU_VALIDATION_RE form below.
+    "phase one validation",
 )
 
 # Amaru deliberately keeps validation details out of the submit API response.
@@ -94,6 +107,8 @@ def classify_response(
     lowered = (body or "").lower()
     if any(marker in lowered for marker in _DECODE_MARKERS):
         return DECODE_REJECT
+    if any(marker in lowered for marker in _MASKED_MARKERS):
+        return MASKED
     if any(marker in lowered for marker in _PHASE1_MARKERS):
         return PHASE1_REJECT
     if status == 400 and _AMARU_VALIDATION_RE.fullmatch((body or "").strip()):
@@ -247,6 +262,7 @@ def observe_differential(
         value in (ACCEPTED, PHASE1_REJECT, DECODE_REJECT) for value in classes.values()
     )
     any_accepted = any(value == ACCEPTED for value in classes.values())
+    masked = any(value == MASKED for value in classes.values())
     if both_classifiable:
         phase1_agreement = all(value == PHASE1_REJECT for value in classes.values())
     else:
@@ -257,6 +273,7 @@ def observe_differential(
         "both_classifiable": both_classifiable,
         "phase1_agreement": phase1_agreement,
         "any_accepted": any_accepted,
+        "masked": masked,
     }
 
 

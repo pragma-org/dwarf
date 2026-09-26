@@ -43,6 +43,11 @@ from profile_manager.version_catalog import (  # noqa: E402
     load_version_catalog,
     resolve_release,
 )
+from profile_manager.version_provenance import (  # noqa: E402
+    ProvenanceIndex,
+    parse_binary_identity,
+    revisions_agree,
+)
 from redeploy_cardano_amaru_topology import (  # noqa: E402
     fresh_readiness_proven,
     remember_bootstrap_evidence,
@@ -562,14 +567,35 @@ def identity_matches(
     reported_version: str,
     expected_image_id: str,
     running_image_id: str,
+    expected_source_revision: str | None = None,
 ) -> bool:
-    """Require process-level version proof and container artifact identity."""
+    """Require process-level version proof and container artifact identity.
+
+    The proof is git-commit equality: when the binary reports a commit
+    (``amaru --version`` / ``cardano-node --version`` "git rev") and the catalog
+    revision for the claimed label is known, the two must name the same commit.
+    The version-text substring match is only a last-resort fallback for a
+    binary that reports no commit.
+    """
+    image_matched = bool(expected_image_id and running_image_id == expected_image_id)
+    observed = parse_binary_identity(reported_version)
+    if expected_source_revision and observed and observed.get("git_commit"):
+        return image_matched and revisions_agree(expected_source_revision, observed["git_commit"])
     return bool(
         expected_version
         and expected_version in reported_version
-        and expected_image_id
-        and running_image_id == expected_image_id
+        and image_matched
     )
+
+
+def _catalog_revision(implementation: str, version: str | None) -> str | None:
+    """Catalog source revision for a claimed label (None if unresolvable)."""
+    if not version:
+        return None
+    try:
+        return ProvenanceIndex.load().expected_revision(implementation, version)
+    except Exception:  # noqa: BLE001 - fall back to the version-text proof
+        return None
 
 
 def _image_id(reference: str) -> str:
@@ -720,7 +746,11 @@ def _identity_observation(
                 reported_version=output,
                 expected_image_id=expected_image_id,
                 running_image_id=artifact_image_id,
+                expected_source_revision=_catalog_revision(
+                    "amaru" if service in AMARU_RELAYS else "cardano-node", expected
+                ),
             )
+        observed_identity = parse_binary_identity(output)
         wrapper_match = not (
             service in AMARU_RELAYS and modern_amaru
         ) or running_image_id == wrapper_image_id
@@ -729,6 +759,7 @@ def _identity_observation(
             "artifact_container": artifact_container,
             "expected_version": expected,
             "reported": output,
+            "reported_git_commit": (observed_identity or {}).get("git_commit"),
             "version_command": version_command,
             "expected_image": expected_image,
             "expected_image_id": expected_image_id,

@@ -529,6 +529,39 @@ class DifferentialObservationTests(unittest.TestCase):
         self.assertIsNone(result["phase1_agreement"])
         self.assertFalse(result["any_accepted"])
 
+    def test_mempool_input_conflict_is_masked_not_phase1_reject(self):
+        subject = load_subject(self)
+        body = (
+            '{"contents":{"contents":{"contents":{"era":"ShelleyBasedEraConway",'
+            '"error":["ConwayMempoolFailure \\"All inputs are spent. Transaction has '
+            'probably already been included\\""],"kind":"ShelleyTxValidationError"}}}}'
+        )
+        self.assertEqual(subject.classify_response(400, body), "masked")
+        self.assertEqual(
+            subject.classify_response(
+                400, "ApplyTxError (ConwayUtxowFailure (UtxoFailure (BadInputsUTxO ...)))"
+            ),
+            "masked",
+        )
+
+    def test_masked_endpoint_is_inconclusive_never_agreement(self):
+        subject = load_subject(self)
+        amaru = RecordingTransport(
+            {"classification": "phase1_reject", "status": 400, "reason": "witness"}
+        )
+        cardano = RecordingTransport(
+            {"classification": "masked", "status": 400, "reason": "All inputs are spent"}
+        )
+
+        result = subject.observe_differential(
+            b"same", {"amaru": amaru, "cardano": cardano}
+        )
+
+        self.assertFalse(result["both_classifiable"])
+        self.assertIsNone(result["phase1_agreement"])
+        self.assertTrue(result["masked"])
+        self.assertFalse(subject.matches_expected(result, "phase1_reject"))
+
     def test_acceptance_is_never_hidden_by_other_endpoint_failure(self):
         subject = load_subject(self)
         amaru = RecordingTransport(
