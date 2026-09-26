@@ -256,3 +256,24 @@ def test_revisions_agree_requires_seven_hex():
     assert revisions_agree("ea1f34e", EA1F)
     assert not revisions_agree("ea1f3", EA1F)
     assert not revisions_agree("ea1f34e", AEDF)
+
+
+def test_cardano_prose_labels_are_checked_case_insensitively(index):
+    # the second mislabel class: a 10.7.1 reference (045bc187) described as 11.1.2
+    assert check_prose(index, "Cardano-node 11.1.2 (`045bc187`) accepts it")
+    assert check_prose(index, "cardano-node 11.1.2 (045bc187)")
+    assert check_prose(index, "Cardano-node 10.7.1 (`045bc187`) accepts it") == []
+    assert check_prose(index, "Cardano-node 11.1.2 (`fef83fed`) accepts it") == []
+
+
+def test_identity_exemption_needs_evidence_and_silences_only_its_digest(index):
+    catalog = json.loads(CATALOG_PATH.read_text())
+    broken = copy.deepcopy(catalog)
+    broken["identity_exemptions"][0].pop("evidence")
+    with pytest.raises(CatalogError, match="evidence"):
+        validate_version_catalog(broken)
+    exempt = catalog["identity_exemptions"][0]["digest"]
+    _, warnings = check_image_refs(index, f"  image: ghcr.io/x/amaru-bootstrap-producer@{exempt}\n")
+    assert warnings == []
+    _, warnings = check_image_refs(index, "  image: ghcr.io/x/amaru-bootstrap-producer@sha256:" + "0" * 64 + "\n")
+    assert warnings

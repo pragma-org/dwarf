@@ -3,7 +3,7 @@
 **Component:** `amaru-protocols` handshake version-table decoding (`crates/amaru-protocols/src/protocol_messages/version_table.rs`, `version_data.rs`, `version_number.rs`)
 **Type:** Node-to-node interoperability / protocol forward-compatibility divergence vs. the Haskell reference node
 **Status:** Confirmed (root cause in source; reproduced as a retained DWARF run with SARIF and patched measurement evidence). **Present in the latest release `v10.11.20260918` and on `main` (`5a2a08bc`, 2026-09-22).** No upstream issue exists (Amaru issues/PRs searched for handshake/V16/Peras/version-data; the related #1304, #1319 and #1333 fixed negotiation and V15, not unknown-version tolerance).
-**Found by:** DWARF version qualification of the mixed pair Cardano-node 11.1.2 + Amaru 10.11.20260912 (classified *incompatible* on 2026-09-18 with no assigned cause), root-caused and reproduced by DWARF on 2026-09-23.
+**Found by:** DWARF version qualification of the mixed pair Cardano-node 11.1.2 (`fef83fed`) + Amaru 10.11.20260912 (`b159172f`) (classified *incompatible* on 2026-09-18 with no assigned cause), root-caused and reproduced by DWARF on 2026-09-23.
 **Date:** 2026-09-23
 **Severity:** Medium (interoperability / availability; latent network-wide break at the next protocol-version rollout; not consensus-affecting, no crash — see *Severity*).
 

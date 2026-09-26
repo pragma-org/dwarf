@@ -21,7 +21,7 @@ family fired the expected `*OCERT` reason. The three findings:
    A valid live-tip Praos header re-encoded with non-canonical CBOR (same logical header, different
    bytes) **crashes an Amaru 10.11.20260918 node** (chain-store integrity panic,
    `types.rs:88:9` — Amaru keys stored headers by the raw-wire hash but integrity-checks the
-   canonical hash) while cardano-node 11.1.2 **accepts** it. Remotely triggerable via ChainSync;
+   canonical hash) while cardano-node 11.1.2 (`fef83fed`) **accepts** it. Remotely triggerable via ChainSync;
    deterministic, reproduced 4×. Availability/DoS-class (no consensus split observed).
 2. **Validation-precedence divergence — reported-reason only** (`finding-opcert-precedence-divergence.md`).
    On a header breaking two opcert rules at once, both nodes reject but report **different rules**

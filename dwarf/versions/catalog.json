@@ -4080,5 +4080,19 @@
       ],
       "issues": []
     }
+  ],
+  "identity_exemptions": [
+    {
+      "digest": "sha256:72906da307862ee5652a35d2e6569fcd929ddd5785ad6d633b42e4912faef147",
+      "reference": "ghcr.io/lambdasistemi/amaru-bootstrap-producer:cf657b918787c213c09ffef3879ac4a2552dd680",
+      "reason": "Binary reports no Amaru git commit: `amaru --version` prints only 'Amaru 10.11.0'; /bin/amaru is the nix package amaru-0.1.2 (lambdasistemi bootstrap-producer tool), not a pragma-org/amaru release tag.",
+      "evidence": "2026-09-26: the only 40-hex strings in /bin/amaru are the rustc commit (7af3402c), the LLD commit (1cb4e383) and 410c5623; none is a pragma-org/amaru commit (GitHub commits API 422). Image has no OCI revision label."
+    },
+    {
+      "digest": "sha256:10b5e15dbae7e9d0a2fa0cb5f62485082cd864727c2c0aa9bdbdeffa9729d431",
+      "reference": "ghcr.io/j-gainsec/dwarf-amaru-runtime-oracle",
+      "reason": "Not a node image: a Python oracle (entrypoint python /opt/antithesis/catalog/oracle.py) with no amaru or cardano-node binary; matched only by its name.",
+      "evidence": "2026-09-26: no amaru*/cardano* file in the image filesystem; entrypoint and labels inspected."
+    }
   ]
 }

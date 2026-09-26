@@ -1,7 +1,7 @@
 # Finding note — operational-certificate / KES header validation (cardano-node + Amaru)
 
 **From:** DWARF opcert header-validation differential testing (Pragma) · **Date:** 2026-09-24
-**Scope:** serve a fixed corpus of mutated block headers to a live cardano-node 11.1.2
+**Scope:** serve a fixed corpus of mutated block headers to a live cardano-node 11.1.2 (`fef83fed`)
 (`fef83fed`) node and a live Amaru 10.11.20260918 (`aedfe797`) node over ChainSync and
 compare each node's accept/reject verdict and rejection reason against an expected table
 (`dwarf/corpora/opcert/opcert-header-cases-v1.json`). Six operational-certificate rules plus

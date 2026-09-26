@@ -208,6 +208,25 @@ def validate_version_catalog(data: Any) -> dict[str, Any]:
     for scope, records in default_scopes.items():
         if len(records) > 1:
             raise CatalogError(f"multiple defaults declared for {scope}: {', '.join(records)}")
+
+    # Pinned node-named images whose binary reports NO node commit (or that
+    # contain no node binary). Recorded explicitly, with evidence, instead of
+    # inventing a binary_git_commit; the provenance gate then stops warning.
+    exemptions = catalog.get("identity_exemptions", [])
+    if not isinstance(exemptions, list):
+        raise CatalogError("catalog.identity_exemptions must be a list")
+    exempt_digests: set[str] = set()
+    for index, item in enumerate(exemptions):
+        context = f"catalog.identity_exemptions[{index}]"
+        record = _require_mapping(item, context)
+        digest = _require_text(record, "digest", context)
+        if not DIGEST.fullmatch(digest):
+            raise CatalogError(f"{context}.digest must be an immutable sha256 digest")
+        if digest in exempt_digests:
+            raise CatalogError(f"duplicate identity exemption {digest}")
+        exempt_digests.add(digest)
+        for key in ("reference", "reason", "evidence"):
+            _require_text(record, key, context)
     return catalog
 
 

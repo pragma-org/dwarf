@@ -79,6 +79,7 @@ class ProvenanceIndex:
     catalog: dict[str, Any]
     by_label: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
     by_digest: dict[str, tuple[dict[str, Any], dict[str, Any]]] = field(default_factory=dict)
+    exempt_digests: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_catalog(cls, catalog: dict[str, Any]) -> "ProvenanceIndex":
@@ -91,6 +92,8 @@ class ProvenanceIndex:
                 digest = artifact.get("digest")
                 if isinstance(digest, str) and digest:
                     index.by_digest.setdefault(digest, (release, artifact))
+        for exemption in catalog.get("identity_exemptions", []) or []:
+            index.exempt_digests[exemption["digest"]] = exemption
         return index
 
     @classmethod
@@ -390,7 +393,7 @@ _GAP = r"[^\n]{0,24}?"
 # label then sha: "amaru 10.11.20260903 (ea1f34e4)", "Amaru 0903 ea1f34e4", "amaru 807 (493bffba)"
 _PROSE_PATTERNS = (
     ("amaru", re.compile(r"(?i:\bamaru\b)[^\n]{0,12}?(?<![\w.])" + _AMARU_LABEL + r"(?![\w.])" + _GAP + _SHA_TOKEN)),
-    ("cardano-node", re.compile(r"\bcardano-node\b[^\n]{0,4}?(?<![\w.])" + _CARDANO_LABEL + r"(?![\w.])" + _GAP + _SHA_TOKEN)),
+    ("cardano-node", re.compile(r"(?i:\bcardano-node\b)[^\n]{0,4}?(?<![\w.])" + _CARDANO_LABEL + r"(?![\w.])" + _GAP + _SHA_TOKEN)),
     # sha then label: "ea1f34e4 = v10.11.20260903", "`ea1f34e4` (amaru 0903)"
     ("amaru", re.compile(_SHA_TOKEN + r"`?\s*(?:=|is|\(|,)\s*(?i:amaru\s+)?(?:tag\s+)?(v?\d+\.\d+\.\d{8})(?![\w.])")),
 )
@@ -518,6 +521,8 @@ def check_image_refs(index: ProvenanceIndex, text: str) -> tuple[list[tuple[int,
             if not digest:
                 continue
             hit = index.by_digest.get(digest)
+            if hit is None and digest in index.exempt_digests:
+                continue
             if hit is None:
                 warnings.append((line, f"{reference}: node image digest is not in the version catalog (no recorded binary identity)"))
                 continue

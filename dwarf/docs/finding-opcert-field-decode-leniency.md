@@ -5,7 +5,7 @@ differential (Pragma) · **Date:** 2026-09-25
 **Scope:** feed the SAME bare Praos block-header CBOR, with its operational-certificate
 sub-structure mutated at the FIELD level, to both implementations' header decoders — Amaru
 10.11.20260918 (`amaru-cbor-decode-block-header`, `from_cbor_no_leftovers::<BlockHeader>`) and
-cardano-node 11.1.2 (the forger's `decode-praos-header`, `decodeFullAnnotator` of
+cardano-node 11.1.2 (`fef83fed` stack; the forger's `decode-praos-header`, `decodeFullAnnotator` of
 `Praos.Header StandardCrypto`) — and compare decode accept/reject. Library/binary level, no
 devnet.
 
