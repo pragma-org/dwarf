@@ -200,3 +200,26 @@ main = hspec $ do
                 Right sp -> csBaseCase sp == "valid-control" && csOpcertField sp == Just "cold-sig-truncated"
                 _ -> False
 
+    describe "reEncodeOpcert CBOR-in-CBOR descent (family A wrapped-header fix)" $ do
+        let opcertNode = TList [TBytes (BS.replicate 32 1), TInt 5, TInt 0, TBytes (BS.replicate 64 2)]
+            bareTerm   = TList [TInt 1, TMap [(TInt 0, TInt 1), (TInt 2, TInt 3)], opcertNode, TListI [TInt 9, TInt 8]]
+            bare       = toLazyByteString (encodeTerm bareTerm)
+            wrapped    = toLazyByteString
+                            (encodeTerm (TList [TInt 0, TTagged 24 (TBytes (LBS.toStrict bare))]))
+            innerOf bs = case deserialiseFromBytes decodeTerm bs of
+                Right (_, TList [_, TTagged 24 (TBytes inner)]) -> Just inner
+                _ -> Nothing
+            forms = ["definite-array", "indefinite-array", "extra-map-key",
+                     "duplicate-map-key", "missing-optional-key", "noncanonical-int"]
+        it "changes the INNER wrapped header (not just the envelope) for every map/array/int form" $
+            mapM_ (\form -> do
+                      let dev = reEncodeOpcert 7 form (Just 3) wrapped
+                      dev `shouldNotBe` wrapped
+                      innerOf dev `shouldNotBe` Just (LBS.toStrict bare)) forms
+        it "preserves the outer CBOR-in-CBOR envelope (deviation lands inside)" $ do
+            let dev = reEncodeOpcert 7 "duplicate-map-key" (Just 3) wrapped
+            (innerOf dev == Nothing) `shouldBe` False
+        it "still deviates a BARE (unwrapped) header directly (regression)" $
+            reEncodeOpcert 7 "indefinite-array" Nothing bare `shouldNotBe` bare
+
+
