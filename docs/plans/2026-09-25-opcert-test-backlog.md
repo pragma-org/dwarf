@@ -119,15 +119,25 @@ byte fields — going deeper than A's whole-header re-encoding.
 
 ## Needs new setup, adjacent
 
-### 7. Epoch-boundary semantics — P2
+### 7. Epoch-boundary semantics — P2 — THIN / DEFERRED (not built)
 
-Exercise opcert counter and KES behavior as the chain crosses an epoch
-boundary.
+Exercise opcert counter and KES behavior as the chain crosses an epoch boundary.
 
-- **Security relevance:** Epoch transitions change the KES period frame and
-  stake/registration state; validation bugs that only appear at the boundary
-  would be missed by within-epoch soaks.
-- **Harness:** NEW setup — the run must span an epoch.
+- **Verdict (design review 2026-09-26): opcert validation is epoch-INVARIANT — no
+  epoch-dependent opcert check to probe.** Counter monotonicity uses per-pool
+  ledger state that persists monotonically across epochs (no epoch reset); the
+  KES-period window is slot-based (kp = slot / slotsPerKESPeriod) and on the
+  profiles slotsPerKESPeriod=129600 gives an ~18h KES period that dwarfs the
+  ~200s epoch (epochLength 400 x 0.5s), so kp does not move across a boundary;
+  cold/hot-key checks are epoch-independent. Reachability is fine (an epoch every
+  ~200s) — the gap is SIGNAL, not reachability.
+- **Where the epoch-dependent surface actually is:** VRF / leader-schedule (nonce
+  roll) — already covered by the VRF false-leadership finding
+  (`consensus-report-false-leadership-vrf.md`) — and pool lifecycle (see #8). A
+  before/after-boundary opcert soak would only re-confirm the epoch-invariance of
+  rules already proven at parity (#1/#4/#5), so it is deferred as low-value.
+- **Harness:** NEW setup — the run must span an epoch (would be trivial; the
+  value, not the reachability, is the blocker).
 
 ### 8. Retired / deregistered-pool forging — P3
 
@@ -138,6 +148,24 @@ Forge an opcert header from a pool that has retired or deregistered.
 - **Harness:** NEW setup — requires pool lifecycle (registration/retirement)
   provisioning.
 
+
+- **Reachability / masking verdict (probe analysis 2026-09-26): the framed test —
+  reject a retired/deregistered pool's header on "opcert-issuer / pool-not-registered"
+  — is NOT cleanly observable via live header serving.** Header validation gates the
+  opcert check behind VRF/leadership, and pool retirement is PIPELINED: (a) during
+  the retirement epoch and until the stake snapshot ages out (~2 epochs), the pool is
+  removed from registration but remains leader-eligible via the lagged stake snapshot
+  and keeps forging VALID, accepted headers (normal wind-down) — no rejection to test;
+  (b) once it ages out of the leadership snapshot its headers fail VRF/leadership first
+  (both nodes reject and AGREE — VRF false-leadership finding), masking any opcert
+  check. There is no state where a header is simultaneously valid-leader AND
+  opcert-issuer-unknown, so the pool-identity check is unreachable at the header layer
+  (the same masking class as the #6 by-hash limit).
+- **Residual empirical caveat:** whether the protocol-state opcert-counter map is
+  cleaned exactly at retirement could, in principle, produce a transient lag-window
+  divergence — but that window is narrow and hard to hit deterministically, and a
+  retired pool forging during the lag is normal accepted behaviour. Would require a
+  validator-level (non-serving) delivery to probe, not a live soak. Deferred.
 ### 9. Genesis / OBFT-delegate opcerts & cross-era validation — P3
 
 Cover genesis-delegate opcerts, which follow a different validation path, and
