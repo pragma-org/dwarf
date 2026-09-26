@@ -17,13 +17,13 @@
       ]
     },
     {
-      "if": {"properties": {"family": {"enum": ["encoding-form", "kes-period-differential", "rules-differential", "error-precedence"]}}},
+      "if": {"properties": {"family": {"enum": ["encoding-form", "kes-period-differential", "rules-differential", "error-precedence", "counter-edge-cases"]}}},
       "then": {"required": ["target_nodes"]},
       "else": {"required": ["target_node"]}
     }
   ],
   "properties": {
-    "family": {"type": "string", "enum": ["encoding-form", "accept-boundary", "restart-persistence", "kes-period-differential", "cross-pool-confusion", "rules-differential", "kes-evolution", "error-precedence"]},
+    "family": {"type": "string", "enum": ["encoding-form", "accept-boundary", "restart-persistence", "kes-period-differential", "cross-pool-confusion", "rules-differential", "kes-evolution", "error-precedence", "counter-edge-cases"]},
     "seed": {"type": "integer"},
     "time_budget_seconds": {"type": "number", "exclusiveMinimum": 0, "default": 5400},
     "profile_id": {"type": "string", "minLength": 1},

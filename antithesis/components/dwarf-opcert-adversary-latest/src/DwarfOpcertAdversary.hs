@@ -45,6 +45,7 @@ module DwarfOpcertAdversary
     , applyCaseSpec
     , applyKesEvolution
     , applyErrorPrecedence
+    , applyCounterEdge
     , RuleParams (..)
     , defaultRuleParams
     , ruleParamsFromSpec
@@ -149,6 +150,7 @@ data Mutation
     | MutateKESPeriodBefore
     | MutateKESKey
     | MutateErrorPrecedence
+    | MutateCounterEdge
     deriving (Eq, Show)
 
 
@@ -361,6 +363,7 @@ caseMutationName = \case
     MutateKESPeriodBefore -> "MutateKESPeriodBefore"
     MutateKESKey -> "MutateKESKey"
     MutateErrorPrecedence -> "MutateErrorPrecedence"
+    MutateCounterEdge -> "MutateCounterEdge"
 
 
 -- | Prepare the case header from a REAL captured pool1 Conway header. Changes
@@ -615,6 +618,7 @@ data CaseSpec = CaseSpec
     , csCounterJump    :: !(Maybe Integer)
     , csKesPeriodsAhead :: !(Maybe Integer)
     , csRules          :: !(Maybe [String])
+    , csCounterValue   :: !(Maybe Integer)
     }
     deriving (Eq, Show)
 
@@ -659,7 +663,8 @@ parseCaseSpec raw = do
         cjump  <- getP "counter_jump"
         kahead <- getP "kes_periods_ahead"
         rules  <- getP "rules"
-        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo cjump kahead rules)
+        cval   <- getP "counter_value"
+        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo cjump kahead rules cval)
 
 -- | The seed that drives the encoding-form byte re-encoding for THIS case. The
 -- generator derives a distinct per-iteration @byte_seed@ (in @params@) from
@@ -680,7 +685,52 @@ applyCaseSpec ks Nothing    caseId hdr = applyCase ks caseId hdr
 applyCaseSpec ks (Just spec) _     hdr = case csBaseCase spec of
     "kes-evolution"    -> applyKesEvolution ks spec hdr
     "error-precedence" -> applyErrorPrecedence ks spec hdr
+    "counter-edge"     -> applyCounterEdge ks spec hdr
     other              -> applyCaseWith ks (ruleParamsFromSpec spec) other hdr
+
+
+-- | Family #5 counter-edge-cases: serve a header whose opcert counter is at an
+-- EDGE value relative to the pool\'s recorded counter, and leave every other
+-- field valid. The target counter is either @realN + counter_jump@ (extreme
+-- forward jumps, e.g. 2^16..2^63 -> counter-too-large) or an ABSOLUTE
+-- @counter_value@ (overflow boundary max-uint64 -> too-large; 0 -> too-small
+-- when the pool has rotated so recorded >= 1). The opcert signature and KES
+-- signature are valid, so the ONLY defect is the counter, and both nodes reject
+-- (too-large on a fresh devnet; too-small only after a rotation).
+--
+-- Fail-closed reachability guard: a target equal to @realN@ (reuse) or
+-- @realN + 1@ (a valid rotation) would be ACCEPTED, so it returns Left
+-- (inconclusive) rather than a valid header. This is exactly what makes the
+-- too-small (counter = 0) case fail-closed on a FRESH devnet, where recorded is
+-- 0: target 0 == realN 0 -> Left. On a rotated pool (recorded >= 1) the same 0
+-- is below recorded -> a genuine too-small rejection.
+applyCounterEdge :: KeySet -> CaseSpec -> Header -> Either String CaseResult
+applyCounterEdge ks spec hdr = case hdr of
+    HeaderConway shelleyHdr ->
+        let praosHdr = shelleyHeaderRaw shelleyHdr
+            body = Praos.headerBody praosHdr
+            ocert = Praos.hbOCert body
+            realN = ocertN ocert
+            ourHot = kesHotVerKeyBytes (ksKesSignKey ks)
+            theirHot = KES.rawSerialiseVerKeyKES (ocertVkHot ocert)
+            target = case csCounterValue spec of
+                Just v  -> fromInteger v :: Word64
+                Nothing -> realN + fromIntegral (fromMaybe 0 (csCounterJump spec))
+        in  if ourHot /= theirHot
+                then Left "counter-edge: captured header is not from our pool (hot-key mismatch)"
+            else if target == realN || target == realN + 1
+                then Left ("counter-edge unreachable: target counter " <> show target
+                           <> " is a valid reuse/rotation of recorded " <> show realN
+                           <> " (would be accepted; a too-small case needs a prior rotation so recorded >= 1)")
+            else
+                let evol = kesEvolutions (ksSlotsPerKESPeriod ks) (Praos.hbSlotNo body) (ocertKESPeriod ocert)
+                    sigma = signedDSIGN (ksColdSignKey ks) (OCertSignable (ocertVkHot ocert) target (ocertKESPeriod ocert))
+                    newOcert = ocert { ocertN = target, ocertSigma = sigma }
+                    newBody = body { Praos.hbOCert = newOcert }
+                    kesSig = signAtEvolution (ksKesSignKey ks) evol newBody
+                in  Right (CaseResult (HeaderConway (mkShelleyHeader (Praos.Header newBody kesSig)))
+                                      MutateCounterEdge "reject")
+    _ -> Left "counter-edge: captured header is not a Conway header"
 
 
 -- | Break TWO opcert rules in a SINGLE header (family #4 error-precedence). The
