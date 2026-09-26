@@ -40,7 +40,20 @@
    "reason_classes": [
     "incorrect_deposit"
    ],
-   "note": "Conway reg cert declaring 1 ADA vs pparam 2 ADA; witnessed"
+   "note": "Conway reg cert declaring 1 ADA vs pparam 2 ADA, tx balanced to the DECLARED 1 ADA; witnessed. cardano-node also reports ValueNotConservedUTxO (it balances against the pparam deposit); Amaru reports only the deposit rule"
+  },
+  {
+   "case_id": "stakereg-bad-deposit-balanced",
+   "tx_file": "stakereg-bad-deposit-balanced.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 346,
+   "cbor_sha256": "1f30fd9230709ee1b3b4102d9612d34f3203a677832571fab6000855d5689307",
+   "rule": "DELEG IncorrectDeposit",
+   "reason_classes": [
+    "incorrect_deposit"
+   ],
+   "note": "same 1 ADA cert, tx balanced to the PPARAM 2 ADA so value is conserved and only the declared-deposit rule applies; witnessed"
   },
   {
    "case_id": "regvote-missing-witness",

@@ -79,6 +79,9 @@ tx() {
 tx stakereg-missing-witness   $STAKE_DEP "" reg.cert payment
 tx stakereg-wrong-key         $STAKE_DEP "" reg.cert payment wrong
 tx stakereg-bad-deposit       $((STAKE_DEP / 2)) "" reg-baddep.cert payment stake
+# same cert, but balanced against the PPARAM deposit, so value is conserved by the ledger's
+# accounting and only the declared-deposit rule (IncorrectDeposit) is violated
+tx stakereg-bad-deposit-balanced $STAKE_DEP "" reg-baddep.cert payment stake
 tx regvote-missing-witness    $STAKE_DEP "" regvote.cert payment
 tx regdeleg-missing-witness   $STAKE_DEP "" regdeleg-genpool.cert payment
 tx regdeleg-unknown-pool      $STAKE_DEP "" regdeleg-nopool.cert payment stake

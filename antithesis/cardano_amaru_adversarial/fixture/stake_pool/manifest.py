@@ -17,7 +17,12 @@ CASES = {
     "stakereg-wrong-key": ("reject", ["missing_witness"], STAKE,
         "UTXOW MissingVKeyWitness (stake credential)", "Conway reg cert signed by an unrelated stake key"),
     "stakereg-bad-deposit": ("reject", ["incorrect_deposit"], None,
-        "DELEG IncorrectDeposit", "Conway reg cert declaring 1 ADA vs pparam 2 ADA; witnessed"),
+        "DELEG IncorrectDeposit", "Conway reg cert declaring 1 ADA vs pparam 2 ADA, tx balanced to the "
+        "DECLARED 1 ADA; witnessed. cardano-node also reports ValueNotConservedUTxO (it balances "
+        "against the pparam deposit); Amaru reports only the deposit rule"),
+    "stakereg-bad-deposit-balanced": ("reject", ["incorrect_deposit"], None,
+        "DELEG IncorrectDeposit", "same 1 ADA cert, tx balanced to the PPARAM 2 ADA so value is "
+        "conserved and only the declared-deposit rule applies; witnessed"),
     "regvote-missing-witness": ("reject", ["missing_witness"], STAKE,
         "UTXOW MissingVKeyWitness (stake credential)", "reg + vote-deleg to AlwaysAbstain (tag 12), stake witness omitted"),
     "regdeleg-missing-witness": ("reject", ["missing_witness"], STAKE,
