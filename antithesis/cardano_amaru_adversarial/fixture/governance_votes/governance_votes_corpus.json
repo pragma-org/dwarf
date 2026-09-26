@@ -1,0 +1,132 @@
+{
+  "description": "Conway governance VOTE-authorization phase-1 differential family (cardano-node vs Amaru), on a governance-PROVISIONED re-baked substrate (govrebake: key-hashed committee, 2 registered DReps, one open InfoAction, all real mined setup before the freeze). Committee angle: unauthorized hot key + missing/wrong hot-key witness vs authorized control. DRep angle: missing/wrong witness vs valid control. All spend the funded UTxO 4e0b9c55...#0 and target the open action; fee auto (>> min). Violations idempotent; valid controls single-use. Result 2026-09-26: all cases AGREE (amaru 0918 ea1f34e4 conformant with cardano-node 11.1.2) - verdict + reason-class + credential parity.",
+  "cases": [
+    {
+      "case_id": "cc-unauthorized",
+      "tx_file": "votes/cc-unauthorized.tx",
+      "expected": "reject",
+      "reason_class": "gov-voter-not-authorized",
+      "input": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0",
+      "action": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0 (InfoAction)",
+      "cbor_size": 376,
+      "cbor_sha256": "15bb10c8a06a3d7a1c7a5027eb598b81f144ff98fc7277473e84e7051e4a5d57",
+      "note": "CC vote by cc3 (MemberNotAuthorized) hot key; both reject as unauthorized/unknown voter (cred 8360fd1e)",
+      "observed": {
+        "cardano_status": 400,
+        "amaru_status": 400,
+        "cardano_class": "gov-voter-not-exist",
+        "amaru_class": "voting-procedure",
+        "credential": "8360fd1e09b7124f2cf9eec8b7d5c8215232f43c9a0d1a72bca299e1",
+        "amaru_msg": "invalid voting procedures: unauthorized or unknown voters: {ConstitutionalCommitteeKey(Hash<28>(\"8360fd1e09b7"
+      }
+    },
+    {
+      "case_id": "cc-missing-witness",
+      "tx_file": "votes/cc-missing-witness.tx",
+      "expected": "reject",
+      "reason_class": "missing-vkey-witness",
+      "input": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0",
+      "action": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0 (InfoAction)",
+      "cbor_size": 275,
+      "cbor_sha256": "da3074620eb7e4e6c3a1097903b8966dd607c50e3c983584d3d879075c219026",
+      "note": "CC vote by cc1 (authorized) but cc1-hot witness omitted (payment sig only); missing cc1-hot 82d5ac73",
+      "observed": {
+        "cardano_status": 400,
+        "amaru_status": 400,
+        "cardano_class": "missing-vkey-witness",
+        "amaru_class": "vkey-witness",
+        "credential": "82d5ac7353088c069ced531b57e2ed2ef1b8a1e82c6f599c3d474284",
+        "amaru_msg": "invalid transaction verification key witness: missing required signatures for keys or roots: [82d5ac7353088c0"
+      }
+    },
+    {
+      "case_id": "cc-wrong-key",
+      "tx_file": "votes/cc-wrong-key.tx",
+      "expected": "reject",
+      "reason_class": "missing-vkey-witness",
+      "input": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0",
+      "action": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0 (InfoAction)",
+      "cbor_size": 376,
+      "cbor_sha256": "f3f6c8a5f4a76ad37370a83e8437f99df3fc16a5550f50292dfdad3fde2fcfb9",
+      "note": "CC vote by cc1 signed with cc2-hot (wrong hot key); required cc1-hot 82d5ac73 still absent",
+      "observed": {
+        "cardano_status": 400,
+        "amaru_status": 400,
+        "cardano_class": "missing-vkey-witness",
+        "amaru_class": "vkey-witness",
+        "credential": "82d5ac7353088c069ced531b57e2ed2ef1b8a1e82c6f599c3d474284",
+        "amaru_msg": "invalid transaction verification key witness: missing required signatures for keys or roots: [82d5ac7353088c0"
+      }
+    },
+    {
+      "case_id": "drep-missing-witness",
+      "tx_file": "votes/drep-missing-witness.tx",
+      "expected": "reject",
+      "reason_class": "missing-vkey-witness",
+      "input": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0",
+      "action": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0 (InfoAction)",
+      "cbor_size": 275,
+      "cbor_sha256": "40e8f559f0be40cae6ae1ca3654e87d1ffc6955b8a4ad2e03eef3daaedf320a5",
+      "note": "DRep vote by drep1 but drep1 witness omitted; missing drep1 411058a7",
+      "observed": {
+        "cardano_status": 400,
+        "amaru_status": 400,
+        "cardano_class": "missing-vkey-witness",
+        "amaru_class": "vkey-witness",
+        "credential": "411058a780cc70ace23fc5fb09e40072f783e3d48ad8d66469ff41aa",
+        "amaru_msg": "invalid transaction verification key witness: missing required signatures for keys or roots: [411058a780cc70a"
+      }
+    },
+    {
+      "case_id": "drep-wrong-key",
+      "tx_file": "votes/drep-wrong-key.tx",
+      "expected": "reject",
+      "reason_class": "missing-vkey-witness",
+      "input": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0",
+      "action": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0 (InfoAction)",
+      "cbor_size": 376,
+      "cbor_sha256": "b5447af864073a95b71c761d24748de37d778d67bde08009d3644d2f641ef1d4",
+      "note": "DRep vote by drep1 signed with drep2; required drep1 411058a7 still absent",
+      "observed": {
+        "cardano_status": 400,
+        "amaru_status": 400,
+        "cardano_class": "missing-vkey-witness",
+        "amaru_class": "vkey-witness",
+        "credential": "411058a780cc70ace23fc5fb09e40072f783e3d48ad8d66469ff41aa",
+        "amaru_msg": "invalid transaction verification key witness: missing required signatures for keys or roots: [411058a780cc70a"
+      }
+    },
+    {
+      "case_id": "cc-valid",
+      "tx_file": "votes/ccvote-valid.tx",
+      "expected": "accepted",
+      "reason_class": "none",
+      "input": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0",
+      "action": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0 (InfoAction)",
+      "cbor_size": 376,
+      "cbor_sha256": "2a232d8d205dffb7674bb29a1e3fa87116596fe94d20a3fc940303809c249f02",
+      "note": "CC vote by cc1 with its AUTHORIZED hot key (single-use control)",
+      "observed": {
+        "cardano_status": 202,
+        "amaru_status": 202,
+        "note": "both accepted (verdict parity; single-use control)"
+      }
+    },
+    {
+      "case_id": "drep-valid",
+      "tx_file": "votes/drepvote-valid.tx",
+      "expected": "accepted",
+      "reason_class": "none",
+      "input": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0",
+      "action": "4e0b9c55b4360fd7fd4ff0dda2b42f360cd36712f2a353867726ccafad5f944a#0 (InfoAction)",
+      "cbor_size": 376,
+      "cbor_sha256": "3ebb185355bce9115fb815d44933763c12f6c3654bc9ece51144c8f0a3c50999",
+      "note": "DRep vote by registered drep1 with its key (single-use control)",
+      "observed": {
+        "cardano_status": 202,
+        "amaru_status": 202,
+        "note": "both accepted (verdict parity; single-use control)"
+      }
+    }
+  ]
+}
