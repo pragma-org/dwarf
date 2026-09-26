@@ -64,15 +64,19 @@ the frozen cardano reference + Amaru `testnet_42`:
 - Non-vacuous: 1 real ACCEPTED + 3 real PHASE1_REJECT. Repeatable (frozen reference never mines;
   restart clears the mempool between runs).
 
-### Min-fee size-accounting divergence (see `dwarf/docs/finding-amaru-minfee-txsize-divergence.md`)
+### Min-fee size-accounting divergence (CLOSED — see `dwarf/docs/finding-amaru-minfee-isvalid-size-divergence-CLOSED.md`)
 
-The accepted case is set to **164225**, not cardano's exact min **164181**, because the two
-implementations disagree on the tx-size used for min-fee: for the SAME 201-byte, RFC-8949-minimal
-tx and BYTE-IDENTICAL fee params (a=44, b=155381), cardano charges for size 200 (min 164181) while
-Amaru charges for size 201 (min 164225 = 44×201+155381). The band **[164181, 164224]** is
-cardano-accept / Amaru-reject. The regression corpus deliberately straddles BOTH boundaries
-(rejects below 164181, accept at/above 164225) so it stays an *agreeing* gate; the divergence band
-itself is captured as the finding, not folded into the gate.
+The accepted case is set to **164225** (not cardano's exact min **164181**) because it was built
+against **amaru 10.11.20260807**, which charged for tx size 201 (min 164225 = 44×201+155381, the
+1-byte Alonzo `IsValid` flag INCLUDED) while cardano charges for size 200 (min 164181, `IsValid`
+excluded per cardano-ledger `toCBORForSizeComputation`) — a 44-lovelace band [164181, 164224] that
+cardano accepts and amaru 807 rejected.
+
+**Update — FIXED in amaru 10.11.20260918 (ea1f34e4): the divergence is gone (gap 0).** 0918 amaru
+accepts exactly at 164181, matching cardano; this is a CLOSED/historical finding, not a live bug.
+`minimum-exact=164225` still keeps the gate green on BOTH 807 and 0918 (both accept ≥164181), so it
+stays a version-robust *agreeing* regression check; the divergence band is documented in the
+CLOSED finding, not folded into the gate.
 
 ## Blast radius / regression gate (consumers of the old UTxO / genesis)
 
