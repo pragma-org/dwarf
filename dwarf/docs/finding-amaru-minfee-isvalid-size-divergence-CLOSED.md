@@ -36,11 +36,14 @@ Divergent band on 807: **[164181, 164224]** — accepted by cardano, rejected by
 
 ### Metadata cross-check (mechanism isolation)
 
-Same tx shape but with real `auxiliary_data` (268 wire bytes): cardano min 167129 (= size 267 =
-len − 1, the −1 persists **with** metadata → not a null-placeholder effect). amaru 807 min 167393
-(= size 273 = len + 5: the IsValid +1 **plus** a separate +4 aux re-encoding over-count, i.e. the
-already-closed relay-canonicalization issue #1277). amaru 0918 accepts 167129 → **both** the
-IsValid off-by-one and the metadata over-count are gone.
+Same tx shape but with real `auxiliary_data` (**268 wire bytes** — the 4-element
+`toCBORForMempoolSubmission` form, which already includes the IsValid byte): cardano min 167129
+(= size **267 = wire 268 − 1**, IsValid excluded; the −1 persists **with** metadata → not a
+null-placeholder effect). amaru 807 min 167393 (= size **273 = wire 268 + 5**, the +5 being
+**entirely** the auxiliary_data re-encode (bare → tagged metadata) — the already-closed relay
+issue #1277; IsValid is not "added," it is already in the 268). So the gap vs cardano is
+**273 − 267 = 6 bytes (264 lovelace) = 5 (aux re-encode, #1277) + 1 (IsValid, this finding)**. amaru
+0918 accepts 167129 → **both** the IsValid off-by-one **and** the aux re-encode over-count are gone.
 
 ## Mechanism (cardano-ledger reference)
 
@@ -66,9 +69,10 @@ validity of the transaction is not taken into account for the size calculation"*
 `size = 1 + body.len() + witnesses.len() + auxiliary_data_len`. That is exactly why amaru's
 block-application accepted the band-fee tx (see Severity). The **bug** was that amaru's
 **mempool / submit_api** path **re-encoded** the locally-submitted tx to measure its size, which
-re-serialized it to the 4-element wire form → IsValid **included** (+1 byte; and for metadata the
-aux re-tag added +4 more, = the +5 metadata over-count). Hence the mempool-vs-block internal
-disagreement this finding evidences.
+re-serialized it to the 4-element form → IsValid **included** (+1 byte vs cardano's IsValid-excluded
+size). For a tx carrying real metadata the same re-encode additionally re-tagged `auxiliary_data`
+(bare → tagged), adding a further **+5 bytes vs the wire** (the #1277 aux effect), for a total +6
+vs cardano. Hence the mempool-vs-block internal disagreement this finding evidences.
 
 ## Severity — LOW (mempool-only; escalation refuted with block-level evidence)
 
