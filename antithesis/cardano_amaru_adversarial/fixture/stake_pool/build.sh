@@ -11,7 +11,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 FUND="$HERE/../funding"
 IMAGE="${CARDANO_CLI_IMAGE:-cnode-p1:local}"
-cd "$HERE"; mkdir -p certs
+cd "$HERE"; mkdir -p certs keys
 cp "$FUND/payment.skey" keys/payment.skey
 trap 'rm -f keys/payment.skey' EXIT
 CLI="docker run --rm -u $(id -u):$(id -g) -v $HERE:/w -w /w --entrypoint cardano-cli $IMAGE"
@@ -23,6 +23,16 @@ M="--testnet-magic 42"
 STAKE_DEP=2000000; POOL_DEP=500000000; MIN_POOL_COST=340000000   # baked pparams
 GEN_POOL=5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8   # genesis pool (registered)
 GEN_DELEG=3e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b0  # genesis delegator (registered, no key)
+
+# Keys: reuse committed ones if present; otherwise (e.g. a public bundle that ships no .skey)
+# generate fresh ones. Fresh keys change the credentials and tx bytes; manifest.py re-records both.
+for n in stake owner wrong; do [ -f keys/$n.skey ] || $CLI conway stake-address key-gen \
+  --verification-key-file keys/$n.vkey --signing-key-file keys/$n.skey; done
+[ -f keys/cold.skey ] || { $CLI conway node key-gen --cold-verification-key-file keys/cold.vkey \
+  --cold-signing-key-file keys/cold.skey --operational-certificate-issue-counter-file keys/cold.counter
+  rm -f keys/cold.counter; }
+[ -f keys/vrf.skey ] || $CLI conway node key-gen-VRF --verification-key-file keys/vrf.vkey \
+  --signing-key-file keys/vrf.skey
 
 POOLID=$($CLI conway stake-pool id --cold-verification-key-file keys/cold.vkey --output-format hex)
 STAKE_HASH=$($CLI conway stake-address key-hash --stake-verification-key-file keys/stake.vkey)
