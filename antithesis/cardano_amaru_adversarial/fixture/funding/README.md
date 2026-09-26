@@ -20,40 +20,65 @@ Regenerate the vkey/hash/address from the committed `payment.skey` with
 
 ## Paired genesis (`genesis/`)
 
-The 5 genesis files copied from the prior reference bake, with ONE change: the funding address
-added to shelley `initialFunds`. Everything else (systemStart `2026-08-20T04:08:52Z`,
-networkMagic 42, k=20, epochLength 400, slotsPerKESPeriod 129600, maxKESEvolutions 62, staking)
-is **preserved**, so the Amaru era-history / global-parameters (`amaru-runtime/era-history.json`,
-`global-parameters.json`, `d807-amaru/globals.env`) remain valid — the only downstream change is
-the funded UTxO and the genesis hash.
+The 5 genesis files from the re-bake (`prepare-rebake.sh` output), with the funding address in
+shelley `initialFunds`. This is the EXACT genesis that produces the funded UTxO below.
 
-- old shelley genesis hash: `c18693fa21f6290ff2315d7499ad59050e1cf157678db584822cdf416c3eeb37`
-- new shelley genesis hash: `cfbe2d072d21549bb99f7b5bda5227679c93b600f5f92db14a7393086cc7e873`
+- profile: networkMagic 42, k=20, epochLength 400, slotLength 0.5s, activeSlotsCoeff 0.2,
+  slotsPerKESPeriod 129600, maxKESEvolutions 62, protocolVersion major 10 (Conway).
+- systemStart: `2026-09-26T14:45:53Z` (Amaru `AMARU_GLOBAL_SYSTEM_START=1790433953000` ms).
+- cardano-cli shelley genesis hash: `8b6dfc7c215c5a0bfdee17f56ac020d4b18f79da78572d6f5cfddeab7ea43398`
 
-Nothing in the repo pins a genesis hash (config.json references genesis by *file*, not hash;
-grep confirms no consumer pins the old hash), so the hash change requires no wiring updates —
-only re-baking both stores under the new genesis.
+An enterprise (no-stake) initialFund address is **fully spendable**; its absence from the
+stake-distribution (which governs rewards/leader math) does not affect UTxO consumption — verified
+live (Amaru accepted a spend of the UTxO below). config.json references genesis by *file*, not
+hash (grep-verified: no repo consumer pins a genesis hash), so the hash change needs no rewiring —
+only re-baking both stores under this genesis.
 
-## Re-bake recipe (`prepare-rebake.sh` — TODO, pending option B)
+## Funded UTxO
 
-Both baked stores must be re-baked under the new (funded) genesis, since they must share one
-genesis:
-1. Cardano reference: run a cardano-node from `genesis/` (configurator image 0f9570b for keys/pool
-   setup as needed), forge >= 3 epochs, snapshot the chain DB -> `reference-image/state`.
-2. Amaru store: `relay-image/make-store.sh` (db-analyser boundary points -> `amaru snapshot create`
-   -> `amaru node bootstrap`) against the same cluster/genesis -> Amaru baked `testnet_42` store.
-3. Rebuild `reference-image` + amaru relay image LOCALLY (do NOT commit the ~1.5GB state/images;
-   do NOT push to GHCR — that is ops territory). Local reproducibility from this recipe is the bar.
+- **`9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0` = 200000000000000 lovelace**
+  (replaces the old `c0a35ac5…#0`). Confirmed **UNSPENT** in BOTH baked stores:
+  the frozen cardano reference (epoch 3, Conway) and Amaru's `testnet_42` store (tip slot ~1199).
+  The UTxO id is stable across re-bakes (it is `f(genesis initialFunds + committed key)`), so it
+  survives changes to pool keys / systemStart.
 
-## Funded UTxO (record after bake)
+## Re-bake recipe (`../prepare-rebake.sh`)
 
-- new funded UTxO id (replaces the old `c0a35ac5…#0`): **TODO — record after the bake and confirm unspent.**
+`prepare-rebake.sh` (in the bundle root) documents + drives the full bake: configurator `0f9570b`
+→ inject this initialFund + forward systemStart → forge ≥3 epochs (3-node k=20 cluster) →
+snapshot a **frozen, non-forging** cardano reference (no KES/VRF/opcert keys — a differential
+reference must NEVER forge, or every run mutates the ledger and the gate stops being repeatable) →
+`make-store.sh` (db-analyser boundary points → `amaru snapshot create` → `amaru node bootstrap`)
+for the Amaru `testnet_42` store, from the SAME genesis → regenerate the underfee fixtures →
+re-verify `workload/mixed_phase1.py`. Rebuild the ~1.5 GB state/images LOCALLY; do NOT commit the
+big artifacts and do NOT push to GHCR (ops territory).
+
+## Regression gate (re-verified 2026-09-26 — GREEN, non-vacuous)
+
+`fixture/static/{corpus.json,underfee*.tx,minimum-exact.tx}` spend the funded UTxO above. Against
+the frozen cardano reference + Amaru `testnet_42`:
+
+- `underfee-minus-100/-2/-1` (fee 164081/164179/164180) → BOTH `phase1_reject`
+  (cardano: real `FeeTooSmallUTxO Mismatch {supplied 164180, expected 164181}`).
+- `minimum-exact` (fee 164225) → BOTH `accepted` (202/202).
+- Non-vacuous: 1 real ACCEPTED + 3 real PHASE1_REJECT. Repeatable (frozen reference never mines;
+  restart clears the mempool between runs).
+
+### Min-fee size-accounting divergence (see `dwarf/docs/finding-amaru-minfee-txsize-divergence.md`)
+
+The accepted case is set to **164225**, not cardano's exact min **164181**, because the two
+implementations disagree on the tx-size used for min-fee: for the SAME 201-byte, RFC-8949-minimal
+tx and BYTE-IDENTICAL fee params (a=44, b=155381), cardano charges for size 200 (min 164181) while
+Amaru charges for size 201 (min 164225 = 44×201+155381). The band **[164181, 164224]** is
+cardano-accept / Amaru-reject. The regression corpus deliberately straddles BOTH boundaries
+(rejects below 164181, accept at/above 164225) so it stays an *agreeing* gate; the divergence band
+itself is captured as the finding, not folded into the gate.
 
 ## Blast radius / regression gate (consumers of the old UTxO / genesis)
 
-- `fixture/static/{corpus.json,underfee*.tx,minimum-*.tx}` — the underfee phase-1 corpus spends the
-  old `c0a35ac5…#0`; **REGENERATE** against the new funded UTxO and re-verify `workload/mixed_phase1.py`
-  classifies ACCEPTED / PHASE1_REJECT / DECODE_REJECT correctly (the regression gate).
-- `reports/amaru-mempool-min-fee-size-evidence/minimum-plus-44.tx` — references the old UTxO but is a
-  **frozen evidence record** of a delivered finding; leave as historical (not repointed).
+- `fixture/static/{corpus.json,underfee*.tx,minimum-exact.tx}` — REGENERATED against the new UTxO
+  (done). `minimum-plus-1.tx` was dropped (a second accepted case would need a second dedicated
+  UTxO; the single genesis initialFund funds one).
+- `reports/amaru-mempool-min-fee-size-evidence/minimum-plus-44.tx` — references the old UTxO but is
+  a **frozen evidence record** of a delivered finding; left as historical (not repointed).
 - No other repo consumer pins the old genesis hash or UTxO (grep-verified 2026-09-26).
