@@ -50,8 +50,10 @@ Findings 2–3 are reported-reason/decoder behavioural divergences; finding 1 is
   header are **indefinite-array, noncanonical-int, and trailing-bytes** (the map / definite-array
   forms have no matching node in a real header's canonical encoding). The **fixed** family A
   (post-`d865648`) is what surfaced the non-canonical-CBOR crash — finding 1 above
-  (`dwarf/docs/finding-amaru-noncanonical-cbor-crash.md`). A full post-fix A parity re-run is
-  tracked separately; the crash is its headline result.
+  (`dwarf/docs/finding-amaru-noncanonical-cbor-crash.md`). Post-fix, A's applicable forms either **crash Amaru**
+  (noncanonical-int / indefinite-array — the crash finding) or are **trivially handled**
+  (trailing-bytes), so there is no separate A parity figure to report; the crash is A's
+  headline result.
 - **D — kes-period-differential (mixed).** The largest retained soak: 554 iterations,
   545 conclusive, `counters.agree 545 / disagree 0 / mismatch 0`, `disagreements: []`.
   Mixed target progressed (tip block height 584 -> 2728) over the ~90-minute run.
