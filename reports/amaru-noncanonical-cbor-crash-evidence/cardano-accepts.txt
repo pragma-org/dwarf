@@ -1,0 +1,5 @@
+# cardano-node 11.1.2 ACCEPTS the non-canonical re-encoding (decode)
+decode-praos-header (canonical mainnet header): OK (exit 0)
+decode-praos-header (noncanonical-int, outer length widened): OK (exit 0)
+
+Live run (peer machinery): cardano-node 11.1.2 verdict=accept (decode + header validation), node healthy, does NOT adopt the lone served header as tip (isolated-consumer test => no observed chain-carried consensus split).

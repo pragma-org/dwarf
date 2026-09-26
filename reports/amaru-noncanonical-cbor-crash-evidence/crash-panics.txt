@@ -1,0 +1,24 @@
+===== reverify-A (original, noncanonical-int, slot 3186) =====
+file: /home/nigel/.local/share/dwarf/runs/reverify-A/out/evidence-crash/amaru-consumer-crash.log
+   Whoops! The Amaru process panicked, rather than handling the error it encountered gracefully.
+thread 'amaru-node' (300) panicked at crates/amaru-ouroboros-traits/src/stores/chain_store/types.rs:88:9:
+chain-store integrity failure: header stored at key 1a1af19bec48dddfc2672dc17b003d50648e2c48937b783ce6ee6fb2a11bfc2b hashes to a81f5f802268e48c8cc1ae9bab4605137610c76085ad5875f0be20f47453771b; the database is corrupt and Amaru cannot continue
+
+===== repro1 (noncanonical-int, slot 1908) =====
+file: /home/nigel/.local/share/dwarf/runs/confirm-Acrash/out/repro1-amaru-consumer-crash.log
+   Whoops! The Amaru process panicked, rather than handling the error it encountered gracefully.
+thread 'amaru-node' (299) panicked at crates/amaru-ouroboros-traits/src/stores/chain_store/types.rs:88:9:
+chain-store integrity failure: header stored at key e680b039d502707cf478acf8c5f95bec018d15ccf4f7d137f24cee0e7fc171bd hashes to 3cf95e3f898fb26fba645fe4207cdf9e7bf2dfbef0c7fe3753294a7021daf683; the database is corrupt and Amaru cannot continue
+
+===== repro2 (noncanonical-int, slot 2681) =====
+file: /home/nigel/.local/share/dwarf/runs/confirm-Acrash/out-r2/amaru-consumer-crash.log
+   Whoops! The Amaru process panicked, rather than handling the error it encountered gracefully.
+thread 'amaru-node' (300) panicked at crates/amaru-ouroboros-traits/src/stores/chain_store/types.rs:88:9:
+chain-store integrity failure: header stored at key 84ca08f5637ff0873792082c90733f3b8013c1ebe04bc2a98bf840a7ae852d8b hashes to b0c56d77c6cfd935b74044444c900213aa527038ffcc92b744cc7f9601e1217f; the database is corrupt and Amaru cannot continue
+
+===== repro3 (indefinite-array, slot 2730) =====
+file: /home/nigel/.local/share/dwarf/runs/confirm-Acrash/out-r3-indef/amaru-consumer-crash.log
+   Whoops! The Amaru process panicked, rather than handling the error it encountered gracefully.
+thread 'amaru-node' (301) panicked at crates/amaru-ouroboros-traits/src/stores/chain_store/types.rs:88:9:
+chain-store integrity failure: header stored at key 67094c34f0e64313515ddd803476f5aad88d4688b60ff29476482dd17983d078 hashes to 7cfd784c29161d66f3cd4127103dc61fba04951a2818922d4b0c6bbf30db2654; the database is corrupt and Amaru cannot continue
+
