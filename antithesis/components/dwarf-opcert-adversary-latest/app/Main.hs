@@ -56,6 +56,7 @@ import DwarfOpcertAdversary
     , caseSpecByteSeed
     , reEncodeOpcert
     , mutateFirstOpcert
+    , mutateOpcertBytes
     , caseEligible
     , caseMutationName
     , loadColdSignKey
@@ -399,13 +400,18 @@ runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo eviden
                     pure h
             Right cr -> do
                     let HeaderFields (SlotNo slotW) _ hash = getHeaderFields (crHeader cr)
-                    encInfo <- case mSp >>= csEncodingForm of
-                        Just form -> do
+                    encInfo <- case (mSp >>= csEncodingForm, mSp >>= csOpcertField) of
+                        (Just form, _) -> do
                             let canonical = toLazyByteString (encHeader (crHeader cr))
                                 deviant = reEncodeOpcert (maybe 0 caseSpecByteSeed mSp) form (mSp >>= csTrailingLen) canonical
                             modifyIORef' deviants (pruneInsert (show hash) deviant)
                             pure ["encoding_form" .= form, "deviant_bytes" .= LBS.length deviant]
-                        Nothing -> pure []
+                        (Nothing, Just ofield) -> do
+                            let canonical = toLazyByteString (encHeader (crHeader cr))
+                                deviant = mutateOpcertBytes ofield canonical
+                            modifyIORef' deviants (pruneInsert (show hash) deviant)
+                            pure ["opcert_field" .= ofield, "deviant_bytes" .= LBS.length deviant]
+                        _ -> pure []
                     putStrLn
                         ( "opcert-case: INJECT " <> cid
                             <> " mutation=" <> caseMutationName (crMutation cr)
