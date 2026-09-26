@@ -88,3 +88,8 @@ certs/drepreg.cert`; `build-raw --tx-in 9708b921…#0 --tx-out <addr>+<total-fee
 --certificate-file certs/drepreg.cert --fee 300000`; `sign` with the committed
 `fixture/funding/payment.skey` (add `keys/drep.skey` for the satisfied control; omit it, or
 use `keys/wrong.skey`, for the violations). Committed keys/certs are testnet-only, no value.
+
+
+## Re-validated against LATEST amaru — v10.11.20260925 (eaf8ac3f), 2026-09-26
+
+Re-ran this family against the current tagged latest amaru (git_commit eaf8ac3f) via `node run` on the 0903-bootstrapped store (store format compatible; latest cannot freshly bootstrap a custom testnet — see amaru-custom-testnet-bootstrap-regression-0903-to-0925.md), vs cardano-node 11.1.2: **still CONFORMANT — all cases agree, no divergence.** Result is now current-version-validated.

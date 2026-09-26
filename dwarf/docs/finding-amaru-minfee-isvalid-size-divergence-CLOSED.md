@@ -127,3 +127,8 @@ fees above (`cardano-cli conway transaction build-raw/sign`, committed `fixture/
 POST raw CBOR to cardano-submit-api (`:8090/api/submit/tx`) and the amaru submit API
 (`:3011/api/submit/tx`). 0918 store bootstraps with the stock `ea1f34e4` binary via
 `--network testnet_42 --era-history <file>` (custom-network support is now upstream).
+
+
+## Re-validated against LATEST amaru — v10.11.20260925 (eaf8ac3f), 2026-09-26
+
+The fix holds on latest: eaf8ac3f accepts fee 164181 and rejects 164180 (gap 0, IsValid excluded = cardano-node 11.1.2), same as v10.11.20260903. This CLOSED finding remains closed on the current release. (Tested via node run on the 0903-bootstrapped store; latest cannot freshly bootstrap a custom testnet — see amaru-custom-testnet-bootstrap-regression-0903-to-0925.md.)

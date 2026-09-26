@@ -80,3 +80,8 @@ Rebuild a case: `cardano-cli conway transaction build-raw --tx-in 9708b921…#0
 --mint-script-file policies/<policy>.json [--invalid-before|--invalid-hereafter <slot>]
 --fee 300000` then `sign` with the committed `payment.skey` (plus the policy keys for a
 satisfied control). Policy scripts + all fixtures are under `fixture/native_script/`.
+
+
+## Re-validated against LATEST amaru — v10.11.20260925 (eaf8ac3f), 2026-09-26
+
+Re-ran this family against the current tagged latest amaru (git_commit eaf8ac3f) via `node run` on the 0903-bootstrapped store (store format compatible; latest cannot freshly bootstrap a custom testnet — see amaru-custom-testnet-bootstrap-regression-0903-to-0925.md), vs cardano-node 11.1.2: **still CONFORMANT — all cases agree, no divergence.** Result is now current-version-validated.
