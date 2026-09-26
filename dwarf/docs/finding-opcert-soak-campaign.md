@@ -12,15 +12,25 @@ added on top of the original encoding / kes-period / restart-persistence soaks.
 
 ## Headline
 
-**Zero cross-implementation cardano-node-vs-Amaru VERDICT (consensus) divergences across every
-tested opcert surface**, and one reported-reason (validation-order) divergence. Across the
-retained mixed differential soaks the two implementations agreed on the accept/reject verdict for
-every conclusive attempt (0 verdict disagreements), and every cardano-only rejection family fired
-the expected `*OCERT` reason. The single divergence is behavioural/diagnostic, not a consensus
-risk: when a header breaks **two** opcert rules at once, cardano-node and Amaru both reject but
-report **different rules** because they validate opcert rules in a different order — found and
-reproduced by the error-precedence family (see
-`dwarf/docs/finding-opcert-precedence-divergence.md`).
+**Three cross-implementation cardano-node-vs-Amaru findings across the opcert surface — one is a
+real availability risk.** Aside from the crash below, the mixed differential soaks recorded zero
+verdict (accept/reject) disagreements on every conclusive attempt, and every cardano-only rejection
+family fired the expected `*OCERT` reason. The three findings:
+
+1. **Non-canonical-CBOR node crash / DoS — HEADLINE, real risk** (`finding-amaru-noncanonical-cbor-crash.md`).
+   A valid live-tip Praos header re-encoded with non-canonical CBOR (same logical header, different
+   bytes) **crashes an Amaru 10.11.20260918 node** (chain-store integrity panic,
+   `types.rs:88:9` — Amaru keys stored headers by the raw-wire hash but integrity-checks the
+   canonical hash) while cardano-node 11.1.2 **accepts** it. Remotely triggerable via ChainSync;
+   deterministic, reproduced 4×. Availability/DoS-class (no consensus split observed).
+2. **Validation-precedence divergence — reported-reason only** (`finding-opcert-precedence-divergence.md`).
+   On a header breaking two opcert rules at once, both nodes reject but report **different rules**
+   (Amaru checks counter first, cardano-node last). Behavioural/diagnostic, not a consensus risk.
+3. **Opcert-field decode-leniency — decoder-strictness, severity-bounded** (`finding-opcert-field-decode-leniency.md`).
+   Amaru's header decoder accepts a truncated hot-vkey / cold-sig / an extra opcert field that
+   cardano-node rejects at decode. Decode-stage; validation-stage bounded (see that note).
+
+Findings 2–3 are reported-reason/decoder behavioural divergences; finding 1 is the genuine risk.
 
 ## Original soak families
 
@@ -30,10 +40,18 @@ reproduced by the error-precedence family (see
 | `20260925T091246Z-56747e3a` | `opcert-soak-kes-period-mixed-1112-amaru-20260918` | kes-period-differential (mixed) | 554 | 545 | 9 | 0 / 0 |
 | `20260925T140303Z-6aff099c` | `opcert-soak-restart-persistence-cardano-1112` | restart-persistence (cardano-only) | 32 | 32 | 0 | 0 / 0 |
 
-- **A — encoding-form (mixed).** 98 forged headers with mutated CBOR encoding forms
-  (duplicate-map-key, trailing-bytes, …) served to both nodes; every conclusive attempt
-  recorded `differential: agree` (73 agree, 25 inconclusive, 0 disagree). `result.json`
-  counters: `agree 73, disagree 0`.
+- **A — encoding-form (mixed).** ⚠️ **The original run's "73 agree / 0 disagree" was PRE-FIX
+  VACUOUS for header-content parity.** Byte evidence from that run (`20260925T064711Z-65d12bb3`,
+  canonical wrapped size 858): 4 of 7 forms (definite-array, duplicate-map-key, extra-map-key,
+  missing-optional-key) served **byte-identical canonical** headers (no-op), 2 forms
+  (indefinite-array, noncanonical-int) deviated only the **outer NodeToNode envelope**, and only
+  trailing-bytes changed the header stream — because `reEncodeOpcert` could not descend into the
+  CBOR-in-CBOR wire wrapper (fixed in `d865648`). A's forms that are applicable to a real Praos
+  header are **indefinite-array, noncanonical-int, and trailing-bytes** (the map / definite-array
+  forms have no matching node in a real header's canonical encoding). The **fixed** family A
+  (post-`d865648`) is what surfaced the non-canonical-CBOR crash — finding 1 above
+  (`dwarf/docs/finding-amaru-noncanonical-cbor-crash.md`). A full post-fix A parity re-run is
+  tracked separately; the crash is its headline result.
 - **D — kes-period-differential (mixed).** The largest retained soak: 554 iterations,
   545 conclusive, `counters.agree 545 / disagree 0 / mismatch 0`, `disagreements: []`.
   Mixed target progressed (tip block height 584 -> 2728) over the ~90-minute run.
