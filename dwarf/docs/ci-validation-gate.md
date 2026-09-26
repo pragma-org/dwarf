@@ -23,9 +23,11 @@ fuzzers, a devnet, or any Antithesis job. This gate just proves the definitions 
 | **Semantic** | every scenario's referenced primitives exist in `dwarf/primitives/registry.json` (`scenario validate --semantic`) | seconds |
 | **Antithesis** | every profile renders into a well-formed Antithesis bundle **offline** — no docker daemon, no registry push | seconds |
 | **MOOG assets** | every documented submission-ready bundle uses only MOOG's supported `com.antithesis.exclude_from_faults` tokens: `network`, `kill`, `pause`, `stop` | ms |
+| **Provenance** | every node version label agrees with the commit it names, per `dwarf/versions/catalog.json` (see below) | seconds |
 
-Current corpus status (2026-08-21): **239 scenarios — 0 schema failures, 0 semantic failures, 77
-warnings; 13 Antithesis profiles render cleanly; 2 documented MOOG assets pass.** The gate passes today; it exists to catch the next
+Current corpus status (2026-09-26): **299 scenarios — 0 schema failures, 0 semantic failures, 2
+warnings; 30 Antithesis profiles render cleanly; 2 documented MOOG assets pass; 0 provenance
+failures, 0 provenance warnings.** The gate passes today; it exists to catch the next
 regression (e.g. a scenario referencing an unregistered primitive — exactly the class of bug that
 slipped in during an earlier reclassification).
 
@@ -59,10 +61,47 @@ The prevention path is now shared:
 4. The CI gate validates the documented checked-in MOOG assets.
 5. The workflow triggers on `antithesis/**`, `tests/**`, and CI dependency changes.
 
+### Version provenance
+
+Incident: an Amaru binary whose startup log reports `git_commit=ea1f34e4` (upstream tag
+`v10.11.20260903`) was published in findings and corpora as `10.11.20260918` (which is `aedfe797`).
+Every structured `{version, source_revision}` pair was correct; the wrong label lived in prose and
+in a DWARF-built image whose base tag says nothing about the binary copied into it. Nothing compared
+the label with the binary.
+
+The truth source is the binary's own identity (`amaru --version` → `Amaru <version> (<sha>)`,
+Amaru's `build.version` log line, `cardano-node --version` → `git rev <sha>`), recorded in the
+committed catalog `dwarf/versions/catalog.json` as release tag → `source_revision` → image digest.
+The PROVENANCE check (`profile_manager/version_provenance.py`) scans tracked files and **fails** on:
+
+- a structured `{version, source_revision}` pair the catalog disagrees with;
+- a prose pair `amaru <label> (<sha>)` or `cardano-node <label> (<sha>)` (full `10.11.20260903`,
+  `v`-prefixed, or the short `0903` / `807` forms; `Cardano-node` in any case) where the label
+  names a different release than the sha — judged only when the sha is a catalog commit of that
+  implementation, so a nearby tx id or UTxO is never mistaken for a build;
+- an `amaru-YYYYMMDD` token in a scenario/profile id that names a different release than its target;
+- a pinned node image whose tag names a different release than its digest.
+
+It **warns** (fatal under `--strict`) on a pinned node image digest the catalog does not know.
+Register such an image as a catalog artifact of kind `oci-derived` with the `binary_git_commit`
+its binary reports (the catalog validator requires it to equal the release `source_revision`).
+An image whose binary reports no node commit, or that contains no node binary, goes in
+`identity_exemptions` with a `reason` and `evidence` — never an invented commit.
+
+A label with no sha next to it cannot be judged, so **always write the short commit next to a
+node version label** in findings and docs: `amaru 10.11.20260903 (ea1f34e4)`,
+`cardano-node 10.7.1 (045bc187)`.
+
+The workflow also runs `refresh_version_catalog.py --verify-upstream`, which checks every catalog
+tag → commit against upstream `git ls-remote`. It needs the network, so it does not block pushes
+or PRs; it blocks a manual `workflow_dispatch`.
+
 ## Files
 
 - `.github/workflows/dwarf-validate.yml` — the workflow (push / pull_request / manual).
 - `dwarf/scripts/validate_scenarios.py` — the gate logic (also runnable locally).
+- `dwarf/profile_manager/version_provenance.py` — the provenance checks.
+- `dwarf/versions/catalog.json` — tag → commit → digest map, derived-image identities, exemptions.
 
 ## Run it locally
 
@@ -72,9 +111,10 @@ python3 dwarf/scripts/validate_scenarios.py            # non-strict: warnings al
 python3 dwarf/scripts/validate_scenarios.py --strict   # warnings are failures
 python3 dwarf/scripts/validate_scenarios.py --json      # machine-readable summary
 python3 dwarf/scripts/validate_scenarios.py --report out.json   # write summary to a file
+python3 dwarf/scripts/refresh_version_catalog.py --verify-upstream   # catalog tags vs upstream (network)
 ```
 
-Exit code `0` = pass, `1` = fail. In `--strict` mode, semantic warnings also fail.
+Exit code `0` = pass, `1` = fail. In `--strict` mode, semantic and provenance warnings also fail.
 
 ## Stage 2 — Library fuzz (real decoder execution)
 

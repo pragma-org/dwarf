@@ -69,8 +69,13 @@ The bounded mixed check of Cardano-node `11.1.2` with Amaru
 `10.11.20260912` kept every exact process alive and both Amaru relays followed
 the chain, but the Cardano consumer fed only by those relays never advanced
 from its seeded tip during the full 30-minute recovery window. That exact pair
-is therefore incompatible with the tested serve-through contract. The result
-does not assign an unproven root cause to either node implementation.
+is therefore incompatible with the tested serve-through contract. The root
+cause was later isolated in
+[`finding-amaru-n2n-handshake-unknown-version-data.md`](finding-amaru-n2n-handshake-unknown-version-data.md):
+Amaru drops Cardano-node 11.1.2's node-to-node V16 handshake offer. With
+Cardano-node experimental protocols pinned off, Cardano-node `11.1.2`
+(`fef83fed`) with Amaru `10.11.20260918` (`aedfe797`) is confirmed for mixed
+(2026-09-23).
 
 ## Refresh releases
 
@@ -101,7 +106,8 @@ PYTHONPATH=dwarf python3 dwarf/scripts/refresh_version_catalog.py \
 The command reads official GitHub release feeds, resolves all release tags with
 one Git transport query per repository, and performs a bounded number of OCI
 manifest lookups. Existing evidence, issue links, defaults, and compatibility
-records are preserved.
+records are preserved. `--verify-upstream` instead checks every checked-in tag
+→ commit against upstream and exits non-zero on drift.
 
 ## Runtime proof
 
@@ -114,9 +120,22 @@ retains:
 - DWARF, topology, and node source revisions;
 - requested policy and exact resolved releases;
 - image reference, image ID, and immutable digest;
-- node-reported version;
+- node-reported version and git commit;
 - configuration, genesis, era-history, and topology hashes;
 - startup, peer, chain-progress, convergence, observation, and teardown logs.
+
+Identity is proven by git-commit equality: the commit the binary reports
+(`cardano-node --version` → `git rev <sha>`, `amaru --version` →
+`Amaru <version> (<sha>)`) must equal the catalog `source_revision` of the
+claimed release, and the running image ID must equal the expected one. A
+version-text match is used only when a binary reports no commit. DWARF-built
+images that copy a node binary over a base image are recorded as catalog
+artifacts of kind `oci-derived` with the `binary_git_commit` their binary
+reports, so a base-image tag is never taken as the binary's identity. Each run
+manifest carries a `provenance` block (claimed label, resolved tag, catalog
+revision, observed commits, status); see
+[`ci-validation-gate.md`](ci-validation-gate.md#version-provenance) for the
+matching CI check.
 
 Cardano-only, Amaru-only, and mixed are independent claims. If an Amaru release
 requires an external honest source, DWARF labels the result an Amaru
