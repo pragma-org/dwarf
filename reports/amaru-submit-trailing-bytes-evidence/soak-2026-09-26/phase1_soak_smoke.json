@@ -1,0 +1,462 @@
+{
+  "stats": {
+    "n": 24303,
+    "both_reject_agree": 298,
+    "both_accept": 0,
+    "inconclusive": 23956,
+    "verdict_divergence": 49,
+    "reason_divergence": 0
+  },
+  "divergences": [
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/regdeleg-unknown-pool.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 13c32287ec4cb34132a310c0639586fd76f664617d0ce6964974007bfd71c841 is invalid: transaction failed phase one validation: invalid certificates: invalid stake credential pool delegation: unknow",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d9010281840b8200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0401a001e8480a100d901028282582068f889b91ddeacd3913ee30dcc28f4e1327ad242ea1c375aa57f354b6b22d2515840d855ad6aca5077cd17a91413df5a2caae652560a618a7f44f580b3ef5a3b517abb2b0775e028afd530170980274c6a9273560dd339c07b3eac4838a8a4dba10c82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858405a9fdeec1003efdb814d084dbea3cbb81805e42362bdc79f72cad2d12691ba2cc0db9c6aa8d32e3271d2cf4e95265caff1326b9f59d887a90a2f1e6fda03ee02f5f6e0"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/wdrl-genesis-no-witness.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 941853fec312a3cb3bead788cb89af46e3e9f364929b70f67f65fc6a29962058 is invalid: transaction failed phase one validation: invalid withdrawals: attempted to withdraw from an account (KeyHash(Ha",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620efec20021a000493e005a1581de03e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b000a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840162e7b84f4ff2bc3ee2c10fa88887852fd8734f7b513bde11fa3e3f7fcb531ac794d84c3ae0b4d0e6b4f64a209132cd8b44dcb6cb7b28d394ec882a18e37270bf5f6d3f8"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-missing-owner.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fd00d81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010282825820ec75e0742e2a5a05c752cd19f1752b62b51a68846c5faf0b0c81a255239aa75b584020f295e52ce9a7796d17266aefac2d3111f9bdda81d5305d2e97225a0f2216cd566679f2010f2afc08b7d28f1a9831eea769394ff0514aae216ff2f777f44f0a82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840ed9bdb894d5c76c6b04d8bd6067f4b50ea6914858acd066f721a704343ee12e0d9e32deea6357c0843936bf004f7e2adb83cb6a7e31707f041baace028b96d06f5f60e755a5c"
+    },
+    {
+      "kind": "verdict",
+      "base": "stake_pool/stakereg-present.tx",
+      "mutator": "?",
+      "cardano": "decode_reject",
+      "amaru": "accepted",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "\"ff28c1a18b5b9e5a0bab919f7f18dc20f9b949fa4fd84e89041d6bfa0a8ce14d\"",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d901028183078200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab1a001e8480a100d901028282582068f889b91ddeacd3913ee30dcc28f4e1327ad242ea1c375aa57f354b6b22d2515840c21cee07d4bea04d13470a12ee92294cbea33cf9b7d86ddb42800ba712ae358cd6c4d5374998c6fddd3cfdf2e3e68aca5aebe3238ced90db8d9533919578fa0a82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858401e5cc076caec0ebb5a4a9bbb2b430a551e241e34943ff60817c46e4ad419f0f73d269c05b3857c8dd8c17bf8e6eb1ca45bc233f47c85273492e3eb9954abf001f5f6f23a0c9f"
+    },
+    {
+      "kind": "verdict",
+      "base": "stake_pool/regvote-present.tx",
+      "mutator": "?",
+      "cardano": "decode_reject",
+      "amaru": "accepted",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "\"fd7def9d1daf9bfe32bc041211012b2efdb8cc77b2ca213a4ab32e65d2affb74\"",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d9010281840c8200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab81021a001e8480a100d901028282582068f889b91ddeacd3913ee30dcc28f4e1327ad242ea1c375aa57f354b6b22d2515840ddf1a59b0011421874fe4d3507d5d05c7df0d950b79f9ee7697a7c30e81349667a8a40d69e92594e115ee86ed02b4ac3cb852e67511defca705635e2ad9dad0782582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf8584063a18512a98b63c1aec73877c79ce666d5918f2ff14b3a3e72419c97c5ac4f587579a9997162e56db0586efbe5ae15af0078f890c96c554fd8c8520f38a07804f5f660843781"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-missing-cold.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fd00d81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010282825820b4f52e99706586e7fca2a3064f288906e2e27e13c6e3cf8b7e9443f71f55f35858406a71372c5b7be0a44b56c7e1aff9f5ad1d6c6941ae5d34574331c3b159f8fd34891df4e039fb30c5825f01005f7ef4beef00e5fea6e71f812a8f9b234849a80c82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840ed9bdb894d5c76c6b04d8bd6067f4b50ea6914858acd066f721a704343ee12e0d9e32deea6357c0843936bf004f7e2adb83cb6a7e31707f041baace028b96d06f5f61e98406c"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-cost-too-low.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction d24e966949cfa7c19b701ff175c2253b1335a7331fab9cbf85491c9493ffd751 is invalid: transaction failed phase one validation: invalid certificates: pool cost too low: provided 339999999, minimum 3",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fcffd81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010283825820b4f52e99706586e7fca2a3064f288906e2e27e13c6e3cf8b7e9443f71f55f35858401915afd6b80b2838b7ffda151735ee34cfbbec3a536d253b964cb8ab987f5c178d65da4713997eca548e136dc453a92fe34c9738d104a31c345a5b5f6be30101825820ec75e0742e2a5a05c752cd19f1752b62b51a68846c5faf0b0c81a255239aa75b58404485a31ebf7c95ef19c49db57e008b1bf9cbde57e95fdb35e17cbd7db6f21b264e47c62da6a6a332f2e12529037f043f33e8b6bd18b4a8359be6c725b82ea30682582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858409b523ac9491ae73fd79a7f4bd9f56e428dc44b5ab613a45cdd29bae4bdb30906a4303eb5b12406d8429ca45abfddc129bc47f443e9ff4ab80fac6215d0c80d09f5f695"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/wdrl-genesis-no-witness.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 941853fec312a3cb3bead788cb89af46e3e9f364929b70f67f65fc6a29962058 is invalid: transaction failed phase one validation: invalid withdrawals: attempted to withdraw from an account (KeyHash(Ha",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620efec20021a000493e005a1581de03e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b000a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840162e7b84f4ff2bc3ee2c10fa88887852fd8734f7b513bde11fa3e3f7fcb531ac794d84c3ae0b4d0e6b4f64a209132cd8b44dcb6cb7b28d394ec882a18e37270bf5f66a"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "governance/drepreg-multi-partial.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 40715c6ecabf3517eb57ebdeff8fc4233d58a37d7284a875795c606c49056193 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e5e5552220021a000493e004d901028284108200581c9cf932499e0313550efe79e3bbf0fa2d53d9e137ab76d766ea33c0091a1dcd6500f684108200581ccd3e0c1e7373018ad2f082556373e57a60368482593d20731c291b641a1dcd6500f6a100d901028282582098b6d593f4f584a68c30a0712e17ce1be9d37c692c168f64d7fd8bb5e69e3a565840558e74b1bc0501908a34584c1909c571972f0cbb27d227fe1bfb5355855b1a0cba238e8994d808e24c7ce7d2f14b1c71fe800594ec1e6aafb37b59b83d7b460182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840d0f03b02528a5e48197f542eec92660b21b6c21ae4c5c6e74fd29156121aa8de8a6d05beb79531190684e2a4af79e90b148eb20993a5462b56d75ccd3c4a4403f5f639806ef0"
+    },
+    {
+      "kind": "verdict",
+      "base": "native_script/timelock-after-boundary.tx",
+      "mutator": "?",
+      "cardano": "decode_reject",
+      "amaru": "accepted",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "\"4e392c0838254ada7e5996cc3540fb4e901dc1ec81106afc264900e478716033\"",
+      "cbor": "84a500d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c592fb0f9d8ed15c06858118d134d5c4b7c77320507810fee9ac2ddf9a145445741524601021a000493e0081903e809a1581c592fb0f9d8ed15c06858118d134d5c4b7c77320507810fee9ac2ddf9a145445741524601a200d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840c0498ee286e3f67b7365dc667486dd7e887855113f9ed6659ea273c8ce0ac697d730aeea88670ea1cfc9ebabddc593fee7582b1dce0962adabd923c7b376080801d901028182041903e8f5f68f"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/stakereg-wrong-key.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction ff28c1a18b5b9e5a0bab919f7f18dc20f9b949fa4fd84e89041d6bfa0a8ce14d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d901028183078200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab1a001e8480a100d90102828258204914e552a1f840885e67d2919781475d3c41a178b5a2d84fe27224c1d6ab30375840da4fb07b25bb1d57945734af1824cae2c72cc427f275d3766fd8db3451207c36f6789e478a4995cca75c31e67caf35bdcfebdcca8893245290e935c92becdb0482582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858401e5cc076caec0ebb5a4a9bbb2b430a551e241e34943ff60817c46e4ad419f0f73d269c05b3857c8dd8c17bf8e6eb1ca45bc233f47c85273492e3eb9954abf001f5f658"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "governance/drepreg-missing-witness.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 3ee080ee8af6570b8ea546ecca9edffa5880eed7a2652b7f599770e0d70a7988 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d901028184108200581c9cf932499e0313550efe79e3bbf0fa2d53d9e137ab76d766ea33c0091a1dcd6500f6a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840b1df0f43e73fc3671a1a27181cd8ac1a46181e705dbcba4bb465b104a1dbd359b9e8af92011e65c854eb786861e5d9812621b576330155ee751b898cce44680ff5f65b99"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "governance/drepreg-wrong-key.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 3ee080ee8af6570b8ea546ecca9edffa5880eed7a2652b7f599770e0d70a7988 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d901028184108200581c9cf932499e0313550efe79e3bbf0fa2d53d9e137ab76d766ea33c0091a1dcd6500f6a100d9010282825820ecbe1a2e0b58728bdea95fc2d96c9f09518d2b8e4a5d7d496934f8195954a15d58407979eb685a1361dfd3fb9ae616a2e6ec5393ecfa89d71e485ea4dc195c4d527ecc275f536e7b51a89f5ad3a42637bf4d8a80c96168efb6b1b069a4fe13d2550582582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840b1df0f43e73fc3671a1a27181cd8ac1a46181e705dbcba4bb465b104a1dbd359b9e8af92011e65c854eb786861e5d9812621b576330155ee751b898cce44680ff5f64046"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/regdeleg-missing-witness.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 44298a09763763180a873c69492aaf21a7e741f8efb3f376c0c78134becde1c7 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d9010281840b8200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab581c5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf81a001e8480a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858400d710de09ff933392c2131bcba9c2e77a43a9b9a112603ae7beecbd6d14bc1ae404f040d4d89e4a015f1bc920f7c507c2046f4741f6d240504a0c5e4a1860708f5f6737aa0fd"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/stakereg-wrong-key.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction ff28c1a18b5b9e5a0bab919f7f18dc20f9b949fa4fd84e89041d6bfa0a8ce14d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d901028183078200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab1a001e8480a100d90102828258204914e552a1f840885e67d2919781475d3c41a178b5a2d84fe27224c1d6ab30375840da4fb07b25bb1d57945734af1824cae2c72cc427f275d3766fd8db3451207c36f6789e478a4995cca75c31e67caf35bdcfebdcca8893245290e935c92becdb0482582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858401e5cc076caec0ebb5a4a9bbb2b430a551e241e34943ff60817c46e4ad419f0f73d269c05b3857c8dd8c17bf8e6eb1ca45bc233f47c85273492e3eb9954abf001f5f6dfb6a5"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/stakereg-missing-witness.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction ff28c1a18b5b9e5a0bab919f7f18dc20f9b949fa4fd84e89041d6bfa0a8ce14d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d901028183078200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab1a001e8480a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858401e5cc076caec0ebb5a4a9bbb2b430a551e241e34943ff60817c46e4ad419f0f73d269c05b3857c8dd8c17bf8e6eb1ca45bc233f47c85273492e3eb9954abf001f5f6cd7b3b"
+    },
+    {
+      "kind": "verdict",
+      "base": "native_script/nested-satisfied.tx",
+      "mutator": "?",
+      "cardano": "decode_reject",
+      "amaru": "accepted",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "\"a1d48a4d642f984be13cf080690ade0fd2d0ae121fc5bc8031060463d102a195\"",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c6255e58a1f1be9d6e43a87458e26198f4a41e9aa9802a65d65fe7981a145445741524601021a000493e009a1581c6255e58a1f1be9d6e43a87458e26198f4a41e9aa9802a65d65fe7981a145445741524601a200d9010283825820d07b9fb6ca676d4f28cda571e6fd6a9d8065f117a9bc85ee684457042ec5bd115840d81cc584c91cfb2315702c4eab662489c4bb4c057c2ebb8c822b8d4a20cc9cfa8afcf98bc7b44467128aa46bfab6a6c69da65ad279ae1a1133a7e308ae68de02825820a401b2634bc09bc5a8f5d834909206c23d049bc2e87414d9db762dfe4d1e652c5840bc77a4737281959741d4833653ff32168e6f903d94e548df3ed79b10608a925467b5270e5add8fdf32d3cbee12eb80f87e6ee8c2743dac5f339b91321945c00782582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf8584034b689dcaba577003d1338799c01cdc3cdf1c7a6e1d5777ce709ab37a51b311a207cc82ba8ac1618f8d794148990cb145b7e0a6ac40f212c8283094151befd0801d90102818201828202828200581c18ac997503902289b9a3684658a9bde9a18227e642d0254fb33dc7838200581cfe7501d070fb55ea4504ee94e11b891097d636121c8bca27fb08f4928200581c28a5712f99c0bb8f25a317853b1ddc45f33ce412a140d90106afa0e8f5f6386d2817"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/wdrl-unregistered.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction bed5660e4a2b74a604a9406967036595a68f70d5334b73b3aa86c0d7b50a0e6e is invalid: transaction failed phase one validation: invalid withdrawals: attempted to withdraw from an account (KeyHash(Ha",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620efec20021a000493e005a1581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab00a100d901028282582068f889b91ddeacd3913ee30dcc28f4e1327ad242ea1c375aa57f354b6b22d2515840070fc6a9a685b102b9e27be66623f2ee4a0a9c27885c2abced98d03903c4f9252aa9cbb32503d927036d780456cf31f34e5598b16ba069a7867823cf897ae80782582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858407f12be0f35416fd4d51695d00e5e319feb20ab98363b04476c6df76fd3b7b1bca457a353b5cd5bbe0386d496b3e833a96282d43e85ee3d5e846fca0e110cb80af5f6a6043e"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "native_script/timelock-before-violation.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction eede0c0fa816e309e14520f1e0b992330aabb26065b86e85a3b49c6dda1eea8c is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [5d0",
+      "cbor": "84a500d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c5d09e310e66d54c98f7e63c36817e41066fd15b6d9c74fc50e01dfc5a145445741524601021a000493e0031a000186a109a1581c5d09e310e66d54c98f7e63c36817e41066fd15b6d9c74fc50e01dfc5a145445741524601a200d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf8584060b7d466bdc7d363f12f27ef0912f06f19eec3ddf8ba9b3f1d09b3f70ab7def9dccafa62213e46593aff86bb6c76a5c841b9acf329b1575a0a13f61a8f646b0601d901028182051a000186a0f5f6a723e7"
+    },
+    {
+      "kind": "verdict",
+      "base": "stake_pool/poolreg-present.tx",
+      "mutator": "?",
+      "cardano": "decode_reject",
+      "amaru": "accepted",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "\"aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d\"",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fd00d81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010283825820b4f52e99706586e7fca2a3064f288906e2e27e13c6e3cf8b7e9443f71f55f35858406a71372c5b7be0a44b56c7e1aff9f5ad1d6c6941ae5d34574331c3b159f8fd34891df4e039fb30c5825f01005f7ef4beef00e5fea6e71f812a8f9b234849a80c825820ec75e0742e2a5a05c752cd19f1752b62b51a68846c5faf0b0c81a255239aa75b584020f295e52ce9a7796d17266aefac2d3111f9bdda81d5305d2e97225a0f2216cd566679f2010f2afc08b7d28f1a9831eea769394ff0514aae216ff2f777f44f0a82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840ed9bdb894d5c76c6b04d8bd6067f4b50ea6914858acd066f721a704343ee12e0d9e32deea6357c0843936bf004f7e2adb83cb6a7e31707f041baace028b96d06f5f6d2d19d"
+    },
+    {
+      "kind": "verdict",
+      "base": "native_script/threshold-2of3-satisfied.tx",
+      "mutator": "?",
+      "cardano": "decode_reject",
+      "amaru": "accepted",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "\"1496c7f9ec75ef8f9c68a9cd99f77ddd036e12c5854e9f51576fb37dbe0f4a39\"",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c3c7f756aa5aa7f3c505cad74e907786c5fffb33d819396071eeb466da145445741524601021a000493e009a1581c3c7f756aa5aa7f3c505cad74e907786c5fffb33d819396071eeb466da145445741524601a200d9010283825820d07b9fb6ca676d4f28cda571e6fd6a9d8065f117a9bc85ee684457042ec5bd115840f871fb8ecadba20c3de29e5ff9fd8208026b9df8558173d5e27d7fa56bf2e978ac6b5f950b778a123457accd43ca15dc014092a2609440149cb6c31347c83d0b82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840bc35c4446cb2f8c154fe2ac96105eea94ee14a57be91ad695e114e2ebe837448d47d7bdb942afca34d7e30ad298ad342506210c5582b54197aa4c778e634da0f825820ea9f001e3976b42b929a4c64a12132c5c571da166365d66c87310a4b38a431835840c2fd3df3036861b02eccb850c3bf65576566709ee736858c26e4004f3faf0edfa3c10adf0a66f2828a495a16a0e2649ed44fa2b769be5a7245bcbc62b76f920501d9010281830302838200581c18ac997503902289b9a3684658a9bde9a18227e642d0254fb33dc7838200581cfe7501d070fb55ea4504ee94e11b891097d636121c8bca27fb08f4928200581c28a5712f99c0bb8f25a317853b1ddc45f33ce412a140d90106afa0e8f5f6acc6e93b"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/wdrl-genesis-no-witness.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 941853fec312a3cb3bead788cb89af46e3e9f364929b70f67f65fc6a29962058 is invalid: transaction failed phase one validation: invalid withdrawals: attempted to withdraw from an account (KeyHash(Ha",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620efec20021a000493e005a1581de03e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b000a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840162e7b84f4ff2bc3ee2c10fa88887852fd8734f7b513bde11fa3e3f7fcb531ac794d84c3ae0b4d0e6b4f64a209132cd8b44dcb6cb7b28d394ec882a18e37270bf5f6d44b"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "governance/drepreg-wrong-key.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 3ee080ee8af6570b8ea546ecca9edffa5880eed7a2652b7f599770e0d70a7988 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d901028184108200581c9cf932499e0313550efe79e3bbf0fa2d53d9e137ab76d766ea33c0091a1dcd6500f6a100d9010282825820ecbe1a2e0b58728bdea95fc2d96c9f09518d2b8e4a5d7d496934f8195954a15d58407979eb685a1361dfd3fb9ae616a2e6ec5393ecfa89d71e485ea4dc195c4d527ecc275f536e7b51a89f5ad3a42637bf4d8a80c96168efb6b1b069a4fe13d2550582582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840b1df0f43e73fc3671a1a27181cd8ac1a46181e705dbcba4bb465b104a1dbd359b9e8af92011e65c854eb786861e5d9812621b576330155ee751b898cce44680ff5f66da1"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-cost-too-low.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction d24e966949cfa7c19b701ff175c2253b1335a7331fab9cbf85491c9493ffd751 is invalid: transaction failed phase one validation: invalid certificates: pool cost too low: provided 339999999, minimum 3",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fcffd81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010283825820b4f52e99706586e7fca2a3064f288906e2e27e13c6e3cf8b7e9443f71f55f35858401915afd6b80b2838b7ffda151735ee34cfbbec3a536d253b964cb8ab987f5c178d65da4713997eca548e136dc453a92fe34c9738d104a31c345a5b5f6be30101825820ec75e0742e2a5a05c752cd19f1752b62b51a68846c5faf0b0c81a255239aa75b58404485a31ebf7c95ef19c49db57e008b1bf9cbde57e95fdb35e17cbd7db6f21b264e47c62da6a6a332f2e12529037f043f33e8b6bd18b4a8359be6c725b82ea30682582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858409b523ac9491ae73fd79a7f4bd9f56e428dc44b5ab613a45cdd29bae4bdb30906a4303eb5b12406d8429ca45abfddc129bc47f443e9ff4ab80fac6215d0c80d09f5f63a80"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-missing-cold.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fd00d81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010282825820b4f52e99706586e7fca2a3064f288906e2e27e13c6e3cf8b7e9443f71f55f35858406a71372c5b7be0a44b56c7e1aff9f5ad1d6c6941ae5d34574331c3b159f8fd34891df4e039fb30c5825f01005f7ef4beef00e5fea6e71f812a8f9b234849a80c82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840ed9bdb894d5c76c6b04d8bd6067f4b50ea6914858acd066f721a704343ee12e0d9e32deea6357c0843936bf004f7e2adb83cb6a7e31707f041baace028b96d06f5f630a8"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "static/underfee-minus-100.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 56f6a6eef447d29191ddb4cb17e9fae9dd55807ddd9082d2893a45dc1e54af62 is invalid: transaction failed phase one validation: invalid fees: declared fee 164081 below minimum 164181: invalid fees: ",
+      "cbor": "84a300d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620f1ff0f021a000280f1a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840b88dc05b4c5717cfcdd0aab822669b91c0abf78f46021611e67017c13f79d74e6452ae275a1a6f27f564fa29ef710cf047df5334b1d114cd6eed769defd46b07f5f68acf"
+    },
+    {
+      "kind": "verdict",
+      "base": "static/minimum-exact.tx",
+      "mutator": "?",
+      "cardano": "decode_reject",
+      "amaru": "accepted",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "\"f88afec6ab957edebd5c364447beb9b0ccb300bf8a54b11e480e3d1b9d519265\"",
+      "cbor": "84a300d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620f1fe7f021a00028181a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf8584079e5731a989adcf7e83b2cf1657680c0fbda83b0b11d73c34021664f956eda9a98303751cfd733ede22aeb5a099c185eaf66368392276787609b086bd4c01806f5f6b9"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "native_script/nested-outer-missing.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction a1d48a4d642f984be13cf080690ade0fd2d0ae121fc5bc8031060463d102a195 is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [625",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c6255e58a1f1be9d6e43a87458e26198f4a41e9aa9802a65d65fe7981a145445741524601021a000493e009a1581c6255e58a1f1be9d6e43a87458e26198f4a41e9aa9802a65d65fe7981a145445741524601a200d9010282825820d07b9fb6ca676d4f28cda571e6fd6a9d8065f117a9bc85ee684457042ec5bd115840d81cc584c91cfb2315702c4eab662489c4bb4c057c2ebb8c822b8d4a20cc9cfa8afcf98bc7b44467128aa46bfab6a6c69da65ad279ae1a1133a7e308ae68de0282582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf8584034b689dcaba577003d1338799c01cdc3cdf1c7a6e1d5777ce709ab37a51b311a207cc82ba8ac1618f8d794148990cb145b7e0a6ac40f212c8283094151befd0801d90102818201828202828200581c18ac997503902289b9a3684658a9bde9a18227e642d0254fb33dc7838200581cfe7501d070fb55ea4504ee94e11b891097d636121c8bca27fb08f4928200581c28a5712f99c0bb8f25a317853b1ddc45f33ce412a140d90106afa0e8f5f62652"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/regdeleg-missing-witness.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 44298a09763763180a873c69492aaf21a7e741f8efb3f376c0c78134becde1c7 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d9010281840b8200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab581c5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf81a001e8480a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858400d710de09ff933392c2131bcba9c2e77a43a9b9a112603ae7beecbd6d14bc1ae404f040d4d89e4a015f1bc920f7c507c2046f4741f6d240504a0c5e4a1860708f5f677b8"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-cost-too-low.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction d24e966949cfa7c19b701ff175c2253b1335a7331fab9cbf85491c9493ffd751 is invalid: transaction failed phase one validation: invalid certificates: pool cost too low: provided 339999999, minimum 3",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fcffd81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010283825820b4f52e99706586e7fca2a3064f288906e2e27e13c6e3cf8b7e9443f71f55f35858401915afd6b80b2838b7ffda151735ee34cfbbec3a536d253b964cb8ab987f5c178d65da4713997eca548e136dc453a92fe34c9738d104a31c345a5b5f6be30101825820ec75e0742e2a5a05c752cd19f1752b62b51a68846c5faf0b0c81a255239aa75b58404485a31ebf7c95ef19c49db57e008b1bf9cbde57e95fdb35e17cbd7db6f21b264e47c62da6a6a332f2e12529037f043f33e8b6bd18b4a8359be6c725b82ea30682582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858409b523ac9491ae73fd79a7f4bd9f56e428dc44b5ab613a45cdd29bae4bdb30906a4303eb5b12406d8429ca45abfddc129bc47f443e9ff4ab80fac6215d0c80d09f5f6bd"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-missing-cold.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fd00d81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010282825820b4f52e99706586e7fca2a3064f288906e2e27e13c6e3cf8b7e9443f71f55f35858406a71372c5b7be0a44b56c7e1aff9f5ad1d6c6941ae5d34574331c3b159f8fd34891df4e039fb30c5825f01005f7ef4beef00e5fea6e71f812a8f9b234849a80c82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840ed9bdb894d5c76c6b04d8bd6067f4b50ea6914858acd066f721a704343ee12e0d9e32deea6357c0843936bf004f7e2adb83cb6a7e31707f041baace028b96d06f5f6b8ae85bc"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/wdrl-genesis-no-witness.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 941853fec312a3cb3bead788cb89af46e3e9f364929b70f67f65fc6a29962058 is invalid: transaction failed phase one validation: invalid withdrawals: attempted to withdraw from an account (KeyHash(Ha",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620efec20021a000493e005a1581de03e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b000a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840162e7b84f4ff2bc3ee2c10fa88887852fd8734f7b513bde11fa3e3f7fcb531ac794d84c3ae0b4d0e6b4f64a209132cd8b44dcb6cb7b28d394ec882a18e37270bf5f6c4df"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-missing-owner.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fd00d81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010282825820ec75e0742e2a5a05c752cd19f1752b62b51a68846c5faf0b0c81a255239aa75b584020f295e52ce9a7796d17266aefac2d3111f9bdda81d5305d2e97225a0f2216cd566679f2010f2afc08b7d28f1a9831eea769394ff0514aae216ff2f777f44f0a82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840ed9bdb894d5c76c6b04d8bd6067f4b50ea6914858acd066f721a704343ee12e0d9e32deea6357c0843936bf004f7e2adb83cb6a7e31707f041baace028b96d06f5f609046c"
+    },
+    {
+      "kind": "verdict",
+      "base": "stake_pool/stakereg-legacy-no-witness.tx",
+      "mutator": "?",
+      "cardano": "decode_reject",
+      "amaru": "accepted",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "\"b71a031a702e6b239d89948f98b4b66cdae0dfc69c1b8707fdb62f690848819a\"",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d901028182008200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aaba100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858404127eb3107a9f365510e379bc9cc49c17c0e547890e3c7964246d4e656fe551577b39c5d4fe4b77b5577a52eb9b025693d5d9752aeebbaa4b9089691a94bb803f5f6f108bd41"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/regdeleg-unknown-pool.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 13c32287ec4cb34132a310c0639586fd76f664617d0ce6964974007bfd71c841 is invalid: transaction failed phase one validation: invalid certificates: invalid stake credential pool delegation: unknow",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d9010281840b8200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0401a001e8480a100d901028282582068f889b91ddeacd3913ee30dcc28f4e1327ad242ea1c375aa57f354b6b22d2515840d855ad6aca5077cd17a91413df5a2caae652560a618a7f44f580b3ef5a3b517abb2b0775e028afd530170980274c6a9273560dd339c07b3eac4838a8a4dba10c82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858405a9fdeec1003efdb814d084dbea3cbb81805e42362bdc79f72cad2d12691ba2cc0db9c6aa8d32e3271d2cf4e95265caff1326b9f59d887a90a2f1e6fda03ee02f5f6af3d5e"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "native_script/nested-outer-missing.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction a1d48a4d642f984be13cf080690ade0fd2d0ae121fc5bc8031060463d102a195 is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [625",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c6255e58a1f1be9d6e43a87458e26198f4a41e9aa9802a65d65fe7981a145445741524601021a000493e009a1581c6255e58a1f1be9d6e43a87458e26198f4a41e9aa9802a65d65fe7981a145445741524601a200d9010282825820d07b9fb6ca676d4f28cda571e6fd6a9d8065f117a9bc85ee684457042ec5bd115840d81cc584c91cfb2315702c4eab662489c4bb4c057c2ebb8c822b8d4a20cc9cfa8afcf98bc7b44467128aa46bfab6a6c69da65ad279ae1a1133a7e308ae68de0282582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf8584034b689dcaba577003d1338799c01cdc3cdf1c7a6e1d5777ce709ab37a51b311a207cc82ba8ac1618f8d794148990cb145b7e0a6ac40f212c8283094151befd0801d90102818201828202828200581c18ac997503902289b9a3684658a9bde9a18227e642d0254fb33dc7838200581cfe7501d070fb55ea4504ee94e11b891097d636121c8bca27fb08f4928200581c28a5712f99c0bb8f25a317853b1ddc45f33ce412a140d90106afa0e8f5f6b430"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-missing-cold.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fd00d81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010282825820b4f52e99706586e7fca2a3064f288906e2e27e13c6e3cf8b7e9443f71f55f35858406a71372c5b7be0a44b56c7e1aff9f5ad1d6c6941ae5d34574331c3b159f8fd34891df4e039fb30c5825f01005f7ef4beef00e5fea6e71f812a8f9b234849a80c82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840ed9bdb894d5c76c6b04d8bd6067f4b50ea6914858acd066f721a704343ee12e0d9e32deea6357c0843936bf004f7e2adb83cb6a7e31707f041baace028b96d06f5f6cae6"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "governance/drepreg-wrong-key.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 3ee080ee8af6570b8ea546ecca9edffa5880eed7a2652b7f599770e0d70a7988 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d901028184108200581c9cf932499e0313550efe79e3bbf0fa2d53d9e137ab76d766ea33c0091a1dcd6500f6a100d9010282825820ecbe1a2e0b58728bdea95fc2d96c9f09518d2b8e4a5d7d496934f8195954a15d58407979eb685a1361dfd3fb9ae616a2e6ec5393ecfa89d71e485ea4dc195c4d527ecc275f536e7b51a89f5ad3a42637bf4d8a80c96168efb6b1b069a4fe13d2550582582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840b1df0f43e73fc3671a1a27181cd8ac1a46181e705dbcba4bb465b104a1dbd359b9e8af92011e65c854eb786861e5d9812621b576330155ee751b898cce44680ff5f6e0799b"
+    },
+    {
+      "kind": "verdict",
+      "base": "native_script/mintpolicy-sig-satisfied.tx",
+      "mutator": "?",
+      "cardano": "decode_reject",
+      "amaru": "accepted",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "\"5ff338e55be73fd7ef07c1b7f17ec2da125612e1675179a08bb27e87da05dc8b\"",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c446bc0ec7ab5ccdc15dd0c226c6b0810921dfdc48320bc0fc3c0c7f2a145445741524601021a000493e009a1581c446bc0ec7ab5ccdc15dd0c226c6b0810921dfdc48320bc0fc3c0c7f2a145445741524601a200d9010282825820cdafffe640f102928e3e25a16c5c3c64128faf80e9b3eef31b2449aace39f7ef5840227db431359f3ce2d99aeade5681a6792d364940b2fa822b3f9d319b37abd40702ea1ab820e58d5a97180ac158638a2ab19eebfcb694220a94e670329013dd0482582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858408a0214276b00a78dbe18d8789ac34767620a7a03a8a31d036f18ed989b7a6bca6dec8760d369bbec2b90da394e06bab73bb47e33b75640606eebd1852423070801d90102818201818200581cdf9f79e6563637525419546f66095c3bbee1677aab4cf6c7893698c6f5f65c9d"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/stakereg-missing-witness.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction ff28c1a18b5b9e5a0bab919f7f18dc20f9b949fa4fd84e89041d6bfa0a8ce14d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620d167a0021a000493e004d901028183078200581c3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab1a001e8480a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858401e5cc076caec0ebb5a4a9bbb2b430a551e241e34943ff60817c46e4ad419f0f73d269c05b3857c8dd8c17bf8e6eb1ca45bc233f47c85273492e3eb9954abf001f5f6c6"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "native_script/timelock-before-violation.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction eede0c0fa816e309e14520f1e0b992330aabb26065b86e85a3b49c6dda1eea8c is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [5d0",
+      "cbor": "84a500d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c5d09e310e66d54c98f7e63c36817e41066fd15b6d9c74fc50e01dfc5a145445741524601021a000493e0031a000186a109a1581c5d09e310e66d54c98f7e63c36817e41066fd15b6d9c74fc50e01dfc5a145445741524601a200d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf8584060b7d466bdc7d363f12f27ef0912f06f19eec3ddf8ba9b3f1d09b3f70ab7def9dccafa62213e46593aff86bb6c76a5c841b9acf329b1575a0a13f61a8f646b0601d901028182051a000186a0f5f66373"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "native_script/timelock-before-violation.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction eede0c0fa816e309e14520f1e0b992330aabb26065b86e85a3b49c6dda1eea8c is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [5d0",
+      "cbor": "84a500d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c5d09e310e66d54c98f7e63c36817e41066fd15b6d9c74fc50e01dfc5a145445741524601021a000493e0031a000186a109a1581c5d09e310e66d54c98f7e63c36817e41066fd15b6d9c74fc50e01dfc5a145445741524601a200d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf8584060b7d466bdc7d363f12f27ef0912f06f19eec3ddf8ba9b3f1d09b3f70ab7def9dccafa62213e46593aff86bb6c76a5c841b9acf329b1575a0a13f61a8f646b0601d901028182051a000186a0f5f68fcb07"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "governance/drepreg-wrong-key.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 3ee080ee8af6570b8ea546ecca9edffa5880eed7a2652b7f599770e0d70a7988 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d901028184108200581c9cf932499e0313550efe79e3bbf0fa2d53d9e137ab76d766ea33c0091a1dcd6500f6a100d9010282825820ecbe1a2e0b58728bdea95fc2d96c9f09518d2b8e4a5d7d496934f8195954a15d58407979eb685a1361dfd3fb9ae616a2e6ec5393ecfa89d71e485ea4dc195c4d527ecc275f536e7b51a89f5ad3a42637bf4d8a80c96168efb6b1b069a4fe13d2550582582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840b1df0f43e73fc3671a1a27181cd8ac1a46181e705dbcba4bb465b104a1dbd359b9e8af92011e65c854eb786861e5d9812621b576330155ee751b898cce44680ff5f6a8"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "native_script/timelock-after-violation.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction fdc054351cf03517ceab4474386a55190ec8357b86440ef4a912519888730b76 is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [592",
+      "cbor": "84a500d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c592fb0f9d8ed15c06858118d134d5c4b7c77320507810fee9ac2ddf9a145445741524601021a000493e0081903e709a1581c592fb0f9d8ed15c06858118d134d5c4b7c77320507810fee9ac2ddf9a145445741524601a200d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840a7fc0bb24070c4563148342a090d8625128a4f6d53a9d90549ee79f3266d14ffe2616df4370026559c4b5f0c34b1b05fbc374073ef7c2a0a7e961b7d6706980301d901028182041903e8f5f6c45904c7"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "native_script/mintpolicy-sig-missing.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 5ff338e55be73fd7ef07c1b7f17ec2da125612e1675179a08bb27e87da05dc8b is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [446",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327821b0000b5e620efec20a1581c446bc0ec7ab5ccdc15dd0c226c6b0810921dfdc48320bc0fc3c0c7f2a145445741524601021a000493e009a1581c446bc0ec7ab5ccdc15dd0c226c6b0810921dfdc48320bc0fc3c0c7f2a145445741524601a200d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858408a0214276b00a78dbe18d8789ac34767620a7a03a8a31d036f18ed989b7a6bca6dec8760d369bbec2b90da394e06bab73bb47e33b75640606eebd1852423070801d90102818201818200581cdf9f79e6563637525419546f66095c3bbee1677aab4cf6c7893698c6f5f68fb2"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/wdrl-genesis-no-witness.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 941853fec312a3cb3bead788cb89af46e3e9f364929b70f67f65fc6a29962058 is invalid: transaction failed phase one validation: invalid withdrawals: attempted to withdraw from an account (KeyHash(Ha",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620efec20021a000493e005a1581de03e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b000a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840162e7b84f4ff2bc3ee2c10fa88887852fd8734f7b513bde11fa3e3f7fcb531ac794d84c3ae0b4d0e6b4f64a209132cd8b44dcb6cb7b28d394ec882a18e37270bf5f63b226bbd"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "static/underfee-minus-100.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction 56f6a6eef447d29191ddb4cb17e9fae9dd55807ddd9082d2893a45dc1e54af62 is invalid: transaction failed phase one validation: invalid fees: declared fee 164081 below minimum 164181: invalid fees: ",
+      "cbor": "84a300d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e620f1ff0f021a000280f1a100d901028182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840b88dc05b4c5717cfcdd0aab822669b91c0abf78f46021611e67017c13f79d74e6452ae275a1a6f27f564fa29ef710cf047df5334b1d114cd6eed769defd46b07f5f69e9b46"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-missing-owner.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fd00d81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010282825820ec75e0742e2a5a05c752cd19f1752b62b51a68846c5faf0b0c81a255239aa75b584020f295e52ce9a7796d17266aefac2d3111f9bdda81d5305d2e97225a0f2216cd566679f2010f2afc08b7d28f1a9831eea769394ff0514aae216ff2f777f44f0a82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840ed9bdb894d5c76c6b04d8bd6067f4b50ea6914858acd066f721a704343ee12e0d9e32deea6357c0843936bf004f7e2adb83cb6a7e31707f041baace028b96d06f5f60767"
+    },
+    {
+      "kind": "reject-verdict",
+      "base": "stake_pool/poolreg-missing-owner.tx",
+      "cardano": "decode_reject",
+      "amaru": "phase1_reject",
+      "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure ",
+      "amaru_reason": "transaction aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatu",
+      "cbor": "84a400d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b0000b5e603228720021a000493e004d90102818a03581cb2e434417a56bc3686fc084036680266559411cf88f986632e70a0405820debf900ae4e1ce149b84314ac7e4d10ad46ed92c480ebfb779b5e8952f4da7aa001a1443fd00d81e820001581de03e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aabd9010281581cb0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11818301190bb96a6e732e6578616d706c65f6a100d9010282825820ec75e0742e2a5a05c752cd19f1752b62b51a68846c5faf0b0c81a255239aa75b584020f295e52ce9a7796d17266aefac2d3111f9bdda81d5305d2e97225a0f2216cd566679f2010f2afc08b7d28f1a9831eea769394ff0514aae216ff2f777f44f0a82582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf85840ed9bdb894d5c76c6b04d8bd6067f4b50ea6914858acd066f721a704343ee12e0d9e32deea6357c0843936bf004f7e2adb83cb6a7e31707f041baace028b96d06f5f602f681"
+    }
+  ]
+}
