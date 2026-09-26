@@ -192,3 +192,11 @@ main = hspec $ do
             parseCaseSpec (LBC.pack js) `shouldSatisfy` \case
                 Right sp -> csCounterJump sp == Just 9223372036854775808 && csCounterValue sp == Nothing
                 _ -> False
+
+    describe "opcert_field serve-path spec" $ do
+        it "parses an opcert_field mutation param (live serve path)" $ do
+            let js = "{\"base_case\":\"valid-control\",\"seed\":5,\"params\":{\"opcert_field\":\"cold-sig-truncated\"}}"
+            parseCaseSpec (LBC.pack js) `shouldSatisfy` \case
+                Right sp -> csBaseCase sp == "valid-control" && csOpcertField sp == Just "cold-sig-truncated"
+                _ -> False
+

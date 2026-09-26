@@ -53,23 +53,44 @@ Amaru's `from_cbor_no_leftovers::<BlockHeader>` returns `Ok(_)` for all three: i
 at decode, a KES hot verification key that is the wrong length, a cold-key signature that is the
 wrong length, or an operational certificate carrying an extra trailing element.
 
-## Interpretation and scope
+## Interpretation and severity
 
 This is a **decode-stage leniency divergence**: Amaru's header decoder admits opcert structures
-that cardano-node's decoder rejects outright. The three consistent (counter/period value +
-type-confusion + missing/duplicate-field) agreements show both decoders are strict about the
-counter and KES-period field *values/types* and about a *too-short* opcert; the divergence is
+that cardano-node's decoder rejects outright. The eight agreements show both decoders are strict
+about the counter/KES-period field *values/types* and about a *too-short* opcert; the divergence is
 specifically about **fixed-width byte fields (KES hot vkey, cold signature) and extra opcert
-elements**, which Amaru does not size-check at decode.
+elements**, which Amaru does not size-check / arity-check at decode.
 
-Whether Amaru rejects these later, at header/consensus VALIDATION (e.g. when it uses the hot vkey
-or verifies the signature), is NOT covered by this decoder-level test — a lenient decoder that is
-backed by a strict validator is not a consensus risk, but a lenient decoder is still a larger
-attack surface and a divergence from cardano-node's fail-fast behaviour. Recommended follow-up:
-confirm whether a truncated-hot-vkey / truncated-cold-sig / extra-field header is rejected by
-Amaru at validation (it would be, on the shared devnet, via the existing opcert families — but
-those serve well-formed CBOR, so a dedicated check is warranted). This mirrors #4's result that
-the two implementations differ in opcert handling; here the difference is at the decoder boundary.
+**Decoder-strictness divergence: CONFIRMED (decode stage).** Deterministic, reproduced across
+preprod + mainnet base headers.
+
+**Validation-stage outcome: CONFOUNDED / UNRESOLVED.** The severity ultimately hinges on whether
+Amaru merely *decodes* these headers leniently but then *rejects* them at cryptographic/consensus
+validation (fail-late, benign — a larger attack surface but not a safety risk), or actually
+*adopts* one into its chain (serious — it would accept a block cardano-node rejects). A live probe
+was attempted (serve each malformed header to a single-target Amaru consumer and read tip.adopt vs
+invalid_header) but is **confounded and did not yield a verdict**: the forger's byte-level deviant
+path (deviantCodec) leaves the served header's canonical form as what Amaru validates at that slot
+— Amaru adopted the header under its *canonical* hash, so the malformed opcert never reached
+Amaru's validation. Delivering the malformed bytes *as* the validated header would introduce a
+hash-mismatch confound (served-bytes' hash ≠ the point Amaru requested). So the live adopt-vs-
+validate read was deliberately not pursued further on the shared devnet.
+
+**Analytical bound (pending the follow-up test):**
+- `hot-vkey-truncated` (16-byte KES hot vkey) and `cold-sig-truncated` (32-byte ed25519 signature)
+  almost certainly **FAIL cryptographic validation** — a 16-byte KES verification key cannot verify
+  the header's KES signature and a 32-byte value is not a valid 64-byte ed25519 opcert signature —
+  so these are very likely **fail-late / benign** (lenient decode, strict validate).
+- `opcert-extra-field` (an extra trailing opcert element) is the one whose validation outcome is
+  **genuinely OPEN**: if Amaru decodes the first four opcert fields correctly and simply ignores the
+  extra element, the header is otherwise well-formed and could **adopt** — the case worth a targeted
+  test.
+
+**Recommended follow-up:** a validator-level test that delivers the decoded deviant directly to
+Amaru's block/header validation (not via the byte-deviant serve path, which cannot deliver the
+malformed header as the validated one), to settle `opcert-extra-field` in particular. This mirrors
+#4's result that the two implementations differ in opcert handling; here the difference is at the
+decoder boundary, and the validation-stage severity is bounded but not yet closed.
 
 Both nodes REJECT the value/type-confusion and too-short mutations, so those are not a divergence.
 

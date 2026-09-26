@@ -57,6 +57,7 @@ module DwarfOpcertAdversary
     , oPCERT_FIELD_MUTATIONS
     , isOpcertNode
     , mutateFirstOpcert
+    , mutateOpcertBytes
     ) where
 
 import Codec.CBOR.Read (deserialiseFromBytes)
@@ -622,6 +623,7 @@ data CaseSpec = CaseSpec
     , csKesPeriodsAhead :: !(Maybe Integer)
     , csRules          :: !(Maybe [String])
     , csCounterValue   :: !(Maybe Integer)
+    , csOpcertField    :: !(Maybe String)
     }
     deriving (Eq, Show)
 
@@ -667,7 +669,8 @@ parseCaseSpec raw = do
         kahead <- getP "kes_periods_ahead"
         rules  <- getP "rules"
         cval   <- getP "counter_value"
-        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo cjump kahead rules cval)
+        ofield <- getP "opcert_field"
+        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo cjump kahead rules cval ofield)
 
 -- | The seed that drives the encoding-form byte re-encoding for THIS case. The
 -- generator derives a distinct per-iteration @byte_seed@ (in @params@) from
@@ -988,6 +991,21 @@ asBytesTerm :: Term -> BS.ByteString
 asBytesTerm (TBytes b) = b
 asBytesTerm _          = BS.empty
 
+-- | Does this Term contain an opcert node anywhere (used to guard descent into a
+-- CBOR-in-CBOR bytestring so only a wrapped header, never a hash/VRF byte field,
+-- is opened).
+containsOpcert :: Term -> Bool
+containsOpcert t = isOpcertNode t || any containsOpcert (termKids t)
+
+termKids :: Term -> [Term]
+termKids t = case t of
+    TList xs    -> xs
+    TListI xs   -> xs
+    TMap ps     -> concatMap (\(k, v) -> [k, v]) ps
+    TMapI ps    -> concatMap (\(k, v) -> [k, v]) ps
+    TTagged _ x -> [x]
+    _           -> []
+
 -- | Apply a named mutation to the opcert's 4 fields.
 mutateOpcertFields :: String -> [Term] -> [Term]
 mutateOpcertFields m fields = case fields of
@@ -1022,8 +1040,24 @@ mutateFirstOpcert m root = snd (go root)
         TListI xs   -> let (d, xs') = firstList xs in (d, TListI xs')
         TMap ps     -> let (d, ps') = firstPairs ps in (d, TMap ps')
         TMapI ps    -> let (d, ps') = firstPairs ps in (d, TMapI ps')
+        -- CBOR-in-CBOR: the live NodeToNode header wraps the real header in a
+        -- tag-24 bytestring (and the hard-fork envelope may wrap it as a plain
+        -- bytestring). Descend into a bytestring ONLY when it is exactly one CBOR
+        -- item that itself contains an opcert node, so a VRF cert / hash byte
+        -- field is never touched. Re-encode the mutated inner and re-wrap.
+        TTagged 24 (TBytes inner) -> descendBytes t inner (\b -> TTagged 24 (TBytes b))
+        TBytes inner              -> descendBytes t inner TBytes
         TTagged w x -> let (d, x') = go x in (d, TTagged w x')
         _           -> (False, t)
+    descendBytes orig inner rewrap =
+        case deserialiseFromBytes decodeTerm (LBS.fromStrict inner) of
+            Right (rest, innerTerm)
+                | LBS.null rest && containsOpcert innerTerm ->
+                    let (d, innerTerm') = go innerTerm
+                    in if d
+                        then (True, rewrap (LBS.toStrict (toLazyByteString (encodeTerm innerTerm'))))
+                        else (False, orig)
+            _ -> (False, orig)
     firstList [] = (False, [])
     firstList (x:xs) =
         let (d, x') = go x
@@ -1036,3 +1070,14 @@ mutateFirstOpcert m root = snd (go root)
            else let (dv, v') = go v
                 in if dv then (True, (k', v') : ps)
                    else let (d2, ps') = firstPairs ps in (d2, (k', v') : ps')
+
+
+-- | Apply an opcert-field CBOR mutation to a WHOLE header\'s wire bytes (decode
+-- to a Term, rewrite the first opcert node, re-encode). Used on the live serve
+-- path to inject an opcert-field mutation into a real live-tip header (so the
+-- parent/VRF/slot stay valid and only the opcert field is deviant). Returns the
+-- input unchanged if it does not decode as CBOR.
+mutateOpcertBytes :: String -> LBS.ByteString -> LBS.ByteString
+mutateOpcertBytes mut bytes = case deserialiseFromBytes decodeTerm bytes of
+    Left _ -> bytes
+    Right (_, term) -> toLazyByteString (encodeTerm (mutateFirstOpcert mut term))
