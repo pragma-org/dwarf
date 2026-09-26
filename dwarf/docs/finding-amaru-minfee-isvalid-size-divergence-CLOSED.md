@@ -10,7 +10,7 @@
 ## Summary
 
 For a transaction that is **byte-identical on the wire** and validated under **byte-identical
-protocol parameters**, amaru 10.11.20260807 and cardano-node 11.1.2 disagreed on the **minimum
+protocol parameters**, amaru 10.11.20260807 and cardano-node 10.7.1 (045bc187) disagreed on the **minimum
 fee** by exactly **44 lovelace (one byte)**, because amaru's mempool min-fee **size** included the
 1-byte Alonzo `IsValid` flag that cardano-ledger deliberately excludes. Amaru therefore rejected,
 as underfee, a fee band that cardano-node accepts. Fixed in 10.11.20260903.
@@ -21,7 +21,7 @@ Params on both sides (identical): `min_fee_a = 44`, `min_fee_b = 155381`, protoc
 Test tx: 1-in/1-out self-send spending `9708b921…#0`, **null auxiliary_data**, RFC-8949-minimal,
 **201 bytes on the wire** (raw == canonical, verified with cbor2 — not a canonicalization issue).
 
-| fee (lovelace) | cardano-node 11.1.2 | amaru 807 (493bffba) | amaru 0903 (ea1f34e4) |
+| fee (lovelace) | cardano-node 10.7.1 (045bc187) | amaru 807 (493bffba) | amaru 0903 (ea1f34e4) |
 |---:|---|---|---|
 | 164180 | reject `FeeTooSmallUTxO {supplied 164180, expected 164181}` | reject | reject ("declared fee 164180 below minimum 164181") |
 | **164181** | **accept** (= 44×**200**+155381) | **reject** | **accept** |
@@ -131,4 +131,4 @@ POST raw CBOR to cardano-submit-api (`:8090/api/submit/tx`) and the amaru submit
 
 ## Re-validated against LATEST amaru — v10.11.20260925 (eaf8ac3f), 2026-09-26
 
-The fix holds on latest: eaf8ac3f accepts fee 164181 and rejects 164180 (gap 0, IsValid excluded = cardano-node 11.1.2), same as v10.11.20260903. This CLOSED finding remains closed on the current release. (Tested via node run on the 0903-bootstrapped store; latest cannot freshly bootstrap a custom testnet — see amaru-custom-testnet-bootstrap-regression-0903-to-0925.md.)
+The fix holds on latest: eaf8ac3f accepts fee 164181 and rejects 164180 (gap 0, IsValid excluded = cardano-node 10.7.1 (045bc187)), same as v10.11.20260903. This CLOSED finding remains closed on the current release. (Tested via node run on the 0903-bootstrapped store; latest cannot freshly bootstrap a custom testnet — see amaru-custom-testnet-bootstrap-regression-0903-to-0925.md.)

@@ -1,7 +1,7 @@
 # Native-script phase-1 differential family
 
 A DWARF phase-1 differential family (extends `workload/mixed_phase1.py`) that submits
-native-script violation and satisfied transactions to **both** cardano-node 11.1.2 and
+native-script violation and satisfied transactions to **both** cardano-node 10.7.1 (045bc187) and
 Amaru, and applies a **verdict + reason-class parity** oracle. Coverage addition, not a
 finding — a clean conformance pass that locks in Amaru native-script phase-1 behavior and
 would catch a future regression or divergence.
@@ -9,7 +9,7 @@ would catch a future regression or divergence.
 ## Result (2026-09-26)
 
 **Amaru 10.11.20260903 (`ea1f34e4`) phase-1 native-script validation is CONFORMANT with
-cardano-node 11.1.2 across `RequireAllOf` / `RequireMOf` (threshold) / nested /
+cardano-node 10.7.1 (045bc187) across `RequireAllOf` / `RequireMOf` (threshold) / nested /
 `RequireTimeBefore` / `RequireTimeAfter`, including inclusive boundary semantics — verdict
 + reason-class parity, non-vacuous.**
 
@@ -84,4 +84,4 @@ satisfied control). Policy scripts + all fixtures are under `fixture/native_scri
 
 ## Re-validated against LATEST amaru — v10.11.20260925 (eaf8ac3f), 2026-09-26
 
-Re-ran this family against the current tagged latest amaru (git_commit eaf8ac3f) via `node run` on the 0903-bootstrapped store (store format compatible; latest cannot freshly bootstrap a custom testnet — see amaru-custom-testnet-bootstrap-regression-0903-to-0925.md), vs cardano-node 11.1.2: **still CONFORMANT — all cases agree, no divergence.** Result is now current-version-validated.
+Re-ran this family against the current tagged latest amaru (git_commit eaf8ac3f) via `node run` on the 0903-bootstrapped store (store format compatible; latest cannot freshly bootstrap a custom testnet — see amaru-custom-testnet-bootstrap-regression-0903-to-0925.md), vs cardano-node 10.7.1 (045bc187): **still CONFORMANT — all cases agree, no divergence.** Result is now current-version-validated.

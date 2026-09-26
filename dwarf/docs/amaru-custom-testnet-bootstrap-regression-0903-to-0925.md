@@ -11,7 +11,7 @@
   `amaru node bootstrap --network testnet_42 --era-history <file>`).
 - Regressed: **v10.11.20260925** — `git_commit eaf8ac3f` (tag confirmed), the current tagged
   latest. Built locally from source (`cargo build --release`, nightly-2026-08-03) for this test.
-- cardano-node 11.1.2 is current (unaffected).
+- cardano-node 10.7.1 (045bc187) is what the reference nodes run (the target pair 11.1.2 is an open operator decision).
 - The change is in the ~271-commit window between ea1f34e4 and eaf8ac3f (the S3 / peer-snapshot
   bootstrap redesign).
 
@@ -71,4 +71,4 @@ retains custom-testnet support, so the fix is plausibly re-exposing local snapsh
 
 Latest-amaru re-validation of the four phase-1 families ran against eaf8ac3f on 0903-bootstrapped
 stores (this workaround): min-fee band (gap still 0), native-script, gov-cert, gov-vote — all
-CONFORMANT with cardano-node 11.1.2 (see each family doc's re-validation note).
+CONFORMANT with cardano-node 10.7.1 (045bc187) (see each family doc's re-validation note).

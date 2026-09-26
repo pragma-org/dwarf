@@ -45,7 +45,7 @@ satisfied controls single-use (an accept consumes the UTxO — one per fresh mem
 | drepreg-present (correct DRep witness) | accept | 202 | 202 | verdict |
 | drepreg-multi-both (both drep witnesses) | accept | 202 | 202 | verdict |
 
-**Result: Amaru 10.11.20260903 (`ea1f34e4`) is CONFORMANT with cardano-node 11.1.2** on
+**Result: Amaru 10.11.20260903 (`ea1f34e4`) is CONFORMANT with cardano-node 10.7.1 (045bc187)** on
 gov-cert required-witness validation — verdict + reason-class parity (both reject with
 `MissingVKeyWitness` naming the **same** governance credential; both accept the controls).
 Notably the wrong-key case confirms both require a witness from the **specific** credential,
@@ -92,4 +92,4 @@ use `keys/wrong.skey`, for the violations). Committed keys/certs are testnet-onl
 
 ## Re-validated against LATEST amaru — v10.11.20260925 (eaf8ac3f), 2026-09-26
 
-Re-ran this family against the current tagged latest amaru (git_commit eaf8ac3f) via `node run` on the 0903-bootstrapped store (store format compatible; latest cannot freshly bootstrap a custom testnet — see amaru-custom-testnet-bootstrap-regression-0903-to-0925.md), vs cardano-node 11.1.2: **still CONFORMANT — all cases agree, no divergence.** Result is now current-version-validated.
+Re-ran this family against the current tagged latest amaru (git_commit eaf8ac3f) via `node run` on the 0903-bootstrapped store (store format compatible; latest cannot freshly bootstrap a custom testnet — see amaru-custom-testnet-bootstrap-regression-0903-to-0925.md), vs cardano-node 10.7.1 (045bc187): **still CONFORMANT — all cases agree, no divergence.** Result is now current-version-validated.
