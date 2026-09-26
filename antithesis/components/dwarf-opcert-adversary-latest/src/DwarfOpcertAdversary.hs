@@ -839,10 +839,67 @@ reEncodeOpcert seed form mTrailing bytes = case form of
         let n = max 1 (fromMaybe 1 mTrailing)
             extra = BS.pack (take n (randomRs (0, 255) (mkStdGen seed))) :: BS.ByteString
         in bytes <> LBS.fromStrict extra
-    "noncanonical-int" -> nonCanonicalOuter bytes
-    _ -> case deserialiseFromBytes decodeTerm bytes of
-        Left _ -> bytes
+    -- The live NodeToNode wire header wraps the real header in CBOR-in-CBOR
+    -- (an outer list + a tag-24 / plain bytestring). deviateTerm / nonCanonicalOuter
+    -- operate on a Term whose walker never descends into a bytestring, so on a
+    -- wrapped header the map/array/int forms would no-op (or hit only the outer
+    -- envelope). withInnerHeaderBytes unwraps to the INNER header, applies the
+    -- deviation there, and re-wraps -- so the mutation actually reaches the header
+    -- content. A bare (unwrapped) header is deviated directly (regression-safe).
+    "noncanonical-int" -> withInnerHeaderBytes nonCanonicalOuter bytes
+    _ -> withInnerHeaderBytes deviateInner bytes
+  where
+    deviateInner b = case deserialiseFromBytes decodeTerm b of
+        Left _ -> b
         Right (_, term) -> toLazyByteString (encodeTerm (deviateTerm seed form term))
+
+-- | Apply a bare-header deviation @f@ to the innermost CBOR-in-CBOR header. If
+-- @bytes@ already decodes to a term that DIRECTLY contains an opcert (a bare
+-- header), @f@ is applied to the whole input. Otherwise the first bytestring
+-- (tag-24 or plain) whose content is exactly one CBOR item containing an opcert
+-- is treated as the wrapped header: @f@ is applied to its content and it is
+-- re-wrapped in place (the outer envelope is preserved). Guarded by
+-- containsOpcert so a VRF cert / hash byte field is never opened.
+withInnerHeaderBytes :: (LBS.ByteString -> LBS.ByteString) -> LBS.ByteString -> LBS.ByteString
+withInnerHeaderBytes f bytes =
+    case deserialiseFromBytes decodeTerm bytes of
+        Right (_, term)
+            | containsOpcert term -> f bytes
+            | otherwise -> case rewrapInnerHeader f term of
+                Just term' -> toLazyByteString (encodeTerm term')
+                Nothing    -> f bytes
+        Left _ -> f bytes
+
+rewrapInnerHeader :: (LBS.ByteString -> LBS.ByteString) -> Term -> Maybe Term
+rewrapInnerHeader f = go
+  where
+    go t = case t of
+        TTagged 24 (TBytes b) | innerHeaderBytes b -> Just (TTagged 24 (TBytes (apply b)))
+        TBytes b              | innerHeaderBytes b -> Just (TBytes (apply b))
+        TList xs    -> TList  <$> firstList xs
+        TListI xs   -> TListI <$> firstList xs
+        TMap ps     -> TMap   <$> firstPairs ps
+        TMapI ps    -> TMapI  <$> firstPairs ps
+        TTagged w x -> TTagged w <$> go x
+        _           -> Nothing
+    apply b = LBS.toStrict (f (LBS.fromStrict b))
+    firstList [] = Nothing
+    firstList (x:xs) = case go x of
+        Just x' -> Just (x' : xs)
+        Nothing -> (x :) <$> firstList xs
+    firstPairs [] = Nothing
+    firstPairs ((k, v):ps) = case go k of
+        Just k' -> Just ((k', v) : ps)
+        Nothing -> case go v of
+            Just v' -> Just ((k, v') : ps)
+            Nothing -> ((k, v) :) <$> firstPairs ps
+
+-- | Is @b@ exactly one CBOR item that contains an opcert node (i.e. the wrapped
+-- header), so it is safe to open and deviate?
+innerHeaderBytes :: BS.ByteString -> Bool
+innerHeaderBytes b = case deserialiseFromBytes decodeTerm (LBS.fromStrict b) of
+    Right (rest, t) -> LBS.null rest && containsOpcert t
+    Left _ -> False
 
 -- | Widen the outermost CBOR length header to a non-canonical 1-byte argument
 -- (a genuine non-minimal length encoding that decodes to the same value). Only
