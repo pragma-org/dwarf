@@ -131,6 +131,18 @@ empirical).**
   split in ledger validity. Proving it needs a substrate with protocolVersion major 11 (a
   re-bake). `newpool-dupvrf` and `rereg-dupvrf` are already staged for it, with expected
   accept at pv10 and reject at pv11.
+- **Upstream status:** this is a **known, in-progress** gap, not a new one. The open upstream
+  pull request [pragma-org/amaru#1247](https://github.com/pragma-org/amaru/pull/1247), "VRF Key
+  Uniqueness Validation - Take 2" (opened 2026-08-20, still open on 2026-09-26), adds this
+  check. It is not in the build tested here (`eaf8ac3f`). When #1247 lands, the two staged
+  cases become the regression test for its protocol-version gating: accept at pv10, reject at
+  pv11.
+- **Standing regression note (for when #1247 merges):** re-run `newpool-dupvrf` and
+  `rereg-dupvrf` on this pv10 substrate against the Amaru build that contains #1247. Both
+  **must still be accepted**. cardano-ledger gates the check on `pvMajor > 10`, so an ungated
+  Amaru check would reject at pv10 what cardano-node accepts: the **reverse** divergence, with
+  Amaru over-strict. The pv10 controls detect that with no re-bake. Only the pv11 half (reject
+  on both) needs a pv11 substrate. The operator deferred that re-bake on 2026-09-26.
 
 **Diagnostics defect (low severity, not a validation divergence).** On `retire-unregistered`,
 Amaru's error text is `unknown pool: unknown entity:
