@@ -36,6 +36,8 @@ REASON_CLASSES = {
     "wrong_network": (r"wrongnetworkpool", r"reward account has wrong network"),
     "wdrl_not_registered": (r"withdrawalsnotinrewards", r"that is not registered"),
     "wdrl_not_drep_delegated": (r"wdrlnotdelegatedtodrep", r"has no drep delegation"),
+    "pool_not_registered": (r"stakepoolnotregisteredonkeypool", r"unknown pool"),
+    "pool_retire_wrong_epoch": (r"stakepoolretirementwrongepochpool", r"pool retirement epoch out of range"),
 }
 _TRUNCATED_AT = 400  # mixed_phase1._observation keeps the first 400 chars of a response
 

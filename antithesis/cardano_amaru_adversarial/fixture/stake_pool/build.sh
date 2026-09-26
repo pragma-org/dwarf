@@ -96,5 +96,41 @@ tx stakereg-present           $STAKE_DEP "" reg.cert payment stake
 tx stakereg-legacy-no-witness $STAKE_DEP "" reg-legacy.cert payment
 tx regvote-present            $STAKE_DEP "" regvote.cert payment stake
 tx poolreg-present            $POOL_DEP "" poolreg.cert payment cold owner
-STAKE_HASH=$STAKE_HASH OWNER_HASH=$OWNER_HASH POOLID=$POOLID GEN_DELEG=$GEN_DELEG IN=$IN \
+# ===== phase 2: existing (genesis) pool 5801a763 re-registration / retirement, VRF reuse =====
+# Stock pool keys (public halves committed as keys/stock-*.vkey). The stock cold SIGNING key is
+# internal-only (keys/stock-p3-cold.skey); cases that need it are built only when it is present.
+# Retirement epochs avoid the frozen-store epoch skew (cardano ledger tip = epoch 3, Amaru tip =
+# epoch 2): 5 is valid on both, 2 is too early on both, 30 is too late on both. Epoch 3 is
+# deliberately NOT used - it would be too early for cardano but valid for Amaru.
+STOCK_POOL=$($CLI conway stake-pool id --cold-verification-key-file keys/stock-p3-cold.vkey --output-format hex)
+pool2() { # out cold.vkey vrf.vkey reward.vkey
+  $CLI conway stake-pool registration-certificate --cold-verification-key-file "keys/$2" \
+    --vrf-verification-key-file "keys/$3" --pool-pledge 0 --pool-cost $((MIN_POOL_COST + 10000000)) \
+    --pool-margin 0 --pool-reward-account-verification-key-file "keys/$4" \
+    --pool-owner-stake-verification-key-file keys/owner.vkey \
+    --single-host-pool-relay p3.example --pool-relay-port 3001 $M --out-file "certs/$1"; }
+pool2 rereg.cert stock-p3-cold.vkey stock-p3-vrf.vkey stock-p3-reward.vkey          # own VRF
+pool2 rereg-dupvrf.cert stock-p3-cold.vkey stock-p2-vrf.vkey stock-p3-reward.vkey   # pool 720c's VRF
+pool2 newpool-dupvrf.cert cold.vkey stock-p3-vrf.vkey stake.vkey                    # NEW pool, 5801's VRF
+ret() { $CLI conway stake-pool deregistration-certificate --cold-verification-key-file "keys/$2" \
+  --epoch "$3" --out-file "certs/$1"; }
+ret retire-e5.cert stock-p3-cold.vkey 5
+ret retire-e2.cert stock-p3-cold.vkey 2
+ret retire-e30.cert stock-p3-cold.vkey 30
+ret retire-unregistered.cert cold.vkey 5
+tx rereg-missing-cold         0 "" rereg.cert payment owner
+tx retire-missing-cold        0 "" retire-e5.cert payment
+tx retire-unregistered        0 "" retire-unregistered.cert payment cold
+tx wdrl-sametx-regvote        $STAKE_DEP "--withdrawal $(cat certs/stake.addr)+0" regvote.cert payment stake
+tx newpool-dupvrf             $POOL_DEP "" newpool-dupvrf.cert payment cold owner
+if [ -f keys/stock-p3-cold.skey ]; then
+  tx rereg-present            0 "" rereg.cert payment stock-p3-cold owner
+  tx rereg-dupvrf             0 "" rereg-dupvrf.cert payment stock-p3-cold owner
+  tx retire-present           0 "" retire-e5.cert payment stock-p3-cold
+  tx retire-too-early         0 "" retire-e2.cert payment stock-p3-cold
+  tx retire-too-late          0 "" retire-e30.cert payment stock-p3-cold
+else
+  echo "keys/stock-p3-cold.skey absent: skipping rereg-present/rereg-dupvrf/retire-{present,too-early,too-late}" >&2
+fi
+STAKE_HASH=$STAKE_HASH OWNER_HASH=$OWNER_HASH POOLID=$POOLID GEN_DELEG=$GEN_DELEG IN=$IN STOCK_POOL=$STOCK_POOL \
   python3 "$HERE/manifest.py"

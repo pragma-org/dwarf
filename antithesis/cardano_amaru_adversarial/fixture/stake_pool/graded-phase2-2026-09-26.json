@@ -1,0 +1,126 @@
+{
+ "date": "2026-09-26",
+ "phase": 2,
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 (fef83fed), sub3-1112-ref :8093 (ledger tip slot 1297, epoch 3)",
+  "amaru": "Amaru 10.11.0 (eaf8ac3f) = v10.11.20260925, store-sub3 :3020 (ledger tip slot 1199, epoch 2)",
+  "protocol_version": "10.0",
+  "note": "mempools reset and cardano tx-mempool = 0 before every run"
+ },
+ "violations_full_responses": {
+  "rereg-missing-cold": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8\\\"}])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction bc1e76a9e5aad0e648b6963ec9c5e5e7fda9ea81aab12713cfd4d26178099ec0 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8]: invalid transaction verification key witness: missing required signatures for keys or roots: [5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8]: missing required signatures for keys or roots: [5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8]"
+   }
+  },
+  "retire-missing-cold": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8\\\"}])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction 239052414ce689c52c7f58b3247e4f76ac2aa084e0f84983bd2e3f3b5f7029a4 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8]: invalid transaction verification key witness: missing required signatures for keys or roots: [5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8]: missing required signatures for keys or roots: [5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8]"
+   }
+  },
+  "retire-unregistered": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayCertsFailure (CertFailure (PoolFailure (StakePoolNotRegisteredOnKeyPOOL (KeyHash {unKeyHash = \\\"b2e434417a56bc3686fc084036680266559411cf88f986632e70a040\\\"}))))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction b41b95fd4490f1bcccb1fdbfd5ac359b8c6063b2afae49ee272cb5546bb1ab82 is invalid: transaction failed phase one validation: invalid certificates: unknown pool: unknown entity: PhantomData<amaru_kernel::cardano::hash::Hash<28>>: invalid certificates: unknown pool: unknown entity: PhantomData<amaru_kernel::cardano::hash::Hash<28>>: unknown pool: unknown entity: PhantomData<amaru_kernel::cardano::hash::Hash<28>>: unknown entity: PhantomData<amaru_kernel::cardano::hash::Hash<28>>"
+   }
+  },
+  "wdrl-sametx-regvote": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayWdrlNotDelegatedToDRep (KeyHash {unKeyHash = \\\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\\\"} :| [])\",\"ConwayCertsFailure (WithdrawalsNotInRewardsCERTS (Withdrawals {unWithdrawals = fromList [(AccountAddress {aaNetworkId = Testnet, aaId = AccountId {unAccountId = KeyHashObj (KeyHash {unKeyHash = \\\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\\\"})}},Coin 0)]}))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction fd6deb86610283a3314f7b915bdfb0ff9493889f0135e5cfc8b8f3ba5adc7557 is invalid: transaction failed phase one validation: invalid withdrawals: attempted to withdraw from an account (KeyHash(Hash<28>(\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\"))) that is not registered: invalid withdrawals: attempted to withdraw from an account (KeyHash(Hash<28>(\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\"))) that is not registered: attempted to withdraw from an account (KeyHash(Hash<28>(\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\"))) that is not registered"
+   }
+  },
+  "retire-too-early": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayCertsFailure (CertFailure (PoolFailure (StakePoolRetirementWrongEpochPOOL Mismatch (RelGT) {supplied: EpochNo 2, expected: EpochNo 3} Mismatch (RelLTEQ) {supplied: EpochNo 2, expected: EpochNo 21})))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction b7ffdb8782769aa6a0824e2ec887371fb493a5c2a1edb6ba2de3c733ae3d0e9b is invalid: transaction failed phase one validation: invalid certificates: pool retirement epoch out of range: epoch 2, must satisfy 2 < epoch <= 20: invalid certificates: pool retirement epoch out of range: epoch 2, must satisfy 2 < epoch <= 20: pool retirement epoch out of range: epoch 2, must satisfy 2 < epoch <= 20"
+   }
+  },
+  "retire-too-late": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayCertsFailure (CertFailure (PoolFailure (StakePoolRetirementWrongEpochPOOL Mismatch (RelGT) {supplied: EpochNo 30, expected: EpochNo 3} Mismatch (RelLTEQ) {supplied: EpochNo 30, expected: EpochNo 21})))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction 2f2221d40c055161e1b95cae4176c0420e328d4e024a9d6d5b1fbf8b45857caf is invalid: transaction failed phase one validation: invalid certificates: pool retirement epoch out of range: epoch 30, must satisfy 2 < epoch <= 20: invalid certificates: pool retirement epoch out of range: epoch 30, must satisfy 2 < epoch <= 20: pool retirement epoch out of range: epoch 30, must satisfy 2 < epoch <= 20"
+   }
+  }
+ },
+ "controls_one_per_mempool_reset": {
+  "newpool-dupvrf": {
+   "case_id": "newpool-dupvrf",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"0d8599ece708513a4d4fec9be9645565a67a3eda8702730878cc8b2bab0f813f\"",
+   "cardano_reason": "\"0d8599ece708513a4d4fec9be9645565a67a3eda8702730878cc8b2bab0f813f\""
+  },
+  "rereg-present": {
+   "case_id": "rereg-present",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"bc1e76a9e5aad0e648b6963ec9c5e5e7fda9ea81aab12713cfd4d26178099ec0\"",
+   "cardano_reason": "\"bc1e76a9e5aad0e648b6963ec9c5e5e7fda9ea81aab12713cfd4d26178099ec0\""
+  },
+  "rereg-dupvrf": {
+   "case_id": "rereg-dupvrf",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"d933c5d7705bf9edd4ddfe67be70f14f098a7826c73602f7242f4cd26d52e754\"",
+   "cardano_reason": "\"d933c5d7705bf9edd4ddfe67be70f14f098a7826c73602f7242f4cd26d52e754\""
+  },
+  "retire-present": {
+   "case_id": "retire-present",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"239052414ce689c52c7f58b3247e4f76ac2aa084e0f84983bd2e3f3b5f7029a4\"",
+   "cardano_reason": "\"239052414ce689c52c7f58b3247e4f76ac2aa084e0f84983bd2e3f3b5f7029a4\""
+  }
+ }
+}

@@ -179,6 +179,131 @@
    "credential": "3e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b0"
   },
   {
+   "case_id": "rereg-missing-cold",
+   "tx_file": "rereg-missing-cold.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 467,
+   "cbor_sha256": "449da37f4620104e32c91820c6f39500b513d0415083f143422924f6877a28c1",
+   "rule": "UTXOW MissingVKeyWitness (existing pool cold key)",
+   "reason_classes": [
+    "missing_witness"
+   ],
+   "note": "re-registration of genesis pool 5801a763, owner signs, cold witness omitted",
+   "credential": "5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8"
+  },
+  {
+   "case_id": "retire-missing-cold",
+   "tx_file": "retire-missing-cold.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 239,
+   "cbor_sha256": "ba469b838709f36eaa97272efc857ceea07e82e512cd1638823a692ef2f00ee9",
+   "rule": "UTXOW MissingVKeyWitness (existing pool cold key)",
+   "reason_classes": [
+    "missing_witness"
+   ],
+   "note": "retire 5801a763 at epoch 5, cold witness omitted",
+   "credential": "5801a7637e0273804ebcc720c8a11a80c05cb5d594836160ca51cbf8"
+  },
+  {
+   "case_id": "retire-unregistered",
+   "tx_file": "retire-unregistered.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 340,
+   "cbor_sha256": "dd2785af4ec83540c2935207092d8f54bb3fccd32d224a24a28198872e609418",
+   "rule": "POOL StakePoolNotRegisteredOnKey",
+   "reason_classes": [
+    "pool_not_registered"
+   ],
+   "note": "retire a never-registered pool (cold-witnessed). Credential parity WAIVED: Amaru's message prints 'unknown entity: PhantomData<...Hash<28>>' instead of the pool id (low-severity diagnostics defect)"
+  },
+  {
+   "case_id": "wdrl-sametx-regvote",
+   "tx_file": "wdrl-sametx-regvote.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 382,
+   "cbor_sha256": "42de26c89206ac2ff349e15457fd418897c8baea8cf98405930b2385fa78a08b",
+   "rule": "withdrawals judged on PRE-tx state",
+   "reason_classes": [
+    "wdrl_not_registered",
+    "wdrl_not_drep_delegated"
+   ],
+   "note": "register + vote-deleg AlwaysAbstain AND withdraw 0 from the same credential in one tx; same-tx certs must not satisfy the withdrawal rules"
+  },
+  {
+   "case_id": "retire-too-early",
+   "tx_file": "retire-too-early.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 340,
+   "cbor_sha256": "4bb494d30f857fa6acdca99a54c96b7eb958e49aadd030d9b2c078b9abf7ab33",
+   "rule": "POOL StakePoolRetirementWrongEpoch",
+   "reason_classes": [
+    "pool_retire_wrong_epoch"
+   ],
+   "note": "retire 5801a763 at epoch 2 (<= current on both frozen stores)"
+  },
+  {
+   "case_id": "retire-too-late",
+   "tx_file": "retire-too-late.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 341,
+   "cbor_sha256": "0e99d6b11be0f1c89a2175ebd0f0c64dfad042d8636ee8e23cc180588f139dcc",
+   "rule": "POOL StakePoolRetirementWrongEpoch",
+   "reason_classes": [
+    "pool_retire_wrong_epoch"
+   ],
+   "note": "retire 5801a763 at epoch 30 (> current + poolRetireMaxEpoch 18)"
+  },
+  {
+   "case_id": "newpool-dupvrf",
+   "tx_file": "newpool-dupvrf.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 568,
+   "cbor_sha256": "239d22276083f4851b9ec31f9cd6c353f9e9e44d7eb6ed35016741df55fe56cc",
+   "rule": "control @pv10 (VRF reuse is PROTOCOL-VERSION-GATED)",
+   "reason_classes": [],
+   "note": "NEW pool registering with 5801a763's VRF key. cardano-ledger rejects this only when pvMajor > 10 (hardforkConwayDisallowDuplicatedVRFKeys); the substrate is pv10, so accept. Expected reject at pv11 - Amaru 0925 has no duplicate-VRF check at all (divergence candidate)"
+  },
+  {
+   "case_id": "rereg-dupvrf",
+   "tx_file": "rereg-dupvrf.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 568,
+   "cbor_sha256": "61c4602b93315f0c08ba2641626eca96a1f6498030faacc8d8cb1cebd38f3a49",
+   "rule": "control @pv10 (VRF reuse is PROTOCOL-VERSION-GATED)",
+   "reason_classes": [],
+   "note": "re-registration of 5801a763 switching to pool 720c084d's VRF key; accept at pv10, reject at pv11"
+  },
+  {
+   "case_id": "rereg-present",
+   "tx_file": "rereg-present.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 568,
+   "cbor_sha256": "a84e90b660a66b9aa14ba6ad3a38c92a9ff272d19d3f308a55bc3404871c9991",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "re-registration of 5801a763 (cost +10 ADA), cold + owner witnessed; no deposit (existing pool)"
+  },
+  {
+   "case_id": "retire-present",
+   "tx_file": "retire-present.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 340,
+   "cbor_sha256": "05f87a19d6f762841f13c6d24eee00f0265e08e47bbc9d5cb75aa985942df337",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "retire 5801a763 at epoch 5, cold witnessed"
+  },
+  {
    "case_id": "stakereg-present",
    "tx_file": "stakereg-present.tx",
    "expected": "accept",

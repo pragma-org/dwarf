@@ -13,6 +13,14 @@ DELEG / POOL / withdrawal rules. It is separate from the DRep-certificate family
 > difference, not a divergence (see below). Graded on a dedicated, mempool-isolated
 > ref+Amaru pair; the cardano mempool was 0 before every run. Full responses are in
 > `fixture/stake_pool/graded-2026-09-26.json`.
+>
+> **PHASE 2 (2026-09-26): GRADED, 27/27 AGREE at protocol version 10.** Phase 2 adds 10
+> cases: re-registration and retirement of an existing genesis pool, retirement epoch bounds,
+> retiring an unknown pool, VRF-key reuse, and a same-tx register-and-withdraw. Full responses
+> are in `fixture/stake_pool/graded-phase2-2026-09-26.json`. There are two open items. (1) A
+> **divergence candidate at protocol version 11**, from source: Amaru has no duplicate-VRF
+> check. It is not provable on this pv10 substrate. (2) A **low-severity diagnostics defect**
+> in Amaru's unknown-pool error message. Both are described in the Phase 2 section.
 
 ## Reachability (probe-first, 2026-09-26)
 
@@ -24,14 +32,16 @@ stores. Two pieces of genesis state are used read-only:
 - genesis pool `5801a763…` (registered), as a valid delegation target;
 - genesis delegator `3e521ccc…` (a registered stake credential; we have **no** key for it).
 
-**Not reachable on the stock substrate** (they need keys or state that we do not have):
+**Phase 2** also uses the stock genesis pool keys. These are the cold key of `5801a763…`
+(internal-only `.skey`), the VRF keys of `5801a763…` and `720c084d…`, and the reward-account
+vkey of `5801a763…`. The files under `/home/nigel/govrebake/p*/keys` are, despite the directory
+name, the **stock rebake** pool keys: the cold keys hash to the stock pool ids, and the VRF keys
+hash to the registered `spsVrf`. The governance substrate's own pools are different.
 
-- a withdrawal ACCEPT control, or a wrong-amount withdrawal on a funded account (needs a
-  registered, DRep-delegated account whose key we hold);
-- pool re-registration or retirement, and VRF-key reuse (needs a genesis pool's cold/VRF keys).
-
-`/home/nigel/govrebake/p*/keys` holds those keys for the governance substrate, so this would be
-a phase 2 there.
+**Still not reachable** (it needs a re-bake with setup mined before the freeze): a withdrawal
+ACCEPT control, and a wrong-amount withdrawal on a funded account. Both need a registered,
+DRep-delegated account whose key we hold, with rewards. No such account exists in the stock
+state, and `wdrl-sametx-regvote` shows it cannot be set up inside the same tx.
 
 ## Cases & result
 
@@ -79,6 +89,64 @@ reason is a member of cardano's set, so the class-set-intersection oracle grades
   the deposit rule. `stakereg-bad-deposit-balanced` isolates the rule: it balances to the pparam
   deposit, and cardano-node then reports *only* IncorrectDepositDELEG. Both nodes still reject.
 
+## Phase 2: existing pools, retirement, VRF reuse (2026-09-26)
+
+These cases run on the same dedicated pair: cardano-node 11.1.2 (`fef83fed`) and Amaru
+v10.11.20260925 (`eaf8ac3f`), at protocol version 10. The pool is genesis pool `5801a763…`.
+
+| case | expected | cardano-node 11.1.2 | Amaru 0925 | grade |
+|---|---|---|---|---|
+| rereg-missing-cold | reject | `MissingVKeyWitnessesUTXOW(5801a763…)` | `missing required signatures … [5801a763…]` | AGREE + cred |
+| retire-missing-cold | reject | `MissingVKeyWitnessesUTXOW(5801a763…)` | same cred | AGREE + cred |
+| retire-unregistered | reject | `StakePoolNotRegisteredOnKeyPOOL(b2e43441…)` | `unknown pool: unknown entity: PhantomData<…Hash<28>>` | AGREE (cred waived, see below) |
+| retire-too-early (epoch 2) | reject | `StakePoolRetirementWrongEpochPOOL {supplied 2, expected > 3}` | `pool retirement epoch out of range: epoch 2, must satisfy 2 < epoch <= 20` | AGREE |
+| retire-too-late (epoch 30) | reject | `StakePoolRetirementWrongEpochPOOL {supplied 30 …}` | `… epoch 30, must satisfy 2 < epoch <= 20` | AGREE |
+| wdrl-sametx-regvote | reject | `{WdrlNotDelegatedToDRep, WithdrawalsNotInRewardsCERTS}` | `… that is not registered` | AGREE |
+| newpool-dupvrf | accept@pv10 | 202 | 202 (same tx id) | AGREE |
+| rereg-dupvrf | accept@pv10 | 202 | 202 (same tx id) | AGREE |
+| rereg-present | accept | 202 | 202 (same tx id) | AGREE |
+| retire-present (epoch 5) | accept | 202 | 202 (same tx id) | AGREE |
+
+After each accept, the cardano mempool held 1 tx, so each accept was real. With phase 1, the
+corpus has 27 cases: 19 violations and 8 controls, all AGREE.
+
+**Same-tx ordering (wdrl-sametx-regvote).** The tx registers a credential, vote-delegates it to
+AlwaysAbstain, **and** withdraws 0 from it. Both nodes judge withdrawals against the **pre-tx**
+account state, so the same-tx certificates do not satisfy the withdrawal rules. This was a
+plausible divergence point; the nodes agree.
+
+**VRF-key reuse: divergence candidate at protocol version 11 (source evidence, not yet
+empirical).**
+- **cardano-ledger:** `hardforkConwayDisallowDuplicatedVRFKeys pv = pvMajor pv > 10`
+  (`Shelley/Era.hs`). When that flag is on, `Shelley/Rules/Pool.hs` rejects with
+  `VRFKeyHashAlreadyRegistered` in two cases: a new pool that reuses a registered VRF, and a
+  re-registration that switches to another pool's VRF. The ledger's own `PoolSpec` test says
+  accept at pv < 11 and reject at pv ≥ 11.
+- **Amaru `eaf8ac3f`:** the `PoolRegistration` rule
+  (`crates/amaru-ledger/src/rules/transaction/phase_one/certificates.rs`) checks only the
+  cold and owner witnesses, the reward-account network, and the minimum pool cost. It has **no
+  VRF-uniqueness check and no protocol-version gate**.
+- **Consequence:** at pv10 both nodes accept, which is correct and graded above. From pv11,
+  cardano-node rejects and Amaru, per its source, accepts. That would be a consensus-relevant
+  split in ledger validity. Proving it needs a substrate with protocolVersion major 11 (a
+  re-bake). `newpool-dupvrf` and `rereg-dupvrf` are already staged for it, with expected
+  accept at pv10 and reject at pv11.
+
+**Diagnostics defect (low severity, not a validation divergence).** On `retire-unregistered`,
+Amaru's error text is `unknown pool: unknown entity:
+PhantomData<amaru_kernel::cardano::hash::Hash<28>>`. It prints a Rust type name **instead of
+the pool id**. cardano-node names `b2e43441…`. The verdict and the rule class agree, so
+credential parity is waived for this case only.
+
+**Substrate epoch-skew trap.** The two frozen stores sit at different tips. The cardano ledger
+tip is slot 1297 (epoch 3); the Amaru tip is slot 1199 (epoch 2); `epochLength` is 400. Both
+retirement error messages show this: cardano says `expected > 3`, and Amaru says
+`2 < epoch <= 20`. A retirement at **epoch 3** would be rejected by cardano and accepted by
+Amaru. That would be a **false** divergence caused by the substrate, not the nodes. So the
+corpus uses only epochs that give the same answer on both stores (5 valid, 2 too early, 30 too
+late), and epoch 3 is excluded. Any epoch-dependent family on this substrate must do the same,
+or re-bake both stores at the same tip.
+
 ## Oracle
 
 `workload/stake_pool_differential.py` grades each case as follows:
@@ -112,7 +180,7 @@ fixture/stake_pool/build.sh                 # rebuild certs/txs/manifest (cardan
                                             # regenerates keys if the .skey files are absent
 # reset mempools; confirm `cardano-cli conway query tx-mempool info` shows numberOfTxs = 0
 cd workload && python3 stake_pool_differential.py --amaru <amaru>/api/submit/tx --cardano <ref>/api/submit/tx
-# -> "VIOLATIONS (13 cases): ALL AGREE"
+# -> "VIOLATIONS (19 cases): ALL AGREE"
 python3 stake_pool_differential.py --control stakereg-legacy-no-witness …   # ONE control per reset
 ```
 
