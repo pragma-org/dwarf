@@ -1,0 +1,3 @@
+{ "type":"all","scripts":[
+  {"type":"any","scripts":[{"type":"sig","keyHash":"18ac997503902289b9a3684658a9bde9a18227e642d0254fb33dc783"},{"type":"sig","keyHash":"fe7501d070fb55ea4504ee94e11b891097d636121c8bca27fb08f492"}]},
+  {"type":"sig","keyHash":"28a5712f99c0bb8f25a317853b1ddc45f33ce412a140d90106afa0e8"} ] }

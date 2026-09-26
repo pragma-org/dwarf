@@ -1,0 +1,180 @@
+{
+  "description": "Native-script phase-1 differential family (cardano-node vs Amaru). All cases spend the committed funding UTxO; violations are idempotent (reject, replay-safe), satisfied/boundary cases are single-use (accepted consumes the UTxO). Fund fee 300000 >> min so a rejection is unambiguously the native-script rule. Result 2026-09-26: all cases AGREE (amaru 0918 ea1f34e4 conformant with cardano-node 11.1.2).",
+  "cases": [
+    {
+      "case_id": "mintpolicy-sig-missing",
+      "tx_file": "mintpolicy-sig-missing.tx",
+      "policy_file": "policies/mintpolicy-sig.json",
+      "expected": "reject",
+      "reason_class": "native-script-fail",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 321,
+      "cbor_sha256": "4912a808d4abfed1f1d0b5922aba6264705ab2416b6ec8ce2e4f6b4838a9244d",
+      "note": "RequireAllOf[sig A]; policy sig A omitted",
+      "observed": {
+        "cardano_status": 400,
+        "amaru_status": 400,
+        "cardano_reason": "ScriptWitnessNotValidatingUTXOW",
+        "amaru_reason": "native script(s) failed to validate",
+        "script_hash": "446bc0ec7ab5ccdc15dd0c226c6b0810921dfdc48320bc0fc3c0c7f2",
+        "reason_hash_match": true
+      }
+    },
+    {
+      "case_id": "threshold-2of3-underfill",
+      "tx_file": "threshold-2of3-underfill.tx",
+      "policy_file": "policies/threshold-2of3.json",
+      "expected": "reject",
+      "reason_class": "native-script-fail",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 487,
+      "cbor_sha256": "ecc87939edf831f590f3c0fb2d3d2c4e155b48b18557ff2b54c2a84f4fa19952",
+      "note": "RequireMOf 2-of-3; only 1 sig (N-1 boundary)",
+      "observed": {
+        "cardano_status": 400,
+        "amaru_status": 400,
+        "cardano_reason": "ScriptWitnessNotValidatingUTXOW",
+        "amaru_reason": "native script(s) failed to validate",
+        "script_hash": "3c7f756aa5aa7f3c505cad74e907786c5fffb33d819396071eeb466d",
+        "reason_hash_match": true
+      }
+    },
+    {
+      "case_id": "nested-outer-missing",
+      "tx_file": "nested-outer-missing.tx",
+      "policy_file": "policies/nested.json",
+      "expected": "reject",
+      "reason_class": "native-script-fail",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 489,
+      "cbor_sha256": "cdb2c67be6de5c12fc62fc5265600bc07d17be4e764814430df3d09da8533acd",
+      "note": "RequireAllOf[RequireAnyOf[B,C], sig D]; inner ok, outer D omitted",
+      "observed": {
+        "cardano_status": 400,
+        "amaru_status": 400,
+        "cardano_reason": "ScriptWitnessNotValidatingUTXOW",
+        "amaru_reason": "native script(s) failed to validate",
+        "script_hash": "6255e58a1f1be9d6e43a87458e26198f4a41e9aa9802a65d65fe7981",
+        "reason_hash_match": true
+      }
+    },
+    {
+      "case_id": "timelock-before-violation",
+      "tx_file": "timelock-before-violation.tx",
+      "policy_file": "policies/timelock-before.json",
+      "expected": "reject",
+      "reason_class": "native-script-fail",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 299,
+      "cbor_sha256": "b12ae9c964f5b2a495d050db525349960936701a342b63903b54927faee20133",
+      "note": "before(100000); invalidHereafter 100001 > lock",
+      "observed": {
+        "cardano_status": 400,
+        "amaru_status": 400,
+        "cardano_reason": "ScriptWitnessNotValidatingUTXOW",
+        "amaru_reason": "native script(s) failed to validate",
+        "script_hash": "5d09e310e66d54c98f7e63c36817e41066fd15b6d9c74fc50e01dfc5",
+        "reason_hash_match": true
+      }
+    },
+    {
+      "case_id": "timelock-after-violation",
+      "tx_file": "timelock-after-violation.tx",
+      "policy_file": "policies/timelock-after.json",
+      "expected": "reject",
+      "reason_class": "native-script-fail",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 295,
+      "cbor_sha256": "715008e764a62f9a4e3f9eb3030028c182b5df836c9c87d2affd9089cdc4e8f8",
+      "note": "after(1000); invalidBefore 999 < lock",
+      "observed": {
+        "cardano_status": 400,
+        "amaru_status": 400,
+        "cardano_reason": "ScriptWitnessNotValidatingUTXOW",
+        "amaru_reason": "native script(s) failed to validate",
+        "script_hash": "592fb0f9d8ed15c06858118d134d5c4b7c77320507810fee9ac2ddf9",
+        "reason_hash_match": true
+      }
+    },
+    {
+      "case_id": "mintpolicy-sig-satisfied",
+      "tx_file": "mintpolicy-sig-satisfied.tx",
+      "policy_file": "policies/mintpolicy-sig.json",
+      "expected": "accepted",
+      "reason_class": "none",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 422,
+      "cbor_sha256": "f663f3d9bc63beba797bae311f5f4a2d8b1e5ef09fffbf59c2ff5d8cfef85d7a",
+      "note": "policy sig A present (single-use control)",
+      "observed": {
+        "cardano_status": 202,
+        "amaru_status": 202,
+        "note": "both accepted (verdict parity; single-use control)"
+      }
+    },
+    {
+      "case_id": "threshold-2of3-satisfied",
+      "tx_file": "threshold-2of3-satisfied.tx",
+      "policy_file": "policies/threshold-2of3.json",
+      "expected": "accepted",
+      "reason_class": "none",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 588,
+      "cbor_sha256": "22d1c4aa32044c9c3c15050bd093ed91a9639bc9e4b94de7e578a992b076a986",
+      "note": "2 of 3 sigs (single-use control)",
+      "observed": {
+        "cardano_status": 202,
+        "amaru_status": 202,
+        "note": "both accepted (verdict parity; single-use control)"
+      }
+    },
+    {
+      "case_id": "nested-satisfied",
+      "tx_file": "nested-satisfied.tx",
+      "policy_file": "policies/nested.json",
+      "expected": "accepted",
+      "reason_class": "none",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 590,
+      "cbor_sha256": "ab1cea4632113b38e77a84c48c31ecf47a0aa61295309917ecd2e9ad46ed4618",
+      "note": "inner B + outer D (single-use control)",
+      "observed": {
+        "cardano_status": 202,
+        "amaru_status": 202,
+        "note": "both accepted (verdict parity; single-use control)"
+      }
+    },
+    {
+      "case_id": "timelock-before-boundary",
+      "tx_file": "timelock-before-boundary.tx",
+      "policy_file": "policies/timelock-before.json",
+      "expected": "accepted",
+      "reason_class": "none",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 299,
+      "cbor_sha256": "816bf0763c2d8a3f1432e24d75383e2cea5229c5f1596a4ecaba847625854c0c",
+      "note": "before(100000); invalidHereafter == 100000 (inclusive; single-use)",
+      "observed": {
+        "cardano_status": 202,
+        "amaru_status": 202,
+        "note": "both accepted (verdict parity; single-use control)"
+      }
+    },
+    {
+      "case_id": "timelock-after-boundary",
+      "tx_file": "timelock-after-boundary.tx",
+      "policy_file": "policies/timelock-after.json",
+      "expected": "accepted",
+      "reason_class": "none",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 295,
+      "cbor_sha256": "2af0ba213ce79d86d75b6a13f928f53a133f0a5cbede97d13593acc6a5920e22",
+      "note": "after(1000); invalidBefore == 1000 (inclusive; single-use)",
+      "observed": {
+        "cardano_status": 202,
+        "amaru_status": 202,
+        "note": "both accepted (verdict parity; single-use control)"
+      }
+    }
+  ]
+}

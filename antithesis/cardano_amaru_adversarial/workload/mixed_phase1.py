@@ -55,6 +55,9 @@ _PHASE1_MARKERS = (
     "conwaymempoolfailure",
     "submitvalidationerror",
     "txvalidationerror",
+    # amaru 10.11.20260918+ emits verbose phase-1 errors (fees/native-script/validity)
+    # under this umbrella phrase; 807 used the coarse _AMARU_VALIDATION_RE form below.
+    "phase one validation",
 )
 
 # Amaru deliberately keeps validation details out of the submit API response.
