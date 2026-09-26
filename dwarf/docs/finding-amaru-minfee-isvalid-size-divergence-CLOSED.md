@@ -125,7 +125,7 @@ direction). Untested here.
 store, shared genesis, funded UTxO `9708b921…#0`); build 1-in/1-out self-sends spending it at the
 fees above (`cardano-cli conway transaction build-raw/sign`, committed `fixture/funding/payment.skey`);
 POST raw CBOR to cardano-submit-api (`:8090/api/submit/tx`) and the amaru submit API
-(`:3011/api/submit/tx`). 0918 store bootstraps with the stock `ea1f34e4` binary via
+(`:3011/api/submit/tx`). The amaru 0903 store bootstraps with the stock `ea1f34e4` binary via
 `--network testnet_42 --era-history <file>` (custom-network support is now upstream).
 
 

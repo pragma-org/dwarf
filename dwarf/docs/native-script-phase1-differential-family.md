@@ -58,7 +58,7 @@ exactly where implementations tend to diverge, so recording the agreement is the
   before the script runs) or (b) a spurious tip-driven verdict split for slots between 1199
   and 1298. The first "after" attempt (lock 2000 > tips) was validity-masked; it was re-run
   at lock 1000 for a clean script-boundary test.
-- **Amaru 0918 emits verbose phase-1 errors** ("transaction … is invalid: transaction
+- **Amaru 0903 (ea1f34e4) emits verbose phase-1 errors** ("transaction … is invalid: transaction
   failed phase one validation: …"), unlike 807's coarse "transaction … is invalid". The
   `mixed_phase1` classifier gained a `"phase one validation"` marker so it recognizes the
   0918 form (fees, native-script, and validity-interval rejects) as `phase1_reject`; the

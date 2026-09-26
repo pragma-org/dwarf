@@ -8,7 +8,7 @@ reason-class parity oracle.
 ## Reachability (probe-first, 2026-09-26)
 
 Governance signature checks need specific ledger state / keys. What the baked substrate
-(frozen cardano reference + Amaru 0918 `testnet_42` store, both sharing the re-bake genesis)
+(frozen cardano reference + Amaru 0903 (ea1f34e4) `testnet_42` store, both sharing the re-bake genesis)
 actually reaches:
 
 - **Committee hot-key authorization — NOT reachable.** The baked Conway committee is 7
@@ -68,7 +68,7 @@ witness rule cleanly would need a re-bake with a pre-registered DRep.
 - Frozen nodes use their **ledger-tip slot** for validity checks; not relevant here (no
   timelocks), but keep fees ≫ min and other fields valid so a rejection is attributable to
   the witness rule.
-- Amaru 0918 emits verbose phase-1 errors; `mixed_phase1`'s `"phase one validation"` marker
+- Amaru 0903 (ea1f34e4) emits verbose phase-1 errors; `mixed_phase1`'s `"phase one validation"` marker
   (added for the native-script family) classifies them as `phase1_reject`.
 
 ## Reproduce

@@ -181,6 +181,7 @@ class RunHandle:
         self._telemetry_summary = None
         self._precondition = None
         self._measurement_context = None
+        self._identity_observations = []
         self._expected_security_finding = (
             dict(expected_security_finding)
             if expected_security_finding is not None
@@ -237,6 +238,44 @@ class RunHandle:
             json.dumps(context, sort_keys=True, ensure_ascii=False)
         )
 
+    def record_binary_identity(self, *, implementation, claimed_label, reported_text,
+                               component=None, image_digest=None):
+        """Compare a claimed label with what a running binary reports; fail closed.
+
+        ``reported_text`` is ``amaru --version`` / Amaru ``build.version`` log
+        output / ``cardano-node --version``.  The comparison (git-commit
+        equality against versions/catalog.json) is stamped into the manifest's
+        ``provenance`` block; a mismatch raises ``ProvenanceError``.
+        """
+        from profile_manager.version_provenance import (
+            ProvenanceError, ProvenanceIndex, observed_identity_matches,
+        )
+
+        status, record = observed_identity_matches(
+            ProvenanceIndex.load(), implementation, claimed_label, reported_text
+        )
+        record.update({"status": status, "component": component, "image_digest": image_digest,
+                       "source": "binary"})
+        self._identity_observations.append(record)
+        if status == "mismatch":
+            raise ProvenanceError(
+                f"{component or implementation}: claimed {claimed_label} but the binary "
+                f"reports {record.get('observed_git_commit')}"
+            )
+        return record
+
+    def _provenance(self):
+        from profile_manager.version_provenance import build_provenance, scan_run_identities
+
+        try:
+            seen = [
+                {**item, "status": "seen", "source": "run-logs"}
+                for item in scan_run_identities(self.run_dir)
+            ]
+        except Exception:  # noqa: BLE001 - provenance must never lose a run
+            seen = []
+        return build_provenance(self._target, [*self._identity_observations, *seen])
+
     def end(self, *, exit_status, end_resource_snapshot=None):
         ended_at = _utc_now_iso()
         self._end_resource_snapshot = end_resource_snapshot
@@ -286,6 +325,7 @@ class RunHandle:
                 expected_security_finding=self._expected_security_finding,
             ),
         }
+        manifest["provenance"] = self._provenance()
         if measurement_manifest is not None:
             manifest["measurements"] = measurement_manifest
         if self._precondition is not None:

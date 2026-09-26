@@ -13,7 +13,14 @@ on:
       - "dwarf/spec/**"
       - "dwarf/primitives/**"
       - "dwarf/profile_manager/**"
+      - "dwarf/versions/**"
+      - "dwarf/docs/**"
+      - "dwarf/measurements/**"
+      - "dwarf/measurement-coverage/**"
+      - "dwarf/profiles/**"
       - "dwarf/scripts/validate_scenarios.py"
+      - "dwarf/scripts/refresh_version_catalog.py"
+      - "reports/**"
       - "dwarf/scripts/requirements-ci.txt"
       - "antithesis/**"
       - "tests/**"
@@ -24,7 +31,14 @@ on:
       - "dwarf/spec/**"
       - "dwarf/primitives/**"
       - "dwarf/profile_manager/**"
+      - "dwarf/versions/**"
+      - "dwarf/docs/**"
+      - "dwarf/measurements/**"
+      - "dwarf/measurement-coverage/**"
+      - "dwarf/profiles/**"
       - "dwarf/scripts/validate_scenarios.py"
+      - "dwarf/scripts/refresh_version_catalog.py"
+      - "reports/**"
       - "dwarf/scripts/requirements-ci.txt"
       - "antithesis/**"
       - "tests/**"
@@ -62,6 +76,14 @@ jobs:
           python3 dwarf/scripts/validate_scenarios.py \
             ${{ (github.event_name == 'workflow_dispatch' && inputs.strict) && '--strict' || '' }} \
             --report dwarf-validation-report.json
+
+      # Version provenance, upstream half: every catalog tag -> commit must match
+      # the upstream Git tag (git ls-remote, no API token). Network-dependent, so
+      # it does not block ordinary pushes/PRs; it DOES block a manual dispatch.
+      # The offline half (label vs commit across the repo) runs in the gate above.
+      - name: Verify catalog tags against upstream
+        continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
+        run: python3 dwarf/scripts/refresh_version_catalog.py --verify-upstream
 
       - name: Upload validation report
         if: always()

@@ -116,10 +116,23 @@ def validate_version_catalog(data: Any) -> dict[str, Any]:
                 raise CatalogError(
                     f"{artifact_context}.availability must be one of {sorted(ARTIFACT_AVAILABILITY)}"
                 )
-            if artifact.get("kind") == "oci" and availability == "available":
+            if artifact.get("kind") in {"oci", "oci-derived"} and availability == "available":
                 digest = artifact.get("digest")
                 if not isinstance(digest, str) or not DIGEST.fullmatch(digest):
                     raise CatalogError(f"{artifact_context} requires an immutable sha256 digest")
+            # A derived image (DWARF-built, binary copied over a base) records the
+            # commit its binary REPORTS; it must be the release it is filed under.
+            binary_commit = artifact.get("binary_git_commit")
+            if artifact.get("kind") == "oci-derived" and binary_commit is None:
+                raise CatalogError(f"{artifact_context} is oci-derived but has no binary_git_commit")
+            if binary_commit is not None:
+                if not isinstance(binary_commit, str) or not SHA40.fullmatch(binary_commit):
+                    raise CatalogError(f"{artifact_context}.binary_git_commit must be an exact 40-character Git revision")
+                if binary_commit != revision:
+                    raise CatalogError(
+                        f"{artifact_context}.binary_git_commit {binary_commit[:12]} is not "
+                        f"{implementation} {version} ({revision[:12]})"
+                    )
         verification = _require_mapping(release.get("verification", {}), f"{context}.verification")
         for scope, record in verification.items():
             if scope not in SCOPES:

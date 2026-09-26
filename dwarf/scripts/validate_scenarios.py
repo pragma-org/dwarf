@@ -9,12 +9,17 @@ Wallet-free, infra-free checks intended to run on every push/PR:
                   (all referenced primitives exist in the registry).
   3. ANTITHESIS — every profile renders into a well-formed Antithesis bundle
                   offline (no docker daemon, no registry push).
+  4. PROVENANCE — every node version label agrees with the commit it names, per
+                  dwarf/versions/catalog.json: structured {version,
+                  source_revision} pairs, prose "amaru 0903 (ea1f34e4)" pairs,
+                  amaru-YYYYMMDD tokens in scenario/profile ids, and pinned node
+                  images in compose files / Dockerfiles.
 
 Nothing here spins up a devnet, a fuzzer, or an Antithesis run — those are the
 separate "full runs" gate (they need a self-hosted runner / wallet).
 
-Exit code: 0 if all checks pass, 1 otherwise. With --strict, SEMANTIC warnings
-are also treated as failures.
+Exit code: 0 if all checks pass, 1 otherwise. With --strict, SEMANTIC and
+PROVENANCE warnings are also treated as failures.
 
 Usage:
     python3 dwarf/scripts/validate_scenarios.py [--strict] [--json]
@@ -27,6 +32,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -195,6 +201,79 @@ def check_harness_prereqs(scenarios: list[Path]) -> tuple[int, int, list[str]]:
     return len(needs), provisioned, needs
 
 
+PROVENANCE_TEXT_SUFFIXES = {".md", ".json", ".yaml", ".yml", ".txt", ".sh", ".py", ".rst"}
+# The catalog is the truth source itself; tests carry deliberate mislabels.
+PROVENANCE_EXCLUDE_PREFIXES = ("dwarf/versions/", "tests/")
+PROVENANCE_MAX_BYTES = 3_000_000
+
+
+def _provenance_files(root: Path) -> list[Path]:
+    """Tracked text files (git ls-files), falling back to a filesystem walk."""
+    try:
+        listed = subprocess.run(
+            ["git", "-C", str(root), "ls-files"],
+            capture_output=True, text=True, check=True, timeout=60,
+        ).stdout.splitlines()
+        candidates = [root / rel for rel in listed]
+    except (OSError, subprocess.SubprocessError):
+        candidates = [
+            path for path in root.rglob("*")
+            if path.is_file() and ".git" not in path.parts and "dist-newstyle" not in path.parts
+        ]
+    selected = []
+    for path in candidates:
+        rel = path.relative_to(root).as_posix()
+        if rel.startswith(PROVENANCE_EXCLUDE_PREFIXES):
+            continue
+        if path.suffix in PROVENANCE_TEXT_SUFFIXES or path.name == "Dockerfile":
+            selected.append(path)
+    return selected
+
+
+def check_version_provenance(
+    root: Path = REPO_ROOT, catalog_path: Path | None = None
+) -> tuple[int, int, list[str], list[str]]:
+    """A version label must agree with the commit it names.
+
+    Returns (fail_count, warn_count, fail_msgs, warn_msgs).  Failures are the
+    historical mislabel class: a label that resolves to catalog release X next
+    to (or paired with) a revision that is not X's source revision.  Warnings
+    are pinned node images the catalog has no binary identity for.
+    """
+    import yaml
+    from profile_manager.version_provenance import (
+        ProvenanceIndex, check_id_labels, check_image_refs, check_prose, check_structured,
+    )
+
+    try:
+        index = ProvenanceIndex.load(catalog_path) if catalog_path else ProvenanceIndex.load()
+    except Exception as exc:  # noqa: BLE001
+        return 1, 0, [f"version catalog invalid: {exc}"], []
+    fails: list[str] = []
+    warns: list[str] = []
+    for path in _provenance_files(root):
+        try:
+            if path.stat().st_size > PROVENANCE_MAX_BYTES:
+                continue
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = path.relative_to(root).as_posix()
+        fails.extend(f"{rel}:{line}: provenance: {msg}" for line, msg in check_prose(index, text))
+        if path.suffix in {".json", ".yaml", ".yml"}:
+            try:
+                document = yaml.safe_load(text)
+            except yaml.YAMLError:
+                document = None
+            fails.extend(f"{rel}: provenance: {msg}" for msg in check_structured(index, document))
+            fails.extend(f"{rel}: provenance: {msg}" for msg in check_id_labels(index, document))
+        if "compose" in path.name or path.name == "Dockerfile":
+            image_fails, image_warns = check_image_refs(index, text)
+            fails.extend(f"{rel}:{line}: provenance: {msg}" for line, msg in image_fails)
+            warns.extend(f"{rel}:{line}: provenance: {msg}" for line, msg in image_warns)
+    return len(fails), len(warns), fails, warns
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="DWARF CI validation gate")
     ap.add_argument("--strict", action="store_true",
@@ -210,10 +289,13 @@ def main(argv: list[str] | None = None) -> int:
     ant_fail, ant_ok, ant_msgs = check_antithesis()
     moog_fail, moog_ok, moog_msgs = check_moog_assets()
     harness_needs, harness_ok, harness_msgs = check_harness_prereqs(scenarios)
+    prov_fail, prov_warn, prov_msgs, prov_warn_msgs = check_version_provenance()
 
-    all_msgs = schema_msgs + sem_msgs + ant_msgs + moog_msgs
-    hard_fail = schema_fail + sem_fail + ant_fail + moog_fail
-    failed = hard_fail > 0 or (args.strict and sem_warn > 0)
+    all_msgs = schema_msgs + sem_msgs + ant_msgs + moog_msgs + prov_msgs
+    hard_fail = schema_fail + sem_fail + ant_fail + moog_fail + prov_fail
+    failed = hard_fail > 0 or (args.strict and (sem_warn > 0 or prov_warn > 0))
+    if args.strict:
+        all_msgs += prov_warn_msgs
 
     summary = {
         "scenarios": len(scenarios),
@@ -224,6 +306,8 @@ def main(argv: list[str] | None = None) -> int:
         "antithesis_failures": ant_fail,
         "moog_assets_ok": moog_ok,
         "moog_asset_failures": moog_fail,
+        "provenance_failures": prov_fail,
+        "provenance_warnings": prov_warn,
         # Informational: harness-dependent scenarios that would skip on this host.
         "harness_provisioned": harness_ok,
         "harness_unprovisioned": harness_needs,
@@ -231,7 +315,8 @@ def main(argv: list[str] | None = None) -> int:
         "passed": not failed,
     }
 
-    report = {"summary": summary, "messages": all_msgs, "notes": harness_msgs}
+    notes = harness_msgs + ([] if args.strict else prov_warn_msgs)
+    report = {"summary": summary, "messages": all_msgs, "notes": notes}
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
@@ -250,6 +335,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  antithesis failures    : {ant_fail}")
         print(f"  moog assets ok         : {moog_ok}")
         print(f"  moog asset failures    : {moog_fail}")
+        print(f"  provenance failures    : {prov_fail}")
+        print(f"  provenance warnings    : {prov_warn}"
+              + ("  (fatal: --strict)" if args.strict else ""))
         print(f"  aflpp harness ready    : {harness_ok}")
         print(f"  aflpp needs harness    : {harness_needs}"
               + ("  (skips at run time; build-afl-harness.sh)" if harness_needs else ""))
@@ -257,9 +345,9 @@ def main(argv: list[str] | None = None) -> int:
             print("-" * 60)
             for m in all_msgs:
                 print(f"  ✗ {m}")
-        if harness_msgs:
+        if notes:
             print("-" * 60)
-            for m in harness_msgs:
+            for m in notes:
                 print(f"  ℹ {m}")
         print("=" * 60)
         print("RESULT:", "PASS ✅" if not failed else "FAIL ❌")

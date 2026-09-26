@@ -48,7 +48,7 @@ no hand-built ledger, no faked witnesses, stock node validation only (the four g
    `gov-state`.
 4. **Freeze** at epoch 3 (slot 1205), with the action open (`expiresAfter` epoch 7 — votes are
    well inside the live window): a **non-forging** cardano reference (empty topology, no keys) +
-   an Amaru 0918 store via `snapshot create` + `node bootstrap`, both from the same post-setup
+   an Amaru 0903 (ea1f34e4) store via `snapshot create` + `node bootstrap`, both from the same post-setup
    point → both frozen stores share the committee + DReps + open action.
 
 **Amaru captured the governance state** (residual-risk i/ii check, from the bootstrap log):
@@ -66,7 +66,7 @@ action. The two frozen stores sit at the same slot-1205 freeze with the action l
 ## Reproduce
 
 `prepare-govrebake.sh` documents + drives the substrate build; then bring up the frozen cardano
-reference (submit-api on :8091) + the Amaru 0918 relay (:3013) and run:
+reference (submit-api on :8091) + the Amaru 0903 (ea1f34e4) relay (:3013) and run:
 
 ```
 cd workload && python3 governance_votes_differential.py \

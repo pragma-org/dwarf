@@ -46,7 +46,7 @@ echo "== 4. Real mined governance setup (from the funded UTxO) =="
 
 echo "== 5. Freeze both stores at the same post-setup point (action still open) =="
 # Stop producers at epoch 3 (action expiresAfter epoch 7 → live window). Non-forging cardano
-# reference from the node db (empty topology, no keys) + submit-api. Amaru 0918 store:
+# reference from the node db (empty topology, no keys) + submit-api. Amaru 0903 (ea1f34e4) store:
 #   db-analyser boundary points (epochs 0,1,2) -> amaru snapshot create --network testnet_42
 #   --cardano-node-db --cardano-node-config-dir --epoch 3 --snapshot <p0> <p1> <p2>  (NO
 #   --era-history on create) -> amaru node bootstrap --network testnet_42 --epoch 3
