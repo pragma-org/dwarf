@@ -1,0 +1,97 @@
+{
+  "schema_version": "v1",
+  "mutations": 11,
+  "agree": 8,
+  "divergences": 3,
+  "crashes": 0,
+  "table": [
+    {
+      "mutation": "counter-negative",
+      "amaru": "error",
+      "cardano": "error",
+      "result": "agree"
+    },
+    {
+      "mutation": "counter-bignum-oversized",
+      "amaru": "error",
+      "cardano": "error",
+      "result": "agree"
+    },
+    {
+      "mutation": "counter-type-text",
+      "amaru": "error",
+      "cardano": "error",
+      "result": "agree"
+    },
+    {
+      "mutation": "counter-type-bytes",
+      "amaru": "error",
+      "cardano": "error",
+      "result": "agree"
+    },
+    {
+      "mutation": "kesperiod-type-text",
+      "amaru": "error",
+      "cardano": "error",
+      "result": "agree"
+    },
+    {
+      "mutation": "kesperiod-negative",
+      "amaru": "error",
+      "cardano": "error",
+      "result": "agree"
+    },
+    {
+      "mutation": "hot-vkey-truncated",
+      "amaru": "ok",
+      "cardano": "error",
+      "result": "divergence"
+    },
+    {
+      "mutation": "cold-sig-truncated",
+      "amaru": "ok",
+      "cardano": "error",
+      "result": "divergence"
+    },
+    {
+      "mutation": "opcert-missing-field",
+      "amaru": "error",
+      "cardano": "error",
+      "result": "agree"
+    },
+    {
+      "mutation": "opcert-duplicate-field",
+      "amaru": "error",
+      "cardano": "error",
+      "result": "agree"
+    },
+    {
+      "mutation": "opcert-extra-field",
+      "amaru": "ok",
+      "cardano": "error",
+      "result": "divergence"
+    }
+  ],
+  "divergence_detail": [
+    {
+      "mutation": "hot-vkey-truncated",
+      "amaru": "ok",
+      "cardano": "error",
+      "result": "divergence"
+    },
+    {
+      "mutation": "cold-sig-truncated",
+      "amaru": "ok",
+      "cardano": "error",
+      "result": "divergence"
+    },
+    {
+      "mutation": "opcert-extra-field",
+      "amaru": "ok",
+      "cardano": "error",
+      "result": "divergence"
+    }
+  ],
+  "crash_detail": [],
+  "base_header": "dwarf/corpora/opcert/field-mutations/base-header-mainnet-10817298.cbor"
+}

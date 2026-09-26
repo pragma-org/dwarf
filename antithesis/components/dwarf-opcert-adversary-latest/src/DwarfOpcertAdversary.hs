@@ -54,6 +54,9 @@ module DwarfOpcertAdversary
     , wrongColdKeyRaw
     , wrongKesKeyRaw
     , reEncodeOpcert
+    , oPCERT_FIELD_MUTATIONS
+    , isOpcertNode
+    , mutateFirstOpcert
     ) where
 
 import Codec.CBOR.Read (deserialiseFromBytes)
@@ -930,3 +933,106 @@ transformNth form target root = snd (walk 0 root)
             (i2, v1) = walk i1 v
             (i3, ps1) = mapAccPairs i2 ps
         in (i3, (k1, v1) : ps1)
+
+
+-- ===================================================================
+-- Family #6: opcert-field CBOR mutation (decoder-level differential)
+-- ===================================================================
+
+-- | The named opcert-field CBOR mutations. Each targets ONE opcert field
+-- (hot-vkey, counter, KES period, cold-sig) or the opcert array structure, with
+-- a CBOR-structure deviation the semantic families (#1-#5) cannot express:
+-- wrong value-encoding (negative / bignum where a uint is required), type
+-- confusion (counter/period as text or bytes), truncated fixed-width bytes, and
+-- missing / duplicate / extra opcert fields. Fed to BOTH implementations' header
+-- decoders, a divergence (one accepts, the other rejects) is a decode-leniency
+-- finding at the opcert level.
+oPCERT_FIELD_MUTATIONS :: [String]
+oPCERT_FIELD_MUTATIONS =
+    [ "counter-negative"
+    , "counter-bignum-oversized"
+    , "counter-type-text"
+    , "counter-type-bytes"
+    , "kesperiod-type-text"
+    , "kesperiod-negative"
+    , "hot-vkey-truncated"
+    , "cold-sig-truncated"
+    , "opcert-missing-field"
+    , "opcert-duplicate-field"
+    , "opcert-extra-field"
+    ]
+
+-- | Exported spelling (Haskell top-level identifiers cannot be ALL_CAPS).
+oPCERT_FIELD_MUTATIONS_export :: [String]
+oPCERT_FIELD_MUTATIONS_export = oPCERT_FIELD_MUTATIONS
+
+-- | Is this Term the operational certificate: a 4-element array
+-- @[vkHot(bytes 32), n(uint), c0(uint), sigma(bytes 64)]@? The 32/64 byte widths
+-- (KES hot vkey / Ed25519 signature) make it unambiguous within a Praos header.
+isOpcertNode :: Term -> Bool
+isOpcertNode t = case t of
+    TList xs  -> matchOpcert xs
+    TListI xs -> matchOpcert xs
+    _         -> False
+  where
+    matchOpcert [TBytes vk, n, c0, TBytes sg] =
+        BS.length vk == 32 && isUintTerm n && isUintTerm c0 && BS.length sg == 64
+    matchOpcert _ = False
+
+isUintTerm :: Term -> Bool
+isUintTerm (TInt i)     = i >= 0
+isUintTerm (TInteger i) = i >= 0
+isUintTerm _            = False
+
+asBytesTerm :: Term -> BS.ByteString
+asBytesTerm (TBytes b) = b
+asBytesTerm _          = BS.empty
+
+-- | Apply a named mutation to the opcert's 4 fields.
+mutateOpcertFields :: String -> [Term] -> [Term]
+mutateOpcertFields m fields = case fields of
+    [vk, n, c0, sg] -> case m of
+        "counter-negative"         -> [vk, TInt (-1), c0, sg]
+        "counter-bignum-oversized" -> [vk, TInteger (18446744073709551616 + 1), c0, sg]
+        "counter-type-text"        -> [vk, TString "1", c0, sg]
+        "counter-type-bytes"       -> [vk, TBytes (BS.pack [0x01]), c0, sg]
+        "kesperiod-type-text"      -> [vk, n, TString "1", sg]
+        "kesperiod-negative"       -> [vk, n, TInt (-1), sg]
+        "hot-vkey-truncated"       -> [TBytes (BS.take 16 (asBytesTerm vk)), n, c0, sg]
+        "cold-sig-truncated"       -> [vk, n, c0, TBytes (BS.take 32 (asBytesTerm sg))]
+        "opcert-missing-field"     -> [vk, n, c0]              -- drop sigma
+        "opcert-duplicate-field"   -> [vk, n, n, c0, sg]       -- duplicate counter
+        "opcert-extra-field"       -> [vk, n, c0, sg, TNull]   -- append a 5th element
+        _                          -> fields                    -- "none"/identity
+    _ -> fields
+
+-- | Replace the FIRST opcert node in the Term tree with its mutated form,
+-- preserving definite/indefinite framing and every other byte of the header.
+mutateFirstOpcert :: String -> Term -> Term
+mutateFirstOpcert m root = snd (go root)
+  where
+    go t
+        | isOpcertNode t = (True, applyOp t)
+        | otherwise      = recurse t
+    applyOp (TList xs)  = TList (mutateOpcertFields m xs)
+    applyOp (TListI xs) = TListI (mutateOpcertFields m xs)
+    applyOp x           = x
+    recurse t = case t of
+        TList xs    -> let (d, xs') = firstList xs in (d, TList xs')
+        TListI xs   -> let (d, xs') = firstList xs in (d, TListI xs')
+        TMap ps     -> let (d, ps') = firstPairs ps in (d, TMap ps')
+        TMapI ps    -> let (d, ps') = firstPairs ps in (d, TMapI ps')
+        TTagged w x -> let (d, x') = go x in (d, TTagged w x')
+        _           -> (False, t)
+    firstList [] = (False, [])
+    firstList (x:xs) =
+        let (d, x') = go x
+        in if d then (True, x' : xs)
+           else let (d2, xs') = firstList xs in (d2, x' : xs')
+    firstPairs [] = (False, [])
+    firstPairs ((k, v):ps) =
+        let (dk, k') = go k
+        in if dk then (True, (k', v) : ps)
+           else let (dv, v') = go v
+                in if dv then (True, (k', v') : ps)
+                   else let (d2, ps') = firstPairs ps in (d2, (k', v') : ps')

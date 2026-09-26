@@ -92,16 +92,30 @@ rotations.
   accept/reject edge.
 - **Harness:** REUSES. Touches the generators.
 
-### 6. Opcert-field CBOR mutations — P2
+### 6. Opcert-field CBOR mutations — P2 — DONE (decoder-level reframe)
 
 Mutate individual opcert fields — negative or oversized counter, field type
-confusion, missing or duplicate opcert fields — going deeper than A's
-whole-header re-encoding.
+confusion, missing / duplicate / extra opcert fields, truncated fixed-width
+byte fields — going deeper than A's whole-header re-encoding.
 
 - **Security relevance:** Malformed structural fields probe the decoder and the
   boundary between decode errors and validation errors; a lenient decoder can
   admit a header a strict one rejects.
-- **Harness:** REUSES. Touches the forger encoder and the generators.
+- **Reframe (why NOT the live soak):** the differential soak correlates verdicts
+  by `header_hash`; a malformed / value-changing opcert CBOR either fails to
+  decode (no `header_hash` logged) or changes the hash, so the live soak scores
+  these mutations INCONCLUSIVE, never "agreement" (confirmed by encoding-form's
+  25/98 inconclusive). Built instead as a DECODER-LEVEL differential: feed the
+  same opcert-field-mutated header CBOR to both header decoders and diff.
+- **Harness:** `dwarf/scripts/opcert_field_decoder_diff.py` +
+  `tests/test_opcert_field_decoder_diff.py`; forger `mutate-opcert` (corpus) and
+  `decode-praos-header` (cardano decoder) modes; amaru
+  `amaru-cbor-decode-block-header`.
+- **Result:** FINDING — Amaru's header decoder is more lenient than
+  cardano-node's at the opcert level: it accepts a truncated hot-vkey, a
+  truncated cold-sig, and an extra opcert field that cardano-node rejects at
+  decode (`dwarf/docs/finding-opcert-field-decode-leniency.md`). The other 8
+  field mutations are rejected by both.
 
 ## Needs new setup, adjacent
 

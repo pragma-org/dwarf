@@ -96,6 +96,10 @@ executable dwarf-opcert-adversary-latest
   build-depends:
     , aeson
     , base
+    , cardano-crypto-class
+    , cardano-ledger-binary
+    , cardano-ledger-core
+    , cardano-protocol
     , cardano-slotting
     , bytestring
     , cborg
