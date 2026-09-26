@@ -8,7 +8,7 @@ would catch a future regression or divergence.
 
 ## Result (2026-09-26)
 
-**Amaru 10.11.20260918 (`ea1f34e4`) phase-1 native-script validation is CONFORMANT with
+**Amaru 10.11.20260903 (`ea1f34e4`) phase-1 native-script validation is CONFORMANT with
 cardano-node 11.1.2 across `RequireAllOf` / `RequireMOf` (threshold) / nested /
 `RequireTimeBefore` / `RequireTimeAfter`, including inclusive boundary semantics — verdict
 + reason-class parity, non-vacuous.**

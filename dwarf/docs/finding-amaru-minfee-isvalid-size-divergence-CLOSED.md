@@ -3,7 +3,7 @@
 > **STATUS: CLOSED / HISTORICAL. Not a live bug; do not file upstream; not a client-facing
 > deliverable.** Detected by the DWARF phase-1 differential harness on **amaru 10.11.20260807**
 > (commit `493bffba`); the currency retest establishes it is **already fixed upstream** in
-> **amaru 10.11.20260918** (commit `ea1f34e4`), which now matches cardano-node exactly (gap 0).
+> **amaru 10.11.20260903** (commit `ea1f34e4`), which now matches cardano-node exactly (gap 0).
 > This record documents the divergence, its mechanism, its (low) severity, and the fix — as a
 > rigorous negative result and a validation that the harness catches real min-fee conformance bugs.
 
@@ -13,7 +13,7 @@ For a transaction that is **byte-identical on the wire** and validated under **b
 protocol parameters**, amaru 10.11.20260807 and cardano-node 11.1.2 disagreed on the **minimum
 fee** by exactly **44 lovelace (one byte)**, because amaru's mempool min-fee **size** included the
 1-byte Alonzo `IsValid` flag that cardano-ledger deliberately excludes. Amaru therefore rejected,
-as underfee, a fee band that cardano-node accepts. Fixed in 10.11.20260918.
+as underfee, a fee band that cardano-node accepts. Fixed in 10.11.20260903.
 
 ## Evidence (frozen reference + amaru, new committed-key UTxO 9708b921…#0)
 
@@ -21,7 +21,7 @@ Params on both sides (identical): `min_fee_a = 44`, `min_fee_b = 155381`, protoc
 Test tx: 1-in/1-out self-send spending `9708b921…#0`, **null auxiliary_data**, RFC-8949-minimal,
 **201 bytes on the wire** (raw == canonical, verified with cbor2 — not a canonicalization issue).
 
-| fee (lovelace) | cardano-node 11.1.2 | amaru 807 (493bffba) | amaru 0918 (ea1f34e4) |
+| fee (lovelace) | cardano-node 11.1.2 | amaru 807 (493bffba) | amaru 0903 (ea1f34e4) |
 |---:|---|---|---|
 | 164180 | reject `FeeTooSmallUTxO {supplied 164180, expected 164181}` | reject | reject ("declared fee 164180 below minimum 164181") |
 | **164181** | **accept** (= 44×**200**+155381) | **reject** | **accept** |

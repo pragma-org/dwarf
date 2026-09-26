@@ -10,7 +10,7 @@ divergences are most likely to live.
 
 ## Result (2026-09-26)
 
-**Amaru 10.11.20260918 (`ea1f34e4`) is CONFORMANT with cardano-node 11.1.2** on governance
+**Amaru 10.11.20260903 (`ea1f34e4`) is CONFORMANT with cardano-node 11.1.2** on governance
 vote authorization — verdict + reason-class + credential parity across all cases.
 
 | case | expected | cardano | amaru | parity |

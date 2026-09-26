@@ -1,5 +1,5 @@
 {
-  "description": "Native-script phase-1 differential family (cardano-node vs Amaru). All cases spend the committed funding UTxO; violations are idempotent (reject, replay-safe), satisfied/boundary cases are single-use (accepted consumes the UTxO). Fund fee 300000 >> min so a rejection is unambiguously the native-script rule. Result 2026-09-26: all cases AGREE (amaru 0918 ea1f34e4 conformant with cardano-node 11.1.2).",
+  "description": "Native-script phase-1 differential family (cardano-node vs Amaru). All cases spend the committed funding UTxO; violations are idempotent (reject, replay-safe), satisfied/boundary cases are single-use (accepted consumes the UTxO). Fund fee 300000 >> min so a rejection is unambiguously the native-script rule. Result 2026-09-26: all cases AGREE (amaru 0903 ea1f34e4 conformant with cardano-node 11.1.2).",
   "cases": [
     {
       "case_id": "mintpolicy-sig-missing",

@@ -45,7 +45,7 @@ satisfied controls single-use (an accept consumes the UTxO — one per fresh mem
 | drepreg-present (correct DRep witness) | accept | 202 | 202 | verdict |
 | drepreg-multi-both (both drep witnesses) | accept | 202 | 202 | verdict |
 
-**Result: Amaru 10.11.20260918 (`ea1f34e4`) is CONFORMANT with cardano-node 11.1.2** on
+**Result: Amaru 10.11.20260903 (`ea1f34e4`) is CONFORMANT with cardano-node 11.1.2** on
 gov-cert required-witness validation — verdict + reason-class parity (both reject with
 `MissingVKeyWitness` naming the **same** governance credential; both accept the controls).
 Notably the wrong-key case confirms both require a witness from the **specific** credential,

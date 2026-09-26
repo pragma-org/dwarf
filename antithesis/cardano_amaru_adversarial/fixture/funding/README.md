@@ -72,7 +72,7 @@ against **amaru 10.11.20260807**, which charged for tx size 201 (min 164225 = 44
 excluded per cardano-ledger `toCBORForSizeComputation`) — a 44-lovelace band [164181, 164224] that
 cardano accepts and amaru 807 rejected.
 
-**Update — FIXED in amaru 10.11.20260918 (ea1f34e4): the divergence is gone (gap 0).** 0918 amaru
+**Update — FIXED in amaru 10.11.20260903 (ea1f34e4): the divergence is gone (gap 0).** 0903 amaru
 accepts exactly at 164181, matching cardano; this is a CLOSED/historical finding, not a live bug.
 `minimum-exact=164225` still keeps the gate green on BOTH 807 and 0918 (both accept ≥164181), so it
 stays a version-robust *agreeing* regression check; the divergence band is documented in the
