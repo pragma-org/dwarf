@@ -189,6 +189,24 @@ peer-punishment / DoS on repeated bad opcerts, and eclipse-with-bad-opcerts.
 - **Harness:** NEW network-level harness (beyond the current single-header
   soak).
 
+- **Probe verdict (2026-09-26) — angle 1 (crash-propagation) = CONTAINED, not amplified.**
+  Framed as: does the confirmed Amaru non-canonical-CBOR crash (finding
+  `finding-amaru-noncanonical-cbor-crash.md`) propagate across the mesh? Crux probe: does a
+  relaying cardano-node forward the raw non-canonical bytes or canonicalize them? EMPIRICAL result
+  (flipped my initial raw-forwarding lean): cardano-node computes the CANONICAL hash for a served
+  non-canonical header (×4, ingest-hash = canonical id), i.e. it decodes to the typed header and
+  discards the raw bytes → it forwards the canonical form → the crash does NOT propagate. Blast
+  radius = Amaru nodes an attacker DIRECTLY peers with (targeted per-connection DoS); a cardano
+  relay sanitizes, and an Amaru node crashes on receipt before it could re-serve. Written up as the
+  "Blast radius / mesh containment" section of the crash finding. (Clean 2-hop forger→cardano→amaru
+  confirmation blocked by one-shot-forger sync lag; containment rests on ingest-hash + cardano's
+  typed-header architecture.)
+- **Angles 2 (chain-split containment) and 4 (eclipse) = THIN:** the crash pre-empts any persistent
+  divergent-tip split, and an eclipsed target just dies rather than being fed a divergent view.
+  Angle 3 (peer-disconnect/ban) not separately pursued (a rider on the contained result).
+- **Status: not built** (contained result documented; a full network-level harness is not warranted
+  for a non-propagating crash).
+
 ## Status / next
 
 Dimensions **#1–#3** are being implemented now as the P1 batch. The remaining

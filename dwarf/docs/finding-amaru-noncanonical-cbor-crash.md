@@ -76,6 +76,50 @@ sending one valid-but-non-canonically-encoded header — the node aborts its pro
 continue"), a denial-of-service. No special privilege or stake is required; the header is otherwise
 valid. Not (observed) a consensus/safety violation, but a node-liveness one.
 
+## Blast radius / mesh containment (does the crash propagate?)
+
+The crash is remotely triggerable, so the operative question is whether one injected header
+crashes ONE directly-peered Amaru node or PROPAGATES/amplifies across a mesh (a network-wide
+worm). **Verdict: CONTAINED — it does not self-propagate.** The crash is reachable only by
+DIRECTLY peering the malformed header to an Amaru node; an intervening cardano-node relay
+sanitizes it.
+
+**Why (probe evidence).** cardano-node identifies a header by the hash of its *re-serialized
+(canonical) typed* header, not the raw received bytes — the opposite of Amaru's raw-wire keying
+that drives this crash. Serving `noncanonical-int` headers to a fresh cardano-node consumer, the
+node computed the **canonical** hash for every served (non-canonical) header — byte-identical to
+the header's canonical id:
+
+| forger canonical header hash | cardano-node computed hash |
+|---|---|
+| `06031dc4…` | `06031dc4…` |
+| `9cc00c9c…` | `9cc00c9c…` |
+| `e5c60591…` | `e5c60591…` |
+| `f23cb91d…` | `f23cb91d…` |
+
+So cardano-node decodes the header to its typed form, discards the raw non-canonical bytes, and
+works with (and re-serializes / re-serves) the **canonical** encoding. Consequently:
+
+- A cardano-node relay/producer between the attacker and an Amaru node **canonicalizes** the
+  header → the downstream Amaru node receives the canonical form → **no crash**. (Amaru trivially
+  survives canonical headers — the entire mesh runs on them.)
+- An Amaru node fed the malformed header directly **crashes on receipt**, before it could re-serve
+  it → it cannot forward the malformed bytes either.
+- Net blast radius = the Amaru nodes an attacker DIRECTLY connects to (a targeted, per-connection
+  DoS), **not** a self-propagating / amplified network-wide crash.
+
+**Rigor note (honest).** The decisive, direct 2-hop confirmation (forger → cardano-node adopts →
+downstream Amaru survives) was attempted but a *clean* cardano-node adoption of an injected header
+was blocked by the harness's one-shot-forger sync lag (every served header hit
+`UnexpectedPrevHash` — the same reason the differential families use a persistent forger). The
+containment verdict therefore rests on the ingest-hash=canonical evidence above plus cardano-node's
+typed-header architecture (it cannot serve bytes that disagree with its own canonical block id
+without breaking ChainSync), not on an observed downstream-survives run. A full persistent-forger
+2-hop could confirm it directly if ever deemed necessary; it is not expected to change the verdict.
+
+This BOUNDS the finding: still **HIGH per-node availability** (a directly-peered attacker crashes
+the node), but not network-amplified.
+
 ## Recommendation (for the Amaru maintainers)
 
 Make header identity invariant to CBOR canonicity in the chain-store: either **key stored headers
