@@ -1,11 +1,15 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main (main) where
 
 import Codec.CBOR.Write (toLazyByteString)
+import Codec.CBOR.Term (decodeTerm, encodeTerm)
+import Codec.CBOR.Read (deserialiseFromBytes)
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
 import Control.Exception (SomeException, catch)
@@ -51,6 +55,7 @@ import DwarfOpcertAdversary
     , parseCaseSpec
     , caseSpecByteSeed
     , reEncodeOpcert
+    , mutateFirstOpcert
     , caseEligible
     , caseMutationName
     , loadColdSignKey
@@ -60,6 +65,11 @@ import DwarfOpcertAdversary
     , resignCodec
     )
 import Cardano.Slotting.Slot (SlotNo (..))
+import Cardano.Ledger.Binary (DecCBOR (decCBOR), DecoderError, decodeFullAnnotator)
+import Cardano.Ledger.Binary.Version (natVersion)
+import Cardano.Protocol.Crypto (StandardCrypto)
+import Cardano.Protocol.Praos.BlockHeader qualified as Praos
+import System.Exit (ExitCode (ExitFailure), exitWith)
 import Codec.CBOR.Encoding (encodePreEncoded)
 import Codec.Serialise (DeserialiseFailure)
 import Data.IORef (IORef)
@@ -73,7 +83,7 @@ import Ouroboros.Network.Mock.Chain qualified as Chain
 import System.Directory (createDirectoryIfMissing, doesFileExist, getFileSize)
 import System.Environment (getArgs)
 import System.FilePath (takeDirectory, (</>))
-import System.IO (BufferMode (LineBuffering), IOMode (AppendMode), hSetBuffering, stdout, withBinaryFile)
+import System.IO (BufferMode (LineBuffering), IOMode (AppendMode), hPutStrLn, hSetBuffering, stderr, stdin, stdout, withBinaryFile)
 import Text.Printf (printf)
 import Text.Read (readMaybe)
 
@@ -99,6 +109,8 @@ main = do
                     (Just (host, upstreamPort), Just listenPort, Just slots) ->
                         runLive host upstreamPort listenPort kesSkey slots evidence
                     _ -> usage
+        ["decode-praos-header"] -> runDecodeHeader
+        ["mutate-opcert", mut] -> runMutateOpcert mut
         ("serve-case" : rest) ->
             let flags = parseFlags rest
              in case ( lookupFlag "--case" flags
@@ -116,6 +128,39 @@ main = do
                          in runCase caseId host upstreamPort listenPort kesSkey coldSkey slots maxEvo evidence caseSpecPath caseSpecDir
                     _ -> usage
         _ -> usage
+
+
+-- | Decoder-differential mode (family #6): read a bare Praos block-header CBOR
+-- from stdin and report whether cardano-node's ledger decoder accepts it. The
+-- contract matches the standalone decode binaries (amaru-cbor-decode-block-header
+-- etc.): stdout "OK" + exit 0 on a clean decode, "ERR <msg>" + exit 1 on a clean
+-- decode error. Feeding the SAME malformed-opcert header CBOR here and to the
+-- amaru BlockHeader decoder yields the cross-decoder differential.
+-- | Corpus generation for family #6: read a valid base Praos header CBOR from
+-- stdin, apply a named opcert-field CBOR mutation to its opcert sub-structure,
+-- and write the mutated header bytes to stdout. Only the opcert region changes;
+-- every other header byte is preserved (Term round-trip), so a decoder\'s
+-- accept/reject is attributable to the opcert mutation alone.
+runMutateOpcert :: String -> IO ()
+runMutateOpcert mut = do
+    lbs <- LBS.hGetContents stdin
+    case deserialiseFromBytes decodeTerm lbs of
+        Left err -> do
+            hPutStrLn stderr ("mutate-opcert: base decode failed: " <> show err)
+            exitWith (ExitFailure 2)
+        Right (_, term) ->
+            LBS.putStr (toLazyByteString (encodeTerm (mutateFirstOpcert mut term)))
+
+
+runDecodeHeader :: IO ()
+runDecodeHeader = do
+    lbs <- LBS.hGetContents stdin
+    case decodeFullAnnotator (natVersion @9) "Header" decCBOR lbs
+            :: Either DecoderError (Praos.Header StandardCrypto) of
+        Right _ -> putStrLn "OK"
+        Left err -> do
+            putStrLn ("ERR " <> show err)
+            exitWith (ExitFailure 1)
 
 
 usage :: IO a

@@ -45,6 +45,7 @@ module DwarfOpcertAdversary
     , applyCaseSpec
     , applyKesEvolution
     , applyErrorPrecedence
+    , applyCounterEdge
     , RuleParams (..)
     , defaultRuleParams
     , ruleParamsFromSpec
@@ -53,6 +54,9 @@ module DwarfOpcertAdversary
     , wrongColdKeyRaw
     , wrongKesKeyRaw
     , reEncodeOpcert
+    , oPCERT_FIELD_MUTATIONS
+    , isOpcertNode
+    , mutateFirstOpcert
     ) where
 
 import Codec.CBOR.Read (deserialiseFromBytes)
@@ -149,6 +153,7 @@ data Mutation
     | MutateKESPeriodBefore
     | MutateKESKey
     | MutateErrorPrecedence
+    | MutateCounterEdge
     deriving (Eq, Show)
 
 
@@ -361,6 +366,7 @@ caseMutationName = \case
     MutateKESPeriodBefore -> "MutateKESPeriodBefore"
     MutateKESKey -> "MutateKESKey"
     MutateErrorPrecedence -> "MutateErrorPrecedence"
+    MutateCounterEdge -> "MutateCounterEdge"
 
 
 -- | Prepare the case header from a REAL captured pool1 Conway header. Changes
@@ -615,6 +621,7 @@ data CaseSpec = CaseSpec
     , csCounterJump    :: !(Maybe Integer)
     , csKesPeriodsAhead :: !(Maybe Integer)
     , csRules          :: !(Maybe [String])
+    , csCounterValue   :: !(Maybe Integer)
     }
     deriving (Eq, Show)
 
@@ -659,7 +666,8 @@ parseCaseSpec raw = do
         cjump  <- getP "counter_jump"
         kahead <- getP "kes_periods_ahead"
         rules  <- getP "rules"
-        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo cjump kahead rules)
+        cval   <- getP "counter_value"
+        pure (CaseSpec base seed bseed form tlen cdelta kfrac replay soff fpool kevo cjump kahead rules cval)
 
 -- | The seed that drives the encoding-form byte re-encoding for THIS case. The
 -- generator derives a distinct per-iteration @byte_seed@ (in @params@) from
@@ -680,7 +688,52 @@ applyCaseSpec ks Nothing    caseId hdr = applyCase ks caseId hdr
 applyCaseSpec ks (Just spec) _     hdr = case csBaseCase spec of
     "kes-evolution"    -> applyKesEvolution ks spec hdr
     "error-precedence" -> applyErrorPrecedence ks spec hdr
+    "counter-edge"     -> applyCounterEdge ks spec hdr
     other              -> applyCaseWith ks (ruleParamsFromSpec spec) other hdr
+
+
+-- | Family #5 counter-edge-cases: serve a header whose opcert counter is at an
+-- EDGE value relative to the pool\'s recorded counter, and leave every other
+-- field valid. The target counter is either @realN + counter_jump@ (extreme
+-- forward jumps, e.g. 2^16..2^63 -> counter-too-large) or an ABSOLUTE
+-- @counter_value@ (overflow boundary max-uint64 -> too-large; 0 -> too-small
+-- when the pool has rotated so recorded >= 1). The opcert signature and KES
+-- signature are valid, so the ONLY defect is the counter, and both nodes reject
+-- (too-large on a fresh devnet; too-small only after a rotation).
+--
+-- Fail-closed reachability guard: a target equal to @realN@ (reuse) or
+-- @realN + 1@ (a valid rotation) would be ACCEPTED, so it returns Left
+-- (inconclusive) rather than a valid header. This is exactly what makes the
+-- too-small (counter = 0) case fail-closed on a FRESH devnet, where recorded is
+-- 0: target 0 == realN 0 -> Left. On a rotated pool (recorded >= 1) the same 0
+-- is below recorded -> a genuine too-small rejection.
+applyCounterEdge :: KeySet -> CaseSpec -> Header -> Either String CaseResult
+applyCounterEdge ks spec hdr = case hdr of
+    HeaderConway shelleyHdr ->
+        let praosHdr = shelleyHeaderRaw shelleyHdr
+            body = Praos.headerBody praosHdr
+            ocert = Praos.hbOCert body
+            realN = ocertN ocert
+            ourHot = kesHotVerKeyBytes (ksKesSignKey ks)
+            theirHot = KES.rawSerialiseVerKeyKES (ocertVkHot ocert)
+            target = case csCounterValue spec of
+                Just v  -> fromInteger v :: Word64
+                Nothing -> realN + fromIntegral (fromMaybe 0 (csCounterJump spec))
+        in  if ourHot /= theirHot
+                then Left "counter-edge: captured header is not from our pool (hot-key mismatch)"
+            else if target == realN || target == realN + 1
+                then Left ("counter-edge unreachable: target counter " <> show target
+                           <> " is a valid reuse/rotation of recorded " <> show realN
+                           <> " (would be accepted; a too-small case needs a prior rotation so recorded >= 1)")
+            else
+                let evol = kesEvolutions (ksSlotsPerKESPeriod ks) (Praos.hbSlotNo body) (ocertKESPeriod ocert)
+                    sigma = signedDSIGN (ksColdSignKey ks) (OCertSignable (ocertVkHot ocert) target (ocertKESPeriod ocert))
+                    newOcert = ocert { ocertN = target, ocertSigma = sigma }
+                    newBody = body { Praos.hbOCert = newOcert }
+                    kesSig = signAtEvolution (ksKesSignKey ks) evol newBody
+                in  Right (CaseResult (HeaderConway (mkShelleyHeader (Praos.Header newBody kesSig)))
+                                      MutateCounterEdge "reject")
+    _ -> Left "counter-edge: captured header is not a Conway header"
 
 
 -- | Break TWO opcert rules in a SINGLE header (family #4 error-precedence). The
@@ -880,3 +933,106 @@ transformNth form target root = snd (walk 0 root)
             (i2, v1) = walk i1 v
             (i3, ps1) = mapAccPairs i2 ps
         in (i3, (k1, v1) : ps1)
+
+
+-- ===================================================================
+-- Family #6: opcert-field CBOR mutation (decoder-level differential)
+-- ===================================================================
+
+-- | The named opcert-field CBOR mutations. Each targets ONE opcert field
+-- (hot-vkey, counter, KES period, cold-sig) or the opcert array structure, with
+-- a CBOR-structure deviation the semantic families (#1-#5) cannot express:
+-- wrong value-encoding (negative / bignum where a uint is required), type
+-- confusion (counter/period as text or bytes), truncated fixed-width bytes, and
+-- missing / duplicate / extra opcert fields. Fed to BOTH implementations' header
+-- decoders, a divergence (one accepts, the other rejects) is a decode-leniency
+-- finding at the opcert level.
+oPCERT_FIELD_MUTATIONS :: [String]
+oPCERT_FIELD_MUTATIONS =
+    [ "counter-negative"
+    , "counter-bignum-oversized"
+    , "counter-type-text"
+    , "counter-type-bytes"
+    , "kesperiod-type-text"
+    , "kesperiod-negative"
+    , "hot-vkey-truncated"
+    , "cold-sig-truncated"
+    , "opcert-missing-field"
+    , "opcert-duplicate-field"
+    , "opcert-extra-field"
+    ]
+
+-- | Exported spelling (Haskell top-level identifiers cannot be ALL_CAPS).
+oPCERT_FIELD_MUTATIONS_export :: [String]
+oPCERT_FIELD_MUTATIONS_export = oPCERT_FIELD_MUTATIONS
+
+-- | Is this Term the operational certificate: a 4-element array
+-- @[vkHot(bytes 32), n(uint), c0(uint), sigma(bytes 64)]@? The 32/64 byte widths
+-- (KES hot vkey / Ed25519 signature) make it unambiguous within a Praos header.
+isOpcertNode :: Term -> Bool
+isOpcertNode t = case t of
+    TList xs  -> matchOpcert xs
+    TListI xs -> matchOpcert xs
+    _         -> False
+  where
+    matchOpcert [TBytes vk, n, c0, TBytes sg] =
+        BS.length vk == 32 && isUintTerm n && isUintTerm c0 && BS.length sg == 64
+    matchOpcert _ = False
+
+isUintTerm :: Term -> Bool
+isUintTerm (TInt i)     = i >= 0
+isUintTerm (TInteger i) = i >= 0
+isUintTerm _            = False
+
+asBytesTerm :: Term -> BS.ByteString
+asBytesTerm (TBytes b) = b
+asBytesTerm _          = BS.empty
+
+-- | Apply a named mutation to the opcert's 4 fields.
+mutateOpcertFields :: String -> [Term] -> [Term]
+mutateOpcertFields m fields = case fields of
+    [vk, n, c0, sg] -> case m of
+        "counter-negative"         -> [vk, TInt (-1), c0, sg]
+        "counter-bignum-oversized" -> [vk, TInteger (18446744073709551616 + 1), c0, sg]
+        "counter-type-text"        -> [vk, TString "1", c0, sg]
+        "counter-type-bytes"       -> [vk, TBytes (BS.pack [0x01]), c0, sg]
+        "kesperiod-type-text"      -> [vk, n, TString "1", sg]
+        "kesperiod-negative"       -> [vk, n, TInt (-1), sg]
+        "hot-vkey-truncated"       -> [TBytes (BS.take 16 (asBytesTerm vk)), n, c0, sg]
+        "cold-sig-truncated"       -> [vk, n, c0, TBytes (BS.take 32 (asBytesTerm sg))]
+        "opcert-missing-field"     -> [vk, n, c0]              -- drop sigma
+        "opcert-duplicate-field"   -> [vk, n, n, c0, sg]       -- duplicate counter
+        "opcert-extra-field"       -> [vk, n, c0, sg, TNull]   -- append a 5th element
+        _                          -> fields                    -- "none"/identity
+    _ -> fields
+
+-- | Replace the FIRST opcert node in the Term tree with its mutated form,
+-- preserving definite/indefinite framing and every other byte of the header.
+mutateFirstOpcert :: String -> Term -> Term
+mutateFirstOpcert m root = snd (go root)
+  where
+    go t
+        | isOpcertNode t = (True, applyOp t)
+        | otherwise      = recurse t
+    applyOp (TList xs)  = TList (mutateOpcertFields m xs)
+    applyOp (TListI xs) = TListI (mutateOpcertFields m xs)
+    applyOp x           = x
+    recurse t = case t of
+        TList xs    -> let (d, xs') = firstList xs in (d, TList xs')
+        TListI xs   -> let (d, xs') = firstList xs in (d, TListI xs')
+        TMap ps     -> let (d, ps') = firstPairs ps in (d, TMap ps')
+        TMapI ps    -> let (d, ps') = firstPairs ps in (d, TMapI ps')
+        TTagged w x -> let (d, x') = go x in (d, TTagged w x')
+        _           -> (False, t)
+    firstList [] = (False, [])
+    firstList (x:xs) =
+        let (d, x') = go x
+        in if d then (True, x' : xs)
+           else let (d2, xs') = firstList xs in (d2, x' : xs')
+    firstPairs [] = (False, [])
+    firstPairs ((k, v):ps) =
+        let (dk, k') = go k
+        in if dk then (True, (k', v) : ps)
+           else let (dv, v') = go v
+                in if dv then (True, (k', v') : ps)
+                   else let (d2, ps') = firstPairs ps in (d2, (k', v') : ps')

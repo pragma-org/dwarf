@@ -25,9 +25,10 @@ FAMILIES: tuple[str, ...] = (
     "rules-differential",
     "kes-evolution",
     "error-precedence",
+    "counter-edge-cases",
 )
 
-DIFFERENTIAL_FAMILIES: frozenset[str] = frozenset({"encoding-form", "kes-period-differential", "rules-differential", "error-precedence"})
+DIFFERENTIAL_FAMILIES: frozenset[str] = frozenset({"encoding-form", "kes-period-differential", "rules-differential", "error-precedence", "counter-edge-cases"})
 
 ENCODING_FORMS: tuple[str, ...] = (
     "noncanonical-int",
@@ -88,7 +89,7 @@ def _case_id(family: str, iteration: int) -> str:
 
 
 def generate_case(family: str, seed: int, iteration: int, *, restart_k: int = 4,
-                  kes_evolution_aged: bool = False) -> dict:
+                  kes_evolution_aged: bool = False, counter_rotated: bool = False) -> dict:
     """Return a seed+iteration deterministic ``SoakCaseSpec`` dict."""
     if family not in FAMILIES:
         raise ValueError(f"unknown family: {family!r}")
@@ -151,6 +152,9 @@ def generate_case(family: str, seed: int, iteration: int, *, restart_k: int = 4,
 
     if family == "error-precedence":
         return _error_precedence_case(base, rng)
+
+    if family == "counter-edge-cases":
+        return _counter_edge_case(base, rng, rotated=counter_rotated)
 
     # kes-period-differential
     base.update(base_case="valid-control", expected_verdict="accept",
@@ -328,4 +332,73 @@ def _error_precedence_case(base: dict, rng: random.Random) -> dict:
         params["kes_periods_ahead"] = rng.choice(KES_PERIODS_AHEAD_MAGNITUDES)
     base.update(base_case="error-precedence", expected_verdict="reject",
                 expected_reason=None, params=params)
+    return base
+
+
+# --------------------------------------------------------------------------- #
+# Family #5: counter-edge-cases (DIFFERENTIAL, mixed). Push the operational-
+# certificate counter to its EDGE values relative to the pool's recorded counter,
+# leaving every other field valid, so the ONLY defect is the counter and both
+# nodes reject. Reuses the reason-parity path (a both-reject-but-different-
+# canonical iteration is a reason divergence).
+#
+# FRESH-DEVNET-REACHABLE (the shipped differential scenario, all conclusive):
+#   - extreme forward jumps: counter = recorded + 2^{16,32,48,63} (counter_jump)
+#   - overflow boundary: counter = 2^64 - 1 (counter_value, absolute)
+#   all -> counter-too-large (cardano CounterOverIncrementedOCERT / amaru
+#   SequenceNumberTooFarAhead). On a fresh devnet recorded == 0, so every one is
+#   far above recorded+1 and reachable.
+#
+# ROTATION-DEPENDENT (too-small; only with ``counter_rotated=True``):
+#   - counter = 0 while recorded >= 1 (a prior rotation) -> counter-too-small
+#     (cardano CounterTooSmallOCERT / amaru SequenceNumberTooSmall). The 0
+#     endpoint of the "replay in [0..N-1] after k rotations" range; family C
+#     (restart-persistence) already exercises the recorded-1 replay single-target.
+#   The forger fail-closes any too-small target when recorded == 0 (fresh): the
+#   {recorded, recorded+1} reachability guard turns counter 0 == recorded 0 into
+#   an ``unreachable`` (inconclusive) iteration, never a false accept. So on the
+#   fresh mixed scenario the too-small edge is simply not emitted (no vacuous
+#   waste); it needs a rotated profile to run.
+# --------------------------------------------------------------------------- #
+COUNTER_EDGE_JUMP_BITS: tuple[int, ...] = (16, 32, 48, 63)
+UINT64_MAX: int = (1 << 64) - 1
+
+_COUNTER_TOO_LARGE_REASON = {
+    "cardano-node": "CounterOverIncrementedOCERT",
+    "amaru": "SequenceNumberTooFarAhead",
+}
+_COUNTER_TOO_SMALL_REASON = {
+    "cardano-node": "CounterTooSmallOCERT",
+    "amaru": "SequenceNumberTooSmall",
+}
+
+
+def _counter_edge_case(base: dict, rng: random.Random, *, rotated: bool = False) -> dict:
+    """Populate ``base`` for one counter-edge-cases iteration.
+
+    Seed+iteration deterministic. The default (fresh devnet) draws only the
+    fresh-reachable too-large edges (extreme forward jumps + overflow), so a run
+    is never vacuous; ``rotated=True`` (a rotated pool where recorded >= 1) also
+    draws the too-small counter = 0 edge. Expected verdict is ``reject`` with the
+    per-node counter reason for the edge (unused by the differential parity oracle
+    but set for correctness if ever run single-target). The forger fail-closes an
+    unreachable target (a valid reuse/rotation) to inconclusive.
+    """
+    edges = [f"jump-{b}" for b in COUNTER_EDGE_JUMP_BITS] + ["overflow-max"]
+    if rotated:
+        edges = edges + ["too-small-zero"]
+    edge = rng.choice(edges)
+    params: dict = {"edge": edge}
+    if edge.startswith("jump-"):
+        bits = int(edge.split("-")[1])
+        params["counter_jump"] = 1 << bits
+        reason = _COUNTER_TOO_LARGE_REASON
+    elif edge == "overflow-max":
+        params["counter_value"] = UINT64_MAX
+        reason = _COUNTER_TOO_LARGE_REASON
+    else:  # too-small-zero
+        params["counter_value"] = 0
+        reason = _COUNTER_TOO_SMALL_REASON
+    base.update(base_case="counter-edge", expected_verdict="reject",
+                expected_reason=dict(reason), params=params)
     return base

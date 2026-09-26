@@ -174,3 +174,21 @@ main = hspec $ do
                               && csCounterJump sp == Nothing
                               && csKesPeriodsAhead sp == Nothing
                 _ -> False
+
+
+    describe "counter-edge spec" $ do
+        it "parses an absolute counter_value (overflow max_uint64)" $ do
+            let js = "{\"base_case\":\"counter-edge\",\"seed\":5,\"params\":{\"edge\":\"overflow-max\",\"counter_value\":18446744073709551615}}"
+            parseCaseSpec (LBC.pack js) `shouldSatisfy` \case
+                Right sp -> csBaseCase sp == "counter-edge" && csCounterValue sp == Just 18446744073709551615
+                _ -> False
+        it "parses an absolute counter_value of 0 (too-small)" $ do
+            let js = "{\"base_case\":\"counter-edge\",\"seed\":5,\"params\":{\"edge\":\"too-small-zero\",\"counter_value\":0}}"
+            parseCaseSpec (LBC.pack js) `shouldSatisfy` \case
+                Right sp -> csCounterValue sp == Just 0
+                _ -> False
+        it "parses an extreme forward jump (2^63 delta)" $ do
+            let js = "{\"base_case\":\"counter-edge\",\"seed\":5,\"params\":{\"edge\":\"jump-63\",\"counter_jump\":9223372036854775808}}"
+            parseCaseSpec (LBC.pack js) `shouldSatisfy` \case
+                Right sp -> csCounterJump sp == Just 9223372036854775808 && csCounterValue sp == Nothing
+                _ -> False
