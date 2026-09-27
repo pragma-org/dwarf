@@ -223,3 +223,12 @@ through the Praos `hashHeaderToNonce` + `⭒` combine — not `parent_of(parent_
 it must feed the epoch-2 pre-stability block. Add a differential unit test seeded from a cardano-derived
 epoch boundary asserting the computed active nonce equals `cardano-cli query protocol-state`'s
 `epochNonce` for that epoch.
+
+## Confound discipline (what was ruled out)
+
+An earlier proxy-path symptom — amaru handshaking then stalling right after chainsync
+intersect_found — was traced to a re-sign artifact of the live-proxy re-signing every header,
+NOT an amaru forward-sync defect. Amaru single-peer forward-sync of real (unmodified) headers
+works; that false symptom was therefore correctly NOT filed as a single-peer-forward-sync
+issue (cardano-node #736 class). The finding above (epoch-transition active-nonce) is the real,
+reproduced defect.
