@@ -1,0 +1,49 @@
+{
+ "description": "Value-conservation / arithmetic knife-edges extending the mint/burn family (uncovered by it): ADA-side value-conservation off-by-one, and signed-int64 mint boundary (2^63-1) + overflow (2^63). amaru ACCEPTING value creation/overflow that cardano rejects is CRITICAL. Graded by mint_burn_differential (verdict -> reason-class -> parity, fail-closed).",
+ "cases": [
+  {
+   "case_id": "conserve-ada-plus1",
+   "tx_file": "conserve-ada-plus1.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 414,
+   "cbor_sha256": "d8f4b594f049f7a305761a0124f9a29015e3c06d815b1b294f1397fd554b1fbc",
+   "reason_classes": [
+    "value_not_conserved"
+   ],
+   "note": "output ADA = balanced + 1 lovelace (creates value); mint 10 == output 10 MINT. amaru-accept = CRITICAL (ada from nothing)"
+  },
+  {
+   "case_id": "conserve-ada-minus1",
+   "tx_file": "conserve-ada-minus1.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 414,
+   "cbor_sha256": "4610ab98fbddc292d5cdada52c66e464d6004156366d36cd91151d12584a4b9f",
+   "reason_classes": [
+    "value_not_conserved"
+   ],
+   "note": "output ADA = balanced - 1 lovelace (destroys value)"
+  },
+  {
+   "case_id": "mint-int64-over",
+   "tx_file": "mint-int64-over.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 430,
+   "cbor_sha256": "b70463894f09831bc7cb2a7b2e80c667871e880361491889b9fceb0d02d59aeb",
+   "reason_classes": [],
+   "note": "mint 2^63 MINT (out of signed-int64 range); both must decode-reject. amaru-accept = CRITICAL value creation via overflow"
+  },
+  {
+   "case_id": "mint-int64-max",
+   "tx_file": "mint-int64-max.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 430,
+   "cbor_sha256": "686147d2b176d87c4346c0b35537c41263734ed14699b47432b1c890f4a7435e",
+   "reason_classes": [],
+   "note": "mint 2^63-1 MINT, output carries it (valid signed-int64 max, value-conserved) -> both accept"
+  }
+ ]
+}
