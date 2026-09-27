@@ -1,0 +1,17 @@
+{
+ "date": "2026-09-27",
+ "verifies_finding": "cb79184 (fd) — amaru under-charges Plutus string builtins",
+ "root_cause_anchor": "amaru value.rs:51 string_ex_mem = len/4 (size-measure bug; propagates to steps via the cpu model)",
+ "substrate": {"cardano": "cardano-node 11.1.2 fef83fed :8111 (pair2)", "amaru": "amaru 0925 eaf8ac3f :3211"},
+ "validator": "strcost.string_amp (decode_utf8 + append_string x10 + equals_string), redeemer-driven",
+ "cardano_exact": {"steps": 149561297, "mem": 16284},
+ "amaru_metered_steps_approx": 40031500,
+ "step_undercharge_pct": 73.2,
+ "trials": [
+  {"trial": "control", "declared": [149561297, 16284], "amaru": "202 accept", "cardano": "202 accept", "tx": "885d6eea..."},
+  {"trial": "split-1", "declared": [149561296, 16284], "amaru": "202 accept", "cardano": "reject: ValidationTagMismatch Phase2Valid FailedUnexpectedly"},
+  {"trial": "split-2", "declared": [149561296, 16284], "amaru": "202 accept", "cardano": "reject: ValidationTagMismatch Phase2Valid FailedUnexpectedly"}
+ ],
+ "divergence_window_steps": [40031500, 149561297],
+ "verdict": "CONFIRMED consensus-validity divergence, reproduced 2x independent of fd pair1"
+}
