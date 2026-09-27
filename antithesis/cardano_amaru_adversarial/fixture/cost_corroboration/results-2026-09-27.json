@@ -1,0 +1,112 @@
+{
+ "date": "2026-09-27",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 fef83fed :8111 (pair2)",
+  "amaru": "amaru 0925 eaf8ac3f :3211"
+ },
+ "method": "per family: measure cardano exact ex-units (calculate-plutus-script-cost), then submit at (exact)->both accept, (steps-1,mem)->both reject if conformant, (steps,mem-1)->both reject if conformant. amaru 202 where cardano 400 = under-charge SPLIT.",
+ "corroborates": "fd source-diff d2bf074 (Integer/ByteString/Unit/Bool/BLS conformant; only String divergent)",
+ "families": [
+  {
+   "family": "baseline",
+   "cardano_steps": 229590204,
+   "cardano_mem": 794740,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  },
+  {
+   "family": "add",
+   "cardano_steps": 302642604,
+   "cardano_mem": 1008140,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  },
+  {
+   "family": "mul",
+   "cardano_steps": 63782804,
+   "cardano_mem": 214860,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  },
+  {
+   "family": "index",
+   "cardano_steps": 318076404,
+   "cardano_mem": 1088940,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  },
+  {
+   "family": "cons",
+   "cardano_steps": 297315632,
+   "cardano_mem": 1010726,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  },
+  {
+   "family": "slice",
+   "cardano_steps": 333556404,
+   "cardano_mem": 1150940,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  },
+  {
+   "family": "serialise",
+   "cardano_steps": 713727004,
+   "cardano_mem": 1045740,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  },
+  {
+   "family": "equalsdata",
+   "cardano_steps": 588480604,
+   "cardano_mem": 1381340,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  },
+  {
+   "family": "blake2b",
+   "cardano_steps": 289397036,
+   "cardano_mem": 875950,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  },
+  {
+   "family": "sha2",
+   "cardano_steps": 314609340,
+   "cardano_mem": 875950,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  },
+  {
+   "family": "keccak",
+   "cardano_steps": 746202991,
+   "cardano_mem": 875950,
+   "exact": "a202/c202",
+   "steps_minus1": "a400/c400",
+   "mem_minus1": "a400/c400",
+   "verdict": "AGREE"
+  }
+ ],
+ "all_agree": true,
+ "coverage_note": "Empirically swept: Integer(add,mul), ByteString(index,cons,slice), Data(serialiseData,equalsData), Hashing(blake2b_256,sha2_256,keccak_256) + a baseline. All conformant (amaru meters == cardano on both steps and mem axes at the knife-edge). Crypto verify* and BLS cost not folded-swept here (fragile in-script vectors); covered by fd source-diff (conformant) + the functional crypto-builtins family 6cfe3da (22/22 AGREE). The one divergent family, String, is filed cb79184 and independently 2x-verified here in fixture/cost_string_verify (73.2% step under-charge)."
+}
