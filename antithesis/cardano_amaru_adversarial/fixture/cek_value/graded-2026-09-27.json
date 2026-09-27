@@ -1,0 +1,147 @@
+{
+ "date": "2026-09-27",
+ "surface": "Plutus CEK VALUE/structure semantics (DEPTH): bignum results, ByteString value edges, deep-nested PlutusData",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 :8111 (pair2)",
+  "amaru": "amaru 0925 clean eaf8ac3f :3211"
+ },
+ "finding": "amaru computes the Cardano-spec VALUE for every case: multiplyInteger(2^128,2^128)=2^256 and large modular arithmetic (bignum, no int64 overflow); indexByteString in-range value = correct byte, OUT-OF-RANGE errors gracefully (no crash); sliceByteString clamps past-end to available length (14+10 -> len 2; start 20 -> len 0); integerToByteString/byteStringToInteger round-trip at minimal(0)/fixed/oversized width and both endiannesses, width-too-small errors gracefully; depth-5 nested list PlutusData traverses to the Int leaf identically. Correct-value cases accept on both, wrong-value controls reject on both. NO value/structure divergence, NO VM crash on the two error-path cases.",
+ "results": {
+  "bignum-mul-wrong": {
+   "status": "AGREE",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "bignum-modmul-wrong": {
+   "status": "AGREE",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "bs-index-wrong": {
+   "status": "AGREE",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "bs-index-oob": {
+   "status": "AGREE",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "i2b-toosmall": {
+   "status": "AGREE",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "nested-wrong": {
+   "status": "AGREE",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "bignum-modmul-ok": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "bignum-mul-ok": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "bs-index-ok": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "bs-slice-clamp": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "bs-slice-mid": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "bs-slice-past": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "i2b-be-w0": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "i2b-be-w4": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "i2b-le-w0": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "i2b-oversized": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "nested-ok": {
+   "status": "AGREE",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}

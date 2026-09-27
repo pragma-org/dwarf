@@ -1,0 +1,167 @@
+{
+ "description": "Plutus CEK-interpreter integer division/modulo SIGN-semantics differential (cardano 11.1.2 vs amaru 0925). Operands fed via redeemer (runtime) so the VM computes; validators assert the Cardano-spec value on negative operands + MIN-int. divideInteger=floored, quotientInteger=truncated, modInteger=sign-of-divisor, remainderInteger=sign-of-dividend. A rounding-convention divergence -> assertion flips on one node -> is_valid consensus split. All sign combos (-/+,+/-,-/-) + cross-convention wrong controls + MIN-int(2^63, bignum no-overflow).",
+ "cases": [
+  {
+   "case_id": "div-np-ok",
+   "tx_file": "div-np-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "df49554903579a66b702053d87b4e1c673e1d22be7df1e1cde0c9bdc420cdb09",
+   "note": "divideInteger FLOORED (toward -inf): builtin(-7,2) asserted ==-4"
+  },
+  {
+   "case_id": "quot-np-ok",
+   "tx_file": "quot-np-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "39eb549c07370a9a70feca5c1ac3beab65c228932075c0657cfe03aa1a9f8bd0",
+   "note": "quotientInteger TRUNCATED (toward 0): builtin(-7,2) asserted ==-3"
+  },
+  {
+   "case_id": "mod-np-ok",
+   "tx_file": "mod-np-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "dd16398e82096bed1678aafcc4d88f3f4a8414e70fb27c90be686ae31ab5cc8c",
+   "note": "modInteger sign-of-divisor: builtin(-7,2) asserted ==1"
+  },
+  {
+   "case_id": "rem-np-ok",
+   "tx_file": "rem-np-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "ffa2a93540a7fcccfa15e9adc0f517d3c2d1cf7be3163f5de2aaf48dd66d5b26",
+   "note": "remainderInteger sign-of-dividend: builtin(-7,2) asserted ==-1"
+  },
+  {
+   "case_id": "div-pn-ok",
+   "tx_file": "div-pn-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "f5793e8ab3cae893de9caecbf5270d4b984f548d999ecaf40be212269d90db01",
+   "note": "divideInteger FLOORED (toward -inf): builtin(7,-2) asserted ==-4"
+  },
+  {
+   "case_id": "quot-pn-ok",
+   "tx_file": "quot-pn-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "1bd24adaabc25e4d4f5212312d9612dc665ea441981021413c3c868389508114",
+   "note": "quotientInteger TRUNCATED (toward 0): builtin(7,-2) asserted ==-3"
+  },
+  {
+   "case_id": "mod-pn-ok",
+   "tx_file": "mod-pn-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "78cede4bf7eab4a11828383a7a13c548dc36f057888b57ca15cb70f730299838",
+   "note": "modInteger sign-of-divisor: builtin(7,-2) asserted ==-1"
+  },
+  {
+   "case_id": "rem-pn-ok",
+   "tx_file": "rem-pn-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "ac4d4ca2cfe438ce35f087ce98991fc59152d588c1d1710f9d38f7aa08e3d2b9",
+   "note": "remainderInteger sign-of-dividend: builtin(7,-2) asserted ==1"
+  },
+  {
+   "case_id": "div-nn-ok",
+   "tx_file": "div-nn-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "a68bf9e11b9b78192d27407147dfe319464e47214e709b164f68ee274f2a9d23",
+   "note": "divideInteger FLOORED (toward -inf): builtin(-7,-2) asserted ==3"
+  },
+  {
+   "case_id": "quot-nn-ok",
+   "tx_file": "quot-nn-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "e68de34d2cd04aeb964210337077f50ef690fe6bdfd221ea74ca5b054c9a3521",
+   "note": "quotientInteger TRUNCATED (toward 0): builtin(-7,-2) asserted ==3"
+  },
+  {
+   "case_id": "mod-nn-ok",
+   "tx_file": "mod-nn-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "2379daefa1ff0e35fbbbfc5146ecc529f164f59a8ee009e6ca2587fd14c61eca",
+   "note": "modInteger sign-of-divisor: builtin(-7,-2) asserted ==-1"
+  },
+  {
+   "case_id": "rem-nn-ok",
+   "tx_file": "rem-nn-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "bb4f22718d90832da2d853c70702d2450df6572f2dd26a0de94961eec3834c61",
+   "note": "remainderInteger sign-of-dividend: builtin(-7,-2) asserted ==-1"
+  },
+  {
+   "case_id": "div-np-wrong",
+   "tx_file": "div-np-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 541,
+   "cbor_sha256": "247506a8e24a1fac432faac3a34cb225846dc7c76afeeeb3bfbd14c040357ad9",
+   "note": "divideInteger FLOORED (toward -inf): builtin(-7,2) asserted ==-3"
+  },
+  {
+   "case_id": "quot-np-wrong",
+   "tx_file": "quot-np-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 541,
+   "cbor_sha256": "ececbe66e95bd30fe2867d9cfd9712c56543e57574668bb09d780f7b724d8fb4",
+   "note": "quotientInteger TRUNCATED (toward 0): builtin(-7,2) asserted ==-4"
+  },
+  {
+   "case_id": "mod-np-wrong",
+   "tx_file": "mod-np-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 541,
+   "cbor_sha256": "95d64f0cc8b5446eb0bfc3732211f4bf8dc6590a42389b4fa9a447df8ed72dc1",
+   "note": "modInteger sign-of-divisor: builtin(-7,2) asserted ==-1"
+  },
+  {
+   "case_id": "rem-np-wrong",
+   "tx_file": "rem-np-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 541,
+   "cbor_sha256": "e22925160ef9e04e7aaff7d023d4ba1add9a704414bcfbb8abf3f3f3feed7c37",
+   "note": "remainderInteger sign-of-dividend: builtin(-7,2) asserted ==1"
+  },
+  {
+   "case_id": "div-minint-ok",
+   "tx_file": "div-minint-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 557,
+   "cbor_sha256": "fae6ff388785b6f28a8debe1171168ec9aaa1d5ad7cbe6a542ca39f1d654bca8",
+   "note": "divideInteger FLOORED (toward -inf): builtin(-9223372036854775808,-1) asserted ==9223372036854775808"
+  },
+  {
+   "case_id": "quot-minint-ok",
+   "tx_file": "quot-minint-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 557,
+   "cbor_sha256": "48098e26e60a6d16d4bbbbbfee28bfc16a6d6ee892c9f6edd8f0b30d122c83ef",
+   "note": "quotientInteger TRUNCATED (toward 0): builtin(-9223372036854775808,-1) asserted ==9223372036854775808"
+  }
+ ]
+}
