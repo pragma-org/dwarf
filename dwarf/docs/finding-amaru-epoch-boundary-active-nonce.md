@@ -176,3 +176,50 @@ epoch-nonce rule (`newEpochNonce`: candidate ⭒ hashHeaderToNonce(last-block-be
 Amaru feeding the epoch-2 `lastEpochBlockNonce` suggests either a wrong reference selection or a
 one-epoch-stale `previous_epoch_tail_parent_hash`. Confirm with a differential unit test seeded from a
 cardano-derived boundary.
+
+---
+
+## SOURCE CROSS-CHECK (2026-09-27) — precise root cause: stale (wrong-epoch) reference block
+
+Traced the exact reference amaru feeds, in `crates/amaru-consensus/src/store.rs` `evolve_nonce`:
+```rust
+// epoch boundary only:
+let previous_epoch_tail_parent_hash = if epoch > parent_nonces.epoch {
+    self.store.load_header(&parent_nonces.tail)?.parent_hash()   // parent of parent_nonces.tail
+} else { None };
+```
+and `Nonces::next_active(h) = blake2b256(candidate ‖ h)` (`amaru-ouroboros-traits/src/praos/nonces.rs:29`),
+with `tail` set at each boundary to `header.parent()` = the previous epoch's last block
+(`amaru-ouroboros/src/praos/nonce.rs:53`, carried unchanged within an epoch).
+
+**Index trace at the epoch 2→3 boundary (block 1200), against the byte-proof values:**
+- `parent_nonces` = nonces at block 1199 (epoch 2). Its `tail` was set when crossing into epoch 2, so
+  `parent_nonces.tail = 842e12ed…` = the **last block of EPOCH 1** (slot 798).
+- `previous_epoch_tail_parent_hash = load_header(842e12ed).parent_hash() = 95ca4227…` — the **parent of
+  epoch 1's last block** (a block at ~slot 797, still epoch 1).
+- `epoch-3 active = blake2b256(candidate e113e77a ‖ 95ca4227) = 3a5e3601…` (matches the runtime).
+
+So Amaru derives the **epoch-3** active nonce from an **epoch-1** block reference. Per the Cardano/Praos
+rule (`newEpochNonce = candidateNonce ⭒ hashHeaderToNonce(last block of the IMMEDIATELY-previous epoch
+before the randomness stability window)`), the epoch-3 nonce must reference an **epoch-2** block. Amaru's
+reference is a full epoch stale (and takes the block's *parent* rather than its own header hash).
+
+This is why the divergence is masked until the first self-computed boundary: bootstrap **imports** the
+correct nonces (η2 = b0fede87 matched), so `parent_nonces.tail` is only *used* to self-derive a nonce
+at the first forward-synced epoch crossing — where the stale reference produces `3a5e3601 ≠ η3 44f12751`
+and the valid block's VRF fails.
+
+(Note the combine is raw `blake2b256(candidate ‖ hash)`. Even with the correct epoch-2 reference nonce
+`blake2b256(candidate ‖ 7631da8e)` = `8a58f3d3` ≠ η3, so cardano's `⭒`/`hashHeaderToNonce` construction
+may also differ from raw concatenation — but the **wrong-epoch reference selection above is the primary,
+verified defect**; confirm the exact combine when fixing.)
+
+## Precise recommendation (filable)
+
+In `store.rs::evolve_nonce`, the epoch-boundary reference must be the **last block of the
+immediately-previous epoch** (before the randomness stability window), by its **own** header hash, fed
+through the Praos `hashHeaderToNonce` + `⭒` combine — not `parent_of(parent_nonces.tail)` where
+`parent_nonces.tail` lags a full epoch. Concretely: amaru feeds an epoch-1 block for the epoch-3 nonce;
+it must feed the epoch-2 pre-stability block. Add a differential unit test seeded from a cardano-derived
+epoch boundary asserting the computed active nonce equals `cardano-cli query protocol-state`'s
+`epochNonce` for that epoch.
