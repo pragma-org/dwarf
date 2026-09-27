@@ -100,6 +100,34 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-013", "TM-034",),
         "risks": ("RR-013", "RR-029",),
     },
+    "runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031"),
+    },
+    "runtime-substrate-plutus-phase2-cek-divmod-differential-mixed-amaru": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031"),
+    },
+    "runtime-substrate-plutus-phase2-crypto-builtins-differential-mixed-amaru": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031"),
+    },
+    "runtime-substrate-plutus-phase2-plutusdata-decode-differential-mixed-amaru": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031"),
+    },
+    "runtime-substrate-plutus-phase2-exunits-cost-model-string-undercharge-mixed-amaru": {
+        "threats": ("TM-016", "TM-036"),
+        "risks": ("RR-016", "RR-031"),
+    },
+    "runtime-substrate-mempool-failure-containment-mixed-amaru": {
+        "threats": ("TM-012",),
+        "risks": ("RR-012",),
+    },
+    "runtime-substrate-txsubmission-unexpected-body-mixed-amaru": {
+        "threats": ("TM-011",),
+        "risks": ("RR-011",),
+    },
 }
 
 
