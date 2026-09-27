@@ -1,0 +1,135 @@
+{
+ "date": "2026-09-27",
+ "surface": "ScriptContext (Conway TxInfo) construction fidelity",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 :8114",
+  "amaru": "amaru 0925 clean eaf8ac3f :3214"
+ },
+ "fields_tested": [
+  "txInfoFee",
+  "txInfoMint(quantity)",
+  "txInfoInputs(count+first-input txid content)",
+  "txInfoReferenceInputs(count+presence)",
+  "txInfoRedeemers(count)",
+  "treasury_donation(Some/None)",
+  "current_treasury_amount(None)"
+ ],
+ "not_reachable": {
+  "inputs_ordering": "cardano-cli emits canonically-sorted tx bodies; a non-canonical input list needs byte surgery",
+  "votes_proposals": "txInfoVotes/proposal_procedures need a registered DRep + open gov action + a script witness in one tx; not present on refpair"
+ },
+ "results": {
+  "ctxfee-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ctxmint-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ctxnuminputs-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ctxnumref-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ctxinputtxid-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ctxredeemers-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ctxtreasury-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ctxfee-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ctxmint-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ctxnuminputs-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ctxnumref-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ctxnumref-none-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ctxinputtxid-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ctxredeemers-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ctxtreasury-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ctxtreasuryamt-none-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}

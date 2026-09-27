@@ -1,0 +1,149 @@
+{
+ "description": "ScriptContext (Conway TxInfo) construction fidelity (cardano 11.1.2 vs amaru 0925). A minting policy asserts a TxInfo field == a redeemer/tx-supplied expectation; correct-value accepts, wrong-expectation rejects, on both. One-accepts-one-rejects = a HIGH is_valid consensus divergence. Fields: fee, mint, inputs (count+content), reference_inputs (count+presence), redeemers, and Conway treasury_donation / current_treasury_amount.",
+ "cases": [
+  {
+   "case_id": "ctxfee-ok",
+   "tx_file": "ctxfee-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 488,
+   "cbor_sha256": "5bc6395fd6ab6054ddfa1e6ba16c080faab783bc0bad532cfc96d6c2c8241b8d",
+   "note": "assert txInfoFee == 2000000 -> accept"
+  },
+  {
+   "case_id": "ctxfee-wrong",
+   "tx_file": "ctxfee-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 488,
+   "cbor_sha256": "e0feba5d6d98f3b4dc6dc373bf87cc73567bf460caea8f2dcf9b74e3498e3534",
+   "note": "assert txInfoFee == 2000001 -> reject"
+  },
+  {
+   "case_id": "ctxmint-ok",
+   "tx_file": "ctxmint-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 637,
+   "cbor_sha256": "ce0d545525e1676c60d03f009fa8ad9cc7f81ab01fa2e000291414477b7f8237",
+   "note": "assert txInfoMint qty of own COLL == 1 -> accept"
+  },
+  {
+   "case_id": "ctxmint-wrong",
+   "tx_file": "ctxmint-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 637,
+   "cbor_sha256": "b269386012b4d5fa49826f1b965f494203c053f262d577fa77fba9dd58713434",
+   "note": "assert qty == 2 -> reject"
+  },
+  {
+   "case_id": "ctxnuminputs-ok",
+   "tx_file": "ctxnuminputs-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 508,
+   "cbor_sha256": "fdf50132439a303657f7166d879d7b274a6aa6e4b91ca84f92484b4e7735eb8d",
+   "note": "assert length txInfoInputs == 1 -> accept"
+  },
+  {
+   "case_id": "ctxnuminputs-wrong",
+   "tx_file": "ctxnuminputs-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 508,
+   "cbor_sha256": "a32427ae64db918e815964c5972a44cb7261411403e32ac703d0945dbddb9ac5",
+   "note": "assert == 2 -> reject"
+  },
+  {
+   "case_id": "ctxnumref-ok",
+   "tx_file": "ctxnumref-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 551,
+   "cbor_sha256": "8eada00437402a51c96fe262bbabf4493b00b788e911a37c69e831edb434a910",
+   "note": "1 ref input; assert length txInfoReferenceInputs == 1 -> accept"
+  },
+  {
+   "case_id": "ctxnumref-wrong",
+   "tx_file": "ctxnumref-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 551,
+   "cbor_sha256": "5ae920565420c3e96109735ab12a34ba901f22899f2aa8a9914f1ea0504d1412",
+   "note": "1 ref input; assert == 0 -> reject"
+  },
+  {
+   "case_id": "ctxnumref-none-ok",
+   "tx_file": "ctxnumref-none-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 510,
+   "cbor_sha256": "eaa4509f384a9b0214be01df6e38b89b8e06004fb8ba3ba71b6101e85d684627",
+   "note": "no ref input; assert length == 0 -> accept"
+  },
+  {
+   "case_id": "ctxinputtxid-ok",
+   "tx_file": "ctxinputtxid-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 540,
+   "cbor_sha256": "65d4305836f060cac2ca2cc89d375309b3396bcb64305ce8fa052ffeb0840f82",
+   "note": "assert first txInfoInputs output_reference txid == funding txid -> accept (inputs content fidelity)"
+  },
+  {
+   "case_id": "ctxinputtxid-wrong",
+   "tx_file": "ctxinputtxid-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 540,
+   "cbor_sha256": "3087efc5fb26fd8221038f5b96632fa6e9ca34ec6dc8be9cab6d9a6fafa998f4",
+   "note": "assert first input txid == a different txid -> reject"
+  },
+  {
+   "case_id": "ctxredeemers-ok",
+   "tx_file": "ctxredeemers-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 526,
+   "cbor_sha256": "b266c2a51b80bacb4142f5afd00c3a1dde43847ee8e9e901de6c225ff7a89ef8",
+   "note": "assert length txInfoRedeemers == 1 -> accept"
+  },
+  {
+   "case_id": "ctxredeemers-wrong",
+   "tx_file": "ctxredeemers-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 526,
+   "cbor_sha256": "3d121993f6f80b29b58b6c844ca89793c7f6fec3a50360f9f8d457e2467509d2",
+   "note": "assert == 2 -> reject"
+  },
+  {
+   "case_id": "ctxtreasury-ok",
+   "tx_file": "ctxtreasury-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 518,
+   "cbor_sha256": "340e8edf26daf43638c995e84b5a23a6435e798f376ec75524a12de39b8895c4",
+   "note": "CONWAY: --treasury-donation 5; assert tx.treasury_donation == Some(5) -> accept"
+  },
+  {
+   "case_id": "ctxtreasury-wrong",
+   "tx_file": "ctxtreasury-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 518,
+   "cbor_sha256": "bfbbb7b58a13b4db056549c69afc02e9771acfa2b36a21cd82aa1b7859a94e89",
+   "note": "CONWAY: donation 5; assert == Some(6) -> reject"
+  },
+  {
+   "case_id": "ctxtreasuryamt-none-ok",
+   "tx_file": "ctxtreasuryamt-none-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 512,
+   "cbor_sha256": "1117b6d65a787e70dc37a6eb65f9d228c29ff9800de2a14e477a2b0f5aaa5df9",
+   "note": "CONWAY: assert tx.current_treasury_amount == None -> accept"
+  }
+ ]
+}
