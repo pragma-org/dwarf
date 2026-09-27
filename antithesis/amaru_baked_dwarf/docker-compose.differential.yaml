@@ -91,7 +91,7 @@ services:
         condition: service_started
 
   cardano-submit-api:
-    image: ghcr.io/intersectmbo/cardano-submit-api:10.7.1
+    image: ghcr.io/intersectmbo/cardano-submit-api:11.1.2
     hostname: cardano-submit-api.example
     container_name: diff-submit-api
     labels: *fault-exclude

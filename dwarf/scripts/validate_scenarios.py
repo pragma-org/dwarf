@@ -242,7 +242,7 @@ def check_version_provenance(
     """
     import yaml
     from profile_manager.version_provenance import (
-        ProvenanceIndex, check_id_labels, check_image_refs, check_prose, check_structured,
+        ProvenanceIndex, check_id_labels, check_image_refs, check_prose, check_structured, check_submit_api_refs,
     )
 
     try:
@@ -269,6 +269,9 @@ def check_version_provenance(
             fails.extend(f"{rel}: provenance: {msg}" for msg in check_id_labels(index, document))
         if "compose" in path.name or path.name == "Dockerfile":
             image_fails, image_warns = check_image_refs(index, text)
+            sub_fails, sub_warns = check_submit_api_refs(index, text)
+            image_fails = list(image_fails) + list(sub_fails)
+            image_warns = list(image_warns) + list(sub_warns)
             fails.extend(f"{rel}:{line}: provenance: {msg}" for line, msg in image_fails)
             warns.extend(f"{rel}:{line}: provenance: {msg}" for line, msg in image_warns)
     return len(fails), len(warns), fails, warns

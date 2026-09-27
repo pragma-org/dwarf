@@ -146,7 +146,7 @@ confirmation before it is a confirmed finding — see
    - `docker build -f Dockerfile.amaru-baked -t ghcr.io/j-gainsec/amaru-baked:0.2.0 .`
      (build context must contain `baked-store.tgz`)
    - `docker build -f workload/Dockerfile -t ghcr.io/j-gainsec/dwarf-submit-workload:0.2.0 workload`
-   - push both to a public registry. (`ghcr.io/intersectmbo/cardano-submit-api:10.7.1`
+   - push both to a public registry. (`ghcr.io/intersectmbo/cardano-submit-api:11.1.2`
      and the cardano-node/configurator/tracer images are already public.)
 2. Commit this dir to `pragma-org/dwarf`. Pick the compose to run:
    single-target (`docker-compose.yaml`) or differential
