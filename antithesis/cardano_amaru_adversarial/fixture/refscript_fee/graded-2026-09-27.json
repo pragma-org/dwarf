@@ -1,0 +1,55 @@
+{
+ "date": "2026-09-27",
+ "surface": "Conway reference-script fee (minFeeRefScriptCostPerByte=15)",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 :8114",
+  "amaru": "amaru 0925 clean eaf8ac3f :3214"
+ },
+ "finding": "amaru computes the ref-script-inclusive min-fee equal to cardano TO THE LOVELACE (1-ref 559523, 2-ref 561197); both accept at exact, both reject FeeTooSmall at -1; amaru states the same below minimum 559523. No fee-consensus divergence. LINEAR tier only (refpair scripts ~7B); tiered/exponential (>~25600B) substrate-limited.",
+ "results": {
+  "reffee-under": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "fee_too_small"
+    ],
+    "cardano": [
+     "fee_too_small"
+    ]
+   }
+  },
+  "reffee-2ref-under": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "fee_too_small"
+    ],
+    "cardano": [
+     "fee_too_small"
+    ]
+   }
+  },
+  "reffee-exact": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "reffee-2ref-exact": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}
