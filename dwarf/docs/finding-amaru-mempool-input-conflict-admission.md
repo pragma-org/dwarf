@@ -45,6 +45,8 @@ So two distinct txs spending the same input both pass `validate_tx` (ledger says
 unspent) and both `insert` (distinct tx ids) → both admitted. cardano's mempool instead applies txs
 to a mempool-local ledger view, so the second sees the input as already consumed.
 
+**Flip side, same root (2026-09-26, cardano-node 11.1.2 vs Amaru `eaf8ac3f`):** mempool **chaining** is refused. A tx that spends an output of a tx still pending in the mempool is accepted by cardano (202) and rejected by Amaru (`failed to prepare … unknown (but required) transaction input … <parent>#0`), because Amaru validates only against the ledger state. Evidence: cardano-box `/tmp/nsprobe/chain/evidence.json`.
+
 ## Severity — LOW (mempool-admission conformance; bounded)
 
 - Mempool ingress only. Block validation still enforces no-double-spend, and amaru does not produce

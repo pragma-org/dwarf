@@ -47,14 +47,39 @@ _DECODE_MARKERS = (
     "expected/found mismatch",
 )
 
-# The funding input is already consumed (a pending tx in the node's mempool, or
-# on-ledger drift), so the node never reached the rule under test. Such a
-# response is inconclusive, never a phase-1 verdict: checked BEFORE the phase-1
-# markers, which would otherwise match the "conwaymempoolfailure" wrapper.
-_MASKED_MARKERS = (
+# Inputs that the substrate guarantees are unspent on BOTH ledgers (the committed
+# funding UTxO). A "missing input" answer naming one of them cannot be a real
+# ledger verdict: it means a pending tx in that node's mempool (or substrate drift)
+# consumed it, so the node never reached the rule under test -> MASKED.
+FUNDING_INPUTS = (
+    "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+)
+
+# cardano-node 11.1.2 answers "All inputs are spent" BOTH for an input consumed by a
+# pending mempool tx AND for an input that never existed, so the text alone is
+# ambiguous. It is masked unless the submitted bytes cannot be spending a live input
+# (a mutated input id): then it is a genuine bad-input phase-1 rejection. Checked
+# BEFORE the phase-1 markers, which would otherwise match the wrapper.
+_INPUT_CONFLICT_MARKERS = (
     "all inputs are spent",
     "badinputsutxo",
 )
+
+# Amaru names the missing input; this is its only preparation failure mapped here.
+# Other "failed to prepare ... for validation" forms stay UNKNOWN (inconclusive).
+_AMARU_UNKNOWN_INPUT_RE = re.compile(
+    r"unknown \(but required\) transaction input or reference input: ([0-9a-f]{64})#(\d+)",
+    re.IGNORECASE,
+)
+
+# Amaru submit-API admission failures (amaru-node submit_api.rs): no ledger verdict.
+_AMARU_UNAVAILABLE_MARKERS = (
+    "mempool is full",
+    "mempool timed out",
+    "mempool unavailable",
+    "mempool returned an invalid response",
+)
+_AMARU_DUPLICATE_MARKER = "transaction is a duplicate"
 
 _PHASE1_MARKERS = (
     "feetosmallutxo",
@@ -95,8 +120,19 @@ class SubmitTransport(Protocol):
         ...
 
 
+def _may_spend_live_input(payload: bytes | None, live_inputs) -> bool:
+    """True unless the payload provably cannot reference any live input (fail closed)."""
+    if payload is None:
+        return True
+    return any(bytes.fromhex(ref.split("#")[0]) in payload for ref in live_inputs)
+
+
 def classify_response(
-    status: int | None, body: str, transport_error: str | None = None
+    status: int | None,
+    body: str,
+    transport_error: str | None = None,
+    payload: bytes | None = None,
+    live_inputs=FUNDING_INPUTS,
 ) -> str:
     """Classify only observations supported by an endpoint's actual response."""
     if transport_error is not None or status is None:
@@ -105,10 +141,18 @@ def classify_response(
         return ACCEPTED
 
     lowered = (body or "").lower()
+    if status in (500, 503) and any(m in lowered for m in _AMARU_UNAVAILABLE_MARKERS):
+        return UNAVAILABLE
+    if status == 409 and _AMARU_DUPLICATE_MARKER in lowered:
+        return MASKED
     if any(marker in lowered for marker in _DECODE_MARKERS):
         return DECODE_REJECT
-    if any(marker in lowered for marker in _MASKED_MARKERS):
-        return MASKED
+    if any(marker in lowered for marker in _INPUT_CONFLICT_MARKERS):
+        return MASKED if _may_spend_live_input(payload, live_inputs) else PHASE1_REJECT
+    unknown_input = _AMARU_UNKNOWN_INPUT_RE.search(body or "")
+    if unknown_input:
+        ref = f"{unknown_input.group(1).lower()}#{unknown_input.group(2)}"
+        return MASKED if ref in live_inputs else PHASE1_REJECT
     if any(marker in lowered for marker in _PHASE1_MARKERS):
         return PHASE1_REJECT
     if status == 400 and _AMARU_VALIDATION_RE.fullmatch((body or "").strip()):
@@ -227,13 +271,13 @@ class HttpSubmitTransport:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 body = response.read(4096).decode("utf-8", "replace")
                 status = response.status
-            return _observation(status, body)
+            return _observation(status, body, payload=payload)
         except urllib.error.HTTPError as exc:
             try:
                 body = exc.read(4096).decode("utf-8", "replace")
             except Exception:
                 body = str(exc.reason or "http error")
-            return _observation(exc.code, body)
+            return _observation(exc.code, body, payload=payload)
         except (urllib.error.URLError, ConnectionError, socket.timeout, TimeoutError) as exc:
             reason = getattr(exc, "reason", exc)
             return _observation(None, "", type(reason).__name__)
@@ -242,11 +286,14 @@ class HttpSubmitTransport:
 
 
 def _observation(
-    status: int | None, body: str, transport_error: str | None = None
+    status: int | None,
+    body: str,
+    transport_error: str | None = None,
+    payload: bytes | None = None,
 ) -> dict:
     reason = body[:400] if body else (transport_error or "")
     return {
-        "classification": classify_response(status, body, transport_error),
+        "classification": classify_response(status, body, transport_error, payload=payload),
         "status": status,
         "reason": reason,
     }
