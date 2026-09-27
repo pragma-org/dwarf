@@ -144,6 +144,60 @@
    "cbor_sha256": "4f4f6a2b90fc4fbea1d418ecea23de3e8c7255cc97f0591e4fbc6c9371b509c6",
    "single_use": false,
    "note": "same (uncosted) -> both reject"
+  },
+  {
+   "case_id": "ecdsa-valid",
+   "tx_file": "ecdsa-valid.tx",
+   "expected": "accept",
+   "cbor_size": 672,
+   "cbor_sha256": "1ddd16ef8ea9c2d93f034c288b36ac307491b1120e2a57d0fd7286d0925f8685",
+   "single_use": true,
+   "note": "verifyEcdsaSecp256k1Signature valid (33B compressed vk, 32B msg, 64B low-s sig) -> both accept"
+  },
+  {
+   "case_id": "ecdsa-wrongsig",
+   "tx_file": "ecdsa-wrongsig.tx",
+   "expected": "reject",
+   "cbor_size": 672,
+   "cbor_sha256": "a6c5254a5f9a884ada06f58fe629d04eee9db065604931d1b1241927d43ab031",
+   "single_use": false,
+   "note": "sig byte flipped -> both reject"
+  },
+  {
+   "case_id": "ecdsa-malformed-vk",
+   "tx_file": "ecdsa-malformed-vk.tx",
+   "expected": "reject",
+   "cbor_size": 671,
+   "cbor_sha256": "a00081d856d5f3f7fd0e856e65439f2fee7b326f918462e377643eb50b7d2b8f",
+   "single_use": false,
+   "note": "32-byte vk (not 33) -> builtin error -> both reject gracefully (amaru live, no crash)"
+  },
+  {
+   "case_id": "schnorr-valid",
+   "tx_file": "schnorr-valid.tx",
+   "expected": "accept",
+   "cbor_size": 671,
+   "cbor_sha256": "6c5fd2fccf8fb9d15b075ea4621e0125ecd1b027afb54d04520b2875a79fbd0a",
+   "single_use": true,
+   "note": "verifySchnorrSecp256k1Signature valid (BIP340: 32B x-only vk, 64B sig; pure-python signer self-checked vs sk=3 pubkey) -> both accept"
+  },
+  {
+   "case_id": "schnorr-wrongsig",
+   "tx_file": "schnorr-wrongsig.tx",
+   "expected": "reject",
+   "cbor_size": 671,
+   "cbor_sha256": "5f8e2f72b4d5a8554097d265ee454baf90d99e9836c338c49f8dc8d6a7ab692b",
+   "single_use": false,
+   "note": "sig byte flipped -> both reject"
+  },
+  {
+   "case_id": "schnorr-malformed-sig",
+   "tx_file": "schnorr-malformed-sig.tx",
+   "expected": "reject",
+   "cbor_size": 670,
+   "cbor_sha256": "6d8feddf2c127824538f2fbf00ccf36aed6d4d6bd9a54e8924e4e4bed36c090c",
+   "single_use": false,
+   "note": "63-byte sig -> builtin error -> both reject gracefully (amaru live, no crash)"
   }
  ]
 }

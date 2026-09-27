@@ -119,6 +119,49 @@
     "amaru": "accepted",
     "cardano": "accepted"
    }
+  },
+  "ecdsa-wrongsig": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ecdsa-malformed-vk": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "schnorr-wrongsig": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "schnorr-malformed-sig": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ecdsa-valid": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "schnorr-valid": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
   }
- }
+ },
+ "secp_note": "verifyEcdsaSecp256k1Signature + verifySchnorrSecp256k1Signature (BIP340): valid accepts on both (same txid), wrong-sig rejects, malformed-length key/sig -> builtin errors gracefully (both reject, amaru live, no crash). ECDSA via cryptography (low-s compact); Schnorr via pure-python BIP340 signer self-checked vs the sk=3 pubkey."
 }
