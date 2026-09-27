@@ -1,0 +1,65 @@
+{
+  "vc-over": {
+    "c_status": 400,
+    "a_status": 400,
+    "c": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO Mismatch (RelEQ) {supplied: MaryValue (Coin 200000000000000) (MultiAsset (fromList [])), expected: MaryValue (Coin 200000000000001) (MultiAsset (fromList []))}))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidatio",
+    "a": "transaction 252ce7f78f53be9b1693db40b4d0a5a91d76f5d2c323a78c65f00275f83cc5fb is invalid: transaction failed phase one validation: value not preserved: balance = (-1, []): value not preserved: balance = (-1, [])",
+    "agree": true
+  },
+  "vc-under": {
+    "c_status": 400,
+    "a_status": 400,
+    "c": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO Mismatch (RelEQ) {supplied: MaryValue (Coin 200000000000000) (MultiAsset (fromList [])), expected: MaryValue (Coin 199999999999999) (MultiAsset (fromList []))}))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidatio",
+    "a": "transaction 5bf4c7b5145d6687752fe821e5857812828357760d2028c201417d6bcfb85f82 is invalid: transaction failed phase one validation: value not preserved: balance = (1, []): value not preserved: balance = (1, [])",
+    "agree": true
+  },
+  "out-1": {
+    "c_status": 400,
+    "a_status": 400,
+    "c": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (BabbageOutputTooSmallUTxO (((Addr Testnet (KeyHashObj (KeyHash {unKeyHash = \\\"e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327\\\"})) StakeRefNull,MaryValue (Coin 1) (MultiAsset (fromList [])),NoDatum,SNothing),Coin 831830) :| [])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValid",
+    "a": "transaction 18142032017e04c7499a082b4225f361b9b971a2456a22096c282e445533eacf is invalid: transaction failed phase one validation: invalid outputs: invalid transaction outputs: [#0: output doesn't contain enough Lovelace: minimum: 831830, given: 1]: invalid outputs: invalid transaction outputs: [#0: output doesn't contain enough Lovelace: minimum: 831830, given: 1]: invalid transaction outputs: [#0",
+    "agree": true
+  },
+  "out-1k": {
+    "c_status": 400,
+    "a_status": 400,
+    "c": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (BabbageOutputTooSmallUTxO (((Addr Testnet (KeyHashObj (KeyHash {unKeyHash = \\\"e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d2327\\\"})) StakeRefNull,MaryValue (Coin 1000) (MultiAsset (fromList [])),NoDatum,SNothing),Coin 840450) :| [])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxVa",
+    "a": "transaction 812e1687371cfedfb90f2440612acc2d77044694a21b80344c35aee7c83dbcca is invalid: transaction failed phase one validation: invalid outputs: invalid transaction outputs: [#0: output doesn't contain enough Lovelace: minimum: 840450, given: 1000]: invalid outputs: invalid transaction outputs: [#0: output doesn't contain enough Lovelace: minimum: 840450, given: 1000]: invalid transaction output",
+    "agree": true
+  },
+  "out-minm1": {
+    "c_status": 202,
+    "a_status": 202,
+    "c": "ACCEPTED",
+    "a": "ACCEPTED",
+    "agree": true
+  },
+  "fee-zero": {
+    "c_status": 400,
+    "a_status": 400,
+    "c": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayMempoolFailure \\\"All inputs are spent. Transaction has probably already been included\\\"\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}",
+    "a": "transaction ac944eed7ea25ec1d3a6ab5b6071e9920dd4298a4aa8936496eb546c821c0aff is invalid: transaction failed phase one validation: invalid fees: declared fee 0 below minimum 164005: invalid fees: declared fee 0 below minimum 164005: declared fee 0 below minimum 164005",
+    "agree": true
+  },
+  "out-min": {
+    "c_status": 400,
+    "a_status": 202,
+    "c": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayMempoolFailure \\\"All inputs are spent. Transaction has probably already been included\\\"\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}",
+    "a": "ACCEPTED",
+    "agree": false
+  },
+  "vc-exact": {
+    "c_status": 400,
+    "a_status": 202,
+    "c": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayMempoolFailure \\\"All inputs are spent. Transaction has probably already been included\\\"\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}",
+    "a": "ACCEPTED",
+    "agree": false
+  },
+  "fee-huge": {
+    "c_status": 400,
+    "a_status": 202,
+    "c": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayMempoolFailure \\\"All inputs are spent. Transaction has probably already been included\\\"\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}",
+    "a": "ACCEPTED",
+    "agree": false
+  }
+}
