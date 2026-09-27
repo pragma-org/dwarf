@@ -1,0 +1,271 @@
+{
+ "graded_at": "2026-09-27",
+ "pair": "pair4: cardano-node 11.1.2 (fef83fed) via cardano-submit-api 11.1.2 on :8113, amaru v10.11.20260925 (eaf8ac3f) submit :3213; mempool reset before the size run, each control, the duplicate run and the HTTP run",
+ "summary": {
+  "cases": 15,
+  "statuses": {
+   "AGREE": 15
+  }
+ },
+ "size_violations": [
+  {
+   "case_id": "size-canonical-16385",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "tx_too_large"
+    ],
+    "cardano": [
+     "tx_too_large"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction f5ff3deef908b90271cd09cc1ee1cd39e58dcd076026c66414615d4cee8b81b4 is invalid: transaction failed phase one validation: transaction too large: provided 16385 bytes, maximum 16384 bytes: transaction too large: provided 16385 bytes,",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (MaxTxSizeUTxO Mismatch (RelLTEQ) {supplied: 16385, expected: 16384}))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErro"
+  },
+  {
+   "case_id": "size-body-16385",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "tx_too_large"
+    ],
+    "cardano": [
+     "tx_too_large"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 907a6cbd4c73e47476fe978b651e759a1ca551fa450bffca335ee228b591a8f6 is invalid: transaction failed phase one validation: transaction too large: provided 16385 bytes, maximum 16384 bytes: transaction too large: provided 16385 bytes,",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (MaxTxSizeUTxO Mismatch (RelLTEQ) {supplied: 16385, expected: 16384}))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErro"
+  },
+  {
+   "case_id": "size-wits-16385",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "tx_too_large"
+    ],
+    "cardano": [
+     "tx_too_large"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 15d01b8db0402d46669ff2392f609e7f3ba57e38a049e5363ead68dcfa5e24df is invalid: transaction failed phase one validation: transaction too large: provided 16385 bytes, maximum 16384 bytes: transaction too large: provided 16385 bytes,",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (MaxTxSizeUTxO Mismatch (RelLTEQ) {supplied: 16385, expected: 16384}))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErro"
+  },
+  {
+   "case_id": "size-aux-16385",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "tx_too_large"
+    ],
+    "cardano": [
+     "tx_too_large"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction f98dada408b3bfd3728c59340b3b075dd715236c4f41b5a7a7a8795994e7e282 is invalid: transaction failed phase one validation: transaction too large: provided 16385 bytes, maximum 16384 bytes: transaction too large: provided 16385 bytes,",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (MaxTxSizeUTxO Mismatch (RelLTEQ) {supplied: 16385, expected: 16384}))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErro"
+  }
+ ],
+ "size_controls": [
+  {
+   "case_id": "size-canonical-16384-valid",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"15d01b8db0402d46669ff2392f609e7f3ba57e38a049e5363ead68dcfa5e24df\"",
+   "cardano_reason": "\"15d01b8db0402d46669ff2392f609e7f3ba57e38a049e5363ead68dcfa5e24df\""
+  },
+  {
+   "case_id": "size-body-16384-valid",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"22671b432e6cfe48279c3ed71fe0db8e02e5ee9119882d1366225d349afc211a\"",
+   "cardano_reason": "\"22671b432e6cfe48279c3ed71fe0db8e02e5ee9119882d1366225d349afc211a\""
+  },
+  {
+   "case_id": "size-wits-16384-valid",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"c4a04307586192ca8210fe90cf87b339bc87a2e52d09d96ffc7e39f428453295\"",
+   "cardano_reason": "\"c4a04307586192ca8210fe90cf87b339bc87a2e52d09d96ffc7e39f428453295\""
+  },
+  {
+   "case_id": "size-aux-16384-valid",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"bde3198890bb6854ecfc897c8e6c5aee66bfc9d65fc2314906975964db18be73\"",
+   "cardano_reason": "\"bde3198890bb6854ecfc897c8e6c5aee66bfc9d65fc2314906975964db18be73\""
+  },
+  {
+   "case_id": "mp-base",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"2f90a19c7e47e02171369e325aa107c0568cbb67d0f5ee2f5156810ba0251e54\"",
+   "cardano_reason": "\"2f90a19c7e47e02171369e325aa107c0568cbb67d0f5ee2f5156810ba0251e54\""
+  }
+ ],
+ "duplicate": [
+  {
+   "case_id": "duplicate-resubmission",
+   "first": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "second": {
+    "amaru": "masked",
+    "cardano": "masked"
+   },
+   "second_reasons": {
+    "amaru": "Transaction is a duplicate",
+    "cardano": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayMempoolFailure \\\"All inputs are spent. Transaction has probably already been "
+   },
+   "status": "AGREE"
+  }
+ ],
+ "http": [
+  {
+   "case_id": "http-empty-body",
+   "http_status": {
+    "amaru": 400,
+    "cardano": 400
+   },
+   "alive_after": {
+    "amaru": true,
+    "cardano": true
+   },
+   "status": "AGREE"
+  },
+  {
+   "case_id": "http-junk-1mib",
+   "http_status": {
+    "amaru": 400,
+    "cardano": 400
+   },
+   "alive_after": {
+    "amaru": true,
+    "cardano": true
+   },
+   "status": "AGREE"
+  },
+  {
+   "case_id": "http-truncated-tx",
+   "http_status": {
+    "amaru": 400,
+    "cardano": 400
+   },
+   "alive_after": {
+    "amaru": true,
+    "cardano": true
+   },
+   "status": "AGREE"
+  },
+  {
+   "case_id": "http-wrong-content-type",
+   "http_status": {
+    "amaru": 415,
+    "cardano": 415
+   },
+   "alive_after": {
+    "amaru": true,
+    "cardano": true
+   },
+   "status": "AGREE"
+  },
+  {
+   "case_id": "http-get",
+   "http_status": {
+    "amaru": 405,
+    "cardano": 405
+   },
+   "alive_after": {
+    "amaru": true,
+    "cardano": true
+   },
+   "status": "AGREE"
+  }
+ ]
+}
