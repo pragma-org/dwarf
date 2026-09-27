@@ -78,6 +78,19 @@ regression: a string-builtin script graded by `calculate-plutus-script-cost` par
   amaru validator/relay lets a tx consume more string-builtin computation than the protocol budget allows
   (resource/DoS angle that grows with string size).
 
+## Protocol-version scope (pv10 current; pv11 open)
+
+- This divergence is **MEASURED at protocol version 10** (amaru `Semantics::C` for PlutusV3), which **IS the
+  current live protocol** — Conway mainnet is pv10; pv11 is only *proposed* (announced 2025-12-04, not yet
+  enacted). So this is a **real current-protocol consensus-validity finding**, not stale/hypothetical.
+  Severity stays **MEDIUM-HIGH** for the current protocol.
+- amaru's `machine/semantics.rs` **changes the string cost measure at pv11**: `costs_strings_by_utf8_bytes()`
+  is `true` for `Semantics::D|E` (pv11) and `false` for `C` (pv10). So amaru's pv11 string costing runs a
+  **different code path** than the one measured here. It is **UNTESTED** — it may match cardano's pv11 model
+  (amaru may already address this at the future hard fork) or may still differ. Not asserted either way
+  (verify-don't-predict); tracked as an open pv11 candidate — see the combined cost-size doc's pv11
+  forward-looking surface.
+
 ## Artifacts
 
 aiken v1.1.24 validators `fixture/bls/validators/{strcost.ak, apponly.ak}` (redeemer-driven to avoid
