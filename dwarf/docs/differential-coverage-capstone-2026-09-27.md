@@ -23,6 +23,18 @@ Ground truth is the binary itself (`--version`), enforced by the version-provena
 Substrate: a frozen, non-forging reference-ledger pair built from the same genesis. Each family
 ran on a dedicated, mempool-isolated pair, with the mempool reset before every single-use accept.
 
+**Serving-binary provenance.** The graded runs above were served by an Amaru `eaf8ac3f` build
+carrying three local DWARF patches:
+- a definite-map fix in the bootstrap UTxO decoder (`tvar.rs`; store building only);
+- custom-testnet era-history loading from an environment variable (`network_name.rs`; the serving
+  commands pass `--era-history` explicitly);
+- a diagnostic print on the epoch-boundary nonce path (`nonce.rs`; never reached on a frozen submit
+  pair).
+
+None of them touches transaction validation. On 2026-09-27 all five pairs were re-served on a
+separately built binary reporting `eaf8ac3f` with no local patches. Empirical re-confirmation that
+the served behaviour is identical is in progress.
+
 ## Oracle (common to every family)
 
 Every case is graded on three things:
@@ -44,12 +56,13 @@ accept control is single-use and run after a mempool reset.
 | Mint / burn + multi-asset value | 19 | **19 AGREE** | `mint-burn-value-phase1-differential-family.md` |
 | Governance **proposals** (deposit, return account, prev-action lineage, hard-fork succession, committee, guardrails) | 24 | **24 AGREE** | `gov-proposal-phase1-differential-family.md` |
 | Metadata / auxiliary-data hash | 17 | **17 AGREE** | `metadata-phase1-differential-family.md` |
-| Reference-input resolution | 5 | **5 AGREE** | `reference-input-resolution-differential-family.md` |
+| Reference-input resolution | 5 | **5 AGREE** (verdict, reason and named-input parity) | `reference-input-resolution-differential-family.md`; `fixture/reference_inputs/graded-2026-09-27.json` |
+| Reference-script + inline-datum spends | 9 | **9 AGREE** | `reference-script-inline-datum-differential-family.md`; `fixture/refscript/graded-2026-09-27.json` |
 | Mempool / submit path (size cap, duplicates, HTTP robustness + liveness) | 15 | **15 AGREE** | `mempool-submit-path-differential-family.md` |
 | Plutus phase 2: 2a ex-units / `is_valid` (9), 2b builtins + ScriptContext (6), 2c error-path builtins (11) | 26 | **26 AGREE**, no VM panic | `plutus-phase2-differential-coverage-2026-09-27.md` |
 | Native scripts (multisig, RequireMOf incl. N-1, nested, timelocks incl. inclusive boundaries) | 10 | **10 AGREE** (script-hash parity; 5 controls same tx id) | `native-script-phase1-differential-family.md`; `fixture/native_script/graded-2026-09-27.json` |
 | Governance certificate witnesses (DRep registration: missing / wrong key / multi-cert partial) | 5 | **5 AGREE** (credential parity) | `governance-signature-phase1-differential-family.md`; `fixture/governance/graded-2026-09-27.json` |
-| **Total** | **166** | **165 AGREE, 1 divergence** | |
+| **Total (11 families)** | **175** | **174 AGREE, 1 divergence** | |
 
 Selected conformance datapoints:
 - **Metadata:** Amaru hashes auxiliary data **as sent**. With a non-canonical aux encoding, both
@@ -59,6 +72,11 @@ Selected conformance datapoints:
   This was confirmed with a separate non-canonical encoding of the body, the witnesses and the aux
   data.
 - **Plutus:** the ex-unit knife-edge agrees exactly.
+- **Reference scripts:** a script UTxO spent with its validator in the witness set and the same
+  spend with the validator supplied as a **reference script** are each accepted by both nodes,
+  with the same tx id on both sides. So Amaru resolves reference scripts conformantly. Supplying the
+  **wrong** reference script is rejected by both, so the safety property holds. Inline datums vs
+  datum hashes (supplied or missing) and the `is_valid=false` collateral path also agree.
 - **Decoder strictness:** every decode edge tested (mint/multi-asset CDDL, anchor bounds,
   metadatum size and type) is refused by **both** decoders. No Amaru decoder leniency was found in
   these families.
@@ -91,6 +109,7 @@ interval (expired, not yet valid, controls), max-tx-size (now pinned at exactly 
 | severity | finding | status | doc |
 |---|---|---|---|
 | **HIGH** | A **non-curve-point verification key** in a witness panics the ledger thread and the node exits: a remote, unauthenticated, single-transaction crash. cardano-node rejects the same tx and stays up. | CONFIRMED 2/2, independently verified, NOVEL. The panic-hunt closure found it to be the **sole reachable** panic among the sibling `.expect` / `unreachable!` sites. | `finding-amaru-vkey-noncurve-point-crash.md` |
+| **MEDIUM-HIGH** | **Epoch-boundary active-nonce mismatch (#3).** Amaru rejects the valid first block of a new epoch (`Invalid VRF proof`) that cardano-node accepts. Root cause, traced in source: `store.rs::evolve_nonce` derives the epoch-3 active nonce from an **epoch-1** block reference (the parent of a tail that lags a full epoch) instead of the immediately previous epoch's block. Amaru's imported nonces and its accumulated candidate nonce match cardano. It is reached when an Amaru node forward-syncs across an epoch boundary from a single peer; it is latent in normal deployments, which re-snapshot through the bootstrap producer. | Reproduced live on native 0925 stores; byte-proof of the combine; root cause traced to `store.rs::evolve_nonce`. The exact Praos combine (`⭒` / `hashHeaderToNonce`) is to be confirmed when fixing. | `finding-amaru-epoch-boundary-active-nonce.md` |
 | **MEDIUM** | **Collateral witness bypass (P1).** Amaru accepts a no-script tx naming someone else's UTxO as collateral without that owner's witness; cardano rejects it. A phase-1 validation-rule bypass. | LIVE, reproduced 2/2 | `collateral-phase1-differential-family.md` |
 | LOW | The submit API accepts **trailing bytes** after a tx; cardano decode-rejects. | known, confirmed live on 0925 | `finding-amaru-submit-trailing-bytes.md` |
 | LOW | The mempool admits **conflicting-input** txs; cardano rejects the second. | likely by-design; not filed | `finding-amaru-mempool-input-conflict-admission.md` |
@@ -107,9 +126,6 @@ Amaru does not forge Praos blocks.
   blocks the submitter when full. Verified against the exact shipped versions (amaru `eaf8ac3f`;
   ouroboros-consensus 4.2.1.0 as shipped in cardano-node 11.1.2). The live confirmation (a 64-UTxO
   re-bake) was deliberately skipped as low value. `finding-candidate-amaru-mempool-capacity-accounting.md`.
-- **Epoch-boundary VRF: PLACEHOLDER.** A block-level result from the block-level lane is pending
-  its (a)/(b) proof. *To be filled with the verdict, evidence path and severity once proven. No
-  claim is made here until then.*
 
 ## Harness hardening delivered in this campaign
 
@@ -121,10 +137,15 @@ Amaru does not forge Praos blocks.
 - **Reproducible fixtures** (`fixture/txedit.py`): shared re-sign helpers with self-checks. Unchanged
   witness entries are spliced as raw bytes, because cbor2 decodes tag-258 sets into hash-randomised
   Python sets, and before this fix the corpus rebuilds were not byte-reproducible.
+- **Reason and read caps raised** (`e49af08`): the response read and the graded reason went from
+  4096 / 400 to 16384 characters. cardano reports multi-rule failure *sets*, and the member matching
+  the other node's reason could sit past the old 400-char cut. That produced a false
+  REASON-DIVERGENCE on the reference-script family, where the verdicts agree. The shared grader's
+  truncation threshold was aligned with the new cap in this revision, so a genuine long-reason
+  divergence is not hidden as "unverified".
 - **Shared grading fixes:** each family passes its own reason table (no cross-family global
-  mutation); an opt-in full-response `detail` field for parity tokens past the 400-char reason cut;
-  a classifier marker for large cardano rejections (`conwayutxowfailure`); and `decode_leniency`
-  flagging.
+  mutation); an opt-in full-response `detail` field; a classifier marker for large cardano
+  rejections (`conwayutxowfailure`); and `decode_leniency` flagging.
 - **Pair reset system-start guard:** `reset-pair.sh` waits out Amaru's "process start must be after
   Ouroboros system start" window after a fresh deploy. *This is an operational script on the test
   host (`/home/nigel/reset-pair.sh`), not in the repository.*
@@ -141,8 +162,10 @@ Amaru does not forge Praos blocks.
 
 ## Pending
 
-- **Reference-script / inline-datum family:** substrate being baked.
-- **Block-level differential:** blocked on forward-sync across the epoch boundary. The VRF
-  placeholder above depends on it.
+- **Block-level differential:** a single-peer forward-sync of Amaru across an epoch boundary is
+  exactly what finding #3 breaks, so this substrate cannot progress past that boundary until #3 is
+  fixed. The rejection itself is the deliverable.
+- **Served-binary re-confirmation:** re-running the families on the clean `eaf8ac3f` serving binary
+  (in progress, see provenance above).
 - **Governance vote authorization on 11.1.2:** needs a fresh governance re-bake (see above).
   Native scripts and governance certificates were re-run on 11.1.2 on 2026-09-27.

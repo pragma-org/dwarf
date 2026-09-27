@@ -70,6 +70,15 @@ class GradeTests(unittest.TestCase):
         self.assertEqual(row["status"], "REASON-DIVERGENCE")
 
 
+    def test_long_but_complete_reason_on_the_wrong_rule_stays_a_divergence(self):
+        # after e49af08 reasons run up to 16384 chars; a 1000-char complete reason naming a
+        # different rule is a REASON-DIVERGENCE, not an unverifiable truncation
+        pad = "x" * 1000
+        row = spd.grade(WITNESS_CASE, result(
+            rej(f"missing required signatures for keys or roots: [{CRED}] {pad}"),
+            rej(f"IncorrectDepositDELEG {pad}")))
+        self.assertEqual(row["status"], "REASON-DIVERGENCE")
+
 class CorpusTests(unittest.TestCase):
     def test_corpus_integrity(self):
         import hashlib

@@ -39,8 +39,11 @@ REASON_CLASSES = {
     "pool_not_registered": (r"stakepoolnotregisteredonkeypool", r"unknown pool"),
     "pool_retire_wrong_epoch": (r"stakepoolretirementwrongepochpool", r"pool retirement epoch out of range"),
 }
-_TRUNCATED_AT = 400  # mixed_phase1._observation keeps the first 400 chars of a response
-_DETAIL_TRUNCATED_AT = 4096  # ... and, with keep_detail, the first 4096 as "detail"
+# mixed_phase1 reads and keeps up to 16384 chars of a response, as both "reason" and "detail"
+# (e49af08); a text that long may have been cut. These must track mixed_phase1, or a genuine
+# REASON-DIVERGENCE with a long reason is mislabelled REASON-UNVERIFIED (hidden, fail-closed).
+_TRUNCATED_AT = 16384
+_DETAIL_TRUNCATED_AT = 16384
 _WANT = {"accept": "accepted", "reject": "phase1_reject", "decode_reject": "decode_reject"}
 
 

@@ -23,7 +23,7 @@ def result(amaru, cardano, masked=False):
 
 
 def rej(reason, detail=None):
-    o = {"classification": "phase1_reject", "status": 400, "reason": reason[:400]}
+    o = {"classification": "phase1_reject", "status": 400, "reason": reason[:16384]}  # mixed_phase1 cap
     if detail is not None:
         o["detail"] = detail
     return o
@@ -55,7 +55,8 @@ class GradeTests(unittest.TestCase):
         self.assertEqual(row["status"], "AGREE")
 
     def test_policy_id_only_past_the_reason_cut_without_detail_is_unverified(self):
-        long = "ValueNotConservedUTxO (Mismatch {" + "x" * 500 + f'ScriptHash "{POL}"' + "})"
+        # the token sits past the 16384-char cap, so the kept reason is genuinely cut
+        long = "ValueNotConservedUTxO (Mismatch {" + "x" * 17000 + f'ScriptHash "{POL}"' + "})"
         row = mbd.grade(VALUE, result(rej(f"value not preserved: balance = {POL}"), rej(long)))
         self.assertEqual(row["status"], "REASON-UNVERIFIED")
 
