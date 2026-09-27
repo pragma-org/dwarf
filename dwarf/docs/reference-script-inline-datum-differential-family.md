@@ -65,3 +65,12 @@ python3 refscript_differential.py --corpus ../fixture/refscript --single spendA-
 ```
 
 Exit 0 all agree / 1 divergence / 2 inconclusive. Keys testnet-only, no value.
+
+## Independent re-verification
+
+Independently re-verified by a second agent (dwarf-v4-fd): the exact corpus transactions were
+re-submitted on refpair (CBOR sha256-matched to this corpus), reading full response bodies,
+one submission per reset. All 9 verdicts identical (every accept had matching amaru/cardano tx
+ids; #8 mismatched-reference-script rejected by both, class-set intersection agreeing on the
+missing script hash). Also re-confirmed on the literal clean labelled serving binary
+amaru 10.11.0 (eaf8ac3f).
