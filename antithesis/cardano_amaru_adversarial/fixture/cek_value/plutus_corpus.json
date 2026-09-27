@@ -1,0 +1,251 @@
+{
+ "description": "Plutus CEK-interpreter VALUE/structure-semantics differential (cardano 11.1.2 vs amaru 0925). Operands fed via redeemer (runtime) so the VM computes the value; validators assert the Cardano-spec result. Covers: bignum VALUE (2^128*2^128=2^256, large modular), ByteString VALUE edges (indexByteString in-range + OOB error, sliceByteString clamp/past-end, integerToByteString/byteStringToInteger round-trip at width 0/oversized/too-small, BE vs LE), and deep-nested PlutusData construct+traverse (depth-5). A value-computation or structure divergence -> assertion flips on one node -> is_valid consensus split. OOB/too-small cases double as VM liveness checks (builtin must error gracefully, not crash).",
+ "cases": [
+  {
+   "case_id": "bignum-mul-ok",
+   "tx_file": "bignum-mul-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "bignum_mul",
+   "cbor_size": 616,
+   "cbor_sha256": "6746d6e50ac81ccc14c48ec193f08b531ef7b87a6d883de1ac0bd34111cde124",
+   "redeemer_ints": [
+    340282366920938463463374607431768211456,
+    340282366920938463463374607431768211456,
+    115792089237316195423570985008687907853269984665640564039457584007913129639936
+   ],
+   "note": "multiplyInteger(2^128, 2^128) == 2^256 (bignum product, 78-digit result)"
+  },
+  {
+   "case_id": "bignum-mul-wrong",
+   "tx_file": "bignum-mul-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "validator": "bignum_mul",
+   "cbor_size": 616,
+   "cbor_sha256": "adb86299e57b0f8db186e08a1219881ae7fe4b9fea0d5a532ad0565ad3967909",
+   "redeemer_ints": [
+    340282366920938463463374607431768211456,
+    340282366920938463463374607431768211456,
+    115792089237316195423570985008687907853269984665640564039457584007913129639937
+   ],
+   "note": "asserts 2^256+1 (off-by-one) -> reject on both"
+  },
+  {
+   "case_id": "bignum-modmul-ok",
+   "tx_file": "bignum-modmul-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "bignum_modmul",
+   "cbor_size": 611,
+   "cbor_sha256": "fd461bfb0c2b10a62d362df037e150d1fb37ea55c7980d16251d0aed20aff20c",
+   "redeemer_ints": [
+    340282366920938463463374607431768211456,
+    340282366920938463463374607431768211456,
+    170141183460469231731687303715884105727,
+    4
+   ],
+   "note": "mod(2^128 * 2^128, 2^127-1) == spec value (large modular arithmetic)"
+  },
+  {
+   "case_id": "bignum-modmul-wrong",
+   "tx_file": "bignum-modmul-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "validator": "bignum_modmul",
+   "cbor_size": 611,
+   "cbor_sha256": "804c73ad87fb9aebd0375f001ead31a5d20a12bf91381f9c5ec61bef896cd405",
+   "redeemer_ints": [
+    340282366920938463463374607431768211456,
+    340282366920938463463374607431768211456,
+    170141183460469231731687303715884105727,
+    5
+   ],
+   "note": "asserts modular result +1 -> reject on both"
+  },
+  {
+   "case_id": "bs-index-ok",
+   "tx_file": "bs-index-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "bs_index",
+   "cbor_size": 555,
+   "cbor_sha256": "50621e4e64c57e7581fd5ac4bd4b13f8bdab1190556078e1a01d5338ba749275",
+   "redeemer_ints": [
+    5,
+    85
+   ],
+   "note": "indexByteString(bs,5) == 0x55; in-range value"
+  },
+  {
+   "case_id": "bs-index-wrong",
+   "tx_file": "bs-index-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "validator": "bs_index",
+   "cbor_size": 554,
+   "cbor_sha256": "98207c7a2535d46562e07fca8674f446d365bfbc27d34ec97487642a1b79ef6d",
+   "redeemer_ints": [
+    5,
+    0
+   ],
+   "note": "asserts wrong byte value -> reject on both"
+  },
+  {
+   "case_id": "bs-index-oob",
+   "tx_file": "bs-index-oob.tx",
+   "expected": "reject",
+   "single_use": false,
+   "validator": "bs_index",
+   "cbor_size": 554,
+   "cbor_sha256": "427f56874bda78acedd2682d36e024d25c42cc132be3b83c8e4edece69e4306f",
+   "redeemer_ints": [
+    16,
+    0
+   ],
+   "note": "indexByteString(bs,16) OUT OF RANGE -> builtin error, both reject (liveness check)"
+  },
+  {
+   "case_id": "bs-slice-mid",
+   "tx_file": "bs-slice-mid.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "bs_slice_len",
+   "cbor_size": 568,
+   "cbor_sha256": "3d5375ded28cf29d511a40199feb3cfd4df12487a0902e82781621f764ff7c02",
+   "redeemer_ints": [
+    2,
+    4,
+    4
+   ],
+   "note": "sliceByteString(2,4) length == 4 (in-range slice)"
+  },
+  {
+   "case_id": "bs-slice-clamp",
+   "tx_file": "bs-slice-clamp.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "bs_slice_len",
+   "cbor_size": 568,
+   "cbor_sha256": "5df92c8ec40fb411c42d49d1f7a1b3c5b14e9c841b31a723ae9f618dbfa33282",
+   "redeemer_ints": [
+    14,
+    10,
+    2
+   ],
+   "note": "sliceByteString(14,10) clamps to available -> length 2"
+  },
+  {
+   "case_id": "bs-slice-past",
+   "tx_file": "bs-slice-past.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "bs_slice_len",
+   "cbor_size": 568,
+   "cbor_sha256": "91dbd5a9b5fed5794a3cfc9a463142ca76c1b15d598d4930efd117ab9e3236d4",
+   "redeemer_ints": [
+    20,
+    4,
+    0
+   ],
+   "note": "sliceByteString(20,4) start past end -> length 0"
+  },
+  {
+   "case_id": "i2b-be-w0",
+   "tx_file": "i2b-be-w0.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "i2b_b2i",
+   "cbor_size": 564,
+   "cbor_sha256": "3df40f2f52edaf6624c44a11843a89e7c4d6c2c94f156b29d64262a2fee2a08d",
+   "redeemer_ints": [
+    1,
+    0,
+    258
+   ],
+   "note": "integerToByteString(BE, width 0, 258) -> byteStringToInteger BE round-trips to 258 (minimal width)"
+  },
+  {
+   "case_id": "i2b-le-w0",
+   "tx_file": "i2b-le-w0.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "i2b_b2i",
+   "cbor_size": 564,
+   "cbor_sha256": "3a8fe513df8ada3b57ec09fa3f88b7316cf31bd03af1e7a3af8037c79e4ea52b",
+   "redeemer_ints": [
+    0,
+    0,
+    258
+   ],
+   "note": "integerToByteString(LE, width 0, 258) -> round-trips to 258 (little-endian minimal)"
+  },
+  {
+   "case_id": "i2b-be-w4",
+   "tx_file": "i2b-be-w4.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "i2b_b2i",
+   "cbor_size": 564,
+   "cbor_sha256": "828dcde14a1db3aa892619bdd6c6d5ed13f4373a37d603b6353f23c59230c1c1",
+   "redeemer_ints": [
+    1,
+    4,
+    258
+   ],
+   "note": "integerToByteString(BE, width 4, 258) fixed width round-trips to 258"
+  },
+  {
+   "case_id": "i2b-oversized",
+   "tx_file": "i2b-oversized.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "i2b_b2i",
+   "cbor_size": 564,
+   "cbor_sha256": "df789141730d9808580c2ff5dc59a2a9438b3be679627f610f87714f97daf628",
+   "redeemer_ints": [
+    1,
+    10,
+    258
+   ],
+   "note": "integerToByteString(BE, width 10, 258) oversized pad round-trips to 258"
+  },
+  {
+   "case_id": "i2b-toosmall",
+   "tx_file": "i2b-toosmall.tx",
+   "expected": "reject",
+   "single_use": false,
+   "validator": "i2b_b2i",
+   "cbor_size": 564,
+   "cbor_sha256": "8b1819cd13779648c2a5fefa20b1cb553b83d9f23bea81a155e542e31b81c2f0",
+   "redeemer_ints": [
+    1,
+    1,
+    258
+   ],
+   "note": "integerToByteString(BE, width 1, 258) width too small -> builtin error, both reject (liveness check)"
+  },
+  {
+   "case_id": "nested-ok",
+   "tx_file": "nested-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "validator": "nested_traverse",
+   "cbor_size": 568,
+   "cbor_sha256": "1582c3ca01cbac69be7adeada98277a980aed64eb990ade12fa398a2538fe7a9",
+   "redeemer_ints": null,
+   "note": "depth-5 nested list Data [[[[[42]]]]], unConstr/unList traverse to Int leaf == 42"
+  },
+  {
+   "case_id": "nested-wrong",
+   "tx_file": "nested-wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "validator": "nested_traverse",
+   "cbor_size": 568,
+   "cbor_sha256": "4275cef5fd4ca6d31a7184eba3db58d200311c3a05e281133fe9117edf438deb",
+   "redeemer_ints": null,
+   "note": "depth-5 nested leaf == 43 (wrong) -> reject on both"
+  }
+ ]
+}
