@@ -1,0 +1,107 @@
+{
+ "description": "PlutusData (datum/redeemer) CBOR canonicalization + decode-strictness differential (cardano 11.1.2 vs amaru 0925). Non-canonical/malformed PlutusData spliced into a redeemer or supplied datum (body untouched). Result: canonical controls accept on both; every non-canonical variant rejects on both -- the >64-byte chunk limit at DECODE (both), the rest via the script-integrity hash (both). No decode/datum-hash/is_valid divergence. Boundary: pure decoder-acceptance (non-canonical WITH a matching integrity hash) needs the integrity-hash recomputation lane; not isolated here.",
+ "cases": [
+  {
+   "case_id": "pd-canonical-mint",
+   "tx_file": "pd-canonical-mint.tx",
+   "expected": "accept",
+   "cbor_size": 391,
+   "cbor_sha256": "57e8f72f4e7aa8285e86822a0798ad0a494653ec0ef47614fc8aa30f0f932368",
+   "note": "canonical unit redeemer (control) -> both accept",
+   "single_use": true
+  },
+  {
+   "case_id": "pd-canonical-datum",
+   "tx_file": "pd-canonical-datum.tx",
+   "expected": "accept",
+   "cbor_size": 317,
+   "cbor_sha256": "1f9857f8386a2dd629d55599b576acc994dac8228a380d4016541665f426c168",
+   "note": "spend datum-hash UTxO with canonical supplied datum (control) -> both accept",
+   "single_use": true
+  },
+  {
+   "case_id": "pd-indefinite-array",
+   "tx_file": "pd-indefinite-array.tx",
+   "expected": "reject",
+   "cbor_size": 392,
+   "cbor_sha256": "1f5f282d8afc10e4e19c49acaf3aaa9e848643df1c45e435d48c64254470edc3",
+   "note": "redeemer unit as tag121+INDEFINITE array -> both reject (integrity hash); decode-lenient on both",
+   "reason_classes": [
+    "integrity_hash"
+   ],
+   "single_use": false
+  },
+  {
+   "case_id": "pd-nonminimal-tag",
+   "tx_file": "pd-nonminimal-tag.tx",
+   "expected": "reject",
+   "cbor_size": 392,
+   "cbor_sha256": "99a9adefef79a4f7d64524479a223f4f53b09249eb87ceea5ec5ec1a984d7582",
+   "note": "redeemer tag121 via non-minimal 2-byte arg -> both reject (integrity hash)",
+   "reason_classes": [
+    "integrity_hash"
+   ],
+   "single_use": false
+  },
+  {
+   "case_id": "pd-nonminimal-int",
+   "tx_file": "pd-nonminimal-int.tx",
+   "expected": "reject",
+   "cbor_size": 397,
+   "cbor_sha256": "ed40f2f99484d5f6bb734d4d9a87723dfd44f8ab406714b6db87f402e513498d",
+   "note": "redeemer int 0 as non-minimal uint64 -> both reject (integrity hash)",
+   "reason_classes": [
+    "integrity_hash"
+   ],
+   "single_use": false
+  },
+  {
+   "case_id": "pd-indefinite-bytes",
+   "tx_file": "pd-indefinite-bytes.tx",
+   "expected": "reject",
+   "cbor_size": 392,
+   "cbor_sha256": "3bb334e07906c306a100892b8ff780010f73f822b96ae6c14bf2bc73ced38a2b",
+   "note": "redeemer bytestring via indefinite chunks -> both reject (integrity hash)",
+   "reason_classes": [
+    "integrity_hash"
+   ],
+   "single_use": false
+  },
+  {
+   "case_id": "pd-dup-map-key",
+   "tx_file": "pd-dup-map-key.tx",
+   "expected": "reject",
+   "cbor_size": 393,
+   "cbor_sha256": "884c8eec66d2c63d20ecee138ed04037d2af978fbe98a0becf79c914b80b4681",
+   "note": "redeemer map with DUPLICATE key -> both DECODE-accept then reject (integrity hash); neither strict-rejects dup keys at decode",
+   "reason_classes": [
+    "integrity_hash"
+   ],
+   "single_use": false
+  },
+  {
+   "case_id": "pd-unchunked-65b",
+   "tx_file": "pd-unchunked-65b.tx",
+   "expected": "reject",
+   "cbor_size": 455,
+   "cbor_sha256": "44ab31adf89f01078ffdbd1d35ed2626536cf50cb99fe2a0c2d2331e9e59dbfc",
+   "note": "redeemer 65-byte bytestring in ONE chunk (>64) -> both DECODE-REJECT (64-byte PlutusData chunk limit enforced identically)",
+   "reason_classes": [
+    "decode"
+   ],
+   "single_use": false
+  },
+  {
+   "case_id": "pd-datum-noncanon",
+   "tx_file": "pd-datum-noncanon.tx",
+   "expected": "reject",
+   "cbor_size": 318,
+   "cbor_sha256": "3d03e9b5de623ad69a506ee8545b944be9dd1a20485497b78d26e8fff2f6eac7",
+   "note": "datum-hash spend with NON-canonical supplied datum -> both reject (integrity hash catches it)",
+   "reason_classes": [
+    "integrity_hash"
+   ],
+   "single_use": false
+  }
+ ]
+}

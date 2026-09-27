@@ -1,0 +1,39 @@
+{
+ "date": "2026-09-27",
+ "surface": "value-conservation / arithmetic knife-edges (extends mint/burn)",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 :8113 (pair4)",
+  "amaru": "amaru 0925 clean eaf8ac3f :3213"
+ },
+ "critical_probes": "amaru accepting value creation / int64 overflow that cardano rejects would be CRITICAL; none observed.",
+ "results": {
+  "conserve-ada-plus1": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   }
+  },
+  "conserve-ada-minus1": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   }
+  },
+  "mint-int64-over": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   }
+  },
+  "mint-int64-max": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}

@@ -1,0 +1,44 @@
+{
+ "description": "Script-integrity-hash / languageViews / cost-model differential (cardano 11.1.2 vs amaru 0925). script_data_hash = hash(redeemers||datums||languageViews). Result: amaru computes the same script_data_hash as cardano for single-V1, single-V3, and MIXED V1+V3 (both cost models in languageViews) -- all accept with the same txid -- and both reject a corrupted hash (PPViewHashesDontMatch). No integrity-hash / cost-model-inclusion consensus divergence. Boundary: PlutusV2 has no cost model on this chain, so V1+V3 (and their mix) are the reachable languages.",
+ "cases": [
+  {
+   "case_id": "v1-mint",
+   "tx_file": "v1-mint.tx",
+   "expected": "accept",
+   "cbor_size": 395,
+   "cbor_sha256": "90f03b5fb4fba286cd42c3de04968d1a7cd45e308dc0a04a656771cd2f964884",
+   "single_use": true,
+   "note": "mint under a PlutusV1 always-succeeds policy -> languageViews carries the V1 cost model; both accept (same script_data_hash)"
+  },
+  {
+   "case_id": "v3-mint",
+   "tx_file": "v3-mint.tx",
+   "expected": "accept",
+   "cbor_size": 387,
+   "cbor_sha256": "15b0d9cb88276ce703e15f727ead95a9595ef9844bfc560a1a1f91924c360f85",
+   "single_use": true,
+   "note": "mint under a PlutusV3 always-succeeds policy (control) -> both accept"
+  },
+  {
+   "case_id": "mixed-v1v3",
+   "tx_file": "mixed-v1v3.tx",
+   "expected": "accept",
+   "cbor_size": 499,
+   "cbor_sha256": "a5d5840785fc38d4ce519402f431d276d0abfe6d2555ac43793f636992d52463",
+   "single_use": true,
+   "note": "ONE tx minting under BOTH a V1 and a V3 policy -> languageViews must carry BOTH cost models; both accept, same txid -> inclusion/ordering/encoding of the two cost models matches"
+  },
+  {
+   "case_id": "mixed-badhash",
+   "tx_file": "mixed-badhash.tx",
+   "expected": "reject",
+   "cbor_size": 496,
+   "cbor_sha256": "1e5a0eb641c85b13ee83c7b33a66d2152e9fece6395f73e3ad02ee32470bf17b",
+   "single_use": false,
+   "note": "mixed-v1v3 with one bit flipped in the body script_data_hash + re-signed -> both reject PPViewHashesDontMatch (both compute + check the hash)",
+   "reason_classes": [
+    "integrity_hash"
+   ]
+  }
+ ]
+}

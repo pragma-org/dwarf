@@ -1,0 +1,47 @@
+{
+ "description": "Conway reference-script fee differential (cardano 11.1.2 vs amaru 0925). Spend a script UTxO via a reference script (minFeeRefScriptCostPerByte=15 surcharge applies) at fee = cardano's computed minimum vs minimum-1, single- and two-reference-script. Result: amaru's computed minimum equals cardano's TO THE LOVELACE (559523 / 561197) - both accept at exact, both reject FeeTooSmall at -1, amaru explicitly states the same 'below minimum 559523'. No fee-consensus divergence. LINEAR tier only (refpair scripts ~7 bytes); the tiered/exponential growth past ~25600 ref-script bytes is substrate-limited (needs a large ref-script UTxO baked).",
+ "cases": [
+  {
+   "case_id": "reffee-exact",
+   "tx_file": "reffee-exact.tx",
+   "expected": "accept",
+   "cbor_size": 334,
+   "cbor_sha256": "34824a8a848eb91fd96337e373ee1cdfcd29c5f9d43bc664005f89329006768c",
+   "single_use": true,
+   "note": "spend via 1 reference script at fee = cardano min 559523 -> both accept"
+  },
+  {
+   "case_id": "reffee-under",
+   "tx_file": "reffee-under.tx",
+   "expected": "reject",
+   "cbor_size": 334,
+   "cbor_sha256": "8151945d7c69541b738427c8eed749846fbdd218f742bb2067856f61c8873d90",
+   "single_use": false,
+   "note": "fee 559522 (min-1) -> both reject FeeTooSmall; amaru states 'below minimum 559523' = cardano's exactly",
+   "reason_classes": [
+    "fee_too_small"
+   ]
+  },
+  {
+   "case_id": "reffee-2ref-exact",
+   "tx_file": "reffee-2ref-exact.tx",
+   "expected": "accept",
+   "cbor_size": 370,
+   "cbor_sha256": "feea64b945fa9db97d63128163d18bf85b296f808c637689859519e7c9a8b1db",
+   "single_use": true,
+   "note": "spend + a 2nd reference-script input, fee = cardano min 561197 -> both accept"
+  },
+  {
+   "case_id": "reffee-2ref-under",
+   "tx_file": "reffee-2ref-under.tx",
+   "expected": "reject",
+   "cbor_size": 370,
+   "cbor_sha256": "bfdcd678c9afc4da93a38591d9eb830cc6dfcf443273979954d6b9ba361de51c",
+   "single_use": false,
+   "note": "2-ref fee 561196 (min-1) -> both reject FeeTooSmall",
+   "reason_classes": [
+    "fee_too_small"
+   ]
+  }
+ ]
+}

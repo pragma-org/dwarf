@@ -1,0 +1,132 @@
+{
+ "date": "2026-09-27",
+ "surface": "PlutusData (datum/redeemer) CBOR canonicalization + decode strictness",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 :8114",
+  "amaru": "amaru 0925 clean eaf8ac3f :3214"
+ },
+ "findings": "No decode / datum-hash / is_valid divergence. Both enforce the >64-byte PlutusData bytestring chunk limit at DECODE (both decode-reject, amaru with a precise message); both are decode-lenient on indefinite-length / non-minimal-int / non-minimal-tag / duplicate-map-key PlutusData but reject via the script-integrity hash; a non-canonical supplied datum hashes to the SAME value on both (1b442147...) and is rejected as an extraneous/not-allowed supplemental datum on both -> datum-hash computed over supplied bytes identically.",
+ "boundary": "PlutusData in redeemers/datums is always under the integrity hash, so a byte-edit is caught by the integrity hash on both; pure decoder-acceptance (non-canonical WITH a matching integrity hash) needs the integrity-hash recomputation lane -- not isolated here.",
+ "results": {
+  "pd-indefinite-array": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "reject",
+    "cardano": "reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "integrity_hash"
+    ],
+    "cardano": [
+     "integrity_hash"
+    ]
+   }
+  },
+  "pd-nonminimal-tag": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "reject",
+    "cardano": "reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "integrity_hash"
+    ],
+    "cardano": [
+     "integrity_hash"
+    ]
+   }
+  },
+  "pd-nonminimal-int": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "reject",
+    "cardano": "reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "integrity_hash"
+    ],
+    "cardano": [
+     "integrity_hash"
+    ]
+   }
+  },
+  "pd-indefinite-bytes": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "reject",
+    "cardano": "reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "integrity_hash"
+    ],
+    "cardano": [
+     "integrity_hash"
+    ]
+   }
+  },
+  "pd-dup-map-key": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "reject",
+    "cardano": "reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "integrity_hash"
+    ],
+    "cardano": [
+     "integrity_hash"
+    ]
+   }
+  },
+  "pd-unchunked-65b": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "decode"
+    ],
+    "cardano": [
+     "decode"
+    ]
+   }
+  },
+  "pd-datum-noncanon": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "reject",
+    "cardano": "reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "extraneous_datum"
+    ],
+    "cardano": [
+     "extraneous_datum",
+     "integrity_hash"
+    ]
+   }
+  },
+  "pd-canonical-mint": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "pd-canonical-datum": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}

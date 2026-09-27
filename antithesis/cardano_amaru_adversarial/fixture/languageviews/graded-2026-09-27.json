@@ -1,0 +1,47 @@
+{
+ "date": "2026-09-27",
+ "surface": "script-integrity-hash / languageViews / cost-model",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 :8113 (pair4)",
+  "amaru": "amaru 0925 clean eaf8ac3f :3213"
+ },
+ "finding": "amaru computes script_data_hash = hash(redeemers||datums||languageViews) identically to cardano for single-V1, single-V3, and MIXED V1+V3 (both cost models in languageViews) -- all accept with the same txid; both reject a corrupted hash (PPViewHashesDontMatch). No cost-model inclusion/ordering/encoding divergence. Boundary: no PlutusV2 cost model on this chain.",
+ "results": {
+  "mixed-badhash": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "integrity_hash"
+    ],
+    "cardano": [
+     "integrity_hash"
+    ]
+   }
+  },
+  "v1-mint": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "v3-mint": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "mixed-v1v3": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}
