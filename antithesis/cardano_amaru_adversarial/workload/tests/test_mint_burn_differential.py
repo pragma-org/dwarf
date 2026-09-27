@@ -98,7 +98,9 @@ class TransportTests(unittest.TestCase):
         plain = mixed_phase1._observation(400, body)
         full = mixed_phase1._observation(400, body, detail=True)
         self.assertNotIn("detail", plain)
-        self.assertEqual((len(full["reason"]), full["detail"]), (400, body))
+        # reason cap raised 400->16384 (fixes truncation-faked reason-divergence on
+        # cardano multi-rule failure sets); a 1000-char body is now kept in full.
+        self.assertEqual((len(full["reason"]), full["detail"]), (1000, body))
 
 
 class ClassifierTests(unittest.TestCase):

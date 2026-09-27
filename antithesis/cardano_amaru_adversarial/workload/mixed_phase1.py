@@ -276,12 +276,12 @@ class HttpSubmitTransport:
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                body = response.read(4096).decode("utf-8", "replace")
+                body = response.read(16384).decode("utf-8", "replace")
                 status = response.status
             return _observation(status, body, payload=payload, detail=self.keep_detail)
         except urllib.error.HTTPError as exc:
             try:
-                body = exc.read(4096).decode("utf-8", "replace")
+                body = exc.read(16384).decode("utf-8", "replace")
             except Exception:
                 body = str(exc.reason or "http error")
             return _observation(exc.code, body, payload=payload, detail=self.keep_detail)
@@ -299,7 +299,7 @@ def _observation(
     payload: bytes | None = None,
     detail: bool = False,
 ) -> dict:
-    reason = body[:400] if body else (transport_error or "")
+    reason = body[:16384] if body else (transport_error or "")
     observation = {
         "classification": classify_response(status, body, transport_error, payload=payload),
         "status": status,
@@ -422,7 +422,7 @@ def emit_assertions(fixture: Fixture, result: dict, recovery: bool = False) -> N
             label: {
                 "classification": observation["classification"],
                 "status": observation.get("status"),
-                "reason": str(observation.get("reason", ""))[:200],
+                "reason": str(observation.get("reason", ""))[:1000],
             }
             for label, observation in observations.items()
         },
@@ -581,7 +581,7 @@ def public_result(result: dict) -> dict:
             label: {
                 "classification": observation["classification"],
                 "status": observation.get("status"),
-                "reason": str(observation.get("reason", ""))[:200],
+                "reason": str(observation.get("reason", ""))[:1000],
             }
             for label, observation in result["observations"].items()
         },
