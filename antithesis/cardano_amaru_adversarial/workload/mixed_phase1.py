@@ -256,9 +256,12 @@ def load_corpus(root: str | Path) -> list[Fixture]:
 class HttpSubmitTransport:
     """POST raw transaction CBOR and preserve enough evidence to classify it."""
 
-    def __init__(self, url: str, timeout: float = 5.0):
+    def __init__(self, url: str, timeout: float = 5.0, keep_detail: bool = False):
         self.url = url
         self.timeout = timeout
+        # keep_detail: also record the full (<= 4096-char) response as "detail", for oracles
+        # whose parity token sits past the 400-char "reason" cut (long ledger Mismatch values)
+        self.keep_detail = keep_detail
 
     def send(self, payload: bytes) -> dict:
         request = urllib.request.Request(
@@ -271,13 +274,13 @@ class HttpSubmitTransport:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 body = response.read(4096).decode("utf-8", "replace")
                 status = response.status
-            return _observation(status, body, payload=payload)
+            return _observation(status, body, payload=payload, detail=self.keep_detail)
         except urllib.error.HTTPError as exc:
             try:
                 body = exc.read(4096).decode("utf-8", "replace")
             except Exception:
                 body = str(exc.reason or "http error")
-            return _observation(exc.code, body, payload=payload)
+            return _observation(exc.code, body, payload=payload, detail=self.keep_detail)
         except (urllib.error.URLError, ConnectionError, socket.timeout, TimeoutError) as exc:
             reason = getattr(exc, "reason", exc)
             return _observation(None, "", type(reason).__name__)
@@ -290,13 +293,17 @@ def _observation(
     body: str,
     transport_error: str | None = None,
     payload: bytes | None = None,
+    detail: bool = False,
 ) -> dict:
     reason = body[:400] if body else (transport_error or "")
-    return {
+    observation = {
         "classification": classify_response(status, body, transport_error, payload=payload),
         "status": status,
         "reason": reason,
     }
+    if detail:
+        observation["detail"] = body or ""
+    return observation
 
 
 def observe_differential(

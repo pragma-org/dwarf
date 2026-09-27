@@ -40,15 +40,29 @@ REASON_CLASSES = {
     "pool_retire_wrong_epoch": (r"stakepoolretirementwrongepochpool", r"pool retirement epoch out of range"),
 }
 _TRUNCATED_AT = 400  # mixed_phase1._observation keeps the first 400 chars of a response
+_DETAIL_TRUNCATED_AT = 4096  # ... and, with keep_detail, the first 4096 as "detail"
+_WANT = {"accept": "accepted", "reject": "phase1_reject", "decode_reject": "decode_reject"}
 
 
-def reason_classes(reason: str, node: str) -> set[str]:
+def _text(o: dict) -> str:
+    """The fullest response text recorded for an observation."""
+    return o.get("detail") or o.get("reason") or ""
+
+
+def _truncated(o: dict) -> bool:
+    limit = _DETAIL_TRUNCATED_AT if "detail" in o else _TRUNCATED_AT
+    return len(_text(o)) >= limit
+
+
+def reason_classes(reason: str, node: str, table: dict | None = None) -> set[str]:
     idx = 0 if node == "cardano" else 1
     low = (reason or "").lower()
-    return {c for c, pats in REASON_CLASSES.items() if re.search(pats[idx], low)}
+    return {c for c, pats in (table or REASON_CLASSES).items() if re.search(pats[idx], low)}
 
 
-def grade(case: dict, result: dict) -> dict:
+def grade(case: dict, result: dict, table: dict | None = None) -> dict:
+    """Grade one case; `table` lets another family supply its reason classes without mutating
+    this module's REASON_CLASSES."""
     obs = result["observations"]
     cls = {k: v["classification"] for k, v in obs.items()}
     row = {"case_id": case["case_id"], "expected": case["expected"], "classes": cls}
@@ -58,20 +72,19 @@ def grade(case: dict, result: dict) -> dict:
         return row
     verdict_parity = len(set(cls.values())) == 1
     row["verdict_parity"] = verdict_parity
-    want = "accepted" if case["expected"] == "accept" else "phase1_reject"
+    want = _WANT[case["expected"]]
     row["matches_expected"] = all(v == want for v in cls.values())
     if case["expected"] == "reject" and verdict_parity:
         target = set(case["reason_classes"])
-        got = {n: reason_classes(o.get("reason", ""), n) for n, o in obs.items()}
+        got = {n: reason_classes(_text(o), n, table) for n, o in obs.items()}
         row["reason_classes"] = {n: sorted(g) for n, g in got.items()}
         row["reason_parity"] = all(g & target for g in got.values()) and bool(
             set.intersection(*got.values()))
         cred = case.get("credential")
         if cred:
-            row["cred_seen"] = {n: cred in (o.get("reason") or "") for n, o in obs.items()}
+            row["cred_seen"] = {n: cred in _text(o) for n, o in obs.items()}
             row["cred_parity"] = all(row["cred_seen"].values())
-            row["reason_truncated"] = [n for n, o in obs.items()
-                                       if len(o.get("reason") or "") >= _TRUNCATED_AT]
+            row["reason_truncated"] = [n for n, o in obs.items() if _truncated(o)]
     if not (verdict_parity and row["matches_expected"]):
         row["status"] = "VERDICT-DIVERGENCE"
     elif row.get("reason_parity", True) and row.get("cred_parity", True):
