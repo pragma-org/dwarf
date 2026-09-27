@@ -1,0 +1,99 @@
+{
+ "date": "2026-09-27",
+ "surface": "reference-script + inline-datum spend",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 :8114",
+  "amaru": "amaru 0925 :3214",
+  "utxos": "5 script UTxOs under 9aecf690..."
+ },
+ "note": "spendA-wrong-refscript first read REASON-DIVERGENCE due to mixed_phase1 400-char reason cap hiding cardano MissingScriptWitnesses (3rd in failure set {PPViewHashesDontMatch, ExtraRedeemers, MissingScriptWitnesses}); driver now reads full body -> both cite missing-script 186e32fa -> AGREE.",
+ "results": {
+  "spendB-missing-datum": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "missing_datum"
+    ],
+    "cardano": [
+     "missing_datum"
+    ]
+   }
+  },
+  "spendD-fail-valid": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "spendA-wrong-refscript": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "script_mismatch"
+    ],
+    "cardano": [
+     "script_mismatch"
+    ]
+   }
+  },
+  "spendA-witness": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "spendA-refscript": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "spendB-hash-witness": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "spendB-refscript": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "spendD-fail-invalid": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "spendA-refscript-also-refinput": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}
