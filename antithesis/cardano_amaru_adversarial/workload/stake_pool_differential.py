@@ -85,6 +85,9 @@ def grade(case: dict, result: dict, table: dict | None = None) -> dict:
             row["cred_seen"] = {n: cred in _text(o) for n, o in obs.items()}
             row["cred_parity"] = all(row["cred_seen"].values())
             row["reason_truncated"] = [n for n, o in obs.items() if _truncated(o)]
+    if case["expected"] == "decode_reject" and set(cls.values()) == {"decode_reject", "phase1_reject"}:
+        # one decoder accepted what the other refused, then validation rejected it anyway
+        row["decode_leniency"] = sorted(n for n, c in cls.items() if c == "phase1_reject")
     if not (verdict_parity and row["matches_expected"]):
         row["status"] = "VERDICT-DIVERGENCE"
     elif row.get("reason_parity", True) and row.get("cred_parity", True):

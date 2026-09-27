@@ -14,78 +14,53 @@ Body edits (re-signed with the payment + policy keys). Each keeps the rest of th
   asset-name-33b         mint 10 of a 33-byte asset name, carried by the output.
   output-zero-qty        output carries 0 of a policy token (Conway: positive_coin), no mint.
 
-Self-checks, or abort: cbor2 re-encoding of the unedited body is byte-identical, and the Python
-Ed25519 signature equals the cardano-cli witness for that body (Ed25519 is deterministic).
+Self-checks (txedit.self_check), or abort: cbor2 re-encoding of the unedited body is
+byte-identical, and the Python Ed25519 signatures equal the cardano-cli witnesses.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 from pathlib import Path
 
 import cbor2
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "collateral"))
-from redeemers import split_tx  # noqa: E402
+sys.path.insert(0, str(HERE.parent))
+import txedit  # noqa: E402
+from txedit import items, signed_wits, split_tx  # noqa: E402
 
 MINT = b"MINT"
 
 
 def load(name: str) -> bytes:
-    return bytes.fromhex(json.loads((HERE / name).read_text())["cborHex"])
+    return txedit.load(HERE, name)
 
 
-def key(name: str) -> Ed25519PrivateKey:
-    seed = bytes.fromhex(json.loads((HERE / "keys" / f"{name}.skey").read_text())["cborHex"])[2:]
-    return Ed25519PrivateKey.from_private_bytes(seed)
-
-
-def vkey(k: Ed25519PrivateKey) -> bytes:
-    return k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-
-
-def items(x):  # a witness/script list, possibly wrapped in a tag-258 set
-    return list(x.value) if isinstance(x, cbor2.CBORTag) else list(x)
-
-
-def rewrap(orig, new_list):
-    return cbor2.CBORTag(orig.tag, new_list) if isinstance(orig, cbor2.CBORTag) else new_list
+def key(name: str):
+    return txedit.key(HERE, name)
 
 
 def write(name: str, body: bytes, wits: dict, tail: bytes, desc: str) -> None:
-    tx = b"\x84" + body + cbor2.dumps(wits) + tail
-    (HERE / f"{name}.tx").write_text(json.dumps(
-        {"type": "Tx ConwayEra", "description": desc, "cborHex": tx.hex()}, indent=4) + "\n")
-
-
-def signed_wits(body: bytes, template: dict, signers, scripts) -> dict:
-    h = hashlib.blake2b(body, digest_size=32).digest()
-    vks = [[vkey(k), k.sign(h)] for k in signers]
-    w = {0: rewrap(template[0], vks)}
-    if scripts:
-        w[1] = rewrap(template.get(1, []), scripts)
-    return w
+    txedit.write(HERE, name, body, wits, tail, desc)
 
 
 def main() -> None:
     body, wits_b, tail = split_tx(load("mint-valid.tx"))
-    assert cbor2.dumps(cbor2.loads(body)) == body, "cbor2 body round-trip is not byte-identical"
     wits = cbor2.loads(wits_b)
     pay, pol = key("payment"), key("policy")
-    h = hashlib.blake2b(body, digest_size=32).digest()
-    cli_vks = {(bytes(v), bytes(s)) for v, s in items(wits[0])}
-    assert {(vkey(pay), pay.sign(h)), (vkey(pol), pol.sign(h))} == cli_vks, "re-sign self-check failed"
+    txedit.self_check(body, wits, [pay, pol])
     policy_script = items(wits[1])[0]
     other = json.loads((HERE / "other.script").read_text())["scripts"][0]["keyHash"]
     other_script = [1, [[0, bytes.fromhex(other)]]]  # all [sig other]
 
     # --- witness-set edits (signatures stay valid: the body is unchanged) ---
-    write("mint-script-missing", body, {0: wits[0]}, tail, "policy native script omitted")
-    write("mint-script-wrong", body, {0: wits[0], 1: rewrap(wits[1], [other_script])}, tail,
+    # the vkey set is spliced as raw bytes (cbor2 set order is not reproducible, see txedit.raw_map)
+    raw = txedit.raw_map(wits_b)
+    write("mint-script-missing", body, txedit.encode_raw_map({0: raw[0]}), tail,
+          "policy native script omitted")
+    write("mint-script-wrong", body,
+          txedit.encode_raw_map({0: raw[0], 1: cbor2.dumps([other_script])}), tail,
           "a different native script supplied in place of the policy script")
     # an ADA-only, otherwise-valid body derived from mint-valid (drop mint, ADA-only output);
     # outputs keep the shape cardano-cli wrote (legacy [addr, value] or post-Babbage {0:, 1:})

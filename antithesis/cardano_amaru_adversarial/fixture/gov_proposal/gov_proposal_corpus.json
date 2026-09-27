@@ -1,0 +1,312 @@
+{
+ "description": "Conway governance-PROPOSAL phase-1 differential family (cardano-node vs Amaru). Every case spends the committed funding UTxO (fee 300000 >> min, no validity interval) and registers its return account in the same tx (the substrate has no usable registered reward account; both ledgers run GOV after CERTS). Gov state at the freeze: pv 10.0, 0 proposals, all roots null. Violations and decode edges idempotent; controls single-use. See dwarf/docs/gov-proposal-phase1-differential-family.md.",
+ "return_account": "f70705e7b6ba01a51b79efcd5218e9e8c2f3fff8579599581bb44ed0",
+ "cases": [
+  {
+   "case_id": "deposit-low",
+   "tx_file": "deposit-low.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 453,
+   "cbor_sha256": "3b8105b8bc639e9a62d9db8975c84fc529f460a48315dd2a711f6d5c8d6b966c",
+   "rule": "GOV ProposalDepositIncorrect",
+   "reason_classes": [
+    "deposit"
+   ],
+   "note": "InfoAction declaring govActionDeposit - 1, tx balanced to the DECLARED deposit",
+   "credential": "99999999999"
+  },
+  {
+   "case_id": "deposit-high",
+   "tx_file": "deposit-high.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 453,
+   "cbor_sha256": "c23fb5f8f85b4c22f8c54046df369ef0cdc43eda0dfaec369fc9bea16ccc5d73",
+   "rule": "GOV ProposalDepositIncorrect",
+   "reason_classes": [
+    "deposit"
+   ],
+   "note": "InfoAction declaring govActionDeposit + 1, tx balanced to the declared deposit",
+   "credential": "100000000001"
+  },
+  {
+   "case_id": "return-unregistered",
+   "tx_file": "return-unregistered.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 409,
+   "cbor_sha256": "011124ef89c6ce767b4ee3aa1dea6780f7840934abd3f905c984c56475365c10",
+   "rule": "GOV ProposalReturnAccountDoesNotExist",
+   "reason_classes": [
+    "return_account"
+   ],
+   "note": "InfoAction returning to a never-registered stake key (no same-tx registration)",
+   "credential": "8d3cf1683d9bcd9e3dbbdb55562e8f69fd55cbba0bb23225a8edffe5"
+  },
+  {
+   "case_id": "return-wrong-network",
+   "tx_file": "return-wrong-network.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 447,
+   "cbor_sha256": "61a47e02d3d586a12e7f4bd41652ede4e98823e80274dd2a240e1808f51d2b28",
+   "rule": "GOV ProposalProcedureNetworkIdMismatch",
+   "reason_classes": [
+    "return_network"
+   ],
+   "note": "return account = the (same-tx registered) key's MAINNET reward address"
+  },
+  {
+   "case_id": "hardfork-prev-nonexistent",
+   "tx_file": "hardfork-prev-nonexistent.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 492,
+   "cbor_sha256": "a68229a9ef397ef0b7299aef73d0595c79b1938e8c0dc64d796526780613262d",
+   "rule": "GOV InvalidPrevGovActionId",
+   "reason_classes": [
+    "prev_action"
+   ],
+   "note": "HardFork 11.0 naming a nonexistent prev action (root is null)",
+   "credential": "a3a437f580092ade68f967eecaf04575253fc1f9c6a6691bac00d8c9068a956d"
+  },
+  {
+   "case_id": "noconfidence-prev-nonexistent",
+   "tx_file": "noconfidence-prev-nonexistent.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 489,
+   "cbor_sha256": "067343993888f99af14676a6a5e8f4422d7e71aaf2883e24279c3fc9028c4ed1",
+   "rule": "GOV InvalidPrevGovActionId",
+   "reason_classes": [
+    "prev_action"
+   ],
+   "note": "NoConfidence naming a nonexistent prev action (committee root is null)",
+   "credential": "a3a437f580092ade68f967eecaf04575253fc1f9c6a6691bac00d8c9068a956d"
+  },
+  {
+   "case_id": "constitution-prev-nonexistent",
+   "tx_file": "constitution-prev-nonexistent.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 579,
+   "cbor_sha256": "198ce573e8f229dc727e4f759c1e9b71a73629a5e6c623c7634b448f533f5edf",
+   "rule": "GOV InvalidPrevGovActionId",
+   "reason_classes": [
+    "prev_action"
+   ],
+   "note": "NewConstitution naming a nonexistent prev action (constitution root is null)",
+   "credential": "a3a437f580092ade68f967eecaf04575253fc1f9c6a6691bac00d8c9068a956d"
+  },
+  {
+   "case_id": "hardfork-skip-major",
+   "tx_file": "hardfork-skip-major.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 457,
+   "cbor_sha256": "876561bc13bd6d59ebb030fb827fd2f92a29998780a2daa7ca47e035c59900c2",
+   "rule": "GOV ProposalCantFollow",
+   "reason_classes": [
+    "cant_follow"
+   ],
+   "note": "HardFork 10.0 -> 12.0 (skips a major version)"
+  },
+  {
+   "case_id": "hardfork-minor-on-major-bump",
+   "tx_file": "hardfork-minor-on-major-bump.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 457,
+   "cbor_sha256": "e2635bdb2d7b998819cf298bb7c9522d80fb293bc283992859b5f56850431b92",
+   "rule": "GOV ProposalCantFollow",
+   "reason_classes": [
+    "cant_follow"
+   ],
+   "note": "HardFork 10.0 -> 11.1 (a major bump must reset minor to 0)"
+  },
+  {
+   "case_id": "hardfork-same-version",
+   "tx_file": "hardfork-same-version.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 457,
+   "cbor_sha256": "cf5e7334b613efb1fe175fa8dbaed378d8331b9280990796b1fa6c5265846bf1",
+   "rule": "GOV ProposalCantFollow",
+   "reason_classes": [
+    "cant_follow"
+   ],
+   "note": "HardFork 10.0 -> 10.0 (not a successor)"
+  },
+  {
+   "case_id": "committee-expiry-too-small",
+   "tx_file": "committee-expiry-too-small.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 497,
+   "cbor_sha256": "82f1ca90dbe84bb25cdbccf192aecc5d8e58fc79042844a7311c37a95f384995",
+   "rule": "GOV ExpirationEpochTooSmall",
+   "reason_classes": [
+    "expiry"
+   ],
+   "note": "UpdateCommittee adding a member expiring at epoch 1 (<= current on BOTH frozen stores: amaru epoch 2, cardano epoch 3; epoch 3 is deliberately avoided)"
+  },
+  {
+   "case_id": "committee-conflicting",
+   "tx_file": "committee-conflicting.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 530,
+   "cbor_sha256": "595fa0118a80c80ca1a3c90f7b8ec811e0fa7e822d020c6f75f132acb1d4ca3e",
+   "rule": "GOV ConflictingCommitteeUpdate",
+   "reason_classes": [
+    "conflicting_committee"
+   ],
+   "note": "UpdateCommittee adding AND removing sitting member 349e55f8 (script)"
+  },
+  {
+   "case_id": "ppupdate-no-policy",
+   "tx_file": "ppupdate-no-policy.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 460,
+   "cbor_sha256": "3e7b15ac56207d5a46315a20bbdc2d15ddb6ea85950ce75ef32c26a50c078307",
+   "rule": "GOV InvalidGuardrailsScriptHash",
+   "reason_classes": [
+    "policy_hash"
+   ],
+   "note": "ParameterChange (maxTxSize 16385) with NO policy hash; constitution has guardrails fa24fb30",
+   "credential": "fa24fb305126805cf2164c161d852a0e7330cf988f1fe558cf7d4a64"
+  },
+  {
+   "case_id": "ppupdate-wrong-policy",
+   "tx_file": "ppupdate-wrong-policy.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 489,
+   "cbor_sha256": "ebedddfd4afbee13699733c66633c92319d48b07d70ff76a19551e9828e0e993",
+   "rule": "GOV InvalidGuardrailsScriptHash",
+   "reason_classes": [
+    "policy_hash"
+   ],
+   "note": "ParameterChange with an all-zero policy hash",
+   "credential": "fa24fb305126805cf2164c161d852a0e7330cf988f1fe558cf7d4a64"
+  },
+  {
+   "case_id": "ppupdate-malformed-zero",
+   "tx_file": "ppupdate-malformed-zero.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 458,
+   "cbor_sha256": "e1b4b47480c4172d4b4164f21219e69f4af0d0895575d1d7bc70d1c25a4e40a8",
+   "rule": "GOV MalformedProposal and/or InvalidGuardrailsScriptHash (co-occurring)",
+   "reason_classes": [
+    "malformed",
+    "policy_hash"
+   ],
+   "note": "ParameterChange maxTxSize 0 with no policy hash: two rules apply (amaru checks well-formedness first), so the reported reason is a PRECEDENCE observation"
+  },
+  {
+   "case_id": "treasury-no-policy",
+   "tx_file": "treasury-no-policy.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 491,
+   "cbor_sha256": "64ffcaffcdf70d7758e0050ab3e0461a63a0a4c2c18d3955adcf1582b8e3b17a",
+   "rule": "GOV InvalidGuardrailsScriptHash",
+   "reason_classes": [
+    "policy_hash"
+   ],
+   "note": "TreasuryWithdrawal of 1 ADA to the (same-tx registered) return account, no policy hash",
+   "credential": "fa24fb305126805cf2164c161d852a0e7330cf988f1fe558cf7d4a64"
+  },
+  {
+   "case_id": "anchor-url-129",
+   "tx_file": "anchor-url-129.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 554,
+   "cbor_sha256": "c444db88f2f379e12fe7b4066002e1afabfee7db27e42fc67c5a929160b3c8d8",
+   "rule": "CDDL url .size (0..128)",
+   "reason_classes": [],
+   "note": "anchor url 129 bytes; otherwise valid (a lenient decoder would ACCEPT)"
+  },
+  {
+   "case_id": "anchor-hash-31",
+   "tx_file": "anchor-hash-31.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 446,
+   "cbor_sha256": "18779bd0a283f7dbc70d214e8146b906a41febdb9bd992b8278c7bbdcebe2bfe",
+   "rule": "CDDL hash32",
+   "reason_classes": [],
+   "note": "anchor data hash 31 bytes; otherwise valid"
+  },
+  {
+   "case_id": "info-valid",
+   "tx_file": "info-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 453,
+   "cbor_sha256": "24d19e92ec2e98360a5692699123b5806bb4db09c3f206c91dd7a948aadb938b",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "stake-reg + InfoAction returning to it (same tx)"
+  },
+  {
+   "case_id": "hardfork-major-valid",
+   "tx_file": "hardfork-major-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 457,
+   "cbor_sha256": "6acee3a36385dad48d275f8d8b646b6b80fdaa86f7e5c5fb5a9137b6353646bd",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "HardFork 10.0 -> 11.0, prev null"
+  },
+  {
+   "case_id": "hardfork-minor-valid",
+   "tx_file": "hardfork-minor-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 457,
+   "cbor_sha256": "58eecbc11db8b7e1db4d26a40f79dbf330b313b31c7db1b6aee27033c4eb69eb",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "HardFork 10.0 -> 10.1, prev null"
+  },
+  {
+   "case_id": "committee-add-valid",
+   "tx_file": "committee-add-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 498,
+   "cbor_sha256": "b8e9cf43fca8d1296874e46e34ea63e48f16e16fec9fdec5728d5acc4f17d76a",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "UpdateCommittee adding a fresh cold key expiring at epoch 50, threshold 2/3, prev null"
+  },
+  {
+   "case_id": "two-proposals-valid",
+   "tx_file": "two-proposals-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 559,
+   "cbor_sha256": "9c942afc8a59a32189cb44d79057c82a78d1b892e898ec0ffe42c5acfe1c28b2",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "InfoAction + HardFork 11.0 in one tx (2 deposits)"
+  },
+  {
+   "case_id": "anchor-url-128-valid",
+   "tx_file": "anchor-url-128-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 553,
+   "cbor_sha256": "6d372aff57b15325c0afbc9be3e544507ab2907817a97447c6d491e1e5997828",
+   "rule": "control (url boundary)",
+   "reason_classes": [],
+   "note": "anchor url of exactly 128 bytes"
+  }
+ ]
+}

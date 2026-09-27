@@ -12,7 +12,7 @@ or to satisfy all of them (controls):
   - decode edges, expected DECODE_REJECT on both: zero mint quantity, empty mint / inner asset
     map, 33-byte asset name, zero-quantity output token. Each tx is otherwise VALID, so a lenient
     decoder surfaces as an ACCEPT (verdict divergence); a node that decodes further and then
-    phase-1-rejects is flagged "decode_leniency";
+    phase-1-rejects is flagged "decode_leniency" (by the shared grade);
   - multi-asset value not preserved with ADA exactly balanced: surplus, deficit, relabel,
     unminted policy in an output;
   - multi-asset min-UTxO boundary and maxValueSize.
@@ -29,7 +29,7 @@ import json, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # workload/ on path
-from mixed_phase1 import HttpSubmitTransport, observe_differential, DECODE_REJECT, PHASE1_REJECT
+from mixed_phase1 import HttpSubmitTransport, observe_differential
 import stake_pool_differential as base
 
 # reason class -> (cardano-node marker, Amaru marker), matched case-insensitively
@@ -50,9 +50,6 @@ _SIZE_RE = {"cardano": re.compile(r"outputtoobigutxo[^0-9]*(\d+)", re.I),
 def grade(case: dict, result: dict) -> dict:
     row = base.grade(case, result, REASON_CLASSES)
     obs = result["observations"]
-    cls = {n: o["classification"] for n, o in obs.items()}
-    if case["expected"] == "decode_reject" and set(cls.values()) == {DECODE_REJECT, PHASE1_REJECT}:
-        row["decode_leniency"] = sorted(n for n, c in cls.items() if c == PHASE1_REJECT)
     if "output_too_big" in case["reason_classes"]:
         sizes = {n: (m.group(1) if (m := _SIZE_RE[n].search(base._text(o))) else None)
                  for n, o in obs.items()}
