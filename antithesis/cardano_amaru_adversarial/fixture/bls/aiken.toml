@@ -1,0 +1,12 @@
+name = "dwarf/bls"
+version = "0.0.0"
+compiler = "v1.1.24"
+plutusVersion = "v3"
+[repository]
+user = "dwarf"
+project = "bls"
+platform = "github"
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "v2"
+source = "github"
