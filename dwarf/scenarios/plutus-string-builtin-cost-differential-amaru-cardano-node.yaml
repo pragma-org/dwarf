@@ -1,0 +1,54 @@
+{
+  "spec_version": "v1",
+  "id": "plutus-string-builtin-cost-differential-amaru-cardano-node",
+  "title": "Plutus string-builtin execution-cost differential \u2014 Amaru vs cardano-node (append_string/equalsString CPU metering)",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "2026-09-27",
+    "amaru",
+    "budget",
+    "cardano-node",
+    "cost-model",
+    "coverage",
+    "differential",
+    "phase2",
+    "plutus"
+  ],
+  "evidence_intent": "candidate",
+  "target": {
+    "implementation": "amaru",
+    "version": "v10.11.20260925"
+  },
+  "runtime": "single-node",
+  "setup": [],
+  "load": [
+    {
+      "primitive": "runtime_version_pinned_plutus_conformance",
+      "cost_model": "/home/nigel/dwarf-pragma/dwarf/corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json",
+      "output_dir": "outputs/plutus-conformance",
+      "executions_per_script": 30,
+      "adapters": {
+        "amaru": {
+          "record": "/home/nigel/.local/share/dwarf/state/measurement-targets/amaru/plutus-conformance/v10.11.20260925/record.json",
+          "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+        },
+        "cardano-node": {
+          "record": "/home/nigel/.local/share/dwarf/state/measurement-targets/cardano-node/plutus-conformance/fef83fed01d7926f3de83b3b917be5a4a48768b5/record.json",
+          "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+        }
+      },
+      "timeout_seconds": 1200,
+      "expect_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "plutus_result_and_budget_match",
+      "executions_per_outcome": 30
+    }
+  ],
+  "teardown": []
+}
