@@ -1,15 +1,19 @@
 # Finding candidate (source-level): Amaru mempool capacity accounting differs from cardano-node
 
-**Status: SOURCE-LEVEL CANDIDATE, not empirically confirmed.** Confirming it needs a substrate
-with many independently spendable UTxOs (see "Empirical plan"). **Severity: LOW** (mempool-ingress
+**Status: SOURCE-LEVEL CANDIDATE, source-verified on both sides against the exact shipped versions;
+not empirically confirmed.** The multi-hour pair-4 re-bake needed to observe it live was
+deliberately skipped (low severity; see "Empirical plan"). **Severity: LOW** (mempool-ingress
 resource accounting), with **one LOW-MEDIUM item** (D3, no execution-unit bound). There is no
 consensus impact: block validation is unaffected, and Amaru does not forge Praos blocks.
 
-Versions:
+Versions (verified):
 - amaru `eaf8ac3f` (v10.11.20260925); source `/home/nigel/codebases/amaru`.
-- cardano-node 11.1.2 (`fef83fed`), which pins `ouroboros-consensus ^>= 4.1`. The consensus
-  source read here is 4.2.1.0. The constants quoted below (1024, 4, `sizeTxF`, ×2, the blocking
-  `addTx`) are long-standing, but **re-check them against the 4.1.x tag before filing**.
+- cardano-node 11.1.2 (`fef83fed`). **Tag `11.1.2` pins `ouroboros-consensus ^>= 4.2.0.1`**
+  (`cardano-node/cardano-node.cabal:179`), and the shipped `ghcr.io/intersectmbo/cardano-node:11.1.2`
+  image carries `ouroboros-consensus-*-4.2.1.0` in its Nix store. So **4.2.1.0 is the consensus
+  version actually running**, and every cardano-side citation below is from that exact source.
+  An earlier caveat said the pin was `^>= 4.1`; that was read from the 11.1.0 checkout and is
+  withdrawn.
 
 ## Correction to the earlier hypothesis
 
@@ -26,7 +30,7 @@ original bytes on both nodes; that was confirmed live (`mempool-submit-path-diff
 |---|---|---|---|
 | D1 | capacity value | `2 × (maxBlockBodySize − 1024)` = **178 176 B** here; derived from pparams (`Mempool/Capacity.hs:62-79`, `txsMaxBytes`, `fixedBlockBodyOverhead = 1024`) | **hard-coded** `DEFAULT_MAX_BYTES = 180_224` (`in_memory_mempool.rs:165`); does **not** follow pparams |
 | D2 | per-tx byte measure | `sizeTxF + perTxOverhead` = ledger size (IsValid excluded) **+ 4** (`Shelley/Ledger/Mempool.hs:181, 402-412`) | raw submitted bytes = ledger size **+ 1** (the IsValid byte) (`in_memory_mempool.rs:76`) |
-| D3 | dimensions | multi-dimensional `TxMeasure`: bytes **and** execution units against 2 × `maxBlockExUnits` (`blockCapacityAlonzoMeasure`, `txMeasureAlonzo`); Conway adds reference-script bytes | **bytes only**; no execution-unit or reference-script bound on the mempool as a whole |
+| D3 | dimensions | Conway `TxLimits` (`Shelley/Ledger/Mempool.hs:765-772`): a tx measures `AlonzoMeasure` (bytes **and** execution units, `txMeasureAlonzo`) plus `RefScriptSize` (`txMeasureRefScripts`); block capacity = (maxBlockBodySize − 1024, `maxBlockExUnits`, `maxRefScriptSizePerBlock`) (`blockCapacityConwayMeasure`, `:694-700`), ×2 for the mempool | **bytes only**; no execution-unit or reference-script bound on the mempool as a whole |
 | D4 | when full | `addTx` **blocks** until space frees ("will block if the mempool is full", `Mempool/Update.hs:157`; local clients wait on the queue) | returns `TxRejectReason::MempoolFull` **immediately** (`in_memory_mempool.rs:83-85`) |
 
 ### Worked consequences (pair-4 pparams: maxBlockBodySize 90 112, maxTxSize 16 384)
@@ -51,7 +55,7 @@ original bytes on both nodes; that was confirmed live (`mempool-submit-path-diff
 None of these change which transactions are *valid*. They change which valid transactions are
 *admitted* and *held*, and how the node behaves under load.
 
-## Empirical plan (gated on an operator decision)
+## Empirical plan (not run: skipped by orchestrator decision 2026-09-27, low severity vs a multi-hour re-bake)
 
 The plan needs a pair-4 genesis variant with 64 extra `initialFunds` entries paying to the
 committed payment key. Use base addresses with `stake_i = blake2b-224("dwarf-cap-%d")`, at
