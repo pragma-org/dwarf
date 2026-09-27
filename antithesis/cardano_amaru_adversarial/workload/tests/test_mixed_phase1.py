@@ -544,6 +544,46 @@ class DifferentialObservationTests(unittest.TestCase):
             "masked",
         )
 
+    def test_input_conflict_masks_only_when_payload_may_spend_a_live_input(self):
+        subject = load_subject(self)
+        body = 'ConwayMempoolFailure "All inputs are spent. Transaction has probably already been included"'
+        funding = bytes.fromhex(subject.FUNDING_INPUTS[0].split("#")[0])
+        # cardano 11.1.2 answers the same text for a pending-mempool conflict AND for an input
+        # that never existed; only the submitted bytes tell them apart.
+        self.assertEqual(subject.classify_response(400, body, payload=b"\x84" + funding), "masked")
+        self.assertEqual(subject.classify_response(400, body, payload=b"\x84" + b"\x11" * 32), "phase1_reject")
+        self.assertEqual(subject.classify_response(400, body), "masked")  # no payload: fail closed
+
+    def test_amaru_unknown_input_masks_only_the_live_funding_input(self):
+        subject = load_subject(self)
+        txid, ix = subject.FUNDING_INPUTS[0].split("#")
+        form = ("failed to prepare transaction {h} for validation: failed to hydrate validation "
+                "context: unknown (but required) transaction input or reference input: {i}")
+        self.assertEqual(
+            subject.classify_response(400, form.format(h="ab" * 32, i=f"{txid}#{ix}")), "masked")
+        self.assertEqual(
+            subject.classify_response(400, form.format(h="ab" * 32, i="11" * 32 + "#3")), "phase1_reject")
+
+    def test_amaru_other_preparation_failures_stay_unknown(self):
+        subject = load_subject(self)
+        body = "failed to prepare transaction " + "ab" * 32 + " for validation: failed to hydrate validation context"
+        self.assertEqual(subject.classify_response(400, body), "unknown")
+
+    def test_amaru_mempool_admission_responses(self):
+        subject = load_subject(self)
+        self.assertEqual(subject.classify_response(409, "Transaction is a duplicate"), "masked")
+        self.assertEqual(subject.classify_response(503, "Mempool is full"), "unavailable")
+        self.assertEqual(subject.classify_response(503, "mempool timed out"), "unavailable")
+        self.assertEqual(subject.classify_response(500, "mempool unavailable"), "unavailable")
+        self.assertEqual(
+            subject.classify_response(500, "mempool returned an invalid response"), "unavailable")
+
+    def test_transport_passes_payload_to_the_classifier(self):
+        subject = load_subject(self)
+        obs = subject._observation(
+            400, "All inputs are spent", payload=b"\x84" + b"\x11" * 32)
+        self.assertEqual(obs["classification"], "phase1_reject")
+
     def test_masked_endpoint_is_inconclusive_never_agreement(self):
         subject = load_subject(self)
         amaru = RecordingTransport(
