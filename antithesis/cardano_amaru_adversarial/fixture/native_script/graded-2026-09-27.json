@@ -1,0 +1,220 @@
+{
+ "graded_at": "2026-09-27",
+ "pair": "pair4: cardano-node 11.1.2 (fef83fed) via cardano-submit-api 11.1.2 on :8113, amaru v10.11.20260925 (eaf8ac3f) submit :3213; mempool reset before the violation run and before each control. Tips: amaru 1168, cardano 1259 (timelock bounds 1000 / 100000 lie outside the skew band).",
+ "oracle": "shared stake_pool_differential.grade: verdict -> reason class -> parity token (the script hash / governance credential recorded in the corpus); fail-closed",
+ "summary": {
+  "cases": 10,
+  "statuses": {
+   "AGREE": 10
+  }
+ },
+ "violations": [
+  {
+   "case_id": "mintpolicy-sig-missing",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "native_script_fail"
+    ],
+    "cardano": [
+     "native_script_fail"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 5ff338e55be73fd7ef07c1b7f17ec2da125612e1675179a08bb27e87da05dc8b is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [446bc0ec7ab5ccdc15dd0c226c6b0810921dfdc4832",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (ScriptWitnessNotValidatingUTXOW (NonEmptySet (fromList [ScriptHash \\\"446bc0ec7ab5ccdc15dd0c226c6b0810921dfdc48320bc0fc3c0c7f2\\\"])))\"],\"kind\":\"S"
+  },
+  {
+   "case_id": "threshold-2of3-underfill",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "native_script_fail"
+    ],
+    "cardano": [
+     "native_script_fail"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 1496c7f9ec75ef8f9c68a9cd99f77ddd036e12c5854e9f51576fb37dbe0f4a39 is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [3c7f756aa5aa7f3c505cad74e907786c5fffb33d819",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (ScriptWitnessNotValidatingUTXOW (NonEmptySet (fromList [ScriptHash \\\"3c7f756aa5aa7f3c505cad74e907786c5fffb33d819396071eeb466d\\\"])))\"],\"kind\":\"S"
+  },
+  {
+   "case_id": "nested-outer-missing",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "native_script_fail"
+    ],
+    "cardano": [
+     "native_script_fail"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction a1d48a4d642f984be13cf080690ade0fd2d0ae121fc5bc8031060463d102a195 is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [6255e58a1f1be9d6e43a87458e26198f4a41e9aa980",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (ScriptWitnessNotValidatingUTXOW (NonEmptySet (fromList [ScriptHash \\\"6255e58a1f1be9d6e43a87458e26198f4a41e9aa9802a65d65fe7981\\\"])))\"],\"kind\":\"S"
+  },
+  {
+   "case_id": "timelock-before-violation",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "native_script_fail"
+    ],
+    "cardano": [
+     "native_script_fail"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction eede0c0fa816e309e14520f1e0b992330aabb26065b86e85a3b49c6dda1eea8c is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [5d09e310e66d54c98f7e63c36817e41066fd15b6d9c",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (ScriptWitnessNotValidatingUTXOW (NonEmptySet (fromList [ScriptHash \\\"5d09e310e66d54c98f7e63c36817e41066fd15b6d9c74fc50e01dfc5\\\"])))\"],\"kind\":\"S"
+  },
+  {
+   "case_id": "timelock-after-violation",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "native_script_fail"
+    ],
+    "cardano": [
+     "native_script_fail"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction fdc054351cf03517ceab4474386a55190ec8357b86440ef4a912519888730b76 is invalid: transaction failed phase one validation: invalid transaction scripts: native script(s) failed to validate: [592fb0f9d8ed15c06858118d134d5c4b7c773205078",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (ScriptWitnessNotValidatingUTXOW (NonEmptySet (fromList [ScriptHash \\\"592fb0f9d8ed15c06858118d134d5c4b7c77320507810fee9ac2ddf9\\\"])))\"],\"kind\":\"S"
+  }
+ ],
+ "controls": [
+  {
+   "case_id": "mintpolicy-sig-satisfied",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"5ff338e55be73fd7ef07c1b7f17ec2da125612e1675179a08bb27e87da05dc8b\"",
+   "cardano_reason": "\"5ff338e55be73fd7ef07c1b7f17ec2da125612e1675179a08bb27e87da05dc8b\""
+  },
+  {
+   "case_id": "threshold-2of3-satisfied",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"1496c7f9ec75ef8f9c68a9cd99f77ddd036e12c5854e9f51576fb37dbe0f4a39\"",
+   "cardano_reason": "\"1496c7f9ec75ef8f9c68a9cd99f77ddd036e12c5854e9f51576fb37dbe0f4a39\""
+  },
+  {
+   "case_id": "nested-satisfied",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"a1d48a4d642f984be13cf080690ade0fd2d0ae121fc5bc8031060463d102a195\"",
+   "cardano_reason": "\"a1d48a4d642f984be13cf080690ade0fd2d0ae121fc5bc8031060463d102a195\""
+  },
+  {
+   "case_id": "timelock-before-boundary",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"d1c09b48b56eeb7f43ba6cd8f28bd58c1c932a65aeec48cda923f2497d8b8951\"",
+   "cardano_reason": "\"d1c09b48b56eeb7f43ba6cd8f28bd58c1c932a65aeec48cda923f2497d8b8951\""
+  },
+  {
+   "case_id": "timelock-after-boundary",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"4e392c0838254ada7e5996cc3540fb4e901dc1ec81106afc264900e478716033\"",
+   "cardano_reason": "\"4e392c0838254ada7e5996cc3540fb4e901dc1ec81106afc264900e478716033\""
+  }
+ ]
+}

@@ -1,0 +1,125 @@
+{
+ "graded_at": "2026-09-27",
+ "pair": "pair4: cardano-node 11.1.2 (fef83fed) via cardano-submit-api 11.1.2 on :8113, amaru v10.11.20260925 (eaf8ac3f) submit :3213; mempool reset before the violation run and before each control. Tips: amaru 1168, cardano 1259 (timelock bounds 1000 / 100000 lie outside the skew band).",
+ "oracle": "shared stake_pool_differential.grade: verdict -> reason class -> parity token (the script hash / governance credential recorded in the corpus); fail-closed",
+ "summary": {
+  "cases": 5,
+  "statuses": {
+   "AGREE": 5
+  }
+ },
+ "violations": [
+  {
+   "case_id": "drepreg-missing-witness",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "missing_witness"
+    ],
+    "cardano": [
+     "missing_witness"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 3ee080ee8af6570b8ea546ecca9edffa5880eed7a2652b7f599770e0d70a7988 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [9cf932499e031355",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"9cf932499e0313550efe79e3bbf0fa2d53d9e137ab76d766ea33c009\\\"}])))\"],\"kin"
+  },
+  {
+   "case_id": "drepreg-wrong-key",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "missing_witness"
+    ],
+    "cardano": [
+     "missing_witness"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 3ee080ee8af6570b8ea546ecca9edffa5880eed7a2652b7f599770e0d70a7988 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [9cf932499e031355",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"9cf932499e0313550efe79e3bbf0fa2d53d9e137ab76d766ea33c009\\\"}])))\"],\"kin"
+  },
+  {
+   "case_id": "drepreg-multi-partial",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "missing_witness"
+    ],
+    "cardano": [
+     "missing_witness"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 40715c6ecabf3517eb57ebdeff8fc4233d58a37d7284a875795c606c49056193 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [cd3e0c1e7373018a",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"cd3e0c1e7373018ad2f082556373e57a60368482593d20731c291b64\\\"}])))\"],\"kin"
+  }
+ ],
+ "controls": [
+  {
+   "case_id": "drepreg-present",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"3ee080ee8af6570b8ea546ecca9edffa5880eed7a2652b7f599770e0d70a7988\"",
+   "cardano_reason": "\"3ee080ee8af6570b8ea546ecca9edffa5880eed7a2652b7f599770e0d70a7988\""
+  },
+  {
+   "case_id": "drepreg-multi-both",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"40715c6ecabf3517eb57ebdeff8fc4233d58a37d7284a875795c606c49056193\"",
+   "cardano_reason": "\"40715c6ecabf3517eb57ebdeff8fc4233d58a37d7284a875795c606c49056193\""
+  }
+ ]
+}

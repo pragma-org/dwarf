@@ -47,7 +47,9 @@ accept control is single-use and run after a mempool reset.
 | Reference-input resolution | 5 | **5 AGREE** | `reference-input-resolution-differential-family.md` |
 | Mempool / submit path (size cap, duplicates, HTTP robustness + liveness) | 15 | **15 AGREE** | `mempool-submit-path-differential-family.md` |
 | Plutus phase 2: 2a ex-units / `is_valid` (9), 2b builtins + ScriptContext (6), 2c error-path builtins (11) | 26 | **26 AGREE**, no VM panic | `plutus-phase2-differential-coverage-2026-09-27.md` |
-| **Total** | **151** | **150 AGREE, 1 divergence** | |
+| Native scripts (multisig, RequireMOf incl. N-1, nested, timelocks incl. inclusive boundaries) | 10 | **10 AGREE** (script-hash parity; 5 controls same tx id) | `native-script-phase1-differential-family.md`; `fixture/native_script/graded-2026-09-27.json` |
+| Governance certificate witnesses (DRep registration: missing / wrong key / multi-cert partial) | 5 | **5 AGREE** (credential parity) | `governance-signature-phase1-differential-family.md`; `fixture/governance/graded-2026-09-27.json` |
+| **Total** | **166** | **165 AGREE, 1 divergence** | |
 
 Selected conformance datapoints:
 - **Metadata:** Amaru hashes auxiliary data **as sent**. With a non-canonical aux encoding, both
@@ -61,19 +63,21 @@ Selected conformance datapoints:
   metadatum size and type) is refused by **both** decoders. No Amaru decoder leniency was found in
   these families.
 
-## Results: families last graded against cardano-node 10.7.1
+## Results: family last graded against cardano-node 10.7.1
 
-These families were graded on Amaru 0903 / cardano-node 10.7.1, then **re-validated on Amaru
-0925 (`eaf8ac3f`) against cardano-node 10.7.1 (`045bc187`)**. They have **not** yet been re-run
-against 11.1.2. Their cases are witness and script rules, not decode edges, so the 10.7.1-vs-11.1.2
-decoder difference noted below does not bear on them. A re-run on the current pair is still the
-honest next step.
+Native scripts and governance-certificate witnesses were re-run on the current pair on 2026-09-27
+and are in the table above. One family remains on the older reference:
 
 | family | cases | result | doc |
 |---|---|---|---|
-| Native scripts (multisig, RequireMOf, nested, timelocks incl. inclusive boundaries) | 10 | all AGREE (script-hash parity) | `native-script-phase1-differential-family.md` |
-| Governance certificate witnesses (DRep registration) | 5 | all AGREE (credential parity) | `governance-signature-phase1-differential-family.md` |
-| Governance vote authorization (committee / DRep) | 7 | all AGREE (credential parity) | `governance-vote-authorization-differential-family.md` |
+| Governance vote authorization (committee / DRep) | 7 | all AGREE (credential parity), on Amaru 0925 (`eaf8ac3f`) vs **cardano-node 10.7.1** (`045bc187`) | `governance-vote-authorization-differential-family.md` |
+
+It cannot be re-run on 11.1.2 by swapping the reference binary. It needs the governance-provisioned
+substrate: a key-hashed committee, registered DReps and an open action, frozen in both stores. That
+substrate is not retained (by design it is rebuilt locally, not committed or published), so a re-run
+requires a fresh governance re-bake (`prepare-govrebake.sh`). Its cases are witness and
+authorization rules, not decode edges, so the 10.7.1 vs 11.1.2 decoder difference does not bear on
+them.
 
 ## Semantic field-edge matrix (Amaru 0925 vs cardano-node 11.1.2; carried forward)
 
@@ -140,5 +144,5 @@ Amaru does not forge Praos blocks.
 - **Reference-script / inline-datum family:** substrate being baked.
 - **Block-level differential:** blocked on forward-sync across the epoch boundary. The VRF
   placeholder above depends on it.
-- **Re-run the three 10.7.1-era families** (native-script, governance certificate, governance vote)
-  on the 11.1.2 pair to bring the whole table onto one reference version.
+- **Governance vote authorization on 11.1.2:** needs a fresh governance re-bake (see above).
+  Native scripts and governance certificates were re-run on 11.1.2 on 2026-09-27.
