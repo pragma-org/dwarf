@@ -144,6 +144,24 @@
    "cbor_size": 512,
    "cbor_sha256": "1117b6d65a787e70dc37a6eb65f9d228c29ff9800de2a14e477a2b0f5aaa5df9",
    "note": "CONWAY: assert tx.current_treasury_amount == None -> accept"
+  },
+  {
+   "case_id": "ctxinputorder-canonical",
+   "tx_file": "ctxinputorder-canonical.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 570,
+   "cbor_sha256": "f38485973257beb4b2c789ccbe638ef61ddf2e769842327b45b7fa5d68544795",
+   "note": "NON-CANONICALLY-ordered 2-input set (byte-crafted, reversed); assert ctx.inputs[0].txid == CANONICAL-first (9708b921) -> both accept: both canonicalize the ctx inputs"
+  },
+  {
+   "case_id": "ctxinputorder-submitfirst",
+   "tx_file": "ctxinputorder-submitfirst.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 570,
+   "cbor_sha256": "4c02d796c31f39a851d5240f340e9d5f7c6bfb329e646c091024c92dfdafc5c6",
+   "note": "same non-canonical tx; assert ctx.inputs[0].txid == SUBMIT-first (9aecf690) -> both reject: neither preserves submit order. Also: neither node decode-rejects the non-canonical input set"
   }
  ]
 }

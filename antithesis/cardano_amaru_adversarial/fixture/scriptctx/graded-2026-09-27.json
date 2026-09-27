@@ -12,10 +12,10 @@
   "txInfoReferenceInputs(count+presence)",
   "txInfoRedeemers(count)",
   "treasury_donation(Some/None)",
-  "current_treasury_amount(None)"
+  "current_treasury_amount(None)",
+  "txInfoInputs ORDERING (byte-crafted non-canonical set)"
  ],
  "not_reachable": {
-  "inputs_ordering": "cardano-cli emits canonically-sorted tx bodies; a non-canonical input list needs byte surgery",
   "votes_proposals": "txInfoVotes/proposal_procedures need a registered DRep + open gov action + a script witness in one tx; not present on refpair"
  },
  "results": {
@@ -130,6 +130,21 @@
     "amaru": "accepted",
     "cardano": "accepted"
    }
+  },
+  "ctxinputorder-canonical": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ctxinputorder-submitfirst": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
   }
- }
+ },
+ "inputs_ordering_result": "Byte-crafted a 2-input tx with a NON-canonically-ordered (reversed) input set. Neither node decode-rejects it; BOTH canonicalize ctx.inputs identically -> asserting inputs[0]==canonical-first (9708b921) ACCEPTS on both (same txid 61e96574); asserting inputs[0]==submit-first (9aecf690) REJECTS on both. No is_valid split, no decode-vs-accept split. CONFORMANT."
 }

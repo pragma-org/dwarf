@@ -18,6 +18,8 @@ CASES = {
  "ctxtreasury-ok":("accept",True,"CONWAY: --treasury-donation 5; assert tx.treasury_donation == Some(5) -> accept"),
  "ctxtreasury-wrong":("reject",False,"CONWAY: donation 5; assert == Some(6) -> reject"),
  "ctxtreasuryamt-none-ok":("accept",True,"CONWAY: assert tx.current_treasury_amount == None -> accept"),
+ "ctxinputorder-canonical":("accept",True,"NON-CANONICALLY-ordered 2-input set (byte-crafted, reversed); assert ctx.inputs[0].txid == CANONICAL-first (9708b921) -> both accept: both canonicalize the ctx inputs"),
+ "ctxinputorder-submitfirst":("reject",False,"same non-canonical tx; assert ctx.inputs[0].txid == SUBMIT-first (9aecf690) -> both reject: neither preserves submit order. Also: neither node decode-rejects the non-canonical input set"),
 }
 cases=[]
 for cid,(exp,single,note) in CASES.items():
