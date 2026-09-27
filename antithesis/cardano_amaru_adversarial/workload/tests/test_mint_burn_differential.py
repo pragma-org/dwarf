@@ -101,6 +101,13 @@ class TransportTests(unittest.TestCase):
         self.assertEqual((len(full["reason"]), full["detail"]), (400, body))
 
 
+class ClassifierTests(unittest.TestCase):
+    def test_large_cardano_ledger_failure_classifies_from_its_leading_text(self):
+        body = ('{"contents":{"contents":{"contents":{"era":"ShelleyBasedEraConway","error":'
+                '["ConwayUtxowFailure (UtxoFailure (OutputTooBigUTxO ((5289,5000,' + "x" * 12000)
+        self.assertEqual(mixed_phase1.classify_response(400, body[:4096]), "phase1_reject")
+
+
 class CorpusTests(unittest.TestCase):
     def test_corpus_integrity(self):
         manifest = json.loads((CORPUS / "mint_burn_corpus.json").read_text())

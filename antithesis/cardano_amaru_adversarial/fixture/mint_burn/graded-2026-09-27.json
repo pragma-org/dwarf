@@ -1,0 +1,433 @@
+{
+ "graded_at": "2026-09-27",
+ "pair": "pair4: cardano-node 11.1.2 (fef83fed) submit :8113, amaru v10.11.20260925 (eaf8ac3f) submit :3213; mempool reset before the violation run and before each control",
+ "summary": {
+  "cases": 19,
+  "statuses": [
+   "AGREE"
+  ]
+ },
+ "violations": [
+  {
+   "case_id": "mint-script-missing",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "missing_script"
+    ],
+    "cardano": [
+     "missing_script"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 97e5b1b67729c1322cc70fd545ba1b5c93294ed2ccf9b66ab908396fa487e412 is invalid: transaction failed phase one validation: invalid transaction scripts: missing required scripts: missing [d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingScriptWitnessesUTXOW (NonEmptySet (fromList [ScriptHash \\\"d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed\\\"])))\"],\"kind\":\"Shell"
+  },
+  {
+   "case_id": "mint-script-wrong",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "missing_script"
+    ],
+    "cardano": [
+     "extraneous_script",
+     "missing_script"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 97e5b1b67729c1322cc70fd545ba1b5c93294ed2ccf9b66ab908396fa487e412 is invalid: transaction failed phase one validation: invalid transaction scripts: missing required scripts: missing [d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingScriptWitnessesUTXOW (NonEmptySet (fromList [ScriptHash \\\"d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed\\\"])))\",\"ConwayUtxowFa"
+  },
+  {
+   "case_id": "extraneous-script-no-mint",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "extraneous_script"
+    ],
+    "cardano": [
+     "extraneous_script"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction e7cf6f7fd25783f376b7f3c47506a5d9502136d3f86364c1e07d009a902f7434 is invalid: transaction failed phase one validation: invalid transaction scripts: extraneous script witnesses: extra [d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (ExtraneousScriptWitnessesUTXOW (NonEmptySet (fromList [ScriptHash \\\"d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed\\\"])))\"],\"kind\":\"Sh"
+  },
+  {
+   "case_id": "burn-nonexistent",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "value_not_conserved"
+    ],
+    "cardano": [
+     "value_not_conserved"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 83b7de995236ec4c9002be4d83663bbb4b70acb4e36628451564a5c078eff60f is invalid: transaction failed phase one validation: value not preserved: balance = (0, [d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed4d494e54: -5]): va",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO Mismatch (RelEQ) {supplied: MaryValue (Coin 200000000000000) (MultiAsset (fromList [])), expected: MaryValue"
+  },
+  {
+   "case_id": "burn-int64-min",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "value_not_conserved"
+    ],
+    "cardano": [
+     "value_not_conserved"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 0245ca4cd790df26086f8115c33245971ba9e64f76cccec3bf7e7bc3a5d95ef6 is invalid: transaction failed phase one validation: value not preserved: balance = (0, [d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed4d494e54: -9223372",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO Mismatch (RelEQ) {supplied: MaryValue (Coin 200000000000000) (MultiAsset (fromList [])), expected: MaryValue"
+  },
+  {
+   "case_id": "mint-zero-qty",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error: decoding 0 as NonZeroInt",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  },
+  {
+   "case_id": "mint-empty-asset-map",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error at position 124: empty map when expecting at least one key/value pair",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  },
+  {
+   "case_id": "mint-empty-map",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error at position 94: empty map when expecting at least one key/value pair",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  },
+  {
+   "case_id": "asset-name-33b",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error: expected 32 bytes, got 33",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  },
+  {
+   "case_id": "output-zero-qty",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error: decoding 0 as PositiveCoin",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  },
+  {
+   "case_id": "asset-surplus",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "value_not_conserved"
+    ],
+    "cardano": [
+     "value_not_conserved"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 199fc2b5b78eaf2eac1fcbbab8edbded02a951a5819818c7899aa19a496ff016 is invalid: transaction failed phase one validation: value not preserved: balance = (0, [d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed4d494e54: -1]): va",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO Mismatch (RelEQ) {supplied: MaryValue (Coin 200000000000000) (MultiAsset (fromList [(PolicyID {policyID = Sc"
+  },
+  {
+   "case_id": "asset-deficit",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "value_not_conserved"
+    ],
+    "cardano": [
+     "value_not_conserved"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction dc193f2140e6406d0998dd70c0a5b8c069463cd8554161f66a82e360d543f78a is invalid: transaction failed phase one validation: value not preserved: balance = (0, [d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed4d494e54: 1]): val",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO Mismatch (RelEQ) {supplied: MaryValue (Coin 200000000000000) (MultiAsset (fromList [(PolicyID {policyID = Sc"
+  },
+  {
+   "case_id": "asset-relabel",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "value_not_conserved"
+    ],
+    "cardano": [
+     "value_not_conserved"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 52f87c4e1ed4796a6898ab4a01dc089dddeaedc3b4b08ae8d5f43aae05c10cef is invalid: transaction failed phase one validation: value not preserved: balance = (0, [d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed4d494e54: 10, d667",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO Mismatch (RelEQ) {supplied: MaryValue (Coin 200000000000000) (MultiAsset (fromList [(PolicyID {policyID = Sc"
+  },
+  {
+   "case_id": "unminted-policy-output",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "value_not_conserved"
+    ],
+    "cardano": [
+     "value_not_conserved"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 5b2a2becbb6793efd33ed4765cbdc582698e169b05b6fbe31ea3fedb7ff683d5 is invalid: transaction failed phase one validation: value not preserved: balance = (0, [3b723a2f83e48ccdce2fa1f42f70609b1b9d9dc55a4988d8a14404f94f54484552: -10]):",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO Mismatch (RelEQ) {supplied: MaryValue (Coin 200000000000000) (MultiAsset (fromList [])), expected: MaryValue"
+  },
+  {
+   "case_id": "minada-token-below",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "output_too_small"
+    ],
+    "cardano": [
+     "output_too_small"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction b09860e691540c4f48d0fdd94e10e7710ca15f97330f4e9e64b104481f9939e1 is invalid: transaction failed phase one validation: invalid outputs: invalid transaction outputs: [#0: output doesn't contain enough Lovelace: minimum: 1017160, g",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (BabbageOutputTooSmallUTxO (((Addr Testnet (KeyHashObj (KeyHash {unKeyHash = \\\"e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d"
+  },
+  {
+   "case_id": "value-too-big",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "output_too_big"
+    ],
+    "cardano": [
+     "output_too_big"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [
+    "cardano"
+   ],
+   "status": "AGREE",
+   "amaru_reason": "transaction 3d07a451f3ce594c8bb74614a9a215d8e51944b6c7c1e0c63cbccbcfa73e9c2a is invalid: transaction failed phase one validation: invalid outputs: invalid transaction outputs: [#0: output value is too large: maximum: 5000, actual: 5289]: in",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (OutputTooBigUTxO ((5289,5000,(Addr Testnet (KeyHashObj (KeyHash {unKeyHash = \\\"e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0",
+   "value_size": {
+    "amaru": "5289",
+    "cardano": "5289"
+   }
+  }
+ ],
+ "controls": [
+  {
+   "case_id": "mint-valid",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"97e5b1b67729c1322cc70fd545ba1b5c93294ed2ccf9b66ab908396fa487e412\"",
+   "cardano_reason": "\"97e5b1b67729c1322cc70fd545ba1b5c93294ed2ccf9b66ab908396fa487e412\""
+  },
+  {
+   "case_id": "multiasset-mint-valid",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"81b4ef3bdd4596f917a38d164f04b82975d8ee9ac2a2f8dac817c8dce1e38cff\"",
+   "cardano_reason": "\"81b4ef3bdd4596f917a38d164f04b82975d8ee9ac2a2f8dac817c8dce1e38cff\""
+  },
+  {
+   "case_id": "minada-token-at-min",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"9af0240552f819c594745b67665803ea42c051bec116c0481eaff380695582da\"",
+   "cardano_reason": "\"9af0240552f819c594745b67665803ea42c051bec116c0481eaff380695582da\""
+  }
+ ]
+}

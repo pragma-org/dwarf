@@ -5,8 +5,22 @@ A DWARF phase-1 differential family (extends `workload/mixed_phase1.py`, grades 
 edges, multi-asset value preservation, the multi-asset min-UTxO, and maxValueSize**, plus
 **decode edges** of the Conway mint/multi-asset CDDL. It adds coverage; it is not a finding.
 
-> **STATUS (2026-09-27): BUILT, NOT YET GRADED.** Corpus built and pre-checked offline
-> (19 cases). Live grading waits for the dedicated pair 4 (cardano-node 11.1.2 + amaru 0925).
+> **STATUS (2026-09-27): GRADED, 19/19 AGREE. Amaru v10.11.20260925 (`eaf8ac3f`) is
+> CONFORMANT with cardano-node 11.1.2 (`fef83fed`)** on every mint/burn, multi-asset value and
+> decode-edge case:
+> - The 11 phase-1 violations are `AGREE`: same verdict, a shared reason class, and the same
+>   policy id or amount.
+> - The 5 decode edges are `AGREE`: both nodes DECODE-reject. **Amaru's decoder is not lenient
+>   on any of them.** There is no accept and no decode-further.
+> - The 3 controls are `AGREE`: both nodes accept, with the same tx id.
+> - `value-too-big`: both nodes report the same serialised value size, **5289** bytes.
+> - The multi-asset min-UTxO boundary is exact on both nodes: 1017160 is accepted, 1017159 is
+>   rejected.
+>
+> There is no verdict divergence and no reason divergence. One precedence-*reporting* difference
+> was seen (`mint-script-wrong`, see below). Binaries were verified with `--version`. The run
+> used the dedicated, mempool-isolated pair 4, reset before the violation run and before each
+> control. Full responses: `fixture/mint_burn/graded-2026-09-27.json`.
 
 ## Scope and no-overlap
 
@@ -78,6 +92,41 @@ Rebuild: `PYTHON=<python with cbor2+cryptography> fixture/mint_burn/build.sh`.
 | multiasset-mint-valid | accept | control (multi-asset mint) | — |
 | minada-token-at-min | accept | control (min-UTxO boundary 1017160) | — |
 
+## Result (pair 4, 2026-09-27)
+
+| case | cardano-node 11.1.2 | Amaru 0925 | grade |
+|---|---|---|---|
+| mint-script-missing | `MissingScriptWitnessesUTXOW [d667c38e…]` | `missing required scripts: missing [d667c38e…]` | AGREE + policy |
+| mint-script-wrong | `MissingScriptWitnessesUTXOW` **and** `ExtraneousScriptWitnessesUTXOW` | `missing required scripts` only | AGREE (precedence, see below) |
+| extraneous-script-no-mint | `ExtraneousScriptWitnessesUTXOW [d667c38e…]` | `extraneous script witnesses: extra [d667c38e…]` | AGREE + policy |
+| burn-nonexistent | `ValueNotConservedUTxO` | `value not preserved: balance = (0, [d667c38e…` | AGREE + policy |
+| burn-int64-min | `ValueNotConservedUTxO` (no overflow) | `value not preserved` (no overflow) | AGREE + policy |
+| asset-surplus / -deficit / -relabel | `ValueNotConservedUTxO` | `value not preserved` | AGREE + policy |
+| unminted-policy-output | `ValueNotConservedUTxO` | `value not preserved: balance = (0, [3b723a2f…` | AGREE + other policy |
+| minada-token-below | `BabbageOutputTooSmallUTxO` (1017159) | `output doesn't contain enough Lovelace` (1017159) | AGREE + amount |
+| value-too-big | `OutputTooBigUTxO (5289,5000,…)` | `output value is too large: maximum: 5000, actual: 5289` | AGREE + size 5289 = 5289 |
+| mint-zero-qty | `DeserialiseFailure` | `decoding 0 as NonZeroInt` | AGREE (decode) |
+| mint-empty-asset-map | `DeserialiseFailure` | `empty map when expecting at least one key/value pair` | AGREE (decode) |
+| mint-empty-map | `DeserialiseFailure` | `empty map when expecting at least one key/value pair` | AGREE (decode) |
+| asset-name-33b | `DeserialiseFailure` | `expected 32 bytes, got 33` | AGREE (decode) |
+| output-zero-qty | `DeserialiseFailure` | `decoding 0 as PositiveCoin` | AGREE (decode) |
+| mint-valid | 202 `97e5b1b6…` | 202 `97e5b1b6…` | AGREE (same tx id) |
+| multiasset-mint-valid | 202 `81b4ef3b…` | 202 `81b4ef3b…` | AGREE (same tx id) |
+| minada-token-at-min | 202 `9af02405…` | 202 `9af02405…` | AGREE (same tx id) |
+
+**Precedence observation, not a divergence.** In `mint-script-wrong`, cardano-node reports the
+full failure set: the policy script is missing, and the supplied script is extraneous. Amaru
+reports only the first failure, the missing script. Amaru does enforce the extraneous-script rule
+on its own (`extraneous-script-no-mint` AGREE). So this is a difference in how many failures are
+reported, not in the rule. It matches the stake-pool family's withdrawal precedence case.
+
+**Harness fix found during grading.** cardano's `OutputTooBigUTxO` response is 11.5 kB, because
+it prints the whole oversized value. Its phase-1 markers (`"kind":"ShelleyTxValidationError"`)
+sit at the end of the JSON, at byte 11412, past the transport's 4096-byte read. So the first run
+fail-closed to INCONCLUSIVE, correctly never a pass. `mixed_phase1._PHASE1_MARKERS` now also
+matches `conwayutxowfailure`, which leads cardano's error text. This affects every family: any
+large cardano rejection previously went to `unknown`.
+
 ## Oracle (fail-closed)
 
 `workload/mint_burn_differential.py`:
@@ -103,3 +152,7 @@ Shared-code changes (backward compatible):
   observation.
 - `stake_pool_differential.grade(case, result, table=None)` accepts a family reason table
   instead of mutating the module global, and supports `expected: decode_reject`.
+  `collateral_differential` now passes its table too. Before this change, importing it
+  overwrote the stake-pool table for the whole process.
+- `mixed_phase1._PHASE1_MARKERS` adds `conwayutxowfailure`, so large cardano rejections classify
+  from the start of the text (see the harness fix above).

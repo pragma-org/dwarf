@@ -90,6 +90,10 @@ _PHASE1_MARKERS = (
     "conwaymempoolfailure",
     "submitvalidationerror",
     "txvalidationerror",
+    # cardano ledger rule failure; it leads the error text, whereas the "kind"/"tag" markers
+    # above sit at the END of the JSON and fall past the 4096-byte read for large responses
+    # (e.g. OutputTooBigUTxO prints the whole oversized value: an 11.5 kB body)
+    "conwayutxowfailure",
     # amaru 10.11.20260918+ emits verbose phase-1 errors (fees/native-script/validity)
     # under this umbrella phrase; 807 used the coarse _AMARU_VALIDATION_RE form below.
     "phase one validation",
