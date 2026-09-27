@@ -120,3 +120,27 @@ Same class as [finding-amaru-noncanonical-cbor-crash.md](finding-amaru-noncanoni
 a malformed-but-decodeable input panics instead of being rejected gracefully. Distinct trigger
 (witness key point-validity vs. CBOR canonicity) and distinct code path (ed25519 key parse in
 the phase-1 witness rule).
+
+
+## Independent verification + novelty (orchestrator, 2026-09-27)
+
+**Independently reproduced.** The 302-byte repro transaction submitted to a fresh isolated pair:
+cardano-node 11.1.2 (fef83fed) rejects it gracefully — ConwayUtxowFailure / InvalidWitnessesUTXOW
+naming the non-curve key 0200...00 — and stays **UP**; amaru 0925 (eaf8ac3f) drops the connection
+and its submit API goes to **000 (process down)**. Confirmed here 1/1, in addition to sub3's 2/2
+and the original soak hit.
+
+**Novelty: NOVEL for amaru.** No amaru issue tracks the VerifyingKey::try_from(..).expect()
+non-curve-point panic (the GitHub "VerifyingKey try_from" search returns 0 amaru hits; the
+closest, issue 1104, is the unrelated epoch-transition rewards panic). Same class as the prior
+DWARF finding finding-amaru-noncanonical-cbor-crash.md (a malformed-but-decodeable input panics
+instead of a graceful reject) but a distinct trigger (a non-curve vkey witness). The same
+.expect() pattern on the signature parse and the bootstrap-witness loop is flagged for audit.
+
+**Severity: HIGH (confirmed).** Remote and unauthenticated: a single spec-shaped transaction downs
+the node via the submit API or the node-to-node tx-submission relay; no stake, spend, or valid
+signature is required. Fix: replace the .expect() with the graceful bad-signature path the caller
+already uses (unwrap_or_else).
+
+**Not filed upstream** (operator decision: consolidate + wrap, 2026-09-26). Strong upstream
+candidate if chosen — clear repro, root cause, and a one-line fix.
