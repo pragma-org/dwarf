@@ -1,0 +1,311 @@
+{
+ "graded_at": "2026-09-27",
+ "pair": "pair4: cardano-node 11.1.2 (fef83fed) via cardano-submit-api 11.1.2 on :8113, amaru v10.11.20260925 (eaf8ac3f) submit :3213; mempool reset before the violation run and before each control",
+ "regrade_note": "re-graded after all pair submit-apis were redeployed on cardano-submit-api 11.1.2. The first run went through submit-api 10.7.1, whose older decoder accepted the 65-byte metadata cases; cardano-node 11.1.2 then closed the local connection (BearerClosed) and those 3 were INCONCLUSIVE. Now cardano answers 400 DeserialiseFailure 'text/bytes .size (0..64)', a decode reject like amaru.",
+ "summary": {
+  "cases": 17,
+  "statuses": {
+   "AGREE": 17
+  }
+ },
+ "violations": [
+  {
+   "case_id": "noncanon-uint-hash-canonical",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "conflicting_hash"
+    ],
+    "cardano": [
+     "conflicting_hash"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction c0ecef5fc66a7b2c9181072c2d028259b54db110e76fc3676c0aea2d8267bdc1 is invalid: transaction failed phase one validation: invalid transaction metadata: metadata hash mismatch: supplied c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f4c293",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (ConflictingMetadataHash Mismatch (RelEQ) {supplied: TxAuxDataHash {unTxAuxDataHash = SafeHash \\\"c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f4c293"
+  },
+  {
+   "case_id": "noncanon-indef-hash-canonical",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "conflicting_hash"
+    ],
+    "cardano": [
+     "conflicting_hash"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction c0ecef5fc66a7b2c9181072c2d028259b54db110e76fc3676c0aea2d8267bdc1 is invalid: transaction failed phase one validation: invalid transaction metadata: metadata hash mismatch: supplied c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f4c293",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (ConflictingMetadataHash Mismatch (RelEQ) {supplied: TxAuxDataHash {unTxAuxDataHash = SafeHash \\\"c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f4c293"
+  },
+  {
+   "case_id": "hash-mismatch",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "conflicting_hash"
+    ],
+    "cardano": [
+     "conflicting_hash"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction 6428c969d13b7490b9bee6fad975cbe6ac990e24489454b67decf87618d16a35 is invalid: transaction failed phase one validation: invalid transaction metadata: metadata hash mismatch: supplied 3ef455e29f45f292665d7fd3758df8e75ac0260231b7dc8",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (ConflictingMetadataHash Mismatch (RelEQ) {supplied: TxAuxDataHash {unTxAuxDataHash = SafeHash \\\"3ef455e29f45f292665d7fd3758df8e75ac0260231b7dc8"
+  },
+  {
+   "case_id": "hash-missing",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "missing_hash"
+    ],
+    "cardano": [
+     "missing_hash"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction e7cf6f7fd25783f376b7f3c47506a5d9502136d3f86364c1e07d009a902f7434 is invalid: transaction failed phase one validation: invalid transaction metadata: missing auxiliary data hash: metadata hash c80ec55e3358e19fd6dfedbf6d9efbfc48b51",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingTxBodyMetadataHash (TxAuxDataHash {unTxAuxDataHash = SafeHash \\\"c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f4c2937ccd1843132f7aece\\\"}))\"],"
+  },
+  {
+   "case_id": "aux-missing",
+   "expected": "reject",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "reason_classes": {
+    "amaru": [
+     "missing_aux"
+    ],
+    "cardano": [
+     "missing_aux"
+    ]
+   },
+   "reason_parity": true,
+   "cred_seen": {
+    "amaru": true,
+    "cardano": true
+   },
+   "cred_parity": true,
+   "reason_truncated": [],
+   "status": "AGREE",
+   "amaru_reason": "transaction c0ecef5fc66a7b2c9181072c2d028259b54db110e76fc3676c0aea2d8267bdc1 is invalid: transaction failed phase one validation: invalid transaction metadata: missing metadata: auxiliary data hash c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f",
+   "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingTxMetadata (TxAuxDataHash {unTxAuxDataHash = SafeHash \\\"c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f4c2937ccd1843132f7aece\\\"}))\"],\"kind\":\""
+  },
+  {
+   "case_id": "text-65",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error: text exceeds 64 bytes: got 65",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  },
+  {
+   "case_id": "bytes-65",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error: bytes exceeds 64 bytes: got 65",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  },
+  {
+   "case_id": "nested-text-65",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error: text exceeds 64 bytes: got 65",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  },
+  {
+   "case_id": "bignum-small",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error: unexpected CBOR datatype Tag when decoding metadatum",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  },
+  {
+   "case_id": "int-overflow",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error: unexpected CBOR datatype Tag when decoding metadatum",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  },
+  {
+   "case_id": "dup-labels",
+   "expected": "decode_reject",
+   "classes": {
+    "amaru": "decode_reject",
+    "cardano": "decode_reject"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "Invalid CBOR transaction: decode error: found duplicate keys when converting collection to a key/value map",
+   "cardano_reason": "{\"contents\":{\"contents\":[\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"Size mismatch when decoding Record RecD.\\\\nExpected 4, but found 3.\\\")\",\"DecoderErrorDeserialiseFailure \\\"Shelley Tx\\\" (DeserialiseFailure 1 \\\"S"
+  }
+ ],
+ "controls": [
+  {
+   "case_id": "noncanon-uint-hash-sent",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"8ffc22a8e7e8dd7715c3c636963a84d8e5590ee49a741bc58133ffaa980164f9\"",
+   "cardano_reason": "\"8ffc22a8e7e8dd7715c3c636963a84d8e5590ee49a741bc58133ffaa980164f9\""
+  },
+  {
+   "case_id": "noncanon-indef-hash-sent",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"71962b0d48aae5e85baa3da5221c8eb4eac5620533fbec570a8157f79e2b8f15\"",
+   "cardano_reason": "\"71962b0d48aae5e85baa3da5221c8eb4eac5620533fbec570a8157f79e2b8f15\""
+  },
+  {
+   "case_id": "canonical-valid",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"c0ecef5fc66a7b2c9181072c2d028259b54db110e76fc3676c0aea2d8267bdc1\"",
+   "cardano_reason": "\"c0ecef5fc66a7b2c9181072c2d028259b54db110e76fc3676c0aea2d8267bdc1\""
+  },
+  {
+   "case_id": "text-64-valid",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"8abb93b7d7b64753744abc1efa266ed73b8137aee538beecc3efaea1a6aa1dcd\"",
+   "cardano_reason": "\"8abb93b7d7b64753744abc1efa266ed73b8137aee538beecc3efaea1a6aa1dcd\""
+  },
+  {
+   "case_id": "bytes-64-valid",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"7a13087f42fafa1f48ad3134de9b3276de1f2657d2894768003f3aacf8caf07c\"",
+   "cardano_reason": "\"7a13087f42fafa1f48ad3134de9b3276de1f2657d2894768003f3aacf8caf07c\""
+  },
+  {
+   "case_id": "indef-text",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"9d3e57e8ab7b96b554c6810ee0fbcb9d304be7f00af0b1b44e4ad52be3c484d7\"",
+   "cardano_reason": "\"9d3e57e8ab7b96b554c6810ee0fbcb9d304be7f00af0b1b44e4ad52be3c484d7\""
+  }
+ ]
+}

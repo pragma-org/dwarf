@@ -1,0 +1,208 @@
+{
+ "description": "Transaction-metadata / auxiliary-data-hash phase-1 differential family (cardano-node vs Amaru). Every case spends the committed funding UTxO (fee 300000 >> min, no validity interval) and is derived from the cardano-cli md-base.tx by edits.py (raw aux bytes, re-signed body). Violations and decode edges idempotent; controls single-use. See dwarf/docs/metadata-phase1-differential-family.md.",
+ "canonical_aux_hash": "c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f4c2937ccd1843132f7aece",
+ "cases": [
+  {
+   "case_id": "noncanon-uint-hash-canonical",
+   "tx_file": "noncanon-uint-hash-canonical.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 255,
+   "cbor_sha256": "19c3e886b981fd6860b93ca4f79e6e95c1ed2091f2dbbc554dcb89947f7487d2",
+   "rule": "UTXOW ConflictingMetadataHash (hash over the SENT bytes)",
+   "reason_classes": [
+    "conflicting_hash"
+   ],
+   "note": "label 674 as a 5-byte uint; body hash over the CANONICAL re-encoding. The token is the hash of the sent bytes: a node hashing its own re-encoding would accept instead",
+   "credential": "7126b40bc313ba23efc76a292e102ba1e8528de756c47738d8a010c0d808cb3b"
+  },
+  {
+   "case_id": "noncanon-indef-hash-canonical",
+   "tx_file": "noncanon-indef-hash-canonical.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 255,
+   "cbor_sha256": "1fd027bb2cf86a12b24ac495cb8f38455958baf7ec3d8086acb2ce1ff6e8d8b8",
+   "rule": "UTXOW ConflictingMetadataHash (hash over the SENT bytes)",
+   "reason_classes": [
+    "conflicting_hash"
+   ],
+   "note": "indefinite-length map + list; body hash over the canonical re-encoding",
+   "credential": "8a9c70798c207626ab3fcade55466332b783b6e3670e1cc09a23108d21e1a47c"
+  },
+  {
+   "case_id": "hash-mismatch",
+   "tx_file": "hash-mismatch.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 253,
+   "cbor_sha256": "e5365f46dc238cebe001452893d3bd94207ba7ea8f998695a18f62bc323824af",
+   "rule": "UTXOW ConflictingMetadataHash",
+   "reason_classes": [
+    "conflicting_hash"
+   ],
+   "note": "body hash of unrelated bytes",
+   "credential": "c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f4c2937ccd1843132f7aece"
+  },
+  {
+   "case_id": "hash-missing",
+   "tx_file": "hash-missing.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 218,
+   "cbor_sha256": "1f6114c8e921cfe9c4c766aba789006623672156984ef44be1ed42c5c4f4208f",
+   "rule": "UTXOW MissingTxBodyMetadataHash",
+   "reason_classes": [
+    "missing_hash"
+   ],
+   "note": "aux present, body auxiliary_data_hash absent",
+   "credential": "c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f4c2937ccd1843132f7aece"
+  },
+  {
+   "case_id": "aux-missing",
+   "tx_file": "aux-missing.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 233,
+   "cbor_sha256": "6648b771d6bf7183e68e63077801329b8651bde1e1b3c73caa5ba5fc4d5da500",
+   "rule": "UTXOW MissingTxMetadata",
+   "reason_classes": [
+    "missing_aux"
+   ],
+   "note": "body auxiliary_data_hash present, aux data null",
+   "credential": "c80ec55e3358e19fd6dfedbf6d9efbfc48b5129f5f4c2937ccd1843132f7aece"
+  },
+  {
+   "case_id": "text-65",
+   "tx_file": "text-65.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 314,
+   "cbor_sha256": "6ed07d67c2677a5de8b8250c5c29fdf20e9277b741d0bdb515fba429f9a0b5bb",
+   "rule": "CDDL metadatum text .size (0..64)",
+   "reason_classes": [],
+   "note": "65-byte text. cardano-node 11.1.2 enforces the 64-byte limit in its DECODER (text/bytes .size (0..64)); older decoders (cardano-submit-api 10.7.1, cardano-cli 10.16) accept the bytes and left it to the UTXOW InvalidMetadata rule. Through a 10.7.1 submit-api the node closes the local connection (BearerClosed) and the case is INCONCLUSIVE"
+  },
+  {
+   "case_id": "bytes-65",
+   "tx_file": "bytes-65.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 314,
+   "cbor_sha256": "37cb1ec75929732933521e3c2fe7a8a5ab48355b2e7c16b34ae74ff920945ab4",
+   "rule": "CDDL metadatum bytes .size (0..64)",
+   "reason_classes": [],
+   "note": "65-byte bytes. cardano-node 11.1.2 enforces the 64-byte limit in its DECODER (text/bytes .size (0..64)); older decoders (cardano-submit-api 10.7.1, cardano-cli 10.16) accept the bytes and left it to the UTXOW InvalidMetadata rule. Through a 10.7.1 submit-api the node closes the local connection (BearerClosed) and the case is INCONCLUSIVE"
+  },
+  {
+   "case_id": "nested-text-65",
+   "tx_file": "nested-text-65.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 320,
+   "cbor_sha256": "c28192ba9ed85193aef09449f6b6338af10c245918d07c85d9409ad553784124",
+   "rule": "CDDL metadatum text .size (0..64)",
+   "reason_classes": [],
+   "note": "65-byte text nested in a list inside a map. cardano-node 11.1.2 enforces the 64-byte limit in its DECODER (text/bytes .size (0..64)); older decoders (cardano-submit-api 10.7.1, cardano-cli 10.16) accept the bytes and left it to the UTXOW InvalidMetadata rule. Through a 10.7.1 submit-api the node closes the local connection (BearerClosed) and the case is INCONCLUSIVE"
+  },
+  {
+   "case_id": "bignum-small",
+   "tx_file": "bignum-small.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 250,
+   "cbor_sha256": "8fc766d0820231f0ab9608c3751dd697bc438cd6120d28cedefa50fe8a7fa0b8",
+   "rule": "CDDL metadatum int (no tag-2 bignum)",
+   "reason_classes": [],
+   "note": "int 5 encoded as a tag-2 bignum"
+  },
+  {
+   "case_id": "int-overflow",
+   "tx_file": "int-overflow.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 258,
+   "cbor_sha256": "8cec68b11232081d9da93459cca98f889cbbde6b890172489e094ea303b5faae",
+   "rule": "CDDL metadatum int range",
+   "reason_classes": [],
+   "note": "int 2^64 (tag-2 bignum)"
+  },
+  {
+   "case_id": "dup-labels",
+   "tx_file": "dup-labels.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 268,
+   "cbor_sha256": "482d654729f66c8a0fb7e341858727cd899a9c478d6ae7aa5abad4b2aecbde74",
+   "rule": "CDDL metadata map (no duplicate labels)",
+   "reason_classes": [],
+   "note": "label 674 twice"
+  },
+  {
+   "case_id": "noncanon-uint-hash-sent",
+   "tx_file": "noncanon-uint-hash-sent.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 255,
+   "cbor_sha256": "d9c4a9ca945268c3960300daa7b228d31c61f2c1427a3ecd17e21e068808ee44",
+   "rule": "control (hash over the sent bytes)",
+   "reason_classes": [],
+   "note": "label 674 as a 5-byte uint; body hash over the SENT bytes"
+  },
+  {
+   "case_id": "noncanon-indef-hash-sent",
+   "tx_file": "noncanon-indef-hash-sent.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 255,
+   "cbor_sha256": "03b45bbaea90b83b60a59b32fa9a0a7a9e24f3e978f7dc64e93242d3df9f95ac",
+   "rule": "control (hash over the sent bytes)",
+   "reason_classes": [],
+   "note": "indefinite-length map + list; body hash over the sent bytes"
+  },
+  {
+   "case_id": "canonical-valid",
+   "tx_file": "canonical-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 253,
+   "cbor_sha256": "49db723961ff1d791c80873ec9868f65f91bd2742384ce2fb1be9fb14cdfc1b1",
+   "rule": "control (encoder anchor)",
+   "reason_classes": [],
+   "note": "canonical aux, hash over it"
+  },
+  {
+   "case_id": "text-64-valid",
+   "tx_file": "text-64-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 313,
+   "cbor_sha256": "542de10df3689483993202d6ef2491c8d6598380943cf8bf3e217c2e7bfd06b7",
+   "rule": "control (size boundary)",
+   "reason_classes": [],
+   "note": "64-byte text"
+  },
+  {
+   "case_id": "bytes-64-valid",
+   "tx_file": "bytes-64-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 313,
+   "cbor_sha256": "316ae15106936e76fab218ea96e39275090a0e18e419ef443679b551bc7359ec",
+   "rule": "control (size boundary)",
+   "reason_classes": [],
+   "note": "64-byte bytes"
+  },
+  {
+   "case_id": "indef-text",
+   "tx_file": "indef-text.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 256,
+   "cbor_sha256": "f249518ec50f3a50d5a17436f90ffb6e437410f112923ff8e76f536bd52e9ab1",
+   "rule": "control (encoding)",
+   "reason_classes": [],
+   "note": "text as an indefinite-length chunked string"
+  }
+ ]
+}
