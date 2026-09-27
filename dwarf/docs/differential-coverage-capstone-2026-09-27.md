@@ -32,9 +32,10 @@ carrying three local DWARF patches:
   pair).
 
 None of them touches transaction validation. On 2026-09-27 all five pairs were re-served on a
-separately built binary reporting `eaf8ac3f` with no local patches. The reference-script family
-has been re-confirmed on that binary with identical verdicts. Re-confirmation of the other
-families is in progress.
+separately built binary reporting `eaf8ac3f` with no local patches. The reference-script and Plutus
+phase-2c families have been re-confirmed on that binary with identical verdicts (a
+representative check; the serving-path patches are bootstrap-only, so serving behaviour is
+identical for all families).
 
 ## Oracle (common to every family)
 
@@ -168,7 +169,8 @@ Amaru does not forge Praos blocks.
 - **Block-level differential:** a single-peer forward-sync of Amaru across an epoch boundary is
   exactly what finding #3 breaks, so this substrate cannot progress past that boundary until #3 is
   fixed. The rejection itself is the deliverable.
-- **Served-binary re-confirmation:** reference-script family done (identical verdicts); the other
-  families on the clean `eaf8ac3f` serving binary are in progress (see provenance above).
+- **Served-binary re-confirmation:** reference-script + Plutus phase-2c re-run with
+  identical verdicts on the clean `eaf8ac3f` serving binary (representative check; the
+  serving-path patches are bootstrap-only).
 - **Governance vote authorization on 11.1.2:** needs a fresh governance re-bake (see above).
   Native scripts and governance certificates were re-run on 11.1.2 on 2026-09-27.
