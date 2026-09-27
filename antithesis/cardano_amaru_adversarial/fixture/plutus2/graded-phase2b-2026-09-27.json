@@ -1,0 +1,84 @@
+{
+ "date": "2026-09-27",
+ "phase": "2b",
+ "tool": "aiken v1.1.24+bacbeb3",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 (fef83fed) :8111",
+  "amaru": "Amaru 10.11.20260925 (eaf8ac3f) :3211"
+ },
+ "attribution_validity_range": {
+  "cardano_systemStart_ms": 1790491788000,
+  "amaru_AMARU_GLOBAL_SYSTEM_START": 1790491788000,
+  "slotLength_s": 0.5,
+  "slot_1000_posix_ms": 1790492288000,
+  "note": "raw slot->POSIXTime mapping AGREES (identical systemStart+slots); ctx_validity_* therefore isolates the VM ScriptContext-construction layer, and it agrees too (off-by-1ms wrong-case rejects on both)."
+ },
+ "results": {
+  "int_to_bytes_wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "bls_wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "ctx_validity_wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "int_to_bytes": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "bls_roundtrip": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ctx_validity_lower": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}

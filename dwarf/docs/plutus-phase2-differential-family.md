@@ -86,3 +86,55 @@ python3 plutus_differential.py --single exu-exact ...   # one accept case per me
 ```
 
 Exit codes: 0 all agree, 1 divergence, 2 inconclusive. Keys are testnet-only, no value.
+
+## Phase-2b: Aiken builtin-semantics & script-context edges (2026-09-27)
+
+Higher-novelty tier: real Aiken-compiled PlutusV3 minting policies (aiken `v1.1.24+bacbeb3`),
+same carrier and oracle as 2a. Corpus + compiled scripts + Aiken source in `fixture/plutus2/`
+(`validators.ak`, `blueprint.json`). **6/6 AGREE** — Amaru 0925 conformant with cardano-node
+11.1.2.
+
+| dimension | correct-value (accept) | wrong-value (reject) | result |
+|---|---|---|---|
+| `integerToByteString` (V3) | `intToBS(bigendian,4,258)==0x00000102` | `==0x00000103` | AGREE (accept / reject) |
+| BLS12-381 G1 codec | `g1_compress(g1_uncompress(gen))==gen` | `==0xaa·48` | AGREE (accept / reject) |
+| ScriptContext validity-range | lower-bound POSIXTime `==1790492288000` | `==…001` (off by 1 ms) | AGREE (accept / reject) |
+
+Each correct-value tx is accepted by both with the **same tx id**; each wrong-value tx is
+rejected by both with a phase-2 tag mismatch. The wrong-value cases prove non-vacuity (the scripts
+are not trivially true).
+
+### Validity-range attribution (kept un-conflated, per the two-layer split)
+
+The validity-range case is the consensus-relevant one. Before trusting the script I confirmed the
+two layers independently:
+
+- **Raw slot→POSIXTime mapping layer:** cardano-node's `systemStart` = `1790491788000` ms and
+  Amaru's `AMARU_GLOBAL_SYSTEM_START` = `1790491788000` ms are **identical**, slot length 0.5 s on
+  both. So both map `invalidBefore` slot 1000 → POSIXTime `1790492288000` ms. The mapping layer
+  agrees by construction.
+- **VM ScriptContext construction layer:** with the mapping equal, the script asserts the lower
+  bound equals `1790492288000` exactly. Both accept it; the off-by-1-ms variant
+  (`1790492288001`) is rejected by both. So Amaru's Plutus VM builds `txInfoValidRange` with the
+  exact same POSIXTime as cardano-node's — the construction layer agrees too.
+
+This is a conformance result, not a finding. Had the raw mapping differed (e.g. a different
+`systemStart`, the bootstrap-trust trait), the divergence would have been attributed to the
+mapping layer, not the VM — the two are reported separately.
+
+### Reproduce (phase-2b)
+
+```
+cd <aiken project>; aiken build
+aiken blueprint convert -m p2b -v <validator> > fixture/plutus2/<validator>.plutus
+# build each as a mint tx (fee 3000000, ex-units (6e9,6e6) >> true cost; ctx cases add
+#   --invalid-before 1000), then:
+cd workload && python3 plutus_differential.py --corpus ../fixture/plutus2 --amaru … --cardano …
+python3 plutus_differential.py --corpus ../fixture/plutus2 --single int_to_bytes …  # accepts, one per reset
+```
+
+Scope: first-cut 2b (one edge per dimension). Natural extensions — more BLS edges (hashToGroup /
+pairing / subgroup & non-canonical encodings), more V3 builtins (`consByteString`>255,
+`byteStringToInteger`, `divideInteger`-by-zero), and more ScriptContext fields (`txInfoInputs`
+ordering, `txInfoRedeemers`, V3 `ScriptInfo`) — are follow-ups if the operator wants deeper
+coverage.

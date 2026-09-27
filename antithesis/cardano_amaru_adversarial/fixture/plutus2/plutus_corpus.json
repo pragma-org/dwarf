@@ -1,0 +1,59 @@
+{
+ "description": "Plutus phase-2b differential (Aiken v1.1.24 compiled V3): integerToByteString determinism, BLS12-381 G1 uncompress/compress round-trip, and ScriptContext validity-range construction. Correct-value cases accept on both; wrong-value cases reject on both (non-vacuity). Oracle = plutus_differential (verdict + phase-2 reason-class parity).",
+ "cases": [
+  {
+   "case_id": "int_to_bytes",
+   "tx_file": "int_to_bytes.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 492,
+   "cbor_sha256": "e232a2dd67eef677de8c502efa7b46748aae898c89984af8b0e46b87379cf038",
+   "note": "integerToByteString(bigendian,4,258)==0x00000102"
+  },
+  {
+   "case_id": "bls_roundtrip",
+   "tx_file": "bls_roundtrip.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 581,
+   "cbor_sha256": "13e9edadfb9573632e9b83c0a166954538f3c065c859a172c6bd05c0629060ec",
+   "note": "bls12_381_g1_compress(uncompress(generator))==generator"
+  },
+  {
+   "case_id": "ctx_validity_lower",
+   "tx_file": "ctx_validity_lower.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 541,
+   "cbor_sha256": "2ddf1e0f923862f211f7b850016dba23617bb6a5d358213e30dbc7dc27301707",
+   "note": "txInfoValidRange lower bound == POSIXTime 1790492288000 for invalidBefore=1000 (raw slot->time mapping agrees; isolates VM ScriptContext construction)"
+  },
+  {
+   "case_id": "int_to_bytes_wrong",
+   "tx_file": "int_to_bytes_wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 492,
+   "cbor_sha256": "40bf22c6240c0af68512bcfe2713d518413aa7392af6e4129ff97603cc8f4f5e",
+   "note": "same but ==0x00000103 -> script false -> both reject (non-vacuity)"
+  },
+  {
+   "case_id": "bls_wrong",
+   "tx_file": "bls_wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 581,
+   "cbor_sha256": "865e206104dd261cb176c2fa3faa6d6818826a4969aa4ec18f28ed4ea71c6029",
+   "note": "round-trip == 0xaa*48 -> false -> both reject (non-vacuity)"
+  },
+  {
+   "case_id": "ctx_validity_wrong",
+   "tx_file": "ctx_validity_wrong.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 541,
+   "cbor_sha256": "16f87220feef86dde56d3baaaff2b990bb9f26de38a88d70183e05086265e090",
+   "note": "lower bound == 1790492288001 (off by 1ms) -> false -> both reject; proves VM builds EXACT POSIXTime, not a loose bound"
+  }
+ ]
+}
