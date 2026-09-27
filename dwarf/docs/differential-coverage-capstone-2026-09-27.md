@@ -64,7 +64,14 @@ accept control is single-use and run after a mempool reset.
 | Plutus phase 2: 2a ex-units / `is_valid` (9), 2b builtins + ScriptContext (6), 2c error-path builtins (11) | 26 | **26 AGREE**, no VM panic | `plutus-phase2-differential-coverage-2026-09-27.md` |
 | Native scripts (multisig, RequireMOf incl. N-1, nested, timelocks incl. inclusive boundaries) | 10 | **10 AGREE** (script-hash parity; 5 controls same tx id) | `native-script-phase1-differential-family.md`; `fixture/native_script/graded-2026-09-27.json` |
 | Governance certificate witnesses (DRep registration: missing / wrong key / multi-cert partial) | 5 | **5 AGREE** (credential parity) | `governance-signature-phase1-differential-family.md`; `fixture/governance/graded-2026-09-27.json` |
-| **Total (11 families)** | **175** | **174 AGREE, 1 divergence** | |
+| ScriptContext (Conway `TxInfo`) construction fidelity (fee, mint, inputs count/content/**ordering** byte-crafted, reference-inputs, redeemers, treasury_donation, current_treasury) | 18 | **18 AGREE** (amaru canonicalises ctx inputs by OutputReference identically) | `scriptcontext-construction-fidelity-differential-family.md` |
+| Value-conservation / int64 arithmetic knife-edges | 4 | **4 AGREE** (no value creation, no int64-overflow acceptance) | `value-conservation-arithmetic-differential-family.md` |
+| Certificate & deposit state-transition edges (deleg-to-nonexistent-DRep, dereg-unregistered, reg+dereg refund exactness) | 4 | **4 AGREE** (deposit-refund amount exact on both) | `certificate-deposit-state-transition-differential-family.md` |
+| PlutusData (datum / redeemer) CBOR canonicalisation + decode-strictness | 9 | **9 AGREE** (incl. the 64-byte PlutusData bytestring decode-limit, enforced identically) | `plutusdata-decode-strictness-differential-family.md` |
+| Reference-script fee (Conway `minFeeRefScriptCostPerByte`) | 4 | **4 AGREE** (min fee exact to the lovelace incl. 2-ref accounting; exponential tier substrate-limited) | `reference-script-fee-differential-family.md` |
+| Script-integrity-hash / `languageViews` / cost-model (incl. **mixed PlutusV1+V3** in one tx) | 4 | **4 AGREE** (`script_data_hash` identical incl. both cost models; PPViewHashesDontMatch on a corrupted hash) | `fixture/plutus2*/graded*.json` |
+| CBOR **decode-strictness** sweep — tx body / witness-set / aux (26 mutation classes: indefinite/definite, non-minimal ints, set tag-258 presence + ordering, duplicate keys, extra/wrong tags, chunked bytestrings, arity) | 26 | **24 AGREE**, 2 decode-layer divergences (trailing-bytes + witness-element arity, both in Findings) | `workload/cbor_strict*.py`; `finding-amaru-witness-element-arity-leniency.md` |
+| **Total (18 families / surfaces)** | **244** | **241 AGREE; 3 divergences, all in Findings (collateral P1 verdict-divergence; trailing-bytes + witness-element-arity decode-layer)** | |
 
 Selected conformance datapoints:
 - **Metadata:** Amaru hashes auxiliary data **as sent**. With a non-canonical aux encoding, both
@@ -116,10 +123,20 @@ interval (expired, not yet valid, controls), max-tx-size (now pinned at exactly 
 | **MEDIUM-HIGH** | **Epoch-boundary active-nonce mismatch (#3).** Amaru rejects the valid first block of a new epoch (`Invalid VRF proof`) that cardano-node accepts. Root cause, traced in source: `store.rs::evolve_nonce` derives the epoch-3 active nonce from an **epoch-1** block reference (the parent of a tail that lags a full epoch) instead of the immediately previous epoch's block. Amaru's imported nonces and its accumulated candidate nonce match cardano. It is reached when an Amaru node forward-syncs across an epoch boundary from a single peer; it is latent in normal deployments, which re-snapshot through the bootstrap producer. | Reproduced live on native 0925 stores; byte-proof of the combine; root cause traced to `store.rs::evolve_nonce`. The exact Praos combine (`⭒` / `hashHeaderToNonce`) is to be confirmed when fixing. An earlier proxy-path stall was traced to a header re-sign artifact and ruled out, not filed (finding doc, "Confound discipline"). | `finding-amaru-epoch-boundary-active-nonce.md` |
 | **MEDIUM** | **Collateral witness bypass (P1).** Amaru accepts a no-script tx naming someone else's UTxO as collateral without that owner's witness; cardano rejects it. A phase-1 validation-rule bypass. | LIVE, reproduced 2/2 | `collateral-phase1-differential-family.md` |
 | LOW | The submit API accepts **trailing bytes** after a tx; cardano decode-rejects. | known, confirmed live on 0925 | `finding-amaru-submit-trailing-bytes.md` |
+| LOW | The submit API accepts a **vkey-witness encoded as a 3-element array** (surplus element ignored; admitted to Amaru's **local** mempool with the canonical tx-id); cardano-node decode-rejects it. Relay characterised live: Amaru demotes the cardano peer over chain-sync, so the malformed tx stays in Amaru's local mempool and is **not realised cross-network**. | LIVE 2/2, NEW; from the 26-class decode-strictness sweep (only this + trailing-bytes diverge). tx-id unchanged → decode-leniency, not id-malleability. | `finding-amaru-witness-element-arity-leniency.md` |
 | LOW | The mempool admits **conflicting-input** txs; cardano rejects the second. | likely by-design; not filed | `finding-amaru-mempool-input-conflict-admission.md` |
 
-The two LOW items are ingress permissiveness. They are bounded, have no consensus impact, and
-Amaru does not forge Praos blocks.
+The three LOW items (trailing-bytes, conflicting-input admission, witness-element arity) are
+ingress permissiveness. They are bounded, have no consensus impact, and Amaru does not forge
+Praos blocks.
+
+**Characterised limitation (not a new finding).** Amaru single-peer forward-sync does not
+sustainably follow a chain: after `intersect_found` → `roll_backward` it stalls (sends
+`RequestNext`, no `roll_forward`) once the peer leads beyond ~dozens of blocks. This is
+`pragma-org/amaru#736` currency; it is why the crafted-block adoption differential is not
+reachable via forward-sync on this substrate, and why deployments follow via the
+bootstrap-producer (snapshot). It also bounds finding #3 (the epoch-boundary case). See
+`finding-amaru-forward-sync-reachability-wall.md`.
 
 ## Source-level candidates (not empirically confirmed)
 
