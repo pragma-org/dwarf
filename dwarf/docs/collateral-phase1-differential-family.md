@@ -17,8 +17,11 @@ families.
 >   without that owner's signature. cardano-node rejects it with `MissingVKeyWitnessesUTXOW`.
 >   See [P1](#p1-unwitnessed-foreign-collateral-no-redeemers).
 >
-> The escalation questions (relay, block inclusion) are **OPEN** pending the orchestrator's
-> assessment. Not filed upstream. Full responses are in `fixture/collateral/graded-2026-09-26.json`.
+> Escalation **ASSESSED** (orchestrator, 2026-09-26): Amaru **relays** P1 to peers (evidence below);
+> a realized consensus split is **bounded** — Amaru does not forge Praos blocks and cardano-node
+> producers reject P1, so it cannot enter the honest chain. Novelty: **novel for Amaru**, upstream-fileable.
+> **Not filed upstream** (operator decision 2026-09-26). Responses: `fixture/collateral/graded-2026-09-26.json`;
+> escalation logs: `fixture/collateral/escalation-2026-09-26/`.
 
 ## Substrate and identities
 
@@ -150,15 +153,42 @@ The ledger requires those witnesses regardless of redeemers:
   a transaction with scripts. Such a transaction has redeemers, and that branch enforces the
   witness (see `foreign-collateral-redeemer`).
 
-**OPEN (escalation, pending the orchestrator's assessment):**
+**Escalation (assessed 2026-09-26, orchestrator):**
 
-- (a) Does Amaru **relay** such a transaction to its peers?
-- (b) Would an Amaru-produced block **include** it? cardano-node would reject that block: a
-  block-level / consensus divergence, the same question as the min-fee escalation.
-- (c) Is there any path where the difference reaches an applied ledger state? cardano-node
-  never produces such a transaction, so the risk runs in the Amaru → cardano direction.
+- (a) **Relay: CONFIRMED.** Amaru propagates P1 over the node-to-node tx-submission protocol.
+  Amaru->Amaru: a peer Amaru logs `transaction.accepted ... origin="remote"` and
+  `tx_submission.responder ... outcome="inserted"` — the unwitnessed-collateral tx enters a
+  second Amaru mempool. Amaru->cardano-node: Amaru offers the tx to a cardano-node 11.1.2 peer
+  over tx-submission (`TxIdsSince`->`GetTxsForIds`->`SendEffect` of the tx bytes); cardano-node
+  rejects it on validation (`MissingVKeyWitnessesUTXOW`, as on direct submit). Logs:
+  `fixture/collateral/escalation-2026-09-26/{relay-amaru-to-amaru,relay-to-cardano}.log`.
+- (b)/(c) **Block-level / consensus split: BOUNDED, not realized.** Amaru does not produce Praos
+  blocks, and cardano-node producers reject P1, so P1 cannot enter the honest chain — no split is
+  demonstrated. Latent risk: Amaru phase-1 block-application uses the same has-redeemers-gated
+  check, so an Amaru-derived producer (or Amaru applying such a block) would admit what
+  cardano-node rejects. Not exercised here.
 
-The novelty check against Amaru's issues and wiki is also open. **Do not file upstream yet.**
+**Severity: MEDIUM (bounded).** A genuine phase-1 **validation-rule** bypass (a required vkey
+witness is not enforced) that also **propagates** — not merely a mempool-ingress policy
+difference. Bounded today: it cannot reach the honest chain, and there is no direct-theft path
+(collateral is seized only on `is_valid = false`, which requires scripts -> redeemers -> the
+enforced branch). More significant than the two LOW mempool-ingress observations
+(submit-trailing-bytes, mempool-conflict).
+
+**Novelty (orchestrator, 2026-09-26): NOVEL for Amaru; upstream-fileable.**
+
+- No Amaru issue tracks the no-redeemers collateral-witness gap.
+- Amaru PR **#744** ("Fix Required Vkey Witnesses", merged 2026-04-10) added the collateral-input
+  vkey-witness requirement, but `collateral.rs` gates it behind `if !has_redeemers { continue; }`
+  before `require_verification_key_witness` — leaving the **no-redeemers** case (P1) unenforced.
+  P1 is the residual hole of a known-incomplete fix.
+- **dingo #4350** ("enforce collateral vkey witnesses independently of phase-2 redeemers",
+  closed/completed) is the **identical bug in another node**, already fixed there — prior art for
+  the class and the correct fix.
+- Amaru **#1004** ("Correct behavior around invalid phase-two transactions") is possibly related
+  but appears distinct (phase-2-invalid collateral consumption, not the no-redeemers witness gap).
+
+**Not filed upstream** (operator decision 2026-09-26). Fileable when chosen, with the #744 + dingo #4350 references.
 
 ## Reproduce
 

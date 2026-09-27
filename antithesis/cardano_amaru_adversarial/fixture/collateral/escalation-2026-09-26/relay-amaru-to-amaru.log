@@ -1,0 +1,9 @@
+# Amaru A (submit :3052) -> Amaru B (listen :3043), both eaf8ac3f on copies of store-sub2
+## A
+2026-09-26T23:59:15.898517Z  INFO amaru::protocols: manager.message.process manager.peer.connected peer="127.0.0.1:3043" conn_id=0 message_type="ConnectionResult"
+2026-09-26T23:59:15.899014Z  INFO amaru::protocols: manager.message.process manager.peer.handshake_completed peer="127.0.0.1:3043" conn_id=0 full_duplex_capable=true full_duplex=true advertisable=true message_type="HandshakeComplete"
+2026-09-26T23:59:35.796118Z  INFO amaru::mempool: transaction.accepted id="1e26b8ca3fdb0f66723f540d51f7f9ca9b752bdc3e2858321c37f6de5c09a6a2" seq_no=1 origin="local"
+2026-09-26T23:59:35.796757Z DEBUG amaru_pure_stage::tokio: stage `tx_submission-29` external effect: GetTxsForIds { tx_ids: [TransactionId(Hash<32>("1e26b8ca3fdb0f66723f540d51f7f9ca9b752bdc3e2858321c37f6de5c09a6a2"))] }
+## B
+2026-09-26T23:59:35.797582Z  INFO amaru::mempool: transaction.accepted id="1e26b8ca3fdb0f66723f540d51f7f9ca9b752bdc3e2858321c37f6de5c09a6a2" seq_no=1 origin="remote"
+2026-09-26T23:59:35.797601Z DEBUG amaru::protocols: tx_submission.responder.received_tx id="1e26b8ca3fdb0f66723f540d51f7f9ca9b752bdc3e2858321c37f6de5c09a6a2" outcome="inserted"
