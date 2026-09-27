@@ -56,6 +56,50 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-013",),
         "risks": ("RR-013",),
     },
+    "plutus-string-builtin-cost-differential-amaru-cardano-node": {
+        "threats": ("TM-016", "TM-036",),
+        "risks": ("RR-016", "RR-031",),
+    },
+    "plutus-cost-model-conformance-sweep-amaru-cardano-node": {
+        "threats": ("TM-016", "TM-036",),
+        "risks": ("RR-016", "RR-031",),
+    },
+    "plutus-vm-crypto-builtins-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031",),
+    },
+    "plutus-bls12-381-builtins-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031",),
+    },
+    "plutus-cek-value-structure-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031",),
+    },
+    "conway-phase1-validation-rules-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016",),
+    },
+    "reference-script-inline-datum-reference-input-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016",),
+    },
+    "conway-scriptcontext-txinfo-fidelity-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016",),
+    },
+    "reference-script-fee-per-byte-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016",),
+    },
+    "cbor-strictness-witness-arity-vkey-noncurve-differential-amaru-cardano-node": {
+        "threats": ("TM-015", "TM-021", "TM-022",),
+        "risks": ("RR-015", "RR-024", "RR-026",),
+    },
+    "consensus-epoch-boundary-active-nonce-differential": {
+        "threats": ("TM-013", "TM-034",),
+        "risks": ("RR-013", "RR-029",),
+    },
 }
 
 
