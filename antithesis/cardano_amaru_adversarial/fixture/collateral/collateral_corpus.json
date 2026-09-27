@@ -1,0 +1,251 @@
+{
+  "description": "Collateral / redeemer phase-1 differential family (cardano-node vs Amaru). Every case spends the committed funding UTxO and mints under a PlutusV3 always-succeeds policy (186e32faa80a26810392fda6d559c7ed4721a65ce1c9d4ef3e1c87b4); fee 400001 >> min, no validity interval, real script-integrity hash from pparams.json. Violations idempotent; single_use cases need a clean mempool each.",
+  "policy_id": "186e32faa80a26810392fda6d559c7ed4721a65ce1c9d4ef3e1c87b4",
+  "cases": [
+    {
+      "case_id": "no-collateral",
+      "tx_file": "no-collateral.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 346,
+      "cbor_sha256": "a1fee7e1abb6bf1719c83312f0c961b6af35eabb17dce314edaaed88127ce2cf",
+      "rule": "UTXO NoCollateralInputs",
+      "reason_classes": [
+        "no_collateral"
+      ],
+      "note": "Plutus V3 mint with a redeemer and no collateral inputs",
+      "single_use": false
+    },
+    {
+      "case_id": "insufficient-at-boundary",
+      "tx_file": "insufficient-at-boundary.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 435,
+      "cbor_sha256": "29a89d56fad450a780cd907b83abb9ea19c58fb7411a701a0982ac82433afc19",
+      "rule": "UTXO InsufficientCollateral",
+      "reason_classes": [
+        "insufficient_collateral"
+      ],
+      "note": "fee 400001 needs ceil(1.5*fee) = 600002; the return leaves 600001 (declared = effective)",
+      "single_use": false
+    },
+    {
+      "case_id": "total-collateral-mismatch",
+      "tx_file": "total-collateral-mismatch.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 435,
+      "cbor_sha256": "bf8b7b00d8c92045aba2eeab4684b8a363f208b31f05774927c12f72fdf322c9",
+      "rule": "UTXO IncorrectTotalCollateralField",
+      "reason_classes": [
+        "total_collateral_mismatch"
+      ],
+      "note": "effective 700000, declared 699999",
+      "single_use": false
+    },
+    {
+      "case_id": "negative-asset-return",
+      "tx_file": "negative-asset-return.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 467,
+      "cbor_sha256": "1229ef375deb3adb96ac1189e5602f0d435d2152568173238808facddeac1b51",
+      "rule": "UTXO CollateralContainsNonADA",
+      "reason_classes": [
+        "collateral_non_ada"
+      ],
+      "note": "the collateral return carries 1 unit of an asset absent from the collateral inputs, so the collateral balance has a NEGATIVE asset quantity",
+      "single_use": false
+    },
+    {
+      "case_id": "return-too-small",
+      "tx_file": "return-too-small.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 422,
+      "cbor_sha256": "677b461ff09e7081d37edc8f0b9a5f27e242c796e51d58f8e0b7e7451183f32a",
+      "rule": "UTXO BabbageOutputTooSmallUTxO (collateral return)",
+      "reason_classes": [
+        "output_too_small"
+      ],
+      "note": "collateral return of 100 lovelace",
+      "single_use": false
+    },
+    {
+      "case_id": "return-wrong-network",
+      "tx_file": "return-wrong-network.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 429,
+      "cbor_sha256": "80337559c6654cc78dcfa02276056754e4923b92e26d707874da59dbcb20a833",
+      "rule": "UTXO WrongNetwork (collateral return)",
+      "reason_classes": [
+        "wrong_network"
+      ],
+      "note": "collateral return paid to a mainnet address",
+      "single_use": false
+    },
+    {
+      "case_id": "too-many-collateral",
+      "tx_file": "too-many-collateral.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 495,
+      "cbor_sha256": "610e75b7576b496d9e4ea9e67101c70b19464f3a77bc7164ce19856f7c61efbb",
+      "rule": "UTXO TooManyCollateralInputs and UTXOW MissingVKeyWitness (co-occurring)",
+      "reason_classes": [
+        "too_many_collateral",
+        "missing_witness"
+      ],
+      "note": "4 collateral inputs (max 3): ours + 3 genesis UTxOs whose keys never sign; two rules apply, so the reported reason is a PRECEDENCE observation",
+      "single_use": false
+    },
+    {
+      "case_id": "foreign-collateral-redeemer",
+      "tx_file": "foreign-collateral-redeemer.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 387,
+      "cbor_sha256": "8198034e6f02455328ae4009c013eb796e8543ef59003f651a1d1e5c94ffc05d",
+      "rule": "UTXOW MissingVKeyWitness (collateral input key)",
+      "reason_classes": [
+        "missing_witness"
+      ],
+      "note": "the only collateral is a genesis UTxO whose key never signs; the tx has a redeemer",
+      "single_use": false,
+      "credential": "19b9a38fc0a2a5ac858598a998cf293f20cfd123e542c0e1f2fd67d1"
+    },
+    {
+      "case_id": "exunits-too-big",
+      "tx_file": "exunits-too-big.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 387,
+      "cbor_sha256": "80e6c6f5ad28f36250638efc62ea5dcb7f587f20768605341529bf6b5cc8180a",
+      "rule": "UTXO ExUnitsTooBigUTxO",
+      "reason_classes": [
+        "exunits_too_big"
+      ],
+      "note": "redeemer memory 14000001 > maxTxExUnits 14000000; fee 2000001",
+      "single_use": false
+    },
+    {
+      "case_id": "integrity-hash-mismatch",
+      "tx_file": "integrity-hash-mismatch.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 387,
+      "cbor_sha256": "2e0fea0fbbb620f8047c9142de39c70b06a681292a7fd6627a09b0d28840ed1b",
+      "rule": "UTXOW PPViewHashesDontMatch",
+      "reason_classes": [
+        "integrity_hash"
+      ],
+      "note": "script-integrity hash computed from an altered PlutusV3 cost model",
+      "single_use": false
+    },
+    {
+      "case_id": "missing-redeemer",
+      "tx_file": "missing-redeemer.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 367,
+      "cbor_sha256": "8806daa57ecba793b304e122ee41814f982f8b76f9427cf939925ca0879aec67",
+      "rule": "UTXOS CollectErrors NoRedeemer / UTXOW MissingRedeemers",
+      "reason_classes": [
+        "missing_redeemer"
+      ],
+      "note": "the Plutus mint has no redeemer; the integrity hash is the one the ledger expects for an empty redeemer map, so only the missing redeemer is wrong",
+      "single_use": false
+    },
+    {
+      "case_id": "extra-redeemer",
+      "tx_file": "extra-redeemer.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 405,
+      "cbor_sha256": "3fed064e3ed0fed8ba6425625ab7333924e0df0cdc7225d2eb9f26e0db280680",
+      "rule": "UTXOW ExtraRedeemers",
+      "reason_classes": [
+        "extra_redeemer"
+      ],
+      "note": "a spend redeemer for the key-locked input next to the valid mint redeemer; hash recomputed",
+      "single_use": false
+    },
+    {
+      "case_id": "valid-minimal",
+      "tx_file": "valid-minimal.tx",
+      "expected": "accept",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 387,
+      "cbor_sha256": "15494b66f56e3d180bde76487848ab6cb09e65e53c77df4b1a1e9aa45a2f85dd",
+      "rule": "control",
+      "reason_classes": [],
+      "note": "collateral = the funding input, no return",
+      "single_use": true
+    },
+    {
+      "case_id": "valid-with-return",
+      "tx_file": "valid-with-return.tx",
+      "expected": "accept",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 435,
+      "cbor_sha256": "cc25b341d935d931fa226c6ab00473047cde459a0842d34eb48f794a47a72f4e",
+      "rule": "control",
+      "reason_classes": [],
+      "note": "collateral return + declared total_collateral 700000 (correct)",
+      "single_use": true
+    },
+    {
+      "case_id": "valid-at-boundary",
+      "tx_file": "valid-at-boundary.tx",
+      "expected": "accept",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 435,
+      "cbor_sha256": "3b2b6dc58a59b7410800272b58c80d8e8f3e99fc5af2b4ac6c5b92942b9d5104",
+      "rule": "control (over-strictness)",
+      "reason_classes": [],
+      "note": "effective collateral exactly ceil(1.5*fee) = 600002",
+      "single_use": true
+    },
+    {
+      "case_id": "p1-foreign-collateral-no-redeemers",
+      "tx_file": "p1-foreign-collateral-no-redeemers.tx",
+      "expected": "reject",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 242,
+      "cbor_sha256": "6f35e75bdd2b842f9da6932ea597c55b0002c56c8c4ed5ef0bb6d15b23048710",
+      "rule": "UTXOW MissingVKeyWitness (collateral input key, no redeemers)",
+      "reason_classes": [
+        "missing_witness"
+      ],
+      "note": "PREDICTED DIVERGENCE: no scripts; a genesis UTxO whose key never signs is named as collateral. The ledger's witness set is inputs + collateral regardless of redeemers; Amaru (collateral.rs) skips the witness when there are no redeemers. Single-use.",
+      "single_use": true,
+      "credential": "19b9a38fc0a2a5ac858598a998cf293f20cfd123e542c0e1f2fd67d1"
+    },
+    {
+      "case_id": "p1-control-no-collateral",
+      "tx_file": "p1-control-no-collateral.tx",
+      "expected": "accept",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 201,
+      "cbor_sha256": "ff719172048ce7c20c6372cf8809ee6e41db39f10e7b7df6b84b86a7d9f8a297",
+      "rule": "control (P1 counter-control)",
+      "reason_classes": [],
+      "note": "P1 without the collateral field: a plain signed spend both nodes must accept",
+      "single_use": true
+    },
+    {
+      "case_id": "p2-total-mismatch-no-redeemers",
+      "tx_file": "p2-total-mismatch-no-redeemers.tx",
+      "expected": "accept",
+      "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+      "cbor_size": 288,
+      "cbor_sha256": "a65674d30a281dd26afaf1a85200d90ee4424ef32006a2d7bdc10fbe843fcdf0",
+      "rule": "control (over-strictness)",
+      "reason_classes": [],
+      "note": "no scripts; declared total_collateral disagrees with the return: the collateral balance checks apply only with redeemers",
+      "single_use": true
+    }
+  ]
+}

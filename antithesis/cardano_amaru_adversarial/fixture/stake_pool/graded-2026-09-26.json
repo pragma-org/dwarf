@@ -1,0 +1,194 @@
+{
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 (fef83fed), frozen non-forging ref sub3-1112-ref, submit-api :8093",
+  "amaru": "Amaru 10.11.0 (eaf8ac3f) = v10.11.20260925, store-sub3, submit-api :3020",
+  "funding": "9708b921...#0 unspent in both; cardano tx-mempool = 0 before every run"
+ },
+ "date": "2026-09-26",
+ "violations_full_responses": {
+  "stakereg-missing-witness": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\\\"}])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction ff28c1a18b5b9e5a0bab919f7f18dc20f9b949fa4fd84e89041d6bfa0a8ce14d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]: invalid transaction verification key witness: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]"
+   }
+  },
+  "stakereg-wrong-key": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\\\"}])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction ff28c1a18b5b9e5a0bab919f7f18dc20f9b949fa4fd84e89041d6bfa0a8ce14d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]: invalid transaction verification key witness: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]"
+   }
+  },
+  "stakereg-bad-deposit": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayCertsFailure (CertFailure (DelegFailure (IncorrectDepositDELEG (Coin 1000000))))\",\"ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO Mismatch (RelEQ) {supplied: MaryValue (Coin 200000000000000) (MultiAsset (fromList [])), expected: MaryValue (Coin 200000001000000) (MultiAsset (fromList []))}))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction 4d6719dd3a6eb83b366458f414ca27eb165b75e7218a45f24b8badaa3e7efc66 is invalid: transaction failed phase one validation: invalid certificates: incorrect stake deposit: provided 1000000, expected 2000000: invalid certificates: incorrect stake deposit: provided 1000000, expected 2000000: incorrect stake deposit: provided 1000000, expected 2000000"
+   }
+  },
+  "regvote-missing-witness": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\\\"}])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction fd7def9d1daf9bfe32bc041211012b2efdb8cc77b2ca213a4ab32e65d2affb74 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]: invalid transaction verification key witness: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]"
+   }
+  },
+  "regdeleg-missing-witness": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\\\"}])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction 44298a09763763180a873c69492aaf21a7e741f8efb3f376c0c78134becde1c7 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]: invalid transaction verification key witness: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]: missing required signatures for keys or roots: [3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab]"
+   }
+  },
+  "regdeleg-unknown-pool": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayCertsFailure (CertFailure (DelegFailure (DelegateeStakePoolNotRegisteredDELEG (KeyHash {unKeyHash = \\\"b2e434417a56bc3686fc084036680266559411cf88f986632e70a040\\\"}))))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction 13c32287ec4cb34132a310c0639586fd76f664617d0ce6964974007bfd71c841 is invalid: transaction failed phase one validation: invalid certificates: invalid stake credential pool delegation: unknown target entity: Hash<28>(\"b2e434417a56bc3686fc084036680266559411cf88f986632e70a040\"): invalid certificates: invalid stake credential pool delegation: unknown target entity: Hash<28>(\"b2e434417a56bc3686fc084036680266559411cf88f986632e70a040\"): invalid stake credential pool delegation: unknown target entity: Hash<28>(\"b2e434417a56bc3686fc084036680266559411cf88f986632e70a040\"): unknown target entity: Hash<28>(\"b2e434417a56bc3686fc084036680266559411cf88f986632e70a040\")"
+   }
+  },
+  "poolreg-missing-cold": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"b2e434417a56bc3686fc084036680266559411cf88f986632e70a040\\\"}])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [b2e434417a56bc3686fc084036680266559411cf88f986632e70a040]: invalid transaction verification key witness: missing required signatures for keys or roots: [b2e434417a56bc3686fc084036680266559411cf88f986632e70a040]: missing required signatures for keys or roots: [b2e434417a56bc3686fc084036680266559411cf88f986632e70a040]"
+   }
+  },
+  "poolreg-missing-owner": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"b0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11\\\"}])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [b0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11]: invalid transaction verification key witness: missing required signatures for keys or roots: [b0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11]: missing required signatures for keys or roots: [b0f6c2fb3d321371da7629235b5036154c2c152626fd8120d941fc11]"
+   }
+  },
+  "poolreg-cost-too-low": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayCertsFailure (CertFailure (PoolFailure (StakePoolCostTooLowPOOL Mismatch (RelGTEQ) {supplied: Coin 339999999, expected: Coin 340000000})))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction d24e966949cfa7c19b701ff175c2253b1335a7331fab9cbf85491c9493ffd751 is invalid: transaction failed phase one validation: invalid certificates: pool cost too low: provided 339999999, minimum 340000000: invalid certificates: pool cost too low: provided 339999999, minimum 340000000: pool cost too low: provided 339999999, minimum 340000000"
+   }
+  },
+  "poolreg-wrong-network": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayCertsFailure (CertFailure (PoolFailure (WrongNetworkPOOL Mismatch (RelEQ) {supplied: Mainnet, expected: Testnet} (KeyHash {unKeyHash = \\\"b2e434417a56bc3686fc084036680266559411cf88f986632e70a040\\\"}))))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction 2ebb06a59105c3580ebe1caa74232d978a37821e68a737fba790462eb5250666 is invalid: transaction failed phase one validation: invalid certificates: pool reward account has wrong network: expected Testnet, actual Mainnet: invalid certificates: pool reward account has wrong network: expected Testnet, actual Mainnet: pool reward account has wrong network: expected Testnet, actual Mainnet"
+   }
+  },
+  "wdrl-unregistered": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayWdrlNotDelegatedToDRep (KeyHash {unKeyHash = \\\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\\\"} :| [])\",\"ConwayCertsFailure (WithdrawalsNotInRewardsCERTS (Withdrawals {unWithdrawals = fromList [(AccountAddress {aaNetworkId = Testnet, aaId = AccountId {unAccountId = KeyHashObj (KeyHash {unKeyHash = \\\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\\\"})}},Coin 0)]}))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction bed5660e4a2b74a604a9406967036595a68f70d5334b73b3aa86c0d7b50a0e6e is invalid: transaction failed phase one validation: invalid withdrawals: attempted to withdraw from an account (KeyHash(Hash<28>(\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\"))) that is not registered: invalid withdrawals: attempted to withdraw from an account (KeyHash(Hash<28>(\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\"))) that is not registered: attempted to withdraw from an account (KeyHash(Hash<28>(\"3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab\"))) that is not registered"
+   }
+  },
+  "wdrl-genesis-no-witness": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayWdrlNotDelegatedToDRep (KeyHash {unKeyHash = \\\"3e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b0\\\"} :| [])\",\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"3e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b0\\\"}])))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction 941853fec312a3cb3bead788cb89af46e3e9f364929b70f67f65fc6a29962058 is invalid: transaction failed phase one validation: invalid withdrawals: attempted to withdraw from an account (KeyHash(Hash<28>(\"3e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b0\"))) that has no drep delegation: invalid withdrawals: attempted to withdraw from an account (KeyHash(Hash<28>(\"3e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b0\"))) that has no drep delegation: attempted to withdraw from an account (KeyHash(Hash<28>(\"3e521ccc7cb396438c191029b02acbe25f6d48f09bcdd990d24171b0\"))) that has no drep delegation"
+   }
+  },
+  "stakereg-bad-deposit-balanced": {
+   "cardano": {
+    "status": 400,
+    "body": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayCertsFailure (CertFailure (DelegFailure (IncorrectDepositDELEG (Coin 1000000))))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\"TxCmdTxSubmitValidationError\"},\"tag\":\"TxSubmitFail\"}"
+   },
+   "amaru": {
+    "status": 400,
+    "body": "transaction 12f0d3543f7053c00eb6ceea322ad3cb47aface1d0ebbd64cc8d02d3d5fa44dd is invalid: transaction failed phase one validation: invalid certificates: incorrect stake deposit: provided 1000000, expected 2000000: invalid certificates: incorrect stake deposit: provided 1000000, expected 2000000: incorrect stake deposit: provided 1000000, expected 2000000"
+   }
+  }
+ },
+ "controls_one_per_mempool_reset": {
+  "stakereg-legacy-no-witness": {
+   "case_id": "stakereg-legacy-no-witness",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"b71a031a702e6b239d89948f98b4b66cdae0dfc69c1b8707fdb62f690848819a\"",
+   "cardano_reason": "\"b71a031a702e6b239d89948f98b4b66cdae0dfc69c1b8707fdb62f690848819a\""
+  },
+  "stakereg-present": {
+   "case_id": "stakereg-present",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"ff28c1a18b5b9e5a0bab919f7f18dc20f9b949fa4fd84e89041d6bfa0a8ce14d\"",
+   "cardano_reason": "\"ff28c1a18b5b9e5a0bab919f7f18dc20f9b949fa4fd84e89041d6bfa0a8ce14d\""
+  },
+  "regvote-present": {
+   "case_id": "regvote-present",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"fd7def9d1daf9bfe32bc041211012b2efdb8cc77b2ca213a4ab32e65d2affb74\"",
+   "cardano_reason": "\"fd7def9d1daf9bfe32bc041211012b2efdb8cc77b2ca213a4ab32e65d2affb74\""
+  },
+  "poolreg-present": {
+   "case_id": "poolreg-present",
+   "expected": "accept",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   },
+   "verdict_parity": true,
+   "matches_expected": true,
+   "status": "AGREE",
+   "amaru_reason": "\"aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d\"",
+   "cardano_reason": "\"aaf5070d4ea9eb740892d07d1216cdd84c75e5f3e78d8e3a8550a4212c2b865d\""
+  }
+ }
+}

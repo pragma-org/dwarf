@@ -1,0 +1,8 @@
+# relay to cardano-node 11.1.2 (fef83fed) sub2-1112-ref 10.192.0.17:3001 from a throwaway Amaru eaf8ac3f on a COPY of store-sub2
+2026-09-26T23:56:54.898387Z  INFO amaru::protocols: manager.message.process manager.peer.connected peer="10.192.0.17:3001" conn_id=0 message_type="ConnectionResult"
+2026-09-26T23:56:54.898780Z  INFO amaru::protocols: manager.message.process manager.peer.handshake_completed peer="10.192.0.17:3001" conn_id=0 full_duplex_capable=true full_duplex=true advertisable=true message_type="HandshakeComplete"
+2026-09-26T23:57:27.886953Z  INFO amaru::mempool: transaction.accepted id="1e26b8ca3fdb0f66723f540d51f7f9ca9b752bdc3e2858321c37f6de5c09a6a2" seq_no=1 origin="local"
+2026-09-26T23:57:54.900922Z DEBUG amaru_pure_stage::tokio: stage `tx_submission-29` external effect: TxIdsSince { mempool_seqno: MempoolSeqNo(0), limit: 3 }
+2026-09-26T23:57:54.904244Z DEBUG amaru_pure_stage::tokio: stage `tx_submission-29` external effect: GetTxsForIds { tx_ids: [TransactionId(Hash<32>("1e26b8ca3fdb0f66723f540d51f7f9ca9b752bdc3e2858321c37f6de5c09a6a2"))] }
+2026-09-26T23:57:54.904362Z DEBUG amaru_pure_stage::tokio: stage `tx_submission-29` external effect: TxIdsSince { mempool_seqno: MempoolSeqNo(2), limit: 3 }
+2026-09-26T23:57:54.904307Z DEBUG amaru_pure_stage::tokio: stage `writer-0-18` external effect: SendEffect { conn: ConnectionId(0), data: Bytes(260, 0395a7de000400fc82039f8206d81858f284a400d90102818258209708b921e6...), timeout: Some(30s) }

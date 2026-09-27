@@ -136,3 +136,38 @@ a datum-hash output, multiple certificates, metadata, and a validity interval �
 headers surfaced 39 decode-divergences; a mechanism probe showed they reduce to one root cause —
 appending arbitrary bytes to a valid transaction is accepted by Amaru (same tx id) and rejected
 by cardano-node (`DecoderErrorLeftover`). See `differential/` and `workload/`.
+
+---
+
+## Confirmed LIVE on the latest supported pair — 2026-09-26
+
+Independently re-surfaced by the phase-1 mutation soak (`workload/phase1_soak.py`) and confirmed
+**STILL OPEN** on the current pair: **amaru `v10.11.20260925` (git `eaf8ac3f`)** accepts, while
+**cardano-node `11.1.2` (git `fef83fed`)** decode-rejects. The divergence therefore persists across
+every release since `v10.11.20260730` (730 → 807 → 903 → 925) — it is not fixed on latest.
+
+**Provenance (ground-truthed via `--version`):** amaru `eaf8ac3f` (v10.11.20260925, built from
+source); cardano-node `11.1.2` git rev `fef83fed01d7926f3de83b3b917be5a4a48768b5`. Frozen rebake
+substrate (submit-api differential, no N2N).
+
+**Evidence (phase-1 soak):**
+- In a 30 s smoke run (24,303 mutants), **every** verdict divergence where amaru ACCEPTED and
+  cardano REJECTED was a **pure trailing append** — a valid base tx + 1–4 trailing bytes, byte-diff
+  confirmed the mutant's prefix is byte-identical to the base. Reproduced cleanly on a fresh mempool.
+- Across **9 different base tx types** — stake-registration, DRep-registration, DRep-vote,
+  native-script (timelock / nested / threshold / minting-policy), min-fee, pool-registration — so it
+  is the framing, not any specific transaction.
+- **A single trailing byte triggers it** (mutants with +1 byte, e.g. `…f5f6` → `…f5f6 8f`).
+- cardano: `DecoderErrorDeserialiseFailure "Shelley Tx" (DeserialiseFailure <n> "Size mismatch …")`
+  — DECODE stage. amaru: `202` with the same tx id as the un-appended tx (admits the prefix,
+  ignores the trailing bytes) — matching the root cause above (no end-of-input check).
+- Longer chunked soak (7×120 s, amaru UTxO-refreshed between chunks): 2x120 s chunks (~200k mutants) reproduced the trailing-append divergence across seeds; the run is inconclusive-dominated once amaru mempool UTxOs are consumed by accepted trailing-mutants (fail-closed, so uninformative past that point) — the 30 s smoke is the cleaner dataset. Only the
+  trailing-append class produced amaru-accept-vs-cardano-reject; no non-trailing divergence class surfaced: the other 40 smoke divergences were amaru decoding further than cardano then validation-rejecting (both reject — same decoder-leniency root, no acceptance, no safety gap).
+
+**Severity:** unchanged (Low) — amaru would mempool/relay a tx that cardano-node rejects as
+malformed → a mixed-network mempool divergence on the submit path; bounded because amaru does not
+produce Praos blocks. Conformance / ingress-malleability, not consensus.
+
+**Status:** this is a CURRENCY confirmation of the known open finding (no new upstream filing beyond
+the existing recommendation — enforce end-of-input after decode). Artifacts: `workload/phase1_soak.py`
+(the soak harness) + the soak result JSON in this finding's evidence dir.

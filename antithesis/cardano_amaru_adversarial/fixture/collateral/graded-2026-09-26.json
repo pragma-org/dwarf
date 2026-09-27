@@ -1,0 +1,370 @@
+{
+  "run": "2026-09-26, dedicated isolated pair; mempools reset before each single-use case",
+  "cardano_node": {
+    "version": "11.1.2",
+    "git_rev": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+    "endpoint": ":8094"
+  },
+  "amaru": {
+    "version": "10.11.20260925",
+    "git_commit": "eaf8ac3fa309f2a174c045454c276194c9312b8d",
+    "git_dirty": false,
+    "endpoint": ":3022"
+  },
+  "violations": [
+    {
+      "case_id": "no-collateral",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "no_collateral"
+        ],
+        "cardano": [
+          "insufficient_collateral",
+          "no_collateral"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction a35624b74ac98b2b9c2185a1e9f8234218f74f7d42e9cde9ddcf8b72a86b2695 is invalid: transaction failed phase one validation: invalid collateral: No collateral was provided, but collateral is required: invalid collateral: No collateral ",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (InsufficientCollateral (DeltaCoin 0) (Coin 600002)))\",\"ConwayUtxowFailure (UtxoFailure NoCollateralInputs)\"],\"kind\":\"ShelleyTxVali"
+    },
+    {
+      "case_id": "insufficient-at-boundary",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "insufficient_collateral"
+        ],
+        "cardano": [
+          "insufficient_collateral"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction 2e5beb2f2d3a2f7ba3c8f696556c88c83e224999bb1be4d25d52e6c54b8bd944 is invalid: transaction failed phase one validation: invalid collateral: effective collateral value (=600001) is insufficient; at least 600002 is required: invalid",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (InsufficientCollateral (DeltaCoin 600001) (Coin 600002)))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMo"
+    },
+    {
+      "case_id": "total-collateral-mismatch",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "total_collateral_mismatch"
+        ],
+        "cardano": [
+          "total_collateral_mismatch"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction ddaa80a75c3bde9cad3b2898e3c1101b09bf5999d3d452a70f22577065d50b2f is invalid: transaction failed phase one validation: invalid collateral: declared collateral (=699999) does not equal effective collateral (=700000): invalid colla",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (IncorrectTotalCollateralField (DeltaCoin 700000) (Coin 699999)))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCa"
+    },
+    {
+      "case_id": "negative-asset-return",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "collateral_non_ada"
+        ],
+        "cardano": [
+          "collateral_non_ada"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction aa6d1437bb4cf073c2d65be13ff4552ab525aa3dd7beb0f822490143f707fa71 is invalid: transaction failed phase one validation: invalid collateral: collateral has non-zero delta: (700000, [186e32faa80a26810392fda6d559c7ed4721a65ce1c9d4ef3",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (CollateralContainsNonADA (MaryValue (Coin 199999999300000) (MultiAsset (fromList [(PolicyID {policyID = ScriptHash \\\"186e32faa80a2"
+    },
+    {
+      "case_id": "return-too-small",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "output_too_small"
+        ],
+        "cardano": [
+          "output_too_small"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction 20cda5dcdabc4003a3826e52a7b172c7b46ff70b463f9567981e34b216808309 is invalid: transaction failed phase one validation: invalid outputs: invalid transaction outputs: [#0: output doesn't contain enough Lovelace: minimum: 836140, gi",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (BabbageOutputTooSmallUTxO (((Addr Testnet (KeyHashObj (KeyHash {unKeyHash = \\\"e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d"
+    },
+    {
+      "case_id": "return-wrong-network",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "wrong_network"
+        ],
+        "cardano": [
+          "wrong_network"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction 72bb0e11796080428ded148302c76833134b169662060d9b7de5ef90502b7bb8 is invalid: transaction failed phase one validation: invalid outputs: invalid transaction outputs: [#0: address has the wrong network: expected: testnet, actual: m",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (WrongNetwork Testnet (NonEmptySet (fromList [Addr Mainnet (KeyHashObj (KeyHash {unKeyHash = \\\"e5a5ddb03fe37059627fede71458401e0dd9"
+    },
+    {
+      "case_id": "too-many-collateral",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "too_many_collateral"
+        ],
+        "cardano": [
+          "missing_witness",
+          "too_many_collateral"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction 4c0983896d2ea24d80249497d540185349af806332fd2e2d0f6c2b1408ff6b18 is invalid: transaction failed phase one validation: invalid collateral: too many collateral inputs: provided: 4 allowed: 3: invalid collateral: too many collatera",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (TooManyCollateralInputs Mismatch (RelLTEQ) {supplied: 4, expected: 3}))\",\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptyS"
+    },
+    {
+      "case_id": "foreign-collateral-redeemer",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "missing_witness"
+        ],
+        "cardano": [
+          "missing_witness"
+        ]
+      },
+      "reason_parity": true,
+      "cred_seen": {
+        "amaru": true,
+        "cardano": true
+      },
+      "cred_parity": true,
+      "reason_truncated": [
+        "amaru"
+      ],
+      "status": "AGREE",
+      "amaru_reason": "transaction 80d10a4777ab4335d593fe74945643d4d01236f3b19ba184b47cb42f590932a1 is invalid: transaction failed phase one validation: invalid transaction verification key witness: missing required signatures for keys or roots: [19b9a38fc0a2a5ac",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"19b9a38fc0a2a5ac858598a998cf293f20cfd123e542c0e1f2fd67d1\\\"}])))\"],\"kin"
+    },
+    {
+      "case_id": "exunits-too-big",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "exunits_too_big"
+        ],
+        "cardano": [
+          "exunits_too_big"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction 578b469f3a07303ce74c37c2714974a887aa073efaf8d1aaf3768e5209c76490 is invalid: transaction failed phase one validation: invalid transaction scripts: transaction execution units exceeded: provided ExUnits { mem: 14000001, steps: 50",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ExUnitsTooBigUTxO Mismatch (RelLTEQ) {supplied: WrapExUnits {unWrapExUnits = ExUnits' {exUnitsMem' = 14000001, exUnitsSteps' = 500"
+    },
+    {
+      "case_id": "integrity-hash-mismatch",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "integrity_hash"
+        ],
+        "cardano": [
+          "integrity_hash"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction bbe5976a89463cb70e1dbf6065becc6e2f3c08cad21453ff5ca3b2b6e8b39144 is invalid: transaction failed phase one validation: invalid transaction scripts: script integrity hash mismatch: supplied Some(Hash<32>(\"29a8fbc6d13d887a6f464cfd0",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (PPViewHashesDontMatch Mismatch (RelEQ) {supplied: SJust (SafeHash \\\"29a8fbc6d13d887a6f464cfd01f9528a776c900f75d7107aebacf2b7f9d9ab39\\\"), expect"
+    },
+    {
+      "case_id": "missing-redeemer",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "missing_redeemer"
+        ],
+        "cardano": [
+          "missing_redeemer"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction 0cc008518e39300777fa82380272597114990bd96608e83b35d8266a99fd0be1 is invalid: transaction failed phase one validation: invalid transaction scripts: missing redeemers: [[Mint, 0]]: invalid transaction scripts: missing redeemers: [",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (UtxosFailure (CollectErrors (NoRedeemer (ConwayMinting (AsItem {unAsItem = PolicyID {policyID = ScriptHash \\\"186e32faa80a26810392f"
+    },
+    {
+      "case_id": "extra-redeemer",
+      "expected": "reject",
+      "classes": {
+        "amaru": "phase1_reject",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "reason_classes": {
+        "amaru": [
+          "extra_redeemer"
+        ],
+        "cardano": [
+          "extra_redeemer"
+        ]
+      },
+      "reason_parity": true,
+      "status": "AGREE",
+      "amaru_reason": "transaction 939ede986bef1c94e2b35d4bf3212d1a46619f7079539e2362b8cab4bb34680a is invalid: transaction failed phase one validation: invalid transaction scripts: extraneous redeemers: [[Spend, 0]]: invalid transaction scripts: extraneous redee",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (ExtraRedeemers (ConwaySpending (AsIx {unAsIx = 0}) :| []))\"],\"kind\":\"ShelleyTxValidationError\"},\"tag\":\"TxValidationErrorInCardanoMode\"},\"tag\":\""
+    }
+  ],
+  "single_use": {
+    "p1-foreign-collateral-no-redeemers#run2": {
+      "case_id": "p1-foreign-collateral-no-redeemers",
+      "expected": "reject",
+      "classes": {
+        "amaru": "accepted",
+        "cardano": "phase1_reject"
+      },
+      "verdict_parity": false,
+      "matches_expected": false,
+      "status": "VERDICT-DIVERGENCE",
+      "amaru_reason": "\"1e26b8ca3fdb0f66723f540d51f7f9ca9b752bdc3e2858321c37f6de5c09a6a2\"",
+      "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (MissingVKeyWitnessesUTXOW (NonEmptySet (fromList [KeyHash {unKeyHash = \\\"19b9a38fc0a2a5ac858598a998cf293f20cfd123e542c0e1f2fd67d1\\\"}])))\"],\"kin"
+    },
+    "p1-control-no-collateral": {
+      "case_id": "p1-control-no-collateral",
+      "expected": "accept",
+      "classes": {
+        "amaru": "accepted",
+        "cardano": "accepted"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "status": "AGREE",
+      "amaru_reason": "\"c4214d2b8f898a65c6fd6b5a08836a1b58ecc1121fded7824344229ab62409d1\"",
+      "cardano_reason": "\"c4214d2b8f898a65c6fd6b5a08836a1b58ecc1121fded7824344229ab62409d1\""
+    },
+    "valid-minimal": {
+      "case_id": "valid-minimal",
+      "expected": "accept",
+      "classes": {
+        "amaru": "accepted",
+        "cardano": "accepted"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "status": "AGREE",
+      "amaru_reason": "\"eef410b2ca77f0d24941eab135145d3564607b184089ad2ed0ddbcda2fda7819\"",
+      "cardano_reason": "\"eef410b2ca77f0d24941eab135145d3564607b184089ad2ed0ddbcda2fda7819\""
+    },
+    "valid-with-return": {
+      "case_id": "valid-with-return",
+      "expected": "accept",
+      "classes": {
+        "amaru": "accepted",
+        "cardano": "accepted"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "status": "AGREE",
+      "amaru_reason": "\"6055f95581881d4ae6f900fd20daa95b6a8125c12f394e693713233e54e3b1b5\"",
+      "cardano_reason": "\"6055f95581881d4ae6f900fd20daa95b6a8125c12f394e693713233e54e3b1b5\""
+    },
+    "valid-at-boundary": {
+      "case_id": "valid-at-boundary",
+      "expected": "accept",
+      "classes": {
+        "amaru": "accepted",
+        "cardano": "accepted"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "status": "AGREE",
+      "amaru_reason": "\"92caf30a9ef870e5c7d5a4945517b3cbfaa6cde4be99e56dc15ac57a8504adf7\"",
+      "cardano_reason": "\"92caf30a9ef870e5c7d5a4945517b3cbfaa6cde4be99e56dc15ac57a8504adf7\""
+    },
+    "p2-total-mismatch-no-redeemers": {
+      "case_id": "p2-total-mismatch-no-redeemers",
+      "expected": "accept",
+      "classes": {
+        "amaru": "accepted",
+        "cardano": "accepted"
+      },
+      "verdict_parity": true,
+      "matches_expected": true,
+      "status": "AGREE",
+      "amaru_reason": "\"30608b185358b67857646a0f57ab1c33c99e1f4133f34f225dfafd6fb38d27f0\"",
+      "cardano_reason": "\"30608b185358b67857646a0f57ab1c33c99e1f4133f34f225dfafd6fb38d27f0\""
+    }
+  }
+}
