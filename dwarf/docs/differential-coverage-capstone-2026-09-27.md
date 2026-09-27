@@ -32,8 +32,9 @@ carrying three local DWARF patches:
   pair).
 
 None of them touches transaction validation. On 2026-09-27 all five pairs were re-served on a
-separately built binary reporting `eaf8ac3f` with no local patches. Empirical re-confirmation that
-the served behaviour is identical is in progress.
+separately built binary reporting `eaf8ac3f` with no local patches. The reference-script family
+has been re-confirmed on that binary with identical verdicts. Re-confirmation of the other
+families is in progress.
 
 ## Oracle (common to every family)
 
@@ -77,6 +78,8 @@ Selected conformance datapoints:
   with the same tx id on both sides. So Amaru resolves reference scripts conformantly. Supplying the
   **wrong** reference script is rejected by both, so the safety property holds. Inline datums vs
   datum hashes (supplied or missing) and the `is_valid=false` collateral path also agree.
+  A second agent independently re-ran the exact corpus (CBOR sha256-matched) with identical
+  verdicts, including on the clean serving binary (family doc, "Independent re-verification").
 - **Decoder strictness:** every decode edge tested (mint/multi-asset CDDL, anchor bounds,
   metadatum size and type) is refused by **both** decoders. No Amaru decoder leniency was found in
   these families.
@@ -109,7 +112,7 @@ interval (expired, not yet valid, controls), max-tx-size (now pinned at exactly 
 | severity | finding | status | doc |
 |---|---|---|---|
 | **HIGH** | A **non-curve-point verification key** in a witness panics the ledger thread and the node exits: a remote, unauthenticated, single-transaction crash. cardano-node rejects the same tx and stays up. | CONFIRMED 2/2, independently verified, NOVEL. The panic-hunt closure found it to be the **sole reachable** panic among the sibling `.expect` / `unreachable!` sites. | `finding-amaru-vkey-noncurve-point-crash.md` |
-| **MEDIUM-HIGH** | **Epoch-boundary active-nonce mismatch (#3).** Amaru rejects the valid first block of a new epoch (`Invalid VRF proof`) that cardano-node accepts. Root cause, traced in source: `store.rs::evolve_nonce` derives the epoch-3 active nonce from an **epoch-1** block reference (the parent of a tail that lags a full epoch) instead of the immediately previous epoch's block. Amaru's imported nonces and its accumulated candidate nonce match cardano. It is reached when an Amaru node forward-syncs across an epoch boundary from a single peer; it is latent in normal deployments, which re-snapshot through the bootstrap producer. | Reproduced live on native 0925 stores; byte-proof of the combine; root cause traced to `store.rs::evolve_nonce`. The exact Praos combine (`⭒` / `hashHeaderToNonce`) is to be confirmed when fixing. | `finding-amaru-epoch-boundary-active-nonce.md` |
+| **MEDIUM-HIGH** | **Epoch-boundary active-nonce mismatch (#3).** Amaru rejects the valid first block of a new epoch (`Invalid VRF proof`) that cardano-node accepts. Root cause, traced in source: `store.rs::evolve_nonce` derives the epoch-3 active nonce from an **epoch-1** block reference (the parent of a tail that lags a full epoch) instead of the immediately previous epoch's block. Amaru's imported nonces and its accumulated candidate nonce match cardano. It is reached when an Amaru node forward-syncs across an epoch boundary from a single peer; it is latent in normal deployments, which re-snapshot through the bootstrap producer. | Reproduced live on native 0925 stores; byte-proof of the combine; root cause traced to `store.rs::evolve_nonce`. The exact Praos combine (`⭒` / `hashHeaderToNonce`) is to be confirmed when fixing. An earlier proxy-path stall was traced to a header re-sign artifact and ruled out, not filed (finding doc, "Confound discipline"). | `finding-amaru-epoch-boundary-active-nonce.md` |
 | **MEDIUM** | **Collateral witness bypass (P1).** Amaru accepts a no-script tx naming someone else's UTxO as collateral without that owner's witness; cardano rejects it. A phase-1 validation-rule bypass. | LIVE, reproduced 2/2 | `collateral-phase1-differential-family.md` |
 | LOW | The submit API accepts **trailing bytes** after a tx; cardano decode-rejects. | known, confirmed live on 0925 | `finding-amaru-submit-trailing-bytes.md` |
 | LOW | The mempool admits **conflicting-input** txs; cardano rejects the second. | likely by-design; not filed | `finding-amaru-mempool-input-conflict-admission.md` |
@@ -165,7 +168,7 @@ Amaru does not forge Praos blocks.
 - **Block-level differential:** a single-peer forward-sync of Amaru across an epoch boundary is
   exactly what finding #3 breaks, so this substrate cannot progress past that boundary until #3 is
   fixed. The rejection itself is the deliverable.
-- **Served-binary re-confirmation:** re-running the families on the clean `eaf8ac3f` serving binary
-  (in progress, see provenance above).
+- **Served-binary re-confirmation:** reference-script family done (identical verdicts); the other
+  families on the clean `eaf8ac3f` serving binary are in progress (see provenance above).
 - **Governance vote authorization on 11.1.2:** needs a fresh governance re-bake (see above).
   Native scripts and governance certificates were re-run on 11.1.2 on 2026-09-27.
