@@ -3,7 +3,7 @@
 **Component:** `amaru` transaction CBOR decoder — vkey-witness (`[vkey, sig]`) in the witness set.
 **Type:** Decode-strictness / transaction-malleability divergence at mempool ingress —
 amaru-accepts-what-cardano-decode-rejects.
-**Severity:** LOW-MEDIUM (mempool-ingress malleability; bounded — amaru does not forge Praos blocks). Same class
+**Severity:** LOW (local mempool-ingress leniency; cross-network relay unverified/not realized in a live mesh; bounded — amaru does not forge Praos blocks). Same class
 as `finding-amaru-submit-trailing-bytes`, distinct mechanism.
 **Status:** Reproduced + verified 2× on the latest supported pair.
 **Provenance (ground-truthed via `--version`):** amaru `v10.11.20260925` (git `eaf8ac3f`) vs cardano-node
@@ -59,9 +59,18 @@ fails → both reject (weaker; noted for completeness).
 ## Severity — LOW-MEDIUM (bounded), a real malleability gap
 
 - Mempool ingress only; amaru does not produce Praos blocks, so no direct consensus/safety impact; the malformed-encoding tx cannot reach the honest chain via amaru.
-- Malleability: `[vkey, sig, <extra>]` is a transaction mutation cardano-node rejects as malformed but
-  amaru admits and would relay → a mixed-network mempool divergence on the submit path (an amaru relay
-  can hold/forward a witness-padded tx its cardano peers reject). Same impact class as trailing-bytes.
+- Local mempool admission is CONFIRMED (amaru returns 202 and holds the tx under the canonical tx-id).
+- Cross-network RELAY form is UNVERIFIED. In a live amaru->cardano n2n mesh (cardano-node 11.1.2,
+  ExperimentalProtocolsEnabled=false, pulling amaru's mempool via tx-submission) the V_14 handshake
+  completes, but amaru DEMOTES the cardano peer over chain-sync (intersect_not_found -> "uninteresting"
+  -> Maintenance) and the TxSubmission child stops before any tx is exchanged (the peer's 60s tx-submission
+  init delay races the demotion). So the malformed tx did NOT propagate to the cardano peer's mempool in
+  practice, and whether amaru would relay the ORIGINAL malformed bytes or RE-SERIALIZE to canonical on
+  egress could not be observed. This BOUNDS the practical impact: the malformed encoding tends to stay in
+  amaru's LOCAL mempool (it does not reach a cardano peer here), so the mixed-network relay divergence is
+  not demonstrated — the confirmed effect is local mempool-ingress leniency only. A clean relay observation
+  would need a chain-sync-healthy mesh or a custom tx-submission egress capture; see
+  finding-amaru-forward-sync-reachability-wall for the underlying chain-sync peer-demotion.
 
 ## Recommendation
 
