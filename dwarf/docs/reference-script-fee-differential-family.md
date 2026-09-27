@@ -31,7 +31,7 @@ lovelace, and the two-reference-script size accounting matches too (`561197`).
 refpair's reference scripts are tiny (~7 bytes), so only the **linear** tier of the ref-script
 fee is exercised. The **tiered / exponential growth** (which kicks in past ~25 600 reference-script
 bytes) is not reachable without a large reference-script UTxO baked into the substrate — documented
-as substrate-limited (would need a big ref-script output in a re-bake, like the governance families).
+as substrate-limited (would need a big ref-script output in a re-bake). Not tested by decision: the exponential tier is the same size formula with a per-tier multiplier and the linear tier is exact to the lovelace here, which strongly implies the exponential tier is conformant too -- not worth a multi-hour >25KB-ref-script re-bake.
 
 ## Reproduce
 
