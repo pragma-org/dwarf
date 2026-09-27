@@ -1,0 +1,106 @@
+{
+  "spec_version": "v1",
+  "id": "consensus-praos-density-chain-growth-differential",
+  "title": "Praos honest-chain density / chain-growth differential (TM-030) \u2014 under an induced low-density interval (producer partition), cardano-node and Amaru apply the chain-growth (>= k-blocks-per-window) assumption consistently and reconverge to the same tip",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "consensus",
+    "density",
+    "chain-growth",
+    "praos",
+    "differential",
+    "chain-selection",
+    "amaru",
+    "upstream-topology",
+    "TM-030"
+  ],
+  "evidence_intent": "candidate",
+  "target": {
+    "implementation": "cardano-node",
+    "version": "11.1.2"
+  },
+  "runtime": "devnet",
+  "seed": "0x7d030030",
+  "iterations": 1,
+  "shrink": false,
+  "attach": {
+    "topology": "cardano_amaru",
+    "network_magic": 42
+  },
+  "setup": [
+    {
+      "primitive": "runtime_attach_topology",
+      "output_dir": "outputs/attach",
+      "topology": "cardano_amaru",
+      "network_magic": 42
+    }
+  ],
+  "faults": [
+    {
+      "primitive": "runtime_network_partition",
+      "runtime_metadata_path": "outputs/attach/runtime.json",
+      "target_node": "p1",
+      "network_name": "cardano-amaru-testnet",
+      "partition_seconds": 45,
+      "settle_seconds": 150,
+      "output_dir": "outputs/partition"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_tracer_capture",
+      "output_dir": "outputs/tracer",
+      "tracer_container": "tracer",
+      "prometheus_port": 4000
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/attach/runtime.json",
+      "node_ids": [
+        "p1",
+        "relay1",
+        "relay2",
+        "amaru-consumer",
+        "amaru-relay-1"
+      ],
+      "observation_window_seconds": 240,
+      "sample_interval_seconds": 5,
+      "network_magic": 42,
+      "observation_primitives": [
+        "tip_state"
+      ],
+      "timeout_seconds": 320,
+      "output_dir": "outputs/obs"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "chain_select_differential",
+      "reference_node_ids": [
+        "relay1",
+        "relay2"
+      ],
+      "target_node_ids": [
+        "amaru-consumer"
+      ],
+      "tolerance_slots": 5,
+      "require_real_progress": true
+    },
+    {
+      "primitive": "chain_select_differential",
+      "reference_node_ids": [
+        "relay1",
+        "relay2"
+      ],
+      "target_node_ids": [
+        "amaru-relay-1"
+      ],
+      "tolerance_slots": 5,
+      "require_real_progress": true
+    }
+  ],
+  "teardown": []
+}

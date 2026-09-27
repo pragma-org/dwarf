@@ -1,0 +1,104 @@
+{
+  "spec_version": "v1",
+  "id": "consensus-sync-peer-concentration-eclipse-differential",
+  "title": "Sync-mode peer-set concentration / eclipse differential (RR-027) \u2014 under a simulated adversarial peer-set capture around a native Amaru relay, the honest peer set is retained and cardano-node and Amaru still select the same chain",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "consensus",
+    "eclipse",
+    "peer-concentration",
+    "sync",
+    "differential",
+    "chain-selection",
+    "amaru",
+    "upstream-topology",
+    "RR-027"
+  ],
+  "evidence_intent": "candidate",
+  "target": {
+    "implementation": "cardano-node",
+    "version": "11.1.2"
+  },
+  "runtime": "devnet",
+  "seed": "0xec027027",
+  "iterations": 1,
+  "shrink": false,
+  "attach": {
+    "topology": "cardano_amaru",
+    "network_magic": 42
+  },
+  "setup": [
+    {
+      "primitive": "runtime_attach_topology",
+      "output_dir": "outputs/attach",
+      "topology": "cardano_amaru",
+      "network_magic": 42
+    }
+  ],
+  "faults": [],
+  "load": [
+    {
+      "primitive": "runtime_tracer_capture",
+      "output_dir": "outputs/tracer",
+      "tracer_container": "tracer",
+      "prometheus_port": 4000
+    },
+    {
+      "primitive": "runtime_simulate_peer_set_capture",
+      "runtime_metadata_path": "outputs/attach/runtime.json",
+      "target_node": "amaru-relay-1",
+      "sybil_node_ids": [
+        "relay2"
+      ],
+      "output_dir": "outputs/peer-set-capture"
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/attach/runtime.json",
+      "node_ids": [
+        "p1",
+        "relay1",
+        "relay2",
+        "amaru-consumer",
+        "amaru-relay-1"
+      ],
+      "observation_window_seconds": 120,
+      "sample_interval_seconds": 3,
+      "network_magic": 42,
+      "observation_primitives": [
+        "tip_state",
+        "connection_state"
+      ],
+      "timeout_seconds": 200,
+      "output_dir": "outputs/obs"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "honest_peer_set_uncompromised",
+      "honest_node_ids": [
+        "p1",
+        "relay1",
+        "relay2",
+        "amaru-consumer"
+      ],
+      "minimum_honest_peers": 2
+    },
+    {
+      "primitive": "chain_select_differential",
+      "reference_node_ids": [
+        "relay1",
+        "relay2"
+      ],
+      "target_node_ids": [
+        "amaru-relay-1"
+      ],
+      "tolerance_slots": 5,
+      "require_real_progress": true
+    }
+  ],
+  "teardown": []
+}
