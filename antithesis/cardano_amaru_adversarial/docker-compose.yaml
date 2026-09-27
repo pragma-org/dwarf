@@ -113,7 +113,7 @@ services:
     - phase1-reference-state:/state
     restart: always
   cardano-submit-api:
-    image: ghcr.io/intersectmbo/cardano-submit-api:10.7.1
+    image: ghcr.io/intersectmbo/cardano-submit-api:11.1.2
     hostname: cardano-submit-api.example
     labels: *id001
     command:

@@ -33,7 +33,6 @@ REASON_CLASSES = {
     "missing_redeemer": (r"missingredeemers|noredeemer", r"missing redeemers"),
     "extra_redeemer": (r"extraredeemers", r"extraneous redeemers"),
 }
-base.REASON_CLASSES = REASON_CLASSES  # grade() resolves reason classes through this table
 
 
 def run(corpus_dir: str, amaru_url: str, cardano_url: str, single: str | None = None) -> list[dict]:
@@ -49,7 +48,7 @@ def run(corpus_dir: str, amaru_url: str, cardano_url: str, single: str | None = 
     rows = []
     for case in cases:
         payload = bytes.fromhex(json.loads((root / case["tx_file"]).read_text())["cborHex"])
-        rows.append(base.grade(case, observe_differential(payload, transports)))
+        rows.append(base.grade(case, observe_differential(payload, transports), REASON_CLASSES))
     return rows
 
 

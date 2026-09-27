@@ -1,5 +1,8 @@
 # Phase-1 differential coverage — 2026-09-26
 
+> **Superseded** by `differential-coverage-capstone-2026-09-27.md` (all families, findings, candidates and harness hardening as of 2026-09-27). Kept for its semantic edge-matrix detail.
+
+
 Coverage record for the phase-1 (submit-API) differential + soak work on the latest supported pair.
 Tight index, not a re-narration — see the linked finding/family docs for detail.
 

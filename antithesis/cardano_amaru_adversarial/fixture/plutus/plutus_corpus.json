@@ -1,0 +1,90 @@
+{
+ "description": "Plutus phase-2 differential family (cardano-node 11.1.2 vs Amaru 0925). Each case mints under a PlutusV3 policy and is phase-1-valid, so any reject is phase-2 (is_valid tag vs actual VM result). Oracle: verdict parity (one-accepts-one-rejects = real is_valid divergence) + phase-2 reason-class parity; MASKED/unavailable = inconclusive. exu-exact is built with the live-measured exact cost (64100,500) steps,mem. See workload/plutus_differential.py.",
+ "exact_cost": {
+  "steps": "64100",
+  "mem": "500"
+ },
+ "cases": [
+  {
+   "case_id": "exu-exact",
+   "tx_file": "exu-exact.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 383,
+   "cbor_sha256": "98ef5c504010d95a9f24e331740fecc96eace66b1538999f5f3764f9ebc460a7",
+   "note": "is_valid=true, always-succeeds, declared ex-units = the EXACT cardano-computed cost (64100,500) steps,mem. KNIFE-EDGE: if amaru's computed cost differs by >=1, this is under-budget on amaru -> amaru rejects while cardano accepts = is_valid VERDICT-DIVERGENCE."
+  },
+  {
+   "case_id": "exu-under-steps",
+   "tx_file": "exu-under-steps.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 383,
+   "cbor_sha256": "90908a36126b1fcd3ff0517f078e93a9b5572ab230b2f424593d97ae8edf5b07",
+   "note": "is_valid=true, always-succeeds, steps = exact-1 -> over budget -> script fails -> tag mismatch"
+  },
+  {
+   "case_id": "exu-under-mem",
+   "tx_file": "exu-under-mem.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 383,
+   "cbor_sha256": "1d4b2c37f18ca7a8d5f1c2a06822b09b3f32e79d123154e26e90ba47954dad27",
+   "note": "is_valid=true, always-succeeds, mem = exact-1 -> over budget -> tag mismatch"
+  },
+  {
+   "case_id": "exu-zero",
+   "tx_file": "exu-zero.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 379,
+   "cbor_sha256": "07fcd9976700f9d39bd97f3dc48d883a6be34f85a68e4e583cf9ea80bf0c7b31",
+   "note": "is_valid=true, always-succeeds, ex-units (0,0) -> over budget -> tag mismatch"
+  },
+  {
+   "case_id": "exu-ample",
+   "tx_file": "exu-ample.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 387,
+   "cbor_sha256": "eb045c3c4677fcab497d1240d8885f72e42f3c7838c73006cb862ada0a63f956",
+   "note": "is_valid=true, always-succeeds, generous ex-units (<< maxTxExUnits) -> script succeeds -> accept"
+  },
+  {
+   "case_id": "isvalid-false-succeeds",
+   "tx_file": "isvalid-false-succeeds.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 387,
+   "cbor_sha256": "21b07f335ca05ceda0f8445b13cce6c8b31165181867d6d12f5299acd74478a9",
+   "note": "is_valid=FALSE but always-succeeds with ample budget -> script actually succeeds -> claimed-invalid contradicts reality -> tag mismatch (reject)"
+  },
+  {
+   "case_id": "isvalid-false-underbudget",
+   "tx_file": "isvalid-false-underbudget.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 379,
+   "cbor_sha256": "8a10dc71269fa3a2d2688ce188dab67c77199a6e9718f3ae0b6f46c29d9b3b22",
+   "note": "is_valid=FALSE, always-succeeds with (0,0) -> script fails on budget -> claim matches reality -> ACCEPT (collateral consumed)"
+  },
+  {
+   "case_id": "alwaysfails-valid",
+   "tx_file": "alwaysfails-valid.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 387,
+   "cbor_sha256": "8cd91ce17b82e8f70193208f9c1c6a16d0dd69b00c3997510d4809975a74e85e",
+   "note": "is_valid=true, always-FAILS script -> script fails -> tag mismatch (reject)"
+  },
+  {
+   "case_id": "alwaysfails-invalid",
+   "tx_file": "alwaysfails-invalid.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 387,
+   "cbor_sha256": "3a3121ab1d8d3d1c8d50e3dfdd543390708d54ce5af300fe7dfbba5b266f4378",
+   "note": "is_valid=FALSE, always-FAILS script -> claim matches reality -> ACCEPT (collateral consumed)"
+  }
+ ]
+}

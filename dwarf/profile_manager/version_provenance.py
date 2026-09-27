@@ -531,3 +531,54 @@ def check_image_refs(index: ProvenanceIndex, text: str) -> tuple[list[tuple[int,
             if tag and tagged is not None and tagged is not release:
                 failures.append((line, f"{reference}: tag says {tagged['version']} but the digest is {release['implementation']} {release['version']}"))
     return failures, warnings
+
+
+_SUBMIT_API_IMAGE = re.compile(r"cardano-submit-api", re.IGNORECASE)
+
+
+def _default_cardano_node_versions(index) -> list[str]:
+    """Cardano-node versions the catalog marks default in any verification profile."""
+    defaults: list[str] = []
+    for release in index.catalog.get("releases", []):
+        if release.get("implementation") != "cardano-node":
+            continue
+        verification = release.get("verification") or {}
+        if any(isinstance(p, dict) and p.get("default") for p in verification.values()):
+            version = release.get("version")
+            if version:
+                defaults.append(version)
+    return defaults
+
+
+def check_submit_api_refs(index, text):
+    """cardano-submit-api image pins must match the cardano-node release under test.
+
+    The submit-api ships its own CBOR decoder.  A submit-api pinned to a
+    different release than the node decodes submitted tx bytes with a different
+    codec, which silently changes decode-layer differential verdicts -- found
+    2026-09-27: submit-api 10.7.1 forwarding to an 11.1.2 node accepted 65-byte
+    metadata the node's codec rejects, masking cases as INCONCLUSIVE.  The
+    submit-api is excluded from ``_NODE_IMAGE`` binary provenance (it is not a
+    binary-under-test), so its version is pinned-checked here instead.  Keyed on
+    ``image:`` YAML lines only, so prose that merely *describes* a bad version
+    does not trip the gate.
+    """
+    failures: list[tuple[int, str]] = []
+    warnings: list[tuple[int, str]] = []
+    defaults = set(_default_cardano_node_versions(index))
+    for match in _IMAGE_LINE.finditer(text):
+        reference = match.group("ref")
+        base = reference.split("@", 1)[0]
+        if not _SUBMIT_API_IMAGE.search(base.rsplit("/", 1)[-1]):
+            continue
+        line = text.count("\n", 0, match.start()) + 1
+        tag = base.rsplit(":", 1)[1] if ":" in base.rsplit("/", 1)[-1] else ""
+        if not tag:
+            warnings.append((line, f"{reference}: cardano-submit-api pinned without a version tag"))
+            continue
+        known = index.resolve_label("cardano-node", tag)
+        if known is None:
+            failures.append((line, f"{reference}: cardano-submit-api tag {tag} is not a known cardano-node release (decoder-skew risk); pin it to the cardano-node version under test"))
+        elif defaults and known.get("version") not in defaults:
+            failures.append((line, f"{reference}: cardano-submit-api {tag} != default cardano-node release {sorted(defaults)} under test (decode-layer skew)"))
+    return failures, warnings

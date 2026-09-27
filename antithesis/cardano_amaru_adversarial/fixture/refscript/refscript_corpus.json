@@ -1,0 +1,86 @@
+{
+ "description": "Reference-script + inline-datum phase-2 differential (cardano 11.1.2 vs amaru 0925). Spends pre-mined script UTxOs; reference-script resolution (witness vs reference must agree), inline-vs-datum-hash, script-fail is_valid paths, wrong reference script. Verdict + reason-class parity; fail-closed.",
+ "cases": [
+  {
+   "case_id": "spendA-witness",
+   "tx_file": "spendA-witness.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 309,
+   "cbor_sha256": "2d5169f00be0a5a2e1ea19424ddbb0168025675c217d1efe947b21bca8485b9a",
+   "note": "spend inline-datum script UTxO, script in WITNESS -> accept (baseline)"
+  },
+  {
+   "case_id": "spendA-refscript",
+   "tx_file": "spendA-refscript.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 338,
+   "cbor_sha256": "d4b18fa8875a78b7048448221cd34be3dceeb95fea23cf46df7e5ce3ba7007ee",
+   "note": "same spend, script via REFERENCE (C_ok) -> accept; MUST equal spendA-witness (reference-script resolution)"
+  },
+  {
+   "case_id": "spendB-hash-witness",
+   "tx_file": "spendB-hash-witness.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 317,
+   "cbor_sha256": "6101cf712391754a06f0ddcccd921e74af0aae138b2bfa69c70783714cbdfdf0",
+   "note": "spend datum-HASH UTxO, datum SUPPLIED, script in witness -> accept"
+  },
+  {
+   "case_id": "spendB-refscript",
+   "tx_file": "spendB-refscript.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 346,
+   "cbor_sha256": "e004993cd49744cee3ac77798184a558f153800888773a0d3a14dab277f3f564",
+   "note": "spend datum-HASH UTxO via reference script, datum supplied -> accept"
+  },
+  {
+   "case_id": "spendB-missing-datum",
+   "tx_file": "spendB-missing-datum.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 309,
+   "cbor_sha256": "ef8777b8d8b3bf872e880f56214c006a9e37417089193908a4f29f198afa851b",
+   "note": "spend datum-HASH UTxO with datum OMITTED -> both reject (missing datum)"
+  },
+  {
+   "case_id": "spendD-fail-valid",
+   "tx_file": "spendD-fail-valid.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 309,
+   "cbor_sha256": "c23004eec7ead0323e06c48f4aa434058472478a3532bdbf68863ca315fd0e8e",
+   "note": "spend always-FAILS UTxO, is_valid=true -> script fails -> both reject (tag mismatch)"
+  },
+  {
+   "case_id": "spendD-fail-invalid",
+   "tx_file": "spendD-fail-invalid.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 309,
+   "cbor_sha256": "f3e56ddfbf92833fff057c7c3cbbff6e5dc588ec35a6b7301e820042430493d0",
+   "note": "spend always-FAILS UTxO, is_valid=false -> claim matches -> both accept (collateral consumed)"
+  },
+  {
+   "case_id": "spendA-wrong-refscript",
+   "tx_file": "spendA-wrong-refscript.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 338,
+   "cbor_sha256": "dbae620f0fee7959187f93e9c2134b596e02acda123f497f0689fd5eb9db7212",
+   "note": "spend always-succeeds UTxO but provide C_fail as the reference script (hash != addr) -> both reject (script mismatch); must NOT run the wrong script"
+  },
+  {
+   "case_id": "spendA-refscript-also-refinput",
+   "tx_file": "spendA-refscript-also-refinput.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 338,
+   "cbor_sha256": "d4b18fa8875a78b7048448221cd34be3dceeb95fea23cf46df7e5ce3ba7007ee",
+   "note": "C_ok used as spending reference script AND as a read-only reference input -> both accept (dedup/disjointness edge)"
+  }
+ ]
+}

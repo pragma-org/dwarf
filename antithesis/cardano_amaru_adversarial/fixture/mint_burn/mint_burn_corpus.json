@@ -1,0 +1,250 @@
+{
+ "description": "Mint/burn + multi-asset value phase-1 differential family (cardano-node vs Amaru). All cases spend the committed funding UTxO; ADA balanced exactly, fee >> min, no validity interval, policy key signs every minting case. Violations and decode edges are idempotent; controls single-use. policy d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed (all[sig]), other policy 3b723a2f83e48ccdce2fa1f42f70609b1b9d9dc55a4988d8a14404f9. A valid BURN control is infeasible on the frozen non-forging substrate (no token UTxO can confirm). See dwarf/docs/mint-burn-value-phase1-differential-family.md.",
+ "policy_id": "d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed",
+ "min_utxo_one_token": 1017160,
+ "cases": [
+  {
+   "case_id": "mint-script-missing",
+   "tx_file": "mint-script-missing.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 380,
+   "cbor_sha256": "36bc7054e62d01a7eb6e7e1cc48c09b8a04a55852700838912782a41f242f47d",
+   "rule": "UTXOW MissingScriptWitnesses",
+   "reason_classes": [
+    "missing_script"
+   ],
+   "note": "mint 10 MINT, policy key signs, native policy script omitted from the witness set",
+   "credential": "d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed"
+  },
+  {
+   "case_id": "mint-script-wrong",
+   "tx_file": "mint-script-wrong.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 417,
+   "cbor_sha256": "41325fbeb89ffc6ba3b6facdd33d249c221b0498fa3e8de380555b2b5d655d52",
+   "rule": "UTXOW MissingScriptWitnesses + ExtraneousScriptWitnesses (co-occurring)",
+   "reason_classes": [
+    "missing_script",
+    "extraneous_script"
+   ],
+   "note": "a different native script supplied in place of the policy script: both rules apply, so the reported reason is a PRECEDENCE observation",
+   "credential": "d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed"
+  },
+  {
+   "case_id": "extraneous-script-no-mint",
+   "tx_file": "extraneous-script-no-mint.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 235,
+   "cbor_sha256": "00b89d3189ee85c2f13f171cd6fff2c7fab6fc8529623271f0c0059a5c25c7e0",
+   "rule": "UTXOW ExtraneousScriptWitnesses",
+   "reason_classes": [
+    "extraneous_script"
+   ],
+   "note": "ADA-only tx, nothing minted, policy script supplied",
+   "credential": "d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed"
+  },
+  {
+   "case_id": "burn-nonexistent",
+   "tx_file": "burn-nonexistent.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 381,
+   "cbor_sha256": "dfbbb34935439b7f20c0fcf53bbfd20c14e9f013a14b57735e61d893e0f44bca",
+   "rule": "UTXO ValueNotConserved",
+   "reason_classes": [
+    "value_not_conserved"
+   ],
+   "note": "burn 5 MINT; inputs hold none (ADA balanced)",
+   "credential": "d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed"
+  },
+  {
+   "case_id": "burn-int64-min",
+   "tx_file": "burn-int64-min.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 383,
+   "cbor_sha256": "e014e362b219004be8aee726999a7eebfd196173a561c8c065b117eb7e104dd5",
+   "rule": "UTXO ValueNotConserved (int64 edge)",
+   "reason_classes": [
+    "value_not_conserved"
+   ],
+   "note": "burn -2^63 MINT (nonZeroInt64 minimum); inputs hold none. Divergence candidate: overflow in either node's value arithmetic",
+   "credential": "d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed"
+  },
+  {
+   "case_id": "mint-zero-qty",
+   "tx_file": "mint-zero-qty.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 375,
+   "cbor_sha256": "095e9a1837730d0b38e7ace68b8865e2a9353c9c8b8027fbc1131ed619d2d2aa",
+   "rule": "CDDL mint nonZeroInt64",
+   "reason_classes": [],
+   "note": "mint 0 MINT; otherwise valid (a lenient decoder would ACCEPT)"
+  },
+  {
+   "case_id": "mint-empty-asset-map",
+   "tx_file": "mint-empty-asset-map.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 369,
+   "cbor_sha256": "17a737986e97d9f7b4c5d6fac9470e6c117a2d180bed1fe8a68a37b12a1af6f4",
+   "rule": "CDDL mint inner map non-empty",
+   "reason_classes": [],
+   "note": "mint {policy: {}}; otherwise valid"
+  },
+  {
+   "case_id": "mint-empty-map",
+   "tx_file": "mint-empty-map.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 200,
+   "cbor_sha256": "ef57cd11e83801b1dcafa3102ba7d384ca206405afbd5031844288e82608ec85",
+   "rule": "CDDL mint non-empty",
+   "reason_classes": [],
+   "note": "mint {}; otherwise valid"
+  },
+  {
+   "case_id": "asset-name-33b",
+   "tx_file": "asset-name-33b.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 474,
+   "cbor_sha256": "198baa7ddb671905ea94725cfa3d018868f00d71fa328161fa023b85a1384919",
+   "rule": "CDDL asset_name bytes .size (0..32)",
+   "reason_classes": [],
+   "note": "mint + output 10 of a 33-byte asset name; otherwise valid"
+  },
+  {
+   "case_id": "output-zero-qty",
+   "tx_file": "output-zero-qty.tx",
+   "expected": "decode_reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 237,
+   "cbor_sha256": "efe82cc35e840b8c067806a293c297aab327e5e2317372fce8e69c4d72d06127",
+   "rule": "CDDL output multiasset positive_coin",
+   "reason_classes": [],
+   "note": "output carries 0 MINT, nothing minted; otherwise valid"
+  },
+  {
+   "case_id": "asset-surplus",
+   "tx_file": "asset-surplus.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 420,
+   "cbor_sha256": "89270a6e6c98647c852e752314f9cd24f40b8dd4dee9726f4e06a489c692a857",
+   "rule": "UTXO ValueNotConserved",
+   "reason_classes": [
+    "value_not_conserved"
+   ],
+   "note": "mint 10 MINT, output 11",
+   "credential": "d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed"
+  },
+  {
+   "case_id": "asset-deficit",
+   "tx_file": "asset-deficit.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 420,
+   "cbor_sha256": "dd005f55040fa7a63a27ee240905623c72be850ef4b9eab6fa74fcc70971d13e",
+   "rule": "UTXO ValueNotConserved",
+   "reason_classes": [
+    "value_not_conserved"
+   ],
+   "note": "mint 10 MINT, output 9",
+   "credential": "d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed"
+  },
+  {
+   "case_id": "asset-relabel",
+   "tx_file": "asset-relabel.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 421,
+   "cbor_sha256": "0a7bca98fad0017ba07d84f6907fcf29f54b06e174ee7d3f50c60a2c99350cad",
+   "rule": "UTXO ValueNotConserved",
+   "reason_classes": [
+    "value_not_conserved"
+   ],
+   "note": "mint 10 MINT, output carries 10 MINTX (same policy, other name)",
+   "credential": "d667c38e38d5712f10a038538e8d5de6467dfb6f2ccf9b70aa3d26ed"
+  },
+  {
+   "case_id": "unminted-policy-output",
+   "tx_file": "unminted-policy-output.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 241,
+   "cbor_sha256": "35452c3b64640981ebbdbff3269f64a3dbb93c7f91a51f2a380195405224916d",
+   "rule": "UTXO ValueNotConserved",
+   "reason_classes": [
+    "value_not_conserved"
+   ],
+   "note": "output carries 10 OTHER of an unminted, unwitnessed policy; no mint",
+   "credential": "3b723a2f83e48ccdce2fa1f42f70609b1b9d9dc55a4988d8a14404f9"
+  },
+  {
+   "case_id": "minada-token-below",
+   "tx_file": "minada-token-below.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 457,
+   "cbor_sha256": "6b78d6ab619486178929017f99daca46e1088f787f048fc838a155fd5345f2ff",
+   "rule": "UTXO BabbageOutputTooSmall",
+   "reason_classes": [
+    "output_too_small"
+   ],
+   "note": "token output at the multi-asset min-UTxO - 1 (1017159; ADA-only min is lower)",
+   "credential": "1017159"
+  },
+  {
+   "case_id": "value-too-big",
+   "tx_file": "value-too-big.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 10947,
+   "cbor_sha256": "1203af35f03f2c65b02f1eb8f489c37dc66a14b3cc6f369a40949301a447797e",
+   "rule": "UTXO OutputTooBig (maxValueSize 5000)",
+   "reason_classes": [
+    "output_too_big"
+   ],
+   "note": "one output carrying 150 x 32-byte asset names (serialised value > 5000 B); both nodes print the size they computed - recorded, a size mismatch is a serialisation divergence",
+   "credential": "5000"
+  },
+  {
+   "case_id": "mint-valid",
+   "tx_file": "mint-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 420,
+   "cbor_sha256": "4d4f2bb137e36396bdb3e4f61fc6dbb72d6c894338a7a5fe282cef3809e66ab0",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "mint 10 MINT, policy script + key witness"
+  },
+  {
+   "case_id": "multiasset-mint-valid",
+   "tx_file": "multiasset-mint-valid.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 434,
+   "cbor_sha256": "1307c0187174995c08ef37edabb4ae266c1ccfb16452f22a2805b54b7966127e",
+   "rule": "control (multi-asset MINT, not a burn)",
+   "reason_classes": [],
+   "note": "mint 10 MINT + 3 MINTB in one tx"
+  },
+  {
+   "case_id": "minada-token-at-min",
+   "tx_file": "minada-token-at-min.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 457,
+   "cbor_sha256": "0e8bfbf7252800f5049ef8ba181e15fb14d15d2da1645575778beaaae6143248",
+   "rule": "control (min-UTxO boundary)",
+   "reason_classes": [],
+   "note": "token output at exactly the multi-asset min-UTxO 1017160"
+  }
+ ]
+}

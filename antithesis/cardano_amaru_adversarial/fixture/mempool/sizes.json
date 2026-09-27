@@ -1,0 +1,34 @@
+{
+ "size-canonical-16385": {
+  "original_ledger_size": 16385,
+  "canonical_ledger_size": 16385
+ },
+ "size-canonical-16384-valid": {
+  "original_ledger_size": 16384,
+  "canonical_ledger_size": 16384
+ },
+ "size-body-16385": {
+  "original_ledger_size": 16385,
+  "canonical_ledger_size": 16381
+ },
+ "size-body-16384-valid": {
+  "original_ledger_size": 16384,
+  "canonical_ledger_size": 16380
+ },
+ "size-wits-16385": {
+  "original_ledger_size": 16385,
+  "canonical_ledger_size": 16384
+ },
+ "size-wits-16384-valid": {
+  "original_ledger_size": 16384,
+  "canonical_ledger_size": 16383
+ },
+ "size-aux-16385": {
+  "original_ledger_size": 16385,
+  "canonical_ledger_size": 16376
+ },
+ "size-aux-16384-valid": {
+  "original_ledger_size": 16384,
+  "canonical_ledger_size": 16375
+ }
+}

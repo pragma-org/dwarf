@@ -56,23 +56,52 @@ def run(corpus_dir: str, amaru_url: str, cardano_url: str) -> list[dict]:
     return results
 
 
+# ---- shared-grade path (verdict -> reason class -> parity token; fail-closed) ----
+import stake_pool_differential as base  # noqa: E402
+
+REASON_CLASSES = {"native_script_fail": (r"scriptwitnessnotvalidatingutxow", r"native script\(s\) failed to validate")}
+
+
+def grade_case(case: dict, result: dict) -> dict:
+    """Grade with the shared oracle; the corpus predates it, so normalise its schema."""
+    reject = case["expected"] == "reject"
+    norm = {"case_id": case["case_id"], "expected": "reject" if reject else "accept",
+             "reason_classes": ["native_script_fail"] if reject else []}
+    token = (case.get("observed") or {}).get("script_hash")
+    if reject and token:
+        norm["credential"] = token
+    return base.grade(norm, result, REASON_CLASSES)
+
+
+def run_graded(corpus_dir: str, amaru_url: str, cardano_url: str, control: str | None = None) -> list[dict]:
+    root = Path(corpus_dir)
+    cases = json.loads((root / "native_script_corpus.json").read_text())["cases"]
+    transports = {"amaru": HttpSubmitTransport(amaru_url, keep_detail=True),
+                   "cardano": HttpSubmitTransport(cardano_url, keep_detail=True)}
+    if control:
+        cases = [c for c in cases if c["case_id"] == control and c["expected"] != "reject"]
+        if not cases:
+            raise SystemExit(f"unknown control case: {control}")
+    else:
+        cases = [c for c in cases if c["expected"] == "reject"]
+    return [grade_case(c, observe_differential(
+        bytes.fromhex(json.loads((root / c["tx_file"]).read_text())["cborHex"]), transports)) for c in cases]
+
+
 if __name__ == "__main__":
     import argparse
     p = argparse.ArgumentParser()
     p.add_argument("--corpus", default=str(Path(__file__).resolve().parents[1] / "fixture" / "native_script"))
     p.add_argument("--amaru", default="http://localhost:3012/api/submit/tx")
     p.add_argument("--cardano", default="http://localhost:8090/api/submit/tx")
-    p.add_argument("--controls", action="store_true",
-                   help="also submit single-use satisfied controls (needs a fresh mempool; "
-                        "an accept consumes the funding UTxO, so run at most one per restart)")
+    p.add_argument("--control", help="run ONE single-use accept case (after a mempool reset)")
     a = p.parse_args()
-    rows = run(a.corpus, a.amaru, a.cardano)
-    # The repeatable oracle is the idempotent violation set: verdict parity (both reject)
-    # AND reason-class parity (both name the same native script hash). Satisfied controls
-    # are single-use (an accept consumes the UTxO) and are proven separately on a fresh mempool.
-    viol = [x for x in rows if x["expected"] == "reject"]
-    ok = all(x["verdict_parity"] and x["reason_parity"]["hash_match"] for x in viol)
+    rows = run_graded(a.corpus, a.amaru, a.cardano, a.control)
     print(json.dumps(rows, indent=2))
-    print(f"VIOLATION VERDICT+REASON PARITY ({len(viol)} cases):", "ALL AGREE" if ok else "DIVERGENCE")
-    print("(satisfied controls are single-use: verify one per fresh mempool restart)")
-    sys.exit(0 if ok else 1)
+    statuses = {r["status"] for r in rows}
+    label = "CONTROL " + a.control if a.control else f"VIOLATIONS ({len(rows)} cases)"
+    if statuses & {"VERDICT-DIVERGENCE", "REASON-DIVERGENCE"}:
+        print(f"{label}: DIVERGENCE {sorted(statuses)}"); sys.exit(1)
+    if statuses - {"AGREE"}:
+        print(f"{label}: INCONCLUSIVE {sorted(statuses)}"); sys.exit(2)
+    print(f"{label}: ALL AGREE"); sys.exit(0)

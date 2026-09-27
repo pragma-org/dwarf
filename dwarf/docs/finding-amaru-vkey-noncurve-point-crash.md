@@ -144,3 +144,31 @@ already uses (unwrap_or_else).
 
 **Not filed upstream** (operator decision: consolidate + wrap, 2026-09-26). Strong upstream
 candidate if chosen — clear repro, root cause, and a one-line fix.
+
+
+## Sibling crash-sites analyzed (panic-hunt scope closure, 2026-09-27)
+
+Beyond the confirmed vkey crash above, the adjacent `.expect()`/`.unwrap()`/`unreachable!()`
+sites in the same code region were each checked (source + live where reachable) and found
+NOT to be attacker-reachable crashes:
+
+- `verification_key_witness.rs:44` `Signature::try_from(sig).expect(..)` — SAFE. dalek's
+  `Signature::try_from` is infallible for any 64-byte input, and decoding guarantees the size
+  (`FixedBytes<64>`). No non-curve analog: a signature is any 64 bytes.
+- `phase_two/mod.rs:235` `unreachable!("cannot have a redeemer point to a native_script")` —
+  UNREACHABLE (correct defensive assertion). `phase_one/scripts.rs partition_scripts` requires
+  a redeemer only for Plutus script kinds (`ProvidedScript::Native(..) => {}`), so a redeemer
+  aimed at a native script is never in `required_redeemers` and is rejected in PHASE ONE as
+  `ExtraneousRedeemers` before phase_two runs. Confirmed live: an injected Mint redeemer over a
+  native-mint tx was phase-1-rejected and amaru stayed up.
+- `phase_two/mod.rs:295` `PlutusData::from_cbor(&arena, to_cbor(&arg)).expect(..)` — SAFE.
+  `arg` is an already-decoded PlutusData that amaru itself re-encodes on the line above; the
+  round-trip is lossless and not attacker-controllable.
+- Kernel/ledger sweep for the same class (`try_from(fixed-size bytes).expect()` validating more
+  than size): all hits are test code except `maths.rs:236` `i64::try_from(&n_exponent).expect()`,
+  which operates on an internally-derived VRF leader-value exponent, not a decoded transaction
+  field (low reachability; flagged for audit, not a submit-path crash). Consensus VRF/KES key
+  parsing shows zero hits of this pattern.
+
+Net: the non-curve vkey witness (`verification_key_witness.rs:42`) is the sole confirmed
+attacker-reachable crash of this class on amaru 0925 (eaf8ac3f).

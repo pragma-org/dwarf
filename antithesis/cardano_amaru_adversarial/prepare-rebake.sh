@@ -54,7 +54,7 @@ echo "== 3. Frozen cardano reference (NON-FORGING) =="
 #         --database-path /state/db --socket-path /state/node.socket --port 3001 --host-addr 0.0.0.0
 #   # verify: query tip == epoch 3 Conway, and query utxo shows 9708b921...#0 UNSPENT.
 #   docker run -d --name rebake-submit-api -v "$REF":/state -v "$HERE"/haskell:/cfg:ro -p 8090:8090 \
-#     ghcr.io/intersectmbo/cardano-submit-api:10.7.1 --config /cfg/submit-api-config.yaml \
+#     ghcr.io/intersectmbo/cardano-submit-api:11.1.2 --config /cfg/submit-api-config.yaml \
 #     --testnet-magic $MAGIC --socket-path /state/node.socket --listen-address 0.0.0.0 --port 8090
 
 echo "== 4. Amaru testnet_42 store (same genesis) =="

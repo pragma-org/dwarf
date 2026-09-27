@@ -1,0 +1,120 @@
+{
+ "date": "2026-09-27",
+ "phase": "2a",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 (fef83fed), pair2-cardano-ref :8111",
+  "amaru": "Amaru 10.11.20260925 (eaf8ac3f) :3211",
+  "exact_cost_always_succeeds_v3_mint": {
+   "steps": 64100,
+   "memory": 500,
+   "lovelaceCost": 34,
+   "measured_by": "cardano-cli calculate-plutus-script-cost online"
+  },
+  "note": "mempools reset before each run; funded UTxO 9708b921#0"
+ },
+ "results": {
+  "exu-under-steps": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "exu-under-mem": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "exu-zero": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "isvalid-false-succeeds": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "alwaysfails-valid": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "exu-exact": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "exu-ample": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "isvalid-false-underbudget": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "alwaysfails-invalid": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}

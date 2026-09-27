@@ -90,6 +90,10 @@ _PHASE1_MARKERS = (
     "conwaymempoolfailure",
     "submitvalidationerror",
     "txvalidationerror",
+    # cardano ledger rule failure; it leads the error text, whereas the "kind"/"tag" markers
+    # above sit at the END of the JSON and fall past the 4096-byte read for large responses
+    # (e.g. OutputTooBigUTxO prints the whole oversized value: an 11.5 kB body)
+    "conwayutxowfailure",
     # amaru 10.11.20260918+ emits verbose phase-1 errors (fees/native-script/validity)
     # under this umbrella phrase; 807 used the coarse _AMARU_VALIDATION_RE form below.
     "phase one validation",
@@ -256,9 +260,12 @@ def load_corpus(root: str | Path) -> list[Fixture]:
 class HttpSubmitTransport:
     """POST raw transaction CBOR and preserve enough evidence to classify it."""
 
-    def __init__(self, url: str, timeout: float = 5.0):
+    def __init__(self, url: str, timeout: float = 5.0, keep_detail: bool = False):
         self.url = url
         self.timeout = timeout
+        # keep_detail: also record the full (<= 4096-char) response as "detail", for oracles
+        # whose parity token sits past the 400-char "reason" cut (long ledger Mismatch values)
+        self.keep_detail = keep_detail
 
     def send(self, payload: bytes) -> dict:
         request = urllib.request.Request(
@@ -269,15 +276,15 @@ class HttpSubmitTransport:
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                body = response.read(4096).decode("utf-8", "replace")
+                body = response.read(16384).decode("utf-8", "replace")
                 status = response.status
-            return _observation(status, body, payload=payload)
+            return _observation(status, body, payload=payload, detail=self.keep_detail)
         except urllib.error.HTTPError as exc:
             try:
-                body = exc.read(4096).decode("utf-8", "replace")
+                body = exc.read(16384).decode("utf-8", "replace")
             except Exception:
                 body = str(exc.reason or "http error")
-            return _observation(exc.code, body, payload=payload)
+            return _observation(exc.code, body, payload=payload, detail=self.keep_detail)
         except (urllib.error.URLError, ConnectionError, socket.timeout, TimeoutError) as exc:
             reason = getattr(exc, "reason", exc)
             return _observation(None, "", type(reason).__name__)
@@ -290,13 +297,17 @@ def _observation(
     body: str,
     transport_error: str | None = None,
     payload: bytes | None = None,
+    detail: bool = False,
 ) -> dict:
-    reason = body[:400] if body else (transport_error or "")
-    return {
+    reason = body[:16384] if body else (transport_error or "")
+    observation = {
         "classification": classify_response(status, body, transport_error, payload=payload),
         "status": status,
         "reason": reason,
     }
+    if detail:
+        observation["detail"] = body or ""
+    return observation
 
 
 def observe_differential(
@@ -411,7 +422,7 @@ def emit_assertions(fixture: Fixture, result: dict, recovery: bool = False) -> N
             label: {
                 "classification": observation["classification"],
                 "status": observation.get("status"),
-                "reason": str(observation.get("reason", ""))[:200],
+                "reason": str(observation.get("reason", ""))[:1000],
             }
             for label, observation in observations.items()
         },
@@ -570,7 +581,7 @@ def public_result(result: dict) -> dict:
             label: {
                 "classification": observation["classification"],
                 "status": observation.get("status"),
-                "reason": str(observation.get("reason", ""))[:200],
+                "reason": str(observation.get("reason", ""))[:1000],
             }
             for label, observation in result["observations"].items()
         },

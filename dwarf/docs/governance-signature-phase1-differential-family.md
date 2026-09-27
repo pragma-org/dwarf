@@ -79,7 +79,7 @@ Bring up the frozen substrate (`prepare-rebake.sh`), then:
 docker restart <cardano-ref> <amaru>       # fresh mempools (accepts are single-use)
 cd workload && python3 governance_differential.py \
   --amaru http://localhost:3012/api/submit/tx --cardano http://localhost:8090/api/submit/tx
-# -> "VIOLATION VERDICT+REASON PARITY (3 cases): ALL AGREE"
+# -> "VIOLATIONS (3 cases): ALL AGREE"; then each accept: --control CASE after a reset
 ```
 
 Rebuild: `cardano-cli conway governance drep registration-certificate
@@ -93,3 +93,16 @@ use `keys/wrong.skey`, for the violations). Committed keys/certs are testnet-onl
 ## Re-validated against LATEST amaru — v10.11.20260925 (eaf8ac3f), 2026-09-26
 
 Re-ran this family against the current tagged latest amaru (git_commit eaf8ac3f) via `node run` on the 0903-bootstrapped store (store format compatible; latest cannot freshly bootstrap a custom testnet — see amaru-custom-testnet-bootstrap-regression-0903-to-0925.md), vs cardano-node 10.7.1 (045bc187): **still CONFORMANT — all cases agree, no divergence.** Result is now current-version-validated.
+
+## Re-validated on the current pair: Amaru 0925 vs cardano-node 11.1.2 (2026-09-27)
+
+Re-run on pair 4: cardano-node 11.1.2 (`fef83fed`) via cardano-submit-api 11.1.2, and Amaru
+v10.11.20260925 (`eaf8ac3f`). The run used the shared oracle (verdict, then reason class, then
+the governance credential recorded in the corpus; fail-closed), with the mempool reset before the violation run
+and before each control. **5/5 AGREE:** 3 violations name the same governance credential on both nodes,
+and 2 controls are accepted by both with the same tx id. Evidence:
+`fixture/governance/graded-2026-09-27.json`.
+
+The driver now uses the standard family shape. Run the violations with
+`python3 workload/governance_differential.py --amaru URL --cardano URL`, and each single-use accept with
+`--control CASE` after a mempool reset.

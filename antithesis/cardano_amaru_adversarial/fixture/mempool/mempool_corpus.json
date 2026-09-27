@@ -1,0 +1,133 @@
+{
+ "description": "Mempool / submit-path phase-1 differential family (cardano-node vs Amaru): max-tx-size exact boundary in canonical and non-canonical encodings, duplicate resubmission, HTTP-level robustness with a liveness oracle. Every tx spends the committed funding UTxO; fee 1 ADA. Violations idempotent; accepts single-use. See dwarf/docs/mempool-submit-path-differential-family.md.",
+ "max_tx_size": 16384,
+ "cases": [
+  {
+   "case_id": "size-canonical-16385",
+   "tx_file": "size-canonical-16385.tx",
+   "expected": "reject",
+   "rule": "UTXO MaxTxSizeUTxO (original bytes, IsValid excluded)",
+   "reason_classes": [
+    "tx_too_large"
+   ],
+   "note": "canonical encoding (reference); original ledger size 16385, canonical re-encoding 16385",
+   "original_ledger_size": 16385,
+   "canonical_ledger_size": 16385,
+   "credential": "16385",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 16386,
+   "cbor_sha256": "256d3335702fb8b80f7b119ffeeb393d67afea0273b5bdf17f39f8602ddedee3"
+  },
+  {
+   "case_id": "size-canonical-16384-valid",
+   "tx_file": "size-canonical-16384-valid.tx",
+   "expected": "accept",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "canonical encoding (reference); original ledger size 16384, canonical re-encoding 16384",
+   "original_ledger_size": 16384,
+   "canonical_ledger_size": 16384,
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 16385,
+   "cbor_sha256": "32ac289aaa77f271e336194b042f371dc1d8992bcf71ac4b07c4d40e1551413b"
+  },
+  {
+   "case_id": "size-body-16385",
+   "tx_file": "size-body-16385.tx",
+   "expected": "reject",
+   "rule": "UTXO MaxTxSizeUTxO (original bytes, IsValid excluded)",
+   "reason_classes": [
+    "tx_too_large"
+   ],
+   "note": "tx body with the fee as a 9-byte uint (+4 bytes over canonical); original ledger size 16385, canonical re-encoding 16381",
+   "original_ledger_size": 16385,
+   "canonical_ledger_size": 16381,
+   "credential": "16385",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 16386,
+   "cbor_sha256": "433a69e71e29d1cca17f77faabacd1516e5bb39f3f4caeb738dd81bdc728370c"
+  },
+  {
+   "case_id": "size-body-16384-valid",
+   "tx_file": "size-body-16384-valid.tx",
+   "expected": "accept",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "tx body with the fee as a 9-byte uint (+4 bytes over canonical); original ledger size 16384, canonical re-encoding 16380",
+   "original_ledger_size": 16384,
+   "canonical_ledger_size": 16380,
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 16385,
+   "cbor_sha256": "742d2008fb979acc8f618fe81437e3121be32e185a037a965eb707660a3b0a32"
+  },
+  {
+   "case_id": "size-wits-16385",
+   "tx_file": "size-wits-16385.tx",
+   "expected": "reject",
+   "rule": "UTXO MaxTxSizeUTxO (original bytes, IsValid excluded)",
+   "reason_classes": [
+    "tx_too_large"
+   ],
+   "note": "vkey witness array as indefinite length (+1 byte); original ledger size 16385, canonical re-encoding 16384",
+   "original_ledger_size": 16385,
+   "canonical_ledger_size": 16384,
+   "credential": "16385",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 16386,
+   "cbor_sha256": "dc7280f94155681c11493911cbd28eb1b0d7637b413c707fdccccf7cbff6cdcd"
+  },
+  {
+   "case_id": "size-wits-16384-valid",
+   "tx_file": "size-wits-16384-valid.tx",
+   "expected": "accept",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "vkey witness array as indefinite length (+1 byte); original ledger size 16384, canonical re-encoding 16383",
+   "original_ledger_size": 16384,
+   "canonical_ledger_size": 16383,
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 16385,
+   "cbor_sha256": "87b67ab10467e7e35f883b102b210c59de523d9314d37a22b1094fe88ae88ff0"
+  },
+  {
+   "case_id": "size-aux-16385",
+   "tx_file": "size-aux-16385.tx",
+   "expected": "reject",
+   "rule": "UTXO MaxTxSizeUTxO (original bytes, IsValid excluded)",
+   "reason_classes": [
+    "tx_too_large"
+   ],
+   "note": "aux: indefinite metadata map + 8 non-minimal text heads (+9 bytes); original ledger size 16385, canonical re-encoding 16376",
+   "original_ledger_size": 16385,
+   "canonical_ledger_size": 16376,
+   "credential": "16385",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 16386,
+   "cbor_sha256": "dc4b3e42eff9110e18eaac9f36eb01ffa952095a6ee29f5b4f643bb9b02ab30e"
+  },
+  {
+   "case_id": "size-aux-16384-valid",
+   "tx_file": "size-aux-16384-valid.tx",
+   "expected": "accept",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "aux: indefinite metadata map + 8 non-minimal text heads (+9 bytes); original ledger size 16384, canonical re-encoding 16375",
+   "original_ledger_size": 16384,
+   "canonical_ledger_size": 16375,
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 16385,
+   "cbor_sha256": "0f908e20733c3f51cf97d4a8bf3d715d64ab0c4d71dd62695f547a9ce5441ea2"
+  },
+  {
+   "case_id": "mp-base",
+   "tx_file": "mp-base.tx",
+   "expected": "accept",
+   "rule": "control",
+   "reason_classes": [],
+   "note": "small valid tx; also the duplicate-resubmission case",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 264,
+   "cbor_sha256": "8038226a54a4174d69b1bc4e58b72dc7749bcf5f3c87a49733e724c202f2c296"
+  }
+ ]
+}
