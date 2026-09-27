@@ -1,0 +1,149 @@
+{
+ "description": "Plutus VM crypto builtins: signature-verify (verifyEd25519Signature) + hash (blake2b_256/224, keccak_256, sha2_256, sha3_256, ripemd_160) differential (cardano 11.1.2 vs amaru 0925). aiken validators assert the builtin result vs a redeemer-supplied expectation; correct accepts, wrong rejects, on both. Result: no is_valid divergence and NO builtin crash -- notably a non-curve-point vk fed into verifyEd25519Signature fails gracefully on amaru (does NOT recur the finding-#1 witness-path panic inside the VM). ripemd_160 is uncosted in this chain's cost model (both reject via budget). BLS12-381 builtins are a sibling lane (dwarf-v4-fd).",
+ "cases": [
+  {
+   "case_id": "ed25519-valid",
+   "tx_file": "ed25519-valid.tx",
+   "expected": "accept",
+   "cbor_size": 655,
+   "cbor_sha256": "f459b5c20b168292ca6d33d119454b9aa3b4279983a105e131b383c4c52baf1c",
+   "single_use": true,
+   "note": "verifyEd25519Signature(vk,msg,sig) valid triple -> True -> both accept"
+  },
+  {
+   "case_id": "ed25519-wrongsig",
+   "tx_file": "ed25519-wrongsig.tx",
+   "expected": "reject",
+   "cbor_size": 655,
+   "cbor_sha256": "aff171f3998d4358dc8fb4f3b10c6e39ba71fcd5bc4c49019e72c77d53cb385d",
+   "single_use": false,
+   "note": "sig byte flipped -> verify False -> both reject (phase-2)"
+  },
+  {
+   "case_id": "ed25519-wrongmsg",
+   "tx_file": "ed25519-wrongmsg.tx",
+   "expected": "reject",
+   "cbor_size": 655,
+   "cbor_sha256": "2f1c6e1fe04c3cbac93454deb96e51f5c0fe7aee029256216e295e3ae1c843ce",
+   "single_use": false,
+   "note": "msg byte flipped -> verify False -> both reject"
+  },
+  {
+   "case_id": "ed25519-noncurve-vk",
+   "tx_file": "ed25519-noncurve-vk.tx",
+   "expected": "reject",
+   "cbor_size": 655,
+   "cbor_sha256": "5e1ed89d54f12763de0c2db000d8b515b63dd39edfbd7290f2c3f9366862f866",
+   "single_use": false,
+   "note": "vk = 0x0200..00 (NON-CURVE-POINT, the finding-#1 crash class) fed INTO the builtin -> both reject gracefully; amaru does NOT crash (stayed live), unlike the tx-witness path. Key negative cross-ref."
+  },
+  {
+   "case_id": "h_blake2b_256-ok",
+   "tx_file": "h_blake2b_256-ok.tx",
+   "expected": "accept",
+   "cbor_size": 566,
+   "cbor_sha256": "d56783d80dc915eebd3f8356965683990aafe5dd16efd64c8004914d9591ef02",
+   "single_use": true,
+   "note": "blake2b_256('abc') == known vector -> both accept"
+  },
+  {
+   "case_id": "h_blake2b_256-wrong",
+   "tx_file": "h_blake2b_256-wrong.tx",
+   "expected": "reject",
+   "cbor_size": 566,
+   "cbor_sha256": "d29b6d64c7074bd4ee7803580f6720c1904260fc096d301b17559cdfd02024b5",
+   "single_use": false,
+   "note": "wrong expected -> both reject"
+  },
+  {
+   "case_id": "h_blake2b_224-ok",
+   "tx_file": "h_blake2b_224-ok.tx",
+   "expected": "accept",
+   "cbor_size": 562,
+   "cbor_sha256": "0f4e1459d281faa74b30200ee43f7fc9b293a6722a5f773e10b6f60e9bb7e4fb",
+   "single_use": true,
+   "note": "blake2b_224('abc') == known vector -> both accept"
+  },
+  {
+   "case_id": "h_blake2b_224-wrong",
+   "tx_file": "h_blake2b_224-wrong.tx",
+   "expected": "reject",
+   "cbor_size": 562,
+   "cbor_sha256": "e236be12eccb19d0e1456a70175ec6ac07f1dbf056ddf7017cb57d5cc9e58816",
+   "single_use": false,
+   "note": "wrong expected -> both reject"
+  },
+  {
+   "case_id": "h_keccak_256-ok",
+   "tx_file": "h_keccak_256-ok.tx",
+   "expected": "accept",
+   "cbor_size": 566,
+   "cbor_sha256": "a89bda375c584c311604e2acb437c484d0b6d7cbdda8e1143b81e590f7a20b2d",
+   "single_use": true,
+   "note": "keccak_256('abc') == known vector (true Ethereum keccak, not SHA3) -> both accept"
+  },
+  {
+   "case_id": "h_keccak_256-wrong",
+   "tx_file": "h_keccak_256-wrong.tx",
+   "expected": "reject",
+   "cbor_size": 566,
+   "cbor_sha256": "711b29f652ad1a1b718e5f69c615364a0d185cbe194ea1fab9d4b0ff53f236dc",
+   "single_use": false,
+   "note": "wrong expected -> both reject"
+  },
+  {
+   "case_id": "h_sha2_256-ok",
+   "tx_file": "h_sha2_256-ok.tx",
+   "expected": "accept",
+   "cbor_size": 566,
+   "cbor_sha256": "c5ebf548b8cc6f89dac07b36dbb68e3dfcf3737d29c79665e3eb4bd6ffa01a9c",
+   "single_use": true,
+   "note": "sha2_256('abc') == known vector -> both accept"
+  },
+  {
+   "case_id": "h_sha2_256-wrong",
+   "tx_file": "h_sha2_256-wrong.tx",
+   "expected": "reject",
+   "cbor_size": 566,
+   "cbor_sha256": "71fd9db60e54e9edbc58e1768b5339fca985cf368c07623923e2fcf6c16abeee",
+   "single_use": false,
+   "note": "wrong expected -> both reject"
+  },
+  {
+   "case_id": "h_sha3_256-ok",
+   "tx_file": "h_sha3_256-ok.tx",
+   "expected": "accept",
+   "cbor_size": 566,
+   "cbor_sha256": "3f8ba3da3e237909b231c99da1bbfce39e621b7aa79ac1063eb455eb61c58316",
+   "single_use": true,
+   "note": "sha3_256('abc') == known vector -> both accept"
+  },
+  {
+   "case_id": "h_sha3_256-wrong",
+   "tx_file": "h_sha3_256-wrong.tx",
+   "expected": "reject",
+   "cbor_size": 566,
+   "cbor_sha256": "62e8f7fededc5802c046d4bc3377d4d8c66ea002f8b26be33f89679a315bbe83",
+   "single_use": false,
+   "note": "wrong expected -> both reject"
+  },
+  {
+   "case_id": "h_ripemd_160-ok",
+   "tx_file": "h_ripemd_160-ok.tx",
+   "expected": "reject",
+   "cbor_size": 553,
+   "cbor_sha256": "af606b12df8b37ddf363a4c3e3d825c63eb79b39ac3bbd0d55ca5963d1bfa5d3",
+   "single_use": false,
+   "note": "ripemd_160 is UNCOSTED in this chain's PlutusV3 cost model (amaru consumed_budget = int64-max sentinel) -> any use exceeds the tx budget -> script fails on BOTH identically. Output not validatable here (cost-model-limited). Conformant (both reject)."
+  },
+  {
+   "case_id": "h_ripemd_160-wrong",
+   "tx_file": "h_ripemd_160-wrong.tx",
+   "expected": "reject",
+   "cbor_size": 553,
+   "cbor_sha256": "4f4f6a2b90fc4fbea1d418ecea23de3e8c7255cc97f0591e4fbc6c9371b509c6",
+   "single_use": false,
+   "note": "same (uncosted) -> both reject"
+  }
+ ]
+}

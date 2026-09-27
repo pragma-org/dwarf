@@ -1,0 +1,124 @@
+{
+ "date": "2026-09-27",
+ "surface": "Plutus VM crypto builtins (signature-verify + hash)",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 :8113 (pair4)",
+  "amaru": "amaru 0925 clean eaf8ac3f :3213"
+ },
+ "crash_cross_ref": "NEGATIVE: a non-curve-point vk (0x0200..00, the finding-#1 crash class) fed INTO verifyEd25519Signature fails GRACEFULLY on amaru (both reject phase-2, amaru stayed live 400) -- the finding-#1 witness-path panic does NOT recur inside the VM builtin.",
+ "hash_note": "blake2b_256/224, keccak_256 (true Ethereum keccak), sha2_256, sha3_256 all compute identically to the standard on both. ripemd_160 is UNCOSTED in this chain PlutusV3 cost model (amaru consumed_budget=int64-max sentinel) -> any use exceeds the budget -> both reject identically; output not validatable here.",
+ "results": {
+  "ed25519-wrongsig": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ed25519-wrongmsg": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ed25519-noncurve-vk": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "h_blake2b_256-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "h_blake2b_224-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "h_keccak_256-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "h_sha2_256-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "h_sha3_256-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "h_ripemd_160-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "h_ripemd_160-wrong": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   }
+  },
+  "ed25519-valid": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "h_blake2b_256-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "h_blake2b_224-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "h_keccak_256-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "h_sha2_256-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "h_sha3_256-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}
