@@ -1,0 +1,64 @@
+{
+ "date": "2026-09-27",
+ "surface": "reference-input resolution",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 (fef83fed) :8111",
+  "amaru": "Amaru 10.11.20260925 (eaf8ac3f) :3211"
+ },
+ "note": "ref-many first read INCONCLUSIVE (amaru unavailable) due to a reset-timing startup race (amaru exited: Process start must be after Ouroboros system start time); fail-closed flagged it, not a false result; re-graded after a longer post-reset wait -> AGREE.",
+ "results": {
+  "ref-nonexistent": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "reject",
+    "cardano": "reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "ref_unknown"
+    ],
+    "cardano": [
+     "ref_unknown"
+    ]
+   },
+   "input_parity": true
+  },
+  "ref-equals-spend": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "reject",
+    "cardano": "reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "ref_nondisjoint"
+    ],
+    "cardano": [
+     "ref_nondisjoint"
+    ]
+   },
+   "input_parity": true
+  },
+  "ref-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ref-duplicate": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "ref-many": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}

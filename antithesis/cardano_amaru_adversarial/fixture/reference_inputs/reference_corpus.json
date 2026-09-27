@@ -1,0 +1,50 @@
+{
+ "description": "Reference-input resolution phase-1 differential (cardano 11.1.2 vs amaru 0925). Reachable-on-frozen-chain slice: reference-INPUT resolution (existing/nonexistent refs, ref==spend disjointness, duplicate/many). Reference-SCRIPT + inline-datum spends need pre-mined script UTxOs (substrate ask). Verdict + reason-class + input parity; fail-closed. All AGREE 2026-09-27.",
+ "cases": [
+  {
+   "case_id": "ref-ok",
+   "tx_file": "ref-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 242,
+   "cbor_sha256": "fe8f3623e6163b8a967702eb2f77688664b6c8e58cfbc627bbf2f29a678dc49e",
+   "note": "spend funding; read-only reference a distinct existing UTxO (not spent) -> both accept"
+  },
+  {
+   "case_id": "ref-duplicate",
+   "tx_file": "ref-duplicate.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 242,
+   "cbor_sha256": "fe8f3623e6163b8a967702eb2f77688664b6c8e58cfbc627bbf2f29a678dc49e",
+   "note": "same reference input listed twice -> dedup (set) -> both accept"
+  },
+  {
+   "case_id": "ref-many",
+   "tx_file": "ref-many.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 314,
+   "cbor_sha256": "1915078511de8996209712d1100de527c470e179f3e8b1ab6e7e47f45986f02b",
+   "note": "three distinct reference inputs -> both accept"
+  },
+  {
+   "case_id": "ref-nonexistent",
+   "tx_file": "ref-nonexistent.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 242,
+   "cbor_sha256": "3509e784418f744278f734933a6c1f5c45792d6d7b0b380c0d5b0d2152b0f1dc",
+   "note": "reference input 0000..#0 not in the UTxO set -> both reject (cardano BadInputsUTxO / amaru unknown ref input); same input named"
+  },
+  {
+   "case_id": "ref-equals-spend",
+   "tx_file": "ref-equals-spend.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 242,
+   "cbor_sha256": "6b6102714665af0d541173ff8a37f2b4f631474e6fa401daff7694f095abe575",
+   "note": "funding UTxO used as BOTH spend input and reference input -> both reject (cardano BabbageNonDisjointRefInputs / amaru inputs in both reference and spent); same input named"
+  }
+ ]
+}
