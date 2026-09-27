@@ -1,0 +1,53 @@
+{
+ "description": "Certificate & deposit state-transition edges (cardano 11.1.2 vs amaru 0925), extending the stake/pool-withdrawal family. Reachable intra-tx cert-sequence edges with fresh creds: dereg-unregistered, reg+dereg round-trip, dereg wrong-refund (deposit exactness), vote-deleg to a nonexistent DRep. amaru accepting a bad state transition or mis-accounting a deposit where cardano rejects = HIGH. Verdict -> reason-class -> credential parity, fail-closed. NOT expressible on the frozen substrate (documented): intra-tx double-registration (Conway certs are a SET -> identical certs dedup); delegate-to-retired-pool, pool-reReg-after-retirement, DRep-already-registered, expired-DRep (need pre-existing on-chain state / a gov re-bake).",
+ "cases": [
+  {
+   "case_id": "dereg-unregistered",
+   "tx_file": "dereg-unregistered.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 346,
+   "cbor_sha256": "215ad7dff6fafcf2633207e42bf77350867642104b9c1216fad6bb2962e73dac",
+   "reason_classes": [
+    "stake_not_registered"
+   ],
+   "note": "deregister a fresh, never-registered stake cred -> both reject (not registered), same cred",
+   "credential": "3e762d7f3adee5d616739be2f35d5f5e4d06d68e0d1f17a008123aab"
+  },
+  {
+   "case_id": "reg-dereg-wrong-refund",
+   "tx_file": "reg-dereg-wrong-refund.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 385,
+   "cbor_sha256": "a1b6b32e7997e0436a97a052e95ebe72a3887a2392c70c5fee1dbe7fbff4c1fe",
+   "reason_classes": [
+    "incorrect_deposit"
+   ],
+   "note": "reg (deposit 2 ADA) + dereg declaring 1 ADA refund in one tx -> both reject IncorrectDeposit (deposit exactness on the refund)"
+  },
+  {
+   "case_id": "regvote-nodrep",
+   "tx_file": "regvote-nodrep.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 378,
+   "cbor_sha256": "7e89cbb19c42a571635bbd6706db0b6b28a83f22938a8ab1137849911681e989",
+   "reason_classes": [
+    "drep_not_registered"
+   ],
+   "note": "register + vote-delegate to a nonexistent DRep key-hash -> both reject (DRep not registered), same DRep id",
+   "credential": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+  },
+  {
+   "case_id": "reg-dereg-samecred",
+   "tx_file": "reg-dereg-samecred.tx",
+   "expected": "accept",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 385,
+   "cbor_sha256": "95ff6e75f95438fadb8d5a34e8cbf2ecb45feaf59e2a4a5ecf16786317d4e828",
+   "reason_classes": [],
+   "note": "register then deregister the same fresh cred in one tx (deposit charged then refunded) -> both accept"
+  }
+ ]
+}

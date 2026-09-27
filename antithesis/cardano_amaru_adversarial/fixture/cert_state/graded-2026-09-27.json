@@ -1,0 +1,67 @@
+{
+ "date": "2026-09-27",
+ "surface": "certificate & deposit state-transition edges",
+ "substrate": {
+  "cardano": "cardano-node 11.1.2 :8113 (pair4)",
+  "amaru": "amaru 0925 clean eaf8ac3f :3213"
+ },
+ "high_probes": "amaru accepting a bad state transition or mis-accounting a deposit where cardano rejects would be HIGH; none observed.",
+ "not_expressible_or_substrate_limited": {
+  "intra_tx_double_registration": "Conway certs are a SET; two identical reg certs dedup (cardano-cli collapsed them) -> not expressible in one tx",
+  "delegate_to_retired_pool / pool_reReg_after_retirement / DRep_already_registered / expired_DRep": "need pre-existing on-chain registered/retired/expired state that the frozen substrate does not provide and cannot be created without forging (or a gov re-bake)"
+ },
+ "results": {
+  "dereg-unregistered": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "stake_not_registered"
+    ],
+    "cardano": [
+     "stake_not_registered"
+    ]
+   }
+  },
+  "reg-dereg-wrong-refund": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "incorrect_deposit"
+    ],
+    "cardano": [
+     "incorrect_deposit"
+    ]
+   }
+  },
+  "regvote-nodrep": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase1_reject",
+    "cardano": "phase1_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "drep_not_registered"
+    ],
+    "cardano": [
+     "drep_not_registered"
+    ]
+   }
+  },
+  "reg-dereg-samecred": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}
