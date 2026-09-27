@@ -1,0 +1,133 @@
+{
+ "date": "2026-09-27",
+ "phase": "2c-errorpath",
+ "tool": "aiken v1.1.24",
+ "liveness": "both nodes stayed 400/alive after every error-path edge - no VM panic",
+ "results": {
+  "div-zero": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "mod-zero": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "cons-oob": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "i2b-toosmall": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "i2b-oversized": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "bls-bad": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "phase2_reject",
+    "cardano": "phase2_reject"
+   },
+   "reason_classes": {
+    "amaru": [
+     "tag_mismatch"
+    ],
+    "cardano": [
+     "tag_mismatch"
+    ]
+   }
+  },
+  "div-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "mod-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "cons-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "i2b-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  },
+  "bls-ok": {
+   "status": "AGREE",
+   "classes": {
+    "amaru": "accepted",
+    "cardano": "accepted"
+   }
+  }
+ }
+}

@@ -1,0 +1,104 @@
+{
+ "description": "Plutus phase-2c error-path builtins (Aiken V3): divide/mod-by-zero, consByteString out-of-range, integerToByteString width edges, BLS12-381 non-canonical uncompress. Edge value via redeemer (no constant-folding). Valid->accept, error->reject on both. Verdict + phase-2 reason-class parity. All edges left BOTH nodes alive (no VM panic).",
+ "cases": [
+  {
+   "case_id": "div-ok",
+   "tx_file": "div-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 478,
+   "cbor_sha256": "918e5156fe73c22dbb5471a330ffd307908414642a1cba9aa0aa73e8d83a4c8c",
+   "note": "divideInteger(10,2)==5"
+  },
+  {
+   "case_id": "div-zero",
+   "tx_file": "div-zero.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 478,
+   "cbor_sha256": "39e15ebf33f93aabfd95e947029e9a5e2960e48e90ce44fc897d3980ce2423b9",
+   "note": "divideInteger(10,0) -> div-by-zero error"
+  },
+  {
+   "case_id": "mod-ok",
+   "tx_file": "mod-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 478,
+   "cbor_sha256": "ee73fed5bec21734d7273242738aa5fb34ce91ce925699b347f2727e28a1abed",
+   "note": "modInteger(10,5)==0"
+  },
+  {
+   "case_id": "mod-zero",
+   "tx_file": "mod-zero.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 478,
+   "cbor_sha256": "a7971022bfa3af1667d2e39efd4e644d8f054b2f58b85b1bba5df37b851bc2f7",
+   "note": "modInteger(10,0) -> mod-by-zero error"
+  },
+  {
+   "case_id": "cons-ok",
+   "tx_file": "cons-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 482,
+   "cbor_sha256": "59edb06b8b0aa4a0756361a80a71fffd5d5b2f16d43965545f36d0e1bcb3ca51",
+   "note": "consByteString(65,#\"\")==0x41"
+  },
+  {
+   "case_id": "cons-oob",
+   "tx_file": "cons-oob.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 483,
+   "cbor_sha256": "439d626f813af7a236c1ae8407bc0955ebcc01dc263fa6fa8c34ac75c7d7e561",
+   "note": "consByteString(256,#\"\") -> byte-out-of-range error"
+  },
+  {
+   "case_id": "i2b-ok",
+   "tx_file": "i2b-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 484,
+   "cbor_sha256": "75226ce20b5eae0f5d5d77bdc939f69ed3aa20e13ac82625bf203d4be02644ac",
+   "note": "integerToByteString(be,0,258) minimal -> len>0"
+  },
+  {
+   "case_id": "i2b-toosmall",
+   "tx_file": "i2b-toosmall.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 484,
+   "cbor_sha256": "0b4fb1b5d7910acc94fa64fc7ec58d8135b2ba58f3eff8674e68593a99c8340f",
+   "note": "integerToByteString(be,1,258) -> width too small error"
+  },
+  {
+   "case_id": "i2b-oversized",
+   "tx_file": "i2b-oversized.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 486,
+   "cbor_sha256": "45744c46e6949e68597d7c5990a5c8e36610ec84a1b728f3c5180c2f2607efc5",
+   "note": "integerToByteString(be,9000,1) -> oversized width error"
+  },
+  {
+   "case_id": "bls-ok",
+   "tx_file": "bls-ok.tx",
+   "expected": "accept",
+   "single_use": true,
+   "cbor_size": 528,
+   "cbor_sha256": "d2195ef2a9e07284e80d5f67d7780a8cd43a16e05f63b1b351f83993610c927a",
+   "note": "bls12_381_g1 uncompress+compress generator round-trips"
+  },
+  {
+   "case_id": "bls-bad",
+   "tx_file": "bls-bad.tx",
+   "expected": "reject",
+   "single_use": false,
+   "cbor_size": 528,
+   "cbor_sha256": "a73383f15f225d7c6387f7f5b66cab156ad4db2a172486f43ef92a345c6ac078",
+   "note": "bls12_381_g1_uncompress(0xff*48) -> invalid-encoding error"
+  }
+ ]
+}

@@ -138,3 +138,29 @@ pairing / subgroup & non-canonical encodings), more V3 builtins (`consByteString
 `byteStringToInteger`, `divideInteger`-by-zero), and more ScriptContext fields (`txInfoInputs`
 ordering, `txInfoRedeemers`, V3 `ScriptInfo`) — are follow-ups if the operator wants deeper
 coverage.
+
+## Phase-2c: error-path builtins (2026-09-27)
+
+The VM interpreter's error paths — where a phase-2 divergence or an Amaru VM panic is most
+likely. Real Aiken `v1.1.24` PlutusV3 policies; the edge value is supplied via the **redeemer**
+(runtime), so Aiken cannot constant-fold the error at compile time (same validator, control
+redeemer vs error redeemer). Corpus + source in `fixture/plutus2c/`. **11/11 AGREE, and both
+nodes stayed alive after every error-path edge — no VM panic.**
+
+| builtin | control (accept) | error edge (reject) | result |
+|---|---|---|---|
+| `divideInteger` | `divideInteger(10,2)==5` | `divideInteger(10,0)` (÷0) | AGREE |
+| `modInteger` | `modInteger(10,5)==0` | `modInteger(10,0)` (mod 0) | AGREE |
+| `consByteString` | `consByteString(65,#"")==0x41` | `consByteString(256,#"")` (byte>255) | AGREE |
+| `integerToByteString` | `intToBS(be,0,258)` minimal | `intToBS(be,1,258)` (width too small) **and** `intToBS(be,9000,1)` (oversized width) | AGREE |
+| `bls12_381_g1_uncompress` | uncompress+compress the generator round-trips | `uncompress(0xff·48)` (invalid encoding) | AGREE |
+
+Every control is accepted by both (same tx id); every error edge is rejected by both with a
+phase-2 tag mismatch. **Amaru's UPLC interpreter fails these builtin error paths the same way
+cardano-node's does, and — importantly, given the VM interpreter is fresh ground after the
+submit-path panic finding — none of the error edges crashed the node** (both submit APIs answered
+after each: liveness confirmed).
+
+Scope: two edges on `integerToByteString`, one on each other builtin. Further error edges
+(`byteStringToInteger` bounds, `sliceByteString`/`indexByteString` out-of-range, BLS subgroup /
+G2 / pairing-mismatch, `unConstrData` type errors) are natural follow-ups.
