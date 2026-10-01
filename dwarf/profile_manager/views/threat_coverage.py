@@ -164,6 +164,10 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-015", "TM-016"),
         "risks": ("RR-015", "RR-016"),
     },
+    "ledger-submit-plutus-case-over-builtin-pv10-differential-amaru-cardano-node": {
+        "threats": ("TM-016", "TM-036"),
+        "risks": ("RR-016", "RR-031"),
+    },
 }
 
 
