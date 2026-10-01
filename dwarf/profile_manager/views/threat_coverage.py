@@ -160,9 +160,9 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-016",),
         "risks": ("RR-016",),
     },
-    "ledger-submit-collateral-foreign-unwitnessed-differential-amaru-cardano-node": {
-        "threats": ("TM-016",),
-        "risks": ("RR-016", "RR-031",),
+    "ledger-submit-stakeaddr-output-differential-amaru-cardano-node": {
+        "threats": ("TM-015", "TM-016"),
+        "risks": ("RR-015", "RR-016"),
     },
 }
 

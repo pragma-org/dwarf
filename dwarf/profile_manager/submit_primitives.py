@@ -73,7 +73,15 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
         tx_path = Path(self.params["tx_file"])
         if not tx_path.is_absolute():
             tx_path = rd / tx_path
-        payload = tx_path.read_bytes()
+        raw = tx_path.read_bytes()
+        # accept either a raw CBOR tx (.cbor) or a cardano-cli text envelope ({"cborHex": ...})
+        payload = raw
+        stripped = raw.lstrip()[:1]
+        if stripped == b"{":
+            try:
+                payload = bytes.fromhex(json.loads(raw.decode("utf-8"))["cborHex"])
+            except Exception:  # noqa: BLE001
+                payload = raw
 
         nodes = {}
         rmp = self.params.get("runtime_metadata_path")

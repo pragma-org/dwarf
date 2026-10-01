@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
-  "id": "ledger-submit-collateral-foreign-unwitnessed-differential-amaru-cardano-node",
-  "title": "Ledger submit differential \u2014 no-script tx with unwitnessed foreign collateral: amaru accepts (collateral.rs !has_redeemers); cardano-node rejects (missing collateral witness)",
+  "id": "ledger-submit-stakeaddr-output-differential-amaru-cardano-node",
+  "title": "Ledger submit differential \u2014 bare stake-address (0xe0) output in a 4-element tx: amaru accepts (202, lenient address decode); cardano-node decode-rejects the 0xe0 output (Invalid header 0b11100000) \u2014 isolated from the tx-arity finding",
   "authors": [
     "dwarf"
   ],
@@ -10,13 +10,13 @@
     "accept-invalid",
     "amaru",
     "cardano-node",
-    "collateral",
     "conway",
+    "decode-leniency",
     "differential",
     "finding",
     "ledger",
-    "submit",
-    "witness-bypass"
+    "stake-address",
+    "submit"
   ],
   "evidence_intent": "finding-validation",
   "target": {
@@ -69,7 +69,7 @@
     {
       "primitive": "runtime_tx_submit_differential",
       "output_dir": "outputs/tx-submit-differential",
-      "tx_file": "antithesis/cardano_amaru_adversarial/fixture/collateral/p1-foreign-collateral-no-redeemers.tx",
+      "tx_file": "antithesis/cardano_amaru_adversarial/fixture/ledger_submit/stakeaddr-output-preflight.cbor",
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "node1",
       "reference_node": "node2",
