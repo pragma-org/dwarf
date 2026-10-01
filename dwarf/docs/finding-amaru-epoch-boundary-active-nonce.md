@@ -270,3 +270,18 @@ proves the single-socket serve→header-adopt bridge end-to-end. Forge/serve pro
 (blocklevel/keys), forced nonce 3a5e3601, block.json point_hash 2304558b… (blake2b256 of the forged
 header). Empty (milestone-1) body — header-level adoption; body block-fetch + ledger-apply is the
 milestone-2 step for crafted-body block-apply findings.
+
+## Reproduce via DWARF
+
+**Scenario:** `consensus-epoch-boundary-active-nonce-differential`
+
+```
+dwarf run --scenario dwarf/scenarios/consensus-epoch-boundary-active-nonce-differential.yaml --profile block-apply-adversary
+```
+
+Whole block-apply suite: `bash dwarf/profiles/block-apply-adversary/run.sh`. The scenario encodes
+the block-apply differential via the `block_apply_differential` load + `block_apply_outcome_matches`
+assertion (expected outcome: amaru crash / accept-invalid vs cardano-node reject); the submit-level
+differential and evidence are in the sections above. Bridge primitives live in `dwarf/block_apply/`
+(see its README); `forge_block` + `serve_crafted_block` require the external cardano-crypto forge
+and serve responder plus a live amaru/cardano pair.

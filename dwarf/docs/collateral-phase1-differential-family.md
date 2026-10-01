@@ -230,3 +230,18 @@ would-accept-INVALID-BLOCK.
 `/home/nigel/forge-work/pathb/outputs/forged-block/artifacts/collateral-apply-2026-09-30/`
 (block.json, serve.log, amaru-collateral-apply.txt) + `artifacts/collateral-preflight-evidence.txt`.
 Severity: MEDIUM (accept-invalid at block level; foreign collateral is not attacker-owned so bounded).
+
+## Reproduce via DWARF
+
+**Scenario:** `ledger-block-apply-collateral-foreign-unwitnessed-differential-amaru-cardano-node`
+
+```
+dwarf run --scenario dwarf/scenarios/ledger-block-apply-collateral-foreign-unwitnessed-differential-amaru-cardano-node.yaml --profile block-apply-adversary
+```
+
+Whole block-apply suite: `bash dwarf/profiles/block-apply-adversary/run.sh`. The scenario encodes
+the block-apply differential via the `block_apply_differential` load + `block_apply_outcome_matches`
+assertion (expected outcome: amaru crash / accept-invalid vs cardano-node reject); the submit-level
+differential and evidence are in the sections above. Bridge primitives live in `dwarf/block_apply/`
+(see its README); `forge_block` + `serve_crafted_block` require the external cardano-crypto forge
+and serve responder plus a live amaru/cardano pair.

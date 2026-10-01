@@ -3524,6 +3524,91 @@
         "amaru"
       ],
       "version": "0.1.0"
+    },
+    "build_block_segments": {
+      "class": "BuildBlockSegments",
+      "family": "setup",
+      "module": "profile_manager.block_apply_primitives",
+      "params_schema": "primitives/setup/build_block_segments.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "forge_block": {
+      "class": "ForgeBlock",
+      "family": "setup",
+      "module": "profile_manager.block_apply_primitives",
+      "params_schema": "primitives/setup/forge_block.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "assemble_blockjson": {
+      "class": "AssembleBlockjson",
+      "family": "setup",
+      "module": "profile_manager.block_apply_primitives",
+      "params_schema": "primitives/setup/assemble_blockjson.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "serve_crafted_block": {
+      "class": "ServeCraftedBlock",
+      "family": "load",
+      "module": "profile_manager.block_apply_primitives",
+      "params_schema": "primitives/load/serve_crafted_block.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "block_apply_differential": {
+      "class": "BlockApplyDifferential",
+      "family": "load",
+      "module": "profile_manager.block_apply_primitives",
+      "params_schema": "primitives/load/block_apply_differential.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "block_apply_outcome_matches": {
+      "class": "BlockApplyOutcomeMatches",
+      "family": "assertion",
+      "module": "profile_manager.block_apply_primitives",
+      "params_schema": "primitives/assertion/block_apply_outcome_matches.schema.json",
+      "runtimes": [
+        "devnet",
+        "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
     }
   }
 }

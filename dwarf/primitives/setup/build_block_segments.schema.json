@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "build_block_segments params",
+  "type": "object",
+  "required": [
+    "primitive"
+  ],
+  "properties": {
+    "primitive": {
+      "const": "build_block_segments"
+    },
+    "output_dir": {
+      "type": "string"
+    },
+    "args": {
+      "type": "array"
+    },
+    "primitive_version": {
+      "type": "string"
+    },
+    "tx_file": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "out_name": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

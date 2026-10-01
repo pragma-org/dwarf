@@ -121,3 +121,18 @@ Keys testnet-only.
 `outputs.rs` must reject an output whose address is not a payment address (mirror cardano's decode /
 `outputs` validation), and `inputs.rs:122` / `collateral.rs:93,98` must return a typed error instead
 of `unreachable!()` for any address shape that can reach them.
+
+## Reproduce via DWARF
+
+**Scenario:** `ledger-block-apply-stake-address-output-crash-differential-amaru-cardano-node`
+
+```
+dwarf run --scenario dwarf/scenarios/ledger-block-apply-stake-address-output-crash-differential-amaru-cardano-node.yaml --profile block-apply-adversary
+```
+
+Whole block-apply suite: `bash dwarf/profiles/block-apply-adversary/run.sh`. The scenario encodes
+the block-apply differential via the `block_apply_differential` load + `block_apply_outcome_matches`
+assertion (expected outcome: amaru crash / accept-invalid vs cardano-node reject); the submit-level
+differential and evidence are in the sections above. Bridge primitives live in `dwarf/block_apply/`
+(see its README); `forge_block` + `serve_crafted_block` require the external cardano-crypto forge
+and serve responder plus a live amaru/cardano pair.

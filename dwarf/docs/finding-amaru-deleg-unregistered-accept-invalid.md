@@ -71,3 +71,18 @@ Keys testnet-only.
 Enforce the registration precondition on the `StakeDelegation` path (and the sibling UPDATE-style
 `VoteDelegation` / `StakeVoteDelegation` / `UpdateDRep` paths), mirroring cardano-node's
 `StakeKeyNotRegisteredDELEG`, instead of an unconditional `bind_left`.
+
+## Reproduce via DWARF
+
+**Scenario:** `ledger-block-apply-cert-phantom-deleg-unregistered-differential-amaru-cardano-node`
+
+```
+dwarf run --scenario dwarf/scenarios/ledger-block-apply-cert-phantom-deleg-unregistered-differential-amaru-cardano-node.yaml --profile block-apply-adversary
+```
+
+Whole block-apply suite: `bash dwarf/profiles/block-apply-adversary/run.sh`. The scenario encodes
+the block-apply differential via the `block_apply_differential` load + `block_apply_outcome_matches`
+assertion (expected outcome: amaru crash / accept-invalid vs cardano-node reject); the submit-level
+differential and evidence are in the sections above. Bridge primitives live in `dwarf/block_apply/`
+(see its README); `forge_block` + `serve_crafted_block` require the external cardano-crypto forge
+and serve responder plus a live amaru/cardano pair.

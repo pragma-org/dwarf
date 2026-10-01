@@ -1,0 +1,12 @@
+{
+  "id": "block-apply-adversary",
+  "label": "Block-apply adversary — forged-block bridge (1 Amaru + 1 Haskell)",
+  "node_type": "mixed",
+  "node_count": 1,
+  "amaru_node_count": 1,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "latest-confirmed",
+  "remote_runtime_root": "/opt/dwarf/cardano-profiles/block-apply-adversary",
+  "compose_project": "dwarf-block-apply-adversary"
+}

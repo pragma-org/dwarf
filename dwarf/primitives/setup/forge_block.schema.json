@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "forge_block params",
+  "type": "object",
+  "required": [
+    "primitive"
+  ],
+  "properties": {
+    "primitive": {
+      "const": "forge_block"
+    },
+    "output_dir": {
+      "type": "string"
+    },
+    "args": {
+      "type": "array"
+    },
+    "primitive_version": {
+      "type": "string"
+    },
+    "body_segments_path": {
+      "type": "string"
+    },
+    "forced_nonce": {
+      "type": "string"
+    },
+    "pool_keys_dir": {
+      "type": "string"
+    },
+    "slot": {
+      "type": "integer"
+    },
+    "prev_hash": {
+      "type": "string"
+    },
+    "block_height": {
+      "type": "integer"
+    }
+  },
+  "additionalProperties": true
+}

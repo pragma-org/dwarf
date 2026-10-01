@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "serve_crafted_block params",
+  "type": "object",
+  "required": [
+    "primitive"
+  ],
+  "properties": {
+    "primitive": {
+      "const": "serve_crafted_block"
+    },
+    "output_dir": {
+      "type": "string"
+    },
+    "args": {
+      "type": "array"
+    },
+    "primitive_version": {
+      "type": "string"
+    },
+    "block_json_path": {
+      "type": "string"
+    },
+    "bind_address": {
+      "type": "string"
+    },
+    "bind_port": {
+      "type": "integer"
+    }
+  },
+  "additionalProperties": true
+}
