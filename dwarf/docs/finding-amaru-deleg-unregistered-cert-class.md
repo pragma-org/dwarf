@@ -71,4 +71,3 @@ amaru would follow a chain containing blocks the Haskell reference rejects. The 
 target credential is registered before the bind/update, matching the reference's `*NotRegistered*`
 ledger rules, across all four cert types.
 
-<!-- GHSA submission block: to be added from the finalized template (orchestrator) -->

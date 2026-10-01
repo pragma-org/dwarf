@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime_tx_submit_differential params",
+  "type": "object",
+  "required": [
+    "primitive",
+    "tx_file"
+  ],
+  "properties": {
+    "primitive": {
+      "const": "runtime_tx_submit_differential"
+    },
+    "output_dir": {
+      "type": "string"
+    },
+    "args": {
+      "type": "array"
+    },
+    "primitive_version": {
+      "type": "string"
+    },
+    "tx_file": {
+      "type": "string"
+    },
+    "runtime_metadata_path": {
+      "type": "string"
+    },
+    "target_node": {
+      "type": "string"
+    },
+    "reference_node": {
+      "type": "string"
+    },
+    "target_submit_api": {
+      "type": "string"
+    },
+    "reference_submit_api": {
+      "type": "string"
+    },
+    "expected_target_outcome": {
+      "type": "string",
+      "enum": [
+        "accept",
+        "reject",
+        "crash",
+        "unknown"
+      ]
+    },
+    "expected_reference_outcome": {
+      "type": "string",
+      "enum": [
+        "accept",
+        "reject",
+        "crash",
+        "unknown"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

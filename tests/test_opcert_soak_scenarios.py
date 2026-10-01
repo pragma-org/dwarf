@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_scenario_count_is_323():
-    assert len(list(Path("dwarf/scenarios").glob("*.yaml"))) == 323
+    assert len(list(Path("dwarf/scenarios").glob("*.yaml"))) == 326
 
 
 def test_soak_scenarios_present():

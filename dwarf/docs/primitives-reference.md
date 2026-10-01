@@ -7804,6 +7804,51 @@ _No authored scenario example found._
 }
 ```
 
+## `runtime_tx_submit_differential`
+
+- Family: `load`
+- Version: `0.1.0`
+- Module: `profile_manager.submit_primitives`
+- Class: `RuntimeTxSubmitDifferential`
+- Supports: `cardano-node`, `amaru`
+- Runtimes: `devnet`
+- Schema: `primitives/load/runtime_tx_submit_differential.schema.json`
+
+### Parameters
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| `args` | `array` | `no` | - |
+| `expected_reference_outcome` | `string` | `no` | - |
+| `expected_target_outcome` | `string` | `no` | - |
+| `output_dir` | `string` | `no` | - |
+| `primitive` | `unspecified` | `yes` | - |
+| `primitive_version` | `string` | `no` | - |
+| `reference_node` | `string` | `no` | - |
+| `reference_submit_api` | `string` | `no` | - |
+| `runtime_metadata_path` | `string` | `no` | - |
+| `target_node` | `string` | `no` | - |
+| `target_submit_api` | `string` | `no` | - |
+| `tx_file` | `string` | `yes` | - |
+
+### Example Invocation
+
+```json
+{
+  "reference": {
+    "expected_reference_outcome": "reject",
+    "expected_target_outcome": "accept",
+    "output_dir": "outputs/tx-submit-differential",
+    "primitive": "runtime_tx_submit_differential",
+    "reference_node": "node2",
+    "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+    "target_node": "node1",
+    "tx_file": "antithesis/cardano_amaru_adversarial/fixture/deleg_cert_class/stakevotedeleg-preflight.cbor"
+  },
+  "scenario": "ledger-submit-stakevotedeleg-deleg-unregistered-differential-amaru-cardano-node"
+}
+```
+
 ## `runtime_txsubmission_batch_pressure`
 
 - Family: `load`
@@ -8511,6 +8556,41 @@ _No parameters._
     "primitive": "stake_snapshot_freeze_consistent"
   },
   "scenario": "runtime-substrate-compound-stake-snapshot-hf-boundary-example-smoke"
+}
+```
+
+## `submit_outcome_matches`
+
+- Family: `assertion`
+- Version: `0.1.0`
+- Module: `profile_manager.submit_primitives`
+- Class: `SubmitOutcomeMatches`
+- Supports: `cardano-node`, `amaru`
+- Runtimes: `devnet`, `library`
+- Schema: `primitives/assertion/submit_outcome_matches.schema.json`
+
+### Parameters
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| `args` | `array` | `no` | - |
+| `expected_reference_outcome` | `string` | `no` | - |
+| `expected_target_outcome` | `string` | `no` | - |
+| `output_dir` | `string` | `no` | - |
+| `primitive` | `unspecified` | `yes` | - |
+| `primitive_version` | `string` | `no` | - |
+| `source_primitive` | `string` | `no` | - |
+
+### Example Invocation
+
+```json
+{
+  "reference": {
+    "expected_reference_outcome": "reject",
+    "expected_target_outcome": "accept",
+    "primitive": "submit_outcome_matches"
+  },
+  "scenario": "ledger-submit-stakevotedeleg-deleg-unregistered-differential-amaru-cardano-node"
 }
 ```
 
