@@ -73,3 +73,23 @@ expected_target=accept / expected_reference=reject). Fixture committed under
   is_valid consensus on a mixed network. PoC: `case-constant-control.tx` (PlutusV3, script hash
   1368c2c8…) → amaru 202 / cardano-node phase-2 CekError. Fix: enforce the pv10 restriction on `case`
   over built-in types in amaru's CEK machine to match the reference.
+
+## Source scope (audit of amaru 9eb5971f CEK pv-gating) — narrow, single-site
+
+The missing gate is ONE eval site, not a broad class. amaru gates pv correctly everywhere else:
+- `crates/amaru-uplc/src/builtin/default_function.rs:479` `is_available_in(protocol_version)` — builtins ARE pv-gated (>=PV10 / >=PV11 branches). A pv11-only builtin at pv10 is correctly rejected.
+- `crates/amaru-uplc/src/flat/decode/decoder.rs:42` `is_constr_case_available(&self)` = `protocol_version >= PROTOCOL_VERSION_10 && machine_version.is_constr_case_available()` — the DECODE-time constr/case gate correctly checks BOTH protocol and machine version.
+- DEFECT: `crates/amaru-uplc/src/machine/cek.rs:247` — the CEK eval of `case` over a built-in scrutinee:
+  `Value::Con(constant) if self.machine_version.is_constr_case_available() => { ... }`
+  gates by the MACHINE version ALONE (`self.machine_version.is_constr_case_available()`), omitting the
+  protocol_version conjunct. So at protocol version 10, a script whose machine_version permits SOP/case
+  evaluates `case` over a built-in constant successfully — where cardano-node rejects it (pv10). The
+  branch falls through to `Value::Constr` (line 236, case-over-Data, correctly allowed pv10) which is why
+  the case-over-Data control AGREES; only the built-in-scrutinee arm is mis-gated.
+
+Fix: cek.rs:247 should use the protocol-version-aware check (as decoder.rs:42 does) — i.e. also require
+protocol_version to permit case-over-builtin (the reference enables it only at pv >= 11) — instead of
+`machine_version` alone.
+
+Scope verdict: case-over-built-in-scrutinee at the CEK eval site is the SPECIFIC defect; builtins and
+decode-time constr/case are correctly protocol-gated. Not a broad missing-pv-gate class.
