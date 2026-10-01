@@ -46,7 +46,7 @@ CASES = {
     "unminted-policy-output": ("reject", ["value_not_conserved"], OTH, "UTXO ValueNotConserved",
         "output carries 10 OTHER of an unminted, unwitnessed policy; no mint"),
     # D. multi-asset min-ADA / value size
-    "minada-token-below": ("reject", ["output_too_small"], str(MIN - 1), "UTXO BabbageOutputTooSmall",
+    "minada-asset-below": ("reject", ["output_too_small"], str(MIN - 1), "UTXO BabbageOutputTooSmall",
         f"token output at the multi-asset min-UTxO - 1 ({MIN - 1}; ADA-only min is lower)"),
     "value-too-big": ("reject", ["output_too_big"], "5000", "UTXO OutputTooBig (maxValueSize 5000)",
         "one output carrying 150 x 32-byte asset names (serialised value > 5000 B); both nodes "
@@ -55,7 +55,7 @@ CASES = {
     "mint-valid": ("accept", [], None, "control", "mint 10 MINT, policy script + key witness"),
     "multiasset-mint-valid": ("accept", [], None, "control (multi-asset MINT, not a burn)",
         "mint 10 MINT + 3 MINTB in one tx"),
-    "minada-token-at-min": ("accept", [], None, "control (min-UTxO boundary)",
+    "minada-asset-at-min": ("accept", [], None, "control (min-UTxO boundary)",
         f"token output at exactly the multi-asset min-UTxO {MIN}"),
 }
 

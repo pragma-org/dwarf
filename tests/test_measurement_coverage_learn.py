@@ -55,7 +55,7 @@ def test_render_time_join_reconciles_current_authoritative_sources():
 
     assert len(views["threats"]) == 36
     assert len(views["risks"]) == 35
-    assert sum(row["scenario_count"] for row in views["scenario_families"]) == 310
+    assert sum(row["scenario_count"] for row in views["scenario_families"]) == 323
     assert len({row["id"] for row in views["scenario_families"]}) == len(
         views["scenario_families"]
     )
@@ -178,9 +178,18 @@ def test_card06_uses_only_its_contract_threat_and_risk_mappings():
             if item["card_id"] == "06"
             for tap in item["measurements"]
         }
+        # TM-012/RR-012 became a SHARED row once runtime-substrate-mempool-
+        # failure-containment-mixed-amaru mapped in (its proper home: TM-012
+        # "Fatal mempool insertion failure boundary" / RR-012). Its resource/
+        # runtime surface pulls stock-resources taps into the row, and card06
+        # (Simple transfer measurement) legitimately carries stock-resources
+        # evidence too (required_collectors amaru/cardano-stock-resources;
+        # node_resource_window), so it contributes both taps to the shared row.
         assert card06_taps == {
             "amaru-external-workload-accounting",
             "cardano-external-workload-accounting",
+            "amaru-stock-resources",
+            "cardano-stock-resources",
         }
 
 

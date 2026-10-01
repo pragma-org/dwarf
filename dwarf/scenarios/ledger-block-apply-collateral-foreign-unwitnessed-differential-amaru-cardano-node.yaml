@@ -1,0 +1,137 @@
+{
+  "spec_version": "v1",
+  "id": "ledger-block-apply-collateral-foreign-unwitnessed-differential-amaru-cardano-node",
+  "title": "Ledger block-apply differential \u2014 no-script tx with unwitnessed foreign collateral: amaru accepts (submit 202, collateral.rs:76 !has_redeemers) and APPLIES the block (accept-invalid-block, alive); cardano-node rejects (missing collateral witness)",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "2026-10-01",
+    "accept-invalid-block",
+    "amaru",
+    "block-apply",
+    "cardano-node",
+    "collateral",
+    "conway",
+    "differential",
+    "finding",
+    "ledger",
+    "witness-bypass"
+  ],
+  "evidence_intent": "finding-validation",
+  "target": {
+    "implementation": "amaru",
+    "version": "v10.11.20260925",
+    "source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d"
+  },
+  "runtime": "devnet",
+  "substrate": {
+    "compose_mode": "host",
+    "network": "preview",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "amaru",
+        "version": "v10.11.20260925",
+        "role": "submitter"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "11.1.2",
+        "role": "observer"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {
+          "from": "node1",
+          "to": "node2"
+        },
+        {
+          "from": "node2",
+          "to": "node1"
+        }
+      ]
+    }
+  },
+  "setup": [
+    {
+      "primitive": "runtime_install_version",
+      "output_dir": "outputs/substrate-install"
+    },
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose"
+    },
+    {
+      "primitive": "build_block_segments",
+      "output_dir": "outputs/build-segments",
+      "tx_file": "fixture/collateral/p1-foreign-collateral-no-redeemers.tx",
+      "label": "collateral"
+    },
+    {
+      "primitive": "forge_block",
+      "output_dir": "outputs/forge-block",
+      "body_segments_path": "outputs/build-segments/body-segments.json",
+      "forced_nonce": "3a5e36011eec01657c4478a9b6f021d8d0eced3232b2796b79f40d0cd0620ebe",
+      "pool_keys_dir": "block_apply/keys-97b0",
+      "slot": 1211,
+      "prev_hash": "f4d474b8498a97a884f84b32ceede03bf392abae870a2b30b566f722192ff7bd",
+      "block_height": 234
+    },
+    {
+      "primitive": "assemble_blockjson",
+      "output_dir": "outputs/assemble",
+      "forge_result_path": "outputs/forge-block/forge-result.json"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "serve_crafted_block",
+      "output_dir": "outputs/serve",
+      "block_json_path": "outputs/assemble/block.json",
+      "bind_port": 3001
+    },
+    {
+      "primitive": "block_apply_differential",
+      "output_dir": "outputs/block-apply-differential",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "expected_outcome": "accept_invalid",
+      "watch_seconds": 120
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": [
+        "node1",
+        "node2"
+      ],
+      "observation_window_seconds": 8,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": [
+        "tip_state",
+        "connection_state"
+      ],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive"
+    },
+    {
+      "primitive": "block_apply_outcome_matches",
+      "expected_outcome": "accept_invalid"
+    }
+  ],
+  "teardown": [
+    {
+      "primitive": "runtime_teardown_substrate",
+      "output_dir": "outputs/substrate-teardown"
+    }
+  ]
+}

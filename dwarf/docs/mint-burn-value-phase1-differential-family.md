@@ -86,11 +86,11 @@ Rebuild: `PYTHON=<python with cbor2+cryptography> fixture/mint_burn/build.sh`.
 | asset-deficit | reject | `value_not_conserved` (mint 10, out 9) | policy id |
 | asset-relabel | reject | `value_not_conserved` (mint MINT, out MINTX) | policy id |
 | unminted-policy-output | reject | `value_not_conserved` (foreign policy, no mint) | other policy id |
-| minada-token-below | reject | `output_too_small` at 1017159 | `1017159` |
+| minada-asset-below | reject | `output_too_small` at 1017159 | `1017159` |
 | value-too-big | reject | `output_too_big` (150 × 32-B names) | `5000` + both reported sizes |
 | mint-valid | accept | control | — |
 | multiasset-mint-valid | accept | control (multi-asset mint) | — |
-| minada-token-at-min | accept | control (min-UTxO boundary 1017160) | — |
+| minada-asset-at-min | accept | control (min-UTxO boundary 1017160) | — |
 
 ## Result (pair 4, 2026-09-27)
 
@@ -103,7 +103,7 @@ Rebuild: `PYTHON=<python with cbor2+cryptography> fixture/mint_burn/build.sh`.
 | burn-int64-min | `ValueNotConservedUTxO` (no overflow) | `value not preserved` (no overflow) | AGREE + policy |
 | asset-surplus / -deficit / -relabel | `ValueNotConservedUTxO` | `value not preserved` | AGREE + policy |
 | unminted-policy-output | `ValueNotConservedUTxO` | `value not preserved: balance = (0, [3b723a2f…` | AGREE + other policy |
-| minada-token-below | `BabbageOutputTooSmallUTxO` (1017159) | `output doesn't contain enough Lovelace` (1017159) | AGREE + amount |
+| minada-asset-below | `BabbageOutputTooSmallUTxO` (1017159) | `output doesn't contain enough Lovelace` (1017159) | AGREE + amount |
 | value-too-big | `OutputTooBigUTxO (5289,5000,…)` | `output value is too large: maximum: 5000, actual: 5289` | AGREE + size 5289 = 5289 |
 | mint-zero-qty | `DeserialiseFailure` | `decoding 0 as NonZeroInt` | AGREE (decode) |
 | mint-empty-asset-map | `DeserialiseFailure` | `empty map when expecting at least one key/value pair` | AGREE (decode) |
@@ -112,7 +112,7 @@ Rebuild: `PYTHON=<python with cbor2+cryptography> fixture/mint_burn/build.sh`.
 | output-zero-qty | `DeserialiseFailure` | `decoding 0 as PositiveCoin` | AGREE (decode) |
 | mint-valid | 202 `97e5b1b6…` | 202 `97e5b1b6…` | AGREE (same tx id) |
 | multiasset-mint-valid | 202 `81b4ef3b…` | 202 `81b4ef3b…` | AGREE (same tx id) |
-| minada-token-at-min | 202 `9af02405…` | 202 `9af02405…` | AGREE (same tx id) |
+| minada-asset-at-min | 202 `9af02405…` | 202 `9af02405…` | AGREE (same tx id) |
 
 **Precedence observation, not a divergence.** In `mint-script-wrong`, cardano-node reports the
 full failure set: the policy script is missing, and the supplied script is extraneous. Amaru

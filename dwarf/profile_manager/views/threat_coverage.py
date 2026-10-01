@@ -128,6 +128,18 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-011",),
         "risks": ("RR-011",),
     },
+    "ledger-block-apply-stake-address-output-crash-differential-amaru-cardano-node": {
+        "threats": ("TM-016", "TM-021", "TM-022"),
+        "risks": ("RR-016", "RR-024", "RR-026"),
+    },
+    "ledger-block-apply-cert-phantom-deleg-unregistered-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031"),
+    },
+    "ledger-block-apply-collateral-foreign-unwitnessed-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031"),
+    },
 }
 
 
