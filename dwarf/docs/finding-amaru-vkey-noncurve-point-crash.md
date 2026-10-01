@@ -193,10 +193,7 @@ Verified vs. implied are kept explicitly separate below.
    (parent 1000/181e9b48, slot 1038, height 214), point_hash
    `424128802d6673e0162e08753d33f31f90c068e662418c201e446c395d712f12`.
 
-4. **Live block-apply reproduction is PENDING** the serve re-derivation fix at the re-anchored tip
-   (amaru currently sees the forged header but does not yet adopt/fetch it — a bridge/serve limitation,
-   not a ledger behavior). It has NOT been observed live. This section will be updated to "observed" if
-   and when the live apply reproduces.
+4. **Live block-apply reproduction OBSERVED (2026-10-01).** cod-forge re-forged a body-hash-consistent block (point_hash ec924aa4f9cedfd95b815cd2f79ce310b66d2c73bb8c084bbdc61a168705e934, slot 1209, height 214, parent 1000/181e9b48) on the store-f re-anchor; amaru adopted + block-fetched it (serve block_served=True) and its ledger thread PANICKED AT APPLY at verification_key_witness.rs:42:10 (amaru DOWN). So the crash reaches BLOCK-APPLY, not only submit: a forged block carrying the tx halts any node that applies it (network-liveness / consensus-halt). The block-fetch/forward-sync wall was solved (epoch-3 slot + stake snapshot + keepalive); the earlier body_hash mismatch (amaru correctly rejected it) was a forge artifact, now fixed.
 
 Reproduce (submit): `reset-pair.sh pair1`; `curl -X POST -H 'Content-Type: application/cbor'
 --data-binary @fixture/deleg_cert_class/../vkey-noncurve-preflight.cbor http://127.0.0.1:3210/api/submit/tx`
