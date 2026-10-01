@@ -172,3 +172,32 @@ NOT to be attacker-reachable crashes:
 
 Net: the non-curve vkey witness (`verification_key_witness.rs:42`) is the sole confirmed
 attacker-reachable crash of this class on amaru 0925 (eaf8ac3f).
+
+## Latest-version reconfirm + forged block-apply vector (2026-10-01)
+
+Verified vs. implied are kept explicitly separate below.
+
+1. **Submit-level node crash — reproduced LIVE (observed) on latest amaru eaf8ac3f.** On the funded
+   store-f substrate (tip 1000), submitting the non-curve-point vkey-witness tx (txid `e7cf6f7f…`,
+   spends `9708b921`) to amaru `:3210` took the node DOWN: `thread 'ledger' panicked at
+   amaru-kernel/src/cardano/verification_key_witness.rs:42:10` ("key size is guaranteed by transaction
+   decoding: signature::Error"). cardano-node `:8110` cleanly rejected the same tx
+   (`ConwayUtxowFailure InvalidWitnessesUTXOW`). This confirms the DoS persists on the current build.
+
+2. **Block-apply reachability — SOURCE-IMPLIED (not yet observed live).** The panic is in a phase-1
+   ledger rule (witness verification) that block application executes identically to mempool admission.
+   The block-apply bridge is independently proven to reach phase-1 ledger-apply (the stake-address
+   `inputs.rs` crash-at-apply, M2). So a block carrying this tx would drive the same panic on apply.
+
+3. **Forged block-apply vector prepared.** A block embedding the tx is forged at the store-f re-anchor
+   (parent 1000/181e9b48, slot 1038, height 214), point_hash
+   `424128802d6673e0162e08753d33f31f90c068e662418c201e446c395d712f12`.
+
+4. **Live block-apply reproduction is PENDING** the serve re-derivation fix at the re-anchored tip
+   (amaru currently sees the forged header but does not yet adopt/fetch it — a bridge/serve limitation,
+   not a ledger behavior). It has NOT been observed live. This section will be updated to "observed" if
+   and when the live apply reproduces.
+
+Reproduce (submit): `reset-pair.sh pair1`; `curl -X POST -H 'Content-Type: application/cbor'
+--data-binary @fixture/deleg_cert_class/../vkey-noncurve-preflight.cbor http://127.0.0.1:3210/api/submit/tx`
+(amaru → node down) and `…:8110…` (cardano → 400 InvalidWitnessesUTXOW). Builder: `dwarf/block_apply/build_rank23.py`.

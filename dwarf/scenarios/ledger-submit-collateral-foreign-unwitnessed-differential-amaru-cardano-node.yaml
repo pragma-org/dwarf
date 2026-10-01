@@ -1,0 +1,113 @@
+{
+  "spec_version": "v1",
+  "id": "ledger-submit-collateral-foreign-unwitnessed-differential-amaru-cardano-node",
+  "title": "Ledger submit differential \u2014 no-script tx with unwitnessed foreign collateral: amaru accepts (collateral.rs !has_redeemers); cardano-node rejects (missing collateral witness)",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "2026-10-01",
+    "accept-invalid",
+    "amaru",
+    "cardano-node",
+    "collateral",
+    "conway",
+    "differential",
+    "finding",
+    "ledger",
+    "submit",
+    "witness-bypass"
+  ],
+  "evidence_intent": "finding-validation",
+  "target": {
+    "implementation": "amaru",
+    "version": "v10.11.20260925",
+    "source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d"
+  },
+  "runtime": "devnet",
+  "substrate": {
+    "compose_mode": "host",
+    "network": "preview",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "amaru",
+        "version": "v10.11.20260925",
+        "role": "submitter"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "11.1.2",
+        "role": "observer"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {
+          "from": "node1",
+          "to": "node2"
+        },
+        {
+          "from": "node2",
+          "to": "node1"
+        }
+      ]
+    }
+  },
+  "setup": [
+    {
+      "primitive": "runtime_install_version",
+      "output_dir": "outputs/substrate-install"
+    },
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_tx_submit_differential",
+      "output_dir": "outputs/tx-submit-differential",
+      "tx_file": "antithesis/cardano_amaru_adversarial/fixture/collateral/p1-foreign-collateral-no-redeemers.tx",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "reference_node": "node2",
+      "expected_target_outcome": "accept",
+      "expected_reference_outcome": "reject"
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": [
+        "node1",
+        "node2"
+      ],
+      "observation_window_seconds": 8,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": [
+        "tip_state",
+        "connection_state"
+      ],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive"
+    },
+    {
+      "primitive": "submit_outcome_matches",
+      "expected_target_outcome": "accept",
+      "expected_reference_outcome": "reject"
+    }
+  ],
+  "teardown": [
+    {
+      "primitive": "runtime_teardown_substrate",
+      "output_dir": "outputs/substrate-teardown"
+    }
+  ]
+}

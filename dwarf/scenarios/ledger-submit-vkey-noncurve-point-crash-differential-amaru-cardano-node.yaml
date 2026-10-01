@@ -1,0 +1,114 @@
+{
+  "spec_version": "v1",
+  "id": "ledger-submit-vkey-noncurve-point-crash-differential-amaru-cardano-node",
+  "title": "Ledger submit differential \u2014 non-curve-point vkey witness: amaru ledger-thread PANIC (node crash/DoS, verification_key_witness.rs:42); cardano-node cleanly rejects InvalidWitnessesUTXOW",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "2026-10-01",
+    "amaru",
+    "cardano-node",
+    "conway",
+    "crash",
+    "differential",
+    "dos",
+    "finding",
+    "ledger",
+    "malformed-witness",
+    "submit",
+    "witness"
+  ],
+  "evidence_intent": "finding-validation",
+  "target": {
+    "implementation": "amaru",
+    "version": "v10.11.20260925",
+    "source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d"
+  },
+  "runtime": "devnet",
+  "substrate": {
+    "compose_mode": "host",
+    "network": "preview",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "amaru",
+        "version": "v10.11.20260925",
+        "role": "submitter"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "11.1.2",
+        "role": "observer"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {
+          "from": "node1",
+          "to": "node2"
+        },
+        {
+          "from": "node2",
+          "to": "node1"
+        }
+      ]
+    }
+  },
+  "setup": [
+    {
+      "primitive": "runtime_install_version",
+      "output_dir": "outputs/substrate-install"
+    },
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_tx_submit_differential",
+      "output_dir": "outputs/tx-submit-differential",
+      "tx_file": "antithesis/cardano_amaru_adversarial/fixture/ledger_submit/vkey-noncurve-preflight.cbor",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "reference_node": "node2",
+      "expected_target_outcome": "crash",
+      "expected_reference_outcome": "reject"
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": [
+        "node1",
+        "node2"
+      ],
+      "observation_window_seconds": 8,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": [
+        "tip_state",
+        "connection_state"
+      ],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive"
+    },
+    {
+      "primitive": "submit_outcome_matches",
+      "expected_target_outcome": "crash",
+      "expected_reference_outcome": "reject"
+    }
+  ],
+  "teardown": [
+    {
+      "primitive": "runtime_teardown_substrate",
+      "output_dir": "outputs/substrate-teardown"
+    }
+  ]
+}
