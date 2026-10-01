@@ -107,3 +107,13 @@ provided value in the `ExUnitsTooBigUTxO` error so a > Word64 sum is still repor
 
 Found by the DWARF ledger-lane differential sweep, 2026-09-30, on isolated pair1
 (amaru eaf8ac3f `:3210` / cardano-node 11.1.2 `:8110`). Not filed upstream.
+
+## Live re-confirmation (2026-10-01) + block-apply reach
+
+Re-confirmed on the current substrate (isolated pair1, GOLDEN reset, amaru `eaf8ac3f` :3210 / cardano-node 11.1.2 :8110) via `runtime_tx_submit_differential`: `l1-wrap-accept.tx` -> amaru **accept** (HTTP 202, node alive) / cardano **non-accept** => **DIVERGENCE**. Control `l1-honest-over.tx` (sum below 2^64 but above the per-tx limit) -> **both reject** (cardano `ExUnitsTooBigUTxO`) => AGREE. The divergence is specific to the u64-wrapping sum.
+
+Block-apply reach (source-level): amaru's block-apply runs the same phase-one ExUnits total/limit path as mempool submit (`has_ex_units.rs` `total_ex_units` -> `scripts.rs:229` per-tx limit), so a block carrying the wrapping transaction would be accepted and applied by amaru while cardano-node rejects the block — an accept-invalid-block of the same class. A live crafted-block demonstration via the forge/serve bridge is deferred (forge executor offline this round); the submit-level divergence above is the live-reproduced evidence.
+
+## Reproduce via DWARF
+
+Scenario `ledger-arithmetic-exunits-sum-overflow-consensus-split-amaru-cardano-node` (runtime_tx_submit_differential, expected_target=accept / expected_reference=reject). Fixtures under `antithesis/cardano_amaru_adversarial/fixture/exunits_overflow/` (`l1-wrap-accept.tx` + `l1-honest-over.tx` control). Run: `bash dwarf/block_apply/submit_differential_run.sh antithesis/cardano_amaru_adversarial/fixture/exunits_overflow/l1-wrap-accept.tx pair1 3210 8110`.
