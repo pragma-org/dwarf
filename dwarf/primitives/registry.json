@@ -3609,6 +3609,35 @@
         "amaru"
       ],
       "version": "0.1.0"
+    },
+    "runtime_tx_submit_differential": {
+      "class": "RuntimeTxSubmitDifferential",
+      "family": "load",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/load/runtime_tx_submit_differential.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "submit_outcome_matches": {
+      "class": "SubmitOutcomeMatches",
+      "family": "assertion",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/assertion/submit_outcome_matches.schema.json",
+      "runtimes": [
+        "devnet",
+        "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
     }
   }
 }

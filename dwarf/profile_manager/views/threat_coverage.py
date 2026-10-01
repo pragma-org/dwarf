@@ -140,6 +140,34 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-016",),
         "risks": ("RR-016", "RR-031"),
     },
+    "ledger-submit-votedeleg-deleg-unregistered-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031",),
+    },
+    "ledger-submit-stakevotedeleg-deleg-unregistered-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031",),
+    },
+    "ledger-submit-updatedrep-deleg-unregistered-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031",),
+    },
+    "ledger-submit-vkey-noncurve-point-crash-differential-amaru-cardano-node": {
+        "threats": ("TM-015", "TM-021", "TM-022",),
+        "risks": ("RR-015", "RR-024", "RR-026",),
+    },
+    "ledger-submit-value-coin-i64-overflow-crash-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016",),
+    },
+    "ledger-submit-stakeaddr-output-differential-amaru-cardano-node": {
+        "threats": ("TM-015", "TM-016"),
+        "risks": ("RR-015", "RR-016"),
+    },
+    "ledger-submit-plutus-case-over-builtin-pv10-differential-amaru-cardano-node": {
+        "threats": ("TM-016", "TM-036"),
+        "risks": ("RR-016", "RR-031"),
+    },
 }
 
 

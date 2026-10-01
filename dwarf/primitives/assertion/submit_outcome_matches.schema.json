@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "submit_outcome_matches params",
+  "type": "object",
+  "required": [
+    "primitive"
+  ],
+  "properties": {
+    "primitive": {
+      "const": "submit_outcome_matches"
+    },
+    "output_dir": {
+      "type": "string"
+    },
+    "args": {
+      "type": "array"
+    },
+    "primitive_version": {
+      "type": "string"
+    },
+    "expected_target_outcome": {
+      "type": "string",
+      "enum": [
+        "accept",
+        "reject",
+        "crash",
+        "unknown"
+      ]
+    },
+    "expected_reference_outcome": {
+      "type": "string",
+      "enum": [
+        "accept",
+        "reject",
+        "crash",
+        "unknown"
+      ]
+    },
+    "source_primitive": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

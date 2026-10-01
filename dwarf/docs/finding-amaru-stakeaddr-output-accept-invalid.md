@@ -136,3 +136,7 @@ assertion (expected outcome: amaru crash / accept-invalid vs cardano-node reject
 differential and evidence are in the sections above. Bridge primitives live in `dwarf/block_apply/`
 (see its README); `forge_block` + `serve_crafted_block` require the external cardano-crypto forge
 and serve responder plus a live amaru/cardano pair.
+
+## Latest-version submit reconfirm (2026-10-01)
+
+Reconfirmed on amaru `eaf8ac3f` with a clean **4-element** bare-stake-address transaction (output = header `0xe0` + key hash), isolated from the separate tx-3-element arity finding: amaru `:3210` → **202 accepted**; cardano-node → decode-reject `Decoding Shelley Address: Invalid header. Unused bits are not suppose to be set: 0b11100000`. Reproduce via DWARF: scenario `ledger-submit-stakeaddr-output-differential-amaru-cardano-node`.

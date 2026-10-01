@@ -123,3 +123,7 @@ class. Consider enabling `overflow-checks` in release for the ledger crates.
 
 Found by the DWARF ledger-lane differential sweep, 2026-09-30, on the isolated pair1
 (amaru eaf8ac3f `:3210` / cardano-node 11.1.2 `:8110`). Not filed upstream.
+
+## Latest-version reconfirm + broader trigger (2026-10-01)
+
+On amaru `eaf8ac3f`, the `value.rs::lovelace_to_i64` `unreachable!()` fires on **any single value field > i64::MAX**, not only the originally-reported output coin — confirmed via the **fee** field (`fee = 2^63` → same abort) and a **u64-max output coin** (`2^64-1`). It is **bounded per-field**: a two-output **sum** (2^62 + 2^62) balances in a wider type (clean `ValueNotConservedUTxO` reject, no abort), and a **mint quantity** of 2^63 is caught gracefully at the `u64→i64` decode (clean reject, no abort). So the defect is the un-guarded `lovelace_to_i64` on a single coin/fee value, not a general value-arithmetic gap. Reproduce via DWARF: scenario `ledger-submit-value-coin-i64-overflow-crash-differential-amaru-cardano-node`.
