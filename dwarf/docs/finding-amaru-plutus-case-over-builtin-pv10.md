@@ -93,3 +93,29 @@ protocol_version to permit case-over-builtin (the reference enables it only at p
 
 Scope verdict: case-over-built-in-scrutinee at the CEK eval site is the SPECIFIC defect; builtins and
 decode-time constr/case are correctly protocol-gated. Not a broad missing-pv-gate class.
+
+## Finalized root cause + remediation + scope verdict (NOVEL confirmed vs amaru HEAD 7ade59e3; not filed, not fixed; nearest PR #1450 unrelated)
+
+Root cause (exact cites, amaru 9eb5971f): the CEK case-over-builtin gate is keyed on the UPLC LANGUAGE
+version, not the Cardano PROTOCOL version.
+- `machine/cek.rs:247` FrameCases arm: `Value::Con(constant) if self.machine_version.is_constr_case_available()` (fall-through to `NonConstrScrutinized` at `cek.rs:264`).
+- `is_constr_case_available()` = `(major, minor) >= (1, 1)` of the UPLC program/machine version only (MachineVersion; Ctx wrapper at `syn/types.rs:36`).
+- The `Machine` struct (`machine/cek.rs:30-50`) holds `machine_version` but NO `protocol_version` field (and `Machine::new(..)` takes no protocol_version) — so the evaluator structurally CANNOT pv-gate case-over-builtin.
+- By contrast the decode layer is protocol-aware: `flat/decode/decoder.rs:42` gates constr/case TERM PRESENCE by `protocol_version >= PV10 && machine_version...`; builtins are separately pv-gated via `decoder.rs:50 is_builtin_available` → `builtin/default_function.rs:479 is_available_in(protocol_version)`. But there is NO protocol-version gate for case-over-builtin VALUES at eval.
+=> A UPLC language-1.1.0 program using `case` over a built-in constant decodes fine at pv10 and evaluates
+successfully in amaru, while cardano-node rejects it ("case on values of built-in types is not supported
+in protocol version 10").
+
+SCOPE VERDICT: case-over-built-in-VALUES at CEK eval is the ONLY affected instance. Builtins (is_available_in)
+and constr/case term-presence (decoder.rs:42) are correctly PROTOCOL-gated at decode. The one eval-time
+feature keyed on language-version instead of protocol-version is `is_constr_case_available` at cek.rs:247.
+Structural note for the advisory: because the CEK Machine carries no protocol_version, eval-time pv-gating
+is categorically absent — case-over-builtin is the confirmed (and currently only) feature that needs an
+eval-time pv gate and lacks one. Frame: confirmed instance = case-over-builtin; root pattern = CEK pv-gates
+keyed on language-version (no protocol_version threaded into the Machine).
+
+Remediation: thread `protocol_version` into the CEK `Machine` (struct + `Machine::new`) and gate the
+`Value::Con` case-over-builtin arm by protocol version (reject below the PV that enables it — the reference
+enables it only at pv >= 11), matching cardano-node. CWE-670 (Always-Incorrect Control Flow Implementation)
+/ CWE-757 (Selection of Less-Secure Algorithm — missing version gate). Severity HIGH, consensus-validity
+(is_valid) divergence.
