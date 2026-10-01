@@ -1,0 +1,37 @@
+[
+  {
+    "case_id": "l1-honest-over",
+    "expected": "reject",
+    "accepted": {
+      "amaru": false,
+      "cardano": false
+    },
+    "status": "AGREE",
+    "amaru": {
+      "status": 400,
+      "reason": "transaction 0ffa3d3ea29e2d3f24dcd81a7f5a1ce73d68cd88b2fa919aa365c8a9a38199f6 is invalid: transaction failed phase one validation: invalid transaction scripts: transaction execution units exceeded: pro"
+    },
+    "cardano": {
+      "status": 400,
+      "reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ExUnitsTooBigUTxO Mismatch (RelLTEQ) {supplied: WrapExUnits {unWrapExUnits = ExUnits' {exU"
+    }
+  },
+  {
+    "case_id": "l1-wrap-accept",
+    "expected": "accept_divergence",
+    "accepted": {
+      "amaru": true,
+      "cardano": false
+    },
+    "status": "ACCEPT-DIVERGENCE",
+    "amaru": {
+      "status": 202,
+      "reason": "\"1243e6240cc48ab3ef5738c633f822afde0b79c58378c10002ac3cbad920bf81\""
+    },
+    "cardano": {
+      "status": 400,
+      "reason": "{\"contents\":{\"contents\":\"DecoderFailure (LocalTxSubmission (GenTx (HardForkBlock (': * ByronBlock (': * (ShelleyBlock (TPraos StandardCrypto) ShelleyEra) (': * (ShelleyBlock (TPraos StandardCrypto) Al"
+    }
+  }
+]
+DIVERGENCE ['ACCEPT-DIVERGENCE', 'AGREE']

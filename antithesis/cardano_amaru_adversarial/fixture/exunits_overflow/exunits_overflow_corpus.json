@@ -1,0 +1,28 @@
+{
+ "description": "L1 ex_units-sum overflow (consensus split): amaru sums the 3 redeemers declared ex_units with a plain u64 + (ex_units.rs:31, has_ex_units.rs:20-22; release has no overflow-checks); a sum >= 2^64 wraps below the per-tx limit so amaru ACCEPTS. cardano sums as Natural and rejects. NOTE: any amaru-wrapping sum is >= 2^64 > Word64max, so cardano ExUnitsTooBig cannot serialize its provided value (submit connection error) - the same u64/Word64 seam. 3 distinct always-succeeds PlutusV3 mint policies (m1/m2/m3) => 3 Mint redeemers.",
+ "source_anchor": "amaru eaf8ac3f: ex_units.rs:31 Add<&ExUnits> unchecked +; traits/has_ex_units.rs:20-22 fold; consumers scripts.rs:229 (per-tx), block/ex_units.rs:24, fees.rs:61.",
+ "cases": [
+  {
+   "case_id": "l1-honest-over",
+   "tx_file": "l1-honest-over.tx",
+   "expected": "reject",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 828,
+   "cbor_sha256": "0da45cef9440bd43565ae8a382fd7eaa96134e839ce5481ddf1f7f6b8a42e5a5",
+   "reason_classes": [
+    "ex_units_too_big"
+   ],
+   "note": "honest ex_units sum 18e6 mem / 18e9 steps > max (14e6/14e9): both reject ExUnitsTooBigUTxO. Control, no wrap."
+  },
+  {
+   "case_id": "l1-wrap-accept",
+   "tx_file": "l1-wrap-accept.tx",
+   "expected": "accept_divergence",
+   "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
+   "cbor_size": 832,
+   "cbor_sha256": "448b27616c296f0eb27038cfc8b009c4b89d1aaad6e629876ed8a98f0adf6e75",
+   "reason_classes": [],
+   "note": "ex_units sum = 2^64+~2e6 wraps amaru u64 to ~(2e6 mem, 8e8 steps) < max: amaru ACCEPTS (is_valid, 202); cardano does NOT accept (rejects; its ExUnitsTooBig error carries provided sum > Word64 so it cannot serialize -> submit connection error)."
+  }
+ ]
+}
