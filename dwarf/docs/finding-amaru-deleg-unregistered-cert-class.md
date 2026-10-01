@@ -71,3 +71,25 @@ amaru would follow a chain containing blocks the Haskell reference rejects. The 
 target credential is registered before the bind/update, matching the reference's `*NotRegistered*`
 ledger rules, across all four cert types.
 
+
+## Class boundary — precondition-cert clean-negatives (R1a, 2026-10-01)
+
+To bound the class, 6 further Conway cert types that also carry a registration/membership precondition
+were probed on the same funded substrate (fresh / non-member entities, submit to amaru :3210 / cardano
+:8110). ALL are GUARDED by amaru — it performs the lookup and rejects with the correct phase-1 error,
+matching cardano (clean-negatives):
+
+| cert | amaru reject (phase-1) | cardano |
+|------|------------------------|---------|
+| stake_deregistration (1) unregistered | "stake credential not registered" | ConwayCertsFailure (AGREE) |
+| unreg_cert (8) unregistered | "stake credential not registered" | AGREE |
+| pool_retirement (4) unregistered pool | rejects (StakePoolNotRegistered) | AGREE |
+| unreg_drep (17) unregistered | "drep not registered" | ConwayDRepNotRegistered (AGREE) |
+| auth_committee_hot (14) non-member | "invalid cc member hot credential delegation: unknown source entity" | AGREE |
+| resign_committee_cold (15) non-member | rejects (not a member) | AGREE |
+
+So the bind_left missing-registration bypass is SPECIFIC to the 4 update/delegation certs
+(StakeDelegation 2, VoteDelegation 9, StakeVoteDelegation 10, UpdateDRep 18). Notably the DRep family
+is split: update_drep (18) is UNGUARDED (the finding) while unreg_drep (17) is GUARDED. amaru is not
+missing registration checks wholesale — only the update/delegation path's bind_left skips them.
+Builder: dwarf/block_apply/build_cert_precond.py.
