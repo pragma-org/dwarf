@@ -112,7 +112,21 @@ Found by the DWARF ledger-lane differential sweep, 2026-09-30, on isolated pair1
 
 Re-confirmed on the current substrate (isolated pair1, GOLDEN reset, amaru `eaf8ac3f` :3210 / cardano-node 11.1.2 :8110) via `runtime_tx_submit_differential`: `l1-wrap-accept.tx` -> amaru **accept** (HTTP 202, node alive) / cardano **non-accept** => **DIVERGENCE**. Control `l1-honest-over.tx` (sum below 2^64 but above the per-tx limit) -> **both reject** (cardano `ExUnitsTooBigUTxO`) => AGREE. The divergence is specific to the u64-wrapping sum.
 
-Block-apply reach (source-level): amaru's block-apply runs the same phase-one ExUnits total/limit path as mempool submit (`has_ex_units.rs` `total_ex_units` -> `scripts.rs:229` per-tx limit), so a block carrying the wrapping transaction would be accepted and applied by amaru while cardano-node rejects the block — an accept-invalid-block of the same class. A live crafted-block demonstration via the forge/serve bridge is deferred (forge executor offline this round); the submit-level divergence above is the live-reproduced evidence.
+Block-apply reach (source-level): amaru's block-apply runs the same phase-one ExUnits total/limit path as mempool submit (`has_ex_units.rs` `total_ex_units` -> `scripts.rs:229` per-tx limit), so a block carrying the wrapping transaction would be accepted and applied by amaru while cardano-node rejects the block — an accept-invalid-block of the same class. A live crafted-block demonstration via the forge/serve bridge has since been reproduced — see **Live block-apply reproduction OBSERVED** below.
+
+## Live block-apply reproduction OBSERVED (2026-10-01)
+
+The block-apply reach above was confirmed live (authorized conformance testing, local devnet, testnet-only keys). A Conway block carrying the single wrapping transaction (`l1-wrap-accept`, txid `1243e624…`, `is_valid=true`, redeemer ExUnits `[i64::MAX, i64::MAX]×2 + [2e6, 8e8]` → sum wraps u64 below the per-tx limit) was forged at slot 1209 / height 214, parent GOLDEN tip `1000/181e9b48` (point_hash `f91ca2dd…`, body_hash `3b973d00…`, body_size 833), and served to amaru over chain-sync + block-fetch.
+
+Sequence (amaru on a fresh GOLDEN snapshot, tip `1000/…/213`):
+- `chainsync.intersect_found highest=[1209, f91ca2dd, 214]` → `tip.adopt slot=1209 block_height=214`
+- serve `block_served=True` (the 833-byte body was fetched) + `rolled_forward=True` (amaru requested the next block)
+- `ledger: epoch_transition … into=3 / apply epoch=3` (block 214 is first-of-epoch-3 → its body was applied)
+- amaru **stays alive** — no panic, no validation error (an `is_valid=true` accept is silent).
+
+Definitive apply proof (UTxO-consumption test): re-submitting the wrapping transaction after the block returns amaru `HTTP 400 "unknown (but required) transaction input … 9708b921…#0"`. That funding input was present and spendable on the fresh GOLDEN snapshot (pre-flight submit → amaru 202 ACCEPT), so it is now **spent** — i.e. block 214's wrapping transaction was **ledger-applied**, not merely header-adopted.
+
+Conclusion: amaru fetched and **ledger-applied** a block whose transaction cardano-node rejects (the ExUnits total exceeds the protocol limit; cardano's error-channel Word64 seam surfaces as the `DeserialiseFailure` noted above), and amaru stayed live at tip 214 — an **accept-invalid-block** of the u64-wrap class (root cause `ex_units.rs:31`). On a mixed network this is a consensus-validity divergence at block-apply, not only at submit.
 
 ## Reproduce via DWARF
 
