@@ -515,10 +515,10 @@ def test_learn_separates_shipped_scenarios_from_runtime_extensions(tmp_path, mon
     landing = render_learn_landing()
     census = scenario_census()
 
-    assert "330 shipped" in landing
+    assert "331 shipped" in landing
     assert "2 active" in landing
     assert "All 2 scenarios are in the active scenario catalog" in census["caption"]
-    assert "The shipped repository catalog has 330 scenarios" in census["caption"]
+    assert "The shipped repository catalog has 331 scenarios" in census["caption"]
     assert "All 2 scenarios in <code>dwarf/scenarios/</code>" not in census["caption"]
 
 
