@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "epoch_boundary_pot_differential params",
+  "type": "object",
+  "required": [
+    "primitive"
+  ],
+  "properties": {
+    "primitive": {
+      "const": "epoch_boundary_pot_differential"
+    },
+    "output_dir": {
+      "type": "string"
+    },
+    "args": {
+      "type": "array"
+    },
+    "runtime_metadata_path": {
+      "type": "string"
+    },
+    "target_node": {
+      "type": "string"
+    },
+    "reference_node": {
+      "type": "string"
+    },
+    "primitive_version": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

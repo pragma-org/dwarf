@@ -1,0 +1,12 @@
+{
+  "id": "epoch-boundary-pot-differential",
+  "label": "epoch-boundary pot-transition differential — treasury/reserves/fees Δ across an epoch roll, amaru vs cardano-node (1 Amaru + 1 Haskell, forged-block bridge)",
+  "node_type": "mixed",
+  "node_count": 1,
+  "amaru_node_count": 1,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "latest-confirmed",
+  "remote_runtime_root": "/opt/dwarf/cardano-profiles/epoch-boundary-pot-differential",
+  "compose_project": "dwarf-epoch-boundary-pot-differential"
+}

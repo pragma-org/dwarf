@@ -146,3 +146,41 @@ class InvalidTxBodyDropped(AssertionPrimitive):
             "result": "pass" if ok else "fail",
             "note": None if ok else f"is_valid=false body-leak: expected {expected!r}, observed {observed!r}",
         }
+
+
+class EpochBoundaryPotDifferential(_ScriptLoadPrimitive):
+    """Diff the pot TRANSITION (treasury/reserves/fees) across an epoch boundary: amaru's delta vs
+    cardano-node's. A divergence means amaru's epoch-boundary pot accounting differs from the
+    cardano-node reference (e.g. the is_valid=false donation realizing into amaru's treasury at the
+    boundary while cardano's is unchanged). Invoked with transition-diff over before/after snapshots;
+    prints a verdict JSON to stdout."""
+    primitive_name = "epoch_boundary_pot_differential"
+    script = "epoch_boundary_pot_differential.py"
+
+
+class EpochBoundaryPotsMatch(AssertionPrimitive):
+    """Pass iff amaru's epoch-boundary pot transition matches cardano-node's (verdict CONFORMANT).
+    Fails (= finding) on POT_TRANSITION_DIVERGENCE (e.g. amaru's treasury inflates across the boundary
+    where cardano-node's does not)."""
+
+    def evaluate(self, handle):
+        expected = str(self.params.get("expected_verdict") or "CONFORMANT")
+        rd = _run_dir(handle)
+        observed = None
+        for p in rd.rglob("epoch_boundary_pot_differential/result.json"):
+            try:
+                r = json.loads(p.read_text())
+                stdout = (r.get("exec", {}).get("stdout") or "")
+                import re as _re
+                m = _re.search(r'"verdict":\s*"([^"]+)"', stdout)
+                observed = m.group(1) if m else r.get("verdict")
+            except Exception:  # noqa: BLE001
+                pass
+        ok = observed is not None and observed == expected
+        return {
+            "primitive": "epoch_boundary_pots_match",
+            "params": dict(self.params),
+            "evaluated_value": {"expected": expected, "observed": observed},
+            "result": "pass" if ok else "fail",
+            "note": None if ok else f"epoch-boundary pot transition: expected {expected!r}, observed {observed!r}",
+        }
