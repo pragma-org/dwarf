@@ -160,6 +160,10 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-016",),
         "risks": ("RR-016",),
     },
+    "conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node": {
+        "threats": ("TM-015", "TM-016"),
+        "risks": ("RR-015", "RR-016"),
+    },
     "ledger-arithmetic-multiasset-quantity-overflow-conformance-amaru-cardano-node": {
         "threats": ("TM-016", "TM-036"),
         "risks": ("RR-016", "RR-031"),
