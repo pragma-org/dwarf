@@ -112,3 +112,37 @@ class BlockApplyOutcomeMatches(AssertionPrimitive):
             "result": "pass" if ok else "fail",
             "note": None if ok else f"expected block-apply outcome {expected!r}, observed {observed!r}",
         }
+
+
+class InvalidTxBodyDifferential(_ScriptLoadPrimitive):
+    """Apply an is_valid=false tx and classify whether its body (donation/output/mint/withdrawal)
+    leaked on amaru vs cardano = value-creation/theft detector. Reads post-apply state; writes verdict."""
+    primitive_name = "invalid_tx_body_differential"
+    script = "invalid_tx_body_differential.py"
+
+
+class InvalidTxBodyDropped(AssertionPrimitive):
+    """Pass iff the is_valid=false tx body was DROPPED on amaru (only collateral consumed), i.e. no
+    value creation/theft. Fails (= finding) if amaru leaked a body effect cardano dropped."""
+
+    def evaluate(self, handle):
+        expected = str(self.params.get("expected_verdict") or "no_body_leak")
+        rd = _run_dir(handle)
+        observed = None
+        for p in rd.rglob("invalid_tx_body_differential/result.json"):
+            try:
+                r = json.loads(p.read_text())
+                observed = (r.get("exec", {}).get("stdout") or "")
+                import re as _re
+                m = _re.search(r'"verdict":\s*"([^"]+)"', observed)
+                observed = m.group(1) if m else r.get("verdict")
+            except Exception:  # noqa: BLE001
+                pass
+        ok = observed is not None and observed == expected
+        return {
+            "primitive": "invalid_tx_body_dropped",
+            "params": dict(self.params),
+            "evaluated_value": {"expected": expected, "observed": observed},
+            "result": "pass" if ok else "fail",
+            "note": None if ok else f"is_valid=false body-leak: expected {expected!r}, observed {observed!r}",
+        }

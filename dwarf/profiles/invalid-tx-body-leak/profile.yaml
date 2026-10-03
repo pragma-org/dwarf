@@ -1,0 +1,12 @@
+{
+  "id": "invalid-tx-body-leak",
+  "label": "is_valid=false body-leak — value-creation/theft detector (1 Amaru + 1 Haskell, forged-block bridge)",
+  "node_type": "mixed",
+  "node_count": 1,
+  "amaru_node_count": 1,
+  "network_magic": 42,
+  "peer_sharing": false,
+  "version_policy": "latest-confirmed",
+  "remote_runtime_root": "/opt/dwarf/cardano-profiles/invalid-tx-body-leak",
+  "compose_project": "dwarf-invalid-tx-body-leak"
+}
