@@ -499,7 +499,7 @@ def test_learn_separates_shipped_scenarios_from_runtime_extensions(tmp_path, mon
     runtime = tmp_path / "scenarios"
     runtime.mkdir()
     packaged = _list_packaged_scenarios_for_compare()
-    assert len(packaged) == 331
+    assert len(packaged) == 332
 
     source = ROOT / "dwarf/scenarios" / "client-example-simple-transfer-amaru.yaml"
     (runtime / source.name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")

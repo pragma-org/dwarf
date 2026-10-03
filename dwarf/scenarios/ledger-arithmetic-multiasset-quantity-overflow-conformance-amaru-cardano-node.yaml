@@ -1,0 +1,167 @@
+{
+  "spec_version": "v1",
+  "id": "ledger-arithmetic-multiasset-quantity-overflow-conformance-amaru-cardano-node",
+  "title": "Ledger arithmetic (clean-negative) \u2014 amaru holds native-asset quantities at/over u64::MAX in a wide integer and rejects a non-conserving overflow tx at phase-one value-conservation while staying alive (no DoS)",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "2026-10-03",
+    "amaru",
+    "arithmetic",
+    "asset",
+    "block-apply",
+    "cardano-node",
+    "clean-negative",
+    "conformance",
+    "conway",
+    "coverage",
+    "differential",
+    "ledger",
+    "mint",
+    "overflow",
+    "phase1"
+  ],
+  "evidence_intent": "risk-support",
+  "target": {
+    "implementation": "amaru",
+    "version": "v10.11.20260925",
+    "source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d"
+  },
+  "runtime": "devnet",
+  "substrate": {
+    "compose_mode": "host",
+    "network": "preview",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "amaru",
+        "version": "v10.11.20260925",
+        "role": "submitter"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "11.1.2",
+        "role": "observer"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {
+          "from": "node1",
+          "to": "node2"
+        },
+        {
+          "from": "node2",
+          "to": "node1"
+        }
+      ]
+    }
+  },
+  "setup": [
+    {
+      "primitive": "runtime_install_version",
+      "output_dir": "outputs/substrate-install"
+    },
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose"
+    },
+    {
+      "primitive": "build_block_segments",
+      "output_dir": "outputs/build-segments",
+      "tx_file": "fixture/multiasset_overflow/setup-mint-A.tx",
+      "label": "multiasset-setup",
+      "extra_tx_files": [
+        "fixture/multiasset_overflow/setup-mint-B.tx"
+      ]
+    },
+    {
+      "primitive": "forge_block",
+      "output_dir": "outputs/forge-block",
+      "body_segments_path": "outputs/build-segments/body-segments.json",
+      "forced_nonce": "3a5e36011eec01657c4478a9b6f021d8d0eced3232b2796b79f40d0cd0620ebe",
+      "pool_keys_dir": "block_apply/keys-97b0",
+      "slot": 1209,
+      "prev_hash": "181e9b48af913dd4823f9a44a7460c90b61f55e6f51f4a8050fe2c4f0c642d37",
+      "block_height": 214
+    },
+    {
+      "primitive": "assemble_blockjson",
+      "output_dir": "outputs/assemble",
+      "forge_result_path": "outputs/forge-block/forge-result.json"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "serve_crafted_block",
+      "output_dir": "outputs/serve",
+      "block_json_path": "outputs/assemble/block.json",
+      "bind_port": 3001
+    },
+    {
+      "primitive": "block_apply_differential",
+      "output_dir": "outputs/setup-apply",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "expected_outcome": "adopt",
+      "watch_seconds": 120
+    },
+    {
+      "primitive": "runtime_tx_submit_differential",
+      "output_dir": "outputs/trigger-overflow",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "reference_node": "node2",
+      "tx_file": "fixture/multiasset_overflow/trigger-overflow.tx",
+      "expected_target": "reject",
+      "expected_reference": "reject"
+    },
+    {
+      "primitive": "runtime_tx_submit_differential",
+      "output_dir": "outputs/control-under",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "reference_node": "node2",
+      "tx_file": "fixture/multiasset_overflow/trigger-just-under.tx",
+      "expected_target": "accept",
+      "expected_reference": "accept"
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": [
+        "node1",
+        "node2"
+      ],
+      "observation_window_seconds": 8,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": [
+        "tip_state",
+        "connection_state"
+      ],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive"
+    },
+    {
+      "primitive": "block_apply_outcome_matches",
+      "expected_outcome": "adopt"
+    },
+    {
+      "primitive": "submit_outcome_matches"
+    }
+  ],
+  "teardown": [
+    {
+      "primitive": "runtime_teardown_substrate",
+      "output_dir": "outputs/substrate-teardown"
+    }
+  ]
+}
