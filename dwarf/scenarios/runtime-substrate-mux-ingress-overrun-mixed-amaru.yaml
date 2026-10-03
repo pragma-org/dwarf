@@ -1,0 +1,107 @@
+{
+  "spec_version": "v1",
+  "id": "runtime-substrate-mux-ingress-overrun-mixed-amaru",
+  "title": "Runtime mux ingress-overrun differential (mixed) - drive a receive-side ingress overrun at amaru vs cardano-node: does amaru scope it to one bearer and stay responsive, or buffer unbounded / panic (ingress-mailbox DoS)?",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "2026-10-03",
+    "amaru",
+    "availability",
+    "cardano-node",
+    "differential",
+    "dos",
+    "ingress",
+    "mux",
+    "rr-032",
+    "runtime",
+    "tm-027",
+    "wire"
+  ],
+  "evidence_intent": "risk-support",
+  "target": {
+    "implementation": "amaru",
+    "version": "v10.11.20260925",
+    "source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d"
+  },
+  "runtime": "devnet",
+  "substrate": {
+    "network": "preview",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "amaru",
+        "version": "v10.11.20260925",
+        "role": "honest"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "11.1.2",
+        "role": "honest"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {
+          "from": "node1",
+          "to": "node2"
+        },
+        {
+          "from": "node2",
+          "to": "node1"
+        }
+      ]
+    }
+  },
+  "setup": [
+    {
+      "primitive": "runtime_install_version",
+      "output_dir": "outputs/substrate-install"
+    },
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_mux_ingress_overrun",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "output_dir": "outputs/mux-ingress-overrun"
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": [
+        "node1",
+        "node2"
+      ],
+      "observation_window_seconds": 12,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": [
+        "connection_state",
+        "resource_profile"
+      ],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive"
+    },
+    {
+      "primitive": "mux_ingress_overrun_scoped"
+    }
+  ],
+  "teardown": [
+    {
+      "primitive": "runtime_teardown_substrate",
+      "output_dir": "outputs/substrate-teardown"
+    }
+  ]
+}
