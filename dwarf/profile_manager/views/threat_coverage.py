@@ -160,6 +160,10 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-016",),
         "risks": ("RR-016",),
     },
+    "ledger-arithmetic-multiasset-quantity-overflow-conformance-amaru-cardano-node": {
+        "threats": ("TM-016", "TM-036"),
+        "risks": ("RR-016", "RR-031"),
+    },
     "ledger-arithmetic-exunits-sum-overflow-consensus-split-amaru-cardano-node": {
         "threats": ("TM-016", "TM-036"),
         "risks": ("RR-016", "RR-031"),
