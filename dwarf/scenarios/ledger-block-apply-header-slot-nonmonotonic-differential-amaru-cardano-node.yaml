@@ -1,0 +1,136 @@
+{
+  "spec_version": "v1",
+  "id": "ledger-block-apply-header-slot-nonmonotonic-differential-amaru-cardano-node",
+  "title": "Ledger block-apply differential - header non-monotonic slot: a tip+1 block whose header slot (999) is below the parent GOLDEN tip slot (1000); cardano-node rejects, amaru should too (live adopt/crash = finding).",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "2026-10-03",
+    "amaru",
+    "block-apply",
+    "cardano-node",
+    "conway",
+    "differential",
+    "header",
+    "ledger",
+    "risk-support"
+  ],
+  "evidence_intent": "risk-support",
+  "target": {
+    "implementation": "amaru",
+    "version": "v10.11.20260925",
+    "source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d"
+  },
+  "runtime": "devnet",
+  "substrate": {
+    "compose_mode": "host",
+    "network": "preview",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "amaru",
+        "version": "v10.11.20260925",
+        "role": "submitter"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "11.1.2",
+        "role": "observer"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {
+          "from": "node1",
+          "to": "node2"
+        },
+        {
+          "from": "node2",
+          "to": "node1"
+        }
+      ]
+    }
+  },
+  "setup": [
+    {
+      "primitive": "runtime_install_version",
+      "output_dir": "outputs/substrate-install"
+    },
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose"
+    },
+    {
+      "primitive": "build_block_segments",
+      "output_dir": "outputs/build-segments",
+      "tx_file": "fixture/mempool/mp-base.tx",
+      "label": "mp-base-valid-body"
+    },
+    {
+      "primitive": "forge_block",
+      "output_dir": "outputs/forge-block",
+      "body_segments_path": "outputs/build-segments/body-segments.json",
+      "forced_nonce": "85e36f9d54bf512a0e841210f9a0f765b6151ffb33d53383fae37c303173a493",
+      "pool_keys_dir": "block_apply/keys-97b0",
+      "slot": 999,
+      "prev_hash": "181e9b48af913dd4823f9a44a7460c90b61f55e6f51f4a8050fe2c4f0c642d37",
+      "block_height": 214,
+      "note": "non-monotonic slot vs parent (parent at slot 1000); live forge must use the nearest 97b0-eligible slot below the parent slot"
+    },
+    {
+      "primitive": "assemble_blockjson",
+      "output_dir": "outputs/assemble",
+      "forge_result_path": "outputs/forge-block/forge-result.json"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "serve_crafted_block",
+      "output_dir": "outputs/serve",
+      "block_json_path": "outputs/assemble/block.json",
+      "bind_port": 3001
+    },
+    {
+      "primitive": "block_apply_differential",
+      "output_dir": "outputs/block-apply-differential",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "expected_outcome": "reject",
+      "watch_seconds": 120
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": [
+        "node1",
+        "node2"
+      ],
+      "observation_window_seconds": 8,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": [
+        "tip_state",
+        "connection_state"
+      ],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive"
+    },
+    {
+      "primitive": "block_apply_outcome_matches",
+      "expected_outcome": "reject"
+    }
+  ],
+  "teardown": [
+    {
+      "primitive": "runtime_teardown_substrate",
+      "output_dir": "outputs/substrate-teardown"
+    }
+  ]
+}
