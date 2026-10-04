@@ -206,27 +206,25 @@ def apply_recovery_mode(*, metadata: dict, mode: str, config: dict, live: bool =
     overrides = dict(metadata.get("observation_overrides") or {})
 
     if mode == "force_rollback":
-        requested = int(config.get("requested_rollback_slots", 5))
-        security_parameter_k = int(config.get("security_parameter_k", 10))
-        applied = requested <= security_parameter_k
         result = {
-            "requested_rollback_slots": requested,
-            "security_parameter_k": security_parameter_k,
-            "rollback_status": "applied" if applied else "rejected",
-            "ledger_state_consistent_post_rollback": bool(applied),
-            "rejection_reason": "" if applied else "ExceededRollback",
+            "status": "not_applicable",
+            "measured": False,
+            "requested_rollback_slots": int(config.get("requested_rollback_slots", 5)),
+            "security_parameter_k": int(config.get("security_parameter_k", 10)),
+            "reason": "substrate-walled: amaru refuses deep fork-switch by design and stalls after "
+                      "roll_backward (forward-sync wall); a real rollback cannot be driven or measured "
+                      "on this 2-node substrate. Within-k rollback recovery is covered by a separate "
+                      "real primitive. Not faking a pass.",
         }
-        latest_tips = dict(overrides.get("latest_tips") or _default_latest_tips(node_ids, slot=120, hash_value="recovery-tip-120"))
-        overrides["latest_tips"] = latest_tips
-        overrides["chain_select_consistent"] = True
-        overrides["per_node_connectivity"] = {n: sorted(o for o in node_ids if o != n) for n in node_ids}
-        overrides["responsive_node_count"] = len(node_ids)
+        # fault not performed -> no fabricated observation_overrides
     elif mode == "chain_switch_inject":
         result = {
-            "target_tip_hash": "chain-switch-tip-120",
-            "target_tip_slot": 120,
+            "status": "not_applicable",
+            "measured": False,
+            "reason": "substrate-walled: amaru refuses deep fork-switch by design; a real competing-chain "
+                      "switch cannot be driven or measured on this 2-node substrate. Not faking a pass.",
         }
-        overrides["latest_tips"] = _default_latest_tips(node_ids, slot=120, hash_value="chain-switch-tip-120")
+        # fault not performed -> no fabricated observation_overrides
     elif mode == "kill_node":
         target_id = str(config["target_node"])
         if not live:

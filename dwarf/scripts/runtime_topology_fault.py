@@ -23,76 +23,33 @@ def _role_map(metadata: dict) -> dict[str, str]:
 
 
 def apply_topology_mode(*, metadata: dict, mode: str, config: dict) -> dict:
-    roles = _role_map(metadata)
-    honest_nodes = sorted(node_id for node_id, role in roles.items() if role == "honest")
-    overrides = dict(metadata.get("observation_overrides") or {})
-    peer_edges = []
-    for index, left in enumerate(honest_nodes):
-        for right in honest_nodes[index + 1:]:
-            peer_edges.append([left, right])
-    if peer_edges:
-        overrides["expected_peer_edges"] = peer_edges
-        overrides["observed_peer_edges"] = peer_edges
-        overrides["missing_peer_edges"] = []
-        overrides["expected_peer_edge_count"] = len(peer_edges)
-        overrides["observed_peer_edge_count"] = len(peer_edges)
-        overrides["missing_peer_edge_count"] = 0
-    if honest_nodes:
-        overrides["quorum_count"] = len(honest_nodes)
-        overrides["quorum_fraction"] = 1.0
-        overrides["quorum_tip"] = {"hash": "topology-tip-120", "slot": 120, "nodes": honest_nodes}
-        overrides["chain_select_consistent"] = True
-        overrides.setdefault(
-            "latest_tips",
-            {
-                node_id: {"slot": 120, "hash": "topology-tip-120", "block": 60}
-                for node_id in honest_nodes
-            },
-        )
-        overrides["per_node_connectivity"] = {
-            node_id: sorted(other for other in honest_nodes if other != node_id)
-            for node_id in honest_nodes
-        }
-
-    if mode == "simulate_peer_set_capture":
-        topology = {
-            "peer_set_capture_detected": False,
-            "honest_peer_counts": {node_id: max(2, len(honest_nodes) - 1) for node_id in honest_nodes},
-        }
-        result = {
-            "target_node": str(config["target_node"]),
-            "honest_peer_counts": topology["honest_peer_counts"],
-            "peer_set_capture_detected": False,
-        }
-        overrides["topology"] = topology
-    elif mode == "inject_hot_warm_churn":
-        churn = {
-            "observed_events_per_hour": float(config.get("events_per_hour", 8)),
-            "baseline_ceiling_events_per_hour": float(config.get("events_per_hour", 8)),
-        }
-        result = {"target_node": str(config["target_node"]), **churn}
-        overrides["churn"] = churn
-    elif mode == "perturb_ledger_peer_weights":
-        ledger_peers = {
-            "max_absolute_delta": 0.01,
-            "expected_stake_distribution": {"poolA": 0.55, "poolB": 0.45},
-            "observed_stake_distribution": {"poolA": 0.56, "poolB": 0.44},
-        }
-        result = {"target_node": str(config["target_node"]), **ledger_peers}
-        overrides["ledger_peers"] = ledger_peers
-    elif mode == "substitute_big_ledger_peers":
-        big_ledger_peers = {
-            "expected_top_peer_ids": ["poolA", "poolB", "poolC", "poolD"],
-            "observed_top_peer_ids": ["poolA", "poolB", "poolC", "poolX"],
-        }
-        result = {"target_node": str(config["target_node"]), **big_ledger_peers}
-        overrides["big_ledger_peers"] = big_ledger_peers
-    else:
+    valid = {
+        "simulate_peer_set_capture",
+        "inject_hot_warm_churn",
+        "perturb_ledger_peer_weights",
+        "substitute_big_ledger_peers",
+    }
+    if mode not in valid:
         raise ValueError(f"unsupported topology mode: {mode}")
-
+    # substrate-walled: eclipse / Sybil / peer-set capture / ledger-peer manipulation all require a
+    # multi-peer (10-30 node) topology so a node can be surrounded by adversary peers. The current
+    # substrate is a 2-node pair (each node has exactly one peer), so none of these faults can be
+    # performed. We do NOT fabricate observation_overrides (no fake peer edges / quorum / tips / stake
+    # distributions) and we do NOT return a pass. Honest not_applicable; real implementation pending a
+    # multi-peer substrate (phase 2).
+    result = {
+        "target_node": str(config.get("target_node", "")),
+        "mode": mode,
+        "status": "not_applicable",
+        "measured": False,
+        "reason": "substrate-walled: eclipse/Sybil/peer-set/ledger-peer manipulation requires a "
+                  "multi-peer (10-30 node) topology; current substrate is 2-node. Real implementation "
+                  "pending a multi-peer substrate (phase 2). Not faking a pass.",
+    }
+    # pass existing overrides through unchanged; write NO fabricated topology/quorum/tip overrides
+    overrides = dict(metadata.get("observation_overrides") or {})
     metadata["observation_overrides"] = overrides
     return {"result": result, "observation_overrides": overrides}
-
 
 def run_topology_fault(*, runtime_metadata_path: Path, output_dir: Path, mode: str, config: dict) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
