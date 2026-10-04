@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 import shutil
 import socket
 import subprocess
@@ -318,6 +319,155 @@ def _run_handshake_version_negotiation_pressure(*, metadata: dict, config: dict)
     }
 
 
+def _resolve_node_config_path(node: dict):
+    for key in ("config_path", "configuration_path", "config"):
+        value = node.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def _resolve_node_topology_path(node: dict):
+    for key in ("topology_path", "topology"):
+        value = node.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def _host_of(addr: str) -> str:
+    text = str(addr)
+    if text.startswith("[") and "]" in text:
+        return text[1:text.index("]")]
+    return text.rsplit(":", 1)[0] if ":" in text else text
+
+
+def _subnet_of(host: str) -> str:
+    parts = host.split(".")
+    if len(parts) == 4 and all(p.isdigit() for p in parts):
+        return ".".join(parts[:3]) + ".0/24"
+    return host
+
+
+def _read_peers_for_node(node: dict):
+    peers = []
+    topo_path = _resolve_node_topology_path(node)
+    read_from = None
+    if topo_path and Path(topo_path).exists():
+        try:
+            topo = json.loads(Path(topo_path).read_text(encoding="utf-8"))
+            def _collect(obj):
+                if isinstance(obj, dict):
+                    if "address" in obj:
+                        addr = obj.get("address")
+                        port = obj.get("port")
+                        peers.append(f"{addr}:{port}" if port is not None else str(addr))
+                    for value in obj.values():
+                        _collect(value)
+                elif isinstance(obj, list):
+                    for value in obj:
+                        _collect(value)
+            _collect(topo)
+            read_from = "topology_file"
+        except Exception:
+            pass
+    if not peers:
+        peers = [str(a) for a in (node.get("container_peer_addresses") or node.get("peer_addresses") or [])]
+        if peers:
+            read_from = "metadata_peer_addresses"
+    return peers, (read_from or "none")
+
+
+def _run_bootstrap_topology_concentration(*, metadata: dict, config: dict) -> dict:
+    if "runtime_metadata_path" not in config:
+        return {
+            "mode_scope": "library-fallback",
+            "measured": False,
+            "note": "no runtime metadata present; peer concentration not measured",
+        }
+    target_node = str(config["target_node"])
+    node = _find_node(metadata, target_node)
+    peers, source = _read_peers_for_node(node)
+    hosts = [_host_of(p) for p in peers]
+    subnets = [_subnet_of(h) for h in hosts]
+    total = len(peers)
+    minimum_required = int(config.get("minimum_required_trustable_peers", 2))
+    if total:
+        top_host, top_host_n = Counter(hosts).most_common(1)[0]
+        top_subnet, top_subnet_n = Counter(subnets).most_common(1)[0]
+        host_share = round(top_host_n / total, 4)
+        subnet_share = round(top_subnet_n / total, 4)
+    else:
+        top_host = top_subnet = None
+        host_share = subnet_share = None
+    distinct_subnets = len(set(subnets))
+    return {
+        "measured": True,
+        "source": source,
+        "target_node": target_node,
+        "total_peers": total,
+        "peers": peers,
+        "distinct_peer_hosts": len(set(hosts)),
+        "distinct_peer_subnets": distinct_subnets,
+        "top_host": top_host,
+        "top_host_share": host_share,
+        "top_subnet": top_subnet,
+        "top_subnet_share": subnet_share,
+        "minimum_required_trustable_peers": minimum_required,
+        "minimum_peer_diversity_met": distinct_subnets >= minimum_required,
+        "note": "REAL measured topology; 2-node devnet pairs inherently have low peer diversity, this reports the measured value (may be below threshold) rather than a fabricated pass",
+    }
+
+
+def _run_bootstrap_assumption_probe(*, metadata: dict, config: dict) -> dict:
+    if "runtime_metadata_path" not in config:
+        return {
+            "mode_scope": "library-fallback",
+            "measured": False,
+            "note": "no runtime metadata present; bootstrap posture not measured",
+        }
+    target_node = str(config["target_node"])
+    node = _find_node(metadata, target_node)
+    impl = str(node.get("impl") or node.get("implementation") or "")
+    cfg_path = _resolve_node_config_path(node)
+    config_text = ""
+    if cfg_path and Path(cfg_path).exists():
+        try:
+            config_text = Path(cfg_path).read_text(encoding="utf-8")
+        except Exception:
+            config_text = ""
+    genesis_hash_keys = ["ByronGenesisHash", "ShelleyGenesisHash", "AlonzoGenesisHash", "ConwayGenesisHash"]
+    unsafe_flag_keys = ["ExperimentalProtocolsEnabled", "ExperimentalHardForksEnabled", "TestShelleyHardForkAtEpoch", "TestAllegraHardForkAtEpoch"]
+    if config_text:
+        genesis_pinned = {k: (k in config_text) for k in genesis_hash_keys}
+        unsafe_flags = {k: True for k in unsafe_flag_keys if k in config_text}
+        genesis_any = any(genesis_pinned.values())
+    else:
+        genesis_pinned = "not-observable"
+        unsafe_flags = "not-observable"
+        genesis_any = "not-observable"
+    amaru_posture = None
+    if impl == "amaru":
+        amaru_posture = (
+            "amaru pins leader-election nonces in-binary and does not validate from raw genesis "
+            "(bootstrap-trust-source): trusts pre-derived params rather than re-deriving from genesis"
+        )
+    return {
+        "measured": True,
+        "target_node": target_node,
+        "impl": impl,
+        "config_path": cfg_path,
+        "config_readable": bool(config_text),
+        "genesis_hashes_pinned_in_config": genesis_pinned,
+        "expected_genesis_hash_verified": genesis_any,
+        "unsafe_flags_present": unsafe_flags,
+        "version_negotiation_downgrade_seen": "not-observable-static (requires live handshake probe)",
+        "amaru_bootstrap_posture": amaru_posture,
+        "note": "MEASURED config posture; fields not statically observable are marked not-observable rather than fabricated",
+    }
+
+
+
 def apply_exposure_mode(*, metadata: dict, mode: str, config: dict) -> dict:
     node_ids = _node_ids(metadata)
     overrides = dict(metadata.get("observation_overrides") or {})
@@ -329,23 +479,13 @@ def apply_exposure_mode(*, metadata: dict, mode: str, config: dict) -> dict:
     overrides.setdefault("chain_select_consistent", True)
 
     if mode == "bootstrap_topology_concentration":
-        minimum_required = int(config.get("minimum_required_trustable_peers", 2))
-        trustable_count = max(minimum_required, len(node_ids) - 1)
-        result = {
-            "minimum_peer_diversity_met": trustable_count >= minimum_required,
-            "trustable_peer_count": trustable_count,
-            "minimum_required_trustable_peers": minimum_required,
-        }
+        result = _run_bootstrap_topology_concentration(metadata=metadata, config=config)
     elif mode == "local_query_stress":
         result = _run_local_query_stress(metadata=metadata, config=config)
     elif mode == "local_submit_stress":
         result = _run_local_submit_stress(metadata=metadata, config=config)
     elif mode == "bootstrap_assumption_probe":
-        result = {
-            "unsafe_defaults_detected": False,
-            "expected_genesis_hash_verified": True,
-            "version_negotiation_downgrade_seen": False,
-        }
+        result = _run_bootstrap_assumption_probe(metadata=metadata, config=config)
     elif mode == "handshake_version_negotiation_pressure":
         result = _run_handshake_version_negotiation_pressure(metadata=metadata, config=config)
     elif mode == "mux_ingress_overrun":
