@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections import Counter
 import shutil
 import socket
@@ -24,6 +25,432 @@ from runtime_txsubmission_probe import HANDSHAKE_PROPOSE_HEX, _encode_mux_sdu  #
 
 TXSUBMISSION_STRESS_PAYLOAD_HEX = "8300f501"
 HANDSHAKE_UNSUPPORTED_VERSION_HEX = "8200a11903e782182af4"
+# NtN v11-14 with four-field version data: [magic=42, duplex diffusion,
+# peer-sharing disabled, query=false].  Modern Amaru rejects the legacy v10
+# two-field proposal imported above, so the real wire drivers use this offer.
+HANDSHAKE_DUPLEX_PROPOSE_HEX = "8200a40b84182af400f40c84182af400f40d84182af400f40e84182af400f4"
+
+
+def _encode_wire_mux_sdu(
+    payload: bytes, *, mini_protocol_num: int, initiator: bool = True, timestamp: int = 0
+) -> bytes:
+    import struct
+
+    # Ouroboros mux mode bit 0 is the initiator-side instance; the imported
+    # legacy helper reverses this bit and is retained only for older modes.
+    header_word = (
+        ((0 if initiator else 1) << 31)
+        | ((mini_protocol_num & 0x7FFF) << 16)
+        | (len(payload) & 0xFFFF)
+    )
+    return struct.pack(">II", timestamp & 0xFFFFFFFF, header_word) + payload
+
+
+def _recv_exact(sock: socket.socket, length: int) -> bytes:
+    chunks: list[bytes] = []
+    remaining = length
+    while remaining:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise EOFError(f"mux bearer closed with {remaining} bytes remaining")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def _recv_mux_sdu(sock: socket.socket) -> dict:
+    header = _recv_exact(sock, 8)
+    header_word = int.from_bytes(header[4:8], "big")
+    payload_length = header_word & 0xFFFF
+    return {
+        "timestamp": int.from_bytes(header[:4], "big"),
+        "mode": (header_word >> 31) & 1,
+        "mini_protocol_num": (header_word >> 16) & 0x7FFF,
+        "payload": _recv_exact(sock, payload_length),
+    }
+
+
+def _encode_cbor_uint(value: int) -> bytes:
+    if value < 24:
+        return bytes([value])
+    if value < 256:
+        return bytes([24, value])
+    if value < 65536:
+        return bytes([25]) + value.to_bytes(2, "big")
+    return bytes([26]) + (value & 0xFFFFFFFF).to_bytes(4, "big")
+
+
+def _keepalive_request(cookie: int) -> bytes:
+    return bytes([0x82, 0x00]) + _encode_cbor_uint(cookie & 0xFFFFFFFF)
+
+
+def _runtime_pid(node: dict) -> int | None:
+    try:
+        pid = int(node.get("pid") or 0)
+    except (TypeError, ValueError):
+        pid = 0
+    if pid > 0:
+        return pid
+    pid_file = node.get("pid_file")
+    if pid_file:
+        try:
+            pid = int(Path(str(pid_file)).read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            return None
+        return pid if pid > 0 else None
+    return None
+
+
+def _resolve_n2n_target(*, metadata: dict, config: dict) -> dict:
+    runtime_metadata_path = Path(config["runtime_metadata_path"])
+    target_node = str(config["target_node"])
+    node = _find_node(metadata, target_node)
+    resolved = None
+    try:
+        resolved = resolve_target_process(runtime_metadata_path, target_node)
+    except RuntimeError:
+        pass
+    port = int(
+        (resolved or {}).get("port")
+        or node.get("n2n_port")
+        or node.get("listen_port")
+        or node.get("port")
+        or 0
+    )
+    if port <= 0:
+        raise RuntimeError(f"runtime metadata has no N2N listen port for {target_node!r}")
+    host = str(
+        config.get("target_host")
+        or node.get("n2n_host")
+        or node.get("listen_host")
+        or node.get("host")
+        or node.get("address")
+        or "127.0.0.1"
+    )
+    if host in {"0.0.0.0", "::", "[::]"}:
+        host = "127.0.0.1"
+    return {
+        "host": host,
+        "port": port,
+        "pid": int((resolved or {}).get("pid") or _runtime_pid(node) or 0) or None,
+        "target_node": target_node,
+    }
+
+
+def _open_n2n_bearer(target: dict, *, duplex: bool, timeout: float = 2.0) -> tuple[socket.socket, dict]:
+    sock = socket.create_connection((target["host"], int(target["port"])), timeout=timeout)
+    try:
+        sock.settimeout(timeout)
+        sock.sendall(_encode_wire_mux_sdu(bytes.fromhex(HANDSHAKE_DUPLEX_PROPOSE_HEX), mini_protocol_num=0))
+        response = _recv_mux_sdu(sock)
+        payload = response["payload"]
+        accepted = (
+            response["mode"] == 1
+            and response["mini_protocol_num"] == 0
+            and len(payload) >= 2
+            and payload[1] == 1
+        )
+        if not accepted:
+            raise RuntimeError(f"N2N handshake was not accepted: payload={payload.hex()}")
+        response["duplex_negotiated"] = bool(duplex and payload.endswith(bytes.fromhex("84182af400f4")))
+        return sock, response
+    except Exception as exc:
+        sock.close()
+        if isinstance(exc, RuntimeError):
+            raise
+        raise RuntimeError(f"N2N handshake failed after TCP connect: {exc}") from exc
+
+
+def _bearer_is_open(sock: socket.socket) -> bool:
+    original_timeout = sock.gettimeout()
+    try:
+        sock.settimeout(0.01)
+        return sock.recv(1, socket.MSG_PEEK) != b""
+    except (BlockingIOError, socket.timeout):
+        return True
+    except (ConnectionResetError, OSError):
+        return False
+    finally:
+        sock.settimeout(original_timeout)
+
+
+def _recv_available_mux_sdu(sock: socket.socket) -> dict | None:
+    original_timeout = sock.gettimeout()
+    try:
+        sock.setblocking(False)
+        header = sock.recv(8, socket.MSG_PEEK)
+        if not header:
+            raise EOFError("mux bearer closed")
+        if len(header) < 8:
+            return None
+        payload_length = int.from_bytes(header[6:8], "big")
+        frame = sock.recv(8 + payload_length, socket.MSG_PEEK)
+        if len(frame) < 8 + payload_length:
+            return None
+        return _recv_mux_sdu(sock)
+    except BlockingIOError:
+        return None
+    finally:
+        sock.settimeout(original_timeout)
+
+
+def _target_status(target: dict) -> dict:
+    pid = target.get("pid")
+    pid_alive = None
+    if pid:
+        try:
+            os.kill(int(pid), 0)
+            pid_alive = True
+        except OSError:
+            pid_alive = False
+    listener_reachable = False
+    try:
+        with socket.create_connection((target["host"], int(target["port"])), timeout=0.5):
+            listener_reachable = True
+    except OSError:
+        pass
+    return {
+        "pid_alive": pid_alive,
+        "listener_reachable": listener_reachable,
+        "node_stayed_up": bool(pid_alive if pid_alive is not None else listener_reachable),
+    }
+
+
+def _control_keepalive(sock: socket.socket, cookie: int) -> bool:
+    sock.settimeout(0.75)
+    sock.sendall(_encode_wire_mux_sdu(_keepalive_request(cookie), mini_protocol_num=8))
+    expected = bytes([0x82, 0x01]) + _encode_cbor_uint(cookie & 0xFFFFFFFF)
+    deadline = time.monotonic() + 0.75
+    while time.monotonic() < deadline:
+        response = _recv_mux_sdu(sock)
+        if response["mode"] == 1 and response["mini_protocol_num"] == 8:
+            return response["payload"] == expected
+    return False
+
+
+def _run_mux_ingress_overrun(*, metadata: dict, config: dict) -> dict:
+    if "runtime_metadata_path" not in config:
+        return {
+            "mode_scope": "library-fallback",
+            "measured": False,
+            "offending_bearer_disconnected": True,
+            "non_offending_bearers_preserved": True,
+            "queue_budget_respected": True,
+            "note": "labeled compatibility constants only; no runtime metadata present and no traffic sent",
+        }
+    target = _resolve_n2n_target(metadata=metadata, config=config)
+    duration_seconds = max(0.5, float(config.get("duration_seconds", 5.0)))
+    batch_size = max(1, min(int(config.get("mux_frames_per_batch", 256)), 2048))
+    control = None
+    offender = None
+    frames_sent = 0
+    bytes_sent = 0
+    send_timeouts = 0
+    send_errors = 0
+    control_checks = 0
+    control_successes = 0
+    control_during_checks = 0
+    control_during_successes = 0
+    control_final_success = False
+    offender_disconnected = False
+    try:
+        try:
+            control, _ = _open_n2n_bearer(target, duplex=False)
+            offender, _ = _open_n2n_bearer(target, duplex=False)
+        except (OSError, EOFError, RuntimeError) as exc:
+            raise RuntimeError(
+                f"target N2N ingress unreachable at {target['host']}:{target['port']}: {exc}"
+            ) from exc
+        control_checks += 1
+        try:
+            control_successes += int(_control_keepalive(control, 1))
+        except (OSError, EOFError):
+            pass
+        offender.settimeout(0.05)
+        frame = _encode_wire_mux_sdu(_keepalive_request(0xC0DE), mini_protocol_num=8)
+        batch = frame * batch_size
+        deadline = time.monotonic() + duration_seconds
+        next_control_check = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            try:
+                offender.sendall(batch)
+                frames_sent += batch_size
+                bytes_sent += len(batch)
+            except socket.timeout:
+                send_timeouts += 1
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                send_errors += 1
+                offender_disconnected = True
+                break
+            if time.monotonic() >= next_control_check:
+                control_checks += 1
+                control_during_checks += 1
+                try:
+                    during_success = _control_keepalive(control, control_checks)
+                    control_successes += int(during_success)
+                    control_during_successes += int(during_success)
+                except (OSError, EOFError):
+                    pass
+                next_control_check = time.monotonic() + 0.5
+        if not offender_disconnected:
+            offender_disconnected = not _bearer_is_open(offender)
+        control_checks += 1
+        try:
+            control_final_success = _control_keepalive(control, control_checks)
+            control_successes += int(control_final_success)
+        except (OSError, EOFError):
+            pass
+        control_preserved = _bearer_is_open(control) and control_final_success
+        status = _target_status(target)
+        queue_budget_respected = bool(status["node_stayed_up"] and control_preserved)
+        return {
+            "measured": True,
+            "target_host": target["host"],
+            "target_port": int(target["port"]),
+            "target_pid": target["pid"],
+            "duration_seconds": duration_seconds,
+            "mux_frames_sent": frames_sent,
+            "mux_bytes_sent": bytes_sent,
+            "send_timeouts": send_timeouts,
+            "send_errors": send_errors,
+            "ingress_backpressure_observed": send_timeouts > 0,
+            "offending_bearer_disconnected": offender_disconnected,
+            "control_bearer_checks": control_checks,
+            "control_bearer_successes": control_successes,
+            "control_bearer_during_window_checks": control_during_checks,
+            "control_bearer_during_window_successes": control_during_successes,
+            "control_bearer_post_window_success": control_final_success,
+            "non_offending_bearers_preserved": control_preserved,
+            "queue_budget_respected": queue_budget_respected,
+            "queue_budget_measurement_basis": "target stayed up and independent control bearer remained responsive",
+            **status,
+            "node_crashed": not status["node_stayed_up"],
+        }
+    finally:
+        for bearer in (offender, control):
+            if bearer is not None:
+                bearer.close()
+
+
+def _run_duplex_promotion_pressure(*, metadata: dict, config: dict) -> dict:
+    hard_limit = int(config.get("hard_limit", 8))
+    if "runtime_metadata_path" not in config:
+        return {
+            "mode_scope": "library-fallback",
+            "measured": False,
+            "hard_limit_exceeded": False,
+            "inbound_preferred_reset_applied": True,
+            "accepted_connection_count_peak": hard_limit,
+            "hard_limit": hard_limit,
+            "note": "labeled compatibility constants only; no runtime metadata present and no traffic sent",
+        }
+    target = _resolve_n2n_target(metadata=metadata, config=config)
+    connection_count = min(64, max(hard_limit + 1, int(config.get("connection_count", hard_limit * 3))))
+    hold_seconds = max(0.25, float(config.get("hold_seconds", 2.0)))
+    bearers: list[socket.socket] = []
+    connection_attempts = 0
+    tcp_connect_failures = 0
+    handshake_failures = 0
+    duplex_negotiated = 0
+    promotion_messages_sent = 0
+    send_timeouts = 0
+    reset_ids: set[int] = set()
+    reverse_direction_frames = 0
+    peak = 0
+    try:
+        for _ in range(connection_count):
+            connection_attempts += 1
+            try:
+                bearer, response = _open_n2n_bearer(target, duplex=True, timeout=1.0)
+            except OSError:
+                tcp_connect_failures += 1
+                continue
+            except (EOFError, RuntimeError):
+                handshake_failures += 1
+                continue
+            bearers.append(bearer)
+            duplex_negotiated += int(response["duplex_negotiated"])
+            try:
+                bearer.settimeout(0.25)
+                bearer.sendall(_encode_wire_mux_sdu(bytes.fromhex("82048180"), mini_protocol_num=2))
+                promotion_messages_sent += 1
+            except socket.timeout:
+                send_timeouts += 1
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                reset_ids.add(id(bearer))
+            active = sum(1 for item in bearers if id(item) not in reset_ids and _bearer_is_open(item))
+            peak = max(peak, active)
+        if not bearers:
+            raise RuntimeError(
+                f"target N2N ingress unreachable at {target['host']}:{target['port']}: "
+                f"no duplex handshake succeeded ({tcp_connect_failures} connect failures, "
+                f"{handshake_failures} handshake failures)"
+            )
+        deadline = time.monotonic() + hold_seconds
+        cookie = 1
+        while time.monotonic() < deadline:
+            for bearer in bearers:
+                if id(bearer) in reset_ids:
+                    continue
+                while True:
+                    try:
+                        incoming = _recv_available_mux_sdu(bearer)
+                    except (EOFError, ConnectionResetError, OSError):
+                        reset_ids.add(id(bearer))
+                        break
+                    if incoming is None:
+                        break
+                    if incoming["mode"] == 0:
+                        reverse_direction_frames += 1
+                if id(bearer) in reset_ids:
+                    continue
+                if not _bearer_is_open(bearer):
+                    reset_ids.add(id(bearer))
+                    continue
+                try:
+                    bearer.settimeout(0.05)
+                    bearer.sendall(_encode_wire_mux_sdu(_keepalive_request(cookie), mini_protocol_num=8))
+                except socket.timeout:
+                    send_timeouts += 1
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    reset_ids.add(id(bearer))
+                cookie += 1
+            active = sum(1 for item in bearers if id(item) not in reset_ids and _bearer_is_open(item))
+            peak = max(peak, active)
+            time.sleep(0.1)
+        active_final = sum(1 for item in bearers if id(item) not in reset_ids and _bearer_is_open(item))
+        status = _target_status(target)
+        return {
+            "measured": True,
+            "target_host": target["host"],
+            "target_port": int(target["port"]),
+            "target_pid": target["pid"],
+            "connection_attempts": connection_attempts,
+            "tcp_connect_failures": tcp_connect_failures,
+            "handshake_successes": len(bearers),
+            "handshake_failures": handshake_failures,
+            "send_timeouts": send_timeouts,
+            "duplex_negotiated_count": duplex_negotiated,
+            "duplex_responder_activations_sent": promotion_messages_sent,
+            "target_initiated_reverse_direction_frames": reverse_direction_frames,
+            "duplex_promotion_observed": reverse_direction_frames > 0,
+            "promotion_measurement_basis": (
+                "inbound bearers negotiated duplex version data and activated the target's ChainSync responder; "
+                "promotion is observed only when the target sends a mode-0 reverse-direction mux frame"
+            ),
+            "accepted_connection_count_peak": peak,
+            "accepted_connection_count_final": active_final,
+            "connection_resets_observed": len(reset_ids),
+            "hard_limit": hard_limit,
+            "hard_limit_exceeded": peak > hard_limit,
+            "inbound_preferred_reset_applied": len(reset_ids) > 0,
+            "hard_limit_measurement_basis": "probe-configured threshold compared with concurrently live negotiated bearers",
+            **status,
+            "node_crashed": not status["node_stayed_up"],
+        }
+    finally:
+        for bearer in bearers:
+            bearer.close()
 
 
 def _load_metadata(runtime_metadata_path: Path) -> dict:
@@ -469,14 +896,17 @@ def _run_bootstrap_assumption_probe(*, metadata: dict, config: dict) -> dict:
 
 
 def apply_exposure_mode(*, metadata: dict, mode: str, config: dict) -> dict:
-    node_ids = _node_ids(metadata)
-    overrides = dict(metadata.get("observation_overrides") or {})
-    overrides.setdefault(
-        "per_node_connectivity",
-        {node_id: sorted(other for other in node_ids if other != node_id) for node_id in node_ids},
-    )
-    overrides.setdefault("responsive_node_count", len(node_ids))
-    overrides.setdefault("chain_select_consistent", True)
+    real_wire_mode = mode in {"mux_ingress_overrun", "duplex_promotion_pressure"}
+    overrides = None
+    if not real_wire_mode:
+        node_ids = _node_ids(metadata)
+        overrides = dict(metadata.get("observation_overrides") or {})
+        overrides.setdefault(
+            "per_node_connectivity",
+            {node_id: sorted(other for other in node_ids if other != node_id) for node_id in node_ids},
+        )
+        overrides.setdefault("responsive_node_count", len(node_ids))
+        overrides.setdefault("chain_select_consistent", True)
 
     if mode == "bootstrap_topology_concentration":
         result = _run_bootstrap_topology_concentration(metadata=metadata, config=config)
@@ -489,25 +919,16 @@ def apply_exposure_mode(*, metadata: dict, mode: str, config: dict) -> dict:
     elif mode == "handshake_version_negotiation_pressure":
         result = _run_handshake_version_negotiation_pressure(metadata=metadata, config=config)
     elif mode == "mux_ingress_overrun":
-        result = {
-            "offending_bearer_disconnected": True,
-            "non_offending_bearers_preserved": True,
-            "queue_budget_respected": True,
-        }
+        result = _run_mux_ingress_overrun(metadata=metadata, config=config)
     elif mode == "duplex_promotion_pressure":
-        hard_limit = int(config.get("hard_limit", 8))
-        result = {
-            "hard_limit_exceeded": False,
-            "inbound_preferred_reset_applied": True,
-            "accepted_connection_count_peak": hard_limit,
-            "hard_limit": hard_limit,
-        }
+        result = _run_duplex_promotion_pressure(metadata=metadata, config=config)
     elif mode == "keepalive_failure_cascade":
         result = _run_keepalive_failure_cascade(metadata=metadata, config=config)
     else:
         raise ValueError(f"unsupported exposure mode: {mode}")
 
-    metadata["observation_overrides"] = overrides
+    if overrides is not None:
+        metadata["observation_overrides"] = overrides
     return {"result": result, "observation_overrides": overrides}
 
 
@@ -518,8 +939,9 @@ def run_exposure_probe(*, runtime_metadata_path: Path, output_dir: Path, mode: s
     config.setdefault("runtime_metadata_path", str(runtime_metadata_path))
     config.setdefault("output_dir", str(output_dir))
     updated = apply_exposure_mode(metadata=metadata, mode=mode, config=config)
-    metadata["observation_overrides"] = updated["observation_overrides"]
-    _write_metadata(runtime_metadata_path, metadata)
+    if updated["observation_overrides"] is not None:
+        metadata["observation_overrides"] = updated["observation_overrides"]
+        _write_metadata(runtime_metadata_path, metadata)
     report = {
         "mode": mode,
         "target_node": str(config.get("target_node", "")),
