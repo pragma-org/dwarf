@@ -1,6 +1,6 @@
 # Finding: Amaru Plutus VM accepts CEK `case` over built-in-type values at protocol version 10 (missing PV gate) — consensus is_valid divergence
 
-**Status:** genuinely-new finding; published to the public DWARF repo; GHSA advisory to be filed with PRAGMA (coordinated disclosure).
+**Status:** genuinely-new finding (advisory-first; public held pending GHSA filing).
 **Severity:** HIGH (consensus-critical phase-2 is_valid divergence).
 **Target:** amaru v10.11.20260925 (eaf8ac3f) vs cardano-node 11.1.2. Protocol version 10.
 **Context:** authorized conformance testing on the local devnet (testnet_42), testnet-only keys; coordinated disclosure to PRAGMA.

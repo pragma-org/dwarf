@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "invalid_tx_body_dropped params",
+  "type": "object",
+  "required": [
+    "primitive"
+  ],
+  "properties": {
+    "primitive": {
+      "const": "invalid_tx_body_dropped"
+    },
+    "output_dir": {
+      "type": "string"
+    },
+    "expected_verdict": {
+      "type": "string",
+      "enum": [
+        "no_body_leak",
+        "VALUE_CREATION_DIVERGENCE"
+      ]
+    },
+    "body_effect": {
+      "type": "string"
+    },
+    "source_primitive": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

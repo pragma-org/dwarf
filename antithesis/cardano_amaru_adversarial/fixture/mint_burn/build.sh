@@ -55,7 +55,7 @@ sign multiasset-mint-valid policy
 # --- multi-asset min-ADA boundary: token output at exactly the min (accept) and min-1 (reject) ---
 MIN=$($CLI conway transaction calculate-min-required-utxo --protocol-params-file pparams.json \
   --tx-out "$ADDR+1000000+1 $A" | awk '{print $2}')
-for c in "minada-token-at-min $MIN" "minada-token-below $((MIN - 1))"; do set -- $c
+for c in "minada-asset-at-min $MIN" "minada-asset-below $((MIN - 1))"; do set -- $c
   raw $1 --tx-out "$ADDR+$2+1 $A" --tx-out "$ADDR+$((TOTAL - FEE - $2))" --fee $FEE --mint "1 $A" "${MS[@]}"
   sign $1 policy; done
 

@@ -31,7 +31,7 @@ into an accepted value. The valid maximum (`2^63-1`) is accepted by both.
   (covered by `mint-zero-qty`), and a net-negative with no token input reduces to a burn with no
   input (covered by `burn-nonexistent` / `burn-int64-min`).
 - **maxValueSize / token-bundle limit** — covered by the mint/burn family's `value-too-big`.
-- **minUTxO exact boundary** — covered by `minada-token-at-min` / `minada-token-below`.
+- **minUTxO exact boundary** — covered by `minada-asset-at-min` / `minada-asset-below`.
 
 ## Reproduce
 

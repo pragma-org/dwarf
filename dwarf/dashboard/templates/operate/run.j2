@@ -293,6 +293,7 @@
 {% endif %}
 
 {% if run.measurements.present %}
+{% include "operate/_partials/_measurement_overview.j2" %}
 {% include "operate/_partials/_measurement_report.j2" %}
 
 <hr class="hairline">

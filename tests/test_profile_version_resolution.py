@@ -68,6 +68,7 @@ def test_loaded_implicit_default_remains_implicit_through_cli_preview_serializat
 
 def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class():
     expected_adapters = {
+        "block-apply-adversary": "amaru-control",
         "profile-a-haskell-peersharing-disabled": "generated-cardano-local",
         "profile-b-haskell-peersharing-enabled": "generated-cardano-local",
         "profile-c-mixed-haskell-amaru-minimal": "amaru-control",
@@ -101,7 +102,7 @@ def test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class(
     }
     profiles = load_profiles()
 
-    assert len(profiles) == 30
+    assert len(profiles) == 31
     assert {profile.id for profile in profiles} == set(expected_adapters)
     for profile in profiles:
         source = next(

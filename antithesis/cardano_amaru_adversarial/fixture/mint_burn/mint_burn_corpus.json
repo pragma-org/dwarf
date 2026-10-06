@@ -186,8 +186,8 @@
    "credential": "3b723a2f83e48ccdce2fa1f42f70609b1b9d9dc55a4988d8a14404f9"
   },
   {
-   "case_id": "minada-token-below",
-   "tx_file": "minada-token-below.tx",
+   "case_id": "minada-asset-below",
+   "tx_file": "minada-asset-below.tx",
    "expected": "reject",
    "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
    "cbor_size": 457,
@@ -236,8 +236,8 @@
    "note": "mint 10 MINT + 3 MINTB in one tx"
   },
   {
-   "case_id": "minada-token-at-min",
-   "tx_file": "minada-token-at-min.tx",
+   "case_id": "minada-asset-at-min",
+   "tx_file": "minada-asset-at-min.tx",
    "expected": "accept",
    "input": "9708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a1#0",
    "cbor_size": 457,

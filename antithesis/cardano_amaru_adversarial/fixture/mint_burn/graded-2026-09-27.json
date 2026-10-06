@@ -327,7 +327,7 @@
    "cardano_reason": "{\"contents\":{\"contents\":{\"contents\":{\"era\":\"ShelleyBasedEraConway\",\"error\":[\"ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO Mismatch (RelEQ) {supplied: MaryValue (Coin 200000000000000) (MultiAsset (fromList [])), expected: MaryValue"
   },
   {
-   "case_id": "minada-token-below",
+   "case_id": "minada-asset-below",
    "expected": "reject",
    "classes": {
     "amaru": "phase1_reject",
@@ -417,7 +417,7 @@
    "cardano_reason": "\"81b4ef3bdd4596f917a38d164f04b82975d8ee9ac2a2f8dac817c8dce1e38cff\""
   },
   {
-   "case_id": "minada-token-at-min",
+   "case_id": "minada-asset-at-min",
    "expected": "accept",
    "classes": {
     "amaru": "accepted",

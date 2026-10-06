@@ -1,0 +1,114 @@
+{
+  "spec_version": "v1",
+  "id": "ledger-block-apply-isvalid-false-withdrawal-gated-conformance-amaru-cardano-node",
+  "title": "Ledger block-apply differential - is_valid=false WITHDRAWAL correctly is_valid-gated (conformance, source-anchored withdrawals.rs:104): amaru does not debit the reward account on a phase-2-failed tx; matches cardano-node. Clean-negative.",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "2026-10-03",
+    "amaru",
+    "block-apply",
+    "cardano-node",
+    "clean-negative",
+    "conformance",
+    "conway",
+    "differential",
+    "is-valid-false",
+    "ledger",
+    "phase2",
+    "source-anchored",
+    "withdrawal"
+  ],
+  "evidence_intent": "risk-support",
+  "target": {
+    "implementation": "amaru",
+    "version": "v10.11.20260925",
+    "source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d"
+  },
+  "runtime": "devnet",
+  "substrate": {
+    "compose_mode": "host",
+    "network": "preview",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "amaru",
+        "version": "v10.11.20260925",
+        "role": "submitter"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "11.1.2",
+        "role": "observer"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {
+          "from": "node1",
+          "to": "node2"
+        },
+        {
+          "from": "node2",
+          "to": "node1"
+        }
+      ]
+    }
+  },
+  "setup": [
+    {
+      "primitive": "runtime_install_version",
+      "output_dir": "outputs/substrate-install"
+    },
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose"
+    }
+  ],
+  "load": [
+    {
+      "primitive": "invalid_tx_body_differential",
+      "output_dir": "outputs/invalid-tx-body-differential",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "reference_node": "node2",
+      "body_effect": "withdrawal"
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": [
+        "node1",
+        "node2"
+      ],
+      "observation_window_seconds": 8,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": [
+        "tip_state",
+        "connection_state"
+      ],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive"
+    },
+    {
+      "primitive": "invalid_tx_body_dropped",
+      "output_dir": "outputs/invalid-tx-body-differential",
+      "expected_verdict": "no_body_leak",
+      "body_effect": "withdrawal"
+    }
+  ],
+  "teardown": [
+    {
+      "primitive": "runtime_teardown_substrate",
+      "output_dir": "outputs/substrate-teardown"
+    }
+  ]
+}

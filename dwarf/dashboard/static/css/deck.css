@@ -569,8 +569,8 @@ body[data-ui="basic"] .measurement-group__summary { padding:10px 14px !important
 body[data-ui="basic"] .measurement-group__summary h3 { font-size:17px !important; }
 body[data-ui="basic"] .measurement-group__summary .eyebrow { font-size:10px; }
 body[data-ui="basic"] .measurement-actions { display:flex; flex-wrap:wrap; gap:14px; margin:12px 0 0; }
-body[data-ui="basic"] .measurement-actions .cta { all:unset; cursor:pointer; font:600 12.5px var(--dk-mono); color:var(--dk-gold) !important; }
-body[data-ui="basic"] .measurement-actions .cta:hover { text-decoration:underline; }
+body[data-ui="basic"] .measurement-actions .cta:not(.cta--primary) { all:unset; cursor:pointer; font:600 12.5px var(--dk-mono); color:var(--dk-gold) !important; }
+body[data-ui="basic"] .measurement-actions .cta:not(.cta--primary):hover { text-decoration:underline; }
 
 /* ---- responsive ---- */
 @media (max-width:900px) {
@@ -603,3 +603,78 @@ body[data-ui="basic"] .measurement-actions .cta:hover { text-decoration:underlin
   .dk-card__inner { transition:none; }
   .dk-mini { transition:none; }
 }
+
+/* run card captured metrics/measurements -> blue outline cue */
+.dk-mini--measured { box-shadow: 0 0 0 1.5px rgb(80,140,245), 0 0 7px rgba(80,140,245,.45); }
+.dk-mini--measured:hover, .dk-mini--measured:focus-visible { box-shadow: 0 0 0 1.5px rgb(110,165,255), 0 0 9px rgba(80,140,245,.6); }
+
+
+/* ---- measurement overview (digestible + interactive summary above the report) ---- */
+.dk-mviz { margin: 0 0 22px; padding: 18px 20px; border-radius: 16px;
+  background: rgba(21,16,31,.6); border: 1px solid rgba(255,255,255,.08); }
+.dk-mviz__sub { color: var(--dk-muted); margin: 4px 0 0; font-size: 13.5px; max-width: 74ch; }
+.dk-mviz__top { display: flex; flex-wrap: wrap; align-items: stretch; gap: 18px 22px; margin-top: 16px; }
+
+/* donut: measured vs unavailable (parts-of-whole) */
+.dk-mviz__donut { display: flex; align-items: center; gap: 16px; margin: 0; flex: none; }
+.dk-donut { width: 124px; height: 124px; flex: none; }
+.dk-donut__track { fill: none; stroke: rgba(238,232,246,.12); stroke-width: 3.6; }
+.dk-donut__val { fill: none; stroke: rgb(80,140,245); stroke-width: 3.6; stroke-linecap: round;
+  transition: stroke-dasharray .6s ease; }
+.dk-donut__pct { fill: #eaf0ff; font: 700 8px var(--dk-mono, ui-monospace, monospace); text-anchor: middle; }
+.dk-donut__lab { fill: var(--dk-muted); font: 2.9px var(--dk-mono, ui-monospace, monospace);
+  text-anchor: middle; letter-spacing: .12em; text-transform: uppercase; }
+.dk-donut-legend { display: flex; flex-direction: column; gap: 6px;
+  font: 12.5px var(--dk-mono, ui-monospace, monospace); color: var(--dk-muted); }
+.dk-donut-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.dk-donut-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.dk-donut-legend .is-measured i { background: rgb(80,140,245); }
+.dk-donut-legend .is-unavail i { background: rgba(238,232,246,.14); border: 1px dashed rgba(238,232,246,.4); }
+.dk-donut-legend .is-tot { opacity: .7; }
+
+/* per-card distribution detail */
+.dk-mviz__detail, .dk-mviz__detail-empty { flex: 1 1 320px; min-width: 270px; border-radius: 12px; }
+.dk-mviz__detail { padding: 13px 16px; background: rgba(80,140,245,.06); border: 1px solid rgba(80,140,245,.26); }
+.dk-mviz__detail-head { display: flex; justify-content: space-between; align-items: center; }
+.dk-mviz__detail-x { background: none; border: 0; color: var(--dk-muted); font-size: 20px; line-height: 1;
+  cursor: pointer; padding: 0 4px; }
+.dk-mviz__detail-x:hover { color: #eaf0ff; }
+.dk-mviz__detail-title { margin: 6px 0 2px; font-size: 14.5px; color: #eaf0ff; }
+.dk-mviz__detail-value { font: 700 22px var(--dk-mono, ui-monospace, monospace); color: rgb(130,175,255); }
+.dk-mviz__detail-value small { font-size: 12px; color: var(--dk-muted); font-weight: 600; }
+.dk-mviz__detail-empty { display: flex; align-items: center; justify-content: center; padding: 14px;
+  border: 1px dashed rgba(238,232,246,.18); color: var(--dk-muted); font-size: 13px; text-align: center; }
+.dk-mviz__detail-note { margin: 10px 0 0; font-size: 12px; color: var(--dk-muted); }
+
+/* percentile bar (median / mean / p95 / p99 across samples) */
+.dk-pbar { position: relative; margin-top: 20px; height: 48px; }
+.dk-pbar__track { position: absolute; left: 0; right: 0; top: 22px; height: 4px; border-radius: 2px;
+  background: rgba(238,232,246,.12); }
+.dk-pbar__fill { position: absolute; top: 22px; height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, rgb(80,140,245), rgb(110,165,255)); }
+.dk-pbar__mark { position: absolute; top: 16px; width: 2px; height: 16px; background: #eaf0ff; transform: translateX(-1px); }
+.dk-pbar__mark.is-mean { background: rgba(234,240,255,.6); }
+.dk-pbar__mark.is-p95 { background: rgb(230,198,127); }
+.dk-pbar__mark.is-p99 { background: rgb(240,120,120); }
+.dk-pbar__cap { position: absolute; top: 0; font: 10px var(--dk-mono, ui-monospace, monospace);
+  color: var(--dk-muted); transform: translateX(-50%); white-space: nowrap; }
+.dk-pbar__lab { position: absolute; top: 34px; font: 10px var(--dk-mono, ui-monospace, monospace);
+  color: var(--dk-muted); transform: translateX(-50%); white-space: nowrap; }
+
+/* category cards (reuse app dk-card trading-card theme) */
+.dk-mviz__cards { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 20px; }
+.dk-mviz__tcard { width: 150px; text-decoration: none; display: block; }
+.dk-mviz__tface { display: flex; flex-direction: column; gap: 8px; min-height: 112px; padding: 13px 14px; height: 100%; }
+.dk-mviz__tcard-top { display: flex; justify-content: space-between; align-items: center;
+  font: 700 12px var(--dk-mono, ui-monospace, monospace); color: var(--dk-gold, rgb(230,198,127)); }
+.dk-mviz__tcard-suit { font-size: 15px; }
+.dk-mviz__tcard-title { font: 600 13px var(--dk-sans, inherit); color: #eee; line-height: 1.25; flex: 1; }
+.dk-mviz__tcard-n { font: 700 21px var(--dk-mono, ui-monospace, monospace); color: rgb(130,175,255);
+  display: flex; align-items: baseline; gap: 5px; }
+.dk-mviz__tcard-n small { font-size: 10.5px; font-weight: 600; color: var(--dk-muted); }
+.dk-mviz__tcard[aria-pressed="true"] .dk-face { box-shadow: 0 0 0 2px rgb(110,165,255); }
+
+/* selected measurement card (the one being charted above) */
+[data-measurement-card][data-m-value] { cursor: pointer; }
+.measurement-card.is-mviz-selected { box-shadow: 0 0 0 2px rgb(110,165,255); }
+@media (prefers-reduced-motion: reduce) { .dk-donut__val { transition: none; } }

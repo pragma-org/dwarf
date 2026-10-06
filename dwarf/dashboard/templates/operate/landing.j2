@@ -1,8 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
 <span class="eyebrow">Operate</span>
-<h1>Forensic substrate</h1>
-<p class="lede">Adversarial inputs against Amaru and the Haskell Cardano node, recorded as tamper-evident evidence bundles. The substrate is observed, probed, and replayed under fault.</p>
 
 <hr class="hairline">
 
@@ -10,8 +8,6 @@
 {# ---- BASIC view: operator-first summary (Advanced shows the full grid) ---- #}
 <section class="basic-only dk" aria-label="The deck box">
   {% set total = (pass_count or 0) + (fail_count or 0) + (other_count or 0) %}
-  <h2 class="dk-lead" style="margin-top:0">{% if runs_total %}{{ pass_rate_pct }}% of the last {{ runs_total }} runs passed — {{ bundles_count }} evidence bundles are preserved.{% else %}No runs yet — start one to deal the first card.{% endif %}</h2>
-  <p class="dk-plain"><b>A count is not a verdict.</b> {{ fail_count }} failed and {{ other_count }} ended in error. Catalog stacks below are inventory, not coverage or security assurance — open a run to check what it asserted and whether its hash chain verifies.</p>
   <div class="dk-box">
     <div>
       {% set C = 502.65 %}
@@ -30,7 +26,6 @@
       <div class="dk-dial-legend"><span class="dk-g-pass">♦ {{ pass_count }} pass</span><span class="dk-g-fail">▲ {{ fail_count }} fail</span><span class="dk-g-error">✕ {{ other_count }} error</span></div>
     </div>
     <div>
-      <p class="eyebrow" style="margin:0 0 14px">Catalog · card backs (inventory, not proof)</p>
       <div class="dk-stacks">
         {% for label, count, href in [
           ('Scenarios', scenario_count, '/operate/scenarios'), ('Primitives', primitive_count, '/operate/primitives'),
@@ -50,19 +45,17 @@
   </div>
 
   <div class="dk-loop">
-    <a class="dk-card" href="/run"><div class="dk-face"><div class="dk-face__body">
+    <a class="dk-card dk-holo dk-holo--soft" href="/run" data-dk-seed="start-run"><div class="dk-face"><div class="dk-foil"></div><div class="dk-glare"></div><div class="dk-face__body">
       <div class="dk-kicker"><span>01</span><span>♦</span></div><div class="dk-title">Start a run</div>
       <p class="dk-sub">Pick a scenario and profile; DWARF checks versions and readiness first.</p></div></div></a>
-    <a class="dk-card" href="/operate/runs"><div class="dk-face"><div class="dk-face__body">
+    <a class="dk-card dk-holo dk-holo--soft" href="/operate/runs" data-dk-seed="inspect-results"><div class="dk-face"><div class="dk-foil"></div><div class="dk-glare"></div><div class="dk-face__body">
       <div class="dk-kicker"><span>02</span><span>♦</span></div><div class="dk-title">Inspect results</div>
       <p class="dk-sub">Open a run for its verdict, asserted property and hash-chain integrity.</p></div></div></a>
-    <a class="dk-card" href="/operate/bundles"><div class="dk-face"><div class="dk-face__body">
+    <a class="dk-card dk-holo dk-holo--soft" href="/operate/bundles" data-dk-seed="export-evidence"><div class="dk-face"><div class="dk-foil"></div><div class="dk-glare"></div><div class="dk-face__body">
       <div class="dk-kicker"><span>03</span><span>♦</span></div><div class="dk-title">Export evidence</div>
       <p class="dk-sub">Download the portable, hash-chained bundle for audit and replay.</p></div></div></a>
   </div>
 
-  <h2 class="b-h2">What is proven vs mapped
-    <a class="b-adv-link" href="?view=advanced">Open the full substrate in Advanced &rarr;</a></h2>
   <div class="b-chips">
     <a class="b-chip" href="/learn/threat-coverage">Threat &amp; risk binder</a>
     <a class="b-chip" href="/learn/measurement-coverage">Measurement coverage</a>

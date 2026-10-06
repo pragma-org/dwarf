@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "epoch_boundary_pots_match params",
+  "type": "object",
+  "required": [
+    "primitive"
+  ],
+  "properties": {
+    "primitive": {
+      "const": "epoch_boundary_pots_match"
+    },
+    "output_dir": {
+      "type": "string"
+    },
+    "expected_verdict": {
+      "type": "string",
+      "enum": [
+        "CONFORMANT",
+        "POT_TRANSITION_DIVERGENCE"
+      ]
+    },
+    "source_primitive": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

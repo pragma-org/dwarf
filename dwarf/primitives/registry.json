@@ -3638,6 +3638,64 @@
         "amaru"
       ],
       "version": "0.1.0"
+    },
+    "invalid_tx_body_differential": {
+      "class": "InvalidTxBodyDifferential",
+      "family": "load",
+      "module": "profile_manager.block_apply_primitives",
+      "params_schema": "primitives/load/invalid_tx_body_differential.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "invalid_tx_body_dropped": {
+      "class": "InvalidTxBodyDropped",
+      "family": "assertion",
+      "module": "profile_manager.block_apply_primitives",
+      "params_schema": "primitives/assertion/invalid_tx_body_dropped.schema.json",
+      "runtimes": [
+        "devnet",
+        "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "epoch_boundary_pot_differential": {
+      "class": "EpochBoundaryPotDifferential",
+      "family": "load",
+      "module": "profile_manager.block_apply_primitives",
+      "params_schema": "primitives/load/epoch_boundary_pot_differential.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "epoch_boundary_pots_match": {
+      "class": "EpochBoundaryPotsMatch",
+      "family": "assertion",
+      "module": "profile_manager.block_apply_primitives",
+      "params_schema": "primitives/assertion/epoch_boundary_pots_match.schema.json",
+      "runtimes": [
+        "devnet",
+        "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
     }
   }
 }
