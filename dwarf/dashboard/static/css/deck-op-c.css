@@ -118,3 +118,17 @@ body[data-ui="basic"] .dkc-tl__card .dk-face__body { padding:12px 14px; }
 
 /* status-summary keeps its exact tag (visual-contract test); the Basic cards replace it. */
 body[data-ui="basic"] .status-summary { display:none !important; }
+
+
+/* Inspect-results card: slight holographic cue -- gateway to hash-chained run evidence */
+a.dk-card.dk-holo--soft { --shine:.06; }
+a.dk-card.dk-holo--soft > .dk-face {
+  border-color: rgba(255,255,255,.22);
+  background: linear-gradient(160deg,#241c37,#161226);
+}
+a.dk-card.dk-holo--soft:hover { --shine:.10; }
+
+/* dim the interactive glare + accent card-02 (Inspect) index so it stands out among the trio */
+a.dk-card.dk-holo--soft > .dk-face > .dk-glare { opacity: .45; }
+a.dk-card.dk-holo--soft:hover > .dk-face > .dk-glare { opacity: .6; }
+a[data-dk-seed="inspect-results"] .dk-kicker > span:first-child { color: rgb(120,170,255); }

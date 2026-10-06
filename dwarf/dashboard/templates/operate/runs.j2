@@ -56,7 +56,7 @@
   <div class="dk-hand-wrap">
     <div class="dk-hand">
       {% for r in rows %}{% set st = r.exit_status if r.exit_status in ('pass','fail','error') else 'other' %}
-      <a class="dk-mini {{ st }}" href="{{ r.run_url if r.is_local else '#' }}" aria-label="{{ st }} · {{ r.target_implementation or '—' }} · {{ r.scenario_id or '—' }} · {{ r.ended_at or '' }} · {{ r.run_id }}">{{ {'pass':'♦','fail':'▲','error':'✕'}.get(st, '■') }}</a>
+      <a class="dk-mini {{ st }}{% if measured.get(r.run_id) %} dk-mini--measured{% endif %}" href="{{ r.run_url if r.is_local else '#' }}" aria-label="{{ st }} · {{ r.target_implementation or '—' }} · {{ r.scenario_id or '—' }} · {{ r.ended_at or '' }} · {{ r.run_id }}">{{ {'pass':'♦','fail':'▲','error':'✕'}.get(st, '■') }}</a>
       {% endfor %}
     </div>
     <p class="dk-readout" data-dk-readout aria-live="polite">Hover or focus a card to read it · newest on the left</p>

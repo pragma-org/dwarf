@@ -1,0 +1,66 @@
+{#- Measurement overview v2: donut (measured/unavailable) + trading-card category cards
+    (app dk-card theme) + per-card distribution detail. Click a card to filter; select a
+    measurement card below to chart its percentile distribution here. -#}
+{% if run.measurements and run.measurements.present %}
+{% set mm = run.measurements %}
+{% set avail = mm.summary.available_count or 0 %}
+{% set unavail = mm.summary.unavailable_count or 0 %}
+{% set tot = avail + unavail %}
+{% set pct = ((100.0 * avail / tot)|round(0)|int) if tot else 0 %}
+<section class="dk-mviz" aria-label="Measurement overview" data-mviz>
+  <div class="dk-mviz__head">
+    <span class="eyebrow">Measurement overview</span>
+    <p class="dk-mviz__sub">What this run captured, at a glance. Pick a category card to filter the report; select any measurement below to chart its distribution here.</p>
+  </div>
+  <div class="dk-mviz__top">
+    {% if tot %}
+    <figure class="dk-mviz__donut">
+      <svg viewBox="0 0 42 42" class="dk-donut" role="img"
+           aria-label="{{ avail }} of {{ tot }} metrics measured, {{ pct }} percent; {{ unavail }} unavailable">
+        <circle class="dk-donut__track" cx="21" cy="21" r="15.9155"></circle>
+        <circle class="dk-donut__val" cx="21" cy="21" r="15.9155"
+                stroke-dasharray="{{ pct }} {{ 100 - pct }}" stroke-dashoffset="25"></circle>
+        <text x="21" y="20.5" class="dk-donut__pct">{{ pct }}%</text>
+        <text x="21" y="26" class="dk-donut__lab">measured</text>
+      </svg>
+      <figcaption class="dk-donut-legend">
+        <span class="is-measured"><i></i>{{ avail }} measured</span>
+        <span class="is-unavail"><i></i>{{ unavail }} unavailable</span>
+        <span class="is-tot">{{ tot }} expected</span>
+      </figcaption>
+    </figure>
+    {% endif %}
+    <div class="dk-mviz__detail" data-mviz-detail hidden aria-live="polite">
+      <div class="dk-mviz__detail-head">
+        <span class="eyebrow">Selected measurement</span>
+        <button type="button" class="dk-mviz__detail-x" data-mviz-detail-close aria-label="Clear selection">&times;</button>
+      </div>
+      <h4 class="dk-mviz__detail-title" data-mviz-detail-title></h4>
+      <div class="dk-mviz__detail-value" data-mviz-detail-value></div>
+      <div class="dk-mviz__detail-body" data-mviz-detail-body></div>
+    </div>
+    <p class="dk-mviz__detail-empty" data-mviz-detail-empty>
+      <span aria-hidden="true">&#9678;</span>&nbsp; Select any measurement card below to chart its distribution here.
+    </p>
+  </div>
+  {% if mm.presentation and mm.presentation.categories %}
+  <div class="dk-mviz__cards" aria-label="Measurement categories — click a card to filter the report">
+    {% set ns = namespace(i=0) %}
+    {% for cat in mm.presentation.categories %}{% if cat.id != 'unavailable' %}
+    {% set ns.i = ns.i + 1 %}
+    <a class="dk-card dk-mviz__tcard" href="#measurement-report-heading" data-mviz-cat="{{ cat.id }}"
+       aria-label="{{ cat.label }}: {{ cat.count }} metric{{ '' if cat.count == 1 else 's' }}. Filter the report.">
+      <span class="dk-face dk-mviz__tface">
+        <span class="dk-mviz__tcard-top">
+          <span class="dk-mviz__tcard-idx">{{ '%02d'|format(ns.i) }}</span>
+          <span class="dk-mviz__tcard-suit" aria-hidden="true">&#9830;</span>
+        </span>
+        <span class="dk-mviz__tcard-title">{{ cat.label }}</span>
+        <span class="dk-mviz__tcard-n">{{ cat.count }}<small>metric{{ '' if cat.count == 1 else 's' }}</small></span>
+      </span>
+    </a>
+    {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
