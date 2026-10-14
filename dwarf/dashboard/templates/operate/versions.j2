@@ -1,141 +1,187 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
-{% if ui == "basic" %}
-{% set rel_state = {} %}{% set n_conf = namespace(v=0) %}{% set n_inc = namespace(v=0) %}
-{% for release in releases %}{% set sts = release.scope_statuses.values()|map(attribute='status')|list %}
-{% set st = 'incompatible' if 'incompatible' in sts else ('confirmed' if 'confirmed' in sts else 'unknown') %}
-{% set _ = rel_state.update({loop.index0: st}) %}
-{% if st == 'confirmed' %}{% set n_conf.v = n_conf.v + 1 %}{% elif st == 'incompatible' %}{% set n_inc.v = n_inc.v + 1 %}{% endif %}{% endfor %}
-{% call deck_head('Operate · Node versions',
-   releases|length ~ ' node releases tracked — ' ~ n_conf.v ~ ' confirmed in at least one deployment scope' ~ (', ' ~ n_inc.v ~ ' incompatible' if n_inc.v else '') ~ '; the rest are not yet qualified.',
-   'Each card is a catalog record. ♦ confirmed is a qualification record for one named deployment scope, not a test verdict; ○ means nobody has qualified it yet.') %}
-<div class="dk-row"><button class="dk-btn" type="button" data-dk-version-refresh>Check for new versions</button><a class="dk-btn" href="/operate/profiles/new">Create profile →</a><a class="dk-btn" href="/learn/versions">How qualification works →</a></div>
-{% endcall %}
-{% endif %}
-<div class="adv-only">
-<header class="definition-header">
-  <div><span class="eyebrow">Operate</span><h1>Node versions</h1><p class="page-subhero">Released implementations, exact artifacts, scoped runtime status, and mixed compatibility evidence.</p></div>
-  <div class="definition-actions"><a class="cta cta--ghost" href="/learn/versions">How qualification works</a><button class="cta cta--ghost" type="button" data-version-refresh data-endpoint="{{ refresh_endpoint }}">Check for new versions</button><a class="cta" href="/operate/profiles/new">Create profile</a></div>
-</header>
-</div>
+<section class="versions-human-view" data-versions-human-view data-basic-reducer="skip">
+  <header class="versions-human-view__header">
+    <div>
+      <span class="eyebrow">Operate</span>
+      <h1>Node Versions</h1>
+      <p>Compare catalog releases, scoped qualification, artifact eligibility, and retained compatibility evidence.</p>
+    </div>
+    <div class="versions-human-view__actions">
+      <a class="dk-btn" href="/operate/profiles/new">Create profile</a>
+      <a class="dk-btn" href="/learn/versions">Qualification guide</a>
+    </div>
+  </header>
 
-<aside class="catalog-callout"><strong>Stable is not the same as confirmed.</strong> Stable comes from the upstream release feed. Confirmed means this exact release or pair passed DWARF's real-node runtime contract for the named deployment scope.</aside>
-<aside class="catalog-callout"><strong>Amaru target means real Amaru operation.</strong> DWARF proves Amaru relay and consumer behavior with the exact supporting Cardano-node producer disclosed below; it does not claim standalone Amaru block production.</aside>
+  <aside class="versions-truth-note">
+    <strong>Stable is not the same as confirmed.</strong> A published release channel is not qualification. Artifact eligibility is not proof that an image is installed. A local preference never changes the shared catalog default. An Amaru target means real Amaru operation with its exact supporting Cardano-node producer; it does not claim standalone Amaru block production.
+  </aside>
+  <input type="hidden" data-version-refresh-token value="{{ refresh_token or '' }}">
 
-<section class="version-refresh" aria-labelledby="refresh-heading" data-version-refresh-status>
-  <div><span class="eyebrow">Official sources</span><h2 id="refresh-heading">Release discovery</h2></div>
-  <dl class="definition-summary">
-    <div><dt>Status</dt><dd><span class="version-badge version-badge--{{ 'confirmed' if refresh.state == 'success' else ('incompatible' if refresh.state == 'error' else 'unknown') }}">{{ refresh.state }}</span></dd></div>
-    <div><dt>Last attempt</dt><dd>{{ refresh.last_attempt_at or 'Not checked yet' }}</dd></div>
-    <div><dt>Last successful check</dt><dd>{{ refresh.last_success_at or 'None yet' }}</dd></div>
-    <div><dt>Cardano-node source</dt><dd>{{ refresh.source_status.get('cardano-node', 'not-checked') }}</dd></div>
-    <div><dt>Amaru source</dt><dd>{{ refresh.source_status.get('amaru', 'not-checked') }}</dd></div>
-  </dl>
-  {% if refresh.error %}<p class="inline-warning dk-op-warn"><strong>Refresh failed:</strong> {{ refresh.error }}. Retained catalog evidence and defaults remain active.</p>{% endif %}
-  <div><strong>New fully identified releases</strong>{% if refresh.new_versions %}<ul>{% for item in refresh.new_versions %}<li>{{ item.implementation }} {{ item.version }} · unknown until qualified</li>{% endfor %}</ul>{% else %}<p>No newly discovered, fully identified releases.</p>{% endif %}</div>
-</section>
+  <section class="versions-panel version-discovery" aria-labelledby="version-discovery-heading">
+    <div class="versions-panel__heading">
+      <div><span class="eyebrow">Official sources</span><h2 id="version-discovery-heading">Manual release discovery</h2></div>
+      <span class="version-status version-status--unknown">On demand</span>
+    </div>
+    <p>Opening this page never contacts GitHub. Fetch one implementation explicitly below; retained catalog evidence and defaults remain active if its source is unavailable.</p>
+    <details class="version-technical"><summary>Discovery details</summary>
+      <p><strong>New fully identified releases:</strong> {% if refresh.new_versions %}{{ refresh.new_versions|length }}{% else %}none{% endif %}.</p>
+      {% if refresh.new_versions %}<ul>{% for item in refresh.new_versions %}<li>{{ item.implementation }} {{ item.version }} · unknown until qualified</li>{% endfor %}</ul>{% endif %}
+      <dl><div><dt>Catalog updated</dt><dd><time datetime="{{ updated_at }}" title="{{ updated_at }}">{{ updated_human }}</time></dd></div><div><dt>Catalog revision</dt><dd><code>{{ catalog_revision }}</code></dd></div></dl>
+    </details>
+  </section>
 
-{% if ui == "basic" %}
-{% set cards = [] %}{% set impls = [] %}
-{% for release in releases %}{% set st = rel_state[loop.index0] %}
-{% if release.implementation not in impls %}{% set _ = impls.append(release.implementation) %}{% endif %}
-{% set facts = [] %}{% for scope, record in release.scope_statuses.items() %}{% set _ = facts.append((scope, record.status ~ (' · default' if record.default else ''))) %}{% endfor %}
-{% set _ = facts.append(('Digest', release.artifact_digest[:19] ~ '…' if release.artifact_digest else release.artifact_availability)) %}
-{% set _ = cards.append({
-  'title': release.implementation ~ ' ' ~ release.version, 'kicker': release.channel ~ ' · ' ~ release.released_at,
-  'tier': 'warn' if st == 'incompatible' else ('face' if st == 'confirmed' else 'back'),
-  'suit': '▲' if st == 'incompatible' else ('♦' if st == 'confirmed' else '○'),
-  'tone': 'dk-g-warn' if st == 'incompatible' else ('dk-g-pass' if st == 'confirmed' else 'dk-g-other'),
-  'group': release.implementation ~ ' ' ~ st, 'facts': facts,
-  'search': st ~ ' ' ~ release.source_revision ~ ' ' ~ (release.artifact_digest or '')}) %}{% endfor %}
-{% set groups = [] %}{% for i in impls|sort %}{% set _ = groups.append((i, i)) %}{% endfor %}
-{% set _ = groups.append(('confirmed', '♦ confirmed · ' ~ n_conf.v)) %}
-{% if n_inc.v %}{% set _ = groups.append(('incompatible', '▲ incompatible · ' ~ n_inc.v)) %}{% endif %}
-{% set _ = groups.append(('unknown', '○ not qualified · ' ~ (releases|length - n_conf.v - n_inc.v))) %}
-<h2 class="b-h2 basic-only">Released versions · catalog records</h2>
-{{ deck_grid(cards, label='releases', groups=groups, empty='No releases are recorded in the version catalog.') }}
-{% set pcards = [] %}
-{% for pair in pairs %}{% set _ = pcards.append({
-  'title': pair.id, 'kicker': 'node ' ~ pair.cardano_version ~ ' + amaru ' ~ pair.amaru_version ~ (' · default' if pair.default else ''),
-  'sub': pair.reason,
-  'tier': 'warn' if pair.status == 'incompatible' else ('face' if pair.status == 'confirmed' else 'back'),
-  'suit': '▲' if pair.status == 'incompatible' else ('♦' if pair.status == 'confirmed' else '○'),
-  'tone': 'dk-g-warn' if pair.status == 'incompatible' else ('dk-g-pass' if pair.status == 'confirmed' else 'dk-g-other'),
-  'facts': [('Status', pair.status), ('Evidence', pair.evidence|length ~ ' record' ~ ('' if pair.evidence|length == 1 else 's'))],
-  'search': pair.status ~ ' ' ~ pair.reason}) %}{% endfor %}
-<h2 class="b-h2 basic-only">Compatibility pairs · mixed topology</h2>
-{{ deck_grid(pcards, label='pairs', search=false, empty='No mixed compatibility evidence has been recorded.') }}
-{{ deck_more('Artifacts, source revisions and per-scope evidence in Advanced') }}
-<script>
-(function(){var b=document.querySelector('[data-dk-version-refresh]'),o=document.querySelector('[data-version-refresh]');if(!b||!o)return;
-b.addEventListener('click',function(){b.disabled=true;b.textContent='Checking…';o.click();
-var t=setInterval(function(){if(!o.disabled){clearInterval(t);b.disabled=false;b.textContent='Check for new versions';}},500);});})();
-</script>
-{% endif %}
-
-<div class="adv-only">
-<dl class="definition-summary">
-  <div><dt>Catalog updated</dt><dd><code>{{ updated_at }}</code></dd></div>
-  <div><dt>Catalog revision</dt><dd><code>{{ catalog_revision }}</code></dd></div>
-  <div><dt>Releases</dt><dd>{{ releases|length }}</dd></div>
-  <div><dt>Mixed pairs</dt><dd>{{ pairs|length }}</dd></div>
-</dl>
-
-<label class="profile-catalog__search">Search releases and compatibility pairs
-  <input type="search" data-version-filter placeholder="Version, implementation, status, digest…">
-</label>
-
-<section aria-labelledby="release-heading"><span class="eyebrow">Implementations</span><h2 id="release-heading">Released versions</h2>
-  <div class="version-catalog" data-version-list>
-  {% for release in releases %}
-    <article class="version-card" data-version-search="{{ release.implementation }} {{ release.version }} {{ release.channel }} {{ release.source_revision }} {{ release.artifact_digest }}">
-      <div class="version-card__head"><div><strong>{{ release.implementation }} {{ release.version }}</strong><span>{{ release.channel }} · {{ release.released_at }}</span></div></div>
-      <div class="version-card__statuses">
-      {% for scope, record in release.scope_statuses.items() %}<span class="version-badge version-badge--{{ record.status }}">{{ scope }} · {{ record.status }}{% if record.default %} · default{% endif %}</span>{% endfor %}
+  <div class="version-summary-grid" aria-label="Qualified defaults and latest discovered releases">
+    {% for summary in implementation_summaries %}
+    <section class="version-summary" data-implementation-summary data-implementation="{{ summary.implementation }}">
+      <div class="version-summary__heading"><h2>{{ summary.label }}</h2><span class="version-status version-status--{{ 'confirmed' if summary.refresh_receipt.state == 'success' else ('incompatible' if summary.refresh_receipt.state == 'error' else 'unknown') }}">{{ summary.refresh_receipt.state|replace('-', ' ')|title }}</span></div>
+      <div class="version-summary__comparison">
+        <div><span>Scoped qualified default</span>{% if summary.default_release %}<strong>{{ summary.default_release.version }}</strong><small>{{ summary.scope }} · confirmed default</small>{% else %}<strong>None</strong><small>{{ summary.default_state }}</small>{% endif %}</div>
+        <div><span>Latest discovered</span>{% if summary.latest_release %}<strong>{{ summary.latest_release.version }}</strong><small>{{ summary.latest_release.channel }} · {{ summary.latest_release.released_human }}</small>{% else %}<strong>None</strong><small>No catalog release</small>{% endif %}</div>
       </div>
-      <dl>
-        <div><dt>Exact source revision</dt><dd><code>{{ release.source_revision }}</code></dd></div>
-        <div><dt>Artifact</dt><dd>{% if release.artifact_reference %}<code>{{ release.artifact_reference }}</code>{% else %}No reviewed artifact recorded{% endif %}</dd></div>
-        <div><dt>Immutable digest</dt><dd>{% if release.artifact_digest %}<code>{{ release.artifact_digest }}</code>{% else %}{{ release.artifact_availability }}{% endif %}</dd></div>
-      </dl>
-      {% for scope, record in release.scope_statuses.items() %}
-      <details class="version-card__evidence"><summary>{{ scope }} details</summary>
-        <dl>
-          <div><dt>Qualification reason</dt><dd>{{ record.reason or 'No runtime qualification has been recorded.' }}</dd></div>
-          <div><dt>Last checked</dt><dd>{{ record.checked_at or 'Never' }}</dd></div>
-          {% if record.supporting_cardano_version %}<div><dt>Supporting Cardano-node</dt><dd><code>{{ record.supporting_cardano_version }}</code></dd></div>{% endif %}
-          <div><dt>Evidence</dt><dd>{% if record.evidence %}{% for item in record.evidence %}<code>{{ item }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}None{% endif %}</dd></div>
-          <div><dt>Related issues</dt><dd>{% if record.issues %}{% for item in record.issues %}<a href="{{ item }}" target="_blank" rel="noopener">{{ item }}</a>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}None{% endif %}</dd></div>
-        </dl>
+      {% if summary.latest_release %}<p><span data-artifact-eligibility="{{ summary.latest_release.artifact_eligibility }}" title="{{ summary.latest_release.artifact_eligibility_label }}" aria-label="Artifact eligibility: {{ summary.latest_release.artifact_eligibility_label }}">{{ summary.latest_release.artifact_eligibility_display_label }}</span>. Source check: {{ summary.source_status|replace('-', ' ') }}{% if refresh_view.cached %} (cached){% endif %}.</p>{% endif %}
+      <div class="version-summary__discovery" data-version-refresh-status="{{ summary.implementation }}">
+        <p><strong>Last attempt:</strong> {% if summary.refresh_receipt.last_attempt_at %}<time datetime="{{ summary.refresh_receipt.last_attempt_at }}" title="{{ summary.refresh_receipt.last_attempt_at }}">{{ summary.refresh_receipt.last_attempt_human }}</time>{% else %}Not checked{% endif %}<br><strong>Last successful fetch:</strong> {% if summary.refresh_receipt.last_success_at %}<time datetime="{{ summary.refresh_receipt.last_success_at }}" title="{{ summary.refresh_receipt.last_success_at }}">{{ summary.refresh_receipt.last_success_human }}</time>{% else %}No successful fetch{% endif %}</p>
+        {% if summary.refresh_receipt.error %}<p class="inline-warning"><strong>{{ summary.label }} fetch failed:</strong> {{ summary.refresh_receipt.error }}. Cached records remain active.</p>{% endif %}
+        <button class="dk-btn" type="button" data-version-refresh data-implementation="{{ summary.implementation }}" data-endpoint="{{ refresh_endpoint }}">Fetch Latest Version</button>
+      </div>
+      <details class="version-technical"><summary>Exact identities</summary>
+        {% if summary.default_release %}<p><strong>Default source</strong><br><code>{{ summary.default_release.source_revision }}</code></p>{% endif %}
+        {% if summary.latest_release %}<p><strong>Latest source</strong><br><code>{{ summary.latest_release.source_revision }}</code></p>{% if summary.latest_release.artifact_digest %}<p><strong>Latest artifact</strong><br><code>{{ summary.latest_release.artifact_digest }}</code></p>{% endif %}{% endif %}
       </details>
-      {% endfor %}
-    </article>
-  {% endfor %}
+    </section>
+    {% endfor %}
   </div>
-</section>
 
-<section aria-labelledby="pair-heading"><span class="eyebrow">Mixed topology</span><h2 id="pair-heading">Compatibility pairs</h2>
-  <div class="version-catalog version-catalog--pairs" data-version-list>
-  {% for pair in pairs %}
-    <article class="version-card" data-version-search="{{ pair.id }} {{ pair.cardano_version }} {{ pair.amaru_version }} {{ pair.status }}">
-      <div class="version-card__head"><div><strong>{{ pair.id }}</strong><span>Cardano-node {{ pair.cardano_version }} · Amaru {{ pair.amaru_version }}</span></div><span class="version-badge version-badge--{{ pair.status }}">{{ pair.status }}{% if pair.default %} · default{% endif %}</span></div>
-      <p>{{ pair.reason }}</p>
-      <dl><div><dt>Topology</dt><dd><code>{{ pair.topology_revision }}</code></dd></div><div><dt>DWARF</dt><dd><code>{{ pair.dwarf_revision }}</code></dd></div><div><dt>Evidence</dt><dd>{% for item in pair.evidence %}<code>{{ item }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}</dd></div></dl>
-    </article>
-  {% else %}<p class="empty-section-statement">No mixed compatibility evidence has been recorded.</p>{% endfor %}
-  </div>
+  <section class="versions-panel" aria-labelledby="release-table-heading">
+    <div class="versions-panel__heading"><div><span class="eyebrow">Catalog</span><h2 id="release-table-heading">Releases</h2></div><span data-version-visible-count>{{ releases|length }} shown</span></div>
+    <div class="version-filter-bar">
+      <label>Find a release<input type="search" data-version-query data-version-filter placeholder="Version, source, digest, or status"></label>
+      <label>Implementation<select data-version-implementation-filter><option value="">All</option><option value="amaru">Amaru</option><option value="cardano-node">Cardano-node</option></select></label>
+      <label>Channel<select data-version-channel-filter><option value="">All</option>{% for channel in releases|map(attribute='channel')|unique|sort %}<option value="{{ channel }}">{{ channel }}</option>{% endfor %}</select></label>
+      <label>Qualification<select data-version-qualification-filter><option value="">All</option><option value="confirmed">Confirmed somewhere</option><option value="incompatible">Incompatible somewhere</option><option value="unknown">Unknown somewhere</option></select></label>
+      <button class="dk-btn version-filter-clear" type="button" data-version-clear>Clear</button>
+    </div>
+    <div class="version-table-wrap" tabindex="0" aria-label="Scrollable release table">
+      <table class="version-table no-responsive-table">
+        <thead><tr>
+          <th aria-sort="none"><button type="button" data-version-sort="implementation">Implementation <span aria-hidden="true">↕</span></button></th>
+          <th aria-sort="none"><button type="button" data-version-sort="release">Release <span aria-hidden="true">↕</span></button></th>
+          <th aria-sort="none"><button type="button" data-version-sort="artifact">Artifact eligibility <span aria-hidden="true">↕</span></button></th>
+          <th aria-sort="none"><button type="button" data-version-sort="qualification">Scoped qualification <span aria-hidden="true">↕</span></button></th>
+          <th aria-sort="none"><button type="button" data-version-sort="default">Default <span aria-hidden="true">↕</span></button></th>
+          <th aria-sort="none"><button type="button" data-version-sort="technical" aria-label="Sort by exact source revision">Technical <span aria-hidden="true">↕</span></button></th>
+        </tr></thead>
+        <tbody>
+        {% for release in releases %}
+          <tr data-version-release-row data-release-id="{{ release.release_id }}" data-version-search="{{ release.search_text }}" data-version-implementation="{{ release.implementation }}" data-version-channel="{{ release.channel }}" data-version-qualification="{{ release.qualification_filter }}" data-version-sort-implementation="{{ release.sort_implementation }}" data-version-sort-release="{{ release.sort_release }}" data-version-sort-artifact="{{ release.sort_artifact }}" data-version-sort-qualification="{{ release.sort_qualification }}" data-version-sort-default="{{ release.sort_default }}" data-version-sort-technical="{{ release.sort_technical }}">
+            <td><span class="version-identity-pill version-identity-pill--{{ 'amaru' if release.implementation == 'amaru' else 'cardano' }}" data-version-implementation-pill>{{ 'Amaru' if release.implementation == 'amaru' else 'Cardano' }}</span></td>
+            <td><span class="version-identity-pill" data-version-value-pill title="{{ release.version }}" aria-label="Release version: {{ release.version }}">{{ release.version }}</span><small>{{ release.channel }} · <time datetime="{{ release.released_exact }}" title="{{ release.released_exact }}">{{ release.released_human }}</time></small></td>
+            <td><span class="version-status version-status--{{ release.artifact_eligibility }}" data-artifact-eligibility="{{ release.artifact_eligibility }}" title="{{ release.artifact_eligibility_label }}" aria-label="Artifact eligibility: {{ release.artifact_eligibility_label }}">{{ release.artifact_eligibility_display_label }}</span></td>
+            <td>{% for scope, record in release.scope_statuses.items() %}<span class="version-status version-status--{{ record.status }}">{{ scope }} · {{ record.status }}</span>{% endfor %}</td>
+            <td>{% if release.default_scopes %}{% for scope in release.default_scopes %}<span class="version-status version-status--default" data-version-default="yes">{{ scope }}</span>{% endfor %}{% else %}<span class="version-status version-status--neutral" data-version-default="no">No</span>{% endif %}</td>
+            <td><button class="version-detail-toggle" type="button" data-version-detail-toggle aria-expanded="false" aria-controls="version-release-detail-{{ loop.index }}">Details</button></td>
+          </tr>
+          <tr id="version-release-detail-{{ loop.index }}" class="version-detail-row" data-version-detail-row data-version-detail-for="{{ release.release_id }}" hidden>
+            <td colspan="6"><div class="version-technical version-release-detail" data-version-technical>
+              <dl>
+                <div><dt>Exact release version</dt><dd><code>{{ release.version }}</code></dd></div>
+                <div><dt>Exact source revision</dt><dd><code>{{ release.source_revision }}</code></dd></div>
+                <div><dt>Artifacts</dt><dd>{% for artifact in release.artifacts %}<span>{{ artifact.kind }} · {{ artifact.availability or 'unknown' }}</span>{% if artifact.reference %}<br><code>{{ artifact.reference }}</code>{% endif %}{% if artifact.digest %}<br><code>{{ artifact.digest }}</code>{% else %}<br>No immutable digest{% endif %}{% if artifact.platforms %}<br>Platforms: {{ artifact.platforms|join(', ') }}{% endif %}{% if artifact.public is defined and artifact.public is not none %}<br>Public: {{ artifact.public }}{% endif %}{% if not loop.last %}<hr>{% endif %}{% else %}No reviewed artifact recorded{% endfor %}</dd></div>
+                {% for scope, record in release.scope_statuses.items() %}<div><dt>Qualification reason · {{ scope }}</dt><dd>{{ record.reason or 'No runtime qualification has been recorded.' }}{% if record.checked_at %}<br><time datetime="{{ record.checked_at }}" title="{{ record.checked_at }}">{{ record.checked_human }}</time>{% endif %}{% if record.supporting_cardano_version %}<br>Supporting Cardano-node <code>{{ record.supporting_cardano_version }}</code>{% endif %}</dd></div><div><dt>Evidence · {{ scope }}</dt><dd>{% if record.evidence %}{% for item in record.evidence %}<code>{{ item }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}None{% endif %}{% if record.issues %}<br>Related issues: {% for item in record.issues %}<a href="{{ item }}" target="_blank" rel="noopener">{{ item }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</dd></div>{% endfor %}
+              </dl>
+            </div></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="empty-section-statement" data-version-empty hidden>No releases match these filters.</p>
+  </section>
+
+  <section class="versions-panel" aria-labelledby="pair-matrix-heading">
+    <div class="versions-panel__heading"><div><span class="eyebrow">Mixed topology</span><h2 id="pair-matrix-heading">Recorded compatibility</h2></div><span>{{ compatibility_matrix.recorded_count }} records</span></div>
+    <p>Each card is one exact Cardano/Amaru version intersection. “Not checked” means no compatibility proof is recorded; it does not mean incompatible.</p>
+    {% if compatibility_matrix.rows and compatibility_matrix.amaru_versions %}
+    <div class="version-pair-groups" data-version-pair-matrix aria-label="Mixed-version compatibility by Cardano version">
+      {% for row in compatibility_matrix.rows %}<section class="version-pair-group" data-version-pair-group data-cardano-version="{{ row.cardano_version }}" aria-labelledby="version-pair-group-{{ loop.index }}">
+        <h3 id="version-pair-group-{{ loop.index }}">Cardano <span class="version-identity-pill version-identity-pill--cardano">{{ row.cardano_version }}</span></h3>
+        <div class="version-pair-cards">
+          {% for cell in row.cells %}<article class="version-pair-card{% if not cell.recorded %} version-pair-card--unchecked{% endif %}" data-version-pair-card data-pair-recorded="{{ 'true' if cell.recorded else 'false' }}" data-amaru-version="{{ cell.amaru_version }}">
+            <div class="version-pair-card__versions"><span><small>Cardano</small><span class="version-identity-pill version-identity-pill--cardano">{{ row.cardano_version }}</span></span><span aria-hidden="true">+</span><span><small>Amaru</small><span class="version-identity-pill version-identity-pill--amaru">{{ cell.amaru_version }}</span></span></div>
+            {% if cell.recorded %}{% for record in cell.records %}<details class="version-pair-detail" data-pair-id="{{ record.pair_id }}"><summary><span class="version-status version-status--{{ record.status }}">{{ record.status_label }}{% if record.default %} · default{% endif %}</span></summary><dl><div><dt>Exact Cardano version</dt><dd><code>{{ row.cardano_version }}</code></dd></div><div><dt>Exact Amaru version</dt><dd><code>{{ cell.amaru_version }}</code></dd></div><div><dt>Exact pair scope</dt><dd><code>{{ record.pair_id }}</code> · {{ record.scope }}</dd></div><div><dt>Reason</dt><dd>{{ record.reason }}</dd></div><div><dt>Evidence</dt><dd>{% if record.evidence %}{% for item in record.evidence %}<code>{{ item }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}None recorded{% endif %}</dd></div>{% if record.checked_at %}<div><dt>Checked</dt><dd><time datetime="{{ record.checked_at }}" title="{{ record.checked_at }}">{{ record.checked_human }}</time></dd></div>{% endif %}<div><dt>Topology / DWARF</dt><dd><code>{{ record.topology_revision or 'unavailable' }}</code><br><code>{{ record.dwarf_revision or 'unavailable' }}</code></dd></div>{% if record.issues %}<div><dt>Related issues</dt><dd>{% for item in record.issues %}<a href="{{ item }}" target="_blank" rel="noopener">{{ item }}</a>{% if not loop.last %}<br>{% endif %}{% endfor %}</dd></div>{% endif %}</dl></details>{% endfor %}
+            {% else %}<span class="version-status version-status--unknown">Not checked</span>{% endif %}
+          </article>{% endfor %}
+        </div>
+      </section>{% endfor %}
+    </div>
+    {% else %}<p class="empty-section-statement">No mixed compatibility evidence has been recorded.</p>{% endif %}
+  </section>
+
+  <section class="versions-panel version-operator" aria-labelledby="operator-version-heading">
+    <div class="versions-panel__heading"><div><span class="eyebrow">Local evidence overlay</span><h2 id="operator-version-heading">Local operator decisions and preferences</h2></div>{% if not operator.error %}<details class="version-technical version-operator__revision" data-operator-revision><summary>Revision {{ operator.revision[:19] }}…</summary><code>{{ operator.revision }}</code></details>{% endif %}</div>
+    <p>These local records do not alter a run verdict, shared qualification, or shared catalog defaults. Historical evidence stays visible if an artifact later becomes unavailable.</p>
+    {% if operator.error %}<p class="inline-warning"><strong>Operator state unavailable:</strong> {{ operator.error }}</p>{% else %}
+    <div class="version-operator__counts"><span>{{ operator.registrations|length }} local artifacts</span><span>{{ operator.decisions|length }} decisions</span><span>{{ operator.preferences|length }} active preferences</span></div>
+
+    <details class="version-operator__section" data-binary-import-section><summary>Package a precompiled node binary</summary>
+      <p>Upload one Linux executable or supported tar archive. DWARF packages and probes it in an isolated container, then registers the exact image as experimental. Packaging does not prove topology compatibility, qualify the release, mark it supported, or make it a default.</p>
+      <form method="post" action="{{ binary_import_endpoint }}" enctype="multipart/form-data" class="version-action-form" data-binary-import-form data-status-endpoint="{{ binary_import_status_endpoint }}">
+        <input type="hidden" name="token" value="{{ refresh_token or '' }}">
+        <input type="hidden" name="expected_revision" value="{{ operator.revision }}">
+        <label>Implementation<select name="implementation" required><option value="amaru">Amaru</option><option value="cardano-node">Cardano-node</option></select></label>
+        <label>Build / version label<input name="version" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}" autocomplete="off"></label>
+        <label>Source revision (optional, operator-declared and unverified)<input name="declared_source_revision" pattern="[0-9a-f]{40}" maxlength="40" autocomplete="off"></label>
+        <label>Precompiled Linux binary or tar archive<input type="file" name="artifact" required accept=".tar,.tar.gz,.tgz,application/octet-stream"></label>
+        <button class="dk-btn" type="submit" data-binary-import-submit>Package exact binary</button>
+        <output data-binary-import-status aria-live="polite"></output>
+      </form>
+      {% if operator.binary_imports %}<div class="version-import-jobs" data-binary-import-jobs>{% for job in operator.binary_imports %}<p data-binary-import-job data-import-id="{{ job.import_id }}" data-execution-id="{{ job.execution_id or '' }}" data-import-state="{{ job.state }}"><strong>{{ job.implementation }} {{ job.version }}</strong> · {{ job.state }}{% if job.registration_id %} · <code>{{ job.registration_id }}</code>{% endif %}{% if job.failure %}<br>{{ job.failure.message }}{% endif %}</p>{% endfor %}</div>{% endif %}
+    </details>
+
+    <details class="version-operator__section" data-version-registration-section><summary>Register an already-present local image</summary>
+      {% if operator.registration_available %}<p>DWARF inspects an already-present image and stores immutable identity. This action does not pull, build, qualify, or claim public availability.</p><form method="post" action="/api/versions/register" class="version-action-form"><input type="hidden" name="token" value="{{ refresh_token or '' }}"><input type="hidden" name="expected_revision" value="{{ operator.revision }}"><label>Implementation<select name="implementation" required><option value="amaru">Amaru</option><option value="cardano-node">Cardano-node</option></select></label><label>Version label<input name="version" required maxlength="64" autocomplete="off"></label><label>Local image name, tag, digest reference, or config ID<input name="image" required maxlength="512" autocomplete="off"></label><label>Declared source revision (optional, unverified)<input name="declared_source_revision" pattern="[0-9a-f]{40}" maxlength="40" autocomplete="off"></label><button class="dk-btn" type="submit">Inspect and register exact identity</button></form><p>{{ operator.registration_reason }}</p>{% else %}<p class="inline-warning"><strong>Registration pending:</strong> {{ operator.registration_reason }}</p>{% endif %}
+    </details>
+
+    <details class="version-operator__section"><summary>Exact local artifacts · {{ operator.registrations|length }}</summary>{% for registration in operator.registrations %}<details class="version-technical"><summary>{{ registration.implementation }} {{ registration.version }} · {{ registration.registration_id }}</summary><dl><div><dt>Image reference</dt><dd><code>{{ registration.image_reference or 'unavailable' }}</code></dd></div><div><dt>Manifest digest</dt><dd><code>{{ registration.manifest_digest or 'unavailable' }}</code></dd></div><div><dt>Inspected config ID</dt><dd><code>{{ registration.config_image_id }}</code></dd></div><div><dt>Platform</dt><dd><code>{{ registration.platform }}</code></dd></div>{% if registration.controller_installation_id %}<div><dt>Inspected by installation</dt><dd><code>{{ registration.controller_installation_id }}</code></dd></div>{% endif %}<div><dt>Inspected at</dt><dd><time datetime="{{ registration.inspected_at }}" title="{{ registration.inspected_at }}">{{ registration.inspected_human }}</time></dd></div><div><dt>Source revision</dt><dd>{{ registration.provenance.source_revision or 'Unverified' }}</dd></div><div><dt>Qualification</dt><dd>{{ registration.provenance.qualification }}</dd></div></dl></details>{% else %}<p>No local artifact has been registered.</p>{% endfor %}</details>
+
+    <details class="version-operator__section" data-version-history-section><summary>Evidence-linked compatibility history · {{ operator.decisions|length }}</summary>{% for decision in operator.decisions|reverse %}<details class="version-technical" data-version-decision><summary>{{ decision.decision }} · {{ decision.subject.implementation }} {{ decision.subject.version }} · {{ decision.subject.scope }}</summary><dl><div><dt>Scenario</dt><dd><code>{{ decision.subject.scenario_id }}</code> · <code>{{ decision.subject.scenario_sha256 }}</code></dd></div><div><dt>Topology profile</dt><dd><code>{{ decision.subject.topology_profile_id }}</code></dd></div><div><dt>Deployment identity</dt><dd><code>{{ decision.subject.deployment_identity_sha256 }}</code></dd></div><div><dt>Artifact reference</dt><dd><code>{{ decision.subject.image_reference }}</code></dd></div><div><dt>Manifest digest</dt><dd><code>{{ decision.subject.manifest_digest or 'unavailable' }}</code></dd></div><div><dt>Inspected config ID</dt><dd><code>{{ decision.subject.config_image_id }}</code></dd></div><div><dt>Run evidence</dt><dd><a href="/operate/runs/{{ decision.evidence.run_id }}">{{ decision.evidence.run_id }}</a> · {{ decision.evidence.operational_outcome }} · assertions {{ decision.evidence.assertion_verdict }}</dd></div><div><dt>Operator reason</dt><dd>{{ decision.reason }}</dd></div></dl>{% if decision.decision_id in operator.active_decision_ids %}<form method="post" action="{{ preference_endpoint }}"><input type="hidden" name="token" value="{{ refresh_token or '' }}"><input type="hidden" name="expected_revision" value="{{ operator.revision }}"><input type="hidden" name="action" value="set"><input type="hidden" name="decision_id" value="{{ decision.decision_id }}"><button class="dk-btn" type="submit">Prefer this exact identity</button></form>{% endif %}</details>{% else %}<p>No local operator decision has been recorded.</p>{% endfor %}</details>
+
+    {% for preference in operator.preferences %}<form method="post" action="{{ preference_endpoint }}" class="version-preference-clear"><input type="hidden" name="token" value="{{ refresh_token or '' }}"><input type="hidden" name="expected_revision" value="{{ operator.revision }}"><input type="hidden" name="action" value="clear"><input type="hidden" name="preference_id" value="{{ preference.preference_id }}"><button class="dk-btn" type="submit">Clear local preference for {{ preference.scope_key }}</button></form>{% endfor %}
+    <p>Older runs without immutable version evidence cannot be attested; no existing verdict or history is rewritten.</p>
+    {% endif %}
+  </section>
 </section>
-</div>
 <script>
-var vf=document.querySelector('[data-version-filter]');
-if(vf){vf.addEventListener('input',function(){var q=this.value.trim().toLowerCase();document.querySelectorAll('[data-version-search]').forEach(function(row){row.hidden=Boolean(q&&!row.dataset.versionSearch.toLowerCase().includes(q));});});}
-var vr=document.querySelector('[data-version-refresh]');
-if(vr){vr.addEventListener('click',async function(){var b=this;b.disabled=true;b.textContent='Checking…';try{var r=await fetch(b.dataset.endpoint,{method:'POST'});var p=await r.json();if(!r.ok&&r.status!==409){throw new Error(p.error||'refresh failed');}window.setTimeout(function(){window.location.reload();},900);}catch(e){b.disabled=false;b.textContent='Check for new versions';window.alert(e.message);}});}
-</script>
-
-<script type="module">
-  import {initPaginate} from "/static/js/paginate.js";
-  initPaginate({container: "[data-version-list]", rows: "article.version-card", pageSize: 30, label: "releases"});
+(function(){
+  var root=document.querySelector('[data-versions-human-view]');if(!root)return;
+  var rows=Array.from(root.querySelectorAll('[data-version-release-row]'));
+  var query=root.querySelector('[data-version-query]');
+  var implementation=root.querySelector('[data-version-implementation-filter]');
+  var channel=root.querySelector('[data-version-channel-filter]');
+  var qualification=root.querySelector('[data-version-qualification-filter]');
+  var releaseBody=root.querySelector('.version-table tbody');
+  var sortButtons=Array.from(root.querySelectorAll('[data-version-sort]'));
+  var count=root.querySelector('[data-version-visible-count]');
+  var empty=root.querySelector('[data-version-empty]');
+  function detailRow(row){return root.querySelector('[data-version-detail-for="'+CSS.escape(row.dataset.releaseId)+'"]');}
+  var releaseRecords=rows.map(function(row,index){return {row:row,detail:detailRow(row),index:index};});
+  var versionCollator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
+  var activeSort=null;var activeDirection='ascending';
+  function sortValue(row,key){var name='versionSort'+key.charAt(0).toUpperCase()+key.slice(1);return row.dataset[name]||'';}
+  function sortReleases(key){var direction=activeSort===key&&activeDirection==='ascending'?'descending':'ascending';activeSort=key;activeDirection=direction;releaseRecords.sort(function(left,right){var compared=versionCollator.compare(sortValue(left.row,key),sortValue(right.row,key));if(compared===0)return left.index-right.index;return direction==='ascending'?compared:-compared;});releaseRecords.forEach(function(record){releaseBody.appendChild(record.row);if(record.detail)releaseBody.appendChild(record.detail);});sortButtons.forEach(function(button){var selected=button.dataset.versionSort===key;var heading=button.closest('th');heading.setAttribute('aria-sort',selected?direction:'none');button.querySelector('[aria-hidden="true"]').textContent=selected?(direction==='ascending'?'▲':'▼'):'↕';});}
+  function apply(){var q=query.value.trim().toLowerCase();var shown=0;rows.forEach(function(row){var visible=(!q||row.dataset.versionSearch.includes(q))&&(!implementation.value||row.dataset.versionImplementation===implementation.value)&&(!channel.value||row.dataset.versionChannel===channel.value)&&(!qualification.value||row.dataset.versionQualification.split(' ').includes(qualification.value));row.hidden=!visible;var detail=detailRow(row);var toggle=row.querySelector('[data-version-detail-toggle]');if(detail)detail.hidden=!visible||!toggle||toggle.getAttribute('aria-expanded')!=='true';if(visible)shown+=1;});count.textContent=shown+' shown';empty.hidden=shown!==0;}
+  [query,implementation,channel,qualification].forEach(function(control){control.addEventListener(control===query?'input':'change',apply);});
+  root.querySelector('[data-version-clear]').addEventListener('click',function(){query.value='';implementation.value='';channel.value='';qualification.value='';apply();query.focus();});
+  sortButtons.forEach(function(button){button.addEventListener('click',function(){sortReleases(button.dataset.versionSort);});});
+  rows.forEach(function(row){var toggle=row.querySelector('[data-version-detail-toggle]');var detail=detailRow(row);if(!toggle||!detail)return;toggle.addEventListener('click',function(){var expanded=toggle.getAttribute('aria-expanded')==='true';toggle.setAttribute('aria-expanded',expanded?'false':'true');detail.hidden=expanded||row.hidden;});});
+  root.querySelectorAll('[data-version-refresh]').forEach(function(refresh){refresh.addEventListener('click',async function(){refresh.disabled=true;refresh.textContent='Fetching…';try{var token=root.querySelector('[data-version-refresh-token]');var body=new URLSearchParams({token:token?token.value:'',implementation:refresh.dataset.implementation});var response=await fetch(refresh.dataset.endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body});var payload=await response.json();if(!response.ok&&response.status!==409)throw new Error(payload.error||'fetch failed');window.setTimeout(function(){window.location.reload();},900);}catch(error){refresh.disabled=false;refresh.textContent='Fetch Latest Version';window.alert(error.message);}});});
+  var importForm=root.querySelector('[data-binary-import-form]');
+  if(importForm){var importButton=importForm.querySelector('[data-binary-import-submit]');var importStatus=importForm.querySelector('[data-binary-import-status]');var polling=false;
+    async function pollImport(job){if(polling)return;polling=true;try{var body=new URLSearchParams({token:importForm.elements.token.value,import_id:job.import_id,execution_id:job.execution_id});var response=await fetch(importForm.dataset.statusEndpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body});var payload=await response.json();if(!response.ok)throw new Error(payload.error||'status failed');importStatus.textContent=payload.state==='registered'?'Exact experimental artifact registered. Compatibility remains unknown until a real run.':(payload.failure&&payload.failure.message)||('Packaging '+payload.state+'.');if(payload.state==='running'||payload.state==='cancelling'){window.setTimeout(function(){polling=false;pollImport(job);},1000);return;}if(payload.state==='registered'){window.setTimeout(function(){window.location.reload();},700);return;}importButton.disabled=false;}catch(error){importStatus.textContent=error.message;importButton.disabled=false;}finally{polling=false;}}
+    importForm.addEventListener('submit',async function(event){event.preventDefault();if(importButton.disabled)return;importButton.disabled=true;importStatus.textContent='Uploading bounded artifact…';try{var response=await fetch(importForm.action,{method:'POST',body:new FormData(importForm)});var payload=await response.json();if(!response.ok)throw new Error(payload.error||'upload failed');importStatus.textContent='Packaging accepted.';pollImport(payload);}catch(error){importStatus.textContent=error.message;importButton.disabled=false;}});
+    var retained=Array.from(root.querySelectorAll('[data-binary-import-job]')).find(function(job){return job.dataset.importState==='running'||job.dataset.importState==='cancelling';});if(retained&&retained.dataset.executionId){pollImport({import_id:retained.dataset.importId,execution_id:retained.dataset.executionId});}
+  }
+})();
 </script>
 {% endblock %}

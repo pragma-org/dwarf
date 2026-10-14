@@ -1,15 +1,11 @@
 // Paste-a-scenario tile on /operate/scenarios. POSTs raw YAML to
 // /api/scenario/paste; surfaces validation result inline.
 
-function getToken() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("token") || "dwarf";
-}
-
 const textarea = document.querySelector("#paste-scenario-yaml");
 const output = document.querySelector("[data-paste-output]");
 const submit = document.querySelector("[data-paste-submit]");
 const clear = document.querySelector("[data-paste-clear]");
+const token = document.querySelector("#paste-scenario-token");
 
 function showOutput(report, ok) {
   if (!output) return;
@@ -31,11 +27,15 @@ async function submitPaste() {
   }
   submit.disabled = true;
   try {
-    const url = `/api/scenario/paste?token=${encodeURIComponent(getToken())}`;
-    const response = await fetch(url, {
+    const endpoint = submit.dataset.endpoint;
+    if (!endpoint) throw new Error("Paste endpoint is not configured.");
+    const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "text/yaml" },
-      body: yaml,
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: new URLSearchParams({
+        token: token ? token.value : "",
+        scenario_yaml: yaml,
+      }),
     });
     let report;
     try { report = await response.json(); } catch { report = await response.text(); }

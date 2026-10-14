@@ -8,7 +8,7 @@ from profile_manager.data.operate_bundles import (
 from profile_manager.templating import render
 
 
-def render_operate_bundles() -> str:
+def render_operate_bundles(*, token: str | None = None) -> str:
     """Render /operate/bundles: dense-table forensic-bundle catalog with filter pills."""
     rows = operate_bundle_rows()
     pills = status_pill_inventory(rows)
@@ -23,5 +23,6 @@ def render_operate_bundles() -> str:
         rows=rows,
         pills=pills,
         scenario_cards=scenario_cards,
+        token=token,
         empty=not rows,
     )

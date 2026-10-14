@@ -51,6 +51,8 @@ import urllib.error
 import urllib.request
 from email.mime.text import MIMEText
 from pathlib import Path
+
+from profile_manager.config import storage_roots
 from typing import Any
 
 
@@ -64,10 +66,7 @@ DEFAULT_TIMEOUT_SECONDS = 5.0
 
 
 def _state_dir() -> Path:
-    env = os.environ.get("ADA2_DWARF_STATE_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[2] / "state"
+    return storage_roots().state
 
 
 def _load_yaml_simple(path: Path) -> dict[str, Any]:

@@ -7,6 +7,7 @@ import sys
 from profile_manager.cli import build_parser, cmd_moog
 from profile_manager.config import DeploymentConfig, parse_config_value
 from profile_manager import remote
+from profile_manager import run_service
 from profile_manager.data.cli import cli_groups
 from profile_manager.data.operate_config import apply_moog_setup_form, moog_setup_payload
 from profile_manager.dashboard import build_dashboard_status_payload
@@ -30,6 +31,7 @@ from profile_manager.moog import (
     moog_registration_summary,
     moog_readiness_summary,
     parse_moog_bootstrap_result,
+    parse_moog_create_test_id,
     parse_moog_health_result,
     query_moog_facts,
     query_moog_health,
@@ -37,9 +39,222 @@ from profile_manager.moog import (
     validate_moog_asset,
 )
 from profile_manager.remote import CommandResult
+from profile_manager.run_ledger import RunLedger
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_parse_moog_create_test_id_accepts_json_and_labeled_text():
+    assert parse_moog_create_test_id('{"test_run_id":"run-json"}\n') == "run-json"
+    assert parse_moog_create_test_id("test-run-id: run-text\n") == "run-text"
+    assert parse_moog_create_test_id("submitted\n") is None
+
+
+def test_moog_submission_and_status_share_one_external_ledger_entry(
+    tmp_path, monkeypatch, capsys
+):
+    config = DeploymentConfig.from_dict({"moog": DEFAULT_MOOG_CONFIG})
+    calls = []
+
+    def submit(*args, **kwargs):
+        calls.append((args, kwargs))
+        return CommandResult(
+            0,
+            '{"test_run_id":"moog-live-1"}\n',
+            "",
+            "ssh cardano-box moog-create-test ...",
+        )
+
+    monkeypatch.setattr("profile_manager.cli._load_or_intake", lambda _command: config)
+    monkeypatch.setattr(remote, "run_moog_create_test", submit)
+    create_args = build_parser().parse_args(
+        [
+            "moog",
+            "create-test",
+            "--repo",
+            "pragma-org/dwarf",
+            "--github-user",
+            "J-GainSec",
+            "--directory",
+            "antithesis/cardano_node_dwarf",
+            "--commit",
+            "a" * 40,
+            "--approve",
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--state-dir",
+            str(tmp_path / "state"),
+            "--json",
+        ]
+    )
+
+    assert cmd_moog(create_args) == 0
+    created = json.loads(capsys.readouterr().out)
+    assert created["ledger"]["state"] == "running"
+    assert created["external_test_run_id"] == "moog-live-1"
+    assert len(RunLedger(tmp_path / "state").list_entries()) == 1
+
+    assert cmd_moog(create_args) == 0
+    duplicate = json.loads(capsys.readouterr().out)
+    assert duplicate["idempotent"] is True
+    assert len(calls) == 1
+    assert len(RunLedger(tmp_path / "state").list_entries()) == 1
+
+    monkeypatch.setattr(
+        remote,
+        "fetch_test_run_facts",
+        lambda *args, **kwargs: [{"value": {"phase": "completed"}}],
+    )
+    status_args = build_parser().parse_args(
+        [
+            "moog",
+            "test-status",
+            "moog-live-1",
+            "--state-dir",
+            str(tmp_path / "state"),
+            "--json",
+        ]
+    )
+    assert cmd_moog(status_args) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["dwarf_run_id"] == created["dwarf_run_id"]
+    assert status["ledger"]["state"] == "completed"
+    assert status["ledger"]["verdict"] == "inconclusive"
+    assert len(RunLedger(tmp_path / "state").list_entries()) == 1
+
+
+def test_moog_link_existing_imports_one_honest_terminal_external_run(
+    tmp_path, monkeypatch, capsys
+):
+    external_test_run_id = "moog-existing-1"
+    facts = [
+        {
+            "id": "unrelated-run",
+            "key": {},
+            "value": {"phase": "running"},
+        },
+        {
+            "id": external_test_run_id,
+            "slot": 133282188,
+            "key": {
+                "commitId": "6" * 40,
+                "directory": "antithesis/cardano_amaru_miniprotocol_security",
+                "platform": "github",
+                "repository": {
+                    "organization": "cyber-castellum",
+                    "repo": "dwarf",
+                },
+                "requester": "j-gainsec",
+                "try": 1,
+                "type": "test-run",
+            },
+            "value": {
+                "duration": 1,
+                "from": {
+                    "from": {
+                        "duration": 1,
+                        "faults_enabled": True,
+                        "phase": "pending",
+                    },
+                    "phase": "accepted",
+                },
+                "outcome": "failure",
+                "phase": "finished",
+                "url": "https://example.invalid/real-report",
+            },
+        }
+    ]
+    config = DeploymentConfig.from_dict({"moog": DEFAULT_MOOG_CONFIG})
+    monkeypatch.setattr("profile_manager.cli._load_or_intake", lambda _command: config)
+    monkeypatch.setattr(remote, "fetch_test_run_facts", lambda *args, **kwargs: facts)
+    args = build_parser().parse_args(
+        [
+            "moog",
+            "link-existing",
+            external_test_run_id,
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--state-dir",
+            str(tmp_path / "state"),
+            "--json",
+        ]
+    )
+
+    assert cmd_moog(args) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert first["ledger"]["state"] == "completed"
+    assert first["ledger"]["verdict"] == "inconclusive"
+    assert first["ledger"]["backend"] == "antithesis"
+    assert first["ledger"]["provenance"]["linked_existing"] is True
+    assert first["ledger"]["provenance"]["external_phase"] == "finished"
+    run_dir = Path(first["ledger"]["evidence_path"])
+    assert json.loads((run_dir / "external/link.json").read_text())["facts"] == [
+        facts[1]
+    ]
+    assert not (run_dir / "external/submission.json").exists()
+
+    assert cmd_moog(args) == 0
+    repeated = json.loads(capsys.readouterr().out)
+    assert repeated["dwarf_run_id"] == first["dwarf_run_id"]
+    assert len(RunLedger(tmp_path / "state").list_entries()) == 1
+
+
+def test_moog_retry_does_not_claim_a_stranded_queued_reservation_succeeded(
+    tmp_path, monkeypatch, capsys
+):
+    config = DeploymentConfig.from_dict({"moog": DEFAULT_MOOG_CONFIG})
+    calls = []
+    monkeypatch.setattr("profile_manager.cli._load_or_intake", lambda _command: config)
+    monkeypatch.setattr(
+        remote,
+        "run_moog_create_test",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    run_service.reserve_external_run(
+        run_service.ExternalRunRequest(
+            backend="antithesis",
+            origin="external",
+            launch={
+                "transport": "moog",
+                "repository": "pragma-org/dwarf",
+                "github_user": "J-GainSec",
+                "directory": "antithesis/cardano_node_dwarf",
+                "commit": "e" * 40,
+                "try": 1,
+                "duration_hours": "1",
+                "faults": True,
+            },
+            runs_dir=tmp_path / "runs",
+            state_dir=tmp_path / "state",
+        )
+    )
+    args = build_parser().parse_args(
+        [
+            "moog",
+            "create-test",
+            "--repo",
+            "pragma-org/dwarf",
+            "--github-user",
+            "J-GainSec",
+            "--directory",
+            "antithesis/cardano_node_dwarf",
+            "--commit",
+            "e" * 40,
+            "--approve",
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--state-dir",
+            str(tmp_path / "state"),
+            "--json",
+        ]
+    )
+
+    assert cmd_moog(args) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["state"] == "reconciliation-required"
+    assert payload["ledger"]["state"] == "queued"
+    assert calls == []
 
 
 def test_live_moog_create_test_uses_fixed_control_shim_verb(monkeypatch):

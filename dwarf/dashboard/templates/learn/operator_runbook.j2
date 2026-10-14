@@ -9,13 +9,11 @@
 <section>
   <header><span class="eyebrow">Step 1</span><h2>Deploy</h2></header>
   <h3>Recommended: Docker</h3>
-  <p>Clone the repo and run the four delivery scripts in order:</p>
+  <p>Clone the repo and run the one supported installer. It seeds state, builds the version-matched images, starts the dashboard and controller, and waits for readiness:</p>
   <pre class="run-payload-pre"><code>git clone https://github.com/pragma-org/dwarf.git
 cd dwarf
-bash delivery/scripts/install.sh       # create ~/.local/share/dwarf/{runs,state,bundles}
-bash delivery/scripts/build-image.sh   # build dwarf/framework:current
-bash delivery/scripts/deploy.sh        # start container dwarf-fw on :8787</code></pre>
-  <p>The deployment mounts <code>runs/</code>, <code>state/</code>, and <code>bundles/</code> from <code>~/.local/share/dwarf/</code> by default and starts the dashboard at <a href="http://127.0.0.1:8787/operate"><code>http://127.0.0.1:8787/operate</code></a>. Override the data location with <code>DWARF_RUNTIME_ROOT</code>. Prerequisites (Docker + Compose v2, ~20 GB free disk) and options are in <code>INSTALL.md</code>. Override the port with <code>DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/deploy.sh</code>.</p>
+bash delivery/scripts/install.sh       # build images, seed state, and start</code></pre>
+  <p>The deployment mounts <code>runs/</code>, <code>state/</code>, and <code>bundles/</code> from <code>~/.local/share/dwarf/</code> by default and starts the dashboard at <a href="http://127.0.0.1:8787/run"><code>http://127.0.0.1:8787/run</code></a>. Override the data location with <code>DWARF_RUNTIME_ROOT</code>. Prerequisites (Docker + Compose v2, ~20 GB free disk) and options are in <code>INSTALL.md</code>. Override the port with <code>DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/install.sh</code>.</p>
   <h3>Refresh an existing control channel</h3>
   <p>On a deployment whose substrate host is not loopback, pass the host and user already shown in <a href="/operate/config">/operate/config</a>. The provisioning helper defaults to <code>127.0.0.1</code> and the current user and rewrites its staged <code>known_hosts</code>; using those defaults during a remote-host upgrade can replace the correct host-key pin.</p>
   <pre class="run-payload-pre"><code>DEPLOY_HOST=&lt;configured-host&gt; DEPLOY_USER=&lt;configured-user&gt; \

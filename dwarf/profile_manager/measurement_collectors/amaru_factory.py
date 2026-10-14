@@ -10,6 +10,9 @@ from profile_manager.measurement_collectors.amaru_external import (
     WorkloadAccountingCollector,
 )
 from profile_manager.measurement_collectors.amaru_resources import AmaruResourceCollector
+from profile_manager.measurement_collectors.cardano_resources import (
+    ManagedContainerResourceCollector,
+)
 from profile_manager.measurement_collectors.amaru_patched import (
     build_amaru_patched_factories,
 )
@@ -32,6 +35,7 @@ def build_amaru_measurement_factories(
     resource_sample_interval_seconds: float = 1.0,
     resource_resolve_pid: Callable[[Path, str], int] | None = None,
     resource_sample_reader: Callable[[int, int], dict[str, Any]] | None = None,
+    resource_docker_run: Callable[..., Any] | None = None,
     resource_background: bool = True,
     target_identity: dict[str, Any] | None = None,
     allow_missing_trace_sources: bool = False,
@@ -67,6 +71,8 @@ def build_amaru_measurement_factories(
     }
     if resource_resolve_pid is not None:
         resource_options["resolve_pid"] = resource_resolve_pid
+    if resource_docker_run is not None:
+        resource_options["docker_run"] = resource_docker_run
 
     def build_resource_collector(entry):
         options = dict(resource_options)
@@ -75,7 +81,7 @@ def build_amaru_measurement_factories(
                 "sample_interval_seconds", resource_sample_interval_seconds
             )
         )
-        return AmaruResourceCollector(entry, **options)
+        return ManagedContainerResourceCollector(entry, **options)
 
     factories["amaru-stock-resources"] = build_resource_collector
     factories["amaru-stock-header-validation"] = lambda entry: AmaruHeaderValidationCollector(

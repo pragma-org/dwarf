@@ -4,6 +4,9 @@ from pathlib import Path
 import pytest
 
 from profile_manager import primitives as primitive_module
+from profile_manager import scenario as scenario_module
+from profile_manager import telemetry
+from profile_manager.measurement_execution import PreparedScenarioMeasurements
 
 
 class _Runtime:
@@ -63,8 +66,7 @@ def test_amaru_runtime_target_uses_the_consumer_node_socket(monkeypatch, tmp_pat
         lambda _handle: {"implementation": "amaru"},
     )
     monkeypatch.setattr(
-        primitive_module,
-        "_protocol_docker_result",
+        "scripts.runtime_amaru_measurement_calibration._run",
         lambda *_args, **_kwargs: type(
             "Result",
             (),
@@ -88,6 +90,255 @@ def test_amaru_runtime_target_uses_the_consumer_node_socket(monkeypatch, tmp_pat
     )
 
     assert target["peer"]["socket_path"] == "/state/node.socket"
+
+
+def test_client_runtime_target_prefers_prepared_metadata_and_rejects_wrong_profile(
+    monkeypatch, tmp_path
+):
+    prepared_path = tmp_path / "controller" / "current" / "runtime.json"
+    prepared_path.parent.mkdir(parents=True)
+    prepared_path.write_text(
+        json.dumps(
+            {
+                "profile_id": "selected-profile",
+                "identity": {
+                    "services": {
+                        "amaru-relay-1": {"container": "amaru-target"},
+                        "amaru-consumer": {"container": "amaru-consumer"},
+                    }
+                },
+            }
+        )
+    )
+    handle = _Handle(tmp_path / "run")
+    handle._prepared_runtime_metadata_path = prepared_path
+    monkeypatch.setenv("ADA2_DWARF_RUN_NETWORK", "owned")
+    monkeypatch.setattr(
+        primitive_module,
+        "_measurement_target_identity",
+        lambda _handle: {"implementation": "amaru"},
+    )
+    monkeypatch.setattr(
+        "scripts.runtime_amaru_measurement_calibration._run",
+        lambda *_args, **_kwargs: type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": json.dumps(
+                    [
+                        {
+                            "NetworkSettings": {
+                                "Networks": {
+                                    "consumer-only": {"IPAddress": "10.99.0.2"},
+                                    "owned": {"IPAddress": "10.0.0.2"},
+                                }
+                            }
+                        }
+                    ]
+                ),
+            },
+        )(),
+    )
+
+    target = primitive_module._resolve_client_runtime_target(
+        handle, {"profile_id": "selected-profile"}
+    )
+    assert target["runtime_metadata_path"] == str(prepared_path)
+    assert target["listen_host"] == "10.0.0.2"
+
+    explicit_path = tmp_path / "explicit" / "runtime.json"
+    explicit_path.parent.mkdir()
+    explicit_path.write_text(prepared_path.read_text())
+    explicit_target = primitive_module._resolve_client_runtime_target(
+        handle,
+        {
+            "profile_id": "selected-profile",
+            "runtime_metadata_path": str(explicit_path),
+        },
+    )
+    assert explicit_target["runtime_metadata_path"] == str(explicit_path)
+
+    with pytest.raises(RuntimeError, match="does not match selected profile"):
+        primitive_module._resolve_client_runtime_target(
+            handle, {"profile_id": "another-profile"}
+        )
+
+    monkeypatch.setenv("ADA2_DWARF_RUN_NETWORK", "foreign")
+    with pytest.raises(RuntimeError, match="attached run network is absent"):
+        primitive_module._resolve_client_runtime_target(
+            handle, {"profile_id": "selected-profile"}
+        )
+
+    monkeypatch.delenv("ADA2_DWARF_RUN_NETWORK")
+    with pytest.raises(RuntimeError, match="ambiguous"):
+        primitive_module._resolve_client_runtime_target(
+            handle, {"profile_id": "selected-profile"}
+        )
+
+
+def test_scenario_hands_prepared_runtime_to_progress_restart_and_sync_helpers(
+    monkeypatch, tmp_path
+):
+    profile_id = "profile-controller-retained"
+    runtime_path = tmp_path / "controller-state" / profile_id / "current" / "runtime.json"
+    runtime_path.parent.mkdir(parents=True)
+    runtime_path.write_text(
+        json.dumps(
+            {
+                "profile_id": profile_id,
+                "identity": {
+                    "services": {
+                        "amaru-relay-1": {"container": "amaru-target"},
+                        "amaru-consumer": {"container": "amaru-consumer"},
+                    }
+                },
+            }
+        )
+    )
+    body = {
+        "spec_version": "v1",
+        "id": "prepared-runtime-handoff-test",
+        "title": "Prepared runtime handoff",
+        "target": {"implementation": "amaru", "version": "test"},
+        "runtime": "devnet",
+        "profile": profile_id,
+        "measurement_profile": "amaru-security-patched",
+        "setup": [
+            {
+                "primitive": "runtime_wait_for_chain_progress",
+                "profile_id": profile_id,
+                "minimum_blocks": 5,
+                "timeout_seconds": 1,
+                "poll_interval_seconds": 0,
+            }
+        ],
+        "load": [
+            {
+                "primitive": "runtime_real_target_restart_and_readiness",
+                "profile_id": profile_id,
+                "timeout_seconds": 1,
+                "poll_interval_seconds": 0,
+            },
+            {
+                "primitive": "runtime_controlled_sync_range",
+                "profile_id": profile_id,
+                "minimum_blocks": 5,
+                "timeout_seconds": 1,
+                "poll_interval_seconds": 0,
+            },
+        ],
+        "faults": [],
+        "probes": [],
+        "assertions": [],
+        "teardown": [],
+    }
+    scenario_path = tmp_path / "scenario.json"
+    scenario_path.write_text(json.dumps(body))
+    prepared = PreparedScenarioMeasurements(
+        resolution={
+            "profile": "amaru-security-patched",
+            "requested": [],
+            "resolved": [],
+            "skipped": [],
+            "incompatible": [],
+            "disabled": [],
+            "target_identity": {"implementation": "amaru"},
+        },
+        runtime_metadata_path=runtime_path,
+        target_node="amaru-relay-1",
+        tip_probe=lambda: _tip(1),
+    )
+    monkeypatch.setattr(
+        scenario_module, "prepare_auto_measurements", lambda _scenario: (prepared, None)
+    )
+
+    class _Observer:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def summarize(self):
+            return {}
+
+    monkeypatch.setattr(telemetry, "ObserverCollector", _Observer)
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    monkeypatch.setenv("ADA2_DWARF_RUN_NETWORK", "owned")
+    monkeypatch.setattr(
+        "scripts.runtime_amaru_measurement_calibration._run",
+        lambda *_args, **_kwargs: type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": json.dumps(
+                    [{"NetworkSettings": {"Networks": {"owned": {"IPAddress": "10.0.0.2"}}}}]
+                ),
+            },
+        )(),
+    )
+    observed_targets = []
+    height = iter(range(100, 200, 5))
+
+    def observe(target):
+        observed_targets.append(dict(target))
+        return _tip(next(height))
+
+    monkeypatch.setattr(primitive_module, "_observe_client_target_tip", observe)
+    monkeypatch.setattr(
+        primitive_module,
+        "_restart_client_runtime_target",
+        lambda _target: {"returncode": 0},
+    )
+    monkeypatch.setattr(primitive_module, "_client_listener_ready", lambda _target: True)
+    monkeypatch.setattr(
+        primitive_module,
+        "_client_peer_role_ready",
+        lambda _target: {"ready": True, "usable": True, "peer_id": "amaru-consumer"},
+    )
+    monkeypatch.setattr(
+        primitive_module,
+        "_protocol_container_state",
+        lambda _container: {"running": True, "restart_count": 0, "oom_killed": False},
+    )
+    monkeypatch.setattr(
+        primitive_module,
+        "_observe_client_window_health",
+        lambda *_args, **_kwargs: {
+            "before": {"running": True, "restart_count": 0, "oom_killed": False},
+            "after": {"running": True, "restart_count": 0, "oom_killed": False},
+            "tip_before": _tip(100),
+            "tip_after": _tip(200),
+            "log_signals": {"fatal": [], "background": []},
+        },
+    )
+
+    handle = scenario_module.run_scenario(
+        scenario_path,
+        runs_dir=tmp_path / "runs",
+        state_dir=tmp_path / "state",
+    )
+
+    assert handle._prepared_runtime_metadata_path == runtime_path
+    assert observed_targets
+    assert {target["runtime_metadata_path"] for target in observed_targets} == {
+        str(runtime_path)
+    }
+    proof_root = handle.run_dir / "outputs" / "client-example-proof"
+    assert (proof_root / "chain-progress-readiness.json").is_file()
+    assert (proof_root / "restart-readiness.json").is_file()
+    assert (proof_root / "controlled-sync-range.json").is_file()
+    restart_proof = json.loads((proof_root / "restart-readiness.json").read_text())
+    assert restart_proof["listener_endpoint"] == {
+        "network": "owned",
+        "host": "10.0.0.2",
+        "port": 3000,
+    }
 
 
 def test_wait_for_chain_progress_retains_observed_positive_delta(monkeypatch, tmp_path):

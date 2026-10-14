@@ -1,134 +1,120 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head with context %}
-{% call deck_head('Start run · ' ~ (wizard.scenarios|length) ~ ' scenarios', 'Pick a scenario, let DWARF check it, then start one real local run.', 'Work down the cards in order. Start stays disabled until DWARF resolves a valid plan and every required check is ready; pressing it launches the run, streams output here, and files the result in the normal evidence viewer.') %}{% endcall %}
-<section id="run-wizard" class="run-wizard" data-resolve-url="/api/run/resolve" data-start-url="/api/run/start" data-dashboard-token="{{ token }}">
-  <span class="eyebrow adv-only">Local real-node execution</span>
-  <h1 class="adv-only">Start a DWARF run</h1>
-  <p class="page-hero adv-only">Choose a scenario. DWARF checks the profile, exact node versions, measurements, primitives, and required runtime before it can start.</p>
-  <p class="run-wizard__plain adv-only"><strong>Plain meaning:</strong> Choose the test. DWARF fills in the safe defaults and tells you what must be ready.</p>
-
-  <nav class="run-wizard__progress" aria-label="Run stages"><ol>
-    {% for key, label in [('scenario', 'Scenario'), ('target', 'Target'), ('profile', 'Profile'), ('versions', 'Versions'), ('measurements', 'Measurements'), ('primitives', 'Primitives'), ('settings', 'Settings'), ('readiness', 'Readiness'), ('review', 'Review'), ('launch', 'Run')] %}
+{% from "operate/_partials/_scenario_discovery.j2" import discovery_filters, scenario_face, scenario_facet_attributes with context %}
+<h1 class="visually-hidden">Run</h1>
+<section id="run-wizard" class="run-wizard run-wizard--basic" data-basic-reducer="skip" data-resolve-url="/api/run/resolve" data-topology-url="/api/topology/configurations" data-prepare-url="/api/run/prepare" data-start-url="/api/run/start" data-dashboard-token="{{ token }}">
+  <figure class="run-readiness-logo run-readiness-logo--centered" data-run-logo-state="unconfigured" aria-labelledby="run-readiness-text">
+    <span class="run-readiness-logo__image" aria-hidden="true"><img src="/static/dwarf-logo.png" alt=""><span class="run-readiness-logo__fill"><img src="/static/dwarf-logo.png" alt=""></span></span>
+    <figcaption id="run-readiness-text" class="visually-hidden" data-run-readiness-text aria-live="polite">Choose a supported topology to begin.</figcaption>
+  </figure>
+  <nav class="run-wizard__progress" aria-label="Basic run stages"><ol>
+    {% for key, label in [('topology', 'Topology'), ('versions', 'Versions'), ('scenario', 'Scenario'), ('measurements', 'Measurement taps'), ('review', 'Prepare'), ('launch', 'Run + evidence')] %}
     <li><a href="#run-stage-{{ key }}" data-run-progress="{{ key }}"{% if loop.first %} aria-current="step"{% endif %}><span>{{ loop.index }}</span>{{ label }}</a></li>
     {% endfor %}
   </ol></nav>
-
   <form data-run-wizard-form novalidate><div class="run-wizard__layout">
-    <section id="run-stage-scenario" class="run-wizard__step" data-run-step="scenario" aria-labelledby="run-step-scenario">
-      <header><span>01</span><div><h2 id="run-step-scenario">Scenario</h2><small>Required</small></div></header>
-      <p class="adv-only">Select the test recipe. This choice controls all later options.</p>
-      <p class="run-wizard__plain"><strong>Plain meaning:</strong> Pick what DWARF will do.</p>
-      <label for="run-scenario-search">Find a scenario <span class="field-optional">Optional</span></label>
-      <input id="run-scenario-search" type="search" autocomplete="off" placeholder="Search by purpose, implementation, or exact ID">
-      <div class="scenario-picker__filters" role="group" aria-label="Filter scenarios">
-        {% for key, label in [('all', 'All'), ('recommended', 'Recommended'), ('amaru', 'Amaru'), ('cardano-node', 'Cardano-node'), ('mixed', 'Mixed'), ('other', 'Other')] %}<button type="button" data-scenario-filter="{{ key }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ label }}</button>{% endfor %}
+    <section id="run-stage-topology" class="run-wizard__step run-wizard__step--wide" data-run-step="topology" aria-labelledby="run-step-topology">
+      <header><span>01</span><div><h2 id="run-step-topology">Topology</h2><small>Existing or new</small></div></header>
+      <p>Reuse an exact deployed profile or create a constrained local topology. DWARF never replaces an existing topology silently.</p>
+      <fieldset class="run-choice-grid"><legend>Topology source</legend>
+        <label><input type="radio" name="topology_mode" value="existing" checked> <strong>Use existing</strong><span>Choose a catalogued profile; healthy matching nodes are reused.</span></label>
+        <label><input type="radio" name="topology_mode" value="new"> <strong>Create new</strong><span>Preview and save a bounded, catalog-resolved local profile.</span></label>
+      </fieldset>
+      <div data-topology-mode-panel="existing">
+        <label for="run-profile">Deployment profile</label>
+        <select id="run-profile" name="profile_id"><option value="">Scenario default</option>{% for group in wizard.profile_groups %}<optgroup label="{{ group.label }}">{% for profile in group.profiles %}<option value="{{ profile.id }}" data-haskell-count="{{ profile.haskell_count }}" data-amaru-count="{{ profile.amaru_count }}" data-full-label="{{ profile.label }}" data-status-label="{{ profile.status_label }}">{{ profile.picker_label }}</option>{% endfor %}</optgroup>{% endfor %}</select>
+        <div class="run-wizard__selection" data-run-summary="profile">Scenario default</div>
       </div>
-      <label id="run-scenario-picker-label" for="run-scenario">Scenario <span class="field-required">Required</span></label>
-      <select id="run-scenario" name="scenario_id" required class="run-wizard__canonical-select" tabindex="-1" aria-hidden="true">
-        {% for scenario in wizard.scenarios %}<option value="{{ scenario.id }}"{% if scenario.id == wizard.default_scenario_id %} selected{% endif %}>{{ scenario.short_title }}</option>{% endfor %}
-      </select>
-      <div class="scenario-picker" data-scenario-picker role="listbox" aria-labelledby="run-scenario-picker-label" tabindex="0">
-        {% for scenario in wizard.scenarios %}
-        {% set visual_class = 'cardano' if scenario.implementation_key == 'cardano-node' else scenario.implementation_key if scenario.implementation_key in ['amaru', 'mixed'] else 'neutral' %}
-        <button type="button" role="option" class="scenario-picker__option scenario-picker__option--{{ visual_class }}" data-scenario-id="{{ scenario.id }}" data-scenario-group="{{ scenario.filter_group }}" data-recommended="{{ 'true' if scenario.recommended_demo else 'false' }}" data-search="{{ scenario.short_title }} {{ scenario.id }} {{ scenario.implementation }} {{ scenario.measurement_state }} {{ scenario.proof_state }}" aria-selected="{{ 'true' if scenario.id == wizard.default_scenario_id else 'false' }}">
-          <span class="scenario-picker__title">{{ scenario.short_title }}</span>
-          <span class="scenario-picker__badges"><span class="scenario-picker__badge scenario-picker__badge--implementation">{{ scenario.implementation }}</span>{% if scenario.measurement_state == 'measurement-enabled' %}<span class="scenario-picker__badge">Measurement-enabled</span>{% endif %}{% if scenario.proof_state == 'retained-proof' %}<span class="scenario-picker__badge scenario-picker__badge--proof">✓ Measurement proof</span>{% elif scenario.proof_state == 'supported-without-retained-proof' %}<span class="scenario-picker__badge scenario-picker__badge--supported">◐ Supported · no retained proof</span>{% else %}<span class="scenario-picker__badge scenario-picker__badge--neutral">○ Unconfirmed / unsupported</span>{% endif %}{% if scenario.recommended_demo %}<span class="scenario-picker__badge scenario-picker__badge--recommended">Recommended demo</span>{% endif %}</span>
-          <code class="scenario-picker__id">{{ scenario.id }}</code>
-        </button>
+      <fieldset class="run-choice-grid" data-topology-mode-panel="new" hidden><legend>Implementation</legend>
+        {% for key, label in [('cardano-node', 'Cardano'), ('amaru', 'Amaru'), ('mixed', 'Mixed')] %}
+        <label data-topology-kind="{{ key }}"><input type="radio" name="topology_kind" value="{{ key }}"{% if loop.first %} checked{% endif %}> <strong>{{ label }}</strong><span data-topology-kind-detail>{{ 'Cardano and Amaru nodes sharing one generated devnet.' if key == 'mixed' else 'A generated local ' ~ label ~ ' topology.' }}</span></label>
         {% endfor %}
-      </div>
-      <p class="scenario-picker__count" data-scenario-picker-count aria-live="polite"></p>
-      <article class="scenario-selection" data-scenario-summary aria-live="polite">
-        <h3 data-scenario-summary-title>Selected scenario</h3>
-        <dl class="run-wizard__facts" data-scenario-summary-facts></dl>
-        <p data-scenario-summary-purpose></p>
-        <p data-scenario-summary-limit></p>
-        <p data-scenario-summary-evidence></p>
-        <details><summary>Technical scenario ID</summary><code data-scenario-raw-id></code></details>
-      </article>
+        <div class="run-topology-builder">
+          <label for="run-topology-id">Configuration name<input id="run-topology-id" name="topology_id" pattern="[a-z0-9][a-z0-9\-]{0,62}" value="dwarf-basic-run" autocomplete="off"></label>
+          <label for="run-cardano-count">Cardano nodes<input id="run-cardano-count" name="haskell_count" type="number" min="0" max="32" value="1"></label>
+          <label for="run-amaru-count">Amaru nodes<input id="run-amaru-count" name="amaru_count" type="number" min="0" max="32" value="0"></label>
+          <label for="run-network-magic">Local network magic<input id="run-network-magic" name="network_magic" type="number" min="1" max="4294967295" value="42"></label>
+        </div>
+        <p class="run-wizard__selection" data-topology-builder-status role="status" aria-live="polite">This configuration will be previewed before it can be prepared.</p>
+      </fieldset>
     </section>
-
-    <section id="run-stage-target" class="run-wizard__step" data-run-step="target" aria-labelledby="run-step-target">
-      <header><span>02</span><div><h2 id="run-step-target">Target and runtime</h2><small>Derived</small></div></header>
-      <p class="adv-only">DWARF derives the real implementation and execution runtime from the scenario.</p>
-      <p class="run-wizard__plain"><strong>Plain meaning:</strong> This shows which real node the test touches and where it runs.</p>
-      <dl class="run-wizard__facts" data-run-summary="target"><div><dt>Target</dt><dd>Resolving…</dd></div></dl>
-    </section>
-
-    <section id="run-stage-profile" class="run-wizard__step" data-run-step="profile" aria-labelledby="run-step-profile">
-      <header><span>03</span><div><h2 id="run-step-profile">Profile</h2><small>Conditional</small></div></header>
-      <p class="adv-only">A profile defines the real-node deployment shape. Library and attached-topology scenarios do not need one.</p>
-      <p class="run-wizard__plain"><strong>Plain meaning:</strong> This is the group of nodes the test uses.</p>
-      <label for="run-profile">Deployment profile <span class="field-optional">Optional override</span></label>
-      <select id="run-profile" name="profile_id"><option value="">Scenario default</option>{% for profile in wizard.profiles %}<option value="{{ profile.id }}">{{ profile.label }} · {{ profile.haskell_count }} Cardano / {{ profile.amaru_count }} Amaru</option>{% endfor %}</select>
-      <div class="run-wizard__selection" data-run-summary="profile">Scenario default</div>
-    </section>
-
     <section id="run-stage-versions" class="run-wizard__step" data-run-step="versions" aria-labelledby="run-step-versions">
-      <header><span>04</span><div><h2 id="run-step-versions">Node versions</h2><small>Default selected</small></div></header>
-      <p class="adv-only"><code>latest-confirmed</code> is the normal default. Exact versions remain available when the profile supports them.</p>
-      <p class="run-wizard__plain"><strong>Plain meaning:</strong> Use the newest node versions that DWARF has proved work, unless you choose another one.</p>
+      <header><span>02</span><div><h2 id="run-step-versions">Node Versions</h2></div></header>
       <label for="run-version-policy">Version policy</label>
       <select id="run-version-policy" name="version_policy"><option value="">Profile default</option>{% for policy in wizard.version_policies %}<option value="{{ policy }}">{{ policy }}</option>{% endfor %}</select>
       <div class="run-wizard__version-grid">
-        <label for="run-cardano-version">Cardano-node version <span class="field-optional">Exact only</span><input id="run-cardano-version" name="cardano_version" autocomplete="off"></label>
-        <label for="run-amaru-version">Amaru version <span class="field-optional">Exact only</span><input id="run-amaru-version" name="amaru_version" autocomplete="off"></label>
+        <label for="run-cardano-version">Cardano-node version <span class="field-optional">Exact only</span><select id="run-cardano-version" name="cardano_version"><option value="">Resolved by policy</option>{% for release in wizard.versions if release.implementation == 'cardano-node' %}<option value="{{ release.version }}" data-downloadable="{{ 'true' if release.downloadable else 'false' }}" data-support-cardano="{{ release.support['cardano-only'] }}" data-support-mixed="{{ release.support['mixed'] }}">{{ release.version }} · {{ release.channel }} · {{ release.artifact_state }} · {{ 'downloadable' if release.downloadable else 'not downloadable' }} · Cardano {{ release.support['cardano-only'] }} · mixed {{ release.support['mixed'] }}</option>{% endfor %}</select></label>
+        <label for="run-amaru-version">Amaru version <span class="field-optional">Exact only</span><select id="run-amaru-version" name="amaru_version"><option value="">Resolved by policy</option>{% for release in wizard.versions if release.implementation == 'amaru' %}<option value="{{ release.version }}" data-downloadable="{{ 'true' if release.downloadable else 'false' }}" data-support-amaru="{{ release.support['amaru-only'] }}" data-support-mixed="{{ release.support['mixed'] }}">{{ release.version }} · {{ release.channel }} · {{ release.artifact_state }} · {{ 'downloadable' if release.downloadable else 'not downloadable' }} · Amaru {{ release.support['amaru-only'] }} · mixed {{ release.support['mixed'] }}</option>{% endfor %}</select></label>
       </div>
-      <label class="run-wizard__check"><input type="checkbox" name="acknowledge_unknown_versions"> Allow this one run to use a catalogued but unconfirmed version</label>
-      <div class="run-wizard__selection" data-run-summary="versions">Resolving exact versions…</div>
+      <label for="run-operator-registration">Local inspected version <span class="field-optional">Experimental / local</span>
+        <select id="run-operator-registration" name="operator_registration_id">
+          <option value="">Use the shared catalog selection above</option>
+          {% for registration in wizard.operator_registrations %}<option value="{{ registration.registration_id }}" data-implementation="{{ registration.implementation }}" data-config-image-id="{{ registration.config_image_id }}">{{ registration.version }} · {{ registration.implementation }} · {{ registration.platform }} · source {{ 'declared' if registration.source_declared else 'unverified' }} · qualification {{ registration.qualification }}</option>{% endfor %}
+        </select>
+      </label>
+      {% if wizard.operator_registration_error %}<p class="inline-warning">Local registrations are unavailable: {{ wizard.operator_registration_error }}</p>{% elif not wizard.operator_registrations %}<p class="run-wizard__selection">No local image is registered. Inspect one from <a href="/operate/versions">Versions</a>, then return here to select its immutable identity.</p>{% else %}<p class="run-wizard__selection">A local selection uses its controller-inspected immutable identity. It does not alter shared qualification or the catalog default.</p>{% endif %}
+      <details class="run-wizard__catalog" data-version-catalog-details><summary>Catalog information</summary><p>Catalog <code>{{ wizard.version_catalog_revision }}</code>. Unsupported and unavailable pins remain visible so DWARF can explain why they cannot run.</p></details>
+      <label class="run-wizard__check" data-version-acknowledgement hidden><input type="checkbox" name="acknowledge_unknown_versions"> Acknowledge this exact unconfirmed or local version for this run</label>
+      <div class="run-wizard__selection" data-run-summary="versions">Resolve a scenario and topology to see exact identities.</div>
     </section>
-
-    <section id="run-stage-measurements" class="run-wizard__step" data-run-step="measurements" aria-labelledby="run-step-measurements">
-      <header><span>05</span><div><h2 id="run-step-measurements">Measurements</h2><small>Optional override</small></div></header>
-      <p>Measurements observe the run. They do not change scenario pass or fail unless a threshold gate is explicitly enabled.</p>
-      <p class="run-wizard__plain"><strong>Plain meaning:</strong> These are extra rulers and stopwatches.</p>
-      <label for="run-measurements">Measurement profile</label>
-      <select id="run-measurements" name="measurement_profile"><option value="">Scenario or compatible default</option><option value="none">No measurements</option>{% for profile in wizard.measurement_profiles %}<option value="{{ profile.id }}">{{ profile.title }} · {{ profile.measurement_count }} taps</option>{% endfor %}</select>
-      <div data-run-summary="measurements" class="run-wizard__list"></div>
-    </section>
-
-    <section id="run-stage-primitives" class="run-wizard__step" data-run-step="primitives" aria-labelledby="run-step-primitives">
-      <header><span>06</span><div><h2 id="run-step-primitives">Primitives</h2><small>Read-only</small></div></header>
-      <p class="adv-only">Primitives are the scenario operations and assertions. Changing them creates a different scenario.</p>
-      <p class="run-wizard__plain"><strong>Plain meaning:</strong> These are the exact actions in the test.</p>
-      <div data-run-summary="primitives" class="run-wizard__list"></div>
+    <section id="run-stage-scenario" class="run-wizard__step" data-run-step="scenario" aria-labelledby="run-step-scenario">
+      <header><span>03</span><div><h2 id="run-step-scenario">Scenario</h2><small>Purpose and requirements</small></div></header>
+      <label id="run-scenario-picker-label" for="run-scenario">Scenario</label>
+      <select id="run-scenario" name="scenario_id" required class="run-wizard__canonical-select" tabindex="-1" aria-hidden="true">{% if not wizard.default_scenario_id %}<option value="" selected disabled>Select a supported scenario</option>{% endif %}{% for scenario in wizard.scenarios %}<option value="{{ scenario.id }}"{% if scenario.id == wizard.default_scenario_id %} selected{% endif %}>{{ scenario.short_title }}</option>{% endfor %}</select>
+      <div class="scenario-discovery" data-scenario-discovery data-discovery-scope="run">
+      {{ discovery_filters('run', wizard.scenario_facets, wizard.scenario_counts) }}
+      <div class="scenario-picker" data-scenario-picker role="listbox" aria-labelledby="run-scenario-picker-label" tabindex="0">
+        {% for subject in wizard.scenario_subjects %}
+        <details class="scenario-discovery__subject" data-scenario-disclosure="subject:{{ subject.key }}">
+          <summary><span>{{ subject.title }}</span><small>{{ subject.variant_count }} exact variant{{ '' if subject.variant_count == 1 else 's' }}</small><span class="scenario-discovery__selected-badge" data-selected-ancestor-badge hidden>✓ Selected</span></summary>
+          {% for child in subject.children %}{% if child.variant_count %}
+          <section class="scenario-discovery__subject-child" data-scenario-subject-child="{{ subject.key }}:{{ child.key }}">
+            {% if child.key != 'general' %}<h3>{{ child.title }}</h3>{% endif %}
+            {% for family in child.families %}
+            <details class="scenario-discovery__family" data-scenario-disclosure="family:{{ subject.key }}:{{ child.key }}:{{ family.key }}">
+              <summary><span>{{ family.title }}</span><small>{{ family.variant_count }} exact variant{{ '' if family.variant_count == 1 else 's' }}</small><span class="scenario-discovery__selected-badge" data-selected-ancestor-badge hidden>✓ Selected</span></summary>
+              {% for scenario in family.variants %}{% set visual_class = 'cardano' if scenario.implementation_key == 'cardano-node' else scenario.implementation_key if scenario.implementation_key in ['amaru', 'mixed'] else 'neutral' %}
+              <button type="button" role="option" class="scenario-picker__option scenario-picker__option--{{ visual_class }}" {{ scenario_facet_attributes(scenario) }} data-recommended="{{ 'true' if scenario.quickstart_recommended else 'false' }}" aria-selected="{{ 'true' if scenario.id == wizard.default_scenario_id else 'false' }}">{{ scenario_face(scenario, false) }}</button>
+              {% endfor %}
+            </details>
+            {% endfor %}
+          </section>
+          {% endif %}{% endfor %}
+        </details>
+        {% endfor %}
+      </div>
+      </div>
+      <details class="scenario-selection" data-scenario-summary aria-live="polite"><summary><span>Selected scenario:</span><strong data-scenario-summary-title>Selected scenario</strong><span class="scenario-selection__badge" data-scenario-selected-badge>✓ Selected</span></summary><div class="scenario-selection__body"><dl class="run-wizard__facts" data-scenario-summary-facts></dl><p data-scenario-summary-purpose></p><p data-scenario-summary-limit></p><p data-scenario-summary-evidence></p><div data-scenario-summary-context></div><details data-scenario-technical><summary>Technical scenario ID</summary><code data-scenario-raw-id></code></details></div></details>
       <a href="/operate/scenarios/new" target="_blank" rel="noreferrer">Customize as a new scenario</a>
     </section>
-
-    <section id="run-stage-settings" class="run-wizard__step" data-run-step="settings" aria-labelledby="run-step-settings">
-      <header><span>07</span><div><h2 id="run-step-settings">Run settings</h2><small>Scenario controlled</small></div></header>
-      <p class="adv-only">The scenario retains its seed, iteration count, and local runtime semantics.</p>
-      <p class="run-wizard__plain"><strong>Plain meaning:</strong> DWARF keeps the recipe repeatable.</p>
-      <dl class="run-wizard__facts" data-run-summary="settings"><div><dt>Seed</dt><dd>Resolving…</dd></div></dl>
+    <section id="run-stage-measurements" class="run-wizard__step" data-run-step="measurements" aria-labelledby="run-step-measurements">
+      <header><span>04</span><div><h2 id="run-step-measurements">Measurement taps</h2></div></header>
+      <label for="run-measurements">Measurement profile <span class="field-optional">Optional override</span></label><select id="run-measurements" name="measurement_profile"><option value="">Scenario or compatible default</option><option value="none">No measurements</option>{% for profile in wizard.measurement_profiles %}<option value="{{ profile.id }}">{{ profile.title }} · {{ profile.measurement_count }} taps</option>{% endfor %}</select>
+      <fieldset class="run-measurement-taps" data-run-measurement-taps><legend class="run-measurement-taps__legend">Individual compatible taps</legend><details class="run-measurement-taps__disclosure" data-measurement-taps-disclosure><summary>Individual taps · resolving</summary><div class="run-measurement-taps__body"><p>Resolve a compatible profile to choose individual taps.</p></div></details></fieldset>
     </section>
-
-    <section id="run-stage-readiness" class="run-wizard__step" data-run-step="readiness" aria-labelledby="run-step-readiness">
-      <header><span>08</span><div><h2 id="run-step-readiness">Readiness</h2><small>Required before start</small></div></header>
-      <p class="adv-only">DWARF checks only the runtime surfaces required by this scenario. Mixed health is not required for unrelated tests.</p>
-      <p class="run-wizard__plain"><strong>Plain meaning:</strong> DWARF checks the needed parts before it starts.</p>
-      <div data-run-summary="readiness" class="run-wizard__list" aria-live="polite">Resolving checks…</div>
-      <a href="/operate/status" target="_blank" rel="noreferrer">Open detailed deployment status</a>
-    </section>
-
     <section id="run-stage-review" class="run-wizard__step run-wizard__step--wide" data-run-step="review" aria-labelledby="run-step-review">
-      <header><span>09</span><div><h2 id="run-step-review">Review</h2><small>Required</small></div></header>
-      <p class="adv-only">Review the resolved target, exact versions, measurements, and readiness contract.</p>
+      <header><span>05</span><div><h2 id="run-step-review">Review and prepare</h2><small>Exact change</small></div></header>
       <div data-run-errors class="run-wizard__errors" role="alert" aria-live="assertive" tabindex="-1" hidden></div>
       <div data-run-summary="review" class="run-wizard__review">Resolving plan…</div>
-      <details><summary>Technical plan</summary><pre data-run-summary="plan"></pre></details>
+      <dl class="run-wizard__facts" data-run-summary="target"><div><dt>Target</dt><dd>Resolving…</dd></div></dl>
+      <div class="run-wizard__review-grid"><div><h3>Scenario operations</h3><div data-run-summary="primitives" class="run-wizard__list"></div></div><div><h3>Prepare will verify</h3><div data-run-summary="readiness" class="run-wizard__list"></div></div></div>
+      <details class="run-wizard__reproducibility" data-run-reproducibility><summary>Reproducibility</summary><label for="run-seed">Seed override <span class="field-optional">Optional</span><input id="run-seed" name="seed" data-run-seed inputmode="text" autocomplete="off" placeholder="Scenario default, decimal, or 0x hexadecimal"></label><p>Leave blank to use the scenario default. A supplied value is frozen into the exact prepared plan.</p></details>
+      <dl class="run-wizard__facts" data-run-summary="settings"><div><dt>Seed</dt><dd>Resolving…</dd></div></dl>
+      <label class="run-wizard__check" data-destructive-confirmation hidden><input type="checkbox" name="confirm_topology_change"> I understand Prepare will replace or redeploy the currently selected DWARF-owned topology.</label>
+      <button class="cta cta--ghost" type="button" data-run-action="prepare" aria-label="Prepare exact configuration" disabled>Prepare</button>
+      <p class="run-wizard__launch-status" data-run-prepare-status aria-live="polite">Resolve a valid plan to continue.</p><pre data-run-prepare-log tabindex="0" hidden></pre>
+      <details class="adv-only"><summary>Technical resolved plan</summary><pre data-run-summary="plan"></pre></details>
     </section>
-
     <section id="run-stage-launch" class="run-wizard__step run-wizard__step--wide" data-run-step="launch" aria-labelledby="run-step-launch">
-      <header><span>10</span><div><h2 id="run-step-launch">Run</h2><small>Mutating action</small></div></header>
-      <p>Starting a run requires the dashboard token. Output streams here and the completed run opens in the normal evidence viewer.</p>
-      <p class="run-wizard__plain"><strong>Plain meaning:</strong> Press Start when every check is ready.</p>
-      <button class="cta" type="submit" data-run-action="start" disabled>Start local run</button>
-      <div class="run-wizard__launch-status" data-run-launch-status aria-live="polite">Resolve a valid plan to continue.</div>
-      <pre data-run-launch-log tabindex="0" hidden></pre>
+      <header><span>06</span><div><h2 id="run-step-launch">Run and evidence</h2><small data-basic-run-gate>Locked</small></div></header>
+      <p>Run the exact prepared digest. DWARF records one queued/running/terminal lifecycle and retains the real result even when assertions fail.</p>
+      <div class="run-basic__lifecycle" aria-label="Run lifecycle"><span data-run-lifecycle="queued">Queued</span><span data-run-lifecycle="running">Running</span><span data-run-lifecycle="completed">Terminal</span></div>
+      <button class="cta" type="submit" data-run-action="start" disabled>Run prepared scenario</button>
+      <div class="run-wizard__launch-status" data-run-launch-status aria-live="polite">Prepare the exact plan before starting.</div><p data-run-basic-evidence aria-live="polite">No run has started.</p><pre data-run-launch-log tabindex="0" hidden></pre>
     </section>
   </div></form>
-  <script type="application/json" id="run-wizard-bootstrap">{{ wizard|tojson }}</script>
+  <script type="application/json" id="run-wizard-bootstrap">{{ wizard_bootstrap|tojson }}</script>
 </section>
+<script type="module" src="/static/js/scenario-discovery.js"></script>
 <script type="module" src="/static/js/run-wizard.js"></script>
 {% endblock %}

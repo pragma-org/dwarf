@@ -75,3 +75,15 @@ def test_scenario_rejects_incomplete_security_finding_expectation(tmp_path):
 
     with pytest.raises(scenario.ScenarioValidationError):
         scenario.load_scenario(path)
+
+
+def test_scenario_rejects_non_numeric_seed(tmp_path):
+    body = json.loads(
+        (ROOT / "dwarf/scenarios/runtime-credential-ceremony-example-smoke.yaml").read_text()
+    )
+    body["seed"] = "0xNOTHEX"
+    path = tmp_path / "scenario.yaml"
+    path.write_text(json.dumps(body))
+
+    with pytest.raises(scenario.ScenarioValidationError, match="seed"):
+        scenario.load_scenario(path)

@@ -48,7 +48,7 @@ def _result(status: int, title: str, body_html: str, *, ok: bool = False) -> tup
         result_title=title,
         body_html=body_html,
         ok=ok,
-        back_href="/operate/targets?token=dwarf",
+        back_href="/operate/targets",
         back_label="Back to targets",
     )
     return status, html
@@ -98,6 +98,6 @@ def handle_register_post(body_bytes: bytes) -> tuple[int, str]:
     target_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return _result(200, "Target registered",
                    f"<p>Wrote <code>{escape(str(target_path))}</code>. It now appears in the "
-                   f"<a style='color:#2BE0E0' href='/operate/targets?token=dwarf'>targets catalog</a>. "
+                   f"<a style='color:#2BE0E0' href='/operate/targets'>targets catalog</a>. "
                    f"To run it, ensure the binary <code>{escape(binary)}</code> is present.</p>",
                    ok=True)

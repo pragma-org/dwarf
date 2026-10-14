@@ -1,11 +1,16 @@
 import html
+import fcntl
 import json
 import mimetypes
 import os
+import re
+import shutil
 import socket
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -38,6 +43,7 @@ from profile_manager.data.health import (
     _health_from_body,
     _latest_profile_health,
     _live_health,
+    runtime_identity,
 )
 from profile_manager.data.bundles import _forensic_bundles_dir, _latest_evidence_rows
 from profile_manager.data.fuzz import _fuzz_rows, _smoke_rows
@@ -205,6 +211,7 @@ def build_dashboard_status_payload(live=True, profile_id=None):
     health_path, health_body = _latest_profile_health()
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "runtime_identity": runtime_identity(),
         "config": _config_payload(),
         "profiles": _profile_rows(),
         "evidence_packages": _package_rows(),
@@ -1263,7 +1270,64 @@ def check_token(path, *, expected):
     provided = qs.get("token", [None])[0]
     if not provided:
         return (False, "missing token query parameter")
-    if not hmac.compare_digest(provided, expected):
+    if not hmac.compare_digest(
+        provided.encode("utf-8"), expected.encode("utf-8")
+    ):
+        return (False, "invalid token")
+    return (True, None)
+
+
+def check_form_token(path, body, *, expected):
+    """Prefer a submitted form token while retaining query-client compatibility."""
+    import hmac
+    from urllib.parse import parse_qs
+
+    form = parse_qs(
+        body.decode("utf-8", errors="replace"), keep_blank_values=True
+    ) if body else {}
+    submitted = (form.get("token") or [None])[0]
+    if submitted is None:
+        return check_token(path, expected=expected)
+    if not submitted or not hmac.compare_digest(
+        submitted.encode("utf-8"), expected.encode("utf-8")
+    ):
+        return (False, "invalid token")
+    return (True, None)
+
+
+def _new_definition_success_location(path, body):
+    """Return the clean post/redirect/get destination for a successful create."""
+    clean = path.split("?", 1)[0]
+    form = parse_qs(
+        body.decode("utf-8", errors="replace"), keep_blank_values=True
+    )
+    if clean == "/operate/primitives/new":
+        return "/operate/primitives"
+    key = "id" if clean == "/operate/targets/new" else "name"
+    definition_id = (form.get(key) or [""])[0].strip()
+    catalog = clean.split("/")[2]
+    return f"/operate/{catalog}/{quote(definition_id, safe='')}"
+
+
+def check_multipart_form_token(path, content_type, body, *, expected):
+    """Prefer a multipart body token while retaining query-client compatibility."""
+    import hmac
+    from profile_manager.data.bundle_import import (
+        _extract_boundary,
+        multipart_text_field,
+    )
+
+    boundary = _extract_boundary(content_type)
+    submitted = (
+        multipart_text_field(body, boundary, "token")
+        if boundary is not None
+        else None
+    )
+    if submitted is None:
+        return check_token(path, expected=expected)
+    if not submitted or not hmac.compare_digest(
+        submitted.encode("utf-8"), expected.encode("utf-8")
+    ):
         return (False, "invalid token")
     return (True, None)
 
@@ -1282,6 +1346,7 @@ def _default_cli_command_builder(
     test_id=None,
     approve=False,
     scenario_path=None,
+    run_origin=None,
     acknowledge_unknown_version=False,
 ):
     if action == "deploy":
@@ -1307,7 +1372,10 @@ def _default_cli_command_builder(
     if action == "compare":
         if not scenario_path:
             raise ValueError("compare requires path")
-        return _cli_command("compare", scenario_path)
+        command = _cli_command("compare", scenario_path)
+        if run_origin:
+            command.extend(("--origin", run_origin))
+        return command
     if action == "scenario_run":
         if not scenario_path:
             raise ValueError("scenario_run requires path")
@@ -1320,12 +1388,16 @@ def _default_cli_command_builder(
                 raise ValueError("scenario_run path does not exist in the scenario catalog")
             scenario_id = candidate.stem
             config = load_config()
+            verb = "scenario-scheduled" if run_origin == "scheduler" else "scenario"
             return render_ssh_command(
                 config,
-                f"scenario {scenario_id}",
-                verb=("scenario", scenario_id),
+                f"{verb} {scenario_id}",
+                verb=(verb, scenario_id),
             )
-        return _cli_command("scenario", "run", scenario_path)
+        command = _cli_command("scenario", "run", scenario_path)
+        if run_origin:
+            command.extend(("--origin", run_origin))
+        return command
     if action == "coverage":
         if not test_id:
             raise ValueError("coverage requires id")
@@ -1333,7 +1405,8 @@ def _default_cli_command_builder(
     if action == "backup":
         import os as _os
         from datetime import datetime as _dt, timezone as _tz
-        state_dir = _os.environ.get("ADA2_DWARF_STATE_DIR") or "/var/dwarf/state"
+        from profile_manager.config import storage_roots as _storage_roots
+        state_dir = _storage_roots().state
         backups_dir = Path(_os.environ.get("ADA2_DWARF_BACKUPS_DIR") or (Path(state_dir) / "backups"))
         backups_dir.mkdir(parents=True, exist_ok=True)
         ts = _dt.now(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -1369,6 +1442,7 @@ def dispatch_schedule_request(*, method, path, body, expected_token,
     match. All endpoints are token-gated and POST-only; pause/resume/
     delete are idempotent (return 200 even on a no-op).
     """
+    import hmac
     from urllib.parse import urlsplit, parse_qs
     from profile_manager.data import schedule_store
     parts = urlsplit(path)
@@ -1377,12 +1451,27 @@ def dispatch_schedule_request(*, method, path, body, expected_token,
         return None
     if method != "POST":
         return (405, "text/plain; charset=utf-8", b"method not allowed\n")
-    ok, err = check_token(path, expected=expected_token)
+    form = parse_qs(
+        body.decode("utf-8", errors="replace"), keep_blank_values=True
+    ) if body else {}
+    submitted_token = (form.get("token") or [None])[0]
+    if submitted_token is not None:
+        ok = bool(submitted_token) and hmac.compare_digest(
+            submitted_token, expected_token
+        )
+        err = None if ok else "invalid token"
+    else:
+        # Preserve compatibility for existing API clients while the Basic UI
+        # keeps credentials out of URLs, browser history, and request logs.
+        ok, err = check_token(path, expected=expected_token)
     if not ok:
-        return (401, "text/plain; charset=utf-8", (err + "\n").encode("utf-8"))
+        return (
+            401,
+            "text/plain; charset=utf-8",
+            ((err or "invalid token") + "\n").encode("utf-8"),
+        )
 
     if clean == "/api/schedule/create":
-        form = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True) if body else {}
         name = (form.get("name") or [""])[0]
         scenario_id = (form.get("scenario_id") or [""])[0]
         scenario_path = (form.get("scenario_path") or [""])[0]
@@ -1434,7 +1523,9 @@ def dispatch_schedule_request(*, method, path, body, expected_token,
             json.dumps({"ok": True, "result": result}).encode("utf-8"))
 
 
-def dispatch_mutating_request(*, method, path, expected_token, cli_command_builder=None):
+def dispatch_mutating_request(
+    *, method, path, expected_token, body=b"", cli_command_builder=None
+):
     """Dispatch a mutating HTTP request.
 
     Returns (status, content_type, body_or_generator) or None if the path isn't a mutating route.
@@ -1448,13 +1539,22 @@ def dispatch_mutating_request(*, method, path, expected_token, cli_command_build
         return None
     if method != "POST":
         return (405, "text/plain; charset=utf-8", b"method not allowed\n")
-    ok, err = check_token(path, expected=expected_token)
+    ok, err = check_form_token(path, body, expected=expected_token)
     if not ok:
         return (401, "text/plain; charset=utf-8", (err + "\n").encode("utf-8"))
     qs = parse_qs(parts.query, keep_blank_values=True)
+    form = (
+        parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+        if body
+        else {}
+    )
     profile = (qs.get("profile") or [None])[0]
     test_id = (qs.get("id") or [None])[0]
-    scenario_path = (qs.get("path") or [None])[0]
+    scenario_path = (
+        (form.get("path") or qs.get("path") or [None])[0]
+        if action == "compare"
+        else (qs.get("path") or [None])[0]
+    )
     approve_raw = (qs.get("approve") or [None])[0]
     approve = approve_raw in ("1", "true", "yes")
     acknowledge_unknown_raw = (qs.get("acknowledge_unknown_version") or [None])[0]
@@ -1465,6 +1565,32 @@ def dispatch_mutating_request(*, method, path, expected_token, cli_command_build
         return (400, "text/plain; charset=utf-8", b"missing id query parameter\n")
     if action in ("compare", "scenario_run") and not scenario_path:
         return (400, "text/plain; charset=utf-8", b"missing path query parameter\n")
+    if action == "compare":
+        from profile_manager.scenario import compare_preflight
+
+        try:
+            preflight = compare_preflight(scenario_path)
+        except Exception as exc:
+            preflight = {
+                "ready": False,
+                "code": "compare-preflight-invalid",
+                "message": str(exc),
+                "requirement": None,
+            }
+        if not preflight["ready"]:
+            return (
+                409,
+                "application/json; charset=utf-8",
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": preflight["code"],
+                        "message": preflight["message"],
+                        "requirement": preflight["requirement"],
+                    },
+                    sort_keys=True,
+                ).encode("utf-8"),
+            )
     if action == "deploy":
         from profile_manager.deployment_versions import (
             DeploymentVersionGateError,
@@ -1497,6 +1623,8 @@ def dispatch_mutating_request(*, method, path, expected_token, cli_command_build
         }
         if action == "deploy":
             builder_kwargs["acknowledge_unknown_version"] = acknowledge_unknown_version
+        if action in ("scenario_run", "compare"):
+            builder_kwargs["run_origin"] = "dashboard"
         cmd = builder(action, **builder_kwargs)
     except Exception as exc:
         release_mutating_lock()
@@ -1513,6 +1641,810 @@ def dispatch_mutating_request(*, method, path, expected_token, cli_command_build
 def _sse_event(event: str, payload) -> bytes:
     body = payload if isinstance(payload, str) else json.dumps(payload, sort_keys=True)
     return f"event: {event}\ndata: {body}\n\n".encode("utf-8")
+
+
+_EXPECTED_DESIRED_UNSET = object()
+
+
+def _desired_topology_reusable(observed: dict, expected: dict) -> bool:
+    from profile_manager.profiles import deployment_topologies_reusable
+
+    return deployment_topologies_reusable(observed, expected)
+
+
+def _observed_desired_with_retained_identity(snapshot: dict) -> dict:
+    """Read one verified legacy desired identity from its retained substrate."""
+    observed = snapshot.get("desired") or {}
+    if not isinstance(observed, dict):
+        return {}
+    if (
+        "deployment_sha256" in observed
+        or "catalog_reuse_metadata" in observed
+    ):
+        return observed
+    persisted = snapshot.get("persisted") or {}
+    substrate = persisted.get("substrate") if isinstance(persisted, dict) else None
+    profile_id = str(snapshot.get("profile_id") or snapshot.get("topology_id") or "")
+    if (
+        not profile_id
+        or not isinstance(substrate, dict)
+        or str(persisted.get("profile_id") or "") != profile_id
+    ):
+        return observed
+    try:
+        from profile_manager.profiles import verified_desired_topology_from_legacy
+
+        upgraded = verified_desired_topology_from_legacy(
+            profile_id, substrate, observed
+        )
+    except (KeyError, TypeError, ValueError):
+        return observed
+    return upgraded if isinstance(upgraded, dict) else observed
+
+
+def _current_run_plan_desired_topology(plan: dict) -> dict | None:
+    """Build the desired topology bound to the resolved plan's catalog identity."""
+    profile = plan.get("profile") or {}
+    profile_snapshot = profile.get("snapshot")
+    catalog_revision = str((plan.get("versions") or {}).get("catalog_revision") or "")
+    if not profile_snapshot or not catalog_revision:
+        return None
+    try:
+        from profile_manager.deployment_versions import build_deployment_version_preview
+        from profile_manager.profiles import Profile, desired_topology_for_profile
+
+        exact_profile = Profile.from_dict(profile_snapshot)
+        exact_preview = build_deployment_version_preview(
+            vars(exact_profile),
+            operator_registration_id=(plan.get("versions") or {}).get(
+                "operator_registration_id"
+            ),
+        )
+        frozen_overlay_revision = (plan.get("versions") or {}).get(
+            "operator_overlay_revision"
+        )
+        if exact_preview.get("operator_overlay_revision") != frozen_overlay_revision:
+            return None
+        if exact_preview.get("catalog_revision") != catalog_revision:
+            return None
+        desired = desired_topology_for_profile(exact_profile, exact_preview)
+        if desired.get("catalog_revision") != catalog_revision:
+            return None
+        return desired
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _refresh_run_plan_after_trusted_discovery(
+    plan: dict,
+    expected_desired: dict,
+    *,
+    capability_context: dict | None = None,
+) -> tuple[dict, str, dict] | None:
+    """Re-resolve one unchanged request after directional catalog enrichment.
+
+    This is deliberately narrower than general plan equivalence.  Everything
+    outside resolver-owned version metadata must remain byte-for-byte stable,
+    operator selection state must remain exact, and the shared deployment
+    predicate must prove that the new catalog view is only trusted enrichment
+    of the topology that was just applied.
+    """
+    from profile_manager.run_plan import (
+        RunPlanRequest,
+        digest_run_plan,
+        resolve_run_plan,
+        stable_run_plan,
+    )
+
+    try:
+        request = RunPlanRequest.from_mapping(plan.get("request"))
+        refreshed = resolve_run_plan(
+            request, capability_context=capability_context
+        )
+        refreshed_desired = _current_run_plan_desired_topology(refreshed)
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not isinstance(refreshed_desired, dict) or not _desired_topology_reusable(
+        expected_desired, refreshed_desired
+    ):
+        return None
+
+    # ``stable_run_plan`` intentionally returns a shallow projection.  Detach
+    # it before normalizing duplicated resolver bindings so the frozen plans
+    # emitted to the browser and later submitted to Run remain immutable.
+    before = json.loads(json.dumps(stable_run_plan(plan)))
+    after = json.loads(json.dumps(stable_run_plan(refreshed)))
+    before_versions = before.pop("versions", None)
+    after_versions = after.pop("versions", None)
+    if not isinstance(before_versions, dict) or not isinstance(after_versions, dict):
+        return None
+
+    def remove_bound_catalog_revision(
+        stable: dict, versions: dict
+    ) -> bool:
+        measurements = stable.get("measurements")
+        identity = (
+            measurements.get("target_identity")
+            if isinstance(measurements, dict)
+            else None
+        )
+        if not isinstance(identity, dict):
+            return True
+        present = "version_catalog_revision" in identity
+        value = identity.pop("version_catalog_revision", None)
+        if not present:
+            return True
+        return bool(
+            isinstance(value, str)
+            and re.fullmatch(r"[0-9a-f]{64}", value)
+            and value == versions.get("catalog_revision")
+        )
+
+    before_binding_present = bool(
+        isinstance((before.get("measurements") or {}).get("target_identity"), dict)
+        and "version_catalog_revision"
+        in (before.get("measurements") or {})["target_identity"]
+    )
+    after_binding_present = bool(
+        isinstance((after.get("measurements") or {}).get("target_identity"), dict)
+        and "version_catalog_revision"
+        in (after.get("measurements") or {})["target_identity"]
+    )
+    if (
+        before_binding_present != after_binding_present
+        or not remove_bound_catalog_revision(before, before_versions)
+        or not remove_bound_catalog_revision(after, after_versions)
+        or before != after
+    ):
+        return None
+    resolver_owned_changes = {
+        "catalog_revision",
+        "topology_plan_sha256",
+        "expected_desired_topology",
+        "resolved",
+        "supporting",
+    }
+    before_invariants = {
+        key: value
+        for key, value in before_versions.items()
+        if key not in resolver_owned_changes
+    }
+    after_invariants = {
+        key: value
+        for key, value in after_versions.items()
+        if key not in resolver_owned_changes
+    }
+    if before_invariants != after_invariants:
+        return None
+    return refreshed, digest_run_plan(refreshed), refreshed_desired
+
+
+def _run_plan_preparation_status(
+    plan: dict,
+    plan_digest: str,
+    health: dict | None,
+    *,
+    expected_desired=_EXPECTED_DESIRED_UNSET,
+) -> dict:
+    """Return the exact server-owned gates that allow a resolved plan to run."""
+    readiness = plan.get("readiness") or {}
+    profile = plan.get("profile") or {}
+    profile_id = str(readiness.get("profile_id") or profile.get("id") or "")
+    topology_id = str(readiness.get("topology_id") or "")
+    availability = plan.get("availability") or {}
+    availability_state = str(availability.get("state") or "ready")
+    availability_ready = availability_state in {"ready", "pullable"}
+
+    measurements = plan.get("measurements") or {}
+    requested = [row for row in (measurements.get("requested") or []) if row.get("enabled")]
+    resolved = measurements.get("resolved") or []
+    incompatible = measurements.get("incompatible") or []
+    measurement_compatible = bool(
+        not incompatible and (not requested or len(resolved) == len(requested))
+    )
+
+    versions = plan.get("versions") or {}
+    releases = list((versions.get("resolved") or {}).values())
+
+    def immutable_release(row):
+        if not isinstance(row, dict):
+            return False
+        if row.get("image_digest") or row.get("executable_digest"):
+            return True
+        registration = row.get("operator_registration")
+        if not isinstance(registration, dict):
+            return False
+        try:
+            from profile_manager.deployment_versions import (
+                DeploymentVersionGateError,
+                operator_registration_immutable_identity,
+            )
+
+            identity = operator_registration_immutable_identity(registration)
+        except (DeploymentVersionGateError, KeyError, TypeError, ValueError):
+            return False
+        return bool(
+            identity["registration_id"]
+            == versions.get("operator_registration_id")
+            and row.get("implementation") == identity["implementation"]
+            and row.get("version") == identity["version"]
+            and row.get("source_revision") == identity["source_revision"]
+            and row.get("image_reference") == identity["config_image_id"]
+            and row.get("image_config_id") == identity["config_image_id"]
+        )
+
+    immutable_targets = all(immutable_release(row) for row in releases)
+
+    current_health = health or {}
+    reconciliation = current_health.get("reconciliation") or {}
+    current_desired = (
+        _current_run_plan_desired_topology(plan)
+        if expected_desired is _EXPECTED_DESIRED_UNSET
+        else expected_desired
+    )
+    expected_topology_plan_sha256 = (
+        current_desired.get("plan_sha256")
+        if isinstance(current_desired, dict)
+        else None
+    )
+    retained_desired = current_health.get("desired") or {}
+    observed_desired = _observed_desired_with_retained_identity(current_health)
+    observed_topology_plan_sha256 = retained_desired.get("plan_sha256")
+    expected_topology_deployment_sha256 = (
+        current_desired.get("deployment_sha256")
+        if isinstance(current_desired, dict)
+        else None
+    )
+    observed_topology_deployment_sha256 = observed_desired.get(
+        "deployment_sha256"
+    )
+    desired_topology_reusable = bool(
+        isinstance(current_desired, dict)
+        and _desired_topology_reusable(observed_desired, current_desired)
+    )
+    if profile_id:
+        fresh = (current_health.get("health") or {}).get("fresh") is True
+        semantic_health = bool(
+            current_health.get("profile_id") == profile_id
+            and current_health.get("state") == "healthy"
+            and fresh
+        )
+        topology_identity = bool(
+            semantic_health
+            and reconciliation.get("state") == "converged"
+            and reconciliation.get("persisted_plan_matches") is True
+            and not reconciliation.get("missing_node_ids")
+            and not reconciliation.get("unexpected_managed_node_ids")
+            and not reconciliation.get("mismatched_nodes")
+            and not reconciliation.get("not_running_node_ids")
+            and not reconciliation.get("duplicate_managed_node_ids")
+            and not reconciliation.get("unmanaged_conflict_node_ids")
+            and not reconciliation.get("persisted_mismatched_fields")
+            and desired_topology_reusable
+        )
+    elif topology_id:
+        fresh = (current_health.get("health") or {}).get("fresh") is True
+        semantic_health = current_health.get("state") == "healthy"
+        topology_identity = semantic_health
+    else:
+        fresh = True
+        semantic_health = True
+        topology_identity = True
+
+    ready = bool(
+        availability_ready
+        and immutable_targets
+        and measurement_compatible
+        and semantic_health
+        and topology_identity
+    )
+    reason_code = None
+    if not availability_ready:
+        reason_code = f"availability_{availability_state}"
+    elif not immutable_targets:
+        reason_code = "target_identity_not_immutable"
+    elif not measurement_compatible:
+        reason_code = "measurement_incompatible"
+    elif not semantic_health:
+        reason_code = current_health.get("reason_code") or "semantic_health_not_ready"
+    elif not topology_identity:
+        reason_code = reconciliation.get("reason_code") or "topology_identity_mismatch"
+
+    measurement_profile = measurements.get("profile") or {}
+    return {
+        "state": "ready" if ready else "blocked",
+        "plan_digest": plan_digest,
+        "profile_id": profile_id or None,
+        "topology_id": topology_id or profile_id or None,
+        "fresh": fresh,
+        "semantic_health": semantic_health,
+        "topology_identity": topology_identity,
+        "expected_topology_plan_sha256": expected_topology_plan_sha256,
+        "observed_topology_plan_sha256": observed_topology_plan_sha256,
+        "expected_topology_deployment_sha256": expected_topology_deployment_sha256,
+        "observed_topology_deployment_sha256": observed_topology_deployment_sha256,
+        "desired_topology_reusable": desired_topology_reusable,
+        "measurement_compatible": measurement_compatible,
+        "measurement_count": len(resolved),
+        "measurement_profile_id": measurement_profile.get("id"),
+        "availability_state": availability_state,
+        "immutable_targets": immutable_targets,
+        "reason_code": reason_code,
+        "health": current_health,
+    }
+
+
+def _prepare_run_plan(
+    plan: dict,
+    plan_digest: str,
+    *,
+    action_service=None,
+    snapshot_loader=None,
+    health_requester=None,
+    health_waiter=None,
+    retry_sleeper=None,
+    readiness_timeout: float = 120,
+    destructive_confirmation: dict | None = None,
+    capability_context: dict | None = None,
+):
+    """Prepare a resolved run through the reviewed topology action adapter."""
+    from profile_manager.data.operate_topology_health import (
+        _default_probe,
+        request_topology_health_check,
+        wait_for_topology_health,
+    )
+    from profile_manager.topology_actions import TopologyActionService
+
+    readiness = plan.get("readiness") or {}
+    profile = plan.get("profile") or {}
+    profile_id = str(readiness.get("profile_id") or profile.get("id") or "")
+    selected_snapshot = snapshot_loader or _default_probe
+    selected_requester = health_requester or request_topology_health_check
+    selected_waiter = health_waiter or wait_for_topology_health
+    selected_sleeper = retry_sleeper or time.sleep
+    actions = action_service or TopologyActionService()
+    operator_registration_id = (plan.get("versions") or {}).get(
+        "operator_registration_id"
+    )
+
+    if not profile_id:
+        status = _run_plan_preparation_status(plan, plan_digest, None)
+        yield {"stage": status["state"], **status}
+        return
+
+    yield {
+        "stage": "checking",
+        "state": "checking",
+        "plan_digest": plan_digest,
+        "profile_id": profile_id,
+        "detail": "Collecting fresh semantic topology and identity evidence.",
+    }
+    profile_snapshot = profile.get("snapshot")
+    snapshot = (
+        selected_snapshot(
+            profile_id,
+            profile_snapshot=profile_snapshot,
+            operator_registration_id=operator_registration_id,
+        )
+        if snapshot_loader is None
+        else selected_snapshot(profile_id)
+    )
+    current_desired = _current_run_plan_desired_topology(plan)
+    status = _run_plan_preparation_status(
+        plan,
+        plan_digest,
+        snapshot,
+        expected_desired=current_desired,
+    )
+    yield {"stage": "readiness", **status}
+    desired_plan_sha256 = (
+        current_desired.get("plan_sha256")
+        if isinstance(current_desired, dict)
+        else None
+    )
+    if not isinstance(desired_plan_sha256, str) or re.fullmatch(
+        r"sha256:[0-9a-f]{64}", desired_plan_sha256
+    ) is None:
+        yield {
+            "stage": "blocked",
+            **status,
+            "detail": (
+                "The selected run plan has no trustworthy desired topology identity; "
+                "no topology action was attempted."
+            ),
+        }
+        return
+
+    def selected_desired_still_current() -> bool:
+        latest = _current_run_plan_desired_topology(plan)
+        return bool(
+            isinstance(latest, dict)
+            and latest.get("plan_sha256") == desired_plan_sha256
+        )
+
+    if status["state"] == "ready":
+        if not selected_desired_still_current():
+            yield {
+                "stage": "blocked",
+                **status,
+                "detail": (
+                    "The selected version or preference changed during topology "
+                    "verification; resolve and Prepare the current selection again."
+                ),
+            }
+            return
+        yield {"stage": "ready", **status}
+        return
+
+    # A dashboard/controller restart can leave the retained topology identity
+    # exact while its last semantic-health receipt has aged out.  Refresh that
+    # exact topology before selecting a repair action; scenario or tap changes
+    # must not turn stale evidence into an unnecessary mutation.
+    if (
+        isinstance(current_desired, dict)
+        and _desired_topology_reusable(
+            _observed_desired_with_retained_identity(snapshot), current_desired
+        )
+        and (snapshot.get("health") or {}).get("fresh") is not True
+    ):
+        requested = (
+            selected_requester(
+                profile_id=profile_id,
+                desired_plan_sha256=desired_plan_sha256,
+                probe=lambda: _default_probe(
+                    profile_id,
+                    profile_snapshot=profile_snapshot,
+                    operator_registration_id=operator_registration_id,
+                ),
+            )
+            if health_requester is None
+            else selected_requester(
+                profile_id=profile_id,
+                desired_plan_sha256=desired_plan_sha256,
+            )
+        )
+        if requested.get("state") == "conflict":
+            yield {
+                "stage": "blocked",
+                **status,
+                "detail": "A different topology health check is already active; retry Prepare after it finishes.",
+            }
+            return
+        refresh_deadline = time.monotonic() + readiness_timeout
+        while True:
+            remaining = max(0.0, refresh_deadline - time.monotonic())
+            refreshed = selected_waiter(
+                timeout=min(30.0, max(0.1, remaining)),
+                profile_id=profile_id,
+                desired_plan_sha256=desired_plan_sha256,
+            )
+            if refreshed.get("state") == "conflict":
+                yield {
+                    "stage": "blocked",
+                    **status,
+                    "detail": (
+                        "A topology health result for a different frozen desired "
+                        "identity is active or retained; no topology action was attempted."
+                    ),
+                }
+                return
+            if refreshed.get("state") != "checking":
+                if not selected_desired_still_current():
+                    yield {
+                        "stage": "blocked",
+                        **status,
+                        "detail": (
+                            "The selected version or preference changed during topology "
+                            "verification; resolve and Prepare the current selection again."
+                        ),
+                    }
+                    return
+                snapshot = refreshed
+                status = _run_plan_preparation_status(
+                    plan,
+                    plan_digest,
+                    snapshot,
+                    expected_desired=current_desired,
+                )
+                yield {"stage": "readiness", **status}
+                if status["state"] == "ready":
+                    yield {"stage": "ready", **status}
+                    return
+                break
+            if time.monotonic() >= refresh_deadline:
+                yield {
+                    "stage": "blocked",
+                    **status,
+                    "detail": "Fresh semantic topology health did not complete before the preparation deadline; no repair was attempted.",
+                }
+                return
+            yield {
+                "stage": "waiting",
+                "state": "checking",
+                "plan_digest": plan_digest,
+                "profile_id": profile_id,
+                "reason_code": status.get("reason_code"),
+                "detail": "The retained topology identity is exact; waiting for fresh semantic health before considering repair.",
+            }
+            selected_sleeper(
+                min(2.0, max(0.0, refresh_deadline - time.monotonic()))
+            )
+
+    if not selected_desired_still_current():
+        yield {
+            "stage": "blocked",
+            **status,
+            "detail": (
+                "The selected version or preference changed before topology action "
+                "selection; resolve and Prepare the current selection again."
+            ),
+        }
+        return
+
+    # Topology actions can only repair topology readiness.  If the selected
+    # topology is already semantically healthy and identity-exact, preserve
+    # the remaining run-plan blocker instead of offering a destructive action
+    # that cannot resolve it (for example, an unavailable target artifact).
+    if (
+        status.get("state") != "ready"
+        and status.get("semantic_health") is True
+        and status.get("topology_identity") is True
+    ):
+        reason_code = str(status.get("reason_code") or "remaining_run_plan_gate")
+        yield {
+            "stage": "blocked",
+            **status,
+            "detail": (
+                "The selected topology is healthy and identity-exact; "
+                f"topology mutation cannot resolve {reason_code}."
+            ),
+        }
+        return
+
+    policies = snapshot.get("actions") or {}
+    action_candidates = ("deploy", "repair", "redeploy")
+    if isinstance(current_desired, dict) and not _desired_topology_reusable(
+        _observed_desired_with_retained_identity(snapshot), current_desired
+    ):
+        # Repair is constrained to the retained deployment contract.  When
+        # the selected immutable identity changes, choose the reviewed
+        # replacement path even if fresh unhealthy evidence also makes the
+        # narrower repair action available.
+        action_candidates = ("deploy", "redeploy", "repair")
+    action = next(
+        (
+            candidate
+            for candidate in action_candidates
+            if (policies.get(candidate) or {}).get("allowed") is True
+        ),
+        None,
+    )
+    if action is None:
+        yield {
+            "stage": "blocked",
+            **status,
+            "detail": "Preparation cannot safely mutate this topology automatically. Open deployment status for the exact allowed actions.",
+            "actions": policies,
+        }
+        return
+    if current_desired is None:
+        yield {
+            "stage": "blocked",
+            **status,
+            "detail": "The current resolved plan identity is unavailable; DWARF will not preview a topology mutation.",
+            "actions": policies,
+        }
+        return
+
+    confirmation = destructive_confirmation or {}
+    confirmation_matches = bool(
+        isinstance(confirmation, dict)
+        and confirmation.get("action") == action
+        and confirmation.get("profile_id") == profile_id
+        and confirmation.get("run_plan_digest") == plan_digest
+        and isinstance(confirmation.get("topology_plan_id"), str)
+        and isinstance(confirmation.get("topology_plan_digest"), str)
+        and isinstance(confirmation.get("execution_id"), str)
+    )
+    action_snapshot = {**snapshot, "desired": current_desired}
+    confirmed_preview = bool(
+        confirmation_matches
+        and actions.preview_binding_reusable(
+            confirmation["topology_plan_id"],
+            confirmation["topology_plan_digest"],
+            confirmation["execution_id"],
+            action=action,
+            topology_id=profile_id,
+            snapshot=action_snapshot,
+        )
+    )
+    topology_plan = (
+        {
+            "action": action,
+            "plan_id": confirmation["topology_plan_id"],
+            "plan_digest": confirmation["topology_plan_digest"],
+            "execution_id": confirmation["execution_id"],
+            "confirmation_required": True,
+        }
+        if confirmed_preview
+        else actions.preview(action, action_snapshot)
+    )
+    planned_action = str(topology_plan.get("action") or action)
+    confirmation_text = f"{planned_action.upper()} {profile_id}"
+    confirmation_binding = {
+        "action": planned_action,
+        "profile_id": profile_id,
+        "run_plan_digest": plan_digest,
+        "topology_plan_id": topology_plan.get("plan_id"),
+        "topology_plan_digest": topology_plan.get("plan_digest"),
+        "execution_id": topology_plan.get("execution_id"),
+    }
+    if topology_plan.get("confirmation_required") and not confirmed_preview:
+        yield {
+            "stage": "blocked",
+            **status,
+            "detail": "The required topology action is destructive and needs explicit confirmation here before DWARF applies it.",
+            "action": planned_action,
+            "topology_plan_id": topology_plan.get("plan_id"),
+            "confirmation_required": True,
+            "confirmation_text": confirmation_text,
+            "confirmation_binding": confirmation_binding,
+        }
+        return
+    yield {
+        "stage": "topology_preview",
+        "state": "planned",
+        "action": planned_action,
+        "profile_id": profile_id,
+        "plan_digest": plan_digest,
+        "topology_plan_id": topology_plan.get("plan_id"),
+        "topology_plan_digest": topology_plan.get("plan_digest"),
+        "execution_id": topology_plan.get("execution_id"),
+    }
+
+    terminal = None
+    apply_kwargs = {"expected_execution_id": topology_plan.get("execution_id")}
+    if topology_plan.get("confirmation_required"):
+        apply_kwargs["confirmation"] = f"{planned_action.upper()} {profile_id}"
+    for event in actions.apply(
+        topology_plan["plan_id"],
+        topology_plan["plan_digest"],
+        **apply_kwargs,
+    ):
+        terminal = event if event.get("stage") == "completed" else terminal
+        yield {
+            "stage": "topology",
+            "state": event.get("status") or event.get("controller_state") or event.get("stage"),
+            "action": planned_action,
+            "profile_id": profile_id,
+            "plan_digest": plan_digest,
+            "topology_plan_id": topology_plan.get("plan_id"),
+            "execution_id": event.get("execution_id") or topology_plan.get("execution_id"),
+            "audit_receipt": event.get("audit_receipt"),
+        }
+    if (
+        not terminal
+        or terminal.get("status") != "applied"
+        or not terminal.get("audit_receipt")
+    ):
+        yield {
+            "stage": "blocked",
+            **status,
+            "detail": "Topology execution ended without a verified applied terminal receipt.",
+            "execution_id": topology_plan.get("execution_id"),
+        }
+        return
+
+    deadline = time.monotonic() + readiness_timeout
+    health_check_in_flight = False
+    while True:
+        if not health_check_in_flight:
+            requested = (
+                selected_requester(
+                    profile_id=profile_id,
+                    desired_plan_sha256=desired_plan_sha256,
+                    probe=lambda: _default_probe(
+                        profile_id,
+                        profile_snapshot=profile_snapshot,
+                        operator_registration_id=operator_registration_id,
+                    ),
+                )
+                if health_requester is None
+                else selected_requester(
+                    profile_id=profile_id,
+                    desired_plan_sha256=desired_plan_sha256,
+                )
+            )
+            if requested.get("state") == "conflict":
+                yield {
+                    "stage": "blocked",
+                    **status,
+                    "detail": "A different topology health check is already active; retry Prepare after it finishes.",
+                }
+                return
+            health_check_in_flight = True
+        remaining = max(0.0, deadline - time.monotonic())
+        health = selected_waiter(
+            timeout=min(30.0, max(0.1, remaining)),
+            profile_id=profile_id,
+            desired_plan_sha256=desired_plan_sha256,
+        )
+        if health.get("state") == "conflict":
+            yield {
+                "stage": "blocked",
+                **status,
+                "detail": (
+                    "Post-action health belongs to a different frozen desired identity; "
+                    "the applied action was not accepted as ready."
+                ),
+                "topology_execution_id": terminal.get("execution_id"),
+                "topology_audit_receipt": terminal.get("audit_receipt"),
+            }
+            return
+        if health.get("state") != "checking" and not selected_desired_still_current():
+            refreshed = _refresh_run_plan_after_trusted_discovery(
+                plan,
+                current_desired,
+                capability_context=capability_context,
+            )
+            if refreshed is None:
+                yield {
+                    "stage": "blocked",
+                    **status,
+                    "detail": (
+                        "The selected version or preference changed during post-action "
+                        "health verification; the applied action was not accepted as ready."
+                    ),
+                    "topology_execution_id": terminal.get("execution_id"),
+                    "topology_audit_receipt": terminal.get("audit_receipt"),
+                }
+                return
+            previous_plan_digest = plan_digest
+            plan, plan_digest, current_desired = refreshed
+            desired_plan_sha256 = current_desired["plan_sha256"]
+            operator_registration_id = (plan.get("versions") or {}).get(
+                "operator_registration_id"
+            )
+            yield {
+                "stage": "plan_refresh",
+                "state": "resolved",
+                "plan": plan,
+                "previous_plan_digest": previous_plan_digest,
+                "plan_digest": plan_digest,
+                "profile_id": profile_id,
+                "detail": (
+                    "Trusted discovery metadata changed while topology health was "
+                    "running; the same user selection was re-resolved without mutation."
+                ),
+            }
+        if health.get("state") != "checking":
+            # Consume the exact completed result before another check can replace
+            # it. A probe may finish in the short gap between wait timeout and
+            # this loop's retry sleep; re-requesting first would hide that result.
+            health_check_in_flight = False
+        final = _run_plan_preparation_status(
+            plan,
+            plan_digest,
+            health,
+            expected_desired=current_desired,
+        )
+        final["topology_action"] = planned_action
+        final["topology_execution_id"] = terminal.get("execution_id")
+        final["topology_audit_receipt"] = terminal.get("audit_receipt")
+        if final["state"] == "ready" or time.monotonic() >= deadline:
+            yield {"stage": final["state"], **final}
+            return
+        yield {
+            "stage": "waiting",
+            "state": "checking",
+            "plan_digest": plan_digest,
+            "profile_id": profile_id,
+            "reason_code": final.get("reason_code"),
+            "detail": "Topology is deployed; waiting for fresh semantic node and chain readiness.",
+            "topology_execution_id": terminal.get("execution_id"),
+            "topology_audit_receipt": terminal.get("audit_receipt"),
+        }
+        selected_sleeper(min(2.0, max(0.0, deadline - time.monotonic())))
 
 
 def _default_run_preflight(launch_id: str, plan: dict) -> dict:
@@ -1539,32 +2471,285 @@ def _default_run_preflight(launch_id: str, plan: dict) -> dict:
             ],
         }
     if plan.get("profile"):
-        import subprocess as _subprocess
-
-        from profile_manager.remote import render_launch_preflight_command
-
-        command = render_launch_preflight_command(load_config(), launch_id)
-        completed = _subprocess.run(
-            command, text=True, capture_output=True, check=False, timeout=90
+        from profile_manager.data.operate_topology_health import (
+            _default_probe,
+            request_topology_health_check,
+            wait_for_topology_health,
         )
-        for line in reversed((completed.stdout or "").splitlines()):
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict) and payload.get("state") in {"ready", "blocked"}:
-                return payload
+
+        profile_id = str(readiness.get("profile_id") or plan["profile"].get("id") or "")
+        profile_snapshot = plan["profile"].get("snapshot")
+        operator_registration_id = (plan.get("versions") or {}).get(
+            "operator_registration_id"
+        )
+        current_desired = _current_run_plan_desired_topology(plan)
+        desired_plan_sha256 = (
+            current_desired.get("plan_sha256")
+            if isinstance(current_desired, dict)
+            else None
+        )
+        if not isinstance(desired_plan_sha256, str) or re.fullmatch(
+            r"sha256:[0-9a-f]{64}", desired_plan_sha256
+        ) is None:
+            return {
+                "state": "blocked",
+                "kind": "profile",
+                "profile_id": profile_id,
+                "health": None,
+                "checks": [
+                    {
+                        "id": "deployed-version-identity",
+                        "passed": False,
+                        "reason": "current desired topology identity is unavailable",
+                    }
+                ],
+            }
+        requested = request_topology_health_check(
+            profile_id=profile_id,
+            desired_plan_sha256=desired_plan_sha256,
+            probe=lambda: _default_probe(
+                profile_id,
+                profile_snapshot=profile_snapshot,
+                operator_registration_id=operator_registration_id,
+            ),
+        )
+        if requested.get("state") == "conflict":
+            return {
+                "state": "blocked",
+                "kind": "profile",
+                "profile_id": profile_id,
+                "health": requested,
+                "checks": [
+                    {
+                        "id": f"profile:{profile_id}",
+                        "passed": False,
+                        "reason": requested.get("reason_code"),
+                    },
+                    {
+                        "id": "deployed-version-identity",
+                        "passed": False,
+                        "reason": "exact profile health was not observed",
+                    },
+                ],
+            }
+        health = wait_for_topology_health(
+            timeout=120,
+            profile_id=profile_id,
+            desired_plan_sha256=desired_plan_sha256,
+        )
+        latest_desired = _current_run_plan_desired_topology(plan)
+        if (
+            not isinstance(latest_desired, dict)
+            or latest_desired.get("plan_sha256") != desired_plan_sha256
+        ):
+            return {
+                "state": "blocked",
+                "kind": "profile",
+                "profile_id": profile_id,
+                "health": health,
+                "checks": [
+                    {
+                        "id": "deployed-version-identity",
+                        "passed": False,
+                        "reason": (
+                            "selected topology identity changed during health verification"
+                        ),
+                    }
+                ],
+            }
+        from profile_manager.run_plan import digest_run_plan
+
+        preparation = _run_plan_preparation_status(
+            plan,
+            digest_run_plan(plan),
+            health,
+            expected_desired=current_desired,
+        )
+        profile_ready = bool(
+            preparation["semantic_health"] and preparation["fresh"]
+        )
+        identity_ready = preparation["topology_identity"]
         return {
-            "state": "blocked",
+            "state": "ready" if preparation["state"] == "ready" else "blocked",
             "kind": "profile",
-            "checks": [],
-            "detail": (completed.stderr or completed.stdout or "profile preflight returned no result").strip(),
+            "profile_id": profile_id,
+            "health": health,
+            "checks": [
+                {
+                    "id": f"profile:{profile_id}",
+                    "passed": profile_ready,
+                    "reason": health.get("reason_code"),
+                },
+                {
+                    "id": "deployed-version-identity",
+                    "passed": identity_ready,
+                    "reason": (health.get("reconciliation") or {}).get("reason_code"),
+                },
+                {
+                    "id": "measurement-compatibility",
+                    "passed": preparation["measurement_compatible"],
+                    "reason": preparation.get("reason_code"),
+                },
+            ],
         }
     return {
         "state": "ready",
         "kind": "self-contained",
         "checks": [{"id": "framework", "passed": True}],
     }
+
+
+def dispatch_run_prepare_request(
+    *, method, path, body, expected_token, preparer=None, request_controller=None
+):
+    """Re-resolve and stream one exact server-owned Prepare operation."""
+    if urlsplit(path).path != "/api/run/prepare":
+        return None
+    if method != "POST":
+        return (405, "application/json; charset=utf-8", b'{"ok":false,"error":{"message":"use POST"}}')
+    ok, error = check_token(path, expected=expected_token)
+    if not ok:
+        payload = {"ok": False, "error": {"field": "token", "message": error}}
+        return (401, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    if len(body) > 8192:
+        payload = {"ok": False, "error": {"field": "request", "message": "request body is too large"}}
+        return (413, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    try:
+        value = json.loads(body.decode("utf-8"))
+        if not isinstance(value, dict) or set(value) - {
+            "request", "plan_digest", "destructive_confirmation"
+        }:
+            raise ValueError(
+                "prepare body must contain request, plan_digest, and optional destructive_confirmation only"
+            )
+        confirmation = value.get("destructive_confirmation")
+        confirmation_fields = {
+            "action", "profile_id", "run_plan_digest", "topology_plan_id",
+            "topology_plan_digest", "execution_id",
+        }
+        if confirmation is not None and (
+            not isinstance(confirmation, dict)
+            or set(confirmation) != confirmation_fields
+            or any(
+                not isinstance(item, str) or not item or len(item) > 256
+                for item in confirmation.values()
+            )
+        ):
+            raise ValueError(
+                "destructive_confirmation must be an exact bounded preview binding or null"
+            )
+        from profile_manager.run_plan import (
+            RunPlanRequest,
+            digest_run_plan,
+            resolve_run_plan,
+        )
+        from profile_manager.data.operate_run_wizard import (
+            operator_registration_capability_context,
+        )
+
+        request = RunPlanRequest.from_mapping(value.get("request"))
+        capability_context = operator_registration_capability_context(
+            request, request_controller=request_controller
+        )
+        plan = resolve_run_plan(
+            request, capability_context=capability_context
+        )
+        current_digest = digest_run_plan(plan)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        field = getattr(exc, "field", "request")
+        payload = {"ok": False, "error": {"field": field, "message": str(exc)}}
+        return (400, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    if value.get("plan_digest") != current_digest:
+        payload = {
+            "ok": False,
+            "error": {
+                "field": "plan_digest",
+                "message": "The catalog or selection changed. Resolve the plan again before preparation.",
+            },
+        }
+        return (409, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    selected_preparer = preparer or _prepare_run_plan
+
+    def generate():
+        ready = False
+        active_digest = current_digest
+        lock_acquired = try_acquire_mutating_lock()
+        if not lock_acquired:
+            yield _sse_event(
+                "error",
+                {
+                    "state": "blocked",
+                    "error": "mutation_in_progress",
+                    "detail": "another mutating action is already in progress",
+                    "plan_digest": current_digest,
+                },
+            )
+            yield _sse_event(
+                "done", {"state": "blocked", "plan_digest": current_digest}
+            )
+            return
+        try:
+            yield _sse_event(
+                "plan",
+                {
+                    "state": "resolved",
+                    "plan_digest": current_digest,
+                    "scenario_id": plan["scenario"]["id"],
+                    "profile_id": (plan.get("profile") or {}).get("id"),
+                },
+            )
+            try:
+                events = (
+                    selected_preparer(
+                        plan,
+                        current_digest,
+                        destructive_confirmation=value.get("destructive_confirmation"),
+                        capability_context=capability_context,
+                    )
+                    if preparer is None
+                    else selected_preparer(plan, current_digest)
+                )
+                for event in events:
+                    stage = str(event.get("stage") or "progress")
+                    if stage == "plan_refresh":
+                        refreshed_plan = event.get("plan")
+                        candidate_digest = event.get("plan_digest")
+                        if (
+                            not isinstance(refreshed_plan, dict)
+                            or event.get("previous_plan_digest") != active_digest
+                            or refreshed_plan.get("request") != plan.get("request")
+                            or candidate_digest != digest_run_plan(refreshed_plan)
+                        ):
+                            raise ValueError(
+                                "preparer emitted an invalid authoritative plan refresh"
+                            )
+                        active_digest = candidate_digest
+                    ready = bool(
+                        stage == "ready"
+                        and event.get("state") == "ready"
+                        and event.get("plan_digest") == active_digest
+                    )
+                    yield _sse_event(stage, event)
+            except Exception as exc:  # noqa: BLE001 - retain bounded preparation failure
+                ready = False
+                yield _sse_event(
+                    "error",
+                    {
+                        "state": "blocked",
+                        "error": "prepare_failed",
+                        "detail": f"{type(exc).__name__}: {str(exc)[:512]}",
+                        "plan_digest": active_digest,
+                    },
+                )
+            yield _sse_event(
+                "done",
+                {"state": "ready" if ready else "blocked", "plan_digest": active_digest},
+            )
+        finally:
+            if lock_acquired:
+                release_mutating_lock()
+
+    return (200, "text/event-stream; charset=utf-8", generate())
 
 
 def dispatch_run_start_request(
@@ -1576,6 +2761,7 @@ def dispatch_run_start_request(
     preflight_runner=None,
     command_builder=None,
     streamer=None,
+    request_controller=None,
 ):
     """Re-resolve, preflight, and stream one identifier-only local launch."""
     if urlsplit(path).path != "/api/run/start":
@@ -1598,9 +2784,17 @@ def dispatch_run_start_request(
             digest_run_plan,
             resolve_run_plan,
         )
+        from profile_manager.data.operate_run_wizard import (
+            operator_registration_capability_context,
+        )
 
         request = RunPlanRequest.from_mapping(value.get("request"))
-        plan = resolve_run_plan(request)
+        capability_context = operator_registration_capability_context(
+            request, request_controller=request_controller
+        )
+        plan = resolve_run_plan(
+            request, capability_context=capability_context
+        )
         current_digest = digest_run_plan(plan)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         field = getattr(exc, "field", "request")
@@ -1615,32 +2809,72 @@ def dispatch_run_start_request(
             },
         }
         return (409, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
-    if not try_acquire_mutating_lock():
+    if _MUTATING_LOCK.locked():
         payload = {"ok": False, "error": {"field": "launch", "message": "another mutating action is already in progress"}}
         return (409, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
-    try:
-        from profile_manager.launch_store import create_launch
-
-        launch = create_launch(plan)
-    except Exception as exc:
-        release_mutating_lock()
-        payload = {"ok": False, "error": {"field": "launch", "message": str(exc)}}
-        return (400, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
 
     selected_preflight = preflight_runner or _default_run_preflight
     selected_streamer = streamer or stream_subprocess_sse
+    controller_configured = bool(
+        os.environ.get("DWARF_CONTROLLER_URL")
+        and os.environ.get("DWARF_CONTROLLER_TOKEN")
+    )
+    if request_controller is None and controller_configured:
+        from profile_manager.topology_actions import controller_request
+
+        request_controller = controller_request
 
     def default_command(launch_id):
+        import shutil as _shutil
+
+        from profile_manager.launch_store import load_launch
         from profile_manager.remote import render_launch_command
 
-        if not control_shim_enabled():
-            raise RuntimeError("the restricted DWARF control channel is not enabled")
-        return render_launch_command(load_config(), launch_id)
+        if control_shim_enabled():
+            return render_launch_command(load_config(), launch_id)
+        stored = load_launch(launch_id)
+        return [
+            _shutil.which("env") or "/usr/bin/env",
+            f"ADA2_DWARF_LAUNCH_ROOT={stored['directory'].parent}",
+            f"ADA2_DWARF_LAUNCH_ID={launch_id}",
+            *_cli_command(
+                "scenario",
+                "run",
+                str(stored["scenario_path"]),
+                "--origin",
+                "dashboard",
+            ),
+        ]
 
     selected_command = command_builder or default_command
 
     def generate():
+        lock_acquired = try_acquire_mutating_lock()
+        if not lock_acquired:
+            yield _sse_event(
+                "error",
+                {
+                    "error": "mutation_in_progress",
+                    "detail": "another mutating action is already in progress",
+                },
+            )
+            yield _sse_event("done", {"exit_code": 75})
+            return
         try:
+            try:
+                from profile_manager.launch_store import create_launch
+
+                launch = create_launch(plan)
+            except Exception as exc:  # noqa: BLE001 - stream bounded launch failure
+                yield _sse_event(
+                    "error",
+                    {
+                        "error": "launch_creation_failed",
+                        "detail": f"{type(exc).__name__}: {str(exc)[:512]}",
+                    },
+                )
+                yield _sse_event("done", {"exit_code": 74})
+                return
             yield _sse_event(
                 "plan",
                 {"launch_id": launch["launch_id"], "plan_digest": current_digest},
@@ -1661,11 +2895,78 @@ def dispatch_run_start_request(
                 yield _sse_event("error", {"error": "preflight_failed", "preflight": preflight})
                 yield _sse_event("done", {"exit_code": 78})
                 return
+            if request_controller is not None and controller_configured:
+                execution_id = "run-execution-" + uuid.uuid4().hex
+                yield _sse_event(
+                    "launch",
+                    {
+                        "launch_id": launch["launch_id"],
+                        "execution_id": execution_id,
+                        "state": "running",
+                    },
+                )
+                try:
+                    response = request_controller(
+                        "run.execute",
+                        {
+                            "launch_id": launch["launch_id"],
+                            "plan_digest": current_digest,
+                            "execution_id": execution_id,
+                        },
+                        2400,
+                        f"run-{launch['launch_id']}",
+                    )
+                    result = response.get("result") or {}
+                    run_id = str(result.get("run_id") or "")
+                    exit_code = int(result.get("exit_code", 1))
+                    yield _sse_event(
+                        "result",
+                        {
+                            "execution_id": execution_id,
+                            "state": result.get("status") or response.get("status"),
+                            "run_id": run_id or None,
+                            "exit_status": result.get("exit_status"),
+                            "security_verdict": result.get("security_verdict"),
+                        },
+                    )
+                    if run_id:
+                        yield f"data: run_id: {run_id}\n\n".encode("utf-8")
+                    yield _sse_event("done", {"exit_code": exit_code})
+                except Exception as exc:  # noqa: BLE001 - stream bounded failure
+                    failure = getattr(exc, "failure", None)
+                    failure = failure if isinstance(failure, dict) else {}
+                    error_payload = {
+                        "error": str(
+                            failure.get("code") or "controller_run_failed"
+                        ),
+                        "detail": "controller run failed",
+                    }
+                    if failure:
+                        error_payload["failure"] = failure
+                    execution_id = getattr(exc, "execution_id", None)
+                    audit_receipt = getattr(exc, "audit_receipt", None)
+                    if execution_id:
+                        error_payload["execution_id"] = execution_id
+                    if audit_receipt:
+                        error_payload["audit_receipt"] = audit_receipt
+                    yield _sse_event(
+                        "error",
+                        error_payload,
+                    )
+                    return_code = failure.get("return_code")
+                    exit_code = (
+                        return_code
+                        if isinstance(return_code, int) and 1 <= return_code <= 255
+                        else 126
+                    )
+                    yield _sse_event("done", {"exit_code": exit_code})
+                return
             command = selected_command(launch["launch_id"])
             yield _sse_event("launch", {"launch_id": launch["launch_id"]})
             yield from selected_streamer(command)
         finally:
-            release_mutating_lock()
+            if lock_acquired:
+                release_mutating_lock()
 
     return (200, "text/event-stream; charset=utf-8", generate())
 
@@ -1696,22 +2997,176 @@ def dispatch_deployment_preview_request(*, method, path):
     return (200, "application/json; charset=utf-8", json.dumps(preview).encode("utf-8"))
 
 
-def dispatch_version_refresh_request(*, method, path, expected_token):
+def dispatch_topology_configuration_request(
+    *,
+    method,
+    path,
+    body,
+    expected_token,
+    generator=None,
+    persister=None,
+    request_controller=None,
+):
+    """Preview, retain, or export a constrained topology configuration."""
+
+    if urlsplit(path).path != "/api/topology/configurations":
+        return None
+    if method != "POST":
+        return (405, "application/json; charset=utf-8", b'{"error":"method not allowed"}')
+    ok, error = check_token(path, expected=expected_token)
+    if not ok:
+        return (
+            401,
+            "application/json; charset=utf-8",
+            json.dumps({"error": error}).encode("utf-8"),
+        )
+    try:
+        request = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return (400, "application/json; charset=utf-8", b'{"error":"invalid JSON body"}')
+    if not isinstance(request, dict):
+        return (400, "application/json; charset=utf-8", b'{"error":"request body must be an object"}')
+    operation = request.get("operation")
+    allowed_by_operation = {
+        "preview": {
+            "operation", "topology_id", "node_count", "implementation", "version",
+            "network_magic",
+        },
+        "preview-shape": {
+            "operation", "topology_id", "implementation", "haskell_count",
+            "amaru_count", "cardano_version", "amaru_version", "network_magic",
+        },
+        "save": {"operation", "configuration"},
+        "export": {"operation", "profile_id"},
+    }
+    allowed = allowed_by_operation.get(operation) if isinstance(operation, str) else None
+    if allowed is None or set(request) != allowed:
+        return (
+            400,
+            "application/json; charset=utf-8",
+            b'{"error":"invalid topology configuration request"}',
+        )
+    from profile_manager.profiles import persist_topology_configuration
+    from profile_manager.topology_actions import TopologyActionError, controller_request
+    from profile_manager.topology_export import (
+        TopologyExportError,
+        generate_topology_configuration,
+        generate_topology_shape_configuration,
+    )
+
+    selected_generator = generator or generate_topology_configuration
+    selected_persister = persister or persist_topology_configuration
+    selected_controller = request_controller or controller_request
+    try:
+        if operation == "preview":
+            configuration = selected_generator(
+                topology_id=request["topology_id"],
+                node_count=request["node_count"],
+                implementation=request["implementation"],
+                version=request["version"],
+                network_magic=request["network_magic"],
+                exported_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            )
+            return (
+                200,
+                "application/json; charset=utf-8",
+                json.dumps({"ok": True, "configuration": configuration}, sort_keys=True).encode("utf-8"),
+            )
+        if operation == "preview-shape":
+            expected_implementation = (
+                "mixed" if request["haskell_count"] and request["amaru_count"]
+                else "cardano-node" if request["haskell_count"] else "amaru"
+            )
+            if request["implementation"] != expected_implementation:
+                raise TopologyExportError(
+                    "implementation does not match the requested node counts"
+                )
+            configuration = generate_topology_shape_configuration(
+                topology_id=request["topology_id"],
+                haskell_count=request["haskell_count"],
+                amaru_count=request["amaru_count"],
+                cardano_version=request["cardano_version"],
+                amaru_version=request["amaru_version"],
+                network_magic=request["network_magic"],
+                exported_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            )
+            return (
+                200,
+                "application/json; charset=utf-8",
+                json.dumps({"ok": True, "configuration": configuration}, sort_keys=True).encode("utf-8"),
+            )
+
+        if not try_acquire_mutating_lock():
+            return (
+                409,
+                "application/json; charset=utf-8",
+                b'{"error":"another mutating action is already in progress"}',
+            )
+        try:
+            if operation == "save":
+                profile = selected_persister(request["configuration"], create=True)
+                result = {
+                    "ok": True,
+                    "status": "saved",
+                    "profile_id": profile.id,
+                    "next_url": "/operate/status?profile_id=" + quote(profile.id),
+                }
+            else:
+                profile_id = request["profile_id"]
+                if not isinstance(profile_id, str) or not re.fullmatch(
+                    r"[a-z0-9][a-z0-9._-]{0,126}[a-z0-9]|[a-z0-9]", profile_id
+                ):
+                    raise TopologyExportError("invalid profile identity")
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+                result = selected_controller(
+                    "topology.save",
+                    {
+                        "topology_id": profile_id,
+                        "file_name": profile_id + ".json",
+                    },
+                    30,
+                    idempotency_key=f"topology-export-{profile_id}-{stamp}",
+                )
+                result = {"ok": True, **result}
+        finally:
+            release_mutating_lock()
+        return (
+            200,
+            "application/json; charset=utf-8",
+            json.dumps(result, sort_keys=True).encode("utf-8"),
+        )
+    except (TopologyExportError, TopologyActionError, KeyError, TypeError, ValueError) as exc:
+        return (
+            409,
+            "application/json; charset=utf-8",
+            json.dumps({"ok": False, "error": str(exc)}).encode("utf-8"),
+        )
+
+
+def dispatch_version_refresh_request(*, method, path, expected_token, body=b""):
     """Start one authenticated, serialized official-release refresh."""
     if urlsplit(path).path != "/api/versions/refresh":
         return None
     if method != "POST":
         return (405, "application/json; charset=utf-8", b'{"ok":false,"error":"use POST"}')
-    ok, error = check_token(path, expected=expected_token)
+    ok, error = check_form_token(path, body, expected=expected_token)
     if not ok:
         return (
             401,
             "application/json; charset=utf-8",
             json.dumps({"ok": False, "error": error}).encode("utf-8"),
         )
+    form = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+    implementation = (form.get("implementation") or [""])[0]
+    if implementation not in {"amaru", "cardano-node"}:
+        return (
+            409,
+            "application/json; charset=utf-8",
+            b'{"ok":false,"error":"select amaru or cardano-node"}',
+        )
     from profile_manager.version_discovery import start_release_refresh
 
-    result = start_release_refresh(manual=True)
+    result = start_release_refresh(implementation=implementation, manual=True)
     status = 202 if result.get("started") else 409
     return (
         status,
@@ -1720,69 +3175,468 @@ def dispatch_version_refresh_request(*, method, path, expected_token):
     )
 
 
-def dispatch_topology_redeploy_request(
+def dispatch_version_preference_request(
+    *, method, path, expected_token, body=b"", ledger=None,
+):
+    """Set or clear one exact local preference with server-derived scope."""
+    if urlsplit(path).path != "/api/versions/preferences":
+        return None
+    if method != "POST":
+        return (405, "text/plain; charset=utf-8", b"use POST\n", {})
+    ok, error = check_form_token(path, body, expected=expected_token)
+    if not ok:
+        return (401, "text/plain; charset=utf-8", (error + "\n").encode(), {})
+    form = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+    action = (form.get("action") or [""])[0]
+    expected_revision = (form.get("expected_revision") or [""])[0]
+    if action not in {"set", "clear"} or not expected_revision:
+        return (409, "text/plain; charset=utf-8", b"invalid preference request\n", {})
+    if not try_acquire_mutating_lock():
+        return (409, "text/plain; charset=utf-8", b"another mutating action is in progress\n", {})
+    try:
+        from profile_manager.operator_version_decisions import (
+            OperatorVersionDecisionLedger,
+            StaleOperatorVersionState,
+            active_decisions,
+            active_preferences,
+            preference_scope_key,
+        )
+        selected_ledger = ledger or OperatorVersionDecisionLedger()
+        state = selected_ledger.read()
+        if expected_revision != state["revision"]:
+            raise StaleOperatorVersionState("operator version state revision is stale")
+        if action == "set":
+            decision_id = (form.get("decision_id") or [""])[0]
+            decision = next(
+                (
+                    item for item in active_decisions(state).values()
+                    if item["decision_id"] == decision_id
+                    and item["decision"] == "supported"
+                ),
+                None,
+            )
+            if decision is None:
+                raise ValueError("preference requires an active supported decision")
+            scope_key = preference_scope_key(decision["subject"])
+            referenced_decision = decision_id
+        else:
+            preference_id = (form.get("preference_id") or [""])[0]
+            preference = next(
+                (
+                    item for item in active_preferences(state).values()
+                    if item["preference_id"] == preference_id
+                ),
+                None,
+            )
+            if preference is None:
+                raise ValueError("clear requires an active preference")
+            scope_key = preference["scope_key"]
+            referenced_decision = None
+        event = {
+            "preference_id": "preference-" + uuid.uuid4().hex,
+            "scope_key": scope_key,
+            "action": action,
+            "decision_id": referenced_decision,
+            "recorded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        selected_ledger.append_preference(event, expected_revision=expected_revision)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        return (409, "text/plain; charset=utf-8", (str(exc) + "\n").encode(), {})
+    finally:
+        release_mutating_lock()
+    return (
+        303,
+        "text/plain; charset=utf-8",
+        b"",
+        {"Location": "/operate/versions"},
+    )
+
+
+def dispatch_run_version_decision_request(
+    *, method, path, expected_token, body=b"", ledger=None, runs_dir=None,
+):
+    """Record an explicit operator judgment derived from one canonical run."""
+    if urlsplit(path).path != "/api/runs/operator-version-decision":
+        return None
+    if method != "POST":
+        return (405, "text/plain; charset=utf-8", b"use POST\n", {})
+    ok, error = check_form_token(path, body, expected=expected_token)
+    if not ok:
+        return (401, "text/plain; charset=utf-8", (error + "\n").encode(), {})
+    try:
+        form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+    except UnicodeDecodeError:
+        return (409, "text/plain; charset=utf-8", b"invalid decision request\n", {})
+    allowed = {"token", "run_id", "decision", "reason", "prefer", "expected_revision"}
+    if set(form) != allowed or any(len(values) != 1 for values in form.values()):
+        return (409, "text/plain; charset=utf-8", b"invalid decision request\n", {})
+    run_id = form["run_id"][0]
+    decision = form["decision"][0]
+    reason = form["reason"][0].strip()
+    prefer_text = form["prefer"][0]
+    expected_revision = form["expected_revision"][0]
+    if (
+        not run_id or "/" in run_id or ".." in run_id
+        or decision not in {"supported", "unsupported"}
+        or not reason or len(reason) > 4096
+        or prefer_text not in {"true", "false"}
+        or (prefer_text == "true" and decision != "supported")
+        or not expected_revision
+    ):
+        return (409, "text/plain; charset=utf-8", b"invalid decision request\n", {})
+    if not try_acquire_mutating_lock():
+        return (409, "text/plain; charset=utf-8", b"another mutating action is in progress\n", {})
+    try:
+        from profile_manager.data.operate_run import operate_run_detail
+        from profile_manager.operator_version_decisions import (
+            OperatorVersionDecisionLedger,
+            StaleOperatorVersionState,
+            preference_scope_key,
+            subject_key,
+        )
+
+        detail = operate_run_detail(
+            run_id, **({"runs_dir": Path(runs_dir)} if runs_dir is not None else {})
+        )
+        if detail is None:
+            raise ValueError("canonical run evidence is unavailable")
+        operator_version = detail.get("operator_version") or {}
+        subject = operator_version.get("subject")
+        if operator_version.get("available") is not True or not isinstance(subject, dict):
+            raise ValueError(
+                operator_version.get("reason")
+                or "canonical operator-version evidence is unavailable"
+            )
+        selected_ledger = ledger or OperatorVersionDecisionLedger()
+        state = selected_ledger.read()
+        if expected_revision != state["revision"]:
+            raise StaleOperatorVersionState("operator version state revision is stale")
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        decision_id = "decision-" + uuid.uuid4().hex
+        event = {
+            "decision_id": decision_id,
+            "subject_key": subject_key(subject),
+            "subject": subject,
+            "decision": decision,
+            "reason": reason,
+            "actor": "local-operator",
+            "decided_at": now,
+            "evidence": {
+                "run_id": run_id,
+                "manifest_sha256": detail["chain"]["manifest_hash"],
+                "operational_outcome": detail["operational_outcome"],
+                "assertion_verdict": str(
+                    detail["security_execution"].get("security_verdict") or "unknown"
+                ),
+            },
+        }
+        prefer = prefer_text == "true"
+        preference = (
+            {
+                "preference_id": "preference-" + uuid.uuid4().hex,
+                "scope_key": preference_scope_key(subject),
+                "action": "set",
+                "decision_id": decision_id,
+                "recorded_at": now,
+            }
+            if prefer
+            else None
+        )
+        selected_ledger.append_decision_and_optional_preference(
+            event,
+            expected_revision=expected_revision,
+            prefer=prefer,
+            preference_event=preference,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        return (409, "text/plain; charset=utf-8", (str(exc) + "\n").encode(), {})
+    finally:
+        release_mutating_lock()
+    return (
+        303,
+        "text/plain; charset=utf-8",
+        b"",
+        {"Location": f"/operate/runs/{run_id}"},
+    )
+
+
+def dispatch_version_registration_request(
+    *, method, path, expected_token, body=b"", ledger=None, request_controller=None,
+):
+    """Register only an immutable identity inspected by the local controller."""
+    if urlsplit(path).path != "/api/versions/register":
+        return None
+    if method != "POST":
+        return (405, "text/plain; charset=utf-8", b"use POST\n", {})
+    ok, error = check_form_token(path, body, expected=expected_token)
+    if not ok:
+        return (401, "text/plain; charset=utf-8", (error + "\n").encode(), {})
+    form = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+    allowed = {
+        "token", "expected_revision", "implementation", "version", "image",
+        "declared_source_revision",
+    }
+    if set(form) - allowed:
+        return (409, "text/plain; charset=utf-8", b"browser identity claims are not accepted\n", {})
+    expected_revision = (form.get("expected_revision") or [""])[0]
+    implementation = (form.get("implementation") or [""])[0]
+    version = (form.get("version") or [""])[0]
+    image = (form.get("image") or [""])[0]
+    source_revision = (form.get("declared_source_revision") or [""])[0] or None
+    if not try_acquire_mutating_lock():
+        return (409, "text/plain; charset=utf-8", b"another mutating action is in progress\n", {})
+    try:
+        from profile_manager.operator_version_decisions import (
+            OperatorVersionDecisionLedger,
+            StaleOperatorVersionState,
+        )
+        from profile_manager.topology_actions import TopologyActionError, controller_request
+
+        selected_ledger = ledger or OperatorVersionDecisionLedger()
+        state = selected_ledger.read()
+        if expected_revision != state["revision"]:
+            raise StaleOperatorVersionState("operator version state revision is stale")
+        parameters = {
+            "implementation": implementation,
+            "version": version,
+            "image": image,
+        }
+        if source_revision is not None:
+            parameters["declared_source_revision"] = source_revision
+        inspect = request_controller or controller_request
+        result = inspect("image.inspect", parameters, 20)
+        expected_fields = {
+            "schema_version", "implementation", "version", "requested_image",
+            "config_image_id", "manifest_references", "platform",
+            "runtime_interface",
+            "declared_source_revision", "provenance", "installation_id", "inspected_at",
+        }
+        if not isinstance(result, dict) or set(result) != expected_fields:
+            raise ValueError("controller image inspection response is invalid")
+        digest_pattern = re.compile(r"^sha256:[0-9a-f]{64}$")
+        reference_pattern = re.compile(
+            r"^[a-z0-9][a-z0-9._:-]*(?:/[a-z0-9][a-z0-9._-]*)*@sha256:[0-9a-f]{64}$"
+        )
+        config_id = result.get("config_image_id")
+        manifests = result.get("manifest_references")
+        provenance = result.get("provenance")
+        if (
+            result.get("schema_version") != "v1"
+            or result.get("implementation") != implementation
+            or result.get("version") != version
+            or result.get("requested_image") != image
+            or result.get("declared_source_revision") != source_revision
+            or not isinstance(config_id, str)
+            or not digest_pattern.fullmatch(config_id)
+            or not isinstance(manifests, list)
+            or any(not isinstance(item, str) or not reference_pattern.fullmatch(item) for item in manifests)
+            or result.get("platform") not in {"linux/amd64", "linux/arm64"}
+            or result.get("runtime_interface") not in {None, "extracted-binary"}
+            or provenance != {
+                "source_revision": "unverified",
+                "public": None,
+                "qualification": "unverified",
+            }
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", str(result.get("installation_id") or ""))
+        ):
+            raise ValueError("controller image inspection identity is invalid")
+        unique_manifests = sorted(set(manifests))
+        if len(unique_manifests) == 1:
+            immutable_reference = unique_manifests[0]
+            manifest_digest = "sha256:" + immutable_reference.rsplit("@sha256:", 1)[1]
+        else:
+            # An ambiguous mutable lookup freezes to the inspected config ID,
+            # never to the tag or an arbitrarily selected repository digest.
+            immutable_reference = config_id
+            manifest_digest = None
+        registration = {
+            "registration_id": "registration-" + uuid.uuid4().hex,
+            "implementation": implementation,
+            "version": version,
+            "image_reference": immutable_reference,
+            "manifest_digest": manifest_digest,
+            "config_image_id": config_id,
+            "platform": result["platform"],
+            "runtime_interface": result["runtime_interface"],
+            "controller_installation_id": result["installation_id"],
+            "inspected_at": result["inspected_at"],
+            "provenance": {
+                "source_revision": source_revision,
+                "public": None,
+                "qualification": "unverified",
+            },
+        }
+        selected_ledger.append_registration(
+            registration, expected_revision=expected_revision
+        )
+    except (OSError, RuntimeError, TopologyActionError, TypeError, ValueError) as exc:
+        return (409, "text/plain; charset=utf-8", (str(exc) + "\n").encode(), {})
+    finally:
+        release_mutating_lock()
+    return (303, "text/plain; charset=utf-8", b"", {"Location": "/operate/versions"})
+
+
+def dispatch_binary_import_request(
+    *, method, path, expected_token, content_type="", body=b"",
+):
+    clean = urlsplit(path).path
+    if clean not in {
+        "/api/versions/import-binary",
+        "/api/versions/import-binary/status",
+    }:
+        return None
+    if method != "POST":
+        return (405, "application/json; charset=utf-8", b'{"ok":false,"error":"use POST"}')
+    from profile_manager.binary_imports import (
+        BinaryImportError,
+        begin_binary_import,
+        poll_binary_import,
+    )
+
+    try:
+        if clean.endswith("/status"):
+            status, payload = poll_binary_import(
+                body, expected_token=expected_token
+            )
+        else:
+            status, payload = begin_binary_import(
+                content_type,
+                body,
+                expected_token=expected_token,
+                host_arch=os.environ.get("DWARF_HOST_ARCH", ""),
+            )
+    except BinaryImportError as exc:
+        status = 401 if str(exc) == "authentication failed" else 409
+        payload = {"ok": False, "error": str(exc)}
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        status = 409
+        payload = {"ok": False, "error": str(exc)}
+    return (
+        status,
+        "application/json; charset=utf-8",
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+    )
+
+
+def dispatch_topology_action_request(
     *,
     method,
     path,
     body,
     expected_token,
-    command_builder=None,
-    stream_builder=None,
+    action_service=None,
+    snapshot_loader=None,
 ):
-    """Dispatch the single fixed, explicitly confirmed topology redeploy."""
-    from urllib.parse import urlsplit
-
-    if urlsplit(path).path != "/api/topology/redeploy":
+    """Dispatch typed topology previews, exact-plan applies, and cancellation."""
+    if urlsplit(path).path != "/api/topology/actions":
         return None
     if method != "POST":
-        return (405, "text/plain; charset=utf-8", b"method not allowed\n")
+        return (405, "application/json; charset=utf-8", b'{"error":"method not allowed"}')
     ok, error = check_token(path, expected=expected_token)
     if not ok:
         return (
             401,
-            "text/plain; charset=utf-8",
-            (error + "\n").encode("utf-8"),
+            "application/json; charset=utf-8",
+            json.dumps({"error": error}).encode("utf-8"),
         )
     try:
         request = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return (400, "text/plain; charset=utf-8", b"invalid JSON body\n")
-    expected = {
-        "topology_id": "cardano_amaru",
-        "confirmation": "REDEPLOY cardano_amaru",
-    }
-    if request != expected:
+        return (400, "application/json; charset=utf-8", b'{"error":"invalid JSON body"}')
+    if not isinstance(request, dict):
         return (
             400,
-            "text/plain; charset=utf-8",
-            b"exact topology id and confirmation are required\n",
+            "application/json; charset=utf-8",
+            b'{"error":"request body must be an object"}',
         )
+    raw_operation = request.get("operation")
+    operation = raw_operation if isinstance(raw_operation, str) else ""
+    fields = {
+        "preview": {"operation", "profile_id", "action"},
+        "apply": {"operation", "plan_id", "plan_digest", "execution_id", "confirmation"},
+        "cancel": {"operation", "execution_id", "reason"},
+        "status": {"operation", "execution_id"},
+    }
+    allowed = fields.get(operation)
+    required = {
+        "preview": {"operation", "profile_id", "action"},
+        "apply": {"operation", "plan_id", "plan_digest"},
+        "cancel": {"operation", "execution_id", "reason"},
+        "status": {"operation", "execution_id"},
+    }.get(operation)
+    if allowed is None or required is None or set(request) - allowed or not required <= set(request):
+        return (
+            400,
+            "application/json; charset=utf-8",
+            b'{"error":"invalid topology action request"}',
+        )
+    from profile_manager.topology_actions import TopologyActionError, TopologyActionService
+
+    actions = action_service or TopologyActionService()
+    try:
+        if operation == "preview":
+            profile_id = request["profile_id"]
+            if not isinstance(profile_id, str) or not re.fullmatch(
+                r"[a-z0-9][a-z0-9._-]{0,126}[a-z0-9]|[a-z0-9]", profile_id
+            ):
+                raise ValueError("invalid profile identity")
+            if snapshot_loader is None:
+                from profile_manager.data.operate_topology_health import (
+                    topology_action_snapshot,
+                )
+
+                snapshot_loader = topology_action_snapshot
+            plan = actions.preview(request["action"], snapshot_loader(profile_id))
+            return (
+                200,
+                "application/json; charset=utf-8",
+                json.dumps(plan, sort_keys=True).encode("utf-8"),
+            )
+        if operation == "cancel":
+            result = actions.cancel(request["execution_id"], request["reason"])
+            return (
+                200,
+                "application/json; charset=utf-8",
+                json.dumps(result, sort_keys=True).encode("utf-8"),
+            )
+        if operation == "status":
+            result = actions.status(request["execution_id"])
+            return (
+                200,
+                "application/json; charset=utf-8",
+                json.dumps(result, sort_keys=True).encode("utf-8"),
+            )
+    except (TopologyActionError, KeyError, TypeError, ValueError) as exc:
+        return (
+            409 if isinstance(exc, TopologyActionError) else 400,
+            "application/json; charset=utf-8",
+            json.dumps({"error": str(exc)}).encode("utf-8"),
+        )
+
     if not try_acquire_mutating_lock():
         return (
             409,
-            "text/plain; charset=utf-8",
-            b"another mutating action is already in progress\n",
-        )
-    if command_builder is None:
-        from profile_manager.data.operate_topology_health import (
-            topology_redeploy_command,
-        )
-
-        command_builder = topology_redeploy_command
-    stream_builder = stream_builder or stream_subprocess_sse
-    try:
-        command = command_builder()
-    except Exception as exc:
-        release_mutating_lock()
-        return (
-            400,
-            "text/plain; charset=utf-8",
-            (f"redeploy unavailable: {exc}\n").encode("utf-8"),
+            "application/json; charset=utf-8",
+            b'{"error":"another mutating action is already in progress"}',
         )
 
     def _gen():
         try:
-            yield from stream_builder(command)
+            try:
+                apply_kwargs = {"confirmation": request.get("confirmation")}
+                if request.get("execution_id") is not None:
+                    apply_kwargs["expected_execution_id"] = request["execution_id"]
+                for event in actions.apply(
+                    request["plan_id"], request["plan_digest"], **apply_kwargs
+                ):
+                    yield _sse_event(str(event.get("stage") or "progress"), event)
+            except TopologyActionError as exc:
+                payload: dict[str, object] = {"stage": "error", "error": str(exc)}
+                if exc.terminal and exc.execution_id:
+                    payload.update(
+                        {"terminal": True, "execution_id": exc.execution_id}
+                    )
+                yield _sse_event("error", payload)
         finally:
             release_mutating_lock()
 
@@ -1936,7 +3790,27 @@ def dispatch_scenario_request(*, method, path, body, expected_token, scenarios_d
         return None
     if method != "POST":
         return (405, "text/plain; charset=utf-8", b"method not allowed\n")
-    ok, err = check_token(path, expected=expected_token)
+    paste_body = body or b""
+    if clean == "/api/scenario/paste":
+        form = parse_qs(
+            paste_body.decode("utf-8", errors="replace"), keep_blank_values=True
+        )
+        wrapped = "token" in form or "scenario_yaml" in form
+        if wrapped:
+            ok, err = check_form_token(path, paste_body, expected=expected_token)
+            payloads = form.get("scenario_yaml") or []
+            if ok and len(payloads) != 1:
+                return (
+                    400,
+                    "application/json; charset=utf-8",
+                    b'{"ok":false,"error":"missing scenario_yaml form field"}',
+                )
+            if ok:
+                paste_body = payloads[0].encode("utf-8")
+        else:
+            ok, err = check_token(path, expected=expected_token)
+    else:
+        ok, err = check_token(path, expected=expected_token)
     if not ok:
         return (401, "text/plain; charset=utf-8", (err + "\n").encode("utf-8"))
     scenarios_dir = Path(scenarios_dir) if scenarios_dir is not None else _scenarios_dir()
@@ -1954,7 +3828,7 @@ def dispatch_scenario_request(*, method, path, body, expected_token, scenarios_d
         return (status, "application/json; charset=utf-8",
                 json.dumps(report).encode("utf-8"))
     if clean == "/api/scenario/paste":
-        report = scen.handle_paste(body or b"", scenarios_dir=scenarios_dir)
+        report = scen.handle_paste(paste_body, scenarios_dir=scenarios_dir)
         status = 200 if report.get("ok") else 400
         return (status, "application/json; charset=utf-8", json.dumps(report).encode("utf-8"))
     qs = parse_qs(parts.query, keep_blank_values=True)
@@ -1981,14 +3855,39 @@ def dispatch_api_request(path, *, runs_dir=None, bundles_dir=None):
             topology_health_snapshot,
         )
 
-        fresh = (parse_qs(parsed.query).get("fresh") or ["0"])[0].lower()
+        topology_query = parse_qs(parsed.query)
+        fresh = (topology_query.get("fresh") or ["0"])[0].lower()
+        profile_id = (topology_query.get("profile_id") or [None])[0]
+        if profile_id is not None and not re.fullmatch(
+            r"[a-z0-9][a-z0-9._-]{0,126}[a-z0-9]|[a-z0-9]", profile_id
+        ):
+            return (
+                400,
+                "application/json; charset=utf-8",
+                b'{"error":"invalid profile_id"}',
+            )
+        if profile_id is not None:
+            from profile_manager.profiles import find_profile
+
+            try:
+                find_profile(profile_id)
+            except KeyError:
+                return (
+                    404,
+                    "application/json; charset=utf-8",
+                    b'{"error":"unknown profile_id"}',
+                )
         payload = (
-            request_topology_health_check()
+            (
+                request_topology_health_check(profile_id=profile_id)
+                if profile_id
+                else request_topology_health_check()
+            )
             if fresh in {"1", "true", "yes"}
-            else topology_health_snapshot()
+            else topology_health_snapshot(profile_id=profile_id)
         )
         return (
-            200,
+            409 if payload.get("state") == "conflict" else 200,
             "application/json; charset=utf-8",
             json.dumps(payload).encode("utf-8"),
         )
@@ -2123,6 +4022,9 @@ def dispatch_api_request(path, *, runs_dir=None, bundles_dir=None):
 
     if parsed.path == "/api/runs":
         raw_limit = (parse_qs(parsed.query).get("limit") or ["50"])[0]
+        cursor = (parse_qs(parsed.query).get("cursor") or [None])[0]
+        scope = (parse_qs(parsed.query).get("scope") or ["scenario"])[0]
+        outcome = (parse_qs(parsed.query).get("outcome") or [""])[0]
         try:
             limit = int(raw_limit)
         except (TypeError, ValueError):
@@ -2130,20 +4032,103 @@ def dispatch_api_request(path, *, runs_dir=None, bundles_dir=None):
         if not 1 <= limit <= 200:
             body = json.dumps({"error": "limit must be an integer from 1 to 200"}).encode("utf-8")
             return (400, "application/json; charset=utf-8", body)
-        payload = {"recent_runs": forensic.list_recent_runs(runs_dir=runs_dir, limit=limit)}
+        if scope not in {"scenario", "ci", "external", "operations", "all"}:
+            body = json.dumps({"error": "scope must be scenario, ci, external, operations, or all"}).encode("utf-8")
+            return (400, "application/json; charset=utf-8", body)
+        if outcome not in {"", "pass", "fail", "error", "inconclusive"}:
+            body = json.dumps(
+                {
+                    "error": (
+                        "outcome must be pass, fail, error, inconclusive, or empty"
+                    )
+                }
+            ).encode("utf-8")
+            return (400, "application/json; charset=utf-8", body)
+        from profile_manager.data.runs import InvalidRunHistoryCursor, recent_runs_payload
+        try:
+            payload = recent_runs_payload(
+                runs_dir=runs_dir,
+                limit=limit,
+                cursor=cursor,
+                scope=scope,
+                outcome=outcome,
+            )
+        except InvalidRunHistoryCursor:
+            body = json.dumps({"error": "invalid run-history cursor"}).encode("utf-8")
+            return (400, "application/json; charset=utf-8", body)
         body = json.dumps(payload, indent=2).encode("utf-8")
         return (200, "application/json; charset=utf-8", body)
 
-    if path.startswith("/runs/") and path.endswith("/bundle"):
-        run_id = path[len("/runs/"):-len("/bundle")]
+    bundle_suffix = None
+    if parsed.path.startswith("/runs/") and parsed.path.endswith("/bundle/signature"):
+        bundle_suffix = "/bundle/signature"
+    elif parsed.path.startswith("/runs/") and parsed.path.endswith("/bundle"):
+        bundle_suffix = "/bundle"
+    if bundle_suffix is not None:
+        run_id = parsed.path[len("/runs/"):-len(bundle_suffix)]
         if not run_id or "/" in run_id or ".." in run_id:
             return (400, "text/plain; charset=utf-8", b"invalid run id\n")
         run_dir = runs_dir / run_id
         if not run_dir.is_dir():
             return (404, "text/plain; charset=utf-8", b"not found\n")
-        bundle_path = forensic.export_bundle(run_id, runs_dir=runs_dir, bundles_dir=bundles_dir)
-        body = bundle_path.read_bytes()
-        return (200, "application/gzip", body)
+        try:
+            from scripts import runtime_bundle_export
+
+            export_dir = run_dir / "outputs" / "export"
+            export_dir.mkdir(parents=True, exist_ok=True)
+            lock_path = export_dir / ".dashboard-export.lock"
+            with lock_path.open("a+b") as lock_stream:
+                fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+                tarball_path = export_dir / f"{run_id}-bundle-export.tar.gz"
+                signature_path = export_dir / "signature.json"
+                reusable = False
+                if tarball_path.is_file() and signature_path.is_file():
+                    try:
+                        reusable = (
+                            runtime_bundle_export.verify_export_signature(export_dir).get("verdict")
+                            == "verified"
+                        )
+                    except (OSError, RuntimeError, ValueError, KeyError, TypeError):
+                        reusable = False
+                if not reusable:
+                    configured_key = os.environ.get("ADA2_DWARF_BUNDLE_SIGNING_KEY")
+                    key_path = Path(configured_key) if configured_key else None
+                    runtime_bundle_export.run_export(
+                        run_dir=run_dir,
+                        output_dir=export_dir,
+                        target_run_id=run_id,
+                        signing_actor=os.environ.get("USER", "dwarf"),
+                        key_path=key_path,
+                    )
+                    if (
+                        runtime_bundle_export.verify_export_signature(export_dir).get("verdict")
+                        != "verified"
+                    ):
+                        raise RuntimeError("generated bundle export signature did not verify")
+                fcntl.flock(lock_stream.fileno(), fcntl.LOCK_UN)
+            bundles_dir.mkdir(parents=True, exist_ok=True)
+            preserved_path = bundles_dir / f"{run_id}.tar.gz"
+            if not preserved_path.exists():
+                shutil.copy2(tarball_path, preserved_path)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+            return (
+                503,
+                "text/plain; charset=utf-8",
+                f"signed bundle export unavailable: {type(exc).__name__}\n".encode("utf-8"),
+            )
+        if bundle_suffix == "/bundle/signature":
+            return (
+                200,
+                "application/json",
+                signature_path.read_bytes(),
+                _attachment_headers("signature.json"),
+            )
+        return (
+            200,
+            "application/gzip",
+            tarball_path.read_bytes(),
+            _attachment_headers(tarball_path.name),
+        )
 
     # Slice 30: per-artifact download. /runs/<id>/output?path=outputs/...
     # serves a single file from inside the bundle so SARIF / attestation
@@ -2176,13 +4161,45 @@ def dispatch_api_request(path, *, runs_dir=None, bundles_dir=None):
     return None
 
 
+def _topology_profile_delete_blocker(profile_id):
+    """Fail closed unless controller inventory proves no managed container uses the profile.
+
+    Deleting a profile definition never stops or removes a topology.
+    """
+    from profile_manager.data import health as _health
+
+    try:
+        inventory = _health.controller_inventory()
+    except Exception:  # noqa: BLE001 - any failure means ownership is unverified
+        inventory = None
+    if not isinstance(inventory, dict) or inventory.get("available") is not True:
+        return "controller inventory is unavailable; cannot verify the profile is unused"
+    managed = inventory.get("managed")
+    if not isinstance(managed, list) or not all(isinstance(row, dict) for row in managed):
+        return "controller inventory is invalid; cannot verify the profile is unused"
+    owned_resources = inventory.get("owned_resources")
+    if not isinstance(owned_resources, list) or not all(
+        isinstance(row, dict) for row in owned_resources
+    ):
+        return "controller inventory is invalid; cannot verify the profile is unused"
+    if any(
+        str(row.get("topology_id") or "") == profile_id
+        for row in [*managed, *owned_resources]
+    ):
+        return "profile owns managed topology containers; stop the topology before deleting"
+    return None
+
+
 def dispatch_catalog_mutating_request(*, method, path, body, expected_token):
     """Validate or atomically save one allow-listed catalog definition."""
+    import hmac
     from urllib.parse import unquote
     from profile_manager.data.catalog_definitions import (
         CatalogError,
+        DefinitionConflictError,
         DefinitionNotFoundError,
         InvalidDefinitionError,
+        delete_user_definition,
         parse_and_validate_definition,
         save_definition,
     )
@@ -2193,11 +4210,30 @@ def dispatch_catalog_mutating_request(*, method, path, body, expected_token):
     parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
     is_validate = len(parts) == 4 and parts[:2] == ["api", "catalog"] and parts[3] == "validate"
     is_save = len(parts) == 5 and parts[:2] == ["api", "catalog"] and parts[4] == "save"
-    if not (is_validate or is_save):
+    is_delete = (
+        len(parts) == 5
+        and parts[:2] == ["api", "catalog"]
+        and parts[2]
+        in {"scenarios", "measurements", "measurement-profiles", "profiles"}
+        and parts[4] == "delete"
+    )
+    if not (is_validate or is_save or is_delete):
         return None
     if method != "POST":
         return (405, "application/json; charset=utf-8", b'{"ok":false,"error":"use POST"}')
-    ok, error = check_token(path, expected=expected_token)
+    delete_form = (
+        parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+        if is_delete and body
+        else {}
+    )
+    if is_delete:
+        submitted_token = (delete_form.get("token") or [None])[0]
+        ok = bool(submitted_token) and hmac.compare_digest(
+            submitted_token, expected_token
+        )
+        error = None if ok else "invalid token"
+    else:
+        ok, error = check_token(path, expected=expected_token)
     if not ok:
         payload = json.dumps({"ok": False, "error": error}).encode("utf-8")
         return (403, "application/json; charset=utf-8", payload)
@@ -2209,16 +4245,36 @@ def dispatch_catalog_mutating_request(*, method, path, body, expected_token):
             expected_id = (query.get("id") or [None])[0] or None
             data = parse_and_validate_definition(catalog, body or b"", expected_id=expected_id)
             payload = {"ok": True, "id": data["id"], "data": data}
-        else:
+        elif is_save:
             definition_id = parts[3]
             create = (query.get("create") or [""])[0].lower() in {"1", "true", "yes"}
             record = save_definition(catalog, definition_id, body or b"", create=create)
             payload = {"ok": True, "id": record.definition_id, "url": f"/operate/{catalog}/{record.definition_id}"}
+        else:
+            definition_id = parts[3]
+            expected_sha256 = (delete_form.get("expected_sha256") or [""])[0]
+            delete_user_definition(
+                catalog,
+                definition_id,
+                expected_sha256=expected_sha256,
+                blocker=(
+                    _topology_profile_delete_blocker
+                    if catalog == "profiles"
+                    else None
+                ),
+            )
+            payload = {
+                "ok": True,
+                "id": definition_id,
+                "url": f"/operate/{catalog}",
+            }
         return (200, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
     except DefinitionNotFoundError as exc:
         status, message = 404, str(exc) or "definition not found"
     except InvalidDefinitionError as exc:
         status, message = (409 if "already exists" in str(exc) else 422), str(exc)
+    except DefinitionConflictError as exc:
+        status, message = 409, str(exc)
     except CatalogError as exc:
         status, message = 400, str(exc) or "invalid catalog request"
     payload = json.dumps({"ok": False, "error": message}).encode("utf-8")
@@ -2827,6 +4883,8 @@ def _md_to_html(md_text):
 # Location header values.
 REDIRECTS = {
     "/index.html": "/operate",
+    "/tests": "/run",
+    "/scenarios": "/operate/scenarios",
     "/compare": "/operate/compare",
     # Slice 25: legacy /architecture targeted /operate/status (substrate
     # health) — wrong destination because /learn/architecture carries the
@@ -2856,6 +4914,16 @@ REDIRECTS = {
     "/deliverables": "/operate/contract",
     "/raw": "/api/health",
 }
+
+
+def _status_profile_id(route: str) -> str | None:
+    parsed = urlsplit(route)
+    profile_id = (parse_qs(parsed.query).get("profile_id") or [None])[0]
+    if profile_id is None or not re.fullmatch(
+        r"[a-z0-9][a-z0-9._-]{0,126}[a-z0-9]|[a-z0-9]", profile_id
+    ):
+        return None
+    return profile_id
 
 
 def render_route_html(route, *, token=None):
@@ -2909,7 +4977,9 @@ def render_route_html(route, *, token=None):
         from profile_manager.views.operate_definition import render_operate_definition
 
         try:
-            return render_operate_definition(definition_parts[1], definition_parts[2])
+            return render_operate_definition(
+                definition_parts[1], definition_parts[2], token=token
+            )
         except DefinitionNotFoundError:
             return None
     # Item #15 — scenario editor. /operate/scenarios/edit/<id> opens an
@@ -2927,22 +4997,40 @@ def render_route_html(route, *, token=None):
     if route.split("?", 1)[0] == "/operate/audit":
         from urllib.parse import urlsplit
         return render_operate_audit(urlsplit(route).query)
-    # Slice 46: /operate/runs accepts ?outcome=&q= server-side filters.
+    # Ledger-backed history: scope and cursor are bookmarkable alongside filters.
     if route.split("?", 1)[0] == "/operate/runs":
         from urllib.parse import urlsplit, parse_qs
         parts = urlsplit(route)
         qs = parse_qs(parts.query, keep_blank_values=True)
         outcome = (qs.get("outcome") or [""])[0]
         q = (qs.get("q") or [""])[0]
-        if outcome not in ("", "pass", "fail", "error"):
+        scope = (qs.get("scope") or ["scenario"])[0]
+        cursor = (qs.get("cursor") or [None])[0]
+        if outcome not in ("", "pass", "fail", "error", "inconclusive"):
             outcome = ""
-        return render_operate_runs(outcome=outcome, q=q[:128])
+        if scope not in {"scenario", "ci", "external", "operations", "all"}:
+            scope = "scenario"
+        from profile_manager.data.runs import InvalidRunHistoryCursor
+        try:
+            return render_operate_runs(
+                outcome=outcome,
+                q=q[:128],
+                scope=scope,
+                cursor=cursor,
+            )
+        except InvalidRunHistoryCursor:
+            return render_operate_runs(outcome=outcome, q=q[:128], scope=scope)
     if route.split("?", 1)[0] == "/operate/versions":
         return render_operate_versions(token=token)
+    if route.split("?", 1)[0] == "/operate/status":
+        return render_operate_status(
+            token=token,
+            profile_id=_status_profile_id(route),
+        )
     profile_template_html = dispatch_profile_template_request(route)
     if profile_template_html is not None:
         return profile_template_html
-    testcase_html = dispatch_testcase_request(route)
+    testcase_html = dispatch_testcase_request(route, token=token)
     if testcase_html is not None:
         return testcase_html
     corpus_html = dispatch_corpus_request(route, token=token)
@@ -2967,16 +5055,25 @@ def render_route_html(route, *, token=None):
     asset_html = dispatch_asset_catalog_request(route)
     if asset_html is not None:
         return asset_html
+    from urllib.parse import parse_qs as _parse_qs, urlsplit as _urlsplit
+
+    run_scenario = None
+    if _urlsplit(route).path.rstrip("/") == "/run":
+        run_scenario = (
+            _parse_qs(_urlsplit(route).query).get("scenario") or [None]
+        )[0]
     # Strip query string before lookup; routes are paths only.
     route = route.split("?", 1)[0]
     routes = {
         "/": render_landing,
-        "/run": lambda: render_operate_run_wizard(token=token),
+        "/run": lambda: render_operate_run_wizard(
+            token=token, requested_scenario_id=run_scenario
+        ),
         "/index.html": render_command_center_html,
         "/tests": render_tests_html,
         "/scenarios": render_scenarios_html,
         "/operate": render_operate_landing,
-        "/operate/scenarios": render_operate_scenarios,
+        "/operate/scenarios": lambda: render_operate_scenarios(token=token),
         "/learn": render_learn_landing,
         "/learn/concepts": render_learn_concepts,
         "/learn/attack-cost": render_learn_attack_cost,
@@ -2985,15 +5082,15 @@ def render_route_html(route, *, token=None):
         "/learn/coverage": render_learn_coverage,
         "/learn/threat-coverage": render_learn_threat_coverage,
         "/learn/status": render_learn_status,
-        "/operate/compare": render_operate_compare,
+        "/operate/compare": lambda: render_operate_compare(token=token),
         "/learn/architecture": render_learn_architecture,
         "/operate/profiles": render_operate_profiles,
         "/operate/measurements": render_operate_measurements,
         "/operate/measurement-profiles": render_operate_measurement_profiles,
         "/operate/runs": render_operate_runs,
         "/operate/status": render_operate_status,
-        "/operate/targets": render_operate_targets,
-        "/operate/bundles": render_operate_bundles,
+        "/operate/targets": lambda: render_operate_targets(token=token),
+        "/operate/bundles": lambda: render_operate_bundles(token=token),
         "/operate/config": render_operate_config,
         "/operate/notifications": render_operate_notifications,
         "/learn/getting-started": render_learn_getting_started,
@@ -3045,7 +5142,7 @@ def render_route_html(route, *, token=None):
     if route.startswith("/operate/runs/"):
         rid = route[len("/operate/runs/"):]
         if rid and "/" not in rid and ".." not in rid:
-            html = render_operate_run(rid)
+            html = render_operate_run(rid, token=token)
             if html is not None:
                 return html
             return render_operate_run_not_found(rid)
@@ -3054,7 +5151,7 @@ def render_route_html(route, *, token=None):
     if route.startswith("/runs/") and not route.endswith("/bundle"):
         rid = route[len("/runs/"):]
         if rid and "/" not in rid and ".." not in rid:
-            html = render_operate_run(rid)
+            html = render_operate_run(rid, token=token)
             if html is not None:
                 return html
             return render_operate_run_not_found(rid)
@@ -3122,7 +5219,14 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
 
     class DashboardHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
-            print(f"{self.address_string()} - {format % args}")
+            safe_args = list(args)
+            if safe_args and isinstance(safe_args[0], str):
+                request_line = safe_args[0]
+                request_parts = request_line.split()
+                if len(request_parts) >= 2 and "?" in request_parts[1]:
+                    request_parts[1] = request_parts[1].split("?", 1)[0] + "?[query-redacted]"
+                    safe_args[0] = " ".join(request_parts)
+            print(f"{self.address_string()} - {format % tuple(safe_args)}")
 
         def _send(self, status, content_type, body, extra_headers=None):
             self.send_response(status)
@@ -3131,9 +5235,6 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             self.send_header("Content-Length", str(len(body)))
             for key, value in (extra_headers or {}).items():
                 self.send_header(key, value)
-            _vc = getattr(self, "_view_cookie", None)
-            if _vc:
-                self.send_header("Set-Cookie", _vc)
             self.end_headers()
             self.wfile.write(body)
             # Slice 44: feed the Prometheus request counter. Path-bucketing
@@ -3150,12 +5251,16 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            for chunk in generator:
-                try:
+            try:
+                for chunk in generator:
                     self.wfile.write(chunk)
                     self.wfile.flush()
-                except (BrokenPipeError, ConnectionResetError):
-                    break
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                close = getattr(generator, "close", None)
+                if callable(close):
+                    close()
 
         def _send_redirect(self, location):
             """Slice-15: 302 with Location header and empty body. Reuses
@@ -3163,8 +5268,82 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             self._send(302, "text/plain; charset=utf-8", b"", extra_headers={"Location": location})
 
         def do_POST(self):
-            length = int(self.headers.get("Content-Length") or 0)
+            clean_path = self.path.split("?", 1)[0]
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                self._send(400, "text/plain; charset=utf-8", b"invalid content length\n")
+                return
+            if clean_path == "/api/versions/import-binary":
+                from profile_manager.binary_imports import MAX_IMPORT_REQUEST_BYTES
+
+                if length > MAX_IMPORT_REQUEST_BYTES:
+                    self._send(
+                        413,
+                        "text/plain; charset=utf-8",
+                        b"binary import request is too large\n",
+                    )
+                    return
+                if length <= 0:
+                    self._send(
+                        400,
+                        "text/plain; charset=utf-8",
+                        b"binary import request is empty\n",
+                    )
+                    return
+                self.connection.settimeout(120)
             body_bytes = self.rfile.read(length) if length > 0 else b""
+            if clean_path == "/api/versions/import-binary" and len(body_bytes) != length:
+                self._send(
+                    400,
+                    "text/plain; charset=utf-8",
+                    b"binary import request is incomplete\n",
+                )
+                return
+            if self.path.split("?", 1)[0] == "/operate/testcases/ingest":
+                ok, err = check_form_token(
+                    self.path, body_bytes, expected=expected_token
+                )
+                if not ok:
+                    self._send(
+                        403,
+                        "text/plain; charset=utf-8",
+                        f"{err}\n".encode("utf-8"),
+                    )
+                    return
+                from profile_manager.views.operate_testcases import (
+                    dispatch_testcase_ingest_request,
+                )
+
+                if not try_acquire_mutating_lock():
+                    self._send(
+                        409,
+                        "text/plain; charset=utf-8",
+                        b"another mutating action is already in progress\n",
+                    )
+                    return
+                try:
+                    status, message, result = dispatch_testcase_ingest_request(
+                        method="POST", path=self.path, body=body_bytes
+                    )
+                finally:
+                    release_mutating_lock()
+                if status == 200:
+                    self._send(
+                        303,
+                        "text/plain; charset=utf-8",
+                        b"",
+                        extra_headers={
+                            "Location": f"/operate/testcases/{result['case_id']}"
+                        },
+                    )
+                    return
+                self._send(
+                    status,
+                    "text/plain; charset=utf-8",
+                    message.encode("utf-8"),
+                )
+                return
             from profile_manager.data.operate_run_wizard import (
                 dispatch_run_resolve_request,
             )
@@ -3175,6 +5354,19 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             if run_resolve is not None:
                 status, ctype, response_body = run_resolve
                 self._send(status, ctype, response_body)
+                return
+            run_prepare = dispatch_run_prepare_request(
+                method="POST",
+                path=self.path,
+                body=body_bytes,
+                expected_token=expected_token,
+            )
+            if run_prepare is not None:
+                status, ctype, response_body = run_prepare
+                if status == 200 and "event-stream" in ctype:
+                    self._send_stream(status, ctype, response_body)
+                else:
+                    self._send(status, ctype, response_body)
                 return
             run_start = dispatch_run_start_request(
                 method="POST",
@@ -3189,12 +5381,56 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 else:
                     self._send(status, ctype, response_body)
                 return
+            binary_import = dispatch_binary_import_request(
+                method="POST",
+                path=self.path,
+                body=body_bytes,
+                content_type=self.headers.get("Content-Type") or "",
+                expected_token=expected_token,
+            )
+            if binary_import is not None:
+                status, ctype, response_body = binary_import
+                self._send(status, ctype, response_body)
+                return
             version_refresh = dispatch_version_refresh_request(
-                method="POST", path=self.path, expected_token=expected_token
+                method="POST",
+                path=self.path,
+                body=body_bytes,
+                expected_token=expected_token,
             )
             if version_refresh is not None:
                 status, ctype, response_body = version_refresh
                 self._send(status, ctype, response_body)
+                return
+            version_preference = dispatch_version_preference_request(
+                method="POST",
+                path=self.path,
+                body=body_bytes,
+                expected_token=expected_token,
+            )
+            if version_preference is not None:
+                status, ctype, response_body, headers = version_preference
+                self._send(status, ctype, response_body, extra_headers=headers)
+                return
+            run_version_decision = dispatch_run_version_decision_request(
+                method="POST",
+                path=self.path,
+                body=body_bytes,
+                expected_token=expected_token,
+            )
+            if run_version_decision is not None:
+                status, ctype, response_body, headers = run_version_decision
+                self._send(status, ctype, response_body, extra_headers=headers)
+                return
+            version_registration = dispatch_version_registration_request(
+                method="POST",
+                path=self.path,
+                body=body_bytes,
+                expected_token=expected_token,
+            )
+            if version_registration is not None:
+                status, ctype, response_body, headers = version_registration
+                self._send(status, ctype, response_body, extra_headers=headers)
                 return
             catalog_result = dispatch_catalog_mutating_request(
                 method="POST", path=self.path, body=body_bytes, expected_token=expected_token
@@ -3242,7 +5478,9 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                     self._send(status, ctype, response_body)
                     return
             if self.path.split("?", 1)[0] == "/api/moog/setup":
-                ok, err = check_token(self.path, expected=expected_token)
+                ok, err = check_form_token(
+                    self.path, body_bytes, expected=expected_token
+                )
                 if not ok:
                     self._send(403, "text/plain; charset=utf-8", f"{err}\n".encode("utf-8"))
                     return
@@ -3260,46 +5498,118 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 return
             # Slice 3 of dispatch 7 — multipart bundle import.
             if self.path.split("?", 1)[0] == "/api/bundle/import":
-                from profile_manager.data.bundle_import import handle_bundle_import_post
                 ctype = self.headers.get("Content-Type") or ""
+                ok, err = check_multipart_form_token(
+                    self.path, ctype, body_bytes, expected=expected_token
+                )
+                if not ok:
+                    self._send(
+                        401,
+                        "text/plain; charset=utf-8",
+                        f"{err}\n".encode("utf-8"),
+                    )
+                    return
+                from profile_manager.data.bundle_import import handle_bundle_import_post
                 status, body = handle_bundle_import_post(ctype, body_bytes)
                 self._send(status, "text/html; charset=utf-8", body.encode("utf-8"))
                 return
             # Slice 7 of dispatch 7 — create scenario from template.
             if self.path.split("?", 1)[0] == "/operate/scenarios/new":
+                ok, err = check_form_token(
+                    self.path, body_bytes, expected=expected_token
+                )
+                if not ok:
+                    self._send(403, "text/plain; charset=utf-8", f"{err}\n".encode("utf-8"))
+                    return
                 from profile_manager.data.operate_scenarios_new import handle_create_post
                 status, body = handle_create_post(body_bytes)
+                if status == 200:
+                    self._send(
+                        303,
+                        "text/plain; charset=utf-8",
+                        b"",
+                        extra_headers={
+                            "Location": _new_definition_success_location(
+                                self.path, body_bytes
+                            )
+                        },
+                    )
+                    return
                 self._send(status, "text/html; charset=utf-8", body.encode("utf-8"))
                 return
             if self.path.split("?", 1)[0] == "/operate/targets/new":
-                ok, err = check_token(self.path, expected=expected_token)
+                ok, err = check_form_token(
+                    self.path, body_bytes, expected=expected_token
+                )
                 if not ok:
                     self._send(403, "text/plain; charset=utf-8", f"{err}\n".encode("utf-8"))
                     return
                 from profile_manager.data.operate_targets_new import handle_register_post
                 status, body = handle_register_post(body_bytes)
+                if status == 200:
+                    self._send(
+                        303,
+                        "text/plain; charset=utf-8",
+                        b"",
+                        extra_headers={
+                            "Location": _new_definition_success_location(
+                                self.path, body_bytes
+                            )
+                        },
+                    )
+                    return
                 self._send(status, "text/html; charset=utf-8", body.encode("utf-8"))
                 return
             if self.path.split("?", 1)[0] == "/operate/profiles/new":
-                ok, err = check_token(self.path, expected=expected_token)
+                ok, err = check_form_token(
+                    self.path, body_bytes, expected=expected_token
+                )
                 if not ok:
                     self._send(403, "text/plain; charset=utf-8", f"{err}\n".encode("utf-8"))
                     return
                 from profile_manager.data.operate_profiles_new import handle_create_post
                 status, body = handle_create_post(body_bytes)
+                if status == 200:
+                    self._send(
+                        303,
+                        "text/plain; charset=utf-8",
+                        b"",
+                        extra_headers={
+                            "Location": _new_definition_success_location(
+                                self.path, body_bytes
+                            )
+                        },
+                    )
+                    return
                 self._send(status, "text/html; charset=utf-8", body.encode("utf-8"))
                 return
             if self.path.split("?", 1)[0] == "/operate/primitives/new":
-                ok, err = check_token(self.path, expected=expected_token)
+                ok, err = check_form_token(
+                    self.path, body_bytes, expected=expected_token
+                )
                 if not ok:
                     self._send(403, "text/plain; charset=utf-8", f"{err}\n".encode("utf-8"))
                     return
                 from profile_manager.data.operate_primitives_new import handle_create_post as _prim_create
                 status, body = _prim_create(body_bytes)
+                if status == 200:
+                    self._send(
+                        303,
+                        "text/plain; charset=utf-8",
+                        b"",
+                        extra_headers={
+                            "Location": _new_definition_success_location(
+                                self.path, body_bytes
+                            )
+                        },
+                    )
+                    return
                 self._send(status, "text/html; charset=utf-8", body.encode("utf-8"))
                 return
             if self.path.split("?", 1)[0] == "/operate/config/save":
-                ok, err = check_token(self.path, expected=expected_token)
+                ok, err = check_form_token(
+                    self.path, body_bytes, expected=expected_token
+                )
                 if not ok:
                     self._send(403, "text/plain; charset=utf-8", f"{err}\n".encode("utf-8"))
                     return
@@ -3315,7 +5625,7 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 status, ctype, body = sched_result
                 self._send(status, ctype, body if isinstance(body, (bytes, bytearray)) else b"".join(body))
                 return
-            topology_result = dispatch_topology_redeploy_request(
+            topology_result = dispatch_topology_action_request(
                 method="POST",
                 path=self.path,
                 body=body_bytes,
@@ -3333,6 +5643,16 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                         if isinstance(body, (bytes, bytearray))
                         else b"".join(body),
                     )
+                return
+            topology_configuration_result = dispatch_topology_configuration_request(
+                method="POST",
+                path=self.path,
+                body=body_bytes,
+                expected_token=expected_token,
+            )
+            if topology_configuration_result is not None:
+                status, ctype, response_body = topology_configuration_result
+                self._send(status, ctype, response_body)
                 return
             scen_result = dispatch_scenario_request(
                 method="POST", path=self.path, body=body_bytes,
@@ -3353,7 +5673,10 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                     self._send(status, ctype, body if isinstance(body, (bytes, bytearray)) else b"".join(body))
                 return
             result = dispatch_mutating_request(
-                method="POST", path=self.path, expected_token=expected_token,
+                method="POST",
+                path=self.path,
+                body=body_bytes,
+                expected_token=expected_token,
             )
             if result is None:
                 self._send(404, "text/plain; charset=utf-8", b"not found\n")
@@ -3363,38 +5686,13 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 self._send_stream(status, ctype, body)
             else:
                 self._send(status, ctype, body if isinstance(body, (bytes, bytearray)) else b"".join(body))
-
-
-        # Routes that have a purpose-built Basic layout. Any other path renders
-        # in Advanced even under a Basic cookie (dense catalogues/detail pages
-        # need the Advanced density treatment); the Basic preference persists.
-        BASIC_NATIVE_EXACT = {
-            "/", "/operate", "/operate/runs", "/operate/status",
-            "/learn", "/learn/getting-started", "/learn/glossary",
-            "/run",
-        }
-        BASIC_NATIVE_PREFIXES = ("/operate/runs/", "/runs/")
-
         def _resolve_view(self):
-            """Basic-vs-Advanced view: ?view= overrides cookie; default advanced (bento).
-            Sets the render contextvar and, on explicit ?view=, a persisting cookie."""
+            """Basic on every request unless the URL explicitly selects Advanced."""
             from urllib.parse import urlsplit, parse_qs
-            from http.cookies import SimpleCookie
             q = parse_qs(urlsplit(self.path).query)
-            view = None
-            if "view" in q and q["view"]:
-                v = q["view"][0].strip().lower()
-                if v in ("basic", "advanced", "bento"):
-                    view = "bento" if v in ("advanced", "bento") else "basic"
-                    self._view_cookie = ("dwarf_view=%s; Path=/; Max-Age=31536000; SameSite=Lax" % view)
-            if view is None:
-                c = SimpleCookie(self.headers.get("Cookie", ""))
-                if "dwarf_view" in c and c["dwarf_view"].value in ("basic", "bento"):
-                    view = c["dwarf_view"].value
-            if view is None:
-                view = "bento"
-            from urllib.parse import urlsplit as _us
-            _path = _us(self.path).path
+            requested = q.get("view", ["basic"])[0].strip().lower()
+            view = "bento" if requested == "advanced" else "basic"
+            _path = urlsplit(self.path).path
             set_current_path(_path)
             # Every route renders the chosen view; Basic layouts are provided
             # for all routes (generic reducer + per-family templates).
@@ -3445,9 +5743,12 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 "/api/deploy", "/api/remove", "/api/fuzz/run", "/api/test/smoke/run",
                 "/api/scenario/paste", "/api/scenario/promote", "/api/scenario/compare",
                 "/api/scenario/run", "/api/backup/create", "/api/coverage/run",
-                "/api/topology/redeploy",
-                "/api/run/resolve", "/api/run/start",
+                "/api/topology/actions",
+                "/api/topology/configurations",
+                "/api/run/resolve", "/api/run/prepare", "/api/run/start",
                 "/api/versions/refresh",
+                "/api/versions/preferences",
+                "/api/versions/register",
                 "/operate/config/save",
             }
             path_only = self.path.split("?", 1)[0]
@@ -3467,14 +5768,6 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             if path_only in mutating_paths:
                 self._send(405, "text/plain; charset=utf-8", b"use POST for mutating endpoints\n")
                 return
-            if path_only == "/operate/versions":
-                try:
-                    from profile_manager.version_discovery import ensure_release_refresh
-                    ensure_release_refresh()
-                except Exception:
-                    # Cached catalog rendering remains available even when a
-                    # background refresh cannot be scheduled.
-                    pass
             target = REDIRECTS.get(path_only)
             if target is not None:
                 self._send_redirect(target)
@@ -3484,6 +5777,7 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                     port=serving_port,
                     bind=serving_bind,
                     token=expected_token,
+                    profile_id=_status_profile_id(self.path),
                 )
                 self._send(200, "text/html; charset=utf-8", html_body.encode("utf-8"))
                 return

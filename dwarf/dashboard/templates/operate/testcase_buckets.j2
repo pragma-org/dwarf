@@ -7,6 +7,27 @@
 {% set _ = cards.append({'title': row.id, 'href': '/operate/testcase-buckets/' ~ row.id, 'kicker': row.classification, 'tier': 'back', 'sub': row.triage_reason ~ ' · ' ~ row.target_implementation,
   'facts': [('Cases', row.case_count), ('Promotion', row.promotion_state), ('Replay pending', row.pending_replay_count), ('Compare pending', row.pending_compare_count)]}) %}{% endfor %}
 {{ deck_grid(cards, label='buckets', empty='No testcase buckets exist in the configured lifecycle state.') }}
+<section class="basic-only dk" aria-label="Testcase bucket actions">
+  <div class="dk-panel">
+    <h3>Where buckets come from</h3>
+    <p class="dkb-p">Buckets are derived from testcase records{% if not rows %}; none exist until a run is recorded as a testcase{% endif %}. Use the native form on <a href="/operate/testcases">Testcases</a>, or the CLI alternative:</p>
+    <div class="dkb-cmds">{% for item in entrypoints.create %}<div class="dk-cmd"><span class="dk-note">{{ item.label }}</span> <code>{{ item.command }}</code></div>{% endfor %}</div>
+  </div>
+  {% if rows %}
+  <div class="dk-panel">
+    <h3>Review buckets</h3>
+    <div class="dkb-cmds">{% for item in entrypoints.summarise %}<div class="dk-cmd"><span class="dk-note">{{ item.label }}</span> <code>{{ item.command }}</code></div>{% endfor %}</div>
+  </div>
+  {% endif %}
+  <div class="dk-panel">
+    <h3>Related</h3>
+    <div class="dk-row">
+      {% if rows %}<a class="dk-btn dk-btn--solid" href="/api/assets/testcase-buckets/export" download>Download buckets</a>{% endif %}
+      <a class="dk-btn" href="/operate/testcases">View cases</a>
+      <a class="dk-btn" href="/learn/cli#cli-testcase">Testcase commands</a>
+    </div>
+  </div>
+</section>
 {{ deck_more('Bucket exports in Advanced') }}
 {% endif %}
 <div class="adv-only">

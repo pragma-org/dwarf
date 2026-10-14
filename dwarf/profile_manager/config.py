@@ -1,12 +1,146 @@
+from __future__ import annotations
+
 import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Mapping
 
 
 CONFIG_ENV = "ADA2_PROFILE_MANAGER_CONFIG"
-DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "state" / "config.yaml"
+RUNTIME_ROOT_ENV = "ADA2_DWARF_RUNTIME_ROOT"
+STORAGE_ENV = {
+    "runs": "ADA2_DWARF_RUNS_DIR",
+    "state": "ADA2_DWARF_STATE_DIR",
+    "bundles": "ADA2_DWARF_BUNDLES_DIR",
+}
+DEFAULT_CONFIG = Path.home() / ".local" / "share" / "dwarf" / "state" / "config.yaml"
+
+
+class StorageConfigurationError(ValueError):
+    """Raised when configured storage could create a split evidence store."""
+
+
+@dataclass(frozen=True)
+class StorageRoots:
+    """Immutable effective storage identity shared by every runtime adapter."""
+
+    runs: Path
+    state: Path
+    bundles: Path
+    runtime_root: Path | None
+    mode: Literal["explicit", "configured", "runtime", "xdg", "development"]
+    sources: dict[str, str]
+
+
+def _path(value: str | os.PathLike[str]) -> Path:
+    return Path(value).expanduser().resolve(strict=False)
+
+
+def resolve_storage_roots(
+    *,
+    runs_dir: str | os.PathLike[str] | None = None,
+    state_dir: str | os.PathLike[str] | None = None,
+    bundles_dir: str | os.PathLike[str] | None = None,
+    runtime_root: str | os.PathLike[str] | None = None,
+    development: bool = False,
+    checkout_root: str | os.PathLike[str] | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> StorageRoots:
+    """Resolve one storage contract with deterministic, fail-closed precedence.
+
+    Explicit function arguments override configured paths component by component.
+    Environment component overrides are accepted only as a complete trio; a
+    partial trio is rejected even when a runtime root is also present. Checkout
+    storage is available only through the explicit ``development`` argument.
+    """
+
+    env = os.environ if environ is None else environ
+    configured = {
+        key: str(env.get(name, "")).strip()
+        for key, name in STORAGE_ENV.items()
+    }
+    populated = {key for key, value in configured.items() if value}
+    overrides = {"runs": runs_dir, "state": state_dir, "bundles": bundles_dir}
+    complete_explicit_trio = all(value is not None for value in overrides.values())
+    explicit_runtime = runtime_root
+    if (
+        explicit_runtime is None
+        and not complete_explicit_trio
+        and populated
+        and len(populated) != len(STORAGE_ENV)
+    ):
+        missing = sorted(set(STORAGE_ENV) - populated)
+        raise StorageConfigurationError(
+            "ADA2_DWARF_RUNS_DIR, ADA2_DWARF_STATE_DIR, and "
+            "ADA2_DWARF_BUNDLES_DIR must be configured as all three; "
+            f"missing: {', '.join(missing)}"
+        )
+
+    configured_runtime = str(env.get(RUNTIME_ROOT_ENV, "")).strip()
+    if explicit_runtime is not None:
+        base_root = _path(explicit_runtime)
+        base_paths = {key: base_root / key for key in STORAGE_ENV}
+        mode: Literal["explicit", "configured", "runtime", "xdg", "development"] = "explicit"
+        base_source = "explicit-runtime"
+    elif complete_explicit_trio:
+        assert runs_dir is not None and state_dir is not None and bundles_dir is not None
+        base_root = None
+        base_paths = {
+            "runs": _path(runs_dir),
+            "state": _path(state_dir),
+            "bundles": _path(bundles_dir),
+        }
+        mode = "explicit"
+        base_source = "explicit"
+    elif populated:
+        base_paths = {key: _path(value) for key, value in configured.items()}
+        base_root = None
+        mode = "configured"
+        base_source = "environment"
+    elif configured_runtime:
+        base_root = _path(configured_runtime)
+        base_paths = {key: base_root / key for key in STORAGE_ENV}
+        mode = "runtime"
+        base_source = "runtime-root"
+    elif development:
+        if checkout_root is None:
+            raise StorageConfigurationError(
+                "checkout_root is required when development storage mode is enabled"
+            )
+        base_root = _path(checkout_root)
+        base_paths = {key: base_root / key for key in STORAGE_ENV}
+        mode = "development"
+        base_source = "development"
+    else:
+        xdg = str(env.get("XDG_DATA_HOME", "")).strip()
+        data_home = _path(xdg) if xdg else Path.home() / ".local" / "share"
+        base_root = data_home / "dwarf"
+        base_paths = {key: base_root / key for key in STORAGE_ENV}
+        mode = "xdg"
+        base_source = "xdg"
+
+    sources = {key: base_source for key in STORAGE_ENV}
+    for key, value in overrides.items():
+        if value is not None:
+            base_paths[key] = _path(value)
+            sources[key] = "explicit"
+            mode = "explicit"
+
+    return StorageRoots(
+        runs=base_paths["runs"],
+        state=base_paths["state"],
+        bundles=base_paths["bundles"],
+        runtime_root=base_root,
+        mode=mode,
+        sources=sources,
+    )
+
+
+def storage_roots(**kwargs) -> StorageRoots:
+    """Short canonical accessor for runtime consumers."""
+
+    return resolve_storage_roots(**kwargs)
 
 CONFIG_FIELDS = {
     "deployment_name": {"type": "string", "default": "dwarf-devnet", "description": "Human-readable deployment label."},
@@ -45,9 +179,9 @@ class DeploymentConfig:
     runs_retention_days: int = 0
     bundles_retention_days: int = 0
     auto_redeploy_unhealthy_topology: bool = False
-    sarif_rules: list[str] = None
-    wallets: list[dict[str, Any]] = None
-    moog: dict[str, Any] = None
+    sarif_rules: list[str] | None = None
+    wallets: list[dict[str, Any]] | None = None
+    moog: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, data):
@@ -98,11 +232,12 @@ class DeploymentConfig:
         }
 
 
-def config_path():
-    override = os.environ.get(CONFIG_ENV)
+def config_path(*, environ: Mapping[str, str] | None = None):
+    env = os.environ if environ is None else environ
+    override = env.get(CONFIG_ENV)
     if override:
         return Path(override).expanduser()
-    return DEFAULT_CONFIG
+    return resolve_storage_roots(environ=env).state / "config.yaml"
 
 
 def config_exists():

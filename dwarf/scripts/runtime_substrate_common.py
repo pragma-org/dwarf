@@ -22,10 +22,15 @@ DEPLOYMENT_ADAPTERS = {
 VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 NODE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 NETWORK_PATTERN = re.compile(r"^(mainnet|preprod|preview|testnet_[1-9][0-9]*)$")
+PUBLIC_NETWORK_MAGIC = {"mainnet": 764824073, "preprod": 1, "preview": 2}
 HOST_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,80}$")
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 SHA64_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+INSTALLATION_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+TRANSFER_SOURCE_INSTALLATION_ID_PATTERN = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+)
 
 
 class CommandResult:
@@ -34,6 +39,43 @@ class CommandResult:
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
+
+
+def reconcile_amaru_runtime_metadata(
+    runtime: dict, deployment: dict
+) -> dict:
+    """Bind legacy runtime metadata to its exact retained Amaru deployment."""
+
+    if not isinstance(runtime, dict) or not isinstance(deployment, dict):
+        raise ValueError("retained Amaru runtime metadata is invalid")
+    substrate = deployment.get("substrate")
+    if not isinstance(substrate, dict):
+        raise ValueError("retained Amaru deployment substrate is invalid")
+    profile_id = runtime.get("profile_id")
+    compose_project = runtime.get("compose_project")
+    ownership = substrate.get("controller_ownership")
+    if (
+        deployment.get("adapter") != "runtime_amaru_control_substrate.py"
+        or deployment.get("lifecycle") != "cardano_amaru_relay_bootstrap_control"
+        or not isinstance(profile_id, str)
+        or not PROFILE_ID_PATTERN.fullmatch(profile_id)
+        or deployment.get("profile_id") != profile_id
+        or deployment.get("compose_project") != compose_project
+        or not isinstance(ownership, dict)
+        or ownership.get("topology_id") != profile_id
+        or not isinstance(ownership.get("installation_id"), str)
+        or not INSTALLATION_ID_PATTERN.fullmatch(ownership["installation_id"])
+    ):
+        raise ValueError("retained Amaru runtime identity is invalid")
+    network_magic = substrate.get("network_magic")
+    if isinstance(network_magic, bool) or network_magic != 42:
+        raise ValueError("retained Amaru network magic is invalid")
+    if "network_magic" in runtime and (
+        isinstance(runtime.get("network_magic"), bool)
+        or runtime.get("network_magic") != network_magic
+    ):
+        raise ValueError("retained Amaru runtime network magic does not match")
+    return {**runtime, "network_magic": network_magic}
 
 
 def run_command(
@@ -71,6 +113,37 @@ def normalize_substrate(substrate: dict) -> dict:
     amaru_json_traces = substrate.get("amaru_json_traces", False)
     if not isinstance(amaru_json_traces, bool):
         raise ValueError("substrate.amaru_json_traces must be a boolean")
+    controller_ownership = substrate.get("controller_ownership")
+    if controller_ownership is not None:
+        if not isinstance(controller_ownership, dict) or set(controller_ownership) != {
+            "installation_id",
+            "topology_id",
+        }:
+            raise ValueError(
+                "substrate.controller_ownership must contain only installation_id and topology_id"
+            )
+        installation_id = controller_ownership.get("installation_id")
+        topology_id = controller_ownership.get("topology_id")
+        if not isinstance(installation_id, str) or not INSTALLATION_ID_PATTERN.fullmatch(
+            installation_id
+        ):
+            raise ValueError("substrate.controller_ownership.installation_id is invalid")
+        if not isinstance(topology_id, str) or not PROFILE_ID_PATTERN.fullmatch(topology_id):
+            raise ValueError("substrate.controller_ownership.topology_id is invalid")
+        controller_ownership = {
+            "installation_id": installation_id,
+            "topology_id": topology_id,
+        }
+    docker_host_runtime_root = substrate.get("docker_host_runtime_root")
+    if docker_host_runtime_root is not None:
+        if (
+            not isinstance(docker_host_runtime_root, str)
+            or not docker_host_runtime_root.startswith("/")
+            or ".." in Path(docker_host_runtime_root).parts
+        ):
+            raise ValueError(
+                "substrate.docker_host_runtime_root must be an absolute normalized path"
+            )
     host_strategy = str(substrate.get("host_strategy", "single-host"))
     if host_strategy not in {"single-host", "explicit"}:
         raise ValueError("substrate.host_strategy must be 'single-host' or 'explicit'")
@@ -173,6 +246,40 @@ def normalize_substrate(substrate: dict) -> dict:
                         f"substrate.nodes[{index}].runtime_probe_image must be immutable"
                     )
                 measurement_identity["runtime_probe_image"] = runtime_probe_image
+            runtime_reference = str(node.get("image") or "")
+            if SHA256_PATTERN.fullmatch(runtime_reference):
+                for field in (
+                    "image_manifest_digest",
+                    "image_config_digest",
+                    "qualification_image_id",
+                    "transfer_manifest_sha256",
+                ):
+                    value = str(node.get(field) or "")
+                    if not SHA256_PATTERN.fullmatch(value):
+                        raise ValueError(
+                            f"substrate.nodes[{index}].{field} must be an immutable sha256"
+                        )
+                    measurement_identity[field] = value
+                source_installation_id = str(
+                    node.get("transfer_source_installation_id") or ""
+                )
+                if not TRANSFER_SOURCE_INSTALLATION_ID_PATTERN.fullmatch(
+                    source_installation_id
+                ):
+                    raise ValueError(
+                        f"substrate.nodes[{index}].transfer_source_installation_id is invalid"
+                    )
+                measurement_identity[
+                    "transfer_source_installation_id"
+                ] = source_installation_id
+                source_reference = str(node.get("source_image_reference") or "")
+                if not source_reference.endswith(
+                    "@" + measurement_identity["image_manifest_digest"]
+                ):
+                    raise ValueError(
+                        f"substrate.nodes[{index}].source_image_reference must bind the manifest digest"
+                    )
+                measurement_identity["source_image_reference"] = source_reference
         host_id = node.get("host")
         if host_strategy == "explicit":
             if host_id not in host_ids:
@@ -217,12 +324,17 @@ def normalize_substrate(substrate: dict) -> dict:
     else:
         if not isinstance(network, str) or not NETWORK_PATTERN.match(network):
             raise ValueError("substrate.network must be one of mainnet, preprod, preview, or testnet_<positive-int>")
-        if network_magic is not None:
+        if network in PUBLIC_NETWORK_MAGIC:
+            canonical_magic = PUBLIC_NETWORK_MAGIC[network]
+            if network_magic is not None and int(network_magic) != canonical_magic:
+                raise ValueError(
+                    "substrate.network and substrate.network_magic must describe the same public network"
+                )
+            network_magic = canonical_magic
+        elif network_magic is not None:
             network_magic = int(network_magic)
             if network.startswith("testnet_") and network != f"testnet_{network_magic}":
                 raise ValueError("substrate.network and substrate.network_magic must describe the same testnet")
-            if not network.startswith("testnet_"):
-                raise ValueError("substrate.network_magic must be omitted for mainnet, preprod, or preview")
         elif network.startswith("testnet_"):
             network_magic = int(network.split("_", 1)[1])
     version_policy = substrate.get("version_policy")
@@ -267,6 +379,8 @@ def normalize_substrate(substrate: dict) -> dict:
         "profile_id": profile_id,
         "cardano_measurement_traces": cardano_measurement_traces,
         "amaru_json_traces": amaru_json_traces,
+        "controller_ownership": controller_ownership,
+        "docker_host_runtime_root": docker_host_runtime_root,
         "host_strategy": host_strategy,
         "hosts": normalized_hosts,
         "network": network,
@@ -611,12 +725,21 @@ def allocate_node_plan(
         host_nodes = [node for node in nodes if node["host_id"] == host["id"]]
         host["nodes"] = [node["id"] for node in host_nodes]
         host["runtime_root"] = str(runtime_root / "hosts" / host["id"])
+    if normalized.get("docker_host_runtime_root"):
+        # Host-published 127.0.0.1 ports are not reachable from inside the
+        # controller container.  The exact host bind is visible, so use the
+        # socket/PID path for the preliminary gate; semantic probes still run
+        # immediately afterwards through Docker exec/log evidence.
+        for node in nodes:
+            node["health_probe"] = "path-only"
     return {
         "profile_id": normalized.get("profile_id"),
         "cardano_measurement_traces": bool(
             normalized.get("cardano_measurement_traces")
         ),
         "amaru_json_traces": bool(normalized.get("amaru_json_traces")),
+        "controller_ownership": normalized.get("controller_ownership"),
+        "docker_host_runtime_root": normalized.get("docker_host_runtime_root"),
         "host_strategy": host_strategy,
         "hosts": hosts,
         "network": normalized["network"],
@@ -653,12 +776,16 @@ def wait_for_nodes_healthy(nodes: list[dict], *, timeout_seconds: float) -> list
         for node in nodes:
             host, port_text = str(node["listen_address"]).rsplit(":", 1)
             port = int(port_text)
-            port_ready = is_port_open(host, port)
+            port_ready = (
+                True
+                if node.get("health_probe") == "path-only"
+                else is_port_open(host, port)
+            )
             path_ready = True
             if node.get("health_probe") == "port-only":
                 path_ready = True
             elif node["impl"] == "cardano-node":
-                path_ready = Path(node["socket_path"]).exists()
+                path_ready = Path(node["socket_path"]).is_socket()
             elif node["impl"] == "amaru":
                 path_ready = Path(node["pid_file"]).exists()
             healthy = bool(port_ready and path_ready)

@@ -1,0 +1,73 @@
+{
+  "status": "draft-not-publication-ready",
+  "public_base": "7ce7e817d9541f8e3b18782192fd7b4fb4fe679f",
+  "source_snapshot": "234e8f256100392e85ae765eb65d8a0c91780dc1",
+  "date": "2026-10-14",
+  "preservation": {
+    "existing_documentation_report_files": 1782,
+    "preserved": 1782,
+    "existing_report_files": 1573,
+    "changed_reports": 0,
+    "missing_paths": 0
+  },
+  "excluded_operational_files": 433,
+  "credential_scan": {
+    "scope": "new or modified exported text files",
+    "credential_pattern_matches": 0,
+    "private_operational_http_endpoints": 0,
+    "files_over_100_mib": 0
+  },
+  "verification": {
+    "framework_command": "PYTHONPATH=dwarf:. pytest -q tests --disable-warnings --tb=short",
+    "passed": 2870,
+    "failed": 33,
+    "skipped": 2,
+    "all_failures_reproduced_on_source_snapshot": true,
+    "focused_public_and_runtime_tests_passed": 85,
+    "delivery_contract": "pass",
+    "installer_contract": "pass",
+    "release_candidate_assembly_contract": "pass"
+  },
+  "failed_tests": [
+    "tests/test_client_example_progress_restart.py::test_scenario_hands_prepared_runtime_to_progress_restart_and_sync_helpers",
+    "tests/test_controller_docker_runtime.py::test_operator_registered_stock_adapter_rejects_untrusted_config_chain",
+    "tests/test_controller_docker_runtime.py::test_profile_r_catalog_enrichment_reaches_real_controller_runtime_repair",
+    "tests/test_dashboard_lifecycle_runtime.py::test_control_shim_lifecycle_does_not_send_arbitrary_ssh",
+    "tests/test_dashboard_lifecycle_runtime.py::test_local_lifecycle_uses_configured_runtime_state",
+    "tests/test_dashboard_measurement_discovery_repair.py::test_run_wizard_keeps_all_six_basic_semantic_stages_and_controls_visible",
+    "tests/test_dashboard_measurement_discovery_repair.py::test_threat_coverage_labels_mapping_and_runtime_evidence_separately",
+    "tests/test_dashboard_views.py::test_basic_scenario_catalog_hands_runs_to_canonical_wizard_and_exposes_staging",
+    "tests/test_definition_catalogs.py::test_scenario_builder_discloses_profile_controlled_exact_runtime_versions",
+    "tests/test_definition_catalogs.py::test_scenario_editor_descriptor_covers_every_registered_primitive_schema",
+    "tests/test_deployment_version_gate.py::test_blocked_registration_and_mixed_pair_cannot_be_overridden",
+    "tests/test_deployment_version_gate.py::test_local_registration_preview_is_separate_unknown_and_exact",
+    "tests/test_deployment_version_gate.py::test_preview_endpoint_is_read_only_and_returns_json",
+    "tests/test_deployment_version_gate.py::test_preview_exposes_exact_release_status_digest_and_catalog_revision",
+    "tests/test_evidence_defaults.py::test_accepted_historical_card_01_run_gets_digest_locked_finding_classification",
+    "tests/test_evidence_defaults.py::test_historical_finding_classification_refuses_digest_mismatch",
+    "tests/test_landing_run_wizard.py::test_changed_plan_cannot_be_repainted_by_an_older_run_terminal_event",
+    "tests/test_landing_run_wizard.py::test_long_prepare_preserves_exact_local_selection_and_consent_binding",
+    "tests/test_landing_run_wizard.py::test_resolve_start_revokes_prior_actions_and_ready_logo_before_network_wait",
+    "tests/test_landing_run_wizard.py::test_run_wizard_measurement_tap_disclosure_search_and_payload_stability",
+    "tests/test_landing_run_wizard.py::test_run_wizard_selected_scenario_disclosure_is_display_only",
+    "tests/test_measurement_coverage_learn.py::test_render_time_join_reconciles_current_authoritative_sources",
+    "tests/test_measurement_coverage_learn.py::test_threat_coverage_header_and_metrics_use_shared_measurement_states",
+    "tests/test_measurement_technical_debrief.py::test_debrief_represents_all_thirty_measurement_definitions",
+    "tests/test_opcert_soak_scenarios.py::test_scenario_count_is_323",
+    "tests/test_operate_primitives.py::test_navigation_landings_api_and_scaffold_lifecycle_are_reconciled",
+    "tests/test_operate_primitives.py::test_plugin_registry_cannot_escape_its_configured_plugin_root",
+    "tests/test_operate_primitives.py::test_primitive_archive_is_deterministic_complete_and_noise_free",
+    "tests/test_operate_primitives.py::test_registry_authoring_comment_describes_current_catalog_not_old_slice",
+    "tests/test_profile_version_resolution.py::test_every_shipped_profile_declares_safe_policy_and_preserves_adapter_class",
+    "tests/test_profile_version_resolution.py::test_registered_preference_survives_own_ledger_revision_and_stales_old_plan",
+    "tests/test_scenario_discovery.py::test_browser_family_disclosure_search_exact_selection_and_back_state",
+    "tests/test_scenario_discovery.py::test_run_and_scenario_catalog_render_the_same_security_first_discovery_contract"
+  ],
+  "publication_blockers": [
+    "Resolve the 33 source-side failing checks; do not dismiss security-negative assertions without reviewing their context.",
+    "Configure the approved release signing key/public-key pair; the checked-in public key is a placeholder.",
+    "Select an immutable public release version and verify configured golden-image indexes for both architectures.",
+    "Build and verify the exact public revision's signed, checksummed multi-architecture release artifacts."
+  ],
+  "public_writes_performed": false
+}

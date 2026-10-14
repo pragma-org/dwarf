@@ -4,10 +4,61 @@ from __future__ import annotations
 import json
 import math
 import operator
+import os
+import platform
 import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
+
+from jsonschema import Draft202012Validator
+
+from profile_manager.run_ledger import atomic_write_bytes
+
+
+_RESULT_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[1] / "spec" / "v1" / "measurement-result.schema.json"
+)
+_TARGET_RESULT_FIELDS = {
+    "implementation",
+    "version",
+    "source_revision",
+    "mode",
+    "image_digest",
+    "image_reference",
+    "image_manifest_digest",
+    "image_config_digest",
+    "qualification_image_id",
+    "source_image_reference",
+    "transfer_manifest_sha256",
+    "transfer_source_installation_id",
+    "executable_digest",
+    "build_result_sha256",
+    "runtime_probe_log_sha256",
+    "patch_set_sha256",
+    "measurement_revision",
+    "version_catalog_revision",
+    "profile_id",
+    "deployment_adapter",
+    "qualification_status",
+    "coverage_harness_sha256",
+    "target_name",
+    "engine",
+    "performance_authority",
+    "non_authoritative_performance",
+    "schema_version",
+    "coverage_target_ref",
+    "working_dir",
+    "fuzz_dir",
+    "binary",
+    "created_at",
+    "identity_kind",
+    "image_config_id",
+    "platform",
+    "operator_registration_id",
+    "operator_overlay_revision",
+    "controller_installation_id",
+}
 
 
 class MeasurementArtifactPathError(ValueError):
@@ -125,7 +176,7 @@ class MeasurementRuntime:
             "measurement_id": measurement_id,
             "phase": phase,
             "type": type(exc).__name__,
-            "message": str(exc),
+            "message": str(exc).replace("\n", " ")[:512],
         }
 
     def _record_error(self, record: _CollectorRecord, phase: str, exc: Exception) -> None:
@@ -297,6 +348,328 @@ class MeasurementRuntime:
             "checks": checks,
         }
 
+    def _tap_result_destination(
+        self, entry: dict[str, Any], claimed: set[str]
+    ) -> tuple[str, Path]:
+        measurement_id = entry["id"]
+        declared = (entry.get("definition") or {}).get("emitted_artifacts") or []
+        result_paths: list[str] = []
+        for value in declared:
+            if not isinstance(value, str) or not value:
+                raise MeasurementArtifactPathError(
+                    f"{measurement_id} emitted artifact path is required"
+                )
+            posix = PurePosixPath(value)
+            if posix.is_absolute() or ".." in posix.parts or "\\" in value:
+                raise MeasurementArtifactPathError(
+                    f"{measurement_id} emitted artifact escapes the run bundle: {value}"
+                )
+            if tuple(posix.parts[:2]) != ("measurements", measurement_id):
+                owner = posix.parts[1] if len(posix.parts) > 1 else "unknown"
+                raise MeasurementArtifactPathError(
+                    f"{measurement_id} emitted artifact belongs to {owner}: {value}"
+                )
+            if posix.name == "result.json":
+                result_paths.append(value)
+        if len(result_paths) != 1:
+            raise MeasurementArtifactPathError(
+                f"{measurement_id} must declare exactly one contained result.json"
+            )
+        relative_path = result_paths[0]
+        if relative_path in claimed:
+            raise MeasurementArtifactPathError(
+                f"duplicate per-tap result artifact: {relative_path}"
+            )
+        claimed.add(relative_path)
+        destination = self.run_dir.joinpath(*PurePosixPath(relative_path).parts)
+        current = self.run_dir
+        for part in PurePosixPath(relative_path).parts:
+            current = current / part
+            if current.is_symlink():
+                raise MeasurementArtifactPathError(
+                    f"{measurement_id} result path contains a symlink: {relative_path}"
+                )
+        if destination.exists():
+            raise MeasurementArtifactPathError(
+                f"{measurement_id} result artifact already exists: {relative_path}"
+            )
+        try:
+            destination.resolve().relative_to(self.run_dir.resolve())
+        except ValueError as exc:
+            raise MeasurementArtifactPathError(
+                f"{measurement_id} result path escapes the run bundle: {relative_path}"
+            ) from exc
+        return relative_path, destination
+
+    @staticmethod
+    def _result_records(result: dict[str, Any]) -> list[dict[str, Any]]:
+        measurements = result.get("measurements")
+        if not isinstance(measurements, dict):
+            return []
+        return [
+            {"name": name, **value}
+            for name, value in measurements.items()
+            if isinstance(name, str) and isinstance(value, dict)
+        ]
+
+    def _result_artifacts(
+        self,
+        *,
+        record: _CollectorRecord | None,
+        result: dict[str, Any],
+        result_path: str,
+    ) -> list[str]:
+        if record is None:
+            return [result_path]
+        candidates: set[str] = set()
+        declared = result.get("artifacts")
+        if isinstance(declared, dict):
+            declared_values = list(declared.values())
+        elif isinstance(declared, list):
+            declared_values = list(declared)
+        elif declared is None:
+            declared_values = []
+        else:
+            raise MeasurementArtifactPathError(
+                f"{record.entry['id']} collector artifacts must be an object or list"
+            )
+        for value in declared_values:
+            if not isinstance(value, str) or not value:
+                raise MeasurementArtifactPathError(
+                    f"{record.entry['id']} collector artifact path is required"
+                )
+            candidates.add(value)
+        if record.context.collector_dir.is_dir():
+            for path in record.context.collector_dir.rglob("*"):
+                if path.is_symlink():
+                    raise MeasurementArtifactPathError(
+                        f"{record.entry['id']} collector artifact contains a symlink: "
+                        f"{path.relative_to(self.run_dir).as_posix()}"
+                    )
+                if path.is_file():
+                    candidates.add(path.relative_to(self.run_dir).as_posix())
+        retained = []
+        collector_root = record.context.collector_dir
+        for value in sorted(candidates):
+            posix = PurePosixPath(value)
+            if posix.is_absolute() or ".." in posix.parts or "\\" in value:
+                raise MeasurementArtifactPathError(
+                    f"{record.entry['id']} collector artifact escapes its evidence root: {value}"
+                )
+            path = self.run_dir.joinpath(*posix.parts)
+            try:
+                path.relative_to(collector_root)
+                path.resolve().relative_to(collector_root.resolve())
+            except ValueError as exc:
+                raise MeasurementArtifactPathError(
+                    f"{record.entry['id']} collector artifact belongs outside its evidence root: {value}"
+                ) from exc
+            current = self.run_dir
+            for part in posix.parts:
+                current = current / part
+                if current.is_symlink():
+                    raise MeasurementArtifactPathError(
+                        f"{record.entry['id']} collector artifact contains a symlink: {value}"
+                    )
+            if not path.is_file():
+                raise MeasurementArtifactPathError(
+                    f"{record.entry['id']} collector artifact is missing: {value}"
+                )
+            retained.append(value)
+        return sorted({result_path, *retained})
+
+    @staticmethod
+    def _metric_sample_count(record: dict[str, Any]) -> int | None:
+        candidates = [record.get("sample_count")]
+        if isinstance(record.get("value"), dict):
+            candidates.append(record["value"].get("sample_count"))
+        for value in candidates:
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                return value
+        return None
+
+    @classmethod
+    def _metric_is_available(cls, record: dict[str, Any]) -> bool:
+        status = record.get("status")
+        if isinstance(status, str):
+            return status in {"available", "collected"}
+        count = cls._metric_sample_count(record)
+        return (count is not None and count > 0) or record.get("value") is not None
+
+    def _write_per_tap_result(
+        self,
+        *,
+        entry: dict[str, Any],
+        target: dict[str, Any],
+        validator: Draft202012Validator,
+        hardware: Any,
+        claimed: set[str],
+    ) -> str:
+        measurement_id = entry["id"]
+        compatibility = (entry.get("definition") or {}).get("compatibility") or {}
+        declared_implementation = compatibility.get("implementation")
+        resolved_implementation = target.get("implementation")
+        if (
+            declared_implementation is not None
+            and declared_implementation != resolved_implementation
+        ):
+            raise ValueError(
+                f"measurement {measurement_id} targets {declared_implementation}, "
+                f"but resolved target is {resolved_implementation}"
+            )
+        relative_path, destination = self._tap_result_destination(entry, claimed)
+        collector_result = self._results.get(measurement_id) or {}
+        record = self._records.get(measurement_id)
+        records = self._result_records(collector_result)
+        errors = [
+            item
+            for item in self._errors
+            if item.get("measurement_id") == measurement_id
+        ]
+        available = [item for item in records if self._metric_is_available(item)]
+        if errors:
+            status = "failed"
+        elif available:
+            status = "collected"
+        else:
+            status = "unavailable"
+        sample_counts = [
+            value
+            for value in (self._metric_sample_count(item) for item in available)
+            if value is not None
+        ]
+        reasons = []
+        for item in records:
+            reason = item.get("reason") or item.get("unavailable_reason")
+            if isinstance(reason, str) and reason and reason not in reasons:
+                reasons.append(reason)
+        for item in errors:
+            reason = item.get("message")
+            if isinstance(reason, str) and reason and reason not in reasons:
+                reasons.append(reason)
+        if status != "collected" and not reasons:
+            reasons.append("collector produced no available measurement evidence")
+        definition = entry.get("definition") or {}
+        collector_mode = str(definition.get("collection_mode") or "external")
+        result = {
+            "schema_version": "v1",
+            "measurement_id": measurement_id,
+            "run_id": self.run_dir.name,
+            "status": status,
+            "result_kind": (
+                "coverage"
+                if collector_mode == "compiler-coverage"
+                else "resource"
+                if measurement_id.endswith("resources")
+                else "summary"
+            ),
+            "sample_count": max(sample_counts, default=0),
+            "records": records,
+            "target": target,
+            "provenance": {
+                "scenario_id": self._scenario_id or "unknown",
+                "collector_mode": collector_mode,
+                "experimental_consent": bool(entry.get("experimental_consent")),
+                "experimental_context_digest": (
+                    (self._resolution.get("experimental_consent") or {}).get(
+                        "context_digest"
+                    )
+                    if entry.get("experimental_consent")
+                    else None
+                ),
+                "compatibility": entry.get("compatibility"),
+                "capability": entry.get("capability"),
+                "hardware": (
+                    collector_result.get("hardware")
+                    if isinstance(collector_result.get("hardware"), dict)
+                    else {
+                        "system": hardware.system,
+                        "kernel_release": hardware.release,
+                        "architecture": hardware.machine,
+                        "logical_cpu_count": os.cpu_count(),
+                    }
+                ),
+                "dataset": (
+                    collector_result.get("dataset")
+                    if isinstance(collector_result.get("dataset"), dict)
+                    else {
+                        "definition_digest": entry.get("definition_digest"),
+                        "profile_id": (self._resolution.get("profile") or {}).get("id"),
+                    }
+                ),
+                "observer_overhead": collector_result.get("observer_overhead"),
+            },
+            "correlation": {
+                "definition_digest": entry.get("definition_digest"),
+                "profile_id": (self._resolution.get("profile") or {}).get("id"),
+            },
+            "artifacts": self._result_artifacts(
+                record=record,
+                result=collector_result,
+                result_path=relative_path,
+            ),
+            "warnings": (
+                [
+                    "No per-metric sample count was reported; collected status derives from available scalar evidence."
+                ]
+                if status == "collected" and not sample_counts
+                else []
+            ),
+        }
+        if status != "collected":
+            result["unavailable_reason"] = "; ".join(reasons)
+        validator.validate(result)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_bytes(
+            destination,
+            (json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode(
+                "utf-8"
+            ),
+        )
+        return relative_path
+
+    def _record_result_artifact_error(self, measurement_id: str, exc: Exception) -> None:
+        record = self._records.get(measurement_id)
+        if record is not None:
+            record.state = "error"
+        self._errors.append(
+            {
+                "measurement_id": measurement_id,
+                "phase": "result-artifact",
+                "type": type(exc).__name__,
+                "message": str(exc).replace("\n", " ")[:512],
+            }
+        )
+        gate = self._threshold_gates.get(measurement_id)
+        if gate and gate.get("enabled"):
+            gate["result"] = "fail"
+
+    def _write_per_tap_results(self) -> dict[str, str]:
+        schema = json.loads(_RESULT_SCHEMA_PATH.read_text(encoding="utf-8"))
+        validator = Draft202012Validator(schema)
+        target = {
+            key: value
+            for key, value in (self._resolution.get("target_identity") or {}).items()
+            if key in _TARGET_RESULT_FIELDS
+            and (value is not None or key == "source_revision")
+        }
+        hardware = platform.uname()
+        claimed: set[str] = set()
+        written: dict[str, str] = {}
+        for entry in self._resolution.get("resolved", []):
+            measurement_id = entry["id"]
+            try:
+                written[measurement_id] = self._write_per_tap_result(
+                    entry=entry,
+                    target=target,
+                    validator=validator,
+                    hardware=hardware,
+                    claimed=claimed,
+                )
+            except Exception as exc:  # noqa: BLE001 - optional tap isolation
+                self._record_result_artifact_error(measurement_id, exc)
+        return written
+
     def finalize(self) -> dict[str, Any]:
         if self._finalized is not None:
             return json.loads(json.dumps(self._finalized))
@@ -306,6 +679,7 @@ class MeasurementRuntime:
                 result = record.collector.finalize(record.context) or {}
                 if not isinstance(result, dict):
                     raise TypeError("collector finalize result must be an object")
+                json.dumps(result, allow_nan=False)
                 self._results[measurement_id] = result
                 if record.state != "error":
                     record.state = "finalized"
@@ -359,8 +733,10 @@ class MeasurementRuntime:
             "measurements": measurements,
         }
         report_artifacts = write_measurement_reports(self.run_dir, report)
+        result_artifacts = self._write_per_tap_results()
         snapshot = self.snapshot()
         snapshot["report_artifacts"] = report_artifacts
+        snapshot["result_artifacts"] = result_artifacts
         snapshot["gate_failed"] = any(
             gate["enabled"] and gate["result"] == "fail"
             for gate in self._threshold_gates.values()
@@ -391,7 +767,19 @@ class MeasurementRuntime:
         }
 
     def scenario_exit_status(self, scenario_status: str) -> str:
-        result = self._finalized or self.snapshot()
-        if scenario_status == "pass" and result.get("gate_failed"):
-            return "fail"
+        """Compatibility API: measurements do not rewrite operational outcome."""
         return scenario_status
+
+    def scenario_verdict(self, scenario_status: str, assertions: Mapping[str, Any]) -> str:
+        """Evaluate this runtime's finalized evidence through the shared contract."""
+        from profile_manager.scenario_verdict import evaluate_scenario_verdict
+
+        result = self._finalized or self.snapshot()
+        verdict = evaluate_scenario_verdict(
+            exit_status=scenario_status,
+            assertions=assertions,
+            measurements=result,
+            run_kind="scenario",
+        ).security_verdict
+        assert verdict is not None
+        return verdict

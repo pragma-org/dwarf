@@ -9,6 +9,47 @@ from scripts import runtime_version_pinned_cbor_conformance as subject
 
 AMARU_REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
 FIXED_REVISION = "d3a6dafcced78f5809a96619e883cf04911d2bdc"
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _packaged_selection(tmp_path):
+    selected = []
+    for category in ("valid", "zap-1", "zap-2", "zap-3"):
+        for index in range(25):
+            data = bytes([index])
+            selected.append(
+                {
+                    "relative_path": f"plutus_data/{category}/{index:05d}.cbor",
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "category": category,
+                    "data": data,
+                }
+            )
+    bundle = tmp_path / "conway-plutus-data-100-v1.json"
+    bundle.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "workload_identity": "conway-plutus-data-100-v1",
+                "source": {
+                    "repository": subject.QUALIFIED_DATASET_REPOSITORY,
+                    "revision": subject.QUALIFIED_DATASET_REVISION,
+                },
+                "selection_sha256": subject._dataset_digest(selected),
+                "inputs": [
+                    {
+                        "relative_path": item["relative_path"],
+                        "sha256": item["sha256"],
+                        "category": item["category"],
+                        "data_hex": item["data"].hex(),
+                    }
+                    for item in selected
+                ],
+            },
+            sort_keys=True,
+        )
+    )
+    return bundle, selected
 
 
 def _accepted():
@@ -231,6 +272,121 @@ def test_runner_retains_exact_100_input_selection_and_raw_timing(monkeypatch, tm
     summary = (output / "report.md").read_text()
     assert "2.184 us" in summary
     assert "Raw nanoseconds are retained" in summary
+
+
+def test_packaged_selection_runs_without_git_or_external_checkout(monkeypatch, tmp_path):
+    bundle, selected = _packaged_selection(tmp_path)
+    monkeypatch.setattr(
+        subject,
+        "QUALIFIED_DATASET_SELECTION_SHA256",
+        subject._dataset_digest(selected),
+    )
+    monkeypatch.setattr(
+        subject,
+        "_git_revision",
+        lambda _path: (_ for _ in ()).throw(
+            AssertionError("packaged selection must not invoke git")
+        ),
+    )
+    monkeypatch.setattr(
+        subject,
+        "load_adapter_record",
+        lambda *_args, **_kwargs: {
+            "executable": "/exact/adapter",
+            "kind": "production-cbor-conformance",
+            "implementation": "amaru",
+            "source_revision": AMARU_REVISION,
+            "measurement_boundary": "production-codec-only",
+            "executable_sha256": "b" * 64,
+            "build_result_sha256": "c" * 64,
+        },
+    )
+    calls = []
+
+    def adapter(_executable, payload, _timeout):
+        category = selected[len(calls)]["category"]
+        calls.append(payload)
+        if category == "valid":
+            return _accepted()
+        return {
+            "schema_version": "v1",
+            "implementation": "amaru",
+            "source_revision": AMARU_REVISION,
+            "boundary": "production-codec-only",
+            "outcome": "rejected",
+            "elapsed_nanos": 2184,
+            "elapsed_micros": 2,
+        }
+
+    report_path = subject.run_cbor_conformance(
+        {
+            "source_repository": subject.QUALIFIED_DATASET_REPOSITORY,
+            "dataset_revision": subject.QUALIFIED_DATASET_REVISION,
+            "dataset_bundle": str(bundle),
+            "implementation": "amaru",
+            "source_revision": AMARU_REVISION,
+            "adapter_record": str(tmp_path / "adapter.json"),
+            "output_dir": str(tmp_path / "out"),
+        },
+        adapter_runner=adapter,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert len(calls) == 100
+    assert report["source"]["selection_sha256"] == subject._dataset_digest(selected)
+    assert report["checks"] == {
+        "cbor_conformance_clean": True,
+        "cbor_roundtrip_consistent": True,
+    }
+
+
+def test_packaged_selection_rejects_tampered_input(monkeypatch, tmp_path):
+    bundle, selected = _packaged_selection(tmp_path)
+    monkeypatch.setattr(
+        subject,
+        "QUALIFIED_DATASET_SELECTION_SHA256",
+        subject._dataset_digest(selected),
+    )
+    body = json.loads(bundle.read_text())
+    body["inputs"][0]["data_hex"] = "ff"
+    bundle.write_text(json.dumps(body))
+    monkeypatch.setattr(
+        subject,
+        "_git_revision",
+        lambda _path: (_ for _ in ()).throw(
+            AssertionError("packaged selection must not invoke git")
+        ),
+    )
+
+    with pytest.raises(subject.ConformanceContractError, match="input digest mismatch"):
+        subject.run_cbor_conformance(
+            {
+                "source_repository": subject.QUALIFIED_DATASET_REPOSITORY,
+                "dataset_revision": subject.QUALIFIED_DATASET_REVISION,
+                "dataset_bundle": str(bundle),
+                "implementation": "amaru",
+                "source_revision": AMARU_REVISION,
+                "adapter_record": str(tmp_path / "adapter.json"),
+                "output_dir": str(tmp_path / "out"),
+            }
+        )
+
+
+def test_shipped_packaged_selection_matches_qualified_workload_identity():
+    selected = subject._load_packaged_selection(
+        ROOT / "dwarf/corpora/qualified/conway-plutus-data-100-v1.json"
+    )
+
+    assert len(selected) == 100
+    assert {item["category"] for item in selected} == {
+        "valid",
+        "zap-1",
+        "zap-2",
+        "zap-3",
+    }
+    assert subject._dataset_digest(selected) == (
+        "3ed74e02f2f2be02ad942d26c193a125a34a0828373aac11cbf5efe082fdd467"
+    )
 
 
 

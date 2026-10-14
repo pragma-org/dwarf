@@ -10,7 +10,9 @@ from profile_manager.data.operate_scenarios_new import (
 from profile_manager.templating import render
 
 
-def render_operate_scenarios_new(query_string: str = "") -> str:
+def render_operate_scenarios_new(
+    query_string: str = "", *, token: str | None = None
+) -> str:
     qs = parse_qs(query_string, keep_blank_values=True)
     selected = (qs.get("template") or [""])[0]
     name = (qs.get("name") or [""])[0]
@@ -29,4 +31,5 @@ def render_operate_scenarios_new(query_string: str = "") -> str:
         selected_template=selected,
         scenario_name=name,
         preview=preview,
+        token=token,
     )

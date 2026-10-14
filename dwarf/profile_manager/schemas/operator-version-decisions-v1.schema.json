@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.dev/schemas/operator-version-decisions-v1.schema.json",
+  "title": "DWARF local operator version decisions v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "revision", "registrations", "decisions", "preferred_defaults"],
+  "properties": {
+    "schema_version": {"const": "v1"},
+    "revision": {"$ref": "#/$defs/prefixedDigest"},
+    "registrations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/registration"}
+    },
+    "decisions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/decision"}
+    },
+    "preferred_defaults": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/preference"}
+    }
+  },
+  "$defs": {
+    "safeId": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$"},
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "prefixedDigest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "nullableText": {"type": ["string", "null"], "minLength": 1, "maxLength": 1024},
+    "registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registration_id", "implementation", "version", "image_reference", "manifest_digest", "config_image_id", "platform", "inspected_at", "provenance"],
+      "properties": {
+        "registration_id": {"$ref": "#/$defs/safeId"},
+        "implementation": {"$ref": "#/$defs/safeId"},
+        "version": {"type": "string", "minLength": 1, "maxLength": 256},
+        "image_reference": {"$ref": "#/$defs/nullableText"},
+        "manifest_digest": {"anyOf": [{"$ref": "#/$defs/prefixedDigest"}, {"type": "null"}]},
+        "config_image_id": {"$ref": "#/$defs/prefixedDigest"},
+        "executable_digest": {"$ref": "#/$defs/prefixedDigest"},
+        "platform": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*$"},
+        "runtime_interface": {"enum": ["extracted-binary", null]},
+        "controller_installation_id": {"$ref": "#/$defs/safeId"},
+        "inspected_at": {"$ref": "#/$defs/timestamp"},
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source_revision", "public", "qualification"],
+          "properties": {
+            "source_revision": {"$ref": "#/$defs/nullableText"},
+            "public": {"type": ["boolean", "null"]},
+            "qualification": {"enum": ["unverified", "qualified", "blocked"]}
+          }
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementation", "version", "image_reference", "manifest_digest", "config_image_id", "scenario_id", "scenario_sha256", "scope", "topology_profile_id", "deployment_identity_sha256", "mixed_pair"],
+      "properties": {
+        "implementation": {"$ref": "#/$defs/safeId"},
+        "version": {"type": "string", "minLength": 1, "maxLength": 256},
+        "image_reference": {"$ref": "#/$defs/nullableText"},
+        "manifest_digest": {"anyOf": [{"$ref": "#/$defs/prefixedDigest"}, {"type": "null"}]},
+        "config_image_id": {"$ref": "#/$defs/prefixedDigest"},
+        "scenario_id": {"$ref": "#/$defs/safeId"},
+        "scenario_sha256": {"$ref": "#/$defs/digest"},
+        "scope": {"$ref": "#/$defs/safeId"},
+        "topology_profile_id": {"$ref": "#/$defs/safeId"},
+        "deployment_identity_sha256": {"$ref": "#/$defs/digest"},
+        "mixed_pair": {"type": ["object", "null"]}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "manifest_sha256", "operational_outcome", "assertion_verdict"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/safeId"},
+        "manifest_sha256": {"$ref": "#/$defs/digest"},
+        "operational_outcome": {"type": "string", "minLength": 1, "maxLength": 64},
+        "assertion_verdict": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_id", "subject_key", "subject", "decision", "reason", "actor", "decided_at", "evidence"],
+      "properties": {
+        "decision_id": {"$ref": "#/$defs/safeId"},
+        "subject_key": {"$ref": "#/$defs/prefixedDigest"},
+        "subject": {"$ref": "#/$defs/subject"},
+        "decision": {"enum": ["supported", "unsupported"]},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "actor": {"type": "string", "minLength": 1, "maxLength": 256},
+        "decided_at": {"$ref": "#/$defs/timestamp"},
+        "evidence": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "preference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preference_id", "scope_key", "action", "decision_id", "recorded_at"],
+      "properties": {
+        "preference_id": {"$ref": "#/$defs/safeId"},
+        "scope_key": {"$ref": "#/$defs/safeId"},
+        "action": {"enum": ["set", "clear"]},
+        "decision_id": {"anyOf": [{"$ref": "#/$defs/safeId"}, {"type": "null"}]},
+        "recorded_at": {"$ref": "#/$defs/timestamp"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"action": {"const": "set"}}},
+          "then": {"properties": {"decision_id": {"$ref": "#/$defs/safeId"}}},
+          "else": {"properties": {"decision_id": {"type": "null"}}}
+        }
+      ]
+    }
+  }
+}

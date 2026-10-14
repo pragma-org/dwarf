@@ -121,7 +121,7 @@ Every mutating endpoint (`POST /api/scenario/run`, `/compare`, `/paste`, `/promo
 
 Or set `ADA2_DWARF_TOKEN`. The dashboard page reads `?token=...` from its own URL; to use a non-default token, open the dashboard at `http://host:8787/?token=<your-token>`. Read-only routes don't require a token.
 
-## Showing remote bundles
+## Remote bundles (legacy, not in authoritative history)
 
 If you run the framework on multiple hosts (e.g. dashboard on macOS but bundles produced on the Linux target host), set `ADA2_DWARF_REMOTE_SOURCES`:
 
@@ -130,7 +130,12 @@ ADA2_DWARF_REMOTE_SOURCES="target-host=ssh://user@host/opt/dwarf/evidence-runs" 
   ./dwarf/cardano-profile dashboard serve
 ```
 
-Recent Runs table merges local + remote entries with a Source column. Multiple sources are comma-separated. SSH key auth must be set up between the two hosts.
+The SSH source parser remains available for legacy integrations, but the local-first
+run ledger does **not** merge remote directories into `/operate/runs` or `/api/runs`.
+Those surfaces now report authoritative local totals and stable cursors only. Import
+remote evidence as an `external` ledger run when it must appear in history. Native
+remote and multi-host pagination is deferred until it can preserve the same identity,
+verdict, and cursor guarantees.
 
 ## A complete walkthrough (non-expert)
 

@@ -22,7 +22,11 @@ def _cardano_testnet_binary(explicit: str | None, *, env: dict[str, str]) -> str
     return "cardano-testnet"
 
 
-def _default_local_binary(name: str) -> str | None:
+def _default_local_binary(name: str, *, env: dict[str, str]) -> str | None:
+    for root in env.get("PATH", "").split(os.pathsep):
+        candidate = Path(root) / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
     candidate = Path.home() / ".local" / "bin" / name
     if candidate.is_file() and os.access(candidate, os.X_OK):
         return str(candidate)
@@ -63,7 +67,7 @@ def run_credential_ceremony(config: dict, *, env: dict[str, str] | None = None) 
     deterministic_seed = str(config.get("deterministic_seed", "record-only"))
     ceremony_env = dict(os.environ if env is None else env)
     if "CARDANO_CLI" not in ceremony_env:
-        cardano_cli = _default_local_binary("cardano-cli")
+        cardano_cli = _default_local_binary("cardano-cli", env=ceremony_env)
         if cardano_cli:
             ceremony_env["CARDANO_CLI"] = cardano_cli
     cardano_testnet = _cardano_testnet_binary(config.get("cardano_testnet_bin"), env=ceremony_env)
@@ -77,8 +81,6 @@ def run_credential_ceremony(config: dict, *, env: dict[str, str] | None = None) 
         str(pool_count),
         "--testnet-magic",
         str(testnet_magic),
-        "--node-logging-format",
-        "json",
     ]
     proc = subprocess.run(command, capture_output=True, text=True, check=False, env=ceremony_env)
     (output_dir / "stdout.log").write_text(proc.stdout or "", encoding="utf-8")

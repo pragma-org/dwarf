@@ -11,12 +11,14 @@ on:
     branches: [main]
     paths:
       - "dwarf/targets/**"
-      - "dwarf/scripts/ci_fuzz_library.py"
+      - "dwarf/scenarios/amaru-cbor-*-fuzz.yaml"
+      - "dwarf/profile_manager/run_service.py"
       - ".github/workflows/dwarf-fuzz.yml"
   pull_request:
     paths:
       - "dwarf/targets/**"
-      - "dwarf/scripts/ci_fuzz_library.py"
+      - "dwarf/scenarios/amaru-cbor-*-fuzz.yaml"
+      - "dwarf/profile_manager/run_service.py"
       - ".github/workflows/dwarf-fuzz.yml"
   schedule:
     - cron: "0 5 * * *"        # nightly, deeper budget
@@ -76,25 +78,36 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run library fuzz
+      - name: Install DWARF runtime dependencies
+        run: python3 -m pip install -r dwarf/scripts/requirements-ci.txt
+
+      - name: Run registered library fuzz scenarios through Run Service
         run: |
           ITERS="${{ github.event.inputs.iterations || (github.event_name == 'schedule' && '20000' || '500') }}"
-          python3 dwarf/scripts/ci_fuzz_library.py \
-            --iterations "$ITERS" \
-            --out dwarf-fuzz-report.json \
-            --crashers-dir fuzz-crashers
+          mkdir -p ci-fuzz-runs ci-fuzz-state
+          python3 - <<'PY' > /tmp/dwarf-fuzz-scenarios
+          import json
+          from pathlib import Path
+          for path in sorted(Path("dwarf/scenarios").glob("amaru-cbor-*-fuzz.yaml")):
+              data = json.loads(path.read_text(encoding="utf-8"))
+              if any(item.get("primitive") == "cbor_fuzz_target" for item in data.get("load", [])):
+                  print(path)
+          PY
+          test -s /tmp/dwarf-fuzz-scenarios
+          while IFS= read -r scenario; do
+            python3 dwarf/cardano-profile scenario run "$scenario" \
+              --origin ci \
+              --fuzz-iterations "$ITERS" \
+              --runs-dir ci-fuzz-runs \
+              --state-dir ci-fuzz-state
+          done < /tmp/dwarf-fuzz-scenarios
 
-      - name: Upload fuzz report
+      - name: Upload canonical fuzz run bundles and ledger
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dwarf-fuzz-report
-          path: dwarf-fuzz-report.json
-
-      - name: Upload crashers
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dwarf-fuzz-crashers
-          path: fuzz-crashers/
+          name: dwarf-fuzz-runs
+          path: |
+            ci-fuzz-runs/
+            ci-fuzz-state/
           if-no-files-found: ignore

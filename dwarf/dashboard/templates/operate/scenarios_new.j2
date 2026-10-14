@@ -39,6 +39,7 @@
 </details>
 
 <form class="scenario-new-form scenario-new-form--create" method="post" action="/operate/scenarios/new">
+  <input type="hidden" name="token" value="{{ token }}">
   <input type="hidden" name="template" value="{{ selected_template }}">
   <input type="hidden" name="name" value="{{ scenario_name or '' }}">
   <button type="submit" class="cta">Create scenario</button>

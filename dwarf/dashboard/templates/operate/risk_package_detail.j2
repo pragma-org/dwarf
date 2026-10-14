@@ -38,7 +38,7 @@
   <div class="dk-panel">
     <h3>Related</h3>
     <div class="dkb-rel">
-      <div><strong>Scenarios</strong>{% if package.scenario_ids %}<ul class="dk-list">{% for id in package.scenario_ids[:6] %}<li><a href="/operate/scenarios/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% if package.scenario_ids|length > 6 %}<p class="dk-note">+{{ package.scenario_ids|length - 6 }} more in Advanced.</p>{% endif %}{% else %}<p class="dkb-p dk-note">No current scenario declares one of these risk IDs.</p>{% endif %}</div>
+      <div><strong>Scenarios</strong>{% if package.scenario_ids %}<ul class="dk-list">{% for id in package.scenario_ids %}<li><a href="/operate/scenarios/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% else %}<p class="dkb-p dk-note">No current scenario declares one of these risk IDs.</p>{% endif %}</div>
       <div><strong>Runtime profile</strong>{% if package.profile_id and package.profile_available %}<p class="dkb-p"><a href="/operate/profiles/{{ package.profile_id }}"><code>{{ package.profile_id }}</code></a></p>{% elif package.profile_id %}<p class="dkb-p"><code>{{ package.profile_id }}</code> <span class="dkb-unres">▲ unavailable here</span></p>{% else %}<p class="dkb-p dk-note">None declared.</p>{% endif %}</div>
     </div>
     <p class="dkb-p" style="margin-top:10px"><a href="/learn/threat-coverage">Threat / risk coverage map →</a></p>

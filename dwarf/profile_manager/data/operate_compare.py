@@ -18,14 +18,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+
+from profile_manager.config import storage_roots
 from typing import Any
 
 
 def _forensic_runs_dir() -> Path:
-    env = os.environ.get("ADA2_DWARF_RUNS_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[2] / "runs"
+    return storage_roots().runs
 
 
 def _bundle_inspector_url(run_id: str) -> str:
@@ -40,16 +39,29 @@ def runnable_scenarios() -> list[dict[str, Any]]:
     cannot drift from the canonical scenario catalog.
     """
     from profile_manager.data.scenarios import _list_scenarios_for_compare
+    from profile_manager.scenario import compare_preflight
     from profile_manager.views.scenarios import _scenario_family
 
     rows = []
     for entry in _list_scenarios_for_compare():
+        try:
+            preflight = compare_preflight(entry["path"])
+        except Exception as exc:
+            preflight = {
+                "ready": False,
+                "code": "compare-preflight-invalid",
+                "message": str(exc),
+                "requirement": None,
+            }
         rows.append({
             "id": entry["id"],
             "title": entry.get("title") or entry["id"],
             "path": entry["path"],
             "runtime": entry.get("runtime") or "",
             "family": _scenario_family(entry["id"]),
+            "available": bool(preflight["ready"]),
+            "availability_code": preflight["code"],
+            "availability_reason": preflight["message"],
         })
     rows.sort(key=lambda r: (1 if r["family"] == "other" else 0, r["family"], r["id"]))
     return rows
@@ -90,13 +102,17 @@ def _read_comparison_summary(run_dir: Path) -> dict[str, Any] | None:
         payload = json.loads(json_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
+    from profile_manager.data.compare import _truthful_comparison_status
+
     runs_block = payload.get("runs") or {}
     amaru = runs_block.get("amaru") or {}
     cn = runs_block.get("cardano-node") or {}
+    result, agreed, comparable = _truthful_comparison_status(payload)
     return {
         "scenario_id": payload.get("scenario_id") or "",
-        "result": payload.get("result") or ("AGREED" if payload.get("agreed") else "DIVERGED"),
-        "agreed": bool(payload.get("agreed")),
+        "result": result,
+        "agreed": agreed,
+        "comparable": comparable,
         "amaru_run_id": amaru.get("run_id"),
         "cardano_node_run_id": cn.get("run_id"),
     }
@@ -131,6 +147,7 @@ def recent_compare_runs(*, runs_dir: Path | None = None, limit: int = 20) -> lis
             "scenario_id": scenario_id,
             "family": _scenario_family(scenario_id) if scenario_id else "other",
             "agreed": summary["agreed"],
+            "comparable": summary["comparable"],
             "result": summary["result"],
             "amaru_run_id": summary["amaru_run_id"],
             "amaru_run_url": _bundle_inspector_url(summary["amaru_run_id"]) if summary["amaru_run_id"] else None,

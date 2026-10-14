@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import io
 import json
 import os
 import re
+import stat
 import tarfile
 import tempfile
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
+import fcntl
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -22,6 +26,12 @@ _CATALOGS = {
     "profiles",
     "measurements",
     "measurement-profiles",
+}
+_USER_DELETABLE_CATALOGS = {
+    "scenarios",
+    "measurements",
+    "measurement-profiles",
+    "profiles",
 }
 _TARGET_DECODER_TYPES = {
     "CBOR codec",
@@ -47,6 +57,10 @@ class DefinitionNotFoundError(CatalogError):
 
 
 class InvalidDefinitionError(CatalogError):
+    pass
+
+
+class DefinitionConflictError(CatalogError):
     pass
 
 
@@ -283,6 +297,119 @@ def serialize_definition(data: dict[str, Any]) -> bytes:
     return (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
+@contextmanager
+def _catalog_write_lock(catalog: str):
+    """Serialize catalog mutations across dashboard workers and processes."""
+    root = catalog_root(catalog)
+    root.mkdir(parents=True, exist_ok=True)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    root_descriptor = None
+    descriptor = None
+    try:
+        root_descriptor = os.open(
+            root,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | nofollow,
+        )
+        descriptor = os.open(
+            ".dwarf-catalog.lock",
+            os.O_RDWR | os.O_CREAT | nofollow,
+            0o600,
+            dir_fd=root_descriptor,
+        )
+    except OSError as exc:
+        if root_descriptor is not None:
+            os.close(root_descriptor)
+        raise UnsafeDefinitionIdError("unsafe catalog root or lock") from exc
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise UnsafeDefinitionIdError("unsafe catalog lock")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield root_descriptor
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+            os.close(root_descriptor)
+
+
+@contextmanager
+def _catalog_write_locks(*catalogs: str):
+    """Hold several catalog locks in one fixed (sorted) order to avoid deadlock."""
+    with ExitStack() as stack:
+        roots = {}
+        for catalog in sorted(set(catalogs)):
+            roots[catalog] = stack.enter_context(_catalog_write_lock(catalog))
+        yield roots
+
+
+def scenario_reference_lock(data: Any, *, scenarios: bool = True):
+    """Lock a scenario write against deletion of the user profiles it names.
+
+    Only user-created measurement and topology profiles can be deleted, so
+    packaged, ``none`` and absent references never touch (or create) a profile
+    catalog lock.
+    """
+    catalogs = ["scenarios"] if scenarios else []
+    for field, catalog in (
+        ("measurement_profile", "measurement-profiles"),
+        ("profile", "profiles"),
+    ):
+        profile = data.get(field) if isinstance(data, dict) else None
+        if (
+            isinstance(profile, str)
+            and profile != "none"
+            and _ID_RE.fullmatch(profile)
+            and not packaged_definition_path(catalog, profile).is_file()
+        ):
+            catalogs.append(catalog)
+    return _catalog_write_locks(*catalogs)
+
+
+def validate_live_scenario_references(data: Any) -> None:
+    """Reject live scenario writes whose mutable catalog references disappeared.
+
+    Pending drafts may retain unresolved references.  This check is therefore
+    called only while saving or promoting into the live scenario catalog and
+    while the matching catalog locks are held.
+    """
+    if not isinstance(data, dict):
+        return
+    for field, catalog in (
+        ("measurement_profile", "measurement-profiles"),
+        ("profile", "profiles"),
+    ):
+        value = data.get(field)
+        if value is None or value == "none":
+            continue
+        if not isinstance(value, str) or not _ID_RE.fullmatch(value):
+            raise InvalidDefinitionError(f"invalid {field} {value!r}")
+        if not (
+            definition_path(catalog, value).is_file()
+            or packaged_definition_path(catalog, value).is_file()
+        ):
+            raise InvalidDefinitionError(f"unknown {field} {value!r}")
+
+
+def _scenarios_referencing_profile(
+    profile_id: str, field: str = "measurement_profile"
+) -> list[str]:
+    """Return live catalog scenario ids whose ``field`` names ``profile_id``."""
+    root = catalog_root("scenarios")
+    if not root.is_dir():
+        return []
+    users = []
+    for path in sorted(root.glob("*.yaml")):
+        try:
+            data = _parse_source(path.read_bytes())
+        except (OSError, CatalogError):
+            continue
+        if data.get(field) == profile_id:
+            users.append(path.stem)
+    return users
+
+
 def save_definition(
     catalog: str,
     definition_id: str,
@@ -294,27 +421,264 @@ def save_definition(
     definition_id = validate_definition_id(definition_id)
     data = parse_and_validate_definition(catalog, source, expected_id=definition_id)
     path = definition_path(catalog, definition_id)
-    if create and path.exists():
-        raise InvalidDefinitionError("definition already exists")
-    if not create and not path.is_file():
-        raise DefinitionNotFoundError(definition_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
     rendered = serialize_definition(data)
-    temporary: Path | None = None
+    lock = (
+        scenario_reference_lock(data) if catalog == "scenarios" else _catalog_write_lock(catalog)
+    )
+    with lock:
+        if catalog == "scenarios":
+            # A profile delete may have finished while we waited for the lock.
+            _validate_loaded(catalog, definition_id, data)
+            validate_live_scenario_references(data)
+        if create and path.exists():
+            raise InvalidDefinitionError("definition already exists")
+        if not create and not path.is_file():
+            raise DefinitionNotFoundError(definition_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                handle.write(rendered)
+                handle.flush()
+                os.fsync(handle.fileno())
+                temporary = Path(handle.name)
+            os.chmod(temporary, 0o644)
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None and temporary.exists():
+                temporary.unlink()
+        return load_definition(catalog, definition_id)
+
+
+def packaged_definition_path(catalog: str, definition_id: str) -> Path:
+    """Return the immutable source-tree path for one supported catalog id."""
+    definition_id = validate_definition_id(definition_id)
+    dwarf_root = Path(__file__).resolve().parents[2]
+    roots = {
+        "scenarios": dwarf_root / "scenarios",
+        "targets": dwarf_root / "targets" / "manifests",
+        "profiles": dwarf_root / "profiles",
+        "measurements": dwarf_root / "measurements",
+        "measurement-profiles": dwarf_root / "measurement-profiles",
+    }
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
-        ) as handle:
-            handle.write(rendered)
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        os.chmod(temporary, 0o644)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None and temporary.exists():
-            temporary.unlink()
-    return load_definition(catalog, definition_id)
+        root = roots[catalog]
+    except KeyError as exc:
+        raise UnknownCatalogError(catalog) from exc
+    return (
+        root / definition_id / "profile.yaml"
+        if catalog == "profiles"
+        else root / f"{definition_id}.yaml"
+    )
+
+
+def is_user_definition(catalog: str, definition_id: str) -> bool:
+    """True only for an existing writable definition without a packaged peer."""
+    if catalog not in _USER_DELETABLE_CATALOGS:
+        return False
+    try:
+        path = definition_path(catalog, definition_id)
+    except UnsafeDefinitionIdError:
+        return False
+    candidate = _user_definition_candidate(catalog, definition_id)
+    return (
+        path == candidate
+        and path.is_file()
+        and not packaged_definition_path(catalog, definition_id).is_file()
+    )
+
+
+def _user_definition_candidate(catalog: str, definition_id: str) -> Path | None:
+    """Return the unresolved definition path, or None if any component is a symlink."""
+    root = catalog_root(catalog).resolve()
+    if catalog == "profiles":
+        directory = root / definition_id
+        if directory.is_symlink():
+            return None
+        candidate = directory / "profile.yaml"
+    else:
+        candidate = root / f"{definition_id}.yaml"
+    return None if candidate.is_symlink() else candidate
+
+
+def delete_user_measurement(
+    definition_id: str, *, expected_sha256: str
+) -> None:
+    """Delete one digest-bound user measurement; packaged definitions are immutable."""
+    delete_user_definition(
+        "measurements", definition_id, expected_sha256=expected_sha256
+    )
+
+
+@contextmanager
+def _opened_user_definition_for_delete(
+    catalog: str,
+    definition_id: str,
+    candidate: Path,
+    *,
+    root_descriptor: int,
+):
+    """Open a definition through stable directory descriptors for safe unlink."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    with ExitStack() as descriptors:
+        directory_descriptor = None
+        try:
+            if catalog == "profiles":
+                directory_descriptor = os.open(
+                    definition_id,
+                    flags | getattr(os, "O_DIRECTORY", 0),
+                    dir_fd=root_descriptor,
+                )
+                descriptors.callback(os.close, directory_descriptor)
+                opened_directory = os.fstat(directory_descriptor)
+                descriptor = os.open(
+                    "profile.yaml", flags, dir_fd=directory_descriptor
+                )
+            else:
+                opened_directory = None
+                descriptor = os.open(
+                    f"{definition_id}.yaml", flags, dir_fd=root_descriptor
+                )
+            descriptors.callback(os.close, descriptor)
+        except OSError as exc:
+            raise DefinitionNotFoundError(definition_id) from exc
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise UnsafeDefinitionIdError(definition_id)
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        yield (
+            b"".join(chunks),
+            opened,
+            opened_directory,
+            root_descriptor,
+            directory_descriptor,
+        )
+
+
+def delete_user_definition(
+    catalog: str,
+    definition_id: str,
+    *,
+    expected_sha256: str,
+    blocker=None,
+) -> None:
+    """Delete one digest-bound user measurement, measurement or topology profile.
+
+    Only the validated definition file is removed; a topology profile's directory
+    is removed afterwards only when it is already empty (sidecars are retained).
+    Running topologies are the caller's concern and are never touched here.
+    """
+    if catalog not in _USER_DELETABLE_CATALOGS:
+        raise UnknownCatalogError(catalog)
+    noun = catalog_label(catalog).lower()
+    stale = f"{noun} changed; reload before deleting"
+    definition_id = validate_definition_id(definition_id)
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256 or ""):
+        raise DefinitionConflictError(stale)
+    if packaged_definition_path(catalog, definition_id).is_file():
+        raise DefinitionConflictError(f"packaged {noun}s cannot be deleted")
+
+    catalogs = (
+        (catalog, "scenarios")
+        if catalog in {"measurement-profiles", "profiles"}
+        else (catalog,)
+    )
+    with _catalog_write_locks(*catalogs) as locked_roots:
+        if blocker is not None:
+            reason = blocker(definition_id)
+            if reason:
+                raise DefinitionConflictError(str(reason))
+        candidate = _user_definition_candidate(catalog, definition_id)
+        resolved = definition_path(catalog, definition_id)
+        if candidate is None or resolved != candidate:
+            raise UnsafeDefinitionIdError(definition_id)
+        if not candidate.is_file():
+            raise DefinitionNotFoundError(definition_id)
+
+        with _opened_user_definition_for_delete(
+            catalog,
+            definition_id,
+            candidate,
+            root_descriptor=locked_roots[catalog],
+        ) as opened_definition:
+            (
+                source,
+                opened,
+                opened_directory,
+                root_descriptor,
+                directory_descriptor,
+            ) = opened_definition
+            data = _parse_source(source)
+            _validate_loaded(catalog, definition_id, data)
+            if hashlib.sha256(source).hexdigest() != expected_sha256:
+                raise DefinitionConflictError(stale)
+            if catalog in {"measurement-profiles", "profiles"}:
+                users = _scenarios_referencing_profile(
+                    definition_id,
+                    (
+                        "measurement_profile"
+                        if catalog == "measurement-profiles"
+                        else "profile"
+                    ),
+                )
+                if users:
+                    raise DefinitionConflictError(
+                        f"{noun} is used by live scenarios: " + ", ".join(users)
+                    )
+            latest = (
+                os.stat(
+                    "profile.yaml",
+                    dir_fd=directory_descriptor,
+                    follow_symlinks=False,
+                )
+                if catalog == "profiles"
+                else os.stat(
+                    f"{definition_id}.yaml",
+                    dir_fd=root_descriptor,
+                    follow_symlinks=False,
+                )
+            )
+            if (
+                stat.S_ISLNK(latest.st_mode)
+                or latest.st_dev != opened.st_dev
+                or latest.st_ino != opened.st_ino
+                or latest.st_size != opened.st_size
+            ):
+                raise DefinitionConflictError(stale)
+            if catalog == "profiles":
+                current_directory = os.stat(
+                    definition_id,
+                    dir_fd=root_descriptor,
+                    follow_symlinks=False,
+                )
+                if (
+                    not stat.S_ISDIR(current_directory.st_mode)
+                    or current_directory.st_dev != opened_directory.st_dev
+                    or current_directory.st_ino != opened_directory.st_ino
+                ):
+                    raise DefinitionConflictError(stale)
+                os.unlink("profile.yaml", dir_fd=directory_descriptor)
+                try:
+                    os.rmdir(definition_id, dir_fd=root_descriptor)
+                except OSError:
+                    pass  # retain unrelated sidecars; never remove recursively
+            else:
+                os.unlink(f"{definition_id}.yaml", dir_fd=root_descriptor)
+    if catalog == "scenarios":
+        from profile_manager.data.scenarios import invalidate_scenario_cache
+
+        invalidate_scenario_cache()
 
 
 def _candidate_ids(catalog: str) -> Iterable[str]:

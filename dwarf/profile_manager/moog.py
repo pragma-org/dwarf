@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import shlex
 import urllib.error
 import urllib.request
@@ -987,6 +988,27 @@ def parse_test_run_phase(test_run_facts):
         return None
     first = test_run_facts[0] if isinstance(test_run_facts, list) else test_run_facts
     return (first.get("value", {}) or {}).get("phase")
+
+
+def parse_moog_create_test_id(stdout):
+    """Extract a returned test identity without inventing one when Moog is terse."""
+    text = str(stdout or "")
+    for line in reversed(text.splitlines()):
+        try:
+            payload = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, dict):
+            for key in ("test_run_id", "testRunId", "test-run-id"):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    match = re.search(
+        r"(?:test[_ -]?run[_ -]?id|test-run-id)\s*[:=]\s*([A-Za-z0-9_.:-]+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return match.group(1) if match else None
 
 
 def build_moog_create_test_command(

@@ -30,6 +30,8 @@ DEFAULT_EXCLUDED_RELPATHS = {
     "events/target-hooks.ndjson",
     "outputs/signature/signature.json",
 }
+LEGACY_CHAIN_EXCLUDED_RELPATH = "outputs/chain/chain.json"
+SIGNATURE_DOMAIN = "dwarf.bundle-signature.v2"
 
 
 def utc_timestamp() -> str:
@@ -115,31 +117,144 @@ def canonical_manifest_bytes(manifest: dict[str, str]) -> bytes:
     return json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def verify_signature(*, run_dir: Path, signature_path: Path) -> dict:
+def canonical_signature_payload_bytes(
+    *,
+    manifest: dict[str, str],
+    target_run_id: str,
+    signing_actor: str,
+    excluded_relpaths: set[str],
+) -> bytes:
+    return json.dumps(
+        {
+            "domain": SIGNATURE_DOMAIN,
+            "target_run_id": target_run_id,
+            "signing_actor": signing_actor,
+            "excluded_relpaths": sorted(excluded_relpaths),
+            "manifest": manifest,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _declared_exclusions(payload: dict) -> set[str] | None:
+    raw = payload.get("excluded_relpaths")
+    if not isinstance(raw, list) or any(not isinstance(item, str) for item in raw):
+        return None
+    exclusions = set(raw)
+    if len(exclusions) != len(raw):
+        return None
+    for item in exclusions:
+        path = Path(item)
+        if path.is_absolute() or ".." in path.parts or str(path) != item:
+            return None
+    return exclusions
+
+
+def verify_signature(
+    *,
+    run_dir: Path,
+    signature_path: Path,
+    expected_manifest: dict[str, str] | None = None,
+) -> dict:
     payload = json.loads(signature_path.read_text(encoding="utf-8"))
+    signer_metadata = {
+        "signing_public_key_hex": payload.get("public_key_hex"),
+        "signing_actor": payload.get("signing_actor"),
+        "operator_warning": payload.get("operator_warning"),
+    }
     if payload.get("signing_unavailable"):
         return {
+            **signer_metadata,
             "verdict": "unsigned",
             "manifest_sha256_recomputed": None,
             "manifest_sha256_signed": payload.get("manifest_sha256"),
             "reason": payload.get("reason"),
         }
-    InvalidSignature, serialization, _, Ed25519PublicKey = _load_crypto()
-    extra_excluded = set(payload.get("excluded_relpaths") or [])
+    declared_exclusions = _declared_exclusions(payload)
+    if declared_exclusions is None:
+        return {
+            **signer_metadata,
+            "verdict": "tampered",
+            "manifest_sha256_recomputed": None,
+            "manifest_sha256_signed": payload.get("manifest_sha256"),
+            "reason": "invalid_excluded_relpaths",
+        }
+    schema_version = payload.get("schema_version")
+    if schema_version == "v2":
+        extra_excluded = declared_exclusions - DEFAULT_EXCLUDED_RELPATHS
+    elif schema_version == "v1":
+        allowed_legacy = (
+            DEFAULT_EXCLUDED_RELPATHS,
+            DEFAULT_EXCLUDED_RELPATHS | {LEGACY_CHAIN_EXCLUDED_RELPATH},
+        )
+        if declared_exclusions not in allowed_legacy:
+            return {
+                **signer_metadata,
+                "verdict": "tampered",
+                "manifest_sha256_recomputed": None,
+                "manifest_sha256_signed": payload.get("manifest_sha256"),
+                "reason": "untrusted_legacy_excluded_relpaths",
+            }
+        extra_excluded = declared_exclusions - DEFAULT_EXCLUDED_RELPATHS
+    else:
+        return {
+            **signer_metadata,
+            "verdict": "tampered",
+            "manifest_sha256_recomputed": None,
+            "manifest_sha256_signed": payload.get("manifest_sha256"),
+            "reason": "unsupported_signature_schema",
+        }
+
     manifest = build_manifest(run_dir, extra_excluded_relpaths=extra_excluded)
     manifest_bytes = canonical_manifest_bytes(manifest)
     manifest_sha256_recomputed = hashlib.sha256(manifest_bytes).hexdigest()
-    public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(payload["public_key_hex"]))
+    if schema_version == "v2":
+        signed_bytes = canonical_signature_payload_bytes(
+            manifest=manifest,
+            target_run_id=str(payload.get("target_run_id") or ""),
+            signing_actor=str(payload.get("signing_actor") or ""),
+            excluded_relpaths=declared_exclusions,
+        )
+    else:
+        signed_bytes = manifest_bytes
+    signed_payload_sha256 = hashlib.sha256(signed_bytes).hexdigest()
+    InvalidSignature, serialization, _, Ed25519PublicKey = _load_crypto()
     try:
-        public_key.verify(bytes.fromhex(payload["signature_hex"]), manifest_bytes)
+        public_key = Ed25519PublicKey.from_public_bytes(
+            bytes.fromhex(payload["public_key_hex"])
+        )
+        public_key.verify(bytes.fromhex(payload["signature_hex"]), signed_bytes)
         signature_ok = True
-    except InvalidSignature:
+    except (InvalidSignature, KeyError, TypeError, ValueError):
         signature_ok = False
-    verdict = "verified" if signature_ok and manifest_sha256_recomputed == payload["manifest_sha256"] else "tampered"
+    scope_ok = expected_manifest is None or manifest == expected_manifest
+    payload_hash_ok = (
+        schema_version != "v2"
+        or payload.get("signed_payload_sha256") == signed_payload_sha256
+    )
+    verdict = (
+        "verified"
+        if signature_ok
+        and manifest_sha256_recomputed == payload.get("manifest_sha256")
+        and payload_hash_ok
+        and scope_ok
+        else "tampered"
+    )
     return {
+        **signer_metadata,
         "verdict": verdict,
         "manifest_sha256_recomputed": manifest_sha256_recomputed,
-        "manifest_sha256_signed": payload["manifest_sha256"],
+        "manifest_sha256_signed": payload.get("manifest_sha256"),
+        "signed_payload_sha256_recomputed": signed_payload_sha256,
+        "signed_payload_sha256_signed": payload.get("signed_payload_sha256"),
+        "manifest_entry_count_recomputed": len(manifest),
+        "signature_schema_version": schema_version,
+        "signed_target_run_id": payload.get("target_run_id"),
+        "signed_signing_actor": payload.get("signing_actor"),
+        "reason": None if verdict == "verified" else (
+            "signature_scope_mismatch" if not scope_ok else "signature_verification_failed"
+        ),
     }
 
 
@@ -162,18 +277,27 @@ def run_signature(
             pass
     if extra_excluded_relpaths:
         extra_excluded.update(extra_excluded_relpaths)
+    declared_exclusions = DEFAULT_EXCLUDED_RELPATHS | extra_excluded
     manifest = build_manifest(run_dir, extra_excluded_relpaths=extra_excluded)
     manifest_bytes = canonical_manifest_bytes(manifest)
     manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+    signed_bytes = canonical_signature_payload_bytes(
+        manifest=manifest,
+        target_run_id=target_run_id,
+        signing_actor=signing_actor,
+        excluded_relpaths=declared_exclusions,
+    )
+    signed_payload_sha256 = hashlib.sha256(signed_bytes).hexdigest()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     payload = {
-        "schema_version": "v1",
+        "schema_version": "v2",
         "target_run_id": target_run_id,
         "signed_at_utc": utc_timestamp(),
         "signing_actor": signing_actor,
-        "excluded_relpaths": sorted(DEFAULT_EXCLUDED_RELPATHS | extra_excluded),
+        "excluded_relpaths": sorted(declared_exclusions),
         "manifest_entry_count": len(manifest),
+        "signed_payload_sha256": signed_payload_sha256,
     }
 
     try:
@@ -184,7 +308,7 @@ def run_signature(
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw,
         ).hex()
-        signature_hex = private_key.sign(manifest_bytes).hex()
+        signature_hex = private_key.sign(signed_bytes).hex()
         payload.update(
             {
                 "public_key_hex": public_key_hex,

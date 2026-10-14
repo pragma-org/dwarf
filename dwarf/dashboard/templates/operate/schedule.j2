@@ -131,7 +131,7 @@
 <section class="schedule-create" aria-labelledby="create-heading">
   <header><span class="eyebrow">Create</span><h2 id="create-heading">New scheduled entry</h2></header>
   <p class="page-subhero">Pick a scenario and supply a 5-field cron expression. Fields: <code>minute hour day-of-month month day-of-week</code>. Examples: <code>*/15 * * * *</code> (every 15 min), <code>0 */6 * * *</code> (every 6 hours on the hour), <code>0 9 * * 1</code> (Mondays 09:00 UTC).</p>
-  <form id="schedule-create-form" class="schedule-form">
+  <form id="schedule-create-form" class="schedule-form" method="post" action="/api/schedule/create">
     <label class="schedule-form__row"><span>Name</span><input type="text" name="name" required maxlength="128" placeholder="e.g. hourly blockfetch smoke"></label>
     <label class="schedule-form__row"><span>Scenario</span>
       <select name="scenario" required>
@@ -151,7 +151,12 @@
 <script>
 (function() {
   function postAction(id, action, token) {
-    return fetch('/api/schedule/' + encodeURIComponent(id) + '/' + encodeURIComponent(action) + '?token=' + encodeURIComponent(token), {method: 'POST'});
+    var body = new URLSearchParams({token: token});
+    return fetch('/api/schedule/' + encodeURIComponent(id) + '/' + encodeURIComponent(action), {
+      method: 'POST',
+      body: body,
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'}
+    });
   }
   function getToken() {
     var t = window.prompt('Dashboard token (required for state changes)');
@@ -183,8 +188,9 @@
       var sep = scenario.indexOf('|');
       var sid = sep >= 0 ? scenario.slice(0, sep) : scenario;
       var spath = sep >= 0 ? scenario.slice(sep + 1) : '';
-      var url = '/api/schedule/create?token=' + encodeURIComponent(token);
+      var url = '/api/schedule/create';
       var body = new URLSearchParams();
+      body.set('token', token);
       body.set('name', name);
       body.set('scenario_id', sid);
       body.set('scenario_path', spath);

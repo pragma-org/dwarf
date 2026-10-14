@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from profile_manager.config import storage_roots
 from profile_manager.data.scenarios import _scenarios_dir
 
 
@@ -28,8 +29,7 @@ def launch_root(root: str | Path | None = None) -> Path:
     configured = os.environ.get("ADA2_DWARF_LAUNCH_ROOT", "").strip()
     if configured:
         return Path(configured)
-    state = Path(os.environ.get("ADA2_DWARF_STATE_DIR") or "/var/dwarf/state")
-    return state / "launches"
+    return storage_roots().state / "launches"
 
 
 def validate_launch_id(launch_id: str) -> str:
@@ -51,55 +51,195 @@ def _write_private(path: Path, body: bytes) -> None:
     path.chmod(0o600)
 
 
-def _materialized_scenario(plan: dict[str, Any]) -> bytes:
+def materialized_scenario(plan: dict[str, Any]) -> bytes:
     scenario_id = str((plan.get("scenario") or {}).get("id") or "")
     source = _scenarios_dir() / f"{scenario_id}.yaml"
     if not source.is_file() or source.parent != _scenarios_dir():
         raise LaunchStoreError("scenario source is no longer in the active catalog")
     try:
-        value = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        source_body = source.read_bytes()
+        original = json.loads(source_body.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise LaunchStoreError("scenario source cannot be materialized") from exc
-    if value.get("id") != scenario_id:
+    if original.get("id") != scenario_id:
         raise LaunchStoreError("scenario source identifier changed")
-    value["target"] = dict(plan["scenario"]["target"])
-    value["seed"] = plan["scenario"].get("seed")
+    if (plan.get("scenario") or {}).get("digest") != _digest(source_body):
+        raise LaunchStoreError("scenario source digest changed after plan resolution")
+
+    materialized = dict(original)
+    original_profile = original.get("profile")
+    selected_profile = (plan.get("profile") or {}).get("id")
+    if (
+        isinstance(original_profile, str)
+        and original_profile
+        and isinstance(selected_profile, str)
+        and selected_profile
+        and selected_profile != original_profile
+    ):
+        for phase in ("setup", "load", "faults", "probes", "assertions", "teardown"):
+            entries = materialized.get(phase)
+            if not isinstance(entries, list):
+                continue
+            materialized[phase] = [
+                {
+                    **entry,
+                    "profile_id": selected_profile,
+                }
+                if isinstance(entry, dict)
+                and entry.get("profile_id") == original_profile
+                else entry
+                for entry in entries
+            ]
+    measurement_context = plan.get("measurements") or {}
+    exact_measurements = {
+        str(item.get("id")): item
+        for item in (
+            list(measurement_context.get("resolved") or [])
+            + list(measurement_context.get("disabled") or [])
+        )
+        if isinstance(item, dict) and item.get("id")
+    }
+    materialized_measurements = []
+    for requested in measurement_context.get("requested") or []:
+        selected = exact_measurements.get(str(requested.get("id") or ""))
+        if selected is None:
+            continue
+        materialized_measurements.append(
+            {
+                "id": selected["id"],
+                "enabled": bool(selected.get("enabled")),
+                "parameters": dict(selected.get("parameters") or {}),
+                "threshold_gate": dict(
+                    selected.get("threshold_gate")
+                    or {"enabled": False, "thresholds": []}
+                ),
+            }
+        )
+
+    desired = {
+        "target": dict(plan["scenario"]["target"]),
+        "seed": plan["scenario"].get("seed"),
+        "profile": (plan.get("profile") or {}).get("id"),
+    }
+    if measurement_context.get("profile") is not None:
+        # Freeze the resolved tap set instead of allowing a mutable profile to
+        # be resolved a second time by the canonical runner.
+        desired["measurement_profile"] = "none"
+        desired["measurements"] = materialized_measurements
+    for field, selected in desired.items():
+        if original.get(field) == selected:
+            continue
+        if selected is None:
+            materialized.pop(field, None)
+        else:
+            materialized[field] = selected
+    for binding in (plan.get("scenario") or {}).get("target_bindings") or []:
+        if binding.get("kind") != "resolved-plan":
+            continue
+        location = binding.get("location")
+        declared = binding.get("declared")
+        resolved = binding.get("resolved")
+        if (
+            not isinstance(location, list)
+            or not isinstance(declared, dict)
+            or not isinstance(resolved, dict)
+        ):
+            raise LaunchStoreError("resolved target binding is invalid")
+        entry: Any = materialized
+        try:
+            for component in location:
+                entry = entry[component]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LaunchStoreError("resolved target binding location changed") from exc
+        if not isinstance(entry, dict) or entry.get("primitive") != "runtime_verify_exact_target":
+            raise LaunchStoreError("resolved target binding no longer names its verifier")
+        if entry.get("identity_binding") != "resolved-plan":
+            raise LaunchStoreError("resolved target binding declaration changed")
+        if any(entry.get(field) != value for field, value in declared.items()):
+            raise LaunchStoreError("resolved target binding constraints changed")
+        if any(resolved.get(field) != value for field, value in declared.items()):
+            raise LaunchStoreError("resolved target binding violates its constraints")
+        entry.update(resolved)
+    for binding in (plan.get("scenario") or {}).get(
+        "required_conformance_adapters"
+    ) or []:
+        if binding.get("kind") != "resolved-registry":
+            raise LaunchStoreError("conformance adapter binding kind is invalid")
+        location = binding.get("location")
+        declared = binding.get("declared")
+        resolved = binding.get("resolved")
+        if (
+            not isinstance(location, list)
+            or not isinstance(declared, dict)
+            or not isinstance(resolved, dict)
+        ):
+            raise LaunchStoreError("conformance adapter binding is not launch-ready")
+        entry = materialized
+        try:
+            for component in location:
+                entry = entry[component]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LaunchStoreError("conformance adapter binding location changed") from exc
+        adapter_family = str(binding.get("adapter_family") or "plutus")
+        if adapter_family == "plutus":
+            valid_declaration = (
+                isinstance(entry, dict)
+                and location[-1] == declared.get("implementation")
+                and all(
+                    entry.get(field) == value
+                    for field, value in declared.items()
+                    if field != "implementation"
+                )
+            )
+        elif adapter_family == "cbor":
+            valid_declaration = (
+                isinstance(entry, dict)
+                and entry.get("primitive") == "runtime_version_pinned_cbor_conformance"
+                and all(entry.get(field) == value for field, value in declared.items())
+            )
+        else:
+            valid_declaration = False
+        if not valid_declaration:
+            raise LaunchStoreError("conformance adapter declaration changed")
+        entry["expected_provenance"] = resolved
+    if materialized == original:
+        return source_body
+    return _canonical_bytes(materialized)
+
+
+def expected_launch_artifacts(plan: dict[str, Any]) -> dict[str, bytes]:
+    """Materialize the exact controller-verifiable launch input set."""
+
+    artifacts = {"scenario.yaml": materialized_scenario(plan)}
     profile = plan.get("profile")
     if profile:
-        value["profile"] = profile["id"]
-    measurement_profile = ((plan.get("measurements") or {}).get("profile") or {}).get("id")
-    if measurement_profile:
-        value["measurement_profile"] = measurement_profile
-    return _canonical_bytes(value)
+        artifacts["profile.json"] = _canonical_bytes(profile["snapshot"])
+    return artifacts
 
 
-def create_launch(
-    plan: dict[str, Any], *, root: str | Path | None = None
+def _store_launch(
+    plan: dict[str, Any],
+    *,
+    launch_id: str,
+    base: Path,
+    preflight: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Freeze a resolved plan and inputs below an unpredictable strict ID."""
     if not isinstance(plan, dict) or plan.get("schema_version") != 1:
         raise LaunchStoreError("resolved run plan is invalid")
-    base = launch_root(root)
     base.mkdir(parents=True, exist_ok=True)
     base.chmod(0o700)
-    for _ in range(8):
-        launch_id = f"launch-{secrets.token_hex(12)}"
-        destination = base / launch_id
-        if not destination.exists():
-            break
-    else:
-        raise LaunchStoreError("could not allocate a unique launch identifier")
-
+    destination = base / launch_id
+    if destination.exists():
+        raise LaunchStoreError("launch snapshot already exists")
     stage = base / f".{launch_id}.tmp-{secrets.token_hex(4)}"
     stage.mkdir(mode=0o700)
     try:
-        scenario_body = _materialized_scenario(plan)
+        expected_artifacts = expected_launch_artifacts(plan)
+        scenario_body = expected_artifacts["scenario.yaml"]
         _write_private(stage / "scenario.yaml", scenario_body)
 
-        profile_body = None
-        profile = plan.get("profile")
-        if profile:
-            profile_body = _canonical_bytes(profile["snapshot"])
+        profile_body = expected_artifacts.get("profile.json")
+        if profile_body is not None:
             _write_private(stage / "profile.json", profile_body)
 
         stored_plan = json.loads(json.dumps(plan))
@@ -121,11 +261,48 @@ def create_launch(
             }
         )
         _write_private(stage / "plan.json", _canonical_bytes(stored_plan))
+        if preflight is not None:
+            if preflight.get("state") not in {"ready", "blocked"}:
+                raise LaunchStoreError("launch preflight result is invalid")
+            _write_private(stage / "preflight.json", _canonical_bytes(preflight))
         os.replace(stage, destination)
     except BaseException:
         shutil.rmtree(stage, ignore_errors=True)
         raise
     return {"launch_id": launch_id, "path": destination, "plan": stored_plan}
+
+
+def materialize_launch_snapshot(
+    plan: dict[str, Any],
+    *,
+    launch_id: str,
+    root: str | Path,
+    preflight: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Regenerate trusted launch inputs below a controller-private root."""
+
+    return _store_launch(
+        plan,
+        launch_id=validate_launch_id(launch_id),
+        base=launch_root(root),
+        preflight=preflight,
+    )
+
+
+def create_launch(
+    plan: dict[str, Any], *, root: str | Path | None = None
+) -> dict[str, Any]:
+    """Freeze a resolved plan and inputs below an unpredictable strict ID."""
+    base = launch_root(root)
+    for _ in range(8):
+        launch_id = f"launch-{secrets.token_hex(12)}"
+        destination = base / launch_id
+        if not destination.exists():
+            break
+    else:
+        raise LaunchStoreError("could not allocate a unique launch identifier")
+
+    return _store_launch(plan, launch_id=launch_id, base=base)
 
 
 def load_launch(
@@ -170,6 +347,22 @@ def load_launch(
         "scenario_path": scenario_path,
         "profile_path": profile_path if profile_path.is_file() else None,
     }
+
+
+def measurement_resolution_from_environment(
+    env: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
+    """Load the immutable launch measurement resolution, when launched normally."""
+    environment = os.environ if env is None else env
+    launch_id = str(environment.get("ADA2_DWARF_LAUNCH_ID") or "").strip()
+    if not launch_id:
+        return None
+    root = str(environment.get("ADA2_DWARF_LAUNCH_ROOT") or "").strip() or None
+    launch = load_launch(launch_id, root=root)
+    measurements = launch["plan"].get("measurements")
+    if not isinstance(measurements, dict):
+        raise LaunchStoreError("launch measurement resolution is missing")
+    return json.loads(json.dumps(measurements))
 
 
 def retain_launch_inputs(

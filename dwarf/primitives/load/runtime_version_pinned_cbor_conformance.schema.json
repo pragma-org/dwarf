@@ -5,19 +5,42 @@
   "required": [
     "source_repository",
     "dataset_revision",
-    "dataset_repo_dir",
-    "dataset_dir",
     "implementation",
     "source_revision",
     "output_dir"
   ],
   "oneOf": [
-    {"required": ["adapter_record"]},
-    {"required": ["adapter_manifest", "adapter_manifest_sha256"]}
+    {
+      "required": ["adapter_record"],
+      "not": {"required": ["adapter_manifest"]}
+    },
+    {
+      "required": ["adapter_manifest", "adapter_manifest_sha256"],
+      "not": {"required": ["adapter_record"]}
+    },
+    {
+      "required": ["adapter_set_sha256"],
+      "not": {"anyOf": [{"required": ["adapter_record"]}, {"required": ["adapter_manifest"]}]}
+    }
+  ],
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "required": ["dataset_bundle"],
+          "not": {"anyOf": [{"required": ["dataset_repo_dir"]}, {"required": ["dataset_dir"]}]}
+        },
+        {
+          "required": ["dataset_repo_dir", "dataset_dir"],
+          "not": {"required": ["dataset_bundle"]}
+        }
+      ]
+    }
   ],
   "properties": {
     "source_repository": {"const": "https://github.com/r2rationality/cardano-cbor-dataset.git"},
     "dataset_revision": {"const": "a7561cd063550c2218898571520f14c3674efe91"},
+    "dataset_bundle": {"type": "string", "minLength": 1},
     "dataset_repo_dir": {"type": "string", "minLength": 1},
     "dataset_dir": {"type": "string", "minLength": 1},
     "implementation": {"enum": ["amaru", "cardano-node"]},
@@ -25,6 +48,8 @@
     "adapter_record": {"type": "string", "minLength": 1},
     "adapter_manifest": {"type": "string", "minLength": 1},
     "adapter_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "adapter_set_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "expected_provenance": {"type": "object"},
     "adapter_registry_root": {"type": "string", "minLength": 1},
     "output_dir": {"type": "string", "minLength": 1},
     "per_input_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},

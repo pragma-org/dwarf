@@ -5,13 +5,18 @@ from profile_manager.data.lifecycle import _local_testcase_lifecycle_summary
 from profile_manager.data.operate_run_families import issue_families
 from profile_manager.data.operate_runs import (
     apply_run_filters,
-    operate_run_rows,
-    status_pill_inventory,
+    operate_run_page,
 )
 from profile_manager.templating import render
 
 
-def render_operate_runs(*, outcome: str = "", q: str = "") -> str:
+def render_operate_runs(
+    *,
+    outcome: str = "",
+    q: str = "",
+    scope: str = "scenario",
+    cursor: str | None = None,
+) -> str:
     """Render /operate/runs: dense-table recent-runs index with filter pills.
 
     Slice 26 added an "Issue families" aggregate panel that surfaces the
@@ -20,13 +25,25 @@ def render_operate_runs(*, outcome: str = "", q: str = "") -> str:
     informative even when filtered by a particular result pill.
 
     Slice 46 wired server-side filters: ``outcome`` (pass / fail / error /
-    "" for all) and ``q`` (substring match on run_id / scenario_id /
-    profile_id / target_implementation). Filters are bookmarkable since
-    they live in the URL.
+    inconclusive / "" for all) and ``q`` (substring match on run_id /
+    scenario_id / profile_id / target_implementation). Filters are
+    bookmarkable since they live in the URL.
     """
-    all_rows = operate_run_rows(limit=100)
+    page = operate_run_page(limit=100, cursor=cursor, scope=scope, outcome=outcome)
+    all_rows = page["runs"]
     filtered = apply_run_filters(all_rows, outcome=outcome, q=q)
-    pills = status_pill_inventory(all_rows, active_outcome=outcome)
+    verdict_counts = page["counts"]["verdicts"]
+    pills = [
+        {"slug": "", "label": "all", "count": page["scope_total"], "active": not outcome}
+    ] + [
+        {
+            "slug": value,
+            "label": value,
+            "count": verdict_counts.get(value, 0),
+            "active": outcome == value,
+        }
+        for value in ("pass", "fail", "error", "inconclusive")
+    ]
     lifecycle = _local_testcase_lifecycle_summary()
     families = issue_families(lifecycle)
     from profile_manager.data.scenario_cards import run_card, scenario_card
@@ -45,12 +62,18 @@ def render_operate_runs(*, outcome: str = "", q: str = "") -> str:
         all_rows=all_rows,
         run_cards=run_cards,
         measured=measured,
-        all_count=len(all_rows),
+        all_count=page["total"],
+        scope_count=page["scope_total"],
+        page_count=len(all_rows),
         filtered_count=len(filtered),
         pills=pills,
-        empty=not all_rows,
+        empty=page["scope_total"] == 0,
         filter_outcome=outcome,
         filter_q=q,
+        history_scope=scope,
+        next_cursor=page["next_cursor"],
+        history_counts=page["counts"],
+        history_scope_totals=page["scope_totals"],
         families=families,
         runtime_anomaly_count=lifecycle.get("runtime_anomaly_count", 0),
     )

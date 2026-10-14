@@ -7,14 +7,15 @@ from pathlib import Path
 
 import yaml
 
+from profile_manager.config import storage_roots
+
 
 DWARF_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _run_manifest_path(run_id: str) -> Path:
     """Resolve retained evidence from the configured runtime before source examples."""
-    runs_root = Path(os.environ.get("ADA2_DWARF_RUNS_DIR") or DWARF_ROOT / "runs")
-    return runs_root / run_id / "manifest.json"
+    return storage_roots().runs / run_id / "manifest.json"
 
 _CARDS = (
     {"id": "01", "title": "CBOR decoding", "measurement_revision": "nanoseconds-v2", "legs": (

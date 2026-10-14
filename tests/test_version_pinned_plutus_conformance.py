@@ -1,10 +1,12 @@
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
 from scripts import runtime_version_pinned_plutus_conformance as subject
+from profile_manager import primitives as primitives_module
 
 
 AMARU_REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
@@ -119,6 +121,121 @@ def test_runner_fails_security_check_on_budget_difference(monkeypatch, tmp_path)
     report = json.loads(report_path.read_text())
     assert report["checks"]["plutus_result_and_budget_match"] is False
     assert len(report["mismatches"]) == 2
+
+
+def test_controller_primitive_re_resolves_frozen_adapter_provenance(
+    monkeypatch, tmp_path
+):
+    expected = {
+        "implementation": "amaru",
+        "source_revision": AMARU_REVISION,
+        "adapter_set_sha256": "a" * 64,
+        "executable_sha256": "b" * 64,
+        "build_result_sha256": "c" * 64,
+        "build_log_sha256": "d" * 64,
+    }
+    monkeypatch.setattr(
+        primitives_module,
+        "resolve_plutus_conformance_adapter",
+        lambda **_kwargs: {
+            **expected,
+            "build_result_sha256": "e" * 64,
+            "record_path": str(tmp_path / "record.json"),
+        },
+    )
+    primitive = primitives_module.RuntimeVersionPinnedPlutusConformance(
+        params={
+            "output_dir": "outputs/plutus",
+            "cost_model": "corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json",
+            "adapters": {
+                "amaru": {
+                    "source_revision": AMARU_REVISION,
+                    "adapter_set_sha256": "a" * 64,
+                    "expected_provenance": expected,
+                }
+            },
+        }
+    )
+    handle = type("Handle", (), {"run_dir": tmp_path})()
+
+    with pytest.raises(ValueError, match="provenance changed"):
+        primitive.run(handle, None)
+
+
+def test_controller_primitive_executes_digest_verified_run_private_snapshot(
+    monkeypatch, tmp_path
+):
+    executable = tmp_path / "registry-adapter"
+    executable.write_bytes(
+        b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 10 + b"\x3e\x00" + b"adapter"
+    )
+    executable.chmod(0o755)
+    expected = {
+        "implementation": "amaru",
+        "source_revision": AMARU_REVISION,
+        "adapter_set_sha256": "a" * 64,
+        "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
+        "build_result_sha256": "c" * 64,
+        "build_log_sha256": "d" * 64,
+        "platform": "linux/amd64",
+    }
+    monkeypatch.setattr(
+        primitives_module,
+        "resolve_plutus_conformance_adapter",
+        lambda **_kwargs: {
+            **expected,
+            "executable": str(executable),
+            "record_path": str(tmp_path / "registry-record.json"),
+        },
+    )
+    seen = {}
+
+    def run(command, **_kwargs):
+        config_path = Path(command[-1])
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        snapshot_record = Path(config["adapters"]["amaru"]["record"])
+        snapshot = json.loads(snapshot_record.read_text(encoding="utf-8"))
+        snapshot_executable = Path(snapshot["executable"])
+        assert snapshot_executable != executable
+        assert tmp_path in snapshot_executable.parents
+        assert hashlib.sha256(snapshot_executable.read_bytes()).hexdigest() == expected[
+            "executable_sha256"
+        ]
+        seen["snapshot_root"] = snapshot_executable.parent
+        output = Path(config["output_dir"])
+        output.mkdir(parents=True)
+        (output / "report.json").write_text("{}\n", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(primitives_module.subprocess, "run", run)
+
+    class Handle:
+        run_dir = tmp_path
+
+        def __init__(self):
+            self.events = []
+
+        def log(self, **event):
+            self.events.append(event)
+
+    primitive = primitives_module.RuntimeVersionPinnedPlutusConformance(
+        params={
+            "output_dir": "outputs/plutus",
+            "cost_model": "corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json",
+            "adapters": {
+                "amaru": {
+                    "source_revision": AMARU_REVISION,
+                    "adapter_set_sha256": "a" * 64,
+                    "expected_provenance": expected,
+                }
+            },
+        }
+    )
+    handle = Handle()
+    primitive.run(handle, None)
+
+    assert not seen["snapshot_root"].exists()
+    assert handle.events[-1]["event"] == "completed"
 
 
 def test_card02_primitives_are_registered_and_scenarios_validate():

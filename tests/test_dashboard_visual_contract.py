@@ -1,9 +1,12 @@
 from pathlib import Path
 from http.server import ThreadingHTTPServer
+import json
+import subprocess
 import threading
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
+import pytest
 from PIL import Image
 
 from profile_manager.data import schedule_store
@@ -159,17 +162,31 @@ def test_topology_health_panel_has_responsive_product_chrome():
     assert 'id="topology-health-panel"' in template
     assert 'aria-live="polite"' in template
     assert 'data-topology-action="recheck"' in template
+    assert 'data-topology-action="deploy"' in template
+    assert 'data-topology-action="repair"' in template
     assert 'data-topology-action="redeploy"' in template
-    assert 'id="topology-redeploy-dialog"' in template
-    assert 'data-required-confirmation="REDEPLOY cardano_amaru"' in template
-    assert "cardano_amaru_relay_bootstrap_control" in template
-    assert "a1-state" in template
-    assert "amaru-consumer-state" in template
+    assert 'data-topology-action="remove"' in template
+    assert 'data-topology-action-url="/api/topology/actions"' in template
+    assert 'id="topology-action-dialog"' in template
+    assert 'data-topology-field="required-confirmation"' in template
+    assert "cardano_amaru_relay_bootstrap_control" not in template
     assert "Download diagnostic evidence" in template
     assert "textContent" in script
     assert "innerHTML" not in script
-    assert "fresh=1" in script
-    assert "REDEPLOY cardano_amaru" in script
+    assert "params.set('fresh', '1')" in script
+    assert "new URLSearchParams(window.location.search).get('profile_id')" not in script
+    assert "params.set('profile_id', configuredProfile)" in script
+    assert "window.dispatchEvent(new CustomEvent('dwarf:topology-profile'" in script
+    assert "health.observation || current.observation" in script
+    assert "controller_health?.nodes" in script
+    assert "operation: 'preview'" in script
+    assert "operation: 'apply'" in script
+    assert "operation: 'cancel'" in script
+    assert "operation: 'status'" in script
+    assert "currentExecutionId = plan.execution_id" in script
+    assert "terminalSeen" in script
+    assert "reconcileControllerExecution" in script
+    assert "Status reconciliation unavailable; retrying" in script
     assert "response.body.getReader" in script
     assert ".topology-health__grid" in css
     assert ".topology-health__nodes" in css
@@ -177,6 +194,262 @@ def test_topology_health_panel_has_responsive_product_chrome():
     assert "overflow-y: auto" in css
     assert "focus({preventScroll: true})" in script
     assert "dialog.scrollTop = 0" in script
+
+
+def test_topology_health_uses_latest_semantic_tip_for_each_exact_node_id():
+    script = ROOT / "dwarf/dashboard/static/js/topology-health.js"
+    probe = r"""
+const fs = require('fs');
+const vm = require('vm');
+const context = {document: {getElementById: () => null}};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+const nodes = context.latestControllerNodes([
+  {controller_health: {nodes: [
+    {id: 'node1', tip: {slot: 10}},
+    {id: 'node2', tip: {slot: 20}},
+  ]}},
+  {controller_health: {nodes: [
+    {id: 'node1', tip: {slot: 30}},
+  ]}},
+]);
+console.log(JSON.stringify({
+  node1: nodes.get('node1').tip.slot,
+  node2: nodes.get('node2').tip.slot,
+  hasMissing: nodes.has('node3'),
+}));
+"""
+    completed = subprocess.run(
+        ["node", "-e", probe, str(script)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "node1": 30,
+        "node2": 20,
+        "hasMissing": False,
+    }
+
+
+def test_incomplete_topology_stream_reconciles_until_controller_is_terminal():
+    script = ROOT / "dwarf/dashboard/static/js/topology-health.js"
+    probe = r"""
+const fs = require('fs');
+const vm = require('vm');
+const context = {document: {getElementById: () => null}, setTimeout};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+const retained = [
+  {execution_id: 'execution-1', state: 'running'},
+  {execution_id: 'execution-1', state: 'cancelling'},
+  {execution_id: 'execution-1', state: 'applied', audit_receipt: 'controller/controller-audit/audit-1.json'},
+];
+const observed = [];
+context.reconcileControllerExecution(
+  async () => retained.shift(),
+  'execution-1',
+  (status) => observed.push(status.state),
+  async () => {},
+).then((terminal) => console.log(JSON.stringify({observed, terminal})));
+"""
+    completed = subprocess.run(
+        ["node", "-e", probe, str(script)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "observed": ["running", "cancelling", "applied"],
+        "terminal": {
+            "execution_id": "execution-1",
+            "state": "applied",
+            "audit_receipt": "controller/controller-audit/audit-1.json",
+        },
+    }
+
+
+def test_browser_refuses_successful_controller_terminal_without_audit_receipt():
+    script = ROOT / "dwarf/dashboard/static/js/topology-health.js"
+    probe = r"""
+const fs = require('fs');
+const vm = require('vm');
+const context = {document: {getElementById: () => null}, setTimeout};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+context.reconcileControllerExecution(
+  async () => ({execution_id: 'execution-crash-window', state: 'applied', audit_receipt: null}),
+  'execution-crash-window',
+  () => {},
+  async () => {},
+).then(
+  () => console.log(JSON.stringify({accepted: true})),
+  (error) => console.log(JSON.stringify({accepted: false, error: String(error.message || error)})),
+);
+"""
+    completed = subprocess.run(
+        ["node", "-e", probe, str(script)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "accepted": False,
+        "error": "controller terminal success has no audit receipt",
+    }
+
+
+def test_unproven_topology_execution_keeps_mutation_controls_locked():
+    script = ROOT / "dwarf/dashboard/static/js/topology-health.js"
+    probe = r"""
+const fs = require('fs');
+const vm = require('vm');
+const context = {document: {getElementById: () => null}};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+console.log(JSON.stringify({
+  missingIdentity: context.settleTopologyMutationState(false, null, {plan_id: 'plan-1'}),
+  invalidIdentity: context.settleTopologyMutationState(false, 'execution-1', {plan_id: 'plan-1'}),
+  terminal: context.settleTopologyMutationState(true, 'execution-1', {plan_id: 'plan-1'}),
+}));
+"""
+    completed = subprocess.run(
+        ["node", "-e", probe, str(script)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "missingIdentity": {
+            "mutating": True,
+            "currentExecutionId": None,
+            "selectedPlan": {"plan_id": "plan-1"},
+        },
+        "invalidIdentity": {
+            "mutating": True,
+            "currentExecutionId": "execution-1",
+            "selectedPlan": {"plan_id": "plan-1"},
+        },
+        "terminal": {
+            "mutating": False,
+            "currentExecutionId": None,
+            "selectedPlan": None,
+        },
+    }
+
+
+def test_topology_stream_rejects_terminal_event_for_another_execution():
+    script = ROOT / "dwarf/dashboard/static/js/topology-health.js"
+    probe = r"""
+const fs = require('fs');
+const vm = require('vm');
+const context = {document: {getElementById: () => null}};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+let error = null;
+try {
+  context.validateTopologyActionEvent(
+    'execution-preview',
+    {stage: 'completed', execution_id: 'execution-other', status: 'applied'},
+  );
+} catch (caught) {
+  error = String(caught.message || caught);
+}
+console.log(JSON.stringify({
+  accepted: context.validateTopologyActionEvent(
+    'execution-preview',
+    {stage: 'accepted', execution_id: 'execution-preview'},
+  ),
+  error,
+}));
+"""
+    completed = subprocess.run(
+        ["node", "-e", probe, str(script)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "accepted": "execution-preview",
+        "error": "progress stream execution identity changed",
+    }
+
+
+@pytest.mark.parametrize("terminal", ["applied", "cancelled"])
+def test_topology_stream_rejects_receiptless_terminal_success(terminal):
+    script = ROOT / "dwarf/dashboard/static/js/topology-health.js"
+    probe = r"""
+const fs = require('fs');
+const vm = require('vm');
+const context = {document: {getElementById: () => null}};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+let error = null;
+try {
+  context.validateTopologyActionEvent(
+    'execution-preview',
+    {stage: 'completed', execution_id: 'execution-preview', status: process.argv[2]},
+  );
+} catch (caught) {
+  error = String(caught.message || caught);
+}
+console.log(JSON.stringify({error}));
+"""
+    completed = subprocess.run(
+        ["node", "-e", probe, str(script), terminal],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "error": "progress stream terminal success has no audit receipt",
+    }
+
+
+def test_definitive_stream_rejection_is_terminal_and_keeps_exact_identity():
+    script = ROOT / "dwarf/dashboard/static/js/topology-health.js"
+    probe = r"""
+const fs = require('fs');
+const vm = require('vm');
+const context = {document: {getElementById: () => null}};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+const event = {
+  stage: 'error', terminal: true, execution_id: 'execution-preview',
+  error: 'exact destructive confirmation is required',
+};
+const executionId = context.validateTopologyActionEvent('execution-preview', event);
+const terminalKnown = context.topologyActionEventIsTerminal(event);
+console.log(JSON.stringify({
+  executionId,
+  terminalKnown,
+  settled: context.settleTopologyMutationState(
+    terminalKnown, executionId, {plan_id: 'plan-1'},
+  ),
+}));
+"""
+    completed = subprocess.run(
+        ["node", "-e", probe, str(script)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "executionId": "execution-preview",
+        "terminalKnown": True,
+        "settled": {
+            "mutating": False,
+            "currentExecutionId": None,
+            "selectedPlan": None,
+        },
+    }
 
 
 def test_current_managed_topology_is_the_authoritative_health_surface():
@@ -200,10 +473,24 @@ def test_current_managed_topology_is_the_authoritative_health_surface():
     assert recovery_action < diagnostics
     assert "Active substrate · current managed profile" in template
     assert "Current managed topology health" in template
-    assert "redeploy_supported" in script
+    assert "current.actions" in script
     assert 'src="/static/dwarf-logo.png"' in landing
     assert '<section class="flask-stage"' not in template
     assert "{% if not shim_enabled %}" in template[summary:legacy_substrate]
+
+
+def test_basic_status_does_not_repeat_legacy_topology_or_moog_diagnostics():
+    template = (
+        ROOT / "dwarf/dashboard/templates/operate/status.j2"
+    ).read_text(encoding="utf-8")
+
+    assert '<h2 class="basic-only b-h2 dkc-h2">At a glance</h2>' not in template
+    assert (
+        '<h2 class="basic-only b-h2 dkc-h2">Deployment health '
+        not in template
+    )
+    assert '<section class="status-summary"' in template
+    assert 'class="runtime-identity adv-only"' in template
 
 
 def test_definition_builders_and_profile_catalog_use_wide_reading_layout():
@@ -217,7 +504,7 @@ def test_definition_builders_and_profile_catalog_use_wide_reading_layout():
 
         assert html is not None
         assert (
-            '<body data-density="reading" data-layout="wide" data-ui="bento">'
+            '<body data-density="reading" data-layout="wide" data-ui="basic">'
             in html
         )
 
@@ -387,6 +674,8 @@ def test_schedule_ui_uses_product_facing_resolved_store_path():
 
 def test_schedule_view_passes_the_resolved_store_path(monkeypatch, tmp_path):
     monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path / "bundles"))
     captured = {}
 
     monkeypatch.setattr(schedule_store, "list_entries", lambda: [])

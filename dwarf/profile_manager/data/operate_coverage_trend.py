@@ -23,6 +23,8 @@ import json
 import os
 import re
 from pathlib import Path
+
+from profile_manager.config import storage_roots
 from typing import Any
 
 
@@ -30,10 +32,7 @@ _BITMAP_RE = re.compile(r"^bitmap_cvg\s*:\s*([0-9.]+)\s*%?\s*$", re.M)
 
 
 def _runs_root() -> Path:
-    env = os.environ.get("ADA2_DWARF_RUNS_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[3] / "dwarf" / "runs"
+    return storage_roots().runs
 
 
 def _read_bitmap_cvg(path: Path) -> float | None:

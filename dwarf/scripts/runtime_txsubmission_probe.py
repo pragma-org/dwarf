@@ -151,16 +151,20 @@ def build_result_body(
     node_stayed_up: bool,
     accounting: dict | None = None,
     negotiated_window: int | None = None,
-    max_in_flight_txids: int | None = None,
+    overflow_attempt_txids: int | None = None,
 ) -> dict:
     case = MODE_CASES[mode]
     accounting = dict(accounting or {})
     if mode == "txsubmission_window_pressure":
         return {
             "negotiated_window": int(negotiated_window if negotiated_window is not None else 0),
-            "max_in_flight_txids": int(max_in_flight_txids if max_in_flight_txids is not None else 0),
+            "overflow_attempt_txids": int(
+                overflow_attempt_txids if overflow_attempt_txids is not None else 0
+            ),
             "overflow_rejected": txsubmission_response_kind in {"reset", "eof", "timeout"} and node_stayed_up,
-            "txids_processed": int(accounting.get("txids_processed", 0) or 0),
+            "client_reply_txids_observed": int(
+                accounting.get("txids_processed", 0) or 0
+            ),
             "txsubmission_messages_observed": int(accounting.get("txsubmission_messages_observed", 0) or 0),
             "txsubmission_message_kinds": list(accounting.get("txsubmission_message_kinds") or []),
             "decode_failure_count": int(accounting.get("decode_failure_count", 0) or 0),
@@ -187,16 +191,26 @@ def build_result_body(
 
 def run_probe(
     *,
-    runtime_metadata_path: Path,
+    runtime_metadata_path: Path | None,
     target_node: str,
     output_dir: Path,
     mode: str,
     target_host: str = "127.0.0.1",
+    target_port: int | None = None,
+    endpoint_source: str = "substrate-runtime",
+    runtime_identity_path: str | None = None,
     response_timeout_seconds: float = 2.0,
     receive_bytes: int = 64,
 ) -> dict:
-    node = _load_runtime_node(runtime_metadata_path, target_node)
-    port = int(node["port"])
+    if target_port is None:
+        if runtime_metadata_path is None:
+            raise RuntimeError("runtime metadata or a verified target port is required")
+        node = _load_runtime_node(runtime_metadata_path, target_node)
+        port = int(node["port"])
+    else:
+        port = int(target_port)
+        if port <= 0 or port > 65535:
+            raise RuntimeError("verified target port is invalid")
     case = MODE_CASES[mode]
     handshake_payload = bytes.fromhex(HANDSHAKE_PROPOSE_HEX)
     txsubmission_init_payload = bytes.fromhex(TXSUBMISSION_INIT_HEX)
@@ -215,7 +229,7 @@ def run_probe(
     txsubmission_response = b""
     transcript: list[dict] = []
     negotiated_window = 0
-    max_in_flight_txids = 0
+    overflow_attempt_txids = 0
     started = time.perf_counter()
     output_dir.mkdir(parents=True, exist_ok=True)
     with socket.create_connection((target_host, port), timeout=2.0) as sock:
@@ -244,8 +258,10 @@ def run_probe(
                 transcript.append({"direction": "recv", "payload_hex": valid_request_response.hex()})
                 request_body = _parse_request_txids(valid_request_response)
                 negotiated_window = int(request_body.get("requested_txids", 0) or 0)
-                max_in_flight_txids = negotiated_window + 1
-                txsubmission_payload = _build_reply_txids_payload(max_in_flight_txids)
+                overflow_attempt_txids = negotiated_window + 1
+                txsubmission_payload = _build_reply_txids_payload(
+                    overflow_attempt_txids
+                )
                 txsubmission_frame = _encode_mux_sdu(txsubmission_payload, mini_protocol_num=4)
             if valid_request_response_kind != "data":
                 raise RuntimeError(
@@ -268,7 +284,7 @@ def run_probe(
                 node_stayed_up=node_stayed_up,
                 accounting=accounting,
                 negotiated_window=negotiated_window,
-                max_in_flight_txids=max_in_flight_txids,
+                overflow_attempt_txids=overflow_attempt_txids,
             )
             report = {
                 "mode": mode,
@@ -283,7 +299,11 @@ def run_probe(
                 "txsubmission_response_kind": txsubmission_response_kind,
                 "txsubmission_response_hex": txsubmission_response.hex(),
                 "elapsed_ms": elapsed_ms,
-                "runtime_metadata_path": str(runtime_metadata_path),
+                "runtime_metadata_path": (
+                    str(runtime_metadata_path) if runtime_metadata_path is not None else None
+                ),
+                "runtime_identity_path": runtime_identity_path,
+                "endpoint_source": endpoint_source,
                 "transcript": transcript,
                 "accounting": accounting,
                 "result": result,
@@ -315,7 +335,7 @@ def run_probe(
         node_stayed_up=node_stayed_up,
         accounting=accounting,
         negotiated_window=negotiated_window,
-        max_in_flight_txids=max_in_flight_txids,
+        overflow_attempt_txids=overflow_attempt_txids,
     )
     report = {
         "mode": mode,
@@ -330,7 +350,11 @@ def run_probe(
         "txsubmission_response_kind": txsubmission_response_kind,
         "txsubmission_response_hex": txsubmission_response.hex(),
         "elapsed_ms": elapsed_ms,
-        "runtime_metadata_path": str(runtime_metadata_path),
+        "runtime_metadata_path": (
+            str(runtime_metadata_path) if runtime_metadata_path is not None else None
+        ),
+        "runtime_identity_path": runtime_identity_path,
+        "endpoint_source": endpoint_source,
         "transcript": transcript,
         "accounting": accounting,
         "result": result,
@@ -346,12 +370,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", required=True, choices=sorted(MODE_CASES))
     args = parser.parse_args(argv)
     config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    runtime_metadata_value = str(config.get("runtime_metadata_path") or "")
+    target_port_value = config.get("target_port")
     report = run_probe(
-        runtime_metadata_path=Path(config["runtime_metadata_path"]),
+        runtime_metadata_path=(
+            Path(runtime_metadata_value) if runtime_metadata_value else None
+        ),
         target_node=str(config["target_node"]),
         output_dir=Path(config["output_dir"]),
         mode=str(args.mode),
         target_host=str(config.get("target_host", "127.0.0.1")),
+        target_port=(int(target_port_value) if target_port_value is not None else None),
+        endpoint_source=str(config.get("endpoint_source") or "substrate-runtime"),
+        runtime_identity_path=(
+            str(config.get("runtime_identity_path"))
+            if config.get("runtime_identity_path")
+            else None
+        ),
         response_timeout_seconds=float(config.get("response_timeout_seconds", 2.0)),
         receive_bytes=int(config.get("receive_bytes", 64)),
     )

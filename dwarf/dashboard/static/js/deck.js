@@ -93,7 +93,18 @@
       });
     });
     var s = grid.querySelector("[data-dk-grid-search]");
-    if (s) s.addEventListener("input", function () { st.q = s.value.trim().toLowerCase(); apply(); });
+    if (s) {
+      function syncRestoredSearch() { st.q = s.value.trim().toLowerCase(); apply(); }
+      s.addEventListener("input", syncRestoredSearch);
+      window.addEventListener("pageshow", function () {
+        syncRestoredSearch();
+        // Chromium may restore a history-cached form value immediately after
+        // dispatching pageshow. Reconcile once more on the next paint.
+        if (window.requestAnimationFrame) window.requestAnimationFrame(syncRestoredSearch);
+        else window.setTimeout(syncRestoredSearch, 0);
+      });
+      syncRestoredSearch();
+    }
   });
 
   /* Runs hand: hover/focus readout. */
@@ -155,3 +166,13 @@
     }
   }
 })();
+document.querySelectorAll('[data-run-details-trigger]').forEach((trigger) => {
+  trigger.addEventListener('click', () => {
+    const targetId = trigger.dataset.runDetailsTarget || '';
+    const details = targetId ? document.getElementById(targetId) : null;
+    if (!(details instanceof HTMLDetailsElement)) return;
+    details.open = true;
+    details.scrollIntoView({behavior: 'smooth', block: 'start'});
+    details.querySelector('summary')?.focus({preventScroll: true});
+  });
+});

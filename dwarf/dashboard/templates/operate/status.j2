@@ -1,6 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_more with context %}
 <div class="adv-only">
 <span class="eyebrow">Operate · Status</span>
 <h1>The flask</h1>
@@ -10,6 +10,10 @@
 </div>
 
 {% set _no_substrate = (substrate.source == 'missing' or (substrate.source != 'live' and substrate.source != 'cached')) %}
+{% set _runtime_catalog = runtime_identity.get('catalog', {}) %}
+{% set _runtime_storage = runtime_identity.get('storage_roots', {}) %}
+{% set _runtime_readiness = runtime_identity.get('readiness', {}) %}
+{% set _runtime_state = _runtime_readiness.get('state', 'unknown') %}
 {% if ui == "basic" %}
 {%- set _ts = topology_health.state or 'unknown' -%}
 {%- if _ts == 'checking' and topology_health.previous and topology_health.previous.state -%}{%- set _ts = topology_health.previous.state -%}{%- endif -%}
@@ -25,6 +29,12 @@
   <span class="eyebrow">Operate · Status</span>
   <h1 class="dk-lead" data-dk-status-lead>{{ _ts_lines.get(_ts, 'Topology health is unknown — treat it as not ready.') }}</h1>
   <p class="dk-plain">This page is a live read-only health check of the node topology DWARF manages, then the facts about what is deployed. Opening it never redeploys or changes anything. A healthy topology is an operating condition, not evidence — proof lives in verified run bundles.</p>
+  <p class="dk-note" data-runtime-health="{{ _runtime_state }}">
+    {% if _runtime_readiness.get('ready', false) and _runtime_catalog.get('status') == 'extended' %}Packaged base aligned; {{ _runtime_catalog.get('runtime_extension_count', 0) }} runtime extensions. Release <code>{{ runtime_identity.release_revision }}</code> is attested.
+    {% elif _runtime_readiness.get('ready', false) %}Packaged base aligned; no runtime extensions. Release <code>{{ runtime_identity.release_revision }}</code> is attested.
+    {% elif _runtime_state == 'drift' %}Dashboard/catalog revision drift: do not treat this deployment as release-aligned.
+    {% else %}Runtime identity is not ready: {{ _runtime_readiness.get('reason', 'identity is missing or unknown') }}.{% endif %}
+  </p>
   <p class="dk-note" data-dk-status-rechecking hidden>A fresh check is running; the card below shows the previous result until it finishes.</p>
 </section>
 <h2 class="basic-only b-h2 dkc-h2">Topology health <span class="dk-note">· live</span></h2>
@@ -33,7 +43,8 @@
 <section id="topology-health-panel" class="topology-health"{% if ui == "basic" %} data-state="{{ topology_health.state or 'unknown' }}"{% endif %}
          data-health-url="/api/topology/health"
          data-evidence-url="/api/topology/health/evidence"
-         data-redeploy-url="/api/topology/redeploy"
+         data-topology-action-url="/api/topology/actions"
+         data-profile-id="{{ selected_profile_id or topology_health.profile_id or active_profile.id or '' }}"
          data-dashboard-token="{{ token or '' }}"
          aria-labelledby="topology-health-heading" aria-live="polite">
   {% if ui == "basic" %}<div class="basic-only dk-kicker dkc-topo__kicker"><span>Topology · current managed profile</span><span class="dkc-topo__suit" aria-hidden="true"></span></div>{% endif %}
@@ -42,6 +53,7 @@
       <span class="eyebrow">Active substrate · current managed profile</span>
       <h2 id="topology-health-heading">Current managed topology health</h2>
       <p class="page-subhero">A fresh read-only check starts whenever this page is opened. Viewing status never redeploys or mutates the topology.</p>
+      <p class="dk-note">Selected topology <code data-topology-field="profile-id">{{ selected_profile_id or topology_health.profile_id or topology_health.topology_id or active_profile.id or 'none selected' }}</code></p>
     </div>
     <div class="topology-health__actions">
       <span class="result-pill topology-health__state" data-topology-field="state">{{ topology_health.state|upper }}</span>
@@ -54,7 +66,11 @@
   </div>
   <div class="topology-health__footer">
     <a data-topology-field="evidence" href="/api/topology/health/evidence" download="cardano-amaru-topology-health.json" hidden>Download diagnostic evidence</a>
-    <button type="button" class="cta topology-health__repair" data-topology-action="redeploy" hidden>Fresh redeploy&hellip;</button>
+    <button type="button" class="cta" data-topology-action="deploy" hidden>Deploy</button>
+    <button type="button" class="cta" data-topology-action="repair" hidden>Repair</button>
+    <button type="button" class="cta topology-health__repair" data-topology-action="redeploy" hidden>Redeploy&hellip;</button>
+    <button type="button" class="cta cta--ghost" data-topology-action="remove" hidden>Remove&hellip;</button>
+    <button type="button" class="cta cta--ghost" data-topology-action="cancel" hidden>Cancel current action</button>
   </div>
   <div class="topology-health__grid">
     <article><span class="eyebrow">Checked</span><strong data-topology-field="checked-at">{{ topology_health.checked_at or topology_health.started_at or '—' }}</strong></article>
@@ -76,87 +92,78 @@
   <script type="application/json" data-topology-initial>{{ topology_health|tojson }}</script>
 </section>
 
-<dialog id="topology-redeploy-dialog" class="topology-redeploy" aria-labelledby="topology-redeploy-title">
+<dialog id="topology-action-dialog" class="topology-redeploy" aria-labelledby="topology-action-title">
   <form method="dialog" class="topology-redeploy__body">
-    <span class="eyebrow">Destructive repair · explicit approval required</span>
-    <h2 id="topology-redeploy-title">Preserve evidence &amp; redeploy?</h2>
-    <p>DWARF will first retain the current health result, Compose model, container state, image identities, and logs. It will then recreate only <code>cardano_amaru_relay_bootstrap_control</code> with fresh project-scoped volumes and wait for full mixed-network readiness.</p>
+    <span class="eyebrow">Destructive topology action · explicit approval required</span>
+    <h2 id="topology-action-title" data-topology-field="action-title">Confirm topology action</h2>
+    <p>DWARF will apply only the exact controller plan shown by the preview. Resources not owned by this installation remain read-only.</p>
     <div class="topology-redeploy__impact">
-      <strong>Volumes replaced after capture</strong>
-      <code>a1-state · a2-state · amaru-consumer-state · amaru-startup · p1-state · p2-state · p3-state · relay1-state · relay2-state · configuration and tracer volumes</code>
+      <strong>Exact retained plan</strong>
+      <code data-topology-field="action-plan">No plan selected.</code>
     </div>
-    <label for="topology-redeploy-confirmation">Type <code>REDEPLOY cardano_amaru</code> to confirm</label>
-    <input id="topology-redeploy-confirmation" type="text" autocomplete="off" spellcheck="false"
-           data-topology-field="redeploy-confirmation"
-           data-required-confirmation="REDEPLOY cardano_amaru">
+    <label for="topology-action-confirmation">Type <code data-topology-field="required-confirmation">the displayed confirmation</code> to confirm</label>
+    <input id="topology-action-confirmation" type="text" autocomplete="off" spellcheck="false"
+           data-topology-field="action-confirmation">
     <p class="topology-redeploy__error" data-topology-field="redeploy-error" role="alert" hidden></p>
     <div class="topology-redeploy__actions">
-      <button type="submit" class="cta cta--ghost" value="cancel" data-topology-action="redeploy-cancel">Cancel</button>
-      <button type="button" class="cta" data-topology-action="redeploy-confirm" disabled>Preserve evidence &amp; redeploy</button>
+      <button type="submit" class="cta cta--ghost" value="cancel" data-topology-action="dialog-cancel">Cancel</button>
+      <button type="button" class="cta" data-topology-action="confirm" disabled>Apply exact plan</button>
     </div>
   </form>
 </dialog>
-<hr class="hairline adv-only">
 
-{% if ui == "basic" %}
-{#- ---- Basic: at-a-glance facts as cards ---- -#}
-{% set glance = [] %}
-{% if not shim_enabled %}
-  {% if _no_substrate %}
-    {% set _sub = {'tier': 'gap', 'suit': '○', 'tone': 'dk-g-other', 'stamp': 'IDLE', 'sub': 'No substrate composed yet. Run a scenario to compose one; this card will reflect node health once nodes are running.'} %}
-  {% elif substrate.state == 'ok' %}
-    {% set _sub = {'tier': 'face', 'suit': '♦', 'tone': 'dk-g-pass', 'stamp': 'OK', 'sub': 'Live poll succeeded.'} %}
-  {% elif substrate.state == 'stale' %}
-    {% if substrate.node_processes is not none and substrate.expected_nodes is not none and substrate.node_processes != substrate.expected_nodes %}
-      {% set _cap = 'Live poll found ' ~ substrate.node_processes ~ ' cardano-node processes; the active profile expects ' ~ substrate.expected_nodes ~ '.' %}
-    {% elif substrate.source == 'cached' %}
-      {% set _cap = 'No live poll — showing the most recent on-disk evidence.' %}
-    {% else %}
-      {% set _cap = 'The substrate reading is stale.' %}
-    {% endif %}
-    {% set _sub = {'tier': 'warn', 'suit': '▲', 'tone': 'dk-g-warn', 'stamp': 'STALE', 'sub': _cap} %}
-  {% else %}
-    {% set _sub = {'tier': 'warn', 'suit': '✕', 'tone': 'dk-g-error', 'stamp': 'ERROR', 'sub': 'Live poll could not complete and no cached evidence is available. Check the dashboard process logs.'} %}
-  {% endif %}
-  {% set _ = glance.append({'title': 'Substrate', 'kicker': 'Substrate', 'tier': _sub.tier, 'suit': _sub.suit, 'tone': _sub.tone, 'stamp': _sub.stamp, 'sub': _sub.sub,
-     'facts': [('processes', (substrate.node_processes if substrate.node_processes is not none else '—') ~ ' / ' ~ (substrate.expected_nodes if substrate.expected_nodes is not none else '—')),
-               ('sockets', substrate.socket_count if substrate.socket_count is not none else '—'),
-               ('listeners', substrate.listener_count if substrate.listener_count is not none else '—'),
-               ('loopback only', substrate.loopback_only), ('tip block', substrate.tip_block), ('sync', substrate.sync_progress)]}) %}
-{% endif %}
-{% set _ = glance.append({'title': active_profile.label or 'Active profile', 'id': active_profile.id if active_profile.id and active_profile.id != '—' else '', 'kicker': 'Active profile · config', 'tier': 'back', 'suit': '■', 'tone': 'dk-g-other',
-   'sub': 'What DWARF is set up to deploy. Configuration, not proof.',
-   'facts': [('node type', active_profile.node_type), ('node count', active_profile.node_count), ('peer sharing', 'enabled' if active_profile.peer_sharing else 'disabled'), ('runtime root', active_profile.remote_runtime_root)]}) %}
-{% set _ = glance.append({'title': 'Live' if last_sync.live_enabled else 'Cached', 'kicker': 'Last sync', 'tier': 'face', 'suit': '♦' if last_sync.live_enabled else '■', 'tone': 'dk-g-pass' if last_sync.live_enabled else 'dk-g-other',
-   'sub': 'Generated ' ~ last_sync.generated_at ~ ('' if last_sync.live_enabled else ' — no live poll; values come from the last on-disk reading.'),
-   'facts': [('evidence file', last_sync.evidence_path)]}) %}
-{% set _tok = ('set (' ~ serving.token_length ~ ' char' ~ ('' if serving.token_length == 1 else 's') ~ ')') if serving.token_set else 'unset' %}
-{% set _ = glance.append({'title': serving.bind ~ ':' ~ serving.port, 'kicker': 'Dashboard serving', 'tier': 'face' if serving.token_set else 'warn', 'suit': '♦' if serving.token_set else '▲', 'tone': 'dk-g-pass' if serving.token_set else 'dk-g-warn',
-   'sub': 'Where this dashboard listens.' if serving.token_set else 'No dashboard token is set — state-changing actions are not gated.',
-   'facts': [('token', _tok), ('bind', serving.bind), ('port', serving.port)]}) %}
-<h2 class="basic-only b-h2 dkc-h2">At a glance</h2>
-{{ deck_grid(glance, label='facts', search=false) }}
-
-{#- ---- Basic: Moog deployment health as cards ---- -#}
-{% set moogc = [] %}
-{% if moog.state == 'ok' %}{% set _m = ('face', '♦', 'dk-g-pass') %}
-{% elif moog.state == 'warn' %}{% set _m = ('warn', '▲', 'dk-g-warn') %}
-{% elif moog.state == 'error' %}{% set _m = ('warn', '✕', 'dk-g-error') %}
-{% else %}{% set _m = ('gap', '○', 'dk-g-other') %}{% endif %}
-{% set _ = moogc.append({'title': moog.metric, 'kicker': 'Moog status', 'tier': _m[0], 'suit': _m[1], 'tone': _m[2], 'sub': moog.error or '',
-   'facts': [('checks', moog.ok_count ~ ' ok · ' ~ moog.warn_count ~ ' warn · ' ~ moog.error_count ~ ' error'), ('deploy root', moog.deploy_root), ('mpfs host', moog.mpfs_host), ('oracle service', moog.oracle_service)]}) %}
-{% set _ = moogc.append({'title': moog.linkage_state|capitalize, 'kicker': 'Preprod linkage', 'tier': 'back' if moog.linkage_state == 'linked' else 'gap', 'suit': '■' if moog.linkage_state == 'linked' else '○', 'tone': 'dk-g-other',
-   'sub': 'A requester token is bound. Linkage is configuration, not proof.' if moog.linkage_state == 'linked' else 'No requester token is bound in this deployment.',
-   'facts': [('asset id', moog.token_id), ('requester', moog.requester_address), ('oracle', moog.oracle_address)]}) %}
-{% for check in moog.checks %}
-  {% set _ = moogc.append({'title': check.id, 'kicker': 'Deployment check · ' ~ check.state, 'tier': 'face' if check.state == 'ok' else 'warn',
-     'suit': '♦' if check.state == 'ok' else ('✕' if check.state == 'error' else '▲'), 'tone': 'dk-g-pass' if check.state == 'ok' else ('dk-g-error' if check.state == 'error' else 'dk-g-warn'),
-     'sub': check.detail}) %}
-{% endfor %}
-<h2 class="basic-only b-h2 dkc-h2">Deployment health <span class="dk-note">· Moog, read-only</span></h2>
-<p class="basic-only dk-note dkc-note">Public metadata only; wallet secrets and access tokens are never inspected here.</p>
-{{ deck_grid(moogc, label='checks', search=false) }}
-{% endif %}
+<section id="topology-configuration-builder" class="topology-health"
+         data-endpoint="/api/topology/configurations"
+         data-dashboard-token="{{ token or '' }}"
+         data-active-profile="{{ selected_profile_id or topology_health.profile_id or active_profile.id or '' }}"
+         aria-labelledby="topology-builder-heading">
+  <header class="topology-health__head">
+    <div>
+      <span class="eyebrow">Constrained topology builder</span>
+      <h2 id="topology-builder-heading">Choose nodes, preview the exact result, then save</h2>
+      <p class="page-subhero">DWARF accepts only catalogued versions and creates the node map on the server. Previewing does not save or deploy anything. A saved profile must still be deployed with the separate exact-plan action above.</p>
+    </div>
+    <span class="result-pill" data-builder-field="state">NOT PREVIEWED</span>
+  </header>
+  <form data-builder-form class="topology-builder__form">
+    <label><span>Configuration name</span><input name="topology_id" required pattern="[a-z0-9][a-z0-9\-]{0,62}" value="generated-local-topology" autocomplete="off"></label>
+    <label><span>Implementation</span><select name="implementation">
+      <option value="cardano-node">Cardano node</option>
+      <option value="amaru">Amaru</option>
+    </select></label>
+    <label><span>Number of target nodes</span><input name="node_count" type="number" min="1" max="32" value="1" required></label>
+    <label><span>Exact catalogued version</span><select name="version" required>
+      {% for release in topology_versions %}
+      {% if release.artifact_digest %}<option value="{{ release.version }}" data-implementation="{{ release.implementation }}">{{ release.version }} · {{ release.channel }} · {{ release.artifact_digest[:18] }}…</option>{% endif %}
+      {% endfor %}
+    </select></label>
+    <label><span>Local network magic</span><input name="network_magic" type="number" min="1" max="4294967295" value="42" required></label>
+  </form>
+  <p class="dk-note">Version catalog <code>{{ topology_catalog_revision }}</code>. Amaru previews disclose any required supporting Cardano node separately from the requested target-node count.</p>
+  <div class="topology-health__footer">
+    <button type="button" class="cta" data-builder-action="preview">Preview and validate</button>
+    <button type="button" class="cta" data-builder-action="save" disabled>Save validated profile</button>
+    <button type="button" class="cta cta--ghost" data-builder-action="export"{% if not (selected_profile_id or topology_health.profile_id or active_profile.id) %} disabled{% endif %}>Download exact deployed snapshot</button>
+    <label class="cta cta--ghost" for="topology-import-file">Open snapshot file</label>
+    <input id="topology-import-file" data-builder-action="import" type="file" accept="application/json,.json" hidden>
+  </div>
+  <p data-builder-field="message" role="status" aria-live="polite">Enter a bounded topology and preview it.</p>
+  <div data-builder-field="preview" hidden>
+    <dl class="definition-summary">
+      <div><dt>Artifact</dt><dd data-builder-field="artifact">—</dd></div>
+      <div><dt>Adapter</dt><dd data-builder-field="adapter">—</dd></div>
+      <div><dt>Catalog revision</dt><dd><code data-builder-field="catalog">—</code></dd></div>
+      <div><dt>Content digest</dt><dd><code data-builder-field="digest">—</code></dd></div>
+    </dl>
+    <div class="responsive-table">
+      <table class="config-table">
+        <thead><tr><th>Node</th><th>Role</th><th>Implementation</th><th>Exact version</th><th>Immutable image</th></tr></thead>
+        <tbody data-builder-field="nodes"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+<hr class="hairline">
 
 <section class="status-summary" aria-labelledby="summary-heading">
   <header><span class="eyebrow">Tiles</span><h2 id="summary-heading">At a glance</h2></header>
@@ -221,6 +228,52 @@
       </dl>
     </article>
 
+  </div>
+</section>
+
+<hr class="hairline adv-only">
+
+<section class="runtime-identity adv-only" aria-labelledby="runtime-identity-heading">
+  <header><span class="eyebrow">Release diagnostics</span><h2 id="runtime-identity-heading">Runtime identity &amp; storage</h2>
+    <p class="page-subhero">Immutable release metadata and the effective evidence roots used by this dashboard. Secret-bearing environment values are not inspected or rendered.</p>
+  </header>
+  <div class="status-tile-grid">
+    <article class="status-tile status-tile--state-{{ 'ok' if _runtime_readiness.get('ready', false) else ('error' if _runtime_state == 'drift' else 'stale') }}">
+      <span class="eyebrow">{{ runtime_identity.component_role or 'dashboard' }} component</span>
+      <span class="status-tile__metric">{{ _runtime_state|upper }}</span>
+      <dl class="status-tile__rows">
+        <div><dt>identity source</dt><dd><code>{{ runtime_identity.identity_source or 'unknown' }}</code></dd></div>
+        <div><dt>attested</dt><dd>{{ 'yes' if runtime_identity.attested else 'no' }}</dd></div>
+        <div><dt>release revision</dt><dd><code>{{ runtime_identity.release_revision or 'unknown' }}</code></dd></div>
+        <div><dt>catalog revision</dt><dd><code>{{ _runtime_catalog.revision or 'unknown' }}</code></dd></div>
+      </dl>
+      {% if not _runtime_readiness.get('ready', false) %}<p class="status-tile__caption">{{ _runtime_readiness.get('reason', 'Release identity is missing or unknown. Rebuild from an attested image.') }}</p>{% endif %}
+    </article>
+    <article class="status-tile status-tile--state-{{ 'error' if _runtime_catalog.get('status') == 'drift' else ('ok' if _runtime_catalog.get('status') in ['aligned', 'extended'] else 'stale') }}">
+      <span class="eyebrow">Catalog integrity</span>
+      <span class="status-tile__metric">{{ (_runtime_catalog.status or 'unknown')|upper }}</span>
+      <dl class="status-tile__rows">
+        <div><dt>catalog status</dt><dd>{{ _runtime_catalog.status or 'unknown' }}</dd></div>
+        <div><dt>active inventory</dt><dd>{{ _runtime_catalog.scenario_count if _runtime_catalog else 0 }} scenarios · {{ _runtime_catalog.primitive_count if _runtime_catalog else 0 }} primitives</dd></div>
+        <div><dt>packaged inventory</dt><dd>{{ _runtime_catalog.packaged_scenario_count if _runtime_catalog else 0 }} scenarios · {{ _runtime_catalog.packaged_primitive_count if _runtime_catalog else 0 }} primitives</dd></div>
+        <div><dt>packaged digest</dt><dd><code>{{ _runtime_catalog.packaged_digest or 'unknown' }}</code></dd></div>
+        <div><dt>active digest</dt><dd><code>{{ _runtime_catalog.active_digest or 'unknown' }}</code></dd></div>
+      </dl>
+      {% if _runtime_catalog.get('runtime_extension_names') %}<p class="status-tile__caption">Runtime extensions: <code>{{ _runtime_catalog.runtime_extension_names|join(', ') }}</code>{% if _runtime_catalog.runtime_extension_names_truncated %} (truncated){% endif %}</p>{% endif %}
+      {% if _runtime_catalog.get('missing_packaged_names') %}<p class="status-tile__caption">Missing packaged scenarios: <code>{{ _runtime_catalog.missing_packaged_names|join(', ') }}</code>{% if _runtime_catalog.missing_packaged_names_truncated %} (truncated){% endif %}</p>{% endif %}
+      {% if _runtime_catalog.get('modified_packaged_names') %}<p class="status-tile__caption">Modified packaged scenarios: <code>{{ _runtime_catalog.modified_packaged_names|join(', ') }}</code>{% if _runtime_catalog.modified_packaged_names_truncated %} (truncated){% endif %}</p>{% endif %}
+    </article>
+  </div>
+  <div class="responsive-table status-profiles__table-wrap">
+    <table class="config-table">
+      <thead><tr><th>Storage root</th><th>Effective path</th><th>Resolution</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for name in ['runs', 'state', 'bundles'] %}
+        {% set root = _runtime_storage.get(name, {}) %}
+        <tr><th scope="row">{{ name }}</th><td><code>{{ root.path or 'unresolved' }}</code></td><td>{{ root.resolution or 'ambiguous' }}</td><td>{{ root.status or 'unconfigured' }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </section>
 
@@ -370,7 +423,7 @@
 
 <hr class="hairline adv-only">
 
-<section class="maintenance adv-only" aria-labelledby="maint-heading">
+<section class="maintenance" aria-labelledby="maint-heading">
   <span class="eyebrow">Operate · Maintenance</span>
   <h2 id="maint-heading">Backup &amp; recovery</h2>
   <p class="page-subhero">Back up DWARF's own control-plane state — scenarios, target manifests, profiles, config, plugin roots. This is not blockchain data; it is what you'd restore to stand this framework back up on a new host or after a bad config change.</p>
@@ -473,4 +526,5 @@ async function runBackup(){
 {% endif %}
 <script type="module" src="/static/js/copy-cell.js"></script>
 <script type="module" src="/static/js/topology-health.js"></script>
+<script type="module" src="/static/js/deployment-builder.js"></script>
 {% endblock %}

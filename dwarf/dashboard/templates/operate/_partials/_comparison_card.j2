@@ -1,7 +1,7 @@
 <article class="comparison-card" id="{{ entry.scenario_id }}">
   <h3 class="comparison-card__scenario"><code>{{ entry.scenario_id }}</code></h3>
   <p>
-    Result: <span class="comparison-result {{ 'comparison-result--agreed' if entry.agreed else 'comparison-result--diverged' }}">{{ entry.result }}</span>
+    Result: <span class="comparison-result {{ 'comparison-result--incomplete' if not entry.comparable else ('comparison-result--agreed' if entry.agreed else 'comparison-result--diverged') }}">{{ entry.result }}</span>
   </p>
   <p class="comparison-card__runs">
     amaru: {% if entry.amaru.run_id_url %}<a href="{{ entry.amaru.run_id_url }}"><code>{{ entry.amaru.run_id }}</code></a>{% elif entry.amaru.run_id %}<code>{{ entry.amaru.run_id }}</code>{% else %}<code>—</code>{% endif %}

@@ -1,5 +1,6 @@
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -7,12 +8,17 @@ from profile_manager.cli import deployment_timeout_seconds
 from profile_manager.deployment_versions import build_deployment_version_preview
 from profile_manager.profiles import (
     Profile,
+    amaru_control_topology_shape,
     deployment_adapter_for_profile,
     deploy_command,
     remove_command,
     versioned_substrate_for_profile,
 )
-from scripts.runtime_substrate_common import build_version_provenance, normalize_substrate
+from scripts.runtime_substrate_common import (
+    allocate_node_plan,
+    build_version_provenance,
+    normalize_substrate,
+)
 
 
 def _profile(**changes):
@@ -53,6 +59,27 @@ def test_confirmed_cardano_profile_freezes_every_node_to_exact_oci_artifact():
     assert len(substrate["topology"]["edges"]) == 2
 
 
+def test_public_profile_retains_catalog_network_magic_for_exact_reconciliation(tmp_path):
+    profile = _profile(
+        public_network="preview",
+        network_magic=2,
+        upstream_peer_address="preview-node.play.dev.cardano.org:3001",
+    )
+
+    substrate = versioned_substrate_for_profile(profile, _preview(profile))
+
+    assert substrate["network"] == "preview"
+    assert substrate["network_magic"] == 2
+    normalized = normalize_substrate(substrate)
+    plan = allocate_node_plan(
+        normalized,
+        runtime_root=Path(tmp_path),
+        compose_project="dwarf-public-profile-proof",
+    )
+    assert plan["network"] == "preview"
+    assert plan["network_magic"] == 2
+
+
 def test_amaru_target_profile_declares_its_required_cardano_bootstrap_source():
     profile = _profile(
         node_type="amaru",
@@ -73,6 +100,17 @@ def test_amaru_target_profile_declares_its_required_cardano_bootstrap_source():
     assert substrate["nodes"][0]["supporting"] is True
     assert {node["version"] for node in substrate["nodes"][1:]} == {"10.11.20260903"}
     assert all(node["impl"] == "amaru" for node in substrate["nodes"][1:])
+    assert substrate["actual_topology"]["selected_node_services"] == {
+        "bootstrap-cardano": "p1",
+        "amaru1": "amaru-relay-1",
+        "amaru2": "amaru-relay-2",
+    }
+    assert substrate["actual_topology"]["physical_cardano_node_count"] == 6
+    assert substrate["actual_topology"]["physical_amaru_node_count"] == 2
+    assert substrate["actual_topology"]["network_names"] == [
+        "default",
+        "amaru-consumer-net",
+    ]
 
     normalized = normalize_substrate(substrate)
     provenance = build_version_provenance(normalized, normalized["nodes"])
@@ -105,9 +143,22 @@ def test_versioned_deploy_can_pin_the_remote_installed_dwarf_root():
         version_preview=_preview(profile),
         remote_dwarf_root="/srv/dwarf/dwarf",
     )
-
     assert "dwarf_root=/srv/dwarf/dwarf" in command
     assert 'dwarf_root="${ADA2_DWARF_ROOT:-}"' not in command
+
+
+def test_amaru_control_rejects_profile_that_advertises_peer_sharing():
+    profile = _profile(
+        node_type="amaru",
+        node_count=0,
+        amaru_node_count=1,
+        peer_sharing=True,
+        version_policy="exact",
+        amaru_version="10.11.20260903",
+    )
+
+    with pytest.raises(ValueError, match="amaru-control.*peer_sharing=false"):
+        versioned_substrate_for_profile(profile, _preview(profile))
 
 
 def test_versioned_amaru_deploy_uses_live_producer_control_adapter():
@@ -127,6 +178,7 @@ def test_versioned_amaru_deploy_uses_live_producer_control_adapter():
     assert '"lifecycle": "cardano_amaru_relay_bootstrap_control"' in command
     assert '"scope": "amaru-only"' in command
     assert '"profile_id": "versioned-local"' in command
+    assert '"peer_sharing": false' in command
     assert '"supporting_cardano_version": "10.7.1"' in command
     assert "docker pull" in command
 
@@ -153,8 +205,71 @@ def test_plutus_v2_profile_propagates_pinned_model_to_additive_runtime():
 
     assert substrate["plutus_v2_genesis"] is True
     assert substrate["plutus_v2_cost_model_sha256"] == profile.plutus_v2_cost_model_sha256
+    assert "plutus-v2-activate" in substrate["actual_topology"][
+        "infrastructure_services"
+    ]
+    assert substrate["actual_topology"]["physical_service_count"] == 16
     assert '"plutus_v2_genesis": true' in command
     assert "/home/nigel/dwarf-pragma/dwarf/corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json" in command
+
+
+def test_amaru_control_shape_discloses_patched_target_extractor_service():
+    shape = amaru_control_topology_shape(
+        {
+            "deployment_adapter": "amaru-control",
+            "scope": "amaru-only",
+            "target_node_count": 1,
+            "support_node_count": 1,
+            "nodes": [
+                {
+                    "id": "bootstrap-cardano",
+                    "impl": "cardano-node",
+                    "supporting": True,
+                },
+                {
+                    "id": "amaru1",
+                    "impl": "amaru",
+                    "supporting": False,
+                    "target_mode": "patched",
+                },
+            ],
+        }
+    )
+
+    assert shape["conditional_infrastructure_services"] == [
+        "amaru-target-extract"
+    ]
+    assert shape["physical_service_count"] == 15
+
+
+def test_amaru_control_shape_discloses_official_modern_target_extractor_service():
+    substrate = {
+        "deployment_adapter": "amaru-control",
+        "scope": "amaru-only",
+        "target_node_count": 1,
+        "support_node_count": 1,
+        "nodes": [
+            {
+                "id": "bootstrap-cardano",
+                "impl": "cardano-node",
+                "supporting": True,
+            },
+            {
+                "id": "amaru1",
+                "impl": "amaru",
+                "supporting": False,
+                "target_mode": "stock",
+                "image": "ghcr.io/pragma-org/amaru@sha256:" + "8" * 64,
+            },
+        ],
+    }
+
+    shape = amaru_control_topology_shape(substrate)
+
+    assert shape["conditional_infrastructure_services"] == [
+        "amaru-target-extract"
+    ]
+    assert shape["physical_service_count"] == 15
 
 
 def test_kes_genesis_override_propagates_only_when_set():
@@ -304,12 +419,16 @@ def test_version_policy_does_not_select_or_replace_deployment_adapter():
         ) == expected[name]
 
 
-def test_public_cardano_keeps_public_peer_configuration_with_exact_artifact():
+def test_public_cardano_uses_canonical_fetched_assets_even_when_source_hint_exists(
+    tmp_path,
+):
+    source_hint = tmp_path / "existing-public-assets"
+    source_hint.mkdir()
     profile = _profile(
         node_count=1,
         topology_pattern=None,
         shared_genesis=False,
-        config_source_dir="/opt/dwarf/cardano-configs/preview",
+        config_source_dir=str(source_hint),
         upstream_peer_address="preview-node.play.dev.cardano.org:3001",
         public_network="preview",
         listen_address="127.0.0.1:39100",
@@ -321,7 +440,7 @@ def test_public_cardano_keeps_public_peer_configuration_with_exact_artifact():
     assert "runtime_compose_substrate.py" in command
     assert '"deployment_adapter": "cardano-public-peer"' in command
     assert '"network": "preview"' in command
-    assert '"config_source_dir": "/opt/dwarf/cardano-configs/preview"' in command
+    assert '"config_source_dir": null' in command
     assert '"upstream_peer_address": "preview-node.play.dev.cardano.org:3001"' in command
     assert '"listen_address": "127.0.0.1:39100"' in command
     assert "/home/dwarf/.local/bin/cardano-node" not in command

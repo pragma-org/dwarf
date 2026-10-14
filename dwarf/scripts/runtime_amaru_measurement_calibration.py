@@ -12,6 +12,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable
 
 from profile_manager.measurement_collectors.amaru_patched import (
@@ -47,6 +48,7 @@ HANDSHAKE_UNKNOWN_FUTURE_VERSION_OFFER_HEX = (
     "8200a30e84182af401f40f84182af401f4186382182a66667574757265"
 )
 RESPONSE_CAP_BYTES = 256
+MAX_SEED = (1 << 64) - 1
 
 _CASE_SETS = {
     # A responder must accept the greatest common version and ignore version
@@ -162,6 +164,33 @@ def build_workload_identity(
         json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     return {**body, "workload_digest": f"sha256:{digest}"}
+
+
+def _validated_seed(value: str, *, canonicalize: bool) -> str:
+    text = str(value)
+    is_decimal = text == "0" or (
+        text.isdecimal() and not text.startswith("0")
+    )
+    is_hex = (
+        len(text) > 2
+        and text[:2].lower() == "0x"
+        and all(character in "0123456789abcdefABCDEF" for character in text[2:])
+    )
+    if not (is_decimal or is_hex):
+        raise ValueError(
+            "seed must be an unsigned decimal integer or 0x hexadecimal value"
+        )
+    number = int(text, 0)
+    if number > MAX_SEED:
+        raise ValueError("seed must fit in an unsigned 64-bit integer")
+    return str(number) if canonicalize else text
+
+
+def _cli_seed(value: str) -> str:
+    try:
+        return _validated_seed(value, canonicalize=True)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -346,11 +375,30 @@ def _container_ip(container: str) -> str:
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"cannot inspect {container}")
     body = json.loads(result.stdout)[0]
-    for network in ((body.get("NetworkSettings") or {}).get("Networks") or {}).values():
-        address = network.get("IPAddress")
-        if address:
-            return str(address)
-    raise RuntimeError(f"container has no routable address: {container}")
+    networks = ((body.get("NetworkSettings") or {}).get("Networks") or {})
+    if not isinstance(networks, dict):
+        raise RuntimeError(f"container network identity is invalid: {container}")
+    attached_network = str(os.environ.get("ADA2_DWARF_RUN_NETWORK") or "")
+    if attached_network:
+        network = networks.get(attached_network)
+        if not isinstance(network, dict):
+            raise RuntimeError(
+                f"attached run network is absent from target container: {container}"
+            )
+        address = str(network.get("IPAddress") or "")
+        if not address:
+            raise RuntimeError(
+                f"attached run network has no target address: {container}"
+            )
+        return address
+    addresses = [
+        str(network.get("IPAddress") or "")
+        for network in networks.values()
+        if isinstance(network, dict) and network.get("IPAddress")
+    ]
+    if len(addresses) != 1:
+        raise RuntimeError(f"container network identity is ambiguous: {container}")
+    return addresses[0]
 
 
 def run_attempts(
@@ -451,13 +499,48 @@ def _target_identity(runtime: dict[str, Any]) -> dict[str, Any]:
     )
     if not release:
         raise RuntimeError("runtime metadata has no exact Amaru release identity")
+    if isinstance(release.get("operator_registration"), dict):
+        from profile_manager.measurement_execution import _stock_amaru_identity
+
+        return _stock_amaru_identity(
+            runtime,
+            SimpleNamespace(
+                profile=runtime.get("profile_id"),
+                target={"implementation": "amaru", "version": release.get("version")},
+            ),
+        )
+    artifact = next(
+        (
+            item
+            for item in release.get("artifacts") or []
+            if item.get("kind") == "oci"
+            and item.get("availability") == "available"
+        ),
+        None,
+    )
+    if not artifact:
+        raise RuntimeError("runtime metadata has no immutable Amaru image")
+    manifest_digest = str(artifact.get("digest") or "")
+    image_reference = str((runtime.get("images") or {}).get("amaru") or "")
     service = ((runtime.get("identity") or {}).get("services") or {}).get("amaru-relay-1") or {}
+    expected_image_id = str(service.get("expected_image_id") or "")
+    if (
+        service.get("matched") is not True
+        or not manifest_digest.startswith("sha256:")
+        or len(manifest_digest) != 71
+        or not image_reference.endswith("@" + manifest_digest)
+        or str(service.get("expected_image") or "") != image_reference
+        or not expected_image_id.startswith("sha256:")
+        or len(expected_image_id) != 71
+        or str(service.get("artifact_image_id") or "") != expected_image_id
+    ):
+        raise RuntimeError("runtime metadata has no proven Amaru image identity")
     return {
         "implementation": "amaru",
         "version": release["version"],
         "source_revision": release["source_revision"],
         "mode": "stock",
-        "image_digest": service.get("artifact_image_id") or service.get("expected_image_id"),
+        "image_digest": manifest_digest,
     }
 
 
@@ -585,9 +668,11 @@ def run_leg(
     attempt_count: int,
     timeout_seconds: float,
     case_set: str = DEFAULT_CASE_SET,
+    seed: str = SEED,
     progress_timeout_seconds: float = 120.0,
     attempt_interval_seconds: float = 0.0,
 ) -> dict[str, Any]:
+    seed = _validated_seed(seed, canonicalize=False)
     runtime_path = runtime_root / "runtime.json"
     runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
     target = _target_identity(runtime)
@@ -670,7 +755,7 @@ def run_leg(
         **build_result_context(output_dir=output_dir),
         "target": target,
         "workload_identity": build_workload_identity(
-            attempt_count=attempt_count, case_set=case_set
+            attempt_count=attempt_count, seed=seed, case_set=case_set
         ),
         "measurements": {"handshake_rejection_roundtrip": summarized["combined"]},
         "measurements_by_outcome": {
@@ -767,6 +852,7 @@ def _parser() -> argparse.ArgumentParser:
     leg.add_argument("--attempts", type=int, default=40)
     leg.add_argument("--timeout-seconds", type=float, default=2.0)
     leg.add_argument("--case-set", choices=sorted(_CASE_SETS), default=DEFAULT_CASE_SET)
+    leg.add_argument("--seed", type=_cli_seed)
     leg.add_argument("--progress-timeout-seconds", type=float, default=120.0)
     leg.add_argument("--attempt-interval-seconds", type=float, default=0.0)
     pair = sub.add_parser("pair")
@@ -787,6 +873,7 @@ def main(argv: list[str] | None = None) -> int:
             attempt_count=args.attempts,
             timeout_seconds=args.timeout_seconds,
             case_set=args.case_set,
+            seed=args.seed if args.seed is not None else SEED,
             progress_timeout_seconds=args.progress_timeout_seconds,
             attempt_interval_seconds=args.attempt_interval_seconds,
         )

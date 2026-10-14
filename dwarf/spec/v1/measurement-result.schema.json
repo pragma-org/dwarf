@@ -35,11 +35,25 @@
       "properties": {
         "implementation": {"type": "string", "enum": ["amaru", "cardano-node"]},
         "version": {"type": "string", "minLength": 1},
-        "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_revision": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
         "mode": {"type": "string", "enum": ["stock", "coverage", "patched"]},
         "image_digest": {"type": "string"},
+        "image_reference": {"type": "string", "minLength": 1},
+        "image_manifest_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "image_config_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "qualification_image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "source_image_reference": {"type": "string", "minLength": 1},
+        "transfer_manifest_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "transfer_source_installation_id": {"type": "string", "minLength": 1},
         "executable_digest": {"type": "string"},
         "build_result_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "runtime_probe_log_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "patch_set_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "measurement_revision": {"type": "string", "minLength": 1},
+        "version_catalog_revision": {"type": "string", "minLength": 1},
+        "profile_id": {"type": "string", "minLength": 1},
+        "deployment_adapter": {"type": "string", "minLength": 1},
+        "qualification_status": {"type": "string", "minLength": 1},
         "coverage_harness_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "target_name": {"type": "string"},
         "engine": {"type": "string"},
@@ -50,8 +64,48 @@
         "working_dir": {"type": "string", "minLength": 1},
         "fuzz_dir": {"type": "string", "minLength": 1},
         "binary": {"type": "string", "minLength": 1},
-        "created_at": {"type": "string", "minLength": 1}
+        "created_at": {"type": "string", "minLength": 1},
+        "identity_kind": {"type": "string", "enum": ["operator-local-config"]},
+        "image_config_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "platform": {"type": "string", "enum": ["linux/amd64", "linux/arm64"]},
+        "operator_registration_id": {"type": "string", "minLength": 1},
+        "operator_overlay_revision": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "controller_installation_id": {"type": "string", "minLength": 1}
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"identity_kind": {"const": "operator-local-config"}},
+            "required": ["identity_kind"]
+          },
+          "then": {
+            "required": [
+              "image_reference",
+              "image_config_id",
+              "executable_digest",
+              "platform",
+              "operator_registration_id",
+              "operator_overlay_revision",
+              "controller_installation_id",
+              "version_catalog_revision"
+            ],
+            "properties": {
+              "image_reference": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "image_config_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "executable_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "operator_registration_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+              "operator_overlay_revision": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "controller_installation_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+              "version_catalog_revision": {"type": "string", "pattern": "^(?:sha256:)?[0-9a-f]{64}$"}
+            }
+          },
+          "else": {
+            "properties": {
+              "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+            }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "provenance": {
@@ -62,7 +116,11 @@
         "collector_mode": {"type": "string", "enum": ["external", "stock-telemetry", "compiler-coverage", "patched-node"]},
         "hardware": {"type": "object", "additionalProperties": true},
         "dataset": {"type": "object", "additionalProperties": true},
-        "observer_overhead": {"type": ["object", "null"], "additionalProperties": true}
+        "observer_overhead": {"type": ["object", "null"], "additionalProperties": true},
+        "experimental_consent": {"type": "boolean"},
+        "experimental_context_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "compatibility": {"type": ["object", "null"], "additionalProperties": true},
+        "capability": {"type": ["object", "null"], "additionalProperties": true}
       },
       "additionalProperties": false
     },

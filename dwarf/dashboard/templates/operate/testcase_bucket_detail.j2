@@ -25,6 +25,13 @@
     <ul class="dk-list">{% for member in bucket.members %}<li><a href="/operate/testcases/{{ member.id }}"><code>{{ member.id }}</code></a> <span class="dk-note">· {{ member.status }}</span></li>{% endfor %}</ul>
     {% else %}<p class="dkb-p dk-note">○ No member testcase records were found.</p>{% endif %}
   </div>
+  {% if bucket.cli_commands %}
+  <div class="dk-panel">
+    <h3>Next steps (from a trusted shell)</h3>
+    <p class="dkb-p dk-note" style="margin-bottom:8px">The dashboard does not change lifecycle state; run these yourself after reviewing the cases.</p>
+    <div class="dkb-cmds">{% for command in bucket.cli_commands %}<div class="dk-cmd"><code>{{ command }}</code></div>{% endfor %}</div>
+  </div>
+  {% endif %}
   <div class="dk-panel">
     <h3>Downloads</h3>
     <div class="dk-row">

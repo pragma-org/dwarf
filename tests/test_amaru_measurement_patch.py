@@ -198,6 +198,19 @@ def test_artifact_record_requires_real_file_and_retains_digest(tmp_path):
         builder.artifact_record(tmp_path / "missing", root=tmp_path)
 
 
+def test_built_binary_path_honors_cargo_target_dir(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    target = tmp_path / "shared-target"
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(target))
+
+    resolved = builder._built_binary_path(
+        source,
+        "target/x86_64-unknown-linux-musl/release/amaru",
+    )
+
+    assert resolved == target / "x86_64-unknown-linux-musl/release/amaru"
+
+
 def test_target_registry_record_is_portable_and_exact(tmp_path):
     result = {
         "source": {"release": "10.11.20260912", "revision": REVISION},

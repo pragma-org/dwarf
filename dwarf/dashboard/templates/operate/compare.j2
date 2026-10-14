@@ -2,11 +2,12 @@
 {% block main %}
 {% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
 {% if ui == "basic" %}
-{% set diverged = strip.total - strip.agreed %}
 {% if empty %}
   {% set answer = 'No cross-implementation comparisons yet — pick a scenario below and run one.' %}
-{% elif diverged > 0 %}
-  {% set answer = diverged ~ ' of ' ~ strip.total ~ ' scenarios currently disagree between Amaru and cardano-node.' %}
+{% elif strip.incomplete > 0 %}
+  {% set answer = strip.incomplete ~ ' of ' ~ strip.total ~ ' comparisons are incomplete because one or both source runs failed.' %}
+{% elif strip.diverged > 0 %}
+  {% set answer = strip.diverged ~ ' of ' ~ strip.total ~ ' scenarios currently disagree between Amaru and cardano-node.' %}
 {% else %}
   {% set answer = 'Amaru and cardano-node agree on all ' ~ strip.total ~ ' compared scenarios (latest run each).' %}
 {% endif %}
@@ -18,25 +19,25 @@
     {% set ns = namespace(div=0, tot=0) %}
     {% for wk in ['whole_run', 'fault_window', 'postfault_window'] %}{% set w = entry.windows[wk] %}{% if w %}{% set ns.div = ns.div + (w.divergent_count or 0) %}{% set ns.tot = ns.tot + (w.total_count or 0) %}{% endif %}{% endfor %}
     {% set _ = cards.append({'title': entry.scenario_id, 'href': entry.cardano_node.run_id_url or entry.amaru.run_id_url or none,
-        'kicker': group.family, 'group': 'agree' if entry.agreed else 'diverge',
-        'tier': 'face' if entry.agreed else 'warn', 'suit': '♦' if entry.agreed else '▲', 'tone': 'dk-g-pass' if entry.agreed else 'dk-g-warn',
+        'kicker': group.family, 'group': 'incomplete' if not entry.comparable else ('agree' if entry.agreed else 'diverge'),
+        'tier': 'back' if not entry.comparable else ('face' if entry.agreed else 'warn'), 'suit': '■' if not entry.comparable else ('♦' if entry.agreed else '▲'), 'tone': 'dk-g-muted' if not entry.comparable else ('dk-g-pass' if entry.agreed else 'dk-g-warn'),
         'sub': 'Result: ' ~ entry.result ~ '.',
         'facts': [('Metrics diverged', ns.div ~ ' of ' ~ ns.tot ~ ' (all windows)'), ('amaru run', entry.amaru.run_id or '—'), ('cardano-node run', entry.cardano_node.run_id or '—')] + ([('Seed', entry.seed)] if entry.seed is not none else []),
         'search': group.family ~ ' ' ~ entry.result}) %}
   {% endfor %}
 {% endfor %}
 <section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Latest result per scenario</h2></section>
-{{ deck_grid(cards, label='comparisons', groups=[('agree', 'Agree'), ('diverge', 'Disagree')], empty='No compare runs recorded yet — nothing has been compared.') }}
+{{ deck_grid(cards, label='comparisons', groups=[('agree', 'Agree'), ('diverge', 'Disagree'), ('incomplete', 'Incomplete')], empty='No compare runs recorded yet — nothing has been compared.') }}
 {% set rcards = [] %}
 {% for r in recents %}
   {% set _ = rcards.append({'title': r.scenario_id or r.run_id, 'id': r.run_id, 'href': r.run_url, 'kicker': r.family ~ ' · ' ~ (r.ended_at or '—'),
-      'group': 'agree' if r.agreed else 'diverge',
-      'tier': 'face' if r.agreed else 'warn', 'suit': '♦' if r.agreed else '▲', 'tone': 'dk-g-pass' if r.agreed else 'dk-g-warn',
+      'group': 'incomplete' if not r.comparable else ('agree' if r.agreed else 'diverge'),
+      'tier': 'back' if not r.comparable else ('face' if r.agreed else 'warn'), 'suit': '■' if not r.comparable else ('♦' if r.agreed else '▲'), 'tone': 'dk-g-muted' if not r.comparable else ('dk-g-pass' if r.agreed else 'dk-g-warn'),
       'sub': 'Result: ' ~ r.result ~ '.',
       'facts': [('amaru run', r.amaru_run_id or '—'), ('cardano-node run', r.cardano_node_run_id or '—')]}) %}
 {% endfor %}
 <section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Recent compare runs</h2></section>
-{{ deck_grid(rcards, label='runs', groups=[('agree', 'Agree'), ('diverge', 'Disagree')], empty='No compare runs recorded yet.') }}
+{{ deck_grid(rcards, label='runs', groups=[('agree', 'Agree'), ('diverge', 'Disagree'), ('incomplete', 'Incomplete')], empty='No compare runs recorded yet.') }}
 <section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Run a compare</h2></section>
 {% endif %}
 <div class="adv-only">
@@ -77,10 +78,11 @@
 
       <ul class="scenario-picker__list" role="listbox" aria-label="Scenarios">
         {% for row in scenarios %}
-        <li class="scenario-picker__row" data-family="{{ row.family }}" data-id="{{ row.id }}" data-path="{{ row.path }}" data-runtime="{{ row.runtime }}" data-title="{{ row.title }}" role="option" aria-selected="false" tabindex="0">
+        <li class="scenario-picker__row" data-family="{{ row.family }}" data-id="{{ row.id }}" data-path="{{ row.path }}" data-runtime="{{ row.runtime }}" data-title="{{ row.title }}" data-available="{{ 'true' if row.available else 'false' }}" data-unavailable-reason="{{ row.availability_reason }}" role="option" aria-selected="false" tabindex="0">
           <span class="scenario-picker__family">{{ row.family }}</span>
           <span class="scenario-picker__id"><code>{{ row.id }}</code></span>
           <span class="scenario-picker__title">{{ row.title }}</span>
+          {% if not row.available %}<span class="scenario-picker__availability">Unavailable: {{ row.availability_reason }}</span>{% endif %}
         </li>
         {% endfor %}
       </ul>
@@ -99,9 +101,11 @@
         <p class="run-card__meta">
           <span data-run-card-family>—</span> · runtime <code data-run-card-runtime>—</code>
         </p>
+        <p class="run-card__availability" data-run-availability>Choose a scenario to check its requirements.</p>
       </header>
 
       <div class="run-card__cta">
+        <input type="hidden" name="token" value="{{ token }}" data-compare-token>
         <button type="button" class="cta cta--primary" data-run-compare disabled>Run compare</button>
         <button type="button" class="cta cta--ghost" data-toggle-command aria-expanded="false" aria-controls="compare-command">Show command</button>
       </div>
@@ -161,7 +165,7 @@
         <td>{{ r.ended_at or '—' }}</td>
         <td>{% if r.scenario_id %}<code>{{ r.scenario_id }}</code>{% else %}—{% endif %}</td>
         <td>{{ r.family }}</td>
-        <td><span class="result-pill {{ 'result-pill--pass' if r.agreed else 'result-pill--fail' }}">{{ r.result }}</span></td>
+        <td><span class="result-pill {{ 'result-pill--error' if not r.comparable else ('result-pill--pass' if r.agreed else 'result-pill--fail') }}">{{ r.result }}</span></td>
         <td>{% if r.amaru_run_id %}<a href="{{ r.amaru_run_url }}"><code>{{ r.amaru_run_id }}</code></a>{% else %}—{% endif %}</td>
         <td>{% if r.cardano_node_run_id %}<a href="{{ r.cardano_node_run_url }}"><code>{{ r.cardano_node_run_id }}</code></a>{% else %}—{% endif %}</td>
       </tr>

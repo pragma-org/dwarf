@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 
+from profile_manager.config import storage_roots
+
 from profile_manager.config import config_exists, load_config
 from profile_manager.remote import control_shim_enabled, ssh_command
 
@@ -132,20 +134,7 @@ def _summarize_testcase_state(state_root):
 
 
 def _local_testcase_lifecycle_summary():
-    from profile_manager.dashboard import PROJECT_ROOT
-
-    configured_state_dir = os.environ.get("ADA2_DWARF_STATE_DIR", "").strip()
-    if configured_state_dir:
-        return _summarize_testcase_state(Path(configured_state_dir) / "testcases")
-
-    candidates = [
-        PROJECT_ROOT / "state" / "testcases",
-        PROJECT_ROOT / "dwarf" / "state" / "testcases",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return _summarize_testcase_state(candidate)
-    return _summarize_testcase_state(candidates[0])
+    return _summarize_testcase_state(storage_roots().state / "testcases")
 
 
 def _live_testcase_lifecycle_summary():

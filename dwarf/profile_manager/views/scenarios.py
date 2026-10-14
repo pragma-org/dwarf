@@ -34,15 +34,40 @@ def render_operate_scenarios(token: str | None = None) -> str:
     from profile_manager.remote import control_shim_enabled
     from profile_manager.templating import render
     from profile_manager.data.scenario_cards import scenario_card
+    from profile_manager.data.scenario_discovery import (
+        RECOMMENDED_SCENARIO_IDS,
+        RETAINED_SCENARIO_EVIDENCE,
+        group_scenario_subjects,
+        scenario_discovery,
+        scenario_discovery_facets,
+    )
+    from profile_manager.profiles import load_profiles
+    from profile_manager.data.threat_risk_coverage import threat_risk_discovery_index
+    from profile_manager.views.threat_coverage import current_threat_coverage_data
 
     scenarios_dir = os.environ.get("ADA2_DWARF_SCENARIOS_DIR") or "dwarf/scenarios"
 
     raw = _list_scenarios_for_compare()
+    threat_risk_index = threat_risk_discovery_index(
+        current_threat_coverage_data(include_measurements=False),
+        scenario_ids={entry["id"] for entry in raw},
+    )
+    profile_shapes = {
+        profile.id: (profile.node_count, profile.amaru_node_count)
+        for profile in load_profiles()
+    }
     rows = []
     for entry in raw:
         family = _scenario_family(entry["id"])
+        discovery = scenario_discovery(
+            entry,
+            profile_shapes=profile_shapes,
+            recommended_ids=RECOMMENDED_SCENARIO_IDS,
+            retained_evidence=RETAINED_SCENARIO_EVIDENCE,
+            threat_risk=threat_risk_index["by_scenario"][entry["id"]],
+        )
         rows.append({
-            "id": entry["id"],
+            **discovery,
             "title": entry.get("title") or entry["id"],
             "runtime": entry.get("runtime") or "",
             "family": family,
@@ -52,6 +77,20 @@ def render_operate_scenarios(token: str | None = None) -> str:
             "edit_url": f"/operate/scenarios/{entry['id']}/edit",
             "download_url": f"/api/catalog/scenarios/{entry['id']}/download",
         })
+    scenario_subjects = group_scenario_subjects(rows)
+    scenario_facets = scenario_discovery_facets(rows)
+    scenario_facets.update(threat_risk_index["facets"])
+    scenario_counts = {
+        "variants": len(rows),
+        "families": sum(
+            len(child["families"])
+            for subject in scenario_subjects
+            for child in subject["children"]
+        ),
+        "hidden_health": sum(
+            row["maintenance"]["state"] == "hidden-by-default" for row in rows
+        ),
+    }
 
     family_slugs = sorted({row["family"] for row in rows}, key=_sort_family_slug)
     # Family label is the slug itself — single-segment families (with
@@ -81,6 +120,9 @@ def render_operate_scenarios(token: str | None = None) -> str:
         active_sub="scenarios",
         total=len(rows),
         families=families,
+        scenario_subjects=scenario_subjects,
+        scenario_facets=scenario_facets,
+        scenario_counts=scenario_counts,
         rows=rows,
         token=token,
         scenarios_dir=scenarios_dir,

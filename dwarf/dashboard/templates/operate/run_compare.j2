@@ -70,7 +70,7 @@
   <section class="basic-only dk dk-op-section"><h2 class="dk-op-h">Field-level diff</h2></section>
   {{ deck_grid([{'title': ('Bundles differ field by field' if fdiff else 'Bundles are field-identical'), 'kicker': 'Manifest, assertion stats, AFL telemetry',
       'tier': 'warn' if fdiff and (o.semantic or o.drift) else 'face', 'suit': ('▲' if fdiff else '♦'), 'tone': ('dk-g-warn' if fdiff else 'dk-g-pass'),
-      'sub': ('Leaves that changed between left and right; per-field table in Advanced.' if fdiff else 'No additions, removals or mutations across the curated fields.'),
+      'sub': ('Leaves that changed between left and right; the per-field table is available below.' if fdiff else 'No additions, removals or mutations across the curated fields.'),
       'facts': [('Mutated', o.mutated), ('Added · removed', (o.added or 0) ~ ' · ' ~ (o.removed or 0)), ('Telemetry drift', o.drift), ('Semantic flags', o.semantic)] if fdiff else [('Same', o.same)]}], label='field diff', search=false) }}
   {% endif %}
 {% endif %}

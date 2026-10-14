@@ -1,0 +1,91 @@
+{% extends "_base.j2" %}
+{% block main %}
+<span class="eyebrow">Operate · External run</span>
+<h1 class="run-id-heading"><code>{{ run.run_id }}</code></h1>
+<p class="page-hero">A ledger-backed external execution linked into DWARF history. Provider lifecycle facts and DWARF test evidence are shown separately so a provider outcome is never mistaken for a verified DWARF verdict.</p>
+
+<section class="dk" aria-labelledby="external-summary-heading">
+  <h2 id="external-summary-heading" class="dk-lead">
+    Test verdict <span class="result-pill result-pill--{{ run.verdict_status }}">{{ run.verdict_status }}</span>
+    · lifecycle <span class="result-pill result-pill--{{ run.state }}">{{ run.state }}</span>
+  </h2>
+  <div class="dk-grid dk-grid--3">
+    <article class="dk-panel">
+      <span class="eyebrow">DWARF verdict</span>
+      <h3>{{ run.verdict_status }}</h3>
+      {% if run.external.result_bundle_verified %}
+      <p>DWARF's ingestion service recorded a verified signature, and the retained result identity, manifest hash, chain, external binding, non-vacuous assertions, and verdict still agree.</p>
+      {% elif run.external.result_bundle_present %}
+      <p>A result bundle is present, but its retained identity, signature provenance, hash chain, or non-vacuous assertions did not revalidate.</p>
+      {% else %}
+      <p>No signed DWARF result bundle was supplied. Provider completion alone cannot produce a pass or fail verdict.</p>
+      {% endif %}
+    </article>
+    <article class="dk-panel">
+      <span class="eyebrow">Provider outcome</span>
+      <h3>{{ run.external.outcome or 'not reported' }}</h3>
+      <p>Phase <code>{{ run.external.phase }}</code> from the exact matched <code>{{ run.external.transport or 'external' }}</code> fact. This is provider metadata, not DWARF's test verdict.</p>
+    </article>
+    <article class="dk-panel">
+      <span class="eyebrow">Receipt integrity</span>
+      <h3>{{ run.external.receipt_integrity }}</h3>
+      <p>{{ run.external.evidence_files|length }} retained receipt{{ '' if run.external.evidence_files|length == 1 else 's' }} are bound to external id <code>{{ run.external.test_run_id }}</code>.</p>
+    </article>
+  </div>
+</section>
+
+{% if run.external.verdict_reason == 'no_verified_result_bundle' %}
+<section class="run-precondition-warning" aria-labelledby="external-evidence-heading">
+  <span class="eyebrow">Evidence boundary</span>
+  <h2 id="external-evidence-heading">Why this run is inconclusive</h2>
+  <p>No signed DWARF result bundle was supplied, so DWARF retained the provider facts but did not infer a test pass or failure. A provider outcome of <code>{{ run.external.outcome or 'unknown' }}</code> is preserved exactly and remains semantically separate.</p>
+</section>
+{% endif %}
+
+<section aria-labelledby="external-identity-heading">
+  <span class="eyebrow">External identity</span>
+  <h2 id="external-identity-heading">What was linked</h2>
+  <div class="responsive-table">
+    <table class="config-table">
+      <tbody>
+        <tr><th scope="row">backend</th><td><code>{{ run.backend }}</code></td></tr>
+        <tr><th scope="row">transport</th><td><code>{{ run.external.transport or '—' }}</code></td></tr>
+        <tr><th scope="row">external test id</th><td><code class="run-chain-hash">{{ run.external.test_run_id }}</code></td></tr>
+        <tr><th scope="row">mode</th><td><code>{{ run.external.mode or '—' }}</code></td></tr>
+        <tr><th scope="row">repository</th><td><code>{{ run.external.repository or '—' }}</code></td></tr>
+        <tr><th scope="row">directory</th><td><code>{{ run.external.directory or '—' }}</code></td></tr>
+        <tr><th scope="row">tested commit</th><td><code class="run-chain-hash">{{ run.external.commit or '—' }}</code></td></tr>
+        <tr><th scope="row">faults</th><td><code>{{ run.external.faults }}</code></td></tr>
+        <tr><th scope="row">requested duration</th><td>{% if run.external.duration_hours is not none %}{{ run.external.duration_hours }} hour{{ '' if run.external.duration_hours == 1 else 's' }}{% else %}—{% endif %}</td></tr>
+        <tr><th scope="row">DWARF release</th><td><code class="run-chain-hash">{{ run.release_revision or '—' }}</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="hairline">
+
+<section aria-labelledby="external-audit-heading">
+  <span class="eyebrow">Audit receipts</span>
+  <h2 id="external-audit-heading">Exact retained evidence</h2>
+  {% if run.external.linked_existing and not run.external.submission_present %}
+  <p><strong>No submission receipt was created.</strong> This record links an existing provider run; it does not claim DWARF launched or paid for a new run.</p>
+  {% endif %}
+  <div class="responsive-table">
+    <table class="config-table">
+      <thead><tr><th>Receipt</th><th>SHA-256</th><th>Bytes</th></tr></thead>
+      <tbody>
+      {% for receipt in run.external.evidence_files %}
+        <tr><td><code>{{ receipt.path }}</code></td><td><code class="run-chain-hash">{{ receipt.sha256 }}</code></td><td>{{ receipt.bytes }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if run.external.receipt_errors %}
+  <ul>{% for error in run.external.receipt_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+  {% endif %}
+</section>
+
+<hr class="hairline">
+<div class="dk-row"><a class="dk-btn dk-btn--solid" href="/operate/runs?scope=external">Back to external runs</a><a class="dk-btn" href="/operate/runs?scope=all">All runs</a></div>
+{% endblock %}

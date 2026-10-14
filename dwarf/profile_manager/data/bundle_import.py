@@ -1,13 +1,9 @@
 """Multipart parsing + bundle import handler for /api/bundle/import.
 
-Slice 3 of dispatch 7 — operators upload a previously-exported bundle
-``tar.gz``; the framework writes it to a tmp path and runs the
-existing ``scripts/bundle_import.py`` helper to verify + unpack into
+Operators upload a previously-exported bundle ``tar.gz`` and its detached
+``signature.json``. The framework writes both to temporary paths and runs the
+existing ``scripts/bundle_import.py`` helper to verify before unpacking into
 ``runs/<run_id>/``.
-
-The multipart parser handles only the single-file case (one
-``<input type="file" name="bundle">``) — the form is dashboard-internal
-and won't see other shapes.
 """
 from __future__ import annotations
 
@@ -19,30 +15,34 @@ import tempfile
 from html import escape
 from pathlib import Path
 
+from profile_manager.config import storage_roots
+
 
 def _runs_dir() -> Path:
-    env = os.environ.get("ADA2_DWARF_RUNS_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[2] / "runs"
+    return storage_roots().runs
 
 
 def _extract_boundary(content_type: str) -> str | None:
     m = re.search(r"boundary=([^;]+)", content_type)
     if not m:
         return None
-    return m.group(1).strip().strip('"')
+    boundary = m.group(1).strip().strip('"')
+    if not boundary or "\r" in boundary or "\n" in boundary:
+        return None
+    try:
+        boundary.encode("ascii")
+    except UnicodeEncodeError:
+        return None
+    return boundary
 
 
-def _parse_single_file_part(body: bytes, boundary: str) -> tuple[str | None, bytes | None, str | None]:
-    """Return (filename, file_bytes, error). Handles the multipart form
-    body produced by a single file input. The boundary line is
-    ``--<boundary>`` and the trailer is ``--<boundary>--``."""
+def _parse_file_parts(
+    body: bytes, boundary: str
+) -> tuple[dict[str, tuple[str, bytes]], str | None]:
+    """Return the two named file fields from the dashboard form."""
     sep = b"--" + boundary.encode("ascii")
     parts = body.split(sep)
-    # First slice is the preamble (typically empty); each subsequent
-    # part starts with \r\n then headers \r\n\r\n then content. Last
-    # part is the trailer ``--``.
+    files: dict[str, tuple[str, bytes]] = {}
     for part in parts:
         if not part or part in (b"--", b"--\r\n"):
             continue
@@ -58,19 +58,64 @@ def _parse_single_file_part(body: bytes, boundary: str) -> tuple[str | None, byt
         # Trim trailing \r\n that precedes the next boundary marker
         if content.endswith(b"\r\n"):
             content = content[:-2]
-        # Look for filename + name
-        if 'name="bundle"' not in headers:
+        field_match = re.search(r'(?:^|;)\s*name="([^"]+)"', headers)
+        if not field_match:
             continue
-        m = re.search(r'filename="([^"]*)"', headers)
-        filename = m.group(1) if m else "uploaded.tar.gz"
-        return filename, content, None
-    return None, None, "no bundle field found in upload"
+        field_name = field_match.group(1)
+        if field_name not in {"bundle", "signature"} or field_name in files:
+            continue
+        filename_match = re.search(r'filename="([^"]*)"', headers)
+        default_name = "uploaded.tar.gz" if field_name == "bundle" else "signature.json"
+        filename = filename_match.group(1) if filename_match else default_name
+        files[field_name] = (filename, content)
+    missing = [name for name in ("bundle", "signature") if name not in files]
+    if missing:
+        return files, f"missing required upload field: {', '.join(missing)}"
+    return files, None
 
 
-def _safe_filename(name: str) -> str:
-    base = Path(name).name
-    # Allow alphanumerics + a small punctuation set; everything else collapses to _.
-    return re.sub(r"[^A-Za-z0-9._-]", "_", base) or "uploaded.tar.gz"
+def multipart_text_field(body: bytes, boundary: str, field_name: str) -> str | None:
+    """Return one non-file text field, or ``None`` when it is absent.
+
+    This uses the same bounded multipart shape as the import parser so request
+    authorization can happen before any upload is written or verified.
+    """
+    sep = b"--" + boundary.encode("ascii")
+    for part in body.split(sep):
+        if part.startswith(b"\r\n"):
+            part = part[2:]
+        head_split = part.find(b"\r\n\r\n")
+        if head_split == -1:
+            continue
+        headers = part[:head_split].decode("utf-8", errors="replace")
+        match = re.search(r'(?:^|;)\s*name="([^"]+)"', headers)
+        if not match or match.group(1) != field_name or 'filename="' in headers:
+            continue
+        content = part[head_split + 4:]
+        if content.endswith(b"\r\n"):
+            content = content[:-2]
+        return content.decode("utf-8", errors="replace")
+    return None
+
+
+def _validated_filename(name: str, *, default: str) -> str | None:
+    """Preserve a signature-bound basename exactly or reject it."""
+    candidate = name or default
+    if (
+        candidate in {".", ".."}
+        or Path(candidate).name != candidate
+        or "/" in candidate
+        or "\\" in candidate
+        or "\x00" in candidate
+        or any(ord(char) < 32 or ord(char) == 127 for char in candidate)
+    ):
+        return None
+    try:
+        if len(os.fsencode(candidate)) > 255:
+            return None
+    except UnicodeEncodeError:
+        return None
+    return candidate
 
 
 def _result_page(title: str, body: str, *, status: int) -> tuple[int, str]:
@@ -100,13 +145,25 @@ def handle_bundle_import_post(content_type: str, body: bytes) -> tuple[int, str]
             "<p class='status-tile__errors-raw'>Missing multipart boundary in Content-Type header.</p>",
             status=400,
         )
-    filename, content, err = _parse_single_file_part(body, boundary)
+    files, err = _parse_file_parts(body, boundary)
     if err:
         return _result_page("Import failed", f"<p class='status-tile__errors-raw'>{escape(err)}</p>", status=400)
-    if content is None or not content:
-        return _result_page("Import failed", "<p class='status-tile__errors-raw'>Empty upload.</p>", status=400)
-    filename = _safe_filename(filename or "uploaded.tar.gz")
-    # Persist the upload and call the bundle_import script.
+    bundle_filename, bundle_content = files["bundle"]
+    signature_filename, signature_content = files["signature"]
+    if not bundle_content or not signature_content:
+        return _result_page("Import failed", "<p class='status-tile__errors-raw'>Bundle and detached signature uploads must not be empty.</p>", status=400)
+    bundle_filename = _validated_filename(
+        bundle_filename, default="uploaded.tar.gz"
+    )
+    signature_filename = _validated_filename(
+        signature_filename, default="signature.json"
+    )
+    if bundle_filename is None or signature_filename is None:
+        return _result_page(
+            "Import failed",
+            "<p class='status-tile__errors-raw'>Upload filenames must be safe basenames without path separators or control characters.</p>",
+            status=400,
+        )
     base = _runs_dir()
     runs_dir = base
     helper = Path(__file__).resolve().parents[2] / "scripts" / "bundle_import.py"
@@ -116,17 +173,36 @@ def handle_bundle_import_post(content_type: str, body: bytes) -> tuple[int, str]
             f"<p class='status-tile__errors-raw'>Helper script not found at {escape(str(helper))}. Use the CLI: <code>cardano-profile bundle import &lt;path&gt;</code>.</p>",
             status=503,
         )
-    tmp = tempfile.NamedTemporaryFile(prefix="dwarf-bundle-import-", suffix="-" + filename, delete=False)
-    try:
-        tmp.write(content)
-        tmp.close()
+    # The export signature binds the archive filename as well as its bytes.
+    # Preserve each uploaded basename exactly in separate private directories;
+    # NamedTemporaryFile prefixes would make every valid browser upload fail
+    # signature verification.
+    with tempfile.TemporaryDirectory(prefix="dwarf-bundle-import-") as tmpdir:
+        snapshot_root = Path(tmpdir)
+        bundle_root = snapshot_root / "bundle"
+        signature_root = snapshot_root / "signature"
+        bundle_root.mkdir(mode=0o700)
+        signature_root.mkdir(mode=0o700)
+        bundle_path = bundle_root / bundle_filename
+        signature_path = signature_root / signature_filename
+        bundle_path.write_bytes(bundle_content)
+        signature_path.write_bytes(signature_content)
         proc = subprocess.run(
-            [sys.executable, str(helper), tmp.name, "--runs-dir", str(runs_dir)],
+            [
+                sys.executable,
+                str(helper),
+                str(bundle_path),
+                "--signature-path",
+                str(signature_path),
+                "--runs-dir",
+                str(runs_dir),
+            ],
             text=True, capture_output=True, check=False,
         )
         ok = proc.returncode == 0
         body_html = (
-            f"<p class='page-subhero'>Uploaded {escape(filename)} ({len(content)} bytes), "
+            f"<p class='page-subhero'>Uploaded {escape(bundle_filename)} ({len(bundle_content)} bytes) "
+            f"with {escape(signature_filename)} ({len(signature_content)} bytes), "
             f"helper exit {proc.returncode}.</p>"
             f"<h2>stdout</h2><pre class='run-payload-pre'>{escape(proc.stdout) or '(empty)'}</pre>"
             f"<h2>stderr</h2><pre class='run-payload-pre'>{escape(proc.stderr) or '(empty)'}</pre>"
@@ -136,8 +212,3 @@ def handle_bundle_import_post(content_type: str, body: bytes) -> tuple[int, str]
             body_html,
             status=200 if ok else 502,
         )
-    finally:
-        try:
-            os.unlink(tmp.name)
-        except OSError:
-            pass

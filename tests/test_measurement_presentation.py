@@ -302,6 +302,32 @@ def test_unknown_metrics_remain_visible_with_conservative_fallback():
     assert card["description"].startswith("A retained DWARF measurement")
 
 
+def test_container_cgroup_metrics_have_explicit_external_presentation():
+    result = build_measurement_presentation(
+        {
+            "container_memory_bytes": {
+                "status": "available",
+                "unit": "bytes",
+                "sample_count": 2,
+                "median": 80 * 1024 * 1024,
+            },
+            "container_tasks": {
+                "status": "available",
+                "unit": "tasks",
+                "sample_count": 2,
+                "median": 15,
+            },
+        },
+        _target("cardano-node", "stock"),
+    )
+
+    memory = _card(result, "container-memory-usage")
+    tasks = _card(result, "container-task-count")
+    assert memory["title"] == "Managed container memory"
+    assert tasks["title"] == "Managed container tasks"
+    assert memory["source_label"] == tasks["source_label"] == "External"
+
+
 def test_acceptance_run_metric_inventory_has_canonical_client_metadata():
     amaru_ids = {
         "attempt_latency", "backlog", "batches_per_second", "block_application",
@@ -325,7 +351,7 @@ def test_acceptance_run_metric_inventory_has_canonical_client_metadata():
         "adopted_blocks", "attempt_latency", "backlog", "batches_per_second",
         "block_application", "block_application_by_outcome", "blockfetch_bytes",
         "blockfetch_duration", "cardano-stock-ledger-block-epoch.adopted_blocks",
-        "chain_events", "cpu_percent", "cpu_time_seconds", "disk_read_bytes",
+        "chain_events", "container_memory_bytes", "container_tasks", "cpu_percent", "cpu_time_seconds", "disk_read_bytes",
         "disk_write_bytes", "epoch_transition", "epoch_transition_by_outcome",
         "epoch_transition_duration", "fd_count", "handler_queue_residence",
         "keepalive_rtt", "ledger_samples", "mempool_accepted", "mempool_bytes",

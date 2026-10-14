@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pragma-org/dwarf/blob/main/delivery/release-manifest.schema.json",
+  "title": "DWARF release manifest",
+  "description": "Signed, immutable identities for a source-checkout-free DWARF release.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "release_version",
+    "release_revision",
+    "released_at",
+    "supported_platforms",
+    "data_schema_version",
+    "minimum_installer_version",
+    "dashboard_image",
+    "controller_image",
+    "golden_amaru_image",
+    "golden_cardano_image",
+    "bundle_file",
+    "bundle_sha256",
+    "catalog_sha256",
+    "installer_file",
+    "installer_sha256",
+    "schema_file",
+    "schema_sha256",
+    "compose_file",
+    "compose_sha256",
+    "backup_file",
+    "backup_sha256",
+    "doctor_file",
+    "doctor_sha256",
+    "migrate_file",
+    "migrate_sha256",
+    "status_file",
+    "status_sha256",
+    "update_file",
+    "update_sha256",
+    "uninstall_file",
+    "uninstall_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "release_version": {
+      "type": "string",
+      "pattern": "^v[0-9]+(?:\\.[0-9]+){0,2}(?:[-+][0-9A-Za-z.-]+)?$"
+    },
+    "release_revision": {
+      "$ref": "#/$defs/gitRevision"
+    },
+    "released_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "supported_platforms": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "linux-amd64",
+          "darwin-arm64"
+        ]
+      }
+    },
+    "data_schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "minimum_installer_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "dashboard_image": {
+      "$ref": "#/$defs/ociDigestReference"
+    },
+    "controller_image": {
+      "$ref": "#/$defs/ociDigestReference"
+    },
+    "golden_amaru_image": {
+      "$ref": "#/$defs/ociDigestReference"
+    },
+    "golden_cardano_image": {
+      "$ref": "#/$defs/ociDigestReference"
+    },
+    "bundle_file": {
+      "$ref": "#/$defs/safeFileName"
+    },
+    "bundle_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "catalog_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "installer_file": {
+      "$ref": "#/$defs/safeFileName"
+    },
+    "installer_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "schema_file": {
+      "$ref": "#/$defs/safeFileName"
+    },
+    "schema_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "compose_file": {
+      "$ref": "#/$defs/safeFileName"
+    },
+    "compose_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "backup_file": {
+      "$ref": "#/$defs/safeFileName"
+    },
+    "backup_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "doctor_file": {
+      "$ref": "#/$defs/safeFileName"
+    },
+    "doctor_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "migrate_file": {
+      "$ref": "#/$defs/safeFileName"
+    },
+    "migrate_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "status_file": {
+      "$ref": "#/$defs/safeFileName"
+    },
+    "status_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "update_file": {
+      "$ref": "#/$defs/safeFileName"
+    },
+    "update_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "uninstall_file": {
+      "$ref": "#/$defs/safeFileName"
+    },
+    "uninstall_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "dependentRequired": {
+    "bundle_file": [
+      "bundle_sha256"
+    ],
+    "bundle_sha256": [
+      "bundle_file"
+    ],
+    "installer_file": [
+      "installer_sha256"
+    ],
+    "installer_sha256": [
+      "installer_file"
+    ],
+    "schema_file": [
+      "schema_sha256"
+    ],
+    "schema_sha256": [
+      "schema_file"
+    ]
+  },
+  "$defs": {
+    "gitRevision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ociDigestReference": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?/[a-z0-9]+(?:[._/-][a-z0-9]+)*@sha256:[0-9a-f]{64}$"
+    },
+    "safeFileName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    }
+  }
+}

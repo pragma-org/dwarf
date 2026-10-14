@@ -1,7 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["bundle_ids", "output_dir"],
+  "required": ["output_dir"],
+  "oneOf": [
+    {"required": ["bundle_ids"]},
+    {"required": ["latest_count"]}
+  ],
   "properties": {
     "runs_dir": {"type": "string", "minLength": 1},
     "bundle_ids": {
@@ -9,6 +13,7 @@
       "items": {"type": "string", "minLength": 1},
       "minItems": 1
     },
+    "latest_count": {"type": "integer", "minimum": 1},
     "scenario_id_filters": {
       "type": "array",
       "items": {"type": "string", "minLength": 1}

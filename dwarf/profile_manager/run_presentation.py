@@ -6,6 +6,8 @@ import os
 import statistics
 from pathlib import Path
 
+from profile_manager.config import storage_roots
+
 
 def profile_qualification(preview):
     if not isinstance(preview, dict):
@@ -30,10 +32,7 @@ def profile_qualification(preview):
 def _runtime_runs_dir(runs_dir):
     if runs_dir is not None:
         return Path(runs_dir)
-    configured = os.environ.get("ADA2_DWARF_RUNS_DIR", "").strip()
-    if configured:
-        return Path(configured)
-    return Path(__file__).resolve().parents[1] / "runs"
+    return storage_roots().runs
 
 
 def _manifest_identity(run_dir, manifest):

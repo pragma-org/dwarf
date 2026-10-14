@@ -31,6 +31,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from profile_manager.config import storage_roots
 from profile_manager.data import schedule_store
 from profile_manager.data.cron import due_entries
 
@@ -39,10 +40,7 @@ CommandBuilder = Callable[..., list[str]]
 
 
 def _runs_dir() -> Path:
-    env = os.environ.get("ADA2_DWARF_RUNS_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[3] / "dwarf" / "runs"
+    return storage_roots().runs
 
 
 def _list_run_ids(runs_dir: Path) -> set[str]:
@@ -83,7 +81,11 @@ def fire_entry(
     schedule_store.mark_running(entry["id"])
     base = runs_dir if runs_dir is not None else _runs_dir()
     before = _list_run_ids(base)
-    cmd = command_builder("scenario_run", scenario_path=entry["scenario_path"])
+    cmd = command_builder(
+        "scenario_run",
+        scenario_path=entry["scenario_path"],
+        run_origin="scheduler",
+    )
     fired_at = now_epoch if now_epoch is not None else time.time()
     actual_runner = runner if runner is not None else _default_runner
     try:

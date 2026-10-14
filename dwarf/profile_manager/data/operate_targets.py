@@ -26,6 +26,15 @@ import os
 from pathlib import Path
 from typing import Any
 
+from profile_manager.data.catalog_definitions import (
+    list_definitions,
+    packaged_definition_path,
+    validate_target_manifest,
+)
+from profile_manager.primitives import _resolve_runtime_path
+from profile_manager.run_plan import RunPlanError, RunPlanRequest, resolve_run_plan
+from profile_manager.scenario import compare_preflight
+
 
 def manifests_dir() -> Path:
     """Writable manifests catalog. Honors ADA2_DWARF_MANIFESTS_DIR (seeded from
@@ -43,6 +52,122 @@ def _target_url(target_id: str) -> str:
     Returns the target's complete definition detail route.
     """
     return f"/operate/targets/{target_id}"
+
+
+_TARGET_REFERENCE_KEYS = {"target_id", "reference_target_id", "candidate_target_id"}
+
+
+def scenario_references_target(value: Any, target_id: str) -> bool:
+    """Match only declared target-reference fields in a scenario definition."""
+    if isinstance(value, dict):
+        return any(
+            (key in _TARGET_REFERENCE_KEYS and item == target_id)
+            or scenario_references_target(item, target_id)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(scenario_references_target(item, target_id) for item in value)
+    return False
+
+
+def _runtime_manifest_path(target_id: str, source_path: Path, source: bytes) -> Path:
+    """Use the immutable packaged path when the writable seed is byte-identical."""
+    packaged = packaged_definition_path("targets", target_id)
+    try:
+        if packaged.is_file() and packaged.read_bytes() == source:
+            return packaged
+    except OSError:
+        pass
+    return source_path
+
+
+def target_runtime_entrypoints(
+    target_id: str, *, source_path: Path, source: bytes
+) -> dict[str, Any]:
+    """Describe executable and canonical scenario readiness without running work."""
+    try:
+        runtime_manifest = _runtime_manifest_path(target_id, source_path, source)
+        manifest = json.loads(runtime_manifest.read_text(encoding="utf-8"))
+        validate_target_manifest(manifest)
+        if manifest["id"] != target_id:
+            raise ValueError(f"target manifest id mismatch in {runtime_manifest}")
+        binary = _resolve_runtime_path(manifest["binary"])
+        if not binary.is_file():
+            raise FileNotFoundError(f"target binary not found: {binary}")
+        if not os.access(binary, os.X_OK):
+            raise PermissionError(f"target binary is not executable: {binary}")
+    except (KeyError, OSError, TypeError, ValueError, RuntimeError) as exc:
+        executable_ready = False
+        executable_reason = f"Target executable is unavailable: {exc}"
+    else:
+        executable_ready = True
+        executable_reason = "The exact target executable is present and executable."
+
+    scenarios: list[dict[str, Any]] = []
+    for record in list_definitions("scenarios"):
+        if not scenario_references_target(record.data, target_id):
+            continue
+        try:
+            preflight = compare_preflight(record.path)
+        except (KeyError, OSError, TypeError, ValueError, RuntimeError) as exc:
+            preflight = {
+                "ready": False,
+                "code": "scenario-preflight-invalid",
+                "message": f"Scenario preflight is unavailable: {exc}",
+            }
+        try:
+            plan = resolve_run_plan(RunPlanRequest(scenario_id=record.definition_id))
+            availability = plan["availability"]
+        except (KeyError, OSError, RunPlanError, TypeError, ValueError, RuntimeError) as exc:
+            availability = {
+                "state": "unavailable",
+                "reason": str(exc),
+            }
+        state = str(availability.get("state") or "unavailable")
+        ready = bool(
+            executable_ready
+            and preflight.get("ready") is True
+            and state in {"ready", "pullable"}
+        )
+        reason = (
+            str(availability.get("reason") or "Scenario availability is unknown.")
+            if preflight.get("ready") is True
+            else str(preflight.get("message") or "Scenario preflight is unavailable.")
+        )
+        if preflight.get("ready") is True and not executable_ready:
+            reason = executable_reason
+        scenarios.append(
+            {
+                "id": record.definition_id,
+                "title": record.data.get("title") or record.definition_id,
+                "start_url": f"/run?scenario={record.definition_id}",
+                "available": ready,
+                "state": state if executable_ready and preflight.get("ready") else "unavailable",
+                "reason": reason,
+            }
+        )
+    scenarios.sort(key=lambda item: item["id"])
+
+    ready_count = sum(1 for item in scenarios if item["available"])
+    if executable_ready and ready_count:
+        state = "ready"
+        reason = (
+            "Executable target and one scenario are ready."
+            if ready_count == 1
+            else f"Executable target and {ready_count} scenarios are ready."
+        )
+    elif not executable_ready:
+        state, reason = "unavailable", executable_reason
+    elif scenarios:
+        state, reason = "unavailable", "No referencing scenario is currently runnable."
+    else:
+        state, reason = "unavailable", "No shipped scenario references this target."
+    return {
+        "state": state,
+        "reason": reason,
+        "executable_ready": executable_ready,
+        "scenarios": scenarios,
+    }
 
 
 def _enrich_target(manifest: dict[str, Any]) -> dict[str, Any]:

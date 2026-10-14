@@ -39,7 +39,7 @@ def _result(status: int, title: str, body_html: str, *, ok: bool = False) -> tup
         result_title=title,
         body_html=body_html,
         ok=ok,
-        back_href="/operate/profiles?token=dwarf",
+        back_href="/operate/profiles",
         back_label="Back to profiles",
     )
     return status, html
@@ -68,6 +68,6 @@ def handle_create_post(body_bytes: bytes) -> tuple[int, str]:
                        f"<p>Profile dir not writable: <code>{escape(str(PROFILE_ROOT))}</code> ({escape(str(exc))}).</p>")
     return _result(200, "Profile created",
                    f"<p>Wrote <code>{escape(str(output_path))}</code>. It now appears in "
-                   f"<a style='color:#2BE0E0' href='/operate/profiles?token=dwarf'>/operate/profiles</a>. "
+                   f"<a style='color:#2BE0E0' href='/operate/profiles'>/operate/profiles</a>. "
                    f"Edit host-specific values, then deploy with <code>cardano-profile deploy {escape(name)}</code>.</p>",
                    ok=True)

@@ -83,6 +83,22 @@ def test_readme_explains_catalogs_sources_and_evidence_boundaries():
         assert term in text
 
 
+def test_readme_documents_basic_first_and_operator_version_workflow():
+    text = " ".join(_text().split())
+    for term in (
+        "Basic is the default",
+        "Prepare topology",
+        "six stages",
+        "/operate/versions",
+        "Fetch Latest Version",
+        "Linux ELF",
+        "experimental consent",
+        "does not automatically mark",
+    ):
+        assert term in text
+    assert "contiguous 01–10" not in text
+
+
 def test_readme_separates_frozen_program_from_additive_transfer_and_plutus_accounting():
     text = _text()
     compact = " ".join(text.split())

@@ -6,16 +6,15 @@
 # everything from that point on:
 #   1. prepare package layout + seed the writable catalog (scenarios,
 #      manifests, profiles, example runs/bundles)
-#   2. build the dashboard container image
-#   3. start the dashboard container and wait for readiness
+#   2. build the dashboard and local-controller container images
+#   3. pull missing pinned target images, start both containers, and wait for readiness
 #
 # Two host-side capabilities are OFF by default because they touch the host
 # beyond the container sandbox — enable them with flags:
-#   --control-channel   provision the restricted forced-command SSH shim so the
-#                       dashboard can deploy/teardown the substrate and run
-#                       host-side coverage. (Without it the dashboard runs fine
-#                       but the deploy/teardown/coverage buttons have no host to
-#                       talk to.)
+#   --control-channel   provision the legacy restricted forced-command SSH shim
+#                       for SSH-backed operations and host-side coverage.
+#                       The local controller and Basic Prepare/Run workflow do
+#                       not need this channel.
 #   --afl               build the AFL coverage harness (HEAVY: needs GHC 9.6.7 +
 #                       cabal; builds a ~268 MB instrumented binary).
 #   --all               = --control-channel --afl
@@ -66,11 +65,14 @@ AFL_STATUS="skipped"
 echo "==> [1/5] preparing package layout + seeding catalog"
 ensure_package_layout
 ensure_runtime_dirs
+ensure_controller_identity
 seed_example_runs
 seed_example_bundles
 seed_scenarios
 seed_manifests
 seed_profiles
+seed_measurements
+seed_measurement_profiles
 echo "    catalog seeded under ${DWARF_RUNTIME_ROOT}/state"
 
 if [[ "${PREPARE_ONLY}" == 1 ]]; then
@@ -81,7 +83,7 @@ if [[ "${PREPARE_ONLY}" == 1 ]]; then
 fi
 
 if [[ "${DO_BUILD}" == 1 ]]; then
-  echo "==> [2/5] building dashboard image"
+  echo "==> [2/5] building dashboard and local controller images"
   require_docker
   bash "${SCRIPT_DIR}/build-image.sh"
 else
@@ -107,7 +109,7 @@ if [[ "${DO_CONTROL_CHANNEL}" == 1 ]]; then
     echo "!!  WITHOUT host fan-out. Re-run provision-control-channel.sh to fix." >&2
   fi
 else
-  echo "==> [3/5] control channel not requested (pass --control-channel to enable)"
+  echo "==> [3/5] optional legacy SSH channel not requested (local controller is enabled)"
 fi
 
 # --- optional host-side capability: AFL coverage harness --------------------
@@ -137,7 +139,7 @@ fi
 
 # --- start the dashboard ----------------------------------------------------
 if [[ "${DO_UP}" == 1 ]]; then
-  echo "==> [5/5] starting dashboard container"
+  echo "==> [5/5] checking pinned target images and starting local controller + dashboard"
   bash "${SCRIPT_DIR}/deploy.sh"
 else
   echo "==> [5/5] not starting container (--no-up)"
@@ -147,19 +149,21 @@ echo
 echo "================ DWARF install summary ================"
 print_delivery_config
 cat <<EOF
-Control channel : ${CONTROL_CHANNEL_STATUS}
+Legacy SSH channel : ${CONTROL_CHANNEL_STATUS}
 AFL harness     : ${AFL_STATUS}
 EOF
 if [[ "${DO_UP}" == 1 ]]; then
-  echo "Dashboard       : http://${DWARF_DASHBOARD_BIND}:${DWARF_DASHBOARD_PORT}/operate?token=${ADA2_DWARF_TOKEN}"
+  echo "Dashboard       : http://${DWARF_DASHBOARD_BIND}:${DWARF_DASHBOARD_PORT}/operate"
+  echo "Dashboard token : ${DWARF_RUNTIME_ROOT}/state/dashboard-token (mode 0600; unless supplied by environment)"
 fi
 cat <<'EOF'
 -------------------------------------------------------
 From here everything is driven from the web dashboard:
 profiles, targets, primitives, scenario runs, fuzzing,
-backups, scheduling, settings — and, when the control
-channel is provisioned, substrate deploy/teardown and
-host-side coverage runs. Two jobs stay on the host by
+backups, scheduling, settings — and, when the
+legacy SSH channel is provisioned, SSH-backed operations and
+host-side coverage runs. Local topology operations use the controller.
+Two jobs stay on the host by
 design (the hardened container never gets a host shell):
 the forced-command shim and the AFL forkserver.
 =======================================================

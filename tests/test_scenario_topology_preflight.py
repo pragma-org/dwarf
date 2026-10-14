@@ -316,6 +316,7 @@ def test_profile_devnet_scenario_auto_attaches_measurements(monkeypatch, tmp_pat
 
     class _Prepared:
         resolution = {"target_identity": {"implementation": "cardano-node"}, "resolved": []}
+        runtime_metadata_path = None
 
         def build_factories(self, _run_dir):
             return {}

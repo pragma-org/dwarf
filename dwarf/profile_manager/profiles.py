@@ -1,10 +1,14 @@
+import hashlib
 import json
 import os
+import platform
+import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
 from profile_manager.profile_shapes import shape_from_profile_dict
+from profile_manager.amaru_runtime import uses_modern_amaru_runtime_interface
 
 
 # Writable profile catalog. Honors ADA2_DWARF_PROFILES_DIR (seeded from the
@@ -22,6 +26,16 @@ _DEFAULT_REMOTE_BASE = "/opt/dwarf/cardano-profiles"
 
 def remote_base():
     return (os.environ.get("ADA2_DWARF_REMOTE_BASE") or _DEFAULT_REMOTE_BASE).rstrip("/")
+
+
+def runtime_root(profile_id: str) -> Path:
+    """Resolve a retained profile runtime across legacy and controller layouts."""
+
+    profile_root = Path(remote_base()) / profile_id
+    current = profile_root / "current"
+    if (current / "runtime.json").is_file():
+        return current
+    return profile_root
 
 
 # Default locations on the remote build host.
@@ -52,6 +66,75 @@ def _normalize_kes_genesis_override(value):
     if slots < 1 or evolutions < 1:
         raise ValueError("kes_genesis_override values must be >= 1")
     return {"slots_per_kes_period": slots, "max_kes_evolutions": evolutions}
+
+
+def _normalize_generated_topology(value):
+    """Validate the persisted provenance contract for dashboard-generated profiles."""
+
+    if value is None:
+        return None
+    if isinstance(value, dict) and value.get("schema_version") == "v2":
+        required_v2 = {
+            "schema_version", "implementation", "network_magic",
+            "haskell_count", "amaru_count", "cardano_version", "amaru_version",
+        }
+        if set(value) != required_v2:
+            raise ValueError("generated_topology must be an exact v2 generator contract")
+        haskell_count = value.get("haskell_count")
+        amaru_count = value.get("amaru_count")
+        if any(
+            isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 32
+            for count in (haskell_count, amaru_count)
+        ) or not 1 <= haskell_count + amaru_count <= 32:
+            raise ValueError("generated_topology v2 total node count must be from 1 through 32")
+        expected = (
+            "mixed" if haskell_count and amaru_count
+            else "cardano-node" if haskell_count else "amaru"
+        )
+        if value.get("implementation") != expected:
+            raise ValueError("generated_topology v2 implementation does not match node counts")
+        network_magic = value.get("network_magic")
+        if isinstance(network_magic, bool) or not isinstance(network_magic, int) or not 1 <= network_magic <= 2**32 - 1:
+            raise ValueError("generated_topology network_magic must be from 1 through 4294967295")
+        if haskell_count and not str(value.get("cardano_version") or "").strip():
+            raise ValueError("generated_topology v2 requires cardano_version")
+        if amaru_count and not str(value.get("amaru_version") or "").strip():
+            raise ValueError("generated_topology v2 requires amaru_version")
+        return dict(value)
+    required = {
+        "schema_version",
+        "implementation",
+        "network_magic",
+        "node_count",
+        "version",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValueError("generated_topology must be an exact v1 generator contract")
+    if value.get("schema_version") != "v1":
+        raise ValueError("generated_topology schema_version must be v1")
+    implementation = value.get("implementation")
+    if implementation not in {"cardano-node", "amaru"}:
+        raise ValueError("generated_topology implementation is unsupported")
+    node_count = value.get("node_count")
+    if isinstance(node_count, bool) or not isinstance(node_count, int) or not 1 <= node_count <= 32:
+        raise ValueError("generated_topology node_count must be from 1 through 32")
+    network_magic = value.get("network_magic")
+    if (
+        isinstance(network_magic, bool)
+        or not isinstance(network_magic, int)
+        or not 1 <= network_magic <= 2**32 - 1
+    ):
+        raise ValueError("generated_topology network_magic must be from 1 through 4294967295")
+    version = value.get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise ValueError("generated_topology version must be a non-empty string")
+    return {
+        "schema_version": "v1",
+        "implementation": implementation,
+        "network_magic": network_magic,
+        "node_count": node_count,
+        "version": version,
+    }
 
 
 @dataclass(frozen=True)
@@ -89,6 +172,7 @@ class Profile:
     plutus_v2_cost_model_sha256: str | None = None
     cardano_experimental_protocols: bool | None = None
     kes_genesis_override: dict | None = None
+    generated_topology: dict | None = None
 
     @classmethod
     def from_dict(cls, data):
@@ -139,6 +223,9 @@ class Profile:
             kes_genesis_override=_normalize_kes_genesis_override(
                 data.get("kes_genesis_override")
             ),
+            generated_topology=_normalize_generated_topology(
+                data.get("generated_topology")
+            ),
         )
 
 
@@ -154,6 +241,51 @@ def find_profile(profile_id):
         if profile.id == profile_id:
             return profile
     raise KeyError(f"Unknown profile: {profile_id}")
+
+
+def operator_preference_scope(profile: Profile) -> str:
+    """Return the profile-scoped key used by the separate operator overlay."""
+    scope = _profile_deploy_mode(profile)
+    return f"{'cardano-only' if scope == 'haskell-only' else scope}:{profile.id}"
+
+
+def persist_topology_configuration(configuration, *, create=True):
+    """Atomically retain a validated generated or exact topology as a profile.
+
+    Replay deliberately persists only the declarative profile.  Resolved
+    images, controller ownership, runtime paths, commands, and observations
+    are always re-derived by the installed catalog and deployment adapter.
+    """
+
+    from profile_manager.data.catalog_definitions import (
+        CatalogError,
+        save_definition,
+        serialize_definition,
+    )
+    from profile_manager.topology_export import replay_profile_from_snapshot
+
+    try:
+        profile_data = replay_profile_from_snapshot(
+            configuration,
+            attestation_secret=os.environ.get("DWARF_CONTROLLER_TOKEN"),
+        )
+        if (
+            configuration.get("artifact_kind") == "exact_deployed_snapshot"
+            and configuration.get("generator") is None
+        ):
+            # A catalog-backed exact snapshot has already been matched against
+            # this installed profile by replay_profile_from_snapshot.  Opening
+            # that trusted profile must never overwrite its catalog source.
+            return find_profile(str(profile_data["id"]))
+        record = save_definition(
+            "profiles",
+            str(profile_data["id"]),
+            serialize_definition(profile_data),
+            create=create,
+        )
+        return Profile.from_dict(record.data)
+    except CatalogError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def profile_list_text():
@@ -251,6 +383,35 @@ def active_profile_command():
 tmux ls 2>/dev/null | grep -oE '^dwarf-profile-[^:]+' | sed 's/^/DWARF_NODE tmux /' || true"""
 
 
+def persisted_deployment_command(runtime_root):
+    """Emit a bounded, single-line copy of the retained deployment plan."""
+    path = shlex.quote(str(Path(runtime_root) / "versioned-deployment.json"))
+    return f"""python3 - {path} <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+try:
+    if path.stat().st_size > 1048576:
+        raise ValueError("deployment file exceeds 1048576 bytes")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("deployment file is not an object")
+except (OSError, ValueError, TypeError):
+    value = None
+print("DWARF_PERSISTED_DEPLOYMENT=" + json.dumps(value, sort_keys=True, separators=(",", ":")))
+PY"""
+
+
+def health_with_persisted_deployment_command(health_command, runtime_root):
+    """Emit persisted evidence without replacing the health probe exit status."""
+    return f"""(
+{health_command}
+)
+dwarf_profile_health_status=$?
+{persisted_deployment_command(runtime_root)}
+exit "$dwarf_profile_health_status"
+"""
+
+
 def _bool_text(value):
     return "true" if value else "false"
 
@@ -339,6 +500,11 @@ def _profile_as_custom_bundle(profile):
 
 
 def _exact_oci_reference(release):
+    registration = release.get("operator_registration")
+    if isinstance(registration, dict):
+        config_id = str(registration.get("config_image_id") or "")
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", config_id):
+            return config_id
     for artifact in release.get("artifacts", []):
         if artifact.get("kind") != "oci" or artifact.get("availability") != "available":
             continue
@@ -355,7 +521,7 @@ def _exact_oci_reference(release):
 
 
 def _versioned_node(node_id, role, release, *, supporting=False):
-    return {
+    node = {
         "id": node_id,
         "impl": release["implementation"],
         "version": release["version"],
@@ -364,6 +530,128 @@ def _versioned_node(node_id, role, release, *, supporting=False):
         "source_revision": release["source_revision"],
         "supporting": supporting,
         "target_mode": "stock",
+    }
+    if isinstance(release.get("operator_registration"), dict):
+        node["operator_registration"] = json.loads(
+            json.dumps(release["operator_registration"])
+        )
+        if node["impl"] == "amaru":
+            node["amaru_runtime_interface"] = release[
+                "operator_registration"
+            ].get("runtime_interface")
+    return node
+
+
+_AMARU_CONTROL_CARDANO_NODE_SERVICES = (
+    "p1",
+    "p2",
+    "p3",
+    "relay1",
+    "relay2",
+    "amaru-consumer",
+)
+_AMARU_CONTROL_AMARU_NODE_SERVICES = ("amaru-relay-1", "amaru-relay-2")
+_AMARU_CONTROL_INFRASTRUCTURE_SERVICES = (
+    "configurator",
+    "tracer",
+    "tracer-sidecar",
+    "amaru-consumer-seed",
+    "sidecar",
+    "log-tailer",
+)
+
+
+def amaru_control_topology_shape(substrate):
+    """Return the exact fixed relay-bootstrap shape and selected-node mapping."""
+
+    if substrate.get("deployment_adapter") != "amaru-control":
+        raise ValueError("topology does not use the Amaru control lifecycle")
+    nodes = substrate.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        raise ValueError("Amaru control lifecycle requires exact selected nodes")
+    cardano = [node for node in nodes if node.get("impl") == "cardano-node"]
+    amaru = [node for node in nodes if node.get("impl") == "amaru"]
+    selected_cardano = [node for node in cardano if node.get("supporting") is not True]
+    support_cardano = [node for node in cardano if node.get("supporting") is True]
+    if len(selected_cardano) > 2:
+        raise ValueError("proven Amaru lifecycle cannot honor selected Cardano node count")
+    if not amaru or len(amaru) > 2:
+        raise ValueError("proven Amaru lifecycle cannot honor selected Amaru node count")
+    scope = substrate.get("scope")
+    if scope == "amaru-only" and len(support_cardano) != 1:
+        raise ValueError(
+            "proven Amaru lifecycle requires exactly one catalog-selected Cardano support node"
+        )
+    if scope == "mixed" and support_cardano:
+        raise ValueError("mixed topology cannot contain implicit support nodes")
+    if scope not in {"amaru-only", "mixed"}:
+        raise ValueError("Amaru control lifecycle requires Amaru-only or mixed scope")
+    if int(substrate.get("target_node_count") or -1) != len(selected_cardano) + len(amaru):
+        raise ValueError("selected target-node count differs from the topology")
+    if int(substrate.get("support_node_count") or 0) != len(support_cardano):
+        raise ValueError("selected support-node count differs from the topology")
+    selected_node_services = {
+        str(node["id"]): f"p{index}"
+        for index, node in enumerate(selected_cardano, start=1)
+    }
+    if support_cardano:
+        selected_node_services[str(support_cardano[0]["id"])] = "p1"
+    selected_node_services.update(
+        {
+            str(node["id"]): f"amaru-relay-{index}"
+            for index, node in enumerate(amaru, start=1)
+        }
+    )
+    selected_target_node_services = {
+        str(node["id"]): selected_node_services[str(node["id"])]
+        for node in [*selected_cardano, *amaru]
+    }
+    selected_support_node_services = {
+        str(node["id"]): selected_node_services[str(node["id"])]
+        for node in support_cardano
+    }
+    node_services = [
+        *_AMARU_CONTROL_CARDANO_NODE_SERVICES,
+        *_AMARU_CONTROL_AMARU_NODE_SERVICES,
+    ]
+    infrastructure_services = list(_AMARU_CONTROL_INFRASTRUCTURE_SERVICES)
+    conditional_infrastructure_services = []
+    if any(
+        node.get("impl") == "amaru"
+        and uses_modern_amaru_runtime_interface(
+            str(node.get("image") or ""),
+            runtime_interface=(
+                "extracted-binary"
+                if node.get("target_mode") == "patched"
+                else node.get("amaru_runtime_interface")
+            ),
+        )
+        for node in nodes
+    ):
+        conditional_infrastructure_services.append("amaru-target-extract")
+    if substrate.get("plutus_v2_genesis") is True:
+        conditional_infrastructure_services.append("plutus-v2-activate")
+    infrastructure_services.extend(conditional_infrastructure_services)
+    selected_services = set(selected_node_services.values())
+    all_services = [*node_services, *infrastructure_services]
+    return {
+        "lifecycle": "cardano_amaru_relay_bootstrap_control",
+        "selected_node_services": selected_node_services,
+        "selected_target_node_services": selected_target_node_services,
+        "selected_support_node_services": selected_support_node_services,
+        "requested_target_nodes": int(substrate["target_node_count"]),
+        "requested_support_nodes": int(substrate["support_node_count"]),
+        "physical_node_services": node_services,
+        "physical_cardano_node_count": len(_AMARU_CONTROL_CARDANO_NODE_SERVICES),
+        "physical_amaru_node_count": len(_AMARU_CONTROL_AMARU_NODE_SERVICES),
+        "fixed_additional_node_services": [
+            service for service in node_services if service not in selected_services
+        ],
+        "infrastructure_services": infrastructure_services,
+        "conditional_infrastructure_services": conditional_infrastructure_services,
+        "network_names": ["default", "amaru-consumer-net"],
+        "all_services": all_services,
+        "physical_service_count": len(all_services),
     }
 
 
@@ -383,6 +671,8 @@ def versioned_substrate_for_profile(profile, version_preview):
     resolved = dict(version_preview.get("resolved") or {})
     scope = str(version_preview.get("scope") or _profile_deploy_mode(profile))
     deployment_adapter = deployment_adapter_for_profile(profile)
+    if deployment_adapter == "amaru-control" and profile.peer_sharing:
+        raise ValueError("amaru-control profiles require peer_sharing=false")
     nodes = []
     target_node_count = profile.node_count + profile.amaru_node_count
     support_node_count = 0
@@ -430,7 +720,8 @@ def versioned_substrate_for_profile(profile, version_preview):
             if node["impl"] != implementation:
                 continue
             patched_identity = {
-                "image": target["image_reference"],
+                "image": target.get("runtime_image_reference")
+                or target["image_reference"],
                 "image_digest": target["image_digest"],
                 "executable_digest": target["executable_digest"],
                 "target_mode": "patched",
@@ -438,6 +729,21 @@ def versioned_substrate_for_profile(profile, version_preview):
                 "build_result_sha256": target["build_result_sha256"],
                 "runtime_probe_log_sha256": target["runtime_probe_log_sha256"],
             }
+            if target.get("runtime_image_reference"):
+                patched_identity.update(
+                    {
+                        "source_image_reference": target["image_reference"],
+                        "image_manifest_digest": target["image_manifest_digest"],
+                        "image_config_digest": target["image_config_digest"],
+                        "qualification_image_id": target["qualification_image_id"],
+                        "transfer_source_installation_id": target[
+                            "transfer_source_installation_id"
+                        ],
+                        "transfer_manifest_sha256": target[
+                            "transfer_manifest_sha256"
+                        ],
+                    }
+                )
             if target.get("runtime_probe_image"):
                 patched_identity["runtime_probe_image"] = target[
                     "runtime_probe_image"
@@ -473,7 +779,11 @@ def versioned_substrate_for_profile(profile, version_preview):
         "selected_pair": version_preview.get("pair"),
         "selected_releases": selected_releases,
     }
-    return {
+    for field in ("operator_registration_id", "operator_overlay_revision"):
+        value = version_preview.get(field)
+        if value is not None:
+            selected_catalog_snapshot[field] = value
+    substrate = {
         "profile_id": profile.id,
         "compose_mode": "docker",
         "scope": scope,
@@ -485,12 +795,20 @@ def versioned_substrate_for_profile(profile, version_preview):
             if deployment_adapter in {"cardano-public-peer", "amaru-public-peer"}
             else f"testnet_{profile.network_magic}"
         ),
-        "network_magic": (
+        # Public profiles have a catalog-owned magic too.  Preserve it in the
+        # retained deployment so desired/persisted reconciliation is exact;
+        # the adapter still validates it against the staged network config.
+        "network_magic": profile.network_magic,
+        "peer_sharing": profile.peer_sharing,
+        # Public adapters always fetch their canonical named-network assets in
+        # the owned runtime.  A catalog's source-host /opt or /home hint is not
+        # portable and must never silently become a different genesis/config
+        # input merely because that path happens to exist on one host.
+        "config_source_dir": (
             None
             if deployment_adapter in {"cardano-public-peer", "amaru-public-peer"}
-            else profile.network_magic
+            else profile.config_source_dir
         ),
-        "config_source_dir": profile.config_source_dir,
         "upstream_peer_address": profile.upstream_peer_address,
         "listen_address": profile.listen_address,
         "version_policy": version_preview.get("policy"),
@@ -510,6 +828,1111 @@ def versioned_substrate_for_profile(profile, version_preview):
         "nodes": nodes,
         "topology": {"edges": edges},
     }
+    for field in ("operator_registration_id", "operator_overlay_revision"):
+        value = version_preview.get(field)
+        if value is not None:
+            substrate[field] = value
+    if deployment_adapter == "amaru-control":
+        substrate["actual_topology"] = amaru_control_topology_shape(substrate)
+    return substrate
+
+
+def _local_executable_identity_from_substrate(
+    substrate, *, require_package_proof=True
+):
+    """Return one exact controller-packaged local identity, or fail closed."""
+    registration_id = substrate.get("operator_registration_id")
+    overlay_revision = substrate.get("operator_overlay_revision")
+    catalog = substrate.get("catalog_snapshot")
+    if registration_id is None and overlay_revision is None:
+        return None
+    if (
+        not isinstance(registration_id, str)
+        or not registration_id
+        or not isinstance(overlay_revision, str)
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", overlay_revision)
+        or not isinstance(catalog, dict)
+        or catalog.get("operator_registration_id") != registration_id
+        or catalog.get("operator_overlay_revision") != overlay_revision
+    ):
+        return None
+    registrations = []
+    releases = catalog.get("selected_releases")
+    if not isinstance(releases, list):
+        return None
+    selected_release = None
+    selected_artifact = None
+    for release in releases:
+        if not isinstance(release, dict):
+            return None
+        registration = release.get("operator_registration")
+        if not isinstance(registration, dict):
+            continue
+        artifacts = release.get("artifacts")
+        if not isinstance(artifacts, list):
+            return None
+        matching = [
+            artifact
+            for artifact in artifacts
+            if isinstance(artifact, dict)
+            and artifact.get("operator_registration") == registration
+        ]
+        if len(matching) != 1:
+            return None
+        registrations.append(registration)
+        selected_release = release
+        selected_artifact = matching[0]
+    if len(registrations) != 1:
+        return None
+    registration = registrations[0]
+    try:
+        from profile_manager.deployment_versions import (
+            DeploymentVersionGateError,
+            operator_registration_immutable_identity,
+        )
+
+        identity = operator_registration_immutable_identity(registration)
+    except (DeploymentVersionGateError, KeyError, TypeError, ValueError):
+        return None
+    package_proof = selected_release.get("operator_package_proof")
+    expected_package_proof = {
+        "status": "verified",
+        "registration_id": identity["registration_id"],
+        "config_image_id": identity["config_image_id"],
+        "executable_digest": identity["executable_digest"],
+        "platform": identity["platform"],
+        "runtime_interface": identity["runtime_interface"],
+        "controller_installation_id": identity["controller_installation_id"],
+    }
+    package_proof_present = "operator_package_proof" in selected_release
+    if (
+        (
+            (require_package_proof or package_proof_present)
+            and package_proof != expected_package_proof
+        )
+        or identity["registration_id"] != registration_id
+        or selected_release.get("implementation") != identity["implementation"]
+        or selected_release.get("version") != identity["version"]
+        or selected_release.get("source_revision") != identity["source_revision"]
+        or selected_artifact.get("kind") != "oci"
+        or selected_artifact.get("availability") != "available"
+        or selected_artifact.get("reference") != identity["config_image_id"]
+        or selected_artifact.get("config_image_id") != identity["config_image_id"]
+        or selected_artifact.get("digest") is not None
+        or selected_artifact.get("executable_digest")
+        != identity["executable_digest"]
+        or selected_artifact.get("platforms") != [identity["platform"]]
+        or selected_artifact.get("runtime_interface")
+        != identity["runtime_interface"]
+    ):
+        return None
+    matching_nodes = []
+    for node in substrate.get("nodes") or []:
+        if not isinstance(node, dict):
+            return None
+        node_registration = node.get("operator_registration")
+        if node_registration is None:
+            continue
+        if node_registration != registration:
+            return None
+        matching_nodes.append(node)
+    if not matching_nodes or any(
+        node.get("impl") != identity["implementation"]
+        or node.get("version") != identity["version"]
+        or node.get("image") != identity["config_image_id"]
+        or node.get("source_revision") != identity["source_revision"]
+        or (
+            identity["implementation"] == "amaru"
+            and node.get("amaru_runtime_interface")
+            != identity["runtime_interface"]
+        )
+        for node in matching_nodes
+    ):
+        return None
+    return {**identity, "operator_overlay_revision": overlay_revision}
+
+
+def _strip_local_executable_digest(contract, identity):
+    """Remove only the proven additive digest from the physical contract."""
+    registration_id = identity["registration_id"]
+    catalog = contract.get("catalog_snapshot")
+    if isinstance(catalog, dict):
+        for release in catalog.get("selected_releases") or []:
+            if not isinstance(release, dict):
+                continue
+            registration = release.get("operator_registration")
+            if isinstance(registration, dict) and registration.get(
+                "registration_id"
+            ) == registration_id:
+                registration.pop("executable_digest", None)
+                release.pop("operator_package_proof", None)
+            for artifact in release.get("artifacts") or []:
+                if not isinstance(artifact, dict):
+                    continue
+                artifact_registration = artifact.get("operator_registration")
+                if isinstance(artifact_registration, dict) and artifact_registration.get(
+                    "registration_id"
+                ) == registration_id:
+                    artifact_registration.pop("executable_digest", None)
+                    # ``operator_registration_release`` has always emitted the
+                    # optional artifact field as JSON null.  Preserve that
+                    # historical representation while removing only the newly
+                    # proven value from physical deployment identity.
+                    artifact["executable_digest"] = None
+    for node in contract.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        registration = node.get("operator_registration")
+        if isinstance(registration, dict) and registration.get(
+            "registration_id"
+        ) == registration_id:
+            registration.pop("executable_digest", None)
+
+
+def _validated_local_executable_reuse_metadata(value):
+    """Validate the compact proof carried by desired-topology identity."""
+    if not isinstance(value, dict) or set(value) != {
+        "schema_version",
+        "registration_id",
+        "implementation",
+        "version",
+        "config_image_id",
+        "executable_digest",
+        "platform",
+        "runtime_interface",
+        "controller_installation_id",
+        "source_revision",
+        "qualification",
+        "operator_overlay_revision",
+    }:
+        return None
+    if (
+        value.get("schema_version") != "v1"
+        or not isinstance(value.get("registration_id"), str)
+        or not value["registration_id"].startswith("registration-")
+        or value.get("implementation") not in {"amaru", "cardano-node"}
+        or not isinstance(value.get("version"), str)
+        or not value["version"]
+        or not isinstance(value.get("config_image_id"), str)
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", value["config_image_id"])
+        or not isinstance(value.get("executable_digest"), str)
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", value["executable_digest"])
+        or value.get("platform") not in {"linux/amd64", "linux/arm64"}
+        or not isinstance(value.get("controller_installation_id"), str)
+        or not value["controller_installation_id"]
+        or value.get("qualification") != "unverified"
+        or not isinstance(value.get("operator_overlay_revision"), str)
+        or not re.fullmatch(
+            r"sha256:[0-9a-f]{64}", value["operator_overlay_revision"]
+        )
+    ):
+        return None
+    source_revision = value.get("source_revision")
+    if source_revision is not None and (
+        not isinstance(source_revision, str)
+        or not re.fullmatch(r"[0-9a-f]{40}", source_revision)
+    ):
+        return None
+    if (
+        value["implementation"] == "amaru"
+        and value.get("runtime_interface") != "extracted-binary"
+    ) or (
+        value["implementation"] == "cardano-node"
+        and value.get("runtime_interface") is not None
+    ):
+        return None
+    return value
+
+
+def _local_executable_metadata_relation(observed, expected):
+    """Return equal/enriched/absent, rejecting every changed or malformed proof."""
+    observed_present = "local_executable_reuse_metadata" in observed
+    expected_present = "local_executable_reuse_metadata" in expected
+    observed_value = (
+        _validated_local_executable_reuse_metadata(
+            observed.get("local_executable_reuse_metadata")
+        )
+        if observed_present
+        else None
+    )
+    expected_value = (
+        _validated_local_executable_reuse_metadata(
+            expected.get("local_executable_reuse_metadata")
+        )
+        if expected_present
+        else None
+    )
+    if observed_present and observed_value is None:
+        return None
+    if expected_present and expected_value is None:
+        return None
+    for container, value in (
+        (observed, observed_value),
+        (expected, expected_value),
+    ):
+        if value is not None and value.get("operator_overlay_revision") != container.get(
+            "operator_overlay_revision"
+        ):
+            return None
+    if not observed_present and not expected_present:
+        return "absent"
+    if not observed_present and expected_value is not None:
+        return "enriched"
+    observed_identity = dict(observed_value or {})
+    expected_identity = dict(expected_value or {})
+    observed_identity.pop("operator_overlay_revision", None)
+    expected_identity.pop("operator_overlay_revision", None)
+    if observed_identity == expected_identity:
+        return "equal"
+    return None
+
+
+def _deployment_contract_from_substrate(
+    substrate, *, trusted_local_identity=None
+):
+    """Return the runtime-affecting identity while retaining full provenance elsewhere."""
+    contract = json.loads(json.dumps(substrate))
+    for field in (
+        "controller_ownership",
+        "docker_host_runtime_root",
+        # The controller re-resolves an already selected concrete release set
+        # as ``exact``. These selection labels are not deployment policy; the
+        # selected releases and their verification records remain fully bound.
+        "version_policy",
+        "version_policy_source",
+        "version_status",
+        "unknown_acknowledged",
+        # The append-only operator ledger revision changes when the operator
+        # records evidence or a preference.  It invalidates the complete plan,
+        # but is not itself a physical deployment input.
+        "operator_overlay_revision",
+    ):
+        contract.pop(field, None)
+    contract.pop("catalog_revision", None)
+    catalog = contract.get("catalog_snapshot")
+    if isinstance(catalog, dict):
+        catalog.pop("catalog_revision", None)
+        catalog.pop("catalog_updated_at", None)
+        catalog.pop("operator_overlay_revision", None)
+        for field in ("selection_policy", "selection_status", "selected_pair"):
+            catalog.pop(field, None)
+        for release in catalog.get("selected_releases") or []:
+            if not isinstance(release, dict):
+                continue
+            for artifact in release.get("artifacts") or []:
+                if not isinstance(artifact, dict):
+                    continue
+                # Catalog discoverability and advertised host platforms may be
+                # added after an exact image has been deployed. They do not
+                # alter that image, its qualification, or the generated runtime.
+                artifact.pop("public", None)
+                artifact.pop("platforms", None)
+    local_identity = trusted_local_identity or _local_executable_identity_from_substrate(
+        substrate
+    )
+    if local_identity is not None:
+        _strip_local_executable_digest(contract, local_identity)
+    if contract.get("network") in {"mainnet", "preprod", "preview"}:
+        contract["config_source_dir"] = None
+    return contract
+
+
+def _catalog_reuse_metadata(substrate):
+    """Expose the narrow eligibility facts needed for directional reuse checks."""
+    raw_arch = str(os.environ.get("DWARF_HOST_ARCH") or platform.machine()).casefold()
+    architecture = {"x86_64": "amd64", "aarch64": "arm64"}.get(
+        raw_arch, raw_arch
+    )
+    container_platform = f"linux/{architecture}"
+    catalog = substrate.get("catalog_snapshot")
+    releases = catalog.get("selected_releases") if isinstance(catalog, dict) else None
+    artifacts = []
+    if isinstance(releases, list):
+        for release in releases:
+            if not isinstance(release, dict):
+                continue
+            source_revision = release.get("source_revision")
+            source_revision_valid = bool(
+                isinstance(source_revision, str)
+                and re.fullmatch(r"[0-9a-f]{40}", source_revision)
+            )
+            verification = release.get("verification")
+            verification_valid = bool(
+                isinstance(verification, dict)
+                and any(
+                    isinstance(record, dict)
+                    and record.get("status") == "confirmed"
+                    and isinstance(record.get("checked_at"), str)
+                    and bool(record["checked_at"])
+                    and isinstance(record.get("evidence"), list)
+                    and bool(record["evidence"])
+                    and all(
+                        isinstance(item, str) and bool(item)
+                        for item in record["evidence"]
+                    )
+                    for record in verification.values()
+                )
+            )
+            for artifact in release.get("artifacts") or []:
+                if not isinstance(artifact, dict) or artifact.get("kind") != "oci":
+                    continue
+                platforms = artifact.get("platforms")
+                platforms_state = (
+                    "absent"
+                    if "platforms" not in artifact
+                    else (
+                        "valid"
+                        if isinstance(platforms, list)
+                        and platforms
+                        and all(isinstance(item, str) for item in platforms)
+                        else "malformed"
+                    )
+                )
+                public = artifact.get("public")
+                public_state = (
+                    "absent"
+                    if "public" not in artifact
+                    else "valid" if isinstance(public, bool) else "malformed"
+                )
+                reference = artifact.get("reference")
+                digest = artifact.get("digest")
+                reference_valid = bool(
+                    isinstance(reference, str)
+                    and "/" in reference
+                    and not reference.startswith("/")
+                    and not reference.endswith("/")
+                    and "://" not in reference
+                    and not re.search(r"\s", reference)
+                    and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@-]+", reference)
+                )
+                digest_valid = bool(
+                    isinstance(digest, str)
+                    and re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                )
+                if reference_valid and "@" in reference:
+                    reference_valid = reference.rsplit("@", 1)[1] == digest
+                qualification_present = "qualification" in artifact
+                qualification = artifact.get("qualification")
+                qualification_valid = bool(
+                    not qualification_present
+                    or (
+                        isinstance(qualification, dict)
+                        and qualification.get("status") == "verified"
+                        and isinstance(
+                            qualification.get("evidence_sha256"), str
+                        )
+                        and re.fullmatch(
+                            r"(?:sha256:)?[0-9a-f]{64}",
+                            qualification["evidence_sha256"],
+                        )
+                    )
+                )
+                platforms_valid = bool(
+                    platforms_state == "valid"
+                    and len(platforms) <= 16
+                    and len(set(platforms)) == len(platforms)
+                    and all(
+                        item in {"linux/amd64", "linux/arm64"}
+                        for item in platforms
+                    )
+                )
+                artifacts.append(
+                    {
+                        "implementation": release.get("implementation"),
+                        "version": release.get("version"),
+                        "reference": reference,
+                        "digest": digest,
+                        "availability": artifact.get("availability"),
+                        "source_revision": source_revision,
+                        "source_revision_valid": source_revision_valid,
+                        "reference_valid": reference_valid,
+                        "digest_valid": digest_valid,
+                        "verification_valid": verification_valid,
+                        "qualification_present": qualification_present,
+                        "qualification_valid": qualification_valid,
+                        "public": public if public_state == "valid" else None,
+                        "public_state": public_state,
+                        "platforms": (
+                            sorted(set(platforms))
+                            if platforms_state == "valid"
+                            else None
+                        ),
+                        "platforms_state": (
+                            platforms_state
+                            if platforms_state != "valid" or platforms_valid
+                            else "malformed"
+                        ),
+                    }
+                )
+    eligible = bool(artifacts) and all(
+        row["public"] is True
+        and row["public_state"] == "valid"
+        and row["availability"] == "available"
+        and row["source_revision_valid"] is True
+        and row["reference_valid"] is True
+        and row["digest_valid"] is True
+        and row["verification_valid"] is True
+        and row["qualification_valid"] is True
+        and isinstance(row["platforms"], list)
+        and row["platforms_state"] == "valid"
+        and container_platform in row["platforms"]
+        for row in artifacts
+    )
+    return {
+        "container_platform": container_platform,
+        "eligible": eligible,
+        "artifacts": artifacts,
+    }
+
+
+def _validated_catalog_reuse_metadata(meta, *, require_verified=False):
+    """Return exact artifact rows only for complete, honest tri-state metadata."""
+    if not isinstance(meta, dict):
+        return None
+    platform_name = meta.get("container_platform")
+    rows = meta.get("artifacts")
+    if (
+        platform_name not in {"linux/amd64", "linux/arm64"}
+        or not isinstance(meta.get("eligible"), bool)
+        or not isinstance(rows, list)
+        or not rows
+    ):
+        return None
+    result = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            return None
+        key = tuple(
+            row.get(name)
+            for name in (
+                "implementation",
+                "version",
+                "source_revision",
+                "reference",
+                "digest",
+            )
+        )
+        source_revision_valid = bool(
+            isinstance(key[2], str) and re.fullmatch(r"[0-9a-f]{40}", key[2])
+        )
+        reference_valid = bool(
+            isinstance(key[3], str)
+            and "/" in key[3]
+            and not key[3].startswith("/")
+            and not key[3].endswith("/")
+            and "://" not in key[3]
+            and not re.search(r"\s", key[3])
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@-]+", key[3])
+        )
+        digest_valid = bool(
+            isinstance(key[4], str)
+            and re.fullmatch(r"sha256:[0-9a-f]{64}", key[4])
+        )
+        if reference_valid and "@" in key[3]:
+            reference_valid = key[3].rsplit("@", 1)[1] == key[4]
+        if (
+            any(not isinstance(value, str) or not value for value in key[:2])
+            or key[2] is not None and not isinstance(key[2], str)
+            or not isinstance(key[3], str) or not key[3]
+            or key[4] is not None and not isinstance(key[4], str)
+            or key in result
+            or any(
+                not isinstance(row.get(name), bool)
+                for name in (
+                    "source_revision_valid",
+                    "reference_valid",
+                    "digest_valid",
+                    "verification_valid",
+                    "qualification_valid",
+                )
+            )
+            or row.get("availability")
+            not in {"available", "unavailable", "unknown"}
+            or not isinstance(row.get("qualification_present"), bool)
+            or row.get("source_revision_valid") is not source_revision_valid
+            or row.get("reference_valid") is not reference_valid
+            or row.get("digest_valid") is not digest_valid
+            or row.get("qualification_present") is False
+            and row.get("qualification_valid") is not True
+        ):
+            return None
+        if require_verified and (
+            any(
+                row.get(name) is not True
+                for name in (
+                    "source_revision_valid",
+                    "reference_valid",
+                    "digest_valid",
+                    "verification_valid",
+                    "qualification_valid",
+                )
+            )
+            or row.get("availability") != "available"
+        ):
+            return None
+        public_state = row.get("public_state")
+        if (
+            public_state == "absent"
+            and row.get("public") is not None
+        ) or (
+            public_state == "valid"
+            and not isinstance(row.get("public"), bool)
+        ) or public_state not in {"absent", "valid"}:
+            return None
+        platforms_state = row.get("platforms_state")
+        platforms = row.get("platforms")
+        if platforms_state == "absent":
+            if platforms is not None:
+                return None
+        elif (
+            platforms_state != "valid"
+            or not isinstance(platforms, list)
+            or not platforms
+            or len(platforms) > 16
+            or len(set(platforms)) != len(platforms)
+            or any(item not in {"linux/amd64", "linux/arm64"} for item in platforms)
+        ):
+            return None
+        result[key] = row
+    eligible = all(
+        row.get("public_state") == "valid"
+        and row.get("public") is True
+        and row.get("availability") == "available"
+        and row.get("source_revision_valid") is True
+        and row.get("reference_valid") is True
+        and row.get("digest_valid") is True
+        and row.get("verification_valid") is True
+        and row.get("qualification_valid") is True
+        and row.get("platforms_state") == "valid"
+        and platform_name in row.get("platforms", [])
+        for row in result.values()
+    )
+    return (platform_name, result) if meta["eligible"] is eligible else None
+
+
+def _catalog_metadata_directionally_enriched(before_meta, after_meta):
+    """Accept only authenticated, one-way eligibility enrichment."""
+    before_validated = _validated_catalog_reuse_metadata(
+        before_meta, require_verified=True
+    )
+    after_validated = _validated_catalog_reuse_metadata(
+        after_meta, require_verified=True
+    )
+    if before_validated is None or after_validated is None:
+        return False
+    before_platform, before = before_validated
+    platform_name, after = after_validated
+    if before_platform != platform_name:
+        return False
+
+    if set(before) != set(after):
+        return False
+    enriched = False
+    for key, current in after.items():
+        retained = before[key]
+        if retained.get("qualification_present") != current.get(
+            "qualification_present"
+        ):
+            return False
+        for row in (retained, current):
+            if any(
+                row.get(name) is not True
+                for name in (
+                    "source_revision_valid",
+                    "reference_valid",
+                    "digest_valid",
+                    "verification_valid",
+                    "qualification_valid",
+                )
+            ) or row.get("availability") != "available":
+                return False
+            if (
+                row.get("public_state") == "malformed"
+                or row.get("platforms_state") == "malformed"
+            ):
+                return False
+        row_enriched = False
+        retained_public = (retained.get("public_state"), retained.get("public"))
+        current_public = (current.get("public_state"), current.get("public"))
+        if retained_public[0] == "absent" and current_public == ("valid", True):
+            row_enriched = True
+        elif retained_public != current_public:
+            if retained_public == ("valid", False) and current_public == ("valid", True):
+                row_enriched = True
+            else:
+                return False
+
+        retained_platforms = retained.get("platforms")
+        current_platforms = current.get("platforms")
+        if retained.get("platforms_state") == "absent":
+            if (
+                current.get("platforms_state") == "valid"
+                and isinstance(current_platforms, list)
+                and platform_name in current_platforms
+            ):
+                row_enriched = True
+            elif current.get("platforms_state") != "absent":
+                return False
+        elif retained.get("platforms_state") == current.get("platforms_state") == "valid":
+            retained_set = set(retained_platforms or [])
+            current_set = set(current_platforms or [])
+            if (
+                platform_name not in current_set
+                or not retained_set.issubset(current_set)
+            ):
+                return False
+            row_enriched = row_enriched or retained_set != current_set
+        else:
+            return False
+        if row_enriched:
+            if (
+                current_public != ("valid", True)
+                or current.get("platforms_state") != "valid"
+                or platform_name not in (current_platforms or [])
+            ):
+                return False
+            enriched = True
+    return enriched
+
+
+def _operator_overlay_relation(before, after):
+    """Classify the exact operator identity relationship, or reject it."""
+    before_registration = before.get("operator_registration_id")
+    after_registration = after.get("operator_registration_id")
+    before_revision = before.get("operator_overlay_revision")
+    after_revision = after.get("operator_overlay_revision")
+    for value, registration, revision in (
+        (before, before_registration, before_revision),
+        (after, after_registration, after_revision),
+    ):
+        catalog = value.get("catalog_snapshot")
+        if isinstance(catalog, dict) and (
+            catalog.get("operator_registration_id") != registration
+            or catalog.get("operator_overlay_revision") != revision
+        ):
+            return None
+    if all(
+        value is None
+        for value in (
+            before_registration,
+            after_registration,
+            before_revision,
+            after_revision,
+        )
+    ):
+        return "ordinary"
+    if (
+        not isinstance(before_registration, str)
+        or not before_registration
+        or after_registration != before_registration
+        or not isinstance(before_revision, str)
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", before_revision)
+        or not isinstance(after_revision, str)
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", after_revision)
+    ):
+        return None
+    return "equal" if before_revision == after_revision else "changed"
+
+
+def deployment_substrates_reusable(retained, current):
+    """Return whether current is the same runtime plus trusted catalog enrichment."""
+    if not isinstance(retained, dict) or not isinstance(current, dict):
+        return False
+    retained_metadata = _catalog_reuse_metadata(retained)
+    current_metadata = _catalog_reuse_metadata(current)
+    retained_local = _local_executable_identity_from_substrate(retained)
+    current_local = _local_executable_identity_from_substrate(current)
+    retained_contract_identity = None
+    if retained_local is None and current_local is None:
+        if (
+            _local_executable_identity_from_substrate(
+                retained, require_package_proof=False
+            )
+            is not None
+            or _local_executable_identity_from_substrate(
+                current, require_package_proof=False
+            )
+            is not None
+        ):
+            return False
+        local_relation = "absent"
+    elif retained_local is None and current_local is not None:
+        retained_embedded = _local_executable_identity_from_substrate(
+            retained, require_package_proof=False
+        )
+        if retained_embedded is None:
+            local_relation = "enriched"
+        elif {
+            key: value
+            for key, value in retained_embedded.items()
+            if key != "operator_overlay_revision"
+        } == {
+            key: value
+            for key, value in current_local.items()
+            if key != "operator_overlay_revision"
+        }:
+            local_relation = "proof-enriched"
+            retained_contract_identity = current_local
+        else:
+            return False
+    elif retained_local is not None and current_local is None:
+        return False
+    elif {
+        key: value
+        for key, value in retained_local.items()
+        if key != "operator_overlay_revision"
+    } == {
+        key: value
+        for key, value in current_local.items()
+        if key != "operator_overlay_revision"
+    }:
+        local_relation = "equal"
+    else:
+        return False
+    if _deployment_contract_from_substrate(
+        retained, trusted_local_identity=retained_contract_identity
+    ) != _deployment_contract_from_substrate(current):
+        return False
+    overlay_relation = _operator_overlay_relation(retained, current)
+    if overlay_relation is None:
+        return False
+    if overlay_relation in {"equal", "changed"}:
+        for substrate in (retained, current):
+            catalog = substrate.get("catalog_snapshot")
+            if (
+                not isinstance(catalog, dict)
+                or catalog.get("operator_registration_id")
+                != substrate.get("operator_registration_id")
+                or catalog.get("operator_overlay_revision")
+                != substrate.get("operator_overlay_revision")
+            ):
+                return False
+    if retained_metadata == current_metadata and overlay_relation == "changed":
+        return bool(
+            local_relation in {"absent", "equal", "proof-enriched"}
+            and _validated_catalog_reuse_metadata(retained_metadata) is not None
+            and _validated_catalog_reuse_metadata(current_metadata) is not None
+        )
+    if (
+        retained_metadata == current_metadata
+        and overlay_relation == "equal"
+        and local_relation == "enriched"
+    ):
+        return bool(
+            _validated_catalog_reuse_metadata(retained_metadata) is not None
+            and _validated_catalog_reuse_metadata(current_metadata) is not None
+        )
+    return bool(
+        overlay_relation in {"ordinary", "equal"}
+        and local_relation in {"absent", "equal"}
+        and _catalog_metadata_directionally_enriched(
+            retained_metadata, current_metadata
+        )
+    )
+
+
+def deployment_topologies_reusable(observed, expected):
+    """Shared dashboard/controller identity predicate; never trusts caller flags."""
+    if not isinstance(observed, dict) or not isinstance(expected, dict):
+        return False
+
+    def canonical_plan_hash(value):
+        claimed = value.get("plan_sha256")
+        if not isinstance(claimed, str) or not re.fullmatch(
+            r"sha256:[0-9a-f]{64}", claimed
+        ):
+            return None
+        body = {key: item for key, item in value.items() if key != "plan_sha256"}
+        actual = "sha256:" + hashlib.sha256(
+            json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        return claimed if claimed == actual else None
+
+    observed_plan = canonical_plan_hash(observed)
+    expected_plan = canonical_plan_hash(expected)
+    if observed_plan is None or expected_plan is None:
+        return False
+    observed_metadata = _validated_catalog_reuse_metadata(
+        observed.get("catalog_reuse_metadata")
+    )
+    expected_metadata = _validated_catalog_reuse_metadata(
+        expected.get("catalog_reuse_metadata")
+    )
+    if observed_metadata is None or expected_metadata is None:
+        return False
+    ignored = {
+        "plan_sha256",
+        "catalog_revision",
+        "substrate_sha256",
+        "catalog_reuse_metadata",
+        "operator_overlay_revision",
+        "local_executable_reuse_metadata",
+    }
+    observed_invariants = {
+        key: value for key, value in observed.items() if key not in ignored
+    }
+    expected_invariants = {
+        key: value for key, value in expected.items() if key not in ignored
+    }
+    if observed_invariants != expected_invariants:
+        return False
+    overlay_relation = _operator_overlay_relation(observed, expected)
+    if overlay_relation is None:
+        return False
+    local_relation = _local_executable_metadata_relation(observed, expected)
+    if local_relation is None:
+        return False
+    if (
+        observed_plan == expected_plan
+        and overlay_relation in {"ordinary", "equal"}
+    ):
+        return bool(
+            local_relation in {"absent", "equal"}
+            and observed.get("catalog_reuse_metadata") == expected.get(
+                "catalog_reuse_metadata"
+            )
+        )
+    observed_deployment = observed.get("deployment_sha256")
+    metadata_matches = observed.get("catalog_reuse_metadata") == expected.get(
+        "catalog_reuse_metadata"
+    )
+    return bool(
+        isinstance(observed_deployment, str)
+        and re.fullmatch(r"sha256:[0-9a-f]{64}", observed_deployment)
+        and observed_deployment == expected.get("deployment_sha256")
+        and (
+            (
+                metadata_matches
+                and overlay_relation == "changed"
+                and local_relation in {"absent", "equal"}
+                and observed_plan != expected_plan
+            )
+            or (
+                overlay_relation in {"ordinary", "equal"}
+                and local_relation in {"absent", "equal"}
+                and _catalog_metadata_directionally_enriched(
+                    observed.get("catalog_reuse_metadata"),
+                    expected.get("catalog_reuse_metadata"),
+                )
+            )
+            or (
+                metadata_matches
+                and overlay_relation == "equal"
+                and local_relation == "enriched"
+                and observed_plan != expected_plan
+            )
+        )
+    )
+
+
+def desired_topology_from_substrate(profile_id, substrate):
+    """Return one exact reconciliation identity for a retained substrate.
+
+    The compact node rows remain suitable for inventory joins, while the
+    substrate digest binds generation inputs that do not appear in a Docker
+    container identity (for example patched executable provenance, genesis
+    features, and protocol/KES configuration).
+    """
+    # Controller ownership and the host-mapped current directory are execution
+    # metadata added after the dashboard/controller independently resolve the
+    # same topology.  They are verified separately and are not generator input.
+    substrate_contract = {
+        key: value
+        for key, value in substrate.items()
+        if key
+        not in {
+            "controller_ownership",
+            "docker_host_runtime_root",
+            # Selection policy explains how the catalog chose the immutable
+            # releases; it is retained in the substrate audit record but is
+            # not a runtime-generation input.  The controller deliberately
+            # re-resolves a requested concrete node set as ``exact``.
+            "version_policy",
+            "version_policy_source",
+            "version_status",
+            "unknown_acknowledged",
+        }
+    }
+    substrate_contract = json.loads(json.dumps(substrate_contract))
+    catalog_contract = substrate_contract.get("catalog_snapshot")
+    if isinstance(catalog_contract, dict):
+        for field in ("selection_policy", "selection_status", "selected_pair"):
+            catalog_contract.pop(field, None)
+    # Public-network adapters fetch the canonical network assets inside their
+    # owned runtime.  Catalog profiles may retain a source-checkout-only /opt
+    # or /home hint which is intentionally cleared by an installed controller
+    # when that host path is unavailable.  It is therefore not generator
+    # identity for public networks.  Custom/devnet source paths remain exact
+    # provenance and continue to affect the reconciliation digest.
+    if substrate_contract.get("network") in {"mainnet", "preprod", "preview"}:
+        substrate_contract["config_source_dir"] = None
+    substrate_body = json.dumps(
+        substrate_contract, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    deployment_body = json.dumps(
+        _deployment_contract_from_substrate(substrate),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    desired = {
+        "schema_version": "v1",
+        "topology_id": profile_id,
+        "profile_id": profile_id,
+        # Reconciliation/controller identity always carries the concrete
+        # network magic, including named public networks whose adapter does
+        # not need a CLI --testnet-magic argument.
+        "network_magic": substrate.get("network_magic"),
+        "peer_sharing": substrate.get("peer_sharing"),
+        "deployment_adapter": substrate.get("deployment_adapter"),
+        "catalog_revision": substrate.get("catalog_revision"),
+        "topology": substrate.get("topology"),
+        "substrate_sha256": "sha256:" + hashlib.sha256(substrate_body).hexdigest(),
+        "deployment_sha256": "sha256:"
+        + hashlib.sha256(deployment_body).hexdigest(),
+        "catalog_reuse_metadata": _catalog_reuse_metadata(substrate),
+        "nodes": [
+            {
+                "id": str(node["id"]),
+                "implementation": str(
+                    node["impl"] if "impl" in node else node["implementation"]
+                ),
+                "version": str(node["version"]),
+                "image": str(node["image"]),
+                "role": str(node["role"]),
+                "supporting": bool(node.get("supporting", False)),
+            }
+            for node in substrate["nodes"]
+        ],
+    }
+    for field in ("operator_registration_id", "operator_overlay_revision"):
+        value = substrate.get(field)
+        if value is not None:
+            desired[field] = value
+    local_executable_identity = _local_executable_identity_from_substrate(substrate)
+    if local_executable_identity is not None:
+        desired["local_executable_reuse_metadata"] = local_executable_identity
+    if any(node["implementation"] == "amaru" for node in desired["nodes"]):
+        desired["amaru_json_traces"] = bool(substrate.get("amaru_json_traces"))
+    encoded = json.dumps(desired, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    return {
+        **desired,
+        "plan_sha256": "sha256:" + hashlib.sha256(encoded).hexdigest(),
+    }
+
+
+def desired_topology_from_retained_substrate(
+    profile_id, substrate, *, expected_desired=None
+):
+    """Rebuild retained identity with only a matching current package proof."""
+    desired = desired_topology_from_substrate(profile_id, substrate)
+    expected_local = _validated_local_executable_reuse_metadata(
+        (expected_desired or {}).get("local_executable_reuse_metadata")
+    )
+    if expected_local is None:
+        return desired
+    retained_local = _local_executable_identity_from_substrate(
+        substrate, require_package_proof=False
+    )
+    if retained_local is None or _operator_overlay_relation(
+        substrate, expected_desired or {}
+    ) not in {"equal", "changed"}:
+        return desired
+    retained_identity = {
+        key: value
+        for key, value in retained_local.items()
+        if key != "operator_overlay_revision"
+    }
+    expected_identity = {
+        key: value
+        for key, value in expected_local.items()
+        if key != "operator_overlay_revision"
+    }
+    if retained_identity != expected_identity:
+        return desired
+
+    enriched = json.loads(json.dumps(substrate))
+    releases = (enriched.get("catalog_snapshot") or {}).get("selected_releases")
+    if not isinstance(releases, list):
+        return desired
+    matching = [
+        release
+        for release in releases
+        if isinstance(release, dict)
+        and isinstance(release.get("operator_registration"), dict)
+        and release["operator_registration"].get("registration_id")
+        == expected_local["registration_id"]
+    ]
+    if len(matching) != 1:
+        return desired
+    matching[0]["operator_package_proof"] = {
+        "status": "verified",
+        "registration_id": expected_local["registration_id"],
+        "config_image_id": expected_local["config_image_id"],
+        "executable_digest": expected_local["executable_digest"],
+        "platform": expected_local["platform"],
+        "runtime_interface": expected_local["runtime_interface"],
+        "controller_installation_id": expected_local[
+            "controller_installation_id"
+        ],
+    }
+    enriched_desired = desired_topology_from_substrate(profile_id, enriched)
+    enriched_local = enriched_desired.get("local_executable_reuse_metadata")
+    if not isinstance(enriched_local, dict) or {
+        key: value
+        for key, value in enriched_local.items()
+        if key != "operator_overlay_revision"
+    } != expected_identity:
+        return desired
+    return enriched_desired
+
+
+def verified_desired_topology_from_legacy(
+    profile_id, substrate, legacy_desired
+):
+    """Upgrade one exact pre-deployment-hash desired record, or fail closed."""
+    if (
+        not isinstance(profile_id, str)
+        or not profile_id
+        or not isinstance(substrate, dict)
+        or substrate.get("profile_id") != profile_id
+        or not isinstance(legacy_desired, dict)
+    ):
+        return None
+    if (
+        "deployment_sha256" in legacy_desired
+        or "catalog_reuse_metadata" in legacy_desired
+    ):
+        return None
+    try:
+        current = desired_topology_from_substrate(profile_id, substrate)
+    except (KeyError, TypeError, ValueError):
+        return None
+    legacy_body = {
+        key: value
+        for key, value in current.items()
+        if key
+        not in {
+            "plan_sha256",
+            "deployment_sha256",
+            "catalog_reuse_metadata",
+        }
+    }
+    encoded = json.dumps(
+        legacy_body, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    verified_legacy = {
+        **legacy_body,
+        "plan_sha256": "sha256:" + hashlib.sha256(encoded).hexdigest(),
+    }
+    return current if legacy_desired == verified_legacy else None
+
+
+def desired_topology_for_profile(profile, version_preview):
+    """Return the immutable desired topology consumed by reconciliation."""
+    substrate = versioned_substrate_for_profile(profile, version_preview)
+    return desired_topology_from_substrate(profile.id, substrate)
 
 
 def _versioned_deploy_command(profile, version_preview, remote_dwarf_root=None):
@@ -530,6 +1953,7 @@ def _versioned_deploy_command(profile, version_preview, remote_dwarf_root=None):
         "healthy_timeout_seconds": 300,
         "deployment_adapter": substrate["deployment_adapter"],
         "network": substrate["network"],
+        "peer_sharing": substrate["peer_sharing"],
         "config_source_dir": substrate.get("config_source_dir"),
         "upstream_peer_address": substrate.get("upstream_peer_address"),
         "listen_address": substrate.get("listen_address"),
@@ -553,7 +1977,7 @@ def _versioned_deploy_command(profile, version_preview, remote_dwarf_root=None):
                 "amaru_runtime_interface": (
                     "extracted-binary"
                     if amaru["target_mode"] == "patched"
-                    else None
+                    else amaru.get("amaru_runtime_interface")
                 ),
                 "measurement_target_identity": {
                     key: amaru[key]
@@ -568,6 +1992,12 @@ def _versioned_deploy_command(profile, version_preview, remote_dwarf_root=None):
                         "build_result_sha256",
                         "runtime_probe_image",
                         "runtime_probe_log_sha256",
+                        "source_image_reference",
+                        "image_manifest_digest",
+                        "image_config_digest",
+                        "qualification_image_id",
+                        "transfer_source_installation_id",
+                        "transfer_manifest_sha256",
                     )
                     if key in amaru
                 },

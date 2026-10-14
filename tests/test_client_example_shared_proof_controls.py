@@ -160,6 +160,65 @@ def test_runtime_verify_exact_target_fails_closed_on_mismatch(tmp_path):
         primitive.run(handle, None)
 
 
+def test_runtime_verify_exact_target_fails_closed_on_transfer_provenance_mismatch(
+    tmp_path,
+):
+    expected = {
+        **_identity(),
+        "source_image_reference": "dwarf/qualified@sha256:" + "d" * 64,
+        "image_manifest_digest": "sha256:" + "d" * 64,
+        "image_config_digest": "sha256:" + "a" * 64,
+        "qualification_image_id": "sha256:" + "d" * 64,
+        "transfer_source_installation_id": "install-source-test",
+        "transfer_manifest_sha256": "sha256:" + "f" * 64,
+    }
+    observed = {**expected, "transfer_manifest_sha256": "sha256:" + "0" * 64}
+    handle = _Handle(tmp_path / "run", target_identity=observed)
+    primitive = _primitive("RuntimeVerifyExactTarget", expected)
+
+    with pytest.raises(RuntimeError, match="transfer_manifest_sha256"):
+        primitive.run(handle, None)
+
+
+def test_runtime_verify_exact_target_rejects_unmaterialized_resolved_plan(tmp_path):
+    observed = _identity()
+    primitive = _primitive(
+        "RuntimeVerifyExactTarget",
+        {
+            "identity_binding": "resolved-plan",
+            "implementation": observed["implementation"],
+            "version": observed["version"],
+            "source_revision": observed["source_revision"],
+            "mode": observed["mode"],
+            "patch_set_sha256": observed["patch_set_sha256"],
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="was not materialized"):
+        primitive.run(_Handle(tmp_path / "run", target_identity=observed), None)
+
+
+def test_runtime_verify_exact_target_accepts_materialized_imported_plan(tmp_path):
+    identity = {
+        **_identity(),
+        "identity_binding": "resolved-plan",
+        "image_reference": "sha256:" + "a" * 64,
+        "source_image_reference": "dwarf/qualified@sha256:" + "d" * 64,
+        "image_manifest_digest": "sha256:" + "d" * 64,
+        "image_config_digest": "sha256:" + "a" * 64,
+        "build_result_sha256": "sha256:" + "1" * 64,
+        "runtime_probe_log_sha256": "sha256:" + "2" * 64,
+        "qualification_image_id": "sha256:" + "d" * 64,
+        "transfer_source_installation_id": "install-source-test",
+        "transfer_manifest_sha256": "sha256:" + "f" * 64,
+        "version_catalog_revision": "3" * 64,
+    }
+    observed = {key: value for key, value in identity.items() if key != "identity_binding"}
+    primitive = _primitive("RuntimeVerifyExactTarget", identity)
+
+    primitive.run(_Handle(tmp_path / "run", target_identity=observed), None)
+
+
 def _write_protocol_report(run_dir: Path, *, peer_usable: bool = True) -> Path:
     destination = run_dir / "outputs" / "protocol-decode-cases" / "result.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

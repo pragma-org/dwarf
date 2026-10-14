@@ -63,14 +63,53 @@ def _parse_scenario_file(path: Path) -> dict[str, Any] | None:
         s = scen.load_scenario(path)
     except Exception:  # noqa: BLE001
         return None
+    phase_primitives = {}
+    phase_refs = {}
+    for phase in ("setup", "load", "faults", "probes", "assertions", "teardown"):
+        refs = list(getattr(s, phase, None) or [])
+        for nested in s.phases:
+            refs.extend(getattr(nested, phase, None) or [])
+        phase_refs[phase] = refs
+        phase_primitives[phase] = [ref.primitive for ref in refs]
+    refs = [ref for phase in phase_refs.values() for ref in phase]
+    attached_topology = scen._attached_topology_id(s)
+    adapter_implementations = sorted(
+        {
+            implementation
+            for ref in refs
+            if isinstance(ref.params.get("adapters"), dict)
+            for implementation in ref.params["adapters"]
+            if implementation in {"amaru", "cardano-node"}
+        }
+    )
+    load_target_ids = sorted(
+        {
+            str(ref.params["target_id"])
+            for ref in phase_refs["load"]
+            if isinstance(ref.params.get("target_id"), str)
+            and ref.params["target_id"]
+        }
+    )
     return {
         "id": s.id,
         "title": s.title,
+        "authors": list(s.authors),
+        "tags": list(s.tags),
         "path": str(path),
         "runtime": s.runtime,
+        "target": dict(getattr(s, "target", {}) or {}),
         "target_impl": (getattr(s, "target", {}) or {}).get("implementation"),
         "target_version": (getattr(s, "target", {}) or {}).get("version"),
         "profile": getattr(s, "profile", None),
+        "substrate": dict(getattr(s, "substrate", {}) or {}),
+        "attached_topology": attached_topology,
+        "adapter_implementations": adapter_implementations,
+        # Safe validated identities support discovery classification without
+        # exposing primitive arguments or payloads.
+        "load_target_ids": load_target_ids,
+        "phase_primitives": phase_primitives,
+        "assertion_primitives": phase_primitives["assertions"],
+        "expected_security_finding": getattr(s, "expected_security_finding", None),
         "measurement_profile": getattr(s, "measurement_profile", None),
         "related_milestones": list(getattr(s, "related_milestones", []) or []),
         "m1_trace": dict(getattr(s, "m1_trace", {}) or {}),

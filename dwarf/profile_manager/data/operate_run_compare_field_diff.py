@@ -29,6 +29,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+
+from profile_manager.config import storage_roots
 from typing import Any
 
 
@@ -36,10 +38,7 @@ TELEMETRY_DRIFT_THRESHOLD = 0.20
 
 
 def _runs_dir() -> Path:
-    env = os.environ.get("ADA2_DWARF_RUNS_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[2] / "runs"
+    return storage_roots().runs
 
 
 def _safe_run_id(run_id: str) -> bool:

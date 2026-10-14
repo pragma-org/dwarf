@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
+from profile_manager.run_ledger import FINAL_STATES_BY_EXIT_STATUS, RunLedger, atomic_write_bytes
 
 FRAMEWORK_VERSION = "0.1.0"
 DEFAULT_ACTOR = "shared:dwarf"
@@ -145,7 +146,8 @@ class RunHandle:
     def __init__(self, *, run_id, run_dir, state_dir, scenario_id, scenario_sha256, scenario_path,
                  target, runtime, profile_id, profile_sha256, env_sha256, seed, framework_version,
                  framework_commit, actor, started_at, measurement_context=None,
-                 expected_security_finding=None):
+                 expected_security_finding=None, run_service_plan=None,
+                 defer_ledger_terminal=False):
         self.run_id = run_id
         self.run_dir = run_dir
         self._state_dir = state_dir
@@ -187,6 +189,12 @@ class RunHandle:
             if expected_security_finding is not None
             else None
         )
+        self._run_service_plan_sha256 = (
+            _sha256_hex(_canonical_json(run_service_plan))
+            if run_service_plan is not None
+            else None
+        )
+        self._defer_ledger_terminal = bool(defer_ledger_terminal)
         if measurement_context is not None:
             self.set_measurement_context(measurement_context)
 
@@ -277,6 +285,10 @@ class RunHandle:
         return build_provenance(self._target, [*self._identity_observations, *seen])
 
     def end(self, *, exit_status, end_resource_snapshot=None):
+        ledger = RunLedger(self._state_dir)
+        entry = ledger.get(self.run_id)
+        if entry["state"] != "running":
+            raise ValueError(f"cannot finalize run in {entry['state']} state")
         ended_at = _utc_now_iso()
         self._end_resource_snapshot = end_resource_snapshot
 
@@ -321,6 +333,8 @@ class RunHandle:
             "execution": _classify_execution(
                 exit_status=exit_status,
                 assertions=self._assertions,
+                measurements=measurement_manifest,
+                run_kind=entry["kind"],
                 target=self._target,
                 expected_security_finding=self._expected_security_finding,
             ),
@@ -330,8 +344,34 @@ class RunHandle:
             manifest["measurements"] = measurement_manifest
         if self._precondition is not None:
             manifest["precondition"] = dict(self._precondition)
+        if self._run_service_plan_sha256 is not None:
+            manifest["run_service"] = {
+                "plan_path": "inputs/run-service-plan.json",
+                "plan_sha256": self._run_service_plan_sha256,
+            }
+            from profile_manager.operator_version_decisions import (
+                InvalidOperatorVersionState,
+                build_operator_version_evidence,
+                decision_subject_from_evidence,
+            )
+
+            try:
+                stamp = build_operator_version_evidence(
+                    self.run_dir,
+                    run_service_plan_sha256=self._run_service_plan_sha256,
+                )
+                decision_subject_from_evidence(
+                    {**manifest, "operator_version_evidence": stamp}
+                )
+                manifest["operator_version_evidence"] = stamp
+            except InvalidOperatorVersionState as exc:
+                # A run remains canonical evidence even when it cannot support
+                # an operator compatibility decision.  The Results surface
+                # displays this bounded reason and never reconstructs history
+                # from mutable catalogs or profiles.
+                manifest["operator_version_evidence_unavailable"] = str(exc)
         manifest_bytes = _canonical_json(manifest)
-        (self.run_dir / "manifest.json").write_bytes(manifest_bytes)
+        atomic_write_bytes(self.run_dir / "manifest.json", manifest_bytes)
         manifest_hash = _sha256_hex(manifest_bytes)
 
         # SARIF is a deterministic, unsigned view of the run's recorded
@@ -419,16 +459,24 @@ class RunHandle:
             "continuity": continuity,
             **continuity_metadata,
         }
-        (self.run_dir / "chain.json").write_text(
-            json.dumps(chain_entry, sort_keys=True, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        atomic_write_bytes(self.run_dir / "chain.json", _canonical_json(chain_entry))
 
         # Atomic head update via tmp file + rename.
         self._state_dir.mkdir(parents=True, exist_ok=True)
-        tmp = head_path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(chain_entry, sort_keys=True, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp, head_path)
+        atomic_write_bytes(head_path, _canonical_json(chain_entry))
+        try:
+            ledger_state = FINAL_STATES_BY_EXIT_STATUS[exit_status]
+        except KeyError as exc:
+            raise ValueError(f"unsupported final exit status: {exit_status}") from exc
+        if not self._defer_ledger_terminal:
+            ledger.transition(
+                self.run_id,
+                ledger_state,
+                verdict=(manifest["execution"]["security_verdict"] if entry["kind"] in {"scenario", "ci", "external"} else None),
+                ended_at=ended_at,
+                manifest_path=str((self.run_dir / "manifest.json").resolve()),
+                evidence_path=str(self.run_dir.resolve()),
+            )
 
         return chain_entry
 
@@ -482,12 +530,21 @@ def _build_resource_snapshot(start, end, started_at, ended_at):
     return snap
 
 
-def _classify_execution(*, exit_status, assertions, target, expected_security_finding):
+def _classify_execution(*, exit_status, assertions, measurements, run_kind, target,
+                        expected_security_finding):
+    from profile_manager.scenario_verdict import evaluate_scenario_verdict
+
     failed = [item for item in assertions if item.get("result") == "fail"]
+    verdict = evaluate_scenario_verdict(
+        exit_status=exit_status,
+        assertions=assertions,
+        measurements=measurements,
+        run_kind=run_kind,
+    )
     execution = {
         "state": "completed",
         "classification": "completed",
-        "security_verdict": "pass" if exit_status == "pass" and not failed else "fail",
+        "security_verdict": verdict.security_verdict,
     }
     expectation = expected_security_finding
     if not expectation or exit_status != "fail" or not failed:
@@ -510,7 +567,9 @@ def _classify_execution(*, exit_status, assertions, target, expected_security_fi
 def start_run(*, scenario_id, scenario_yaml, target, runtime, profile_id, profile_resolved,
               framework_version, framework_commit, seed, actor=DEFAULT_ACTOR,
               runs_dir, state_dir, start_resource_snapshot=None,
-              measurement_context=None, expected_security_finding=None):
+              measurement_context=None, expected_security_finding=None,
+              run_kind="scenario", origin="forensic", backend="local", topology_identity=None,
+              run_service_plan=None, defer_ledger_terminal=False):
     if seed is None:
         seed = 0
     runs_dir = Path(runs_dir)
@@ -529,13 +588,25 @@ def start_run(*, scenario_id, scenario_yaml, target, runtime, profile_id, profil
         env_bytes=env_bytes,
         seed=seed,
     )
-    run_dir = runs_dir / run_id
-    # If a collision occurs (same content within the same second), append a counter.
     counter = 0
-    while run_dir.exists():
-        counter += 1
-        run_dir = runs_dir / f"{run_id}-{counter}"
-    run_dir.mkdir(parents=True)
+    while True:
+        run_dir = runs_dir / (run_id if counter == 0 else f"{run_id}-{counter}")
+        try:
+            run_dir.mkdir()
+            break
+        except FileExistsError:
+            # Directory creation is the allocation primitive. Checking exists()
+            # first permits two processes to select the same counter.
+            counter += 1
+    ledger = RunLedger(state_dir)
+    ledger.create(
+        run_id=run_dir.name, kind=run_kind, origin=origin, backend=backend,
+        scenario={"id": scenario_id, "sha256": _sha256_hex(scenario_yaml)},
+        profile=({"id": profile_id, "sha256": _sha256_hex(profile_bytes) if profile_resolved is not None else None} if profile_id else None),
+        topology=topology_identity, release_revision=framework_commit,
+        evidence_path=str(run_dir.resolve()), provenance={"actor": actor},
+    )
+    started_at = ledger.transition(run_dir.name, "running")["started_at"]
 
     (run_dir / "scenario.yaml").write_bytes(scenario_yaml)
     (run_dir / "env.json").write_bytes(env_bytes)
@@ -569,9 +640,11 @@ def start_run(*, scenario_id, scenario_yaml, target, runtime, profile_id, profil
         framework_version=framework_version,
         framework_commit=framework_commit,
         actor=actor,
-        started_at=_utc_now_iso(),
+        started_at=started_at,
         measurement_context=measurement_context,
         expected_security_finding=expected_security_finding,
+        run_service_plan=run_service_plan,
+        defer_ledger_terminal=defer_ledger_terminal,
     )
     if start_resource_snapshot is not None:
         handle.set_start_resource_snapshot(start_resource_snapshot)
@@ -702,6 +775,30 @@ def verify(run_id, *, runs_dir, state_dir):
     except json.JSONDecodeError as exc:
         return VerifyResult(ok=False, errors=[f"manifest json invalid: {exc}"])
 
+    run_service = manifest_obj.get("run_service")
+    if run_service is not None:
+        if not isinstance(run_service, dict):
+            errors.append("run service attestation is not an object")
+        elif run_service.get("plan_path") != "inputs/run-service-plan.json":
+            errors.append("run service plan path is not canonical")
+        else:
+            plan_path = run_dir / "inputs" / "run-service-plan.json"
+            try:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                errors.append(f"run service plan is unavailable: {exc}")
+            else:
+                if not isinstance(plan, dict):
+                    errors.append("run service plan is not a JSON object")
+                else:
+                    actual_plan_hash = _sha256_hex(_canonical_json(plan))
+                    if run_service.get("plan_sha256") != actual_plan_hash:
+                        errors.append(
+                            "run service plan hash mismatch: manifest says "
+                            f"{run_service.get('plan_sha256')} but recomputed "
+                            f"{actual_plan_hash}"
+                        )
+
     canonical_manifest = _canonical_json(manifest_obj)
     actual_manifest_hash = _sha256_hex(canonical_manifest)
     chain_entry = json.loads(chain_path.read_text(encoding="utf-8"))
@@ -790,6 +887,9 @@ def record_remote_run(
         runs_dir=runs_dir,
         state_dir=state_dir,
         start_resource_snapshot=start_resource_snapshot,
+        run_kind="external",
+        origin="legacy-remote-command",
+        backend="ssh",
     )
 
     rendered = getattr(command_result, "rendered_command", "")

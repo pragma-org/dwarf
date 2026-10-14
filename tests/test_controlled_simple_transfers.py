@@ -1,4 +1,5 @@
 import json
+from contextlib import ExitStack
 from pathlib import Path
 
 from scripts import runtime_controlled_simple_transfers as subject
@@ -85,6 +86,46 @@ def test_accounting_payload_preserves_every_terminal_outcome_and_nanoseconds():
                 "bytes": 280,
             },
         ],
+    }
+
+
+def test_amaru_simple_transfers_use_controller_owned_cli_bridge(tmp_path, monkeypatch):
+    runtime = {"compose_project": "profile-z"}
+    controller = {"Id": "d" * 64}
+    captured = {}
+
+    monkeypatch.setattr(subject, "_controller_container", lambda: controller)
+
+    def prepare(actual_runtime, output_dir, stack, **kwargs):
+        captured.update(
+            runtime=actual_runtime,
+            output_dir=output_dir,
+            stack=stack,
+            kwargs=kwargs,
+        )
+        return {"support_binaries": {"cardano-cli": "/work/cardano-cli"}}, {
+            "socket_path": "/state/node.socket"
+        }
+
+    monkeypatch.setattr(subject, "_prepare_amaru_transaction_producer", prepare)
+    runtime_root = tmp_path / "runtime"
+    output_dir = tmp_path / "run-output"
+
+    with ExitStack() as stack:
+        workload_runtime, node = subject._prepare_amaru_simple_transfer_workload(
+            runtime=runtime,
+            runtime_root=runtime_root,
+            output_dir=output_dir,
+            stack=stack,
+        )
+
+    assert workload_runtime["support_binaries"] == {"cardano-cli": "/work/cardano-cli"}
+    assert node["socket_path"] == "/state/node.socket"
+    assert captured == {
+        "runtime": runtime,
+        "output_dir": output_dir,
+        "stack": captured["stack"],
+        "kwargs": {"runtime_root": runtime_root, "controller": controller},
     }
 
 

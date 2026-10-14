@@ -1,17 +1,10 @@
 // /operate/compare runner — scenario picker + SSE-streamed run + result panel.
 //
-// Pure DOM wiring. No external deps. The SSE endpoint (POST
-// /api/scenario/compare?token=…&path=…) was authored by an earlier slice
-// and is still served by the dashboard handler; this module is the
-// current-gen UI on top of it.
+// Pure DOM wiring. No external deps. The SSE endpoint accepts a query-free
+// body-authenticated POST so dashboard credentials stay out of URLs.
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-
-function getToken() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("token") || "dwarf";
-}
 
 function setSelected(row) {
   $$(".scenario-picker__row").forEach((r) => r.setAttribute("aria-selected", "false"));
@@ -27,7 +20,14 @@ function setSelected(row) {
   const pre = $("#compare-command");
   pre.textContent = cmd;
   pre.dataset.commandTemplate = cmd;
-  $("[data-run-compare]").disabled = false;
+  const available = row.dataset.available === "true";
+  const availability = $("[data-run-availability]");
+  if (availability) {
+    availability.textContent = available
+      ? "Requirements available. Ready to compare."
+      : row.dataset.unavailableReason || "This scenario is unavailable.";
+  }
+  $("[data-run-compare]").disabled = !available;
   $("[data-run-compare]").dataset.path = path;
 }
 
@@ -91,6 +91,12 @@ function setOutputState(state) {
   el.dataset.state = state;
 }
 
+export function comparisonTerminalState(result, exitCode) {
+  if (result === "AGREED" || result === "DIVERGED") return "done";
+  if (result === "INCOMPLETE") return "incomplete";
+  return exitCode === 0 ? "done" : "incomplete";
+}
+
 function appendOutput(line) {
   const code = $("[data-output-code]");
   if (!code) return;
@@ -109,15 +115,16 @@ function showResult(payload) {
   section.hidden = false;
   const pill = $("[data-result-pill]");
   if (pill) {
-    if (payload.agreed === true) {
+    const result = payload.result || (payload.exit_code === 0 ? "AGREED" : "INCOMPLETE");
+    if (result === "AGREED") {
       pill.className = "result-pill result-pill--pass";
       pill.textContent = "AGREED";
-    } else if (payload.agreed === false) {
+    } else if (result === "DIVERGED") {
       pill.className = "result-pill result-pill--fail";
       pill.textContent = "DIVERGED";
     } else {
       pill.className = "result-pill result-pill--error";
-      pill.textContent = "ERROR";
+      pill.textContent = "INCOMPLETE";
     }
   }
   const link = $("[data-result-bundle]");
@@ -150,11 +157,22 @@ async function streamRun(button) {
   if (result) result.hidden = true;
   button.disabled = true;
 
-  const token = getToken();
-  const url = `/api/scenario/compare?token=${encodeURIComponent(token)}&path=${encodeURIComponent(path)}`;
+  const token = $("[data-compare-token]")?.value || "";
+  if (!token) {
+    appendOutput("Dashboard token is unavailable. Reload the page and try again.");
+    setOutputState("error");
+    button.disabled = false;
+    return;
+  }
+  const body = new URLSearchParams({ token, path });
   let pendingEvent = null;
+  let observedResult = null;
   try {
-    const response = await fetch(url, { method: "POST" });
+    const response = await fetch("/api/scenario/compare", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
     if (!response.ok) {
       appendOutput(`HTTP ${response.status}: ${await response.text()}`);
       setOutputState("error");
@@ -181,19 +199,23 @@ async function streamRun(button) {
           if (parsed.type === "data") {
             if (pendingEvent === "done") {
               try {
-                showResult(JSON.parse(parsed.value));
+                const donePayload = JSON.parse(parsed.value);
+                showResult({ ...donePayload, result: observedResult });
+                setOutputState(comparisonTerminalState(observedResult, donePayload.exit_code));
               } catch {
                 appendOutput("[done]");
               }
               pendingEvent = null;
               continue;
             }
+            const resultMatch = parsed.value.match(/^Result: (AGREED|DIVERGED|INCOMPLETE)$/);
+            if (resultMatch) observedResult = resultMatch[1];
             appendOutput(parsed.value);
           }
         }
       }
     }
-    setOutputState("done");
+    if ($("[data-output-state]")?.dataset.state === "running") setOutputState("done");
   } catch (err) {
     appendOutput(`[error] ${String(err)}`);
     setOutputState("error");
@@ -208,7 +230,9 @@ function bindRunner() {
   button.addEventListener("click", () => streamRun(button));
 }
 
-bindPickerFilters();
-bindPickerSelection();
-bindCommandToggle();
-bindRunner();
+if (typeof document !== "undefined") {
+  bindPickerFilters();
+  bindPickerSelection();
+  bindCommandToggle();
+  bindRunner();
+}

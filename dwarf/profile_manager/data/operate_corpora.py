@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import jsonschema
 
+from profile_manager.config import storage_roots
 from profile_manager.data.asset_catalog import (
     ExportSource,
     deterministic_export_archive,
@@ -45,8 +46,7 @@ def _runtime_root() -> Path:
     configured = os.environ.get("ADA2_DWARF_CORPORA_DIR", "").strip()
     if configured:
         return Path(configured)
-    state = os.environ.get("ADA2_DWARF_STATE_DIR", "").strip()
-    return (Path(state) if state else PROJECT_ROOT / "dwarf" / "state") / "corpora"
+    return storage_roots().state / "corpora"
 
 
 def _roots(

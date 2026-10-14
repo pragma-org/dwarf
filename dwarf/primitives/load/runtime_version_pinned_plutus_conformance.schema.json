@@ -22,10 +22,42 @@
   "$defs": {
     "adapter": {
       "type": "object",
-      "required": ["record", "source_revision"],
+      "required": ["source_revision"],
+      "oneOf": [
+        {"required": ["record"], "not": {"required": ["adapter_set_sha256"]}},
+        {"required": ["adapter_set_sha256"], "not": {"required": ["record"]}}
+      ],
       "properties": {
         "record": {"type": "string", "minLength": 1},
-        "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+        "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "adapter_set_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "expected_provenance": {
+          "type": "object",
+          "required": [
+            "implementation",
+            "source_revision",
+            "adapter_set_sha256",
+            "executable_sha256",
+            "build_result_sha256",
+            "build_log_sha256",
+            "platform"
+          ],
+          "properties": {
+            "implementation": {"enum": ["amaru", "cardano-node"]},
+            "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "adapter_set_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "executable_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "build_result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "build_log_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "qualification_record_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "qualification_manifest_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "transfer_manifest_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "transfer_source_provenance": {"enum": ["installation-owned", "legacy-qualified"]},
+            "transfer_source_installation_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+            "platform": {"enum": ["linux/amd64", "linux/arm64"]}
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     }

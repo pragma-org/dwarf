@@ -32,6 +32,8 @@ import json
 import os
 import re
 from pathlib import Path
+
+from profile_manager.config import storage_roots
 from typing import Any
 
 
@@ -144,10 +146,7 @@ def _read_manifest(run_dir: Path) -> dict | None:
 
 
 def _runs_root() -> Path:
-    env = os.environ.get("ADA2_DWARF_RUNS_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[3] / "dwarf" / "runs"
+    return storage_roots().runs
 
 
 def _telemetry_summary(run_dir: Path, manifest: dict,

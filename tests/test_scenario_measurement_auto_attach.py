@@ -145,3 +145,31 @@ def test_explicit_preparation_failure_still_raises(monkeypatch):
 
     with pytest.raises(MeasurementExecutionError):
         scenario_module.prepare_auto_measurements(scenario)
+
+
+def test_auto_measurements_pass_the_exact_frozen_launch_resolution(monkeypatch):
+    scenario = _scenario(measurement_profile="amaru-security-default")
+    frozen = {
+        "target_identity": {"identity_kind": "operator-local-config"},
+        "experimental_consent": {
+            "tap_ids": ["amaru-external-workload-accounting"],
+            "context_digest": "sha256:" + "a" * 64,
+        },
+    }
+    observed = {}
+
+    def prepare(_scenario, **kwargs):
+        observed.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        "profile_manager.measurement_execution.prepare_scenario_measurements", prepare
+    )
+
+    prepared, reason = scenario_module.prepare_auto_measurements(
+        scenario, expected_resolution=frozen
+    )
+
+    assert prepared is not None
+    assert reason is None
+    assert observed == {"expected_resolution": frozen}

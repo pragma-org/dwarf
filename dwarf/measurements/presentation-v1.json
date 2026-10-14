@@ -543,6 +543,28 @@
       ]
     },
     {
+      "id": "container-memory-usage",
+      "title": "Managed container memory",
+      "description": "Docker-reported cgroup memory usage for the exact managed target container.",
+      "category": "resources",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["container_memory_bytes"], "source": "external", "derivation": "Sampled from Docker cgroup statistics for the ownership-validated immutable container identity; this is not process RSS."}
+      ]
+    },
+    {
+      "id": "container-task-count",
+      "title": "Managed container tasks",
+      "description": "Docker-reported process and kernel-thread task count for the exact managed target container.",
+      "category": "resources",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "bindings": [
+        {"implementation": "cardano-node", "modes": ["stock", "patched"], "metric_ids": ["container_tasks"], "source": "external", "derivation": "Sampled from the container cgroup task counter; this is not the target process thread count."}
+      ]
+    },
+    {
       "id": "disk-read-volume",
       "title": "Target disk bytes read",
       "description": "Increase in cumulative bytes read by the target during the observation window.",

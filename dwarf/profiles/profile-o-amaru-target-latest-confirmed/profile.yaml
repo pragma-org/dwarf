@@ -7,5 +7,6 @@
   "peer_sharing": false,
   "version_policy": "latest-confirmed",
   "topology_pattern": "local-mesh",
-  "shared_genesis": true
+  "shared_genesis": true,
+  "amaru_json_traces": true
 }

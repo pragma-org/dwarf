@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from profile_manager.config import storage_roots
 from profile_manager.data.files import _latest_files
 
 
@@ -20,8 +21,4 @@ def _latest_evidence_rows():
 
 
 def _forensic_bundles_dir():
-    env = os.environ.get("ADA2_DWARF_BUNDLES_DIR")
-    if env:
-        return Path(env)
-    # data/bundles.py -> data/ -> profile_manager/ -> dwarf/
-    return Path(__file__).resolve().parents[2] / "bundles"
+    return storage_roots().bundles

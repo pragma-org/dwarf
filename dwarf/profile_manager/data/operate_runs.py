@@ -169,6 +169,24 @@ def _known_profile_ids() -> set[str]:
     return {entry["id"] for entry in operate_profile_entries()}
 
 
+def _has_external_inspector(plan_path: Path) -> bool:
+    try:
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(plan, dict) or plan.get("schema_version") != "dwarf.run-service.invocation.v1":
+        return False
+    resolved = plan.get("resolved")
+    invocation = plan.get("invocation")
+    return bool(
+        isinstance(resolved, dict)
+        and isinstance(invocation, dict)
+        and isinstance(resolved.get("launch"), dict)
+        and resolved.get("schema_version") == "dwarf.external-run.plan.v1"
+        and resolved.get("evidence_layout") == "external-run-evidence-v1"
+    )
+
+
 def _enrich_run_row(
     run: dict,
     runs_dir: Path,
@@ -183,12 +201,13 @@ def _enrich_run_row(
     already enumerated it.
     """
     run_id = run["run_id"]
-    profile_id: str | None = None
+    profile_id: str | None = run.get("profile_id")
     target_implementation: str | None = None
     manifest: dict[str, Any] = {}
     manifest_path = runs_dir / run_id / "manifest.json"
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = loaded if isinstance(loaded, dict) else {}
         profile = manifest.get("profile") or {}
         if isinstance(profile, dict):
             profile_id = profile.get("id")
@@ -200,6 +219,13 @@ def _enrich_run_row(
 
     source = run.get("source") or "local"
     is_local = source == "local"
+    external_plan_path = runs_dir / run_id / "inputs" / "run-service-plan.json"
+    if run.get("ledger_backed") and run.get("run_kind") == "external":
+        inspectable = is_local and _has_external_inspector(external_plan_path)
+    else:
+        inspectable = is_local and (
+            manifest_path.is_file() or _has_external_inspector(external_plan_path)
+        )
     runtime = run.get("runtime") or manifest.get("runtime")
     scenario_metadata = _scenario_execution_metadata(
         runs_dir / run_id,
@@ -222,22 +248,78 @@ def _enrich_run_row(
         except Exception:  # noqa: BLE001 — never crash the index render
             thinness_signals = []
 
+    state = run.get("state")
+    verdict = run.get("verdict")
+    run_kind = run.get("run_kind") or "external"
+    if state in {"queued", "running", "interrupted"}:
+        display_status = state
+    elif run_kind in {"scenario", "ci", "external"}:
+        display_status = verdict or "unknown"
+    else:
+        display_status = state or run.get("exit_status")
+
     return {
         "run_id": run_id,
+        "run_kind": run_kind,
+        "state": state,
+        "verdict": verdict,
+        "display_status": display_status,
+        "ledger_backed": bool(run.get("ledger_backed")),
+        "history_at": run.get("history_at"),
+        "queued_at": run.get("queued_at"),
+        "started_at": run.get("started_at"),
         "ended_at": run.get("ended_at"),
         "scenario_id": run.get("scenario_id"),
         "profile_id": profile_id,
         "profile_url": _profile_url(profile_id) if profile_id and profile_id in (profile_ids if profile_ids is not None else _known_profile_ids()) else None,
         "runtime": runtime,
         "exit_status": run.get("exit_status"),
+        "operational_outcome": run.get("operational_outcome") or run.get("exit_status"),
         "target_implementation": target_implementation,
-        "run_url": _bundle_inspector_url(run_id),
+        "run_url": _bundle_inspector_url(run_id) if inspectable else None,
+        "inspectable": inspectable,
         "source": source,
         "is_local": is_local,
         "thinness_signals": thinness_signals,
         **scenario_metadata,
         **evidence_metadata,
     }
+
+
+def operate_run_page(
+    *,
+    runs_dir: Path | None = None,
+    state_dir: Path | None = None,
+    limit: int = 100,
+    cursor: str | None = None,
+    scope: str = "scenario",
+    outcome: str = "",
+) -> dict[str, Any]:
+    """Return one enriched, ledger-backed history page plus true totals."""
+    from profile_manager.data.runs import _forensic_runs_dir, run_history_page
+
+    base = Path(runs_dir) if runs_dir is not None else _forensic_runs_dir()
+    page = run_history_page(
+        runs_dir=base,
+        state_dir=state_dir,
+        limit=limit,
+        cursor=cursor,
+        scope=scope,
+        outcome=outcome,
+    )
+    profile_ids = _known_profile_ids()
+    from profile_manager.data.operate_testcases import testcase_catalog_rows
+    lifecycle_rows = testcase_catalog_rows(runs_dir=base)
+    page["runs"] = [
+        _enrich_run_row(
+            run,
+            runs_dir=base,
+            profile_ids=profile_ids,
+            lifecycle_rows=lifecycle_rows,
+        )
+        for run in page["runs"]
+    ]
+    return page
 
 
 def operate_run_rows(*, runs_dir: Path | None = None, limit: int = 100) -> list[dict[str, Any]]:
@@ -247,22 +329,7 @@ def operate_run_rows(*, runs_dir: Path | None = None, limit: int = 100) -> list[
     Remote-source runs render run_id without an inspector link
     (matches existing legacy treatment in dashboard.py).
     """
-    from profile_manager.data.runs import recent_runs_payload, _forensic_runs_dir
-
-    base = Path(runs_dir) if runs_dir is not None else _forensic_runs_dir()
-    payload = recent_runs_payload(runs_dir=base, limit=limit)
-    profile_ids = _known_profile_ids()
-    from profile_manager.data.operate_testcases import testcase_catalog_rows
-    lifecycle_rows = testcase_catalog_rows(runs_dir=base)
-    return [
-        _enrich_run_row(
-            run,
-            runs_dir=base,
-            profile_ids=profile_ids,
-            lifecycle_rows=lifecycle_rows,
-        )
-        for run in payload.get("recent_runs", [])
-    ]
+    return operate_run_page(runs_dir=runs_dir, limit=limit)["runs"]
 
 
 def apply_run_filters(rows: list[dict[str, Any]], *, outcome: str = "",
@@ -274,7 +341,10 @@ def apply_run_filters(rows: list[dict[str, Any]], *, outcome: str = "",
     run identity, target, execution source, and primitive names."""
     out = list(rows)
     if outcome:
-        out = [r for r in out if (r.get("exit_status") or "") == outcome]
+        out = [
+            r for r in out
+            if (r.get("display_status") or r.get("verdict") or r.get("exit_status") or "") == outcome
+        ]
     if q:
         needle = q.lower()
         def hay(row: dict[str, Any]) -> str:
@@ -304,9 +374,12 @@ def status_pill_inventory(rows: list[dict[str, Any]], *, active_outcome: str = "
     Counts are computed against the unfiltered ``rows`` so the pills
     advertise the corpus size, not the filtered subset.
     """
-    pass_count = sum(1 for r in rows if r.get("exit_status") == "pass")
-    fail_count = sum(1 for r in rows if r.get("exit_status") == "fail")
-    error_count = sum(1 for r in rows if r.get("exit_status") == "error")
+    def status(row):
+        return row.get("display_status") or row.get("verdict") or row.get("exit_status")
+
+    pass_count = sum(1 for r in rows if status(r) == "pass")
+    fail_count = sum(1 for r in rows if status(r) == "fail")
+    error_count = sum(1 for r in rows if status(r) == "error")
     return [
         {"slug": "", "label": "all", "count": len(rows), "active": active_outcome == ""},
         {"slug": "pass", "label": "pass", "count": pass_count, "active": active_outcome == "pass"},

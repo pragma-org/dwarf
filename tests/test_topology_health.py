@@ -2,7 +2,9 @@ import json
 import importlib.util
 import subprocess
 import sys
+import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -120,6 +122,53 @@ def test_healthy_mixed_topology_requires_all_targets_current():
     assert result["reason_code"] == "all_mixed_readiness_gates_passed"
     assert result["reference_tip"]["slot"] == 1002
     assert result["consumer_lag_slots"] == 0
+
+
+def test_probe_samples_all_cardano_tips_in_one_concurrent_window(monkeypatch):
+    """A block arriving during a serial sweep must not create false divergence."""
+    probe = _load_probe()
+    services = (*probe.CARDANO_REFERENCE_NODES, probe.AMARU_CONSUMER)
+    containers = {
+        service: {"container_name": f"container-{service}"}
+        for service in (*services, *probe.AMARU_RELAYS)
+    }
+    started: set[str] = set()
+    lock = threading.Lock()
+    all_started = threading.Event()
+
+    def query(container):
+        with lock:
+            started.add(container)
+            if len(started) == len(services):
+                all_started.set()
+        assert all_started.wait(1), "tip queries were serialized"
+        return _tip(10612, block=2092, hash_value="shared-tip")
+
+    monkeypatch.setattr(probe, "query_cardano_tip", query)
+    monkeypatch.setattr(
+        probe,
+        "run_command",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+
+    sample = probe.read_sample(containers)
+
+    assert set(sample["tips"]) == set(services)
+    assert {tip["hash"] for tip in sample["tips"].values()} == {"shared-tip"}
+    assert set(sample["tip_queries"]) == set(services)
+    assert all(
+        query["status"] == "available"
+        and query["started_at"]
+        and query["completed_at"]
+        and query["duration_seconds"] >= 0
+        for query in sample["tip_queries"].values()
+    )
+    assert sample["tip_query_window"]["completed_at"]
+    assert sample["tip_query_window"]["duration_seconds"] >= 0
 
 
 def test_missing_required_container_is_unhealthy():

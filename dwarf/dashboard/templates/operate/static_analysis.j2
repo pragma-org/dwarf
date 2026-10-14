@@ -1,6 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_actions, deck_more with context %}
 {% if ui == "basic" %}
 {% set sa = namespace(ran=0, clean=0, attn=0, unavail=0, names_attn=[], names_none=[]) %}
 {% set cards = [] %}
@@ -10,7 +10,7 @@
     {% set _ = sa.names_none.append(tool) %}
     {% set _ = cards.append({'title': 'cargo ' ~ tool, 'id': 'runtime_static_analysis_' ~ tool, 'kicker': 'Not run yet', 'tier': 'gap', 'suit': '○', 'tone': 'dk-g-other', 'group': 'none',
         'sub': 'No ' ~ tool ~ ' run has been recorded, so there is no result to show.',
-        'facts': [('To run', 'cardano-profile scenario run dwarf/scenarios/runtime-static-analysis-' ~ tool ~ '-example-smoke.yaml')]}) %}
+        'facts': [('Availability', 'No per-tool execution scenario or catalog primitive is shipped on this installation.'), ('Next step', 'Use Runs for retained evidence.')]}) %}
   {% else %}
     {% set sa.ran = sa.ran + 1 %}
     {% set has_findings = (t.findings_count is not none and t.findings_count > 0) %}
@@ -44,6 +44,17 @@
 {{ deck_head('Operate · Static analysis', answer,
    'One card per tool — clippy (lints), audit (known security advisories) and deny (licences and banned crates). Each shows only what the tool itself reported on its most recent run; a clean result means that tool found nothing, not that the code is proven safe.') }}
 {{ deck_grid(cards, label='tools', search=false, empty='No static-analysis tools are configured.') }}
+{% if sa.ran %}
+<section class="basic-only dk" aria-label="Retained result files">
+  <p class="dk-note">Result files from each tool's latest retained run:</p>
+  <ul class="dk-note">
+  {% for tool in tools if latest[tool] %}{% set t = latest[tool] %}
+    <li>cargo {{ tool }} · run <a href="{{ t.run_url }}"><code>{{ t.run_id }}</code></a>{% if t.findings_url %} · <a href="{{ t.findings_url }}">findings.json</a>{% endif %}{% if t.stdout_url %} · <a href="{{ t.stdout_url }}">stdout.log</a>{% endif %}{% if t.stderr_url %} · <a href="{{ t.stderr_url }}">stderr.log</a>{% endif %}</li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{{ deck_actions([('Retained runs', '/operate/runs', false, false)]) }}
 {{ deck_more('Logs, stderr and run history in Advanced') }}
 {% endif %}
 <div class="adv-only">
@@ -69,7 +80,7 @@
       No <code>{{ tool }}</code> runs yet.
       <span class="empty-section-statement__cite">scanned <code>dwarf/runs/</code>, 0 runs with <code>outputs/static-analysis-{{ tool }}/</code></span>
     </p>
-    <p class="page-subhero">Generate one with <code>cardano-profile scenario run dwarf/scenarios/runtime-static-analysis-{{ tool }}-example-smoke.yaml</code>.</p>
+    <p class="page-subhero">No per-tool execution scenario or catalog primitive is shipped on this installation. Use retained Runs when evidence exists; this page does not offer a command that cannot run.</p>
     {% else %}
     <div class="static-tool-card__status">
       <span class="result-pill {% if t.pill_state == 'ok' %}result-pill--pass{% elif t.pill_state == 'stale' %}result-pill--error{% else %}result-pill--fail{% endif %}">{{ t.tool_status or 'unknown' }}</span>

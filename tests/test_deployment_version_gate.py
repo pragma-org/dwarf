@@ -12,11 +12,101 @@ from profile_manager.deployment_versions import (
     enforce_deployment_version_gate,
     profile_deployment_version_preview,
 )
+from profile_manager.operator_version_decisions import OperatorVersionDecisionLedger
 from profile_manager.version_catalog import load_version_catalog, validate_version_catalog
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "dwarf/versions/catalog.json"
+
+
+def _local_registration(
+    identifier="local-amaru-1", *, public=None, platform="linux/amd64",
+    qualification="unverified",
+):
+    return {
+        "registration_id": identifier,
+        "implementation": "amaru",
+        "version": "10.12.0-local",
+        "image_reference": "local/amaru@sha256:" + "a" * 64,
+        "manifest_digest": "sha256:" + "a" * 64,
+        "config_image_id": "sha256:" + "b" * 64,
+        "platform": platform,
+        "inspected_at": "2026-10-11T12:00:00Z",
+        "provenance": {
+            "source_revision": None,
+            "public": public,
+            "qualification": qualification,
+        },
+    }
+
+
+def test_local_registration_preview_is_separate_unknown_and_exact(tmp_path):
+    ledger = OperatorVersionDecisionLedger(tmp_path)
+    initial = ledger.read()
+    registration = _local_registration()
+    state = ledger.append_registration(registration, expected_revision=initial["revision"])
+    profile = {
+        "id": "local-amaru",
+        "label": "Local Amaru",
+        "node_type": "amaru",
+        "node_count": 0,
+        "amaru_node_count": 1,
+        "network_magic": 42,
+        "peer_sharing": False,
+        "version_policy": "latest-confirmed",
+    }
+
+    ordinary = build_deployment_version_preview(profile)
+    preview = build_deployment_version_preview(
+        profile,
+        operator_registration_id=registration["registration_id"],
+        operator_state_dir=tmp_path,
+    )
+
+    assert ordinary["resolved"]["amaru"]["version"] == "10.11.20260912"
+    selected = preview["resolved"]["amaru"]
+    assert selected["version"] == registration["version"]
+    assert selected["source_revision"] is None
+    assert selected["artifacts"][0]["config_image_id"] == registration["config_image_id"]
+    assert preview["catalog_snapshot"] == ordinary["catalog_snapshot"]
+    assert preview["catalog_revision"] == ordinary["catalog_revision"]
+    assert preview["operator_overlay_revision"] == state["revision"]
+    assert preview["status"] == "unknown"
+    assert preview["requires_acknowledgement"] is True
+    with pytest.raises(DeploymentVersionGateError, match="acknowledgement"):
+        enforce_deployment_version_gate(preview, acknowledge_unknown=False)
+    assert enforce_deployment_version_gate(
+        preview, acknowledge_unknown=True
+    )["allowed"] is True
+
+
+def test_blocked_registration_and_mixed_pair_cannot_be_overridden(tmp_path):
+    ledger = OperatorVersionDecisionLedger(tmp_path)
+    initial = ledger.read()
+    blocked = _local_registration(qualification="blocked")
+    state = ledger.append_registration(blocked, expected_revision=initial["revision"])
+    profile = {
+        "id": "local-amaru", "label": "Local Amaru", "node_type": "amaru",
+        "node_count": 0, "amaru_node_count": 1, "network_magic": 42,
+        "peer_sharing": False, "version_policy": "latest-confirmed",
+    }
+    with pytest.raises(DeploymentVersionGateError, match="blocked"):
+        build_deployment_version_preview(
+            profile,
+            operator_registration_id=blocked["registration_id"],
+            operator_state_dir=tmp_path,
+        )
+
+    unverified = _local_registration("local-amaru-2")
+    ledger.append_registration(unverified, expected_revision=state["revision"])
+    mixed = {**profile, "node_type": "mixed", "node_count": 1, "amaru_node_count": 1}
+    with pytest.raises(DeploymentVersionGateError, match="mixed"):
+        build_deployment_version_preview(
+            mixed,
+            operator_registration_id=unverified["registration_id"],
+            operator_state_dir=tmp_path,
+        )
 
 
 def _profile(tmp_path: Path, monkeypatch, *, mixed=False, policy="latest-stable") -> str:

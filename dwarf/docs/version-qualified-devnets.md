@@ -79,12 +79,11 @@ Cardano-node experimental protocols pinned off, Cardano-node `11.1.2`
 
 ## Refresh releases
 
-Opening `/operate/versions` performs a staleness-limited background check of
-the official Cardano-node and Amaru sources. The page remains available from
-cached data while the check runs. **Check for new versions** starts the same
-authenticated, serialized check manually and reports the last attempt, last
-success, per-source status, newly discovered releases, and any rate-limit or
-registry failure.
+Opening `/operate/versions` reads retained catalog data and never contacts GitHub automatically. Each implementation has its own **Fetch Latest Version**
+button. That authenticated, serialized action checks only the selected source
+and reports its independent last attempt, last success, newly discovered
+releases, and any rate-limit or registry failure. A source failure leaves the
+other source's cached records and receipt intact.
 
 Discovery is written to a runtime-state overlay under
 `$ADA2_DWARF_STATE_DIR/version-catalog/`; it never rewrites the checked-in

@@ -8,6 +8,39 @@
   'tier': 'warn', 'suit': '▲', 'tone': 'dk-g-warn', 'group': row.target_implementation, 'sub': row.triage_reason,
   'facts': [('Status', row.status), ('Replay', row.replay_state), ('Compare', row.compare_state)], 'search': row.bucket_id ~ ' ' ~ (row.source_run_id or '')}) %}{% endfor %}
 {{ deck_grid(cards, label='testcases', empty='No testcase records are retained in the configured state directory.') }}
+<section class="basic-only dk" aria-label="Testcase lifecycle actions">
+  <div class="dk-panel">
+    <h3>{% if rows %}Add more testcases{% else %}How testcases get here{% endif %}</h3>
+    <p class="dkb-p">Testcases are recorded from finished runs. Pick a retained run in <a href="/operate/runs">Runs</a>, classify the issue, and keep a short triage reason.</p>
+    <form method="post" action="/operate/testcases/ingest">
+      <input type="hidden" name="token" value="{{ token }}">
+      <label for="testcase-run-id">Retained run ID</label>
+      <input id="testcase-run-id" name="run_id" required maxlength="255" autocomplete="off">
+      <label for="testcase-classification">Classification</label>
+      <input id="testcase-classification" name="classification" required maxlength="128" placeholder="crash">
+      <label for="testcase-triage-reason">Triage reason</label>
+      <input id="testcase-triage-reason" name="triage_reason" required maxlength="256" placeholder="decoder-abort">
+      <button class="dk-btn dk-btn--solid" type="submit">Record testcase</button>
+    </form>
+    <p class="dkb-p dk-note">CLI alternative:</p>
+    <div class="dkb-cmds">{% for item in entrypoints.create %}<div class="dk-cmd"><span class="dk-note">{{ item.label }}</span> <code>{{ item.command }}</code></div>{% endfor %}</div>
+  </div>
+  {% if rows %}
+  <div class="dk-panel">
+    <h3>Advance retained cases</h3>
+    <div class="dkb-cmds">{% for item in entrypoints.advance %}<div class="dk-cmd"><span class="dk-note">{{ item.label }}</span> <code>{{ item.command }}</code></div>{% endfor %}</div>
+  </div>
+  {% endif %}
+  <div class="dk-panel">
+    <h3>Related</h3>
+    <div class="dk-row">
+      {% if rows %}<a class="dk-btn dk-btn--solid" href="/api/assets/testcases/export" download>Download records</a>{% endif %}
+      <a class="dk-btn" href="/operate/testcase-buckets">View buckets</a>
+      <a class="dk-btn" href="/operate/runs">Source runs</a>
+      <a class="dk-btn" href="/learn/cli#cli-testcase">Testcase commands</a>
+    </div>
+  </div>
+</section>
 {{ deck_more('Buckets, provenance and downloads in Advanced') }}
 {% endif %}
 <div class="adv-only">

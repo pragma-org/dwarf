@@ -72,7 +72,14 @@ def _cpu_percent_samples(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if elapsed > 0 and cpu_delta >= 0:
                 values.append({"value": cpu_delta / elapsed * 100, "unit": "%"})
         previous = point
-    return values
+    if values:
+        return values
+    return [
+        {"value": sample["cpu_percent"], "unit": "%"}
+        for sample in samples
+        if isinstance(sample.get("cpu_percent"), (int, float))
+        and not isinstance(sample.get("cpu_percent"), bool)
+    ]
 
 
 def _network_scope(samples: list[dict[str, Any]]) -> str:
@@ -88,7 +95,7 @@ def _network_scope(samples: list[dict[str, Any]]) -> str:
 
 def _resource_measurements(samples: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     network_scope = _network_scope(samples)
-    return {
+    measurements = {
         "cpu_percent": distribution_summary(_cpu_percent_samples(samples), unit="%"),
         "cpu_time_seconds": _counter_delta(samples, "cpu_time_seconds", "s"),
         "rss_bytes": _distribution(samples, "rss_bytes", "bytes"),
@@ -103,6 +110,15 @@ def _resource_measurements(samples: list[dict[str, Any]]) -> dict[str, dict[str,
         "fd_count": _distribution(samples, "fd_count", "fds"),
         "threads": _distribution(samples, "threads", "threads"),
     }
+    if any("container_memory_bytes" in sample for sample in samples):
+        measurements["container_memory_bytes"] = _distribution(
+            samples, "container_memory_bytes", "bytes"
+        )
+    if any("container_tasks" in sample for sample in samples):
+        measurements["container_tasks"] = _distribution(
+            samples, "container_tasks", "tasks"
+        )
+    return measurements
 
 
 _LEGACY_RESOURCE_WINDOW_NAMES = ("baseline", "hostile", "recovery")
@@ -234,9 +250,12 @@ class AmaruResourceCollector:
         resolve_pid: Callable[[Path, str], int] = resolve_target_pid,
         sample_reader: Callable[[int, int], dict[str, Any]] | None = None,
         background: bool = True,
+        capture_timeout_seconds: float = 1.0,
     ) -> None:
         if sample_interval_seconds <= 0 or sample_interval_seconds > 60:
             raise ValueError("sample_interval_seconds must be within (0, 60]")
+        if capture_timeout_seconds <= 0 or capture_timeout_seconds > 60:
+            raise ValueError("capture_timeout_seconds must be within (0, 60]")
         self.entry = entry
         self.runtime_metadata_path = Path(runtime_metadata_path)
         self.target_node = target_node
@@ -244,10 +263,12 @@ class AmaruResourceCollector:
         self._resolve_pid = resolve_pid
         self._sample_reader = sample_reader
         self._background = background
+        self._capture_timeout_seconds = capture_timeout_seconds
         self._pid: int | None = None
         self._samples: list[dict[str, Any]] = []
         self._sample_errors: list[str] = []
         self._lock = threading.Lock()
+        self._capture_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -273,6 +294,10 @@ class AmaruResourceCollector:
         return {**sample, "sample_index": index, "target_node": self.target_node}
 
     def _capture(self) -> None:
+        with self._capture_lock:
+            self._capture_serialized()
+
+    def _capture_serialized(self) -> None:
         with self._lock:
             index = len(self._samples)
         try:
@@ -317,10 +342,20 @@ class AmaruResourceCollector:
     def stop(self, context) -> None:
         self._stop_event.set()
         if self._thread is not None:
-            self._thread.join(timeout=max(1.0, self.sample_interval_seconds * 2))
+            self._thread.join(
+                timeout=max(
+                    1.0,
+                    self.sample_interval_seconds * 2,
+                    self._capture_timeout_seconds + 1,
+                )
+            )
+            if self._thread.is_alive():
+                raise RuntimeError("resource sampler did not terminate before finalization")
         self._capture()
 
     def finalize(self, context) -> dict[str, Any]:
+        if self._thread is not None and self._thread.is_alive():
+            raise RuntimeError("resource sampler is still active during finalization")
         with self._lock:
             samples = list(self._samples)
             sample_errors = list(self._sample_errors)

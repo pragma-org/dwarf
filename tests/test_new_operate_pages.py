@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from profile_manager.config import DeploymentConfig, load_config
+from profile_manager import dashboard
 from profile_manager.data.operate_config_edit import config_edit_payload, handle_config_save
+from profile_manager.views.operate_config import render_operate_config
 from profile_manager.views.operate_config_edit import render_operate_config_edit
 from profile_manager.views.scenarios import render_operate_scenarios
 
@@ -58,6 +60,47 @@ def test_auto_redeploy_setting_round_trips_and_shows_enabled_warning(
     assert "at most one evidence-preserving redeploy" in rendered
     scenarios = render_operate_scenarios(token="dwarf")
     assert "AUTO-REPAIR ENABLED FOR ATTACHED SCENARIOS" in scenarios
+
+
+def test_config_links_and_forms_keep_token_out_of_user_facing_urls():
+    config_html = render_operate_config(token="test-token")
+    edit_html = render_operate_config_edit(token="test-token")
+
+    assert "?token=" not in config_html
+    assert "?token=" not in edit_html
+    assert 'href="/operate/config/edit"' in config_html
+    assert 'action="/api/moog/setup"' in config_html
+    assert 'action="/operate/config/save"' in edit_html
+    assert 'type="hidden" name="token" value="test-token"' in config_html
+    assert 'type="hidden" name="token" value="test-token"' in edit_html
+
+
+def test_config_form_auth_prefers_supplied_body_token_without_query_fallback():
+    assert dashboard.check_form_token(
+        "/operate/config/save",
+        b"",
+        expected="test-token",
+    ) == (False, "missing token query parameter")
+    assert dashboard.check_form_token(
+        "/operate/config/save?token=test-token",
+        b"token=",
+        expected="test-token",
+    ) == (False, "invalid token")
+    assert dashboard.check_form_token(
+        "/operate/config/save",
+        b"token=test-token",
+        expected="test-token",
+    ) == (True, None)
+    assert dashboard.check_form_token(
+        "/operate/config/save?token=test-token",
+        b"token=wrong-token",
+        expected="test-token",
+    ) == (False, "invalid token")
+    assert dashboard.check_form_token(
+        "/operate/config/save?token=test-token",
+        b"host=127.0.0.1",
+        expected="test-token",
+    ) == (True, None)
 
 
 def test_visual_audit_includes_new_routes_and_accessibility_checks():

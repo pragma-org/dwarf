@@ -413,11 +413,14 @@ def test_scaffold_result_returns_to_primitives_and_never_claims_live_registratio
 ):
     module = importlib.import_module("profile_manager.data.operate_primitives_new")
     monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path / "bundles"))
 
     status, html = module.handle_create_post(b"family=load&name=example_catalog_primitive")
 
     assert status == 200
-    assert 'href="/operate/primitives?token=dwarf"' in html
+    assert '?token=' not in html
+    assert 'href="/operate/primitives"' in html
     assert "requires implementation" in html.lower()
     assert "rebuild" in html.lower()
     assert "now live" not in html.lower()

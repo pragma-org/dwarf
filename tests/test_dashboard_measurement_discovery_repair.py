@@ -63,7 +63,7 @@ def test_operate_has_one_clear_measurements_hub_with_existing_destinations():
     assert "run reports contain results" in hub
 
 
-def test_run_wizard_keeps_all_ten_semantic_stages_visible():
+def test_run_wizard_keeps_all_six_basic_semantic_stages_and_controls_visible():
     html = render_route_html("/run")
     stages = re.findall(
         r'<section id="run-stage-[^"]+"[^>]*>\s*<header><span>(\d\d)</span>',
@@ -71,7 +71,29 @@ def test_run_wizard_keeps_all_ten_semantic_stages_visible():
     )
     script = RUN_WIZARD_SCRIPT.read_text(encoding="utf-8")
 
-    assert stages == [f"{value:02d}" for value in range(1, 11)]
+    assert stages == [f"{value:02d}" for value in range(1, 7)]
+    assert re.findall(r'<h2 id="run-step-[^"]+">([^<]+)</h2>', html) == [
+        "Topology",
+        "Exact node versions",
+        "Scenario",
+        "Measurements",
+        "Review and prepare",
+        "Run and evidence",
+    ]
+    for required in (
+        'name="topology_mode"',
+        'name="version_policy"',
+        'name="scenario_id"',
+        'name="measurement_profile"',
+        'name="confirm_topology_change"',
+        'data-run-action="prepare"',
+        'data-run-action="start"',
+        'data-run-lifecycle="queued"',
+        'data-run-lifecycle="running"',
+        'data-run-lifecycle="completed"',
+        "data-run-basic-evidence",
+    ):
+        assert required in html
     assert "[data-run-step=\"versions\"].hidden" not in script
     assert "[data-run-step=\"measurements\"].hidden" not in script
     assert "setConditionalState" not in script
@@ -105,7 +127,32 @@ def test_coverage_separates_inventory_from_accepted_runtime_evidence():
         assert run_id in html
 
 
-def test_threat_coverage_labels_mapping_and_runtime_evidence_separately():
+def test_threat_coverage_labels_mapping_and_runtime_evidence_separately(
+    tmp_path, monkeypatch
+):
+    runs = tmp_path / "runs"
+    retained = (
+        ("20260920T235440Z-050046a4", "client-example-cbor-decoding-amaru-d3a6dafc-regression"),
+        ("20260920T132629Z-ea000d37", "client-example-cbor-decoding-cardano-patched"),
+        ("20260921T204537Z-ff5a800a", "client-example-plutus-vm-amaru-onchain-v2"),
+        ("20260921T202611Z-27eeadb5", "client-example-plutus-vm-cardano"),
+        ("20260921T035546Z-9747122c", "client-example-block-application-amaru-canonical-v3"),
+        ("20260921T021935Z-3b58eafc", "client-example-block-application-cardano-canonical-v2"),
+        ("20260921T045619Z-15e864a0", "client-example-restart-recovery-sync-amaru"),
+        ("20260921T045807Z-8e2bbb0e", "client-example-restart-recovery-sync-cardano"),
+        ("20260921T194749Z-26542a57", "client-example-simple-transfer-amaru"),
+        ("20260921T195334Z-e713d0de", "client-example-simple-transfer-cardano"),
+    )
+    for run_id, scenario_id in retained:
+        run = runs / run_id
+        run.mkdir(parents=True)
+        (run / "manifest.json").write_text(
+            json.dumps({"run_id": run_id, "scenario": {"id": scenario_id}}),
+            encoding="utf-8",
+        )
+    monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(runs))
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path / "bundles"))
     html = render_route_html("/learn/threat-coverage")
     data = json.loads(re.search(r"const DATA = (\{.*\});\nconst TYPES", html).group(1))
 
@@ -125,7 +172,7 @@ def test_threat_coverage_labels_mapping_and_runtime_evidence_separately():
     assert data["meta"]["rr_covered"] == len(
         [row for row in data["risks"] if row.get("scenarios")]
     )
-    assert data["meta"]["n_scen"] == len(data["scenarios"]) == 268
+    assert data["meta"]["n_scen"] == len(data["scenarios"]) == 344
     assert data["meta"]["tm_gaps"] == ["TM-030", "TM-031"]
     assert data["meta"]["rr_gaps"] == ["RR-027"]
 

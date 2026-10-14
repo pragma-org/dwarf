@@ -18,6 +18,8 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from profile_manager.config import storage_roots
 from typing import Any
 
 from profile_manager.views.scenarios import _scenario_family
@@ -109,6 +111,30 @@ def _empty_windows() -> dict[str, dict[str, Any]]:
     }
 
 
+def _truthful_comparison_status(payload: dict[str, Any]) -> tuple[str, bool, bool]:
+    """Derive display truth from source outcomes, not self-asserted summary flags."""
+    runs = payload.get("runs") if isinstance(payload.get("runs"), dict) else {}
+    amaru = runs.get("amaru") if isinstance(runs.get("amaru"), dict) else {}
+    cardano = (
+        runs.get("cardano-node")
+        if isinstance(runs.get("cardano-node"), dict)
+        else {}
+    )
+    sources_passed = (
+        amaru.get("exit_status") == "pass"
+        and cardano.get("exit_status") == "pass"
+    )
+    if not sources_passed or payload.get("comparable") is False:
+        return ("INCOMPLETE", False, False)
+
+    agreed = payload.get("agreed") is True
+    expected_result = "AGREED" if agreed else "DIVERGED"
+    declared_result = payload.get("result")
+    if declared_result is not None and declared_result != expected_result:
+        return ("INCOMPLETE", False, False)
+    return (expected_result, agreed, True)
+
+
 def _comparison_from_run(run_dir: Path) -> dict[str, Any] | None:
     """Read {run_dir}/cross-impl-comparison.json and return an enriched dict.
 
@@ -125,6 +151,7 @@ def _comparison_from_run(run_dir: Path) -> dict[str, Any] | None:
     runs_block = payload.get("runs") or {}
     amaru_run = runs_block.get("amaru") or {}
     cn_run = runs_block.get("cardano-node") or {}
+    result, agreed, comparable = _truthful_comparison_status(payload)
 
     windows: dict[str, dict[str, Any]] = _empty_windows()
     compare_diff = payload.get("compare_diff") or {}
@@ -144,8 +171,9 @@ def _comparison_from_run(run_dir: Path) -> dict[str, Any] | None:
     return {
         "scenario_id": scenario_id,
         "family": _scenario_family(scenario_id),
-        "result": payload.get("result") or ("AGREED" if payload.get("agreed") else "DIVERGED"),
-        "agreed": bool(payload.get("agreed")),
+        "result": result,
+        "agreed": agreed,
+        "comparable": comparable,
         "seed": payload.get("seed"),
         "amaru": {
             "run_id": amaru_run.get("run_id"),
@@ -166,14 +194,8 @@ def _comparison_from_run(run_dir: Path) -> dict[str, Any] | None:
 
 
 def _forensic_runs_dir() -> Path:
-    """Mirror data.runs._forensic_runs_dir without re-importing it (private).
-
-    Source of truth: ADA2_DWARF_RUNS_DIR env var, else dwarf/runs/.
-    """
-    env = os.environ.get("ADA2_DWARF_RUNS_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[2] / "runs"
+    """Return the canonical configured runtime run root."""
+    return storage_roots().runs
 
 
 def _retained_evidence_dir() -> Path:
@@ -233,11 +255,16 @@ def _comparison_from_retained_markdown(path: Path, *, runs_dir: Path) -> dict[st
     seed_match = _SEED_RE.search(text)
     amaru = runs["amaru"]
     cn = runs["cardano-node"]
+    comparable = all(
+        runs[impl].get("exit_status") == "pass"
+        for impl in ("amaru", "cardano-node")
+    )
     return {
         "scenario_id": scenario_id,
         "family": _scenario_family(scenario_id),
-        "result": result,
-        "agreed": result == "AGREED",
+        "result": result if comparable else "INCOMPLETE",
+        "agreed": comparable and result == "AGREED",
+        "comparable": comparable,
         "seed": seed_match.group(1) if seed_match else None,
         "amaru": {
             "run_id": amaru.get("run_id"),
@@ -350,13 +377,15 @@ def aggregate_strip(comparisons: list[dict[str, Any]], all_runs_24h_count: int) 
     - runs_24h: separate cadence indicator (passed in by the view)
     """
     total = len(comparisons)
-    agreed = sum(1 for c in comparisons if c.get("agreed"))
-    diverged = total - agreed
+    agreed = sum(1 for c in comparisons if c.get("result") == "AGREED")
+    diverged = sum(1 for c in comparisons if c.get("result") == "DIVERGED")
+    incomplete = total - agreed - diverged
     metric_divergent = sum(1 for c in comparisons if _has_metric_divergence(c))
     return {
         "total": total,
         "agreed": agreed,
         "diverged": diverged,
+        "incomplete": incomplete,
         "metric_divergent": metric_divergent,
         "runs_24h": all_runs_24h_count,
     }

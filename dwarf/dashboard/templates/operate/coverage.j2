@@ -71,7 +71,10 @@
   {% elif latest.file_level_md_url %}<p class="basic-only dk-row dkc-links"><a class="dk-btn" href="{{ latest.file_level_json_url }}">coverage-report-file-level.json</a><a class="dk-btn" href="{{ latest.file_level_md_url }}">coverage-file-level.md</a></p>{% endif %}
 {% else %}
 <div class="basic-only">
-  <p class="dk-note">To produce one, aggregate the per-bundle bitmaps:</p>
+  <p class="dk-note">Coverage needs the optional host-side AFL harness. Install it on a supported Linux substrate host with the same one-script installer, then choose a coverage-capable scenario. A catalogued AFL target does not mean that target is runnable on this installation.</p>
+  <pre class="dkc-cmd"><code>bash delivery/scripts/install.sh --afl</code></pre>
+  <p class="dk-row"><a class="dk-btn dk-btn--solid" href="/operate/scenarios">Open coverage-capable scenarios</a><a class="dk-btn" href="/operate/targets">Inspect AFL targets</a></p>
+  <p class="dk-note">After a campaign has retained bundle evidence, aggregate the per-bundle bitmaps:</p>
   <pre class="dkc-cmd"><code>cardano-profile coverage aggregate</code></pre>
 </div>
 {% endif %}

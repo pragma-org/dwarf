@@ -393,23 +393,42 @@ def _observe_connection_state(
     target_host: str,
     connect_attempts: int,
 ) -> dict:
-    target = resolve_target_process(runtime_metadata_path, str(node.get("name") or ""))
-    port = int(target["port"])
-    connect_successes = 0
-    connect_failures = 0
-    for _ in range(connect_attempts):
+    container_name = str(node.get("container_name") or "")
+    if container_name:
+        port = int(node.get("port") or 0)
+        container_port = int(str(node.get("container_listen_address") or "node:3001").rsplit(":", 1)[1])
+        inspect_proc = _run(
+            ["docker", "inspect", "--format", "{{.State.Pid}}", container_name],
+            timeout=10,
+        )
         try:
-            with socket.create_connection((target_host, port), timeout=1.0):
+            host_pid = int((inspect_proc.stdout or "").strip())
+        except ValueError as exc:
+            raise RuntimeError("multi-node observation could not resolve docker host pid") from exc
+        if inspect_proc.returncode != 0 or host_pid <= 0:
+            raise RuntimeError("multi-node observation could not resolve docker host pid")
+        connect_successes = 0
+        connect_failures = 0
+        for _ in range(connect_attempts):
+            connect_proc = _run(
+                [
+                    "docker",
+                    "exec",
+                    container_name,
+                    "bash",
+                    "-lc",
+                    f"exec 3<>/dev/tcp/127.0.0.1/{container_port}; exec 3>&-; exec 3<&-",
+                ],
+                timeout=10,
+            )
+            if connect_proc.returncode == 0:
                 connect_successes += 1
-        except OSError:
-            connect_failures += 1
-
-    if node.get("container_name"):
-        ss_proc = _run(["docker", "exec", str(node["container_name"]), "ss", "-tan"], timeout=10)
+            else:
+                connect_failures += 1
+        ss_proc = _run(["docker", "exec", container_name, "ss", "-tan"], timeout=10)
         if ss_proc.returncode != 0:
             raise RuntimeError("multi-node observation could not capture docker ss output")
         filtered_lines = []
-        container_port = int(str(node.get("container_listen_address") or "node:3001").rsplit(":", 1)[1])
         for line in (ss_proc.stdout or "").splitlines():
             text = line.strip()
             if not text:
@@ -427,8 +446,11 @@ def _observe_connection_state(
         established_count = sum(1 for line in ss_lines if line.startswith("ESTAB"))
         return {
             "target_node": str(node.get("name") or ""),
-            "pid": int(target["pid"]),
+            "pid": host_pid,
+            "pid_scope": "docker-host",
             "port": port,
+            "container_port": container_port,
+            "connect_scope": "container-loopback",
             "connect_successes": connect_successes,
             "connect_failures": connect_failures,
             "ss_match_count": len(ss_lines),
@@ -439,6 +461,17 @@ def _observe_connection_state(
             "responsive": bool(connect_successes >= 1 and listen_count >= 1),
             "ss_lines": ss_lines,
         }
+
+    target = resolve_target_process(runtime_metadata_path, str(node.get("name") or ""))
+    port = int(target["port"])
+    connect_successes = 0
+    connect_failures = 0
+    for _ in range(connect_attempts):
+        try:
+            with socket.create_connection((target_host, port), timeout=1.0):
+                connect_successes += 1
+        except OSError:
+            connect_failures += 1
 
     ss_proc = _run(["ss", "-tanp"], timeout=10)
     if ss_proc.returncode != 0:

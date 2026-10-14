@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
 import re
 import shutil
@@ -80,6 +82,31 @@ def _resolve_support_binary(name: str) -> str:
     raise FileNotFoundError(f"missing required binary: {name}")
 
 
+def _packaged_cardano_testnet_create_env_command(
+    *,
+    output_dir: Path,
+    pool_count: int,
+    network_magic: int,
+    binary: str = "cardano-testnet",
+) -> list[str]:
+    """Build the create-env command supported by the packaged 11.1.2 tool.
+
+    JSON node logging is the tool's default.  The historical
+    ``--node-logging-format`` option is not accepted by the 11.1.2 release.
+    """
+
+    return [
+        binary,
+        "create-env",
+        "--output",
+        str(output_dir),
+        "--num-pool-nodes",
+        str(pool_count),
+        "--testnet-magic",
+        str(network_magic),
+    ]
+
+
 def _port_bases(compose_project: str) -> tuple[int, int]:
     offset = sum(compose_project.encode("utf-8")) % 500
     return 33001 + (offset * 10), 43001 + (offset * 10)
@@ -117,14 +144,45 @@ def _cardano_local_roots(access_points: list[dict[str, int | str]]) -> list[dict
     ]
 
 
-def _requires_legacy_cardano_testnet_genesis_fields(version: str) -> bool:
+def _requires_legacy_cardano_testnet_genesis_fields(version: object) -> bool:
     try:
-        major_text, minor_text, *_ = str(version).split(".")
+        major_text, *_ = str(version).split(".")
         major = int(major_text)
-        minor = int(minor_text)
     except (TypeError, ValueError):
         return False
-    return (major, minor) < (10, 7)
+    return major < 11
+
+
+def _requires_cardano_testnet_log_metrics(version: object) -> bool:
+    try:
+        major_text, *_ = str(version).split(".")
+        major = int(major_text)
+    except (TypeError, ValueError):
+        return False
+    return major < 11
+
+
+def _ensure_cardano_testnet_config_compatibility(
+    *, config_path: Path, nodes: list[dict]
+) -> dict:
+    required_by_versions = sorted(
+        {
+            str(node.get("version"))
+            for node in nodes
+            if node.get("impl") == "cardano-node"
+            and _requires_cardano_testnet_log_metrics(node.get("version"))
+        }
+    )
+    body = json.loads(config_path.read_text(encoding="utf-8"))
+    changed = bool(required_by_versions and "TurnOnLogMetrics" not in body)
+    if changed:
+        body["TurnOnLogMetrics"] = True
+        config_path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+    return {
+        "changed": changed,
+        "required_by_versions": required_by_versions,
+        "turn_on_log_metrics": body.get("TurnOnLogMetrics"),
+    }
 
 
 def _tip_has_real_chain_progress(tip: dict) -> bool:
@@ -440,6 +498,10 @@ def _apply_kes_genesis_override_to_shelley(*, genesis_path: Path, override: dict
         "slots_per_kes_period": slots,
         "max_kes_evolutions": evolutions,
         "window_slots": slots * evolutions,
+        "effective_shelley_genesis_path": str(genesis_path),
+        "effective_shelley_genesis_sha256": hashlib.sha256(
+            genesis_path.read_bytes()
+        ).hexdigest(),
     }
 
 
@@ -451,8 +513,28 @@ def _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(*, genesis_path: Pa
     ):
         return False
     body = json.loads(genesis_path.read_text(encoding="utf-8"))
-    pools = ((body.get("staking") or {}).get("pools") or {})
     changed = False
+    extra_config = body.get("extraConfig") or {}
+    extra_initial_funds = copy.deepcopy(
+        ((extra_config.get("initialFunds") or {}).get("data") or {})
+    )
+    extra_stake_pools = copy.deepcopy(
+        ((extra_config.get("stakePools") or {}).get("data") or {})
+    )
+    extra_stake_credentials = copy.deepcopy(
+        ((extra_config.get("stakeCredentials") or {}).get("data") or {})
+    )
+    if extra_initial_funds and not body.get("initialFunds"):
+        body["initialFunds"] = extra_initial_funds
+        changed = True
+    staking = body.setdefault("staking", {})
+    if extra_stake_pools and not staking.get("pools"):
+        staking["pools"] = extra_stake_pools
+        changed = True
+    if extra_stake_credentials and not staking.get("stake"):
+        staking["stake"] = extra_stake_credentials
+        changed = True
+    pools = staking.get("pools") or {}
     for pool_id, pool_body in pools.items():
         if not isinstance(pool_body, dict):
             continue
@@ -465,6 +547,27 @@ def _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(*, genesis_path: Pa
     if changed:
         genesis_path.write_text(json.dumps(body, indent=4) + "\n", encoding="utf-8")
     return changed
+
+
+def _public_topology_with_upstream(
+    template: dict, upstream_peer_address: str
+) -> tuple[dict, list[dict[str, int | str]]]:
+    """Retain an explicit public peer in both legacy and Genesis-mode inputs."""
+
+    body = dict(template)
+    upstream = str(upstream_peer_address or "").strip()
+    if not upstream:
+        return body, []
+    peer_host, peer_port_text = upstream.rsplit(":", 1)
+    access_point: dict[str, int | str] = {
+        "address": peer_host,
+        "port": int(peer_port_text),
+    }
+    # cardano-node 11.x Genesis mode deliberately ignores bootstrapPeers, but
+    # earlier supported versions still consume it.  The same catalog-owned peer
+    # must therefore also be emitted as a trusted local root.
+    body["bootstrapPeers"] = [access_point]
+    return body, [access_point]
 
 
 def _rewrite_haskell_topology(
@@ -486,10 +589,11 @@ def _rewrite_haskell_topology(
         body["bootstrapPeers"] = None
     if "publicRoots" not in body:
         body["publicRoots"] = [{"accessPoints": [], "advertise": False}]
-    # Mixed-version synthetic devnets stay inside the 10.x node-to-node envelope.
-    # 9.x↔10.x is intentionally unsupported after repeated version-band handshake
-    # failures, so topology emission remains on the modern P2P shape.
-    body["useLedgerAfterSlot"] = -1
+    # Synthetic devnets need ledger peers immediately, but public-network
+    # topology assets carry a deliberate bootstrap threshold.  Overwriting it
+    # made a fresh node abandon its trusted bootstrap path while still far
+    # behind the public tip.
+    body.setdefault("useLedgerAfterSlot", -1)
     if peer_snapshot_path is not None:
         body["peerSnapshotFile"] = str(peer_snapshot_path)
     topo_path.parent.mkdir(parents=True, exist_ok=True)
@@ -769,7 +873,15 @@ def _host_compose_project(*, compose_project: str, host_id: str) -> str:
     return _docker_project_name(f"{compose_project}-{host_id}")
 
 
-def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_name: str) -> dict:
+def _docker_compose_body(
+    *,
+    compose_project: str,
+    nodes: list[dict],
+    network_name: str,
+    network_magic: int | None = None,
+    controller_ownership: dict | None = None,
+    docker_host_runtime_root: str | None = None,
+) -> dict:
     services = {}
     for node in nodes:
         host, port_text = node["listen_address"].rsplit(":", 1)
@@ -861,20 +973,35 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
                 f"2>&1 | tee -a /logs/{node['id']}/stdout.log"
             )
             command = ["; ".join(command_parts)]
+        labels = {
+            "ada2.managed": "dwarf",
+            "ada2.profile": compose_project,
+            "ada2.service": node["id"],
+        }
+        if controller_ownership:
+            labels.update(
+                {
+                    "io.dwarf.managed": "true",
+                    "io.dwarf.installation": str(controller_ownership["installation_id"]),
+                    "io.dwarf.topology": str(controller_ownership["topology_id"]),
+                    "io.dwarf.component": "node",
+                    "io.dwarf.node_id": str(node["id"]),
+                    "io.dwarf.implementation": str(node["impl"]),
+                    "io.dwarf.version": str(node.get("version") or "unknown"),
+                    "io.dwarf.network_magic": str(network_magic if network_magic is not None else ""),
+                }
+            )
+        volume_root = docker_host_runtime_root.rstrip("/") if docker_host_runtime_root else "."
         services[node["id"]] = {
             "image": _docker_image_ref(node),
             "container_name": f"{compose_project}-{node['id']}-1",
             "hostname": node["id"],
-            "labels": {
-                "ada2.managed": "dwarf",
-                "ada2.profile": compose_project,
-                "ada2.service": node["id"],
-            },
+            "labels": labels,
             "networks": {"default": {"aliases": [node["id"]]}},
             "ports": [f"{host}:{port_text}:{_docker_container_port(node)}"],
             "volumes": [
-                "./env:/env",
-                "./logs:/logs",
+                f"{volume_root}/env:/env",
+                f"{volume_root}/logs:/logs",
             ],
             "user": "1000:1000",
             "read_only": True,
@@ -885,7 +1012,7 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
             "command": command,
         }
         if node["impl"] == "amaru":
-            services[node["id"]]["volumes"].append("./amaru:/amaru")
+            services[node["id"]]["volumes"].append(f"{volume_root}/amaru:/amaru")
             services[node["id"]]["environment"] = {
                 "AMARU_MIGRATE_CHAIN_DB": "true",
             }
@@ -898,10 +1025,18 @@ def _docker_compose_body(*, compose_project: str, nodes: list[dict], network_nam
                     f"/logs/{node['id']}/cardano-plutus.ndjson"
                 ),
             }
+    network: dict[str, object] = {"name": f"{compose_project}-net"}
+    if controller_ownership:
+        network["labels"] = {
+            "io.dwarf.managed": "true",
+            "io.dwarf.installation": str(controller_ownership["installation_id"]),
+            "io.dwarf.topology": str(controller_ownership["topology_id"]),
+            "io.dwarf.component": "network",
+        }
     return {
         "name": compose_project,
         "services": services,
-        "networks": {"default": {"name": f"{compose_project}-net"}},
+        "networks": {"default": network},
     }
 
 
@@ -960,6 +1095,8 @@ def _compose_substrate_docker(
     public_network = _is_public_network(plan["network"])
     public_assets = None
     resolved_public_network_magic = None
+    cardano_testnet_config_compatibility = None
+    kes_genesis_override_evidence = None
     env_root = runtime_root / "env"
     if haskell_nodes and public_network:
         public_assets = _stage_public_network_assets(
@@ -973,12 +1110,10 @@ def _compose_substrate_docker(
             shutil.copy2(asset_path, env_root / destination_name)
         config_path = env_root / "configuration.yaml"
         topology_template = json.loads(Path(public_assets["topology.json"]).read_text(encoding="utf-8"))
-        upstream_peer = str(plan.get("upstream_peer_address") or "").strip()
-        if upstream_peer:
-            peer_host, peer_port_text = upstream_peer.rsplit(":", 1)
-            topology_template["bootstrapPeers"] = [
-                {"address": peer_host, "port": int(peer_port_text)}
-            ]
+        topology_template, upstream_access_points = _public_topology_with_upstream(
+            topology_template,
+            str(plan.get("upstream_peer_address") or ""),
+        )
         resolved_public_network_magic = _resolve_public_network_magic(
             network_name=plan["network"], config_path=config_path
         )
@@ -993,6 +1128,7 @@ def _compose_substrate_docker(
                 node,
                 topo_path=topo_path,
                 template=topology_template,
+                access_points=upstream_access_points,
                 peer_snapshot_path=(
                     Path("/env/peer-snapshot.json")
                     if public_assets.get("peer-snapshot.json")
@@ -1009,18 +1145,12 @@ def _compose_substrate_docker(
         if host_cardano_node_binary is None:
             host_cardano_node_binary = _resolve_support_binary("cardano-node")
         create_env = run_command(
-            [
-                support["cardano-testnet"],
-                "create-env",
-                "--output",
-                str(env_root),
-                "--num-pool-nodes",
-                str(len(haskell_nodes)),
-                "--testnet-magic",
-                str(plan["network_magic"]),
-                "--node-logging-format",
-                "json",
-            ],
+            _packaged_cardano_testnet_create_env_command(
+                output_dir=env_root,
+                pool_count=len(haskell_nodes),
+                network_magic=int(plan["network_magic"]),
+                binary=support["cardano-testnet"],
+            ),
             env=_cardano_testnet_env(
                 cardano_node_binary=host_cardano_node_binary,
                 cardano_cli_binary=support["cardano-cli"],
@@ -1028,13 +1158,13 @@ def _compose_substrate_docker(
         )
         if create_env.returncode != 0:
             raise RuntimeError(f"cardano-testnet create-env failed: {create_env.stderr or create_env.stdout}")
+        cardano_testnet_config_compatibility = _ensure_cardano_testnet_config_compatibility(
+            config_path=env_root / "configuration.yaml",
+            nodes=haskell_nodes,
+        )
         _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(
             genesis_path=env_root / "shelley-genesis.json",
             nodes=haskell_nodes,
-        )
-        _apply_kes_genesis_override_to_shelley(
-            genesis_path=env_root / "shelley-genesis.json",
-            override=plan.get("kes_genesis_override"),
         )
         measurement_trace_config = (
             _enable_cardano_measurement_traces(env_root / "configuration.yaml")
@@ -1077,8 +1207,32 @@ def _compose_substrate_docker(
         _synthesize_amaru_bootstrap_for_custom_testnet(runtime_root=runtime_root, plan=plan)
     elif not public_network:
         start_time_refresh = _refresh_cardano_testnet_start_times(env_root=runtime_root / "env")
+    if plan.get("kes_genesis_override"):
+        if any(node["impl"] == "amaru" for node in plan["nodes"]):
+            raise RuntimeError(
+                "short-KES is not qualified for mixed Cardano/Amaru compose runtimes"
+            )
+        if public_network:
+            raise RuntimeError("short-KES requires a generated private Cardano devnet")
+        kes_genesis_override_evidence = _apply_kes_genesis_override_to_shelley(
+            genesis_path=env_root / "shelley-genesis.json",
+            override=plan["kes_genesis_override"],
+        )
 
-    compose_body = _docker_compose_body(compose_project=docker_project, nodes=plan["nodes"], network_name=plan["network"])
+    compose_body = _docker_compose_body(
+        compose_project=docker_project,
+        nodes=plan["nodes"],
+        network_name=plan["network"],
+        network_magic=plan.get("network_magic"),
+        controller_ownership=plan.get("controller_ownership"),
+        docker_host_runtime_root=plan.get("docker_host_runtime_root"),
+    )
+    if plan.get("controller_ownership"):
+        for service in compose_body["services"].values():
+            for published in service.get("ports") or []:
+                fields = str(published).rsplit(":", 2)
+                if len(fields) >= 2 and fields[-2] == "8787":
+                    raise RuntimeError("controller-owned topology may not publish port 8787")
     compose_path = runtime_root / "docker-compose.yml"
     compose_path.write_text(json.dumps(compose_body, indent=2) + "\n", encoding="utf-8")
 
@@ -1147,6 +1301,8 @@ def _compose_substrate_docker(
         "network_magic": resolved_public_network_magic if public_network else plan["network_magic"],
         "support_binaries": dict(support),
         "cardano_testnet_start_time_refresh": start_time_refresh,
+        "cardano_testnet_config_compatibility": cardano_testnet_config_compatibility,
+        "kes_genesis_override": kes_genesis_override_evidence,
         "nodes": metadata_nodes,
         "haskell_nodes": [node for node in metadata_nodes if node["impl"] == "cardano-node"],
         "amaru_nodes": [node for node in metadata_nodes if node["impl"] == "amaru"],
@@ -1167,12 +1323,22 @@ def _compose_substrate_docker(
         node["healthy"] = bool(health_by_id.get(node["id"], False))
 
     chain_progress_gate = None
-    if haskell_nodes and not public_network:
+    if haskell_nodes:
+        chain_network_magic = (
+            resolved_public_network_magic if public_network else plan["network_magic"]
+        )
+        if chain_network_magic is None:
+            raise RuntimeError(
+                f"cardano network magic is unavailable for {plan['network']} chain progress gate"
+            )
         chain_progress_gate = _wait_for_cardano_node_block(
             runtime_metadata_path=bundle_metadata_path,
             nodes=[node for node in metadata_nodes if node["impl"] == "cardano-node"],
-            network_magic=int(plan["network_magic"]),
-            cardano_cli=support["cardano-cli"],
+            network_magic=int(chain_network_magic),
+            # Docker-backed nodes are queried with `docker exec ... cardano-cli`.
+            # Public-network plans intentionally have no controller-local support
+            # binaries, so retain a harmless fallback for the non-container branch.
+            cardano_cli=support.get("cardano-cli", "cardano-cli"),
         )
         write_json(output_dir / "cardano-chain-progress-gate.json", chain_progress_gate)
         if not chain_progress_gate.get("ready"):
@@ -1205,6 +1371,8 @@ def _compose_substrate_docker(
         "network_magic": resolved_public_network_magic if public_network else plan["network_magic"],
         "support_binaries": dict(support),
         "cardano_testnet_start_time_refresh": start_time_refresh,
+        "cardano_testnet_config_compatibility": cardano_testnet_config_compatibility,
+        "kes_genesis_override": kes_genesis_override_evidence,
         "cardano_chain_progress_gate": chain_progress_gate,
         "amaru_chain_progress_gate": amaru_progress_gate,
         "public_network_assets": public_assets,

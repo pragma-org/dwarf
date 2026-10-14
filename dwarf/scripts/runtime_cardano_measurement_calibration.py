@@ -7,11 +7,16 @@ import hashlib
 import json
 import os
 import platform
+import re
+import shlex
 import shutil
 import subprocess
+import tempfile
 import time
+import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from scripts.runtime_amaru_measurement_calibration import (
@@ -205,6 +210,409 @@ def _wait_for_utxo_key_absent(
         time.sleep(0.5)
 
 
+def _inspect_container(identifier: str) -> dict[str, Any]:
+    if not identifier:
+        raise RuntimeError("container identity is unavailable")
+    result = _run(["docker", "inspect", identifier])
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"cannot inspect container {identifier}")
+    try:
+        inspected = json.loads(result.stdout)[0]
+    except (IndexError, json.JSONDecodeError, TypeError) as exc:
+        raise RuntimeError("container inspect result is invalid") from exc
+    if not isinstance(inspected, dict):
+        raise RuntimeError("container inspect result is invalid")
+    return inspected
+
+
+def _controller_container() -> dict[str, Any] | None:
+    """Return the installed controller identity, or None for direct host mode."""
+    identifier = str(os.environ.get("HOSTNAME") or "")
+    controller_mode = (
+        str(os.environ.get("ADA2_DWARF_RUNS_DIR") or "") == "/var/dwarf/runs"
+    )
+    if not identifier:
+        if controller_mode:
+            raise RuntimeError("installed controller has no container identity")
+        return None
+    try:
+        result = _run(["docker", "inspect", identifier])
+    except (OSError, subprocess.SubprocessError) as exc:
+        if controller_mode:
+            raise RuntimeError("cannot inspect the installed DWARF controller") from exc
+        return None
+    if result.returncode != 0:
+        if controller_mode:
+            raise RuntimeError("cannot inspect the installed DWARF controller")
+        return None
+    try:
+        inspected = json.loads(result.stdout)[0]
+    except (IndexError, json.JSONDecodeError, TypeError) as exc:
+        raise RuntimeError("controller container inspect result is invalid") from exc
+    if not isinstance(inspected, dict):
+        raise RuntimeError("controller container inspect result is invalid")
+    labels = (inspected.get("Config") or {}).get("Labels") or {}
+    if (
+        labels.get("io.dwarf.application") != "true"
+        or labels.get("io.dwarf.component") != "controller"
+    ):
+        raise RuntimeError("HOSTNAME does not identify the installed DWARF controller")
+    inspected_id = str(inspected.get("Id") or "")
+    if not inspected_id.startswith(identifier):
+        raise RuntimeError("controller container identity does not match HOSTNAME")
+    return inspected
+
+
+def _mount_source(inspected: dict[str, Any], destination: str, *, writable: bool) -> str:
+    matches = [
+        mount for mount in inspected.get("Mounts") or []
+        if mount.get("Destination") == destination
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(f"container has no unique {destination} mount")
+    mount = matches[0]
+    source = str(mount.get("Source") or "")
+    if not Path(source).is_absolute() or (writable and mount.get("RW") is not True):
+        raise RuntimeError(f"container {destination} mount contract is invalid")
+    return source
+
+
+def _verify_workload_container(
+    runtime: dict[str, Any], node: dict[str, Any]
+) -> dict[str, Any]:
+    container = str(node.get("container_name") or "")
+    expected_container_id = str(node.get("container_id") or "")
+    if not expected_container_id:
+        raise RuntimeError("Cardano workload target has no immutable container identity")
+    inspected = _inspect_container(expected_container_id)
+    labels = (inspected.get("Config") or {}).get("Labels") or {}
+    expected_labels = {
+        "ada2.managed": "dwarf",
+        "io.dwarf.managed": "true",
+        "io.dwarf.component": "node",
+        "io.dwarf.implementation": "cardano-node",
+        "io.dwarf.topology": str(runtime.get("profile_id") or ""),
+        "io.dwarf.node_id": str(node.get("id") or ""),
+        "com.docker.compose.project": str(runtime.get("compose_project") or ""),
+        "com.docker.compose.service": str(node.get("service_name") or node.get("id") or ""),
+    }
+    if any(not value or labels.get(key) != value for key, value in expected_labels.items()):
+        raise RuntimeError("Cardano workload target ownership labels do not match")
+    expected_ref = str(node.get("image_ref") or "")
+    expected_id = str(
+        node.get("image_id")
+        or node.get("container_image_id")
+        or (node.get("artifact_identity") or {}).get("expected_image_id")
+        or ""
+    )
+    if not expected_ref or not expected_id:
+        raise RuntimeError("Cardano workload target image identity is incomplete")
+    config = inspected.get("Config") or {}
+    if config.get("Image") != expected_ref or inspected.get("Image") != expected_id:
+        raise RuntimeError("Cardano workload target image identity does not match")
+    if inspected.get("Id") != expected_container_id:
+        raise RuntimeError("Cardano workload target container identity does not match")
+    names = {str(inspected.get("Name") or "").lstrip("/")}
+    names.update(str(name).lstrip("/") for name in inspected.get("Names") or [])
+    if container not in names:
+        raise RuntimeError("Cardano workload target container name does not match identity")
+    if (inspected.get("State") or {}).get("Running") is not True:
+        raise RuntimeError("Cardano workload target is not running")
+    return inspected
+
+
+def _owned_socket_volume(
+    *, inspected_target: dict[str, Any], controller: dict[str, Any],
+    runtime: dict[str, Any], node: dict[str, Any], destination: str,
+) -> tuple[str, str]:
+    service = str(node.get("service_name") or "")
+    volume_key = str(node.get("socket_volume_key") or "")
+    if not service or not volume_key:
+        raise RuntimeError("Cardano workload socket volume identity is incomplete")
+    matches = [
+        mount for mount in inspected_target.get("Mounts") or []
+        if mount.get("Destination") == destination
+    ]
+    if len(matches) != 1:
+        raise RuntimeError("Cardano workload target has no unique socket volume")
+    mount = matches[0]
+    volume_name = str(mount.get("Name") or "")
+    if mount.get("Type") != "volume" or not volume_name:
+        raise RuntimeError("Cardano workload socket is not on a named volume")
+    inspected = _run(["docker", "volume", "inspect", volume_name])
+    try:
+        volumes = json.loads(inspected.stdout) if inspected.returncode == 0 else []
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Cardano workload socket volume inspect is invalid") from exc
+    if len(volumes) != 1 or not isinstance(volumes[0], dict):
+        raise RuntimeError("Cardano workload socket volume inspect is invalid")
+    labels = volumes[0].get("Labels") or {}
+    controller_labels = (controller.get("Config") or {}).get("Labels") or {}
+    expected_labels = {
+        "io.dwarf.managed": "true",
+        "io.dwarf.component": "volume",
+        "io.dwarf.installation": str(controller_labels.get("io.dwarf.installation") or ""),
+        "io.dwarf.topology": str(runtime.get("profile_id") or ""),
+        "com.docker.compose.project": str(runtime.get("compose_project") or ""),
+        "com.docker.compose.volume": volume_key,
+    }
+    if (
+        volumes[0].get("Name") != volume_name
+        or any(not value or labels.get(key) != value for key, value in expected_labels.items())
+    ):
+        raise RuntimeError("Cardano workload socket volume ownership is invalid")
+    target_user = str((inspected_target.get("Config") or {}).get("User") or "")
+    if target_user in {"", "0", "0:0"}:
+        workload_user = "0:0"
+        uid, gid = 0, 0
+    else:
+        match = re.fullmatch(r"(\d+):(\d+)", target_user)
+        if match is None:
+            raise RuntimeError("Cardano workload target user identity is not numeric")
+        uid, gid = int(match.group(1)), int(match.group(2))
+        workload_user = f"{uid}:{gid}"
+    socket_path = str(node.get("container_socket_path") or "")
+    target_id = str(inspected_target.get("Id") or "")
+    if target_id != str(node.get("container_id") or ""):
+        raise RuntimeError("Cardano workload target container identity changed")
+    stat = _run(
+        ["docker", "exec", target_id,
+         "stat", "-Lc", "%u:%g:%a:%F", socket_path]
+    )
+    match = re.fullmatch(r"(\d+):(\d+):([0-7]{3,4}):socket\s*", stat.stdout) \
+        if stat.returncode == 0 else None
+    if match is None:
+        raise RuntimeError("Cardano workload target socket identity is invalid")
+    socket_uid, socket_gid, mode = int(match.group(1)), int(match.group(2)), int(match.group(3), 8)
+    writable = (
+        uid == 0
+        or (uid == socket_uid and bool(mode & 0o200))
+        or (gid == socket_gid and bool(mode & 0o020))
+        or bool(mode & 0o002)
+    )
+    if not writable:
+        raise RuntimeError("Cardano workload target user cannot access the socket")
+    return volume_name, workload_user
+
+
+def _cleanup_workload_containers(workload_id: str) -> None:
+    label = f"io.dwarf.workload={workload_id}"
+    listed = _run(["docker", "ps", "-aq", "--filter", f"label={label}"])
+    if listed.returncode != 0:
+        raise RuntimeError("cannot enumerate owned Cardano workload containers")
+    container_ids = [line.strip() for line in listed.stdout.splitlines() if line.strip()]
+    for container_id in container_ids:
+        if not (12 <= len(container_id) <= 64):
+            raise RuntimeError("owned Cardano workload container identity is invalid")
+        try:
+            int(container_id, 16)
+        except ValueError as exc:
+            raise RuntimeError("owned Cardano workload container identity is invalid") from exc
+        inspected = _inspect_container(container_id)
+        labels = (inspected.get("Config") or {}).get("Labels") or {}
+        if (
+            labels.get("io.dwarf.managed") != "true"
+            or labels.get("io.dwarf.component") != "cardano-cli-workload"
+            or labels.get("io.dwarf.workload") != workload_id
+        ):
+            raise RuntimeError("refusing to remove a foreign Cardano workload container")
+    if container_ids:
+        removed = _run(["docker", "rm", "-f", *container_ids], timeout=30)
+        if removed.returncode != 0:
+            raise RuntimeError("cannot remove owned Cardano workload containers")
+
+
+def _owned_run_output_relative(
+    output_dir: Path, *, runs_root: Path = Path("/var/dwarf/runs")
+) -> tuple[Path, Path]:
+    """Return a real, non-symlinked output path beneath the owned runs root."""
+    output_absolute = Path(os.path.abspath(output_dir))
+    try:
+        runs_resolved = runs_root.resolve(strict=True)
+        output_resolved = output_absolute.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("Cardano workload output directory is unavailable") from exc
+    if output_resolved != output_absolute:
+        raise RuntimeError("Cardano workload output directory is symlinked")
+    try:
+        output_relative = output_resolved.relative_to(runs_resolved)
+    except ValueError as exc:
+        raise RuntimeError(
+            "Cardano workload output is outside the retained runs root"
+        ) from exc
+    if not output_relative.parts:
+        raise RuntimeError("Cardano workload output cannot be the runs root")
+    return output_absolute, output_relative
+
+
+@contextmanager
+def _containerized_cardano_workload(
+    *, runtime_root: Path, runtime: dict[str, Any], node: dict[str, Any],
+    output_dir: Path, controller: dict[str, Any],
+):
+    """Run cardano-cli beside the target so its Unix socket path stays short."""
+    container = str(node.get("container_name") or "")
+    image = str(node.get("image_ref") or "")
+    socket_path = str(node.get("container_socket_path") or "")
+    if not container or not socket_path:
+        raise RuntimeError("Cardano-node workload has no container socket identity")
+    if "@sha256:" not in image:
+        raise RuntimeError("Cardano-node workload image is not digest-pinned")
+    inspected_target = _verify_workload_container(runtime, node)
+    socket_mount_destination = str(node.get("socket_mount_destination") or "/env")
+    socket_mount_path = PurePosixPath(socket_mount_destination)
+    socket_path_value = PurePosixPath(socket_path)
+    if (
+        not socket_mount_path.is_absolute()
+        or socket_mount_path == PurePosixPath("/")
+        or ".." in socket_mount_path.parts
+        or not socket_path_value.is_absolute()
+        or ".." in socket_path_value.parts
+    ):
+        raise RuntimeError("Cardano workload socket mount path is invalid")
+    try:
+        socket_path_value.relative_to(socket_mount_path)
+    except ValueError as exc:
+        raise RuntimeError("Cardano workload socket is outside its mounted volume") from exc
+    if node.get("socket_mount_type") == "volume":
+        socket_volume, workload_user = _owned_socket_volume(
+            inspected_target=inspected_target,
+            controller=controller,
+            runtime=runtime,
+            node=node,
+            destination=socket_mount_destination,
+        )
+        socket_mount_lines = (
+            f'--mount "type=volume,src={shlex.quote(socket_volume)},'
+            f'dst={shlex.quote(socket_mount_destination)},readonly" '
+        )
+        target_source_line = (
+            'OWNER_UID="$(id -u)"\n'
+            'OWNER_GID="$(id -g)"\n'
+        )
+        user_line = f'--user "{workload_user}" '
+        run_prefix = "if docker run "
+        pre_run_lines = (
+            "restore_work_owner() {\n"
+            "  docker run --rm --user 0:0 --read-only "
+            "--mount \"type=bind,src=$HOST_WORK_SOURCE,dst=/work\" "
+            "--entrypoint chown \"$IMAGE\" -R \"$OWNER_UID:$OWNER_GID\" /work\n"
+            "}\n"
+            "trap restore_work_owner EXIT\n"
+        )
+        run_suffix = (
+            "; then\n"
+            "  status=0\n"
+            "else\n"
+            "  status=$?\n"
+            "fi\n"
+            "if restore_work_owner; then\n"
+            "  restore_status=0\n"
+            "else\n"
+            "  restore_status=$?\n"
+            "fi\n"
+            "trap - EXIT\n"
+            "if [ \"$restore_status\" -ne 0 ]; then\n"
+            "  exit \"$restore_status\"\n"
+            "fi\n"
+            "exit \"$status\"\n"
+        )
+    else:
+        target_env_source = _mount_source(
+            inspected_target, socket_mount_destination, writable=False
+        )
+        socket_mount_lines = (
+            '--mount "type=bind,src=$TARGET_ENV_SOURCE,'
+            f'dst={shlex.quote(socket_mount_destination)},readonly" '
+        )
+        target_source_line = f"TARGET_ENV_SOURCE={shlex.quote(target_env_source)}\n"
+        user_line = '--user "$(id -u):$(id -g)" '
+        run_prefix = "exec docker run "
+        pre_run_lines = ""
+        run_suffix = "\n"
+    runs_root = Path("/var/dwarf/runs")
+    output_absolute, output_relative = _owned_run_output_relative(
+        output_dir, runs_root=runs_root
+    )
+    runs_source = Path(
+        _mount_source(controller, str(runs_root), writable=True)
+    )
+    host_work_source = runs_source / output_relative
+    key_root = Path(
+        runtime.get("workload_key_root")
+        or runtime_root / "env" / "utxo-keys" / "utxo1"
+    ).resolve()
+    if not all((key_root / name).is_file() for name in ("utxo.vkey", "utxo.skey")):
+        raise RuntimeError("Cardano-node measurement workload has no genesis UTxO keys")
+    env_root = (runtime_root / "env").resolve()
+    try:
+        key_relative = key_root.relative_to(env_root)
+        container_key_root = Path("/env") / key_relative
+    except ValueError:
+        try:
+            key_relative = key_root.relative_to(output_absolute)
+        except ValueError as exc:
+            raise RuntimeError(
+                "Cardano workload keys are outside the owned runtime env or run output"
+            ) from exc
+        container_key_root = Path("/work") / key_relative
+    workload_id = uuid.uuid4().hex
+    primary_error: BaseException | None = None
+    with tempfile.TemporaryDirectory(
+        prefix=".dwarf-cardano-cli-", dir=output_absolute
+    ) as temporary:
+        wrapper = Path(temporary) / "cardano-cli"
+        wrapper.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            f"HOST_WORK={shlex.quote(str(output_absolute))}\n"
+            f"HOST_WORK_SOURCE={shlex.quote(str(host_work_source))}\n"
+            f"HOST_KEYS={shlex.quote(str(key_root))}\n"
+            f"CONTAINER_KEYS={shlex.quote(str(container_key_root))}\n"
+            f"{target_source_line}"
+            f"IMAGE={shlex.quote(image)}\n"
+            f"{pre_run_lines}"
+            f"WORKLOAD_ID={shlex.quote(workload_id)}\n"
+            "NAME=\"dwarf-cardano-cli-${WORKLOAD_ID}-$$\"\n"
+            "args=()\n"
+            "for arg in \"$@\"; do\n"
+            "  arg=$(printf '%s' \"$arg\" | sed "
+            "\"s|$HOST_WORK|/work|;s|$HOST_KEYS|$CONTAINER_KEYS|\")\n"
+            "  args+=(\"$arg\")\n"
+            "done\n"
+            f"{run_prefix}--rm --name \"$NAME\" "
+            "--label io.dwarf.managed=true "
+            "--label io.dwarf.component=cardano-cli-workload "
+            "--label \"io.dwarf.workload=$WORKLOAD_ID\" "
+            f"{user_line}"
+            "--mount \"type=bind,src=$HOST_WORK_SOURCE,dst=/work\" "
+            f"{socket_mount_lines}"
+            "--entrypoint cardano-cli \"$IMAGE\" \"${args[@]}\""
+            f"{run_suffix}",
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o700)
+        workload_runtime = dict(runtime)
+        workload_runtime["support_binaries"] = {"cardano-cli": str(wrapper)}
+        workload_runtime["workload_key_root"] = str(key_root)
+        workload_runtime["workload_socket_remote"] = True
+        workload_node = dict(node)
+        workload_node["socket_path"] = socket_path
+        workload_node["container_socket_path"] = socket_path
+        try:
+            yield workload_runtime, workload_node
+        except BaseException as exc:
+            primary_error = exc
+            raise
+        finally:
+            try:
+                _cleanup_workload_containers(workload_id)
+            except Exception as cleanup_error:
+                if primary_error is None:
+                    raise
+                primary_error.add_note(f"Cardano workload cleanup failed: {cleanup_error}")
+
+
 def run_plutus_workload(
     *, runtime_root: Path, runtime: dict[str, Any], node: dict[str, Any],
     output_dir: Path, transaction_count: int,
@@ -216,7 +624,13 @@ def run_plutus_workload(
             raise RuntimeError(f"retained Plutus workload is missing: {source}")
     cli = str((runtime.get("support_binaries") or {}).get("cardano-cli") or "cardano-cli")
     socket_path = str(node.get("socket_path") or "")
-    network_magic = int(runtime.get("network_magic", 42))
+    network_magic = runtime.get("network_magic")
+    if (
+        isinstance(network_magic, bool)
+        or not isinstance(network_magic, int)
+        or not 0 <= network_magic <= 2**32 - 1
+    ):
+        raise RuntimeError("Cardano-node measurement workload has no exact network magic")
     if not socket_path or (
         runtime.get("workload_socket_remote") is not True
         and not Path(socket_path).exists()
@@ -459,6 +873,10 @@ def _target(runtime: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         raise RuntimeError(f"unsupported Cardano-node target mode: {mode}")
     if observed_digest != stock_digest:
         raise RuntimeError("Cardano-node runtime identity does not match the catalog")
+    if str(node.get("image_ref") or "") != str(artifact.get("image_ref") or ""):
+        raise RuntimeError("Cardano-node runtime image reference does not match identity")
+    if not str(node.get("image_ref") or "").endswith("@" + stock_digest):
+        raise RuntimeError("Cardano-node runtime image reference is not digest-pinned")
     return ({
         "implementation": "cardano-node",
         "version": release["version"],
@@ -643,17 +1061,33 @@ def run_leg(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in attempts),
         encoding="utf-8",
     )
-    plutus_workload = (
-        run_plutus_workload(
-            runtime_root=runtime_root,
-            runtime=runtime,
-            node=node,
-            output_dir=output_dir,
-            transaction_count=plutus_transactions,
-        )
-        if plutus_transactions
-        else None
-    )
+    if plutus_transactions:
+        controller = _controller_container()
+        if controller is None:
+            plutus_workload = run_plutus_workload(
+                runtime_root=runtime_root,
+                runtime=runtime,
+                node=node,
+                output_dir=output_dir,
+                transaction_count=plutus_transactions,
+            )
+        else:
+            with _containerized_cardano_workload(
+                runtime_root=runtime_root,
+                runtime=runtime,
+                node=node,
+                output_dir=output_dir,
+                controller=controller,
+            ) as (workload_runtime, workload_node):
+                plutus_workload = run_plutus_workload(
+                    runtime_root=runtime_root,
+                    runtime=workload_runtime,
+                    node=workload_node,
+                    output_dir=output_dir,
+                    transaction_count=plutus_transactions,
+                )
+    else:
+        plutus_workload = None
     if epoch_observation_seconds:
         time.sleep(epoch_observation_seconds)
     trace_path = output_dir / "raw" / "node1.ndjson"

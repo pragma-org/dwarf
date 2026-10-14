@@ -85,7 +85,7 @@ def _result(status: int, title: str, body_html: str, *, ok: bool):
         result_title=title,
         body_html=body_html,
         ok=ok,
-        back_href="/operate/config?token=dwarf",
+        back_href="/operate/config",
         back_label="Back to settings",
     )
     return status, html

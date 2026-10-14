@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from profile_manager.config import storage_roots
+
 # Display-name maps. Capitalization only — set membership is auto-derived.
 _MINI_PROTOCOL_LABELS = {
     "chainsync":     "ChainSync",
@@ -39,7 +41,7 @@ def _project_root() -> Path:
 
 
 def _runs_root() -> Path:
-    return _project_root() / "dwarf" / "runs"
+    return storage_roots().runs
 
 
 def _read_json(path: Path) -> dict | None:

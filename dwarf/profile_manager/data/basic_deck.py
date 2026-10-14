@@ -22,14 +22,21 @@ def deck_suit(status: str | None) -> str:
 
 def deck_runs(limit: int = 100) -> dict[str, Any]:
     """Recent-run outcome summary for the PAST card and the runs hand."""
-    from profile_manager.data.operate_runs import operate_run_rows
+    from profile_manager.data.operate_runs import operate_run_page
 
-    rows = operate_run_rows(limit=limit)
+    page = operate_run_page(limit=limit, scope="scenario")
+    rows = page["runs"]
     counts = {"pass": 0, "fail": 0, "error": 0, "other": 0}
     for row in rows:
-        status = row.get("exit_status") or ""
+        status = row.get("display_status") or ""
         counts[status if status in counts else "other"] += 1
-    return {"rows": rows, "total": len(rows), "counts": counts}
+    return {
+        "rows": rows,
+        "total": page["total"],
+        "shown": len(rows),
+        "counts": counts,
+        "next_cursor": page["next_cursor"],
+    }
 
 
 def _entry(row: dict[str, Any], kind: str, gap_ids: set[str]) -> dict[str, Any]:

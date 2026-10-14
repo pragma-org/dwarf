@@ -188,6 +188,131 @@ def test_refresh_preserves_artifact_bound_to_confirmed_runtime_evidence():
     assert retained["artifacts"] == prior["artifacts"]
 
 
+def test_refresh_enriches_exact_retained_artifact_with_public_platform_proof():
+    catalog = _existing_catalog()
+    prior = catalog["releases"][0]
+    digest = "sha256:" + "1" * 64
+    reference = "ghcr.io/example/cardano-node:11.1.1"
+    prior["artifacts"] = [{
+        "kind": "oci",
+        "reference": reference,
+        "availability": "available",
+        "digest": digest,
+    }]
+    prior_verification = copy.deepcopy(prior["verification"])
+
+    def exact_registry_artifact(implementation, tag, release):
+        if implementation == "cardano-node" and tag == "11.1.1":
+            return [{
+                "kind": "oci",
+                "reference": reference,
+                "availability": "available",
+                "digest": digest,
+                "public": True,
+                "platforms": ["linux/amd64", "linux/arm64"],
+            }]
+        return []
+
+    refreshed = refresh_version_catalog(
+        catalog,
+        fetch_json=_fake_fetch,
+        artifact_resolver=exact_registry_artifact,
+        checked_at="2026-09-17T22:00:00Z",
+    )
+
+    retained = next(
+        release for release in refreshed["releases"]
+        if release["implementation"] == "cardano-node" and release["version"] == "11.1.1"
+    )
+    assert retained["source_revision"] == prior["source_revision"]
+    assert retained["verification"] == prior_verification
+    assert retained["artifacts"] == [{
+        "kind": "oci",
+        "reference": reference,
+        "availability": "available",
+        "digest": digest,
+        "public": True,
+        "platforms": ["linux/amd64", "linux/arm64"],
+    }]
+
+
+def test_refresh_refuses_nonexact_or_unproven_retained_artifact_enrichment():
+    digest = "sha256:" + "1" * 64
+    reference = "ghcr.io/example/cardano-node:11.1.1"
+    candidates = [
+        {
+            "kind": "oci", "reference": reference,
+            "availability": "available", "digest": "sha256:" + "9" * 64,
+            "public": True, "platforms": ["linux/amd64"],
+        },
+        {
+            "kind": "oci", "reference": "ghcr.io/example/other:11.1.1",
+            "availability": "available", "digest": digest,
+            "public": True, "platforms": ["linux/amd64"],
+        },
+        {
+            "kind": "oci", "reference": reference,
+            "availability": "available", "digest": digest,
+            "public": False, "platforms": ["linux/amd64"],
+        },
+        {
+            "kind": "oci", "reference": reference,
+            "availability": "unknown", "digest": digest,
+            "public": True, "platforms": ["linux/amd64"],
+        },
+        {
+            "kind": "oci", "reference": reference,
+            "availability": "unavailable", "digest": digest,
+            "public": True, "platforms": ["linux/amd64"],
+        },
+        {
+            "kind": "oci", "reference": reference,
+            "availability": "available", "digest": digest,
+            "public": True, "platforms": [],
+        },
+        {
+            "kind": "oci", "reference": reference,
+            "availability": "available", "digest": digest,
+            "public": True, "platforms": ["linux/amd64", "unknown/unknown"],
+        },
+        {
+            "kind": "oci", "reference": reference,
+            "availability": "available", "digest": digest,
+            "public": True, "platforms": ["linux/s390x"],
+        },
+    ]
+
+    for candidate in candidates:
+        catalog = _existing_catalog()
+        prior = catalog["releases"][0]
+        prior["artifacts"] = [{
+            "kind": "oci",
+            "reference": reference,
+            "availability": "available",
+            "digest": digest,
+        }]
+        expected = copy.deepcopy(prior)
+
+        def resolver(implementation, tag, release, row=candidate):
+            if implementation == "cardano-node" and tag == "11.1.1":
+                return [row]
+            return []
+
+        refreshed = refresh_version_catalog(
+            catalog,
+            fetch_json=_fake_fetch,
+            artifact_resolver=resolver,
+            checked_at="2026-09-17T22:00:00Z",
+        )
+        retained = next(
+            release for release in refreshed["releases"]
+            if release["implementation"] == "cardano-node"
+            and release["version"] == "11.1.1"
+        )
+
+        assert retained == expected
+
+
 def test_refresh_is_deterministic_for_the_same_inputs():
     kwargs = {
         "fetch_json": _fake_fetch,
@@ -274,7 +399,13 @@ def test_amaru_artifact_resolution_preserves_the_official_v_prefixed_tag(monkeyp
 
     class Result:
         returncode = 0
-        stdout = json.dumps({"digest": "sha256:" + "b" * 64})
+        stdout = json.dumps({
+            "digest": "sha256:" + "b" * 64,
+            "manifests": [
+                {"platform": {"os": "linux", "architecture": "amd64"}},
+                {"platform": {"os": "linux", "architecture": "arm64"}},
+            ],
+        })
 
     def run(command, **kwargs):
         commands.append(command)
@@ -291,6 +422,8 @@ def test_amaru_artifact_resolution_preserves_the_official_v_prefixed_tag(monkeyp
     assert commands[0][4] == "ghcr.io/pragma-org/amaru:v10.11.20260912"
     assert artifacts[0]["reference"] == "ghcr.io/pragma-org/amaru:v10.11.20260912"
     assert artifacts[0]["availability"] == "available"
+    assert "public" not in artifacts[0]
+    assert artifacts[0]["platforms"] == ["linux/amd64", "linux/arm64"]
 
 
 def test_http_artifact_resolution_needs_no_docker_cli(monkeypatch):
@@ -314,7 +447,17 @@ def test_http_artifact_resolution_needs_no_docker_cli(monkeypatch):
         requests.append(request)
         if "ghcr.io/token" in request.full_url:
             return Response(json.dumps({"token": "registry-token"}).encode())
-        return Response(headers={"Docker-Content-Digest": "sha256:" + "c" * 64})
+        return Response(
+            body=json.dumps({
+                "manifests": [
+                    {"platform": {"os": "linux", "architecture": "amd64"}},
+                    {"platform": {"os": "linux", "architecture": "arm64"}},
+                    {"platform": {"os": "unknown", "architecture": "unknown"}},
+                    {"platform": {"os": "linux", "architecture": "s390x"}},
+                ]
+            }).encode(),
+            headers={"Docker-Content-Digest": "sha256:" + "c" * 64},
+        )
 
     monkeypatch.setattr("scripts.refresh_version_catalog.urllib.request.urlopen", open_url)
 
@@ -328,6 +471,8 @@ def test_http_artifact_resolution_needs_no_docker_cli(monkeypatch):
         "reference": "ghcr.io/pragma-org/amaru:v10.11.20260912",
         "availability": "available",
         "digest": "sha256:" + "c" * 64,
+        "public": True,
+        "platforms": ["linux/amd64", "linux/arm64"],
     }]
 
 

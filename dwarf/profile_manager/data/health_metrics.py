@@ -22,6 +22,8 @@ import threading
 import time
 from collections import Counter
 from pathlib import Path
+
+from profile_manager.config import storage_roots
 from typing import Any
 
 
@@ -31,17 +33,12 @@ _REQUEST_COUNTS: Counter[tuple[str, str, int]] = Counter()
 
 
 def _runs_dir() -> Path:
-    env = os.environ.get("ADA2_DWARF_RUNS_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[2] / "runs"
+    return storage_roots().runs
 
 
 def _state_dir(runs_dir: Path) -> Path:
-    env = os.environ.get("ADA2_DWARF_STATE_DIR")
-    if env:
-        return Path(env)
-    return runs_dir.parent / "state"
+    roots = storage_roots()
+    return roots.state if Path(runs_dir) == roots.runs else Path(runs_dir).parent / "state"
 
 
 def _path_bucket(path: str) -> str:

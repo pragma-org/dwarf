@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import parse_qs
 
 from profile_manager import testcase_lifecycle
+from profile_manager.config import storage_roots
+from profile_manager.run_ledger import FINAL_STATES_BY_EXIT_STATUS
 from profile_manager.data.asset_catalog import (
     DEFAULT_REGISTRY,
     AssetCatalog,
@@ -17,22 +21,51 @@ from profile_manager.data.asset_catalog import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+CLI = "./dwarf/cardano-profile"
+_ISSUE_CLASSIFICATION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def testcase_lifecycle_entrypoints() -> dict[str, list[dict[str, str]]]:
+    """Existing `cardano-profile testcase` operations surfaced by Basic pages.
+
+    The dashboard stays read-only for lifecycle state; these are the supported
+    trusted-shell commands that create, advance and summarise records.
+    """
+    return {
+        "create": [
+            {
+                "label": "Record a finished run as a testcase",
+                "command": (
+                    f"{CLI} testcase ingest-run <run-id> "
+                    "--classification <classification> --triage-reason <reason>"
+                ),
+            },
+        ],
+        "advance": [
+            {
+                "label": "Replay pending cases",
+                "command": f"{CLI} testcase replay-queue run --manifests-dir <target-manifests-dir>",
+            },
+            {
+                "label": "Compare pending cases across implementations",
+                "command": f"{CLI} testcase compare-queue run",
+            },
+        ],
+        "summarise": [
+            {
+                "label": "Summarise buckets",
+                "command": f"{CLI} testcase buckets summary",
+            },
+        ],
+    }
 
 
 def _default_state_dir() -> Path:
-    configured = os.environ.get("ADA2_DWARF_STATE_DIR", "").strip()
-    if configured:
-        return Path(configured)
-    candidates = (PROJECT_ROOT / "dwarf" / "state", PROJECT_ROOT / "state")
-    return next((path for path in candidates if path.exists()), candidates[0])
+    return storage_roots().state
 
 
 def _default_runs_dir() -> Path:
-    configured = os.environ.get("ADA2_DWARF_RUNS_DIR", "").strip()
-    if configured:
-        return Path(configured)
-    candidates = (PROJECT_ROOT / "dwarf" / "runs", PROJECT_ROOT / "runs")
-    return next((path for path in candidates if path.exists()), candidates[0])
+    return storage_roots().runs
 
 
 def _default_scenarios_dir() -> Path:
@@ -44,6 +77,83 @@ def _roots(
     *, state_dir: Path | None = None, runs_dir: Path | None = None
 ) -> tuple[Path, Path]:
     return Path(state_dir or _default_state_dir()), Path(runs_dir or _default_runs_dir())
+
+
+def ingest_retained_run(
+    body: bytes,
+    *,
+    state_dir: Path | None = None,
+    runs_dir: Path | None = None,
+) -> tuple[int, str, dict[str, Any] | None]:
+    """Validate a Basic ingest form, then call the canonical lifecycle writer."""
+
+    form = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+    run_id = (form.get("run_id") or [""])[0].strip()
+    classification = (form.get("classification") or [""])[0].strip()
+    triage_reason = (form.get("triage_reason") or [""])[0].strip()
+    if not is_safe_asset_id(run_id) or len(run_id) > 255:
+        return 400, "invalid run id\n", None
+    if not _ISSUE_CLASSIFICATION.fullmatch(classification):
+        return 422, "classification is required and must be a portable label\n", None
+    if (
+        not triage_reason
+        or len(triage_reason) > 256
+        or any(ord(character) < 32 for character in triage_reason)
+    ):
+        return 422, "triage reason is required and must be at most 256 characters\n", None
+
+    state_root, runs_root = _roots(state_dir=state_dir, runs_dir=runs_dir)
+    resolved_runs = runs_root.resolve()
+    run_dir = (runs_root / run_id).resolve()
+    try:
+        run_dir.relative_to(resolved_runs)
+    except ValueError:
+        return 400, "invalid run id\n", None
+    if not run_dir.is_dir():
+        return 404, "run not found\n", None
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return 422, "retained run manifest is missing\n", None
+    try:
+        manifest_path.resolve().relative_to(run_dir)
+    except ValueError:
+        return 422, "retained run manifest is unsafe\n", None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return 422, "retained run manifest is malformed\n", None
+    nested_objects = ("scenario", "target", "assertion_summary", "resource_snapshot")
+    if not isinstance(manifest, dict) or any(
+        manifest.get(key) is not None and not isinstance(manifest.get(key), dict)
+        for key in nested_objects
+    ) or not isinstance(manifest.get("target"), dict):
+        return 422, "retained run manifest is malformed\n", None
+    if manifest.get("exit_status") not in FINAL_STATES_BY_EXIT_STATUS:
+        return 422, "retained run is not terminal\n", None
+
+    try:
+        result = testcase_lifecycle.ingest_run_issue(
+            runs_dir=runs_root,
+            state_dir=state_root,
+            run_id=run_id,
+            classification=classification,
+            triage_reason=triage_reason,
+            producer="scenario",
+            source_artifact_path="manifest.json",
+        )
+    except TimeoutError:
+        return 409, "another testcase lifecycle writer is already in progress\n", None
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+    ):
+        return 422, "retained run evidence is malformed\n", None
+    return 200, "", result
 
 
 def _contained_artifact(runs_dir: Path, record: dict[str, Any]) -> tuple[str, Path | None]:
@@ -345,7 +455,7 @@ def testcase_bucket_detail(
 ) -> dict[str, Any] | None:
     if not is_safe_asset_id(bucket_id):
         return None
-    return next(
+    row = next(
         (
             row
             for row in testcase_bucket_rows(
@@ -355,6 +465,16 @@ def testcase_bucket_detail(
         ),
         None,
     )
+    if row is None:
+        return None
+    return {
+        **row,
+        "cli_commands": [
+            f"{CLI} testcase promote bucket {bucket_id} "
+            "--state <candidate|validated|finding> "
+            "--summary <summary> --source <evidence-source>",
+        ],
+    }
 
 
 def testcase_artifact(

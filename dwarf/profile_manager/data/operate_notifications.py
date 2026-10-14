@@ -19,12 +19,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from profile_manager.config import storage_roots
+
 
 def _state_dir() -> Path:
-    env = os.environ.get("ADA2_DWARF_STATE_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[2] / "state"
+    return storage_roots().state
 
 
 def _mask_url(url: str) -> str:

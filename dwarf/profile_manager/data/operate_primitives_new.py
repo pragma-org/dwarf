@@ -15,12 +15,14 @@ from html import escape
 from pathlib import Path
 from urllib.parse import parse_qs
 
+from profile_manager.config import storage_roots
+
 FAMILIES = ["setup", "load", "probe", "assertion", "fault", "teardown"]
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]{2,79}$")
 
 
 def primitives_new_payload() -> dict:
-    root = Path(os.environ.get("ADA2_DWARF_STATE_DIR") or "/var/dwarf/state") / "primitive-scaffold"
+    root = storage_roots().state / "primitive-scaffold"
     return {"families": FAMILIES, "scaffold_root": str(root)}
 
 
@@ -39,7 +41,7 @@ def _result(status: int, title: str, body_html: str, *, ok: bool = False) -> tup
         result_title=title,
         body_html=body_html,
         ok=ok,
-        back_href="/operate/primitives?token=dwarf",
+        back_href="/operate/primitives",
         back_label="Back to primitives",
     )
     return status, html
@@ -61,7 +63,7 @@ def handle_create_post(body_bytes: bytes) -> tuple[int, str]:
         return _result(400, "Invalid primitive name",
                        "<p>Name must start with a letter; lowercase letters/digits/underscore; 3–80 chars.</p>")
 
-    root = Path(os.environ.get("ADA2_DWARF_STATE_DIR") or "/var/dwarf/state") / "primitive-scaffold" / name
+    root = storage_roots().state / "primitive-scaffold" / name
     if root.exists():
         return _result(409, "Scaffold already exists",
                        f"<p><code>{escape(name)}</code> was already scaffolded at <code>{escape(str(root))}</code>.</p>")

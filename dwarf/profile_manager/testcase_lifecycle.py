@@ -1,17 +1,22 @@
+import fcntl
 import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
+import time
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
 PROMOTION_STATES = {"candidate", "validated", "finding"}
 _SAFE_CASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_TESTCASE_WRITE_LOCK_TIMEOUT_SECONDS = 10.0
 
 
 def _stable_case_id(*parts) -> str:
@@ -535,31 +540,136 @@ def ingest_run_issue(
     producer: str = "scenario",
     source_artifact_path: str = "manifest.json",
 ) -> dict:
-    run_dir = Path(runs_dir) / run_id
-    manifest_path = run_dir / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    metadata = {
-        "scenario_id": ((manifest.get("scenario") or {}).get("id")),
-        "runtime": manifest.get("runtime"),
-        "exit_status": manifest.get("exit_status"),
-        "behavior_signature": summarize_run_behavior(run_dir=run_dir).get("signature"),
-        "resource_signature": summarize_run_resources(run_dir=run_dir).get("signature"),
-    }
-    record = build_run_issue_record(
-        run_id=run_id,
-        producer=producer,
-        target_implementation=((manifest.get("target") or {}).get("implementation") or "unknown"),
-        classification=classification,
-        triage_reason=triage_reason,
-        source_artifact_path=source_artifact_path,
-        metadata=metadata,
-    )
-    lifecycle = write_lifecycle_artifacts(run_dir=run_dir, state_dir=state_dir, records=[record])
-    return {
-        "case_id": record["case_id"],
-        "bucket_id": record["bucket_id"],
-        "lifecycle": lifecycle,
-    }
+    from profile_manager.run_ledger import FINAL_STATES_BY_EXIT_STATUS
+
+    runs_root = Path(runs_dir).resolve(strict=True)
+    if not _SAFE_CASE_ID.fullmatch(run_id):
+        raise ValueError("invalid run id")
+    run_dir = runs_root / run_id
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    runs_descriptor = os.open(runs_root, directory_flags)
+    run_descriptor = None
+    manifest_descriptor = None
+    try:
+        run_entry = os.stat(run_id, dir_fd=runs_descriptor, follow_symlinks=False)
+        if stat.S_ISLNK(run_entry.st_mode) or not stat.S_ISDIR(run_entry.st_mode):
+            raise ValueError("run entry must be a retained directory, not a symlink")
+        run_descriptor = os.open(
+            run_id, directory_flags | no_follow, dir_fd=runs_descriptor
+        )
+        opened_run = os.fstat(run_descriptor)
+        if (
+            not stat.S_ISDIR(opened_run.st_mode)
+            or (opened_run.st_dev, opened_run.st_ino)
+            != (run_entry.st_dev, run_entry.st_ino)
+        ):
+            raise ValueError("retained run directory changed during validation")
+
+        manifest_entry = os.stat(
+            "manifest.json", dir_fd=run_descriptor, follow_symlinks=False
+        )
+        if stat.S_ISLNK(manifest_entry.st_mode) or not stat.S_ISREG(
+            manifest_entry.st_mode
+        ):
+            raise ValueError("retained run manifest must be a regular file, not a symlink")
+        manifest_descriptor = os.open(
+            "manifest.json", os.O_RDONLY | no_follow, dir_fd=run_descriptor
+        )
+        opened_manifest = os.fstat(manifest_descriptor)
+        if (
+            not stat.S_ISREG(opened_manifest.st_mode)
+            or (opened_manifest.st_dev, opened_manifest.st_ino)
+            != (manifest_entry.st_dev, manifest_entry.st_ino)
+        ):
+            raise ValueError("retained run manifest changed during validation")
+        manifest_bytes = b""
+        while chunk := os.read(manifest_descriptor, 64 * 1024):
+            manifest_bytes += chunk
+        manifest = json.loads(manifest_bytes)
+        if not isinstance(manifest, dict):
+            raise ValueError("retained run manifest must be an object")
+        for key in ("scenario", "target", "assertion_summary", "resource_snapshot"):
+            if manifest.get(key) is not None and not isinstance(manifest.get(key), dict):
+                raise ValueError(f"retained run manifest {key} must be an object")
+        if not isinstance(manifest.get("target"), dict):
+            raise ValueError("retained run manifest target must be an object")
+        if manifest.get("exit_status") not in FINAL_STATES_BY_EXIT_STATUS:
+            raise ValueError("retained run is not terminal")
+
+        behavior_signature = summarize_run_behavior(
+            run_dir=run_dir, manifest_snapshot=manifest
+        ).get("signature")
+        resource_signature = summarize_run_resources(
+            run_dir=run_dir, manifest_snapshot=manifest
+        ).get("signature")
+
+        current_run = os.stat(run_id, dir_fd=runs_descriptor, follow_symlinks=False)
+        current_manifest = os.stat(
+            "manifest.json", dir_fd=run_descriptor, follow_symlinks=False
+        )
+        os.lseek(manifest_descriptor, 0, os.SEEK_SET)
+        current_bytes = b""
+        while chunk := os.read(manifest_descriptor, 64 * 1024):
+            current_bytes += chunk
+        if (
+            stat.S_ISLNK(current_run.st_mode)
+            or not stat.S_ISDIR(current_run.st_mode)
+            or (current_run.st_dev, current_run.st_ino)
+            != (opened_run.st_dev, opened_run.st_ino)
+            or stat.S_ISLNK(current_manifest.st_mode)
+            or not stat.S_ISREG(current_manifest.st_mode)
+            or (current_manifest.st_dev, current_manifest.st_ino)
+            != (opened_manifest.st_dev, opened_manifest.st_ino)
+            or current_bytes != manifest_bytes
+        ):
+            raise ValueError("retained run changed during ingestion")
+
+        metadata = {
+            "scenario_id": ((manifest.get("scenario") or {}).get("id")),
+            "runtime": manifest.get("runtime"),
+            "exit_status": manifest.get("exit_status"),
+            "behavior_signature": behavior_signature,
+            "resource_signature": resource_signature,
+        }
+        record = build_run_issue_record(
+            run_id=run_id,
+            producer=producer,
+            target_implementation=(
+                (manifest.get("target") or {}).get("implementation") or "unknown"
+            ),
+            classification=classification,
+            triage_reason=triage_reason,
+            source_artifact_path=source_artifact_path,
+            metadata=metadata,
+        )
+        lifecycle = write_lifecycle_artifacts(
+            run_dir=run_dir,
+            state_dir=state_dir,
+            records=[record],
+            _run_binding=(
+                runs_descriptor,
+                run_descriptor,
+                manifest_descriptor,
+                run_id,
+                opened_run.st_dev,
+                opened_run.st_ino,
+                opened_manifest.st_dev,
+                opened_manifest.st_ino,
+                manifest_bytes,
+            ),
+        )
+        return {
+            "case_id": record["case_id"],
+            "bucket_id": lifecycle["case_bucket_ids"][record["case_id"]],
+            "lifecycle": lifecycle,
+        }
+    finally:
+        if manifest_descriptor is not None:
+            os.close(manifest_descriptor)
+        if run_descriptor is not None:
+            os.close(run_descriptor)
+        os.close(runs_descriptor)
 
 
 def _promotion_entry(*, bucket_id: str, promotion_state: str, summary: str, source: str, actor: str | None) -> dict:
@@ -579,6 +689,26 @@ def _promotion_entry(*, bucket_id: str, promotion_state: str, summary: str, sour
 
 
 def promote_bucket(
+    *,
+    state_dir: Path,
+    bucket_id: str,
+    promotion_state: str,
+    summary: str,
+    source: str,
+    actor: str | None = None,
+) -> dict:
+    with _testcase_write_lock(state_dir):
+        return _promote_bucket_locked(
+            state_dir=state_dir,
+            bucket_id=bucket_id,
+            promotion_state=promotion_state,
+            summary=summary,
+            source=source,
+            actor=actor,
+        )
+
+
+def _promote_bucket_locked(
     *,
     state_dir: Path,
     bucket_id: str,
@@ -683,9 +813,15 @@ def build_replay_scenario_body(record: dict, *, target_implementation: str, mani
     }
 
 
-def summarize_run_behavior(*, run_dir: Path) -> dict:
+def summarize_run_behavior(
+    *, run_dir: Path, manifest_snapshot: dict | None = None
+) -> dict:
     run_dir = Path(run_dir)
-    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest = (
+        manifest_snapshot
+        if manifest_snapshot is not None
+        else json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    )
     assertion_summary = manifest.get("assertion_summary") or {}
     outcomes = Counter()
     outcome_details = Counter()
@@ -785,9 +921,15 @@ def _bucket_count(value: int | None) -> str:
     return "high"
 
 
-def summarize_run_resources(*, run_dir: Path) -> dict:
+def summarize_run_resources(
+    *, run_dir: Path, manifest_snapshot: dict | None = None
+) -> dict:
     run_dir = Path(run_dir)
-    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest = (
+        manifest_snapshot
+        if manifest_snapshot is not None
+        else json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    )
     metrics_summary = {}
     metrics_summary_path = run_dir / "metrics" / "summary.json"
     if metrics_summary_path.exists():
@@ -856,63 +998,285 @@ def summarize_run_resources(*, run_dir: Path) -> dict:
     }
 
 
-def write_lifecycle_artifacts(*, run_dir: Path, state_dir: Path, records: list[dict]) -> dict:
+@contextmanager
+def _testcase_write_lock(
+    state_dir: Path, *, timeout_seconds: float = _TESTCASE_WRITE_LOCK_TIMEOUT_SECONDS
+):
+    state_root = Path(state_dir)
+    state_root.mkdir(parents=True, exist_ok=True)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    root_descriptor = None
+    lock_descriptor = None
+    acquired = False
+    try:
+        root_descriptor = os.open(
+            state_root,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | no_follow,
+        )
+        try:
+            lock_descriptor = os.open(
+                ".testcase-lifecycle.lock",
+                os.O_RDWR | os.O_CREAT | os.O_EXCL | no_follow,
+                0o600,
+                dir_fd=root_descriptor,
+            )
+        except FileExistsError:
+            lock_descriptor = os.open(
+                ".testcase-lifecycle.lock",
+                os.O_RDWR | no_follow,
+                dir_fd=root_descriptor,
+            )
+        if not stat.S_ISREG(os.fstat(lock_descriptor).st_mode):
+            raise ValueError("unsafe testcase lifecycle lock")
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                fcntl.flock(lock_descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("testcase lifecycle writer lock timed out")
+                time.sleep(min(0.05, remaining))
+        yield
+    finally:
+        if lock_descriptor is not None:
+            try:
+                if acquired:
+                    fcntl.flock(lock_descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(lock_descriptor)
+        if root_descriptor is not None:
+            os.close(root_descriptor)
+
+
+def _validate_run_binding(
+    binding: tuple[int, int, int, str, int, int, int, int, bytes],
+) -> None:
+    (
+        runs_descriptor,
+        run_descriptor,
+        manifest_descriptor,
+        bound_run_id,
+        run_device,
+        run_inode,
+        manifest_device,
+        manifest_inode,
+        manifest_bytes,
+    ) = binding
+    try:
+        current_run = os.stat(
+            bound_run_id, dir_fd=runs_descriptor, follow_symlinks=False
+        )
+        opened_run = os.fstat(run_descriptor)
+        current_manifest = os.stat(
+            "manifest.json", dir_fd=run_descriptor, follow_symlinks=False
+        )
+        opened_manifest = os.fstat(manifest_descriptor)
+        os.lseek(manifest_descriptor, 0, os.SEEK_SET)
+        current_bytes = b""
+        while chunk := os.read(manifest_descriptor, 64 * 1024):
+            current_bytes += chunk
+    except OSError as exc:
+        raise ValueError("retained run changed before lifecycle write") from exc
+    if (
+        stat.S_ISLNK(current_run.st_mode)
+        or not stat.S_ISDIR(current_run.st_mode)
+        or not stat.S_ISDIR(opened_run.st_mode)
+        or (current_run.st_dev, current_run.st_ino) != (run_device, run_inode)
+        or (opened_run.st_dev, opened_run.st_ino) != (run_device, run_inode)
+        or stat.S_ISLNK(current_manifest.st_mode)
+        or not stat.S_ISREG(current_manifest.st_mode)
+        or not stat.S_ISREG(opened_manifest.st_mode)
+        or (current_manifest.st_dev, current_manifest.st_ino)
+        != (manifest_device, manifest_inode)
+        or (opened_manifest.st_dev, opened_manifest.st_ino)
+        != (manifest_device, manifest_inode)
+        or current_bytes != manifest_bytes
+    ):
+        raise ValueError("retained run changed before lifecycle write")
+
+
+def write_lifecycle_artifacts(
+    *,
+    run_dir: Path,
+    state_dir: Path,
+    records: list[dict],
+    _run_binding: tuple[int, int, int, str, int, int, int, int, bytes] | None = None,
+) -> dict:
+    with _testcase_write_lock(state_dir):
+        return _write_lifecycle_artifacts_transaction(
+            run_dir=run_dir,
+            state_dir=state_dir,
+            records=records,
+            _run_binding=_run_binding,
+        )
+
+
+def _write_lifecycle_artifacts_transaction(
+    *,
+    run_dir: Path,
+    state_dir: Path,
+    records: list[dict],
+    _run_binding: tuple[int, int, int, str, int, int, int, int, bytes] | None = None,
+) -> dict:
+    if _run_binding is not None:
+        _validate_run_binding(_run_binding)
     records = [
         record if "bucket_id" in record and "bucket_signature" in record else _enrich_record_with_bucket(record)
         for record in records
+    ]
+    existing_state = read_testcase_state(state_dir=state_dir)
+    existing_records = existing_state["records"]
+    existing_by_case_id = {
+        record["case_id"]: record for record in existing_records
+    }
+    records = [
+        existing_by_case_id.get(record["case_id"], record) for record in records
     ]
     producers = {record.get("producer") for record in records}
     if len(producers) > 1:
         raise ValueError(f"write_lifecycle_artifacts requires a single producer per run, got {sorted(producers)}")
     bundle_namespace = lifecycle_bundle_namespace(producer=next(iter(producers), "afl"))
     bundle_path = run_dir / "outputs" / bundle_namespace / "testcases.ndjson"
-    bundle_path.parent.mkdir(parents=True, exist_ok=True)
-    bundle_path.write_text(
-        "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
-        encoding="utf-8",
-    )
     replay_queue = build_replay_queue(records)
     compare_queue = build_compare_queue(records)
     bucket_rows = build_bucket_rows(records)
     bundle_queue_path = bundle_path.parent / "replay-queue.ndjson"
-    bundle_queue_path.write_text(
-        "".join(json.dumps(item, sort_keys=True) + "\n" for item in replay_queue),
-        encoding="utf-8",
-    )
     bundle_compare_queue_path = bundle_path.parent / "compare-queue.ndjson"
-    bundle_compare_queue_path.write_text(
-        "".join(json.dumps(item, sort_keys=True) + "\n" for item in compare_queue),
-        encoding="utf-8",
-    )
     bundle_buckets_path = bundle_path.parent / "buckets.ndjson"
-    bundle_buckets_path.write_text(
-        "".join(json.dumps(item, sort_keys=True) + "\n" for item in bucket_rows),
-        encoding="utf-8",
+    bundle_payloads = {
+        "testcases.ndjson": "".join(
+            json.dumps(record, sort_keys=True) + "\n" for record in records
+        ).encode("utf-8"),
+        "replay-queue.ndjson": "".join(
+            json.dumps(item, sort_keys=True) + "\n" for item in replay_queue
+        ).encode("utf-8"),
+        "compare-queue.ndjson": "".join(
+            json.dumps(item, sort_keys=True) + "\n" for item in compare_queue
+        ).encode("utf-8"),
+        "buckets.ndjson": "".join(
+            json.dumps(item, sort_keys=True) + "\n" for item in bucket_rows
+        ).encode("utf-8"),
+    }
+    if _run_binding is None:
+        bundle_path.parent.mkdir(parents=True, exist_ok=True)
+        for name, payload in bundle_payloads.items():
+            (bundle_path.parent / name).write_bytes(payload)
+    else:
+        runs_descriptor, run_descriptor, *_rest = _run_binding
+        _validate_run_binding(_run_binding)
+        if not _SAFE_CASE_ID.fullmatch(bundle_namespace):
+            raise ValueError("unsafe lifecycle bundle namespace")
+
+        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+
+        def open_directory(parent_descriptor: int, name: str) -> int:
+            try:
+                os.mkdir(name, mode=0o755, dir_fd=parent_descriptor)
+            except FileExistsError:
+                pass
+            return os.open(
+                name,
+                directory_flags | no_follow,
+                dir_fd=parent_descriptor,
+            )
+
+        outputs_descriptor = open_directory(run_descriptor, "outputs")
+        try:
+            bundle_descriptor = open_directory(outputs_descriptor, bundle_namespace)
+            try:
+                for name, payload in bundle_payloads.items():
+                    temporary_name = (
+                        f".{name}.tmp-{os.getpid()}-{os.urandom(8).hex()}"
+                    )
+                    file_descriptor = None
+                    try:
+                        file_descriptor = os.open(
+                            temporary_name,
+                            os.O_WRONLY | os.O_CREAT | os.O_EXCL | no_follow,
+                            0o644,
+                            dir_fd=bundle_descriptor,
+                        )
+                        view = memoryview(payload)
+                        while view:
+                            written = os.write(file_descriptor, view)
+                            view = view[written:]
+                        os.fsync(file_descriptor)
+                        os.close(file_descriptor)
+                        file_descriptor = None
+                        os.replace(
+                            temporary_name,
+                            name,
+                            src_dir_fd=bundle_descriptor,
+                            dst_dir_fd=bundle_descriptor,
+                        )
+                    finally:
+                        if file_descriptor is not None:
+                            os.close(file_descriptor)
+                        try:
+                            os.unlink(temporary_name, dir_fd=bundle_descriptor)
+                        except FileNotFoundError:
+                            pass
+            finally:
+                os.close(bundle_descriptor)
+        finally:
+            os.close(outputs_descriptor)
+
+    incoming_records = records
+    state_by_case_id = {record["case_id"]: record for record in existing_records}
+    state_by_case_id.update({record["case_id"]: record for record in incoming_records})
+    state_records = [state_by_case_id[case_id] for case_id in sorted(state_by_case_id)]
+    retained_case_ids = set(state_by_case_id)
+    replay_by_id = {
+        item["queue_id"]: item for item in build_replay_queue(state_records)
+    }
+    replay_by_id.update(
+        {
+            item["queue_id"]: item
+            for item in existing_state["replay_queue"]
+            if item.get("queue_id") and item.get("case_id") in retained_case_ids
+        }
     )
+    state_replay_queue = [replay_by_id[key] for key in sorted(replay_by_id)]
+    compare_by_id = {
+        item["queue_id"]: item for item in build_compare_queue(state_records)
+    }
+    compare_by_id.update(
+        {
+            item["queue_id"]: item
+            for item in existing_state["compare_queue"]
+            if item.get("queue_id") and item.get("case_id") in retained_case_ids
+        }
+    )
+    state_compare_queue = [compare_by_id[key] for key in sorted(compare_by_id)]
+    state_bucket_rows = build_bucket_rows(state_records)
 
     state_root = state_dir / "testcases"
     state_root.mkdir(parents=True, exist_ok=True)
     index_path = state_root / "index.ndjson"
     index_path.write_text(
-        "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
+        "".join(json.dumps(record, sort_keys=True) + "\n" for record in state_records),
         encoding="utf-8",
     )
     state_queue_path = state_root / "replay-queue.ndjson"
     state_queue_path.write_text(
-        "".join(json.dumps(item, sort_keys=True) + "\n" for item in replay_queue),
+        "".join(json.dumps(item, sort_keys=True) + "\n" for item in state_replay_queue),
         encoding="utf-8",
     )
     state_compare_queue_path = state_root / "compare-queue.ndjson"
     state_compare_queue_path.write_text(
-        "".join(json.dumps(item, sort_keys=True) + "\n" for item in compare_queue),
+        "".join(json.dumps(item, sort_keys=True) + "\n" for item in state_compare_queue),
         encoding="utf-8",
     )
     state_buckets_path = state_root / "buckets.ndjson"
     state_buckets_path.write_text(
-        "".join(json.dumps(item, sort_keys=True) + "\n" for item in bucket_rows),
+        "".join(json.dumps(item, sort_keys=True) + "\n" for item in state_bucket_rows),
         encoding="utf-8",
     )
-    for record in records:
+    for record in incoming_records:
         (state_root / f"{record['case_id']}.json").write_text(
             json.dumps(record, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -933,6 +1297,9 @@ def write_lifecycle_artifacts(*, run_dir: Path, state_dir: Path, records: list[d
         "replay_queue_count": len(replay_queue),
         "compare_queue_count": len(compare_queue),
         "bucket_count": len(bucket_rows),
+        "case_bucket_ids": {
+            record["case_id"]: record["bucket_id"] for record in records
+        },
     }
 
 
@@ -1014,6 +1381,11 @@ def _rewrite_index_record(state_root: Path, record: dict) -> list[dict]:
 
 
 def repair_state(*, state_dir: Path) -> dict:
+    with _testcase_write_lock(state_dir):
+        return _repair_state_locked(state_dir=state_dir)
+
+
+def _repair_state_locked(*, state_dir: Path) -> dict:
     state_root = _state_root(Path(state_dir))
     case_paths = sorted(state_root.glob("tc-*.json"))
     repaired_records = []
@@ -1070,6 +1442,19 @@ def pending_compare_queue_items(*, state_dir: Path, limit: int | None = None, ca
 
 
 def record_replay_result(*, state_dir: Path, case_id: str, target: str, run_id: str, exit_status: str, behavior_summary: dict | None = None, resource_summary: dict | None = None) -> None:
+    with _testcase_write_lock(state_dir):
+        _record_replay_result_locked(
+            state_dir=state_dir,
+            case_id=case_id,
+            target=target,
+            run_id=run_id,
+            exit_status=exit_status,
+            behavior_summary=behavior_summary,
+            resource_summary=resource_summary,
+        )
+
+
+def _record_replay_result_locked(*, state_dir: Path, case_id: str, target: str, run_id: str, exit_status: str, behavior_summary: dict | None = None, resource_summary: dict | None = None) -> None:
     state_root = _state_root(Path(state_dir))
     queue = _load_replay_queue(state_root)
     updated_targets = set()
@@ -1103,6 +1488,20 @@ def record_replay_result(*, state_dir: Path, case_id: str, target: str, run_id: 
 
 
 def record_compare_result(*, state_dir: Path, case_id: str, comparison_path: str, agreed: bool, runs: dict, run_outcomes: dict | None = None, behavior_summaries: dict | None = None, resource_summaries: dict | None = None) -> None:
+    with _testcase_write_lock(state_dir):
+        _record_compare_result_locked(
+            state_dir=state_dir,
+            case_id=case_id,
+            comparison_path=comparison_path,
+            agreed=agreed,
+            runs=runs,
+            run_outcomes=run_outcomes,
+            behavior_summaries=behavior_summaries,
+            resource_summaries=resource_summaries,
+        )
+
+
+def _record_compare_result_locked(*, state_dir: Path, case_id: str, comparison_path: str, agreed: bool, runs: dict, run_outcomes: dict | None = None, behavior_summaries: dict | None = None, resource_summaries: dict | None = None) -> None:
     state_root = _state_root(Path(state_dir))
     compare_queue = _load_compare_queue(state_root)
     for item in compare_queue:
@@ -1131,6 +1530,19 @@ def record_compare_result(*, state_dir: Path, case_id: str, comparison_path: str
 
 
 def record_minimization_result(*, state_dir: Path, case_id: str, target: str, minimized_path: str, original_size: int, minimized_size: int, tool: str) -> None:
+    with _testcase_write_lock(state_dir):
+        _record_minimization_result_locked(
+            state_dir=state_dir,
+            case_id=case_id,
+            target=target,
+            minimized_path=minimized_path,
+            original_size=original_size,
+            minimized_size=minimized_size,
+            tool=tool,
+        )
+
+
+def _record_minimization_result_locked(*, state_dir: Path, case_id: str, target: str, minimized_path: str, original_size: int, minimized_size: int, tool: str) -> None:
     state_root = _state_root(Path(state_dir))
     record_path = state_root / f"{case_id}.json"
     record = json.loads(record_path.read_text(encoding="utf-8"))
@@ -1157,6 +1569,17 @@ def record_minimization_result(*, state_dir: Path, case_id: str, target: str, mi
 
 
 def record_minimization_failure(*, state_dir: Path, case_id: str, target: str, tool: str, error: str) -> None:
+    with _testcase_write_lock(state_dir):
+        _record_minimization_failure_locked(
+            state_dir=state_dir,
+            case_id=case_id,
+            target=target,
+            tool=tool,
+            error=error,
+        )
+
+
+def _record_minimization_failure_locked(*, state_dir: Path, case_id: str, target: str, tool: str, error: str) -> None:
     state_root = _state_root(Path(state_dir))
     record_path = state_root / f"{case_id}.json"
     record = json.loads(record_path.read_text(encoding="utf-8"))
@@ -1472,11 +1895,21 @@ def run_replay_case(*, case_id: str, target_implementation: str, runs_dir: Path,
         )
         scenario_path = tmp_root / "replay-scenario.yaml"
         scenario_path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
-        handle = scenario_module.run_scenario(
-            scenario_path,
-            runs_dir=Path(runs_dir),
-            state_dir=Path(state_dir),
-            registry_path=registry_path,
+        from types import SimpleNamespace
+        from profile_manager import run_service
+
+        executed = run_service.execute_run(
+            run_service.RunRequest(
+                scenario_path=scenario_path,
+                origin="replay",
+                runs_dir=Path(runs_dir),
+                state_dir=Path(state_dir),
+                registry_path=registry_path,
+            )
+        )
+        handle = SimpleNamespace(
+            run_id=executed["run_id"],
+            run_dir=Path(executed["run_dir"]),
         )
     manifest = json.loads((handle.run_dir / "manifest.json").read_text(encoding="utf-8"))
     record_replay_result(

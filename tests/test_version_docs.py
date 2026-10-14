@@ -41,7 +41,8 @@ def test_version_docs_include_refresh_examples_and_claim_boundaries():
     assert "relay/consumer" in source
     assert "does not prove" in source
     assert "Antithesis" in source
-    assert "Check for new versions" in source
+    assert "Fetch Latest Version" in source
+    assert "never contacts GitHub automatically" in source
     assert "runtime-state overlay" in source
     assert "10.11.20260912" in source
     assert "10.7.1" in source

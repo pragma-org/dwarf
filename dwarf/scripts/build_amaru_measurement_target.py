@@ -332,6 +332,21 @@ def verify_static_binary(path: Path) -> dict[str, str]:
     }
 
 
+def _built_binary_path(source: Path, configured: str) -> Path:
+    relative = Path(configured)
+    target_dir = os.environ.get("CARGO_TARGET_DIR", "").strip()
+    if not target_dir:
+        return source / relative
+    if not relative.parts or relative.parts[0] != "target":
+        raise BuildContractError(
+            "CARGO_TARGET_DIR requires the configured binary path to start with target/"
+        )
+    target_root = Path(target_dir)
+    if not target_root.is_absolute():
+        target_root = source / target_root
+    return target_root.joinpath(*relative.parts[1:])
+
+
 def _write_derived_dockerfile(
     path: Path, *, base_image: str, source_revision: str, patch_digest: str
 ) -> None:
@@ -449,7 +464,7 @@ def build_target(
         log_path=logs / "cargo-build.log",
         env=build_env,
     )
-    built_binary = source / str(manifest["build"]["binary"])
+    built_binary = _built_binary_path(source, str(manifest["build"]["binary"]))
     if not built_binary.is_file():
         raise BuildContractError(f"build did not produce {built_binary}")
     packaged_binary = output_dir / "artifacts" / "amaru"

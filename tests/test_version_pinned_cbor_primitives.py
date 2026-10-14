@@ -1,6 +1,10 @@
 import os
+import hashlib
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
+from profile_manager import primitives as primitives_module
 from profile_manager.scenario import semantic_validate_scenario
 from profile_manager.primitives import (
     _build_dwarf_telemetry_env,
@@ -158,3 +162,71 @@ def test_fixed_amaru_regression_scenario_links_old_failure_and_upstream_fix():
         "invalid_protocol_cases_contained",
         "target_progress_continues",
     ]
+
+
+def test_cbor_primitive_snapshots_exact_resolved_adapter_into_run(monkeypatch, tmp_path):
+    executable = tmp_path / "qualified-cbor-adapter"
+    executable.write_bytes(b"exact production adapter")
+    executable.chmod(0o755)
+    digest = hashlib.sha256(executable.read_bytes()).hexdigest()
+    provenance = {
+        "implementation": "amaru",
+        "source_revision": "a" * 40,
+        "adapter_set_sha256": "b" * 64,
+        "executable_sha256": digest,
+        "build_result_sha256": "c" * 64,
+        "build_log_sha256": "d" * 64,
+        "platform": "linux/amd64",
+    }
+    monkeypatch.setattr(
+        primitives_module,
+        "resolve_cbor_conformance_adapter",
+        lambda **_kwargs: {
+            **provenance,
+            "schema_version": 1,
+            "kind": "production-cbor-conformance",
+            "measurement_boundary": "production-codec-only",
+            "executable": str(executable),
+            "record_path": str(tmp_path / "registry-record.json"),
+        },
+    )
+    captured = {}
+
+    def run(command, **_kwargs):
+        config = json.loads(Path(command[-1]).read_text(encoding="utf-8"))
+        record = json.loads(Path(config["adapter_record"]).read_text(encoding="utf-8"))
+        captured.update(config=config, record=record)
+        assert Path(record["executable"]).read_bytes() == executable.read_bytes()
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(primitives_module.subprocess, "run", run)
+
+    class Handle:
+        run_dir = tmp_path / "run"
+        events = []
+
+        def log(self, **event):
+            self.events.append(event)
+
+    entry = load_registry(ROOT / "dwarf/primitives/registry.json")[
+        "runtime_version_pinned_cbor_conformance"
+    ]
+    primitive = primitives_module.RuntimeVersionPinnedCborConformance(
+        entry=entry,
+        params={
+            "source_repository": "https://github.com/r2rationality/cardano-cbor-dataset.git",
+            "dataset_revision": "a7561cd063550c2218898571520f14c3674efe91",
+            "dataset_bundle": "dwarf/corpora/qualified/conway-plutus-data-100-v1.json",
+            "implementation": "amaru",
+            "source_revision": "a" * 40,
+            "adapter_set_sha256": "b" * 64,
+            "expected_provenance": provenance,
+            "output_dir": "outputs/cbor-conformance",
+        },
+    )
+
+    primitive.run(Handle(), None)
+
+    assert captured["record"]["executable_sha256"] == digest
+    assert captured["record"]["executable"] != str(executable)
+    assert Path(captured["record"]["executable"]).is_relative_to(tmp_path / "run")

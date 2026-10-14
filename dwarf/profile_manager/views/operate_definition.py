@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
 
 from profile_manager.data.catalog_definitions import (
     catalog_label,
+    is_user_definition,
     load_definition,
 )
+from profile_manager.data.operate_targets import target_runtime_entrypoints
 from profile_manager.data.definition_facts import definition_facts
 from profile_manager.templating import render
 
@@ -36,10 +39,19 @@ def _summary_fields(catalog: str, data: dict) -> list[dict[str, str]]:
     return fields
 
 
-def render_operate_definition(catalog: str, definition_id: str) -> str:
+def render_operate_definition(
+    catalog: str, definition_id: str, *, token: str | None = None
+) -> str:
     record = load_definition(catalog, definition_id)
     label = catalog_label(catalog)
     title = record.data.get("title") or record.data.get("label") or definition_id
+    target_runtime = (
+        target_runtime_entrypoints(
+            definition_id, source_path=record.path, source=record.source
+        )
+        if catalog == "targets"
+        else None
+    )
     return render(
         "operate/definition_detail.j2",
         page_title=f"{label} · {definition_id}",
@@ -58,4 +70,8 @@ def render_operate_definition(catalog: str, definition_id: str) -> str:
         catalog_url=f"/operate/{catalog}",
         edit_url=f"/operate/{catalog}/{definition_id}/edit",
         download_url=f"/api/catalog/{catalog}/{definition_id}/download",
+        deletable=is_user_definition(catalog, definition_id),
+        definition_sha256=hashlib.sha256(record.source).hexdigest(),
+        target_runtime=target_runtime,
+        token=token or "",
     )

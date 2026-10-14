@@ -64,6 +64,7 @@ _JSON_SPAN_KINDS = {
     ("amaru::ledger", "block.apply"): "block-apply",
     ("amaru::ledger", "epoch_transition.apply"): "epoch-transition",
     ("amaru::ledger", "transaction.validate"): "transaction-validation",
+    ("amaru::ledger", "transaction.script.execute"): "plutus-execution",
 }
 
 _OTLP_SPAN_KINDS = {
@@ -467,6 +468,47 @@ def _samples_by_outcome(
     }
 
 
+def _header_arrival_samples(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Reject current release traces whose arrival delta mixes clock domains."""
+    matching = [event for event in events if event["kind"] == "header-lifecycle"]
+    usable = [
+        event
+        for event in matching
+        if event["fields"].get("slot_start_to_header_micros") is not None
+        and not (
+            event["fields"].get("message") == "perf.header.lifecycle"
+            and event["fields"].get("slot_start_clock_domain") != "shared"
+        )
+    ]
+    summary = _samples(
+        usable, "header-lifecycle", "slot_start_to_header_micros", "us"
+    )
+    if matching and not usable:
+        summary["reason"] = (
+            "the pinned Amaru release exports header receipt in the global epoch "
+            "and slot start in chain-relative time; mixed clock domains cannot "
+            "produce an arrival latency"
+        )
+    return summary
+
+
+def _header_arrival_samples_by_outcome(
+    events: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    usable = [
+        event
+        for event in events
+        if not (
+            event["kind"] == "header-lifecycle"
+            and event["fields"].get("message") == "perf.header.lifecycle"
+            and event["fields"].get("slot_start_clock_domain") != "shared"
+        )
+    ]
+    return _samples_by_outcome(
+        usable, "header-lifecycle", "slot_start_to_header_micros", "us"
+    )
+
+
 def _span_samples(events: Iterable[dict[str, Any]], kind: str) -> dict[str, Any]:
     matching = [
         event
@@ -591,10 +633,8 @@ def _build_measurements(measurement_id: str, events: list[dict[str, Any]]) -> tu
     if measurement_id == "amaru-stock-header-lifecycle":
         claims["exclusive_adopt_duration"] = "unavailable"
         return {
-            "header_slot_start_to_reception": _samples(events, "header-lifecycle", "slot_start_to_header_micros", "us"),
-            "header_slot_start_to_reception_by_outcome": _samples_by_outcome(
-                events, "header-lifecycle", "slot_start_to_header_micros", "us"
-            ),
+            "header_slot_start_to_reception": _header_arrival_samples(events),
+            "header_slot_start_to_reception_by_outcome": _header_arrival_samples_by_outcome(events),
             "header_reception_to_fetch_request": _samples(events, "header-lifecycle", "block_fetch_wait_micros", "us"),
             "header_reception_to_fetch_request_by_outcome": _samples_by_outcome(
                 events, "header-lifecycle", "block_fetch_wait_micros", "us"

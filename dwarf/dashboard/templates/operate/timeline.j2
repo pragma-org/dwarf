@@ -1,6 +1,6 @@
 {% extends "_base.j2" %}
 {% block main %}
-{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_more with context %}
+{% from "operate/_partials/_deck.j2" import deck_head, deck_grid, deck_actions, deck_more with context %}
 {% if ui == "basic" %}
 {%- if latest -%}
   {%- set _n = latest.summary.event_count if latest.summary.event_count is not none else latest.events|length -%}
@@ -46,6 +46,8 @@
   <pre class="dkc-cmd"><code>cardano-profile bundle export &lt;run-id&gt;</code></pre>
 </div>
 {% endif %}
+<p class="basic-only dk-note">Each run's detail page has an Export bundle download. The timeline scenario page has its own Run control and selects the latest completed evidence bundles at launch. Opening either link does not run anything.</p>
+{{ deck_actions([('Retained runs', '/operate/runs', false, false), ('Timeline scenario', '/operate/scenarios/runtime-bundle-timeline-example-smoke', false, false)]) }}
 {{ deck_more('Per-signature breakdown and past timelines — in Advanced') }}
 {% endif %}
 <div class="adv-only">

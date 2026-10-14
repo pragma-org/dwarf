@@ -217,6 +217,50 @@ def test_exact_runtime_json_shape_normalizes_events_and_completed_node_spans(tmp
     assert result["export"]["incomplete"] is False
     assert result["export"]["ignored_record_count"] == 1
 
+    header = _collect_from_paths(
+        tmp_path / "header",
+        "amaru-stock-header-lifecycle",
+        json_paths=[trace],
+        otlp_paths=[],
+    )
+    arrival = header["measurements"]["header_slot_start_to_reception"]
+    assert arrival["status"] == "unavailable"
+    assert arrival["sample_count"] == 0
+    assert "mixed clock domains" in arrival["reason"]
+    assert header["measurements"]["block_fetch"]["sample_count"] == 1
+
+
+def test_header_arrival_rejects_explicit_chain_relative_slot_start(tmp_path):
+    trace = tmp_path / "amaru.ndjson"
+    trace.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-09-18T23:06:11.505172Z",
+                "level": "DEBUG",
+                "fields": {
+                    "message": "perf.header.lifecycle",
+                    "outcome": "valid",
+                    "slot_start_clock_domain": "chain-relative",
+                    "slot_start_to_header_micros": 1_791_643_330_006_409,
+                },
+                "target": "amaru::consensus",
+            }
+        )
+        + "\n"
+    )
+
+    header = _collect_from_paths(
+        tmp_path / "header",
+        "amaru-stock-header-lifecycle",
+        json_paths=[trace],
+        otlp_paths=[],
+    )
+
+    arrival = header["measurements"]["header_slot_start_to_reception"]
+    assert arrival["status"] == "unavailable"
+    assert arrival["sample_count"] == 0
+    assert "mixed clock domains" in arrival["reason"]
+
 
 def test_block_application_distribution_prefers_monotonic_nanoseconds(tmp_path):
     trace = tmp_path / "amaru.ndjson"
@@ -269,6 +313,57 @@ def test_block_application_distribution_prefers_monotonic_nanoseconds(tmp_path):
     assert distribution["minimum"] == 2.184
     assert distribution["maximum"] == 2.184
     assert distribution["timing_sources"] == ["patched-monotonic-nanoseconds"]
+
+
+def test_plutus_execution_uses_completed_runtime_json_span(tmp_path):
+    trace = tmp_path / "amaru.ndjson"
+    rows = [
+        {
+            "timestamp": "2026-10-11T05:00:00.000001Z",
+            "target": "amaru::ledger",
+            "fields": {
+                "amaru.tag.cpu": True,
+                "index": 0,
+                "message": "enter",
+                "purpose": "spend",
+            },
+            "span": {"name": "transaction.script.execute"},
+            "id": 41,
+        },
+        {
+            "timestamp": "2026-10-11T05:00:00.000131Z",
+            "target": "amaru::ledger",
+            "fields": {
+                "acquire_arena_micros": 11,
+                "amaru.tag.cpu": True,
+                "build_uplc_program_micros": 23,
+                "decode_script_micros": 17,
+                "evaluate_uplc_program_micros": 79,
+                "index": 0,
+                "message": "exit",
+                "purpose": "spend",
+            },
+            "span": {"name": "transaction.script.execute"},
+            "id": 41,
+        },
+    ]
+    trace.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
+    loaded = load_amaru_telemetry(json_trace_paths=[trace])
+    event = next(event for event in loaded["events"] if event["kind"] == "plutus-execution")
+    assert event["timing_source"] == "paired-node-json-span-events"
+    assert event["fields"]["evaluate_uplc_program_micros"] == 79
+
+    result = _collect_from_paths(
+        tmp_path / "result",
+        "amaru-stock-plutus-execution",
+        json_paths=[trace],
+        otlp_paths=[],
+    )
+    assert result["measurements"]["virtual_machine_acquire_arena"]["mean"] == 11.0
+    assert result["measurements"]["virtual_machine_decode_script"]["mean"] == 17.0
+    assert result["measurements"]["virtual_machine_build_program"]["mean"] == 23.0
+    assert result["measurements"]["virtual_machine_evaluate"]["mean"] == 79.0
 
 
 def test_collector_retains_bounded_raw_normalized_correlation_and_result_artifacts(tmp_path):

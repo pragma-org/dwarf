@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
@@ -55,6 +56,12 @@ FATAL_PATTERNS = {
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
+        "+00:00", "Z"
+    )
+
+
+def _utc_now_precise() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace(
         "+00:00", "Z"
     )
 
@@ -277,10 +284,53 @@ def query_cardano_tip(container: str) -> dict[str, Any] | None:
 
 def read_sample(containers: dict[str, dict[str, Any]]) -> dict[str, Any]:
     tips: dict[str, Any] = {}
-    for service in (*CARDANO_REFERENCE_NODES, AMARU_CONSUMER):
-        container = (containers.get(service) or {}).get("container_name")
-        if container and (tip := query_cardano_tip(container)) is not None:
-            tips[service] = tip
+    tip_queries: dict[str, dict[str, Any]] = {}
+    tip_targets = {
+        service: (containers.get(service) or {}).get("container_name")
+        for service in (*CARDANO_REFERENCE_NODES, AMARU_CONSUMER)
+    }
+    tip_targets = {
+        service: container
+        for service, container in tip_targets.items()
+        if container
+    }
+    if tip_targets:
+        query_window_started_at = _utc_now_precise()
+        query_window_started = time.monotonic()
+
+        def timed_tip_query(container: str) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+            started_at = _utc_now_precise()
+            started = time.monotonic()
+            tip = query_cardano_tip(container)
+            return tip, {
+                "started_at": started_at,
+                "completed_at": _utc_now_precise(),
+                "duration_seconds": round(max(0.0, time.monotonic() - started), 6),
+                "status": "available" if tip is not None else "unavailable",
+            }
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(tip_targets),
+            thread_name_prefix="dwarf-tip",
+        ) as executor:
+            pending = {
+                service: executor.submit(timed_tip_query, container)
+                for service, container in tip_targets.items()
+            }
+            for service, future in pending.items():
+                tip, query_receipt = future.result()
+                tip_queries[service] = query_receipt
+                if tip is not None:
+                    tips[service] = tip
+        tip_query_window = {
+            "started_at": query_window_started_at,
+            "completed_at": _utc_now_precise(),
+            "duration_seconds": round(
+                max(0.0, time.monotonic() - query_window_started), 6
+            ),
+        }
+    else:
+        tip_query_window = None
 
     amaru_relays: dict[str, Any] = {}
     for service in AMARU_RELAYS:
@@ -292,7 +342,13 @@ def read_sample(containers: dict[str, dict[str, Any]]) -> dict[str, Any]:
         amaru_relays[service] = parsed
         if parsed["fatal_signatures"]:
             containers[service]["fatal_signatures"] = list(parsed["fatal_signatures"])
-    return {"at": _utc_now(), "tips": tips, "amaru_relays": amaru_relays}
+    return {
+        "at": _utc_now(),
+        "tips": tips,
+        "tip_queries": tip_queries,
+        "tip_query_window": tip_query_window,
+        "amaru_relays": amaru_relays,
+    }
 
 
 def read_peer_contract(containers: dict[str, dict[str, Any]]) -> bool | None:

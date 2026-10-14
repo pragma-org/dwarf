@@ -1,15 +1,20 @@
 {% extends "_base.j2" %}
 {% block main %}
+{% if ui != "basic" %}
 <span class="eyebrow">Operate · Run</span>
+{% endif %}
 <h1 class="run-id-heading"><code>{{ run.run_id }}</code></h1>
+{% if ui != "basic" %}
 <p class="page-hero">Forensic bundle for one scenario execution. Manifest, observer events, assertion outcomes, resource snapshot, and the tamper-check verdict — all read-only, all sourced from the bundle on disk.</p>
+{% endif %}
 
+{% set ov = run.operator_version or {} %}
 {% if run.thinness_signals %}
 <section class="thinness-banner" aria-labelledby="thinness-heading">
   <header class="thinness-banner__head">
     <span class="eyebrow">Thin-pass suspicion</span>
     <h2 id="thinness-heading">{{ run.thinness_signals|length }} rule{{ '' if run.thinness_signals|length == 1 else 's' }} fired on this bundle</h2>
-    <p class="thinness-banner__sub">Manifest reports <code>{{ run.exit_status or '—' }}</code>, but one or more telemetry-shape rules suggest the pass may be thin. The pass/fail color above is unchanged — the badges below are additive.</p>
+    <p class="thinness-banner__sub">Operational outcome <code>{{ run.operational_outcome or '—' }}</code>; test verdict <code>{{ run.verdict_status or '—' }}</code>. One or more telemetry-shape rules suggest the evidence may be thin; the badges below are additive.</p>
   </header>
   <ul class="thinness-banner__list">
     {% for s in run.thinness_signals %}
@@ -34,16 +39,12 @@
 {% endif %}
 
 {% if ui == "basic" %}
-{% set st = run.exit_status or 'unknown' %}
+{% set st = run.verdict_status or 'unknown' %}
 {% set verified = run.verify.status == 'verified' %}
 {% set suit = {'pass':'♦','fail':'▲','error':'✕'}.get(st, '■') %}
 {% set tone = {'pass':'dk-g-pass','fail':'dk-g-fail','error':'dk-g-error'}.get(st, 'dk-g-other') %}
-<section class="basic-only dk" aria-label="Run card">
-  <h2 class="dk-lead" style="margin-top:0">
-    {% if st == 'precondition_failed' %}Not run — the topology gate stopped this run before any assertion.
-    {% elif verified %}Recorded {{ st }}{% if run.assertion_summary.total %} · {{ run.assertion_summary.pass }}/{{ run.assertion_summary.total }} assertions{% endif %}, and the bundle's hash chain verifies.
-    {% else %}Recorded {{ st }}, but evidence integrity is {{ run.verify.label|lower }} — treat this card as unproven.{% endif %}
-  </h2>
+<section class="basic-only dk run-results-basic" aria-label="Run card">
+  <p class="visually-hidden" data-run-verdict-summary>Test verdict: {{ st }}. Operational outcome: {{ run.operational_outcome or 'unknown' }}. {% if st == 'precondition_failed' %}Assertions: not run.{% else %}Assertions: {{ run.assertion_summary.pass }} of {{ run.assertion_summary.total }} passed.{% endif %} Bundle integrity: {{ run.verify.label|lower }}.</p>
   <div class="dk-runlay">
     <div class="dk-card dk-card--flip {{ 'dk-holo' if verified else 'dk-back' }}" data-dk-seed="{{ run.chain.manifest_hash or run.run_id }}" tabindex="0" role="button" aria-pressed="false" data-dk-flip aria-label="Run card for {{ run.run_id }}. Flip for manifest, hash chain and commands">
       <div class="dk-card__inner">
@@ -74,42 +75,30 @@
         </div></div>
       </div>
     </div>
-    <div>
-      <div class="dk-panel">
-        <h3>What this run shows</h3>
-        <p style="margin:0 0 8px">{{ run.explanation.summary }}</p>
-        <ul>{% for item in run.explanation.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
-      </div>
+    <div class="run-results__summary">
       {% if run.measurements and run.measurements.present %}
-      {% set mm = run.measurements %}{% set ti = mm.target_identity or {} %}
-      <div class="dk-panel dk-meas-panel">
-        <h3>Measurements · independent taps</h3>
-        <p style="margin:0 0 8px">{{ mm.summary.available_count or 0 }} metrics measured · {{ mm.summary.unavailable_count or 0 }} unavailable · {{ mm.collector_counts.finalized or 0 }} collectors finalized{% if mm.collector_counts.error %} · <span class="dk-g-warn">▲ {{ mm.collector_counts.error }} collector error{{ '' if mm.collector_counts.error == 1 else 's' }}</span>{% endif %}</p>
-        <span class="dk-tags" style="margin:0 0 10px">{% if mm.profile_id %}<span data-tag="profile">{{ mm.profile_id }}</span>{% endif %}{% if ti.implementation %}<span data-tag="{{ ti.implementation }}">{{ ti.implementation }}</span>{% endif %}{% if ti.version %}<span data-tag="{{ ('amaru ' if ti.implementation == 'amaru' else 'node ') ~ ti.version }}">{{ ('amaru ' if ti.implementation == 'amaru' else 'node ') ~ ti.version }}</span>{% endif %}{% if ti.mode %}<span data-tag="{{ ti.mode }}">{{ ti.mode }}</span>{% endif %}</span>
-        <div class="dk-row"><a class="dk-btn dk-btn--solid" href="#measurement-report-heading">Jump to measurement report ↓</a><a class="dk-btn" href="{{ mm.raw_url }}">Raw data</a></div>
-        <p class="dk-note" style="margin:8px 0 0">Measurements show what was observed in this run; they are not the pass/fail verdict.</p>
-      </div>
+      {% set mm = run.measurements %}
+      <p class="run-results__metric-count"><strong>{{ mm.summary.available_count or 0 }} metrics measured</strong></p>
       {% endif %}
-      <div class="dk-panel">
-        <h3>Take it with you</h3>
-        <div class="dk-row">
-          <a class="dk-btn dk-btn--solid" href="{{ run.bundle_url }}" download>Export bundle (.tar.gz)</a>
-          <a class="dk-btn" href="/operate/runs/{{ run.run_id }}/live">Live tail</a>
-          <a class="dk-btn" href="{{ request_path or '/' }}?view=advanced">Full evidence in Advanced →</a>
-        </div>
-        <p class="dk-note" style="margin:10px 0 0">The card flips to show the manifest hash, previous hash, phases and the replay / verify commands. Manifest, provenance, SARIF, recorded assertions and logs are in Advanced.</p>
+      <div class="dk-row run-results__actions">
+        <a class="dk-btn dk-btn--solid" href="{{ run.bundle_url }}" download>Export bundle</a>
+        <a class="dk-btn" href="{{ run.bundle_signature_url }}" download>Signature</a>
+        <a class="dk-btn" href="/operate/runs/{{ run.run_id }}/live">Live tail</a>
+        <button class="dk-btn" type="button" data-run-details-trigger data-run-details-target="run-manifest">Run details</button>
+        {% if run.measurements and run.measurements.present %}<a class="dk-btn" href="#measurement-report-heading">Measurements</a>{% endif %}
       </div>
     </div>
   </div>
 </section>
 {% endif %}
-<div class="run-status-banner run-status-banner--{{ run.exit_status or 'unknown' }} adv-only">
+{% if ui != "basic" %}<div class="run-status-banner run-status-banner--{{ run.verdict_status or 'unknown' }}">
   <div class="run-status-banner__primary">
-    {% if run.exit_status %}
-    <span class="result-pill result-pill--{{ run.exit_status }}">{{ run.exit_status }}</span>
+    {% if run.verdict_status %}
+    <span class="result-pill result-pill--{{ run.verdict_status }}">verdict {{ run.verdict_status }}</span>
     {% else %}
-    <span class="result-pill">no exit status</span>
+    <span class="result-pill">no verdict</span>
     {% endif %}
+    {% if run.operational_outcome %}<span class="run-status-banner__runtime">operational outcome <code>{{ run.operational_outcome }}</code></span>{% endif %}
     <span class="run-status-banner__scenario">{% if run.scenario_id %}<code>{{ run.scenario_id }}</code>{% else %}—{% endif %}</span>
     {% if run.target_implementation %}<span class="run-status-banner__target">against <code>{{ run.target_implementation }}</code></span>{% endif %}
     {% if run.runtime %}<span class="run-status-banner__runtime">{{ run.runtime }} runtime</span>{% endif %}
@@ -117,8 +106,10 @@
   <div class="run-status-banner__cta">
     <a class="cta cta--ghost" href="/operate/runs/{{ run.run_id }}/live" title="{{ run.explanation.control_help['live tail'] }}">Live tail</a>
     <a class="cta cta--ghost" href="{{ run.bundle_url }}" download title="{{ run.explanation.control_help['export bundle'] }}">Export bundle (.tar.gz)</a>
+    <a class="cta cta--ghost" href="{{ run.bundle_signature_url }}" download>Detached signature (.json)</a>
   </div>
 </div>
+{% endif %}
 
 {% if run.security_execution.classification == 'completed_with_security_finding' %}
 <section class="run-precondition-warning" aria-labelledby="run-security-finding-heading">
@@ -153,7 +144,7 @@
 </section>
 {% endif %}
 
-<section class="run-explainer adv-only" aria-labelledby="run-explainer-heading">
+{% if ui != "basic" %}<section class="run-explainer" aria-labelledby="run-explainer-heading">
   <header>
     <span class="eyebrow">Guide</span>
     <h2 id="run-explainer-heading">{{ run.explanation.title }}</h2>
@@ -173,10 +164,11 @@
     </ol>
   </details>
 </section>
+{% endif %}
 
 <hr class="hairline">
 
-<section class="run-tile-grid adv-only" aria-label="Run summary tiles">
+<section class="run-tile-grid" aria-label="Run summary tiles">
   <article class="status-tile status-tile--state-{{ 'stale' if run.exit_status == 'precondition_failed' else 'ok' if run.assertion_summary.fail == 0 and run.assertion_summary.total else 'stale' if run.assertion_summary.total else 'error' }}">
     <span class="eyebrow" title="{{ run.explanation.field_help['assertions'] }}">Assertions</span>
     {% if run.exit_status == 'precondition_failed' %}
@@ -239,8 +231,7 @@
 
 <hr class="hairline">
 
-{% if ui == "basic" %}<p class="b-adv-evidence"><a class="b-adv-link" href="{{ request_path or '/' }}?view=advanced">Open the full evidence &mdash; manifest, hash chain, provenance, SARIF, assertions, logs &mdash; in Advanced &rarr;</a></p>{% endif %}
-<details class="run-disclosure adv-only" data-run-section="manifest">
+<details class="run-disclosure" data-run-section="manifest" id="run-manifest">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Manifest</span><span class="run-disclosure__title">Bundle manifest</span></span><span class="run-disclosure__meta">Run identity and inputs</span></summary>
   <div class="run-disclosure__body">
   <table class="config-table run-manifest-table">
@@ -262,7 +253,7 @@
 <hr class="hairline">
 
 {% if run.version_provenance.present %}
-<details class="run-disclosure adv-only" data-run-section="version-provenance">
+<details class="run-disclosure" data-run-section="version-provenance">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Real-node provenance</span><span class="run-disclosure__title">Resolved node versions</span></span><span class="run-disclosure__meta">{{ (run.version_provenance.targets + run.version_provenance.supporting)|length }} artifact{{ '' if (run.version_provenance.targets + run.version_provenance.supporting)|length == 1 else 's' }}</span></summary>
   <div class="run-disclosure__body">
   <p class="page-subhero">This is the catalog and exact-artifact snapshot retained when DWARF launched the deployment; it is not recomputed from today's defaults.</p>
@@ -299,7 +290,24 @@
 <hr class="hairline">
 {% endif %}
 
-<details class="run-disclosure adv-only" data-run-section="execution-definition">
+<details class="run-disclosure evidence-disclosure" data-run-section="export">
+  <summary class="run-disclosure__summary"><span><span class="eyebrow">Export</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['sarif export'] }}">SARIF export</span></span><span class="run-disclosure__meta">{{ 'Available' if run.export.sarif_present else 'Unavailable' }}</span></summary>
+  <div class="run-disclosure__body">
+  {% if run.export.sarif_present %}
+  <p class="run-cross-impl__summary">
+    <a class="cta cta--primary" href="{{ run.export.sarif_download_url }}" title="{{ run.explanation.control_help['download sarif'] }}">Download dwarf-export.sarif ({{ run.export.sarif_size_bytes }} B)</a>
+  </p>
+  <p class="page-subhero" title="{{ run.explanation.control_help['sarif export'] }}">SARIF v2.1.0 {% if run.export.generation == 'automatic-run-finalization' %}generated automatically when this run completed{% else %}regenerated explicitly from this retained run{% endif %}{% if run.export.result_count is not none %}; {{ run.export.result_count }} finding{{ '' if run.export.result_count == 1 else 's' }} mapped{% endif %}. Schema: <strong>{{ 'valid' if run.export.schema_valid else 'not verified' }}</strong>. Artifact: <code>{{ run.export.sarif_artifact_relpath }}</code>. The explicit export primitive can regenerate it idempotently.</p>
+  {% else %}
+  <p class="page-subhero" title="{{ run.explanation.control_help['sarif export'] }}">Automatic SARIF generation did not produce an artifact for this run{% if run.export.generation_error %}: <code>{{ run.export.generation_error }}</code>{% endif %}. Regenerate it with:</p>
+  <pre class="cli-example__pre" title="{{ run.explanation.control_help['generate sarif'] }}">{{ run.export.generate_command }}</pre>
+  {% endif %}
+  </div>
+</details>
+
+<hr class="hairline">
+
+<details class="run-disclosure evidence-disclosure" data-run-section="execution-definition">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Scenario snapshot</span><span class="run-disclosure__title">Execution definition</span></span><span class="run-disclosure__meta">{{ run.phase_inventory|length }} phase{{ '' if run.phase_inventory|length == 1 else 's' }}</span></summary>
   <div class="run-disclosure__body">
   <p class="page-subhero">
@@ -314,7 +322,7 @@
       <tr>
         <th scope="row">{{ phase.label }}</th>
         <td>{{ phase.count }}</td>
-        <td><ul class="run-probe-list">{% for primitive in phase.primitives %}<li><code>{{ primitive }}</code></li>{% endfor %}</ul></td>
+        <td><ul class="run-probe-list">{% for primitive in phase.primitives %}<li><code class="run-evidence-identity" title="{{ primitive }}">{{ primitive }}</code></li>{% endfor %}</ul></td>
       </tr>
       {% endfor %}
     </tbody>
@@ -328,7 +336,7 @@
 <hr class="hairline">
 
 {% if run.interesting_evidence %}
-<details class="run-disclosure adv-only" data-run-section="interesting-evidence">
+<details class="run-disclosure evidence-disclosure" data-run-section="interesting-evidence">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Run evidence</span><span class="run-disclosure__title">Interesting evidence</span></span><span class="run-disclosure__meta">{{ run.interesting_evidence|length }} retained item{{ '' if run.interesting_evidence|length == 1 else 's' }}</span></summary>
   <div class="run-disclosure__body">
   <p class="page-subhero">Inputs or runtime anomalies retained from this run for triage, replay, minimization, comparison, or promotion.</p>
@@ -349,7 +357,7 @@
     </dl>
     <p class="definition-actions">
       {% if evidence.artifact_available %}<a class="cta cta--primary" href="/api/assets/testcases/{{ evidence.id }}/artifact" download>Download retained artifact</a>{% endif %}
-      <a class="cta cta--ghost" href="/operate/testcases/{{ evidence.id }}">Advanced lifecycle</a>
+      <a class="cta cta--ghost" href="/operate/testcases/{{ evidence.id }}">Evidence lifecycle</a>
     </p>
   </article>
   {% endfor %}
@@ -359,7 +367,7 @@
 <hr class="hairline">
 {% endif %}
 
-<details class="run-disclosure adv-only" data-run-section="chain">
+<details class="run-disclosure evidence-disclosure" data-run-section="chain">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Hash chain</span><span class="run-disclosure__title">Tamper chain</span></span><span class="run-disclosure__meta">{{ run.chain.continuity }}</span></summary>
   <div class="run-disclosure__body">
   <table class="config-table run-chain-table">
@@ -376,7 +384,7 @@
 
 <hr class="hairline">
 
-<details class="run-disclosure adv-only" data-run-section="provenance">
+<details class="run-disclosure evidence-disclosure" data-run-section="provenance">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Provenance</span><span class="run-disclosure__title">Attestation chain</span></span><span class="run-disclosure__meta">{{ run.provenance.verdict if run.provenance.present else 'Not requested' }}</span></summary>
   <div class="run-disclosure__body">
   {% if run.provenance.present %}
@@ -420,27 +428,10 @@
   </div>
 </details>
 
-<hr class="hairline">
-
-<details class="run-disclosure adv-only" data-run-section="export">
-  <summary class="run-disclosure__summary"><span><span class="eyebrow">Export</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['sarif export'] }}">SARIF export</span></span><span class="run-disclosure__meta">{{ 'Available' if run.export.sarif_present else 'Unavailable' }}</span></summary>
-  <div class="run-disclosure__body">
-  {% if run.export.sarif_present %}
-  <p class="run-cross-impl__summary">
-    <a class="cta cta--primary" href="{{ run.export.sarif_download_url }}" title="{{ run.explanation.control_help['download sarif'] }}">Download dwarf-export.sarif ({{ run.export.sarif_size_bytes }} B)</a>
-  </p>
-  <p class="page-subhero" title="{{ run.explanation.control_help['sarif export'] }}">SARIF v2.1.0 {% if run.export.generation == 'automatic-run-finalization' %}generated automatically when this run completed{% else %}regenerated explicitly from this retained run{% endif %}{% if run.export.result_count is not none %}; {{ run.export.result_count }} finding{{ '' if run.export.result_count == 1 else 's' }} mapped{% endif %}. Schema: <strong>{{ 'valid' if run.export.schema_valid else 'not verified' }}</strong>. Artifact: <code>{{ run.export.sarif_artifact_relpath }}</code>. The explicit export primitive can regenerate it idempotently.</p>
-  {% else %}
-  <p class="page-subhero" title="{{ run.explanation.control_help['sarif export'] }}">Automatic SARIF generation did not produce an artifact for this run{% if run.export.generation_error %}: <code>{{ run.export.generation_error }}</code>{% endif %}. Regenerate it with:</p>
-  <pre class="cli-example__pre" title="{{ run.explanation.control_help['generate sarif'] }}">{{ run.export.generate_command }}</pre>
-  {% endif %}
-  </div>
-</details>
-
 {% if run.replay_artifact %}
 <hr class="hairline">
 
-<details class="run-disclosure adv-only" data-run-section="replay">
+<details class="run-disclosure evidence-disclosure" data-run-section="replay">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Replay</span><span class="run-disclosure__title">Replay verdict</span></span><span class="run-disclosure__meta">{{ run.replay_artifact.verdict or 'Unknown' }}</span></summary>
   <div class="run-disclosure__body">
   <p class="run-cross-impl__summary">
@@ -465,7 +456,7 @@
 {% if run.diff_artifact %}
 <hr class="hairline">
 
-<details class="run-disclosure adv-only" data-run-section="diff">
+<details class="run-disclosure evidence-disclosure" data-run-section="diff">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Diff</span><span class="run-disclosure__title">Bundle diff verdict</span></span><span class="run-disclosure__meta">{{ run.diff_artifact.verdict or 'Unknown' }}</span></summary>
   <div class="run-disclosure__body">
   <p class="run-cross-impl__summary">
@@ -488,7 +479,7 @@
 
 <hr class="hairline">
 
-<details class="run-disclosure run-actions adv-only" data-run-section="actions">
+<details class="run-disclosure evidence-disclosure run-actions" data-run-section="actions">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Actions</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['operator actions'] }}">Operator actions</span></span><span class="run-disclosure__meta">4 bundle workflows</span></summary>
   <div class="run-disclosure__body">
   <p class="page-subhero">Each card surfaces the CLI invocation for one of ada3's bundle-workflow primitives, with this run-id substituted. Copy the command and run it from a terminal where <code>cardano-profile</code> is on PATH.</p>
@@ -509,7 +500,7 @@
 {% if run.cross_impl.markdown %}
 <hr class="hairline">
 
-<details class="run-disclosure adv-only" data-run-section="cross-impl">
+<details class="run-disclosure evidence-disclosure" data-run-section="cross-impl">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Cross-impl</span><span class="run-disclosure__title">Cross-impl comparison</span></span><span class="run-disclosure__meta">{{ run.cross_impl.result or 'Unknown' }}</span></summary>
   <div class="run-disclosure__body">
   <p class="run-cross-impl__summary">
@@ -526,7 +517,7 @@
 {% if run.substrate_evidence.present %}
 <hr class="hairline">
 
-<details class="run-disclosure substrate-evidence adv-only" data-run-section="substrate-evidence">
+<details class="run-disclosure evidence-disclosure substrate-evidence" data-run-section="substrate-evidence">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Substrate evidence</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['substrate evidence section'] }}">Composed-substrate observations</span></span><span class="run-disclosure__meta">{{ run.substrate_evidence.tiles|length }} observation{{ '' if run.substrate_evidence.tiles|length == 1 else 's' }}</span></summary>
   <div class="run-disclosure__body">
   <div class="substrate-evidence__grid">
@@ -660,7 +651,7 @@
 {% if run.floor_preview and run.floor_preview.rows %}
 <hr class="hairline">
 
-<details class="run-disclosure adv-only floor-preview floor-preview--{{ 'gap' if run.floor_preview.summary.any_gap else 'match' }}" data-run-section="floor-preview">
+<details class="run-disclosure evidence-disclosure floor-preview floor-preview--{{ 'gap' if run.floor_preview.summary.any_gap else 'match' }}" data-run-section="floor-preview">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Floor preview · live re-evaluation</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['floor preview section'] }}">Recorded vs floor-preview</span></span><span class="run-disclosure__meta">{{ run.floor_preview.summary.gap }} gap{{ '' if run.floor_preview.summary.gap == 1 else 's' }} · {{ run.floor_preview.summary.match }} match{{ '' if run.floor_preview.summary.match == 1 else 'es' }}</span></summary>
   <div class="run-disclosure__body">
   <header class="floor-preview__head">
@@ -678,13 +669,13 @@
         <th>Recorded</th>
         <th>Floor preview</th>
         <th>Kind</th>
-        <th>Why</th>
+        {% if ui != "basic" %}<th>Why</th>{% endif %}
       </tr>
     </thead>
     <tbody>
       {% for r in run.floor_preview.rows %}
       <tr class="floor-preview__row floor-preview__row--{{ r.kind }}">
-        <td><code>{{ r.primitive }}</code></td>
+        <td><code class="run-evidence-identity" title="{{ r.primitive }}">{{ r.primitive }}</code></td>
         <td>
           {% if r.recorded_result %}
           <span class="result-pill result-pill--{{ r.recorded_result }}">{{ r.recorded_result }}</span>
@@ -704,16 +695,28 @@
           <span class="result-pill result-pill--pass">match</span>
           {% endif %}
         </td>
+        {% if ui == "basic" %}
+      </tr>
+      <tr class="run-evidence-detail-row">
+        <td colspan="4">
+          <details class="run-payload-disclosure" data-evidence-payload="floor-preview">
+            <summary aria-label="Why or evaluated value for {{ r.primitive }}">Why / evaluated value</summary>
+            <pre class="run-payload-pre"><code{% if r.kind == 'error' %} class="floor-preview__error"{% endif %}>{% if r.kind == 'error' %}{{ r.error }}{% elif r.note %}{{ r.note }}{% elif r.evaluated_value is not none %}{{ r.evaluated_value }}{% else %}—{% endif %}</code></pre>
+          </details>
+        </td>
+      </tr>
+        {% else %}
         <td>
           {% if r.kind == 'error' %}
           <code class="floor-preview__error">{{ r.error }}</code>
           {% elif r.note %}
           <code>{{ r.note }}</code>
-          {% elif r.evaluated_value %}
+          {% elif r.evaluated_value is not none %}
           <code>{{ r.evaluated_value }}</code>
           {% else %}—{% endif %}
         </td>
       </tr>
+        {% endif %}
       {% endfor %}
     </tbody>
   </table>
@@ -724,16 +727,32 @@
 {% if run.assertions %}
 <hr class="hairline">
 
-<details class="run-disclosure adv-only" data-run-section="assertions">
+<details class="run-disclosure evidence-disclosure" data-run-section="assertions">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Assertions</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['assertions section'] }}">Recorded assertions</span></span><span class="run-disclosure__meta">{{ run.assertions|length }} assertion{{ '' if run.assertions|length == 1 else 's' }}</span></summary>
   <div class="run-disclosure__body">
   <table class="config-table run-assertions-table">
-    <thead><tr><th title="{{ run.explanation.field_help['primitive'] }}">Primitive</th><th title="{{ run.explanation.field_help['params'] }}">Params</th><th title="{{ run.explanation.field_help['evaluated'] }}">Evaluated</th><th title="{{ run.explanation.field_help['result'] }}">Result</th></tr></thead>
+    <thead><tr><th title="{{ run.explanation.field_help['primitive'] }}">Primitive</th><th title="{{ run.explanation.field_help['params'] }}">Params</th>{% if ui != "basic" %}<th title="{{ run.explanation.field_help['evaluated'] }}">Evaluated</th>{% endif %}<th title="{{ run.explanation.field_help['result'] }}">Result</th></tr></thead>
     <tbody>
       {% for a in run.assertions %}
       <tr>
-        <td><code>{{ a.primitive }}</code></td>
+        <td><code class="run-evidence-identity" title="{{ a.primitive }}">{{ a.primitive }}</code></td>
         <td><code>{{ a.params|tojson }}</code></td>
+        {% if ui == "basic" %}
+        <td>{{ a.result }}</td>
+      </tr>
+      <tr class="run-evidence-detail-row">
+        <td colspan="3">
+          {% if a.evaluated_value_pretty.is_long %}
+          <details class="run-payload-disclosure" data-evidence-payload="assertion">
+            <summary title="{{ run.explanation.field_help['payload details'] }}" aria-label="Evaluated payload for {{ a.primitive }}">Evaluated payload ({{ a.evaluated_value_pretty.length }} chars)</summary>
+            <pre class="run-payload-pre"><code>{{ a.evaluated_value_pretty.pretty }}</code></pre>
+          </details>
+          {% else %}
+          <span class="run-evidence-inline-value"><span>Evaluated</span><code title="{{ run.explanation.field_help['payload details'] }}">{{ a.evaluated_value_pretty.compact }}</code></span>
+          {% endif %}
+        </td>
+      </tr>
+        {% else %}
         <td>
           {% if a.evaluated_value_pretty.is_long %}
           <details class="run-payload-disclosure">
@@ -746,6 +765,7 @@
         </td>
         <td>{{ a.result }}</td>
       </tr>
+        {% endif %}
       {% endfor %}
     </tbody>
   </table>
@@ -756,7 +776,7 @@
 {% if run.probes %}
 <hr class="hairline">
 
-<details class="run-disclosure adv-only" data-run-section="probes">
+<details class="run-disclosure evidence-disclosure" data-run-section="probes">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Probes</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['probes section'] }}">Time-series probes</span></span><span class="run-disclosure__meta">{{ run.probes|length }} probe{{ '' if run.probes|length == 1 else 's' }}</span></summary>
   <div class="run-disclosure__body">
   <ul class="run-probe-list">
@@ -771,18 +791,33 @@
 {% if run.log_tail %}
 <hr class="hairline">
 
-<details class="run-disclosure adv-only" data-run-section="log-tail">
+<details class="run-disclosure evidence-disclosure" data-run-section="log-tail">
   <summary class="run-disclosure__summary"><span><span class="eyebrow">Log tail</span><span class="run-disclosure__title" title="{{ run.explanation.control_help['log tail section'] }}">Last {{ run.log_tail|length }} log events</span></span><span class="run-disclosure__meta">Most recent events</span></summary>
   <div class="run-disclosure__body">
   <table class="config-table run-log-table">
-    <thead><tr><th title="{{ run.explanation.field_help['ts'] }}">ts</th><th title="{{ run.explanation.field_help['phase'] }}">phase</th><th title="{{ run.explanation.field_help['primitive'] }}">primitive</th><th title="{{ run.explanation.field_help['event'] }}">event</th><th title="{{ run.explanation.field_help['payload'] }}">payload</th></tr></thead>
+    <thead><tr><th title="{{ run.explanation.field_help['ts'] }}">ts</th><th title="{{ run.explanation.field_help['phase'] }}">phase</th><th title="{{ run.explanation.field_help['primitive'] }}">primitive</th><th title="{{ run.explanation.field_help['event'] }}">event</th>{% if ui != "basic" %}<th title="{{ run.explanation.field_help['payload'] }}">payload</th>{% endif %}</tr></thead>
     <tbody>
       {% for e in run.log_tail %}
       <tr title="{{ run.explanation.field_help['log row'] }}">
         <td><code>{{ e.ts }}</code></td>
         <td>{{ e.phase }}</td>
-        <td><code>{{ e.primitive }}</code></td>
+        <td><code class="run-evidence-identity" title="{{ e.primitive }}">{{ e.primitive }}</code></td>
         <td>{{ e.event }}</td>
+        {% if ui == "basic" %}
+      </tr>
+      <tr class="run-evidence-detail-row">
+        <td colspan="4">
+          {% if e.payload_pretty.is_long %}
+          <details class="run-payload-disclosure" data-evidence-payload="log">
+            <summary title="{{ run.explanation.field_help['payload details'] }}" aria-label="Payload for {{ e.primitive }} at {{ e.ts }}">Payload ({{ e.payload_pretty.length }} chars)</summary>
+            <pre class="run-payload-pre"><code>{{ e.payload_pretty.pretty }}</code></pre>
+          </details>
+          {% else %}
+          <span class="run-evidence-inline-value"><span>Payload</span><code title="{{ run.explanation.field_help['payload details'] }}">{{ e.payload_pretty.compact }}</code></span>
+          {% endif %}
+        </td>
+      </tr>
+        {% else %}
         <td>
           {% if e.payload_pretty.is_long %}
           <details class="run-payload-disclosure">
@@ -794,10 +829,45 @@
           {% endif %}
         </td>
       </tr>
+        {% endif %}
       {% endfor %}
     </tbody>
   </table>
   </div>
 </details>
 {% endif %}
+
+<hr class="hairline basic-only">
+<details class="basic-only run-disclosure evidence-disclosure operator-version-disclosure" data-operator-version-decision>
+  <summary class="run-disclosure__summary">
+    <span class="run-disclosure__title" id="operator-version-heading">Operator support decision</span>
+    <span class="run-disclosure__meta">Exact run scope</span>
+  </summary>
+  <div class="run-disclosure__body">
+  {% if ov.available %}
+    {% if ov.decision %}<p>Current decision: <strong>{{ ov.decision.decision }}</strong> — {{ ov.decision.reason }}</p>{% endif %}
+    <form method="post" action="/api/runs/operator-version-decision">
+      <input type="hidden" name="token" value="{{ token or '' }}">
+      <input type="hidden" name="run_id" value="{{ run.run_id }}">
+      <input type="hidden" name="expected_revision" value="{{ ov.revision }}">
+      <label>Decision
+        <select name="decision" required>
+          <option value="supported">Supported for this exact scope</option>
+          <option value="unsupported">Unsupported for this exact scope</option>
+        </select>
+      </label>
+      <label>Reason <textarea name="reason" required maxlength="4096"></textarea></label>
+      <label>Preferred default
+        <select name="prefer">
+          <option value="false">Do not change preference</option>
+          <option value="true">Prefer this exact supported scope</option>
+        </select>
+      </label>
+      <button class="dk-btn dk-btn--solid operator-version-disclosure__submit" type="submit">Record operator decision</button>
+    </form>
+  {% else %}
+    <p role="status"><strong>Decision unavailable:</strong> {{ ov.reason }}</p>
+  {% endif %}
+  </div>
+</details>
 {% endblock %}

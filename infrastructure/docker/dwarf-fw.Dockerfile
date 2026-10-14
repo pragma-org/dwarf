@@ -2,12 +2,18 @@ ARG PYTHON_BASE=python@sha256:46cb7cc2877e60fbd5e21a9ae6115c30ace7a077b9f8772da8
 FROM ${PYTHON_BASE}
 
 ARG DWARF_SOURCE_REVISION=unknown
+ARG DWARF_COMPONENT_ROLE=dashboard
+ARG DWARF_CATALOG_REVISION=unknown
 ARG SOURCE_DATE_EPOCH=0
 ARG DEBIAN_SNAPSHOT=20260429T000000Z
 ARG BASH_VERSION=5.2.37-2+b8
 ARG CA_CERTIFICATES_VERSION=20250419
 ARG DOCKER_IO_VERSION=26.1.5+dfsg1-9+b12
+ARG DOCKER_CLI_VERSION=26.1.5+dfsg1-9+b12
+ARG DOCKER_COMPOSE_VERSION=2.26.1-4
 ARG JQ_VERSION=1.7.1-6+deb13u1
+ARG LIBSODIUM_VERSION=1.0.18-1+deb13u1
+ARG LIBSECP256K1_VERSION=0.5.0-2+b1
 ARG OPENSSH_CLIENT_VERSION=1:10.0p1-7+deb13u2
 ARG RSYNC_VERSION=3.4.1+ds1-5+deb13u1
 ARG TMUX_VERSION=3.5a-3
@@ -24,8 +30,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DWARF_SOURCE_REVISION=${DWARF_SOURCE_REVISION} \
     SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 
-LABEL org.opencontainers.image.source="https://github.com/pragma-org/dwarf" \
-      org.opencontainers.image.revision=${DWARF_SOURCE_REVISION}
+LABEL org.opencontainers.image.title="DWARF dashboard" \
+      org.opencontainers.image.source="https://github.com/pragma-org/dwarf" \
+      org.opencontainers.image.revision=${DWARF_SOURCE_REVISION} \
+      io.dwarf.component.role=${DWARF_COMPONENT_ROLE} \
+      io.dwarf.catalog.revision=${DWARF_CATALOG_REVISION}
 
 RUN printf 'Acquire::Check-Valid-Until "false";\nAcquire::Check-Date "false";\n' >/etc/apt/apt.conf.d/90snapshot \
     && cat >/etc/apt/sources.list.d/debian.sources <<EOF
@@ -47,7 +56,11 @@ RUN apt-get update \
         bash=${BASH_VERSION} \
         ca-certificates=${CA_CERTIFICATES_VERSION} \
         docker.io=${DOCKER_IO_VERSION} \
+        docker-cli=${DOCKER_CLI_VERSION} \
+        docker-compose=${DOCKER_COMPOSE_VERSION} \
         jq=${JQ_VERSION} \
+        libsodium23=${LIBSODIUM_VERSION} \
+        libsecp256k1-2=${LIBSECP256K1_VERSION} \
         openssh-client=${OPENSSH_CLIENT_VERSION} \
         rsync=${RSYNC_VERSION} \
         tmux=${TMUX_VERSION} \
@@ -61,8 +74,17 @@ RUN useradd --create-home --uid 1000 dwarf \
 WORKDIR /home/dwarf/dwarf-fw
 
 COPY dwarf/ /home/dwarf/dwarf-fw/dwarf/
+COPY antithesis/cardano_amaru_relay_bootstrap_control/ /home/dwarf/dwarf-fw/antithesis/cardano_amaru_relay_bootstrap_control/
 COPY infrastructure/docker/dwarf-fw-entrypoint.sh /usr/local/bin/dwarf-fw-entrypoint
 COPY infrastructure/docker/requirements-framework.txt /tmp/requirements-framework.txt
+
+RUN PYTHONPATH=/home/dwarf/dwarf-fw/dwarf \
+    python3 -m profile_manager.release_identity generate \
+      --dwarf-root /home/dwarf/dwarf-fw/dwarf \
+      --output /home/dwarf/dwarf-fw/dwarf/release-identity.json \
+      --component-role "${DWARF_COMPONENT_ROLE}" \
+      --release-revision "${DWARF_SOURCE_REVISION}" \
+      --catalog-revision "${DWARF_CATALOG_REVISION}"
 
 RUN chmod +x /usr/local/bin/dwarf-fw-entrypoint \
     && python3 -m pip install --no-compile --require-hashes -r /tmp/requirements-framework.txt \

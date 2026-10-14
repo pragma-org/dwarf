@@ -30,10 +30,12 @@ env.globals["asset_v"] = (_os.environ.get("DWARF_SOURCE_REVISION") or "dev")[:12
 
 import contextvars as _ctxvars
 
-# View toggle (Basic vs Advanced/Bento). Set per-request by the HTTP handler
-# from the dwarf_view cookie / ?view= query. Falls back to "bento" when unset
-# so non-HTTP renders and tests keep the committed Advanced behaviour.
-CURRENT_VIEW = _ctxvars.ContextVar("dwarf_view", default=None)
+# View context, set per-request only by an explicit ?view=advanced query.
+# Basic is the canonical fallback for HTTP and direct renders; no cookie
+# or navigation action makes Advanced a sticky preference.
+CURRENT_VIEW: _ctxvars.ContextVar[str | None] = _ctxvars.ContextVar(
+    "dwarf_view", default=None
+)
 CURRENT_PATH = _ctxvars.ContextVar("dwarf_path", default="/")
 
 
@@ -42,7 +44,7 @@ def set_current_view(value):
 
 
 def current_view():
-    return CURRENT_VIEW.get() or "bento"
+    return CURRENT_VIEW.get() or "basic"
 
 
 def set_current_path(value):

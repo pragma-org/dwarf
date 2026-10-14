@@ -1,0 +1,335 @@
+name: DWARF release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: dwarf-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'pragma-org/dwarf'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: release
+    env:
+      DASHBOARD_REPOSITORY: ghcr.io/${{ github.repository_owner }}/dwarf
+      CONTROLLER_REPOSITORY: ghcr.io/${{ github.repository_owner }}/dwarf-controller
+      GOLDEN_AMARU_IMAGE: ${{ vars.DWARF_GOLDEN_AMARU_IMAGE }}
+      GOLDEN_CARDANO_IMAGE: ${{ vars.DWARF_GOLDEN_CARDANO_IMAGE }}
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve immutable release identity
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=${GITHUB_REF_NAME}
+          revision=$(git rev-parse HEAD)
+          source_date_epoch=$(git show -s --format=%ct HEAD)
+          if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "unsupported release tag: ${version}" >&2
+            exit 1
+          fi
+          test "$(git rev-list -n 1 "${version}")" = "${revision}"
+          {
+            echo "version=${version}"
+            echo "revision=${revision}"
+            echo "source_date_epoch=${source_date_epoch}"
+          } >>"${GITHUB_OUTPUT}"
+
+      - name: Validate configured golden image identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest_reference='^[a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?/[a-z0-9]+([._/-][a-z0-9]+)*@sha256:[0-9a-f]{64}$'
+          for value in "${GOLDEN_AMARU_IMAGE}" "${GOLDEN_CARDANO_IMAGE}"; do
+            if [[ ! "${value}" =~ ${digest_reference} ]]; then
+              echo "golden image variables must be non-empty digest-pinned OCI references" >&2
+              exit 1
+            fi
+          done
+
+      - name: Validate release signing key
+        env:
+          DWARF_RELEASE_SIGNING_KEY: ${{ secrets.DWARF_RELEASE_SIGNING_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "${DWARF_RELEASE_SIGNING_KEY}"
+          signing_key=${RUNNER_TEMP}/dwarf-release-preflight-key.pem
+          derived_public_key=${RUNNER_TEMP}/dwarf-release-preflight-public.pem
+          trap 'rm -f -- "${signing_key}" "${derived_public_key}"' EXIT HUP INT TERM
+          printf '%s' "${DWARF_RELEASE_SIGNING_KEY}" >"${signing_key}"
+          openssl pkey -in "${signing_key}" -check -noout >/dev/null
+          openssl pkey -pubin -in delivery/dwarf-release-public.pem -noout >/dev/null
+          openssl pkey -in "${signing_key}" -pubout -out "${derived_public_key}" >/dev/null
+          test "$(openssl pkey -pubin -in delivery/dwarf-release-public.pem -outform DER | sha256sum | awk '{print $1}')" = \
+            "$(openssl pkey -pubin -in "${derived_public_key}" -outform DER | sha256sum | awk '{print $1}')"
+
+      - name: Gate release on installer and bundle contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --quiet 'jsonschema[format]==4.25.1'
+          bash delivery/tests/test_installer_contract.sh
+
+      - name: Log in to the GitHub container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prove configured golden images are multi-architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          for reference in "${GOLDEN_AMARU_IMAGE}" "${GOLDEN_CARDANO_IMAGE}"
+          do
+            raw=$(docker buildx imagetools inspect --raw "${reference}")
+            jq -e '[.manifests[].platform | [.os, .architecture]] | index(["linux", "amd64"]) != null' <<<"${raw}" >/dev/null
+            jq -e '[.manifests[].platform | [.os, .architecture]] | index(["linux", "arm64"]) != null' <<<"${raw}" >/dev/null
+          done
+
+      - name: Build and publish dashboard image index
+        id: dashboard
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/dwarf-fw.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            ${{ env.DASHBOARD_REPOSITORY }}:${{ steps.release.outputs.version }}
+            ${{ env.DASHBOARD_REPOSITORY }}:git-${{ steps.release.outputs.revision }}
+          build-args: |
+            DWARF_SOURCE_REVISION=${{ steps.release.outputs.revision }}
+            DWARF_COMPONENT_ROLE=dashboard
+            DWARF_CATALOG_REVISION=${{ steps.release.outputs.revision }}
+            SOURCE_DATE_EPOCH=${{ steps.release.outputs.source_date_epoch }}
+
+      - name: Build and publish controller image index
+        id: controller
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/dwarf-controller.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            ${{ env.CONTROLLER_REPOSITORY }}:${{ steps.release.outputs.version }}
+            ${{ env.CONTROLLER_REPOSITORY }}:git-${{ steps.release.outputs.revision }}
+          build-args: |
+            DWARF_FRAMEWORK_IMAGE=${{ env.DASHBOARD_REPOSITORY }}@${{ steps.dashboard.outputs.digest }}
+            DWARF_SOURCE_REVISION=${{ steps.release.outputs.revision }}
+            DWARF_CATALOG_REVISION=${{ steps.release.outputs.revision }}
+
+      - name: Prove both release image indexes are multi-architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          for reference in \
+            "${DASHBOARD_REPOSITORY}@${{ steps.dashboard.outputs.digest }}" \
+            "${CONTROLLER_REPOSITORY}@${{ steps.controller.outputs.digest }}"
+          do
+            raw=$(docker buildx imagetools inspect --raw "${reference}")
+            jq -e '[.manifests[].platform | [.os, .architecture]] | index(["linux", "amd64"]) != null' <<<"${raw}" >/dev/null
+            jq -e '[.manifests[].platform | [.os, .architecture]] | index(["linux", "arm64"]) != null' <<<"${raw}" >/dev/null
+          done
+
+      - name: Assemble checksummed release bundle and signed manifest
+        env:
+          DWARF_RELEASE_SIGNING_KEY: ${{ secrets.DWARF_RELEASE_SIGNING_KEY }}
+          DASHBOARD_DIGEST: ${{ steps.dashboard.outputs.digest }}
+          CONTROLLER_DIGEST: ${{ steps.controller.outputs.digest }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_REVISION: ${{ steps.release.outputs.revision }}
+          SOURCE_DATE_EPOCH: ${{ steps.release.outputs.source_date_epoch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "${DWARF_RELEASE_SIGNING_KEY}"
+
+          output=${RUNNER_TEMP}/dwarf-release
+          payload=${output}/payload
+          mkdir -p "${payload}" dist
+          signing_key=${RUNNER_TEMP}/dwarf-release-signing-key.pem
+          public_key=delivery/dwarf-release-public.pem
+          derived_public_key=${RUNNER_TEMP}/dwarf-release-derived-public-key.pem
+          trap 'rm -f -- "${signing_key}" "${derived_public_key}"' EXIT HUP INT TERM
+          printf '%s' "${DWARF_RELEASE_SIGNING_KEY}" >"${signing_key}"
+          openssl pkey -in "${signing_key}" -check -noout >/dev/null
+          openssl pkey -pubin -in "${public_key}" -noout >/dev/null
+          openssl pkey -in "${signing_key}" -pubout -out "${derived_public_key}" >/dev/null
+          test "$(openssl pkey -pubin -in "${public_key}" -outform DER | sha256sum | awk '{print $1}')" = \
+            "$(openssl pkey -pubin -in "${derived_public_key}" -outform DER | sha256sum | awk '{print $1}')"
+          PUBLIC_KEY_PATH=${public_key} python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          source = Path("delivery/install.sh").read_text(encoding="utf-8")
+          public_key = Path(os.environ["PUBLIC_KEY_PATH"]).read_text(encoding="utf-8").strip()
+          placeholder = """-----BEGIN PUBLIC KEY-----
+          DWARF_RELEASE_PUBLIC_KEY_NOT_CONFIGURED
+          -----END PUBLIC KEY-----"""
+          if source.count(placeholder) != 1:
+              raise SystemExit("installer public-key placeholder is missing or duplicated")
+          Path(os.environ["RUNNER_TEMP"], "dwarf-release", "payload", "install.sh").write_text(
+              source.replace(placeholder, public_key), encoding="utf-8"
+          )
+          PY
+          cp delivery/docker-compose.dwarf.yml "${payload}/docker-compose.dwarf.yml"
+          cp delivery/scripts/backup.sh "${payload}/backup.sh"
+          cp delivery/scripts/doctor.sh "${payload}/doctor.sh"
+          cp delivery/scripts/migrate.sh "${payload}/migrate.sh"
+          cp delivery/scripts/release-status.sh "${payload}/status.sh"
+          cp delivery/scripts/update.sh "${payload}/update.sh"
+          cp delivery/scripts/uninstall.sh "${payload}/uninstall.sh"
+          cp delivery/release-manifest.schema.json "${payload}/release-manifest.schema.json"
+          mkdir -p "${payload}/catalog/scenarios" \
+            "${payload}/catalog/targets/manifests" \
+            "${payload}/catalog/profiles"
+          cp dwarf/scenarios/*.yaml "${payload}/catalog/scenarios/"
+          cp dwarf/targets/manifests/*.yaml "${payload}/catalog/targets/manifests/"
+          for profile in dwarf/profiles/*/profile.yaml; do
+            profile_id=$(basename "$(dirname "${profile}")")
+            mkdir -p "${payload}/catalog/profiles/${profile_id}"
+            cp "${profile}" "${payload}/catalog/profiles/${profile_id}/profile.yaml"
+          done
+          chmod 0755 "${payload}/install.sh" "${payload}/backup.sh" "${payload}/doctor.sh" \
+            "${payload}/migrate.sh" "${payload}/status.sh" "${payload}/update.sh" "${payload}/uninstall.sh"
+
+          bundle_file="dwarf-${RELEASE_VERSION}-${RELEASE_REVISION}.tar.gz"
+          tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
+            -C "${payload}" -cf - . | gzip -n >"dist/${bundle_file}"
+
+          export BUNDLE_FILE="${bundle_file}"
+          export BUNDLE_SHA256=$(sha256sum "dist/${bundle_file}" | awk '{print $1}')
+          export CATALOG_SHA256=$(
+            while IFS= read -r file; do
+              relative=${file#"${payload}/catalog/"}
+              printf '%s  %s\n' "$(sha256sum "${file}" | awk '{print $1}')" "${relative}"
+            done < <(find "${payload}/catalog" -type f | LC_ALL=C sort) |
+              sha256sum | awk '{print $1}'
+          )
+          export INSTALLER_SHA256=$(sha256sum "${payload}/install.sh" | awk '{print $1}')
+          export SCHEMA_SHA256=$(sha256sum "${payload}/release-manifest.schema.json" | awk '{print $1}')
+          export COMPOSE_SHA256=$(sha256sum "${payload}/docker-compose.dwarf.yml" | awk '{print $1}')
+          export BACKUP_SHA256=$(sha256sum "${payload}/backup.sh" | awk '{print $1}')
+          export DOCTOR_SHA256=$(sha256sum "${payload}/doctor.sh" | awk '{print $1}')
+          export MIGRATE_SHA256=$(sha256sum "${payload}/migrate.sh" | awk '{print $1}')
+          export STATUS_SHA256=$(sha256sum "${payload}/status.sh" | awk '{print $1}')
+          export UPDATE_SHA256=$(sha256sum "${payload}/update.sh" | awk '{print $1}')
+          export UNINSTALL_SHA256=$(sha256sum "${payload}/uninstall.sh" | awk '{print $1}')
+          export RELEASED_AT=$(date -u -d "@${SOURCE_DATE_EPOCH}" '+%Y-%m-%dT%H:%M:%SZ')
+          export DASHBOARD_IMAGE="${DASHBOARD_REPOSITORY}@${DASHBOARD_DIGEST}"
+          export CONTROLLER_IMAGE="${CONTROLLER_REPOSITORY}@${CONTROLLER_DIGEST}"
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = {
+              "schema_version": "1",
+              "release_version": os.environ["RELEASE_VERSION"],
+              "release_revision": os.environ["RELEASE_REVISION"],
+              "released_at": os.environ["RELEASED_AT"],
+              "supported_platforms": ["linux-amd64", "darwin-arm64"],
+              "data_schema_version": 1,
+              "minimum_installer_version": "1.2.0",
+              "dashboard_image": os.environ["DASHBOARD_IMAGE"],
+              "controller_image": os.environ["CONTROLLER_IMAGE"],
+              "golden_amaru_image": os.environ["GOLDEN_AMARU_IMAGE"],
+              "golden_cardano_image": os.environ["GOLDEN_CARDANO_IMAGE"],
+              "bundle_file": os.environ["BUNDLE_FILE"],
+              "bundle_sha256": os.environ["BUNDLE_SHA256"],
+              "catalog_sha256": os.environ["CATALOG_SHA256"],
+              "installer_file": "install.sh",
+              "installer_sha256": os.environ["INSTALLER_SHA256"],
+              "schema_file": "release-manifest.schema.json",
+              "schema_sha256": os.environ["SCHEMA_SHA256"],
+              "compose_file": "docker-compose.dwarf.yml",
+              "compose_sha256": os.environ["COMPOSE_SHA256"],
+              "backup_file": "backup.sh",
+              "backup_sha256": os.environ["BACKUP_SHA256"],
+              "doctor_file": "doctor.sh",
+              "doctor_sha256": os.environ["DOCTOR_SHA256"],
+              "migrate_file": "migrate.sh",
+              "migrate_sha256": os.environ["MIGRATE_SHA256"],
+              "status_file": "status.sh",
+              "status_sha256": os.environ["STATUS_SHA256"],
+              "update_file": "update.sh",
+              "update_sha256": os.environ["UPDATE_SHA256"],
+              "uninstall_file": "uninstall.sh",
+              "uninstall_sha256": os.environ["UNINSTALL_SHA256"],
+          }
+          Path("dist/release-manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          python3 -m pip install --disable-pip-version-check --quiet 'jsonschema[format]==4.25.1'
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from jsonschema import Draft202012Validator, FormatChecker
+
+          schema = json.loads(Path("delivery/release-manifest.schema.json").read_text())
+          manifest = json.loads(Path("dist/release-manifest.json").read_text())
+          Draft202012Validator(schema, format_checker=FormatChecker()).validate(manifest)
+          PY
+
+          openssl dgst -sha256 -sign "${signing_key}" \
+            -out dist/release-manifest.sig dist/release-manifest.json
+          openssl dgst -sha256 -verify "${public_key}" \
+            -signature dist/release-manifest.sig dist/release-manifest.json
+
+          cp "${payload}/install.sh" dist/install.sh
+
+          (
+            cd dist
+            sha256sum "${bundle_file}" install.sh release-manifest.json release-manifest.sig >SHA256SUMS
+          )
+
+      - name: Attach immutable release artifacts to the tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "${RELEASE_VERSION}" \
+            --verify-tag \
+            --title "DWARF ${RELEASE_VERSION}" \
+            --generate-notes \
+            dist/dwarf-*.tar.gz \
+            dist/install.sh \
+            dist/release-manifest.json \
+            dist/release-manifest.sig \
+            dist/SHA256SUMS

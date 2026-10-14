@@ -32,15 +32,21 @@
   {% set _ = cards.append({'title': row.key, 'kicker': ns.glabel, 'tier': 'face', 'group': ns.grp,
       'suit': ('▲' if on and ns.grp == 'safety' else '■'), 'tone': ('dk-g-warn' if on and ns.grp == 'safety' else 'dk-g-other'),
       'sub': row.description,
-      'facts': [('Value', shown), ('Default', ('empty' if (row.default or '') in ('', '[]', '{}') and is_struct else (row.default or '—') if not is_struct else 'see Advanced'))],
+      'facts': [('Value', shown), ('Default', ('empty' if (row.default or '') in ('', '[]', '{}') and is_struct else (row.default or '—') if not is_struct else 'see Edit settings'))],
       'tags': tags, 'search': row.source ~ ' ' ~ row.type}) %}
 {% endfor %}
 {% set _ = groups.append(('other', 'Other')) if rows|rejectattr('key', 'in', known)|list else none %}
 {% set answer = (rows|length ~ ' settings; ' ~ cfg.changed ~ ' differ from the default.') if config_present else ('Config file missing — all ' ~ rows|length ~ ' settings are running on defaults.') %}
 {% call deck_head('Operate · Config', answer,
-   'A read-only snapshot of ' ~ config_path ~ ', grouped by what each setting controls. Secret values (passwords, tokens, keys) are shown only as “***redacted***” and are never echoed here. Nested blocks such as moog are summarised; the full values are in Advanced.') %}
-  <p><a class="dk-btn dk-btn--solid" href="/operate/config/edit?token={{ token }}">Edit settings →</a></p>
+   'A read-only snapshot of ' ~ config_path ~ ', grouped by what each setting controls. Secret values (passwords, tokens, keys) are shown only as “***redacted***” and are never echoed here. Nested blocks such as moog are summarised; use Edit settings for their full values.') %}
+  <p><a class="dk-btn dk-btn--solid" href="/operate/config/edit">Edit settings →</a></p>
 {% endcall %}
+<section class="basic-only dk dk-op-section" aria-labelledby="local-runtime-support-heading">
+  <h2 id="local-runtime-support-heading" class="dk-op-h">Local runtime support</h2>
+  <p class="dk-plain"><strong>Supported now:</strong> one local machine using Docker Engine on Linux amd64 or Docker Desktop with Compose on macOS arm64. The dashboard and managed services stay loopback-bound by default.</p>
+  <p class="dk-note"><strong>Deferred:</strong> Podman, Remote execution, and multi-host operation. The remote settings below are retained for future compatibility; this local-first release does not treat them as a supported Basic execution path.</p>
+  <p class="dk-row"><a class="dk-btn dk-btn--solid" href="/run">Start a local run</a><a class="dk-btn" href="/operate/status">Check local readiness</a></p>
+</section>
 {% set sorted_cards = [] %}{% for g, gl in groups %}{% for c in cards if c.group == g %}{% set _ = sorted_cards.append(c) %}{% endfor %}{% endfor %}
 {{ deck_grid(sorted_cards, label='settings', groups=groups, empty='No settings found.') }}
 <section class="basic-only dk dk-op-section" aria-labelledby="dk-op-moog-h">
@@ -50,8 +56,8 @@
 {% endif %}
 <div class="adv-only">
 <span class="eyebrow">Operate · Config</span>
-<h1>Config <a class="cta" style="float:right;font-size:.8rem" href="/operate/config/edit?token={{ token }}">Edit settings &rarr;</a></h1>
-<p class="page-hero">Config view for <code>{{ config_path }}</code>{% if not config_present %} (file missing — every row falls back to its default){% endif %}. This table is a read-only snapshot; <a href="/operate/config/edit?token={{ token }}"><strong>Edit settings</strong></a> opens an editable form for every field. The Moog + Antithesis setup panel below can also save values into the Dwarf <code>moog</code> config block.</p>
+<h1>Config <a class="cta" style="float:right;font-size:.8rem" href="/operate/config/edit">Edit settings &rarr;</a></h1>
+<p class="page-hero">Config view for <code>{{ config_path }}</code>{% if not config_present %} (file missing — every row falls back to its default){% endif %}. This table is a read-only snapshot; <a href="/operate/config/edit"><strong>Edit settings</strong></a> opens an editable form for every field. The Moog + Antithesis setup panel below can also save values into the Dwarf <code>moog</code> config block.</p>
 
 <hr class="hairline">
 </div>
@@ -62,7 +68,8 @@
     <h2 id="moog-setup-heading">Moog + Antithesis setup</h2>
   </header>
   <p>Values can come from Docker environment variables, including entries loaded from the package <code>.env</code> file at deploy time, or from this form. Environment values take display precedence over saved config. Secret fields are saved when entered, but are not echoed back into the form; leave a secret field blank to keep the current value.</p>
-  <form class="moog-setup-form" method="post" action="/api/moog/setup?token={{ token or 'dwarf' }}">
+  <form class="moog-setup-form" method="post" action="/api/moog/setup">
+    <input type="hidden" name="token" value="{{ token or 'dwarf' }}">
     {% for group in moog_setup.groups %}
     <fieldset class="moog-setup-form__group">
       <legend>{{ group.name }}</legend>

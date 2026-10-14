@@ -3,10 +3,10 @@
   "id": "cardano-measurement-e2e-stock",
   "title": "Cardano-node stock measurements — real-node end-to-end proof",
   "authors": ["dwarf"],
-  "tags": ["cardano-node", "measurement", "stock", "real-node", "end-to-end", "fresh-profile-deploy-required"],
+  "tags": ["cardano-node", "measurement", "stock", "real-node", "end-to-end", "fresh-profile-deploy-required", "golden-quickstart", "digest-pinned-multi-arch"],
   "evidence_intent": "candidate",
   "promotion_blockers": [
-    "Run only after profile-s-cardano-measurement-stock-control was freshly deployed through DWARF and its exact runtime identity was verified.",
+    "Prepare profile-s-cardano-measurement-stock-control through DWARF and verify its exact runtime identity before Run is enabled.",
     "This bounded proof validates the measurement path; it does not establish a performance threshold or vulnerability."
   ],
   "target": {"implementation": "cardano-node", "version": "11.1.2"},

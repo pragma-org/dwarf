@@ -1,0 +1,63 @@
+{% macro discovery_filters(prefix, facets, counts) %}
+<div class="scenario-discovery__controls" data-discovery-controls>
+  <div class="scenario-discovery__search-row">
+    <label for="{{ prefix }}-scenario-search">Find a scenario</label>
+    <input id="{{ prefix }}-scenario-search" type="search" autocomplete="off" placeholder="Search titles, purpose, aliases, technical IDs or checks" data-discovery-query>
+    <label class="scenario-discovery__maintenance"><input type="checkbox" data-discovery-show-maintenance> Show health/smoke checks <span>({{ counts.hidden_health }} hidden by default)</span></label>
+  </div>
+  {% for group, label in [('implementation', 'Implementation'), ('goal', 'Security goal')] %}
+  <fieldset class="scenario-discovery__facet scenario-discovery__facet--primary"><legend>{{ label }}</legend>
+    <button type="button" data-facet-clear="{{ group }}" aria-pressed="true">All</button>
+    {% for option in facets[group] %}<button type="button" data-facet-group="{{ group }}" data-facet-value="{{ option.value }}" aria-pressed="false">{{ option.label }} <span>{{ option.count }}</span></button>{% endfor %}
+  </fieldset>
+  {% endfor %}
+  {% for group, label in [('threat_model', 'Threat Model'), ('risk_register', 'Risk Register')] %}
+  <fieldset class="scenario-discovery__facet scenario-discovery__facet--searchable"><legend class="visually-hidden">{{ label }}</legend>
+    <details class="scenario-discovery__facet-options"><summary>Choose {{ label }} entries</summary>
+    <label class="scenario-discovery__option-search">Find a {{ 'threat' if group == 'threat_model' else 'risk' }}
+      <input type="search" autocomplete="off" placeholder="Search {{ 'TM ID or threat' if group == 'threat_model' else 'RR ID or risk' }}" data-facet-option-search="{{ group }}">
+    </label>
+    <div data-facet-options="{{ group }}">
+      <button type="button" data-facet-clear="{{ group }}" aria-pressed="true">All</button>
+      {% for option in facets[group] %}<button type="button" data-facet-group="{{ group }}" data-facet-value="{{ option.value }}" data-facet-label="{{ option.label|lower }}" aria-pressed="false">{{ option.label }} <span>{{ option.count }}</span></button>{% endfor %}
+    </div>
+    </details>
+  </fieldset>
+  {% endfor %}
+  <details class="scenario-discovery__more"><summary>More filters</summary>
+  {% for group, label in [('execution', 'Execution type'), ('recommended', 'Recommended'), ('compatibility', 'Compatibility'), ('capability', 'Local capability'), ('evidence', 'Evidence')] %}
+  <fieldset class="scenario-discovery__facet"><legend>{{ label }}</legend>
+    <button type="button" data-facet-clear="{{ group }}" aria-pressed="true">All</button>
+    {% for option in facets[group] %}<button type="button" data-facet-group="{{ group }}" data-facet-value="{{ option.value }}" aria-pressed="false">{{ option.label }} <span>{{ option.count }}</span></button>{% endfor %}
+  </fieldset>
+  {% endfor %}
+  </details>
+  <div class="scenario-discovery__actions">
+    <button type="button" class="cta cta--ghost scenario-discovery__clear" data-discovery-clear>Clear filters</button>
+  </div>
+  <p class="scenario-discovery__count" data-discovery-count aria-live="polite">{{ counts.families }} families · {{ counts.variants }} exact variants</p>
+</div>
+{% endmacro %}
+
+{% macro scenario_facet_attributes(scenario) -%}
+data-scenario-card data-scenario-id="{{ scenario.id }}" data-scenario-family="{{ scenario.family_key }}" data-maintenance="{{ scenario.maintenance.state }}" data-search="{{ scenario.search_text }}" data-facet-implementation="{{ scenario.implementation_facets|join(' ') }}" data-facet-execution="{{ scenario.execution_type }}" data-facet-goal="{{ scenario.security_goals|join(' ') }}" data-facet-recommended="{{ 'recommended' if scenario.recommended else '' }}" data-facet-compatibility="{{ scenario.compatibility.state }}" data-facet-capability="{{ scenario.local_capability.state }}" data-facet-evidence="{{ scenario.evidence.state }}" data-facet-threat-model="{{ scenario.threat_model_ids|join(' ') }}" data-facet-risk-register="{{ scenario.risk_register_ids|join(' ') }}"
+{%- endmacro %}
+
+{% macro scenario_face(scenario, show_context=true) %}
+<span class="scenario-picker__title">{{ scenario.friendly_title }}</span>
+<span class="scenario-picker__purpose" data-scenario-purpose>{{ scenario.purpose }}</span>
+<span class="scenario-picker__check" data-scenario-check>{{ scenario.security_check }}</span>
+<span class="scenario-picker__badges">
+  <span class="scenario-picker__badge scenario-picker__badge--implementation">{{ scenario.topology_scope }}</span>
+  <span class="scenario-picker__badge">Target: {{ scenario.primary_target }}</span>
+  <span class="scenario-picker__badge">Participants: {% for participant in scenario.implementation_participants %}{{ 'Amaru' if participant == 'amaru' else 'Cardano' if participant == 'cardano-node' else 'Other' }}{% if not loop.last %} + {% endif %}{% endfor %}</span>
+  <span class="scenario-picker__badge">{{ scenario.execution_type|replace('-', ' ') }}</span>
+  {% for goal in scenario.security_goals %}<span class="scenario-picker__badge">{{ goal|replace('-', ' ') }}</span>{% endfor %}
+  {% if scenario.measurement_state == 'measurement-enabled' %}<span class="scenario-picker__badge">Measurement-enabled</span>{% endif %}
+  {% if scenario.recommended %}<span class="scenario-picker__badge scenario-picker__badge--recommended">Recommended</span>{% endif %}
+  {% if scenario.evidence.state == 'retained-proof' %}<span class="scenario-picker__badge scenario-picker__badge--proof">✓ Retained evidence</span>{% else %}<span class="scenario-picker__badge scenario-picker__badge--neutral">No linked run evidence</span>{% endif %}
+</span>
+<span class="scenario-picker__requirements">Exact variant: {{ scenario.variant_requirements|join(' · ') }}</span>
+{% if scenario.evidence.state != 'retained-proof' %}<span class="scenario-picker__evidence-detail">{{ scenario.evidence.reason }}</span>{% endif %}
+{% if show_context and scenario.context_links %}<details class="scenario-discovery__context"><summary>Related context</summary><ul>{% for item in scenario.context_links %}<li><a href="{{ item.href }}"{% if item.href.startswith('http') %} target="_blank" rel="noreferrer"{% endif %}>{{ item.label }}</a><span>{{ item.scope }}</span></li>{% endfor %}</ul></details>{% endif %}
+{% endmacro %}

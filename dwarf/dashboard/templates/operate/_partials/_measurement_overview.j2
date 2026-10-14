@@ -13,7 +13,7 @@
     <p class="dk-mviz__sub">What this run captured, at a glance. Pick a category card to filter the report; select any measurement below to chart its distribution here.</p>
   </div>
   <div class="dk-mviz__top">
-    {% if tot %}
+    {% if tot and ui != "basic" %}
     <figure class="dk-mviz__donut">
       <svg viewBox="0 0 42 42" class="dk-donut" role="img"
            aria-label="{{ avail }} of {{ tot }} metrics measured, {{ pct }} percent; {{ unavail }} unavailable">
@@ -46,6 +46,21 @@
   {% if mm.presentation and mm.presentation.categories %}
   <div class="dk-mviz__cards" aria-label="Measurement categories — click a card to filter the report">
     {% set ns = namespace(i=0) %}
+    {% if ui == "basic" %}
+    {% for group in mm.presentation.groups %}
+    {% set available = namespace(count=0) %}{% for metric in group.cards %}{% if metric.metric_type != 'unavailable' and metric.status != 'reserved' %}{% set available.count = available.count + 1 %}{% endif %}{% endfor %}
+    {% if available.count %}
+    {% set ns.i = ns.i + 1 %}
+    <a class="dk-card dk-mviz__tcard" href="#measurement-report-heading" data-mviz-cat="{{ group.id }}"
+       aria-label="{{ group.label }}: {{ available.count }} measured metric{{ '' if available.count == 1 else 's' }}. Filter the report.">
+      <span class="dk-face dk-mviz__tface">
+        <span class="dk-mviz__tcard-top"><span class="dk-mviz__tcard-idx">{{ '%02d'|format(ns.i) }}</span><span class="dk-mviz__tcard-suit" aria-hidden="true">&#9830;</span></span>
+        <span class="dk-mviz__tcard-title">{{ group.label }}</span>
+        <span class="dk-mviz__tcard-n">{{ available.count }}<small>metric{{ '' if available.count == 1 else 's' }}</small></span>
+      </span>
+    </a>
+    {% endif %}{% endfor %}
+    {% else %}
     {% for cat in mm.presentation.categories %}{% if cat.id != 'unavailable' %}
     {% set ns.i = ns.i + 1 %}
     <a class="dk-card dk-mviz__tcard" href="#measurement-report-heading" data-mviz-cat="{{ cat.id }}"
@@ -60,6 +75,7 @@
       </span>
     </a>
     {% endif %}{% endfor %}
+    {% endif %}
   </div>
   {% endif %}
 </section>

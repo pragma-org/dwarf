@@ -20,6 +20,8 @@ CSS = ROOT / "dwarf/dashboard/static/css/base.css"
 
 def test_client_card_evidence_uses_the_authoritative_runtime_runs_root(monkeypatch, tmp_path):
     monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(tmp_path))
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path.parent / "state"))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path.parent / "bundles"))
     run_id = "20260920T235440Z-050046a4"
     assert client_example_evidence._run_manifest_path(run_id) == tmp_path / run_id / "manifest.json"
 

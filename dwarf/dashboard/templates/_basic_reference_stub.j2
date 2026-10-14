@@ -5,9 +5,9 @@
 <section class="basic-only" aria-label="Basic summary">
   <p class="b-note">{{ summary }}</p>
   <div class="b-loop" style="margin-top:20px">
-    <a class="b-step" href="{{ request_path }}?view=advanced"><span class="num">FULL PAGE</span>
-      <h3>Open in Advanced</h3><p>{{ advanced_hint or 'This is a long reference document. Open the complete version in the Advanced view.' }}</p>
-      <span class="cta">Open the full reference &rarr;</span></a>
+    <div class="b-step"><span class="num">FULL PAGE</span>
+      <h3>Full reference</h3><p>{{ advanced_hint or 'This is a long reference document.' }}</p>
+      <p>This concise page links to the supported operator and reference surfaces where they are needed.</p></div>
   </div>
 </section>
 {% endblock %}

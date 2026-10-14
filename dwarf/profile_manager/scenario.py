@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +32,9 @@ ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 HOST_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 SUBSTRATE_NETWORK_PATTERN = re.compile(r"^(mainnet|preprod|preview|testnet_[1-9][0-9]*)$")
 VALID_SUBSTRATE_COMPOSE_MODES = ("host", "docker")
+_DECIMAL_SEED_PATTERN = re.compile(r"^(0|[1-9][0-9]*)$")
+_HEX_SEED_PATTERN = re.compile(r"^0[xX][0-9a-fA-F]+$")
+_MAX_SEED = (1 << 64) - 1
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "primitives" / "registry.json"
 COMPARE_DIFF_METRICS = (
     "preview_chain_bytes_delta",
@@ -189,6 +193,8 @@ class ScenarioMeasurementSelection:
 class Scenario:
     id: str
     title: str
+    authors: List[str]
+    tags: List[str]
     target: Dict[str, str]
     runtime: str
     profile: Optional[str]
@@ -322,6 +328,26 @@ def _validate_top(body):
     if not isinstance(shrink, bool):
         raise ScenarioValidationError("shrink must be a boolean")
     return scenario_id, title, target, runtime, profile, substrate, iterations, shrink
+
+
+def _validate_seed(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ScenarioValidationError(
+            "seed must be an unsigned decimal integer or 0x hexadecimal value"
+        )
+    text = str(value)
+    if not (
+        _DECIMAL_SEED_PATTERN.fullmatch(text)
+        or _HEX_SEED_PATTERN.fullmatch(text)
+    ):
+        raise ScenarioValidationError(
+            "seed must be an unsigned decimal integer or 0x hexadecimal value"
+        )
+    if int(text, 0) > _MAX_SEED:
+        raise ScenarioValidationError("seed must fit in an unsigned 64-bit integer")
+    return value
 
 
 def _validate_substrate(value):
@@ -874,7 +900,7 @@ def measurement_auto_attach_target(scen, *, env=None) -> bool:
     return scen.target.get("implementation") in MEASUREMENT_AUTO_ATTACH_IMPLEMENTATIONS
 
 
-def prepare_auto_measurements(scen):
+def prepare_auto_measurements(scen, *, expected_resolution=None):
     """Prepare scenario measurements, returning ``(prepared, skip_reason)``.
 
     Explicit intent fails loud: a scenario that asked to be measured must not
@@ -891,7 +917,12 @@ def prepare_auto_measurements(scen):
     if not explicit and not measurement_auto_attach_target(scen):
         return None, None
     try:
-        return prepare_scenario_measurements(scen), None
+        kwargs = (
+            {"expected_resolution": expected_resolution}
+            if expected_resolution is not None
+            else {}
+        )
+        return prepare_scenario_measurements(scen, **kwargs), None
     except (MeasurementExecutionError, MeasurementResolutionError) as exc:
         if explicit:
             raise
@@ -912,7 +943,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                  framework_version="0.1.0", framework_commit=None, actor="shared:dwarf",
                  topology_preflight=None, topology_redeploy=None,
                  auto_redeploy_unhealthy=None, measurement_context=None,
-                 measurement_collector_factories=None):
+                 measurement_collector_factories=None,
+                 run_kind="scenario", origin="forensic", backend="local",
+                 run_service_plan=None, scenario_definition=None,
+                 registry_definition=None, defer_ledger_terminal=False):
     """Execute a scenario end-to-end, producing a forensic bundle.
 
     v1 runs setup → load → per-iteration probe fan-out → assertions → teardown.
@@ -921,12 +955,21 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     import random
     from profile_manager import forensic, primitives, telemetry, testcase_lifecycle
 
-    scen = load_scenario(path)
-    registry = primitives.load_registry(registry_path or DEFAULT_REGISTRY_PATH)
+    scen = scenario_definition if scenario_definition is not None else load_scenario(path)
+    registry = (
+        registry_definition
+        if registry_definition is not None
+        else primitives.load_registry(registry_path or DEFAULT_REGISTRY_PATH)
+    )
     prepared_measurements = None
     measurement_auto_skip = None
     if measurement_context is None:
-        prepared_measurements, measurement_auto_skip = prepare_auto_measurements(scen)
+        from profile_manager.launch_store import measurement_resolution_from_environment
+
+        expected_measurements = measurement_resolution_from_environment()
+        prepared_measurements, measurement_auto_skip = prepare_auto_measurements(
+            scen, expected_resolution=expected_measurements
+        )
         if prepared_measurements is not None:
             measurement_context = prepared_measurements.resolution
     seed = scen.seed if scen.seed is not None else 0
@@ -955,7 +998,25 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         state_dir=state_dir,
         measurement_context=measurement_context,
         expected_security_finding=scen.expected_security_finding,
+        run_kind=run_kind,
+        origin=origin,
+        backend=backend,
+        run_service_plan=run_service_plan,
+        defer_ledger_terminal=defer_ledger_terminal,
     )
+    if prepared_measurements is not None:
+        # Keep the exact controller-retained runtime selected by measurement
+        # preparation available to runtime-aware scenario primitives.  Those
+        # primitives must not reconstruct a legacy host path after collectors
+        # have already bound to this deployed topology.
+        handle._prepared_runtime_metadata_path = (
+            prepared_measurements.runtime_metadata_path
+        )
+    if run_service_plan is not None:
+        (handle.run_dir / "inputs" / "run-service-plan.json").write_text(
+            json.dumps(run_service_plan, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     from profile_manager.launch_store import retain_launch_inputs_from_environment
 
     retain_launch_inputs_from_environment(handle.run_dir)
@@ -1140,6 +1201,56 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         handle._measurement_runtime = measurement_runtime
         handle.set_measurement_context(measurement_runtime.snapshot())
 
+    amaru_trace_capture = None
+    if (
+        measurement_runtime is not None
+        and scen.runtime == "devnet"
+        and scen.profile
+        and scen.target.get("implementation") == "amaru"
+    ):
+        capture_params = {"profile_id": scen.profile}
+        if prepared_measurements is not None:
+            capture_params["runtime_metadata_path"] = str(
+                prepared_measurements.runtime_metadata_path
+            )
+        try:
+            capture_target = primitives_module._resolve_client_runtime_target(
+                handle, capture_params
+            )
+        except Exception as exc:  # noqa: BLE001 - evidence must survive capture setup failure
+            handle.log(
+                phase="measurement",
+                primitive="amaru-scenario-trace",
+                level="warning",
+                event="node_trace_unavailable",
+                payload={"reason": str(exc)[:512], "stage": "start"},
+            )
+        else:
+            amaru_trace_capture = {
+                "target": capture_target,
+                "capture_params": capture_params,
+                "started_at": datetime.now(timezone.utc).isoformat().replace(
+                    "+00:00", "Z"
+                ),
+                "destination": (
+                    handle.run_dir
+                    / "outputs"
+                    / "amaru-measurement-run"
+                    / "raw"
+                    / "amaru-relay-1.ndjson"
+                ),
+            }
+            handle.log(
+                phase="measurement",
+                primitive="amaru-scenario-trace",
+                level="info",
+                event="node_trace_capture_started",
+                payload={
+                    "node_id": capture_target.get("id"),
+                    "started_at": amaru_trace_capture["started_at"],
+                },
+            )
+
     observer = telemetry.ObserverCollector(metrics_dir=handle.run_dir / "metrics", pid=os.getpid())
     observer.start()
 
@@ -1310,12 +1421,53 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         except Exception:
             pass
     finally:
+        if amaru_trace_capture is not None:
+            ended_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            try:
+                current_target = primitives_module._resolve_client_runtime_target(
+                    handle, amaru_trace_capture["capture_params"]
+                )
+                identity_fields = (
+                    "id",
+                    "implementation",
+                    "container",
+                    "runtime_metadata_path",
+                )
+                if any(
+                    current_target.get(field)
+                    != amaru_trace_capture["target"].get(field)
+                    for field in identity_fields
+                ):
+                    raise RuntimeError(
+                        "measured Amaru runtime target changed during scenario"
+                    )
+                trace_summary = primitives_module._capture_amaru_measurement_window(
+                    current_target,
+                    started_at=amaru_trace_capture["started_at"],
+                    ended_at=ended_at,
+                    destination=amaru_trace_capture["destination"],
+                )
+            except Exception as exc:  # noqa: BLE001 - never lose terminal evidence
+                handle.log(
+                    phase="measurement",
+                    primitive="amaru-scenario-trace",
+                    level="warning",
+                    event="node_trace_unavailable",
+                    payload={"reason": str(exc)[:512], "stage": "finish"},
+                )
+            else:
+                handle.log(
+                    phase="measurement",
+                    primitive="amaru-scenario-trace",
+                    level="info",
+                    event="node_trace_captured",
+                    payload={**trace_summary, "ended_at": ended_at},
+                )
         observer.stop()
         handle.set_telemetry_summary(observer.summarize())
         if measurement_runtime is not None:
             measurement_result = measurement_runtime.finalize()
             handle.set_measurement_context(measurement_result)
-            overall = measurement_runtime.scenario_exit_status(overall)
 
     handle.end(
         exit_status=overall,
@@ -1336,39 +1488,57 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     return handle
 
 
-def verify_gate(exit_status, assertions):
+def verify_gate(exit_status, assertions, measurements=None):
     """Pure local-behavioral gate predicate. Returns (state, reason).
 
     'pass' iff the run finished cleanly (exit_status == 'pass') AND at least
     one assertion passed AND none failed. Zero assertions is a failure: it
     means the scenario did not actually exercise the target (the silent
     'looked clean but never ran' trap)."""
-    if exit_status != "pass":
-        return "fail", f"run exit_status={exit_status!r}"
-    assertions = assertions or {}
-    if assertions.get("fail", 0) > 0:
-        return "fail", f"{assertions['fail']} assertion(s) failed"
-    if assertions.get("pass", 0) <= 0:
-        return "fail", "no assertions passed (scenario did not exercise the target)"
-    return "pass", ""
+    from profile_manager.scenario_verdict import evaluate_scenario_verdict
+
+    verdict = evaluate_scenario_verdict(
+        exit_status=exit_status,
+        assertions=assertions,
+        measurements=measurements,
+        run_kind="scenario",
+    )
+    if verdict.security_verdict == "pass":
+        return "pass", ""
+    reasons = {
+        "operational-outcome-not-pass": f"run exit_status={exit_status!r}",
+        "assertions-failed": f"{(assertions or {}).get('fail', 0)} assertion(s) failed",
+        "no-passing-assertions": "no assertions passed (scenario did not exercise the target)",
+        "required-measurement-evidence-missing": (
+            "required measurement evidence missing: "
+            + ", ".join(verdict.measurement_failures)
+        ),
+    }
+    return "fail", "; ".join(reasons[code] for code in verdict.reason_codes)
 
 
 def verify_scenario(path, *, runs_dir, state_dir, registry_path=None):
     """Run a scenario locally and apply verify_gate to its manifest result.
     Returns {state, reason, run_id, exit_status, assertions}."""
-    import json as _json
+    from profile_manager import run_service
 
-    handle = run_scenario(
-        path, runs_dir=runs_dir, state_dir=state_dir, registry_path=registry_path
+    result = run_service.execute_run(
+        run_service.RunRequest(
+            scenario_path=path,
+            origin="cli",
+            runs_dir=runs_dir,
+            state_dir=state_dir,
+            registry_path=registry_path,
+        )
     )
-    manifest = _json.loads((handle.run_dir / "manifest.json").read_text())
+    manifest = result["manifest"]
     exit_status = manifest.get("exit_status")
     assertions = manifest.get("assertion_summary") or {}
-    state, reason = verify_gate(exit_status, assertions)
+    state, reason = verify_gate(exit_status, assertions, manifest.get("measurements"))
     return {
         "state": state,
         "reason": reason,
-        "run_id": handle.run_id,
+        "run_id": result["run_id"],
         "exit_status": exit_status,
         "assertions": assertions,
     }
@@ -1380,9 +1550,25 @@ def run_scenario_backend(path, *, backend, runs_dir, state_dir, registry_path=No
     antithesis = generate + statically verify a native bundle (launch is a
     separate Moog step)."""
     if backend == "local-devnet":
-        return {"backend": "local-devnet",
-                "result": run_scenario(path, runs_dir=runs_dir, state_dir=state_dir,
-                                       registry_path=registry_path)}
+        from types import SimpleNamespace
+        from profile_manager import run_service
+
+        executed = run_service.execute_run(
+            run_service.RunRequest(
+                scenario_path=path,
+                origin="cli",
+                runs_dir=runs_dir,
+                state_dir=state_dir,
+                registry_path=registry_path,
+            )
+        )
+        return {
+            "backend": "local-devnet",
+            "result": SimpleNamespace(
+                run_id=executed["run_id"],
+                run_dir=Path(executed["run_dir"]),
+            ),
+        }
     if backend == "antithesis":
         from profile_manager import antithesis_generator as gen
         if not out_dir:
@@ -1399,6 +1585,8 @@ def run_scenario_backend(path, *, backend, runs_dir, state_dir, registry_path=No
 class CompareResult:
     runs: dict  # {"amaru": RunHandle, "cardano-node": RunHandle}
     agreed: bool
+    comparable: bool
+    status: str
     comparison_path: "Path"
     comparison_json_path: "Path | None" = None
     run_outcomes: dict | None = None
@@ -1406,8 +1594,124 @@ class CompareResult:
     resource_summaries: dict | None = None
 
 
+def compare_preflight(scenario_path) -> dict[str, Any]:
+    """Check external inputs that must exist before a compare can create runs.
+
+    Most compare scenarios are self-contained.  The qualified Cardano CBOR
+    dataset scenario is intentionally not: it requires a separately qualified
+    source checkout.  Refuse it before either implementation run is created
+    when that input is absent instead of producing two matching failures.
+    """
+    scen = load_scenario(scenario_path)
+    refs = list(scen.load)
+    for phase in scen.phases:
+        refs.extend(phase.load)
+    for ref in refs:
+        if ref.primitive != "runtime_cardano_cbor_dataset_differential":
+            continue
+        config = dict(ref.params)
+        for field_name in ("dataset_repo_dir", "dataset_dir"):
+            raw = str(config.get(field_name) or "")
+            variables = re.findall(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))", raw)
+            for braced, plain in variables:
+                name = braced or plain
+                if not os.environ.get(name):
+                    return {
+                        "ready": False,
+                        "code": "compare-requirement-unavailable",
+                        "message": f"Required compare input {name} is not configured.",
+                        "requirement": name,
+                    }
+            resolved = Path(os.path.expanduser(os.path.expandvars(raw)))
+            if not raw or not resolved.is_dir():
+                return {
+                    "ready": False,
+                    "code": "compare-requirement-unavailable",
+                    "message": f"Required compare input {field_name} is unavailable.",
+                    "requirement": field_name,
+                }
+        try:
+            from scripts import runtime_cardano_cbor_dataset_differential as dataset_runtime
+
+            dataset_runtime.validate_qualified_dataset_contract(config)
+            repo_dir = Path(
+                os.path.expanduser(os.path.expandvars(str(config["dataset_repo_dir"])))
+            ).resolve()
+            actual_revision = dataset_runtime._git_revision(repo_dir)
+            if actual_revision != str(config["expected_source_revision"]):
+                raise ValueError(
+                    "source revision mismatch: expected "
+                    f"{config['expected_source_revision']}, got {actual_revision}"
+                )
+            dataset_dir = Path(
+                os.path.expanduser(os.path.expandvars(str(config["dataset_dir"])))
+            ).resolve()
+            dataset_runtime._select_inputs(
+                dataset_dir,
+                str(config["rule"]),
+                int(config.get("samples_per_category", 10)),
+            )
+            manifests_dir = Path(
+                os.path.expanduser(os.path.expandvars(str(config["manifests_dir"])))
+            ).resolve()
+            dataset_runtime._load_target(str(config["reference_target_id"]), manifests_dir)
+            dataset_runtime._load_target(str(config["candidate_target_id"]), manifests_dir)
+            verifier_binary = config.get("reference_verifier_binary")
+            verifier_image = config.get("reference_verifier_image")
+            if bool(verifier_binary) == bool(verifier_image):
+                raise ValueError(
+                    "configure exactly one reference_verifier_binary or reference_verifier_image"
+                )
+            if verifier_binary:
+                binary = Path(
+                    os.path.expanduser(os.path.expandvars(str(verifier_binary)))
+                ).resolve()
+                if not binary.is_file() or not os.access(binary, os.X_OK):
+                    raise FileNotFoundError(
+                        f"reference verifier binary is not executable: {binary}"
+                    )
+            else:
+                identity = dataset_runtime._inspect_container_image(
+                    str(config.get("docker_binary", "docker")),
+                    str(verifier_image),
+                )
+                requested = str(config.get("reference_verifier_platform", "linux/amd64"))
+                actual = f"{identity.get('os')}/{identity.get('architecture')}"
+                if requested != actual:
+                    raise ValueError(
+                        f"reference verifier platform mismatch: expected {requested}, got {actual}"
+                    )
+        except (KeyError, OSError, TypeError, ValueError, RuntimeError) as exc:
+            return {
+                "ready": False,
+                "code": "compare-requirement-unavailable",
+                "message": f"Qualified compare input is unavailable: {exc}",
+                "requirement": "runtime_cardano_cbor_dataset_differential",
+            }
+    return {
+        "ready": True,
+        "code": "ready",
+        "message": "Compare requirements are available.",
+        "requirement": None,
+    }
+
+
+def _compare_status(a_manifest, c_manifest, *, iteration_diff_rows) -> tuple[str, bool, bool]:
+    operationally_complete = all(
+        manifest.get("exit_status") == "pass"
+        for manifest in (a_manifest, c_manifest)
+    )
+    if not operationally_complete:
+        return ("INCOMPLETE", False, False)
+    agreed = (
+        a_manifest.get("assertion_summary") == c_manifest.get("assertion_summary")
+        and not iteration_diff_rows
+    )
+    return ("AGREED" if agreed else "DIVERGED", agreed, True)
+
+
 def compare_run(scenario_path, *, runs_dir, state_dir, registry_path=None,
-                implementation_manifest_dirs=None):
+                implementation_manifest_dirs=None, origin="cli"):
     """Run a scenario against both implementations (amaru, cardano-node) and diff.
 
     The scenario's `target.implementation` is overridden per run. For scenarios
@@ -1420,6 +1724,9 @@ def compare_run(scenario_path, *, runs_dir, state_dir, registry_path=None,
     import tempfile
     from pathlib import Path as _P
 
+    preflight = compare_preflight(scenario_path)
+    if not preflight["ready"]:
+        raise ScenarioValidationError(preflight["message"])
     original = load_scenario(scenario_path)
     implementations = ("amaru", "cardano-node")
     runs = {}
@@ -1451,9 +1758,21 @@ def compare_run(scenario_path, *, runs_dir, state_dir, registry_path=None,
             f.write(json.dumps(body))
             tmp_path = _P(f.name)
         try:
-            handle = run_scenario(
-                tmp_path, runs_dir=runs_dir, state_dir=state_dir,
-                registry_path=registry_path,
+            from types import SimpleNamespace
+            from profile_manager import run_service
+
+            executed = run_service.execute_run(
+                run_service.RunRequest(
+                    scenario_path=tmp_path,
+                    origin=origin,
+                    runs_dir=runs_dir,
+                    state_dir=state_dir,
+                    registry_path=registry_path,
+                )
+            )
+            handle = SimpleNamespace(
+                run_id=executed["run_id"],
+                run_dir=Path(executed["run_dir"]),
             )
             runs[impl] = handle
         finally:
@@ -1479,11 +1798,6 @@ def compare_run(scenario_path, *, runs_dir, state_dir, registry_path=None,
         "amaru": testcase_lifecycle.summarize_run_resources(run_dir=runs["amaru"].run_dir),
         "cardano-node": testcase_lifecycle.summarize_run_resources(run_dir=runs["cardano-node"].run_dir),
     }
-    agreed = (
-        a_manifest.get("exit_status") == c_manifest.get("exit_status")
-        and a_manifest.get("assertion_summary") == c_manifest.get("assertion_summary")
-    )
-
     # Per-iteration outcome comparison for cbor_fuzz_target scenarios.
     a_outcomes = _extract_outcomes_from_dir(runs["amaru"].run_dir)
     c_outcomes = _extract_outcomes_from_dir(runs["cardano-node"].run_dir)
@@ -1493,8 +1807,11 @@ def compare_run(scenario_path, *, runs_dir, state_dir, registry_path=None,
         c_out = co.get("outcome")
         if a_out != c_out:
             iteration_diff_rows.append((i, a_out, c_out))
-    if iteration_diff_rows:
-        agreed = False
+    status_label, agreed, comparable = _compare_status(
+        a_manifest,
+        c_manifest,
+        iteration_diff_rows=iteration_diff_rows,
+    )
 
     # Emit comparison markdown into the second run's directory (cardano-node),
     # since compare is conceptually a follow-up to the amaru run. Content is
@@ -1502,7 +1819,6 @@ def compare_run(scenario_path, *, runs_dir, state_dir, registry_path=None,
     cmp_dir = runs["cardano-node"].run_dir
     cmp_path = cmp_dir / "cross-impl-comparison.md"
     cmp_json_path = cmp_dir / "cross-impl-comparison.json"
-    status_label = "AGREED" if agreed else "DIVERGED"
     iter_section = ""
     if iteration_diff_rows:
         iter_section = (
@@ -1555,6 +1871,7 @@ def compare_run(scenario_path, *, runs_dir, state_dir, registry_path=None,
         "scenario_id": original.id,
         "seed": original.seed,
         "agreed": agreed,
+        "comparable": comparable,
         "runs": {
             "amaru": {
                 "run_id": runs["amaru"].run_id,
@@ -1580,6 +1897,8 @@ def compare_run(scenario_path, *, runs_dir, state_dir, registry_path=None,
     return CompareResult(
         runs=runs,
         agreed=agreed,
+        comparable=comparable,
+        status=status_label,
         comparison_path=cmp_path,
         comparison_json_path=cmp_json_path,
         run_outcomes=run_outcomes,
@@ -1743,8 +2062,21 @@ def replay_run(run_id, *, runs_dir, state_dir, registry_path=None):
     staged = original_dir / ".replay-input.yaml"
     staged.write_bytes(scenario_path.read_bytes())
     try:
-        replay = run_scenario(
-            staged, runs_dir=runs_dir, state_dir=state_dir, registry_path=registry_path,
+        from types import SimpleNamespace
+        from profile_manager import run_service
+
+        executed = run_service.execute_run(
+            run_service.RunRequest(
+                scenario_path=staged,
+                origin="replay",
+                runs_dir=runs_dir,
+                state_dir=state_dir,
+                registry_path=registry_path,
+            )
+        )
+        replay = SimpleNamespace(
+            run_id=executed["run_id"],
+            run_dir=Path(executed["run_dir"]),
         )
     finally:
         try:
@@ -1919,19 +2251,37 @@ def save_scenario_body(body_bytes, *, scenarios_dir):
     own ``id`` field determines the filename — the caller's URL or
     filename is not trusted.
     """
-    report = validate_scenario_body(body_bytes)
-    if not report.get("ok"):
-        return report
-    scenarios_dir = Path(scenarios_dir)
-    scenario_id = report["scenario_id"]
-    if not _SAFE_ID.match(scenario_id):
-        return {"ok": False, "error": f"unsafe scenario id: {scenario_id!r}",
-                "kind": "schema"}
-    scenarios_dir.mkdir(parents=True, exist_ok=True)
-    target = scenarios_dir / f"{scenario_id}.yaml"
-    tmp = target.with_suffix(".yaml.tmp")
-    tmp.write_bytes(body_bytes)
-    os.replace(tmp, target)
+    from profile_manager.data.catalog_definitions import (
+        CatalogError,
+        _parse_source,
+        scenario_reference_lock,
+        validate_live_scenario_references,
+    )
+
+    try:
+        data = _parse_source(body_bytes)
+    except CatalogError:
+        data = None
+    # Validate under the shared lock so a concurrent measurement-profile delete
+    # cannot leave this scenario naming a deleted profile.
+    with scenario_reference_lock(data, scenarios=False):
+        report = validate_scenario_body(body_bytes)
+        if not report.get("ok"):
+            return report
+        try:
+            validate_live_scenario_references(data)
+        except CatalogError as exc:
+            return {"ok": False, "error": str(exc), "kind": "catalog"}
+        scenarios_dir = Path(scenarios_dir)
+        scenario_id = report["scenario_id"]
+        if not _SAFE_ID.match(scenario_id):
+            return {"ok": False, "error": f"unsafe scenario id: {scenario_id!r}",
+                    "kind": "schema"}
+        scenarios_dir.mkdir(parents=True, exist_ok=True)
+        target = scenarios_dir / f"{scenario_id}.yaml"
+        tmp = target.with_suffix(".yaml.tmp")
+        tmp.write_bytes(body_bytes)
+        os.replace(tmp, target)
     return {
         "ok": True,
         "scenario_id": scenario_id,
@@ -1939,6 +2289,21 @@ def save_scenario_body(body_bytes, *, scenarios_dir):
         "runtime": report["runtime"],
         "target": report["target"],
     }
+
+
+def _configured_scenario_lifecycle_catalogs(scenarios_dir):
+    """Return the fixed writable catalog lock set for pending/live promotion."""
+    catalogs = []
+    configured_scenarios = os.environ.get("ADA2_DWARF_SCENARIOS_DIR")
+    if configured_scenarios and Path(configured_scenarios).resolve() == Path(
+        scenarios_dir
+    ).resolve():
+        catalogs.append("scenarios")
+    if os.environ.get("ADA2_DWARF_MEASUREMENT_PROFILES_DIR"):
+        catalogs.append("measurement-profiles")
+    if os.environ.get("ADA2_DWARF_PROFILES_DIR"):
+        catalogs.append("profiles")
+    return tuple(catalogs)
 
 
 def handle_paste(body_bytes, *, scenarios_dir):
@@ -1960,15 +2325,20 @@ def handle_paste(body_bytes, *, scenarios_dir):
     pending_path = _safe_pending_path(scenarios_dir, scenario_id)
     if pending_path is None:
         return {"ok": False, "error": f"invalid or missing scenario id: {scenario_id!r}"}
-    pending_path.write_bytes(body_bytes)
-    try:
-        s = load_scenario(pending_path)
-    except ScenarioValidationError as exc:
+    from profile_manager.data.catalog_definitions import _catalog_write_locks
+
+    with _catalog_write_locks(
+        *_configured_scenario_lifecycle_catalogs(scenarios_dir)
+    ):
+        pending_path.write_bytes(body_bytes)
         try:
-            pending_path.unlink()
-        except OSError:
-            pass
-        return {"ok": False, "error": str(exc), "scenario_id": scenario_id}
+            s = load_scenario(pending_path)
+        except ScenarioValidationError as exc:
+            try:
+                pending_path.unlink()
+            except OSError:
+                pass
+            return {"ok": False, "error": str(exc), "scenario_id": scenario_id}
     return {
         "ok": True,
         "scenario_id": s.id,
@@ -1986,14 +2356,27 @@ def handle_promote(scenario_id, *, scenarios_dir):
     pending = scenarios_dir / "pending" / f"{scenario_id}.yaml"
     if not pending.exists():
         return {"ok": False, "error": f"no pending scenario with id {scenario_id!r}"}
-    try:
-        s = load_scenario(pending)
-    except ScenarioValidationError as exc:
-        return {"ok": False, "error": f"scenario re-validation failed: {exc}"}
-    if s.id != scenario_id:
-        return {"ok": False, "error": f"id mismatch: pending file has id {s.id!r}"}
-    target = scenarios_dir / f"{scenario_id}.yaml"
-    pending.replace(target)
+    from profile_manager.data.catalog_definitions import (
+        CatalogError,
+        _catalog_write_locks,
+        _parse_source,
+        validate_live_scenario_references,
+    )
+
+    with _catalog_write_locks(
+        *_configured_scenario_lifecycle_catalogs(scenarios_dir)
+    ):
+        try:
+            source = pending.read_bytes()
+            data = _parse_source(source)
+            s = load_scenario(pending)
+            validate_live_scenario_references(data)
+        except (OSError, CatalogError, ScenarioValidationError) as exc:
+            return {"ok": False, "error": f"scenario re-validation failed: {exc}"}
+        if s.id != scenario_id:
+            return {"ok": False, "error": f"id mismatch: pending file has id {s.id!r}"}
+        target = scenarios_dir / f"{scenario_id}.yaml"
+        pending.replace(target)
     return {"ok": True, "scenario_id": s.id, "promoted_path": str(target)}
 
 
@@ -2002,6 +2385,8 @@ def _scenario_from_data(body, *, raw, path):
     if not isinstance(body, dict):
         raise ScenarioValidationError("scenario top-level must be a mapping")
     scenario_id, title, target, runtime, profile, substrate, iterations, shrink = _validate_top(body)
+    authors = _optional_string_list(body, "authors")
+    tags = _optional_string_list(body, "tags")
     related_milestones = _optional_string_list(body, "related_milestones")
     m1_trace = _validate_m1_trace(body)
     evidence_intent = _validate_evidence_intent(body)
@@ -2031,11 +2416,13 @@ def _scenario_from_data(body, *, raw, path):
     return Scenario(
         id=scenario_id,
         title=title,
+        authors=authors,
+        tags=tags,
         target=dict(target),
         runtime=runtime,
         profile=profile,
         substrate=substrate,
-        seed=body.get("seed"),
+        seed=_validate_seed(body.get("seed")),
         iterations=iterations,
         shrink=shrink,
         related_milestones=related_milestones,

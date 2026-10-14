@@ -19,6 +19,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from profile_manager.config import storage_roots
+
 
 SUPPORTED_THEMES = (
     "forensic-noir",
@@ -28,10 +30,7 @@ SUPPORTED_THEMES = (
 
 
 def _state_dir() -> Path:
-    env = os.environ.get("ADA2_DWARF_STATE_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[2] / "state"
+    return storage_roots().state
 
 
 def _load_state_config() -> dict[str, Any]:

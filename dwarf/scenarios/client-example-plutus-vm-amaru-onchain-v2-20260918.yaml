@@ -42,17 +42,17 @@
   "load": [
     {
       "primitive": "runtime_version_pinned_plutus_conformance",
-      "cost_model": "/home/nigel/dwarf-pragma/dwarf/corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json",
+      "cost_model": "corpora/cardano-measurement/plutus-v2-cost-model-protocol-v10.json",
       "output_dir": "outputs/plutus-conformance",
       "executions_per_script": 30,
       "adapters": {
         "amaru": {
-          "record": "/home/nigel/.local/share/dwarf/state/measurement-targets/amaru/plutus-conformance/aedfe797a5b8ef00d8b362be40b47a52c3b4a379/a32bbf07fe4351502a55ef25a424a17991f6e81a625c6bb0892c4a6dd37fe9f2.json",
-          "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379"
+          "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+          "adapter_set_sha256": "a32bbf07fe4351502a55ef25a424a17991f6e81a625c6bb0892c4a6dd37fe9f2"
         },
         "cardano-node": {
-          "record": "/home/nigel/.local/share/dwarf/state/measurement-targets/cardano-node/plutus-conformance/fef83fed01d7926f3de83b3b917be5a4a48768b5/0d73dc998d695bd557be97e24bce10f5b25066a8620e77578be6081f4f38fc6e.json",
-          "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+          "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+          "adapter_set_sha256": "0d73dc998d695bd557be97e24bce10f5b25066a8620e77578be6081f4f38fc6e"
         }
       },
       "timeout_seconds": 1200,

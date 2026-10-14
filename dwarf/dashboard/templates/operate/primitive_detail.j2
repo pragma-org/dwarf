@@ -29,7 +29,7 @@
     <h3>Used by {{ primitive.referencing_scenarios|length }} scenario{{ '' if primitive.referencing_scenarios|length == 1 else 's' }}</h3>
     {% if primitive.referencing_scenarios %}
     <ul class="dk-list">{% for scenario_id in primitive.referencing_scenarios[:6] %}<li><a href="/operate/scenarios/{{ scenario_id }}"><code>{{ scenario_id }}</code></a></li>{% endfor %}</ul>
-    {% if primitive.referencing_scenarios|length > 6 %}<p class="dk-note">+{{ primitive.referencing_scenarios|length - 6 }} more in Advanced.</p>{% endif %}
+    {% if primitive.referencing_scenarios|length > 6 %}<p class="dk-note">+{{ primitive.referencing_scenarios|length - 6 }} additional references are recorded in the downloadable definition.</p>{% endif %}
     {% else %}<p class="dkb-p dk-note">○ No configured scenario references this primitive.</p>{% endif %}
   </div>
   <div class="dk-panel">

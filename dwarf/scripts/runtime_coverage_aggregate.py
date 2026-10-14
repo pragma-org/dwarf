@@ -10,6 +10,8 @@ from typing import Any
 
 import yaml
 
+from profile_manager.config import storage_roots
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 DWARF_ROOT = SCRIPT_DIR.parent
 
@@ -335,16 +337,19 @@ def write_report(*, report: dict[str, Any], state_dir: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runs-root", default=str(DWARF_ROOT / "runs"))
+    parser.add_argument("--runs-root")
     parser.add_argument("--manifests-dir", default=str(DWARF_ROOT / "targets" / "manifests"))
-    parser.add_argument("--state-dir", default=str(DWARF_ROOT / "state"))
+    parser.add_argument("--state-dir")
     args = parser.parse_args(argv)
+    roots = storage_roots()
+    runs_root = Path(args.runs_root) if args.runs_root else roots.runs
+    state_dir = Path(args.state_dir) if args.state_dir else roots.state
     report = build_report(
-        runs_root=Path(args.runs_root),
+        runs_root=runs_root,
         manifests_dir=Path(args.manifests_dir),
-        state_dir=Path(args.state_dir),
+        state_dir=state_dir,
     )
-    path = write_report(report=report, state_dir=Path(args.state_dir))
+    path = write_report(report=report, state_dir=state_dir)
     print(json.dumps({"coverage_rollup": str(path), "cell_count": report["cell_count"]}, sort_keys=True))
     return 0
 

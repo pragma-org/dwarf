@@ -18,13 +18,29 @@ DWARF_ROOT = SCRIPT_DIR.parent
 if str(DWARF_ROOT) not in sys.path:
     sys.path.insert(0, str(DWARF_ROOT))
 
-from profile_manager.version_catalog import DEFAULT_CATALOG_PATH, validate_version_catalog
+from profile_manager.version_catalog import (
+    DEFAULT_CATALOG_PATH,
+    enrich_retained_oci_artifacts,
+    validate_version_catalog,
+)
 
 
 REPOSITORIES = {
     "cardano-node": "IntersectMBO/cardano-node",
     "amaru": "pragma-org/amaru",
 }
+
+
+def _supported_oci_platforms(manifest: dict[str, Any]) -> list[str]:
+    return sorted({
+        f"{platform_record.get('os')}/{platform_record.get('architecture')}"
+        for descriptor in manifest.get("manifests") or []
+        if isinstance(descriptor, dict)
+        for platform_record in [descriptor.get("platform")]
+        if isinstance(platform_record, dict)
+        and platform_record.get("os") == "linux"
+        and platform_record.get("architecture") in {"amd64", "arm64"}
+    })
 
 
 def fetch_json_url(url: str) -> Any:
@@ -115,11 +131,13 @@ def resolve_oci_artifacts(implementation: str, tag: str, release: dict[str, Any]
         except (FileNotFoundError, subprocess.TimeoutExpired):
             result = None
         digest = None
+        platforms: list[str] = []
         if result is not None and result.returncode == 0:
             try:
                 manifest = json.loads(result.stdout)
                 if isinstance(manifest, dict):
                     digest = manifest.get("digest") or manifest.get("Digest")
+                    platforms = _supported_oci_platforms(manifest)
                 elif isinstance(manifest, str):
                     digest = manifest
             except json.JSONDecodeError:
@@ -131,6 +149,7 @@ def resolve_oci_artifacts(implementation: str, tag: str, release: dict[str, Any]
                     "reference": reference,
                     "availability": "available",
                     "digest": digest,
+                    "platforms": platforms,
                 }
             )
         else:
@@ -186,9 +205,13 @@ def resolve_oci_artifacts_http(
         )
         with urllib.request.urlopen(manifest_request, timeout=20) as response:
             digest = str(response.headers.get("Docker-Content-Digest") or "")
+            manifest_body = json.loads(response.read() or b"{}")
         if digest.startswith("sha256:") and len(digest) == 71:
             artifact["availability"] = "available"
             artifact["digest"] = digest
+            artifact["public"] = True
+            if isinstance(manifest_body, dict):
+                artifact["platforms"] = _supported_oci_platforms(manifest_body)
     except Exception:
         # Discovery is advisory.  The caller exposes an unresolved artifact as
         # unknown and does not merge it into exact selectors.
@@ -231,10 +254,11 @@ def refresh_version_catalog(
     catalog: dict[str, Any],
     *,
     fetch_json: Callable[[str], Any] = fetch_json_url,
-    artifact_resolver: Callable[[str, str, dict[str, Any]], list[dict[str, Any]]] = resolve_oci_artifacts,
+    artifact_resolver: Callable[[str, str, dict[str, Any]], list[dict[str, Any]]] = resolve_oci_artifacts_http,
     artifact_limit_per_implementation: int | None = None,
     tag_revision_resolver: Callable[[str, str], str] | None = None,
     checked_at: str | None = None,
+    implementations: tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, Any]:
     """Return a deterministic candidate catalog while retaining human evidence."""
 
@@ -244,8 +268,14 @@ def refresh_version_catalog(
         (release["implementation"], release["version"]): copy.deepcopy(release)
         for release in original.get("releases", [])
     }
+    selected = set(implementations or REPOSITORIES)
+    unknown = selected.difference(REPOSITORIES)
+    if not selected or unknown:
+        raise ValueError("implementations must select a known release source")
     discovered: dict[tuple[str, str], dict[str, Any]] = {}
     for implementation, repository in REPOSITORIES.items():
+        if implementation not in selected:
+            continue
         releases_url = f"https://api.github.com/repos/{repository}/releases?per_page=100"
         releases = fetch_json(releases_url)
         if not isinstance(releases, list):
@@ -270,9 +300,37 @@ def refresh_version_catalog(
             prior = existing.get(key)
             # Discovery is additive.  A retained entry may be bound to
             # qualification evidence, so never re-resolve or replace any of
-            # its identity fields from a mutable upstream tag.
+            # its identity fields from a mutable upstream tag.  It is safe to
+            # enrich missing public/platform proof only when the registry
+            # returns the exact retained reference and immutable digest.
             if prior is not None:
-                discovered[key] = copy.deepcopy(prior)
+                retained = copy.deepcopy(prior)
+                needs_platform_proof = any(
+                    isinstance(artifact, dict)
+                    and artifact.get("kind") == "oci"
+                    and artifact.get("availability") == "available"
+                    and artifact.get("reference")
+                    and artifact.get("digest")
+                    and (
+                        artifact.get("public") is not True
+                        or not artifact.get("platforms")
+                    )
+                    for artifact in retained.get("artifacts") or []
+                )
+                should_resolve_artifacts = (
+                    needs_platform_proof
+                    and (
+                        artifact_limit_per_implementation is None
+                        or artifact_lookups < artifact_limit_per_implementation
+                    )
+                )
+                if should_resolve_artifacts:
+                    retained = enrich_retained_oci_artifacts(
+                        retained,
+                        artifact_resolver(implementation, tag, release),
+                    )
+                    artifact_lookups += 1
+                discovered[key] = retained
                 continue
             if tag_revision_resolver is None:
                 commit_url = f"https://api.github.com/repos/{repository}/commits/{tag}"

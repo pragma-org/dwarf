@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from datetime import datetime, timezone
 
-from profile_manager.config import config_exists, config_path, load_config
+from profile_manager.config import config_exists, config_path, load_config, storage_roots
 from profile_manager.config import CONFIG_FIELDS, list_config_values, save_config, set_config_value
 from profile_manager import profile_templates
 from profile_manager import scenario_templates
@@ -167,7 +167,10 @@ def print_banner():
 
 
 def should_suppress_banner(args):
-    return args.command in {"wallet", "moog", "antithesis"} and getattr(args, "json", False)
+    return getattr(args, "json", False) and (
+        args.command in {"wallet", "moog", "antithesis", "migrate"}
+        or (args.command == "doctor" and getattr(args, "doctor_command", None) == "storage")
+    )
 
 
 def build_parser():
@@ -314,10 +317,34 @@ def build_parser():
     moog_create_test.add_argument("--duration", default="1", help="Requested Antithesis run duration in hours.")
     moog_create_test.add_argument("--no-faults", action="store_true", help="Submit with Moog fault injection disabled.")
     moog_create_test.add_argument("--approve", action="store_true", help="Submit the live on-chain create-test (omit for dry-run).")
+    moog_create_test.add_argument("--scenario", help="Optional registered scenario represented by this external run.")
+    moog_create_test.add_argument("--runs-dir")
+    moog_create_test.add_argument("--state-dir")
     moog_create_test.add_argument("--json", action="store_true")
+
+    moog_link_existing = moog_sub.add_parser("link-existing")
+    moog_link_existing.add_argument(
+        "test_run_id", help="Existing Moog test-run id to link without submitting a new run."
+    )
+    moog_link_existing.add_argument(
+        "--scenario", help="Optional registered scenario represented by this external run."
+    )
+    moog_link_existing.add_argument("--runs-dir")
+    moog_link_existing.add_argument("--state-dir")
+    moog_link_existing.add_argument("--json", action="store_true")
 
     moog_test_status = moog_sub.add_parser("test-status")
     moog_test_status.add_argument("test_run_id", help="Moog test-run id returned by create-test.")
+    moog_test_status.add_argument("--run-id", help="DWARF external ledger run id; auto-resolved when the submission returned a Moog id.")
+    moog_test_status.add_argument("--runs-dir")
+    moog_test_status.add_argument("--state-dir")
+    moog_test_status.add_argument("--result-bundle", help="Standard signed DWARF result bundle tarball to verify and link.")
+    moog_test_status.add_argument("--signature-path", help="Detached signature.json for --result-bundle.")
+    moog_test_status.add_argument(
+        "--trusted-public-key-hex",
+        default=os.environ.get("DWARF_EXTERNAL_RESULT_PUBLIC_KEY_HEX"),
+        help="Expected Ed25519 public key for a result bundle allowed to set a test verdict.",
+    )
     moog_test_status.add_argument("--json", action="store_true")
 
     antithesis_p = subcommands.add_parser("antithesis")
@@ -369,6 +396,25 @@ def build_parser():
     doctor.add_argument("--profile-id")
     doctor.add_argument("--runtime-root")
     doctor.add_argument("--dry-run", action="store_true")
+    doctor_subcommands = doctor.add_subparsers(dest="doctor_command")
+    doctor_storage = doctor_subcommands.add_parser("storage")
+    doctor_storage.add_argument("--from", dest="from_paths", action="append", required=True)
+    doctor_storage.add_argument("--json", action="store_true")
+
+    migrate = subcommands.add_parser("migrate")
+    migrate_subcommands = migrate.add_subparsers(dest="migrate_command", required=True)
+    migrate_storage = migrate_subcommands.add_parser("storage")
+    migrate_storage.add_argument("--from", dest="from_path", required=True)
+    mode = migrate_storage.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--apply", action="store_true")
+    migrate_storage.add_argument("--run-id", action="append", dest="run_ids")
+    scope = migrate_storage.add_mutually_exclusive_group()
+    scope.add_argument("--runs-only", action="store_true", help="Apply only run trees; bundles remain read-only inventory.")
+    scope.add_argument("--bundles-only", action="store_true", help="Apply only bundles; run trees remain read-only inventory.")
+    scope.add_argument("--all-components", action="store_true", help="Apply both run trees and non-colliding bundles.")
+    migrate_storage.add_argument("--plan-digest", help="Digest returned by the reviewed dry-run; required with --apply.")
+    migrate_storage.add_argument("--json", action="store_true")
 
     logs = subcommands.add_parser("logs")
     logs_subcommands = logs.add_subparsers(dest="log_action", required=True)
@@ -544,6 +590,12 @@ def build_parser():
     compare.add_argument("--runs-dir")
     compare.add_argument("--state-dir")
     compare.add_argument("--registry-path")
+    compare.add_argument(
+        "--origin",
+        choices=("cli", "dashboard"),
+        default="cli",
+        help=argparse.SUPPRESS,
+    )
     compare.add_argument("--amaru-manifests-dir",
                          help="Directory holding Amaru target manifests (overrides scenario's manifests_dir for the Amaru run).")
     compare.add_argument("--cardano-node-manifests-dir",
@@ -636,11 +688,23 @@ def build_parser():
     scenario_run.add_argument("--backend", choices=("local-devnet", "antithesis"),
                               default="local-devnet",
                               help="Where to run: the local DWARF executor or a native Antithesis test.")
+    scenario_run.add_argument(
+        "--origin",
+        choices=("cli", "dashboard", "scheduler", "replay", "ci", "external"),
+        default="cli",
+        help=argparse.SUPPRESS,
+    )
     scenario_run.add_argument("--out", default=None,
                               help="Output dir for the generated antithesis bundle.")
     scenario_run.add_argument("--registry", default=None,
                               help="Container registry for the antithesis bundle image refs.")
     scenario_run.add_argument("--tag", default="latest")
+    scenario_run.add_argument(
+        "--fuzz-iterations",
+        type=int,
+        default=None,
+        help="Override registered fuzz primitive iteration counts; retained in the Run Service plan.",
+    )
     scenario_run.add_argument("--json", action="store_true")
 
     scenario_verify = scenario_sub.add_parser("verify")
@@ -1179,7 +1243,11 @@ def cmd_moog(args):
         return 0 if summary.get("state") == "ready" else 1
     if args.moog_command == "create-test":
         from profile_manager import remote as _remote
-        from profile_manager.moog import build_moog_create_test_command
+        from profile_manager import run_service
+        from profile_manager.moog import (
+            build_moog_create_test_command,
+            parse_moog_create_test_id,
+        )
         try_number = args.try_number or 1
         command = build_moog_create_test_command(
             moog_config,
@@ -1197,6 +1265,42 @@ def cmd_moog(args):
             else:
                 print(command)
             return 0
+        external = run_service.reserve_external_run(
+            run_service.ExternalRunRequest(
+                backend="antithesis",
+                origin="external",
+                launch={
+                    "transport": "moog",
+                    "repository": args.repo,
+                    "github_user": args.github_user,
+                    "directory": args.directory,
+                    "commit": args.commit,
+                    "try": try_number,
+                    "duration_hours": args.duration,
+                    "faults": not args.no_faults,
+                },
+                runs_dir=Path(args.runs_dir) if args.runs_dir else None,
+                state_dir=Path(args.state_dir) if args.state_dir else None,
+                scenario_path=Path(args.scenario) if args.scenario else None,
+            )
+        )
+        if not external["created"]:
+            retained_state = external["ledger"]["state"]
+            payload = {
+                "state": (
+                    "reconciliation-required"
+                    if retained_state == "queued"
+                    else retained_state
+                ),
+                "idempotent": True,
+                "dwarf_run_id": external["run_id"],
+                "ledger": external["ledger"],
+            }
+            if args.json:
+                print(json.dumps(payload, indent=2))
+            else:
+                print(f"existing DWARF external run: {external['run_id']} ({payload['state']})")
+            return 1 if retained_state in {"queued", "failed"} else 0
         result = _remote.run_moog_create_test(
             config,
             moog_config,
@@ -1210,21 +1314,191 @@ def cmd_moog(args):
             no_faults=args.no_faults,
         )
         state = "submitted" if result.returncode == 0 else "error"
+        external_test_run_id = parse_moog_create_test_id(result.stdout)
+        ledger = run_service.record_external_submission(
+            external["run_id"],
+            state_dir=Path(args.state_dir) if args.state_dir else storage_roots().state,
+            response={
+                "returncode": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "rendered_command": result.rendered_command,
+            },
+            external_test_run_id=external_test_run_id,
+        )
         if args.json:
             print(json.dumps({"state": state, "returncode": result.returncode,
-                              "stdout": result.stdout, "stderr": result.stderr}, indent=2))
+                              "stdout": result.stdout, "stderr": result.stderr,
+                              "external_test_run_id": external_test_run_id,
+                              "dwarf_run_id": external["run_id"],
+                              "ledger": ledger}, indent=2))
         else:
             print(result.stdout or result.stderr)
+            print(f"DWARF run: {external['run_id']}")
         return result.returncode
+    if args.moog_command == "link-existing":
+        from profile_manager import remote as _remote
+        from profile_manager import run_service
+        from profile_manager.moog import parse_test_run_phase
+
+        facts = _remote.fetch_test_run_facts(
+            config, moog_config, args.test_run_id
+        )
+        matches = [
+            item
+            for item in facts
+            if isinstance(item, dict) and item.get("id") == args.test_run_id
+        ]
+        if len(matches) != 1:
+            payload = {
+                "error": "expected exactly one matching Moog test-run fact",
+                "test_run_id": args.test_run_id,
+                "matches": len(matches),
+            }
+            if args.json:
+                print(json.dumps(payload, indent=2, sort_keys=True))
+            else:
+                print(payload["error"], file=sys.stderr)
+            return 1
+        fact = matches[0]
+        raw_key = fact.get("key")
+        key = raw_key if isinstance(raw_key, dict) else {}
+        raw_value = fact.get("value")
+        value = raw_value if isinstance(raw_value, dict) else {}
+        raw_repository = key.get("repository")
+        repository = raw_repository if isinstance(raw_repository, dict) else {}
+        organization = str(repository.get("organization") or "").strip()
+        repository_name = str(repository.get("repo") or "").strip()
+        directory = str(key.get("directory") or "").strip()
+        commit = str(key.get("commitId") or "").strip()
+        if not all((organization, repository_name, directory, commit)):
+            payload = {
+                "error": "Moog fact is missing repository, directory, or commit identity",
+                "test_run_id": args.test_run_id,
+            }
+            if args.json:
+                print(json.dumps(payload, indent=2, sort_keys=True))
+            else:
+                print(payload["error"], file=sys.stderr)
+            return 1
+        raw_predecessor = value.get("from")
+        predecessor = raw_predecessor if isinstance(raw_predecessor, dict) else {}
+        raw_requested = predecessor.get("from")
+        requested = raw_requested if isinstance(raw_requested, dict) else predecessor
+        launch = {
+            "transport": "moog",
+            "mode": "link-existing",
+            "external_test_run_id": args.test_run_id,
+            "repository": f"{organization}/{repository_name}",
+            "github_user": str(key.get("requester") or ""),
+            "directory": directory,
+            "commit": commit,
+            "try": key.get("try"),
+            "duration_hours": value.get("duration") or requested.get("duration"),
+            "faults": requested.get("faults_enabled"),
+        }
+        runs_dir = Path(args.runs_dir) if args.runs_dir else None
+        state_dir = (
+            Path(args.state_dir) if args.state_dir else storage_roots().state
+        )
+        external = run_service.reserve_external_run(
+            run_service.ExternalRunRequest(
+                backend="antithesis",
+                origin="external",
+                launch=launch,
+                runs_dir=runs_dir,
+                state_dir=state_dir,
+                scenario_path=Path(args.scenario) if args.scenario else None,
+            )
+        )
+        linked = run_service.link_existing_external_run(
+            external["run_id"],
+            state_dir=state_dir,
+            external_test_run_id=args.test_run_id,
+            link_evidence={
+                "test_run_id": args.test_run_id,
+                "source": "moog-facts",
+                "facts": [fact],
+            },
+        )
+        phase = parse_test_run_phase([fact])
+        ledger_entry = run_service.reconcile_external_status(
+            external["run_id"],
+            state_dir=state_dir,
+            phase=phase,
+            status_evidence={
+                "test_run_id": args.test_run_id,
+                "phase": phase,
+                "facts": [fact],
+            },
+        )
+        payload = {
+            "test_run_id": args.test_run_id,
+            "phase": phase,
+            "dwarf_run_id": external["run_id"],
+            "created": external["created"],
+            "linked": linked,
+            "ledger": ledger_entry,
+        }
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(
+                f"DWARF run: {external['run_id']} "
+                f"({ledger_entry['state']}/{ledger_entry['verdict'] or 'pending'})"
+            )
+        return 0
     if args.moog_command == "test-status":
         from profile_manager import remote as _remote
+        from profile_manager import run_service
         from profile_manager.moog import parse_test_run_phase
         facts = _remote.fetch_test_run_facts(config, moog_config, args.test_run_id)
         phase = parse_test_run_phase(facts)
+        state_dir = Path(args.state_dir) if args.state_dir else storage_roots().state
+        linked = None
+        ledger_entry = None
+        run_id = args.run_id
+        if not run_id:
+            linked = run_service.find_external_run(
+                args.test_run_id, state_dir=state_dir
+            )
+            run_id = linked["run_id"] if linked else None
+        result_bundle_path = None
+        result_signature_path = None
+        result_runs_dir = None
+        if args.result_bundle:
+            runs_dir = Path(args.runs_dir) if args.runs_dir else storage_roots().runs
+            tarball = Path(args.result_bundle)
+            signature = (
+                Path(args.signature_path)
+                if args.signature_path
+                else tarball.parent / "signature.json"
+            )
+            result_bundle_path = tarball
+            result_signature_path = signature
+            result_runs_dir = runs_dir / ".external-results"
+        if run_id:
+            ledger_entry = run_service.reconcile_external_status(
+                run_id,
+                state_dir=state_dir,
+                phase=phase,
+                status_evidence={
+                    "test_run_id": args.test_run_id,
+                    "phase": phase,
+                    "facts": facts,
+                },
+                result_bundle_path=result_bundle_path,
+                result_signature_path=result_signature_path,
+                trusted_public_key_hex=args.trusted_public_key_hex,
+                result_runs_dir=result_runs_dir,
+            )
         if args.json:
-            print(json.dumps({"test_run_id": args.test_run_id, "phase": phase}, indent=2))
+            print(json.dumps({"test_run_id": args.test_run_id, "phase": phase,
+                              "dwarf_run_id": run_id, "ledger": ledger_entry}, indent=2))
         else:
             print(f"phase: {phase}")
+            if run_id and ledger_entry is not None:
+                print(f"DWARF run: {run_id} ({ledger_entry['state']})")
         return 0
     return 2
 
@@ -1581,6 +1855,82 @@ def cmd_doctor(args):
     if result.stderr:
         print(result.stderr, file=sys.stderr, end="")
     return result.returncode
+
+
+def cmd_storage_doctor(args):
+    from profile_manager.data.storage_reconciliation import (
+        inventory_resolved_storage,
+        inventory_storage,
+        public_inventory,
+    )
+
+    roots = storage_roots()
+    payload = {
+        "schema_version": "dwarf-storage-doctor-v1",
+        "destination": {
+            "runs": str(roots.runs),
+            "state": str(roots.state),
+            "bundles": str(roots.bundles),
+            "mode": roots.mode,
+        },
+        "destination_inventory": public_inventory(inventory_resolved_storage(roots)),
+        "sources": [public_inventory(inventory_storage(path)) for path in args.from_paths],
+    }
+    if args.json:
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        for source in payload["sources"]:
+            counts = source["runs"]["counts"]
+            print(
+                f"{source['source_root']}: complete={counts['complete']} "
+                f"incomplete={counts['incomplete']} invalid={counts['invalid']} "
+                f"unreadable={counts['unreadable']}"
+            )
+    return 0
+
+
+def cmd_storage_migrate(args):
+    from profile_manager.data.storage_reconciliation import (
+        StorageReconciliationError,
+        reconcile_storage,
+    )
+
+    try:
+        if args.apply and not (args.runs_only or args.bundles_only or args.all_components):
+            raise StorageReconciliationError(
+                "--apply requires explicit component scope: --runs-only, --bundles-only, or --all-components"
+            )
+        if args.apply and not args.plan_digest:
+            raise StorageReconciliationError(
+                "--apply requires --plan-digest from a reviewed dry-run"
+            )
+        include_runs = not args.bundles_only
+        include_bundles = bool(args.bundles_only or args.all_components)
+        payload = reconcile_storage(
+            args.from_path,
+            destination=storage_roots(),
+            run_ids=args.run_ids,
+            apply=bool(args.apply),
+            include_runs=include_runs,
+            include_bundles=include_bundles,
+            expected_plan_digest=args.plan_digest,
+        )
+    except (OSError, ValueError, StorageReconciliationError) as exc:
+        if args.json:
+            print(json.dumps({"status": "refused", "error": str(exc)}, sort_keys=True))
+        else:
+            print(f"Storage migration refused: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(f"Storage migration {payload['status']} ({payload['mode']})")
+        print(f"Runs to import: {len(payload['runs']['import'])}")
+        print(f"Run collisions: {len(payload['runs']['collision'])}")
+        print(f"Bundle mode: {payload['bundles']['mode']}")
+        if payload.get("receipt_path"):
+            print(f"Receipt: {payload['receipt_path']}")
+    return 0
 
 
 def cmd_logs(args):
@@ -2032,19 +2382,13 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 def _forensic_runs_dir(args):
     if getattr(args, "runs_dir", None):
         return Path(args.runs_dir)
-    env = os.environ.get("ADA2_DWARF_RUNS_DIR")
-    if env:
-        return Path(env)
-    return PACKAGE_ROOT / "runs"
+    return storage_roots().runs
 
 
 def _forensic_state_dir(args):
     if getattr(args, "state_dir", None):
         return Path(args.state_dir)
-    env = os.environ.get("ADA2_DWARF_STATE_DIR")
-    if env:
-        return Path(env)
-    return PACKAGE_ROOT / "state"
+    return storage_roots().state
 
 
 def _synthetic_scenario_yaml(kind, scenario_id, label, environment, commands, profile, dry_run=False):
@@ -2428,12 +2772,13 @@ def cmd_compare(args):
         state_dir=state_dir,
         registry_path=registry_path,
         implementation_manifest_dirs=impl_dirs or None,
+        origin=getattr(args, "origin", "cli"),
     )
     print(f"amaru run_id:        {result.runs['amaru'].run_id}")
     print(f"cardano-node run_id: {result.runs['cardano-node'].run_id}")
-    print(f"Result: {'AGREED' if result.agreed else 'DIVERGED'}")
+    print(f"Result: {result.status}")
     print(f"Comparison: {result.comparison_path}")
-    return 0 if result.agreed else 1
+    return 0 if result.agreed and result.comparable else 1
 
 
 def cmd_testcase(args):
@@ -2677,22 +3022,25 @@ def cmd_scenario(args):
                 for reason in verify["reasons"]:
                     print(f"  - {reason}")
             return 0 if verify["state"] == "pass" else 1
-        runs_dir = _forensic_runs_dir(args)
-        state_dir = _forensic_state_dir(args)
-        handle = scenario_module.run_scenario(
-            args.path,
-            runs_dir=runs_dir,
-            state_dir=state_dir,
-            registry_path=registry_path,
+        from profile_manager import run_service
+
+        result = run_service.execute_run(
+            run_service.RunRequest(
+                scenario_path=args.path,
+                origin=getattr(args, "origin", "cli"),
+                runs_dir=_forensic_runs_dir(args),
+                state_dir=_forensic_state_dir(args),
+                registry_path=registry_path,
+                fuzz_iterations=getattr(args, "fuzz_iterations", None),
+            )
         )
-        manifest_path = handle.run_dir / "manifest.json"
-        import json as _json
-        manifest = _json.loads(manifest_path.read_text())
-        print(f"run_id: {handle.run_id}")
+        manifest = result["manifest"]
+        print(f"run_id: {result['run_id']}")
         print(f"exit_status: {manifest['exit_status']}")
+        print(f"security_verdict: {manifest['execution']['security_verdict']}")
         print(f"assertions: {manifest['assertion_summary']}")
-        print(f"bundle: {handle.run_dir}")
-        return 0 if manifest["exit_status"] == "pass" else 1
+        print(f"bundle: {result['run_dir']}")
+        return 0 if manifest["execution"]["security_verdict"] == "pass" else 1
     if args.scenario_command == "verify":
         runs_dir = _forensic_runs_dir(args)
         state_dir = _forensic_state_dir(args)
@@ -3210,78 +3558,32 @@ def cmd_bundle(args):
         return 0
 
     if args.bundle_command == "import":
-        if args.runs_dir:
-            helper_script = Path(__file__).resolve().parents[1] / "scripts" / "bundle_import.py"
-            proc = subprocess.run(
-                [
-                    sys.executable,
-                    str(helper_script),
-                    str(args.tarball_path),
-                    "--runs-dir",
-                    str(args.runs_dir),
-                ],
-                text=True,
-                capture_output=True,
-                check=False,
-                env=os.environ.copy(),
-            )
-            if proc.stdout:
-                print(proc.stdout, end="")
-            if proc.stderr:
-                print(proc.stderr, file=sys.stderr, end="")
-            return proc.returncode
-        tarball_path = Path(args.tarball_path)
-        signature_path = Path(args.signature_path) if args.signature_path else tarball_path.parent / "signature.json"
-        target_run_id = tarball_path.name.removesuffix("-bundle-export.tar.gz")
-        if not signature_path.exists():
-            print(
-                json.dumps(
-                    {
-                        "target_run_id": target_run_id,
-                        "verdict": "unsigned",
-                        "manifest_sha256_recomputed": None,
-                        "manifest_sha256_signed": None,
-                        "tarball_path": str(tarball_path),
-                        "signature_artifact": str(signature_path),
-                    },
-                    sort_keys=True,
-                )
-            )
-            return 0
-
-        export_helper_script = Path(__file__).resolve().parents[1] / "scripts" / "runtime_bundle_export.py"
-        sys.path.insert(0, str(export_helper_script.parent))
-        import runtime_bundle_export as bundle_export_helper
-
-        verification = bundle_export_helper.verify_export_signature(tarball_path.parent)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            extract_root = Path(tmpdir) / "imported"
-            extract_root.mkdir(parents=True, exist_ok=True)
-            with tarfile.open(tarball_path, "r:gz") as handle:
-                handle.extractall(extract_root)
-            readme_path = extract_root / "README-export.txt"
-            bundle_roots = sorted(path for path in extract_root.iterdir() if path.is_dir())
-            bundle_root = bundle_roots[0] if bundle_roots else None
-            if bundle_root is not None:
-                target_run_id = bundle_root.name
-            payload = {
-                "target_run_id": target_run_id,
-                "tarball_path": str(tarball_path),
-                "signature_artifact": str(signature_path),
-                "readme_present": readme_path.exists(),
-                "extracted_bundle_root": str(bundle_root) if bundle_root else None,
-                "has_promotion_artifact": bool(bundle_root and (bundle_root / "outputs" / "promotion" / "promotion.json").exists()),
-                "has_dedupe_artifact": bool(bundle_root and (bundle_root / "outputs" / "dedupe" / "dedupe.json").exists()),
-                "has_bundle_signature_artifact": bool(bundle_root and (bundle_root / "outputs" / "signature" / "signature.json").exists()),
-                "bundle_verify_command": (
-                    f"cardano-profile bundle verify {target_run_id} --runs-dir <extracted-parent>/runs-or-parent"
-                    if target_run_id
-                    else None
-                ),
-                **verification,
-            }
-        print(json.dumps(payload, sort_keys=True))
-        return 0 if payload["verdict"] != "tampered" else 1
+        helper_script = Path(__file__).resolve().parents[1] / "scripts" / "bundle_import.py"
+        signature_path = (
+            Path(args.signature_path)
+            if args.signature_path
+            else Path(args.tarball_path).parent / "signature.json"
+        )
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(helper_script),
+                str(args.tarball_path),
+                "--signature-path",
+                str(signature_path),
+                "--runs-dir",
+                str(runs_dir),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+            env=os.environ.copy(),
+        )
+        if proc.stdout:
+            print(proc.stdout, end="")
+        if proc.stderr:
+            print(proc.stderr, file=sys.stderr, end="")
+        return proc.returncode
 
     if args.bundle_command == "promote":
         run_dir = runs_dir / args.run_id
@@ -3466,8 +3768,7 @@ def cmd_bundle(args):
             # (forensic.export_bundle). Best-effort; a copy failure is non-fatal.
             try:
                 import shutil
-                bundles_dir = os.environ.get("ADA2_DWARF_BUNDLES_DIR")
-                bundles_path = Path(bundles_dir) if bundles_dir else (Path(__file__).resolve().parents[1] / "bundles")
+                bundles_path = storage_roots().bundles
                 bundles_path.mkdir(parents=True, exist_ok=True)
                 if export_tarball.exists():
                     preserved = bundles_path / f"{args.run_id}.tar.gz"
@@ -3515,7 +3816,11 @@ def main(argv=None):
     if args.command == "inspect":
         return cmd_inspect(args)
     if args.command == "doctor":
+        if getattr(args, "doctor_command", None) == "storage":
+            return cmd_storage_doctor(args)
         return cmd_doctor(args)
+    if args.command == "migrate":
+        return cmd_storage_migrate(args)
     if args.command == "logs":
         return cmd_logs(args)
     if args.command == "component":

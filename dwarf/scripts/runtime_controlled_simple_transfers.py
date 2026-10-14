@@ -23,6 +23,7 @@ from scripts.runtime_cardano_measurement_calibration import (
     classify_log_signals,
 )
 from scripts.runtime_controlled_plutus_transactions import (
+    _controller_container,
     _container_logs,
     _health_target,
     _prepare_amaru_transaction_producer,
@@ -234,6 +235,23 @@ def _simple_transfer_attempts(
     return records
 
 
+def _prepare_amaru_simple_transfer_workload(
+    *,
+    runtime: dict[str, Any],
+    runtime_root: Path,
+    output_dir: Path,
+    stack: ExitStack,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    controller = _controller_container()
+    return _prepare_amaru_transaction_producer(
+        runtime,
+        output_dir,
+        stack,
+        runtime_root=runtime_root,
+        controller=controller,
+    )
+
+
 def run_controlled_simple_transfers(
     *, runtime_root: Path, output_dir: Path, attempt_count: int,
     measurement_implementation: str, outcome_timeout_seconds: float = 90,
@@ -243,7 +261,12 @@ def run_controlled_simple_transfers(
     output_dir.mkdir(parents=True, exist_ok=False)
     with ExitStack() as stack:
         if measurement_implementation == "amaru":
-            workload_runtime, node = _prepare_amaru_transaction_producer(runtime, output_dir, stack)
+            workload_runtime, node = _prepare_amaru_simple_transfer_workload(
+                runtime=runtime,
+                runtime_root=runtime_root,
+                output_dir=output_dir,
+                stack=stack,
+            )
         elif measurement_implementation == "cardano-node":
             _identity, node = _target(runtime)
             workload_runtime = runtime

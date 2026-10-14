@@ -1,325 +1,263 @@
 # Install Guide
 
-This guide is written for a new operator setting up Dwarf.
+Use this guide to install DWARF from a Git checkout.
+The recommended host is Linux with Docker Engine and Docker Compose v2.
+For macOS, use Docker Desktop with compatible Linux node images.
 
-The recommended path is to install on a Linux host with Docker. The package is not hard-coded to a specific host.
+## 1. Check prerequisites
 
-## 1. Check Requirements
-
+Install Git, Bash, Python 3, and Docker first.
+Make sure your user can access the Docker daemon.
 Run:
 
 ```bash
+git --version
+bash --version
+python3 --version
 docker version
 docker compose version
 df -h .
 ```
 
-Expected:
+Check these results:
 
-- Docker daemon is reachable.
-- `docker compose version` prints a Compose v2 version.
-- At least 20 GB free disk is available.
+- Docker reports a reachable server.
+- Compose reports version 2.
+- The host has sufficient free storage for builds, node data, and retained evidence.
 
-If Docker is installed but permission is denied, add the deploying user to the Docker group or run from an account with Docker access. Do not run the Dwarf container privileged by default.
+Plan for at least 20 GB for initial setup.
+Large topologies, coverage builds, and retained runs can require much more storage.
+Check the runtime drive as well as the checkout drive.
 
-## 2. Get The Package Onto The Target Host
+If Docker reports permission denied, correct your host Docker access.
+Membership in the Docker group gives substantial host privileges.
+Do not make the DWARF containers privileged.
 
-Clone the repository directly on the target host:
+## 2. Get the source
+
+Clone the repository on the installation host:
 
 ```bash
 git clone https://github.com/pragma-org/dwarf.git
 cd dwarf
+git status --short
 ```
 
-Or, if you already have the tree on another machine, copy it over and connect with Secure Shell (SSH):
+Make sure `git status --short` has no output before a source image build.
+The builder checks the checkout root, clean state, and exact commit identity.
+It builds from a Git archive of that commit.
+An extracted source ZIP alone is not a supported source-build input.
 
-```bash
-rsync -a --delete DWARF/ user@host:/opt/DWARF/
-ssh user@host
-cd /opt/DWARF
-```
+If you copy an existing checkout, include its `.git` directory.
+Do not overwrite an unrelated destination directory.
+Use a path that your deploying user can write.
 
-The package is not hard-coded to a specific host or path; put it anywhere the deploying user can write.
+## 3. Install DWARF
 
-## 3. Install (one command)
-
-Run:
+For the normal local workflow, run:
 
 ```bash
 bash delivery/scripts/install.sh
 ```
 
-This performs the full bring-up: it validates the package layout, seeds the
-scenario/manifest/profile catalog, creates the runtime directories, builds the
-framework image, and starts the dashboard container. In other words, `install.sh`
-runs sections 4 and 5 below for you — they document what it does under the hood and
-how to run each step standalone (e.g. to rebuild or restart without re-seeding).
+The installer performs these actions:
 
-```text
-var/runs
-var/state
-var/bundles
-```
+1. Check the package layout.
+2. Create runtime directories and private installation credentials.
+3. Seed writable definition catalogs.
+4. Build the framework and local-controller images.
+5. Download missing digest-pinned node images.
+6. Start the local controller and dashboard.
+7. Check dashboard readiness and matching source revisions.
 
-Optional capabilities (off by default):
+An unsuccessful node-image download stops container startup.
+The local controller is required and enabled automatically.
+It is separate from the optional legacy SSH channel.
 
-```bash
-bash delivery/scripts/install.sh --control-channel   # drive substrate deploy/teardown from the dashboard
-bash delivery/scripts/install.sh --afl                # build the host-side AFL coverage harness
-bash delivery/scripts/install.sh --all                # both of the above
-bash delivery/scripts/install.sh --prepare-only       # seed the catalog only (no build, no start)
-```
+The default runtime root is `${XDG_DATA_HOME:-$HOME/.local/share}/dwarf/`.
+Installation does not start a node topology.
+Prepare a topology from `/run` after installation.
 
-The script does not install host packages, modify Docker daemon configuration, or start Cardano services.
+### Optional host capabilities
 
-## 4. Build The Framework Image
-
-Run:
+To request both the legacy SSH channel and AFL harness, run:
 
 ```bash
-bash delivery/scripts/build-image.sh
+bash delivery/scripts/install.sh --all
 ```
 
-This builds:
+`--all` is equivalent to `--control-channel --afl`.
+It does not prepare every target, scenario, measurement patch, or external service.
+Read these prerequisites before you use it:
 
-```text
-dwarf/framework:current
-```
+- **Legacy SSH channel:** OpenSSH tools and an accessible SSH server for the selected host.
+  Setup creates a restricted key and changes the deploying user's SSH configuration.
+- **AFL harness:** GHC 9.6.7, Cabal, and the documented Cardano build dependencies.
+  Setup builds a large host executable and installs a compatible AFL runtime.
+  See the [coverage harness guide](antithesis/components/dwarf-adversary/COVERAGE-HARNESS.md).
+- **Host directories:** Write access to the selected installation paths.
+  Setup can request `sudo` for directory creation.
 
-The build uses:
+Check the final `Legacy SSH channel` and `AFL harness` summary lines.
+The installer can continue after an optional setup failure.
+Do not treat `FAILED` as successful feature installation.
+Do not treat a running dashboard as proof of AFL or SSH readiness.
 
-```text
-infrastructure/docker/dwarf-fw.Dockerfile
-```
-
-The Dockerfile uses Debian snapshot repositories for reproducibility. The build includes a regression check ensuring expired snapshot Release files do not break the build:
-
-```text
-Acquire::Check-Valid-Until "false";
-Acquire::Check-Date "false";
-```
-
-## 5. Deploy The Dashboard
-
-Run:
+To request only one capability, use its specific option:
 
 ```bash
-bash delivery/scripts/deploy.sh
+bash delivery/scripts/install.sh --control-channel
+bash delivery/scripts/install.sh --afl
 ```
 
-Default dashboard:
+Choose one command that matches your requirements.
+Do not run every alternative in sequence.
+
+Other options:
+
+| Option | Result |
+|---|---|
+| `--prepare-only` | Seed catalogs without a build or startup |
+| `--no-build` | Use existing framework and controller images |
+| `--no-up` | Prepare and build without container startup |
+
+Normal installation does not install host packages or change Docker daemon settings.
+It does not configure Moog wallets, Antithesis credentials, or external services.
+
+## 4. Open the dashboard
+
+Open this URL on the installation host:
 
 ```text
-http://127.0.0.1:8787/operate
-http://<host-local-area-network-ip>:8787/operate
+http://127.0.0.1:8787/run
 ```
 
-The local area network (LAN) Internet Protocol (IP) address form is:
-
-```text
-http://<host-lan-ip>:8787/operate
-```
-
-If port `8787` is in use:
+The dashboard binds to loopback by default.
+For a remote installation, start SSH port forwarding from your local machine:
 
 ```bash
-DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/deploy.sh
+ssh -N -L 8877:127.0.0.1:8787 user@host
 ```
 
-Then open:
+Replace `user@host` with your SSH account and host.
+Then open this URL on your local machine:
 
 ```text
-http://127.0.0.1:8877/operate
-http://<host-lan-ip>:8877/operate
+http://127.0.0.1:8877/run
 ```
 
-## 6. Check Status
+The installer prints the dashboard token file path, not the token value.
+The default file is `~/.local/share/dwarf/state/dashboard-token`.
+Its permissions allow only the owner to read or write it.
+If you set `ADA2_DWARF_TOKEN`, that supplied value replaces the generated dashboard credential.
+Keep token files, private URLs, and screenshots of credentials private.
 
-Run:
+### Deliberate LAN access
+
+Before you enable LAN access, restrict access with a firewall or authenticated reverse proxy.
+To install with a LAN bind, run:
+
+```bash
+DWARF_DASHBOARD_BIND=0.0.0.0 bash delivery/scripts/install.sh
+```
+
+Open `http://<host-lan-ip>:8787/run` from an authorized machine.
+Replace `<host-lan-ip>` with the installation host's LAN address.
+The token does not provide network isolation or HTTPS.
+
+### Another host port
+
+If port 8787 is occupied, use another host port:
+
+```bash
+DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/install.sh
+```
+
+Open `http://127.0.0.1:8877/run` on that host.
+The container still listens internally on port 8787.
+
+## 5. Prepare and run a topology
+
+Basic is the default dashboard view.
+Use the six stages on `/run`:
+
+1. Select or configure a topology.
+2. Select node versions.
+3. Select a scenario.
+4. Select measurement taps.
+5. Review the changes and select **Prepare topology**.
+6. Wait for Ready before you start the run.
+
+After the run, inspect `/operate/runs/<run-id>`.
+Check the security verdict, assertions, measurements, logs, and evidence.
+Installation readiness does not prove node readiness or scenario success.
+
+## 6. Optional diagnostics
+
+`install.sh` already checks application readiness.
+`status.sh` is not required to complete installation.
+To inspect the deployment later, run:
 
 ```bash
 bash delivery/scripts/status.sh
 ```
 
-Or, if deployed on a non-default port:
+For a custom host port, use the same setting:
 
 ```bash
 DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/status.sh
 ```
 
-The status command reports:
+This command reports delivery settings, image identity, Compose status, container status, mapped ports, and an in-container CLI check.
+It does not replace a real Prepare → Run → Evidence check.
+Catalog counts do not prove readiness or compatibility.
 
-- package root
-- image tag
-- container name
-- dashboard bind/port
-- runtime root
-- Docker image status
-- Compose service status
-- Docker container status
-- mapped port
-- in-container `cardano-profile dashboard status` output
+## Separate build and startup commands
 
-Expected inventory:
-
-```text
-Profiles: 13
-Evidence packages: 4
-Smoke tests: 5
-Fuzz tests: 0
-Scenario catalog: 239 scenarios
-```
-
-## 7. Optional Browser Verification
-
-By default, deployment binds Docker to `0.0.0.0`, so the dashboard is reachable on both loopback and the host LAN IP. If you deploy with:
+The installer already calls these commands.
+Use them separately only when you need another build or application startup:
 
 ```bash
-DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/deploy.sh
-```
-
-then open either:
-
-```text
-http://127.0.0.1:8877/operate
-http://<host-lan-ip>:8877/operate
-```
-
-If you explicitly deploy loopback-only with `DWARF_DASHBOARD_BIND=127.0.0.1`, use SSH port forwarding:
-
-```bash
-ssh -N -L 8877:127.0.0.1:8877 user@host
-```
-
-Then open locally:
-
-```text
-http://127.0.0.1:8877/operate
-```
-
-The dashboard should render the Operate page and the Scenarios page should show the scenario catalog.
-
-For a recipient-facing visual overview of the expected graphical user interface (GUI), open:
-
-```text
-docs/index.html
-```
-
-That HyperText Markup Language (HTML) file is self-contained and is the GitHub Pages entry point for the delivery overview, so it can be viewed offline after the package is unpacked or hosted from the repository's `docs/` directory.
-
-## Configuration
-
-Override deployment defaults with environment variables:
-
-```bash
-export DWARF_IMAGE=dwarf/framework:current
-export DWARF_CONTAINER_NAME=dwarf-fw
-export DWARF_DASHBOARD_BIND=0.0.0.0
-export DWARF_DASHBOARD_PORT=8787
-export DWARF_RUNTIME_ROOT=/absolute/path/to/var
-export ADA2_DWARF_TOKEN=dwarf
-```
-
-Most operators only need `DWARF_DASHBOARD_PORT`. By default, persistent runtime data is stored under `~/.local/share/dwarf/` (or `$XDG_DATA_HOME/dwarf/` when `XDG_DATA_HOME` is set), independently of the source checkout. Set `DWARF_RUNTIME_ROOT` to use another location. Set `DWARF_DASHBOARD_BIND=127.0.0.1` only when you want loopback-only access.
-
-## Moog, GitHub, And Antithesis Setup Values
-
-The dashboard exposes a browser-based setup form at:
-
-```text
-/operate/config
-```
-
-Values can be entered through that form and saved into `$DWARF_RUNTIME_ROOT/state/config.yaml` (by default `~/.local/share/dwarf/state/config.yaml`), or provided as Docker environment variables at startup. The delivery scripts source a package-local `.env` file before running Compose, and the Compose file passes through Moog/GitHub/Antithesis variables including:
-
-```bash
-MOOG_GITHUB_USER=
-MOOG_GITHUB_REPO=
-MOOG_GITHUB_PAT=
-MOOG_TARGET_DIRECTORY=
-MOOG_TARGET_COMMIT=
-MOOG_ANTITHESIS_LAUNCH_URL=
-MOOG_ANTITHESIS_USER=
-MOOG_ANTITHESIS_PASSWORD=
-MOOG_REGISTRY=
-MOOG_ANTITHESIS_API_KEY=
-MOOG_AGENT_EMAIL_USER=
-MOOG_AGENT_EMAIL_PASSWORD=
-```
-
-Environment values take display precedence over saved config. Secret fields are masked after save; leave a secret field blank in the form to keep the current saved value. In this client-prep mode, PATs and Antithesis credentials may be saved, so treat `var/state/config.yaml` as private.
-
-## Optional Moog Bootstrap
-
-Moog setup is not automatic. The delivery scripts deploy Dwarf by default and leave Moog binaries, wallets, PATs, Antithesis credentials, and services untouched.
-
-To preview the Moog bootstrap plan from inside the running Dwarf container:
-
-```bash
-DWARF_MOOG_BOOTSTRAP=plan bash delivery/scripts/deploy.sh
-```
-
-To apply the safe skeleton setup, both variables are required:
-
-```bash
-DWARF_MOOG_BOOTSTRAP=approve \
-DWARF_MOOG_BOOTSTRAP_APPROVE=1 \
+bash delivery/scripts/build-image.sh
 bash delivery/scripts/deploy.sh
 ```
 
-The approved path creates only Moog deploy/state/ops and requester/oracle secret directories, then writes an operator plan file. It does not download Moog release artifacts, create wallet files, read wallet JSON, store GitHub PATs, write Antithesis credentials, enable services, or start oracle/agent processes.
+The build produces `dwarf/framework:current` and `dwarf/controller:current`.
+The deployment script seeds catalogs, checks pinned images, and recreates the application containers.
+It checks readiness and matching revisions.
+Do not use application startup as a substitute for topology preparation.
 
-After any bootstrap or manual Moog change, run:
+## Configuration
 
-```bash
-docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile moog healthcheck --json
-docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile wallet healthcheck moog-requester --json
-docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile moog readiness --repo <org/repo> --github-user <user> --json
-docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile moog preflight --asset-dir <dir> --repo <org/repo> --github-user <user> --directory <path> --commit <sha> --json
-```
+The scripts read the package-local `.env` file.
+Explicit exported environment values take precedence.
+Use the same settings for later lifecycle commands.
+Keep `.env` private.
 
-## Node-version policy
+| Variable | Default or purpose |
+|---|---|
+| `DWARF_IMAGE` | `dwarf/framework:current` |
+| `DWARF_CONTROLLER_IMAGE` | `dwarf/controller:current` |
+| `DWARF_CONTAINER_NAME` | `dwarf-fw` |
+| `DWARF_DASHBOARD_BIND` | `127.0.0.1` |
+| `DWARF_DASHBOARD_PORT` | `8787` |
+| `DWARF_RUNTIME_ROOT` | `${XDG_DATA_HOME:-$HOME/.local/share}/dwarf` |
 
-New deployment profiles can select `latest-confirmed`, `latest-stable`, or an
-exact release/compatibility pair. The packaged release catalog is visible at
-`/operate/versions`. `latest-confirmed` is the safest unattended choice because
-it resolves only the explicit scoped default backed by retained runtime
-evidence. Release discovery never creates confirmation.
+Use an absolute path for a custom runtime root.
+Read [OPERATIONS.md](OPERATIONS.md) for versions, optional integrations, backups, and troubleshooting.
 
-An omitted or blank `version_policy` uses `latest-confirmed` as DWARF's safe
-implicit default. The resolved evidence records that the policy was implicit,
-but the node artifacts are still exact and digest-pinned. No omitted-policy
-path may fall through to an installed host node, a changing source tree, or a
-mutable image tag.
+## Stop or remove DWARF
 
-## SSH Keys
-
-The V3 delivery stack does not mount SSH keys by default. That is deliberate.
-
-Some future or operator-specific substrate scenarios may require SSH fan-out to another machine. Add that only through an explicit Compose override after deciding which keys and hosts are in scope.
-
-## Uninstall
-
-Stop the stack and preserve runtime data and image:
+To stop the application and preserve runtime data, run:
 
 ```bash
 bash delivery/scripts/uninstall.sh
 ```
 
-Remove runtime data:
+This does not remove every managed node topology, optional host tool, or provisioned SSH file.
+Remove a managed topology through its reviewed DWARF action before a complete removal.
 
-```bash
-bash delivery/scripts/uninstall.sh --purge
-```
-
-Remove image:
-
-```bash
-bash delivery/scripts/uninstall.sh --remove-image
-```
-
-Remove both:
-
-```bash
-bash delivery/scripts/uninstall.sh --purge --remove-image
-```
+The source-checkout uninstall path refuses `--purge` without a verified release receipt.
+Do not use a bare `--purge` option.
+For a receipt-backed release installation, see the [removal instructions](OPERATIONS.md#stop-and-remove-dwarf).
+Back up evidence before any purge.

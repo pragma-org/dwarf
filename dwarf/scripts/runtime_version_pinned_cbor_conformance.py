@@ -12,6 +12,7 @@ from profile_manager.measurement_targets import measurement_target_registry_root
 from scripts.runtime_cardano_cbor_dataset_differential import (
     QUALIFIED_DATASET_REPOSITORY,
     QUALIFIED_DATASET_REVISION,
+    REQUIRED_CATEGORIES,
     _dataset_digest,
     _git_revision,
     _select_inputs,
@@ -22,12 +23,105 @@ class ConformanceContractError(RuntimeError):
     pass
 
 
+QUALIFIED_DATASET_SELECTION_SHA256 = (
+    "3ed74e02f2f2be02ad942d26c193a125a34a0828373aac11cbf5efe082fdd467"
+)
+QUALIFIED_WORKLOAD_IDENTITY = "conway-plutus-data-100-v1"
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _load_packaged_selection(path: Path) -> list[dict[str, Any]]:
+    try:
+        body = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConformanceContractError(
+            f"packaged CBOR selection is unavailable or invalid: {path}"
+        ) from exc
+    expected = {
+        "schema_version": 1,
+        "workload_identity": QUALIFIED_WORKLOAD_IDENTITY,
+        "source": {
+            "repository": QUALIFIED_DATASET_REPOSITORY,
+            "revision": QUALIFIED_DATASET_REVISION,
+        },
+        "selection_sha256": QUALIFIED_DATASET_SELECTION_SHA256,
+    }
+    for key, value in expected.items():
+        if body.get(key) != value:
+            raise ConformanceContractError(
+                f"packaged CBOR selection {key} mismatch"
+            )
+    raw_inputs = body.get("inputs")
+    if not isinstance(raw_inputs, list) or len(raw_inputs) != 100:
+        raise ConformanceContractError(
+            "packaged CBOR selection must contain exactly 100 inputs"
+        )
+    selected = []
+    paths = set()
+    categories = {category: 0 for category in REQUIRED_CATEGORIES}
+    for index, item in enumerate(raw_inputs):
+        if not isinstance(item, dict):
+            raise ConformanceContractError(
+                f"packaged CBOR input {index} must be an object"
+            )
+        relative_path = str(item.get("relative_path") or "")
+        relative = Path(relative_path)
+        category = str(item.get("category") or "")
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or len(relative.parts) != 3
+            or relative.parts[0] != "plutus_data"
+            or relative.parts[1] != category
+            or relative.suffix != ".cbor"
+            or category not in categories
+            or relative_path in paths
+        ):
+            raise ConformanceContractError(
+                f"packaged CBOR input path is invalid: {relative_path!r}"
+            )
+        data_hex = item.get("data_hex")
+        if not isinstance(data_hex, str):
+            raise ConformanceContractError(
+                f"packaged CBOR input {relative_path} has no hex payload"
+            )
+        try:
+            data = bytes.fromhex(data_hex)
+        except ValueError as exc:
+            raise ConformanceContractError(
+                f"packaged CBOR input {relative_path} has invalid hex"
+            ) from exc
+        digest = str(item.get("sha256") or "")
+        if digest != hashlib.sha256(data).hexdigest():
+            raise ConformanceContractError(
+                f"packaged CBOR input digest mismatch: {relative_path}"
+            )
+        selected.append(
+            {
+                "relative_path": relative_path,
+                "sha256": digest,
+                "category": category,
+                "data": data,
+            }
+        )
+        paths.add(relative_path)
+        categories[category] += 1
+    if any(count != 25 for count in categories.values()):
+        raise ConformanceContractError(
+            "packaged CBOR selection must contain 25 inputs per category"
+        )
+    if _dataset_digest(selected) != QUALIFIED_DATASET_SELECTION_SHA256:
+        raise ConformanceContractError(
+            "packaged CBOR selection digest mismatch"
+        )
+    return selected
 
 
 def resolve_adapter_record_path(config: dict[str, Any]) -> Path:
@@ -252,11 +346,16 @@ def run_cbor_conformance(
         raise ConformanceContractError("CBOR dataset repository is not qualified")
     if revision != QUALIFIED_DATASET_REVISION:
         raise ConformanceContractError("CBOR dataset revision is not qualified")
-    repo_dir = Path(str(config["dataset_repo_dir"])).resolve()
-    if _git_revision(repo_dir) != revision:
-        raise ConformanceContractError("CBOR dataset checkout revision mismatch")
-    dataset_dir = Path(str(config["dataset_dir"])).resolve()
-    selected = _select_inputs(dataset_dir, "plutus_data", 25)
+    if config.get("dataset_bundle"):
+        selected = _load_packaged_selection(
+            Path(str(config["dataset_bundle"])).resolve()
+        )
+    else:
+        repo_dir = Path(str(config["dataset_repo_dir"])).resolve()
+        if _git_revision(repo_dir) != revision:
+            raise ConformanceContractError("CBOR dataset checkout revision mismatch")
+        dataset_dir = Path(str(config["dataset_dir"])).resolve()
+        selected = _select_inputs(dataset_dir, "plutus_data", 25)
     if len(selected) != 100:
         raise ConformanceContractError("frozen CBOR selection must contain 100 inputs")
 

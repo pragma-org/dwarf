@@ -266,6 +266,7 @@ def test_testcase_exact_download_archive_and_artifact_containment(tmp_path, monk
     state_dir, runs_dir, records = _seed_lifecycle(tmp_path)
     monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(state_dir))
     monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(runs_dir))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path / "bundles"))
     case_id = records[0]["case_id"]
     unsafe_id = next(row["case_id"] for row in records if row["triage_reason"] == "unsafe-test-record")
 
@@ -303,6 +304,7 @@ def test_testcase_routes_learn_reference_and_empty_state(tmp_path, monkeypatch):
     state_dir, runs_dir, records = _seed_lifecycle(tmp_path)
     monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(state_dir))
     monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(runs_dir))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path / "bundles"))
     case_id = records[0]["case_id"]
     bucket_id = records[0]["bucket_id"]
 
@@ -335,6 +337,8 @@ def test_testcase_catalogs_remain_compatible_but_are_hidden_from_primary_navigat
     learn_api = importlib.import_module("profile_manager.data.learn_api")
     nav = importlib.import_module("profile_manager.data.sub_nav")
     monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path / "bundles"))
     routes = {route for group in learn_api.html_route_groups() for route in group["routes"]}
 
     assert {

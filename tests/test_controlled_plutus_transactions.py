@@ -1,16 +1,44 @@
 import json
 import hashlib
 import subprocess
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
+
+import pytest
 
 from scripts import runtime_controlled_plutus_transactions as subject
+from profile_manager import primitives as primitive_module
 from profile_manager.primitives import RuntimeControlledPlutusTransactions
 
 
 def test_controlled_workload_retains_before_and_after_target_health(monkeypatch, tmp_path):
     runtime_root = tmp_path / "runtime"
     runtime_root.mkdir()
-    (runtime_root / "runtime.json").write_text(json.dumps({"runtime": "fixture"}))
+    (runtime_root / "runtime.json").write_text(
+        json.dumps(
+            {
+                "runtime": "fixture",
+                "profile_id": "profile-legacy",
+                "compose_project": "dwarf-profile-install-profile-legacy",
+            }
+        )
+    )
+    (runtime_root / "versioned-deployment.json").write_text(
+        json.dumps(
+            {
+                "adapter": "runtime_amaru_control_substrate.py",
+                "lifecycle": "cardano_amaru_relay_bootstrap_control",
+                "profile_id": "profile-legacy",
+                "compose_project": "dwarf-profile-install-profile-legacy",
+                "substrate": {
+                    "network_magic": 42,
+                    "controller_ownership": {
+                        "installation_id": "install-test",
+                        "topology_id": "profile-legacy",
+                    },
+                },
+            }
+        )
+    )
     states = iter([
         {"running": True, "restart_count": 3, "oom_killed": False},
         {"running": True, "restart_count": 3, "oom_killed": False},
@@ -108,6 +136,37 @@ def test_amaru_accounting_does_not_claim_support_producer_response_or_adoption()
     assert "submit_to_chain_adoption_nanos" not in attempt
 
 
+@pytest.mark.parametrize(
+    ("runtime_magic", "deployment_magic"),
+    [(None, True), (None, 43), (2, 42)],
+)
+def test_retained_runtime_magic_reconciliation_rejects_invalid_or_mismatched_values(
+    runtime_magic, deployment_magic
+):
+    runtime = {
+        "profile_id": "profile-legacy",
+        "compose_project": "dwarf-profile-install-profile-legacy",
+    }
+    if runtime_magic is not None:
+        runtime["network_magic"] = runtime_magic
+    deployment = {
+        "adapter": "runtime_amaru_control_substrate.py",
+        "lifecycle": "cardano_amaru_relay_bootstrap_control",
+        "profile_id": "profile-legacy",
+        "compose_project": "dwarf-profile-install-profile-legacy",
+        "substrate": {
+            "network_magic": deployment_magic,
+            "controller_ownership": {
+                "installation_id": "install-test",
+                "topology_id": "profile-legacy",
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="network magic"):
+        subject.reconcile_amaru_runtime_metadata(runtime, deployment)
+
+
 def test_primitive_emits_existing_workload_accounting_event(monkeypatch, tmp_path):
     class Handle:
         run_dir = tmp_path
@@ -150,6 +209,278 @@ def test_primitive_emits_existing_workload_accounting_event(monkeypatch, tmp_pat
     assert event["payload"] == accounting
 
 
+def test_primitive_uses_exact_prepared_runtime_metadata_path(monkeypatch, tmp_path):
+    prepared_root = tmp_path / "prepared-runtime"
+    prepared_root.mkdir()
+    prepared_path = prepared_root / "runtime.json"
+    prepared_path.write_text(
+        json.dumps({"profile_id": "profile-za", "network_magic": 42}),
+        encoding="utf-8",
+    )
+    decoy_root = tmp_path / "decoy-runtime"
+    decoy_root.mkdir()
+    (decoy_root / "runtime.json").write_text(
+        json.dumps({"profile_id": "profile-za", "network_magic": 999}),
+        encoding="utf-8",
+    )
+
+    class Handle:
+        run_dir = tmp_path
+        _prepared_runtime_metadata_path = prepared_path
+
+        def log(self, **_event):
+            pass
+
+    captured = {}
+
+    def run(command, **_kwargs):
+        captured["command"] = command
+        output_dir = subject.Path(command[command.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True)
+        (output_dir / "result.json").write_text("{}", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(
+        primitive_module,
+        "_resolve_client_runtime_target",
+        lambda _handle, _params: {
+            "id": "amaru-relay-1",
+            "implementation": "amaru",
+            "container": "owned-amaru-relay-1",
+        },
+    )
+    monkeypatch.setattr(
+        primitive_module,
+        "_capture_amaru_measurement_window",
+        lambda *_args, **_kwargs: {"record_count": 0},
+    )
+    primitive = RuntimeControlledPlutusTransactions(
+        params={
+            "profile_id": "profile-za",
+            "runtime_root": str(decoy_root),
+            "measurement_implementation": "amaru",
+        }
+    )
+
+    primitive.run(Handle(), None)
+
+    command = captured["command"]
+    assert command[command.index("--runtime-root") + 1] == str(prepared_root)
+
+
+def test_plutus_primitive_does_not_create_a_duplicate_node_trace_capture(
+    monkeypatch, tmp_path
+):
+    prepared_root = tmp_path / "prepared-runtime"
+    prepared_root.mkdir()
+    prepared_path = prepared_root / "runtime.json"
+    prepared_path.write_text(
+        json.dumps({"profile_id": "profile-za", "network_magic": 42}),
+        encoding="utf-8",
+    )
+
+    class Handle:
+        run_dir = tmp_path
+        _prepared_runtime_metadata_path = prepared_path
+
+        def log(self, **_event):
+            pass
+
+    monkeypatch.setattr(
+        primitive_module,
+        "_resolve_client_runtime_target",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("scenario-level trace ownership must not be duplicated")
+        ),
+    )
+    monkeypatch.setattr(
+        primitive_module,
+        "_capture_amaru_measurement_window",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("scenario-level trace ownership must not be duplicated")
+        ),
+    )
+
+    def run(command, **_kwargs):
+        output_dir = subject.Path(command[command.index("--output-dir") + 1])
+        assert not output_dir.exists(), (
+            "measurement trace preparation must not pre-create the helper's "
+            "exclusive output directory"
+        )
+        output_dir.mkdir(parents=True)
+        (output_dir / "result.json").write_text("{}", encoding="utf-8")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="helper output is not node telemetry",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", run)
+    primitive = RuntimeControlledPlutusTransactions(
+        params={
+            "profile_id": "profile-za",
+            "measurement_implementation": "amaru",
+        }
+    )
+
+    primitive.run(Handle(), None)
+
+    assert not (tmp_path / "outputs" / "controlled-plutus-measurements").exists()
+
+
+def test_amaru_measurement_window_retains_only_owned_node_records_in_window(
+    monkeypatch, tmp_path
+):
+    rows = [
+        {"timestamp": "2026-10-11T01:00:00Z", "fields": {"message": "before"}},
+        {"timestamp": "2026-10-11T01:00:01Z", "fields": {"message": "inside"}},
+        {"timestamp": "2026-10-11T01:00:03Z", "fields": {"message": "after"}},
+    ]
+    observed = {}
+
+    def docker_result(command, *, timeout):
+        observed["command"] = command
+        observed["timeout"] = timeout
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="\n".join(json.dumps(row) for row in rows),
+            stderr="helper/conformance text must not be retained",
+        )
+
+    monkeypatch.setattr(primitive_module, "_protocol_docker_result", docker_result)
+    destination = tmp_path / "amaru-relay-1.ndjson"
+
+    result = primitive_module._capture_amaru_measurement_window(
+        {
+            "id": "amaru-relay-1",
+            "implementation": "amaru",
+            "container": "owned-amaru-relay-1",
+        },
+        started_at="2026-10-11T01:00:00.500000Z",
+        ended_at="2026-10-11T01:00:02Z",
+        destination=destination,
+    )
+
+    assert observed["command"] == [
+        "logs",
+        "--since",
+        "2026-10-11T01:00:00.500000Z",
+        "--until",
+        "2026-10-11T01:00:02Z",
+        "owned-amaru-relay-1",
+    ]
+    assert result == {
+        "container": "owned-amaru-relay-1",
+        "record_count": 1,
+        "trace_path": str(destination),
+    }
+    assert [
+        json.loads(line)["fields"]["message"]
+        for line in destination.read_text(encoding="utf-8").splitlines()
+    ] == ["inside"]
+
+
+def test_amaru_measurement_window_timeout_publishes_no_partial_trace(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        primitive_module,
+        "_protocol_docker_result",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired("docker logs", 120)
+        ),
+    )
+    destination = tmp_path / "amaru-relay-1.ndjson"
+
+    with pytest.raises(RuntimeError, match="cannot retain"):
+        primitive_module._capture_amaru_measurement_window(
+            {
+                "id": "amaru-relay-1",
+                "implementation": "amaru",
+                "container": "owned-amaru-relay-1",
+            },
+            started_at="2026-10-11T01:00:00Z",
+            ended_at="2026-10-11T01:00:02Z",
+            destination=destination,
+        )
+
+    assert not destination.exists()
+
+
+def test_amaru_measurement_window_write_failure_publishes_no_partial_trace(
+    monkeypatch, tmp_path
+):
+    destination = tmp_path / "amaru-relay-1.ndjson"
+    destination.write_text('{"timestamp":"stale"}\n', encoding="utf-8")
+    row = {
+        "timestamp": "2026-10-11T01:00:01Z",
+        "fields": {"message": "inside"},
+    }
+    monkeypatch.setattr(
+        primitive_module,
+        "_protocol_docker_result",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [], 0, stdout=json.dumps(row), stderr=""
+        ),
+    )
+    monkeypatch.setattr(
+        primitive_module,
+        "atomic_write_bytes",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    with pytest.raises(RuntimeError, match="cannot publish"):
+        primitive_module._capture_amaru_measurement_window(
+            {
+                "id": "amaru-relay-1",
+                "implementation": "amaru",
+                "container": "owned-amaru-relay-1",
+            },
+            started_at="2026-10-11T01:00:00Z",
+            ended_at="2026-10-11T01:00:02Z",
+            destination=destination,
+        )
+
+    assert not destination.exists()
+
+
+def test_primitive_rejects_prepared_runtime_for_different_profile(
+    monkeypatch, tmp_path
+):
+    prepared_root = tmp_path / "prepared-runtime"
+    prepared_root.mkdir()
+    prepared_path = prepared_root / "runtime.json"
+    prepared_path.write_text(
+        json.dumps({"profile_id": "profile-other", "network_magic": 42}),
+        encoding="utf-8",
+    )
+
+    class Handle:
+        run_dir = tmp_path
+        _prepared_runtime_metadata_path = prepared_path
+
+        def log(self, **_event):
+            pass
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("workload must not start"),
+    )
+    primitive = RuntimeControlledPlutusTransactions(
+        params={
+            "profile_id": "profile-za",
+            "measurement_implementation": "amaru",
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="prepared runtime profile identity"):
+        primitive.run(Handle(), None)
+
+
 def test_health_target_selects_measured_amaru_instead_of_transaction_producer():
     runtime = {
         "network_magic": 42,
@@ -179,7 +510,19 @@ def test_amaru_support_bridge_is_digest_pinned_and_removes_temporary_keys(
     monkeypatch, tmp_path
 ):
     runtime = {
+        "profile_id": "profile-za",
         "compose_project": "qualified-profile",
+        "network_magic": 42,
+        "actual_topology": {
+            "selected_support_node_services": {"bootstrap-cardano": "p1"},
+            "selected_nodes": [{
+                "id": "bootstrap-cardano",
+                "service": "p1",
+                "implementation": "cardano-node",
+                "supporting": True,
+                "image": "example/cardano@sha256:" + "a" * 64,
+            }],
+        },
         "identity": {
             "services": {
                 "p1": {
@@ -216,14 +559,183 @@ def test_amaru_support_bridge_is_digest_pinned_and_removes_temporary_keys(
     assert not wrapper.exists()
 
 
+def test_installed_amaru_support_bridge_reuses_hardened_containerized_workload(
+    monkeypatch, tmp_path
+):
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    runtime = {
+        "profile_id": "profile-za",
+        "compose_project": "qualified-profile",
+        "network_magic": 42,
+        "actual_topology": {
+            "selected_support_node_services": {"bootstrap-cardano": "p1"},
+            "selected_nodes": [{
+                "id": "bootstrap-cardano",
+                "service": "p1",
+                "implementation": "cardano-node",
+                "supporting": True,
+                "image": "example/cardano@sha256:" + "a" * 64,
+            }],
+        },
+        "identity": {
+            "services": {
+                "p1": {
+                    "matched": True,
+                    "container": "qualified-producer",
+                    "expected_image": "example/cardano@sha256:" + "a" * 64,
+                    "expected_image_id": "sha256:" + "b" * 64,
+                },
+            },
+        },
+    }
+
+    def copy_key(_container, _source, destination):
+        destination.write_text("fixture-key", encoding="utf-8")
+        destination.chmod(0o600)
+
+    monkeypatch.setattr(subject, "_copy_fixture_key", copy_key)
+    monkeypatch.setattr(
+        subject,
+        "_inspect_container",
+        lambda _container: {"Id": "c" * 64},
+    )
+    captured = {}
+
+    @contextmanager
+    def hardened(**kwargs):
+        captured.update(kwargs)
+        assert "support_binaries" not in kwargs["runtime"]
+        yield (
+            {**kwargs["runtime"], "support_binaries": {"cardano-cli": "/work/cardano-cli"}},
+            kwargs["node"],
+        )
+
+    monkeypatch.setattr(subject, "_containerized_cardano_workload", hardened)
+    output = tmp_path / "output"
+    output.mkdir()
+    controller = {"Id": "d" * 64}
+    with ExitStack() as stack:
+        workload_runtime, node = subject._prepare_amaru_transaction_producer(
+            runtime,
+            output,
+            stack,
+            runtime_root=runtime_root,
+            controller=controller,
+        )
+        assert workload_runtime["support_binaries"] == {
+            "cardano-cli": "/work/cardano-cli"
+        }
+        assert node["container_name"] == "qualified-producer"
+        assert node["id"] == "bootstrap-cardano"
+        assert node["service_name"] == "p1"
+        assert node["socket_mount_destination"] == "/state"
+        assert node["socket_mount_type"] == "volume"
+        assert node["container_id"] == "c" * 64
+        assert node["image_ref"] == runtime["identity"]["services"]["p1"]["expected_image"]
+        assert node["image_id"] == runtime["identity"]["services"]["p1"]["expected_image_id"]
+    assert captured["runtime_root"] == runtime_root
+    assert captured["output_dir"] == output
+    assert captured["controller"] is controller
+
+
+@pytest.mark.parametrize(
+    "actual_topology",
+    [
+        {},
+        {
+            "selected_support_node_services": {"bootstrap-cardano": "p2"},
+            "selected_nodes": [],
+        },
+        {
+            "selected_support_node_services": {
+                "bootstrap-cardano": "p1",
+                "other-cardano": "p1",
+            },
+            "selected_nodes": [],
+        },
+    ],
+)
+def test_installed_amaru_support_bridge_rejects_missing_or_ambiguous_producer_mapping(
+    monkeypatch, tmp_path, actual_topology
+):
+    runtime = {
+        "profile_id": "profile-za",
+        "compose_project": "qualified-profile",
+        "network_magic": 42,
+        "actual_topology": actual_topology,
+        "identity": {
+            "services": {
+                "p1": {
+                    "matched": True,
+                    "container": "qualified-producer",
+                    "expected_image": "example/cardano@sha256:" + "a" * 64,
+                    "expected_image_id": "sha256:" + "b" * 64,
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(subject, "_copy_fixture_key", lambda *_args: None)
+    monkeypatch.setattr(subject, "_inspect_container", lambda _container: {"Id": "c" * 64})
+    output = tmp_path / "output"
+    output.mkdir()
+
+    with ExitStack() as stack, pytest.raises(
+        RuntimeError, match="supporting Cardano producer mapping"
+    ):
+        subject._prepare_amaru_transaction_producer(
+            runtime,
+            output,
+            stack,
+            runtime_root=tmp_path / "runtime",
+            controller={"Id": "d" * 64},
+        )
+
+
+@pytest.mark.parametrize("network_magic", [None, True])
+def test_installed_amaru_support_bridge_rejects_missing_or_boolean_network_magic(
+    monkeypatch, tmp_path, network_magic
+):
+    runtime = {
+        "compose_project": "qualified-profile",
+        "network_magic": network_magic,
+        "identity": {
+            "services": {
+                "p1": {
+                    "matched": True,
+                    "container": "qualified-producer",
+                    "expected_image": "example/cardano@sha256:" + "a" * 64,
+                }
+            }
+        },
+    }
+    monkeypatch.setattr(
+        subject,
+        "_copy_fixture_key",
+        lambda _container, _source, destination: destination.write_text(
+            "fixture-key", encoding="utf-8"
+        ),
+    )
+    output = tmp_path / "output"
+    output.mkdir()
+
+    with ExitStack() as stack, pytest.raises(
+        RuntimeError, match="exact network magic"
+    ):
+        subject._prepare_amaru_transaction_producer(runtime, output, stack)
+
 def test_amaru_workload_requires_verified_live_plutus_v2_topology(tmp_path):
     runtime_root = tmp_path / "runtime"
     runtime_root.mkdir()
     (runtime_root / "runtime.json").write_text(
-        json.dumps({"compose_project": "profile", "plutus_v2": {"verified": False}})
+        json.dumps(
+            {
+                "compose_project": "profile",
+                "network_magic": 42,
+                "plutus_v2": {"verified": False},
+            }
+        )
     )
-
-    import pytest
 
     with pytest.raises(RuntimeError, match="verified live PlutusV2"):
         subject.run_controlled_plutus_transactions(

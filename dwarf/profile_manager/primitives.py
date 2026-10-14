@@ -11,8 +11,10 @@ Concrete primitives are implemented in profile_manager.primitives_impl and its
 submodules, and registered in dwarf/primitives/registry.json.
 """
 import importlib
+import hashlib
 import json
 import os
+import stat
 import subprocess
 import tempfile
 from collections import Counter
@@ -23,7 +25,15 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from profile_manager import plugin_loader
+from profile_manager.config import storage_roots
 from profile_manager.measurement_precision import precise_microseconds
+from profile_manager.measurement_targets import (
+    cbor_conformance_adapter_provenance,
+    plutus_conformance_adapter_provenance,
+    resolve_cbor_conformance_adapter,
+    resolve_plutus_conformance_adapter,
+)
+from profile_manager.run_ledger import atomic_write_bytes
 
 FAMILIES = frozenset({"setup", "load", "probe", "assertion", "fault", "teardown"})
 RUNTIMES = frozenset({"library", "single-node", "devnet"})
@@ -1201,7 +1211,8 @@ def build_runtime_bundle_attestation_command(
 def build_runtime_bundle_timeline_command(
     *,
     runs_dir: Path,
-    bundle_ids: list[str],
+    bundle_ids: list[str] | None = None,
+    latest_count: int | None = None,
     output_dir: Path,
     scenario_id_filters: list[str] | None = None,
     signature_token_filters: list[str] | None = None,
@@ -1214,8 +1225,12 @@ def build_runtime_bundle_timeline_command(
         "--output-dir",
         str(output_dir),
     ]
-    for bundle_id in bundle_ids:
+    if bool(bundle_ids) == (latest_count is not None):
+        raise ValueError("select explicit bundle_ids or latest_count, but not both")
+    for bundle_id in bundle_ids or []:
         command.extend(["--bundle-id", bundle_id])
+    if latest_count is not None:
+        command.extend(["--latest-count", str(latest_count)])
     for scenario_id in scenario_id_filters or []:
         command.extend(["--scenario-id", scenario_id])
     for token in signature_token_filters or []:
@@ -3982,11 +3997,56 @@ class RuntimeVersionPinnedCborConformance(LoadPrimitive):
     def run(self, handle, rng):
         output_dir = _resolve_output_path(handle, self.params["output_dir"])
         output_dir.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_record = None
+        if self.params.get("adapter_set_sha256"):
+            resolved = resolve_cbor_conformance_adapter(
+                implementation=str(self.params["implementation"]),
+                source_revision=str(self.params["source_revision"]),
+                adapter_set_sha256=str(self.params["adapter_set_sha256"]),
+                host_os=os.environ.get("DWARF_HOST_OS"),
+                host_arch=os.environ.get("DWARF_HOST_ARCH"),
+            )
+            expected = self.params.get("expected_provenance")
+            current = cbor_conformance_adapter_provenance(resolved)
+            if not isinstance(expected, dict) or current != expected:
+                raise ValueError(
+                    "CBOR conformance adapter provenance changed after launch resolution"
+                )
+            source = Path(resolved["executable"])
+            descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                metadata = os.fstat(descriptor)
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise ValueError("CBOR conformance adapter is not a regular file")
+                chunks = []
+                while True:
+                    chunk = os.read(descriptor, 1024 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+            finally:
+                os.close(descriptor)
+            body = b"".join(chunks)
+            if hashlib.sha256(body).hexdigest() != resolved["executable_sha256"]:
+                raise ValueError("CBOR conformance adapter changed during snapshot")
+            snapshot_dir = output_dir.parent / "cbor-conformance-adapter"
+            if snapshot_dir.exists() or snapshot_dir.is_symlink():
+                raise ValueError("CBOR conformance adapter snapshot already exists")
+            snapshot_dir.mkdir(mode=0o700)
+            executable = snapshot_dir / "adapter"
+            executable.write_bytes(body)
+            executable.chmod(0o700)
+            retained = {key: value for key, value in resolved.items() if key != "record_path"}
+            retained["executable"] = str(executable)
+            snapshot_record = snapshot_dir / "record.json"
+            snapshot_record.write_text(
+                json.dumps(retained, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            snapshot_record.chmod(0o600)
         config = {
             "source_repository": str(self.params["source_repository"]),
             "dataset_revision": str(self.params["dataset_revision"]),
-            "dataset_repo_dir": str(_resolve_runtime_path(self.params["dataset_repo_dir"])),
-            "dataset_dir": str(_resolve_runtime_path(self.params["dataset_dir"])),
             "implementation": str(self.params["implementation"]),
             "source_revision": str(self.params["source_revision"]),
             "output_dir": str(output_dir),
@@ -3994,7 +4054,20 @@ class RuntimeVersionPinnedCborConformance(LoadPrimitive):
                 self.params.get("per_input_timeout_seconds", 5)
             ),
         }
-        if self.params.get("adapter_record"):
+        if self.params.get("dataset_bundle"):
+            config["dataset_bundle"] = str(
+                _resolve_runtime_path(self.params["dataset_bundle"])
+            )
+        else:
+            config["dataset_repo_dir"] = str(
+                _resolve_runtime_path(self.params["dataset_repo_dir"])
+            )
+            config["dataset_dir"] = str(
+                _resolve_runtime_path(self.params["dataset_dir"])
+            )
+        if snapshot_record is not None:
+            config["adapter_record"] = str(snapshot_record)
+        elif self.params.get("adapter_record"):
             config["adapter_record"] = str(
                 _resolve_runtime_path(self.params["adapter_record"])
             )
@@ -4071,26 +4144,84 @@ class RuntimeVersionPinnedPlutusConformance(LoadPrimitive):
     def run(self, handle, rng):
         output_dir = _resolve_output_path(handle, self.params["output_dir"])
         output_dir.parent.mkdir(parents=True, exist_ok=True)
-        config = {
-            "cost_model": str(_resolve_runtime_path(self.params["cost_model"])),
-            "output_dir": str(output_dir),
-            "executions_per_script": int(self.params.get("executions_per_script", 30)),
-            "adapters": {
-                implementation: {
-                    "record": str(_resolve_runtime_path(item["record"])),
-                    "source_revision": str(item["source_revision"]),
+        with tempfile.TemporaryDirectory(
+            prefix=".dwarf-plutus-conformance-", dir=output_dir.parent
+        ) as snapshot_name:
+            snapshot_root = Path(snapshot_name)
+            adapters = {}
+            for implementation, item in self.params["adapters"].items():
+                source_revision = str(item["source_revision"])
+                if item.get("adapter_set_sha256"):
+                    resolved = resolve_plutus_conformance_adapter(
+                        implementation=str(implementation),
+                        source_revision=source_revision,
+                        adapter_set_sha256=str(item["adapter_set_sha256"]),
+                    )
+                    expected = item.get("expected_provenance")
+                    current = plutus_conformance_adapter_provenance(resolved)
+                    if not isinstance(expected, dict) or current != expected:
+                        raise ValueError(
+                            "Plutus conformance adapter provenance changed after launch resolution"
+                        )
+                    source = Path(resolved["executable"])
+                    descriptor = os.open(
+                        source,
+                        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                    )
+                    try:
+                        metadata = os.fstat(descriptor)
+                        if not stat.S_ISREG(metadata.st_mode):
+                            raise ValueError("Plutus conformance adapter is not a regular file")
+                        chunks = []
+                        while True:
+                            chunk = os.read(descriptor, 1024 * 1024)
+                            if not chunk:
+                                break
+                            chunks.append(chunk)
+                    finally:
+                        os.close(descriptor)
+                    body = b"".join(chunks)
+                    if hashlib.sha256(body).hexdigest() != resolved["executable_sha256"]:
+                        raise ValueError("Plutus conformance adapter changed during snapshot")
+                    executable = snapshot_root / f"{implementation}-adapter"
+                    executable.write_bytes(body)
+                    executable.chmod(0o700)
+                    snapshot_record = {
+                        key: value
+                        for key, value in resolved.items()
+                        if key != "record_path"
+                    }
+                    snapshot_record["executable"] = str(executable)
+                    record_path = snapshot_root / f"{implementation}-record.json"
+                    record_path.write_text(
+                        json.dumps(snapshot_record, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+                    record_path.chmod(0o600)
+                else:
+                    # Historical frozen scenarios retain their authored record.
+                    record_path = _resolve_runtime_path(item["record"])
+                adapters[str(implementation)] = {
+                    "record": str(record_path),
+                    "source_revision": source_revision,
                 }
-                for implementation, item in self.params["adapters"].items()
-            },
-        }
-        config_path = output_dir.parent / f"{output_dir.name}-config.json"
-        config_path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        command = build_runtime_version_pinned_plutus_conformance_command(config_path=config_path)
-        handle.log(phase="load", primitive="runtime_version_pinned_plutus_conformance",
-                   level="info", event="started", payload={"output_dir": str(output_dir), "command": command})
-        proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True,
-                              timeout=float(self.params.get("timeout_seconds", 1200)),
-                              check=False, env=_build_dwarf_telemetry_env(handle))
+            config = {
+                "cost_model": str(_resolve_runtime_path(self.params["cost_model"])),
+                "output_dir": str(output_dir),
+                "executions_per_script": int(self.params.get("executions_per_script", 30)),
+                "adapters": adapters,
+            }
+            config_path = snapshot_root / "config.json"
+            config_path.write_text(
+                json.dumps(config, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            command = build_runtime_version_pinned_plutus_conformance_command(config_path=config_path)
+            handle.log(phase="load", primitive="runtime_version_pinned_plutus_conformance",
+                       level="info", event="started", payload={"output_dir": str(output_dir), "command": command})
+            proc = subprocess.run(command, cwd=DWARF_ROOT, capture_output=True,
+                                  timeout=float(self.params.get("timeout_seconds", 1200)),
+                                  check=False, env=_build_dwarf_telemetry_env(handle))
         report_path = output_dir / "report.json"
         report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
         artifacts = {
@@ -4709,11 +4840,24 @@ class RuntimeComposeSubstrate(LoadPrimitive):
         healthy_timeout = float(self.params.get("healthy_timeout_seconds", 180))
         run_id = str(getattr(handle, "run_id", "substrate")).replace(":", "").replace("/", "-")
         compose_project = str(self.params.get("compose_project", f"dwarf-substrate-{run_id}"))
-        runtime_root = Path(self.params.get("runtime_root") or str(Path(tempfile.gettempdir()) / compose_project))
+        substrate = dict(self.bound_substrate)
+        configured_runtime_root = self.params.get("runtime_root")
+        controller_host_state = os.environ.get("DWARF_CONTROLLER_HOST_STATE_DIR")
+        if configured_runtime_root:
+            runtime_root = Path(configured_runtime_root)
+        elif controller_host_state:
+            relative_runtime = Path("controller") / "scenario-runtimes" / compose_project
+            runtime_root = storage_roots().state / relative_runtime
+            if not substrate.get("docker_host_runtime_root"):
+                substrate["docker_host_runtime_root"] = str(
+                    Path(controller_host_state) / relative_runtime
+                )
+        else:
+            runtime_root = Path(tempfile.gettempdir()) / compose_project
         output_dir.mkdir(parents=True, exist_ok=True)
         config_path = output_dir / "compose-substrate-config.json"
         config_body = {
-            "substrate": self.bound_substrate,
+            "substrate": substrate,
             "output_dir": str(output_dir),
             "runtime_root": str(runtime_root),
             "compose_project": compose_project,
@@ -5289,25 +5433,80 @@ class _RuntimeTxsubmissionProbePrimitive(LoadPrimitive):
             or state.get("substrate_runtime_metadata_path")
             or ""
         )
-        if not runtime_metadata_value:
-            raise ValueError(f"{self.primitive_name} requires substrate runtime metadata")
-        runtime_metadata_path = str(_resolve_output_path(handle, runtime_metadata_value))
+        profile_id = str(self.params.get("profile_id") or "")
+        if bool(runtime_metadata_value) == bool(profile_id):
+            raise ValueError(
+                f"{self.primitive_name} requires exactly one endpoint mode: "
+                "substrate runtime metadata or profile_id"
+            )
+        if profile_id and self.params.get("target_host"):
+            raise ValueError(
+                f"{self.primitive_name} profile endpoint mode does not accept target_host"
+            )
         output_dir = _resolve_output_path(handle, self.params["output_dir"])
         timeout = float(self.params.get("timeout_seconds", 240))
         expect_exit = int(self.params.get("expect_exit", 0))
         output_dir.mkdir(parents=True, exist_ok=True)
         config_path = output_dir / f"{self.primitive_name}-config.json"
-        config_body = {"runtime_metadata_path": runtime_metadata_path, "output_dir": str(output_dir)}
-        config_body.update(self._build_config(output_dir, state))
-        config_path.write_text(json.dumps(config_body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        command = build_runtime_txsubmission_probe_command(config_path=config_path, mode=self.mode_name)
+        if runtime_metadata_value:
+            runtime_metadata_path = str(_resolve_output_path(handle, runtime_metadata_value))
+            config_body = {
+                "runtime_metadata_path": runtime_metadata_path,
+                "output_dir": str(output_dir),
+                "endpoint_source": "substrate-runtime",
+            }
+            config_body.update(self._build_config(output_dir, state))
+        else:
+            target = _resolve_client_runtime_target(handle, self.params)
+            target_node = str(target.get("id") or "")
+            target_host = str(target.get("listen_host") or "")
+            target_port = int(target.get("listen_port") or 0)
+            runtime_identity_path = str(target.get("runtime_metadata_path") or "")
+            if (
+                not target_node
+                or not target_host
+                or target_port <= 0
+                or not runtime_identity_path
+            ):
+                raise RuntimeError("prepared runtime target endpoint is incomplete")
+            requested_node = str(self.params.get("target_node") or "")
+            if requested_node and requested_node != target_node:
+                raise RuntimeError(
+                    "prepared runtime target node does not match the requested node"
+                )
+            runtime_metadata_path = ""
+            config_body = {
+                "target_node": target_node,
+                "target_host": target_host,
+                "target_port": target_port,
+                "endpoint_source": "prepared-runtime",
+                "runtime_identity_path": runtime_identity_path,
+                "output_dir": str(output_dir),
+                "response_timeout_seconds": float(
+                    self.params.get("response_timeout_seconds", 2.0)
+                ),
+                "receive_bytes": int(self.params.get("receive_bytes", 64)),
+            }
+        config_path.write_text(
+            json.dumps(config_body, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        command = build_runtime_txsubmission_probe_command(
+            config_path=config_path, mode=self.mode_name
+        )
 
         handle.log(
             phase="load",
             primitive=self.primitive_name,
             level="info",
             event="started",
-            payload={"runtime_metadata_path": runtime_metadata_path, "output_dir": str(output_dir), "command": command},
+            payload={
+                "runtime_metadata_path": runtime_metadata_path or None,
+                "runtime_identity_path": config_body.get("runtime_identity_path"),
+                "endpoint_source": config_body["endpoint_source"],
+                "output_dir": str(output_dir),
+                "command": command,
+            },
         )
 
         proc = subprocess.run(
@@ -6333,7 +6532,7 @@ class RuntimeAggregateCoverage(LoadPrimitive):
 
     def run(self, handle, rng):
         output_dir = _resolve_output_path(handle, self.params["output_dir"])
-        runs_root = _resolve_runtime_path(self.params.get("runs_root", str(DWARF_ROOT / "runs")))
+        runs_root = _resolve_runtime_path(self.params.get("runs_root", str(storage_roots().runs)))
         bundle_ids = [str(bundle_id) for bundle_id in self.params.get("bundle_ids", [])]
         campaign_bundle_ids = [str(bundle_id) for bundle_id in self.params.get("campaign_bundle_ids", [])]
         timeout = float(self.params.get("timeout_seconds", 300))
@@ -6544,7 +6743,7 @@ class RuntimeCoverageReport(LoadPrimitive):
 
     def run(self, handle, rng):
         output_dir = _resolve_output_path(handle, self.params["output_dir"])
-        runs_dir = _resolve_runtime_path(self.params.get("runs_dir", str(DWARF_ROOT / "runs")))
+        runs_dir = _resolve_runtime_path(self.params.get("runs_dir", str(storage_roots().runs)))
         aggregate_bundle_id = self.params.get("aggregate_bundle_id")
         if aggregate_bundle_id is not None:
             aggregate_bundle_id = str(aggregate_bundle_id)
@@ -12065,8 +12264,12 @@ class RuntimeBundleTimeline(LoadPrimitive):
 
     def run(self, handle, rng):
         output_dir = _resolve_output_path(handle, self.params["output_dir"])
-        runs_dir = _resolve_runtime_path(self.params.get("runs_dir", str(DWARF_ROOT / "runs")))
+        runs_dir = _resolve_runtime_path(self.params.get("runs_dir", str(storage_roots().runs)))
         bundle_ids = [str(bundle_id) for bundle_id in self.params.get("bundle_ids", [])]
+        latest_count_value = self.params.get("latest_count")
+        latest_count = (
+            int(latest_count_value) if latest_count_value is not None else None
+        )
         scenario_id_filters = [str(value) for value in self.params.get("scenario_id_filters", [])]
         signature_token_filters = [str(value) for value in self.params.get("signature_token_filters", [])]
         timeout = float(self.params.get("timeout_seconds", 120))
@@ -12075,6 +12278,7 @@ class RuntimeBundleTimeline(LoadPrimitive):
         command = build_runtime_bundle_timeline_command(
             runs_dir=runs_dir,
             bundle_ids=bundle_ids,
+            latest_count=latest_count,
             output_dir=output_dir,
             scenario_id_filters=scenario_id_filters,
             signature_token_filters=signature_token_filters,
@@ -12088,6 +12292,7 @@ class RuntimeBundleTimeline(LoadPrimitive):
             payload={
                 "runs_dir": str(runs_dir),
                 "bundle_ids": bundle_ids,
+                "latest_count": latest_count,
                 "scenario_id_filters": scenario_id_filters,
                 "signature_token_filters": signature_token_filters,
                 "output_dir": str(output_dir),
@@ -13480,6 +13685,14 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         import os
         import subprocess
 
+        seed_argument = None
+        if not self._CARDANO_NODE_WORKLOAD and hasattr(handle, "_seed"):
+            from profile_manager.scenario import _validate_seed
+
+            validated_seed = _validate_seed(getattr(handle, "_seed"))
+            if validated_seed is not None:
+                seed_argument = str(int(str(validated_seed), 0))
+
         helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
         python_bin = str(self.params.get("python_bin", "python3"))
         profile_id = self.params.get("profile_id")
@@ -13490,9 +13703,9 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "profile_id or runtime_root"
             )
         if profile_id:
-            from profile_manager.profiles import remote_base
+            from profile_manager.profiles import runtime_root as profile_runtime_root
 
-            runtime_root = str(Path(remote_base()) / str(profile_id))
+            runtime_root = str(profile_runtime_root(str(profile_id)))
         else:
             runtime_root = str(runtime_root_value)
         attempts = int(self.params.get("attempts", 40))
@@ -13554,6 +13767,8 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             "--case-set",
             case_set,
         ]
+        if seed_argument is not None:
+            command.extend(["--seed", seed_argument])
         if not self._CARDANO_NODE_WORKLOAD:
             # Only the Amaru helper waits for post-workload chain progress; the
             # Cardano helper rejects this flag.
@@ -13578,6 +13793,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "output_dir": str(output_dir),
                 "attempts": attempts,
                 "case_set": case_set,
+                "seed": seed_argument,
                 "response_timeout_seconds": response_timeout_seconds,
                 "progress_timeout_seconds": progress_timeout_seconds,
                 "observation_seconds": observation_seconds,
@@ -13739,24 +13955,105 @@ def _measurement_target_identity(handle) -> dict[str, Any]:
     return dict(identity)
 
 
+def _capture_amaru_measurement_window(
+    target: dict[str, Any],
+    *,
+    started_at: str,
+    ended_at: str,
+    destination: Path,
+) -> dict[str, Any]:
+    """Retain only the measured Amaru node's JSON records for one workload window."""
+
+    if target.get("implementation") != "amaru" or target.get("id") != "amaru-relay-1":
+        raise RuntimeError("controlled Amaru trace target is not the measured relay")
+    container = str(target.get("container") or "")
+    if not container:
+        raise RuntimeError("controlled Amaru trace target container is unavailable")
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.unlink(missing_ok=True)
+    except OSError as exc:
+        raise RuntimeError("cannot reset the measured Amaru node trace window") from exc
+    try:
+        result = _protocol_docker_result(
+            ["logs", "--since", started_at, "--until", ended_at, container],
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError("cannot retain the measured Amaru node trace window") from exc
+    if result.returncode != 0:
+        raise RuntimeError("cannot retain the measured Amaru node trace window")
+    window_target = {
+        **target,
+        "window_started_at": started_at,
+        "window_ended_at": ended_at,
+    }
+    rows = []
+    for line in (result.stdout + "\n" + result.stderr).splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        if _timestamp_in_controlled_window(row.get("timestamp"), window_target):
+            rows.append(row)
+    payload = "".join(
+        json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+        for row in rows
+    ).encode("utf-8")
+    try:
+        atomic_write_bytes(destination, payload)
+    except OSError as exc:
+        try:
+            destination.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise RuntimeError("cannot publish the measured Amaru node trace window") from exc
+    return {
+        "container": container,
+        "record_count": len(rows),
+        "trace_path": str(destination),
+    }
+
+
 class RuntimeControlledPlutusTransactions(LoadPrimitive):
     """Submit exactly 30 valid and 30 invalid frozen Plutus transactions."""
 
     def run(self, handle, rng):
         import os
-        from profile_manager.profiles import remote_base
+        from profile_manager.profiles import runtime_root as profile_runtime_root
 
         profile_id = self.params.get("profile_id")
-        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        prepared_path_value = getattr(handle, "_prepared_runtime_metadata_path", None)
+        if prepared_path_value:
+            prepared_path = Path(prepared_path_value)
+            if not prepared_path.is_file() or prepared_path.is_symlink():
+                raise RuntimeError("prepared runtime metadata is unavailable")
+            try:
+                prepared_runtime = json.loads(prepared_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise RuntimeError("prepared runtime metadata is unreadable") from error
+            if (
+                not isinstance(prepared_runtime, dict)
+                or prepared_runtime.get("profile_id") != str(profile_id)
+            ):
+                raise RuntimeError("prepared runtime profile identity does not match")
+            runtime_root = prepared_path.parent
+        else:
+            runtime_root = Path(
+                self.params.get("runtime_root") or profile_runtime_root(str(profile_id))
+            )
         output_dir = _resolve_output_path(
             handle, self.params.get("output_dir", "outputs/controlled-plutus-transactions")
         )
         output_dir.parent.mkdir(parents=True, exist_ok=True)
+        implementation = str(self.params["measurement_implementation"])
         command = [
             str(self.params.get("python_bin", "python3")),
             str(DWARF_ROOT / "scripts" / "runtime_controlled_plutus_transactions.py"),
             "--measurement-implementation",
-            str(self.params["measurement_implementation"]),
+            implementation,
             "--runtime-root", str(runtime_root),
             "--output-dir", str(output_dir),
             "--transaction-count", "60",
@@ -13790,10 +14087,10 @@ class RuntimeControlledSimpleTransfers(LoadPrimitive):
 
     def run(self, handle, rng):
         import os
-        from profile_manager.profiles import remote_base
+        from profile_manager.profiles import runtime_root as profile_runtime_root
 
         profile_id = self.params.get("profile_id")
-        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        runtime_root = Path(self.params.get("runtime_root") or profile_runtime_root(str(profile_id)))
         output_dir = _resolve_output_path(
             handle, self.params.get("output_dir", "outputs/controlled-simple-transfers")
         )
@@ -13843,10 +14140,10 @@ class RuntimeOpcertHeaderCases(LoadPrimitive):
 
     def run(self, handle, rng):
         import os
-        from profile_manager.profiles import remote_base
+        from profile_manager.profiles import runtime_root as profile_runtime_root
 
         profile_id = self.params.get("profile_id")
-        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        runtime_root = Path(self.params.get("runtime_root") or profile_runtime_root(str(profile_id)))
         output_dir = _resolve_output_path(
             handle, self.params.get("output_dir", "outputs/opcert-header-cases")
         )
@@ -13979,10 +14276,10 @@ class RuntimeOpcertHeaderSoak(LoadPrimitive):
 
     def run(self, handle, rng):
         import os
-        from profile_manager.profiles import remote_base
+        from profile_manager.profiles import runtime_root as profile_runtime_root
 
         profile_id = self.params.get("profile_id")
-        runtime_root = Path(self.params.get("runtime_root") or Path(remote_base()) / str(profile_id))
+        runtime_root = Path(self.params.get("runtime_root") or profile_runtime_root(str(profile_id)))
         output_dir = _resolve_output_path(handle, self.params.get("output_dir", "outputs/opcert-soak"))
         output_dir.mkdir(parents=True, exist_ok=True)
         command = self._build_command(runtime_root=runtime_root, output_dir=output_dir)
@@ -14097,12 +14394,61 @@ class RuntimeVerifyExactTarget(LoadPrimitive):
         "version",
         "source_revision",
         "mode",
+        "image_reference",
+        "source_image_reference",
         "image_digest",
+        "image_manifest_digest",
+        "image_config_digest",
         "executable_digest",
         "patch_set_sha256",
+        "build_result_sha256",
+        "runtime_probe_log_sha256",
+        "qualification_image_id",
+        "transfer_source_installation_id",
+        "transfer_manifest_sha256",
+        "version_catalog_revision",
     )
 
     def run(self, handle, rng):
+        if self.params.get("identity_binding") == "resolved-plan":
+            required = {
+                "image_reference",
+                "image_digest",
+                "version_catalog_revision",
+            }
+            if self.params.get("mode") == "patched":
+                required.update(
+                    {
+                        "executable_digest",
+                        "patch_set_sha256",
+                        "build_result_sha256",
+                        "runtime_probe_log_sha256",
+                    }
+                )
+            missing = sorted(
+                field for field in required if self.params.get(field) in (None, "")
+            )
+            if self.params.get("image_reference") == self.params.get("image_digest"):
+                imported_required = {
+                    "source_image_reference",
+                    "image_manifest_digest",
+                    "image_config_digest",
+                    "qualification_image_id",
+                    "transfer_source_installation_id",
+                    "transfer_manifest_sha256",
+                }
+                missing.extend(
+                    sorted(
+                        field
+                        for field in imported_required
+                        if self.params.get(field) in (None, "")
+                    )
+                )
+            if missing:
+                raise RuntimeError(
+                    "resolved-plan target identity was not materialized: "
+                    + ", ".join(sorted(set(missing)))
+                )
         observed = _measurement_target_identity(handle)
         expected = {
             field: self.params[field]
@@ -14368,6 +14714,34 @@ def _active_measurement_runtime(handle):
     return runtime
 
 
+def _runtime_elapsed_seconds(handle) -> float:
+    """Return an operational clock without inventing measurement evidence."""
+    import time
+
+    runtime = getattr(handle, "_measurement_runtime", None)
+    if runtime is not None and callable(getattr(runtime, "elapsed_seconds", None)):
+        return float(runtime.elapsed_seconds())
+    started = getattr(handle, "_scenario_runtime_started_monotonic", None)
+    if started is None:
+        started = time.monotonic()
+        handle._scenario_runtime_started_monotonic = started
+    return max(0.0, time.monotonic() - float(started))
+
+
+def _runtime_phase_marker(handle, phase: str, event: str) -> dict[str, Any]:
+    """Use measurement markers when selected, otherwise an operational marker."""
+    runtime = getattr(handle, "_measurement_runtime", None)
+    if runtime is not None and callable(getattr(runtime, "mark_phase", None)):
+        return runtime.mark_phase(phase, event)
+    return {
+        "phase": phase,
+        "event": event,
+        "elapsed_seconds": _runtime_elapsed_seconds(handle),
+        "observed_at_epoch_seconds": _client_epoch(),
+        "source": "scenario-operational-clock",
+    }
+
+
 class _RuntimeTimedMeasurementWindow(LoadPrimitive):
     _WINDOW_NAME = ""
 
@@ -14498,9 +14872,9 @@ class RuntimeProtocolDecodeCases(LoadPrimitive):
                 "runtime_protocol_decode_cases requires exactly one of profile_id or runtime_root"
             )
         if profile_id:
-            from profile_manager.profiles import remote_base
+            from profile_manager.profiles import runtime_root as profile_runtime_root
 
-            runtime_root = Path(remote_base()) / str(profile_id)
+            runtime_root = profile_runtime_root(str(profile_id))
         else:
             runtime_root = Path(str(runtime_root_value))
         attempts_per_case = int(self.params.get("attempts_per_case", 100))
@@ -14675,16 +15049,49 @@ def _resolve_client_runtime_target(handle, params: dict[str, Any]) -> dict[str, 
     metadata_value = params.get("runtime_metadata_path")
     if metadata_value:
         metadata_path = Path(str(metadata_value))
+    elif getattr(handle, "_prepared_runtime_metadata_path", None) is not None:
+        metadata_path = Path(str(handle._prepared_runtime_metadata_path))
     elif profile_id:
-        metadata_path = Path("/opt/dwarf/cardano-profiles") / profile_id / "runtime.json"
+        from profile_manager.profiles import runtime_root
+
+        metadata_path = runtime_root(profile_id) / "runtime.json"
     else:
         raise RuntimeError("profile_id or runtime_metadata_path is required")
     try:
         runtime = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"runtime metadata is unavailable: {metadata_path}") from exc
+    runtime_profile_id = str(runtime.get("profile_id") or "")
+    if profile_id and runtime_profile_id != profile_id:
+        raise RuntimeError(
+            "runtime metadata profile does not match selected profile: "
+            f"expected {profile_id}, observed {runtime_profile_id or 'missing'}"
+        )
 
-    implementation = str((_measurement_target_identity(handle) or {}).get("implementation") or "")
+    frozen_execution_identity = False
+    plan_sha256 = getattr(handle, "_run_service_plan_sha256", None)
+    if getattr(handle, "_measurement_context", None) is not None or not plan_sha256:
+        execution_identity = _measurement_target_identity(handle)
+    else:
+        if not isinstance(plan_sha256, str):
+            raise RuntimeError("frozen execution target identity is unavailable")
+        from profile_manager.operator_version_decisions import (
+            InvalidOperatorVersionState,
+            build_operator_version_execution_target,
+        )
+
+        try:
+            frozen_target = build_operator_version_execution_target(
+                handle.run_dir,
+                run_service_plan_sha256=plan_sha256,
+            )
+        except InvalidOperatorVersionState as exc:
+            raise RuntimeError(
+                f"frozen execution target identity is unavailable: {exc}"
+            ) from exc
+        execution_identity = frozen_target["subject"]
+        frozen_execution_identity = True
+    implementation = str(execution_identity.get("implementation") or "")
     if implementation == "cardano-node":
         nodes = runtime.get("haskell_nodes") or []
         node = next((item for item in nodes if item.get("id") == "node1"), None)
@@ -14710,28 +15117,42 @@ def _resolve_client_runtime_target(handle, params: dict[str, Any]) -> dict[str, 
         }
 
     if implementation == "amaru":
-        services = ((runtime.get("identity") or {}).get("services") or {})
+        runtime_identity = runtime.get("identity") or {}
+        services = runtime_identity.get("services") or {}
         target = services.get("amaru-relay-1") or {}
         peer = services.get("amaru-consumer") or {}
         container = target.get("container")
         if not container:
             raise RuntimeError("Amaru runtime has no amaru-relay-1 target")
-        inspect = _protocol_docker_result(["inspect", str(container)])
-        ip_address = None
-        if inspect.returncode == 0:
-            try:
-                networks = json.loads(inspect.stdout)[0]["NetworkSettings"]["Networks"]
-                ip_address = next(
-                    (item.get("IPAddress") for item in networks.values() if item.get("IPAddress")),
-                    None,
-                )
-            except (KeyError, IndexError, json.JSONDecodeError, StopIteration):
-                ip_address = None
+        if frozen_execution_identity:
+            expected_config_id = execution_identity.get("config_image_id")
+            expected_version = execution_identity.get("version")
+            frozen_service = frozen_target["service"]
+            if (
+                runtime_identity.get("matched") is not True
+                or not isinstance(expected_config_id, str)
+                or not expected_config_id.startswith("sha256:")
+                or target.get("matched") is not True
+                or target.get("wrapper_matched") is not True
+                or target.get("artifact_image_id") != expected_config_id
+                or target.get("expected_image_id") != expected_config_id
+                or target.get("expected_version") != expected_version
+                or target.get("identity_basis") != "operator-registration-config-id"
+                or target.get("container") != frozen_service["container"]
+                or target.get("running_image_id") != frozen_service["wrapper_image_id"]
+                or target.get("wrapper_expected_image_id")
+                != frozen_service["wrapper_image_id"]
+                or frozen_target["runtime_interface"] != "extracted-binary"
+            ):
+                raise RuntimeError("Amaru runtime target disagrees with frozen execution identity")
+        from scripts.runtime_amaru_measurement_calibration import _container_ip
+
+        ip_address = _container_ip(str(container))
         return {
             "id": "amaru-relay-1",
             "implementation": implementation,
             "container": container,
-            "listen_host": ip_address or str(container),
+            "listen_host": ip_address,
             "listen_port": 3000,
             "peer": {
                 "id": "amaru-consumer",
@@ -15621,7 +16042,7 @@ def _client_peer_role_ready(target: dict[str, Any]) -> dict[str, Any]:
 
 def _emit_readiness_gate(handle, target_node: str, event: str, payload: dict[str, Any]) -> dict[str, Any]:
     observed_at = _client_epoch()
-    elapsed_seconds = _active_measurement_runtime(handle).elapsed_seconds()
+    elapsed_seconds = _runtime_elapsed_seconds(handle)
     body = {"target_node": target_node, "elapsed_seconds": elapsed_seconds, "observed_at_epoch_seconds": observed_at, **payload}
     _append_target_hook_event(
         handle, primitive="runtime_real_target_restart_and_readiness", event=event, payload=body
@@ -15639,8 +16060,7 @@ class RuntimeRealTargetRestartAndReadiness(LoadPrimitive):
         timeout = float(self.params.get("timeout_seconds", 240))
         interval = float(self.params.get("poll_interval_seconds", 1))
         before = _observe_client_target_tip(target)
-        runtime = _active_measurement_runtime(handle)
-        recovery_start_marker = runtime.mark_phase("restart-recovery", "start")
+        recovery_start_marker = _runtime_phase_marker(handle, "restart-recovery", "start")
         restart = _emit_readiness_gate(handle, str(target["id"]), "restart_started", {"tip": before})
         restart_command = _restart_client_runtime_target(target)
         deadline = time.monotonic() + timeout
@@ -15677,6 +16097,11 @@ class RuntimeRealTargetRestartAndReadiness(LoadPrimitive):
         }
         proof = {
             "schema_version": "v1", "target_node": target["id"],
+            "listener_endpoint": {
+                "network": str(os.environ.get("ADA2_DWARF_RUN_NETWORK") or "") or None,
+                "host": target.get("listen_host"),
+                "port": target.get("listen_port"),
+            },
             "tip_before_restart": before, "tip_after_readiness": after,
             "restart": restart, "restart_command": restart_command,
             "recovery_start_marker": recovery_start_marker,
@@ -15705,12 +16130,11 @@ class RuntimeControlledSyncRange(LoadPrimitive):
         before_state = _protocol_container_state(str(target.get("container") or ""))
         window_started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         peer_before = _client_peer_role_ready(target)
-        runtime = _active_measurement_runtime(handle)
-        sync_start_marker = runtime.mark_phase("controlled-sync-range", "start")
+        sync_start_marker = _runtime_phase_marker(handle, "controlled-sync-range", "start")
         started_event = {
             "event": "sync_range_started",
             "target_node": target["id"],
-            "elapsed_seconds": runtime.elapsed_seconds(),
+            "elapsed_seconds": _runtime_elapsed_seconds(handle),
             "observed_at_epoch_seconds": _client_epoch(),
             "tip": start,
             "peer_policy": policy,
@@ -15727,11 +16151,11 @@ class RuntimeControlledSyncRange(LoadPrimitive):
                 poll_interval_seconds=float(self.params.get("poll_interval_seconds", 1)),
             )
         finally:
-            sync_end_marker = runtime.mark_phase("controlled-sync-range", "end")
+            sync_end_marker = _runtime_phase_marker(handle, "controlled-sync-range", "end")
         completed_event = {
             "event": "sync_range_completed",
             "target_node": target["id"],
-            "elapsed_seconds": runtime.elapsed_seconds(),
+            "elapsed_seconds": _runtime_elapsed_seconds(handle),
             "observed_at_epoch_seconds": _client_epoch(),
             "tip": end,
             "peer_policy": policy,
@@ -15740,7 +16164,7 @@ class RuntimeControlledSyncRange(LoadPrimitive):
             handle, primitive="runtime_controlled_sync_range", event="sync_range_completed",
             payload={key: value for key, value in completed_event.items() if key != "event"},
         )
-        recovery_end_marker = runtime.mark_phase("restart-recovery", "end")
+        recovery_end_marker = _runtime_phase_marker(handle, "restart-recovery", "end")
         peer_after = _client_peer_role_ready(target)
         target_health = _observe_client_window_health(
             target,
@@ -16922,7 +17346,12 @@ class LoadEventsAreOk(AssertionPrimitive):
                 "required_completed": required_completed,
             },
             "data_points_used": [
-                {"outcome": payload.get("outcome"), "exit_code": payload.get("exit_code")}
+                {
+                    "outcome": payload.get("outcome"),
+                    "exit_code": payload.get(
+                        "helper_exit_code", payload.get("exit_code")
+                    ),
+                }
                 for payload in non_ok
             ],
             "result": result,
@@ -20059,20 +20488,19 @@ class TxsubmissionWindowEnforced(AssertionPrimitive):
     def evaluate(self, handle):
         latest, payload = _latest_completed_payload(handle, phase="load", primitive="runtime_txsubmission_window_pressure")
         result_body = payload.get("result") or {}
-        min_txids_processed = int(self.params.get("min_txids_processed", 1) or 0)
         min_messages_observed = int(self.params.get("min_txsubmission_messages_observed", 3) or 0)
         negotiated_window = int(result_body.get("negotiated_window", 0) or 0)
-        max_in_flight = int(result_body.get("max_in_flight_txids", 0) or 0)
+        overflow_attempt = int(result_body.get("overflow_attempt_txids", 0) or 0)
         overflow_rejected = bool(result_body.get("overflow_rejected", False))
-        txids_processed = int(result_body.get("txids_processed", 0) or 0)
+        client_reply_txids = int(result_body.get("client_reply_txids_observed", 0) or 0)
         messages_observed = int(result_body.get("txsubmission_messages_observed", 0) or 0)
         enough = (
             latest is not None
             and payload.get("outcome") == "ok"
             and negotiated_window >= 1
-            and max_in_flight <= negotiated_window
+            and overflow_attempt == negotiated_window + 1
+            and client_reply_txids == overflow_attempt
             and overflow_rejected
-            and txids_processed >= min_txids_processed
             and messages_observed >= min_messages_observed
         )
         result = "pass" if enough else "fail"
@@ -20083,11 +20511,10 @@ class TxsubmissionWindowEnforced(AssertionPrimitive):
             "evaluated_value": {
                 "completed": 1 if latest is not None else 0,
                 "negotiated_window": negotiated_window,
-                "max_in_flight_txids": max_in_flight,
+                "overflow_attempt_txids": overflow_attempt,
                 "overflow_rejected": overflow_rejected,
-                "txids_processed": txids_processed,
+                "client_reply_txids_observed": client_reply_txids,
                 "txsubmission_messages_observed": messages_observed,
-                "min_txids_processed": min_txids_processed,
                 "min_txsubmission_messages_observed": min_messages_observed,
             },
             "data_points_used": [payload] if latest is not None else [],

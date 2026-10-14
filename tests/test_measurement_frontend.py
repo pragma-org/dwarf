@@ -47,6 +47,20 @@ def test_measurement_catalog_routes_are_wired():
     assert "Profiles select taps; run reports contain results." in hub.group(1)
 
 
+def test_user_measurement_delete_keeps_credentials_in_post_body():
+    script = Path("dwarf/dashboard/static/js/definition-delete.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "const body = new URLSearchParams(new FormData(form))" in script
+    assert "method: 'POST'" in script
+    assert "window.confirm(" in script
+    assert "window.prompt('Dashboard token (required for state changes)')" in script
+    assert "form.querySelector('input[name=\"token\"]')" in script
+    assert "tokenInput.value = token" in script
+    assert "?token=" not in script
+
+
 def test_measurement_learn_route_explains_modes_outcomes_and_claim_boundary():
     html = render_route_html("/learn/measurements")
     lower = html.lower()
@@ -209,6 +223,54 @@ def test_run_measurement_section_surfaces_identity_collectors_and_metrics(tmp_pa
     assert section["raw_url"].endswith("/measurements/raw")
 
 
+def test_run_measurement_section_preserves_origin_profile_for_frozen_exact_taps(
+    tmp_path: Path,
+):
+    measurement_dir = tmp_path / "measurements"
+    measurement_dir.mkdir()
+    (tmp_path / "launch").mkdir()
+    (measurement_dir / "selection.json").write_text(
+        json.dumps(
+            {
+                "collector_states": {"amaru-stock-network": "finalized"},
+                "resolution": {
+                    "profile": {"id": "none", "source": "explicit-none"},
+                    "resolved": [{"id": "amaru-stock-network"}],
+                    "target_identity": {"implementation": "amaru"},
+                },
+            }
+        )
+    )
+    (tmp_path / "launch" / "plan.json").write_text(
+        json.dumps(
+            {
+                "measurements": {
+                    "profile": {"id": "amaru-security-default"},
+                    "resolved": [{"id": "amaru-stock-network"}],
+                }
+            }
+        )
+    )
+
+    section = _measurement_section(tmp_path)
+
+    assert section["profile_id"] == "amaru-security-default"
+
+    (measurement_dir / "selection.json").write_text(
+        json.dumps(
+            {
+                "collector_states": {"amaru-stock-resources": "finalized"},
+                "resolution": {
+                    "profile": {"id": "none", "source": "explicit-none"},
+                    "resolved": [{"id": "amaru-stock-resources"}],
+                    "target_identity": {"implementation": "amaru"},
+                },
+            }
+        )
+    )
+    assert _measurement_section(tmp_path)["profile_id"] == "none"
+
+
 def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
     run_id = "20260918T230610Z-measured"
     run_dir = tmp_path / run_id
@@ -252,7 +314,18 @@ def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
         )
     )
     (run_dir / "measurements" / "runtime.json").write_text(
-        json.dumps({"collector_errors": []})
+        json.dumps(
+            {
+                "collector_errors": [
+                    {
+                        "measurement_id": "optional-observer",
+                        "phase": "finalize",
+                        "type": "RuntimeError",
+                        "message": "bounded optional collector failed",
+                    }
+                ]
+            }
+        )
     )
     (run_dir / "measurements" / "report.json").write_text(
         json.dumps(
@@ -301,36 +374,42 @@ def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
                         "status": "unavailable",
                         "unit": "s",
                         "reason": "the scenario did not request a restart"
+                    },
+                    "restart_recovery": {
+                        "status": "not-recovered",
+                        "unit": "s",
+                        "reason": "the target never recovered"
                     }
                 }
             }
         )
     )
     monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(tmp_path))
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path / "bundles"))
 
     html = render_route_html(f"/operate/runs/{run_id}")
 
-    assert "Measurement report" in html
-    assert "cardano-security-patched" in html
+    assert "Measurements" in html
     assert "attempt_latency" in html
     assert "102000" in html
     assert "measurements/report.json" in html
-    assert "This run proves collection for this exact target and workload." in html
-    assert "It is not automatically an Amaru-versus-Cardano benchmark." in html
-    assert "Functional assertions passed" in html
-    assert "Available report metrics" in html
-    assert "Unavailable report metrics" in html
-    assert "Collectors finalized" in html
-    assert "Collector errors" in html
+    assert "5 metrics measured" in html
+    assert "1 unavailable" not in html
+    assert "Collectors finalized" not in html
+    assert "1 optional collector error" in html
+    assert "bounded optional collector failed" in html
     assert "Workload and outcomes" in html
     assert "Latency and processing time" in html
     assert "Throughput and chain progress" in html
-    assert "Unavailable measurements" in html
+    assert "Unavailable measurements" not in html
     assert "Workload attempt latency" in html
     assert "Chain sync speed" in html
     assert "Ledger events observed" in html
-    assert "Evidence: Very small sample" in html
-    assert "Reserved / not implemented" in html
+    assert "very small sample" in html.lower()
+    assert "Reserved / not implemented" not in html
+    assert "the scenario did not request a restart" not in html
+    assert "the target never recovered" not in html
     assert 'data-measurement-card' in html
     assert 'data-measurement-category="all"' in html
     measurement_groups = re.findall(
@@ -350,6 +429,16 @@ def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
     assert f'/operate/runs/{run_id}/measurements/raw' in html
     assert '<table class="config-table measurement-table">' not in html
     assert "0 samples" not in html
+    assert "Operate · Run" not in html
+    assert "Forensic bundle for one scenario execution" not in html
+    assert "What this run shows" not in html
+    assert "Take it with you" not in html
+    assert "How to read this run" not in html
+    assert "Run details" in html
+    assert 'data-run-details-trigger' in html
+    assert 'class="dk-lead"' not in html
+    assert 'data-run-verdict-summary' in html
+    assert 'class="visually-hidden"' in html
 
     raw_html = render_route_html(f"/operate/runs/{run_id}/measurements/raw")
     assert "Raw measurement data" in raw_html
@@ -360,6 +449,9 @@ def test_run_page_renders_measurement_report(monkeypatch, tmp_path: Path):
     assert "ledger_samples" in raw_html
     assert "measurements/report.json" in raw_html
     assert "measurements/report.md" in raw_html
+    assert "restart_recovery" in raw_html
+    assert "not-recovered" in raw_html
+    assert "the target never recovered" in raw_html
 
 
 def test_run_report_secondary_evidence_uses_closed_native_disclosures():
@@ -400,3 +492,49 @@ def test_run_report_secondary_evidence_uses_closed_native_disclosures():
 
     assert '<summary class="run-disclosure__summary">' in template
     assert '<div class="run-disclosure__body">' in template
+    assert '{% if ui != "basic" %}' in template
+    assert "Operate · Run" in template
+    assert "Forensic bundle for one scenario execution" in template
+    measurement_template = (
+        Path(__file__).parents[1]
+        / "dwarf/dashboard/templates/operate/_partials/_measurement_report.j2"
+    ).read_text(encoding="utf-8")
+    assert "Raw data" in measurement_template
+    assert "Raw measurement data" in measurement_template
+    assert "Download report.json" in measurement_template
+    assert "What this run shows" not in template
+    assert "Take it with you" not in template
+    assert 'data-run-details-trigger' in template
+    assert 'id="run-manifest"' in template
+    assert 'class="dk-lead"' not in template
+    assert 'data-run-verdict-summary' in template
+    post_measurement = template.split('{% include "operate/_partials/_measurement_report.j2" %}', 1)[1]
+    post_measurement_details = re.findall(
+        r'<details class="([^"]*run-disclosure[^"]*)"[^>]*(?:data-run-section|data-operator-version-decision)',
+        post_measurement,
+    )
+    assert post_measurement_details
+    assert all("evidence-disclosure" in classes for classes in post_measurement_details)
+    assert template.index('data-operator-version-decision') > template.index('data-run-section="log-tail"')
+
+
+def test_basic_run_evidence_uses_full_width_associated_payload_rows():
+    template = (
+        Path(__file__).parents[1]
+        / "dwarf/dashboard/templates/operate/run.j2"
+    ).read_text(encoding="utf-8")
+
+    assert template.index('data-run-section="export"') < template.index(
+        'data-run-section="execution-definition"'
+    )
+    assert '{% if ui != "basic" %}<th>Why</th>{% endif %}' in template
+    assert template.count('class="run-evidence-detail-row"') == 3
+    assert 'data-evidence-payload="floor-preview"' in template
+    assert 'data-evidence-payload="assertion"' in template
+    assert 'data-evidence-payload="log"' in template
+    assert 'colspan="4"' in template
+    assert 'colspan="3"' in template
+    assert 'class="run-evidence-identity"' in template
+    assert 'title="{{ primitive }}"' in template
+    assert '{% if ui != "basic" %}<th title="{{ run.explanation.field_help[\'payload\'] }}">payload</th>{% endif %}' in template
+    assert template.count('class="run-payload-disclosure"') == 5

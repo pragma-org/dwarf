@@ -13,16 +13,7 @@
   "load": [
     {
       "primitive": "runtime_bundle_timeline",
-      "runs_dir": "~/dwarf-fw/runs",
-      "bundle_ids": [
-        "20260427T074053Z-ba7c46cc",
-        "20260427T075930Z-8a754454",
-        "20260427T082605Z-98e8aae2",
-        "20260427T083724Z-176c5cf7",
-        "20260427T091106Z-3bce7cb4",
-        "20260427T094439Z-5b4d3858",
-        "20260427T105341Z-0b24e9a8"
-      ],
+      "latest_count": 7,
       "output_dir": "outputs/bundle-timeline",
       "timeout_seconds": 120
     }

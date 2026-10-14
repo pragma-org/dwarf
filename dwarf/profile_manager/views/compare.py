@@ -17,7 +17,7 @@ from profile_manager.data.runs import recent_runs_payload
 from profile_manager.templating import render
 
 
-def render_operate_compare() -> str:
+def render_operate_compare(*, token: str | None = None) -> str:
     """Render /operate/compare with the runner + standing divergence sections.
 
     Slice-24 redesign merges three concerns:
@@ -49,4 +49,5 @@ def render_operate_compare() -> str:
         strip=strip,
         families=families,
         empty=not comparisons,
+        token=token or "",
     )

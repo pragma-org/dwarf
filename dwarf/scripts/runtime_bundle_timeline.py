@@ -163,6 +163,74 @@ def _bundle_event(run_dir: Path) -> dict | None:
     }
 
 
+def _manifest_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _latest_manifest_candidate(runs_root: Path, run_dir: Path) -> tuple[datetime, str] | None:
+    if run_dir.is_symlink() or not run_dir.is_dir():
+        return None
+    try:
+        root = runs_root.resolve(strict=True)
+        resolved_run = run_dir.resolve(strict=True)
+    except OSError:
+        return None
+    if resolved_run.parent != root:
+        return None
+    manifest_path = run_dir / "manifest.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        return None
+    try:
+        if manifest_path.resolve(strict=True).parent != resolved_run:
+            return None
+    except OSError:
+        return None
+    manifest = _load_json(manifest_path)
+    if not isinstance(manifest, dict):
+        return None
+    started_at = _manifest_timestamp(manifest.get("started_at"))
+    ended_at = _manifest_timestamp(manifest.get("ended_at"))
+    if started_at is None or ended_at is None:
+        return None
+    return started_at, run_dir.name
+
+
+def _contains_symlink(run_dir: Path) -> bool:
+    for current_root, dirnames, filenames in os.walk(run_dir, followlinks=False):
+        root = Path(current_root)
+        if any((root / name).is_symlink() for name in (*dirnames, *filenames)):
+            return True
+    return False
+
+
+def select_latest_completed_bundle_ids(runs_dir: Path, *, count: int) -> list[str]:
+    """Select the newest contained, completed runs in chronological order."""
+    if count < 1:
+        raise ValueError("latest bundle count must be at least 1")
+    candidates = [
+        candidate
+        for run_dir in runs_dir.iterdir()
+        if (candidate := _latest_manifest_candidate(runs_dir, run_dir)) is not None
+    ]
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    selected = []
+    for _, bundle_id in candidates:
+        if _contains_symlink(runs_dir / bundle_id):
+            continue
+        selected.append(bundle_id)
+        if len(selected) == count:
+            break
+    return list(reversed(selected))
+
+
 def _render_markdown(payload: dict) -> str:
     summary = payload["summary"]
     lines = [
@@ -197,10 +265,19 @@ def run_bundle_timeline(
     output_dir: Path,
     scenario_id_filters: list[str],
     signature_token_filters: list[str],
+    require_safe_completed_paths: bool = False,
 ) -> dict:
     events = []
     for bundle_id in bundle_ids:
-        event = _bundle_event(runs_dir / bundle_id)
+        run_dir = runs_dir / bundle_id
+        if require_safe_completed_paths and (
+            _latest_manifest_candidate(runs_dir, run_dir) is None
+            or _contains_symlink(run_dir)
+        ):
+            raise RuntimeError(
+                "selected completed bundle changed before consumption"
+            )
+        event = _bundle_event(run_dir)
         if event is None:
             continue
         if scenario_id_filters and event["scenario_id"] not in scenario_id_filters:
@@ -275,7 +352,9 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Assemble a chronological evidence timeline across captured bundles")
     parser.add_argument("--runs-dir", default=None)
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--bundle-id", action="append", dest="bundle_ids", required=True)
+    selector = parser.add_mutually_exclusive_group(required=True)
+    selector.add_argument("--bundle-id", action="append", dest="bundle_ids")
+    selector.add_argument("--latest-count", type=int)
     parser.add_argument("--scenario-id", action="append", dest="scenario_ids", default=[])
     parser.add_argument("--signature-token", action="append", dest="signature_tokens", default=[])
     args = parser.parse_args(argv[1:])
@@ -284,6 +363,20 @@ def main(argv: list[str]) -> int:
     if runs_dir is None:
         print("missing runs dir", file=sys.stderr)
         return 1
+    if args.latest_count is not None and args.latest_count < 1:
+        parser.error("--latest-count must be at least 1")
+    bundle_ids = list(args.bundle_ids or [])
+    if args.latest_count is not None:
+        try:
+            bundle_ids = select_latest_completed_bundle_ids(
+                runs_dir, count=args.latest_count
+            )
+        except OSError as exc:
+            print(f"could not inspect runs dir: {exc}", file=sys.stderr)
+            return 1
+        if not bundle_ids:
+            print("no completed run bundles found", file=sys.stderr)
+            return 1
     output_dir = Path(args.output_dir) if args.output_dir else _default_output_dir()
 
     emit_target_event(
@@ -291,19 +384,25 @@ def main(argv: list[str]) -> int:
         event="bundle_timeline_started",
         payload={
             "runs_dir": str(runs_dir),
-            "bundle_ids": list(args.bundle_ids),
+            "bundle_ids": bundle_ids,
+            "latest_count": args.latest_count,
             "scenario_id_filters": list(args.scenario_ids),
             "signature_token_filters": list(args.signature_tokens),
             "output_dir": str(output_dir),
         },
     )
-    result = run_bundle_timeline(
-        runs_dir=runs_dir,
-        bundle_ids=list(args.bundle_ids),
-        output_dir=output_dir,
-        scenario_id_filters=list(args.scenario_ids),
-        signature_token_filters=list(args.signature_tokens),
-    )
+    try:
+        result = run_bundle_timeline(
+            runs_dir=runs_dir,
+            bundle_ids=bundle_ids,
+            output_dir=output_dir,
+            scenario_id_filters=list(args.scenario_ids),
+            signature_token_filters=list(args.signature_tokens),
+            require_safe_completed_paths=args.latest_count is not None,
+        )
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     emit_target_event(
         primitive="runtime_bundle_timeline",
         event="bundle_timeline_completed",

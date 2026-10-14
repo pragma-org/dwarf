@@ -2,9 +2,12 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from profile_manager.primitives import (
     AmaruMeasurementBoundaryProven,
     RuntimeAmaruMeasurementCalibration,
+    RuntimeCardanoMeasurementCalibration,
 )
 from profile_manager.scenario import scenario_from_body
 
@@ -375,6 +378,115 @@ def test_calibration_primitive_runs_retained_leg_with_exact_attempt_count(
     )
     assert completed["payload"]["outcome"] == "ok"
     assert completed["payload"]["report"]["attempts"]["total"] == 40
+
+
+def test_real_amaru_calibration_primitive_passes_canonical_handle_seed(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    class Handle:
+        run_dir = tmp_path
+        _seed = "0xA11CE502"
+
+        def log(self, **_event):
+            pass
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        (output_dir / "result.json").write_text("{}", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    RuntimeAmaruMeasurementCalibration(
+        params={"runtime_root": "/runtime", "attempts": 40}
+    ).run(Handle(), None)
+
+    command = calls[0]
+    assert command[command.index("--seed") + 1] == str(int("0xA11CE502", 0))
+
+
+def test_real_zero_seed_is_explicit_but_legacy_fake_handle_keeps_helper_default(
+    tmp_path, monkeypatch
+):
+    commands = []
+
+    class RealHandle:
+        run_dir = tmp_path / "real"
+        _seed = 0
+
+        def log(self, **_event):
+            pass
+
+    class LegacyHandle:
+        run_dir = tmp_path / "legacy"
+
+        def log(self, **_event):
+            pass
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        (output_dir / "result.json").write_text("{}", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    primitive = RuntimeAmaruMeasurementCalibration(
+        params={"runtime_root": "/runtime", "attempts": 40}
+    )
+    primitive.run(RealHandle(), None)
+    primitive.run(LegacyHandle(), None)
+
+    assert commands[0][commands[0].index("--seed") + 1] == "0"
+    assert "--seed" not in commands[1]
+
+
+def test_cardano_calibration_does_not_receive_amaru_seed_flag(tmp_path, monkeypatch):
+    commands = []
+
+    class Handle:
+        run_dir = tmp_path
+        _seed = "0xA11CE502"
+
+        def log(self, **_event):
+            pass
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        (output_dir / "result.json").write_text("{}", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    RuntimeCardanoMeasurementCalibration(
+        params={"runtime_root": "/runtime", "attempts": 40}
+    ).run(Handle(), None)
+
+    assert "--seed" not in commands[0]
+
+
+@pytest.mark.parametrize("seed", [True, -1, "-1", "1.5", "0x", 1 << 64])
+def test_calibration_primitive_rejects_invalid_real_seed_before_helper_io(
+    tmp_path, monkeypatch, seed
+):
+    class Handle:
+        run_dir = tmp_path
+        _seed = seed
+
+        def log(self, **_event):
+            pass
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("helper subprocess must not start"),
+    )
+
+    with pytest.raises((TypeError, ValueError)):
+        RuntimeAmaruMeasurementCalibration(
+            params={"runtime_root": "/runtime", "attempts": 40}
+        ).run(Handle(), None)
 
 
 def test_calibration_primitive_emits_outcome_independent_workload_accounting(

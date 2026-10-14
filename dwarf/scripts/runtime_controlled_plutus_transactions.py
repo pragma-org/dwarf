@@ -13,8 +13,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.runtime_amaru_measurement_calibration import extract_latest_adopted_tip
+from scripts.runtime_substrate_common import reconcile_amaru_runtime_metadata
 from scripts.runtime_cardano_measurement_calibration import (
+    _containerized_cardano_workload,
     _container_state,
+    _controller_container,
+    _inspect_container,
     _query_cardano_tip,
     _run,
     _target,
@@ -30,10 +34,21 @@ def _container_logs(container: str, *, since: str) -> str:
     return result.stdout + ("\n" + result.stderr if result.stderr else "")
 
 
+def _exact_network_magic(runtime: dict) -> int:
+    network_magic = runtime.get("network_magic")
+    if (
+        isinstance(network_magic, bool)
+        or not isinstance(network_magic, int)
+        or not 0 <= network_magic <= 2**32 - 1
+    ):
+        raise RuntimeError("installed Amaru workload has no exact network magic")
+    return network_magic
+
+
 def _health_target(
     runtime: dict, transaction_producer: dict, measurement_implementation: str
 ) -> dict:
-    network_magic = int(runtime.get("network_magic") or 42)
+    network_magic = _exact_network_magic(runtime)
     if measurement_implementation == "cardano-node":
         return {
             "implementation": "cardano-node",
@@ -84,17 +99,60 @@ def _copy_fixture_key(container: str, source: str, destination: Path) -> None:
     destination.chmod(0o600)
 
 
-def _prepare_amaru_transaction_producer(
-    runtime: dict, output_dir: Path, stack: ExitStack
-) -> tuple[dict, dict]:
-    services = ((runtime.get("identity") or {}).get("services") or {})
-    producer = services.get("p1") or {}
+def _supporting_cardano_producer(runtime: dict) -> tuple[str, str, dict]:
+    actual_topology = runtime.get("actual_topology") or {}
+    service_map = actual_topology.get("selected_support_node_services")
+    selected_nodes = actual_topology.get("selected_nodes")
+    if not isinstance(service_map, dict) or not isinstance(selected_nodes, list):
+        raise RuntimeError("installed Amaru workload has no supporting Cardano producer mapping")
+    mappings = [
+        (str(node_id), str(service))
+        for node_id, service in service_map.items()
+        if str(node_id) and str(service)
+    ]
+    if len(mappings) != 1:
+        raise RuntimeError("installed Amaru workload has no unique supporting Cardano producer mapping")
+    node_id, service = mappings[0]
+    producer = (((runtime.get("identity") or {}).get("services") or {}).get(service) or {})
+    expected_image = str(producer.get("expected_image") or "")
+    matches = [
+        node
+        for node in selected_nodes
+        if isinstance(node, dict)
+        and node.get("id") == node_id
+        and node.get("service") == service
+        and node.get("implementation") == "cardano-node"
+        and node.get("supporting") is True
+        and node.get("image") == expected_image
+    ]
+    if len(matches) != 1:
+        raise RuntimeError("installed Amaru workload supporting Cardano producer mapping is invalid")
     if producer.get("matched") is not True or not producer.get("container"):
         raise RuntimeError("Amaru runtime has no qualified Cardano producer")
+    return node_id, service, producer
+
+
+def _prepare_amaru_transaction_producer(
+    runtime: dict,
+    output_dir: Path,
+    stack: ExitStack,
+    *,
+    runtime_root: Path | None = None,
+    controller: dict | None = None,
+) -> tuple[dict, dict]:
+    network_magic = _exact_network_magic(runtime)
+    producer_node_id, producer_service, producer = _supporting_cardano_producer(runtime)
     project = str(runtime.get("compose_project") or "")
     if not project:
         raise RuntimeError("Amaru runtime has no Compose project identity")
-    temp_root = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="dwarf-plutus-")))
+    temp_root = Path(
+        stack.enter_context(
+            tempfile.TemporaryDirectory(
+                prefix=".dwarf-plutus-",
+                dir=output_dir if controller is not None else None,
+            )
+        )
+    )
     key_root = temp_root / "keys"
     key_root.mkdir(mode=0o700)
     configurator = f"{project}-configurator-1"
@@ -107,6 +165,36 @@ def _prepare_amaru_transaction_producer(
     image = str(producer.get("expected_image") or "")
     if "@sha256:" not in image:
         raise RuntimeError("Cardano producer image is not digest-pinned")
+    if controller is not None:
+        if runtime_root is None:
+            raise RuntimeError("installed Amaru workload has no runtime root")
+        inspected = _inspect_container(str(producer["container"]))
+        node = {
+            "id": producer_node_id,
+            "service_name": producer_service,
+            "container_name": str(producer["container"]),
+            "container_id": str(inspected.get("Id") or ""),
+            "image_ref": image,
+            "image_id": str(producer.get("expected_image_id") or ""),
+            "container_socket_path": "/state/node.socket",
+            "socket_path": "/state/node.socket",
+            "socket_mount_destination": "/state",
+            "socket_mount_type": "volume",
+            "socket_volume_key": f"{producer_service}-state",
+        }
+        workload_runtime = dict(runtime)
+        workload_runtime["network_magic"] = network_magic
+        workload_runtime["workload_key_root"] = str(key_root)
+        workload_runtime["workload_socket_remote"] = True
+        return stack.enter_context(
+            _containerized_cardano_workload(
+                runtime_root=runtime_root,
+                runtime=workload_runtime,
+                node=node,
+                output_dir=output_dir,
+                controller=controller,
+            )
+        )
     wrapper = temp_root / "cardano-cli"
     host_work = str(output_dir.resolve())
     host_keys = str(key_root.resolve())
@@ -137,7 +225,7 @@ def _prepare_amaru_transaction_producer(
     )
     wrapper.chmod(0o700)
     workload_runtime = dict(runtime)
-    workload_runtime["network_magic"] = 42
+    workload_runtime["network_magic"] = network_magic
     workload_runtime["support_binaries"] = {"cardano-cli": str(wrapper)}
     workload_runtime["workload_key_root"] = str(key_root)
     workload_runtime["workload_socket_remote"] = True
@@ -234,6 +322,17 @@ def run_controlled_plutus_transactions(
     if transaction_count != 60:
         raise ValueError("transaction_count must be exactly 60")
     runtime = json.loads((runtime_root / "runtime.json").read_text(encoding="utf-8"))
+    if "network_magic" not in runtime:
+        deployment_path = runtime_root / "versioned-deployment.json"
+        if not deployment_path.is_file() or deployment_path.is_symlink():
+            raise RuntimeError("installed runtime has no exact network magic source")
+        try:
+            deployment = json.loads(deployment_path.read_text(encoding="utf-8"))
+            runtime = reconcile_amaru_runtime_metadata(runtime, deployment)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            raise RuntimeError(
+                "installed runtime has no valid exact network magic source"
+            ) from error
     if (
         measurement_implementation == "amaru"
         and (runtime.get("plutus_v2") or {}).get("verified") is not True
@@ -247,8 +346,13 @@ def run_controlled_plutus_transactions(
         )
     with ExitStack() as stack:
         if measurement_implementation == "amaru":
+            controller = _controller_container()
             workload_runtime, node = _prepare_amaru_transaction_producer(
-                runtime, output_dir, stack
+                runtime,
+                output_dir,
+                stack,
+                runtime_root=runtime_root,
+                controller=controller,
             )
         else:
             _target_identity, node = _target(runtime)

@@ -29,6 +29,11 @@ DEFAULT_OUTPUT_NAME = "runtime-amaru-preview-proof-of-life"
 ADOPTED_TIP_PATTERN = re.compile(
     r"adopted tip tip\.slot=(?P<slot>\d+) tip\.hash=(?P<hash>[0-9a-f]+) tip\.block_height=(?P<block_height>\d+)"
 )
+CONSENSUS_TIP_ADOPT_PATTERN = re.compile(
+    r'\btip\.adopt\s+slot=(?P<slot>\d+)\s+'
+    r'header_hash="(?P<hash>[0-9a-fA-F]{64})"\s+'
+    r'block_height=(?P<block_height>\d+)\b'
+)
 HEADER_PATTERN = re.compile(r"(?P<hash>[0-9a-f]{64}): 828a1a(?P<epoch>[0-9a-f]{8})1a(?P<slot>[0-9a-f]{8})")
 
 
@@ -82,7 +87,10 @@ def extract_latest_adopted_tip(log_text: str) -> dict[str, object] | None:
                         "block_hash": block_hash,
                         "block_height": block_height,
                     }
-        for match in ADOPTED_TIP_PATTERN.finditer(line):
+        for match in (
+            *ADOPTED_TIP_PATTERN.finditer(line),
+            *CONSENSUS_TIP_ADOPT_PATTERN.finditer(line),
+        ):
             block_hash = match.group("hash")
             latest = {
                 "slot": int(match.group("slot")),

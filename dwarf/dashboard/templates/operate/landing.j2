@@ -35,7 +35,7 @@
           ('Risk candidates', risk_candidate_count, '/operate/risk-packages'), ('Profile templates', profile_template_count, '/operate/profile-templates')] %}
         {% if count is not none and count is defined %}
         {% set n = [((count|string)|length) + 1, 6]|min %}
-        <a class="dk-stack" href="{{ href }}?view=advanced" style="--n:{{ n }}">
+        <a class="dk-stack" href="{{ href }}" style="--n:{{ n }}">
           <span class="dk-stack__pile" aria-hidden="true">{% for k in range(n) %}<i style="--k:{{ k }}"></i>{% endfor %}</span>
           <b>{{ count }}</b><small>{{ label }}</small></a>
         {% endif %}
@@ -60,7 +60,7 @@
     <a class="b-chip" href="/learn/threat-coverage">Threat &amp; risk binder</a>
     <a class="b-chip" href="/learn/measurement-coverage">Measurement coverage</a>
     <a class="b-chip" href="/operate/status">Substrate health</a>
-    <a class="b-chip" href="/operate/versions?view=advanced">Node versions</a>
+    <a class="b-chip" href="/operate/versions">Node versions</a>
   </div>
 </section>
 

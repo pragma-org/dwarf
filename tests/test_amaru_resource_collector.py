@@ -1,7 +1,21 @@
 from profile_manager.measurement_collectors.amaru_resources import (
     AmaruResourceCollector,
 )
+from profile_manager.measurement_collectors.amaru_factory import (
+    build_amaru_measurement_factories,
+)
+from profile_manager.measurement_collectors.cardano_resources import (
+    CardanoResourceCollector,
+    _docker_container_identity,
+)
 from profile_manager.measurement_runtime import CollectorContext
+
+import json
+import threading
+import time
+from types import SimpleNamespace
+
+import pytest
 
 
 def _context(tmp_path):
@@ -73,6 +87,197 @@ def test_resource_collector_samples_actual_target_and_reports_cost(tmp_path):
     assert result["measurements"]["threads"]["maximum"] == 8.0
     assert result["measurements"]["network_rx_bytes"]["scope"] == "process-network-namespace"
     assert (context.collector_dir / "samples.json").is_file()
+
+
+def test_amaru_factory_samples_exact_owned_container_without_host_ps(
+    monkeypatch, tmp_path
+):
+    """Control-plane runs cannot see sibling container PIDs in their /proc."""
+    metadata = tmp_path / "runtime.json"
+    container_name = "dwarf-profile-test-amaru-relay-1-1"
+    compose_project = "dwarf-profile-test"
+    metadata.write_text(
+        json.dumps(
+            {
+                "profile_id": "profile-test",
+                "compose_project": compose_project,
+                "lifecycle": "cardano_amaru_relay_bootstrap_control",
+                "identity": {
+                    "services": {
+                        "amaru-relay-1": {
+                            "container": container_name,
+                            "matched": True,
+                        }
+                    }
+                },
+                "actual_topology": {
+                    "selected_target_node_services": {
+                        "amaru1": "amaru-relay-1"
+                    },
+                    "selected_nodes": [
+                        {
+                            "id": "amaru1",
+                            "implementation": "amaru",
+                            "service": "amaru-relay-1",
+                            "supporting": False,
+                        }
+                    ],
+                },
+            }
+        )
+    )
+    monkeypatch.setenv("DWARF_INSTALLATION_ID", "install-test")
+    stats = iter(
+        [
+            {
+                "BlockIO": "1MB / 2MB",
+                "CPUPerc": "2.00%",
+                "ID": "abcdef123456",
+                "MemUsage": "64MiB / 2GiB",
+                "Name": container_name,
+                "NetIO": "5MB / 7MB",
+                "PIDs": "14",
+            },
+            {
+                "BlockIO": "2MB / 4MB",
+                "CPUPerc": "4.00%",
+                "ID": "abcdef123456",
+                "MemUsage": "96MiB / 2GiB",
+                "Name": container_name,
+                "NetIO": "8MB / 11MB",
+                "PIDs": "16",
+            },
+        ]
+    )
+    commands = []
+
+    def docker_run(command, **_kwargs):
+        commands.append(command)
+        if command[:2] == ["docker", "inspect"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    [
+                        {
+                            "Id": "abcdef1234567890",
+                            "Name": "/" + container_name,
+                            "State": {"Status": "running"},
+                            "Config": {
+                                "Labels": {
+                                    "io.dwarf.managed": "true",
+                                    "io.dwarf.installation": "install-test",
+                                    "io.dwarf.topology": "profile-test",
+                                    "io.dwarf.component": "node",
+                                    "io.dwarf.node_id": "amaru1",
+                                    "io.dwarf.implementation": "amaru",
+                                    "com.docker.compose.project": compose_project,
+                                    "com.docker.compose.service": "amaru-relay-1",
+                                }
+                            },
+                        }
+                    ]
+                ),
+                stderr="",
+            )
+        if command[:3] == ["docker", "stats", "--no-stream"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(next(stats)) + "\n",
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    factories = build_amaru_measurement_factories(
+        runtime_metadata_path=metadata,
+        target_node="amaru-relay-1",
+        json_trace_paths=[],
+        otlp_trace_paths=[],
+        tip_probe=None,
+        resource_background=False,
+        resource_docker_run=docker_run,
+    )
+    collector = factories["amaru-stock-resources"](
+        {"id": "amaru-stock-resources", "parameters": {}}
+    )
+    context = _context(tmp_path)
+
+    collector.prepare(context)
+    collector.start(context)
+    collector.stop(context)
+    result = collector.finalize(context)
+
+    assert result["target"] == {
+        "node": "amaru-relay-1",
+        "container_name": container_name,
+        "container_id": "abcdef1234567890",
+    }
+    assert result["source"]["kind"] == "docker-container-cgroup"
+    assert result["source"]["sample_count"] == 2
+    assert result["measurements"]["container_memory_bytes"]["maximum"] == 96 * 1024 * 1024
+    assert all(command[0] == "docker" for command in commands)
+
+
+@pytest.mark.parametrize(
+    "mapping",
+    [None, [], {}, {"amaru1": "different-service"}],
+    ids=("missing", "malformed", "empty", "no-service-match"),
+)
+def test_amaru_control_resource_identity_requires_exact_target_mapping(
+    tmp_path, mapping
+):
+    metadata = tmp_path / "runtime.json"
+    actual_topology = {
+        "selected_nodes": [
+            {
+                "id": "amaru1",
+                "implementation": "amaru",
+                "service": "amaru-relay-1",
+                "supporting": False,
+            }
+        ]
+    }
+    if mapping is not None:
+        actual_topology["selected_target_node_services"] = mapping
+    metadata.write_text(
+        json.dumps(
+            {
+                "profile_id": "profile-test",
+                "compose_project": "dwarf-profile-test",
+                "lifecycle": "cardano_amaru_relay_bootstrap_control",
+                "identity": {
+                    "services": {
+                        "amaru-relay-1": {
+                            "container": "dwarf-profile-test-amaru-relay-1-1"
+                        }
+                    }
+                },
+                "actual_topology": actual_topology,
+            }
+        )
+    )
+
+    def docker_run(_command, **_kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {
+                        "Id": "abcdef1234567890",
+                        "Name": "/dwarf-profile-test-amaru-relay-1-1",
+                        "State": {"Status": "running"},
+                        "Config": {"Labels": {}},
+                    }
+                ]
+            ),
+            stderr="",
+        )
+
+    with pytest.raises(RuntimeError, match="resource target mapping"):
+        _docker_container_identity(
+            metadata,
+            "amaru-relay-1",
+            docker_run=docker_run,
+        )
 
 
 def test_resource_collector_keeps_missing_proc_fields_unavailable(tmp_path):
@@ -302,3 +507,234 @@ def test_resource_collector_re_resolves_pid_after_real_restart(tmp_path):
     assert calls == [(100, 0), (100, 1), (200, 1), (200, 2)]
     assert collector._pid == 200
     assert len(collector._samples) == 3
+
+
+def test_resource_collector_waits_for_active_capture_before_final_sample(tmp_path):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text('{"amaru_nodes":[{"name":"amaru-1","impl":"amaru"}]}\n')
+    capture_started = threading.Event()
+    release_capture = threading.Event()
+    indexes = []
+
+    def reader(_pid, index):
+        indexes.append(index)
+        if index == 1:
+            capture_started.set()
+            assert release_capture.wait(2)
+        return {
+            "pid": 4242,
+            "monotonic_seconds": float(index),
+            "cpu_time_seconds": float(index),
+        }
+
+    collector = AmaruResourceCollector(
+        {"id": "amaru-stock-resources", "parameters": {}},
+        runtime_metadata_path=metadata,
+        target_node="amaru-1",
+        sample_interval_seconds=0.01,
+        capture_timeout_seconds=0.5,
+        resolve_pid=lambda _path, _node: 4242,
+        sample_reader=reader,
+    )
+    context = _context(tmp_path)
+    collector.prepare(context)
+    collector.start(context)
+    assert capture_started.wait(1)
+
+    stop_thread = threading.Thread(target=collector.stop, args=(context,))
+    stop_thread.start()
+    time.sleep(0.05)
+
+    assert stop_thread.is_alive()
+    assert indexes == [0, 1]
+    release_capture.set()
+    stop_thread.join(timeout=1)
+
+    assert not stop_thread.is_alive()
+    assert indexes == [0, 1, 2]
+    assert [sample["sample_index"] for sample in collector._samples] == [0, 1, 2]
+    assert collector._thread is not None and not collector._thread.is_alive()
+
+
+@pytest.mark.parametrize(
+    ("configured_installation", "container_installation"),
+    [(None, "other-install"), ("install-test", "other-install")],
+    ids=("missing-installation-identity", "mismatched-installation-label"),
+)
+def test_cardano_resource_collector_rejects_unproven_installation_ownership(
+    monkeypatch, tmp_path, configured_installation, container_installation
+):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text(
+        json.dumps(
+            {
+                "profile_id": "profile-s-cardano-measurement-stock-control",
+                "nodes": [
+                    {
+                        "id": "node1",
+                        "impl": "cardano-node",
+                        "container_name": "dwarf-cardano-node1",
+                    }
+                ],
+            }
+        )
+    )
+    if configured_installation is None:
+        monkeypatch.delenv("DWARF_INSTALLATION_ID", raising=False)
+    else:
+        monkeypatch.setenv("DWARF_INSTALLATION_ID", configured_installation)
+
+    def docker_run(command, **_kwargs):
+        assert command[:2] == ["docker", "inspect"]
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {
+                        "Id": "abcdef1234567890",
+                        "Name": "/dwarf-cardano-node1",
+                        "State": {"Status": "running"},
+                        "Config": {
+                            "Labels": {
+                                "io.dwarf.managed": "true",
+                                "io.dwarf.installation": container_installation,
+                                "io.dwarf.topology": "profile-s-cardano-measurement-stock-control",
+                                "io.dwarf.component": "node",
+                                "io.dwarf.node_id": "node1",
+                            }
+                        },
+                    }
+                ]
+            ),
+            stderr="",
+        )
+
+    collector = CardanoResourceCollector(
+        {"id": "cardano-stock-resources", "parameters": {}},
+        runtime_metadata_path=metadata,
+        target_node="node1",
+        docker_run=docker_run,
+        background=False,
+    )
+
+    with pytest.raises(RuntimeError, match="installation|managed topology"):
+        collector.prepare(_context(tmp_path))
+
+
+def test_cardano_resource_collector_samples_exact_owned_container_cgroup(
+    monkeypatch, tmp_path
+):
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text(
+        json.dumps(
+            {
+                "profile_id": "profile-s-cardano-measurement-stock-control",
+                "nodes": [
+                    {
+                        "id": "node1",
+                        "impl": "cardano-node",
+                        "container_name": "dwarf-cardano-node1",
+                    }
+                ],
+            }
+        )
+    )
+    monkeypatch.setenv("DWARF_INSTALLATION_ID", "install-test")
+    stats = iter(
+        [
+            {
+                "BlockIO": "1.5MB / 2MiB",
+                "CPUPerc": "2.00%",
+                "Container": "dwarf-cardano-node1",
+                "ID": "abcdef123456",
+                "MemUsage": "64MiB / 2GiB",
+                "Name": "dwarf-cardano-node1",
+                "NetIO": "5MB / 7MB",
+                "PIDs": "14",
+            },
+            {
+                "BlockIO": "2.5MB / 4MiB",
+                "CPUPerc": "4.00%",
+                "Container": "dwarf-cardano-node1",
+                "ID": "abcdef123456",
+                "MemUsage": "96MiB / 2GiB",
+                "Name": "dwarf-cardano-node1",
+                "NetIO": "8MB / 11MB",
+                "PIDs": "16",
+            },
+        ]
+    )
+    commands = []
+
+    def docker_run(command, **_kwargs):
+        commands.append(command)
+        if command[:2] == ["docker", "inspect"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    [
+                        {
+                            "Id": "abcdef1234567890",
+                            "Name": "/dwarf-cardano-node1",
+                            "State": {"Status": "running"},
+                            "Config": {
+                                "Labels": {
+                                    "io.dwarf.managed": "true",
+                                    "io.dwarf.installation": "install-test",
+                                    "io.dwarf.topology": "profile-s-cardano-measurement-stock-control",
+                                    "io.dwarf.component": "node",
+                                    "io.dwarf.node_id": "node1",
+                                }
+                            },
+                        }
+                    ]
+                ),
+                stderr="",
+            )
+        if command[:3] == ["docker", "stats", "--no-stream"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(next(stats)) + "\n",
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    collector = CardanoResourceCollector(
+        {"id": "cardano-stock-resources", "parameters": {}},
+        runtime_metadata_path=metadata,
+        target_node="node1",
+        docker_run=docker_run,
+        background=False,
+    )
+    context = CollectorContext(
+        measurement_id="cardano-stock-resources",
+        definition={"id": "cardano-stock-resources"},
+        parameters={},
+        run_dir=tmp_path,
+        collector_dir=tmp_path / "measurements" / "collectors" / "cardano-stock-resources",
+    )
+
+    collector.prepare(context)
+    collector.start(context)
+    collector.stop(context)
+    result = collector.finalize(context)
+
+    assert result["target"] == {
+        "node": "node1",
+        "container_name": "dwarf-cardano-node1",
+        "container_id": "abcdef1234567890",
+    }
+    assert result["source"]["kind"] == "docker-container-cgroup"
+    assert result["source"]["sample_count"] == 2
+    assert result["source"]["errors"] == []
+    assert result["measurements"]["cpu_percent"]["mean"] == 3.0
+    assert result["measurements"]["rss_bytes"]["status"] == "unavailable"
+    assert result["measurements"]["container_memory_bytes"]["maximum"] == 96 * 1024 * 1024
+    assert result["measurements"]["network_rx_bytes"]["delta"] == 3_000_000
+    assert result["measurements"]["network_tx_bytes"]["delta"] == 4_000_000
+    assert result["measurements"]["disk_read_bytes"]["delta"] == 1_000_000
+    assert result["measurements"]["disk_write_bytes"]["delta"] == 2 * 1024 * 1024
+    assert result["measurements"]["threads"]["status"] == "unavailable"
+    assert result["measurements"]["container_tasks"]["maximum"] == 16
+    assert result["measurements"]["network_rx_bytes"]["scope"] == "container-network-namespace"
+    assert commands[1][-1] == "abcdef1234567890"

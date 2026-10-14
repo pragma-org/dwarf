@@ -1,12 +1,15 @@
-<tr data-status="{{ row.exit_status or '' }}">
+<tr data-status="{{ row.display_status or '' }}">
   <td>
-    {% if row.is_local %}
+    {% if row.inspectable %}
     <a href="{{ row.run_url }}"><code>{{ row.run_id }}</code></a>
+    {% elif row.is_local %}
+    <code>{{ row.run_id }}</code>
     {% else %}
     <code>{{ row.run_id }}</code> <small>on {{ row.source }}</small>
     {% endif %}
   </td>
-  <td>{{ row.ended_at or '—' }}</td>
+  <td><code>{{ row.run_kind }}</code><br><span class="result-pill result-pill--{{ row.state or 'unknown' }}">{{ row.state or 'unknown' }}</span></td>
+  <td>{{ row.ended_at or row.started_at or row.history_at or '—' }}</td>
   <td>{% if row.scenario_id %}<code>{{ row.scenario_id }}</code>{% else %}—{% endif %}</td>
   <td>
     {% if row.execution.kind == 'profile' and row.profile_url %}
@@ -25,9 +28,8 @@
   </td>
   <td>{{ row.runtime or '—' }}</td>
   <td>
-    {% if row.exit_status %}
-    <span class="result-pill result-pill--{{ row.exit_status }}">{{ row.exit_status }}</span>
-    {% else %}—{% endif %}
+    {% if row.verdict %}<span class="result-pill result-pill--{{ row.verdict }}">test {{ row.verdict }}</span>{% endif %}
+    {% if row.operational_outcome %}<small>operation {{ row.operational_outcome }}</small>{% elif not row.verdict %}<span class="result-pill result-pill--{{ row.display_status or 'unknown' }}">{{ row.display_status or 'unknown' }}</span>{% endif %}
     {% if row.thinness_signals %}
     {% for s in row.thinness_signals %}
     <span class="thinness-pill" title="{{ s.reason }}">thin · {{ s.rule }}</span>

@@ -22,12 +22,15 @@ import json
 import os
 import re
 from pathlib import Path
+
+from profile_manager.config import storage_roots
 from typing import Any
 
 from profile_manager.data.operate_runs import (
     _interesting_evidence_metadata,
     _scenario_execution_metadata,
 )
+from profile_manager.scenario_verdict import evaluate_scenario_verdict
 
 
 _PREV_HASH_MISMATCH_RE = re.compile(
@@ -58,14 +61,16 @@ def _security_execution_section(
         return dict(recorded)
 
     failed = [item for item in assertions if item.get("result") == "fail"]
+    verdict = evaluate_scenario_verdict(
+        exit_status=manifest.get("exit_status") or "unknown",
+        assertions=assertions or manifest.get("assertion_summary"),
+        measurements=manifest.get("measurements"),
+        run_kind=manifest.get("run_kind") or manifest.get("kind") or "scenario",
+    )
     section = {
         "state": "completed",
         "classification": "completed",
-        "security_verdict": (
-            "pass"
-            if manifest.get("exit_status") == "pass" and not failed
-            else "fail"
-        ),
+        "security_verdict": verdict.security_verdict,
     }
     registry = _read_json(_HISTORICAL_RUN_CLASSIFICATIONS, {}) or {}
     record = next(
@@ -153,17 +158,12 @@ def _structure_verify_error(message: str) -> dict[str, Any]:
 
 
 def _forensic_runs_dir() -> Path:
-    env = os.environ.get("ADA2_DWARF_RUNS_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[2] / "runs"
+    return storage_roots().runs
 
 
 def _state_dir(runs_dir: Path) -> Path:
-    env = os.environ.get("ADA2_DWARF_STATE_DIR")
-    if env:
-        return Path(env)
-    return runs_dir.parent / "state"
+    roots = storage_roots()
+    return roots.state if Path(runs_dir) == roots.runs else Path(runs_dir).parent / "state"
 
 
 _PRETTY_PAYLOAD_LONG_THRESHOLD = 200
@@ -273,14 +273,20 @@ def _run_explanation(
     target_implementation: str,
     runtime: str,
     exit_status: str,
+    security_verdict: str | None,
     assertion_summary: dict[str, Any],
     verify_status: str,
 ) -> dict[str, Any]:
     """Build a reader-facing explanation without changing source evidence."""
     target = _target_display_name(target_implementation)
     bullets: list[str] = []
-    if exit_status:
-        bullets.append(f"The recorded result is {exit_status}.")
+    if security_verdict:
+        bullets.append(
+            f"The test verdict is {security_verdict}; the operational outcome is "
+            f"{exit_status or 'unknown'}."
+        )
+    elif exit_status:
+        bullets.append(f"The operational outcome is {exit_status}; this run has no test verdict.")
 
     total = int(assertion_summary.get("total", 0) or 0)
     passed = int(assertion_summary.get("pass", 0) or 0)
@@ -337,6 +343,479 @@ def _read_json(path: Path, default):
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return default
+
+
+def _read_external_receipt(
+    path: Path,
+    label: str,
+    errors: list[str],
+    *,
+    required: bool,
+) -> dict[str, Any]:
+    if not path.is_file():
+        if required:
+            errors.append(f"{label} receipt is missing")
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        errors.append(f"{label} receipt is malformed")
+        return {}
+    if not isinstance(value, dict):
+        errors.append(f"{label} receipt is not a JSON object")
+        return {}
+    return value
+
+
+def _external_result_verification(
+    entry: dict[str, Any],
+) -> tuple[bool, bool, list[str]]:
+    """Re-check retained result evidence before presenting it as verified."""
+    manifest_value = entry.get("manifest_path")
+    if not isinstance(manifest_value, str) or not manifest_value:
+        if entry.get("verdict") in {"pass", "fail"}:
+            return False, False, ["terminal external verdict has no result manifest"]
+        return False, False, []
+
+    manifest_path = Path(manifest_value)
+    if not manifest_path.is_file():
+        return False, False, ["retained external result manifest is missing"]
+    errors: list[str] = []
+    provenance = entry.get("provenance")
+    if not isinstance(provenance, dict):
+        provenance = {}
+        errors.append("external result provenance is not an object")
+    imported = provenance.get("result_bundle")
+    if not isinstance(imported, dict):
+        imported = {}
+        errors.append("verified result import receipt is missing")
+    if provenance.get("verdict_reason") != "verified_non_vacuous_result_bundle":
+        errors.append("ledger does not record a verified non-vacuous result bundle")
+    if imported.get("verdict") != "imported" or imported.get("signature_verdict") != "verified":
+        errors.append("result bundle import or signature is not verified")
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        manifest = {}
+        errors.append("retained external result manifest is malformed")
+    if not isinstance(manifest, dict):
+        manifest = {}
+        errors.append("retained external result manifest is not an object")
+    chain = _read_external_receipt(
+        manifest_path.parent / "chain.json", "result chain", errors, required=True
+    )
+    assertions_path = manifest_path.parent / "assertions.json"
+    try:
+        assertions = json.loads(assertions_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        assertions = None
+        errors.append("result assertions are missing or malformed")
+    if not isinstance(assertions, list) or not assertions:
+        errors.append("result assertions are not a non-empty list")
+        assertions = []
+
+    canonical_hash = hashlib.sha256(
+        json.dumps(
+            manifest,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    result_run_id = provenance.get("result_bundle_run_id")
+    expected_hash = provenance.get("result_bundle_manifest_sha256")
+    if not (
+        isinstance(result_run_id, str)
+        and result_run_id
+        and result_run_id == manifest_path.parent.name
+        and manifest.get("run_id") == result_run_id
+        and chain.get("run_id") == result_run_id
+    ):
+        errors.append("result bundle run identity is inconsistent")
+    if expected_hash != canonical_hash or chain.get("manifest_hash") != canonical_hash:
+        errors.append("result bundle manifest hash is inconsistent")
+
+    external = manifest.get("external")
+    expected_external_id = provenance.get("external_test_run_id")
+    if not isinstance(external, dict) or not (
+        external.get("test_run_id") == expected_external_id
+        and external.get("backend") == entry.get("backend")
+    ):
+        errors.append("result bundle external identity is inconsistent")
+    expected_scenario = entry.get("scenario")
+    observed_scenario = manifest.get("scenario")
+    if not isinstance(expected_scenario, dict) or not isinstance(observed_scenario, dict):
+        errors.append("result bundle scenario identity is inconsistent")
+    else:
+        expected_scenario_hash = str(
+            expected_scenario.get("sha256") or ""
+        ).removeprefix("sha256:")
+        observed_scenario_hash = str(
+            observed_scenario.get("sha256") or ""
+        ).removeprefix("sha256:")
+        if not (
+            expected_scenario.get("id") == observed_scenario.get("id")
+            and expected_scenario_hash
+            and expected_scenario_hash == observed_scenario_hash
+        ):
+            errors.append("result bundle scenario identity is inconsistent")
+    summary = manifest.get("assertion_summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    total, passed, failed = (
+        summary.get("total"),
+        summary.get("pass"),
+        summary.get("fail"),
+    )
+    valid_counts = all(type(value) is int for value in (total, passed, failed))
+    if not valid_counts:
+        errors.append("result bundle assertion summary is inconsistent or vacuous")
+    else:
+        assert isinstance(total, int) and isinstance(passed, int) and isinstance(failed, int)
+        if (
+            total <= 0
+            or total != passed + failed
+            or total != len(assertions)
+            or passed != sum(isinstance(item, dict) and item.get("result") == "pass" for item in assertions)
+            or failed != sum(isinstance(item, dict) and item.get("result") == "fail" for item in assertions)
+        ):
+            errors.append("result bundle assertion summary is inconsistent or vacuous")
+        canonical = evaluate_scenario_verdict(
+            exit_status=manifest.get("exit_status") or "unknown",
+            assertions=summary,
+            measurements=manifest.get("measurements"),
+            run_kind="external",
+        ).security_verdict
+        claimed = manifest.get("execution")
+        claimed_verdict = (
+            claimed.get("security_verdict") if isinstance(claimed, dict) else None
+        )
+        if (
+            canonical not in {"pass", "fail"}
+            or claimed_verdict != canonical
+            or entry.get("verdict") != canonical
+        ):
+            errors.append("result bundle verdict is inconsistent")
+    return True, not errors, errors
+
+
+def _external_evidence_path_matches(
+    entry_path: Any,
+    *,
+    run_id: str,
+    run_dir: Path,
+    runs_dir: Path,
+    plan: dict[str, Any],
+) -> bool:
+    """Match a ledger path in either the process or declared host namespace."""
+    if not isinstance(entry_path, str) or not entry_path:
+        return False
+    declared = Path(entry_path)
+    if not declared.is_absolute():
+        return False
+    try:
+        current_run = run_dir.resolve()
+        current_runs = runs_dir.resolve()
+        if current_run != (current_runs / run_id).resolve():
+            return False
+        host_runs_raw = os.environ.get("DWARF_HOST_RUNS_DIR")
+        if not host_runs_raw:
+            return declared.resolve() == current_run
+
+        storage = plan.get("storage")
+        planned_runs_raw = storage.get("runs_dir") if isinstance(storage, dict) else None
+        if not isinstance(planned_runs_raw, str):
+            return False
+        host_runs = Path(host_runs_raw)
+        planned_runs = Path(planned_runs_raw)
+        if not host_runs.is_absolute() or not planned_runs.is_absolute():
+            return False
+        host_runs = host_runs.resolve()
+        return (
+            planned_runs.resolve() == host_runs
+            and declared.resolve() == (host_runs / run_id).resolve()
+        )
+    except (OSError, RuntimeError):
+        return False
+
+
+def _external_run_detail(
+    run_id: str,
+    *,
+    run_dir: Path,
+    runs_dir: Path,
+    plan: dict[str, Any],
+    entry: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Render ledger-backed external evidence without pretending it is a bundle."""
+    resolved = plan.get("resolved")
+    invocation = plan.get("invocation")
+    if (
+        plan.get("schema_version") != "dwarf.run-service.invocation.v1"
+        or not isinstance(resolved, dict)
+        or resolved.get("schema_version") != "dwarf.external-run.plan.v1"
+        or resolved.get("evidence_layout") != "external-run-evidence-v1"
+        or not isinstance(invocation, dict)
+        or not isinstance(resolved.get("launch"), dict)
+        or entry.get("kind") != "external"
+    ):
+        return None
+
+    launch = resolved["launch"]
+    provenance = entry.get("provenance")
+    if not isinstance(provenance, dict):
+        provenance = {}
+    linked_existing = bool(provenance.get("linked_existing"))
+    terminal = entry.get("state") in {"completed", "failed", "interrupted"}
+    errors: list[str] = []
+    canonical_resolved = json.dumps(
+        resolved,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    expected_plan_digest = "sha256:" + hashlib.sha256(canonical_resolved).hexdigest()
+    if plan.get("plan_digest") != expected_plan_digest:
+        errors.append("retained run plan digest does not match its resolved plan")
+
+    mode = launch.get("mode")
+    if mode == "link-existing":
+        transport = str(launch.get("transport") or "").strip()
+        launch_external_id = str(launch.get("external_test_run_id") or "").strip()
+        if not transport or not launch_external_id:
+            errors.append("linked external plan has no transport or external test id")
+        identity_document = {
+            "backend": entry.get("backend"),
+            "transport": transport,
+            "external_test_run_id": launch_external_id,
+        }
+    else:
+        identity_document = {
+            "backend": entry.get("backend"),
+            "launch": launch,
+        }
+    expected_external_key = "sha256:" + hashlib.sha256(
+        json.dumps(
+            identity_document,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if provenance.get("external_key") != expected_external_key:
+        errors.append("ledger external key does not match the retained plan")
+    if linked_existing and mode != "link-existing":
+        errors.append("linked-existing ledger provenance disagrees with launch mode")
+    if (
+        mode == "link-existing"
+        and entry.get("state") != "queued"
+        and not linked_existing
+    ):
+        errors.append("linked-existing launch is not bound in ledger provenance")
+    if not _external_evidence_path_matches(
+        entry.get("evidence_path"),
+        run_id=run_id,
+        run_dir=run_dir,
+        runs_dir=runs_dir,
+        plan=plan,
+    ):
+        errors.append("ledger evidence path does not match this run directory")
+
+    retained_launch = _read_external_receipt(
+        run_dir / "external" / "launch.json", "launch", errors, required=True
+    )
+    link = _read_external_receipt(
+        run_dir / "external" / "link.json",
+        "link",
+        errors,
+        required=linked_existing or launch.get("mode") == "link-existing",
+    )
+    status = _read_external_receipt(
+        run_dir / "external" / "status.json",
+        "status",
+        errors,
+        required=terminal,
+    )
+    submission_path = run_dir / "external" / "submission.json"
+    submission = _read_external_receipt(
+        submission_path,
+        "submission",
+        errors,
+        required=not linked_existing and entry.get("state") != "queued",
+    )
+    if linked_existing and submission_path.is_file():
+        errors.append("linked existing run unexpectedly has a submission receipt")
+    if retained_launch != launch:
+        errors.append("launch receipt does not match the retained run plan")
+    if invocation.get("backend") != entry.get("backend"):
+        errors.append("ledger backend does not match the retained run plan")
+
+    external_id = provenance.get("external_test_run_id")
+    if not isinstance(external_id, str) or not external_id:
+        errors.append("ledger has no bound external test id")
+        external_id = None
+    for label, receipt, field in (
+        ("launch", launch, "external_test_run_id"),
+        ("link", link, "test_run_id"),
+        ("status", status, "test_run_id"),
+        ("submission", submission, "external_test_run_id"),
+    ):
+        observed = receipt.get(field)
+        if receipt and observed is not None and observed != external_id:
+            errors.append(f"{label} receipt external id does not match the ledger")
+
+    matched_facts: dict[str, dict[str, Any]] = {}
+    for label, receipt, required in (
+        ("link", link, linked_existing),
+        ("status", status, terminal or bool(status)),
+    ):
+        if not receipt:
+            continue
+        facts = receipt.get("facts")
+        matches = (
+            [fact for fact in facts if isinstance(fact, dict) and fact.get("id") == external_id]
+            if isinstance(facts, list)
+            else []
+        )
+        if required and (not isinstance(facts, list) or len(facts) != 1 or len(matches) != 1):
+            errors.append(f"{label} receipt does not contain exactly the matched external fact")
+        if len(matches) == 1:
+            matched_facts[label] = matches[0]
+
+    if launch.get("transport") == "moog":
+        expected_repository = launch.get("repository")
+        expected_identity = {
+            "repository": expected_repository,
+            "requester": launch.get("github_user"),
+            "directory": launch.get("directory"),
+            "commit": launch.get("commit"),
+            "try": launch.get("try"),
+            "duration": launch.get("duration_hours"),
+            "faults": launch.get("faults"),
+        }
+        for label, fact in matched_facts.items():
+            key = fact.get("key")
+            fact_value = fact.get("value")
+            if not isinstance(key, dict) or not isinstance(fact_value, dict):
+                errors.append(f"{label} fact immutable launch identity does not match")
+                continue
+            repository = key.get("repository")
+            repository_name = (
+                f"{repository.get('organization')}/{repository.get('repo')}"
+                if isinstance(repository, dict)
+                else None
+            )
+            raw_predecessor = fact_value.get("from")
+            predecessor = (
+                raw_predecessor if isinstance(raw_predecessor, dict) else {}
+            )
+            raw_requested = predecessor.get("from")
+            requested = (
+                raw_requested if isinstance(raw_requested, dict) else predecessor
+            )
+            observed_identity = {
+                "repository": repository_name,
+                "requester": key.get("requester"),
+                "directory": key.get("directory"),
+                "commit": key.get("commitId"),
+                "try": key.get("try"),
+                "duration": fact_value.get("duration")
+                or requested.get("duration"),
+                "faults": requested.get("faults_enabled"),
+            }
+            if observed_identity != expected_identity:
+                errors.append(f"{label} fact immutable launch identity does not match")
+
+    matched_fact = matched_facts.get("status") or matched_facts.get("link") or {}
+    value = matched_fact.get("value") if isinstance(matched_fact, dict) else {}
+    if not isinstance(value, dict):
+        value = {}
+        errors.append("matched external fact value is not an object")
+    provider_phase = status.get("phase") or value.get("phase") or "unknown"
+    if status and value.get("phase") and status.get("phase") != value.get("phase"):
+        errors.append("status phase does not match the retained external fact")
+
+    evidence_files = []
+    for relative in (
+        "inputs/run-service-plan.json",
+        "external/launch.json",
+        "external/link.json",
+        "external/status.json",
+        "external/submission.json",
+    ):
+        path = run_dir / relative
+        if path.is_file():
+            evidence_files.append(
+                {
+                    "path": relative,
+                    "sha256": _sha256_file(path),
+                    "bytes": path.stat().st_size,
+                }
+            )
+
+    result_bundle_present, result_bundle_verified, result_errors = (
+        _external_result_verification(entry)
+    )
+    verify_errors = [*errors, *result_errors]
+    verify_status = (
+        "fail"
+        if verify_errors
+        else "verified"
+        if result_bundle_verified
+        else "incomplete"
+    )
+    verify = {
+        "ok": verify_status == "verified",
+        "status": verify_status,
+        "label": {
+            "verified": "VERIFIED",
+            "incomplete": "INCOMPLETE",
+            "fail": "FAIL",
+        }[verify_status],
+        "errors": [
+            {"kind": "External evidence mismatch", "raw": error, "fields": []}
+            for error in verify_errors
+        ],
+    }
+    verdict = entry.get("verdict") or "unknown"
+    return {
+        "presentation_kind": "external",
+        "run_id": run_id,
+        "run_kind": "external",
+        "state": entry.get("state") or "unknown",
+        "verdict_status": verdict,
+        "backend": entry.get("backend") or invocation.get("backend") or "unknown",
+        "origin": entry.get("origin") or invocation.get("origin") or "unknown",
+        "queued_at": entry.get("queued_at"),
+        "started_at": entry.get("started_at"),
+        "ended_at": entry.get("ended_at"),
+        "release_revision": entry.get("release_revision")
+        or resolved.get("release_revision"),
+        "verify": verify,
+        "evidence_path": _safe_relative(run_dir, runs_dir.parent),
+        "external": {
+            "test_run_id": external_id,
+            "transport": launch.get("transport"),
+            "mode": launch.get("mode"),
+            "repository": launch.get("repository"),
+            "directory": launch.get("directory"),
+            "commit": launch.get("commit"),
+            "duration_hours": launch.get("duration_hours"),
+            "faults": launch.get("faults"),
+            "phase": provider_phase,
+            "outcome": value.get("outcome"),
+            "linked_existing": linked_existing,
+            "submission_present": submission_path.is_file(),
+            "result_bundle_present": result_bundle_present,
+            "result_bundle_verified": result_bundle_verified,
+            "verdict_reason": provenance.get("verdict_reason"),
+            "receipt_integrity": "fail" if errors else "verified",
+            "receipt_errors": errors,
+            "result_errors": result_errors,
+            "evidence_files": evidence_files,
+        },
+    }
 
 
 def _read_ndjson(path: Path, *, limit: int | None = None) -> list[dict[str, Any]]:
@@ -883,6 +1362,25 @@ def _measurement_section(run_dir: Path) -> dict[str, Any]:
         collector_states.append({"id": measurement_id, "state": state})
     resolution = selection.get("resolution") or {}
     profile = resolution.get("profile") or {}
+    profile_id = profile.get("id")
+    if profile_id == "none":
+        launch_plan = _read_json(run_dir / "launch" / "plan.json", {}) or {}
+        launch_measurements = launch_plan.get("measurements") or {}
+        launch_profile = launch_measurements.get("profile") or {}
+        selected_ids = {
+            str(item.get("id"))
+            for item in resolution.get("resolved") or []
+            if isinstance(item, dict) and item.get("id")
+        }
+        launch_ids = {
+            str(item.get("id"))
+            for item in launch_measurements.get("resolved") or []
+            if isinstance(item, dict) and item.get("id")
+        }
+        if selected_ids and selected_ids == launch_ids:
+            origin_profile_id = launch_profile.get("id")
+            if origin_profile_id and origin_profile_id != "none":
+                profile_id = str(origin_profile_id)
     metrics_raw = report.get("measurements") or {}
     metrics = [
         _measurement_metric_row(name, raw)
@@ -896,7 +1394,7 @@ def _measurement_section(run_dir: Path) -> dict[str, Any]:
         "present": True,
         "summary": summary,
         "duration_seconds": summary.get("duration_seconds", report.get("duration_seconds")),
-        "profile_id": profile.get("id"),
+        "profile_id": profile_id,
         "target_identity": target_identity,
         "collector_states": collector_states,
         "collector_counts": collector_counts,
@@ -920,6 +1418,27 @@ def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str
         return None
     run_dir = base / run_id
     if not run_dir.is_dir():
+        return None
+
+    plan = _read_json(run_dir / "inputs" / "run-service-plan.json", {}) or {}
+    from profile_manager.run_ledger import FINAL_STATES_BY_EXIT_STATUS, RunLedger
+    try:
+        ledger_entry = RunLedger(_state_dir(base), create=False).get(run_id)
+    except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+        ledger_entry = None
+    if isinstance(ledger_entry, dict) and ledger_entry.get("kind") == "external":
+        return _external_run_detail(
+            run_id,
+            run_dir=run_dir,
+            runs_dir=base,
+            plan=plan,
+            entry=ledger_entry,
+        )
+    resolved_plan = plan.get("resolved") if isinstance(plan, dict) else None
+    if (
+        isinstance(resolved_plan, dict)
+        and resolved_plan.get("schema_version") == "dwarf.external-run.plan.v1"
+    ):
         return None
 
     manifest = _read_json(run_dir / "manifest.json", {}) or {}
@@ -963,6 +1482,13 @@ def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str
     scenario = manifest.get("scenario") or {}
     ass_summary = manifest.get("assertion_summary") or {}
     security_execution = _security_execution_section(run_dir, manifest, assertions)
+    operational_outcome = manifest.get("exit_status") or ""
+    security_verdict = security_execution.get("security_verdict")
+    verdict_status = (
+        operational_outcome
+        if operational_outcome == "precondition_failed"
+        else security_verdict or operational_outcome
+    )
     profile = manifest.get("profile") or {}
     profile_id = profile.get("id") if isinstance(profile, dict) else None
     scenario_metadata = _scenario_execution_metadata(
@@ -975,6 +1501,56 @@ def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str
         run_id,
         testcase_catalog_rows(state_dir=_state_dir(base), runs_dir=base),
     )
+
+    from profile_manager.operator_version_decisions import (
+        InvalidOperatorVersionState,
+        OperatorVersionDecisionLedger,
+        active_decisions,
+        subject_key,
+        verified_operator_version_subject,
+    )
+    operator_version = {
+        "available": False,
+        "reason": str(
+            manifest.get("operator_version_evidence_unavailable")
+            or "This historical run has no immutable operator-version evidence binding."
+        ),
+        "revision": None,
+        "decision": None,
+        "subject": None,
+    }
+    try:
+        expected_terminal = FINAL_STATES_BY_EXIT_STATUS.get(operational_outcome)
+        if (
+            not isinstance(ledger_entry, dict)
+            or expected_terminal is None
+            or ledger_entry.get("state") != expected_terminal
+            or ledger_entry.get("ended_at") != manifest.get("ended_at")
+            or Path(str(ledger_entry.get("manifest_path") or "")).resolve()
+            != (run_dir / "manifest.json").resolve()
+            or Path(str(ledger_entry.get("evidence_path") or "")).resolve()
+            != run_dir.resolve()
+        ):
+            raise InvalidOperatorVersionState(
+                "The canonical run ledger has not reached a matching terminal state."
+            )
+        subject = verified_operator_version_subject(manifest, run_dir=run_dir)
+        if not verify["ok"]:
+            raise InvalidOperatorVersionState(
+                "The canonical bundle must pass its tamper check before an operator decision."
+            )
+        decision_ledger = OperatorVersionDecisionLedger(_state_dir(base))
+        decision_state = decision_ledger.read()
+        current_decision = active_decisions(decision_state).get(subject_key(subject))
+        operator_version = {
+            "available": True,
+            "reason": None,
+            "revision": decision_state["revision"],
+            "decision": current_decision,
+            "subject": subject,
+        }
+    except (InvalidOperatorVersionState, OSError, RuntimeError, ValueError) as exc:
+        operator_version["reason"] = str(exc)
 
     cross_impl_result = None
     if cross_impl_md:
@@ -989,7 +1565,9 @@ def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str
         "target_implementation": target.get("implementation") or "",
         "target_version": target.get("version") or "",
         "runtime": manifest.get("runtime") or "",
-        "exit_status": manifest.get("exit_status") or "",
+        "exit_status": operational_outcome,
+        "operational_outcome": operational_outcome,
+        "verdict_status": verdict_status,
         "security_execution": security_execution,
         "started_at": manifest.get("started_at") or "",
         "ended_at": manifest.get("ended_at") or "",
@@ -1041,7 +1619,8 @@ def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str
             scenario_id=scenario.get("id") or "",
             target_implementation=target.get("implementation") or "",
             runtime=manifest.get("runtime") or "",
-            exit_status=manifest.get("exit_status") or "",
+            exit_status=operational_outcome,
+            security_verdict=security_verdict,
             assertion_summary=ass_summary,
             verify_status=verify["status"],
         ),
@@ -1050,9 +1629,11 @@ def operate_run_detail(run_id: str, *, runs_dir: Path | None = None) -> dict[str
             "markdown": cross_impl_md,
         },
         "bundle_url": f"/runs/{run_id}/bundle",
+        "bundle_signature_url": f"/runs/{run_id}/bundle/signature",
         "precondition": _precondition_section(run_dir, manifest),
         "evidence_path": _safe_relative(run_dir, base.parent),
         "version_provenance": _version_provenance_section(run_dir),
+        "operator_version": operator_version,
         "measurements": _measurement_section(run_dir),
         # Slice 30 enrichments — three operator-facing sections that
         # surface ada3's bundle-workflow primitives without hiding the

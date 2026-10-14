@@ -55,6 +55,33 @@ def test_extract_latest_adopted_tip_keeps_legacy_text_compatibility():
     }
 
 
+def test_extract_latest_adopted_tip_accepts_pinned_amaru_consensus_text():
+    log_text = (
+        "2026-10-10T13:24:42.004740Z DEBUG amaru::consensus: "
+        "tip.adopt slot=7512 "
+        'header_hash="4a0ef980d3610935d86dec3704432f55ece3da4e2b11fd4b58af573bffa68b19" '
+        "block_height=1485 max_block_height=1485 suppressed=0\n"
+    )
+
+    assert extract_latest_adopted_tip(log_text) == {
+        "slot": 7512,
+        "hash": "4a0ef980d3610935d86dec3704432f55ece3da4e2b11fd4b58af573bffa68b19",
+        "block_hash": "4a0ef980d3610935d86dec3704432f55ece3da4e2b11fd4b58af573bffa68b19",
+        "block_height": 1485,
+    }
+
+
+def test_extract_latest_adopted_tip_rejects_malformed_consensus_text():
+    malformed = (
+        "INFO amaru::consensus: tip.adopt slot=7512 "
+        'header_hash="not-a-hash" block_height=1485\n'
+        "INFO amaru::consensus: tip.adopt slot=true "
+        f'header_hash="{"a" * 64}" block_height=-1\n'
+    )
+
+    assert extract_latest_adopted_tip(malformed) is None
+
+
 def test_extract_latest_adopted_tip_rejects_malformed_json_tip_values():
     malformed = json.dumps(
         {

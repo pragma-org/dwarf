@@ -38,6 +38,39 @@ function updatePill(name, state, value, detail) {
   if (small) small.textContent = detail;
 }
 
+function updateTopologySummary(payload) {
+  const state = payload.state || 'unknown';
+  const stateLabel = state.replaceAll('_', ' ');
+  const healthy = ['healthy', 'ready', 'ok'].includes(state);
+  const headline = document.querySelector('[data-topology-headline]');
+  const card = document.querySelector('[data-topology-card]');
+  const suit = document.querySelector('[data-topology-suit]');
+  const primaryState = document.querySelector('[data-topology-primary-state]');
+  const cacheText = document.querySelector('[data-topology-cache-text]');
+
+  document.querySelectorAll('[data-topology-state-text]').forEach((element) => {
+    element.textContent = stateLabel;
+  });
+  if (headline) {
+    headline.textContent = healthy
+      ? 'The lab is up. Read what the evidence proves.'
+      : `Not all clear: active topology is ${stateLabel}.`;
+  }
+  card?.classList.toggle('dk-warnface', !healthy);
+  if (suit) {
+    suit.textContent = healthy ? '♦' : '▲';
+    suit.classList.toggle('dk-g-pass', healthy);
+  }
+  if (primaryState) {
+    primaryState.style.color = healthy ? 'var(--dk-pass)' : 'var(--dk-warn)';
+  }
+  if (cacheText) {
+    cacheText.textContent = payload.cached
+      ? `yes · ${payload.age_seconds ?? '?'}s old`
+      : 'no';
+  }
+}
+
 async function refreshFramework() {
   try {
     const response = await fetch(root.dataset.frameworkUrl, {headers: {'Accept': 'application/json'}});
@@ -58,16 +91,19 @@ async function fetchTopology(url) {
 async function refreshTopology() {
   try {
     let payload = await fetchTopology(root.dataset.topologyUrl);
+    updateTopologySummary(payload);
     updatePill('topology', payload.state, payload.state === 'checking' ? 'Checking' : payload.state, 'Current managed profile');
     while (payload.state === 'checking') {
       await wait(500);
       payload = await fetchTopology('/api/topology/health');
+      updateTopologySummary(payload);
     }
     const detail = payload.cached
       ? `Cached · ${payload.age_seconds ?? 'unknown'}s old`
       : (payload.reason_code || 'Current managed profile');
     updatePill('topology', payload.state, payload.state, detail);
   } catch (error) {
+    updateTopologySummary({state: 'unknown', cached: false});
     updatePill('topology', 'unknown', 'Unknown', 'Topology check failed');
   }
 }

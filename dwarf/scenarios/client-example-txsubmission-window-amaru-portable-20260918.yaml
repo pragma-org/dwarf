@@ -1,0 +1,86 @@
+{
+  "spec_version": "v1",
+  "id": "client-example-txsubmission-window-amaru-portable-20260918",
+  "title": "Amaru TxSubmission window pressure — 10.11.20260918 — portable qualified target",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "client-example",
+    "amaru",
+    "measurement",
+    "txsubmission",
+    "security",
+    "resolved-target"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This exercises the TxSubmission window contract; it does not claim valid transaction admission or stock mempool coverage.",
+    "Patched timing is evidence only for this exact qualified target."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260918"
+  },
+  "runtime": "devnet",
+  "profile": "profile-z-amaru-20260918-nanoseconds-v3",
+  "measurement_profile": "amaru-security-patched",
+  "seed": "0x7A5B0051",
+  "setup": [
+    {
+      "primitive": "runtime_verify_exact_target",
+      "implementation": "amaru",
+      "version": "10.11.20260918",
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "mode": "patched",
+      "patch_set_sha256": "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6",
+      "identity_binding": "resolved-plan"
+    },
+    {
+      "primitive": "runtime_mark_baseline_window",
+      "duration_seconds": 20
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_txsubmission_window_pressure",
+      "profile_id": "profile-z-amaru-20260918-nanoseconds-v3",
+      "response_timeout_seconds": 2,
+      "timeout_seconds": 240,
+      "output_dir": "outputs/txsubmission-window"
+    },
+    {
+      "primitive": "runtime_mark_hostile_window"
+    },
+    {
+      "primitive": "runtime_mark_recovery_window",
+      "duration_seconds": 20
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {
+      "primitive": "runtime_target_health_and_progress"
+    },
+    {
+      "primitive": "runtime_peer_session_health"
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "txsubmission_window_enforced",
+      "min_txsubmission_messages_observed": 3
+    },
+    {
+      "primitive": "target_progress_continues"
+    },
+    {
+      "primitive": "unrelated_peer_session_usable",
+      "max_recovery_seconds": 35
+    },
+    {
+      "primitive": "no_target_fatal_signal"
+    }
+  ],
+  "teardown": []
+}

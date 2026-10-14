@@ -1,0 +1,26 @@
+{
+  "spec_version": "v1",
+  "id": "run-service-parity",
+  "title": "Canonical Run Service adapter parity",
+  "authors": ["dwarf"],
+  "tags": ["run-service", "parity"],
+  "target": {"implementation": "amaru", "version": "any"},
+  "runtime": "library",
+  "seed": 5101,
+  "load": [
+    {
+      "primitive": "load_shell_command",
+      "command": "true",
+      "timeout_seconds": 5,
+      "expect_exit": 0
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "min_completed": 1,
+      "min_event_count": 1
+    }
+  ],
+  "teardown": []
+}

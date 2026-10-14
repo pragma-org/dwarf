@@ -1,5 +1,10 @@
 import json
+import os
 from pathlib import Path
+import shutil
+import stat
+import subprocess
+import sys
 
 import pytest
 
@@ -119,6 +124,12 @@ def _compose_model():
     }
 
 
+def _extractor_container_command(transformed):
+    command = transformed["services"]["amaru-target-extract"]["command"][0]
+    assert "$$" in command
+    return command.replace("$$", "$")
+
+
 def test_candidate_matrix_is_newest_to_oldest_and_ignores_prereleases():
     catalog = _catalog()
 
@@ -225,6 +236,109 @@ def test_modern_amaru_identity_uses_extractor_artifact_and_target_binary(monkeyp
     assert amaru["artifact_image_id"] == target_image_id
     assert amaru["artifact_container"] == "amaru-extractor"
     assert "/target/amaru" in amaru["version_command"]
+
+
+def test_operator_registered_stock_identity_uses_validated_content_id_not_label(
+    monkeypatch,
+):
+    target_image = "sha256:" + "a" * 64
+    wrapper_image_id = "sha256:" + "b" * 64
+    cardano_image_id = "sha256:" + "c" * 64
+    containers = {
+        "p1": "p1-container",
+        "p2": "p2-container",
+        "p3": "p3-container",
+        "relay1": "relay1-container",
+        "relay2": "relay2-container",
+        "amaru-consumer": "consumer-container",
+        "amaru-relay-1": "amaru-one",
+        "amaru-relay-2": "amaru-two",
+        "amaru-target-extract": "amaru-extractor",
+    }
+    monkeypatch.setattr(qualification, "_project_containers", lambda _project: containers)
+    monkeypatch.setattr(
+        qualification,
+        "_image_id",
+        lambda image: (
+            target_image
+            if image == target_image
+            else wrapper_image_id
+            if image == CONTROL_AMARU_IMAGE
+            else cardano_image_id
+        ),
+    )
+
+    def fake_run(args, **_kwargs):
+        if args[:2] == ["docker", "inspect"]:
+            container = args[2]
+            image_id = (
+                target_image
+                if container == "amaru-extractor"
+                else wrapper_image_id
+                if container.startswith("amaru-")
+                else cardano_image_id
+            )
+            return qualification.subprocess.CompletedProcess(args, 0, image_id + "\n", "")
+        if args[:3] in (["docker", "exec", "amaru-one"], ["docker", "exec", "amaru-two"]):
+            if args[3] == "/target/amaru":
+                return qualification.subprocess.CompletedProcess(
+                    args, 0, "Amaru 10.11.20260912 (b159172)\n", ""
+                )
+            return qualification.subprocess.CompletedProcess(args, 127, "", "missing")
+        if args[:2] == ["docker", "exec"]:
+            return qualification.subprocess.CompletedProcess(
+                args, 0, "cardano-node 10.7.1\n", ""
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setattr(qualification, "_run", fake_run)
+
+    observation = qualification._identity_observation(
+        "candidate",
+        scope="mixed",
+        cardano_version="10.7.1",
+        amaru_version="10.11.20260912-local-b892defe",
+        cardano_image="cardano-image",
+        amaru_image=target_image,
+        amaru_runtime_interface="extracted-binary",
+        operator_stock_content_id=target_image,
+    )
+
+    assert observation["matched"] is True
+    relay = observation["services"]["amaru-relay-1"]
+    assert relay["identity_basis"] == "operator-registration-config-id"
+    assert relay["reported"] == "Amaru 10.11.20260912 (b159172)"
+    assert relay["reported_source_matched"] is None
+    assert relay["executable_digest_matched"] is None
+
+    wrong_content = qualification._identity_observation(
+        "candidate",
+        scope="mixed",
+        cardano_version="10.7.1",
+        amaru_version="10.11.20260912-local-b892defe",
+        cardano_image="cardano-image",
+        amaru_image=target_image,
+        amaru_runtime_interface="extracted-binary",
+        operator_stock_content_id="sha256:" + "d" * 64,
+    )
+    assert wrong_content["matched"] is False
+
+    invalidated_registration = qualification._identity_observation(
+        "candidate",
+        scope="mixed",
+        cardano_version="10.7.1",
+        amaru_version="10.11.20260912",
+        cardano_image="cardano-image",
+        amaru_image=target_image,
+        amaru_runtime_interface="extracted-binary",
+        operator_stock_registration_expected=True,
+        operator_stock_content_id=None,
+    )
+    assert invalidated_registration["matched"] is False
+    assert (
+        invalidated_registration["services"]["amaru-relay-1"]["identity_basis"]
+        == "operator-registration-invalid"
+    )
 
 
 def test_patched_amaru_identity_uses_source_patch_and_executable_not_release_text(monkeypatch):
@@ -357,11 +471,22 @@ def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
     assert relay["environment"]["AMARU_BIN"] == "/target/amaru"
     assert relay["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
     assert relay["environment"]["AMARU_PEER"] == "p1.example:3001"
+    assert "AMARU_PEER_MIX" not in relay["environment"]
+    assert "AMARU_UPSTREAM_PEERS" not in relay["environment"]
     assert transformed["services"]["amaru-relay-2"]["environment"]["AMARU_PEER"] == "p2.example:3001"
     assert any(item.get("target") == "/target" for item in relay["volumes"])
     extractor = transformed["services"]["amaru-target-extract"]
     assert extractor["image"] == modern_amaru
-    assert "cp /usr/local/bin/amaru /target/amaru" in extractor["command"][0]
+    extractor_command = extractor["command"][0]
+    assert 'temporary=$$(mktemp /target/.amaru.XXXXXX)' in extractor_command
+    assert 'status=$$?' in extractor_command
+    assert 'rm -f "$$temporary" || true' in extractor_command
+    assert 'cp /usr/local/bin/amaru "$$temporary"' in extractor_command
+    assert extractor_command.index('chmod 0755 "$$temporary"') < extractor_command.index(
+        'mv -f "$$temporary" /target/amaru'
+    )
+    assert 'mv -f "$$temporary" /target/amaru' in extractor_command
+    assert "cp /usr/local/bin/amaru /target/amaru" not in extractor_command
     assert extractor["user"] == "0:0"
     assert "amaru-target-bin" in transformed["volumes"]
     assert "amaru-consumer-ready" not in transformed["services"]
@@ -370,6 +495,327 @@ def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
     ]["condition"] == "service_completed_successfully"
     assert transformed["services"]["amaru-consumer-seed"]["image"] == CONTROL_AMARU_IMAGE
     assert transformed["volumes"]["external"].get("external") is not True
+
+
+def test_modern_amaru_extractor_atomically_replaces_an_executing_binary(tmp_path):
+    transformed = transform_compose_model(
+        _compose_model(),
+        scope="amaru-only",
+        project="dwarf-qual-extractor-running",
+        cardano_image="known-good-cardano",
+        amaru_image="ghcr.io/pragma-org/amaru@sha256:" + "9" * 64,
+    )
+    command = _extractor_container_command(transformed)
+    target = tmp_path / "amaru"
+    replacement = Path("/bin/echo")
+    shutil.copyfile(sys.executable, target)
+    target.chmod(0o755)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_cp = fake_bin / "cp"
+    fake_cp.write_text(
+        "#!/bin/sh\n"
+        'if [ "$2" = "$DWARF_BUSY_TARGET" ]; then\n'
+        "  echo 'Text file busy' >&2\n"
+        "  exit 1\n"
+        "fi\n"
+        'exec /bin/cp "$@"\n',
+        encoding="utf-8",
+    )
+    fake_cp.chmod(0o755)
+    running = subprocess.Popen(
+        [str(target), "-c", "import time; time.sleep(30)"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        assert running.poll() is None
+        result = subprocess.run(
+            [
+                "/bin/sh",
+                "-ec",
+                command.replace("/usr/local/bin/amaru", str(replacement)).replace(
+                    "/target", str(tmp_path)
+                ),
+            ],
+            env={
+                **os.environ,
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                "DWARF_BUSY_TARGET": str(target),
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert running.poll() is None
+        assert target.read_bytes() == replacement.read_bytes()
+        assert stat.S_IMODE(target.stat().st_mode) == 0o755
+        assert list(tmp_path.glob(".amaru.*")) == []
+    finally:
+        running.terminate()
+        running.wait(timeout=5)
+
+
+def test_modern_amaru_extractor_survives_compose_config_round_trip(tmp_path):
+    transformed = transform_compose_model(
+        _compose_model(),
+        scope="amaru-only",
+        project="dwarf-qual-extractor-compose",
+        cardano_image="known-good-cardano",
+        amaru_image="ghcr.io/pragma-org/amaru@sha256:" + "9" * 64,
+    )
+    compose_path = tmp_path / "compose.json"
+    compose_path.write_text(json.dumps(transformed), encoding="utf-8")
+    rendered = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--file",
+            str(compose_path),
+            "config",
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert rendered.returncode == 0, rendered.stderr
+    materialized = json.loads(rendered.stdout)
+    source_command = transformed["services"]["amaru-target-extract"]["command"][0]
+    assert materialized["services"]["amaru-target-extract"]["command"][0] == source_command
+    assert "$$" in source_command
+    assert "variable is not set" not in rendered.stderr
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DWARF_EXTRACTOR_COMPOSE_TEST_IMAGE"),
+    reason=(
+        "set DWARF_EXTRACTOR_COMPOSE_TEST_IMAGE to a locally present, "
+        "immutable image with POSIX shell utilities"
+    ),
+)
+def test_modern_amaru_extractor_reaches_actual_container_shell(tmp_path):
+    image = os.environ["DWARF_EXTRACTOR_COMPOSE_TEST_IMAGE"]
+    assert image.startswith("sha256:") or "@sha256:" in image
+    transformed = transform_compose_model(
+        _compose_model(),
+        scope="amaru-only",
+        project="dwarf-qual-extractor-container",
+        cardano_image="known-good-cardano",
+        amaru_image=image,
+        amaru_runtime_interface="extracted-binary",
+    )
+    extractor = transformed["services"]["amaru-target-extract"]
+    extractor["command"][0] = extractor["command"][0].replace(
+        "/usr/local/bin/amaru", "/bin/echo"
+    )
+    extractor["command"][0] += (
+        "; cmp -s /bin/echo /target/amaru"
+        "; test -x /target/amaru"
+        "; test -z \"$$(find /target -name '.amaru.*' -print -quit)\""
+    )
+    extractor["volumes"] = [{"type": "tmpfs", "target": "/target"}]
+    compose_path = tmp_path / "compose.json"
+    compose_path.write_text(
+        json.dumps({"services": {"amaru-target-extract": extractor}}),
+        encoding="utf-8",
+    )
+    project = f"dwarf-test-extractor-{os.getpid()}-{tmp_path.name[-8:]}"
+    delivered_command = ""
+    try:
+        executed = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "--project-name",
+                project,
+                "--file",
+                str(compose_path),
+                "up",
+                "--abort-on-container-exit",
+                "--exit-code-from",
+                "amaru-target-extract",
+                "--pull",
+                "never",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        located = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "--project-name",
+                project,
+                "--file",
+                str(compose_path),
+                "ps",
+                "--all",
+                "--quiet",
+                "amaru-target-extract",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert located.returncode == 0, located.stderr
+        container_id = located.stdout.strip()
+        assert container_id
+        inspected = subprocess.run(
+            ["docker", "inspect", container_id],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert inspected.returncode == 0, inspected.stderr
+        delivered_command = json.loads(inspected.stdout)[0]["Config"]["Cmd"][0]
+    finally:
+        subprocess.run(
+            [
+                "docker",
+                "compose",
+                "--project-name",
+                project,
+                "--file",
+                str(compose_path),
+                "down",
+                "--volumes",
+                "--remove-orphans",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    assert executed.returncode == 0, executed.stderr
+    assert "$$" not in delivered_command
+    assert "temporary=$(mktemp /target/.amaru.XXXXXX)" in delivered_command
+    assert "cmp -s /bin/echo /target/amaru" in delivered_command
+
+
+def test_modern_amaru_extractor_failure_preserves_target_and_cleans_temp(tmp_path):
+    transformed = transform_compose_model(
+        _compose_model(),
+        scope="amaru-only",
+        project="dwarf-qual-extractor-failure",
+        cardano_image="known-good-cardano",
+        amaru_image="ghcr.io/pragma-org/amaru@sha256:" + "9" * 64,
+    )
+    command = _extractor_container_command(transformed)
+    target = tmp_path / "amaru"
+    replacement = Path("/bin/echo")
+    original = b"preserved target\n"
+    target.write_bytes(original)
+    target.chmod(0o755)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_chmod = fake_bin / "chmod"
+    fake_chmod.write_text("#!/bin/sh\nexit 37\n", encoding="utf-8")
+    fake_chmod.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "/bin/sh",
+            "-ec",
+            command.replace("/usr/local/bin/amaru", str(replacement)).replace(
+                "/target", str(tmp_path)
+            ),
+        ],
+        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 37
+    assert target.read_bytes() == original
+    assert list(tmp_path.glob(".amaru.*")) == []
+
+
+def test_modern_amaru_extractor_signal_is_nonzero_and_cleans_temp(tmp_path):
+    transformed = transform_compose_model(
+        _compose_model(),
+        scope="amaru-only",
+        project="dwarf-qual-extractor-signal",
+        cardano_image="known-good-cardano",
+        amaru_image="ghcr.io/pragma-org/amaru@sha256:" + "9" * 64,
+    )
+    command = _extractor_container_command(transformed)
+    target = tmp_path / "amaru"
+    replacement = Path("/bin/echo")
+    original = b"preserved target\n"
+    target.write_bytes(original)
+    target.chmod(0o755)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_chmod = fake_bin / "chmod"
+    fake_chmod.write_text(
+        "#!/bin/sh\n"
+        'kill -TERM "$PPID"\n'
+        "sleep 0.1\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_chmod.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "/bin/sh",
+            "-ec",
+            command.replace("/usr/local/bin/amaru", str(replacement)).replace(
+                "/target", str(tmp_path)
+            ),
+        ],
+        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 143
+    assert target.read_bytes() == original
+    assert list(tmp_path.glob(".amaru.*")) == []
+
+
+def test_modern_amaru_extractor_is_safe_for_concurrent_and_repeated_invocation(
+    tmp_path,
+):
+    transformed = transform_compose_model(
+        _compose_model(),
+        scope="amaru-only",
+        project="dwarf-qual-extractor-concurrent",
+        cardano_image="known-good-cardano",
+        amaru_image="ghcr.io/pragma-org/amaru@sha256:" + "9" * 64,
+    )
+    command = _extractor_container_command(transformed)
+    target = tmp_path / "amaru"
+    replacement = Path("/bin/echo")
+    target.write_bytes(b"old target\n")
+    target.chmod(0o755)
+    argv = [
+        "/bin/sh",
+        "-ec",
+        command.replace("/usr/local/bin/amaru", str(replacement)).replace(
+            "/target", str(tmp_path)
+        ),
+    ]
+
+    concurrent = [
+        subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        for _ in range(4)
+    ]
+    results = [process.communicate(timeout=5) for process in concurrent]
+    assert [process.returncode for process in concurrent] == [0, 0, 0, 0], results
+
+    repeated = subprocess.run(argv, text=True, capture_output=True, check=False)
+    assert repeated.returncode == 0, repeated.stderr
+    assert target.read_bytes() == replacement.read_bytes()
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+    assert list(tmp_path.glob(".amaru.*")) == []
 
 
 def test_transform_retained_amaru_control_keeps_legacy_runtime_interface():

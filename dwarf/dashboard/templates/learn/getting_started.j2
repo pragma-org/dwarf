@@ -11,13 +11,11 @@
     <header><span class="eyebrow">Step 1</span><h2>Install</h2></header>
 
     <h3>Recommended: Docker deployment</h3>
-    <p>Clone the repository and run the four delivery scripts in order. Any Docker-capable Linux host with Compose v2 and ~20&nbsp;GB free disk works; no credentials or wallet are needed for local use.</p>
+    <p>Clone the repository and run the one supported installer. It seeds the writable state, builds the version-matched images, starts the dashboard and controller, and waits for readiness. Any Docker-capable Linux host with Compose v2 and ~20&nbsp;GB free disk works; no credentials or wallet are needed for local use.</p>
     <pre class="run-payload-pre"><code>git clone https://github.com/pragma-org/dwarf.git
 cd dwarf
-bash delivery/scripts/install.sh       # create ~/.local/share/dwarf/{runs,state,bundles}
-bash delivery/scripts/build-image.sh   # build dwarf/framework:current
-bash delivery/scripts/deploy.sh        # start container dwarf-fw on :8787</code></pre>
-    <p>The deployment starts the <code>dwarf/framework:current</code> image, mounts <code>runs/</code> · <code>state/</code> · <code>bundles/</code> from <code>~/.local/share/dwarf/</code> by default, and starts the dashboard at <a href="http://127.0.0.1:8787/operate"><code>http://127.0.0.1:8787/operate</code></a>. Set <code>DWARF_RUNTIME_ROOT</code> to use another location. Prerequisites and options are in <code>INSTALL.md</code>. Use a different port with <code>DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/deploy.sh</code>.</p>
+bash delivery/scripts/install.sh       # build images, seed state, and start</code></pre>
+    <p>The deployment starts the version-matched dashboard and controller images, mounts <code>runs/</code> · <code>state/</code> · <code>bundles/</code> from <code>~/.local/share/dwarf/</code> by default, and starts the dashboard at <a href="http://127.0.0.1:8787/run"><code>http://127.0.0.1:8787/run</code></a>. Set <code>DWARF_RUNTIME_ROOT</code> to use another location. Prerequisites and options are in <code>INSTALL.md</code>. Use a different port with <code>DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/install.sh</code>.</p>
     <p>This is the primary deploy path. The container layer pins framework dependencies so installs are reproducible across Docker-capable Linux hosts.</p>
 
     <h3>Confirm it's working</h3>

@@ -1,9 +1,13 @@
-name: dwarf
+name: ${DWARF_COMPOSE_PROJECT_NAME:-dwarf}
 
 services:
   dwarf-fw:
-    image: ${DWARF_IMAGE:-dwarf/framework:current}
+    image: ${DWARF_IMAGE:?set DWARF_IMAGE to the signed digest-pinned dashboard image}
     container_name: ${DWARF_CONTAINER_NAME:-dwarf-fw}
+    labels:
+      io.dwarf.application: "true"
+      io.dwarf.installation: ${DWARF_INSTALLATION_ID:?set DWARF_INSTALLATION_ID}
+      io.dwarf.component: dashboard
     command:
       - dashboard
       - serve
@@ -12,20 +16,26 @@ services:
       - --port
       - "8787"
       - --token
-      - ${ADA2_DWARF_TOKEN:-dwarf}
+      - ${ADA2_DWARF_TOKEN:?set ADA2_DWARF_TOKEN to a private random token}
     ports:
-      - "${DWARF_DASHBOARD_BIND:-0.0.0.0}:${DWARF_DASHBOARD_PORT:-8787}:8787"
+      - "${DWARF_DASHBOARD_BIND:-127.0.0.1}:${DWARF_DASHBOARD_PORT:-8787}:8787"
     environment:
       ADA2_DWARF_RUNS_DIR: /var/dwarf/runs
+      DWARF_HOST_RUNS_DIR: ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/runs
       ADA2_DWARF_STATE_DIR: /var/dwarf/state
       ADA2_DWARF_BUNDLES_DIR: /var/dwarf/bundles
+      ADA2_DWARF_LAUNCH_ROOT: /var/dwarf/launches
+      ADA2_DWARF_RUN_LEDGER_ROOT: /var/dwarf/run-ledger
       ADA2_DWARF_SCENARIOS_DIR: /var/dwarf/state/scenarios
       ADA2_DWARF_MANIFESTS_DIR: /var/dwarf/state/targets/manifests
       ADA2_DWARF_PROFILES_DIR: /var/dwarf/state/profiles
+      ADA2_DWARF_MEASUREMENTS_DIR: /var/dwarf/state/measurements
+      ADA2_DWARF_MEASUREMENT_PROFILES_DIR: /var/dwarf/state/measurement-profiles
+      ADA2_DWARF_VERSION_IMPORTS_DIR: /var/dwarf/version-imports
       # Single runtime-root base — every profile normalizes to <base>/<id>, so
       # the deploy target and remove archival root can never diverge. Must match
       # REMOTE_BASE_PATH in the deploy host's dwarf-control.conf.
-      ADA2_DWARF_REMOTE_BASE: ${ADA2_DWARF_REMOTE_BASE:-/opt/dwarf/cardano-profiles}
+      ADA2_DWARF_REMOTE_BASE: /var/dwarf/controller-state/controller/topology-runtimes
       ADA2_PROFILE_MANAGER_CONFIG: /var/dwarf/state/config.yaml
       # Evidence (deploy/remove/status/snapshot writeups) must land in the
       # writable overlay, not the read-only baked tree.
@@ -38,7 +48,14 @@ services:
       # CLI. These vars keep the skip well-labelled and support host-mode runs.
       DWARF_AFL_HARNESS: ${DWARF_AFL_HARNESS:-/opt/dwarf/afl-harness/dwarf-decode-any}
       DWARF_AFL_FUZZ: ${DWARF_AFL_FUZZ:-/opt/dwarf/afl-harness/afl-fuzz}
-      ADA2_DWARF_TOKEN: ${ADA2_DWARF_TOKEN:-dwarf}
+      ADA2_DWARF_TOKEN: ${ADA2_DWARF_TOKEN:?set ADA2_DWARF_TOKEN to a private random token}
+      DWARF_CONTROLLER_URL: http://dwarf-controller:8790
+      DWARF_CONTROLLER_TOKEN: ${DWARF_CONTROLLER_TOKEN:?set DWARF_CONTROLLER_TOKEN to a private random token}
+      DWARF_INSTALLATION_ID: ${DWARF_INSTALLATION_ID:?set DWARF_INSTALLATION_ID}
+      DWARF_HOST_OS: ${DWARF_HOST_OS:?set DWARF_HOST_OS to the detected installation host OS}
+      DWARF_HOST_ARCH: ${DWARF_HOST_ARCH:?set DWARF_HOST_ARCH to the detected installation host architecture}
+      DWARF_AVAILABLE_IMAGE_DIGESTS: ${DWARF_AVAILABLE_IMAGE_DIGESTS:-}
+      DWARF_AVAILABLE_CREDENTIALS: ${DWARF_AVAILABLE_CREDENTIALS:-}
       # Web-driven substrate control channel. When set to 1 (and the deploy
       # host has been provisioned via delivery/control-plane/provision-control-channel.sh),
       # deploy/remove/status/active are sent to the host as restricted verbs
@@ -69,9 +86,12 @@ services:
       MOOG_AGENT_EMAIL_USER: ${MOOG_AGENT_EMAIL_USER:-}
       MOOG_AGENT_EMAIL_PASSWORD: ${MOOG_AGENT_EMAIL_PASSWORD:-}
     volumes:
-      - ${DWARF_RUNTIME_ROOT:-../var}/runs:/var/dwarf/runs
-      - ${DWARF_RUNTIME_ROOT:-../var}/state:/var/dwarf/state
-      - ${DWARF_RUNTIME_ROOT:-../var}/bundles:/var/dwarf/bundles
+      - dwarf-runs:/var/dwarf/runs
+      - dwarf-state:/var/dwarf/state
+      - dwarf-bundles:/var/dwarf/bundles
+      - dwarf-launches:/var/dwarf/launches
+      - dwarf-run-ledger:/var/dwarf/run-ledger
+      - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/version-imports:/var/dwarf/version-imports
       - ${DWARF_SSH_KEY_PATH:-../var/state/ssh_deploy_key}:/home/dwarf/.ssh/cardano-box:ro
       - ${DWARF_SSH_KNOWN_HOSTS:-../var/state/ssh_known_hosts}:/home/dwarf/.ssh/known_hosts:ro
     read_only: true
@@ -82,10 +102,151 @@ services:
     tmpfs:
       - /tmp
       - /run
+    group_add:
+      - ${DWARF_RUNTIME_GID:-1000}
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - 'import urllib.request; r=urllib.request.urlopen("http://127.0.0.1:8787/healthz", timeout=5); raise SystemExit(0 if r.status == 200 else 1)'
+      interval: 5s
+      timeout: 6s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+    depends_on:
+      dwarf-controller:
+        condition: service_healthy
+
+  dwarf-controller:
+    image: ${DWARF_CONTROLLER_IMAGE:?set DWARF_CONTROLLER_IMAGE to the signed digest-pinned controller image}
+    container_name: ${DWARF_CONTROLLER_CONTAINER_NAME:-dwarf-controller}
+    labels:
+      io.dwarf.application: "true"
+      io.dwarf.installation: ${DWARF_INSTALLATION_ID:?set DWARF_INSTALLATION_ID}
+      io.dwarf.component: controller
+    environment:
+      # Controller plans, retained Compose specs, integrity records, and runtime
+      # assets are isolated from the dashboard's writable state volume.
+      ADA2_DWARF_STATE_DIR: /var/dwarf/controller-state
+      ADA2_DWARF_RUNS_DIR: /var/dwarf/runs
+      ADA2_DWARF_BUNDLES_DIR: /var/dwarf/bundles
+      ADA2_DWARF_LAUNCH_ROOT: /var/dwarf/launches
+      ADA2_DWARF_RUN_LEDGER_ROOT: /var/dwarf/run-ledger
+      ADA2_DWARF_REMOTE_BASE: /var/dwarf/controller-state/controller/topology-runtimes
+      # Generated profiles are written by the validated dashboard workflow.
+      # The controller sees only this catalog subtree and only read-only, then
+      # independently re-resolves it against its signed release catalog.
+      ADA2_DWARF_PROFILES_DIR: /var/dwarf/dashboard-state/profiles
+      # User-authored scenarios are dashboard-owned. The controller sees only
+      # this read-only subtree so immutable launches are independently resolved
+      # against the exact active scenario bytes before execution.
+      ADA2_DWARF_SCENARIOS_DIR: /var/dwarf/dashboard-state/scenarios
+      # User-authored measurement definitions and profiles are dashboard-owned
+      # persistent state. The controller independently re-resolves launches
+      # against these exact catalogs through read-only, subtree-scoped mounts.
+      ADA2_DWARF_MEASUREMENTS_DIR: /var/dwarf/dashboard-state/measurements
+      ADA2_DWARF_MEASUREMENT_PROFILES_DIR: /var/dwarf/dashboard-state/measurement-profiles
+      # Version refresh remains dashboard-owned; the controller gets only the
+      # persisted discovery overlay needed to independently recompute and
+      # verify the resolver catalog revision carried by topology plans.
+      ADA2_DWARF_VERSION_CATALOG_STATE_DIR: /var/dwarf/dashboard-state
+      ADA2_DWARF_VERSION_IMPORTS_DIR: /var/dwarf/version-imports
+      # Docker uses host paths, not paths inside this controller container.
+      DWARF_CONTROLLER_HOST_STATE_DIR: ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/controller-state
+      # Compose requires a writable client-config directory even when it does
+      # not use credentials. Keep it private and ephemeral on the existing
+      # controller-only /tmp tmpfs while the root filesystem stays read-only.
+      DOCKER_CONFIG: /tmp/dwarf-docker-config
+      DWARF_CONTROLLER_TOKEN: ${DWARF_CONTROLLER_TOKEN:?set DWARF_CONTROLLER_TOKEN to a private random token}
+      DWARF_INSTALLATION_ID: ${DWARF_INSTALLATION_ID:?set DWARF_INSTALLATION_ID}
+      DWARF_HOST_OS: ${DWARF_HOST_OS:?set DWARF_HOST_OS to the detected installation host OS}
+      DWARF_HOST_ARCH: ${DWARF_HOST_ARCH:?set DWARF_HOST_ARCH to the detected installation host architecture}
+      DWARF_GOLDEN_IMAGES: ${DWARF_GOLDEN_IMAGES:?set DWARF_GOLDEN_IMAGES to digest-pinned target images}
+      DWARF_ARTIFACT_PACKAGE_AMARU_BASE: ${DWARF_ARTIFACT_PACKAGE_AMARU_BASE:?set DWARF_ARTIFACT_PACKAGE_AMARU_BASE to a digest-pinned standard image}
+      DWARF_ARTIFACT_PACKAGE_CARDANO_BASE: ${DWARF_ARTIFACT_PACKAGE_CARDANO_BASE:?set DWARF_ARTIFACT_PACKAGE_CARDANO_BASE to a digest-pinned standard image}
+    volumes:
+      - dwarf-runs:/var/dwarf/runs
+      - dwarf-controller-state:/var/dwarf/controller-state
+      - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/profiles:/var/dwarf/dashboard-state/profiles:ro
+      - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/scenarios:/var/dwarf/dashboard-state/scenarios:ro
+      - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/measurements:/var/dwarf/dashboard-state/measurements:ro
+      - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/measurement-profiles:/var/dwarf/dashboard-state/measurement-profiles:ro
+      - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/version-catalog:/var/dwarf/dashboard-state/version-catalog:ro
+      - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/version-imports:/var/dwarf/version-imports:ro
+      - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/measurement-targets:/var/dwarf/controller-state/measurement-targets:ro
+      - dwarf-bundles:/var/dwarf/bundles
+      - dwarf-launches:/var/dwarf/launches:ro
+      - dwarf-run-ledger:/var/dwarf/run-ledger
+      - ${DWARF_DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
+    group_add:
+      - ${DWARF_DOCKER_GID:-0}
+      - ${DWARF_RUNTIME_GID:-1000}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /run
+      # Mask the dashboard base image's inherited VOLUME declaration so
+      # Compose cannot attach the full dashboard state volume to controller.
+      - /var/dwarf/state
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - 'import urllib.request; r=urllib.request.urlopen("http://127.0.0.1:8790/healthz", timeout=5); raise SystemExit(0 if r.status == 200 else 1)'
+      interval: 5s
+      timeout: 6s
+      retries: 12
+      start_period: 5s
     restart: unless-stopped
 
 networks:
   default:
+    name: ${DWARF_NETWORK_NAME:-dwarf_default}
     ipam:
       config:
-        - subnet: 10.201.0.0/24
+        - subnet: ${DWARF_NETWORK_SUBNET:-10.201.0.0/24}
+
+volumes:
+  dwarf-runs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DWARF_RUNTIME_ROOT:-../var}/runs
+  dwarf-state:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DWARF_RUNTIME_ROOT:-../var}/state
+  dwarf-bundles:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DWARF_RUNTIME_ROOT:-../var}/bundles
+  dwarf-controller-state:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/controller-state
+  dwarf-launches:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/launches
+  dwarf-run-ledger:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/run-ledger

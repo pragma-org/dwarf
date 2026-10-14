@@ -10,15 +10,20 @@ import copy
 import fcntl
 import json
 import os
+import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from profile_manager.config import storage_roots
+from profile_manager.operator_version_decisions import OperatorVersionDecisionLedger
+
 from profile_manager.version_catalog import (
     DEFAULT_CATALOG_PATH,
     DIGEST,
     SHA40,
+    enrich_retained_oci_artifacts,
     load_version_catalog,
     validate_version_catalog,
 )
@@ -27,6 +32,8 @@ from profile_manager.version_catalog import (
 DEFAULT_MAX_AGE_SECONDS = 6 * 60 * 60
 _THREADS: set[threading.Thread] = set()
 _THREADS_LOCK = threading.Lock()
+_REGISTRATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
+IMPLEMENTATIONS = ("amaru", "cardano-node")
 
 
 def _now() -> datetime:
@@ -40,8 +47,12 @@ def _timestamp(value: datetime | None = None) -> str:
 def _state_dir(state_dir: str | Path | None = None) -> Path:
     if state_dir is not None:
         return Path(state_dir)
-    configured = os.environ.get("ADA2_DWARF_STATE_DIR", "").strip()
-    return Path(configured or "/var/dwarf/state")
+    catalog_state_dir = os.environ.get(
+        "ADA2_DWARF_VERSION_CATALOG_STATE_DIR", ""
+    ).strip()
+    if catalog_state_dir:
+        return Path(catalog_state_dir)
+    return storage_roots().state
 
 
 def _root(state_dir: str | Path | None = None) -> Path:
@@ -54,6 +65,35 @@ def candidate_path(state_dir: str | Path | None = None) -> Path:
 
 def status_path(state_dir: str | Path | None = None) -> Path:
     return _root(state_dir) / "refresh-status.json"
+
+
+def load_operator_registrations(
+    state_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Read the local overlay without merging it into shared qualification."""
+    state = OperatorVersionDecisionLedger(state_dir).read()
+    return {
+        "revision": state["revision"],
+        "registrations": copy.deepcopy(state["registrations"]),
+    }
+
+
+def load_operator_registration(
+    registration_id: str, state_dir: str | Path | None = None
+) -> dict[str, Any]:
+    if not isinstance(registration_id, str) or not _REGISTRATION_ID.fullmatch(
+        registration_id
+    ):
+        raise ValueError("registration_id must be a safe local identity")
+    overlay = load_operator_registrations(state_dir)
+    matches = [
+        row
+        for row in overlay["registrations"]
+        if row.get("registration_id") == registration_id
+    ]
+    if len(matches) != 1:
+        raise ValueError("operator registration is missing or ambiguous")
+    return {"revision": overlay["revision"], "registration": matches[0]}
 
 
 def _atomic_json(path: Path, body: dict[str, Any]) -> None:
@@ -73,6 +113,16 @@ def read_refresh_status(state_dir: str | Path | None = None) -> dict[str, Any]:
         "source_status": {"cardano-node": "not-checked", "amaru": "not-checked"},
         "new_versions": [],
         "error": None,
+        "implementations": {
+            name: {
+                "state": "never",
+                "last_attempt_at": None,
+                "last_success_at": None,
+                "new_versions": [],
+                "error": None,
+            }
+            for name in IMPLEMENTATIONS
+        },
     }
     try:
         body = json.loads(path.read_text(encoding="utf-8"))
@@ -80,7 +130,48 @@ def read_refresh_status(state_dir: str | Path | None = None) -> dict[str, Any]:
         return fallback
     if not isinstance(body, dict) or body.get("schema_version") != 1:
         return fallback
-    return {**fallback, **body}
+    status = {**fallback, **body}
+    source_status = dict(status.get("source_status") or {})
+    implementations = body.get("implementations")
+    if not isinstance(implementations, dict):
+        implementations = {}
+    normalized = {}
+    for implementation in IMPLEMENTATIONS:
+        source_state = str(source_status.get(implementation) or "not-checked")
+        legacy_state = {
+            "checking": "running",
+            "ok": "success",
+            "error": "error",
+            "not-checked": "never",
+        }.get(source_state, "never")
+        retained = implementations.get(implementation)
+        if not isinstance(retained, dict):
+            retained = {}
+        attempted = retained.get("last_attempt_at")
+        if attempted is None and legacy_state != "never":
+            attempted = status.get("last_attempt_at")
+        succeeded = retained.get("last_success_at")
+        if succeeded is None and legacy_state == "success":
+            succeeded = status.get("last_success_at")
+        normalized[implementation] = {
+            "state": retained.get("state") or legacy_state,
+            "last_attempt_at": attempted,
+            "last_success_at": succeeded,
+            "new_versions": list(
+                retained.get("new_versions")
+                if isinstance(retained.get("new_versions"), list)
+                else [
+                    row for row in status.get("new_versions") or []
+                    if isinstance(row, dict)
+                    and row.get("implementation") == implementation
+                ]
+            ),
+            "error": retained.get("error") or (
+                status.get("error") if legacy_state == "error" else None
+            ),
+        }
+    status["implementations"] = normalized
+    return status
 
 
 def refresh_is_stale(
@@ -123,10 +214,20 @@ def merge_discovery_candidate(
         (release["implementation"], release["version"])
         for release in checked_source["releases"]
     }
+    retained_index = {
+        (release["implementation"], release["version"]): index
+        for index, release in enumerate(merged["releases"])
+    }
     discovered: list[dict[str, str]] = []
     for release in checked_candidate["releases"]:
         key = (release["implementation"], release["version"])
-        if key in known or not _has_immutable_artifact(release):
+        if key in known:
+            index = retained_index[key]
+            merged["releases"][index] = enrich_retained_oci_artifacts(
+                merged["releases"][index], release.get("artifacts") or []
+            )
+            continue
+        if not _has_immutable_artifact(release):
             continue
         clean = copy.deepcopy(release)
         for record in (clean.get("verification") or {}).values():
@@ -171,6 +272,7 @@ def load_effective_version_catalog(
 
 def perform_release_refresh(
     *,
+    implementation: str | None = None,
     state_dir: str | Path | None = None,
     source_path: str | Path = DEFAULT_CATALOG_PATH,
     fetch_json: Callable[[str], Any] | None = None,
@@ -186,9 +288,21 @@ def perform_release_refresh(
         resolve_oci_artifacts_http,
     )
 
+    if implementation is not None and implementation not in IMPLEMENTATIONS:
+        raise ValueError("unknown release implementation")
+    selected = IMPLEMENTATIONS if implementation is None else (implementation,)
     attempted_at = checked_at or _timestamp()
     prior_status = read_refresh_status(state_dir)
-    source_status = {"cardano-node": "not-checked", "amaru": "not-checked"}
+    source_status = dict(prior_status.get("source_status") or {})
+    implementation_status = copy.deepcopy(prior_status["implementations"])
+    for name in selected:
+        source_status[name] = "checking"
+        implementation_status[name] = {
+            **implementation_status[name],
+            "state": "running",
+            "last_attempt_at": attempted_at,
+            "error": None,
+        }
     running = {
         **prior_status,
         "schema_version": 1,
@@ -196,10 +310,12 @@ def perform_release_refresh(
         "manual": bool(manual),
         "last_attempt_at": attempted_at,
         "source_status": source_status,
+        "implementations": implementation_status,
         "error": None,
     }
     _atomic_json(status_path(state_dir), running)
     source = load_version_catalog(source_path)
+    refresh_base = load_effective_version_catalog(source_path, state_dir=state_dir)
     source_keys = {
         (release["implementation"], release["version"])
         for release in source["releases"]
@@ -228,33 +344,66 @@ def perform_release_refresh(
     resolve_artifact = artifact_resolver or resolve_oci_artifacts_http
     try:
         candidate = refresh_version_catalog(
-            source,
+            refresh_base,
             fetch_json=tracked_fetch,
             artifact_resolver=resolve_artifact,
             artifact_limit_per_implementation=3,
             tag_revision_resolver=tag_revision_resolver,
             checked_at=attempted_at,
+            implementations=list(selected),
         )
         _atomic_json(candidate_path(state_dir), candidate)
         _effective, discovered = merge_discovery_candidate(source, candidate)
         # Include only releases actually eligible for the effective catalog.
         eligible = [
             item for item in discovered
-            if (item["implementation"], item["version"]) not in source_keys
+            if item["implementation"] in selected
+            and (item["implementation"], item["version"]) not in source_keys
         ]
+        for name in selected:
+            source_status[name] = "ok"
+            implementation_status[name] = {
+                **implementation_status[name],
+                "state": "success",
+                "last_attempt_at": attempted_at,
+                "last_success_at": attempted_at,
+                "new_versions": [
+                    row for row in eligible if row["implementation"] == name
+                ],
+                "error": None,
+            }
         completed = {
             **running,
             "state": "success",
             "last_success_at": attempted_at,
             "source_status": source_status,
+            "implementations": implementation_status,
             "new_versions": eligible,
             "error": None,
         }
     except Exception as exc:
+        failed = [
+            name for name in selected if source_status.get(name) == "error"
+        ]
+        if implementation is not None or not failed:
+            failed = list(selected)
+        for name in selected:
+            if name in failed:
+                source_status[name] = "error"
+                implementation_status[name] = {
+                    **implementation_status[name],
+                    "state": "error",
+                    "last_attempt_at": attempted_at,
+                    "error": str(exc)[:1000],
+                }
+            elif implementation is None and source_status.get(name) == "checking":
+                source_status[name] = "not-checked"
+                implementation_status[name] = prior_status["implementations"][name]
         completed = {
             **running,
             "state": "error",
             "source_status": source_status,
+            "implementations": implementation_status,
             "error": str(exc)[:1000],
         }
     _atomic_json(status_path(state_dir), completed)
@@ -273,8 +422,13 @@ def _try_lock(state_dir: str | Path | None):
     return handle
 
 
-def start_release_refresh(*, manual: bool, state_dir: str | Path | None = None) -> dict[str, Any]:
+def start_release_refresh(
+    *, implementation: str, manual: bool, state_dir: str | Path | None = None
+) -> dict[str, Any]:
     """Start one serialized background refresh and return immediately."""
+
+    if implementation not in IMPLEMENTATIONS:
+        raise ValueError("unknown release implementation")
 
     lock_handle = _try_lock(state_dir)
     if lock_handle is None:
@@ -282,6 +436,15 @@ def start_release_refresh(*, manual: bool, state_dir: str | Path | None = None) 
 
     attempted_at = _timestamp()
     prior = read_refresh_status(state_dir)
+    source_status = dict(prior.get("source_status") or {})
+    source_status[implementation] = "checking"
+    implementation_status = copy.deepcopy(prior["implementations"])
+    implementation_status[implementation] = {
+        **implementation_status[implementation],
+        "state": "running",
+        "last_attempt_at": attempted_at,
+        "error": None,
+    }
     _atomic_json(
         status_path(state_dir),
         {
@@ -290,7 +453,8 @@ def start_release_refresh(*, manual: bool, state_dir: str | Path | None = None) 
             "state": "running",
             "manual": bool(manual),
             "last_attempt_at": attempted_at,
-            "source_status": {"cardano-node": "checking", "amaru": "checking"},
+            "source_status": source_status,
+            "implementations": implementation_status,
             "error": None,
         },
     )
@@ -298,6 +462,7 @@ def start_release_refresh(*, manual: bool, state_dir: str | Path | None = None) 
     def worker() -> None:
         try:
             perform_release_refresh(
+                implementation=implementation,
                 state_dir=state_dir, checked_at=attempted_at, manual=manual
             )
         finally:
@@ -314,7 +479,7 @@ def start_release_refresh(*, manual: bool, state_dir: str | Path | None = None) 
 
 
 def ensure_release_refresh(*, max_age_seconds: int = DEFAULT_MAX_AGE_SECONDS) -> dict[str, Any]:
-    status = read_refresh_status()
-    if refresh_is_stale(status, max_age_seconds=max_age_seconds):
-        return start_release_refresh(manual=False)
-    return {"started": False, **status}
+    """Compatibility shim: automatic upstream discovery is intentionally disabled."""
+
+    del max_age_seconds
+    return {"started": False, **read_refresh_status()}

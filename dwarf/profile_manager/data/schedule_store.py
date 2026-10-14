@@ -35,15 +35,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from profile_manager.config import storage_roots
+
 
 _LOCK = threading.RLock()
 
 
 def _state_dir() -> Path:
-    env = os.environ.get("ADA2_DWARF_STATE_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parents[3] / "dwarf" / "state"
+    return storage_roots().state
 
 
 def store_path() -> Path:

@@ -22,7 +22,9 @@
      "kind": "oci",
      "reference": "ghcr.io/intersectmbo/cardano-node:11.1.2",
      "availability": "available",
-     "digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f"
+     "digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+     "public": true,
+     "platforms": ["linux/amd64", "linux/arm64"]
     }
    ],
    "verification": {
@@ -4014,7 +4016,7 @@
    "cardano_version": "11.1.2",
    "amaru_version": "10.11.20260918",
    "status": "confirmed",
-   "default": false,
+   "default": true,
    "checked_at": "2026-09-23T14:30:00Z",
    "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
    "dwarf_revision": "a9f4de0945f5893e78413c7b54027a9edaa5e0ac",
@@ -4102,11 +4104,11 @@
    "cardano_version": "10.7.1",
    "amaru_version": "10.11.0",
    "status": "confirmed",
-   "default": true,
+   "default": false,
    "checked_at": "2026-09-18T09:11:11Z",
    "topology_revision": "b8a7c1d471129faf8aa453b77c159d69183ad2a8",
    "dwarf_revision": "15aad96a348d57ae98f7c8037caddf8d327d0479",
-   "reason": "The exact pair was reproduced from fresh volumes with the proven live-producer snapshot lifecycle and passed every mixed readiness, exact-identity, convergence, fatal-signal, and clean-teardown gate. It remains the bounded-search fallback after the newest exact pair failed its isolated serve-through contract.",
+   "reason": "The exact pair was reproduced from fresh volumes with the proven live-producer snapshot lifecycle and passed every mixed readiness, exact-identity, convergence, fatal-signal, and clean-teardown gate. It remains confirmed but is superseded as the default by the newer confirmed Cardano 11.1.2 and Amaru 10.11.20260918 pair.",
    "evidence": [
     "workbench:dwarf-latest/obj_7b551786555142b78aecdcc5",
     "state:topology-health/latest.json",

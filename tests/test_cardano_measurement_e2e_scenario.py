@@ -68,7 +68,11 @@ def _runtime_body(*, digest: str = "sha256:" + "6" * 64):
             "source_revision": revision,
             "container_name": "dwarf-cardano-node1",
             "image_ref": f"ghcr.io/intersectmbo/cardano-node:11.1.2@{digest}",
-            "artifact_identity": {"satisfied": True, "image_digest": digest},
+            "artifact_identity": {
+                "satisfied": True,
+                "image_digest": digest,
+                "image_ref": f"ghcr.io/intersectmbo/cardano-node:11.1.2@{digest}",
+            },
             "version_identity": {"satisfied": True},
         }],
     }
@@ -123,6 +127,62 @@ def test_cardano_runtime_leg_retains_every_timed_outcome_and_exact_identity(
     assert result["node_trace"]["record_count"] == 1
     assert result["node_trace"]["protocol_record_count"] == 1
     assert result["node_trace"]["minimum_observation_seconds"] == 2
+
+
+def test_cardano_plutus_workload_preserves_direct_host_execution(
+    monkeypatch, tmp_path
+):
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    runtime_body = _runtime_body()
+    runtime_root.joinpath("runtime.json").write_text(json.dumps(runtime_body))
+    output_dir = tmp_path / "output"
+    received = {}
+    monkeypatch.setattr(calibration, "_controller_container", lambda: None)
+    monkeypatch.setattr(calibration, "_container_ip", lambda _container: "127.0.0.1")
+    monkeypatch.setattr(
+        calibration,
+        "run_attempts",
+        lambda **_kwargs: [{
+            "attempt_id": "handshake-0000",
+            "outcome": "rejected",
+            "elapsed_micros": 1,
+        }],
+    )
+
+    def run_plutus_workload(**kwargs):
+        received.update(kwargs)
+        return {"status": "completed", "transactions": 1}
+
+    def capture(_container, *, since, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            '{"ns":"Net.Handshake.Remote","data":{"kind":"Handshake"}}\n'
+        )
+        return {
+            "record_count": 1,
+            "protocol_record_count": 1,
+            "byte_count": destination.stat().st_size,
+            "namespaces": ["Net.Handshake.Remote"],
+        }
+
+    monkeypatch.setattr(calibration, "run_plutus_workload", run_plutus_workload)
+    monkeypatch.setattr(calibration, "_capture_logs", capture)
+    monkeypatch.setattr(calibration.time, "sleep", lambda _seconds: None)
+
+    result = calibration.run_leg(
+        runtime_root=runtime_root,
+        output_dir=output_dir,
+        attempt_count=1,
+        timeout_seconds=1,
+        observation_seconds=0,
+        trace_timeout_seconds=0,
+        plutus_transactions=1,
+    )
+
+    assert received["runtime"] == runtime_body
+    assert received["node"] == runtime_body["nodes"][0]
+    assert result["plutus_workload"] == {"status": "completed", "transactions": 1}
 
 
 def test_cardano_runtime_identity_fails_closed_on_digest_mismatch():

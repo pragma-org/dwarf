@@ -1,429 +1,476 @@
 # Operations Guide
 
-This guide covers normal operation after Dwarf has been installed and the framework image has been built.
+Use this guide after installation.
+For prerequisites and first startup, read [INSTALL.md](INSTALL.md).
+Commands assume the default container name and a terminal at the checkout root.
 
-## Lifecycle Commands
+## Application lifecycle
 
-Full bring-up in one command — seeds the catalog, builds the image, and starts the
-container:
+To prepare catalogs, build both images, and start the application, run:
 
 ```bash
 bash delivery/scripts/install.sh
 ```
 
-When provisioning or refreshing the optional control channel on a deployment
-whose substrate host is not loopback, pass the same host and user shown in
-`/operate/config`:
+The installer also checks readiness and matching source revisions.
+You do not need to run `status.sh` to complete installation.
 
-```bash
-DEPLOY_HOST=<configured-host> DEPLOY_USER=<configured-user> \
-  bash delivery/scripts/install.sh --control-channel --no-build
-```
-
-`provision-control-channel.sh` defaults to `127.0.0.1` and the current user.
-Those defaults are appropriate for a same-host fresh install, but an upgrade
-must not use them when the saved DWARF deployment points elsewhere: provisioning
-rewrites the staged `known_hosts` file for the selected host.
-
-`install.sh` calls the two scripts below for you; run them individually to rebuild or
-restart without re-seeding.
-
-Build the Docker image:
+To build images separately, run:
 
 ```bash
 bash delivery/scripts/build-image.sh
 ```
 
-Deploy (or restart) the container:
+To start or replace the application containers, run:
 
 ```bash
 bash delivery/scripts/deploy.sh
 ```
 
-Status:
+This command also seeds catalogs, checks pinned node images, and checks application readiness.
+It is not a node-topology preparation command.
+Do not run it repeatedly while another deployment is active.
+
+For an optional diagnostic, run:
 
 ```bash
 bash delivery/scripts/status.sh
 ```
 
-Undeploy while preserving runtime data:
+To stop the application and preserve runtime data, run:
 
 ```bash
 bash delivery/scripts/undeploy.sh
 ```
 
-Conservative uninstall:
+## Dashboard access
 
-```bash
-bash delivery/scripts/uninstall.sh
-```
+Open `http://127.0.0.1:8787/run` on the installation host.
+The root path redirects to `/operate`.
+Basic is the default dashboard view.
+The six-stage `/run` wizard contains the required Prepare → Run → Evidence controls.
 
-## Dashboard Routes
+The default host bind is `127.0.0.1`, not `0.0.0.0`.
+For remote access, use the SSH forwarding procedure in [INSTALL.md](INSTALL.md#4-open-the-dashboard).
+Enable a LAN bind only with deliberate network access restrictions.
+The dashboard credential does not replace a firewall, authenticated reverse proxy, or HTTPS.
 
-After deployment, open:
+The installer prints the dashboard token file path.
+It does not print a tokenized access URL.
+The default file is `~/.local/share/dwarf/state/dashboard-token`.
+Keep credentials and configuration private.
 
-```text
-http://127.0.0.1:8787/operate
-http://<host-local-area-network-ip>:8787/operate
-```
-
-Useful routes:
+### Useful routes
 
 | Route | Purpose |
 |---|---|
-| `/operate` | Operational overview |
+| `/run` | Configure, prepare, and start a run |
+| `/operate` | Operations overview |
 | `/operate/scenarios` | Scenario catalog |
-| `/operate/targets` | Registered targets |
-| `/operate/profiles` | Configured profiles |
-| `/operate/status` | Deployment/status view |
-| `/operate/bundles` | Evidence bundle browser |
-| `/operate/coverage` | Coverage roll-up |
-| `/operate/plugins` | Plugin and primitive registry |
-| `/operate/config` | Read-only resolved config view |
-| `/learn` | Documentation and onboarding pages |
-| `/api/status` | JavaScript Object Notation (JSON) status payload |
+| `/operate/targets` | Target catalog |
+| `/operate/profiles` | Topology profiles |
+| `/operate/versions` | Release discovery, imports, defaults, and compatibility evidence |
+| `/operate/measurements` | Measurement definitions |
+| `/operate/measurement-profiles` | Tap selections |
+| `/operate/runs` | Run history |
+| `/operate/runs/<run-id>` | Run results and retained evidence |
+| `/operate/status` | Deployment status |
+| `/operate/bundles` | Evidence bundles |
+| `/operate/coverage` | Coverage summary |
+| `/operate/plugins` | Plugins and primitives |
+| `/operate/config` | Resolved configuration and setup controls |
+| `/learn` | Documentation |
+| `/api/status` | JSON status response |
 
-The root path redirects to `/operate`.
+## Prepare, run, and inspect evidence
 
-## Definition Catalogs And Builders
+Use this sequence on `/run`:
 
-DWARF exposes the complete mounted scenario, target, and profile catalogs through
-the dashboard. Each catalog supports search, a complete detail view, exact source
-download, and a deterministic full-catalog `tar.gz` export:
+1. Select the topology.
+2. Select node versions.
+3. Select the scenario.
+4. Select measurement taps.
+5. Review the changes, seed, prerequisites, and experimental consent.
+6. Select **Prepare topology**.
+7. Wait for Ready.
+8. Start the run.
+9. Inspect the result and evidence.
 
-| Definition | Catalog | Create | Detail / edit |
+The logo shows progress, not readiness proof.
+A healthy topology with unchanged physical identities can pass revalidation without another deployment.
+A changed topology can require explicit replacement confirmation.
+
+Read the framework outcome separately from the security verdict.
+A completed run can contain a failed security assertion.
+Inspect the assertion and its evidence before you classify the failure.
+
+Check measurement samples, workload correlations, and collection windows.
+An available tap or a zero value does not prove that the workload exercised that metric.
+Patched taps require matching instrumentation and provenance.
+An imported stock binary does not acquire instrumentation hooks.
+
+## Node versions and compatibility
+
+The deployment profile controls runtime node versions.
+Scenarios inherit its exact artifacts.
+A target's harness version does not override the profile's runtime version.
+
+Open `/operate/versions` to inspect releases, imports, artifact identities, defaults, compatibility decisions, and retained evidence.
+Select **Fetch Latest Version** for Amaru or Cardano to request upstream release metadata.
+An open page does not repeatedly request release metadata.
+A GitHub error or rate limit does not prove that a release is absent.
+
+Metadata discovery does not download or deploy an artifact.
+Use the preparation workflow for that step.
+For an unreleased build, import a compatible Docker image or supported Linux ELF binary or archive.
+The executable must match the Linux container architecture.
+DWARF does not compile arbitrary source trees or correct node build errors.
+
+Use this sequence for an experimental version:
+
+1. Discover or import the version.
+2. Select its exact artifact.
+3. Download or prepare it.
+4. Run applicable checks.
+5. Inspect retained evidence.
+6. Record a compatibility decision for a specific scope.
+7. Optionally choose it as your default.
+
+A successful run does not automatically confirm every scenario, tap, or mixed pair.
+A standalone Cardano pass does not prove mixed compatibility.
+A mixed pass does not prove standalone Amaru block production.
+Local-devnet evidence does not establish Preview, Preview2, or Preprod compatibility.
+
+`incompatible` and `blocked` choices stop execution.
+Unknown compatibility requires a one-run acknowledgement.
+The acknowledgement does not promote catalog support.
+
+Profile policies include `latest-confirmed`, `latest-stable`, and exact selection.
+An omitted policy uses `latest-confirmed`.
+That policy resolves a scoped default; discovery alone does not create confirmation.
+The resolved artifact remains exact and digest-pinned.
+
+Use **Preview deploy** to inspect the resolved profile before a change.
+For a container CLI dry run, replace `PROFILE_ID` with the profile identifier:
+
+```bash
+docker exec dwarf-fw python3 dwarf/cardano-profile deploy PROFILE_ID --dry-run
+```
+
+For an intentional deployment with unknown compatibility, use:
+
+```bash
+docker exec dwarf-fw python3 dwarf/cardano-profile deploy PROFILE_ID --approve --acknowledge-unknown-version
+```
+
+This second command changes the topology.
+Do not run it as a status check.
+
+For a separate metadata candidate, run:
+
+```bash
+PYTHONPATH=dwarf python3 dwarf/scripts/refresh_version_catalog.py --output /tmp/dwarf-version-catalog-candidate.json
+```
+
+This command requests upstream metadata and writes a candidate file.
+It is not a compatibility proof.
+Read the [version-qualified devnet guide](dwarf/docs/version-qualified-devnets.md) for detailed requirements.
+
+## Definition catalogs and builders
+
+The scenario, target, and profile catalogs support search, detail views, source downloads, and catalog exports.
+
+| Definition | Catalog | Create | Edit |
 |---|---|---|---|
-| Scenario | `/operate/scenarios` | `/operate/scenarios/new` | `/operate/scenarios/<id>` and `/operate/scenarios/<id>/edit` |
-| Target | `/operate/targets` | `/operate/targets/new` | `/operate/targets/<id>` and `/operate/targets/<id>/edit` |
-| Profile | `/operate/profiles` | `/operate/profiles/new` | `/operate/profiles/<id>` and `/operate/profiles/<id>/edit` |
+| Scenario | `/operate/scenarios` | `/operate/scenarios/new` | `/operate/scenarios/<id>/edit` |
+| Target | `/operate/targets` | `/operate/targets/new` | `/operate/targets/<id>/edit` |
+| Profile | `/operate/profiles` | `/operate/profiles/new` | `/operate/profiles/<id>/edit` |
 
-The default Structured view presents supported fields, enumerations, and
-repeatable values as form controls. Advanced accepts the complete JSON or YAML
-definition. Switching modes preserves valid extension fields instead of silently
-discarding them. IDs become immutable after creation.
+Append `/<id>` to a catalog route to open its detail view.
+An identifier becomes fixed after creation.
+The structured editor provides controls for supported schema fields.
+Optional raw JSON or YAML editing handles extension fields.
+The operator workflow does not require a hidden advanced dashboard view.
 
-Scenario controls are generated from `dwarf/spec/v1/schema.json`, the current
-primitive registry, and each primitive's declared parameter schema. Primitive
-choices are filtered by lifecycle phase, runtime, and target implementation.
-Profile and target controls likewise cover the supported schema while Advanced
-mode remains available for valid extension fields.
+Scenario controls use `dwarf/spec/v1/schema.json`, the primitive registry, and primitive parameter schemas.
+Primitive choices depend on lifecycle phase, runtime, and target implementation.
+Field help appears on hover and keyboard focus.
+Visible help remains available to touch and assistive-technology users.
 
-Validate before saving. The server repeats syntactic and semantic validation,
-rejects unsupported values and unsafe IDs, and replaces the destination file
-atomically only after validation succeeds. Existing scenario Run and profile
-Deploy controls continue to use the same runtime and deployment paths; the
-builders do not introduce a second execution engine.
+Validate the definition before you save it.
+The server repeats syntax and semantic validation.
+It rejects unsafe identifiers and unsupported values.
+It replaces a definition file only after successful validation.
+The builders use the existing run and deployment services.
 
-Read-only catalog endpoints are:
+Read-only export endpoints are:
 
 ```text
 /api/catalog/<catalog>/<id>/download
 /api/catalog/<catalog>/export
 ```
 
-`<catalog>` is one of `scenarios`, `targets`, or `profiles`. Exports retain the
-repository layout under `dwarf/` and omit runtime state, bundles, caches, secrets,
-and operating-system metadata.
+Replace `<catalog>` with `scenarios`, `targets`, or `profiles`.
+Exports retain the `dwarf/` definition layout.
+They omit runtime state, bundles, caches, secrets, and operating-system metadata.
 
-## Graphical User Interface Handoff Documentation
+## CLI inside the container
 
-The polished visual handoff page for recipients is:
+The framework directory is `/home/dwarf/dwarf-fw`.
+The CLI entry point is `python3 dwarf/cardano-profile`.
 
-```text
-docs/index.html
-```
-
-It is a self-contained HyperText Markup Language (HTML) file covering the V3 delivery scope and the deployed dashboard. Use it when introducing the package to a new operator or when hosting the overview from GitHub Pages.
-
-## Command-Line Interface Inside The Container
-
-The framework lives at:
-
-```text
-/home/dwarf/dwarf-fw
-```
-
-The command-line interface (CLI) entrypoint is:
-
-```text
-python3 dwarf/cardano-profile
-```
-
-Examples:
+For status and definition checks, run:
 
 ```bash
 docker exec dwarf-fw python3 dwarf/cardano-profile dashboard status
 docker exec dwarf-fw python3 dwarf/cardano-profile test smoke list
 docker exec dwarf-fw python3 dwarf/cardano-profile fuzz list
-docker exec dwarf-fw python3 dwarf/cardano-profile scenario validate dwarf/scenarios/throughput-regression-floor-example-smoke.yaml
+docker exec dwarf-fw python3 dwarf/cardano-profile scenario validate --semantic dwarf/scenarios/client-example-cbor-decoding-cardano-patched.yaml
 ```
 
-To prove that a profile produced by the builder reaches the existing deployment
-control path without changing the active runtime, use a dry run:
-
-```bash
-docker exec \
-  -e ADA2_PROFILE_MANAGER_CONFIG=/var/dwarf/state/config.yaml \
-  dwarf-fw python3 dwarf/cardano-profile deploy <profile-id> --dry-run
-```
-
-Open a shell:
+If you need an interactive container shell, run:
 
 ```bash
 docker exec -it dwarf-fw bash
 ```
 
-## Running With A Non-Default Port
+This shell is inside the dashboard container, not on the host.
+The container does not contain every node-build toolchain.
 
-If another service already uses `8787`, deploy on another host port:
+## Host settings and storage
+
+The scripts read the package-local `.env` file.
+Explicit exported values take precedence.
+Keep the same runtime root and installation identity for later lifecycle commands.
+
+To change only the host port, run:
 
 ```bash
 DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/deploy.sh
-DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/status.sh
 ```
 
-The container still listens internally on `8787`; only the host port changes.
+Open `http://127.0.0.1:8877/run`.
+The internal dashboard port remains 8787.
 
-## Moog Setup Form
+The default host runtime root is `${XDG_DATA_HOME:-$HOME/.local/share}/dwarf`.
+Use `DWARF_RUNTIME_ROOT` to select another absolute path.
 
-Open `/operate/config` to enter Moog, GitHub, target repository, and Antithesis values from the dashboard. The form saves to the Dwarf `moog` config block and reads Docker environment variables as effective overrides. Values from `.env` are available when `delivery/scripts/deploy.sh` starts the container.
+| Host path relative to the runtime root | Container path | Contents |
+|---|---|---|
+| `runs/` | `/var/dwarf/runs` | Run evidence |
+| `state/` | `/var/dwarf/state` | Configuration and writable catalogs |
+| `bundles/` | `/var/dwarf/bundles` | Evidence archives |
+| `controller-state/` | `/var/dwarf/controller-state` | Controller state |
+| `state/launches/` | `/var/dwarf/launches` | Resolved launch records |
+| `state/run-ledger/` | `/var/dwarf/run-ledger` | Execution ledger |
 
-Client-prep mode allows saving GitHub PATs, Antithesis passwords/API keys, and agent email passwords in `var/state/config.yaml`. Secret inputs are masked after save, and a blank secret submission preserves the existing saved value.
+Compose uses named volumes with host bind-backed storage for these paths.
+The controller receives only the specified state views and shared runtime paths.
+Its Docker socket mount permits host Docker operations.
+Treat controller credentials and Docker access as privileged.
 
-## Optional Moog Bootstrap And Healthchecks
+The container configuration file is `/var/dwarf/state/config.yaml`.
+Its host path is `<runtime-root>/state/config.yaml`.
+A missing configuration file is not evidence of a successful run.
+Complete the applicable setup before you use dependent operations.
 
-Dwarf does not set up Moog during normal install or deploy. To keep wallet/secrets/service changes explicit, the deploy script only runs Moog setup when requested:
+Before an upgrade or purge, back up the runtime root.
+Protect credentials in the backup.
+Keep a consistent copy of run evidence and integrity history.
+Do not remove evidence while a run or collector is active.
+
+## Evidence and integrity
+
+Read the [forensic bundle format](dwarf/docs/forensic-bundle-format.md).
+Completed scenario runs retain manifests, assertions, telemetry, and integrity records.
+
+DWARF automatically generates SARIF at `outputs/sarif-export/dwarf-export.sarif`.
+A clean or assertion-free run can have an empty-results SARIF report.
+Use `runtime_bundle_export_sarif` to regenerate it after additional replay or difference evidence.
+
+Signed attestation is optional.
+It requires an operator-controlled Ed25519 identity and `runtime_bundle_attestation`.
+A manifest hash chain is integrity metadata, not an identity signature.
+
+The inspector shows these integrity states:
+
+- `VERIFIED`: The manifest digest matches and retained history reaches a chain root.
+- `INCOMPLETE`: The digest matches, but a missing predecessor prevents complete continuity verification.
+- `FAIL`: Evidence differs from its recorded digest, or another integrity error occurred.
+
+If the saved chain head cannot be verified, a later run starts a documented new root.
+DWARF does not rewrite older evidence.
+The new `chain.json` records the previous head and reason.
+
+## Optional SSH channel and AFL harness
+
+The local controller does not require the legacy SSH channel.
+The normal installer leaves both host-side capabilities disabled.
+`install.sh --all` requests both; it does not prepare every DWARF feature.
+
+Read the optional prerequisites in [INSTALL.md](INSTALL.md#optional-host-capabilities).
+The AFL build needs GHC 9.6.7, Cabal, compatible AFL, and the documented build dependencies.
+Inspect the final summary for optional failures.
+
+For an existing non-loopback SSH deployment, preserve its configured host and user during provisioning.
+Set `DEPLOY_HOST` and `DEPLOY_USER` to the values shown in `/operate/config`.
+Then request the channel without another image build:
+
+```bash
+bash delivery/scripts/install.sh --control-channel --no-build
+```
+
+Provisioning defaults to `127.0.0.1` and the current user.
+It rewrites staged host-key data for the selected host.
+Do not apply those defaults to an existing deployment that uses another host.
+Do not mount unrelated SSH keys.
+
+## Optional Moog and Antithesis setup
+
+Normal installation does not configure Moog or start its services.
+Use `/operate/config` for supported setup values.
+Startup environment values override saved values.
+The scripts pass supported `MOOG_*` variables from `.env` to the container.
+
+Saved secrets can include GitHub tokens, Antithesis credentials, and agent email credentials.
+Secret fields are masked after save.
+A blank secret submission preserves the saved value.
+Keep `<runtime-root>/state/config.yaml` private.
+
+To request a bootstrap plan, run:
 
 ```bash
 DWARF_MOOG_BOOTSTRAP=plan bash delivery/scripts/deploy.sh
 ```
 
-The plan mode prints the Moog bootstrap plan and changes no remote state. The approved mode requires a second confirmation variable:
+The plan does not change remote state.
+To approve the limited skeleton setup, run:
 
 ```bash
-DWARF_MOOG_BOOTSTRAP=approve \
-DWARF_MOOG_BOOTSTRAP_APPROVE=1 \
-bash delivery/scripts/deploy.sh
+DWARF_MOOG_BOOTSTRAP=approve DWARF_MOOG_BOOTSTRAP_APPROVE=1 bash delivery/scripts/deploy.sh
 ```
 
-Approved bootstrap creates only the Moog directory skeleton and a remote operator plan file. It does not fetch binaries, create wallet files, read secrets, write PATs, write Antithesis credentials, enable systemd units, or start Moog services.
+Approval creates directory structure and an operator plan file.
+It does not download binaries, create wallets, store credentials, enable services, or start oracle or agent processes.
+These deployment commands also recreate the application containers.
 
-Use this healthcheck sequence after bootstrap or manual Moog changes:
+After applicable manual setup, inspect health:
 
 ```bash
-docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile moog bootstrap --json
 docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile moog healthcheck --json
 docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile wallet healthcheck moog-requester --json
-docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile moog readiness --repo <org/repo> --github-user <user> --json
-docker exec dwarf-fw /home/dwarf/dwarf-fw/dwarf/cardano-profile moog preflight --asset-dir <dir> --repo <org/repo> --github-user <user> --directory <path> --commit <sha> --json
 ```
 
-## Runtime Data Layout
-
-Host paths:
-
-```text
-var/runs
-var/state
-var/bundles
-```
-
-Container paths:
-
-```text
-/var/dwarf/runs
-/var/dwarf/state
-/var/dwarf/bundles
-```
-
-Purpose:
-
-| Path | Purpose |
-|---|---|
-| `var/runs` | Run directories and generated evidence |
-| `var/state` | Config, chain head, runtime state |
-| `var/bundles` | Exported or preserved bundle archives |
-
-These directories are bind-mounted instead of Docker volumes so operators can inspect and back them up directly.
-
-## Evidence Bundles
-
-Dwarf’s evidence model is documented in:
-
-```text
-dwarf/docs/forensic-bundle-format.md
-```
-
-Every meaningful run is expected to produce a self-contained bundle with manifest, scenario copy, environment capture, logs, assertions, and provenance-chain metadata.
-
-## Configuration
-
-The default config path inside the container is:
-
-```text
-/var/dwarf/state/config.yaml
-```
-
-Mapped from:
-
-```text
-var/state/config.yaml
-```
-
-If no config exists, dashboard status still works but reports:
-
-```text
-Config missing. Run intake first.
-```
-
-That is acceptable for a clean delivery smoke test. Operators can later create config through the CLI or by writing the config file directly.
-
-## Security Posture
-
-The delivery stack is intentionally conservative:
-
-- dashboard binds to `0.0.0.0` by default for loopback and local area network (LAN) access
-- container filesystem is read-only
-- Linux capabilities are dropped
-- `no-new-privileges` is enabled
-- runtime data is limited to explicit bind mounts
-- SSH keys are not mounted by default
-- Cardano substrate containers are not started by default
+Run the documented Moog readiness and preflight checks before external execution.
+Do not treat a directory skeleton as a ready integration.
 
 ## Troubleshooting
 
-### Docker daemon unreachable
+### Docker is unavailable
 
-Run:
+Run `docker version`.
+Correct Docker access before you repeat DWARF installation.
+Do not change container privileges to hide a host access failure.
 
-```bash
-docker version
-```
+### A container is unhealthy
 
-If this fails, fix host Docker access before running Dwarf scripts.
-
-### Port already in use
-
-Check:
+Inspect recent logs and application status:
 
 ```bash
-ss -ltnp | grep 8787
-```
-
-Use another port:
-
-```bash
-DWARF_DASHBOARD_PORT=8877 bash delivery/scripts/deploy.sh
-```
-
-### Container exits immediately
-
-Run:
-
-```bash
-docker logs dwarf-fw
+docker logs --tail 80 dwarf-controller
+docker logs --tail 80 dwarf-fw
+docker inspect dwarf-controller --format '{{json .State.Health}}'
 bash delivery/scripts/status.sh
 ```
 
-Common causes:
+If logs are empty, inspect the controller health response:
 
-- image was not built
-- runtime paths are not writable
-- port mapping conflicts
-- Docker daemon restarted while container was starting
-
-### Build fails at apt snapshot update
-
-The V3 Dockerfile should include:
-
-```text
-Acquire::Check-Valid-Until "false";
-Acquire::Check-Date "false";
+```bash
+docker exec dwarf-controller python3 -c 'import urllib.request,urllib.error
+try:
+    response=urllib.request.urlopen("http://127.0.0.1:8790/healthz", timeout=10)
+except urllib.error.HTTPError as error:
+    response=error
+print(response.read().decode())'
 ```
 
-Run:
+Check the reported Docker access, writable state, missing images, and revision compatibility.
+Read the exact failure before another startup attempt.
+Do not start a duplicate job to check whether an existing job is alive.
+
+### The browser cannot connect
+
+Check the installation summary, bind address, host port, and SSH forwarding.
+A loopback bind is not directly accessible from another machine.
+For the default local port, inspect application status:
+
+```bash
+curl -fsS http://127.0.0.1:8787/api/status
+```
+
+Use the configured host port if it differs.
+If the response fails, inspect recent logs before you restart the application.
+
+### A source image build is refused
+
+Run `git status --short`.
+The source builder requires a clean Git checkout with matching source and catalog revisions.
+Do not discard unrelated changes to obtain a clean build.
+Commit intended changes or use a separate clean checkout.
+A source ZIP does not contain the required Git metadata.
+
+### The snapshot package build fails
+
+The image uses Debian snapshot repositories.
+The Dockerfile disables expiration and date checks for those snapshots.
+For a delivery contract check, run:
 
 ```bash
 bash delivery/tests/test_delivery_contract.sh
 ```
 
-If the contract test fails, do not ship the package.
+A contract pass does not prove a successful image build or runtime deployment.
 
-### Browser shows a connection reset immediately after deploy
+## Stop and remove DWARF
 
-The dashboard process may still be starting. Wait a few seconds and retry:
+Back up evidence before removal.
+Use the reviewed topology removal action for managed nodes first.
+Do not remove unrelated containers, images, networks, or volumes.
 
-```bash
-curl -fsS http://127.0.0.1:8787/api/status
-curl -fsS http://<host-lan-ip>:8787/api/status
-```
-
-### `/api/operate/runs` returns 404
-
-This was observed during manual Playwright probing. It does not block the rendered Operate and Scenarios pages, but it should be tracked as an API coverage gap if that endpoint is expected by future UI code.
-
-## Run evidence defaults
-
-Every completed scenario run retains `manifest.json`, `assertions.json`, telemetry,
-and `chain.json`. SARIF is generated automatically at
-`outputs/sarif-export/dwarf-export.sarif`, including a valid empty-results report
-for a clean or assertion-free run. The `runtime_bundle_export_sarif` primitive is
-still available to regenerate that file after later replay or diff evidence is
-added.
-
-Signed attestation remains optional because it requires an operator-controlled
-Ed25519 signing identity. Use `runtime_bundle_attestation` when signed provenance
-is required; the automatic manifest hash chain is integrity metadata, not an
-identity signature.
-
-The run inspector reports three integrity states:
-
-- `VERIFIED`: the manifest digest matches and retained history reaches a chain root.
-- `INCOMPLETE`: this run's digest matches, but a missing retained predecessor prevents full continuity verification.
-- `FAIL`: retained evidence does not match its recorded digest or another integrity error occurred.
-
-When the saved chain head cannot be verified, the next run starts a documented
-new root instead of inheriting the broken history. Older evidence is never
-rewritten; the new `chain.json` records the prior head and re-root reason.
-
-## Structured-builder help
-
-Field names in the scenario, profile, and target builders expose schema-backed
-help on pointer hover and keyboard focus. Dropdowns expose a description of the
-currently selected supported value and update that description when selection
-changes. The visible helper text remains the accessible baseline for touch and
-assistive-technology users.
-
-## Node release and compatibility preflight
-
-The deployment profile is the sole runtime-version authority. Scenarios inherit
-its exact Cardano-node and Amaru artifacts; target versions describe the
-harnessed surface and do not override deployment. Version policy and deployment
-adapter are independent: selecting a release does not replace a profile's
-network, topology, genesis, configured peer, or lifecycle.
-
-Open `/operate/versions` before deploying a version-aware profile. It shows
-official release metadata, exact source revisions and OCI digests, scoped
-verification status, defaults, mixed compatibility pairs, retained evidence,
-and blockers. Use the profile's **Preview deploy** action to resolve policy into
-exact artifacts before the mutating request starts.
-
-`confirmed` is scope-specific. A Cardano-only pass does not establish mixed
-compatibility, and a mixed pass does not establish standalone Amaru block
-production. Local-devnet qualification also does not establish Preview,
-Preview2, or Preprod behavior; those public-network contexts remain `unknown`
-and require one-run acknowledgement. `incompatible` and `blocked` selections are hard stops. An
-`unknown` stable release requires an explicit one-run acknowledgement:
+To stop the application and preserve runtime data, run:
 
 ```bash
-cardano-profile deploy PROFILE --dry-run
-cardano-profile deploy PROFILE --approve --acknowledge-unknown-version
+bash delivery/scripts/uninstall.sh
 ```
 
-The acknowledgement is retained in deployment evidence and does not promote
-the catalog. Refresh upstream release metadata into a reviewable candidate:
+To also request removal of configured application images, run:
 
 ```bash
-PYTHONPATH=dwarf python3 dwarf/scripts/refresh_version_catalog.py \
-  --output /tmp/dwarf-version-catalog-candidate.json
+bash delivery/scripts/uninstall.sh --remove-images
 ```
+
+The source-checkout path removes only image references explicitly recorded in its `.env`.
+It does not perform a global Docker cleanup.
+
+A source-checkout installation cannot use automated purge without a verified release receipt.
+The uninstaller refuses that operation.
+For a receipt-backed release installation, use the exact recorded path and installation identifier:
+
+```bash
+bash delivery/scripts/uninstall.sh --purge /absolute/recorded/runtime/path --confirm 'PURGE DWARF INSTALLATION_ID'
+```
+
+Replace both placeholders with values from the verified installation receipt.
+Use the configured `DWARF_INSTALL_ROOT` if it is not the default release installation root.
+The receipt checks, ownership marker, signed release checks, and managed-container checks must all pass.
+A purge permanently removes the selected runtime data.
+Optional host tools and provisioned SSH entries require separate, scoped removal.
+
+## Further documentation
+
+- [Install guide](INSTALL.md)
+- [Security policy](SECURITY.md)
+- [Operator handbook](dwarf/docs/operator-handbook.md)
+- [Version-qualified devnets](dwarf/docs/version-qualified-devnets.md)
+- [Coverage harness](antithesis/components/dwarf-adversary/COVERAGE-HARNESS.md)
+- [Historical delivery overview](docs/index.html)

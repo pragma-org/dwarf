@@ -28,6 +28,38 @@ class CatalogError(ValueError):
     """The checked-in version catalog is internally inconsistent."""
 
 
+def enrich_retained_oci_artifacts(
+    retained: dict[str, Any], resolved: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Add public platform proof only for an exact retained OCI identity."""
+
+    enriched = copy.deepcopy(retained)
+    exact = {
+        (item.get("kind"), item.get("reference"), item.get("digest")): item
+        for item in resolved
+        if isinstance(item, dict)
+    }
+    for artifact in enriched.get("artifacts") or []:
+        if not isinstance(artifact, dict) or artifact.get("availability") != "available":
+            continue
+        candidate = exact.get(
+            (artifact.get("kind"), artifact.get("reference"), artifact.get("digest"))
+        )
+        platforms = (candidate or {}).get("platforms")
+        if (
+            artifact.get("kind") == "oci"
+            and (candidate or {}).get("kind") == "oci"
+            and (candidate or {}).get("availability") == "available"
+            and (candidate or {}).get("public") is True
+            and isinstance(platforms, list)
+            and platforms
+            and all(item in {"linux/amd64", "linux/arm64"} for item in platforms)
+        ):
+            artifact["public"] = True
+            artifact["platforms"] = sorted(set(platforms))
+    return enriched
+
+
 def _require_mapping(value: Any, context: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise CatalogError(f"{context} must be a mapping")
@@ -120,6 +152,24 @@ def validate_version_catalog(data: Any) -> dict[str, Any]:
                 digest = artifact.get("digest")
                 if not isinstance(digest, str) or not DIGEST.fullmatch(digest):
                     raise CatalogError(f"{artifact_context} requires an immutable sha256 digest")
+            public = artifact.get("public")
+            if public is not None and not isinstance(public, bool):
+                raise CatalogError(f"{artifact_context}.public must be boolean when present")
+            platforms = artifact.get("platforms")
+            if platforms is not None:
+                if (
+                    not isinstance(platforms, list)
+                    or len(platforms) > 16
+                    or any(
+                        not isinstance(item, str)
+                        or not re.fullmatch(r"linux/(?:amd64|arm64)", item)
+                        for item in platforms
+                    )
+                    or len(set(platforms)) != len(platforms)
+                ):
+                    raise CatalogError(
+                        f"{artifact_context}.platforms must be a unique bounded list of supported OCI platforms"
+                    )
             # A derived image (DWARF-built, binary copied over a base) records the
             # commit its binary REPORTS; it must be the release it is filed under.
             binary_commit = artifact.get("binary_git_commit")

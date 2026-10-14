@@ -52,6 +52,7 @@ WRITE_VERBS = {
     "coverage",
     "smoke",
     "scenario",
+    "scenario-scheduled",
     "launch",
     "moog-create-test",
     "topology-redeploy",
@@ -224,6 +225,7 @@ def main() -> int:
             active_profile_command,
             deploy_command,
             find_profile,
+            health_with_persisted_deployment_command,
             remove_command,
             status_command,
         )
@@ -313,6 +315,9 @@ def main() -> int:
             )
         else:
             script = inspect_health_command(profile.remote_runtime_root)
+        script = health_with_persisted_deployment_command(
+            script, profile.remote_runtime_root
+        )
     elif verb == "topology-redeploy":
         state_dir = conf.get("STATE_DIR")
         if not state_dir:
@@ -373,7 +378,7 @@ def main() -> int:
             f"cd {shlex.quote(str(dwarf_root))} && "
             f"{runtime_env} PYTHONPATH=. "
             "python3 cardano-profile scenario run "
-            f"{shlex.quote(str(stored['scenario_path']))}"
+            f"{shlex.quote(str(stored['scenario_path']))} --origin dashboard"
         )
     elif verb == "deploy":
         if not arg:
@@ -429,9 +434,10 @@ def main() -> int:
             f"PYTHONPATH=. "
             f"DWARF_AFL_HARNESS={shlex.quote(harness)} "
             f"DWARF_AFL_FUZZ={shlex.quote(aflfuzz)} "
-            f"python3 cardano-profile scenario run {shlex.quote(str(scen_path))}"
+            f"python3 cardano-profile scenario run {shlex.quote(str(scen_path))} "
+            "--origin dashboard"
         )
-    elif verb == "scenario":
+    elif verb in {"scenario", "scenario-scheduled"}:
         if not arg:
             return _reject(conf, original, "scenario-requires-id")
         scen_dir = conf.get("SCENARIOS_DIR")
@@ -453,10 +459,12 @@ def main() -> int:
             f"{name}={shlex.quote(str(value))}"
             for name, value in required_runtime_paths.items()
         )
+        origin = "scheduler" if verb == "scenario-scheduled" else "dashboard"
         script = (
             f"cd {shlex.quote(str(dwarf_root))} && "
             f"{runtime_env} PYTHONPATH=. "
-            f"python3 cardano-profile scenario run {shlex.quote(str(scen_path))}"
+            f"python3 cardano-profile scenario run {shlex.quote(str(scen_path))} "
+            f"--origin {origin}"
         )
     elif verb == "smoke":
         if not arg:

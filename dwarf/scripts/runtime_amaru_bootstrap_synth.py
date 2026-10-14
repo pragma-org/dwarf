@@ -160,6 +160,8 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
         amaru_slot += 1
 
     return {
+        "runtime_root": str(runtime_root),
+        "docker_host_runtime_root": plan.get("docker_host_runtime_root"),
         "workspace_root": str(workspace_root),
         "scripts_root": str(scripts_root),
         "generated_root": str(generated_root),
@@ -174,6 +176,19 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
         "amaru_slot_map": amaru_slot_map,
         "network_name": str(plan["network"]),
     }
+
+
+def _docker_bind_source(layout: dict, source: str | Path) -> str:
+    host_root = str(layout.get("docker_host_runtime_root") or "").strip()
+    if not host_root:
+        return str(source)
+    runtime_root = Path(str(layout.get("runtime_root") or ""))
+    source_path = Path(source)
+    try:
+        relative = source_path.relative_to(runtime_root)
+    except ValueError as exc:
+        raise RuntimeError("bootstrap bind source is outside the controller runtime root") from exc
+    return str(Path(host_root) / relative)
 
 
 def loader_commands(*, layout: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -> tuple[list[str], list[str]]:
@@ -196,14 +211,18 @@ def loader_commands(*, layout: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -
         "-e",
         f"NETWORK_NAME={layout['network_name']}",
         "-v",
-        f"{layout['generated_root']}:/data/generated",
+        f"{_docker_bind_source(layout, layout['generated_root'])}:/data/generated",
         "-v",
-        f"{scripts_root / 'cardano-loader.sh'}:/data/cardano-loader.sh:ro",
+        f"{_docker_bind_source(layout, scripts_root / 'cardano-loader.sh')}:/data/cardano-loader.sh:ro",
     ]
     for slot, config_root in sorted(layout["config_roots"].items(), key=lambda item: int(item[0])):
-        cardano_cmd.extend(["-v", f"{config_root}:/configs/{slot}"])
+        cardano_cmd.extend(
+            ["-v", f"{_docker_bind_source(layout, config_root)}:/configs/{slot}"]
+        )
     for slot, state_root in sorted(layout["cardano_state_roots"].items(), key=lambda item: int(item[0])):
-        cardano_cmd.extend(["-v", f"{state_root}:/state/{slot}"])
+        cardano_cmd.extend(
+            ["-v", f"{_docker_bind_source(layout, state_root)}:/state/{slot}"]
+        )
     cardano_cmd.extend([loader_image, "/data/cardano-loader.sh"])
 
     first_slot = sorted(layout["config_roots"], key=int)[0]
@@ -224,16 +243,18 @@ def loader_commands(*, layout: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -
         "-e",
         f"NETWORK_NAME={layout['network_name']}",
         "-v",
-        f"{layout['generated_root']}:/data/generated",
+        f"{_docker_bind_source(layout, layout['generated_root'])}:/data/generated",
         "-v",
-        f"{scripts_root / 'amaru-loader.sh'}:/data/amaru-loader.sh:ro",
+        f"{_docker_bind_source(layout, scripts_root / 'amaru-loader.sh')}:/data/amaru-loader.sh:ro",
         "-v",
-        f"{layout['config_roots'][first_slot]}:/cardano/config",
+        f"{_docker_bind_source(layout, layout['config_roots'][first_slot])}:/cardano/config",
         "-v",
-        f"{layout['cardano_state_roots'][first_slot]}:/cardano/state",
+        f"{_docker_bind_source(layout, layout['cardano_state_roots'][first_slot])}:/cardano/state",
     ]
     for slot, state_root in sorted(layout["amaru_state_roots"].items(), key=lambda item: int(item[0])):
-        amaru_cmd.extend(["-v", f"{state_root}:/state/{slot}"])
+        amaru_cmd.extend(
+            ["-v", f"{_docker_bind_source(layout, state_root)}:/state/{slot}"]
+        )
     amaru_cmd.extend([loader_image, "/data/amaru-loader.sh"])
     return cardano_cmd, amaru_cmd
 
@@ -264,11 +285,11 @@ def bootstrap_producer_command(
         "-e",
         "AMARU_POLL_INTERVAL_SECONDS=1",
         "-v",
-        f"{layout['cardano_state_roots'][first_slot]}:/cardano/state",
+        f"{_docker_bind_source(layout, layout['cardano_state_roots'][first_slot])}:/cardano/state",
         "-v",
-        f"{layout['config_roots'][first_slot]}:/cardano/config:ro",
+        f"{_docker_bind_source(layout, layout['config_roots'][first_slot])}:/cardano/config:ro",
         "-v",
-        f"{bundle_root}:/bundle",
+        f"{_docker_bind_source(layout, bundle_root)}:/bundle",
         "--entrypoint",
         "/bin/bootstrap-producer",
         producer_image,

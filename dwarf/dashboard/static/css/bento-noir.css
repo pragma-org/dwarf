@@ -251,16 +251,21 @@ body[data-ui="bento"] .result-pill {
   border: 0;
 }
 body[data-ui="bento"] .result-pill--pass,
+body[data-ui="bento"] .result-pill--completed,
 body[data-ui="bento"] .pill--pass,
 body[data-ui="bento"] .pill--ok {
   background: rgba(43, 224, 224, 0.12); color: var(--bn-pass);
 }
 body[data-ui="bento"] .result-pill--fail,
+body[data-ui="bento"] .result-pill--failed,
 body[data-ui="bento"] .pill--fail,
 body[data-ui="bento"] .pill--danger {
   background: rgba(192, 48, 48, 0.20); color: var(--bn-fail);
 }
 body[data-ui="bento"] .result-pill--error,
+body[data-ui="bento"] .result-pill--queued,
+body[data-ui="bento"] .result-pill--running,
+body[data-ui="bento"] .result-pill--interrupted,
 body[data-ui="bento"] .pill--warn,
 body[data-ui="bento"] .pill--pending {
   background: rgba(181, 138, 79, 0.16); color: var(--bn-error);

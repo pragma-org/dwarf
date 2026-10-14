@@ -106,9 +106,8 @@ def operate_config_payload() -> dict[str, Any]:
         # Older deployments don't ship CONFIG_FIELDS — fall back to a
         # state-dir lookup and derive the schema from the file contents.
         CONFIG_FIELDS = {}
-        cfg_path = (Path(os.environ.get("ADA2_DWARF_STATE_DIR")
-                          or Path(__file__).resolve().parents[2] / "state")
-                    / "config.yaml")
+        from profile_manager.config import storage_roots
+        cfg_path = storage_roots().state / "config.yaml"
 
     file_data = _read_config_file(cfg_path)
     rows: list[dict[str, Any]] = []

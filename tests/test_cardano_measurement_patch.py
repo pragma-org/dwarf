@@ -194,7 +194,7 @@ def test_registry_record_requires_smoked_immutable_image(tmp_path):
             "status": "built",
             "reference": "dwarf/cardano-measurement:11.1.2-fef83fed",
             "image_id": "sha256:" + "f" * 64,
-            "repo_digests": ["dwarf/cardano-measurement@sha256:" + "f" * 64],
+            "repo_digests": ["dwarf/cardano-measurement@sha256:" + "1" * 64],
             "smoke": {"status": "passed", "log": {"sha256": "c" * 64}},
             "runtime_probe": {
                 "status": "passed",
@@ -206,6 +206,9 @@ def test_registry_record_requires_smoked_immutable_image(tmp_path):
     assert record["implementation"] == "cardano-node"
     assert record["mode"] == "patched"
     assert record["source_revision"] == REVISION
+    assert record["image_reference"] == (
+        "dwarf/cardano-measurement@sha256:" + "1" * 64
+    )
     assert record["image_digest"] == "sha256:" + "f" * 64
     assert record["runtime_probe_log_sha256"] == "sha256:" + "d" * 64
     assert "/home/" not in json.dumps(record)

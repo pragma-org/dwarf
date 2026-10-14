@@ -12,13 +12,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from profile_manager.config import storage_roots
+
 _PKG = Path(__file__).resolve().parents[1]          # .../dwarf/profile_manager
 _DWARF = _PKG.parent                                 # .../dwarf
 _SCENARIOS = _DWARF / "scenarios"
 
 
 def _state_root() -> Path:
-    return Path(os.environ.get("ADA2_DWARF_STATE_DIR", "/var/dwarf/state"))
+    return storage_roots().state
 
 
 def antithesis_state_dir() -> Path:

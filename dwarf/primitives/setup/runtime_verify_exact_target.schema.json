@@ -7,16 +7,37 @@
     "implementation",
     "version",
     "source_revision",
-    "mode",
-    "image_digest"
+    "mode"
   ],
   "properties": {
+    "identity_binding": {"type": "string", "enum": ["frozen", "resolved-plan"]},
     "implementation": {"type": "string", "enum": ["amaru", "cardano-node"]},
     "version": {"type": "string", "minLength": 1},
     "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "mode": {"type": "string", "enum": ["stock", "patched"]},
     "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "image_reference": {"type": "string", "minLength": 1},
+    "source_image_reference": {"type": "string", "minLength": 1},
+    "image_manifest_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "image_config_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "executable_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "patch_set_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
-  }
+    "patch_set_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "build_result_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "runtime_probe_log_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "qualification_image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "transfer_source_installation_id": {"type": "string", "minLength": 1},
+    "transfer_manifest_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "version_catalog_revision": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "not": {
+          "properties": {"identity_binding": {"const": "resolved-plan"}},
+          "required": ["identity_binding"]
+        }
+      },
+      "then": {"required": ["image_digest"]}
+    }
+  ]
 }

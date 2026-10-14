@@ -1,7 +1,7 @@
 schema_version: v1
 id: cardano-stock-resources
-title: Cardano process resources
-description: Retains node-emitted ResourceStats plus explicitly scoped DWARF process, cgroup, disk, file-descriptor, thread, and network-namespace samples.
+title: Cardano target resources
+description: Retains node-emitted ResourceStats plus explicitly scoped process metrics when process visibility exists and Docker container-cgroup CPU, memory, task, disk, and network samples otherwise.
 output_schema: dwarf/spec/v1/measurement-result.schema.json
 compatibility:
   implementation: cardano-node

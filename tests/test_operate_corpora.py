@@ -419,6 +419,7 @@ def test_promote_retained_testcase_copies_exact_bytes_to_runtime(tmp_path, monke
     )
     monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(state))
     monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(runs))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path / "bundles"))
 
     response = _mutation(
         "/api/corpora/runtime--overlay/actions?token=secret",

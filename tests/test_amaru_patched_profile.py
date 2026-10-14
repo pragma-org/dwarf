@@ -20,6 +20,7 @@ REVISION = "b159172f25a9c389f82f20bca4f15e3032791638"
 PATCH_SET = "f0e1aebca9adf2713d4d9f6f8ba33f20b0d04c3b35de6127d4a1e027a68b50af"
 IMAGE_ID = "sha256:" + "f" * 64
 EXECUTABLE = "sha256:" + "e" * 64
+CONFIG_ID = "sha256:" + "1" * 64
 
 
 def _profile():
@@ -69,6 +70,22 @@ def _write_record(root, record=None):
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(record or _record()) + "\n", encoding="utf-8")
     return path
+
+
+def _imported_record():
+    record = _record()
+    record.update(
+        {
+            "qualification_image_id": record["image_digest"],
+            "image_manifest_digest": "sha256:" + "f" * 64,
+            "image_config_digest": CONFIG_ID,
+            "runtime_image_reference": CONFIG_ID,
+            "image_digest": CONFIG_ID,
+            "transfer_source_installation_id": "install-source",
+            "transfer_manifest_sha256": "sha256:" + "2" * 64,
+        }
+    )
+    return record
 
 
 def test_patched_profile_retains_exact_target_intent():
@@ -125,6 +142,35 @@ def test_patched_profile_substitutes_only_amaru_image_and_preserves_control_life
     assert "DWARF patched-target wrapper compatibility probe" in command
     assert IMAGE_ID in command
     assert f"docker pull {amaru['image']}" not in command
+
+
+def test_imported_target_uses_config_content_id_and_preserves_manifest_provenance(
+    tmp_path, monkeypatch
+):
+    profile = _profile()
+    record_path = _write_record(tmp_path, _imported_record())
+    monkeypatch.setenv("ADA2_DWARF_MEASUREMENT_TARGET_REGISTRY", str(tmp_path))
+    preview = build_deployment_version_preview(profile.__dict__)
+
+    target = resolve_patched_amaru_target(profile, registry_root=tmp_path)
+    substrate = versioned_substrate_for_profile(profile, preview)
+    amaru = next(node for node in substrate["nodes"] if node["impl"] == "amaru")
+
+    assert target["image_reference"] == _record()["image_reference"]
+    assert target["image_manifest_digest"] == "sha256:" + "f" * 64
+    assert target["image_config_digest"] == CONFIG_ID
+    assert target["runtime_image_reference"] == CONFIG_ID
+    assert amaru["image"] == CONFIG_ID
+    assert amaru["image_digest"] == CONFIG_ID
+    assert amaru["image_manifest_digest"] == "sha256:" + "f" * 64
+    assert amaru["source_image_reference"] == _record()["image_reference"]
+    assert amaru["transfer_source_installation_id"] == "install-source"
+
+    invalid = _imported_record()
+    invalid["transfer_source_installation_id"] = "invalid source identity"
+    record_path.write_text(json.dumps(invalid) + "\n", encoding="utf-8")
+    with pytest.raises(MeasurementTargetError, match="source installation identity"):
+        resolve_patched_amaru_target(profile, registry_root=tmp_path)
 
 
 def test_stock_profile_does_not_require_patched_target_registry(monkeypatch):

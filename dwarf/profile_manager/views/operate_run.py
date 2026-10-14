@@ -5,20 +5,26 @@ from profile_manager.data.operate_run import operate_run_detail
 from profile_manager.templating import render
 
 
-def render_operate_run(run_id: str) -> str | None:
+def render_operate_run(run_id: str, *, token: str | None = None) -> str | None:
     """Render /operate/runs/<id>. Returns None when the run is not on disk
     so the caller can dispatch a 404; the view itself never invents a run.
     """
     detail = operate_run_detail(run_id)
     if detail is None:
         return None
+    template = (
+        "operate/external_run.j2"
+        if detail.get("presentation_kind") == "external"
+        else "operate/run.j2"
+    )
     return render(
-        "operate/run.j2",
+        template,
         page_title=f"Run · {run_id}",
         density="reading",
         active="operate",
         active_sub="runs",
         run=detail,
+        token=token,
     )
 
 

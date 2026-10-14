@@ -9,12 +9,37 @@
     <p style="margin:0">A {{ catalog_label|lower }} definition from <code>{{ source_path }}</code>. A definition says what can run — it is not evidence that it ran. Open Runs for results.</p>
     {% if catalog == 'targets' %}<p class="b-note" style="margin-top:10px"><b>Target identity is not a deployment pin.</b> Deployment profiles select the exact node artifacts. <a href="/operate/profiles">Profiles</a> · <a href="/operate/versions">Node versions</a></p>{% endif %}
   </div>
+  {% if catalog == 'targets' and target_runtime %}
+  <div class="dk-panel" data-target-runtime-state="{{ target_runtime.state }}">
+    <h3>Runtime availability</h3>
+    <p style="margin:0"><b>{{ target_runtime.state|upper }}</b> — {{ target_runtime.reason }}</p>
+    {% if target_runtime.scenarios %}
+    <ul class="dk-list" style="margin-top:12px">
+      {% for scenario in target_runtime.scenarios %}
+      <li>
+        <strong>{{ scenario.title }}</strong> <code>{{ scenario.id }}</code><br>
+        <span>{{ scenario.reason }}</span><br>
+        <a class="dk-btn{% if scenario.available %} dk-btn--solid{% endif %}" href="{{ scenario.start_url }}">{% if scenario.available %}Start in Run{% else %}Review in Run{% endif %}</a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
   <div class="dk-panel">
     <h3>Actions</h3>
     <div class="dk-row">
       <a class="dk-btn dk-btn--solid" href="{{ edit_url }}">Edit</a>
       <a class="dk-btn" href="{{ download_url }}" download>Download source</a>
       <a class="dk-btn" href="{{ catalog_url }}">Back to {{ catalog|replace('-', ' ') }}</a>
+      {% if catalog in ('scenarios', 'measurements', 'measurement-profiles', 'profiles') and deletable %}
+      <form action="/api/catalog/{{ catalog }}/{{ definition_id }}/delete" method="post" data-definition-delete data-definition-delete-noun="{{ catalog_label|lower }}">
+        <input type="hidden" name="token" value="{{ token }}">
+        <input type="hidden" name="expected_sha256" value="{{ definition_sha256 }}">
+        <button class="dk-btn" type="submit">Delete this {{ catalog_label|lower }}</button>
+        <span data-definition-delete-status aria-live="polite"></span>
+      </form>
+      {% endif %}
     </div>
   </div>
 {% endcall %}
@@ -69,4 +94,7 @@
   <pre><code>{{ raw_source }}</code></pre>
 </section>
 </div>
+{% if catalog in ('scenarios', 'measurements', 'measurement-profiles', 'profiles') and deletable %}
+<script src="/static/js/definition-delete.js" defer></script>
+{% endif %}
 {% endblock %}

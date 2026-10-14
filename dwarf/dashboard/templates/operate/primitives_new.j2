@@ -16,7 +16,8 @@
 .mn-submit{margin-top:18px;background:var(--accent);color:var(--obsidian-0);border:none;border-radius:8px;padding:9px 20px;font-weight:700;font-size:.88rem;cursor:pointer}
 </style>
 
-<form class="mn-form" method="post" action="/operate/primitives/new?token={{ token }}">
+<form class="mn-form" method="post" action="/operate/primitives/new">
+  <input type="hidden" name="token" value="{{ token }}">
   <label for="primitive-family">Family</label>
   <select id="primitive-family" name="family">{% for f in families %}<option value="{{ f }}">{{ f }}</option>{% endfor %}</select>
   <p class="mn-hint">The conceptual bucket: setup / load / probe / assertion / fault / teardown.</p>

@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.runtime_install_version import resolve_requested_versions
 from scripts.runtime_substrate_common import (
     allocate_node_plan,
@@ -56,12 +58,37 @@ def test_normalize_substrate_preserves_exact_version_provenance():
     assert normalized["nodes"][0]["source_revision"] == "d" * 40
 
 
+def test_normalize_substrate_preserves_validated_controller_ownership():
+    substrate = {
+        **_substrate(),
+        "controller_ownership": {
+            "installation_id": "install-1",
+            "topology_id": "profile-a",
+        },
+    }
+
+    normalized = normalize_substrate(substrate)
+
+    assert normalized["controller_ownership"] == substrate["controller_ownership"]
+
+
+def test_normalize_substrate_preserves_absolute_docker_host_runtime_root():
+    substrate = {
+        **_substrate(),
+        "docker_host_runtime_root": "/srv/dwarf/controller-state/controller/topology/current",
+    }
+
+    normalized = normalize_substrate(substrate)
+
+    assert normalized["docker_host_runtime_root"] == substrate["docker_host_runtime_root"]
+
+
 def test_normalize_substrate_preserves_adapter_and_public_peer_contract():
     substrate = {
         **_substrate(),
         "deployment_adapter": "cardano-public-peer",
         "network": "preview",
-        "network_magic": None,
+        "network_magic": 2,
         "version_policy_source": "implicit-default",
         "config_source_dir": "/opt/dwarf/cardano-configs/preview",
         "upstream_peer_address": "preview-node.play.dev.cardano.org:3001",
@@ -72,6 +99,7 @@ def test_normalize_substrate_preserves_adapter_and_public_peer_contract():
 
     assert normalized["deployment_adapter"] == "cardano-public-peer"
     assert normalized["network"] == "preview"
+    assert normalized["network_magic"] == 2
     assert normalized["version_policy_source"] == "implicit-default"
     assert normalized["config_source_dir"] == "/opt/dwarf/cardano-configs/preview"
     assert normalized["upstream_peer_address"] == "preview-node.play.dev.cardano.org:3001"
@@ -84,6 +112,13 @@ def test_normalize_substrate_preserves_adapter_and_public_peer_contract():
     )
     assert plan["nodes"][0]["listen_address"] == "127.0.0.1:39100"
     assert plan["upstream_peer_address"] == "preview-node.play.dev.cardano.org:3001"
+
+
+def test_normalize_substrate_rejects_mismatched_public_network_magic():
+    substrate = {**_substrate(), "network": "preview", "network_magic": 1}
+
+    with pytest.raises(ValueError, match="same public network"):
+        normalize_substrate(substrate)
 
 
 def test_missing_docker_image_is_not_reported_as_present(tmp_path):

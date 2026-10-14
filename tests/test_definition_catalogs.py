@@ -1,15 +1,19 @@
 import io
+import hashlib
 import json
 import re
 import tarfile
 import threading
+import time
 from html import unescape
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlencode
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
 import pytest
+import yaml
 from jsonschema import Draft202012Validator
 
 from profile_manager import dashboard
@@ -154,6 +158,626 @@ def test_definition_detail_page_has_complete_source_and_actions(tmp_path, monkey
     assert "Complete definition" in html
     assert f"/operate/{catalog}/{definition_id}/edit" in html
     assert f"/api/catalog/{catalog}/{definition_id}/download" in html
+
+
+def test_user_measurement_detail_offers_body_credential_delete_only_for_user_file(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "measurements"
+    root.mkdir()
+    monkeypatch.setenv("ADA2_DWARF_MEASUREMENTS_DIR", str(root))
+    bundled = Path("dwarf/measurements/amaru-stock-header-lifecycle.yaml")
+    data = yaml.safe_load(bundled.read_text(encoding="utf-8"))
+    data["id"] = "measurement-user-delete"
+    data["title"] = "User deletion acceptance"
+    source = (json.dumps(data, indent=2) + "\n").encode()
+    (root / "measurement-user-delete.yaml").write_bytes(source)
+
+    html = dashboard.render_route_html(
+        "/operate/measurements/measurement-user-delete", token="secret"
+    )
+
+    assert 'data-definition-delete' in html
+    assert 'action="/api/catalog/measurements/measurement-user-delete/delete"' in html
+    assert f'value="{hashlib.sha256(source).hexdigest()}"' in html
+    assert "?token=" not in html
+    assert 'src="/static/js/definition-delete.js"' in html
+
+    packaged_data = yaml.safe_load(bundled.read_text(encoding="utf-8"))
+    packaged_source = (json.dumps(packaged_data, indent=2) + "\n").encode()
+    (root / "amaru-stock-header-lifecycle.yaml").write_bytes(packaged_source)
+    packaged_html = dashboard.render_route_html(
+        "/operate/measurements/amaru-stock-header-lifecycle", token="secret"
+    )
+    assert 'data-definition-delete' not in packaged_html
+
+
+def test_measurement_delete_is_body_token_gated_digest_bound_and_packaged_safe(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "measurements"
+    root.mkdir()
+    monkeypatch.setenv("ADA2_DWARF_MEASUREMENTS_DIR", str(root))
+    bundled = Path("dwarf/measurements/amaru-stock-header-lifecycle.yaml")
+    data = yaml.safe_load(bundled.read_text(encoding="utf-8"))
+    data["id"] = "measurement-user-delete"
+    data["title"] = "User deletion acceptance"
+    source = (json.dumps(data, indent=2) + "\n").encode()
+    user_path = root / "measurement-user-delete.yaml"
+    user_path.write_bytes(source)
+    digest = hashlib.sha256(source).hexdigest()
+
+    denied = dashboard.dispatch_catalog_mutating_request(
+        method="POST",
+        path="/api/catalog/measurements/measurement-user-delete/delete?token=secret",
+        body=urlencode({"token": "wrong", "expected_sha256": digest}).encode(),
+        expected_token="secret",
+    )
+    missing = dashboard.dispatch_catalog_mutating_request(
+        method="POST",
+        path="/api/catalog/measurements/measurement-user-delete/delete?token=secret",
+        body=b"",
+        expected_token="secret",
+    )
+    stale = dashboard.dispatch_catalog_mutating_request(
+        method="POST",
+        path="/api/catalog/measurements/measurement-user-delete/delete",
+        body=urlencode({"token": "secret", "expected_sha256": "0" * 64}).encode(),
+        expected_token="secret",
+    )
+    assert denied is not None and denied[0] == 403
+    assert missing is not None and missing[0] == 403
+    assert stale is not None and stale[0] == 409
+    assert user_path.is_file()
+
+    packaged_source = bundled.read_bytes()
+    packaged_path = root / bundled.name
+    packaged_path.write_bytes(packaged_source)
+    packaged = dashboard.dispatch_catalog_mutating_request(
+        method="POST",
+        path=f"/api/catalog/measurements/{bundled.stem}/delete",
+        body=urlencode(
+            {
+                "token": "secret",
+                "expected_sha256": hashlib.sha256(packaged_source).hexdigest(),
+            }
+        ).encode(),
+        expected_token="secret",
+    )
+    assert packaged is not None and packaged[0] == 409
+    assert packaged_path.is_file()
+
+    deleted = dashboard.dispatch_catalog_mutating_request(
+        method="POST",
+        path="/api/catalog/measurements/measurement-user-delete/delete",
+        body=urlencode({"token": "secret", "expected_sha256": digest}).encode(),
+        expected_token="secret",
+    )
+    assert deleted is not None and deleted[0] == 200
+    assert json.loads(deleted[2]) == {
+        "ok": True,
+        "id": "measurement-user-delete",
+        "url": "/operate/measurements",
+    }
+    assert not user_path.exists()
+
+
+def test_scenario_delete_reuses_guarded_transaction_and_invalidates_cache(
+    tmp_path, monkeypatch
+):
+    from profile_manager.data import scenarios as scenario_catalog
+
+    roots = _write_catalog_fixture(tmp_path, monkeypatch)
+    user_path = roots["scenarios"] / "scenario-demo.yaml"
+    source = user_path.read_bytes()
+    digest = hashlib.sha256(source).hexdigest()
+    retained_run = tmp_path / "runs" / "retained-run" / "manifest.json"
+    retained_run.parent.mkdir(parents=True)
+    retained_run.write_text('{"run_id":"retained-run"}\n', encoding="utf-8")
+
+    scenario_catalog.invalidate_scenario_cache()
+    assert [row["id"] for row in scenario_catalog._list_scenarios_for_compare()] == [
+        "scenario-demo"
+    ]
+    assert scenario_catalog._SCENARIO_FILE_CACHE
+
+    html = dashboard.render_route_html(
+        "/operate/scenarios/scenario-demo", token="secret"
+    )
+    assert html is not None
+    assert 'data-definition-delete' in html
+    assert 'action="/api/catalog/scenarios/scenario-demo/delete"' in html
+    assert f'value="{digest}"' in html
+    assert "?token=" not in html
+
+    denied = dashboard.dispatch_catalog_mutating_request(
+        method="POST",
+        path="/api/catalog/scenarios/scenario-demo/delete?token=secret",
+        body=urlencode(
+            {"token": "wrong", "expected_sha256": digest}
+        ).encode(),
+        expected_token="secret",
+    )
+    stale = dashboard.dispatch_catalog_mutating_request(
+        method="POST",
+        path="/api/catalog/scenarios/scenario-demo/delete",
+        body=urlencode(
+            {"token": "secret", "expected_sha256": "0" * 64}
+        ).encode(),
+        expected_token="secret",
+    )
+    assert denied is not None and denied[0] == 403
+    assert stale is not None and stale[0] == 409
+    assert user_path.is_file()
+
+    packaged_path = next(Path("dwarf/scenarios").glob("*.yaml"))
+    packaged_id = packaged_path.stem
+    packaged = dashboard.dispatch_catalog_mutating_request(
+        method="POST",
+        path=f"/api/catalog/scenarios/{packaged_id}/delete",
+        body=urlencode(
+            {
+                "token": "secret",
+                "expected_sha256": hashlib.sha256(
+                    packaged_path.read_bytes()
+                ).hexdigest(),
+            }
+        ).encode(),
+        expected_token="secret",
+    )
+    assert packaged is not None and packaged[0] == 409
+    assert packaged_path.is_file()
+
+    deleted = dashboard.dispatch_catalog_mutating_request(
+        method="POST",
+        path="/api/catalog/scenarios/scenario-demo/delete",
+        body=urlencode(
+            {"token": "secret", "expected_sha256": digest}
+        ).encode(),
+        expected_token="secret",
+    )
+    assert deleted is not None and deleted[0] == 200
+    assert json.loads(deleted[2]) == {
+        "ok": True,
+        "id": "scenario-demo",
+        "url": "/operate/scenarios",
+    }
+    assert not user_path.exists()
+    assert retained_run.read_text(encoding="utf-8") == (
+        '{"run_id":"retained-run"}\n'
+    )
+    assert scenario_catalog._SCENARIO_FILE_CACHE == {}
+    assert scenario_catalog._SCENARIO_LIST_CACHE == {}
+
+
+def test_measurement_delete_cannot_remove_a_concurrent_validated_save(
+    tmp_path, monkeypatch
+):
+    from profile_manager.data import catalog_definitions as definitions
+
+    root = tmp_path / "measurements"
+    root.mkdir()
+    monkeypatch.setenv("ADA2_DWARF_MEASUREMENTS_DIR", str(root))
+    bundled = Path("dwarf/measurements/amaru-stock-header-lifecycle.yaml")
+    data = yaml.safe_load(bundled.read_text(encoding="utf-8"))
+    data["id"] = "measurement-user-race"
+    data["title"] = "Original user measurement"
+    original = (json.dumps(data, indent=2) + "\n").encode()
+    path = root / "measurement-user-race.yaml"
+    path.write_bytes(original)
+    changed = {**data, "title": "Concurrent validated save"}
+    changed_source = (json.dumps(changed, indent=2) + "\n").encode()
+
+    replace_ready = threading.Event()
+    allow_replace = threading.Event()
+    original_replace = definitions.os.replace
+
+    def blocked_replace(source, destination):
+        if Path(destination) == path:
+            replace_ready.set()
+            assert allow_replace.wait(2)
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(definitions.os, "replace", blocked_replace)
+    save_errors = []
+    delete_errors = []
+
+    def save():
+        try:
+            definitions.save_definition(
+                "measurements",
+                "measurement-user-race",
+                changed_source,
+                create=False,
+            )
+        except Exception as exc:  # pragma: no cover - asserted below
+            save_errors.append(exc)
+
+    def delete():
+        try:
+            definitions.delete_user_measurement(
+                "measurement-user-race",
+                expected_sha256=hashlib.sha256(original).hexdigest(),
+            )
+        except Exception as exc:
+            delete_errors.append(exc)
+
+    saver = threading.Thread(target=save)
+    saver.start()
+    assert replace_ready.wait(2)
+    deleter = threading.Thread(target=delete)
+    deleter.start()
+    time.sleep(0.05)
+    assert deleter.is_alive(), "delete did not wait for the in-flight catalog save"
+    allow_replace.set()
+    saver.join(2)
+    deleter.join(2)
+
+    assert not saver.is_alive() and not deleter.is_alive()
+    assert save_errors == []
+    assert len(delete_errors) == 1
+    assert isinstance(delete_errors[0], definitions.DefinitionConflictError)
+    assert json.loads(path.read_text())["title"] == "Concurrent validated save"
+
+
+def _write_user_measurement_profile(tmp_path, monkeypatch, definition_id):
+    root = tmp_path / "measurement-profiles"
+    root.mkdir(exist_ok=True)
+    monkeypatch.setenv("ADA2_DWARF_MEASUREMENT_PROFILES_DIR", str(root))
+    # Profile deletes also lock the live scenario catalog; keep it out of the tree.
+    monkeypatch.setenv("ADA2_DWARF_SCENARIOS_DIR", str(tmp_path / "live-scenarios"))
+    bundled = Path("dwarf/measurement-profiles/amaru-security-default.yaml")
+    data = yaml.safe_load(bundled.read_text(encoding="utf-8"))
+    data["id"] = definition_id
+    data["title"] = "User profile deletion acceptance"
+    source = (json.dumps(data, indent=2) + "\n").encode()
+    path = root / f"{definition_id}.yaml"
+    path.write_bytes(source)
+    return root, bundled, data, source, path
+
+
+def _delete_profile(definition_id, form, query=""):
+    return dashboard.dispatch_catalog_mutating_request(
+        method="POST",
+        path=f"/api/catalog/measurement-profiles/{definition_id}/delete{query}",
+        body=urlencode(form).encode() if form is not None else b"",
+        expected_token="secret",
+    )
+
+
+def test_user_measurement_profile_detail_offers_body_credential_delete_only_for_user_file(
+    tmp_path, monkeypatch
+):
+    root, bundled, _, source, _ = _write_user_measurement_profile(
+        tmp_path, monkeypatch, "profile-user-delete"
+    )
+
+    html = dashboard.render_route_html(
+        "/operate/measurement-profiles/profile-user-delete", token="secret"
+    )
+
+    assert "data-definition-delete" in html
+    assert (
+        'action="/api/catalog/measurement-profiles/profile-user-delete/delete"' in html
+    )
+    assert f'value="{hashlib.sha256(source).hexdigest()}"' in html
+    assert "?token=" not in html
+    assert 'src="/static/js/definition-delete.js"' in html
+
+    (root / bundled.name).write_bytes(bundled.read_bytes())
+    packaged_html = dashboard.render_route_html(
+        f"/operate/measurement-profiles/{bundled.stem}", token="secret"
+    )
+    assert "data-definition-delete" not in packaged_html
+
+
+def test_measurement_profile_delete_is_body_token_gated_digest_bound_and_packaged_safe(
+    tmp_path, monkeypatch
+):
+    root, bundled, _, source, user_path = _write_user_measurement_profile(
+        tmp_path, monkeypatch, "profile-user-delete"
+    )
+    digest = hashlib.sha256(source).hexdigest()
+
+    denied = _delete_profile(
+        "profile-user-delete",
+        {"token": "wrong", "expected_sha256": digest},
+        query="?token=secret",
+    )
+    missing = _delete_profile("profile-user-delete", None, query="?token=secret")
+    stale = _delete_profile(
+        "profile-user-delete", {"token": "secret", "expected_sha256": "0" * 64}
+    )
+    assert denied is not None and denied[0] == 403
+    assert missing is not None and missing[0] == 403
+    assert stale is not None and stale[0] == 409
+    assert user_path.is_file()
+
+    packaged_source = bundled.read_bytes()
+    packaged_path = root / bundled.name
+    packaged_path.write_bytes(packaged_source)
+    packaged = _delete_profile(
+        bundled.stem,
+        {
+            "token": "secret",
+            "expected_sha256": hashlib.sha256(packaged_source).hexdigest(),
+        },
+    )
+    assert packaged is not None and packaged[0] == 409
+    assert packaged_path.is_file()
+
+    deleted = _delete_profile(
+        "profile-user-delete", {"token": "secret", "expected_sha256": digest}
+    )
+    assert deleted is not None and deleted[0] == 200
+    assert json.loads(deleted[2]) == {
+        "ok": True,
+        "id": "profile-user-delete",
+        "url": "/operate/measurement-profiles",
+    }
+    assert not user_path.exists()
+
+
+def test_measurement_profile_delete_refuses_symlink_outside_catalog(
+    tmp_path, monkeypatch
+):
+    root, _, _, source, _ = _write_user_measurement_profile(
+        tmp_path, monkeypatch, "profile-user-real"
+    )
+    outside = tmp_path / "outside.yaml"
+    data = json.loads(source)
+    data["id"] = "profile-user-link"
+    outside_source = (json.dumps(data, indent=2) + "\n").encode()
+    outside.write_bytes(outside_source)
+    link = root / "profile-user-link.yaml"
+    link.symlink_to(outside)
+
+    refused = _delete_profile(
+        "profile-user-link",
+        {
+            "token": "secret",
+            "expected_sha256": hashlib.sha256(outside_source).hexdigest(),
+        },
+    )
+    assert refused is not None and refused[0] == 400
+    assert link.is_symlink() and outside.read_bytes() == outside_source
+
+
+def test_measurement_profile_delete_cannot_remove_a_concurrent_validated_save(
+    tmp_path, monkeypatch
+):
+    from profile_manager.data import catalog_definitions as definitions
+
+    _, _, data, original, path = _write_user_measurement_profile(
+        tmp_path, monkeypatch, "profile-user-race"
+    )
+    changed_source = (
+        json.dumps({**data, "title": "Concurrent validated save"}, indent=2) + "\n"
+    ).encode()
+
+    replace_ready = threading.Event()
+    allow_replace = threading.Event()
+    original_replace = definitions.os.replace
+
+    def blocked_replace(source, destination):
+        if Path(destination) == path.resolve():
+            replace_ready.set()
+            assert allow_replace.wait(2)
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(definitions.os, "replace", blocked_replace)
+    save_errors = []
+    delete_results = []
+
+    def save():
+        try:
+            definitions.save_definition(
+                "measurement-profiles", "profile-user-race", changed_source, create=False
+            )
+        except Exception as exc:  # pragma: no cover - asserted below
+            save_errors.append(exc)
+
+    def delete():
+        delete_results.append(
+            _delete_profile(
+                "profile-user-race",
+                {"token": "secret", "expected_sha256": hashlib.sha256(original).hexdigest()},
+            )
+        )
+
+    saver = threading.Thread(target=save)
+    saver.start()
+    assert replace_ready.wait(2)
+    deleter = threading.Thread(target=delete)
+    deleter.start()
+    time.sleep(0.05)
+    assert deleter.is_alive(), "delete did not wait for the in-flight catalog save"
+    allow_replace.set()
+    saver.join(2)
+    deleter.join(2)
+
+    assert not saver.is_alive() and not deleter.is_alive()
+    assert save_errors == []
+    assert len(delete_results) == 1 and delete_results[0][0] == 409
+    assert json.loads(path.read_text())["title"] == "Concurrent validated save"
+
+
+def _scenario_referencing_profile(tmp_path, monkeypatch, scenario_id, profile_id):
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    data = json.loads((paths["scenarios"] / "scenario-demo.yaml").read_text())
+    data["id"] = scenario_id
+    data["measurement_profile"] = profile_id
+    return paths["scenarios"], (json.dumps(data, indent=2) + "\n").encode()
+
+
+def test_measurement_profile_delete_refuses_live_scenario_references(
+    tmp_path, monkeypatch
+):
+    profile_root, _, _, source, path = _write_user_measurement_profile(
+        tmp_path, monkeypatch, "profile-user-used"
+    )
+    scenarios, scenario_source = _scenario_referencing_profile(
+        tmp_path, monkeypatch, "scenario-uses-profile", "profile-user-used"
+    )
+    (scenarios / "scenario-uses-profile.yaml").write_bytes(scenario_source)
+    (scenarios / "pending" / "draft-uses-profile.yaml").write_bytes(scenario_source)
+
+    refused = _delete_profile(
+        "profile-user-used",
+        {"token": "secret", "expected_sha256": hashlib.sha256(source).hexdigest()},
+    )
+
+    assert refused is not None and refused[0] == 409
+    error = json.loads(refused[2])["error"]
+    assert "scenario-uses-profile" in error
+    assert "draft-uses-profile" not in error
+    assert path.is_file()
+    assert (profile_root / ".dwarf-catalog.lock").is_file()
+    assert (scenarios / ".dwarf-catalog.lock").is_file()
+    assert not Path("dwarf/measurement-profiles/.dwarf-catalog.lock").exists()
+    assert not Path("dwarf/scenarios/.dwarf-catalog.lock").exists()
+
+
+def test_profile_delete_waits_for_in_flight_scenario_save_and_refuses_orphan(
+    tmp_path, monkeypatch
+):
+    from profile_manager.data import catalog_definitions as definitions
+
+    _, _, _, source, profile_path = _write_user_measurement_profile(
+        tmp_path, monkeypatch, "profile-user-race"
+    )
+    scenarios, scenario_source = _scenario_referencing_profile(
+        tmp_path, monkeypatch, "scenario-race", "profile-user-race"
+    )
+    scenario_path = (scenarios / "scenario-race.yaml").resolve()
+    replace_ready = threading.Event()
+    allow_replace = threading.Event()
+    original_replace = definitions.os.replace
+
+    def blocked_replace(src, destination):
+        if Path(destination) == scenario_path:
+            replace_ready.set()
+            assert allow_replace.wait(2)
+        return original_replace(src, destination)
+
+    monkeypatch.setattr(definitions.os, "replace", blocked_replace)
+    save_errors, delete_results = [], []
+
+    def save():
+        try:
+            definitions.save_definition(
+                "scenarios", "scenario-race", scenario_source, create=True
+            )
+        except Exception as exc:  # pragma: no cover - asserted below
+            save_errors.append(exc)
+
+    saver = threading.Thread(target=save)
+    saver.start()
+    assert replace_ready.wait(2)
+    deleter = threading.Thread(
+        target=lambda: delete_results.append(
+            _delete_profile(
+                "profile-user-race",
+                {"token": "secret", "expected_sha256": hashlib.sha256(source).hexdigest()},
+            )
+        )
+    )
+    deleter.start()
+    time.sleep(0.05)
+    assert deleter.is_alive(), "profile delete did not wait for the scenario save"
+    allow_replace.set()
+    saver.join(2)
+    deleter.join(2)
+
+    assert save_errors == []
+    assert delete_results[0][0] == 409
+    assert "scenario-race" in json.loads(delete_results[0][2])["error"]
+    assert profile_path.is_file() and scenario_path.is_file()
+
+
+@pytest.mark.parametrize("writer", ["catalog", "legacy"])
+def test_scenario_save_waits_for_in_flight_profile_delete_and_refuses_orphan(
+    tmp_path, monkeypatch, writer
+):
+    from profile_manager import scenario as scen
+    from profile_manager.data import catalog_definitions as definitions
+
+    profile_root, _, _, source, profile_path = _write_user_measurement_profile(
+        tmp_path, monkeypatch, "profile-user-race"
+    )
+    scenarios, scenario_source = _scenario_referencing_profile(
+        tmp_path, monkeypatch, "scenario-race", "profile-user-race"
+    )
+    candidate = profile_root.resolve() / "profile-user-race.yaml"
+    unlink_ready = threading.Event()
+    allow_unlink = threading.Event()
+    original_lstat = definitions.os.lstat
+
+    def blocked_lstat(target, *args, **kwargs):
+        if threading.current_thread().name == "profile-deleter" and Path(target) == candidate:
+            unlink_ready.set()
+            assert allow_unlink.wait(2)
+        return original_lstat(target, *args, **kwargs)
+
+    monkeypatch.setattr(definitions.os, "lstat", blocked_lstat)
+    delete_errors, save_results = [], []
+
+    def delete():
+        try:
+            definitions.delete_user_definition(
+                "measurement-profiles",
+                "profile-user-race",
+                expected_sha256=hashlib.sha256(source).hexdigest(),
+            )
+        except Exception as exc:  # pragma: no cover - asserted below
+            delete_errors.append(exc)
+
+    def save():
+        try:
+            if writer == "catalog":
+                definitions.save_definition(
+                    "scenarios", "scenario-race", scenario_source, create=True
+                )
+                save_results.append({"ok": True})
+            else:
+                save_results.append(
+                    scen.save_scenario_body(scenario_source, scenarios_dir=scenarios)
+                )
+        except definitions.CatalogError as exc:
+            save_results.append({"ok": False, "error": str(exc)})
+
+    deleter = threading.Thread(target=delete, name="profile-deleter")
+    deleter.start()
+    assert unlink_ready.wait(2)
+    saver = threading.Thread(target=save)
+    saver.start()
+    time.sleep(0.05)
+    assert saver.is_alive(), "scenario save did not wait for the profile delete"
+    allow_unlink.set()
+    deleter.join(2)
+    saver.join(2)
+
+    assert delete_errors == []
+    assert not profile_path.exists()
+    assert save_results and save_results[0]["ok"] is False
+    assert "profile-user-race" in save_results[0]["error"]
+    assert not (scenarios / "scenario-race.yaml").exists()
+
+
+def test_legacy_scenario_save_without_user_profile_takes_no_profile_lock(
+    tmp_path, monkeypatch
+):
+    from profile_manager import scenario as scen
+
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    unconfigured = tmp_path / "unwritable-profiles"
+    monkeypatch.setenv("ADA2_DWARF_MEASUREMENT_PROFILES_DIR", str(unconfigured))
+    body = (paths["scenarios"] / "scenario-demo.yaml").read_bytes()
+
+    report = scen.save_scenario_body(body, scenarios_dir=paths["scenarios"])
+
+    assert report["ok"] is True
+    assert not unconfigured.exists()
 
 
 def test_unknown_catalog_and_missing_definition_are_not_found(tmp_path, monkeypatch):

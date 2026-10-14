@@ -43,6 +43,10 @@ from profile_manager.version_catalog import (  # noqa: E402
     load_version_catalog,
     resolve_release,
 )
+from profile_manager.amaru_runtime import (  # noqa: E402
+    AmaruRuntimeInterfaceError,
+    uses_modern_amaru_runtime_interface,
+)
 from profile_manager.version_provenance import (  # noqa: E402
     ProvenanceIndex,
     parse_binary_identity,
@@ -210,17 +214,10 @@ def build_project_name(
 def _uses_modern_amaru_runtime_interface(
     image: str, runtime_interface: str | None = None
 ) -> bool:
-    if runtime_interface is not None:
-        if runtime_interface not in {"extracted-binary", "legacy-wrapper"}:
-            raise QualificationError(
-                "amaru_runtime_interface must be extracted-binary or legacy-wrapper"
-            )
-        return runtime_interface == "extracted-binary"
-    repository = str(image or "").split("@", 1)[0]
-    last_slash = repository.rfind("/")
-    if repository.rfind(":") > last_slash:
-        repository = repository[: repository.rfind(":")]
-    return repository == "ghcr.io/pragma-org/amaru"
+    try:
+        return uses_modern_amaru_runtime_interface(image, runtime_interface)
+    except AmaruRuntimeInterfaceError as exc:
+        raise QualificationError(str(exc)) from exc
 
 
 def _append_volume(service: dict[str, Any], source: str, target: str) -> None:
@@ -371,7 +368,22 @@ def transform_compose_model(
             "user": "0:0",
             "entrypoint": ["/bin/sh", "-ec"],
             "command": [
-                "cp /usr/local/bin/amaru /target/amaru && chmod 0755 /target/amaru"
+                "temporary=; "
+                "cleanup() { status=$$?; trap - 0; "
+                '[ -z "$${temporary:-}" ] || rm -f "$$temporary" || true; '
+                'exit "$$status"; }; '
+                "abort() { status=$$1; trap - 0 1 2 3 15; "
+                '[ -z "$${temporary:-}" ] || rm -f "$$temporary" || true; '
+                'exit "$$status"; }; '
+                "trap cleanup 0; "
+                "trap 'abort 129' 1; trap 'abort 130' 2; "
+                "trap 'abort 131' 3; trap 'abort 143' 15; "
+                "temporary=$$(mktemp /target/.amaru.XXXXXX); "
+                'cp /usr/local/bin/amaru "$$temporary"; '
+                'chmod 0755 "$$temporary"; '
+                'mv -f "$$temporary" /target/amaru; '
+                "temporary=; "
+                "trap - 0 1 2 3 15"
             ],
             "volumes": [
                 {"type": "volume", "source": "amaru-target-bin", "target": "/target"}
@@ -613,6 +625,8 @@ def _identity_observation(
     amaru_image: str | None,
     amaru_runtime_interface: str | None = None,
     measurement_target_identity: dict[str, Any] | None = None,
+    operator_stock_registration_expected: bool = False,
+    operator_stock_content_id: str | None = None,
 ) -> dict[str, Any]:
     containers = _project_containers(project)
     modern_amaru = bool(
@@ -716,7 +730,9 @@ def _identity_observation(
         reported_source_matched = None
         executable_digest_matched = None
         executable_digest_reported = None
+        identity_basis = "catalog-version-or-source"
         if service in AMARU_RELAYS and patched_target:
+            identity_basis = "qualified-measurement-target"
             expected_source = str(measurement_target_identity.get("source_revision") or "")
             reported_source_matched = bool(
                 len(expected_source) == 40 and expected_source[:8] in output
@@ -739,6 +755,21 @@ def _identity_observation(
                 and patched_target_record["identity_record_matched"]
                 and reported_source_matched
                 and executable_digest_matched
+            )
+        elif service in AMARU_RELAYS and (
+            operator_stock_registration_expected
+            or operator_stock_content_id is not None
+        ):
+            identity_basis = (
+                "operator-registration-config-id"
+                if operator_stock_content_id is not None
+                else "operator-registration-invalid"
+            )
+            artifact_match = bool(
+                operator_stock_content_id
+                and expected_image_id
+                and expected_image_id == operator_stock_content_id
+                and artifact_image_id == expected_image_id
             )
         else:
             artifact_match = identity_matches(
@@ -779,6 +810,7 @@ def _identity_observation(
             "reported_source_matched": reported_source_matched,
             "executable_digest_reported": executable_digest_reported,
             "executable_digest_matched": executable_digest_matched,
+            "identity_basis": identity_basis,
             "matched": bool(
                 container
                 and result

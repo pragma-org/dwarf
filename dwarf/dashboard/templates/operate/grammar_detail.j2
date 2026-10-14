@@ -29,7 +29,7 @@
     <div class="dkb-rel">
       <div><strong>Targets</strong>{% if grammar.target_ids %}<ul class="dk-list">{% for id in grammar.target_ids %}<li><a href="/operate/targets/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% else %}<p class="dkb-p dk-note">None referenced.</p>{% endif %}</div>
       <div><strong>Corpora</strong>{% if grammar.corpus_ids %}<ul class="dk-list">{% for id in grammar.corpus_ids %}<li><a href="/operate/corpora/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% else %}<p class="dkb-p dk-note">None referenced.</p>{% endif %}</div>
-      <div><strong>Scenarios</strong>{% if grammar.scenario_ids %}<ul class="dk-list">{% for id in grammar.scenario_ids[:6] %}<li><a href="/operate/scenarios/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% if grammar.scenario_ids|length > 6 %}<p class="dk-note">+{{ grammar.scenario_ids|length - 6 }} more in Advanced.</p>{% endif %}{% else %}<p class="dkb-p dk-note">None referenced.</p>{% endif %}</div>
+      <div><strong>Scenarios</strong>{% if grammar.scenario_ids %}<ul class="dk-list">{% for id in grammar.scenario_ids %}<li><a href="/operate/scenarios/{{ id }}"><code>{{ id }}</code></a></li>{% endfor %}</ul>{% else %}<p class="dkb-p dk-note">None referenced.</p>{% endif %}</div>
     </div>
   </div>
   <div class="dk-panel">

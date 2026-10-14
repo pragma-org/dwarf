@@ -100,7 +100,7 @@ def test_latest_confirmed_amaru_default_is_current_stable_with_disclosed_support
     ]
 
 
-def test_mixed_default_remains_reproduced_control_after_latest_pair_failure():
+def test_mixed_default_is_newest_confirmed_reproduced_pair():
     catalog = load_version_catalog(CATALOG_PATH)
 
     selected = resolve_default(catalog, "mixed")
@@ -110,8 +110,8 @@ def test_mixed_default_remains_reproduced_control_after_latest_pair_failure():
         if pair["id"] == "cardano-11.1.2__amaru-10.11.20260912"
     )
 
-    assert selected["pair"]["id"] == "cardano-10.7.1__amaru-10.11.0"
-    assert "20260918T085655Z" in selected["pair"]["evidence"][-1]
+    assert selected["pair"]["id"] == "cardano-11.1.2__amaru-10.11.20260918"
+    assert "20260923T140419Z" in selected["pair"]["evidence"][-1]
     assert failed["status"] == "incompatible"
     assert "20260918T092619Z" in failed["evidence"][0]
 
@@ -129,6 +129,27 @@ def test_available_oci_artifact_requires_immutable_digest():
     del catalog["releases"][0]["artifacts"][0]["digest"]
 
     with pytest.raises(CatalogError, match="immutable sha256 digest"):
+        validate_version_catalog(catalog)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("public", "false", "public must be boolean"),
+        ("platforms", "linux/amd64", "platforms must be a unique bounded list"),
+        ("platforms", ["linux/ppc64le"], "platforms must be a unique bounded list"),
+        (
+            "platforms",
+            ["linux/amd64", "linux/amd64"],
+            "platforms must be a unique bounded list",
+        ),
+    ],
+)
+def test_oci_portability_metadata_fails_closed(field, value, message):
+    catalog = _catalog()
+    catalog["releases"][0]["artifacts"][0][field] = value
+
+    with pytest.raises(CatalogError, match=message):
         validate_version_catalog(catalog)
 
 

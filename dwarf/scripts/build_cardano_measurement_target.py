@@ -352,7 +352,9 @@ def publish_target_record(result: Mapping[str, Any], *, registry_root: Path) -> 
         if not image_id.startswith("sha256:"):
             raise BuildContractError("patched image identity is not immutable")
         immutable = f"{image.get('reference')}@{image_id}"
-    image_digest = immutable.rsplit("@", 1)[-1]
+    image_digest = str(image.get("image_id") or "")
+    if not image_digest.startswith("sha256:") or len(image_digest) != 71:
+        raise BuildContractError("patched image config identity is not immutable")
     record = {
         "schema_version": 1,
         "implementation": "cardano-node",

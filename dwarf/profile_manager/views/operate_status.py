@@ -16,7 +16,8 @@ from profile_manager.templating import render
 
 
 def render_operate_status(*, port: int | None = None, bind: str | None = None,
-                          token: str | None = None) -> str:
+                          token: str | None = None,
+                          profile_id: str | None = None) -> str:
     """Render /operate/status.
 
     The dashboard handler may pass in port/bind/token so the serving-tile
@@ -26,7 +27,18 @@ def render_operate_status(*, port: int | None = None, bind: str | None = None,
     """
     from profile_manager.dashboard import build_dashboard_status_payload
     from profile_manager.data.operate_topology_health import topology_health_snapshot
-    payload = build_dashboard_status_payload(live=True)
+    from profile_manager.data.operate_versions import version_catalog_view
+    payload = (
+        build_dashboard_status_payload(live=True, profile_id=profile_id)
+        if profile_id is not None
+        else build_dashboard_status_payload(live=True)
+    )
+    version_view = version_catalog_view()
+    topology_health = (
+        topology_health_snapshot(profile_id=profile_id)
+        if profile_id is not None
+        else topology_health_snapshot()
+    )
     return render(
         "operate/status.j2",
         page_title="Status",
@@ -40,7 +52,11 @@ def render_operate_status(*, port: int | None = None, bind: str | None = None,
         profiles=all_profiles(payload),
         wallets=wallet_status_rows(payload),
         moog=moog_status_tile(payload),
-        topology_health=topology_health_snapshot(),
+        topology_health=topology_health,
+        selected_profile_id=profile_id or "",
+        topology_versions=version_view["releases"],
+        topology_catalog_revision=version_view["catalog_revision"],
+        runtime_identity=payload.get("runtime_identity") or {},
         token=token,
         shim_enabled=control_shim_enabled(),
     )
