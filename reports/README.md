@@ -2,6 +2,16 @@
 
 Client-facing results from DWARF campaigns against `cardano-node` and Amaru.
 
+## Amaru handshake forward compatibility (updated 2026-10-14)
+
+[Report and advisory fields](../dwarf/docs/finding-amaru-n2n-handshake-unknown-version-data.md):
+stock Amaru `v10.11.20260925` accepts V14/V15-only offers but closes offers
+that also contain differently shaped parameters for unsupported V16 or version
+99. The 60-attempt test confirms the connection-level defect, not a node crash
+or consensus failure. Recommended severity: Low.
+[Request/response evidence](amaru-n2n-handshake-unknown-version-data-evidence/verification-20261014/).
+The older reference evidence remains in the evidence directory.
+
 ## Campaign reports (`campaign-reports/`)
 
 - `dwarf-consensus-chain-selection-differential-campaign.html` — **cardano-node vs

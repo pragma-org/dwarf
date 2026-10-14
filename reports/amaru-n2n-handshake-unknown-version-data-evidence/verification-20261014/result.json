@@ -1,0 +1,180 @@
+{
+  "attempts": {
+    "artifact": "attempts.ndjson",
+    "by_case": {
+      "node-11-1-experimental-v16-offer": {
+        "outcomes": {
+          "rejected": 20
+        },
+        "total": 20
+      },
+      "unknown-future-version-offer": {
+        "outcomes": {
+          "rejected": 20
+        },
+        "total": 20
+      },
+      "v14-v15-offer": {
+        "outcomes": {
+          "accepted": 20
+        },
+        "total": 20
+      }
+    },
+    "outcomes": {
+      "accepted": 20,
+      "rejected": 40
+    },
+    "total": 60,
+    "unexpected_count": 40
+  },
+  "created_at": "2026-10-14T21:25:34.747814Z",
+  "measurements": {
+    "handshake_rejection_roundtrip": {
+      "excluded_warmup_count": 0,
+      "maximum": 102406,
+      "mean": 99644.01666666666,
+      "median": 101204,
+      "minimum": 4656,
+      "p95": 102207,
+      "p99": 102406,
+      "rejected_count": 0,
+      "rejection_reasons": {},
+      "sample_count": 60,
+      "status": "available",
+      "unit": "us"
+    }
+  },
+  "measurements_by_outcome": {
+    "handshake_rejection_roundtrip": {
+      "accepted": {
+        "excluded_warmup_count": 0,
+        "maximum": 102258,
+        "mean": 96341.45,
+        "median": 101069.5,
+        "minimum": 4656,
+        "p95": 101854,
+        "p99": 102258,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 20,
+        "status": "available",
+        "unit": "us"
+      },
+      "rejected": {
+        "excluded_warmup_count": 0,
+        "maximum": 102406,
+        "mean": 101295.3,
+        "median": 101212,
+        "minimum": 99995,
+        "p95": 102207,
+        "p99": 102406,
+        "rejected_count": 0,
+        "rejection_reasons": {},
+        "sample_count": 40,
+        "status": "available",
+        "unit": "us"
+      }
+    }
+  },
+  "node_measurements": {},
+  "raw_trace": "raw/amaru-relay-1.ndjson",
+  "run_id": "amaru-measurement-calibration",
+  "runner": {
+    "script": "runtime_amaru_measurement_calibration.py",
+    "script_sha256": "sha256:9293f023f6d35790c3bc6efce11ac96014dc999e6619fc1d132f6f7d06ed3135"
+  },
+  "schema_version": 1,
+  "status": "unavailable",
+  "target": {
+    "image_digest": "sha256:ad95eabd49d29b04978763b94e3036ad727c5e53c06946eeea98bd706cbaaee7",
+    "implementation": "amaru",
+    "mode": "stock",
+    "source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d",
+    "version": "10.11.20260925"
+  },
+  "target_health": {
+    "after": {
+      "exit_code": 0,
+      "oom_killed": false,
+      "restart_count": 0,
+      "running": true,
+      "status": "running"
+    },
+    "before": {
+      "exit_code": 0,
+      "oom_killed": false,
+      "restart_count": 0,
+      "running": true,
+      "status": "running"
+    },
+    "checks": {
+      "all_attempts_classified_as_expected": false,
+      "honest_chain_progressed": true,
+      "no_fatal_signals": true,
+      "target_not_oom_killed": true,
+      "target_restart_count_unchanged": true,
+      "target_running_after": true,
+      "target_running_before": true
+    },
+    "log_signals": {
+      "background": [],
+      "fatal": []
+    },
+    "tip_after": {
+      "block_hash": "0a49b6af21f2b88603cc9c016e66f19d5d284c6001651970d804035f5eb6d708",
+      "block_height": 515,
+      "hash": "0a49b6af21f2b88603cc9c016e66f19d5d284c6001651970d804035f5eb6d708",
+      "slot": 2787
+    },
+    "tip_before": {
+      "block_hash": "cbd709f59aacec66867f4bdce07e2cc01b31b640f1d9468383f208b4a5b6c2c4",
+      "block_height": 511,
+      "hash": "cbd709f59aacec66867f4bdce07e2cc01b31b640f1d9468383f208b4a5b6c2c4",
+      "slot": 2770
+    }
+  },
+  "timing_policy": {
+    "clock": "monotonic-perf-counter-ns",
+    "outcome_inclusion": "all",
+    "start": "before-tcp-connect",
+    "stop": "terminal-response-eof-timeout-or-disconnect",
+    "warmup": "none"
+  },
+  "workload_identity": {
+    "attempt_count": 60,
+    "case_set": "version-table-forward-compat-v1",
+    "cases": [
+      {
+        "attempt_count": 20,
+        "expected_decode_outcome": "decoded",
+        "expected_external_outcome": "accepted",
+        "name": "v14-v15-offer",
+        "payload_hex": "8200a20e84182af401f40f84182af401f4"
+      },
+      {
+        "attempt_count": 20,
+        "expected_decode_outcome": "decoded",
+        "expected_external_outcome": "accepted",
+        "name": "node-11-1-experimental-v16-offer",
+        "payload_hex": "8200a30e84182af401f40f84182af401f41085182af401f4f4"
+      },
+      {
+        "attempt_count": 20,
+        "expected_decode_outcome": "decoded",
+        "expected_external_outcome": "accepted",
+        "name": "unknown-future-version-offer",
+        "payload_hex": "8200a30e84182af401f40f84182af401f4186382182a66667574757265"
+      }
+    ],
+    "mini_protocol": "handshake",
+    "mux_direction_bit": 0,
+    "network_magic": 42,
+    "response_cap_bytes": 256,
+    "scenario_id": "amaru-measurement-overhead-calibration",
+    "seed": "2703025430",
+    "target_port": 3000,
+    "transport": "tcp",
+    "workload_digest": "sha256:567c4459577d350df8aca683d3777470a0f9a0da8fe792ad73fefd85ee48be30"
+  }
+}
