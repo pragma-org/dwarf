@@ -436,6 +436,44 @@ def test_no_script_mutations_change_only_the_redeemer_container():
             assert witnesses[5] == expected
 
 
+def _exact_missing_redeemer_derivation():
+    policy_id = "186e32faa80a26810392fda6d559c7ed4721a65ce1c9d4ef3e1c87b4"
+    return {
+        "schema_version": 1,
+        "status": "exact-source-bound-derivation",
+        "derivation_lineage": {
+            "cardano_node_source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+            "ouroboros_network_source_revision": "c45735a56c567fa977969173d18943bac6bb3821",
+            "ouroboros_consensus_source_revision": "82ecba329d7d054340bf707d44fe6e9ac27cec40",
+            "cardano_ledger_source_revision": "f649f9751074d2ab3de033fc3912f29c9862c1f5",
+        },
+        "negotiated_version": "NodeToClientV_20",
+        "era": "Conway",
+        "apply_tx_error": "ConwayApplyTxError",
+        "predicate_failures": [
+            {
+                "path": [
+                    "ConwayUtxowFailure",
+                    "UtxoFailure",
+                    "UtxosFailure",
+                    "CollectErrors",
+                    "NoRedeemer",
+                ],
+                "plutus_purpose": "ConwayMinting",
+                "policy_id": policy_id,
+            },
+            {
+                "path": ["ConwayUtxowFailure", "MissingRedeemers"],
+                "plutus_purpose": "ConwayMinting",
+                "policy_id": policy_id,
+                "script_hash": policy_id,
+            },
+        ],
+        "canonical_cbor_length": 115,
+        "canonical_cbor_sha256": "2e33e2c1aad23c8f6d8469d06028a922309a62dd621d8d1a7451783247a36aca",
+    }
+
+
 def test_live_control_assessment_requires_real_controls_and_missing_redeemer_evidence():
     records = []
     assigned = funding_inputs("f" * 64)
@@ -581,8 +619,13 @@ def test_live_control_completion_does_not_require_the_hypothesized_target_verdic
                     if role == "target"
                     else {
                         "classification": "ledger_reject",
-                        "body": "NoRedeemer (Mint, 0)",
+                        "body": "opaque typed rejection",
                         "reference_chain_included": False,
+                        "protocol_receipt": {
+                            "reject_evidence": {
+                                "source_bound_derivation": _exact_missing_redeemer_derivation()
+                            }
+                        },
                     }
                 )
             else:
@@ -1093,7 +1136,88 @@ def _oversized_reject_evidence():
     return evidence
 
 
-def _submit_raw_receipt(monkeypatch, receipt):
+def test_exact_cardano_node_reject_term_derives_named_missing_redeemer_errors(
+    monkeypatch,
+):
+    retained_term = base64.b64decode(
+        "gYIGgoIBggCCAIIBgYIAggFYHBhuMvqoCiaBA5L9ptVZx+1HIaZc4cnU7z4ch7SC"
+        "AYIKgYKCAVgcGG4y+qgKJoEDkv2m1VnH7UchplzhydTvPhyHtFgcGG4y+qgKJoEDk"
+        "v2m1VnH7UchplzhydTvPhyHtA=="
+    )
+
+    def term_tree(value):
+        if isinstance(value, list):
+            return {"type": "list", "items": [term_tree(item) for item in value]}
+        if isinstance(value, bytes):
+            return {
+                "type": "bytes",
+                "encoding": "base64",
+                "value": base64.b64encode(value).decode("ascii"),
+            }
+        return {"type": "int", "value": value}
+
+    evidence = _complete_reject_evidence()
+    wire = b"\x82\x02" + retained_term
+    tree = term_tree(cbor2.loads(retained_term))
+    nodes, depth = live_controls._reject_term_tree_metrics(tree)
+    evidence.update(
+        wire_bytes_base64=base64.b64encode(wire).decode("ascii"),
+        wire_length=len(wire),
+        wire_sha256=hashlib.sha256(wire).hexdigest(),
+        term_tree=tree,
+        term_node_count=nodes,
+        term_max_depth=depth,
+        canonical_cbor_base64=base64.b64encode(retained_term).decode("ascii"),
+        canonical_cbor_length=len(retained_term),
+        canonical_cbor_sha256=hashlib.sha256(retained_term).hexdigest(),
+    )
+    receipt = {
+        "schema_version": 1,
+        "outcome": "node_rejected",
+        "payload_sha256": hashlib.sha256(b"tx").hexdigest(),
+        "payload_length": 2,
+        "transaction_era": "conway",
+        "network_magic": 42,
+        "negotiated_version": "NodeToClientV_20",
+        "rejection": "opaque typed rejection",
+        "detail": None,
+        "reject_evidence": evidence,
+    }
+
+    result = _submit_raw_receipt(
+        monkeypatch,
+        receipt,
+        source_revision="fef83fed01d7926f3de83b3b917be5a4a48768b5",
+    )
+
+    assert result["http"] == 400
+    derived = result["protocol_receipt"]["reject_evidence"][
+        "source_bound_derivation"
+    ]
+    assert derived == _exact_missing_redeemer_derivation()
+
+    receipt["negotiated_version"] = "NodeToClientV_19"
+    receipt["reject_evidence"]["source_bound_derivation"] = {
+        "status": "helper-injected-fake",
+        "predicate_failures": [
+            {
+                "path": ["ConwayUtxowFailure", "MissingRedeemers"],
+                "plutus_purpose": "ConwayMinting",
+            }
+        ],
+    }
+    wrong_version = _submit_raw_receipt(
+        monkeypatch,
+        receipt,
+        source_revision="fef83fed01d7926f3de83b3b917be5a4a48768b5",
+    )
+    assert wrong_version["http"] == 400
+    assert "source_bound_derivation" not in wrong_version["protocol_receipt"][
+        "reject_evidence"
+    ]
+
+
+def _submit_raw_receipt(monkeypatch, receipt, *, source_revision="c" * 40):
     payload = b"tx"
     helper = "ghcr.io/j-gainsec/dwarf-adversary@sha256:" + "d" * 64
     helper_inspect = _raw_helper_inspect("sha256:" + "e" * 64)
@@ -1110,7 +1234,7 @@ def _submit_raw_receipt(monkeypatch, receipt):
     monkeypatch.setattr(subprocess, "run", run)
     return _submit_reference_raw(
         runtime=_raw_reference_runtime(),
-        reference=_raw_reference_node(),
+        reference={**_raw_reference_node(), "source_revision": source_revision},
         payload=payload,
         helper_image=helper,
     )

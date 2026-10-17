@@ -77,6 +77,10 @@ _RAW_REJECT_TERM_JSON_LIMIT = 262_144
 _RAW_REJECT_WIRE_SCOPE = "localtxsubmission-mini-protocol-response-after-demux"
 _RAW_REJECT_CANONICAL_SCOPE = "decoded-reject-term-canonical-cbor"
 _RAW_REJECT_TERM_WIRE_SCOPE = "localtxsubmission-submitfail-reject-term"
+_CARDANO_NODE_11_1_2_SOURCE = "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+_CARDANO_NODE_11_1_2_NETWORK_SOURCE = "c45735a56c567fa977969173d18943bac6bb3821"
+_CARDANO_NODE_11_1_2_CONSENSUS_SOURCE = "82ecba329d7d054340bf707d44fe6e9ac27cec40"
+_CARDANO_NODE_11_1_2_LEDGER_SOURCE = "f649f9751074d2ab3de033fc3912f29c9862c1f5"
 _UTC_TIMESTAMP_RE = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z"
 )
@@ -124,6 +128,91 @@ def _extract_reject_term_wire(wire: bytes, canonical: bytes) -> dict[str, Any]:
         "sha256": hashlib.sha256(exact_term).hexdigest(),
         "message_tag": 2,
         "matches_canonical_cbor": exact_term == canonical,
+    }
+
+
+def _derive_cardano_node_11_1_2_reject_term(
+    canonical: bytes,
+    *,
+    source_revision: str,
+    negotiated_version: str,
+) -> dict[str, Any] | None:
+    """Name one exact Conway rejection using the selected node's source codecs."""
+
+    if (
+        source_revision != _CARDANO_NODE_11_1_2_SOURCE
+        or negotiated_version != "NodeToClientV_20"
+    ):
+        return None
+    decoder = cbor2.CBORDecoder(io.BytesIO(canonical))
+    try:
+        term = decoder.decode()
+        try:
+            decoder.decode()
+        except cbor2.CBORDecodeEOF:
+            pass
+        else:
+            return None
+        policy_id = term[0][1][0][1][1][1][1][0][1][1]
+    except (cbor2.CBORDecodeError, IndexError, KeyError, TypeError):
+        return None
+    if not isinstance(policy_id, bytes) or len(policy_id) != 28:
+        return None
+
+    # Source-bound constructor chain:
+    # HardForkApplyTxErr/ConwayApplyTxError -> ConwayUtxowFailure, with both
+    # UtxosFailure(CollectErrors(NoRedeemer)) and MissingRedeemers.
+    minting_purpose = [1, policy_id]
+    no_redeemer = [0, minting_purpose]
+    collect_errors = [1, [no_redeemer]]
+    utxos_failure = [0, collect_errors]
+    utxo_failure = [0, utxos_failure]
+    expected = [
+        [
+            6,
+            [
+                [1, utxo_failure],
+                [1, [10, [[minting_purpose, policy_id]]]],
+            ],
+        ]
+    ]
+    if term != expected:
+        return None
+
+    policy_hex = policy_id.hex()
+    return {
+        "schema_version": 1,
+        "status": "exact-source-bound-derivation",
+        "derivation_lineage": {
+            "cardano_node_source_revision": _CARDANO_NODE_11_1_2_SOURCE,
+            "ouroboros_network_source_revision": _CARDANO_NODE_11_1_2_NETWORK_SOURCE,
+            "ouroboros_consensus_source_revision": _CARDANO_NODE_11_1_2_CONSENSUS_SOURCE,
+            "cardano_ledger_source_revision": _CARDANO_NODE_11_1_2_LEDGER_SOURCE,
+        },
+        "negotiated_version": negotiated_version,
+        "era": "Conway",
+        "apply_tx_error": "ConwayApplyTxError",
+        "predicate_failures": [
+            {
+                "path": [
+                    "ConwayUtxowFailure",
+                    "UtxoFailure",
+                    "UtxosFailure",
+                    "CollectErrors",
+                    "NoRedeemer",
+                ],
+                "plutus_purpose": "ConwayMinting",
+                "policy_id": policy_hex,
+            },
+            {
+                "path": ["ConwayUtxowFailure", "MissingRedeemers"],
+                "plutus_purpose": "ConwayMinting",
+                "policy_id": policy_hex,
+                "script_hash": policy_hex,
+            },
+        ],
+        "canonical_cbor_length": len(canonical),
+        "canonical_cbor_sha256": hashlib.sha256(canonical).hexdigest(),
     }
 
 
@@ -728,10 +817,49 @@ def validate_runtime_identity(
 
 def _has_missing_redeemer_diagnostic(observation: dict[str, Any]) -> bool:
     body = str(observation.get("body") or "").lower()
-    return observation.get("classification") == "ledger_reject" and any(
+    if observation.get("classification") != "ledger_reject":
+        return False
+    if any(
         marker in body
         for marker in ("missingredeemers", "missing redeemers", "noredeemer", "no redeemer")
+    ):
+        return True
+
+    derived = (
+        ((observation.get("protocol_receipt") or {}).get("reject_evidence") or {}).get(
+            "source_bound_derivation"
+        )
+        or {}
     )
+    if (
+        not isinstance(derived, dict)
+        or derived.get("schema_version") != 1
+        or derived.get("status") != "exact-source-bound-derivation"
+        or derived.get("negotiated_version") != "NodeToClientV_20"
+        or derived.get("era") != "Conway"
+        or derived.get("apply_tx_error") != "ConwayApplyTxError"
+        or derived.get("derivation_lineage")
+        != {
+            "cardano_node_source_revision": _CARDANO_NODE_11_1_2_SOURCE,
+            "ouroboros_network_source_revision": _CARDANO_NODE_11_1_2_NETWORK_SOURCE,
+            "ouroboros_consensus_source_revision": _CARDANO_NODE_11_1_2_CONSENSUS_SOURCE,
+            "cardano_ledger_source_revision": _CARDANO_NODE_11_1_2_LEDGER_SOURCE,
+        }
+    ):
+        return False
+    for failure in derived.get("predicate_failures") or []:
+        if not isinstance(failure, dict):
+            continue
+        policy_id = failure.get("policy_id")
+        if (
+            failure.get("path") == ["ConwayUtxowFailure", "MissingRedeemers"]
+            and failure.get("plutus_purpose") == "ConwayMinting"
+            and isinstance(policy_id, str)
+            and re.fullmatch(r"[0-9a-f]{56}", policy_id) is not None
+            and failure.get("script_hash") == policy_id
+        ):
+            return True
+    return False
 
 
 def reconcile_control_inclusions(
@@ -1697,6 +1825,19 @@ def _submit_reference_raw(
         raw_reject_evidence, outcome
     )
     if reject_evidence is not None:
+        reject_evidence.pop("source_bound_derivation", None)
+        canonical_value = reject_evidence.get("canonical_cbor_base64")
+        if isinstance(canonical_value, str):
+            canonical = _decode_reject_base64(
+                canonical_value, "canonical_cbor_base64"
+            )
+            derived = _derive_cardano_node_11_1_2_reject_term(
+                canonical,
+                source_revision=source_revision,
+                negotiated_version=str(receipt.get("negotiated_version") or ""),
+            )
+            if derived is not None:
+                reject_evidence["source_bound_derivation"] = derived
         protocol_receipt["reject_evidence"] = reject_evidence
     elif raw_reject_evidence is not None:
         protocol_receipt["reject_evidence_validation"] = {
