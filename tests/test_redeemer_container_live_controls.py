@@ -1044,8 +1044,8 @@ def test_raw_reference_submit_preserves_protocol_boundary(
 
 
 def _complete_reject_evidence():
-    wire = bytes.fromhex("8201826f4d697373696e6752656465656d657273")
-    canonical = bytes.fromhex("826f4d697373696e6752656465656d65727301")
+    wire = bytes.fromhex("820282704d697373696e6752656465656d65727301")
+    canonical = bytes.fromhex("82704d697373696e6752656465656d65727301")
     return {
         "schema_version": 1,
         "status": "complete",
@@ -1138,7 +1138,19 @@ def test_raw_reject_evidence_survives_validated_receipt_and_identity(monkeypatch
     assert result["observation_boundary"] == "node-submit-rejected"
     assert result["identity_binding"]["container_id"] == "a" * 64
     assert result["helper_identity"]["source_revision"] == "7" * 40
-    assert result["protocol_receipt"]["reject_evidence"] == evidence
+    retained = result["protocol_receipt"]["reject_evidence"]
+    for key, value in evidence.items():
+        assert retained[key] == value
+    assert retained["wire_reject_term"] == {
+        "schema_version": 1,
+        "scope": "localtxsubmission-submitfail-reject-term",
+        "encoding": "base64",
+        "bytes_base64": evidence["canonical_cbor_base64"],
+        "length": evidence["canonical_cbor_length"],
+        "sha256": evidence["canonical_cbor_sha256"],
+        "message_tag": 2,
+        "matches_canonical_cbor": True,
+    }
     assert "reject_evidence_validation" not in result["protocol_receipt"]
 
 

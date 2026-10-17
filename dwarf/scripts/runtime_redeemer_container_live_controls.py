@@ -76,6 +76,7 @@ _RAW_REJECT_TERM_NODE_LIMIT = 4_096
 _RAW_REJECT_TERM_JSON_LIMIT = 262_144
 _RAW_REJECT_WIRE_SCOPE = "localtxsubmission-mini-protocol-response-after-demux"
 _RAW_REJECT_CANONICAL_SCOPE = "decoded-reject-term-canonical-cbor"
+_RAW_REJECT_TERM_WIRE_SCOPE = "localtxsubmission-submitfail-reject-term"
 _UTC_TIMESTAMP_RE = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z"
 )
@@ -88,6 +89,42 @@ def _decode_reject_base64(value: object, field: str) -> bytes:
         return base64.b64decode(value, validate=True)
     except (binascii.Error, ValueError) as error:
         raise ValueError(f"{field} is not valid base64") from error
+
+
+def _extract_reject_term_wire(wire: bytes, canonical: bytes) -> dict[str, Any]:
+    if not wire.startswith(b"\x82\x02"):
+        raise ValueError("reject wire response is not SubmitFail")
+    exact_term = wire[2:]
+
+    def decode_one(raw: bytes) -> object:
+        decoder = cbor2.CBORDecoder(io.BytesIO(raw))
+        try:
+            value = decoder.decode()
+        except cbor2.CBORDecodeError as error:
+            raise ValueError("reject term CBOR is invalid") from error
+        try:
+            decoder.decode()
+        except cbor2.CBORDecodeEOF:
+            return value
+        except cbor2.CBORDecodeError as error:
+            raise ValueError("reject term CBOR is invalid") from error
+        raise ValueError("reject term CBOR has trailing values")
+
+    wire_term = decode_one(exact_term)
+    canonical_term = decode_one(canonical)
+    if wire_term != canonical_term:
+        raise ValueError("wire and canonical reject terms differ")
+
+    return {
+        "schema_version": 1,
+        "scope": _RAW_REJECT_TERM_WIRE_SCOPE,
+        "encoding": "base64",
+        "bytes_base64": base64.b64encode(exact_term).decode("ascii"),
+        "length": len(exact_term),
+        "sha256": hashlib.sha256(exact_term).hexdigest(),
+        "message_tag": 2,
+        "matches_canonical_cbor": exact_term == canonical,
+    }
 
 
 def _reject_term_tree_metrics(tree: object) -> tuple[int, int]:
@@ -294,9 +331,14 @@ def _validated_reject_evidence(
             not isinstance(failure_reason, str) or not failure_reason or len(failure_reason) > 256
         ):
             raise ValueError("incomplete reject evidence lacks a bounded failure reason")
+        retained = dict(evidence)
+        if status == "complete":
+            retained["wire_reject_term"] = _extract_reject_term_wire(wire, canonical)
     except ValueError as error:
         return None, str(error)[:256]
-    return dict(evidence), None
+    return retained, None
+
+
 _TX_SUBMISSION_INIT_DELAY_RE = re.compile(
     r"ncTxSubmissionInitDelay\s*=\s*"
     r"(?:TxSubmissionInitDelay\s+)?(?P<seconds>\d+(?:\.\d+)?)s"
