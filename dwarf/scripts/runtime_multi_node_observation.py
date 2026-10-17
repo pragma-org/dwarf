@@ -427,7 +427,29 @@ def _observe_connection_state(
                 connect_failures += 1
         ss_proc = _run(["docker", "exec", container_name, "ss", "-tan"], timeout=10)
         if ss_proc.returncode != 0:
-            raise RuntimeError("multi-node observation could not capture docker ss output")
+            return {
+                "target_node": str(node.get("name") or ""),
+                "pid": host_pid,
+                "pid_scope": "docker-host",
+                "port": port,
+                "container_port": container_port,
+                "connect_scope": "container-loopback",
+                "connect_successes": connect_successes,
+                "connect_failures": connect_failures,
+                "ss_match_count": None,
+                "ss_listen_count": None,
+                "ss_established_count": None,
+                "lsof_socket_count": None,
+                "peer_nodes_connected": None,
+                "responsive": connect_successes >= 1,
+                "responsiveness_basis": ["docker-pid", "container-loopback-connect"],
+                "socket_observation": {
+                    "status": "unavailable",
+                    "reason": "ss-command-failed",
+                    "return_code": int(ss_proc.returncode),
+                },
+                "ss_lines": None,
+            }
         filtered_lines = []
         for line in (ss_proc.stdout or "").splitlines():
             text = line.strip()
@@ -459,6 +481,8 @@ def _observe_connection_state(
             "lsof_socket_count": 0,
             "peer_nodes_connected": peer_nodes,
             "responsive": bool(connect_successes >= 1 and listen_count >= 1),
+            "responsiveness_basis": ["docker-pid", "container-loopback-connect", "ss-listen"],
+            "socket_observation": {"status": "available", "source": "ss"},
             "ss_lines": ss_lines,
         }
 
@@ -475,7 +499,26 @@ def _observe_connection_state(
 
     ss_proc = _run(["ss", "-tanp"], timeout=10)
     if ss_proc.returncode != 0:
-        raise RuntimeError("multi-node observation could not capture ss output")
+        return {
+            "target_node": str(node.get("name") or ""),
+            "pid": int(target["pid"]),
+            "port": port,
+            "connect_successes": connect_successes,
+            "connect_failures": connect_failures,
+            "ss_match_count": None,
+            "ss_listen_count": None,
+            "ss_established_count": None,
+            "lsof_socket_count": None,
+            "peer_nodes_connected": None,
+            "responsive": connect_successes >= 1,
+            "responsiveness_basis": ["host-pid", "tcp-connect"],
+            "socket_observation": {
+                "status": "unavailable",
+                "reason": "ss-command-failed",
+                "return_code": int(ss_proc.returncode),
+            },
+            "ss_lines": None,
+        }
     filtered_lines = []
     for line in (ss_proc.stdout or "").splitlines():
         text = line.strip()
@@ -503,6 +546,8 @@ def _observe_connection_state(
         "lsof_socket_count": max(0, len(lsof_lines) - 1),
         "peer_nodes_connected": peer_nodes,
         "responsive": listen_count >= 1,
+        "responsiveness_basis": ["host-pid", "ss-listen"],
+        "socket_observation": {"status": "available", "source": "ss"},
         "ss_lines": ss_lines,
     }
 
@@ -638,7 +683,7 @@ def _summarize_observation(per_node: dict[str, dict], node_ids: list[str], metad
         connection_state = body.get("connection_state") or {}
         if connection_state.get("responsive"):
             responsive_nodes.append(node_id)
-        for peer in connection_state.get("peer_nodes_connected", []):
+        for peer in connection_state.get("peer_nodes_connected") or []:
             observed_edges.add((node_id, peer))
         latest_tip = ((body.get("tip_state") or {}).get("latest_tip")) or {}
         if latest_tip.get("ok") and latest_tip.get("hash"):

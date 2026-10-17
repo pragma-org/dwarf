@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import sys
@@ -54,8 +55,25 @@ def _stage_loader_scripts(scripts_root: Path) -> None:
         "--chain-dir ${BASEDIR}/chain.${NETWORK_NAME}.db",
     )
     amaru_loader_path.write_text(amaru_loader, encoding="utf-8")
+    funding_loader_path = scripts_root / "apply-workload-funding.sh"
+    shutil.copy2(
+        AMARU_TESTNET_DIR / "apply-workload-funding.sh", funding_loader_path
+    )
+    producer_stake_loader_path = scripts_root / "apply-single-producer-stake.sh"
+    shutil.copy2(
+        AMARU_TESTNET_DIR / "apply-single-producer-stake.sh",
+        producer_stake_loader_path,
+    )
+    guardrails_loader_path = scripts_root / "apply-governance-guardrails.sh"
+    shutil.copy2(
+        AMARU_TESTNET_DIR / "apply-governance-guardrails.sh",
+        guardrails_loader_path,
+    )
     cardano_loader_path.chmod(0o755)
     amaru_loader_path.chmod(0o755)
+    funding_loader_path.chmod(0o755)
+    producer_stake_loader_path.chmod(0o755)
+    guardrails_loader_path.chmod(0o755)
 
 
 def ensure_loader_image(
@@ -111,6 +129,21 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
     amaru_state_root.mkdir(parents=True, exist_ok=True)
     _stage_loader_scripts(scripts_root)
 
+    funding_request = env_root / "generated-workload-funding.json"
+    if not funding_request.is_file():
+        raise RuntimeError("Amaru bootstrap synthesis requires generated workload funding")
+    staged_funding_request = workspace_root / "workload-funding.json"
+    shutil.copy2(funding_request, staged_funding_request)
+    guardrails_request = env_root / "generated-governance-guardrails.json"
+    staged_guardrails_request = None
+    if plan.get("governance_guardrails_fixture"):
+        if not guardrails_request.is_file():
+            raise RuntimeError(
+                "Amaru bootstrap synthesis requires governance guardrails request"
+            )
+        staged_guardrails_request = workspace_root / "governance-guardrails.json"
+        shutil.copy2(guardrails_request, staged_guardrails_request)
+
     source_configs_root = env_root / "configs" if (env_root / "configs").exists() else env_root
 
     config_roots: dict[str, str] = {}
@@ -165,6 +198,10 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
         "workspace_root": str(workspace_root),
         "scripts_root": str(scripts_root),
         "generated_root": str(generated_root),
+        "workload_funding_request": str(staged_funding_request),
+        "governance_guardrails_request": (
+            str(staged_guardrails_request) if staged_guardrails_request else None
+        ),
         "config_roots": config_roots,
         "target_config_root": str(env_root),
         "cardano_state_roots": cardano_state_roots,
@@ -214,7 +251,22 @@ def loader_commands(*, layout: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -
         f"{_docker_bind_source(layout, layout['generated_root'])}:/data/generated",
         "-v",
         f"{_docker_bind_source(layout, scripts_root / 'cardano-loader.sh')}:/data/cardano-loader.sh:ro",
+        "-v",
+        f"{_docker_bind_source(layout, scripts_root / 'apply-workload-funding.sh')}:/data/apply-workload-funding.sh:ro",
+        "-v",
+        f"{_docker_bind_source(layout, scripts_root / 'apply-single-producer-stake.sh')}:/data/apply-single-producer-stake.sh:ro",
+        "-v",
+        f"{_docker_bind_source(layout, scripts_root / 'apply-governance-guardrails.sh')}:/data/apply-governance-guardrails.sh:ro",
+        "-v",
+        f"{_docker_bind_source(layout, layout['workload_funding_request'])}:/data/workload-funding.json:ro",
     ]
+    if layout.get("governance_guardrails_request"):
+        cardano_cmd.extend(
+            [
+                "-v",
+                f"{_docker_bind_source(layout, layout['governance_guardrails_request'])}:/data/governance-guardrails.json:ro",
+            ]
+        )
     for slot, config_root in sorted(layout["config_roots"].items(), key=lambda item: int(item[0])):
         cardano_cmd.extend(
             ["-v", f"{_docker_bind_source(layout, config_root)}:/configs/{slot}"]
@@ -257,6 +309,110 @@ def loader_commands(*, layout: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -
         )
     amaru_cmd.extend([loader_image, "/data/amaru-loader.sh"])
     return cardano_cmd, amaru_cmd
+
+
+def _validated_workload_funding_evidence(layout: dict) -> dict:
+    request = json.loads(
+        Path(str(layout["workload_funding_request"])).read_text(encoding="utf-8")
+    )
+    evidence_path = Path(str(layout["generated_root"])) / "workload-funding-applied.json"
+    if not evidence_path.is_file():
+        raise RuntimeError("cardano loader omitted generated workload funding evidence")
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    for field in ("address", "address_base16", "verification_key", "id"):
+        if evidence.get(field) != request.get(field):
+            raise RuntimeError("cardano loader workload funding identity does not match")
+    request_credentials = request.get("credentials") or [
+        {
+            field: request.get(field)
+            for field in ("id", "address", "address_base16", "verification_key")
+        }
+    ]
+    evidence_credentials = evidence.get("credentials") or [evidence]
+    if not isinstance(request_credentials, list) or not isinstance(
+        evidence_credentials, list
+    ) or len(request_credentials) != len(evidence_credentials):
+        raise RuntimeError("cardano loader workload funding credential set is invalid")
+    for requested, retained in zip(request_credentials, evidence_credentials):
+        if not isinstance(requested, dict) or not isinstance(retained, dict):
+            raise RuntimeError("cardano loader workload funding credential is invalid")
+        for field in ("id", "address", "address_base16", "verification_key"):
+            if retained.get(field) != requested.get(field):
+                raise RuntimeError("cardano loader workload funding identity does not match")
+        if (
+            not isinstance(retained.get("lovelace"), int)
+            or isinstance(retained.get("lovelace"), bool)
+            or retained["lovelace"] <= 0
+            or not isinstance(retained.get("materialized"), bool)
+        ):
+            raise RuntimeError("cardano loader workload funding credential is invalid")
+    lovelace = evidence.get("lovelace")
+    expected_sha256 = str(evidence.get("shelley_genesis_sha256") or "")
+    if (
+        not isinstance(lovelace, int)
+        or isinstance(lovelace, bool)
+        or lovelace <= 0
+        or not isinstance(evidence.get("materialized"), bool)
+        or len(expected_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in expected_sha256)
+    ):
+        raise RuntimeError("cardano loader workload funding evidence is invalid")
+    for config_root in layout["config_roots"].values():
+        genesis_path = Path(str(config_root)) / "configs" / "shelley-genesis.json"
+        genesis = json.loads(genesis_path.read_text(encoding="utf-8"))
+        for retained in evidence_credentials:
+            if (genesis.get("initialFunds") or {}).get(
+                retained["address_base16"]
+            ) != retained["lovelace"]:
+                raise RuntimeError(
+                    "staged Shelley genesis omitted generated workload funding"
+                )
+        if hashlib.sha256(genesis_path.read_bytes()).hexdigest() != expected_sha256:
+            raise RuntimeError("staged Shelley genesis does not match funding evidence")
+    return evidence
+
+
+def _validated_governance_guardrails_evidence(layout: dict) -> dict | None:
+    request_path = layout.get("governance_guardrails_request")
+    if not request_path:
+        return None
+    request = json.loads(Path(str(request_path)).read_text(encoding="utf-8"))
+    evidence_path = (
+        Path(str(layout["generated_root"]))
+        / "governance-guardrails-applied.json"
+    )
+    if not evidence_path.is_file():
+        raise RuntimeError("cardano loader omitted governance guardrails evidence")
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    for field in (
+        "fixture",
+        "effective_script_hash",
+        "script_sha256",
+    ):
+        if evidence.get(field) != request.get(field):
+            raise RuntimeError("cardano loader governance guardrails identity does not match")
+    if evidence.get("prior_script_hash") != request.get(
+        "expected_source_script_hash"
+    ):
+        raise RuntimeError("cardano loader governance source policy does not match")
+    expected_sha256 = str(evidence.get("conway_genesis_sha256") or "")
+    if (
+        evidence.get("config_count") != len(layout["config_roots"])
+        or len(expected_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in expected_sha256)
+    ):
+        raise RuntimeError("cardano loader governance guardrails evidence is invalid")
+    for config_root in layout["config_roots"].values():
+        genesis_path = Path(str(config_root)) / "configs" / "conway-genesis.json"
+        genesis = json.loads(genesis_path.read_text(encoding="utf-8"))
+        if (
+            (genesis.get("constitution") or {}).get("script")
+            != evidence["effective_script_hash"]
+        ):
+            raise RuntimeError("staged Conway genesis omitted governance guardrails fixture")
+        if hashlib.sha256(genesis_path.read_bytes()).hexdigest() != expected_sha256:
+            raise RuntimeError("staged Conway genesis does not match guardrails evidence")
+    return evidence
 
 
 def bootstrap_producer_command(
@@ -433,11 +589,32 @@ def synthesize_amaru_bootstrap(
     cardano = run_command(cardano_cmd)
     if cardano.returncode != 0:
         raise RuntimeError(f"cardano loader failed: {cardano.stderr or cardano.stdout}")
+    workload_funding = _validated_workload_funding_evidence(layout)
+    governance_guardrails = _validated_governance_guardrails_evidence(layout)
     producer_cmd = bootstrap_producer_command(layout=layout, producer_image=producer_image)
     producer = run_command(producer_cmd)
     if producer.returncode != 0:
         raise RuntimeError(f"Amaru bootstrap producer failed: {producer.stderr or producer.stdout}")
     apply_producer_bundle(layout)
+    final_genesis = runtime_root / "env" / "shelley-genesis.json"
+    if hashlib.sha256(final_genesis.read_bytes()).hexdigest() != workload_funding[
+        "shelley_genesis_sha256"
+    ]:
+        raise RuntimeError("applied producer genesis does not match workload funding evidence")
+    if governance_guardrails:
+        final_conway = runtime_root / "env" / "conway-genesis.json"
+        if hashlib.sha256(final_conway.read_bytes()).hexdigest() != governance_guardrails[
+            "conway_genesis_sha256"
+        ]:
+            raise RuntimeError(
+                "applied producer Conway genesis does not match guardrails evidence"
+            )
+        final_body = json.loads(final_conway.read_text(encoding="utf-8"))
+        if (
+            (final_body.get("constitution") or {}).get("script")
+            != governance_guardrails["effective_script_hash"]
+        ):
+            raise RuntimeError("applied producer genesis omitted governance guardrails fixture")
     report = {
         "network_name": layout["network_name"],
         "loader_image": loader_image,
@@ -447,6 +624,8 @@ def synthesize_amaru_bootstrap(
         "amaru_slot_map": layout["amaru_slot_map"],
         "cardano_command": cardano_cmd,
         "amaru_command": producer_cmd,
+        "generated_workload_funding": workload_funding,
+        "governance_guardrails_fixture": governance_guardrails,
     }
     report_path = runtime_root / "amaru-bootstrap-loader" / "synth-report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

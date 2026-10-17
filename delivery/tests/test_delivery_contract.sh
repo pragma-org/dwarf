@@ -225,6 +225,8 @@ if awk '/^  dwarf-fw:/{dashboard=1} /^  dwarf-controller:/{dashboard=0} dashboar
 fi
 [[ $(grep -Fc 'DWARF_INSTALLATION_ID: ${DWARF_INSTALLATION_ID:?set DWARF_INSTALLATION_ID}' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml") -eq 2 ]]
 grep -q 'DWARF_CONTROLLER_TOKEN' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
+[[ $(grep -Fc 'DWARF_RUN_ARTIFACT_BASE_URL:' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml") -eq 1 ]]
+awk '/^  dwarf-controller:/{controller=1} /^networks:/{controller=0} controller && /DWARF_RUN_ARTIFACT_BASE_URL:/{found=1} END{exit found ? 0 : 1}' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
 grep -q 'DWARF_CONTROLLER_IMAGE' "${PACKAGE_ROOT}/delivery/scripts/build-image.sh"
 grep -q 'FROM scratch' "${PACKAGE_ROOT}/infrastructure/docker/dwarf-controller.Dockerfile"
 grep -q 'controller image must not inherit the dashboard state volume' "${PACKAGE_ROOT}/delivery/scripts/build-image.sh"

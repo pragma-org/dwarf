@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime_redeemer_container_differential params",
+  "type": "object",
+  "required": [
+    "primitive",
+    "corpus_dir",
+    "runtime_metadata_path",
+    "target_node",
+    "reference_node",
+    "output_dir"
+  ],
+  "properties": {
+    "primitive": {"const": "runtime_redeemer_container_differential"},
+    "corpus_dir": {"type": "string", "minLength": 1},
+    "runtime_metadata_path": {"type": "string", "minLength": 1},
+    "target_node": {"type": "string", "minLength": 1},
+    "reference_node": {"type": "string", "minLength": 1},
+    "output_dir": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,60 @@
+{
+  "cases": [
+    {
+      "case_id": "no-script-redeemers-omitted",
+      "cbor_sha256": "efe578dc56adf76e4f79a9dfe20d0bb9fc8468e85822c0aff77ee8c62cede8be",
+      "cbor_size": 201,
+      "expected": {
+        "reference": "phase1_reject",
+        "target": "phase1_reject"
+      },
+      "tx_file": "no-script-redeemers-omitted.tx"
+    },
+    {
+      "case_id": "no-script-redeemers-empty-list",
+      "cbor_sha256": "7fb6a8b7cedbae1636d9600158f1c1d2fdfc8ec564a02cf860ecb7fc6d5c1544",
+      "cbor_size": 203,
+      "expected": {
+        "reference": "decode_reject",
+        "target": "phase1_reject"
+      },
+      "tx_file": "no-script-redeemers-empty-list.tx"
+    },
+    {
+      "case_id": "no-script-redeemers-empty-map",
+      "cbor_sha256": "51f3c059fbd44265f3c9800071a52e55263f994915932dc2076d81a428296d07",
+      "cbor_size": 203,
+      "expected": {
+        "reference": "decode_reject",
+        "target": "phase1_reject"
+      },
+      "tx_file": "no-script-redeemers-empty-map.tx"
+    },
+    {
+      "case_id": "script-redeemer-valid-control",
+      "cbor_sha256": "07fcd9976700f9d39bd97f3dc48d883a6be34f85a68e4e583cf9ea80bf0c7b31",
+      "cbor_size": 379,
+      "expected": {
+        "reference": "phase1_reject",
+        "target": "phase1_reject"
+      },
+      "tx_file": "script-redeemer-valid-control.tx"
+    },
+    {
+      "case_id": "script-redeemers-omitted",
+      "cbor_sha256": "ae8e7bb7ddf9c01ea7541e1ecc4b8c937f20183edb35a785c580f03928cc9eb5",
+      "cbor_size": 367,
+      "expected": {
+        "reference": "phase1_reject",
+        "target": "phase1_reject"
+      },
+      "tx_file": "script-redeemers-omitted.tx"
+    }
+  ],
+  "purpose": "redeemer-container-decoder-differential",
+  "schema_version": 1,
+  "sources": {
+    "no_script": "dwarf/corpora/redeemer-container/sources/no-script-underfee.tx",
+    "valid_script": "dwarf/corpora/redeemer-container/sources/valid-script-exu-zero.tx"
+  }
+}

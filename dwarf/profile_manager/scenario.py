@@ -419,13 +419,41 @@ def _validate_substrate(value):
             raise ScenarioValidationError(f"substrate.nodes[{index}].version must be a non-empty string")
         if not isinstance(role, str) or not role:
             raise ScenarioValidationError(f"substrate.nodes[{index}].role must be a non-empty string")
+        image = node.get("image")
+        if image is not None and (not isinstance(image, str) or not image):
+            raise ScenarioValidationError(
+                f"substrate.nodes[{index}].image must be a non-empty string when present"
+            )
+        source_revision = node.get("source_revision")
+        if source_revision is not None and (
+            not isinstance(source_revision, str) or not source_revision
+        ):
+            raise ScenarioValidationError(
+                f"substrate.nodes[{index}].source_revision must be a non-empty string when present"
+            )
+        identity_binding = str(node.get("identity_binding") or "frozen")
+        if identity_binding not in {"frozen", "resolved-plan"}:
+            raise ScenarioValidationError(
+                f"substrate.nodes[{index}].identity_binding must be frozen or resolved-plan"
+            )
         node_host = node.get("host")
         if host_strategy == "explicit":
             if node_host not in host_ids:
                 raise ScenarioValidationError(f"substrate.nodes[{index}].host must reference a declared substrate.hosts id")
         elif node_host is not None:
             raise ScenarioValidationError("substrate.nodes[*].host requires substrate.host_strategy='explicit'")
-        normalized_nodes.append({"id": node_id, "impl": impl, "version": version, "role": role, "host": node_host})
+        normalized_nodes.append(
+            {
+                "id": node_id,
+                "impl": impl,
+                "version": version,
+                "role": role,
+                "host": node_host,
+                "image": image,
+                "source_revision": source_revision,
+                "identity_binding": identity_binding,
+            }
+        )
     topology = value.get("topology") or {}
     if not isinstance(topology, dict):
         raise ScenarioValidationError("substrate.topology must be a mapping")
@@ -473,7 +501,28 @@ def _validate_substrate(value):
         raise ScenarioValidationError(
             f"substrate.compose_mode must be one of {VALID_SUBSTRATE_COMPOSE_MODES}, got {compose_mode!r}"
         )
-    return {
+    guardrails_fixture = value.get("governance_guardrails_fixture")
+    if guardrails_fixture is not None:
+        if not isinstance(guardrails_fixture, dict) or set(guardrails_fixture) != {
+            "name",
+            "expected_active_script_hash",
+        }:
+            raise ScenarioValidationError(
+                "substrate.governance_guardrails_fixture requires name and expected_active_script_hash"
+            )
+        if guardrails_fixture.get("name") != "always-succeeds-v3":
+            raise ScenarioValidationError(
+                "substrate.governance_guardrails_fixture name is unsupported"
+            )
+        active_hash = guardrails_fixture.get("expected_active_script_hash")
+        if not isinstance(active_hash, str) or not re.fullmatch(
+            r"[0-9a-f]{56}", active_hash
+        ):
+            raise ScenarioValidationError(
+                "substrate.governance_guardrails_fixture expected hash is invalid"
+            )
+        guardrails_fixture = dict(guardrails_fixture)
+    normalized_substrate = {
         "compose_mode": compose_mode,
         "host_strategy": host_strategy,
         "hosts": normalized_hosts,
@@ -482,6 +531,9 @@ def _validate_substrate(value):
         "nodes": normalized_nodes,
         "topology": {"edges": normalized_edges},
     }
+    if guardrails_fixture is not None:
+        normalized_substrate["governance_guardrails_fixture"] = guardrails_fixture
+    return normalized_substrate
 
 
 def _optional_string_list(body, key):

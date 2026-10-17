@@ -12,6 +12,8 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import cbor2
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -66,6 +68,15 @@ PUBLIC_NETWORK_MAGIC = {
     "preprod": 1,
     "preview": 2,
 }
+
+GOVERNANCE_GUARDRAILS_FIXTURE = "always-succeeds-v3"
+GOVERNANCE_GUARDRAILS_SCRIPT = (
+    SCRIPT_DIR.parent
+    / "corpora"
+    / "redeemer-container"
+    / "live-controls"
+    / "always-succeeds-v3.plutus"
+)
 
 
 def _is_public_network(network_name: str) -> bool:
@@ -369,6 +380,15 @@ def _parse_amaru_runtime_progress(text: str) -> dict:
         int(value)
         for value in re.findall(r"\bintersect found\b[^\n]*?\bhighest=([0-9]+)\.", text or "")
     ]
+    current_intersections = [
+        (int(current), int(highest))
+        for current, highest in re.findall(
+            r"\bchainsync\.intersect_found\b[^\n]*?\bcurrent=\"?\[([0-9]+),"
+            r"[^\n]*?\bhighest=\"?\[([0-9]+),",
+            text or "",
+        )
+    ]
+    highest_slots.extend(highest for _, highest in current_intersections)
     adopted_slots = [
         int(value)
         for value in re.findall(r"\badopted tip\b[^\n]*?\btip\.slot=([0-9]+)", text or "")
@@ -382,14 +402,21 @@ def _parse_amaru_runtime_progress(text: str) -> dict:
         "panic": r"\bpanicked at\b",
         "consensus-terminated": r"\bConsensus died\b",
         "future-rollback": r"attempted roll back in the future",
+        "handshake-decode-error": r"failed to decode message from network[^\n]*decode error",
     }
     blocking_signals = [
         name
         for name, pattern in blocking_patterns.items()
         if re.search(pattern, text or "", flags=re.IGNORECASE)
     ]
-    bootstrap_slot = bootstrap_slots[-1] if bootstrap_slots else None
-    highest_peer_slot = max(highest_slots) if highest_slots else None
+    bootstrap_slot = (
+        bootstrap_slots[-1]
+        if bootstrap_slots
+        else (current_intersections[0][0] if current_intersections else None)
+    )
+    # Measure convergence against the stable peer tip advertised at the first
+    # intersection. A live producer may advance while the follower catches up.
+    highest_peer_slot = highest_slots[0] if highest_slots else None
     latest_adopted_slot = max(adopted_slots) if adopted_slots else None
     advanced = bool(
         bootstrap_slot is not None
@@ -404,6 +431,7 @@ def _parse_amaru_runtime_progress(text: str) -> dict:
     return {
         "bootstrap_slot": bootstrap_slot,
         "highest_peer_slot": highest_peer_slot,
+        "convergence_target": "initial-advertised-peer-tip",
         "latest_adopted_slot": latest_adopted_slot,
         "intersection_found": bool(highest_slots),
         "advanced": advanced,
@@ -505,6 +533,42 @@ def _apply_kes_genesis_override_to_shelley(*, genesis_path: Path, override: dict
     }
 
 
+def _prepare_governance_guardrails_fixture_request(
+    *, fixture: dict | None
+) -> dict | None:
+    """Describe an explicit guardrails edit for the staged pinned loader config."""
+
+    if not fixture:
+        return None
+    if set(fixture) != {"name", "expected_active_script_hash"}:
+        raise RuntimeError(
+            "governance_guardrails_fixture requires name and expected_active_script_hash"
+        )
+    if fixture["name"] != GOVERNANCE_GUARDRAILS_FIXTURE:
+        raise RuntimeError("governance guardrails fixture is not supported")
+    expected = str(fixture["expected_active_script_hash"] or "").lower()
+    if not re.fullmatch(r"[0-9a-f]{56}", expected):
+        raise RuntimeError("expected constitution guardrails hash is invalid")
+
+    envelope = json.loads(GOVERNANCE_GUARDRAILS_SCRIPT.read_text(encoding="utf-8"))
+    if envelope.get("type") != "PlutusScriptV3":
+        raise RuntimeError("governance guardrails fixture is not Plutus V3")
+    encoded = bytes.fromhex(str(envelope.get("cborHex") or ""))
+    script = cbor2.loads(encoded)
+    if not isinstance(script, bytes):
+        raise RuntimeError("governance guardrails fixture CBOR is not a script byte string")
+    fixture_hash = hashlib.blake2b(b"\x03" + script, digest_size=28).hexdigest()
+
+    return {
+        "fixture": GOVERNANCE_GUARDRAILS_FIXTURE,
+        "expected_source_script_hash": expected,
+        "effective_script_hash": fixture_hash,
+        "script_sha256": hashlib.sha256(
+            GOVERNANCE_GUARDRAILS_SCRIPT.read_bytes()
+        ).hexdigest(),
+    }
+
+
 def _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(*, genesis_path: Path, nodes: list[dict]) -> bool:
     if not any(
         node.get("impl") == "cardano-node"
@@ -547,6 +611,86 @@ def _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(*, genesis_path: Pa
     if changed:
         genesis_path.write_text(json.dumps(body, indent=4) + "\n", encoding="utf-8")
     return changed
+
+
+def _prepare_generated_workload_funding(
+    *, env_root: Path, cardano_cli: str, network_magic: int
+) -> dict:
+    """Stage a public identity request for the post-copy bootstrap loader hook."""
+
+    if not (env_root / "shelley-genesis.json").is_file():
+        raise RuntimeError("cardano-testnet omitted the Shelley genesis")
+
+    credentials = []
+    for index in range(1, 4):
+        credential_id = f"utxo{index}"
+        key_root = env_root / "utxo-keys" / credential_id
+        verification_key = key_root / "utxo.vkey"
+        signing_key = key_root / "utxo.skey"
+        if not verification_key.is_file() or not signing_key.is_file():
+            raise RuntimeError(
+                "cardano-testnet omitted one of three generated workload credentials"
+            )
+        address_result = run_command(
+            [
+                cardano_cli,
+                "latest",
+                "genesis",
+                "initial-addr",
+                "--verification-key-file",
+                str(verification_key),
+                "--testnet-magic",
+                str(network_magic),
+            ]
+        )
+        if address_result.returncode != 0:
+            raise RuntimeError(
+                "failed to derive a generated workload address: "
+                f"{address_result.stderr or address_result.stdout}"
+            )
+        address = address_result.stdout.strip()
+        info_result = run_command(
+            [cardano_cli, "latest", "address", "info", "--address", address]
+        )
+        if info_result.returncode != 0:
+            raise RuntimeError(
+                "failed to inspect a generated workload address: "
+                f"{info_result.stderr or info_result.stdout}"
+            )
+        try:
+            address_info = json.loads(info_result.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("generated workload address metadata is invalid") from exc
+        address_base16 = str(address_info.get("base16") or "").lower()
+        if (
+            not address.startswith("addr_test")
+            or address_info.get("type") != "payment"
+            or len(address_base16) != 58
+            or not address_base16.startswith("60")
+            or any(character not in "0123456789abcdef" for character in address_base16)
+        ):
+            raise RuntimeError(
+                "generated workload address is not a testnet payment address"
+            )
+        credentials.append(
+            {
+                "id": credential_id,
+                "address": address,
+                "address_base16": address_base16,
+                "verification_key": f"utxo-keys/{credential_id}/utxo.vkey",
+            }
+        )
+    if len({item["address_base16"] for item in credentials}) != len(credentials):
+        raise RuntimeError("generated workload credentials do not have unique addresses")
+
+    request = {
+        **credentials[0],
+        "credentials": credentials,
+    }
+    (env_root / "generated-workload-funding.json").write_text(
+        json.dumps(request, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return request
 
 
 def _public_topology_with_upstream(
@@ -961,6 +1105,7 @@ def _docker_compose_body(
                 f"--network {json.dumps(network_name)} "
                 f"{peer_args} "
                 "--listen-address 0.0.0.0:5001 "
+                "--submit-api-address 0.0.0.0:3011 "
                 f"--ledger-dir {json.dumps(f'{state_root}/{ledger_name}')} "
                 f"--chain-dir {json.dumps(f'{state_root}/{chain_name}')} "
                 + (
@@ -1015,6 +1160,10 @@ def _docker_compose_body(
             services[node["id"]]["volumes"].append(f"{volume_root}/amaru:/amaru")
             services[node["id"]]["environment"] = {
                 "AMARU_MIGRATE_CHAIN_DB": "true",
+                # `tip.adopt` is INFO at most once per second and DEBUG for
+                # suppressed catch-up blocks. The readiness gate must observe
+                # actual adoption, not infer it from a ChainSync intersection.
+                "AMARU_LOG": "error,amaru=info,amaru_pure_stage=warn,amaru::consensus=debug",
             }
         elif node.get("target_mode") == "patched":
             services[node["id"]]["environment"] = {
@@ -1049,7 +1198,7 @@ def _inspect_docker_node(*, compose_project: str, node: dict) -> dict:
     network_name = f"{compose_project}-net"
     network_entry = body.get("NetworkSettings", {}).get("Networks", {}).get(network_name) or {}
     container_ip = network_entry.get("IPAddress", "")
-    return {
+    result = {
         "container_name": container_name,
         "container_id": body.get("Id", ""),
         "container_image_id": body.get("Image", ""),
@@ -1058,6 +1207,9 @@ def _inspect_docker_node(*, compose_project: str, node: dict) -> dict:
         "container_listen_address": f"{node['id']}:{_docker_container_port(node)}",
         "container_socket_path": _docker_container_socket_path(node),
     }
+    if node["impl"] == "amaru":
+        result["submit_api_url"] = f"http://{node['id']}:3011/api/submit/tx"
+    return result
 
 
 def _inspect_docker_node_remote(*, compose_project: str, node: dict, host: dict) -> dict:
@@ -1096,7 +1248,9 @@ def _compose_substrate_docker(
     public_assets = None
     resolved_public_network_magic = None
     cardano_testnet_config_compatibility = None
+    generated_workload_funding = None
     kes_genesis_override_evidence = None
+    governance_guardrails_fixture_evidence = None
     env_root = runtime_root / "env"
     if haskell_nodes and public_network:
         public_assets = _stage_public_network_assets(
@@ -1204,7 +1358,34 @@ def _compose_substrate_docker(
         and plan["network"].startswith("testnet_")
     )
     if uses_synthetic_amaru_bootstrap:
-        _synthesize_amaru_bootstrap_for_custom_testnet(runtime_root=runtime_root, plan=plan)
+        guardrails_request = _prepare_governance_guardrails_fixture_request(
+            fixture=plan.get("governance_guardrails_fixture"),
+        )
+        if guardrails_request:
+            (env_root / "generated-governance-guardrails.json").write_text(
+                json.dumps(guardrails_request, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        _prepare_generated_workload_funding(
+            env_root=env_root,
+            cardano_cli=support["cardano-cli"],
+            network_magic=int(plan["network_magic"]),
+        )
+        bootstrap_result = _synthesize_amaru_bootstrap_for_custom_testnet(
+            runtime_root=runtime_root, plan=plan
+        )
+        generated_workload_funding = bootstrap_result.get(
+            "generated_workload_funding"
+        )
+        governance_guardrails_fixture_evidence = bootstrap_result.get(
+            "governance_guardrails_fixture"
+        )
+        if guardrails_request and not isinstance(
+            governance_guardrails_fixture_evidence, dict
+        ):
+            raise RuntimeError("Amaru bootstrap omitted governance guardrails evidence")
+        if not isinstance(generated_workload_funding, dict):
+            raise RuntimeError("Amaru bootstrap omitted generated workload funding")
     elif not public_network:
         start_time_refresh = _refresh_cardano_testnet_start_times(env_root=runtime_root / "env")
     if plan.get("kes_genesis_override"):
@@ -1302,6 +1483,8 @@ def _compose_substrate_docker(
         "support_binaries": dict(support),
         "cardano_testnet_start_time_refresh": start_time_refresh,
         "cardano_testnet_config_compatibility": cardano_testnet_config_compatibility,
+        "generated_workload_funding": generated_workload_funding,
+        "governance_guardrails_fixture": governance_guardrails_fixture_evidence,
         "kes_genesis_override": kes_genesis_override_evidence,
         "nodes": metadata_nodes,
         "haskell_nodes": [node for node in metadata_nodes if node["impl"] == "cardano-node"],
@@ -1350,7 +1533,10 @@ def _compose_substrate_docker(
     amaru_nodes = [node for node in metadata_nodes if node["impl"] == "amaru"]
     amaru_progress_gate = None
     if amaru_nodes:
-        amaru_progress_gate = _wait_for_amaru_progress(nodes=amaru_nodes)
+        amaru_progress_gate = _wait_for_amaru_progress(
+            nodes=amaru_nodes,
+            timeout_seconds=healthy_timeout_seconds,
+        )
         write_json(output_dir / "amaru-chain-progress-gate.json", amaru_progress_gate)
         if not amaru_progress_gate.get("ready"):
             raise RuntimeError(
@@ -1372,6 +1558,8 @@ def _compose_substrate_docker(
         "support_binaries": dict(support),
         "cardano_testnet_start_time_refresh": start_time_refresh,
         "cardano_testnet_config_compatibility": cardano_testnet_config_compatibility,
+        "generated_workload_funding": generated_workload_funding,
+        "governance_guardrails_fixture": governance_guardrails_fixture_evidence,
         "kes_genesis_override": kes_genesis_override_evidence,
         "cardano_chain_progress_gate": chain_progress_gate,
         "amaru_chain_progress_gate": amaru_progress_gate,
@@ -1813,6 +2001,9 @@ def compose_substrate(
             raise RuntimeError(f"missing resolved binary for {node['id']}")
 
     plan["kes_genesis_override"] = substrate.get("kes_genesis_override")
+    plan["governance_guardrails_fixture"] = substrate.get(
+        "governance_guardrails_fixture"
+    )
 
     if compose_mode == "docker":
         if plan.get("host_strategy") == "explicit":

@@ -1,0 +1,93 @@
+{
+  "spec_version": "v1",
+  "id": "ledger-submit-empty-redeemers-container-differential-amaru-cardano-node",
+  "title": "Empty redeemers container validation-stage differential — operator-selected Amaru and cardano-node",
+  "authors": ["dwarf"],
+  "tags": [
+    "amaru",
+    "cardano-node",
+    "cbor",
+    "conway",
+    "differential",
+    "redeemers",
+    "security",
+    "witness-set"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "A decoder-stage divergence is not by itself proof of block adoption or consensus divergence.",
+    "The immutable five-case corpus is structural evidence: its underfee no-script source and phase-two-failing script source are not ledger-success controls.",
+    "A separate audited funded missing-redeemer rejection and valid-minimal acceptance pair is required before a ledger verdict."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "resolved-plan"
+  },
+  "runtime": "devnet",
+  "seed": "0xE3DEE001",
+  "substrate": {
+    "compose_mode": "docker",
+    "network": "testnet_42",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "amaru",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
+        "role": "submitter"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
+        "role": "reference"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {"from": "node1", "to": "node2"}
+      ]
+    }
+  },
+  "setup": [
+    {"primitive": "runtime_install_version", "output_dir": "outputs/substrate-install"},
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose",
+      "healthy_timeout_seconds": 360,
+      "timeout_seconds": 600
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_redeemer_container_differential",
+      "corpus_dir": "dwarf/corpora/redeemer-container",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "reference_node": "node2",
+      "output_dir": "outputs/redeemer-container-differential"
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": ["node1", "node2"],
+      "observation_window_seconds": 8,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": ["tip_state", "connection_state"],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "redeemer_container_differential_matches",
+      "result_path": "outputs/redeemer-container-differential/result.json"
+    },
+    {"primitive": "all_nodes_responsive"}
+  ],
+  "teardown": [
+    {"primitive": "runtime_teardown_substrate", "output_dir": "outputs/substrate-teardown"}
+  ]
+}

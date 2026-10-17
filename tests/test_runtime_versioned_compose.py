@@ -54,6 +54,91 @@ def test_cardano_only_short_kes_records_effective_generated_genesis(tmp_path):
     ).hexdigest()
 
 
+def test_staged_loader_replaces_only_reviewed_active_guardrails_after_pinned_copy(
+    tmp_path,
+):
+    genesis_path = tmp_path / "conway-genesis.json"
+    original = "fa24fb305126805cf2164c161d852a0e7330cf988f1fe558cf7d4a64"
+    genesis_path.write_text(
+        json.dumps(
+            {
+                "constitution": {
+                    "anchor": {"url": "", "dataHash": "0" * 64},
+                },
+                "govActionDeposit": 100_000_000_000,
+                "minFeeRefScriptCostPerByte": 15,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    original_bytes = genesis_path.read_bytes()
+    request = compose._prepare_governance_guardrails_fixture_request(
+        fixture={
+            "name": "always-succeeds-v3",
+            "expected_active_script_hash": original,
+        },
+    )
+
+    assert genesis_path.read_bytes() == original_bytes
+    assert request["expected_source_script_hash"] == original
+    assert request["effective_script_hash"] == (
+        "186e32faa80a26810392fda6d559c7ed4721a65ce1c9d4ef3e1c87b4"
+    )
+    configs = tmp_path / "configs"
+    pinned_genesis = configs / "1/configs/conway-genesis.json"
+    pinned_genesis.parent.mkdir(parents=True)
+    pinned_genesis.write_text(
+        json.dumps(
+            {
+                "constitution": {
+                    "anchor": {"url": None, "dataHash": None},
+                    "script": original,
+                },
+                "govActionDeposit": 100_000_000_000,
+                "minFeeRefScriptCostPerByte": 15,
+            }
+        ),
+        encoding="utf-8",
+    )
+    request_path = tmp_path / "governance-guardrails.json"
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    evidence_path = tmp_path / "governance-guardrails-applied.json"
+    scripts = tmp_path / "scripts"
+    bootstrap._stage_loader_scripts(scripts)
+    subprocess.run(
+        [
+            "bash",
+            str(scripts / "apply-governance-guardrails.sh"),
+            str(request_path),
+            str(evidence_path),
+            str(configs),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    body = json.loads(pinned_genesis.read_text(encoding="utf-8"))
+    assert body["constitution"]["script"] == request["effective_script_hash"]
+    assert body["govActionDeposit"] == 100_000_000_000
+    assert body["minFeeRefScriptCostPerByte"] == 15
+    assert evidence["conway_genesis_sha256"] == hashlib.sha256(
+        pinned_genesis.read_bytes()
+    ).hexdigest()
+    assert evidence["config_count"] == 1
+    validated = bootstrap._validated_governance_guardrails_evidence(
+        {
+            "governance_guardrails_request": str(request_path),
+            "generated_root": str(tmp_path),
+            "config_roots": {"1": str(configs / "1")},
+        }
+    )
+    assert validated == evidence
+
+    assert evidence["prior_script_hash"] == original
+
+
 def test_staged_legacy_loader_keeps_its_supported_header_import_contract(tmp_path):
     scripts = tmp_path / "scripts"
 
@@ -66,6 +151,157 @@ def test_staged_legacy_loader_keeps_its_supported_header_import_contract(tmp_pat
 
     cardano_body = (scripts / "cardano-loader.sh").read_text(encoding="utf-8")
     assert 'cp -fr /data/p${POOL_ID}-config/configs/* /configs/${POOL_ID}/' in cardano_body
+
+
+def test_staged_loader_funds_generated_credential_after_pinned_config_copy(tmp_path):
+    scripts = tmp_path / "scripts"
+    configs = tmp_path / "configs"
+    generated = tmp_path / "generated"
+    request = tmp_path / "workload-funding.json"
+    evidence = generated / "workload-funding-applied.json"
+    genesis = configs / "1" / "configs" / "shelley-genesis.json"
+    genesis.parent.mkdir(parents=True)
+    generated.mkdir()
+    genesis.write_text(
+        json.dumps(
+            {
+                "initialFunds": {"60" + "1" * 56: 120_000_000_000},
+                "maxLovelaceSupply": 45_000_000_000_000_000,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    request.write_text(
+        json.dumps(
+            {
+                "address": "addr_test1funded",
+                "address_base16": "60" + "2" * 56,
+                "verification_key": "utxo-keys/utxo1/utxo.vkey",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    bootstrap._stage_loader_scripts(scripts)
+    subprocess.run(
+        [
+            "bash",
+            str(scripts / "apply-workload-funding.sh"),
+            str(request),
+            str(evidence),
+            str(configs),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    body = json.loads(genesis.read_text(encoding="utf-8"))
+    retained = json.loads(evidence.read_text(encoding="utf-8"))
+    assert body["initialFunds"]["60" + "2" * 56] == 120_000_000_000
+    assert retained["address"] == "addr_test1funded"
+    assert retained["lovelace"] == 120_000_000_000
+    assert retained["shelley_genesis_sha256"] == hashlib.sha256(
+        genesis.read_bytes()
+    ).hexdigest()
+
+    loader = (scripts / "cardano-loader.sh").read_text(encoding="utf-8")
+    assert loader.index('copy_config "$pool_ix"') < loader.index(
+        "/data/apply-workload-funding.sh"
+    ) < loader.index("/data/apply-governance-guardrails.sh") < loader.index(
+        "db-synthesizer"
+    )
+    assert "BOOTSTRAP_TARGET_EPOCH=3" in loader
+    assert "BOOTSTRAP_TARGET_EPOCH_FRACTION_NUMERATOR=3" in loader
+    assert "BOOTSTRAP_TARGET_EPOCH_FRACTION_DENOMINATOR=4" in loader
+    normalized_loader = " ".join(loader.split())
+    assert (
+        "epoch_length * BOOTSTRAP_TARGET_EPOCH_FRACTION_NUMERATOR "
+        "/ BOOTSTRAP_TARGET_EPOCH_FRACTION_DENOMINATOR"
+    ) in normalized_loader
+    assert "epoch_length / 2" not in loader
+    assert 'db-synthesizer' in loader and '-s "${SYNTHESIS_SLOT}"' in loader
+    assert "86400 * 4" not in loader
+
+
+def test_staged_loader_consolidates_pinned_stake_onto_single_materialized_producer(tmp_path):
+    scripts = tmp_path / "scripts"
+    configs = tmp_path / "configs"
+    generated = tmp_path / "generated"
+    pool_id = "14f3abc153c13b3d8681e0e0bbde70594ac27f70d156a3727aac184a"
+    other_pool_ids = [str(index) * 56 for index in range(2, 6)]
+    genesis = configs / "1" / "configs" / "shelley-genesis.json"
+    cold_key = configs / "1" / "keys" / "cold.vkey"
+    genesis.parent.mkdir(parents=True)
+    cold_key.parent.mkdir(parents=True)
+    generated.mkdir()
+    cold_key.write_text(
+        json.dumps(
+            {
+                "type": "StakePoolVerificationKey_ed25519",
+                "cborHex": "5820e22abfb2eeefddd5f5cff46683b68cf9e6c366ad063d3903db14b8968c13f88a",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    genesis.write_text(
+        json.dumps(
+            {
+                "initialFunds": {"60" + "a" * 56: 120_000_000_000},
+                "staking": {
+                    "pools": {
+                        candidate: {"poolId": candidate, "publicKey": candidate}
+                        for candidate in [pool_id, *other_pool_ids]
+                    },
+                    "stake": {
+                        f"credential-{index}": candidate
+                        for index, candidate in enumerate(
+                            [pool_id, *other_pool_ids], start=1
+                        )
+                    },
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    bootstrap._stage_loader_scripts(scripts)
+    subprocess.run(
+        [
+            "bash",
+            str(scripts / "apply-single-producer-stake.sh"),
+            str(generated / "single-producer-stake-applied.json"),
+            str(configs),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    body = json.loads(genesis.read_text(encoding="utf-8"))
+    evidence = json.loads(
+        (generated / "single-producer-stake-applied.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert body["staking"]["pools"] == {
+        pool_id: {"poolId": pool_id, "publicKey": pool_id}
+    }
+    assert set(body["staking"]["stake"].values()) == {pool_id}
+    assert evidence == {
+        "config_count": 1,
+        "delegation_count": 5,
+        "materialized_pool_id": pool_id,
+        "prior_pool_count": 5,
+        "retained_pool_count": 1,
+    }
+    loader = (scripts / "cardano-loader.sh").read_text(encoding="utf-8")
+    assert loader.index('copy_config "$pool_ix"') < loader.index(
+        "/data/apply-single-producer-stake.sh"
+    ) < loader.index("/data/apply-workload-funding.sh")
 
 
 def test_versioned_compose_nodes_are_discoverable_as_dwarf_managed():
@@ -575,6 +811,73 @@ def test_generated_cardano_testnet_genesis_materializes_legacy_stake_for_10_x_no
     }
 
 
+def test_generated_private_chain_stages_the_emitted_utxo_identity(tmp_path, monkeypatch):
+    env_root = tmp_path / "env"
+    for index in range(1, 4):
+        key_root = env_root / "utxo-keys" / f"utxo{index}"
+        key_root.mkdir(parents=True)
+        (key_root / "utxo.vkey").write_text("public verification key\n", encoding="utf-8")
+        (key_root / "utxo.skey").write_text("private fixture placeholder\n", encoding="utf-8")
+    genesis_path = env_root / "shelley-genesis.json"
+    genesis_path.write_text(
+        json.dumps(
+            {
+                "initialFunds": {"60" + "1" * 56: 120_000_000_000},
+                "maxLovelaceSupply": 45_000_000_000_000_000,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        if "initial-addr" in command:
+            index = int(Path(command[command.index("--verification-key-file") + 1]).parent.name[-1])
+            return common.CommandResult(command, 0, f"addr_test1funded{index}\n", "")
+        if "address" in command and "info" in command:
+            index = int(command[-1][-1])
+            return common.CommandResult(
+                command,
+                0,
+                json.dumps({"base16": "60" + str(index) * 56, "type": "payment"}),
+                "",
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(compose, "run_command", fake_run)
+
+    before = genesis_path.read_bytes()
+    request = compose._prepare_generated_workload_funding(
+        env_root=env_root,
+        cardano_cli="/opt/cardano-cli",
+        network_magic=42,
+    )
+
+    assert genesis_path.read_bytes() == before
+    assert request == {
+        "id": "utxo1",
+        "address": "addr_test1funded1",
+        "address_base16": "60" + "1" * 56,
+        "verification_key": "utxo-keys/utxo1/utxo.vkey",
+        "credentials": [
+            {
+                "id": f"utxo{index}",
+                "address": f"addr_test1funded{index}",
+                "address_base16": "60" + str(index) * 56,
+                "verification_key": f"utxo-keys/utxo{index}/utxo.vkey",
+            }
+            for index in range(1, 4)
+        ],
+    }
+    assert json.loads(
+        (env_root / "generated-workload-funding.json").read_text(encoding="utf-8")
+    ) == request
+    assert "utxo.skey" not in json.dumps(request)
+    assert any("initial-addr" in command for command in commands)
+
+
 def test_synthetic_chain_cardano_service_omits_unrelated_byron_credentials():
     node = {
         "id": "bootstrap-cardano",
@@ -617,6 +920,53 @@ INFO adopted tip tip.slot=345560 tip.hash=bbb tip.block_height=3500 max_block_he
     assert parsed["ready"] is True
 
 
+def test_amaru_runtime_progress_parses_current_format_against_initial_peer_tip():
+    text = """
+2026-10-15T20:28:14Z INFO amaru::consensus: chainsync.intersect_found peer="node2:3001" current="[259129, h'aaa', 2579]" highest="[345447, h'bbb', 3463]"
+2026-10-15T20:28:15Z INFO amaru::consensus: tip.adopt slot=259216 header_hash="ccc" block_height=2580 max_block_height=2580 suppressed=0
+2026-10-15T20:33:31Z INFO amaru::consensus: chainsync.intersect_found peer="node2:3001" current="[345447, h'bbb', 3463]" highest="[345977, h'ddd', 3464]"
+2026-10-15T20:33:31Z DEBUG amaru::consensus: tip.adopt slot=345447 header_hash="bbb" block_height=3463 max_block_height=3463 suppressed=883
+"""
+
+    parsed = compose._parse_amaru_runtime_progress(text)
+
+    assert parsed["bootstrap_slot"] == 259129
+    assert parsed["highest_peer_slot"] == 345447
+    assert parsed["convergence_target"] == "initial-advertised-peer-tip"
+    assert parsed["latest_adopted_slot"] == 345447
+    assert parsed["intersection_found"] is True
+    assert parsed["advanced"] is True
+    assert parsed["converged"] is True
+    assert parsed["ready"] is True
+
+
+def test_amaru_runtime_progress_does_not_treat_intersection_as_adoption():
+    text = """
+INFO amaru::consensus: chainsync.intersect_found peer="node2:3001" current="[259129, h'aaa', 2579]" highest="[345447, h'bbb', 3463]"
+INFO amaru::consensus: tip.adopt slot=259216 header_hash="ccc" block_height=2580 max_block_height=2580 suppressed=0
+INFO amaru::consensus: chainsync.intersect_found peer="node2:3001" current="[345447, h'bbb', 3463]" highest="[345977, h'ddd', 3464]"
+"""
+
+    parsed = compose._parse_amaru_runtime_progress(text)
+
+    assert parsed["latest_adopted_slot"] == 259216
+    assert parsed["converged"] is False
+    assert parsed["ready"] is False
+
+
+def test_amaru_runtime_progress_blocks_network_handshake_decode_failure():
+    text = """
+INFO amaru::consensus: chainsync.intersect_found peer="node2:3001" current="[259129, h'aaa', 2579]" highest="[345447, h'bbb', 3463]"
+INFO amaru::consensus: chainsync.intersect_found peer="node2:3001" current="[345447, h'bbb', 3463]" highest="[345977, h'ddd', 3464]"
+ERROR amaru_pure_stage::types: failed to decode message from network err=decode error: expected array length 4 for label 0, got: Some(5)
+"""
+
+    parsed = compose._parse_amaru_runtime_progress(text)
+
+    assert parsed["blocking_signals"] == ["handshake-decode-error"]
+    assert parsed["ready"] is False
+
+
 def test_amaru_runtime_progress_rejects_one_block_then_vrf_failure():
     text = """
 INFO build_ledger tip.hash=aaa tip.slot=259181
@@ -653,6 +1003,10 @@ def test_versioned_amaru_service_migrates_bootstrap_state_before_run():
 
     service = body["services"]["amaru1"]
     assert service["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
+    assert service["environment"]["AMARU_LOG"] == (
+        "error,amaru=info,amaru_pure_stage=warn,amaru::consensus=debug"
+    )
+    assert "AMARU_TRACE" not in service["environment"]
     assert "exec amaru run" in service["command"][0]
     assert '--era-history "/amaru/amaru1/era-history.json"' in service["command"][0]
 
@@ -822,6 +1176,7 @@ def test_bootstrap_commands_translate_controller_paths_for_host_docker(tmp_path)
         "network_name": "testnet_42",
         "workspace_root": str(workspace_root),
         "generated_root": str(workspace_root / "generated"),
+        "workload_funding_request": str(workspace_root / "workload-funding.json"),
         "config_roots": {"1": str(workspace_root / "configs" / "1")},
         "cardano_state_roots": {"1": str(workspace_root / "cardano-state" / "1")},
         "amaru_state_roots": {"1": str(workspace_root / "amaru-state" / "1")},

@@ -3624,6 +3624,90 @@
       ],
       "version": "0.1.0"
     },
+    "runtime_redeemer_container_differential": {
+      "class": "RuntimeRedeemerContainerDifferential",
+      "family": "load",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/load/runtime_redeemer_container_differential.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_governance_zero_denominator_admission": {
+      "class": "RuntimeGovernanceZeroDenominatorAdmission",
+      "family": "load",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/load/runtime_hardening_probe.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_multiasset_compact_boundary": {
+      "class": "RuntimeMultiassetCompactBoundary",
+      "family": "load",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/load/runtime_hardening_probe.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_inline_datum_tag24_boundary": {
+      "class": "RuntimeInlineDatumTag24Boundary",
+      "family": "load",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/load/runtime_hardening_probe.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_uplc_deep_delay_stack_safety": {
+      "class": "RuntimeUplcDeepDelayStackSafety",
+      "family": "load",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/load/runtime_hardening_probe.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_transaction_array_arity_differential": {
+      "class": "RuntimeTransactionArrayArityDifferential",
+      "family": "load",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/load/runtime_hardening_probe.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
     "submit_outcome_matches": {
       "class": "SubmitOutcomeMatches",
       "family": "assertion",
@@ -3632,6 +3716,90 @@
       "runtimes": [
         "devnet",
         "library"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "redeemer_container_differential_matches": {
+      "class": "RedeemerContainerDifferentialMatches",
+      "family": "assertion",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/assertion/redeemer_container_differential_matches.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "governance_zero_denominator_admission_matches": {
+      "class": "GovernanceZeroDenominatorAdmissionMatches",
+      "family": "assertion",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/assertion/all_nodes_responsive.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "multiasset_compact_boundary_matches": {
+      "class": "MultiassetCompactBoundaryMatches",
+      "family": "assertion",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/assertion/multiasset_compact_boundary_matches.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "inline_datum_tag24_boundary_matches": {
+      "class": "InlineDatumTag24BoundaryMatches",
+      "family": "assertion",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/assertion/inline_datum_tag24_boundary_matches.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "uplc_deep_delay_stack_safety_matches": {
+      "class": "UplcDeepDelayStackSafetyMatches",
+      "family": "assertion",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/assertion/uplc_deep_delay_stack_safety_matches.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "transaction_array_arity_differential_matches": {
+      "class": "TransactionArrayArityDifferentialMatches",
+      "family": "assertion",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/assertion/transaction_array_arity_differential_matches.schema.json",
+      "runtimes": [
+        "devnet"
       ],
       "supports": [
         "cardano-node",

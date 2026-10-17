@@ -10,6 +10,10 @@
 # self-contained image build is ever needed.)
 FROM ubuntu:24.04
 
+ARG DWARF_SOURCE_REVISION
+LABEL org.opencontainers.image.revision=${DWARF_SOURCE_REVISION} \
+      io.dwarf.component="dwarf-localtx-submit-raw"
+
 ENV TZ=UTC
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -28,6 +32,7 @@ RUN ldconfig
 # into a second layer (doubling the image). Debug symbols are kept (not
 # stripped) — they aid post-mortem analysis on any finding.
 COPY --chmod=0755 dist/dwarf-adversary /usr/local/bin/dwarf-adversary
+COPY --chmod=0755 dist/dwarf-localtx-submit-raw /usr/local/bin/dwarf-localtx-submit-raw
 
 # Also ship the in-process decoder-fuzz harness (#4/FU5) + its baked seed corpus
 # in this SAME (public) image, so the Antithesis decoder-fuzz workload reuses this

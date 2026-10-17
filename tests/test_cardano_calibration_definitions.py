@@ -181,6 +181,8 @@ def test_cardano_plutus_workload_uses_the_target_container_socket(
     (key_root / "utxo.skey").write_text("skey", encoding="utf-8")
     output_dir = Path("/var/dwarf/runs/run-1/outputs/cardano-measurement-calibration")
     runtime, node, inspected = _owned_workload_runtime()
+    runtime["workload_key_root"] = "/env/utxo-keys/utxo1"
+    runtime["support_binaries"] = {"cardano-cli": "/opt/dwarf/bin/cardano-cli"}
     image = node["image_ref"]
     controller_id = "b" * 64
     controller = {
@@ -242,7 +244,14 @@ def test_cardano_plutus_workload_uses_the_target_container_socket(
         wrapper = Path(workload_runtime["support_binaries"]["cardano-cli"])
         text = wrapper.read_text(encoding="utf-8")
         assert workload_runtime["workload_socket_remote"] is True
+        assert workload_runtime["controller_support_binaries"] == {
+            "cardano-cli": "/opt/dwarf/bin/cardano-cli"
+        }
         assert workload_runtime["workload_key_root"] == str(key_root)
+        assert workload_runtime["controller_workload_key_root"] == str(key_root)
+        assert workload_runtime["container_workload_key_root"] == (
+            "/env/utxo-keys/utxo1"
+        )
         assert workload_node["socket_path"] == "/env/socket/node1/sock"
         assert workload_node["container_socket_path"] == "/env/socket/node1/sock"
         assert '--user "$(id -u):$(id -g)"' in text
