@@ -820,6 +820,389 @@ def test_governance_post_mutant_control_uses_three_block_terminal_threshold(
     assert captured["terminal_progress_blocks"] == 3
 
 
+def test_governance_post_mutant_control_confirms_same_bytes_directly_after_target_window(
+    monkeypatch, tmp_path
+):
+    from scripts import runtime_governance_zero_denominator as governance
+
+    payload = b"same-post-mutant-valid-control"
+    payload_sha256 = hashlib.sha256(payload).hexdigest()
+    transaction_id = "7" * 64
+    reference = {
+        "id": "node2",
+        "container_id": "1" * 64,
+        "container_image_id": "sha256:" + "2" * 64,
+        "source_revision": "3" * 40,
+    }
+    events = []
+
+    def fake_tip(**_kwargs):
+        events.append("tip-before-direct-submit")
+        return {"block": 41, "slot": 99, "hash": "4" * 64}
+
+    def fake_submit(**kwargs):
+        events.append("direct-reference-submit")
+        assert kwargs["payload"] == payload
+        assert kwargs["reference"] == reference
+        return {
+            "classification": "accepted",
+            "http": 202,
+            "identity_binding": {
+                "node_id": reference["id"],
+                "container_id": reference["container_id"],
+                "container_image_id": reference["container_image_id"],
+                "source_revision": reference["source_revision"],
+            },
+            "protocol_receipt": {
+                "outcome": "accepted",
+                "payload_sha256": payload_sha256,
+                "payload_length": len(payload),
+            },
+        }
+
+    def fake_wait(**kwargs):
+        events.append("direct-reference-inclusion")
+        assert kwargs["transaction_id"] == transaction_id
+        assert kwargs["initial_tip"]["block"] == 41
+        assert "target_propagation_gate" not in kwargs
+        kwargs["destination"].write_text("{}", encoding="utf-8")
+        kwargs["evidence_path"].write_text(
+            json.dumps(
+                {
+                    "status": "included",
+                    "observations": [
+                        {
+                            "included": True,
+                            "tip": {"block": 42, "slot": 100, "hash": "5" * 64},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return {transaction_id + "#0": {"value": {"lovelace": 2_000_000}}}
+
+    monkeypatch.setattr(governance, "_query_reference_tip", fake_tip)
+    monkeypatch.setattr(governance, "_submit_reference_raw", fake_submit)
+    monkeypatch.setattr(governance, "_wait_for_reference_inclusion", fake_wait)
+
+    result = governance._confirm_post_mutant_control_on_reference(
+        runtime={"compose_project": "owned"},
+        reference=reference,
+        payload=payload,
+        transaction_id=transaction_id,
+        helper_image="sha256:" + "6" * 64,
+        cli="/env/cardano-cli",
+        socket_path="/env/socket/node2/sock",
+        network_magic=42,
+        address="addr_test1postcontrol",
+        output_dir=tmp_path,
+        target_observation={
+            "status": "not-included-after-reference-progress",
+            "terminal_progress_block_threshold": 3,
+        },
+    )
+
+    assert events == [
+        "tip-before-direct-submit",
+        "direct-reference-submit",
+        "direct-reference-inclusion",
+    ]
+    assert result["classification"] == "accepted"
+    assert result["included"] is True
+    assert result["payload_sha256"] == payload_sha256
+    assert result["payload_length"] == len(payload)
+    assert result["payload_path"] == "direct-reference-payload.cbor"
+    assert (tmp_path / result["payload_path"]).read_bytes() == payload
+    assert result["transaction_id"] == transaction_id
+    assert result["identity_binding"]["container_id"] == reference["container_id"]
+    assert result["target_observation_status"] == (
+        "not-included-after-reference-progress"
+    )
+    assert result["inclusion_evidence"]["status"] == "included"
+
+    post_record = {
+        "target": {
+            "classification": "accepted",
+            "local_mempool_admission_observed": True,
+            "included": False,
+            "target_adopted": False,
+            "funding_input": "8" * 64 + "#7",
+            "payload_sha256": payload_sha256,
+            "body_sha256": "9" * 64,
+            "transaction_id": transaction_id,
+            "propagation_observation": {
+                "status": "not-included-after-reference-progress",
+                "terminal_progress_block_threshold": 3,
+            },
+        },
+        "direct_reference_confirmation": result,
+    }
+    assert governance._post_mutant_control_complete(post_record) is True
+
+
+def test_governance_matched_negative_control_is_portable_and_reference_first(
+    monkeypatch, tmp_path
+):
+    from scripts import runtime_governance_zero_denominator as governance
+
+    scenario_path = (
+        Path(__file__).parents[1]
+        / "dwarf/scenarios/governance-zero-denominator-matched-nonzero-control-amaru-cardano-node.yaml"
+    )
+    scenario = json.loads(scenario_path.read_text(encoding="utf-8"))
+    assert scenario["target"]["version"] == "resolved-plan"
+    assert all(
+        node["version"] == "resolved-plan"
+        and node["identity_binding"] == "resolved-plan"
+        for node in scenario["substrate"]["nodes"]
+    )
+    load = next(
+        item
+        for item in scenario["load"]
+        if item["primitive"] == "runtime_governance_zero_denominator_admission"
+    )
+    assert load["experiment_mode"] == governance.MATCHED_CONTROL_MODE
+
+    runtime_path = tmp_path / "outputs/substrate-compose/runtime.json"
+    runtime_path.parent.mkdir(parents=True)
+    runtime_path.write_text(json.dumps({"network": "testnet_42"}), encoding="utf-8")
+
+    class Handle:
+        run_dir = tmp_path
+
+    captured = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return {"admission_status": {"complete": False}}
+
+    monkeypatch.setattr(
+        governance, "run_governance_zero_denominator_admission", fake_run
+    )
+    primitive = submit_primitives.RuntimeGovernanceZeroDenominatorAdmission(
+        params=load
+    )
+    primitive.bound_substrate = {
+        "nodes": [
+            {
+                "id": "node1",
+                "impl": "amaru",
+                "version": "10.11.selected",
+                "source_revision": "a" * 40,
+            },
+            {
+                "id": "node2",
+                "impl": "cardano-node",
+                "version": "11.1.selected",
+                "source_revision": "b" * 40,
+            },
+        ]
+    }
+    primitive.run(Handle(), None)
+    assert captured["experiment_mode"] == governance.MATCHED_CONTROL_MODE
+    assert captured["expected_target_version"] == "10.11.selected"
+    assert captured["expected_reference_version"] == "11.1.selected"
+
+    payload = b"identical-valid-middle-control"
+    payload_sha256 = hashlib.sha256(payload).hexdigest()
+    transaction_id = "c" * 64
+    events = []
+
+    def reference_submit(**kwargs):
+        events.append("reference")
+        assert kwargs["payload"] == payload
+        return {
+            "classification": "accepted",
+            "http": 202,
+            "protocol_receipt": {
+                "outcome": "accepted",
+                "payload_sha256": payload_sha256,
+                "payload_length": len(payload),
+            },
+        }
+
+    def target_submit(**kwargs):
+        events.append("target")
+        assert kwargs["payload"] == payload
+        assert kwargs["transaction_id"] == transaction_id
+        return {
+            "classification": "accepted",
+            "http": 202,
+            "local_mempool_admission_observed": True,
+        }
+
+    monkeypatch.setattr(governance, "_submit_reference_raw", reference_submit)
+    monkeypatch.setattr(
+        governance, "_submit_amaru_with_admission_log", target_submit
+    )
+    attempts = governance._submit_matched_nonzero_attempts(
+        runtime={"network_magic": 42},
+        reference={"id": "node2"},
+        target={"id": "node1"},
+        payload=payload,
+        transaction_id=transaction_id,
+        helper_image="sha256:" + "d" * 64,
+        before_reference=lambda: events.append("pre-submit-tip")
+        or {"block": 10, "slot": 20, "hash": "e" * 64},
+    )
+    assert events == ["pre-submit-tip", "reference", "target"]
+    assert attempts["submission_order"] == ["reference", "target"]
+    assert attempts["reference_pre_submit_tip"]["block"] == 10
+    assert attempts["reference"]["classification"] == "accepted"
+    assert attempts["target"]["classification"] == "accepted"
+
+    control_role = {
+        "classification": "accepted",
+        "included": True,
+        "target_adopted": True,
+        "funding_input": "1" * 64 + "#0",
+        "collateral_input": "1" * 64 + "#1",
+        "payload_sha256": "2" * 64,
+        "body_sha256": "3" * 64,
+        "transaction_id": "4" * 64,
+    }
+    records = [
+        {
+            "case_id": governance.CONTROL_CASE,
+            "target": dict(control_role),
+            "reference": {
+                **control_role,
+                "funding_input": "5" * 64 + "#2",
+                "collateral_input": "5" * 64 + "#3",
+                "payload_sha256": "6" * 64,
+                "body_sha256": "7" * 64,
+                "transaction_id": "8" * 64,
+            },
+        },
+        {
+            "case_id": governance.MATCHED_MIDDLE_CASE,
+            "funding_input": "9" * 64 + "#4",
+            "collateral_input": "9" * 64 + "#5",
+            "payload_sha256": payload_sha256,
+            "body_sha256": "e" * 64,
+            "transaction_id": transaction_id,
+            "reference": {
+                "classification": "accepted",
+                "included": True,
+                "target_adopted": True,
+                "payload_sha256": payload_sha256,
+            },
+            "target": {
+                "classification": "accepted",
+                "included": True,
+                "target_adopted": True,
+                "local_mempool_admission_observed": True,
+                "payload_sha256": payload_sha256,
+            },
+        },
+        {
+            "case_id": governance.POST_CONTROL_CASE,
+            "target": {
+                "classification": "accepted",
+                "included": True,
+                "target_adopted": True,
+                "local_mempool_admission_observed": True,
+                "funding_input": "a" * 64 + "#7",
+                "payload_sha256": "b" * 64,
+                "body_sha256": "c" * 64,
+                "transaction_id": "d" * 64,
+            },
+        },
+    ]
+    result = governance.assess_governance_admission(
+        records, experiment_mode=governance.MATCHED_CONTROL_MODE
+    )
+    assert result["complete"] is True
+    assert result["experiment_mode"] == governance.MATCHED_CONTROL_MODE
+    assert result["matched_middle_control_complete"] is True
+    assert result["middle_payloads_match"] is True
+    assert result["post_mutant_valid_control_complete"] is True
+    assert result["p2p_relay_observed"] is None
+    assert result["relay_rejection_observed"] is None
+
+
+def test_governance_matched_assessment_uses_nested_retained_role_evidence():
+    from scripts import runtime_governance_zero_denominator as governance
+
+    payload_sha256 = "2" * 64
+    body_sha256 = "3" * 64
+    transaction_id = "4" * 64
+    control_role = {
+        "classification": "accepted",
+        "included": True,
+        "target_adopted": True,
+        "funding_input": "5" * 64 + "#0",
+        "collateral_input": "5" * 64 + "#1",
+        "payload_sha256": "6" * 64,
+        "body_sha256": "7" * 64,
+        "transaction_id": "8" * 64,
+    }
+    records = [
+        {
+            "case_id": governance.CONTROL_CASE,
+            "target": dict(control_role),
+            "reference": {
+                **control_role,
+                "funding_input": "9" * 64 + "#2",
+                "collateral_input": "9" * 64 + "#3",
+                "payload_sha256": "a" * 64,
+                "body_sha256": "b" * 64,
+                "transaction_id": "c" * 64,
+            },
+        },
+        {
+            "case_id": governance.MATCHED_MIDDLE_CASE,
+            "funding_input": "d" * 64 + "#4",
+            "collateral_input": "d" * 64 + "#5",
+            "payload_sha256": payload_sha256,
+            # Stale aggregate fields must not mask the retained role records.
+            "included": False,
+            "target_adopted": False,
+            "transaction_id": "e" * 64,
+            "body_sha256": "f" * 64,
+            "reference": {
+                "classification": "accepted",
+                "included": True,
+                "target_adopted": True,
+                "payload_sha256": payload_sha256,
+                "body_sha256": body_sha256,
+                "transaction_id": transaction_id,
+            },
+            "target": {
+                "classification": "accepted",
+                "included": True,
+                "target_adopted": True,
+                "local_mempool_admission_observed": True,
+                "payload_sha256": payload_sha256,
+                "body_sha256": body_sha256,
+                "transaction_id": transaction_id,
+            },
+        },
+        {
+            "case_id": governance.POST_CONTROL_CASE,
+            "target": {
+                "classification": "accepted",
+                "included": True,
+                "target_adopted": True,
+                "local_mempool_admission_observed": True,
+                "funding_input": "1" * 64 + "#7",
+                "payload_sha256": "2" * 64,
+                "body_sha256": "3" * 64,
+                "transaction_id": "4" * 64,
+            },
+        },
+    ]
+
+    result = governance.assess_governance_admission(
+        records, experiment_mode=governance.MATCHED_CONTROL_MODE
+    )
+
+    assert result["complete"] is True
+    assert result["matched_middle_control_complete"] is True
+    assert result["outcomes_conclusive"] is True
+
+
 def test_governance_registers_both_return_credentials_before_proposal_build(
     monkeypatch, tmp_path
 ):

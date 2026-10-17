@@ -1,0 +1,88 @@
+{
+  "spec_version": "v1",
+  "id": "governance-zero-denominator-matched-nonzero-control-amaru-cardano-node",
+  "title": "Zero-denominator governance matched nonzero control — operator-selected Amaru and cardano-node",
+  "authors": ["dwarf"],
+  "tags": [
+    "amaru",
+    "cardano-node",
+    "conway",
+    "governance",
+    "protocol-parameters",
+    "negative-control"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This is a matched negative control for retained zero-denominator runs, not a vulnerability or severity claim.",
+    "Direct reference acceptance after target-path absence does not prove peer-to-peer relay rejection.",
+    "Admission is not ratification, enactment, deposit refund or epoch-transition evidence."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "resolved-plan"
+  },
+  "runtime": "devnet",
+  "seed": "0x60A00033",
+  "substrate": {
+    "compose_mode": "docker",
+    "network": "testnet_42",
+    "governance_guardrails_fixture": {
+      "name": "always-succeeds-v3",
+      "expected_active_script_hash": "fa24fb305126805cf2164c161d852a0e7330cf988f1fe558cf7d4a64"
+    },
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "amaru",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
+        "role": "submitter"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
+        "role": "reference"
+      }
+    ],
+    "topology": {"edges": [{"from": "node1", "to": "node2"}]}
+  },
+  "setup": [
+    {"primitive": "runtime_install_version", "output_dir": "outputs/substrate-install"},
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose",
+      "healthy_timeout_seconds": 360,
+      "timeout_seconds": 600
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_governance_zero_denominator_admission",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "reference_node": "node2",
+      "output_dir": "outputs/governance-zero-denominator",
+      "experiment_mode": "nonzero-middle-control"
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": ["node1", "node2"],
+      "observation_window_seconds": 8,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": ["tip_state", "connection_state"],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {"primitive": "governance_zero_denominator_admission_matches"},
+    {"primitive": "all_nodes_responsive"}
+  ],
+  "teardown": [
+    {"primitive": "runtime_teardown_substrate", "output_dir": "outputs/substrate-teardown"}
+  ]
+}

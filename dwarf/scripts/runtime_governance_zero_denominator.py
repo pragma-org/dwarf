@@ -50,7 +50,10 @@ from scripts.runtime_redeemer_container_live_controls import (
 
 CONTROL_CASE = "nonzero-control"
 ZERO_CASE = "zero-denominator"
+MATCHED_MIDDLE_CASE = "nonzero-middle-control"
 POST_CONTROL_CASE = "post-mutant-valid-traffic"
+ZERO_DENOMINATOR_MODE = "zero-denominator"
+MATCHED_CONTROL_MODE = "nonzero-middle-control"
 REGISTRATION_PREP = "registration-prep"
 PARAMETER_KEY = 33  # Conway minFeeRefScriptCostPerByte
 FEE_RESERVE = 5_000_000
@@ -71,6 +74,19 @@ ANCHOR_BYTES = (
 _MAX_TARGET_LOG_SLICE_BYTES = 256 * 1024
 _TARGET_ADMISSION_WAIT_SECONDS = 10.0
 _POST_MUTANT_TERMINAL_PROGRESS_BLOCKS = 3
+_MAX_P2P_TRACE_BYTES = 4 * 1024 * 1024
+_MAX_P2P_TRACE_PRELUDE_BYTES = 4 * 1024 * 1024
+_MAX_P2P_TRACE_EVENTS = 256
+_P2P_EVENT_MARKERS = (
+    "tx_submission.initiator.reply_tx_ids",
+    "tx_submission.initiator.received_request",
+    "tx_submission.initiator.reply_txs",
+    "tx_submission.initiator.acknowledged",
+    "tx_submission.initiator.wait_for_at_least",
+    "connection.child_died",
+    "manager.peer.connection_died",
+    "manager.peer.connected",
+)
 
 
 def _utc_now() -> str:
@@ -95,6 +111,299 @@ def _target_log_identity(target: Mapping[str, Any]) -> dict[str, str]:
     ):
         raise RuntimeError("Amaru admission log identity is incomplete")
     return identity
+
+
+def _trace_field(line: str, name: str) -> str | None:
+    match = re.search(
+        rf"(?:^|\s){re.escape(name)}=(?:\"([^\"]*)\"|(\[[^\]]*\])|(\S+))",
+        line,
+    )
+    if match is None:
+        return None
+    return next((value for value in match.groups() if value is not None), None)
+
+
+def _trace_connection(line: str) -> int | None:
+    value = _trace_field(line, "conn_id")
+    return int(value) if value is not None and value.isdigit() else None
+
+
+def _selected_trace_event(line: str) -> str | None:
+    return next((marker for marker in _P2P_EVENT_MARKERS if marker in line), None)
+
+
+def assess_txsubmission_trace(
+    *,
+    target: Mapping[str, Any],
+    log_start_offset: int,
+    malformed_transaction_id: str,
+    later_valid_transaction_id: str,
+    expected_peer: str | None = None,
+) -> dict[str, Any]:
+    """Assess one bounded, single-peer TxSubmission sequence from retained logs."""
+
+    identity = _target_log_identity(target)
+    for transaction_id in (malformed_transaction_id, later_valid_transaction_id):
+        if re.fullmatch(r"[0-9a-f]{64}", transaction_id) is None:
+            raise RuntimeError("P2P trace transaction identity is invalid")
+    peer_addresses = [
+        str(value)
+        for value in (target.get("container_peer_addresses") or [])
+        if str(value)
+    ]
+    if expected_peer is None:
+        if len(peer_addresses) != 1:
+            return {
+                "schema_version": 1,
+                "status": "inconclusive",
+                "restart_eligible": False,
+                "blocking_reason": "single-controlled-peer-is-not-established",
+                "identity": identity,
+                "configured_peers": peer_addresses,
+            }
+        expected_peer = peer_addresses[0]
+        peer_binding = "single-configured-peer"
+    else:
+        peer_binding = "reference-container-network-address"
+    log_path = Path(str(target.get("log_path") or ""))
+    if not log_path.is_absolute() or not log_path.is_file():
+        raise RuntimeError("P2P trace requires the retained target log")
+    try:
+        log_size = log_path.stat().st_size
+    except OSError as exc:
+        raise RuntimeError("P2P trace log is unavailable") from exc
+    if (
+        isinstance(log_start_offset, bool)
+        or not isinstance(log_start_offset, int)
+        or log_start_offset < 0
+        or log_start_offset > log_size
+    ):
+        raise RuntimeError("P2P trace start offset is invalid")
+    trace_length = log_size - log_start_offset
+    base = {
+        "schema_version": 1,
+        "status": "inconclusive",
+        "restart_eligible": False,
+        "identity": identity,
+        "configured_peers": peer_addresses,
+        "observed_peer": expected_peer,
+        "peer_binding": peer_binding,
+        "log_path": str(log_path),
+        "log_start_offset": log_start_offset,
+        "log_end_offset": log_size,
+        "log_slice_length": trace_length,
+        "limits": {
+            "maximum_trace_bytes": _MAX_P2P_TRACE_BYTES,
+            "maximum_prelude_bytes": _MAX_P2P_TRACE_PRELUDE_BYTES,
+            "maximum_retained_events": _MAX_P2P_TRACE_EVENTS,
+            "requested_id_prefix_hex_length": 12,
+        },
+    }
+    if trace_length > _MAX_P2P_TRACE_BYTES:
+        return {**base, "blocking_reason": "trace-slice-oversized"}
+    prelude_start = max(0, log_start_offset - _MAX_P2P_TRACE_PRELUDE_BYTES)
+    try:
+        with log_path.open("rb") as stream:
+            stream.seek(prelude_start)
+            prelude = stream.read(log_start_offset - prelude_start)
+            trace = stream.read(trace_length)
+    except OSError as exc:
+        raise RuntimeError("P2P trace log cannot be read") from exc
+    base.update(
+        {
+            "prelude_start_offset": prelude_start,
+            "prelude_sha256": hashlib.sha256(prelude).hexdigest(),
+            "log_slice_sha256": hashlib.sha256(trace).hexdigest(),
+        }
+    )
+
+    active_connection: int | None = None
+    for line in prelude.decode("utf-8", errors="replace").splitlines():
+        if "manager.peer.connected" not in line:
+            continue
+        if _trace_field(line, "peer") != expected_peer:
+            continue
+        connection = _trace_connection(line)
+        if connection is not None:
+            active_connection = connection
+    initial_binding = "prelude-connected-event"
+    if active_connection is None:
+        # The connection can still be bound retroactively by the exact
+        # same-peer child-death event after the transaction exchange.
+        active_connection = 0
+        initial_binding = "subsequent-child-death-event"
+
+    windows: dict[int, list[str]] = {active_connection: []}
+    malformed_advertised = False
+    malformed_requested = False
+    malformed_reply_txs = False
+    malformed_acked = False
+    later_advertised = False
+    later_requested = False
+    close_connection: int | None = None
+    reconnect_connection: int | None = None
+    malformed_readvertised = False
+    retained_events: list[dict[str, Any]] = []
+    pending_requests: dict[int, list[str]] = {}
+    blocking_reason = "required-p2p-cycle-was-not-observed"
+    relative_offset = 0
+    for raw_line in trace.splitlines(keepends=True):
+        line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+        marker = _selected_trace_event(line)
+        line_offset = log_start_offset + relative_offset
+        relative_offset += len(raw_line)
+        if marker is None:
+            continue
+        peer = _trace_field(line, "peer")
+        if peer is not None and peer != expected_peer:
+            continue
+        if len(retained_events) >= _MAX_P2P_TRACE_EVENTS:
+            return {
+                **base,
+                "blocking_reason": "retained-event-limit-exceeded",
+                "events": retained_events,
+            }
+        event = {
+            "name": marker,
+            "offset": line_offset,
+            "line_sha256": hashlib.sha256(raw_line).hexdigest(),
+            "line": line[:4096],
+        }
+        retained_events.append(event)
+
+        if marker == "manager.peer.connected":
+            connection = _trace_connection(line)
+            if connection is None:
+                blocking_reason = "connected-event-lacks-connection-id"
+                continue
+            if close_connection is None and connection != active_connection:
+                blocking_reason = "overlapping-peer-connection-observed"
+                continue
+            if close_connection is not None and connection != close_connection:
+                reconnect_connection = connection
+                active_connection = connection
+                windows.setdefault(connection, [])
+            continue
+
+        if marker == "tx_submission.initiator.reply_tx_ids":
+            ids = re.findall(r"(?<![0-9A-Fa-f])[0-9a-f]{64}(?![0-9A-Fa-f])", line)
+            window = windows.setdefault(active_connection, [])
+            window.extend(ids)
+            if malformed_transaction_id in ids:
+                if reconnect_connection == active_connection:
+                    malformed_readvertised = True
+                else:
+                    malformed_advertised = True
+            if later_valid_transaction_id in ids:
+                later_advertised = True
+            continue
+
+        if marker == "tx_submission.initiator.received_request" and _trace_field(
+            line, "request"
+        ) == "txs":
+            ids_value = _trace_field(line, "ids") or ""
+            prefixes = re.findall(
+                r"(?<![0-9A-Fa-f])[0-9a-f]{12}(?![0-9A-Fa-f])", ids_value
+            )
+            window = windows.setdefault(active_connection, [])
+            for prefix in prefixes:
+                candidates = {value for value in window if value.startswith(prefix)}
+                if len(candidates) != 1:
+                    return {
+                        **base,
+                        "blocking_reason": "requested-id-prefix-is-ambiguous",
+                        "events": retained_events,
+                    }
+                requested = next(iter(candidates))
+                malformed_requested |= requested == malformed_transaction_id
+                later_requested |= requested == later_valid_transaction_id
+                pending_requests.setdefault(active_connection, []).append(requested)
+            continue
+
+        if marker == "tx_submission.initiator.reply_txs":
+            count_value = _trace_field(line, "count")
+            requested = pending_requests.pop(active_connection, [])
+            if count_value is not None and count_value.isdigit():
+                delivered_count = int(count_value)
+                malformed_reply_txs |= (
+                    malformed_transaction_id in requested
+                    and delivered_count == len(requested)
+                    and delivered_count > 0
+                )
+            continue
+
+        if marker == "tx_submission.initiator.acknowledged":
+            ack_value = _trace_field(line, "ack")
+            if ack_value is None or not ack_value.isdigit():
+                blocking_reason = "acknowledgement-count-is-invalid"
+                continue
+            ack = int(ack_value)
+            window = windows.setdefault(active_connection, [])
+            removed = window[:ack]
+            del window[:ack]
+            malformed_acked |= malformed_transaction_id in removed
+            continue
+
+        if marker in {
+            "connection.child_died",
+            "manager.peer.connection_died",
+        }:
+            connection = _trace_connection(line)
+            if active_connection == 0 and connection is not None:
+                windows[connection] = windows.pop(0, [])
+                active_connection = connection
+            if connection != active_connection:
+                blocking_reason = "connection-close-does-not-bind-active-peer"
+                continue
+            if marker == "connection.child_died":
+                child = (_trace_field(line, "child") or "").lower()
+                if "txsubmission" not in child.replace("_", ""):
+                    continue
+            if malformed_requested and not malformed_acked:
+                close_connection = connection
+
+    exact_cycle = all(
+        (
+            malformed_advertised,
+            malformed_requested,
+            malformed_reply_txs,
+            later_advertised,
+            close_connection is not None,
+            reconnect_connection is not None,
+            malformed_readvertised,
+            not malformed_acked,
+        )
+    )
+    return {
+        **base,
+        "status": "exact-cycle-observed" if exact_cycle else "inconclusive",
+        "restart_eligible": exact_cycle,
+        "blocking_reason": None if exact_cycle else blocking_reason,
+        "malformed": {
+            "transaction_id": malformed_transaction_id,
+            "advertised": malformed_advertised,
+            "requested": malformed_requested,
+            "reply_txs_observed": malformed_reply_txs,
+            "acknowledged_before_close": malformed_acked,
+            "readvertised_after_reconnect": malformed_readvertised,
+        },
+        "later_valid": {
+            "transaction_id": later_valid_transaction_id,
+            "advertised": later_advertised,
+            "requested": later_requested,
+        },
+        "connection": {
+            "initial_connection_id": next(iter(windows)),
+            "initial_connection_binding": initial_binding,
+            "closed_connection_id": close_connection,
+            "reconnected_connection_id": reconnect_connection,
+        },
+        "events": retained_events,
+        "evidence_limit": (
+            "source event sequence binds the controlled peer connection but does not "
+            "establish public-network reachability or causation outside this fixture"
+        ),
+    }
 
 
 def _submit_amaru_with_admission_log(
@@ -262,11 +571,470 @@ def _submit_zero_denominator_attempts(
     }
 
 
+def _submit_matched_nonzero_attempts(
+    *,
+    runtime: dict[str, Any],
+    reference: dict[str, Any],
+    target: dict[str, Any],
+    payload: bytes,
+    transaction_id: str,
+    helper_image: str,
+    before_reference: Callable[[], Any] | None = None,
+) -> dict[str, Any]:
+    """Submit one shared valid middle control reference-first, then to Amaru."""
+
+    from profile_manager.submit_primitives import _validation_stage
+
+    reference_pre_submit = (
+        before_reference() if before_reference is not None else None
+    )
+    reference_response = _submit_reference_raw(
+        runtime=runtime,
+        reference=reference,
+        payload=payload,
+        helper_image=helper_image,
+    )
+    reference_response = {
+        **reference_response,
+        "classification": reference_response.get("classification")
+        or _validation_stage(reference_response),
+    }
+    if reference_response["classification"] != "accepted":
+        return {
+            "submission_order": ["reference"],
+            "reference_pre_submit_tip": reference_pre_submit,
+            "reference": reference_response,
+            "target": {
+                "classification": "skipped",
+                "reason": "matched nonzero reference control was not accepted",
+            },
+        }
+    target_response = _submit_amaru_with_admission_log(
+        target=target,
+        payload=payload,
+        transaction_id=transaction_id,
+        submit=_submit_amaru_container,
+    )
+    return {
+        "submission_order": ["reference", "target"],
+        "reference_pre_submit_tip": reference_pre_submit,
+        "reference": reference_response,
+        "target": target_response,
+    }
+
+
 def _wait_for_post_mutant_reference_inclusion(**kwargs: Any) -> dict[str, Any]:
     return _wait_for_reference_inclusion(
         terminal_progress_blocks=_POST_MUTANT_TERMINAL_PROGRESS_BLOCKS,
         **kwargs,
     )
+
+
+def _confirm_post_mutant_control_on_reference(
+    *,
+    runtime: dict[str, Any],
+    reference: dict[str, Any],
+    payload: bytes,
+    transaction_id: str,
+    helper_image: str,
+    cli: str,
+    socket_path: str,
+    network_magic: int,
+    address: str,
+    output_dir: Path,
+    target_observation: dict[str, Any],
+) -> dict[str, Any]:
+    """Submit the retained post-control bytes directly after target observation."""
+
+    if (
+        target_observation.get("status")
+        != "not-included-after-reference-progress"
+        or target_observation.get("terminal_progress_block_threshold")
+        != _POST_MUTANT_TERMINAL_PROGRESS_BLOCKS
+    ):
+        raise RuntimeError(
+            "direct post-control confirmation requires the completed target "
+            "propagation observation"
+        )
+    from profile_manager.submit_primitives import _validation_stage
+
+    payload_sha256 = hashlib.sha256(payload).hexdigest()
+    payload_path = output_dir / "direct-reference-payload.cbor"
+    payload_path.write_bytes(payload)
+    initial_tip = _query_reference_tip(
+        cli=cli, socket_path=socket_path, network_magic=network_magic
+    )
+    response = _submit_reference_raw(
+        runtime=runtime,
+        reference=reference,
+        payload=payload,
+        helper_image=helper_image,
+    )
+    classification = response.get("classification") or _validation_stage(response)
+    identity_binding = response.get("identity_binding") or {}
+    expected_identity = {
+        "node_id": str(reference.get("id") or ""),
+        "container_id": str(reference.get("container_id") or ""),
+        "container_image_id": str(reference.get("container_image_id") or ""),
+        "source_revision": str(reference.get("source_revision") or ""),
+    }
+    identity_match = all(
+        identity_binding.get(key) == value
+        for key, value in expected_identity.items()
+    )
+    receipt = response.get("protocol_receipt") or {}
+    payload_identity_match = (
+        receipt.get("payload_sha256") == payload_sha256
+        and receipt.get("payload_length") == len(payload)
+    )
+    if classification == "accepted" and not (
+        identity_match and payload_identity_match
+    ):
+        classification = "unavailable"
+
+    inclusion_path = output_dir / "direct-reference-inclusion.json"
+    included = False
+    if classification == "accepted":
+        try:
+            _wait_for_reference_inclusion(
+                cli=cli,
+                socket_path=socket_path,
+                network_magic=network_magic,
+                address=address,
+                destination=output_dir / "direct-reference-included-utxo.json",
+                transaction_id=transaction_id,
+                initial_tip=initial_tip,
+                evidence_path=inclusion_path,
+            )
+            included = True
+        except RuntimeError:
+            included = False
+    inclusion_evidence: dict[str, Any] = {}
+    if inclusion_path.is_file():
+        inclusion_evidence = json.loads(inclusion_path.read_text(encoding="utf-8"))
+    return {
+        **response,
+        "classification": classification,
+        "included": included,
+        "payload_sha256": payload_sha256,
+        "payload_length": len(payload),
+        "payload_path": str(payload_path.name),
+        "transaction_id": transaction_id,
+        "reference_identity": expected_identity,
+        "identity_match": identity_match,
+        "payload_identity_match": payload_identity_match,
+        "target_observation_status": target_observation.get("status"),
+        "target_observation_terminal_progress_blocks": target_observation.get(
+            "terminal_progress_block_threshold"
+        ),
+        "inclusion_evidence_path": str(inclusion_path.name),
+        "inclusion_evidence": inclusion_evidence,
+        "evidence_limit": (
+            "direct reference acceptance/inclusion confirms the control bytes; "
+            "it does not prove peer relay or relay rejection"
+        ),
+    }
+
+
+def _reference_peer_identity(reference: Mapping[str, Any]) -> dict[str, Any]:
+    container_id = str(reference.get("container_id") or "")
+    if re.fullmatch(r"[0-9a-f]{64}", container_id) is None:
+        raise RuntimeError("reference peer container identity is invalid")
+    inspected = _inspect_container(container_id)
+    if str(inspected.get("Id") or "") != container_id:
+        raise RuntimeError("reference peer Docker identity changed")
+    image_id = str(reference.get("container_image_id") or "")
+    if str(inspected.get("Image") or "") != image_id:
+        raise RuntimeError("reference peer image identity changed")
+    networks = (inspected.get("NetworkSettings") or {}).get("Networks") or {}
+    addresses = sorted(
+        {
+            str(value.get("IPAddress") or "")
+            for value in networks.values()
+            if isinstance(value, dict) and str(value.get("IPAddress") or "")
+        }
+    )
+    if len(addresses) != 1:
+        raise RuntimeError("reference peer network address is not unique")
+    return {
+        "peer": f"{addresses[0]}:3001",
+        "container_id": container_id,
+        "container_image_id": image_id,
+        "source_revision": str(reference.get("source_revision") or ""),
+        "docker_networks": sorted(str(name) for name in networks),
+    }
+
+
+def _restart_owned_amaru(
+    *, runtime: Mapping[str, Any], target: Mapping[str, Any]
+) -> dict[str, Any]:
+    identity = _target_log_identity(target)
+    inspected_before = _inspect_container(identity["container_id"])
+    labels = (inspected_before.get("Config") or {}).get("Labels") or {}
+    expected_labels = {
+        "io.dwarf.managed": "true",
+        "io.dwarf.installation": str(os.environ.get("DWARF_INSTALLATION_ID") or ""),
+        "com.docker.compose.project": str(runtime.get("compose_project") or ""),
+        "io.dwarf.topology": str(runtime.get("profile_id") or ""),
+        "io.dwarf.node_id": identity["node_id"],
+        "io.dwarf.implementation": "amaru",
+    }
+    if any(str(labels.get(key) or "") != value for key, value in expected_labels.items()):
+        raise RuntimeError("Amaru recovery restart ownership does not match")
+    if (
+        str(inspected_before.get("Id") or "") != identity["container_id"]
+        or str(inspected_before.get("Image") or "")
+        != identity["container_image_id"]
+    ):
+        raise RuntimeError("Amaru recovery restart identity changed")
+    log_path = Path(str(target.get("log_path") or ""))
+    if not log_path.is_absolute() or not log_path.is_file():
+        raise RuntimeError("Amaru recovery restart log is unavailable")
+    log_start_offset = log_path.stat().st_size
+    before_state = inspected_before.get("State") or {}
+    before_started_at = str(before_state.get("StartedAt") or "")
+    _checked(
+        ["docker", "restart", "--time", "30", identity["container_id"]],
+        timeout=90,
+    )
+    inspected_after = _inspect_container(identity["container_id"])
+    after_state = inspected_after.get("State") or {}
+    after_started_at = str(after_state.get("StartedAt") or "")
+    if (
+        str(inspected_after.get("Id") or "") != identity["container_id"]
+        or str(inspected_after.get("Image") or "")
+        != identity["container_image_id"]
+        or after_state.get("Running") is not True
+        or not after_started_at
+        or after_started_at == before_started_at
+    ):
+        raise RuntimeError("Amaru recovery restart did not preserve a running identity")
+    return {
+        "schema_version": 1,
+        "status": "restarted",
+        "identity": identity,
+        "log_start_offset": log_start_offset,
+        "started_at_before": before_started_at,
+        "started_at_after": after_started_at,
+        "restart_count_before": int(inspected_before.get("RestartCount") or 0),
+        "restart_count_after": int(inspected_after.get("RestartCount") or 0),
+    }
+
+
+def _wait_for_fresh_peer_connection(
+    *,
+    target: Mapping[str, Any],
+    expected_peer: str,
+    prior_connection_id: int,
+    log_start_offset: int,
+    timeout_seconds: float = 60.0,
+) -> dict[str, Any]:
+    log_path = Path(str(target.get("log_path") or ""))
+    started = time.monotonic()
+    while True:
+        try:
+            end_offset = log_path.stat().st_size
+            length = end_offset - log_start_offset
+            if length > _MAX_P2P_TRACE_BYTES:
+                raise RuntimeError("fresh peer connection log slice is oversized")
+            with log_path.open("rb") as stream:
+                stream.seek(log_start_offset)
+                log_slice = stream.read(max(0, length))
+        except OSError as exc:
+            raise RuntimeError("fresh peer connection log is unavailable") from exc
+        offset = log_start_offset
+        for raw_line in log_slice.splitlines(keepends=True):
+            line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+            if (
+                "manager.peer.connected" in line
+                and _trace_field(line, "peer") == expected_peer
+            ):
+                connection = _trace_connection(line)
+                if connection is not None and connection != prior_connection_id:
+                    return {
+                        "schema_version": 1,
+                        "status": "connected",
+                        "peer": expected_peer,
+                        "conn_id": connection,
+                        "prior_conn_id": prior_connection_id,
+                        "log_start_offset": log_start_offset,
+                        "event_offset": offset,
+                        "event_line": line[:4096],
+                        "event_line_sha256": hashlib.sha256(raw_line).hexdigest(),
+                    }
+            offset += len(raw_line)
+        if time.monotonic() - started >= timeout_seconds:
+            raise RuntimeError("Amaru did not establish a fresh peer connection")
+        time.sleep(0.25)
+
+
+def _wait_for_reference_tip_progress(
+    *,
+    cli: str,
+    socket_path: str,
+    network_magic: int,
+    initial_tip: Mapping[str, Any],
+    evidence_path: Path,
+    timeout_seconds: float = 360.0,
+) -> dict[str, Any]:
+    initial_block = initial_tip.get("block")
+    initial_hash = str(initial_tip.get("hash") or "")
+    if (
+        isinstance(initial_block, bool)
+        or not isinstance(initial_block, int)
+        or re.fullmatch(r"[0-9a-f]{64}", initial_hash) is None
+    ):
+        raise RuntimeError("reference progress baseline is invalid")
+    started = time.monotonic()
+    latest = dict(initial_tip)
+    while time.monotonic() - started < timeout_seconds:
+        latest = _query_reference_tip(
+            cli=cli, socket_path=socket_path, network_magic=network_magic
+        )
+        block = latest.get("block")
+        header_hash = str(latest.get("hash") or "")
+        if (
+            isinstance(block, int)
+            and not isinstance(block, bool)
+            and block > initial_block
+            and re.fullmatch(r"[0-9a-f]{64}", header_hash) is not None
+            and header_hash != initial_hash
+        ):
+            evidence = {
+                "schema_version": 1,
+                "status": "progressed",
+                "initial_tip": dict(initial_tip),
+                "progressed_tip": latest,
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            }
+            evidence_path.write_text(
+                json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            return evidence
+        time.sleep(1)
+    evidence = {
+        "schema_version": 1,
+        "status": "not-progressed",
+        "initial_tip": dict(initial_tip),
+        "last_tip": latest,
+        "timeout_seconds": timeout_seconds,
+    }
+    evidence_path.write_text(
+        json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    raise RuntimeError("reference did not progress after the Amaru restart")
+
+
+def _recover_post_control_after_cycle(
+    *,
+    trace_evidence: Mapping[str, Any],
+    runtime: dict[str, Any],
+    target: dict[str, Any],
+    reference: dict[str, Any],
+    payload: bytes,
+    transaction_id: str,
+    target_propagation_gate: dict[str, Any],
+    cli: str,
+    socket_path: str,
+    network_magic: int,
+    address: str,
+    output_dir: Path,
+) -> dict[str, Any]:
+    if (
+        trace_evidence.get("status") != "exact-cycle-observed"
+        or trace_evidence.get("restart_eligible") is not True
+    ):
+        return {
+            "schema_version": 1,
+            "status": "not-attempted",
+            "reason": "exact transaction-bound P2P cycle was not established",
+        }
+    connection = trace_evidence.get("connection") or {}
+    prior_connection_id = connection.get("reconnected_connection_id")
+    if isinstance(prior_connection_id, bool) or not isinstance(
+        prior_connection_id, int
+    ):
+        raise RuntimeError("P2P recovery connection identity is unavailable")
+    peer_identity = _reference_peer_identity(reference)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    restart = _restart_owned_amaru(runtime=runtime, target=target)
+    (output_dir / "restart.json").write_text(
+        json.dumps(restart, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    reconnect = _wait_for_fresh_peer_connection(
+        target=target,
+        expected_peer=str(peer_identity["peer"]),
+        prior_connection_id=prior_connection_id,
+        log_start_offset=int(restart["log_start_offset"]),
+    )
+    (output_dir / "fresh-peer-connection.json").write_text(
+        json.dumps(reconnect, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    reference_tip = _query_reference_tip(
+        cli=cli, socket_path=socket_path, network_magic=network_magic
+    )
+    reference_progress = _wait_for_reference_tip_progress(
+        cli=cli,
+        socket_path=socket_path,
+        network_magic=network_magic,
+        initial_tip=reference_tip,
+        evidence_path=output_dir / "post-restart-reference-progress.json",
+    )
+    progressed_tip = dict(reference_progress["progressed_tip"])
+    sync = _wait_for_target_adoption(
+        log_path=Path(str(target.get("log_path") or "")),
+        expected_tip=progressed_tip,
+        evidence_path=output_dir / "post-restart-sync.json",
+        minimum_log_offset=int(restart["log_start_offset"]),
+    )
+    response = _submit_amaru_with_admission_log(
+        target=target,
+        payload=payload,
+        transaction_id=transaction_id,
+    )
+    if response.get("classification") != "accepted":
+        raise RuntimeError("post-restart exact valid control was not admitted by Amaru")
+    initial_tip = _query_reference_tip(
+        cli=cli, socket_path=socket_path, network_magic=network_magic
+    )
+    inclusion_path = output_dir / "reference-inclusion.json"
+    _wait_for_reference_inclusion(
+        cli=cli,
+        socket_path=socket_path,
+        network_magic=network_magic,
+        address=address,
+        destination=output_dir / "included-utxo.json",
+        transaction_id=transaction_id,
+        initial_tip=initial_tip,
+        evidence_path=inclusion_path,
+        target_propagation_gate=target_propagation_gate,
+        terminal_progress_blocks=_POST_MUTANT_TERMINAL_PROGRESS_BLOCKS,
+    )
+    included_tip = _terminal_inclusion_tip(
+        inclusion_path, label="post-restart valid traffic control"
+    )
+    adoption = _wait_for_target_adoption(
+        log_path=Path(str(target.get("log_path") or "")),
+        expected_tip=included_tip,
+        evidence_path=output_dir / "target-adoption.json",
+        minimum_log_offset=int(restart["log_start_offset"]),
+    )
+    return {
+        "schema_version": 1,
+        "status": "recovered",
+        "transaction_id": transaction_id,
+        "payload_sha256": hashlib.sha256(payload).hexdigest(),
+        "payload_length": len(payload),
+        "reference_peer_identity": peer_identity,
+        "restart": restart,
+        "fresh_peer_connection": reconnect,
+        "post_restart_reference_progress": reference_progress,
+        "post_restart_sync": sync,
+        "target_resubmission": response,
+        "reference_inclusion_path": str(inclusion_path.relative_to(output_dir)),
+        "target_adoption": adoption,
+    }
 
 
 def prepare_governance_anchor(
@@ -666,7 +1434,113 @@ def resign_transaction_body(
     return b"\x84" + mutated_body + cbor2.dumps(witnesses) + tail
 
 
-def assess_governance_admission(records: list[dict[str, Any]]) -> dict[str, Any]:
+def _assess_matched_governance_control(
+    records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    by_case = {str(record.get("case_id") or ""): record for record in records}
+    control = by_case.get(CONTROL_CASE) or {}
+    middle = by_case.get(MATCHED_MIDDLE_CASE) or {}
+    post_control = by_case.get(POST_CONTROL_CASE) or {}
+    inputs = [
+        str((control.get(role) or {}).get("funding_input") or "")
+        for role in ("target", "reference")
+    ] + [
+        str(middle.get("funding_input") or ""),
+        str((post_control.get("target") or {}).get("funding_input") or ""),
+    ]
+    funding_isolated = (
+        set(by_case) == {CONTROL_CASE, MATCHED_MIDDLE_CASE, POST_CONTROL_CASE}
+        and all(inputs)
+        and len(inputs) == len(set(inputs))
+    )
+    valid_control = _valid_control_complete(control)
+    middle_payload = str(middle.get("payload_sha256") or "")
+    middle_funding = str(middle.get("funding_input") or "")
+    middle_collateral = str(middle.get("collateral_input") or "")
+    middle_roles = [middle.get(role) or {} for role in ("reference", "target")]
+    middle_payloads_match = bool(_lower_hex(middle_payload, 64)) and all(
+        (middle.get(role) or {}).get("payload_sha256") == middle_payload
+        for role in ("reference", "target")
+    )
+
+    def matched_identity(field: str) -> bool:
+        nested = [str(role.get(field) or "") for role in middle_roles]
+        if any(nested):
+            return (
+                all(_lower_hex(value, 64) for value in nested)
+                and len(set(nested)) == 1
+            )
+        return bool(_lower_hex(middle.get(field), 64))
+
+    middle_complete = (
+        middle_payloads_match
+        and all(role.get("classification") == "accepted" for role in middle_roles)
+        and all(role.get("included") is True for role in middle_roles)
+        and all(role.get("target_adopted") is True for role in middle_roles)
+        and middle_roles[1].get("local_mempool_admission_observed") is True
+        and matched_identity("transaction_id")
+        and matched_identity("body_sha256")
+        and middle_funding != middle_collateral
+        and _lower_hex(middle_funding.partition("#")[0], 64)
+        and middle_funding.partition("#")[1] == "#"
+        and middle_funding.partition("#")[2].isdigit()
+        and _lower_hex(middle_collateral.partition("#")[0], 64)
+        and middle_collateral.partition("#")[1] == "#"
+        and middle_collateral.partition("#")[2].isdigit()
+    )
+    post_control_complete = _post_mutant_control_complete(post_control)
+    complete = (
+        funding_isolated
+        and valid_control
+        and middle_complete
+        and post_control_complete
+    )
+    post_target = post_control.get("target") or {}
+    post_propagation = post_target.get("propagation_observation") or {}
+    direct_confirmation = post_control.get("direct_reference_confirmation") or {}
+    if not funding_isolated:
+        reason = "matched governance inputs are not independently funded"
+    elif not valid_control:
+        reason = _control_failure_reason(control)
+    elif not middle_complete:
+        reason = "matched nonzero middle control is incomplete"
+    elif not post_control_complete:
+        reason = "matched post-middle valid traffic control is incomplete"
+    else:
+        reason = "matched nonzero governance negative-control evidence is complete"
+    return {
+        "complete": complete,
+        "experiment_mode": MATCHED_CONTROL_MODE,
+        "valid_control_present": valid_control,
+        "funding_inputs_isolated": funding_isolated,
+        "mutation_payloads_match": middle_payloads_match,
+        "middle_payloads_match": middle_payloads_match,
+        "matched_middle_control_complete": middle_complete,
+        "post_mutant_valid_control_complete": post_control_complete,
+        "post_valid_control_complete": post_control_complete,
+        "post_target_path_included": post_target.get("included") is True,
+        "post_target_path_absent_after_progress": (
+            post_propagation.get("status")
+            == "not-included-after-reference-progress"
+        ),
+        "post_direct_reference_confirmation_used": bool(direct_confirmation),
+        "p2p_relay_observed": None,
+        "relay_rejection_observed": None,
+        "outcomes_conclusive": complete,
+        "enactment_observed": False,
+        "reason": reason,
+    }
+
+
+def assess_governance_admission(
+    records: list[dict[str, Any]],
+    *,
+    experiment_mode: str = ZERO_DENOMINATOR_MODE,
+) -> dict[str, Any]:
+    if experiment_mode == MATCHED_CONTROL_MODE:
+        return _assess_matched_governance_control(records)
+    if experiment_mode != ZERO_DENOMINATOR_MODE:
+        raise RuntimeError("unsupported governance admission experiment mode")
     by_case = {str(record.get("case_id") or ""): record for record in records}
     control = by_case.get(CONTROL_CASE) or {}
     mutant = by_case.get(ZERO_CASE) or {}
@@ -706,6 +1580,10 @@ def assess_governance_admission(records: list[dict[str, Any]]) -> dict[str, Any]
         and propagation.get("relay_rejection_observed") is None
     )
     post_control_complete = _post_mutant_control_complete(post_control)
+    p2p_trace = post_control.get("p2p_trace") or {}
+    p2p_relay_observed = (
+        True if p2p_trace.get("status") == "exact-cycle-observed" else None
+    )
     conclusive = (
         direct_reference_decoder_reject
         and target_local_admission
@@ -738,6 +1616,7 @@ def assess_governance_admission(records: list[dict[str, Any]]) -> dict[str, Any]
         reason = "bounded zero-denominator impact follow-up evidence is complete"
     return {
         "complete": complete,
+        "experiment_mode": ZERO_DENOMINATOR_MODE,
         "valid_control_present": valid_control,
         "funding_inputs_isolated": funding_isolated,
         "mutation_payloads_match": mutation_payloads_match,
@@ -745,7 +1624,7 @@ def assess_governance_admission(records: list[dict[str, Any]]) -> dict[str, Any]
         "target_local_admission_observed": target_local_admission,
         "propagation_absence_observed": propagation_absence,
         "post_mutant_valid_control_complete": post_control_complete,
-        "p2p_relay_observed": None,
+        "p2p_relay_observed": p2p_relay_observed,
         "relay_rejection_observed": None,
         "outcomes_conclusive": conclusive,
         "enactment_observed": False,
@@ -766,17 +1645,51 @@ def _valid_control_complete(record: dict[str, Any]) -> bool:
 def _post_mutant_control_complete(record: dict[str, Any]) -> bool:
     evidence = record.get("target") or {}
     funding_input = str(evidence.get("funding_input") or "")
-    return (
+    identity_complete = (
         evidence.get("classification") == "accepted"
         and evidence.get("local_mempool_admission_observed") is True
-        and evidence.get("included") is True
-        and evidence.get("target_adopted") is True
         and _lower_hex(evidence.get("transaction_id"), 64)
         and _lower_hex(evidence.get("body_sha256"), 64)
         and _lower_hex(evidence.get("payload_sha256"), 64)
         and _lower_hex(funding_input.partition("#")[0], 64)
         and funding_input.partition("#")[1] == "#"
         and funding_input.partition("#")[2].isdigit()
+    )
+    if not identity_complete:
+        return False
+    if evidence.get("included") is True and evidence.get("target_adopted") is True:
+        return True
+    target_observation = evidence.get("propagation_observation") or {}
+    direct = record.get("direct_reference_confirmation") or {}
+    recovery = record.get("conditional_recovery") or {}
+    recovered = (
+        recovery.get("status") == "recovered"
+        and recovery.get("payload_sha256") == evidence.get("payload_sha256")
+        and recovery.get("transaction_id") == evidence.get("transaction_id")
+        and (recovery.get("target_resubmission") or {}).get("classification")
+        == "accepted"
+        and (recovery.get("target_adoption") or {}).get("status") == "adopted"
+    )
+    return (
+        target_observation.get("status")
+        == "not-included-after-reference-progress"
+        and target_observation.get("terminal_progress_block_threshold")
+        == _POST_MUTANT_TERMINAL_PROGRESS_BLOCKS
+        and (
+            recovered
+            or (
+                direct.get("target_observation_status")
+                == "not-included-after-reference-progress"
+                and direct.get("target_observation_terminal_progress_blocks")
+                == _POST_MUTANT_TERMINAL_PROGRESS_BLOCKS
+                and direct.get("classification") == "accepted"
+                and direct.get("included") is True
+                and direct.get("identity_match") is True
+                and direct.get("payload_identity_match") is True
+                and direct.get("payload_sha256") == evidence.get("payload_sha256")
+                and direct.get("transaction_id") == evidence.get("transaction_id")
+            )
+        )
     )
 
 
@@ -1156,7 +2069,13 @@ def run_governance_zero_denominator_admission(
     expected_target_source: str,
     expected_reference_version: str,
     expected_reference_source: str,
+    experiment_mode: str = ZERO_DENOMINATOR_MODE,
+    p2p_trace_recovery: bool = False,
 ) -> dict[str, Any]:
+    if experiment_mode not in {ZERO_DENOMINATOR_MODE, MATCHED_CONTROL_MODE}:
+        raise RuntimeError("unsupported governance admission experiment mode")
+    if p2p_trace_recovery and experiment_mode != ZERO_DENOMINATOR_MODE:
+        raise RuntimeError("P2P trace recovery requires the zero-denominator mode")
     identities = validate_runtime_identity(
         runtime,
         target_node=target_node,
@@ -1179,6 +2098,8 @@ def run_governance_zero_denominator_admission(
     )
     target = identities["target"]
     reference = identities["reference"]
+    if p2p_trace_recovery and runtime.get("amaru_txsubmission_trace") is not True:
+        raise RuntimeError("P2P trace recovery requires the scenario trace opt-in")
     network_magic = int(runtime["network_magic"])
     socket_path = str(reference.get("container_socket_path") or "")
     helper_image = str(os.environ.get("DWARF_LOCALTXSUBMISSION_HELPER_IMAGE") or "")
@@ -1577,34 +2498,58 @@ def run_governance_zero_denominator_admission(
                 + "; zero-denominator case was not submitted"
             )
 
-        zero_dir = output_dir / ZERO_CASE
+        middle_case_id = (
+            MATCHED_MIDDLE_CASE
+            if experiment_mode == MATCHED_CONTROL_MODE
+            else ZERO_CASE
+        )
+        zero_dir = output_dir / middle_case_id
         envelope, valid_body, valid_payload = build_valid_proposal(
             case_dir=zero_dir,
             credential_case=ZERO_CASE,
             funding_input=assigned[ZERO_CASE]["shared"],
             collateral_input=collateral[ZERO_CASE]["shared"],
         )
-        final_body = mutate_min_fee_ref_script_cost(valid_body)
-        payload = resign_transaction_body(
-            valid_payload,
-            final_body,
-            [controller_key_root / "utxo.skey"],
-        )
-        _write_envelope(zero_dir / "transaction.signed", envelope, payload)
+        if experiment_mode == MATCHED_CONTROL_MODE:
+            final_body = valid_body
+            payload = valid_payload
+        else:
+            final_body = mutate_min_fee_ref_script_cost(valid_body)
+            payload = resign_transaction_body(
+                valid_payload,
+                final_body,
+                [controller_key_root / "utxo.skey"],
+            )
+            _write_envelope(zero_dir / "transaction.signed", envelope, payload)
         tx_id = _transaction_id_from_body(final_body)
-        attempts = _submit_zero_denominator_attempts(
-            runtime=runtime,
-            reference=reference,
-            target=target,
-            payload=payload,
-            transaction_id=tx_id,
-            helper_image=helper_image,
-            before_target=lambda: _query_reference_tip(
-                cli=cli,
-                socket_path=socket_path,
-                network_magic=network_magic,
-            ),
-        )
+        if experiment_mode == MATCHED_CONTROL_MODE:
+            attempts = _submit_matched_nonzero_attempts(
+                runtime=runtime,
+                reference=reference,
+                target=target,
+                payload=payload,
+                transaction_id=tx_id,
+                helper_image=helper_image,
+                before_reference=lambda: _query_reference_tip(
+                    cli=cli,
+                    socket_path=socket_path,
+                    network_magic=network_magic,
+                ),
+            )
+        else:
+            attempts = _submit_zero_denominator_attempts(
+                runtime=runtime,
+                reference=reference,
+                target=target,
+                payload=payload,
+                transaction_id=tx_id,
+                helper_image=helper_image,
+                before_target=lambda: _query_reference_tip(
+                    cli=cli,
+                    socket_path=socket_path,
+                    network_magic=network_magic,
+                ),
+            )
         (zero_dir / "submission-attempts.json").write_text(
             json.dumps(attempts, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -1617,16 +2562,22 @@ def run_governance_zero_denominator_admission(
             role: str(response.get("classification") or "unavailable")
             for role, response in responses.items()
         }
-        if classifications["reference"] != "decode_reject":
-            raise RuntimeError(
-                "zero-denominator direct reference decoder evidence is unavailable; "
-                "target submission was not attempted"
-            )
-        if classifications["target"] != "accepted":
-            raise RuntimeError(
-                "zero-denominator exact Amaru local admission is unavailable; "
-                "propagation and post-mutant control were not attempted"
-            )
+        if experiment_mode == MATCHED_CONTROL_MODE:
+            if classifications != {"reference": "accepted", "target": "accepted"}:
+                raise RuntimeError(
+                    "matched nonzero middle control was not accepted by both nodes"
+                )
+        else:
+            if classifications["reference"] != "decode_reject":
+                raise RuntimeError(
+                    "zero-denominator direct reference decoder evidence is unavailable; "
+                    "target submission was not attempted"
+                )
+            if classifications["target"] != "accepted":
+                raise RuntimeError(
+                    "zero-denominator exact Amaru local admission is unavailable; "
+                    "propagation and post-mutant control were not attempted"
+                )
         included = False
         target_adopted = False
         inclusion_path = zero_dir / "inclusion.json"
@@ -1638,9 +2589,19 @@ def run_governance_zero_denominator_admission(
                 address=address,
                 destination=zero_dir / "included-utxo.json",
                 transaction_id=tx_id,
-                initial_tip=dict(attempts["target_pre_submit_tip"]),
+                initial_tip=dict(
+                    attempts[
+                        "reference_pre_submit_tip"
+                        if experiment_mode == MATCHED_CONTROL_MODE
+                        else "target_pre_submit_tip"
+                    ]
+                ),
                 evidence_path=inclusion_path,
-                target_propagation_gate=target_propagation_gate,
+                target_propagation_gate=(
+                    None
+                    if experiment_mode == MATCHED_CONTROL_MODE
+                    else target_propagation_gate
+                ),
             )
             included = True
         except RuntimeError as exc:
@@ -1652,8 +2613,13 @@ def run_governance_zero_denominator_admission(
                 raise RuntimeError(
                     "zero-denominator propagation evidence is unavailable"
                 ) from evidence_error
-            if propagation_evidence.get("status") != (
-                "not-included-after-reference-progress"
+            if experiment_mode == MATCHED_CONTROL_MODE:
+                raise RuntimeError(
+                    "matched nonzero middle control was not included"
+                ) from exc
+            if (
+                propagation_evidence.get("status")
+                != "not-included-after-reference-progress"
             ):
                 raise RuntimeError(
                     "zero-denominator propagation observation is inconclusive"
@@ -1674,6 +2640,10 @@ def run_governance_zero_denominator_admission(
                 target_adopted = True
             except RuntimeError:
                 target_adopted = False
+        if experiment_mode == MATCHED_CONTROL_MODE and not target_adopted:
+            raise RuntimeError(
+                "matched nonzero middle control lacks exact target adoption"
+            )
         payload_sha256 = hashlib.sha256(payload).hexdigest()
         propagation_observation = {
             "status": str(propagation_evidence.get("status") or "unavailable"),
@@ -1684,12 +2654,18 @@ def run_governance_zero_denominator_admission(
             "p2p_relay_observed": None,
             "relay_rejection_observed": None,
             "evidence_limit": (
-                "reference mempool/UTxO absence after eligibility and progress "
-                "does not prove peer-to-peer relay or relay rejection"
+                "the matched middle transaction was submitted directly to both "
+                "nodes and does not measure peer relay"
+                if experiment_mode == MATCHED_CONTROL_MODE
+                else (
+                    "reference mempool/UTxO absence after eligibility and progress "
+                    "does not prove peer-to-peer relay or relay rejection"
+                )
             ),
         }
         zero_record = {
-            "case_id": ZERO_CASE,
+            "case_id": middle_case_id,
+            "experiment_mode": experiment_mode,
             "funding_input": assigned[ZERO_CASE]["shared"],
             "collateral_input": collateral[ZERO_CASE]["shared"],
             "payload_sha256": payload_sha256,
@@ -1720,7 +2696,7 @@ def run_governance_zero_denominator_admission(
 
         post_dir = output_dir / POST_CONTROL_CASE
         post_record: dict[str, Any] = {"case_id": POST_CONTROL_CASE}
-        if included:
+        if included and experiment_mode == ZERO_DENOMINATOR_MODE:
             post_record["target"] = {
                 "classification": "skipped",
                 "reason": (
@@ -1787,6 +2763,7 @@ def run_governance_zero_denominator_admission(
             )
             post_included = False
             post_adopted = False
+            post_propagation_observation: dict[str, Any] = {}
             post_inclusion_path = post_dir / "inclusion.json"
             if post_response.get("classification") == "accepted":
                 try:
@@ -1804,6 +2781,10 @@ def run_governance_zero_denominator_admission(
                     post_included = True
                 except RuntimeError:
                     post_included = False
+            if post_inclusion_path.is_file():
+                post_propagation_observation = json.loads(
+                    post_inclusion_path.read_text(encoding="utf-8")
+                )
             if post_included:
                 post_tip = _terminal_inclusion_tip(
                     post_inclusion_path,
@@ -1826,8 +2807,79 @@ def run_governance_zero_denominator_admission(
                 "payload_sha256": hashlib.sha256(post_payload).hexdigest(),
                 "body_sha256": hashlib.sha256(post_body_raw).hexdigest(),
                 "transaction_id": post_tx_id,
+                "propagation_observation": post_propagation_observation,
                 "observation_boundary": "post-mutant-valid-target-traffic",
             }
+            if (
+                p2p_trace_recovery
+                and post_response.get("classification") == "accepted"
+            ):
+                admission_evidence = attempts.get("target", {}).get(
+                    "amaru_admission_evidence", {}
+                )
+                peer_identity = _reference_peer_identity(reference)
+                trace_evidence = assess_txsubmission_trace(
+                    target=target,
+                    log_start_offset=admission_evidence.get("log_start_offset"),
+                    malformed_transaction_id=tx_id,
+                    later_valid_transaction_id=post_tx_id,
+                    expected_peer=str(peer_identity["peer"]),
+                )
+                trace_evidence["reference_peer_identity"] = peer_identity
+                (post_dir / "p2p-trace.json").write_text(
+                    json.dumps(trace_evidence, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                post_record["p2p_trace"] = trace_evidence
+                if (
+                    not post_included
+                    and post_propagation_observation.get("status")
+                    == "not-included-after-reference-progress"
+                ):
+                    post_record["conditional_recovery"] = (
+                        _recover_post_control_after_cycle(
+                            trace_evidence=trace_evidence,
+                            runtime=runtime,
+                            target=target,
+                            reference=reference,
+                            payload=post_payload,
+                            transaction_id=post_tx_id,
+                            target_propagation_gate=target_propagation_gate,
+                            cli=cli,
+                            socket_path=socket_path,
+                            network_magic=network_magic,
+                            address=address,
+                            output_dir=post_dir / "conditional-recovery",
+                        )
+                    )
+                else:
+                    post_record["conditional_recovery"] = {
+                        "schema_version": 1,
+                        "status": "not-attempted",
+                        "reason": "post-control target path did not meet the recovery precondition",
+                    }
+            elif (
+                post_response.get("classification") == "accepted"
+                and not post_included
+                and post_propagation_observation.get("status")
+                == "not-included-after-reference-progress"
+            ):
+                if not p2p_trace_recovery:
+                    post_record["direct_reference_confirmation"] = (
+                        _confirm_post_mutant_control_on_reference(
+                            runtime=runtime,
+                            reference=reference,
+                            payload=post_payload,
+                            transaction_id=post_tx_id,
+                            helper_image=helper_image,
+                            cli=cli,
+                            socket_path=socket_path,
+                            network_magic=network_magic,
+                            address=address,
+                            output_dir=post_dir,
+                            target_observation=post_propagation_observation,
+                        )
+                    )
         records.append(post_record)
         (post_dir / "result.json").parent.mkdir(parents=True, exist_ok=True)
         (post_dir / "result.json").write_text(
@@ -1835,13 +2887,19 @@ def run_governance_zero_denominator_admission(
             encoding="utf-8",
         )
 
-    status = assess_governance_admission(records)
+    status = assess_governance_admission(records, experiment_mode=experiment_mode)
     registration_receipt = json.loads(
         (output_dir / REGISTRATION_PREP / "result.json").read_text(encoding="utf-8")
     )
     return {
         "schema_version": 1,
-        "evidence_scope": "governance_parameter_update_admission_only",
+        "evidence_scope": (
+            "governance_parameter_update_matched_negative_control"
+            if experiment_mode == MATCHED_CONTROL_MODE
+            else "governance_parameter_update_admission_only"
+        ),
+        "experiment_mode": experiment_mode,
+        "p2p_trace_recovery": p2p_trace_recovery,
         "target_identity": target,
         "reference_identity": reference,
         "network_magic": network_magic,
@@ -1850,7 +2908,16 @@ def run_governance_zero_denominator_admission(
             "cddl_key": PARAMETER_KEY,
             "name": "minFeeRefScriptCostPerByte",
             "control_ratio": [control_ratio.numerator, control_ratio.denominator],
-            "mutant_ratio": [control_ratio.numerator, 0],
+            **(
+                {
+                    "middle_ratio": [
+                        control_ratio.numerator,
+                        control_ratio.denominator,
+                    ]
+                }
+                if experiment_mode == MATCHED_CONTROL_MODE
+                else {"mutant_ratio": [control_ratio.numerator, 0]}
+            ),
         },
         "prerequisites": {
             "governance_action_deposit": gov_deposit,

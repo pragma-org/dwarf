@@ -389,6 +389,12 @@ class RuntimeGovernanceZeroDenominatorAdmission(LoadPrimitive):
             expected_target_source=str(target_identity["source_revision"]),
             expected_reference_version=str(reference_identity["version"]),
             expected_reference_source=str(reference_identity["source_revision"]),
+            experiment_mode=str(
+                self.params.get("experiment_mode", "zero-denominator")
+            ),
+            p2p_trace_recovery=bool(
+                self.params.get("p2p_trace_recovery", False)
+            ),
         )
         report.update(
             {

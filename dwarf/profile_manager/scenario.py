@@ -522,6 +522,13 @@ def _validate_substrate(value):
                 "substrate.governance_guardrails_fixture expected hash is invalid"
             )
         guardrails_fixture = dict(guardrails_fixture)
+    amaru_txsubmission_trace = value.get("amaru_txsubmission_trace")
+    if amaru_txsubmission_trace is not None and not isinstance(
+        amaru_txsubmission_trace, bool
+    ):
+        raise ScenarioValidationError(
+            "substrate.amaru_txsubmission_trace must be a boolean"
+        )
     normalized_substrate = {
         "compose_mode": compose_mode,
         "host_strategy": host_strategy,
@@ -531,6 +538,10 @@ def _validate_substrate(value):
         "nodes": normalized_nodes,
         "topology": {"edges": normalized_edges},
     }
+    if amaru_txsubmission_trace is not None:
+        normalized_substrate["amaru_txsubmission_trace"] = (
+            amaru_txsubmission_trace
+        )
     if guardrails_fixture is not None:
         normalized_substrate["governance_guardrails_fixture"] = guardrails_fixture
     return normalized_substrate

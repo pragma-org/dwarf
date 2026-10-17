@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime_governance_zero_denominator_admission params",
+  "type": "object",
+  "required": [
+    "runtime_metadata_path",
+    "target_node",
+    "reference_node",
+    "output_dir"
+  ],
+  "properties": {
+    "runtime_metadata_path": {"type": "string", "minLength": 1},
+    "target_node": {"type": "string", "minLength": 1},
+    "reference_node": {"type": "string", "minLength": 1},
+    "output_dir": {"type": "string", "minLength": 1},
+    "experiment_mode": {
+      "type": "string",
+      "enum": ["zero-denominator", "nonzero-middle-control"]
+    },
+    "p2p_trace_recovery": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

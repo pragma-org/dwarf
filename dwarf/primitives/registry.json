@@ -3642,7 +3642,7 @@
       "class": "RuntimeGovernanceZeroDenominatorAdmission",
       "family": "load",
       "module": "profile_manager.submit_primitives",
-      "params_schema": "primitives/load/runtime_hardening_probe.schema.json",
+      "params_schema": "primitives/load/runtime_governance_admission.schema.json",
       "runtimes": [
         "devnet"
       ],

@@ -1291,6 +1291,7 @@ def _wait_for_target_adoption(
     expected_tip: dict[str, Any],
     evidence_path: Path,
     timeout_seconds: float = 180,
+    minimum_log_offset: int = 0,
 ) -> dict[str, Any]:
     """Require Amaru to adopt the exact reference block before spending it."""
 
@@ -1305,6 +1306,12 @@ def _wait_for_target_adoption(
     ):
         raise RuntimeError("reference funding tip identity is incomplete")
     expected = {"block": block, "slot": slot, "hash": header_hash}
+    if (
+        isinstance(minimum_log_offset, bool)
+        or not isinstance(minimum_log_offset, int)
+        or minimum_log_offset < 0
+    ):
+        raise RuntimeError("target adoption log offset is invalid")
     started = time.monotonic()
     last_diagnostic = "target log has not reported the exact funding block"
     while True:
@@ -1312,7 +1319,7 @@ def _wait_for_target_adoption(
             with log_path.open("rb") as stream:
                 stream.seek(0, 2)
                 size = stream.tell()
-                stream.seek(max(0, size - 262_144))
+                stream.seek(max(minimum_log_offset, size - 262_144))
                 text = stream.read().decode("utf-8", "replace")
             matching = [line for line in text.splitlines() if header_hash in line]
             for line in matching:
@@ -1321,6 +1328,7 @@ def _wait_for_target_adoption(
                         "schema_version": 1,
                         "status": "invalid-header",
                         "expected_tip": expected,
+                        "minimum_log_offset": minimum_log_offset,
                         "blocking_diagnostic": line[-4096:],
                     }
                     evidence_path.write_text(
@@ -1338,6 +1346,7 @@ def _wait_for_target_adoption(
                         "schema_version": 1,
                         "status": "adopted",
                         "expected_tip": expected,
+                        "minimum_log_offset": minimum_log_offset,
                         "adoption_diagnostic": line[-4096:],
                         "elapsed_seconds": round(time.monotonic() - started, 3),
                     }
@@ -1352,6 +1361,7 @@ def _wait_for_target_adoption(
                 "schema_version": 1,
                 "status": "not-adopted",
                 "expected_tip": expected,
+                "minimum_log_offset": minimum_log_offset,
                 "blocking_diagnostic": last_diagnostic,
                 "timeout_seconds": timeout_seconds,
             }

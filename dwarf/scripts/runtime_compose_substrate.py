@@ -1025,6 +1025,7 @@ def _docker_compose_body(
     network_magic: int | None = None,
     controller_ownership: dict | None = None,
     docker_host_runtime_root: str | None = None,
+    amaru_txsubmission_trace: bool = False,
 ) -> dict:
     services = {}
     for node in nodes:
@@ -1165,6 +1166,16 @@ def _docker_compose_body(
                 # actual adoption, not infer it from a ChainSync intersection.
                 "AMARU_LOG": "error,amaru=info,amaru_pure_stage=warn,amaru::consensus=debug",
             }
+            if amaru_txsubmission_trace:
+                services[node["id"]]["environment"].update(
+                    {
+                        "AMARU_TRACE_EMIT_PRIVATE": "true",
+                        "AMARU_LOG": (
+                            "error,amaru=info,amaru_pure_stage=warn,"
+                            "amaru::consensus=debug,amaru::protocols=debug"
+                        ),
+                    }
+                )
         elif node.get("target_mode") == "patched":
             services[node["id"]]["environment"] = {
                 "DWARF_CARDANO_MEASUREMENT_TRACE": (
@@ -1407,6 +1418,9 @@ def _compose_substrate_docker(
         network_magic=plan.get("network_magic"),
         controller_ownership=plan.get("controller_ownership"),
         docker_host_runtime_root=plan.get("docker_host_runtime_root"),
+        amaru_txsubmission_trace=bool(
+            plan.get("amaru_txsubmission_trace", False)
+        ),
     )
     if plan.get("controller_ownership"):
         for service in compose_body["services"].values():
@@ -1495,6 +1509,9 @@ def _compose_substrate_docker(
         "era_transition": {},
         "version_provenance": build_version_provenance(plan, metadata_nodes),
         "cardano_measurement_traces": measurement_trace_config if haskell_nodes and not public_network else {"enabled": False, "namespaces": []},
+        "amaru_txsubmission_trace": bool(
+            plan.get("amaru_txsubmission_trace", False)
+        ),
     }
     metadata_path = runtime_root / "runtime.json"
     write_json(metadata_path, metadata)
@@ -1559,6 +1576,9 @@ def _compose_substrate_docker(
         "cardano_testnet_start_time_refresh": start_time_refresh,
         "cardano_testnet_config_compatibility": cardano_testnet_config_compatibility,
         "generated_workload_funding": generated_workload_funding,
+        "amaru_txsubmission_trace": bool(
+            plan.get("amaru_txsubmission_trace", False)
+        ),
         "governance_guardrails_fixture": governance_guardrails_fixture_evidence,
         "kes_genesis_override": kes_genesis_override_evidence,
         "cardano_chain_progress_gate": chain_progress_gate,
@@ -2003,6 +2023,9 @@ def compose_substrate(
     plan["kes_genesis_override"] = substrate.get("kes_genesis_override")
     plan["governance_guardrails_fixture"] = substrate.get(
         "governance_guardrails_fixture"
+    )
+    plan["amaru_txsubmission_trace"] = bool(
+        substrate.get("amaru_txsubmission_trace", False)
     )
 
     if compose_mode == "docker":

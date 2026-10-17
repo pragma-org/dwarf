@@ -26,6 +26,7 @@
   "substrate": {
     "compose_mode": "docker",
     "network": "testnet_42",
+    "amaru_txsubmission_trace": true,
     "governance_guardrails_fixture": {
       "name": "always-succeeds-v3",
       "expected_active_script_hash": "fa24fb305126805cf2164c161d852a0e7330cf988f1fe558cf7d4a64"
@@ -67,7 +68,8 @@
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "node1",
       "reference_node": "node2",
-      "output_dir": "outputs/governance-zero-denominator"
+      "output_dir": "outputs/governance-zero-denominator",
+      "p2p_trace_recovery": true
     },
     {
       "primitive": "runtime_multi_node_observation",
