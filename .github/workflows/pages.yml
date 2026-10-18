@@ -1,0 +1,52 @@
+name: Publish portable results viewer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - docs/index.html
+      - docs/portable-defaults.js
+      - docs/evidence/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Assemble static site
+        run: |
+          mkdir -p _site/docs
+          cp index.html _site/index.html
+          cp docs/index.html docs/portable-defaults.js _site/docs/
+          cp -R docs/evidence _site/docs/evidence
+          touch _site/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
