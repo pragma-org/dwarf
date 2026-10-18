@@ -22,8 +22,7 @@
   "evidence_intent": "risk-support",
   "target": {
     "implementation": "amaru",
-    "version": "v10.11.20260925",
-    "source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d"
+    "version": "resolved-plan"
   },
   "runtime": "devnet",
   "substrate": {
@@ -32,13 +31,15 @@
       {
         "id": "node1",
         "impl": "amaru",
-        "version": "v10.11.20260925",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
         "role": "honest"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
-        "version": "11.1.2",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
         "role": "honest"
       }
     ],

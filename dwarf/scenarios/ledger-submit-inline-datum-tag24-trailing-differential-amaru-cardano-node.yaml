@@ -1,0 +1,90 @@
+{
+  "spec_version": "v1",
+  "id": "ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node",
+  "title": "Inline-datum nested tag-24 trailing-CBOR differential — operator-selected Amaru and cardano-node",
+  "authors": ["dwarf"],
+  "tags": [
+    "amaru",
+    "cardano-node",
+    "cbor",
+    "differential",
+    "inline-datum",
+    "security"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This case appends one byte inside the output inline-datum tag-24 byte string; it is not whole-transaction trailing data.",
+    "Submission acceptance without retained inclusion is not ledger adoption or consensus divergence.",
+    "A transport close or unavailable response is not a node rejection or crash."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "resolved-plan"
+  },
+  "runtime": "devnet",
+  "seed": "0x1A1DDA24",
+  "substrate": {
+    "compose_mode": "docker",
+    "network": "testnet_42",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "amaru",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
+        "role": "submitter"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
+        "role": "reference"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {"from": "node1", "to": "node2"}
+      ]
+    }
+  },
+  "setup": [
+    {"primitive": "runtime_install_version", "output_dir": "outputs/substrate-install"},
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose",
+      "healthy_timeout_seconds": 360,
+      "timeout_seconds": 600
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_inline_datum_tag24_boundary",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "reference_node": "node2",
+      "output_dir": "outputs/inline-datum-tag24-boundary"
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": ["node1", "node2"],
+      "observation_window_seconds": 8,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": ["tip_state", "connection_state"],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "inline_datum_tag24_boundary_matches",
+      "result_path": "outputs/inline-datum-tag24-boundary/result.json"
+    },
+    {"primitive": "all_nodes_responsive"}
+  ],
+  "teardown": [
+    {"primitive": "runtime_teardown_substrate", "output_dir": "outputs/substrate-teardown"}
+  ]
+}

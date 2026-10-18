@@ -15,7 +15,7 @@
   ],
   "target": {
     "implementation": "cardano-node",
-    "version": "11.1.2"
+    "version": "resolved-plan"
   },
   "runtime": "devnet",
   "substrate": {
@@ -25,13 +25,15 @@
       {
         "id": "node1",
         "impl": "cardano-node",
-        "version": "11.1.2",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
         "role": "submitter"
       },
       {
         "id": "node2",
         "impl": "amaru",
-        "version": "10.11.20260925",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
         "role": "observer"
       }
     ],

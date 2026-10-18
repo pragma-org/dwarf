@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "uplc_deep_delay_stack_safety_matches params",
+  "type": "object",
+  "required": ["primitive"],
+  "properties": {
+    "primitive": {"const": "uplc_deep_delay_stack_safety_matches"},
+    "result_path": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

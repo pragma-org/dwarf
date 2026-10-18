@@ -14,6 +14,7 @@ import importlib
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import tempfile
@@ -4754,6 +4755,15 @@ class RuntimeInstallVersion(LoadPrimitive):
                 "stderr": stderr[-2048:],
             },
         )
+        if outcome != "ok":
+            detail = stderr.strip() or stdout.strip() or (
+                f"runtime_install_version exited with {proc.returncode}"
+            )
+            raise RuntimeError(detail)
+        if expect_exit == 0 and not report_path.is_file():
+            raise RuntimeError(
+                "runtime_install_version completed without install-report.json"
+            )
 
 
 class RuntimeAttachTopology(LoadPrimitive):
@@ -4841,6 +4851,25 @@ class RuntimeComposeSubstrate(LoadPrimitive):
         run_id = str(getattr(handle, "run_id", "substrate")).replace(":", "").replace("/", "-")
         compose_project = str(self.params.get("compose_project", f"dwarf-substrate-{run_id}"))
         substrate = dict(self.bound_substrate)
+        installation_id = str(os.environ.get("DWARF_INSTALLATION_ID") or "").strip()
+        if installation_id:
+            topology_id = re.sub(r"[^a-z0-9_-]", "-", compose_project.lower()) or "dwarf-substrate"
+            expected_ownership = {
+                "installation_id": installation_id,
+                "topology_id": topology_id,
+            }
+            declared_profile = substrate.get("profile_id")
+            if declared_profile not in (None, topology_id):
+                raise RuntimeError(
+                    "scenario substrate profile identity conflicts with its run-owned topology"
+                )
+            declared_ownership = substrate.get("controller_ownership")
+            if declared_ownership not in (None, expected_ownership):
+                raise RuntimeError(
+                    "scenario substrate ownership conflicts with its run-owned topology"
+                )
+            substrate["profile_id"] = topology_id
+            substrate["controller_ownership"] = expected_ownership
         configured_runtime_root = self.params.get("runtime_root")
         controller_host_state = os.environ.get("DWARF_CONTROLLER_HOST_STATE_DIR")
         if configured_runtime_root:
@@ -4898,9 +4927,25 @@ class RuntimeComposeSubstrate(LoadPrimitive):
         if report_path.is_file():
             report = json.loads(report_path.read_text(encoding="utf-8"))
         if self.bound_state is not None:
+            partial_runtime_metadata_path = runtime_root / "runtime.json"
+            partial_bundle_metadata_path = output_dir / "runtime.json"
             self.bound_state["substrate_runtime_root"] = report.get("runtime_root", str(runtime_root))
-            self.bound_state["substrate_runtime_metadata_path"] = report.get("runtime_metadata_path")
-            self.bound_state["substrate_bundle_runtime_metadata_path"] = report.get("bundle_runtime_metadata_path")
+            self.bound_state["substrate_runtime_metadata_path"] = (
+                report.get("runtime_metadata_path")
+                or (
+                    str(partial_runtime_metadata_path)
+                    if partial_runtime_metadata_path.is_file()
+                    else None
+                )
+            )
+            self.bound_state["substrate_bundle_runtime_metadata_path"] = (
+                report.get("bundle_runtime_metadata_path")
+                or (
+                    str(partial_bundle_metadata_path)
+                    if partial_bundle_metadata_path.is_file()
+                    else None
+                )
+            )
             self.bound_state["substrate_compose_report"] = report
         for node in report.get("nodes", []):
             handle.log(
@@ -4928,6 +4973,15 @@ class RuntimeComposeSubstrate(LoadPrimitive):
                 "stderr": stderr[-2048:],
             },
         )
+        if outcome != "ok":
+            detail = stderr.strip() or stdout.strip() or (
+                f"runtime_compose_substrate exited with {proc.returncode}"
+            )
+            raise RuntimeError(detail)
+        if expect_exit == 0 and not report_path.is_file():
+            raise RuntimeError(
+                "runtime_compose_substrate completed without compose-report.json"
+            )
 
 
 class RuntimeSubstrateTipWarmup(LoadPrimitive):
@@ -14407,28 +14461,61 @@ class RuntimeVerifyExactTarget(LoadPrimitive):
         "transfer_source_installation_id",
         "transfer_manifest_sha256",
         "version_catalog_revision",
+        "identity_kind",
+        "image_config_id",
+        "platform",
+        "operator_registration_id",
+        "operator_overlay_revision",
+        "controller_installation_id",
+        "experimental_instrumentation",
     )
 
     def run(self, handle, rng):
         if self.params.get("identity_binding") == "resolved-plan":
-            required = {
-                "image_reference",
-                "image_digest",
-                "version_catalog_revision",
-            }
-            if self.params.get("mode") == "patched":
-                required.update(
-                    {
-                        "executable_digest",
-                        "patch_set_sha256",
-                        "build_result_sha256",
-                        "runtime_probe_log_sha256",
-                    }
-                )
+            local_config = self.params.get("identity_kind") == "operator-local-config"
+            if local_config:
+                required = {
+                    "image_reference",
+                    "image_config_id",
+                    "executable_digest",
+                    "platform",
+                    "operator_registration_id",
+                    "operator_overlay_revision",
+                    "controller_installation_id",
+                    "version_catalog_revision",
+                }
+                if self.params.get("mode") == "patched":
+                    required.update(
+                        {"patch_set_sha256", "experimental_instrumentation"}
+                    )
+            else:
+                required = {
+                    "image_reference",
+                    "image_digest",
+                    "version_catalog_revision",
+                }
+                if self.params.get("mode") == "patched":
+                    required.update(
+                        {
+                            "executable_digest",
+                            "patch_set_sha256",
+                            "build_result_sha256",
+                            "runtime_probe_log_sha256",
+                        }
+                    )
             missing = sorted(
                 field for field in required if self.params.get(field) in (None, "")
             )
-            if self.params.get("image_reference") == self.params.get("image_digest"):
+            if local_config and (
+                self.params.get("image_reference") != self.params.get("image_config_id")
+            ):
+                raise RuntimeError(
+                    "resolved-plan local target reference differs from its config image ID"
+                )
+            if (
+                not local_config
+                and self.params.get("image_reference") == self.params.get("image_digest")
+            ):
                 imported_required = {
                     "source_image_reference",
                     "image_manifest_digest",
@@ -14449,6 +14536,21 @@ class RuntimeVerifyExactTarget(LoadPrimitive):
                     "resolved-plan target identity was not materialized: "
                     + ", ".join(sorted(set(missing)))
                 )
+            if local_config and self.params.get("mode") == "patched":
+                from profile_manager.experimental_instrumentation import validate_candidate
+
+                try:
+                    candidate = validate_candidate(
+                        self.params.get("experimental_instrumentation"), self.params
+                    )
+                except ValueError as exc:
+                    raise RuntimeError(
+                        "resolved-plan experimental instrumentation identity is invalid"
+                    ) from exc
+                if candidate["patch_set_sha256"] != self.params.get("patch_set_sha256"):
+                    raise RuntimeError(
+                        "resolved-plan experimental instrumentation patch set differs"
+                    )
         observed = _measurement_target_identity(handle)
         expected = {
             field: self.params[field]
@@ -14461,6 +14563,30 @@ class RuntimeVerifyExactTarget(LoadPrimitive):
             for field, value in expected.items()
             if observed.get(field) != value
         }
+        if (
+            self.params.get("identity_binding") == "resolved-plan"
+            and self.params.get("identity_kind") == "operator-local-config"
+            and self.params.get("mode") == "patched"
+        ):
+            from profile_manager.experimental_instrumentation import validate_candidate
+
+            try:
+                observed_candidate = validate_candidate(
+                    observed.get("experimental_instrumentation"), observed
+                )
+            except ValueError:
+                mismatches["experimental_instrumentation"] = {
+                    "expected": self.params.get("experimental_instrumentation"),
+                    "observed": observed.get("experimental_instrumentation"),
+                }
+            else:
+                if observed_candidate["patch_set_sha256"] != observed.get(
+                    "patch_set_sha256"
+                ):
+                    mismatches["experimental_instrumentation"] = {
+                        "expected": self.params.get("experimental_instrumentation"),
+                        "observed": observed.get("experimental_instrumentation"),
+                    }
         if expected.get("version") and expected.get("source_revision"):
             from profile_manager.version_provenance import ProvenanceIndex
 

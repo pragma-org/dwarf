@@ -101,6 +101,7 @@ _EXACT_TARGET_IDENTITY_FIELDS = (
     "operator_registration_id",
     "operator_overlay_revision",
     "controller_installation_id",
+    "experimental_instrumentation",
 )
 _EXACT_TARGET_SEMANTIC_FIELDS = (
     "implementation",
@@ -667,6 +668,100 @@ def _scenario_target_bindings(scenario, target_identity: dict[str, Any]) -> list
     return bindings
 
 
+def _scenario_substrate_version_profile(scenario, request) -> dict[str, Any] | None:
+    """Project a self-composed portable substrate onto the existing version resolver."""
+
+    substrate = scenario.substrate or {}
+    nodes = list(substrate.get("nodes") or [])
+    portable = [node for node in nodes if node.get("identity_binding") == "resolved-plan"]
+    if not portable:
+        return None
+    if len(portable) != len(nodes):
+        raise RunPlanError(
+            f"scenario {scenario.id} mixes frozen and resolved-plan substrate nodes",
+            field="scenario_id",
+        )
+    cardano_count = sum(node.get("impl") == "cardano-node" for node in nodes)
+    amaru_count = sum(node.get("impl") == "amaru" for node in nodes)
+    network = str(substrate.get("network") or "")
+    network_magic = int(network.removeprefix("testnet_")) if network.startswith("testnet_") else 42
+    explicit_release_selection = any(
+        (request.cardano_version, request.amaru_version, request.compatibility_pair)
+    )
+    data = {
+        "id": f"scenario-{scenario.id}-version-selection",
+        "label": f"{scenario.title} version selection",
+        "haskell_count": cardano_count,
+        "amaru_count": amaru_count,
+        "network_magic": network_magic,
+        "peer_sharing": False,
+        "topology_pattern": "local-mesh",
+        "shared_genesis": True,
+        "measurement_target_mode": "stock",
+        "version_policy": request.version_policy
+        or ("exact" if explicit_release_selection else "latest-confirmed"),
+        "version_policy_source": (
+            "explicit"
+            if request.version_policy or explicit_release_selection
+            else "implicit-default"
+        ),
+    }
+    if request.cardano_version:
+        data["cardano_version"] = request.cardano_version
+    if request.amaru_version:
+        data["amaru_version"] = request.amaru_version
+    if request.compatibility_pair:
+        data["compatibility_pair"] = request.compatibility_pair
+    return data
+
+
+def _scenario_substrate_bindings(scenario, preview) -> list[dict[str, Any]]:
+    if preview is None:
+        return []
+    releases = {
+        **(preview.get("supporting") or {}),
+        **(preview.get("resolved") or {}),
+    }
+    bindings = []
+    for index, node in enumerate((scenario.substrate or {}).get("nodes") or []):
+        if node.get("identity_binding") != "resolved-plan":
+            continue
+        release = releases.get(node["impl"])
+        if not isinstance(release, dict):
+            raise RunPlanError(
+                f"scenario {scenario.id} has no resolved {node['impl']} release for {node['id']}",
+                field="versions",
+            )
+        compact = _compact_release(release)
+        required = ("version", "source_revision", "image_reference", "image_digest")
+        missing = [field for field in required if compact.get(field) in (None, "")]
+        if missing:
+            raise RunPlanError(
+                f"scenario {scenario.id} resolved {node['impl']} identity is incomplete: "
+                + ", ".join(missing),
+                field="versions",
+            )
+        bindings.append(
+            {
+                "kind": "resolved-plan",
+                "location": ["substrate", "nodes", index],
+                "declared": {
+                    "id": node["id"],
+                    "impl": node["impl"],
+                    "role": node["role"],
+                    "identity_binding": "resolved-plan",
+                },
+                "resolved": {
+                    "version": compact["version"],
+                    "source_revision": compact["source_revision"],
+                    "image": compact["image_reference"],
+                    "image_digest": compact["image_digest"],
+                },
+            }
+        )
+    return bindings
+
+
 def _compact_release(release: dict[str, Any]) -> dict[str, Any]:
     artifact = next(
         (
@@ -680,6 +775,12 @@ def _compact_release(release: dict[str, Any]) -> dict[str, Any]:
         artifact.get("operator_registration") if artifact else None
     )
     execution_reference = artifact.get("reference") if artifact else None
+    if (
+        isinstance(execution_reference, str)
+        and "@" not in execution_reference
+        and _DIGEST.fullmatch(str(artifact.get("digest") or ""))
+    ):
+        execution_reference = f"{execution_reference}@{artifact['digest']}"
     if (
         artifact
         and not artifact.get("digest")
@@ -1058,6 +1159,9 @@ def _measurement_context(
             capabilities = CARDANO_PATCHED_CAPABILITIES
         else:
             capabilities = CARDANO_STOCK_CAPABILITIES
+        if implementation == "amaru" and identity.get("experimental_instrumentation") is not None:
+            from profile_manager.experimental_instrumentation import CAPABILITIES
+            capabilities |= CAPABILITIES
         if implementation == "amaru" and profile.amaru_json_traces is not True:
             capabilities -= AMARU_JSON_TRACE_CAPABILITIES
         return resolve_measurements(
@@ -1247,12 +1351,30 @@ def resolve_run_plan(
                     ),
                 },
             ) from exc
+    elif (substrate_version_profile := _scenario_substrate_version_profile(scenario, request)) is not None:
+        profile_data = substrate_version_profile
+        try:
+            preview = build_deployment_version_preview(profile_data)
+            enforce_deployment_version_gate(
+                preview,
+                acknowledge_unknown=request.acknowledge_unknown_versions,
+            )
+        except DeploymentVersionGateError as exc:
+            raise RunPlanError(
+                str(exc),
+                field="versions",
+                details={
+                    "code": exc.code,
+                    "requires_acknowledgement": exc.code == "unknown-version-ack-required",
+                },
+            ) from exc
 
     effective_target = dict(scenario.target)
     if preview is not None:
         release = (preview.get("resolved") or {}).get(effective_target["implementation"])
         if release:
             effective_target["version"] = release["version"]
+            effective_target["source_revision"] = release.get("source_revision")
     effective_scenario = replace(
         scenario,
         target=effective_target,
@@ -1274,6 +1396,7 @@ def resolve_run_plan(
     target_bindings = _scenario_target_bindings(
         effective_scenario, measurements.get("target_identity") or {}
     )
+    substrate_bindings = _scenario_substrate_bindings(effective_scenario, preview)
     cells, primitive_names = _primitive_inventory(effective_scenario)
     capability = _capability_context(capability_context)
     conformance_adapters = _conformance_bindings(
@@ -1289,9 +1412,6 @@ def resolve_run_plan(
     versions = None
     topology_shape = None
     if preview is not None:
-        substrate = versioned_substrate_for_profile(profile, preview)
-        desired_topology = desired_topology_from_substrate(profile.id, substrate)
-        topology_shape = substrate.get("actual_topology")
         versions = {
             "policy": preview.get("policy"),
             "policy_source": preview.get("policy_source"),
@@ -1301,12 +1421,6 @@ def resolve_run_plan(
             "catalog_revision": preview.get("catalog_revision"),
             "operator_overlay_revision": preview.get("operator_overlay_revision"),
             "operator_registration_id": preview.get("operator_registration_id"),
-            "deployment_identity_sha256": desired_topology["deployment_sha256"],
-            "topology_plan_sha256": desired_topology["plan_sha256"],
-            # Freeze the complete resolver-owned operand used by the shared
-            # deployment-equivalence predicate.  A compact release projection
-            # cannot preserve absent/false/malformed catalog metadata states.
-            "expected_desired_topology": desired_topology,
             "pair": preview.get("pair"),
             "requires_acknowledgement": bool(
                 preview.get("requires_acknowledgement")
@@ -1321,6 +1435,22 @@ def resolve_run_plan(
                 for name, release in (preview.get("supporting") or {}).items()
             },
         }
+        if profile is not None:
+            substrate = versioned_substrate_for_profile(profile, preview)
+            desired_topology = desired_topology_from_substrate(profile.id, substrate)
+            topology_shape = substrate.get("actual_topology")
+            versions.update(
+                {
+                    "deployment_identity_sha256": desired_topology["deployment_sha256"],
+                    "topology_plan_sha256": desired_topology["plan_sha256"],
+                    # Freeze the complete resolver-owned operand used by the shared
+                    # deployment-equivalence predicate.  A compact release projection
+                    # cannot preserve absent/false/malformed catalog metadata states.
+                    "expected_desired_topology": desired_topology,
+                }
+            )
+        else:
+            versions["selection_kind"] = "scenario-substrate"
         if operator_preference is not None:
             subject = operator_preference["decision"]["subject"]
             _validate_operator_preference_subject(subject, versions, profile.id)
@@ -1357,6 +1487,7 @@ def resolve_run_plan(
                 "by the current execution engine."
             ),
             "target_bindings": target_bindings,
+            "substrate_bindings": substrate_bindings,
             "required_conformance_adapters": conformance_adapters,
         },
         "profile": (

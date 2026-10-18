@@ -2,6 +2,16 @@
 set -vxo pipefail
 
 export PATH=/usr/local/bin:$PATH
+BOOTSTRAP_TARGET_EPOCH=3
+# The immutable producer requires an immutable tip in epoch >= 3.  At the
+# former epoch-3 midpoint, the pinned synthesizer's immutable tip was still in
+# epoch 2.  Three quarters through epoch 3 is the audited exportable point and
+# leaves one quarter of the epoch for this live ledger test.  It deliberately
+# avoids the known epoch-transition active-nonce path; it does not fix or test
+# that path.
+BOOTSTRAP_TARGET_EPOCH_FRACTION_NUMERATOR=3
+BOOTSTRAP_TARGET_EPOCH_FRACTION_DENOMINATOR=4
+SYNTHESIS_SLOT=""
 
 write_file() {
     local tmp_file="${1}_$(tr </dev/urandom -dc A-Za-z0-9 | head -c16)"
@@ -52,9 +62,20 @@ EOF
 }
 
 set_start_time() {
-    SYSTEM_START_UNIX=$(echo "$(date +%s) - (86400 * 4)" | bc)
     SHELLEY_GENESIS_JSON="$1/configs/shelley-genesis.json"
     BYRON_GENESIS_JSON="$1/configs/byron-genesis.json"
+    epoch_length=$(jq -er '.epochLength | select(type == "number" and . > 1)' "${SHELLEY_GENESIS_JSON}")
+    target_slot=$((
+        epoch_length * BOOTSTRAP_TARGET_EPOCH
+        + epoch_length * BOOTSTRAP_TARGET_EPOCH_FRACTION_NUMERATOR
+            / BOOTSTRAP_TARGET_EPOCH_FRACTION_DENOMINATOR
+    ))
+    if [[ -n "${SYNTHESIS_SLOT}" && "${SYNTHESIS_SLOT}" != "${target_slot}" ]]; then
+        echo "inconsistent epoch length across bootstrap pool configurations" >&2
+        exit 1
+    fi
+    SYNTHESIS_SLOT=${target_slot}
+    SYSTEM_START_UNIX=$(($(date +%s) - SYNTHESIS_SLOT))
     SYSTEM_START_ISO="$(date -d @${SYSTEM_START_UNIX} '+%Y-%m-%dT%H:%M:00Z')"
     jq ".systemStart = \"${SYSTEM_START_ISO}\"" "${SHELLEY_GENESIS_JSON}" | write_file "${SHELLEY_GENESIS_JSON}"
     jq ".startTime = ${SYSTEM_START_UNIX}" "${BYRON_GENESIS_JSON}" | write_file "${BYRON_GENESIS_JSON}"
@@ -70,6 +91,29 @@ for pool in $pools; do
   config_topology_json "$pool_ix" "$number_of_pools"
   set_start_time "$pool"
 done
+: "${SYNTHESIS_SLOT:?bootstrap synthesis slot was not derived}"
+
+# The pinned bootstrap config retains five genesis pools even when the runtime
+# materializes only one producer.  Keep the synthesized private genesis aligned
+# with the producer set that can actually forge; this is a coherence hardening,
+# not proof that sparse leadership caused any particular observed stall.
+if [[ "$number_of_pools" -eq 1 ]]; then
+  /data/apply-single-producer-stake.sh \
+    /data/generated/single-producer-stake-applied.json \
+    /configs || exit 1
+fi
+
+/data/apply-workload-funding.sh \
+  /data/workload-funding.json \
+  /data/generated/workload-funding-applied.json \
+  /configs
+
+if [[ -f /data/governance-guardrails.json ]]; then
+  /data/apply-governance-guardrails.sh \
+    /data/governance-guardrails.json \
+    /data/generated/governance-guardrails-applied.json \
+    /configs
+fi
 
 if [[ -d /data/generated/db ]]; then
     echo "Generated DB exists, archiving it"
@@ -86,7 +130,7 @@ pushd /data/generated
                  [[ $i -ne 5 ]] && echo ","
              done; echo "]" ) > bulk.json
 
-db-synthesizer --config /configs/1/configs/config.json --bulk-credentials-file bulk.json -s "$(( 86400 * 4 ))" --db db
+db-synthesizer --config /configs/1/configs/config.json --bulk-credentials-file bulk.json -s "${SYNTHESIS_SLOT}" --db db
 popd
 
 for pool in $pools; do

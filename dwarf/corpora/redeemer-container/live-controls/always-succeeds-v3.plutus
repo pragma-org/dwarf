@@ -1,0 +1,5 @@
+{
+  "type": "PlutusScriptV3",
+  "description": "DWARF fresh-funded empty-redeemer live control",
+  "cborHex": "46450101002499"
+}

@@ -1,0 +1,149 @@
+{
+  "assertions": [
+    {
+      "implementation": "amaru",
+      "min_attempts_per_case": 20,
+      "primitive": "handshake_cases_match_expected"
+    }
+  ],
+  "authors": [
+    "dwarf"
+  ],
+  "evidence_intent": "finding-validation",
+  "id": "amaru-20260925-stock-version-table-qualification",
+  "load": [
+    {
+      "attempts": 60,
+      "case_set": "version-table-forward-compat-v1",
+      "expected_helper_exit": 0,
+      "primitive": "runtime_amaru_measurement_calibration",
+      "profile_id": "profile-r-amaru-measurement-stock-control",
+      "progress_timeout_seconds": 120,
+      "response_timeout_seconds": 2,
+      "timeout_seconds": 300
+    }
+  ],
+  "measurement_profile": "none",
+  "measurements": [
+    {
+      "enabled": true,
+      "id": "amaru-stock-header-lifecycle",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    },
+    {
+      "enabled": true,
+      "id": "amaru-stock-fork-switch",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    },
+    {
+      "enabled": true,
+      "id": "amaru-stock-mempool",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    },
+    {
+      "enabled": true,
+      "id": "amaru-stock-ledger-rules",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    },
+    {
+      "enabled": true,
+      "id": "amaru-stock-plutus-execution",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    },
+    {
+      "enabled": true,
+      "id": "amaru-stock-block-epoch",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    },
+    {
+      "enabled": true,
+      "id": "amaru-stock-network",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    },
+    {
+      "enabled": true,
+      "id": "amaru-stock-resources",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    },
+    {
+      "enabled": true,
+      "id": "amaru-external-restart-readiness",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    },
+    {
+      "enabled": true,
+      "id": "amaru-external-sync-speed",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    },
+    {
+      "enabled": true,
+      "id": "amaru-external-workload-accounting",
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    }
+  ],
+  "probes": [],
+  "profile": "profile-r-amaru-measurement-stock-control",
+  "promotion_blockers": [
+    "One stock handshake workload is not proof of all Amaru scenarios or patched instrumentation."
+  ],
+  "runtime": "devnet",
+  "seed": "0xA11CE516",
+  "spec_version": "v1",
+  "tags": [
+    "amaru",
+    "stock",
+    "security",
+    "handshake",
+    "qualification"
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "10.11.20260925"
+  },
+  "teardown": [],
+  "title": "Amaru 20260925 stock handshake forward compatibility"
+}

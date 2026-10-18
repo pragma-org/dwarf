@@ -166,6 +166,8 @@ services:
       DWARF_GOLDEN_IMAGES: ${DWARF_GOLDEN_IMAGES:?set DWARF_GOLDEN_IMAGES to digest-pinned target images}
       DWARF_ARTIFACT_PACKAGE_AMARU_BASE: ${DWARF_ARTIFACT_PACKAGE_AMARU_BASE:?set DWARF_ARTIFACT_PACKAGE_AMARU_BASE to a digest-pinned standard image}
       DWARF_ARTIFACT_PACKAGE_CARDANO_BASE: ${DWARF_ARTIFACT_PACKAGE_CARDANO_BASE:?set DWARF_ARTIFACT_PACKAGE_CARDANO_BASE to a digest-pinned standard image}
+      DWARF_LOCALTXSUBMISSION_HELPER_IMAGE: ${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE:-}
+      DWARF_RUN_ARTIFACT_BASE_URL: ${DWARF_RUN_ARTIFACT_BASE_URL:-}
     volumes:
       - dwarf-runs:/var/dwarf/runs
       - dwarf-controller-state:/var/dwarf/controller-state

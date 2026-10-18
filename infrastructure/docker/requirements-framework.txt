@@ -10,6 +10,10 @@ attrs==26.1.0 \
     # via
     #   jsonschema
     #   referencing
+cbor2==5.7.1 \
+    --hash=sha256:7a405a1d7c8230ee9acf240aad48ae947ef584e8af05f169f3c1bde8f01f8b71 \
+    --hash=sha256:9fc81da8c0e09beb42923e455e477b36ff14a03b9ca18a8a2e9b462de9a953e8 \
+    --hash=sha256:edbf814dd7763b6eda27a5770199f6ccd55bd78be8f4367092460261bfbf19d0
 cffi==2.0.0 \
     --hash=sha256:00bdf7acc5f795150faa6957054fbbca2439db2f775ce831222b66f192f03beb \
     --hash=sha256:07b271772c100085dd28b74fa0cd81c8fb1a3ba18b21e03d7c27f3436a10606b \

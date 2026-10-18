@@ -538,10 +538,14 @@ def _containerized_cardano_workload(
         _mount_source(controller, str(runs_root), writable=True)
     )
     host_work_source = runs_source / output_relative
-    key_root = Path(
+    declared_key_root = Path(
         runtime.get("workload_key_root")
         or runtime_root / "env" / "utxo-keys" / "utxo1"
-    ).resolve()
+    )
+    if declared_key_root.is_absolute() and declared_key_root.parts[:2] == ("/", "env"):
+        key_root = (runtime_root / "env" / declared_key_root.relative_to("/env")).resolve()
+    else:
+        key_root = declared_key_root.resolve()
     if not all((key_root / name).is_file() for name in ("utxo.vkey", "utxo.skey")):
         raise RuntimeError("Cardano-node measurement workload has no genesis UTxO keys")
     env_root = (runtime_root / "env").resolve()
@@ -593,8 +597,13 @@ def _containerized_cardano_workload(
         )
         wrapper.chmod(0o700)
         workload_runtime = dict(runtime)
+        workload_runtime["controller_support_binaries"] = dict(
+            runtime.get("support_binaries") or {}
+        )
         workload_runtime["support_binaries"] = {"cardano-cli": str(wrapper)}
         workload_runtime["workload_key_root"] = str(key_root)
+        workload_runtime["controller_workload_key_root"] = str(key_root)
+        workload_runtime["container_workload_key_root"] = str(container_key_root)
         workload_runtime["workload_socket_remote"] = True
         workload_node = dict(node)
         workload_node["socket_path"] = socket_path

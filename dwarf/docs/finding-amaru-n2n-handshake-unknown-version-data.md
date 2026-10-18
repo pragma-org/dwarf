@@ -1,190 +1,202 @@
-# Amaru drops the whole node-to-node handshake when an offer contains a version it does not know (Cardano-node 11.1 NodeToNodeV_16)
+# Amaru closes a valid handshake offer that includes an unsupported version
 
-**Component:** `amaru-protocols` handshake version-table decoding (`crates/amaru-protocols/src/protocol_messages/version_table.rs`, `version_data.rs`, `version_number.rs`)
-**Type:** Node-to-node interoperability / protocol forward-compatibility divergence vs. the Haskell reference node
-**Status:** Confirmed (root cause in source; reproduced as a retained DWARF run with SARIF and patched measurement evidence). **Present in the latest release `v10.11.20260918` and on `main` (`5a2a08bc`, 2026-09-22).** No upstream issue exists (Amaru issues/PRs searched for handshake/V16/Peras/version-data; the related #1304, #1319 and #1333 fixed negotiation and V15, not unknown-version tolerance).
-**Found by:** DWARF version qualification of the mixed pair Cardano-node 11.1.2 (`fef83fed`) + Amaru 10.11.20260912 (`b159172f`) (classified *incompatible* on 2026-09-18 with no assigned cause), root-caused and reproduced by DWARF on 2026-09-23.
-**Date:** 2026-09-23
-**Severity:** Medium (interoperability / availability; latent network-wide break at the next protocol-version rollout; not consensus-affecting, no crash — see *Severity*).
-
----
+Component: Amaru node-to-node handshake decoder (`amaru-protocols`).
+Finding ID: `amaru-n2n-handshake-unknown-version-data`.
+Status: Confirmed in stock `v10.11.20260925`.
+First report: 2026-09-23. Stock release verification: 2026-10-14.
+Recommended severity: Low, for the confirmed connection-level effect.
+No patched release was verified in this work.
 
 ## Summary
 
-A node-to-node handshake starts with `MsgProposeVersions`, a map from version number to
-that version's parameters. A responder must pick the greatest version both sides support and
-ignore versions it does not know.
+Amaru closes an incoming connection when a valid handshake offer includes
+supported versions and an unsupported version with a different parameter format.
+It sends no handshake reply.
 
-Amaru instead decodes **every** entry of the offered table with its own V11–V15 parameter
-layout (a 4-element array). If the initiator offers any version whose parameters have a
-different shape, the whole `MsgProposeVersions` fails to decode and Amaru closes the
-connection without replying (no `MsgAcceptVersion`, no `MsgRefuse`).
+The peer does not ask Amaru to use the unsupported version. The peer offers
+several choices. Amaru must select the highest shared version and ignore the
+parameters of unsupported versions.
 
-Cardano-node 11.1.x offers exactly such a version when `ExperimentalProtocolsEnabled` is set:
-`NodeToNodeV_16` (Peras) appends a fifth field, `perasSupport`. As a result, **no
-Cardano-node 11.1+ with experimental protocols enabled can connect to an Amaru responder**,
-and the same will happen to every peer once V16 (or any later version with new parameters)
-is offered by default. The Haskell node answers the same offers with the greatest common
-version and ignores version numbers it does not know.
+In the test, Amaru accepted an offer for V14 and V15. It closed the connection
+when the same offer also included either V16 or an unknown version 99. The
+supported V14 and V15 entries did not change.
 
-## Environment
+This is a protocol compatibility defect. It is not evidence that Amaru must
+implement V16. It is not a node crash or a consensus failure.
 
-| | |
-|---|---|
-| Amaru (target) | `v10.11.20260918`, source `aedfe797a5b8ef00d8b362be40b47a52c3b4a379`; stock image `ghcr.io/pragma-org/amaru@sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60`; DWARF measurement build `dwarf/amaru-measurement@sha256:b3f6c0cec64c62e0500f012367d1661872efede9b683c8a56dd870a42c8fb3fd` (nanoseconds-v3 instrumentation, patch set `47787f15…`) |
-| Amaru (also affected) | `main` `5a2a08bc` (decoder byte-identical); `v10.11.20260912` (DWARF mixed qualification 2026-09-18); `v10.11.20260903` (live relay, 2026-09-23) |
-| Reference | Cardano-node `11.1.2` (`fef83fed01d7926f3de83b3b917be5a4a48768b5`), DWARF measurement target `dwarf/cardano-measurement@sha256:956ae21c…` on profile `profile-v-cardano-measurement-nanoseconds-v2`; stock `ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f` in the mixed devnet |
-| Network | DWARF devnets `testnet_42`: mixed profile `profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3` (2× Cardano-node 11.1.2 producers + Amaru relays + Amaru-fed Cardano consumer) for the Amaru leg; `profile-v-cardano-measurement-nanoseconds-v2` for the reference leg |
-| Workload | DWARF case set `version-table-forward-compat-v1`, 60 raw `MsgProposeVersions` attempts (20 per case) to Amaru N2N port 3000 |
+## Environment and affected versions
 
-## Observed behaviour
+| Item | Verified value |
+| --- | --- |
+| Latest stock target tested | Amaru `v10.11.20260925` |
+| Source revision | `eaf8ac3fa309f2a174c045454c276194c9312b8d` |
+| Official image | `ghcr.io/pragma-org/amaru:v10.11.20260925@sha256:ad95eabd49d29b04978763b94e3036ad727c5e53c06946eeea98bd706cbaaee7` |
+| Executable version observed | `Amaru 10.11.20260925 (eaf8ac3)` |
+| DWARF revision | `63d829332f386c46255366117b1d0e3f4870022a` |
+| DWARF run | `20261014T212526Z-b401ed89` |
+| Scenario | `amaru-20260925-stock-version-table-qualification` |
+| Target mode | Stock. No Amaru instrumentation patch. |
+| Network | Isolated devnet; network magic 42 |
+| Scope | Amaru as the incoming handshake responder |
 
-DWARF run `20260923T145318Z-508a12bd` (scenario `amaru-n2n-handshake-version-table-forward-compat-20260918-mixed-1112`),
-classified by DWARF as `completed_with_security_finding` / `amaru-n2n-handshake-unknown-version-data`;
-reference run `20260923T150024Z-5ac32f61` (scenario `cardano-n2n-handshake-version-table-forward-compat-1112`, pass):
+The Amaru target used the existing bootstrap wrapper and Cardano 11.1.2 support
+services. The test does not establish standalone Amaru block production or
+mixed-topology qualification.
 
-| Offer (payload) | Amaru 10.11.20260918 | Cardano-node 11.1.2 (reference) |
-|---|---|---|
-| V14 + V15 (`8200a20e84182af401f40f84182af401f4`) | 20/20 **accepted** (V15) | 20/20 **accepted** (V15) |
-| V14 + V15 + **V16 with perasSupport** — the exact Cardano-node 11.1.x experimental offer (`…1085182af401f4f4`) | 20/20 **rejected — connection closed, no reply** | 20/20 **accepted** (V16 — this node supports it) |
-| V14 + V15 + unknown future version 99 (`…186382182a66667574757265`) | 20/20 **rejected — connection closed, no reply** | 20/20 **accepted** (V15 — version 99 ignored) |
+The earlier evidence in this directory covers `v10.11.20260918` with
+instrumentation, `v10.11.20260912` in topology qualification, and
+`v10.11.20260903` in a manual connection check. Source review also covered the
+historical main revision `5a2a08bc`. Do not describe all `v10.11.x` releases or
+the current main branch as affected without further checks.
 
-Amaru's own patched instrumentation (`amaru-patched-protocol-decode`, same run) shows where it
-fails: all 60 frames were **framed** at the mux, 20 **decoded**, and **40 classified
-`malformed` by the handshake message decoder** with negotiation **`not_attempted`**. The node
-stayed up (no restart, no fatal signal); only the connection is dropped.
+## Details
 
-End-to-end with a real initiator: a Cardano-node 11.1.2 whose only upstream was a live
-Amaru `v10.11.20260903` relay failed every connection attempt with `BearerClosed` during the
-handshake when `ExperimentalProtocolsEnabled=true`, and completed the handshake and downloaded
-headers with `false` (manual A/B during root-causing, 2026-09-23; not a retained DWARF run).
-DWARF's mixed qualification shows the same at topology level: Cardano-node 11.1.2 +
-Amaru `10.11.20260912` was classified *incompatible* with the flag on (qualification
-`20260918T092619Z…89b35bbd`: the Amaru-fed consumer stayed at its seed slot while Amaru logged
-`connection.child_died child="Handshake"`), and Cardano-node 11.1.2 + Amaru `10.11.20260918`
-passed every mixed gate with the flag pinned off (qualification `20260923T140419Z…867a6f18`).
+The source links below use the exact stock release revision, not a moving branch.
 
-## Root cause
+1. [VersionNumber decoder and supported versions](https://github.com/pragma-org/amaru/blob/eaf8ac3fa309f2a174c045454c276194c9312b8d/crates/amaru-protocols/src/protocol_messages/version_number.rs#L34-L72):
+   the supported list ends at V15. The decoder can read other unsigned version
+   numbers. The parameter-format condition is `self.0 >= 11`; it has no upper
+   bound at V15.
+2. [VersionTable decoder](https://github.com/pragma-org/amaru/blob/eaf8ac3fa309f2a174c045454c276194c9312b8d/crates/amaru-protocols/src/protocol_messages/version_table.rs#L98-L112):
+   the loop decodes the parameters for every map entry. It does not skip an
+   unsupported entry. The statement `let value = d.decode_with(&mut ctx)?;`
+   returns an error for the whole table if one parameter record fails.
+3. [VersionData decoder](https://github.com/pragma-org/amaru/blob/eaf8ac3fa309f2a174c045454c276194c9312b8d/crates/amaru-protocols/src/protocol_messages/version_data.rs#L179-L196):
+   every version at or above 11 reaches a check for a four-element array.
+   V16's five-element record fails this check. The test's version-99 record has
+   two elements and also fails it.
+4. [Array-length check](https://github.com/pragma-org/amaru/blob/eaf8ac3fa309f2a174c045454c276194c9312b8d/crates/amaru-minicbor-extra/src/decode.rs#L172-L184):
+   the check requires the exact declared length.
+5. [Handshake message decoder](https://github.com/pragma-org/amaru/blob/eaf8ac3fa309f2a174c045454c276194c9312b8d/crates/amaru-protocols/src/handshake/messages.rs#L75-L87):
+   the table error prevents construction of a proposal.
+   [Version selection](https://github.com/pragma-org/amaru/blob/eaf8ac3fa309f2a174c045454c276194c9312b8d/crates/amaru-protocols/src/handshake/mod.rs#L44-L61)
+   therefore cannot select the supported V15 entry.
 
-`version_table.rs` decodes the value of **every** offered version with that version as context:
+The defect is the early decoding of unsupported parameters. It is not the
+four-field check for a supported V14 or V15 record.
 
-```rust
-for _ in 0..len {
-    let key = d.decode()?;
-    let mut ctx = key;
-    let value = d.decode_with(&mut ctx)?;   // any failure aborts the whole table
-    values.insert(key, value);
-}
-```
+An unknown version does not necessarily cause a failure. If its parameters
+happen to match the assumed format, this particular length failure need not
+occur. The confirmed cases use valid CBOR with a different parameter format.
 
-`version_data.rs` then requires the V11–V15 layout for any version ≥ 11:
+The [Ouroboros Network Specification, section 3.6.7](https://ouroboros-network.cardano.intersectmbo.org/pdfs/network-spec/network-spec.pdf#page=20)
+requires the responder to find the shared versions first. It then selects the
+highest shared version and decodes its parameters. Parameters of unsupported
+versions must be ignored.
 
-```rust
-if ctx.as_ref().has_query_and_peer_sharing() {        // version_number.rs: self.0 >= 11
-    let len = d.array()?;
-    cbor::check_tagged_array_length(0, len, 4)?;       // V16 sends 5 fields; unknown versions send anything
-    ...
-```
+## Proof of concept
 
-So V16 (`[magic, initiatorOnly, peerSharing, query, perasSupport]`) and any unknown version
-make `decode_with` fail, the `?` aborts the table decode, the handshake child dies and the
-connection is closed before negotiation.
+Use only a node that you own or have permission to test. The payloads below use
+network magic 42. Use a matching devnet.
 
-The Haskell reference (`ouroboros-network`,
-`framework/lib/Ouroboros/Network/Protocol/Handshake/Codec.hs`, `decodeVersions`) reads each
-entry's parameters as an **opaque CBOR term** and **skips version numbers it does not
-recognise**:
+Each payload is one CBOR `MsgProposeVersions` message. Send it in one initiator
+MUX segment on protocol 0. The first eight bytes of each complete request form
+the MUX header.
 
-```haskell
-vNumberTerm <- CBOR.decodeTerm
-vParams <- CBOR.decodeTerm
-case decodeTerm versionNumberCodec vNumberTerm of
-  -- error when decoding un-recognized version; skip the version
-  Left _        -> go (pred l) prev vs
-  Right vNumber -> ...
-```
+| Case | Complete request, in hexadecimal |
+| --- | --- |
+| V14 and V15 | `00000000000000118200a20e84182af401f40f84182af401f4` |
+| V14, V15 and V16 | `00000000000000198200a30e84182af401f40f84182af401f41085182af401f4f4` |
+| V14, V15 and version 99 | `000000000000001d8200a30e84182af401f40f84182af401f4186382182a66667574757265` |
 
-Only the negotiated version's parameters are decoded afterwards (for V16,
-`cardano-diffusion` `Cardano.Network.NodeToNode.Version` accepts the optional
-`perasSupport` field), and a failure there is answered with `MsgRefuse HandshakeDecodeError`
-rather than a dropped connection. That is why Cardano-node 11.1.2 answers the offer that
-contains the unknown version 99 with `MsgAcceptVersion 15` (DWARF run
-`20260923T150024Z-5ac32f61`).
+V16 has the extra `perasSupport` field. Version 99 has the valid CBOR value
+`[42, "future"]`. Amaru does not need to understand either record to use V15.
 
-## Severity
-
-**Medium.**
-
-- **Interoperability / availability:** any Cardano-node ≥ 11.1 with experimental protocols
-  enabled (common on testnets and developer setups) cannot use an Amaru node as an upstream.
-  An Amaru relay silently loses those inbound peers; an Amaru-fed Cardano node stalls.
-- **Latent network-wide break:** the defect is not V16-specific. When Cardano-node ships any
-  release that offers a new version with new parameters by default (V16/Peras is the next
-  one), every such peer is refused by every Amaru responder at once.
-- **Not affected today on public networks:** mainnet and preprod configs leave
-  `ExperimentalProtocolsEnabled` unset (false), so current production Cardano-node initiators
-  offer ≤ V15.
-- **Not a crash / not consensus:** the node keeps running; no chain or ledger state is involved.
-  A remote peer can only cause its own connection to be dropped.
-
-## Scope
-
-- Affected: Amaru as **responder** (inbound). Amaru as initiator offers only V11–V15, so its own
-  outbound connections to Cardano-node 11.1.x succeed.
-- Affected releases: every release with the current `VersionTable` decoder —
-  `v10.11.20260918` (DWARF run), `v10.11.20260912` (DWARF qualification),
-  `v10.11.20260903` (manual A/B), and `main` `5a2a08bc` (decoder source byte-identical to
-  `v10.11.20260918`).
-- The same code path is used for node-to-client handshakes wherever `VersionTable` is decoded
-  (not tested here).
-
-## Reproduction
-
-DWARF (retained evidence, SARIF, measurements):
+For a minimal manual check, send the V16 request to a permitted devnet node:
 
 ```bash
-python3 dwarf/cardano-profile deploy profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3 --approve
-python3 dwarf/cardano-profile scenario run dwarf/scenarios/amaru-n2n-handshake-version-table-forward-compat-20260918-mixed-1112.yaml
-python3 dwarf/cardano-profile deploy profile-v-cardano-measurement-nanoseconds-v2 --replace --approve
-python3 dwarf/cardano-profile scenario run dwarf/scenarios/cardano-n2n-handshake-version-table-forward-compat-1112.yaml
+printf '%s' '00000000000000198200a30e84182af401f40f84182af401f41085182af401f4f4' |
+  xxd -r -p |
+  nc -w 3 <devnet-host> <n2n-port> |
+  xxd -p
 ```
 
-Minimal (any Amaru N2N port):
+Amaru in this test closed the connection with no reply. Use the V14/V15 control
+request to distinguish this result from an unreachable node or wrong network.
+The retained attempts record listener reachability and the terminal result.
 
-```bash
-# MsgProposeVersions {14,15,16(perasSupport)} in one initiator mux SDU (mode bit 0, protocol 0)
-printf '\x00\x00\x00\x00\x00\x00\x00\x19\x82\x00\xa3\x0e\x84\x18\x2a\xf4\x01\xf4\x0f\x84\x18\x2a\xf4\x01\xf4\x10\x85\x18\x2a\xf4\x01\xf4\xf4' | nc -q2 <amaru-host> 3000 | xxd
-# Amaru: no bytes, connection closed.  Cardano-node 11.1.2: MsgAcceptVersion 16 (8301 10 85 …), or 15 without V16 support.
-```
+### Observed result
 
-## Suggested remediation
+DWARF sent 20 copies of each request to the same stock target.
 
-Decode the version table the way the reference does:
+| Offer | Expected result | Observed result |
+| --- | --- | --- |
+| V14 and V15 | Accept V15 | 20 accepted; V15 reply |
+| V14, V15 and V16 | Ignore V16; accept V15 | 20 closed; zero reply bytes |
+| V14, V15 and version 99 | Ignore version 99; accept V15 | 20 closed; zero reply bytes |
 
-1. Decode each version number; for versions Amaru does not support, **skip** the parameter item
-   (`d.skip()`) instead of decoding it.
-2. Decode parameters only for supported versions, with the shape of that exact version
-   (and accept the optional `perasSupport` field once V16 is supported).
-3. If a supported version's parameters fail to decode, drop that version (or reply
-   `MsgRefuse`) rather than aborting the whole handshake without a reply.
+The 40 failed requests ended with EOF, not a `MsgRefuse` response.
+The node log has 40 matching `connection.child_died` events for the
+`Handshake` child. The Amaru process remained running. The restart count did
+not increase. No OOM or fatal signal was recorded. The honest chain advanced.
 
-Regression tests: the three DWARF payloads above, plus an offer containing only unknown
-versions (expected: `MsgRefuse VersionMismatch`).
+DWARF completed the run and retained a failed assertion. The browser showed
+bundle integrity as verified. A failed security assertion does not mean that
+the test runner failed.
 
-Until fixed, DWARF pins `ExperimentalProtocolsEnabled=false` for Cardano-node ≥ 11.1 in
-topologies that include Amaru (`cardano_experimental_protocols_policy`), which is the
-public-network default.
+The earlier reference run against Cardano-node 11.1.2 accepted all three
+offers. It selected V16 for the V16 offer and V15 for the version-99 offer.
+That reference run is historical; it was not repeated on 2026-10-14.
 
-## How this was found
+## Impact and severity
 
-DWARF's version qualification recorded Cardano-node 11.1.2 + Amaru 10.11.20260912 as
-*incompatible* (the Amaru-fed consumer stayed at its seed slot) without a cause. Re-reading the
-retained logs showed the consumer's connections to Amaru closing during the handshake
-(`BearerClosed`, Amaru `connection.child_died child="Handshake"` within 1 ms). The Haskell
-V16 encoder and Amaru's decoder were then compared, an A/B with a real 11.1.2 initiator isolated
-`ExperimentalProtocolsEnabled` as the trigger, and the behaviour was captured as the DWARF
-case set `version-table-forward-compat-v1` with the `handshake_cases_match_expected` assertion.
+Recommended severity: **Low** for the confirmed effect.
 
-## Artifacts
+A peer that offers a supported version together with differently shaped data
+for an unsupported version cannot complete this incoming handshake. This can
+prevent connections from otherwise compatible newer peers. The V16 case is
+relevant when a peer advertises experimental protocol versions.
 
-Evidence bundle: `reports/amaru-n2n-handshake-unknown-version-data-evidence/`.
+The confirmed effect is limited to the affected connection. The test did not
+show a node crash, loss of other peers, resource exhaustion, ledger corruption,
+or consensus failure. It did not show that a remote peer can disconnect other
+peers. It did not establish a public-network outage.
+
+A future change to the default versions offered by other nodes could increase
+the effect. That is a conditional risk, not an observed network-wide failure.
+
+The earlier report assigned Medium severity based on the projected rollout
+risk. This update recommends Low for the demonstrated scope and separates the
+projected risk from measured impact.
+
+## Suggested correction
+
+Read each parameter value as an opaque CBOR item before version selection.
+Ignore unsupported entries. Select the highest shared version. Decode only
+the selected version's parameters with that version's format.
+
+If no shared version exists, send `MsgRefuse(VersionMismatch)`. If the selected
+version's parameters are invalid, use the protocol-defined decode refusal.
+Do not require Amaru to support V16 to correct unknown-version handling.
+
+Regression tests must include the three offers above, an offer with only
+unsupported versions, and an offer with invalid parameters for the selected
+supported version. No Amaru correction was implemented or tested in this work.
+
+## Evidence and history
+
+The [2026-10-14 stock verification](https://github.com/pragma-org/dwarf/tree/main/reports/amaru-n2n-handshake-unknown-version-data-evidence/verification-20261014)
+contains all 60 request/response records, the result, assertions, frozen
+scenario, and selected node log events. Its README states which local
+environment fields were omitted for publication.
+
+The surrounding evidence directory retains the original 2026-09-23 Amaru and
+Cardano reference runs, instrumented decoder results, qualification records,
+and historical source copies. Those files were not replaced.
+
+The new stock run confirms the behavior on the official September 25 artifact.
+The exact-release source trace explains the failure. It does not provide new
+patched internal telemetry or a new Cardano reference run.
+
+## Advisory fields
+
+- Title: Amaru drops valid handshake offers that include an unsupported version — protocol forward-compatibility failure
+- Package ecosystem: Other
+- Package name: Amaru (`amaru-protocols`; no separate registry package identified)
+- Affected version confirmed by this stock run: `v10.11.20260925`
+- Earlier affected releases: `v10.11.20260918`, `v10.11.20260912`, `v10.11.20260903`; see the evidence limits above.
+- Patched versions: No verified patched release.
+- Severity: Low (recommended; no CVSS score assigned).
+- Weakness: [CWE-440: Expected Behavior Violation](https://cwe.mitre.org/data/definitions/440.html).
+- Description: Use Summary, Details, Proof of concept, and Impact and severity above.
+- Credit: J-GainSec / DWARF.

@@ -1,5 +1,20 @@
 # Evidence bundle — Amaru drops the node-to-node handshake when an offer contains a version it does not know
 
+## Update: stock release verified on 2026-10-14
+
+The [updated finding](finding-amaru-n2n-handshake-unknown-version-data.md)
+includes the exact-release source trace and advisory fields.
+[New evidence](verification-20261014/) confirms the defect on official stock
+`v10.11.20260925`: 20 ordinary offers accepted; 40 offers with differently
+shaped unsupported-version data closed without a reply.
+
+The updated finding supersedes the old severity and projected-impact wording
+below. It recommends Low severity for the demonstrated connection-level effect.
+No node crash or consensus failure was shown. An unknown version whose data
+matches the assumed format does not necessarily cause this failure.
+
+## Historical evidence: 2026-09-23
+
 Supporting runs, measurements, SARIF, qualification results and source for the finding
 `finding-amaru-n2n-handshake-unknown-version-data.md` (included). Generated 2026-09-23 on
 DWARF devnets (testnet_42) against Amaru `v10.11.20260918` and Cardano-node `11.1.2`.

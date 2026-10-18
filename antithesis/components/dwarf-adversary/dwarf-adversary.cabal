@@ -65,6 +65,7 @@ library
     , cborg
     , containers
     , contra-tracer
+    , cryptonite
     , file-embed
     , data-default
     , directory
@@ -105,6 +106,7 @@ library
     DwarfAdversary.TxSubmission.MutatingCodec
     DwarfAdversary.TxSubmission.Target
     DwarfAdversary.HeaderSource
+    DwarfAdversary.LocalTxSubmission.Raw
     DwarfAdversary.MiniProtocolDecode
     DwarfAdversary.SDK
     DwarfAdversary.Sequencing.Embedded
@@ -136,6 +138,17 @@ executable dwarf-adversary
     , time
 
   hs-source-dirs: app
+
+executable dwarf-localtx-submit-raw
+  import:         settings
+  main-is:        Main.hs
+  build-depends:
+    , dwarf-adversary
+    , aeson
+    , base
+    , bytestring
+
+  hs-source-dirs: localtx-submit-raw
 
 executable dwarf-decoder-fuzz
   import:         settings
@@ -214,17 +227,28 @@ executable dwarf-snapshot-decode
 
 test-suite dwarf-adversary-test
   import:             settings
-  other-modules:      FuzzSpec, SequencingSpec
+  other-modules:      FuzzSpec, LocalTxSubmissionRawSpec, SequencingSpec
   type:               exitcode-stdio-1.0
   hs-source-dirs:     test
   main-is:            Main.hs
   build-depends:
     , dwarf-adversary
+    , async
     , base
     , bytestring
     , cborg
     , containers
+    , contra-tracer
+    , cryptonite
+    , directory
     , hspec
+    , io-classes
+    , network
+    , network-mux
+    , ouroboros-network
+    , ouroboros-network-api
+    , ouroboros-network-framework
+    , ouroboros-network-protocols
     , QuickCheck
     , random
     , serialise

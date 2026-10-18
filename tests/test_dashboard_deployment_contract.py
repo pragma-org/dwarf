@@ -125,6 +125,19 @@ def test_controller_uses_ephemeral_private_docker_config_with_read_only_root():
     assert "/home/dwarf/.docker" not in controller
 
 
+def test_controller_receives_optional_raw_submission_helper_identity():
+    compose = (ROOT / "delivery/docker-compose.dwarf.yml").read_text(encoding="utf-8")
+    dashboard, controller = compose.split("\n  dwarf-controller:\n", 1)
+    controller = controller.split("\nvolumes:\n", 1)[0]
+
+    declaration = (
+        "DWARF_LOCALTXSUBMISSION_HELPER_IMAGE: "
+        "${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE:-}"
+    )
+    assert declaration in controller
+    assert declaration not in dashboard
+
+
 def test_image_records_public_source_revision():
     dockerfile = (ROOT / "infrastructure/docker/dwarf-fw.Dockerfile").read_text(encoding="utf-8")
     build = (ROOT / "delivery/scripts/build-image.sh").read_text(encoding="utf-8")

@@ -113,6 +113,9 @@ def normalize_substrate(substrate: dict) -> dict:
     amaru_json_traces = substrate.get("amaru_json_traces", False)
     if not isinstance(amaru_json_traces, bool):
         raise ValueError("substrate.amaru_json_traces must be a boolean")
+    amaru_txsubmission_trace = substrate.get("amaru_txsubmission_trace", False)
+    if not isinstance(amaru_txsubmission_trace, bool):
+        raise ValueError("substrate.amaru_txsubmission_trace must be a boolean")
     controller_ownership = substrate.get("controller_ownership")
     if controller_ownership is not None:
         if not isinstance(controller_ownership, dict) or set(controller_ownership) != {
@@ -379,6 +382,7 @@ def normalize_substrate(substrate: dict) -> dict:
         "profile_id": profile_id,
         "cardano_measurement_traces": cardano_measurement_traces,
         "amaru_json_traces": amaru_json_traces,
+        "amaru_txsubmission_trace": amaru_txsubmission_trace,
         "controller_ownership": controller_ownership,
         "docker_host_runtime_root": docker_host_runtime_root,
         "host_strategy": host_strategy,
@@ -738,6 +742,9 @@ def allocate_node_plan(
             normalized.get("cardano_measurement_traces")
         ),
         "amaru_json_traces": bool(normalized.get("amaru_json_traces")),
+        "amaru_txsubmission_trace": bool(
+            normalized.get("amaru_txsubmission_trace")
+        ),
         "controller_ownership": normalized.get("controller_ownership"),
         "docker_host_runtime_root": normalized.get("docker_host_runtime_root"),
         "host_strategy": host_strategy,
