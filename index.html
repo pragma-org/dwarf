@@ -9425,16 +9425,18 @@ body[data-offline-viewer] [data-offline-detail-content] .measurement-groups { ga
 body[data-offline-viewer] [data-offline-detail-content] .measurement-group__summary { min-height:38px; padding:7px 34px !important; border-radius:0; }
 body[data-offline-viewer] [data-offline-detail-content] .measurement-group__summary h3 { font-size:15px !important; }
 body[data-offline-viewer] [data-offline-detail-content] .measurement-card-grid {
-  grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr)) !important;
-  justify-content:stretch;
+  display:flex !important; flex-wrap:wrap; align-items:flex-start; justify-content:center; gap:10px !important;
+}
+body[data-offline-viewer] [data-offline-detail-content] .measurement-card-grid > .dk-mcard {
+  flex:0 1 auto; width:fit-content; min-width:min(100%,12rem); max-width:min(100%,28rem);
 }
 body[data-offline-viewer] [data-offline-detail-content] .portable-detail-facts,
 body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card-grid {
-  display:grid; grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr)); gap:10px; margin:0;
+  display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:center; gap:10px; margin:0;
 }
 body[data-offline-viewer] [data-offline-detail-content] .portable-detail-facts > div,
 body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card {
-  min-width:0; padding:12px 14px; color:var(--dk-ink);
+  flex:0 1 auto; width:fit-content; min-width:min(100%,12rem); max-width:min(100%,34rem); padding:12px 14px; color:var(--dk-ink);
   background:linear-gradient(160deg,var(--dk-back),var(--dk-back2));
   border:1px solid var(--dk-line2); border-radius:12px;
   box-shadow:0 12px 26px -16px rgba(0,0,0,.7);
@@ -9456,6 +9458,17 @@ body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card__r
   display:flex; flex-direction:column; align-items:flex-start; gap:3px; padding:0 0 8px; border-bottom:1px solid var(--dk-line);
 }
 body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card__rows > div:last-child { padding-bottom:0; border-bottom:0; }
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-optional[hidden],
+body[data-offline-viewer] [data-offline-detail-content] .measurement-card[hidden] { display:none !important; }
+body[data-offline-viewer] [data-offline-detail-content] .portable-pretty-json {
+  max-width:100%; margin:0; padding:9px 10px; overflow:auto; color:var(--dk-ink); background:var(--dk-back);
+  border:1px solid var(--dk-line); border-radius:7px; font:400 11.5px/1.55 var(--dk-mono); white-space:pre-wrap; overflow-wrap:anywhere;
+}
+body[data-offline-viewer] [data-offline-detail-content] .portable-pretty-json code { padding:0; color:inherit; background:transparent; }
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-json-disclosure { width:100%; }
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-json-disclosure > summary {
+  width:max-content; cursor:pointer; color:var(--dk-gold); font:600 11px/1.4 var(--dk-mono); letter-spacing:.06em; text-transform:uppercase;
+}
 body[data-offline-viewer] [data-offline-detail-content] .dk-mviz__head { justify-content:center; text-align:center; }
 body[data-offline-viewer] [data-offline-detail-content] .dk-mviz__head > .eyebrow { width:100%; text-align:center; }
 body[data-offline-viewer] .portable-measurement-anchor { display:block; height:0; scroll-margin-top:12px; }
@@ -9465,6 +9478,10 @@ body[data-offline-viewer] .portable-measurement-filters > summary::-webkit-detai
 body[data-offline-viewer] .portable-measurement-filters > summary::after { content:" +"; margin-left:4px; }
 body[data-offline-viewer] .portable-measurement-filters[open] > summary::after { content:" −"; }
 body[data-offline-viewer] .portable-measurement-filters .measurement-controls { margin:10px auto 12px; justify-content:center; }
+body[data-offline-viewer] .portable-show-optional {
+  order:3; display:flex; flex:1 1 100%; align-items:center; justify-content:center; gap:7px; color:var(--dk-muted); font:500 12px var(--dk-sans);
+}
+body[data-offline-viewer] .portable-show-optional input { accent-color:var(--dk-gold); }
 body[data-offline-viewer] .run-results__actions { flex-wrap:nowrap !important; justify-content:center; gap:4px !important; }
 body[data-offline-viewer] .run-results__actions .dk-btn { min-height:26px !important; padding:3px 6px !important; font-size:.67rem !important; white-space:nowrap; }
 body[data-offline-viewer] .dk-card--flip .dk-face--rear {
@@ -11160,11 +11177,31 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       return String(Math.round(value * 1000) / 1000);
     }
     function duration(value) { return typeof value === "number" && Number.isFinite(value) ? (Math.round(value * 100) / 100) + "s" : "—"; }
+    var showOptional = false, optionalNodes = [];
+    function optionalValue(value) {
+      if (value && typeof value === "object") return false;
+      return value === undefined || value === null || value === "" || value === "—" || String(value).toLowerCase() === "unknown";
+    }
+    function registerOptional(node) {
+      var current = node.getAttribute ? node.getAttribute("class") : node.attrs && node.attrs.class;
+      node.setAttribute("class", ((current || "") + " portable-detail-optional").trim());
+      node.hidden = !showOptional; optionalNodes.push(node); return node;
+    }
+    function refreshOptional() { optionalNodes.forEach(function (node) { node.hidden = !showOptional; }); }
+    function appendValue(parent, value, key) {
+      if (value && typeof value === "object") {
+        var pre = element("pre", undefined, "portable-pretty-json"); pre.appendChild(code(JSON.stringify(value, null, 2)));
+        if (key === "payload") {
+          var disclosure = element("details", undefined, "portable-detail-json-disclosure");
+          disclosure.appendChild(element("summary", "View payload")); disclosure.appendChild(pre); parent.appendChild(disclosure);
+        } else parent.appendChild(pre);
+      } else parent.textContent = known(value);
+    }
     function facts(parent, values, cls) {
       var dl = element("dl", undefined, cls || "offline-detail__facts portable-detail-facts");
       Object.keys(values).forEach(function (key) {
-        var row = element("div"); row.appendChild(element("dt", label(key)));
-        row.appendChild(element("dd", values[key])); dl.appendChild(row);
+        var row = element("div"), dd = element("dd"); row.appendChild(element("dt", label(key)));
+        appendValue(dd, values[key], key); row.appendChild(dd); if (optionalValue(values[key])) registerOptional(row); dl.appendChild(row);
       }); parent.appendChild(dl); return dl;
     }
     function table(parent, group, columns, cellValue, cls) {
@@ -11174,11 +11211,14 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       grid.setAttribute("role", "list"); grid.setAttribute("aria-label", "Retained detail rows");
       values.slice(0, MAX_ROWS).forEach(function (value) {
         var card = element("article", undefined, "portable-detail-card"); card.setAttribute("role", "listitem");
-        var rows = element("dl", undefined, "status-tile__rows portable-detail-card__rows");
+        var rows = element("dl", undefined, "status-tile__rows portable-detail-card__rows"), visibleFields = 0;
         columns.forEach(function (k) {
-          var row = element("div"); append(row, element("dt", label(k)), element("dd", cellValue ? cellValue(dict(value), k) : dict(value)[k])); rows.appendChild(row);
+          var raw = cellValue ? cellValue(dict(value), k) : dict(value)[k], row = element("div"), dd = element("dd");
+          append(row, element("dt", label(k)), dd); appendValue(dd, raw, k);
+          if (optionalValue(raw) || /sha256$/i.test(k)) registerOptional(row); else visibleFields += 1;
+          rows.appendChild(row);
         });
-        card.appendChild(rows); grid.appendChild(card);
+        card.appendChild(rows); if (!visibleFields) registerOptional(card); grid.appendChild(card);
       });
       parent.appendChild(grid);
       if (group.omitted) parent.appendChild(element("p", group.omitted + " additional retained rows omitted from this bounded view.", "run-evidence-note"));
@@ -11284,6 +11324,9 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     var search = element("input"); search.setAttribute("type", "search"); search.setAttribute("placeholder", "Block application, mempool, CPU…"); search.setAttribute("data-measurement-search", ""); searchLabel.appendChild(search); controls.appendChild(searchLabel);
     var filterRow = element("div", undefined, "measurement-controls__categories"), allButton = element("button", "All", "measurement-filter is-active");
     allButton.setAttribute("type", "button"); allButton.setAttribute("aria-pressed", "true"); allButton.setAttribute("data-measurement-category", "all"); filterRow.appendChild(allButton); controls.appendChild(filterRow);
+    var optionalLabel = element("label", undefined, "measurement-controls__toggle portable-show-optional"), optionalInput = element("input");
+    optionalInput.setAttribute("type", "checkbox"); optionalInput.setAttribute("data-portable-show-optional", "");
+    append(optionalLabel, optionalInput, element("span", "Show empty and technical fields")); controls.appendChild(optionalLabel);
     var filterDisclosure = element("details", undefined, "portable-measurement-filters");
     filterDisclosure.appendChild(element("summary", "Filter", "dk-btn portable-measurement-filters__summary")); filterDisclosure.appendChild(controls); report.appendChild(filterDisclosure);
     if (measurements.omitted) report.appendChild(element("p", measurements.omitted + " retained measurement rows omitted from total " + known(measurements.total) + ".", "run-evidence-note"));
@@ -11305,6 +11348,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       ["mean", "p95", "p99", "sample_count"].forEach(function (key) { if (row[key] != null) cardNode.setAttribute(key === "sample_count" ? "data-m-samples" : "data-m-" + key, row[key]); });
       append(cardNode, element("span", metricLabel(row), "dk-mcard__kind"), element("h4", title, "dk-mcard__title"));
       var valueBox = element("div", undefined, "dk-mcard__value"); append(valueBox, element("strong", value == null ? (row.reason || label(state)) : shortNumber(value)), value == null ? null : element("span", row.unit)); cardNode.appendChild(valueBox);
+      cardNode.setAttribute("data-measurement-empty", value === 0 ? "true" : "false"); cardNode.hidden = value === 0 && !showOptional;
       var tags = element("div", undefined, "dk-tags dk-mcard__pills");
       if (state !== "available") tags.appendChild(element("span", label(state)));
       tags.appendChild(element("span", identity.implementation + " " + identity.version)); cardNode.appendChild(tags);
@@ -11324,7 +11368,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
         if (query) view.ensure();
         var categoryVisible = selectedCategory === "all" || selectedCategory === view.id, matching = 0;
         view.values.forEach(function (entry, index) {
-          var match = entryMatches(entry, query); if (match) matching += 1;
+          var match = entryMatches(entry, query) && (showOptional || metricValue(entry.row) !== 0); if (match) matching += 1;
           if (view.cards[index]) view.cards[index].hidden = !match;
         });
         view.node.hidden = !categoryVisible || matching === 0; if (!view.node.hidden) visible += matching;
@@ -11332,6 +11376,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       });
       allButton.setAttribute("aria-pressed", selectedCategory === "all" ? "true" : "false"); empty.hidden = visible !== 0;
     }
+    optionalInput.addEventListener("change", function () { showOptional = Boolean(optionalInput.checked); refreshOptional(); applyFilters(); });
     function setCategory(category) {
       selectedCategory = category;
       groupViews.forEach(function (view) { if (category === view.id) { view.ensure(); view.node.open = true; } });
@@ -11356,6 +11401,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       catCard.addEventListener("click", function () { setCategory(category); }); categoryCards.appendChild(catCard);
     });
     search.addEventListener("input", applyFilters);
+    applyFilters();
 
     var artifactRows = list(dict(detail.artifacts).rows), sarif = artifactRows.some(function (row) { return /\.sarif$/i.test(dict(row).path || ""); });
     runDisclosure("Export", "SARIF export", sarif ? "Available" : "Not retained", "sarif-export--" + id, function (parent) {
