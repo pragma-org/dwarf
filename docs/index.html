@@ -9424,6 +9424,38 @@ body[data-offline-viewer] [data-offline-detail-content] .measurement-report { pa
 body[data-offline-viewer] [data-offline-detail-content] .measurement-groups { gap:0; }
 body[data-offline-viewer] [data-offline-detail-content] .measurement-group__summary { min-height:38px; padding:7px 34px !important; border-radius:0; }
 body[data-offline-viewer] [data-offline-detail-content] .measurement-group__summary h3 { font-size:15px !important; }
+body[data-offline-viewer] [data-offline-detail-content] .measurement-card-grid {
+  grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr)) !important;
+  justify-content:stretch;
+}
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-facts,
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card-grid {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr)); gap:10px; margin:0;
+}
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-facts > div,
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card {
+  min-width:0; padding:12px 14px; color:var(--dk-ink);
+  background:linear-gradient(160deg,var(--dk-back),var(--dk-back2));
+  border:1px solid var(--dk-line2); border-radius:12px;
+  box-shadow:0 12px 26px -16px rgba(0,0,0,.7);
+}
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-facts > div {
+  display:flex; flex-direction:column; align-items:flex-start; gap:6px;
+}
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-facts dt,
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card dt {
+  color:var(--dk-gold); font:600 10.5px var(--dk-mono); letter-spacing:.1em; text-transform:uppercase;
+}
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-facts dd,
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card dd {
+  width:100%; margin:0; color:var(--dk-ink); font:400 12.5px/1.5 var(--dk-mono);
+  overflow-wrap:anywhere; word-break:break-word; white-space:pre-wrap;
+}
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card__rows { margin:0; gap:8px; }
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card__rows > div {
+  display:flex; flex-direction:column; align-items:flex-start; gap:3px; padding:0 0 8px; border-bottom:1px solid var(--dk-line);
+}
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card__rows > div:last-child { padding-bottom:0; border-bottom:0; }
 body[data-offline-viewer] [data-offline-detail-content] .dk-mviz__head { justify-content:center; text-align:center; }
 body[data-offline-viewer] [data-offline-detail-content] .dk-mviz__head > .eyebrow { width:100%; text-align:center; }
 body[data-offline-viewer] .portable-measurement-anchor { display:block; height:0; scroll-margin-top:12px; }
@@ -11129,7 +11161,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     }
     function duration(value) { return typeof value === "number" && Number.isFinite(value) ? (Math.round(value * 100) / 100) + "s" : "—"; }
     function facts(parent, values, cls) {
-      var dl = element("dl", undefined, cls || "offline-detail__facts");
+      var dl = element("dl", undefined, cls || "offline-detail__facts portable-detail-facts");
       Object.keys(values).forEach(function (key) {
         var row = element("div"); row.appendChild(element("dt", label(key)));
         row.appendChild(element("dd", values[key])); dl.appendChild(row);
@@ -11138,15 +11170,17 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     function table(parent, group, columns, cellValue, cls) {
       group = dict(group); var values = list(group.rows);
       if (!values.length) { parent.appendChild(element("p", "No retained rows; unavailable or not measured.", "empty-section-statement")); return; }
-      var wrap = element("div", undefined, "responsive-table portable-table-scroll"), tbl = element("table", undefined, cls || "config-table");
-      wrap.setAttribute("tabindex", "0"); wrap.setAttribute("role", "region"); wrap.setAttribute("aria-label", "Retained detail rows");
-      var head = element("thead"), tr = element("tr");
-      columns.forEach(function (k) { var th = element("th", label(k)); th.setAttribute("scope", "col"); tr.appendChild(th); }); head.appendChild(tr); tbl.appendChild(head);
-      var body = element("tbody");
+      var grid = element("div", undefined, "portable-detail-card-grid" + (cls ? " " + cls : ""));
+      grid.setAttribute("role", "list"); grid.setAttribute("aria-label", "Retained detail rows");
       values.slice(0, MAX_ROWS).forEach(function (value) {
-        var row = element("tr"); columns.forEach(function (k) { row.appendChild(element("td", cellValue ? cellValue(dict(value), k) : dict(value)[k])); }); body.appendChild(row);
+        var card = element("article", undefined, "portable-detail-card"); card.setAttribute("role", "listitem");
+        var rows = element("dl", undefined, "status-tile__rows portable-detail-card__rows");
+        columns.forEach(function (k) {
+          var row = element("div"); append(row, element("dt", label(k)), element("dd", cellValue ? cellValue(dict(value), k) : dict(value)[k])); rows.appendChild(row);
+        });
+        card.appendChild(rows); grid.appendChild(card);
       });
-      tbl.appendChild(body); wrap.appendChild(tbl); parent.appendChild(wrap);
+      parent.appendChild(grid);
       if (group.omitted) parent.appendChild(element("p", group.omitted + " additional retained rows omitted from this bounded view.", "run-evidence-note"));
     }
 
@@ -11271,7 +11305,9 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       ["mean", "p95", "p99", "sample_count"].forEach(function (key) { if (row[key] != null) cardNode.setAttribute(key === "sample_count" ? "data-m-samples" : "data-m-" + key, row[key]); });
       append(cardNode, element("span", metricLabel(row), "dk-mcard__kind"), element("h4", title, "dk-mcard__title"));
       var valueBox = element("div", undefined, "dk-mcard__value"); append(valueBox, element("strong", value == null ? (row.reason || label(state)) : shortNumber(value)), value == null ? null : element("span", row.unit)); cardNode.appendChild(valueBox);
-      var tags = element("div", undefined, "dk-tags dk-mcard__pills"); append(tags, element("span", label(state)), element("span", identity.implementation + " " + identity.version)); cardNode.appendChild(tags);
+      var tags = element("div", undefined, "dk-tags dk-mcard__pills");
+      if (state !== "available") tags.appendChild(element("span", label(state)));
+      tags.appendChild(element("span", identity.implementation + " " + identity.version)); cardNode.appendChild(tags);
       var more = element("details", undefined, "measurement-card__details dk-mcard__details"); more.appendChild(element("summary", "Details"));
       var dl = element("dl"); Object.keys(row).filter(function (key) { return ["metric", "outcomes"].indexOf(key) < 0 && row[key] != null; }).forEach(function (key) {
         var item = element("div"); append(item, element("dt", label(key)), element("dd", row[key])); dl.appendChild(item);
@@ -11323,7 +11359,6 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
 
     var artifactRows = list(dict(detail.artifacts).rows), sarif = artifactRows.some(function (row) { return /\.sarif$/i.test(dict(row).path || ""); });
     runDisclosure("Export", "SARIF export", sarif ? "Available" : "Not retained", "sarif-export--" + id, function (parent) {
-      parent.appendChild(element("p", sarif ? "A retained SARIF artifact is present in this archive." : "No SARIF artifact was retained for this run."));
       table(parent, {rows: artifactRows.filter(function (row) { return /sarif/i.test(dict(row).path || ""); })}, ["path", "size_bytes", "sha256"]);
     }, "evidence-disclosure");
     runDisclosure("Scenario snapshot", "Execution definition", "Retained inputs", "execution-definition--" + id, function (parent) {
@@ -11340,13 +11375,6 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     runDisclosure("Provenance", "Attestation chain", known(dict(manifest.provenance).status || "not requested"), "attestation-chain--" + id, function (parent) {
       facts(parent, {browser_verification: evidence.signature || verification, retained_provenance: manifest.provenance || null, sources: context.sources || []});
     }, "evidence-disclosure");
-    runDisclosure("Portable evidence", "Archive contents", detail.artifacts.total == null ? "Unknown" : detail.artifacts.total + " files", "portable-evidence--" + id, function (parent) {
-      var currentFiles = source.kind === "embedded" && source.binding === "current-run-directory";
-      parent.appendChild(element("h3", currentFiles ? "Current run directory files (unarchived, as exported) · not from a verified archive" : "Retained files in the run archive"));
-      parent.appendChild(element("p", source.kind === "archive" ? "These files were retained in the imported archive. Backend workflows remain available only on a DWARF installation." : "These files were embedded when this standalone page was exported."));
-      facts(parent, {source_files: detail.source_files, source: detail.source, verification_results: context.verifications || [], comparison_exclusion: context.exclusion || "none", omissions: detail.omissions});
-      table(parent, detail.artifacts, ["path", "size_bytes", "sha256", "type"]);
-    }, "evidence-disclosure run-actions");
     runDisclosure("Assertions", "Recorded assertions", assertions.total == null ? "Unknown" : assertions.total + " assertion" + (assertions.total === 1 ? "" : "s"), "assertions-heading--" + id, function (parent) {
       table(parent, assertions, ["primitive", "result", "params", "evaluated_value"]);
     }, "evidence-disclosure");
@@ -11358,6 +11386,10 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       parent.appendChild(element("p", manifest.operator_version_evidence_unavailable));
       facts(parent, {implementation: identity.implementation, version: identity.version, source_revision: identity.source_revision});
     }, "evidence-disclosure operator-version-disclosure");
+    runDisclosure("Portable evidence", "Archive contents", detail.artifacts.total == null ? "Unknown" : detail.artifacts.total + " files", "portable-evidence--" + id, function (parent) {
+      facts(parent, {source_files: detail.source_files, source: detail.source, verification_results: context.verifications || [], comparison_exclusion: context.exclusion || "none", omissions: detail.omissions});
+      table(parent, detail.artifacts, ["path", "size_bytes", "sha256", "type"]);
+    }, "evidence-disclosure run-actions");
 
     return {reveal: function (anchor) { if (builders[anchor]) builders[anchor](); }};
   }
