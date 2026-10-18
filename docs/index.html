@@ -9459,15 +9459,35 @@ body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card__r
 }
 body[data-offline-viewer] [data-offline-detail-content] .portable-detail-card__rows > div:last-child { padding-bottom:0; border-bottom:0; }
 body[data-offline-viewer] [data-offline-detail-content] .portable-detail-optional[hidden],
-body[data-offline-viewer] [data-offline-detail-content] .measurement-card[hidden] { display:none !important; }
-body[data-offline-viewer] [data-offline-detail-content] .portable-pretty-json {
-  max-width:100%; margin:0; padding:9px 10px; overflow:auto; color:var(--dk-ink); background:var(--dk-back);
-  border:1px solid var(--dk-line); border-radius:7px; font:400 11.5px/1.55 var(--dk-mono); white-space:pre-wrap; overflow-wrap:anywhere;
+body[data-offline-viewer] [data-offline-detail-content] .measurement-card[hidden],
+body[data-offline-viewer] [data-offline-detail-content] .portable-provenance-section[hidden] { display:none !important; }
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured { width:100%; }
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured > summary {
+  width:max-content; max-width:100%; cursor:pointer; color:var(--dk-gold); font:600 11px/1.4 var(--dk-mono);
+  letter-spacing:.06em; text-transform:uppercase; overflow-wrap:anywhere;
 }
-body[data-offline-viewer] [data-offline-detail-content] .portable-pretty-json code { padding:0; color:inherit; background:transparent; }
-body[data-offline-viewer] [data-offline-detail-content] .portable-detail-json-disclosure { width:100%; }
-body[data-offline-viewer] [data-offline-detail-content] .portable-detail-json-disclosure > summary {
-  width:max-content; cursor:pointer; color:var(--dk-gold); font:600 11px/1.4 var(--dk-mono); letter-spacing:.06em; text-transform:uppercase;
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows {
+  display:grid; grid-template-columns:minmax(8rem,auto) minmax(10rem,1fr); gap:0; width:min(100%,52rem); margin:9px 0 0;
+  overflow:hidden; border:1px solid var(--dk-line); border-radius:8px; background:var(--dk-back);
+}
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows > div { display:contents; }
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows dt,
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows dd {
+  min-width:0; margin:0; padding:7px 9px; border-bottom:1px solid var(--dk-line); white-space:normal;
+  font:500 11.5px/1.45 var(--dk-mono); letter-spacing:0; text-transform:none; overflow-wrap:anywhere;
+}
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows dt { color:var(--dk-muted); border-right:1px solid var(--dk-line); }
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows dd { color:var(--dk-ink); }
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows > div:last-child dt,
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows > div:last-child dd { border-bottom:0; }
+body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__notice {
+  max-width:42rem; margin:9px 0 0; padding:9px 10px; color:var(--dk-muted); background:var(--dk-back);
+  border:1px solid var(--dk-line); border-radius:8px; font:500 12px/1.5 var(--dk-sans); white-space:normal;
+}
+@media (max-width:620px) {
+  body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows { grid-template-columns:1fr; }
+  body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows dt { padding-bottom:2px; border-right:0; border-bottom:0; }
+  body[data-offline-viewer] [data-offline-detail-content] .portable-detail-structured__rows dd { padding-top:2px; }
 }
 body[data-offline-viewer] [data-offline-detail-content] .dk-mviz__head { justify-content:center; text-align:center; }
 body[data-offline-viewer] [data-offline-detail-content] .dk-mviz__head > .eyebrow { width:100%; text-align:center; }
@@ -9478,10 +9498,13 @@ body[data-offline-viewer] .portable-measurement-filters > summary::-webkit-detai
 body[data-offline-viewer] .portable-measurement-filters > summary::after { content:" +"; margin-left:4px; }
 body[data-offline-viewer] .portable-measurement-filters[open] > summary::after { content:" −"; }
 body[data-offline-viewer] .portable-measurement-filters .measurement-controls { margin:10px auto 12px; justify-content:center; }
-body[data-offline-viewer] .portable-show-optional {
+body[data-offline-viewer] .portable-show-optional,
+body[data-offline-viewer] .portable-show-provenance {
   order:3; display:flex; flex:1 1 100%; align-items:center; justify-content:center; gap:7px; color:var(--dk-muted); font:500 12px var(--dk-sans);
 }
-body[data-offline-viewer] .portable-show-optional input { accent-color:var(--dk-gold); }
+body[data-offline-viewer] .portable-show-provenance { order:4; }
+body[data-offline-viewer] .portable-show-optional input,
+body[data-offline-viewer] .portable-show-provenance input { accent-color:var(--dk-gold); }
 body[data-offline-viewer] .run-results__actions { flex-wrap:nowrap !important; justify-content:center; gap:4px !important; }
 body[data-offline-viewer] .run-results__actions .dk-btn { min-height:26px !important; padding:3px 6px !important; font-size:.67rem !important; white-space:nowrap; }
 body[data-offline-viewer] .dk-card--flip .dk-face--rear {
@@ -9782,7 +9805,7 @@ body[data-offline-viewer] .dk-card--flip .dk-face--rear .dk-hash {
   <a href="https://gainsec.com" data-offline-external="attribution" target="_blank" rel="noopener noreferrer">DWARF made by Jon "GainSec" Gaines</a>
 </footer>
 <p class="offline-notice" data-offline-notice hidden role="status" aria-live="polite"></p>
-<script type="application/json" data-portable-viewer-payload>{"schema_version": "dwarf.portable-viewer.v1", "generated_at_utc": "2026-10-18T06:30:50Z", "dwarf_revision": "dev", "filters": {"scope": "scenario", "outcome": "", "q": ""}, "presentation_catalog": {"by_metric": {"block_application": {"title": "Block application time", "category": "latency-processing"}, "block_application_by_outcome": {"title": "Block application time", "category": "latency-processing"}, "epoch_transition": {"title": "Epoch transition time", "category": "latency-processing"}, "epoch_transition_by_outcome": {"title": "Epoch transition time", "category": "latency-processing"}, "epoch_transition_duration": {"title": "Epoch transition time", "category": "latency-processing"}, "sync_speed": {"title": "Chain sync speed", "category": "throughput-progress"}, "ledger_samples": {"title": "Ledger events observed", "category": "protocol-ledger"}, "attempt_latency": {"title": "Workload attempt latency", "category": "latency-processing"}, "backlog": {"title": "Workload backlog", "category": "workload-outcomes"}, "batches_per_second": {"title": "Workload batch rate", "category": "workload-outcomes"}, "offered_bytes_per_second": {"title": "Offered workload bytes", "category": "workload-outcomes"}, "offered_operations": {"title": "Offered operation rate", "category": "workload-outcomes"}, "rejected_operations": {"title": "Rejected workload operations", "category": "workload-outcomes"}, "rejected_operations_per_second": {"title": "Rejected operation rate", "category": "workload-outcomes"}, "successful_operations": {"title": "Successful workload operations", "category": "workload-outcomes"}, "successful_operations_per_second": {"title": "Successful operation rate", "category": "workload-outcomes"}, "restart_readiness": {"title": "Restart recovery time", "category": "latency-processing"}, "block_fetch": {"title": "BlockFetch processing time", "category": "latency-processing"}, "block_fetch_by_outcome": {"title": "BlockFetch processing time", "category": "latency-processing"}, "blockfetch_duration": {"title": "BlockFetch processing time", "category": "latency-processing"}, "block_prepare": {"title": "Block preparation time", "category": "latency-processing"}, "header_reception_to_fetch_request": {"title": "Header-to-fetch request time", "category": "latency-processing"}, "header_reception_to_fetch_request_by_outcome": {"title": "Header-to-fetch request time", "category": "latency-processing"}, "header_reception_to_terminal_forward": {"title": "Header terminal-processing time", "category": "latency-processing"}, "header_reception_to_terminal_forward_by_outcome": {"title": "Header terminal-processing time", "category": "latency-processing"}, "header_slot_start_to_reception": {"title": "Header arrival offset", "category": "latency-processing"}, "header_slot_start_to_reception_by_outcome": {"title": "Header arrival offset", "category": "latency-processing"}, "keepalive_round_trip": {"title": "KeepAlive round-trip time", "category": "latency-processing"}, "keepalive_rtt": {"title": "KeepAlive round-trip time", "category": "latency-processing"}, "fork_switch": {"title": "Fork-switch processing time", "category": "latency-processing"}, "fork_switch_by_outcome": {"title": "Fork-switch processing time", "category": "latency-processing"}, "protocol_receive_decode": {"title": "Protocol receive and decode time", "category": "latency-processing"}, "protocol_receive_decode_by_outcome": {"title": "Protocol receive and decode time", "category": "latency-processing"}, "handler_queue_residence": {"title": "Protocol handler queue residence", "category": "latency-processing"}, "txsubmission_residence": {"title": "TxSubmission residence time", "category": "latency-processing"}, "mempool_terminal_latency": {"title": "Mempool terminal latency", "category": "latency-processing"}, "mempool_sync_duration": {"title": "Mempool synchronization time", "category": "latency-processing"}, "transfer_validation": {"title": "Transaction validation time", "category": "latency-processing"}, "virtual_machine_evaluate": {"title": "Plutus VM execution time", "category": "latency-processing"}, "plutus_vm_duration": {"title": "Plutus VM execution time", "category": "latency-processing"}, "plutus_vm": {"title": "Plutus VM execution time", "category": "latency-processing"}, "plutus_vm_by_outcome": {"title": "Plutus VM execution time", "category": "latency-processing"}, "virtual_machine_acquire_arena": {"title": "Plutus arena acquisition time", "category": "latency-processing"}, "virtual_machine_build_program": {"title": "Plutus program build time", "category": "latency-processing"}, "virtual_machine_decode_script": {"title": "Plutus script decode time", "category": "latency-processing"}, "adopted_blocks": {"title": "Blocks adopted", "category": "throughput-progress"}, "cardano-stock-ledger-block-epoch.adopted_blocks": {"title": "Blocks adopted", "category": "throughput-progress"}, "served_blocks": {"title": "Blocks served", "category": "throughput-progress"}, "blockfetch_bytes": {"title": "BlockFetch bytes transferred", "category": "throughput-progress"}, "chain_tip_updates": {"title": "Chain-tip updates", "category": "throughput-progress"}, "chain_events": {"title": "Chain lifecycle events", "category": "throughput-progress"}, "rollbacks": {"title": "Chain rollbacks", "category": "throughput-progress"}, "cpu_percent": {"title": "Target CPU utilization", "category": "resources"}, "cpu_time_seconds": {"title": "Target CPU time consumed", "category": "resources"}, "rss_bytes": {"title": "Target resident memory", "category": "resources"}, "container_memory_bytes": {"title": "Managed container memory", "category": "resources"}, "container_tasks": {"title": "Managed container tasks", "category": "resources"}, "disk_read_bytes": {"title": "Target disk bytes read", "category": "resources"}, "disk_write_bytes": {"title": "Target disk bytes written", "category": "resources"}, "network_rx_bytes": {"title": "Network bytes received", "category": "resources"}, "network_tx_bytes": {"title": "Network bytes transmitted", "category": "resources"}, "fd_count": {"title": "Open file descriptors", "category": "resources"}, "threads": {"title": "Target thread count", "category": "resources"}, "mempool_accepted": {"title": "Transactions accepted by the mempool", "category": "protocol-ledger"}, "mempool_rejected": {"title": "Transactions rejected by the mempool", "category": "protocol-ledger"}, "mempool_received": {"title": "Transactions received by the mempool", "category": "protocol-ledger"}, "mempool_evicted": {"title": "Transactions evicted from the mempool", "category": "protocol-ledger"}, "mempool_size_bytes": {"title": "Mempool size in bytes", "category": "protocol-ledger"}, "mempool_bytes": {"title": "Mempool size in bytes", "category": "protocol-ledger"}, "mempool_tx_count": {"title": "Transactions held in the mempool", "category": "protocol-ledger"}, "mux_failed": {"title": "Multiplexer failures", "category": "protocol-ledger"}, "peer_connected": {"title": "Peer connection events", "category": "protocol-ledger"}, "protocol_events": {"title": "Instrumented protocol events", "category": "protocol-ledger"}, "transaction_outcomes": {"title": "Instrumented transaction outcomes", "category": "protocol-ledger"}}, "categories": [{"id": "workload-outcomes", "label": "Workload and outcomes"}, {"id": "latency-processing", "label": "Latency and processing time"}, {"id": "throughput-progress", "label": "Throughput and chain progress"}, {"id": "resources", "label": "CPU, memory, disk, and network"}, {"id": "protocol-ledger", "label": "Protocol and ledger activity"}, {"id": "uncategorized", "label": "Other metrics"}], "implementation_labels": {"amaru": "Amaru", "cardano-node": "Cardano"}, "unit_short": {"operations": "ops", "operation": "op", "blocks": "bl", "block": "bl", "transactions": "tx", "transaction": "tx", "seconds": "s", "second": "s", "sec": "s", "milliseconds": "ms", "millisecond": "ms", "microseconds": "us", "microsecond": "us", "µs": "us", "nanoseconds": "ns", "nanosecond": "ns", "minutes": "min", "minute": "min", "bytes": "B", "byte": "B", "batches": "batch", "events": "evt", "event": "evt", "tasks": "task"}, "unit_full": {"ops": "operations", "op": "operation", "bl": "blocks", "tx": "transactions", "s": "seconds", "ms": "milliseconds", "us": "microseconds", "ns": "nanoseconds", "min": "minutes", "B": "bytes", "batch": "batches", "evt": "events", "task": "tasks"}}, "runs": [], "skipped": []}</script>
+<script type="application/json" data-portable-viewer-payload>{"schema_version": "dwarf.portable-viewer.v1", "generated_at_utc": "2026-10-18T20:59:16Z", "dwarf_revision": "dev", "filters": {"scope": "scenario", "outcome": "", "q": ""}, "presentation_catalog": {"by_metric": {"block_application": {"title": "Block application time", "category": "latency-processing"}, "block_application_by_outcome": {"title": "Block application time", "category": "latency-processing"}, "epoch_transition": {"title": "Epoch transition time", "category": "latency-processing"}, "epoch_transition_by_outcome": {"title": "Epoch transition time", "category": "latency-processing"}, "epoch_transition_duration": {"title": "Epoch transition time", "category": "latency-processing"}, "sync_speed": {"title": "Chain sync speed", "category": "throughput-progress"}, "ledger_samples": {"title": "Ledger events observed", "category": "protocol-ledger"}, "attempt_latency": {"title": "Workload attempt latency", "category": "latency-processing"}, "backlog": {"title": "Workload backlog", "category": "workload-outcomes"}, "batches_per_second": {"title": "Workload batch rate", "category": "workload-outcomes"}, "offered_bytes_per_second": {"title": "Offered workload bytes", "category": "workload-outcomes"}, "offered_operations": {"title": "Offered operation rate", "category": "workload-outcomes"}, "rejected_operations": {"title": "Rejected workload operations", "category": "workload-outcomes"}, "rejected_operations_per_second": {"title": "Rejected operation rate", "category": "workload-outcomes"}, "successful_operations": {"title": "Successful workload operations", "category": "workload-outcomes"}, "successful_operations_per_second": {"title": "Successful operation rate", "category": "workload-outcomes"}, "restart_readiness": {"title": "Restart recovery time", "category": "latency-processing"}, "block_fetch": {"title": "BlockFetch processing time", "category": "latency-processing"}, "block_fetch_by_outcome": {"title": "BlockFetch processing time", "category": "latency-processing"}, "blockfetch_duration": {"title": "BlockFetch processing time", "category": "latency-processing"}, "block_prepare": {"title": "Block preparation time", "category": "latency-processing"}, "header_reception_to_fetch_request": {"title": "Header-to-fetch request time", "category": "latency-processing"}, "header_reception_to_fetch_request_by_outcome": {"title": "Header-to-fetch request time", "category": "latency-processing"}, "header_reception_to_terminal_forward": {"title": "Header terminal-processing time", "category": "latency-processing"}, "header_reception_to_terminal_forward_by_outcome": {"title": "Header terminal-processing time", "category": "latency-processing"}, "header_slot_start_to_reception": {"title": "Header arrival offset", "category": "latency-processing"}, "header_slot_start_to_reception_by_outcome": {"title": "Header arrival offset", "category": "latency-processing"}, "keepalive_round_trip": {"title": "KeepAlive round-trip time", "category": "latency-processing"}, "keepalive_rtt": {"title": "KeepAlive round-trip time", "category": "latency-processing"}, "fork_switch": {"title": "Fork-switch processing time", "category": "latency-processing"}, "fork_switch_by_outcome": {"title": "Fork-switch processing time", "category": "latency-processing"}, "protocol_receive_decode": {"title": "Protocol receive and decode time", "category": "latency-processing"}, "protocol_receive_decode_by_outcome": {"title": "Protocol receive and decode time", "category": "latency-processing"}, "handler_queue_residence": {"title": "Protocol handler queue residence", "category": "latency-processing"}, "txsubmission_residence": {"title": "TxSubmission residence time", "category": "latency-processing"}, "mempool_terminal_latency": {"title": "Mempool terminal latency", "category": "latency-processing"}, "mempool_sync_duration": {"title": "Mempool synchronization time", "category": "latency-processing"}, "transfer_validation": {"title": "Transaction validation time", "category": "latency-processing"}, "virtual_machine_evaluate": {"title": "Plutus VM execution time", "category": "latency-processing"}, "plutus_vm_duration": {"title": "Plutus VM execution time", "category": "latency-processing"}, "plutus_vm": {"title": "Plutus VM execution time", "category": "latency-processing"}, "plutus_vm_by_outcome": {"title": "Plutus VM execution time", "category": "latency-processing"}, "virtual_machine_acquire_arena": {"title": "Plutus arena acquisition time", "category": "latency-processing"}, "virtual_machine_build_program": {"title": "Plutus program build time", "category": "latency-processing"}, "virtual_machine_decode_script": {"title": "Plutus script decode time", "category": "latency-processing"}, "adopted_blocks": {"title": "Blocks adopted", "category": "throughput-progress"}, "cardano-stock-ledger-block-epoch.adopted_blocks": {"title": "Blocks adopted", "category": "throughput-progress"}, "served_blocks": {"title": "Blocks served", "category": "throughput-progress"}, "blockfetch_bytes": {"title": "BlockFetch bytes transferred", "category": "throughput-progress"}, "chain_tip_updates": {"title": "Chain-tip updates", "category": "throughput-progress"}, "chain_events": {"title": "Chain lifecycle events", "category": "throughput-progress"}, "rollbacks": {"title": "Chain rollbacks", "category": "throughput-progress"}, "cpu_percent": {"title": "Target CPU utilization", "category": "resources"}, "cpu_time_seconds": {"title": "Target CPU time consumed", "category": "resources"}, "rss_bytes": {"title": "Target resident memory", "category": "resources"}, "container_memory_bytes": {"title": "Managed container memory", "category": "resources"}, "container_tasks": {"title": "Managed container tasks", "category": "resources"}, "disk_read_bytes": {"title": "Target disk bytes read", "category": "resources"}, "disk_write_bytes": {"title": "Target disk bytes written", "category": "resources"}, "network_rx_bytes": {"title": "Network bytes received", "category": "resources"}, "network_tx_bytes": {"title": "Network bytes transmitted", "category": "resources"}, "fd_count": {"title": "Open file descriptors", "category": "resources"}, "threads": {"title": "Target thread count", "category": "resources"}, "mempool_accepted": {"title": "Transactions accepted by the mempool", "category": "protocol-ledger"}, "mempool_rejected": {"title": "Transactions rejected by the mempool", "category": "protocol-ledger"}, "mempool_received": {"title": "Transactions received by the mempool", "category": "protocol-ledger"}, "mempool_evicted": {"title": "Transactions evicted from the mempool", "category": "protocol-ledger"}, "mempool_size_bytes": {"title": "Mempool size in bytes", "category": "protocol-ledger"}, "mempool_bytes": {"title": "Mempool size in bytes", "category": "protocol-ledger"}, "mempool_tx_count": {"title": "Transactions held in the mempool", "category": "protocol-ledger"}, "mux_failed": {"title": "Multiplexer failures", "category": "protocol-ledger"}, "peer_connected": {"title": "Peer connection events", "category": "protocol-ledger"}, "protocol_events": {"title": "Instrumented protocol events", "category": "protocol-ledger"}, "transaction_outcomes": {"title": "Instrumented transaction outcomes", "category": "protocol-ledger"}}, "categories": [{"id": "workload-outcomes", "label": "Workload and outcomes"}, {"id": "latency-processing", "label": "Latency and processing time"}, {"id": "throughput-progress", "label": "Throughput and chain progress"}, {"id": "resources", "label": "CPU, memory, disk, and network"}, {"id": "protocol-ledger", "label": "Protocol and ledger activity"}, {"id": "uncategorized", "label": "Other metrics"}], "implementation_labels": {"amaru": "Amaru", "cardano-node": "Cardano"}, "unit_short": {"operations": "ops", "operation": "op", "blocks": "bl", "block": "bl", "transactions": "tx", "transaction": "tx", "seconds": "s", "second": "s", "sec": "s", "milliseconds": "ms", "millisecond": "ms", "microseconds": "us", "microsecond": "us", "µs": "us", "nanoseconds": "ns", "nanosecond": "ns", "minutes": "min", "minute": "min", "bytes": "B", "byte": "B", "batches": "batch", "events": "evt", "event": "evt", "tasks": "task"}, "unit_full": {"ops": "operations", "op": "operation", "bl": "blocks", "tx": "transactions", "s": "seconds", "ms": "milliseconds", "us": "microseconds", "ns": "nanoseconds", "min": "minutes", "B": "bytes", "batch": "batches", "evt": "events", "task": "tasks"}}, "runs": [], "skipped": []}</script>
 <script data-inlined="js/responsive-tables.js">
 /* Keep dense evidence tables readable on narrow screens.
  *
@@ -11177,7 +11200,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       return String(Math.round(value * 1000) / 1000);
     }
     function duration(value) { return typeof value === "number" && Number.isFinite(value) ? (Math.round(value * 100) / 100) + "s" : "—"; }
-    var showOptional = false, optionalNodes = [];
+    var showOptional = false, optionalNodes = [], showProvenance = false, provenanceNodes = [], provenanceInput = null;
     function optionalValue(value) {
       if (value && typeof value === "object") return false;
       return value === undefined || value === null || value === "" || value === "—" || String(value).toLowerCase() === "unknown";
@@ -11188,20 +11211,64 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       node.hidden = !showOptional; optionalNodes.push(node); return node;
     }
     function refreshOptional() { optionalNodes.forEach(function (node) { node.hidden = !showOptional; }); }
-    function appendValue(parent, value, key) {
+    function registerProvenance(node) {
+      var current = node.getAttribute ? node.getAttribute("class") : node.attrs && node.attrs.class;
+      node.setAttribute("class", ((current || "") + " portable-provenance-section").trim());
+      node.hidden = !showProvenance; provenanceNodes.push(node); return node;
+    }
+    function refreshProvenance() { provenanceNodes.forEach(function (node) { node.hidden = !showProvenance; }); }
+    function structuredValue(value) {
+      if (value && typeof value === "object") return value;
+      if (typeof value !== "string") return null;
+      var trimmed = value.trim();
+      if (!trimmed || (trimmed[0] !== "{" && trimmed[0] !== "[")) return null;
+      try { var parsed = JSON.parse(trimmed); return parsed && typeof parsed === "object" ? parsed : null; } catch (_error) { return null; }
+    }
+    function flattenStructured(value, prefix, output) {
+      if (output.length >= MAX_ROWS) return;
+      if (Array.isArray(value)) {
+        for (var index = 0; index < value.length && output.length < MAX_ROWS; index += 1) {
+          flattenStructured(value[index], prefix ? prefix + " · item " + (index + 1) : "item " + (index + 1), output);
+        }
+        return;
+      }
       if (value && typeof value === "object") {
-        var pre = element("pre", undefined, "portable-pretty-json"); pre.appendChild(code(JSON.stringify(value, null, 2)));
-        if (key === "payload") {
-          var disclosure = element("details", undefined, "portable-detail-json-disclosure");
-          disclosure.appendChild(element("summary", "View payload")); disclosure.appendChild(pre); parent.appendChild(disclosure);
-        } else parent.appendChild(pre);
-      } else parent.textContent = known(value);
+        Object.keys(value).some(function (key) {
+          flattenStructured(value[key], prefix ? prefix + " · " + label(key) : label(key), output);
+          return output.length >= MAX_ROWS;
+        });
+        return;
+      }
+      if (!optionalValue(value)) output.push({label: prefix || "value", value: value});
+    }
+    function appendValue(parent, value, key) {
+      var structured = structuredValue(value);
+      if (structured) {
+        var rows = []; flattenStructured(structured, "", rows);
+        if (!rows.length) return false;
+        var structuredClass = "portable-detail-structured" + (key === "payload" ? " portable-detail-json-disclosure" : "");
+        var disclosure = element("details", undefined, structuredClass);
+        disclosure.appendChild(element("summary", (key === "payload" ? "View payload" : "View details") + " · " + rows.length + " field" + (rows.length === 1 ? "" : "s")));
+        disclosure.addEventListener("toggle", function () {});
+        var values = element("dl", undefined, "portable-detail-structured__rows");
+        rows.forEach(function (entry) {
+          var row = element("div"); append(row, element("dt", entry.label), element("dd", entry.value)); values.appendChild(row);
+        });
+        disclosure.appendChild(values); parent.appendChild(disclosure); return true;
+      }
+      if (key === "payload" && typeof value === "string" && /^\s*[\[{]/.test(value) && /payload truncated\)?\s*$/i.test(value)) {
+        var truncated = element("details", undefined, "portable-detail-structured portable-detail-json-disclosure portable-detail-truncated");
+        truncated.appendChild(element("summary", "View payload · truncated"));
+        truncated.appendChild(element("p", "This structured payload was truncated before it could be decoded. Use the imported archive for the complete retained value.", "portable-detail-structured__notice"));
+        truncated.addEventListener("toggle", function () {}); parent.appendChild(truncated); return true;
+      }
+      parent.textContent = known(value); return !optionalValue(value);
     }
     function facts(parent, values, cls) {
       var dl = element("dl", undefined, cls || "offline-detail__facts portable-detail-facts");
       Object.keys(values).forEach(function (key) {
         var row = element("div"), dd = element("dd"); row.appendChild(element("dt", label(key)));
-        appendValue(dd, values[key], key); row.appendChild(dd); if (optionalValue(values[key])) registerOptional(row); dl.appendChild(row);
+        var hasValue = appendValue(dd, values[key], key); row.appendChild(dd); if (!hasValue) registerOptional(row); dl.appendChild(row);
       }); parent.appendChild(dl); return dl;
     }
     function table(parent, group, columns, cellValue, cls) {
@@ -11214,8 +11281,8 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
         var rows = element("dl", undefined, "status-tile__rows portable-detail-card__rows"), visibleFields = 0;
         columns.forEach(function (k) {
           var raw = cellValue ? cellValue(dict(value), k) : dict(value)[k], row = element("div"), dd = element("dd");
-          append(row, element("dt", label(k)), dd); appendValue(dd, raw, k);
-          if (optionalValue(raw) || /sha256$/i.test(k)) registerOptional(row); else visibleFields += 1;
+          append(row, element("dt", label(k)), dd); var hasValue = appendValue(dd, raw, k);
+          if (!hasValue || /sha256$/i.test(k)) registerOptional(row); else visibleFields += 1;
           rows.appendChild(row);
         });
         card.appendChild(rows); if (!visibleFields) registerOptional(card); grid.appendChild(card);
@@ -11281,8 +11348,10 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       var body = element("div", undefined, "run-disclosure__body"); section.appendChild(body); var built = false;
       function ensure() { if (!built) { built = true; build(body); } }
       section.addEventListener("toggle", function () { if (section.open) ensure(); });
-      if (anchor) builders[anchor] = function () { ensure(); section.open = true; };
-      container.appendChild(section); return section;
+      if (anchor) builders[anchor] = function () {
+        showProvenance = true; if (provenanceInput) provenanceInput.checked = true; refreshProvenance(); ensure(); section.open = true;
+      };
+      registerProvenance(section); container.appendChild(section); return section;
     }
     var catalog = context.presentationCatalog || {}, byMetric = dict(catalog.by_metric), categoryDefs = list(catalog.categories);
     if (!categoryDefs.length) categoryDefs = [{id: "uncategorized", label: "Other metrics"}];
@@ -11327,6 +11396,9 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     var optionalLabel = element("label", undefined, "measurement-controls__toggle portable-show-optional"), optionalInput = element("input");
     optionalInput.setAttribute("type", "checkbox"); optionalInput.setAttribute("data-portable-show-optional", "");
     append(optionalLabel, optionalInput, element("span", "Show empty and technical fields")); controls.appendChild(optionalLabel);
+    var provenanceLabel = element("label", undefined, "measurement-controls__toggle portable-show-provenance"); provenanceInput = element("input");
+    provenanceInput.setAttribute("type", "checkbox"); provenanceInput.setAttribute("data-portable-show-provenance", "");
+    append(provenanceLabel, provenanceInput, element("span", "Providence")); controls.appendChild(provenanceLabel);
     var filterDisclosure = element("details", undefined, "portable-measurement-filters");
     filterDisclosure.appendChild(element("summary", "Filter", "dk-btn portable-measurement-filters__summary")); filterDisclosure.appendChild(controls); report.appendChild(filterDisclosure);
     if (measurements.omitted) report.appendChild(element("p", measurements.omitted + " retained measurement rows omitted from total " + known(measurements.total) + ".", "run-evidence-note"));
@@ -11401,6 +11473,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       catCard.addEventListener("click", function () { setCategory(category); }); categoryCards.appendChild(catCard);
     });
     search.addEventListener("input", applyFilters);
+    provenanceInput.addEventListener("change", function () { showProvenance = Boolean(provenanceInput.checked); refreshProvenance(); });
     applyFilters();
 
     var artifactRows = list(dict(detail.artifacts).rows), sarif = artifactRows.some(function (row) { return /\.sarif$/i.test(dict(row).path || ""); });
