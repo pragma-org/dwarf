@@ -1,0 +1,45 @@
+{
+  "schema_version": "dwarf.default-run-archives.v1",
+  "archives": [
+    {
+      "url": "runs/20261017T185758Z-644f18ee-bundle-export.tar.gz",
+      "size_bytes": 417017,
+      "sha256": "1c5095ba1c5503f2a98db0bb9c42980e54d18e96ca98ec28c29c633ea76a696a",
+      "run_id": "20261017T185758Z-644f18ee",
+      "implementation": "amaru",
+      "version": "10.11.20260912"
+    },
+    {
+      "url": "runs/20261017T192303Z-18763f1d-bundle-export.tar.gz",
+      "size_bytes": 377606,
+      "sha256": "81a05d2b641a6ebb64710e8747e62c58c40320398d217c4dde5e1838300a14e1",
+      "run_id": "20261017T192303Z-18763f1d",
+      "implementation": "amaru",
+      "version": "10.11.20260918"
+    },
+    {
+      "url": "runs/20261017T195503Z-5da2cd59-bundle-export.tar.gz",
+      "size_bytes": 432890,
+      "sha256": "c63f85cbd1974ed63749bc66e2bf87872ad0ecc04ee2679e956b3a6aea1c213e",
+      "run_id": "20261017T195503Z-5da2cd59",
+      "implementation": "amaru",
+      "version": "10.11.20260925"
+    },
+    {
+      "url": "runs/20261017T195632Z-0560c742-bundle-export.tar.gz",
+      "size_bytes": 82656,
+      "sha256": "157c2451ddb01f463a709469dfa8fe3a4265aac4d0f1883255d42e891d6d0241",
+      "run_id": "20261017T195632Z-0560c742",
+      "implementation": "cardano-node",
+      "version": "10.7.1"
+    },
+    {
+      "url": "runs/20261017T195819Z-6721da4e-bundle-export.tar.gz",
+      "size_bytes": 81294,
+      "sha256": "5bf50543689018729afc74b79058af96cbaa02fd44f898caf5560d61dff5134b",
+      "run_id": "20261017T195819Z-6721da4e",
+      "implementation": "cardano-node",
+      "version": "11.1.2"
+    }
+  ]
+}

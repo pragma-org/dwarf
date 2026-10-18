@@ -11,6 +11,10 @@ dwarf/state/
 dwarf/bundles/
 dwarf/evidence/
 evidence/
+!docs/evidence/
+!docs/evidence/default-runs.json
+!docs/evidence/runs/
+!docs/evidence/runs/*.tar.gz
 sp1-closure/
 notes/
 agent/

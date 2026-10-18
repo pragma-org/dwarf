@@ -12272,14 +12272,22 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     }
     if (form) form.addEventListener("submit", function (event) { event.preventDefault(); open(); });
     describe();
-    return {open: open, state: state};
+    return {
+      open: open,
+      state: state,
+      importFiles: function (files) {
+        if (state.busy) return Promise.resolve(null);
+        replaceSelection(files || []);
+        return open();
+      }
+    };
   }
 
   var api = {renderArchiveView: renderArchiveView, initPortableImport: initPortableImport, statusLabel: statusLabel, classifyImportFiles: classifyImportFiles, MAX_RENDER_ROWS: MAX_RENDER_ROWS};
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root && root.document) {
     root.DwarfPortableImport = api;
-    var start = function () { initPortableImport(root.document, root); };
+    var start = function () { root.DwarfPortableImportInstance = initPortableImport(root.document, root); };
     if (root.document.readyState === "loading") root.document.addEventListener("DOMContentLoaded", start);
     else start();
   }
@@ -12984,5 +12992,6 @@ function initFilter({table, axis, label}) {
 }
 
 </script>
+<script src="./portable-defaults.js" data-dwarf-default-runs="./evidence/default-runs.json"></script>
 </body>
 </html>
