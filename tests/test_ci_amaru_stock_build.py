@@ -44,6 +44,7 @@ def test_fixed_locked_build_retains_network_metadata_logs_and_computed_hashes(tm
     candidate = source_candidate(tmp_path / "source")
     peer_snapshots = snapshots(tmp_path)
     calls = []
+    runtime_dockerfile = []
     def run(argv, **kwargs):
         calls.append(argv)
         if argv[:2] == ["docker", "run"]:
@@ -55,6 +56,9 @@ def test_fixed_locked_build_retains_network_metadata_logs_and_computed_hashes(tm
             (work / "synthetic-git.json").write_text('{"commit":"' + "e" * 40 + '"}')
             kwargs["stdout"].write(b"fetch and build log\n")
         if argv[:3] == ["docker", "buildx", "build"]:
+            runtime_dockerfile.append(
+                (Path(argv[-1]) / "Dockerfile").read_text(encoding="utf-8")
+            )
             output = Path(argv[argv.index("--output") + 1].split("dest=", 1)[1])
             output.write_bytes(b"synthetic Docker archive")
     receipt = api().build_stock(candidate, directory=tmp_path / "out", builder_image=PIN,
@@ -71,6 +75,16 @@ def test_fixed_locked_build_retains_network_metadata_logs_and_computed_hashes(tm
     assert "AMARU_SKIP_PEER_SNAPSHOT_FETCH=1" in api().BUILD_SCRIPT
     assert "git init" in api().BUILD_SCRIPT
     assert any(argv[:2] == ["docker", "pull"] and argv[-1] == PIN for argv in calls)
+    assert runtime_dockerfile == [
+        "FROM docker.io/library/busybox:1.37.0-musl@"
+        "sha256:dc88b80842580654294472735332ec7c7789a4010ec9a68b69f9b88c19abede6\n"
+        "COPY executable /usr/local/bin/amaru\n"
+        'ENTRYPOINT ["/usr/local/bin/amaru"]\n'
+    ]
+    assert receipt["runtime_base_image"] == (
+        "docker.io/library/busybox:1.37.0-musl@"
+        "sha256:dc88b80842580654294472735332ec7c7789a4010ec9a68b69f9b88c19abede6"
+    )
     docker_run = next(argv for argv in calls if argv[:2] == ["docker", "run"])
     assert any(value.endswith(",dst=/peer-snapshots,readonly") for value in docker_run)
     assert "DWARF_SOURCE_DATE=2026-10-19T12:00:00+00:00" in docker_run

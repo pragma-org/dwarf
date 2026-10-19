@@ -25,6 +25,10 @@ from profile_manager.candidate_build_executor import (
 from profile_manager.candidate_builds import plan_candidate_builds
 
 BUILDER_REPOSITORY = "ghcr.io/j-gainsec/dwarf-amaru-builder"
+RUNTIME_BASE_IMAGE = (
+    "docker.io/library/busybox:1.37.0-musl@"
+    "sha256:dc88b80842580654294472735332ec7c7789a4010ec9a68b69f9b88c19abede6"
+)
 RUST = "nightly-2026-09-04"
 NETWORK = "dependency-fetch-allowed; not-hermetic; not-offline"
 CONFIGS_REPOSITORY = "cardano-foundation/cardano-configurations"
@@ -160,6 +164,7 @@ def build_stock(candidate, *, directory, builder_image=None, source_date=None, p
     output = _owned_directory(directory)
     receipt = {"kind": "amaru-network-stock-build", "status": "partial", "ready": False,
                "builder_image": image, "network": NETWORK, "dependency_closure": "not-retained",
+               "runtime_base_image": RUNTIME_BASE_IMAGE,
                "repository_commit": candidate.repository_commit, "source_tree_digest": candidate.source_tree_digest,
                "source_date": source_date, "peer_snapshot_inputs": snapshot_receipt,
                "files": {}, "commands": BUILD_SCRIPT.splitlines()}
@@ -214,7 +219,11 @@ def build_stock(candidate, *, directory, builder_image=None, source_date=None, p
                 context.mkdir()
                 shutil.copyfile(binary, context / "executable")
                 (context / "executable").chmod(0o555)
-                (context / "Dockerfile").write_text('FROM scratch\nCOPY executable /usr/local/bin/amaru\nENTRYPOINT ["/usr/local/bin/amaru"]\n')
+                (context / "Dockerfile").write_text(
+                    f"FROM {RUNTIME_BASE_IMAGE}\n"
+                    "COPY executable /usr/local/bin/amaru\n"
+                    'ENTRYPOINT ["/usr/local/bin/amaru"]\n'
+                )
                 archive = output / "runtime.docker.tar"
                 if archive.exists() or archive.is_symlink():
                     raise ValueError("runtime archive path was populated by candidate")
