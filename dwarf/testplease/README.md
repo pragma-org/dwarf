@@ -15,8 +15,10 @@ and scenario versions remain run-selected; this intake does not pin them.
 A same-repository push that changes this directory starts the GitHub-hosted
 security-campaign workflow. The current executable lane accepts one changed Amaru
 candidate, builds its stock artifact, qualifies the exact mixed-node pair, and runs
-the frozen security and stock-measurement campaign. Cardano candidate builds, patched
-taps, release publication, and Pages publication remain separate follow-on lanes.
+the frozen security and stock-measurement campaign. A complete verified campaign is
+published as content-addressed release assets and becomes eligible for the bounded
+GitHub Pages defaults. Cardano candidate builds and patched taps remain separate
+follow-on lanes.
 
 ## Recognized source
 

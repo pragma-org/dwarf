@@ -191,11 +191,21 @@ def test_hosted_campaign_consumes_and_validates_build_artifact():
     assert all(s['with']['retention-days'] == '30' for s in uploads)
 
 
-def test_workflow_has_no_publish_commit_or_merge_authority():
+def test_publication_is_isolated_from_candidate_execution_and_release_only():
     data = workflow()
-    assert 'publish' not in data['jobs']
+    publication = data['jobs']['publication']
+    assert publication['needs'] == ['discover', 'campaign']
+    assert publication['if'] == "needs.campaign.result == 'success'"
+    assert publication['permissions'] == {'actions': 'read', 'contents': 'write'}
+    assert publication['concurrency']['cancel-in-progress'] in {False, 'false'}
+    assert step('publication', 'Download completed campaign')['with']['name'] == 'dwarf-security-campaign-status'
+    verifier = step('publication', 'Reverify and sign opaque publication assets')
+    assert 'DWARF_CAMPAIGN_PUBLISHING_KEY_PEM' in json.dumps(verifier)
+    assert 'ci_publish_campaign.py' in verifier['run']
+    release = step('publication', 'Publish immutable campaign assets and rolling indexes')['run']
+    assert 'gh release create' in release and 'gh release upload' in release
+    assert 'cmp ' in release
     text = WORKFLOW.read_text()
-    assert 'contents: write' not in text
     assert 'pages: write' not in text
     assert 'id-token: write' not in text
     assert 'git push' not in text

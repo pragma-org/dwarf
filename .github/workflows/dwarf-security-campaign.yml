@@ -383,3 +383,117 @@ jobs:
             campaign-runtime/
           if-no-files-found: error
           retention-days: 30
+
+  publication:
+    needs: [discover, campaign]
+    if: needs.campaign.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: dwarf-campaign-publication
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout pinned publication verifier
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.discover.outputs.trusted_revision }}
+          path: publication-trusted
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Download completed campaign
+        uses: actions/download-artifact@v4
+        with:
+          name: dwarf-security-campaign-status
+          path: publication-input
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned publication dependencies
+        run: python3 -m pip install --require-hashes -r publication-trusted/infrastructure/docker/requirements-framework.txt
+      - name: Download the previous rolling indexes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p publication-previous
+          if gh release view dwarf-campaign-results --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release download dwarf-campaign-results --repo "$GITHUB_REPOSITORY" \
+              --pattern campaigns.json --pattern default-runs.json \
+              --dir publication-previous
+          else
+            cp publication-trusted/docs/evidence/campaigns.json publication-previous/campaigns.json
+            cp publication-trusted/docs/evidence/default-runs.json publication-previous/default-runs.json
+          fi
+      - name: Reverify and sign opaque publication assets
+        env:
+          PUBLISHING_KEY: ${{ secrets.DWARF_CAMPAIGN_PUBLISHING_KEY_PEM }}
+          TRUSTED_REVISION: ${{ needs.discover.outputs.trusted_revision }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PUBLISHING_KEY" ]; then
+            echo "DWARF_CAMPAIGN_PUBLISHING_KEY_PEM is not configured" >&2
+            exit 1
+          fi
+          umask 077
+          key_path="$RUNNER_TEMP/dwarf-campaign-publisher.pem"
+          printf '%s' "$PUBLISHING_KEY" > "$key_path"
+          published_at=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)
+          PYTHONPATH=publication-trusted/dwarf python3 publication-trusted/dwarf/scripts/ci_publish_campaign.py \
+            --manifest publication-input/campaign-plan/manifest.json \
+            --state publication-input/campaign-runtime/state.json \
+            --runtime-root publication-input/campaign-runtime \
+            --trusted-publishers publication-trusted/docs/evidence/trusted-publishers.json \
+            --signing-key "$key_path" \
+            --previous-catalog publication-previous/campaigns.json \
+            --previous-defaults publication-previous/default-runs.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --published-at "$published_at" \
+            --output publication-output
+          rm -f "$key_path"
+      - name: Publish immutable campaign assets and rolling indexes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_REVISION: ${{ needs.discover.outputs.trusted_revision }}
+        run: |
+          set -euo pipefail
+          campaign_id=$(python3 -c 'import json; print(json.load(open("publication-output/metadata.json"))["campaign_id"])')
+          mkdir -p remote-assets
+          if ! gh release view "$campaign_id" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$campaign_id" --repo "$GITHUB_REPOSITORY" \
+              --target "$TRUSTED_REVISION" --draft \
+              --title "DWARF campaign $campaign_id" \
+              --notes "Content-addressed DWARF campaign archives. Status is recorded in campaigns.json; a release is not a security-success claim."
+          fi
+          remote_names=$(gh release view "$campaign_id" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          for asset in publication-output/assets/*; do
+            name=$(basename "$asset")
+            if printf '%s\n' "$remote_names" | grep -Fxq "$name"; then
+              gh release download "$campaign_id" --repo "$GITHUB_REPOSITORY" \
+                --pattern "$name" --dir remote-assets
+              cmp "$asset" "remote-assets/$name"
+            else
+              gh release upload "$campaign_id" "$asset" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
+          gh release edit "$campaign_id" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+          if ! gh release view dwarf-campaign-results --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create dwarf-campaign-results --repo "$GITHUB_REPOSITORY" \
+              --target "$TRUSTED_REVISION" --title "DWARF campaign results index" \
+              --notes "Rolling verified indexes. Campaign archives remain content-addressed assets under their campaign digest releases."
+          fi
+          gh release upload dwarf-campaign-results \
+            publication-output/campaigns.json publication-output/default-runs.json \
+            --repo "$GITHUB_REPOSITORY" --clobber
+      - name: Retain publication receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dwarf-security-campaign-publication
+          path: publication-output/
+          if-no-files-found: error
+          retention-days: 30

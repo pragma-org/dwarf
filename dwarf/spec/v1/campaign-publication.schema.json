@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/campaign-publication.schema.json",
+  "title": "Compact trusted DWARF campaign publication catalog and publisher pins",
+  "description": "Full archives and detached v2 signatures remain external GitHub Release assets under a campaign digest tag. URLs are content addressed; remote release immutability is a publisher responsibility. Trust is pinned independently of supplied signatures. Empty publisher pins intentionally disable publication. Semantic identity and signature checks are enforced by campaign_publication.py.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/catalog"
+    },
+    {
+      "$ref": "#/$defs/trusted_publishers"
+    }
+  ],
+  "$defs": {
+    "archive": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}(?![\\s\\S])"
+        },
+        "archive_url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://github\\.com/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+/releases/download/campaign-[0-9a-f]{64}/[A-Za-z0-9][A-Za-z0-9_.-]*(?![\\s\\S])"
+        },
+        "signature_url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://github\\.com/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+/releases/download/campaign-[0-9a-f]{64}/[A-Za-z0-9][A-Za-z0-9_.-]*(?![\\s\\S])"
+        },
+        "archive_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "signer_id": {
+          "type": "string",
+          "pattern": "^ed25519:[0-9a-f]{64}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "run_id",
+        "archive_url",
+        "signature_url",
+        "archive_sha256",
+        "signer_id"
+      ],
+      "additionalProperties": false
+    },
+    "version": {
+      "type": "object",
+      "properties": {
+        "implementation": {
+          "enum": [
+            "amaru",
+            "cardano-node"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "implementation",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "suite": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "security",
+            "measurement"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}(?![\\s\\S])"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "publisher": {
+      "type": "object",
+      "properties": {
+        "signer_id": {
+          "type": "string",
+          "pattern": "^ed25519:[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "algorithm": {
+          "const": "ed25519"
+        },
+        "public_key_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "revoked"
+          ]
+        }
+      },
+      "required": [
+        "signer_id",
+        "algorithm",
+        "public_key_hex",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "record": {
+      "type": "object",
+      "properties": {
+        "campaign_id": {
+          "type": "string",
+          "pattern": "^campaign-[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "campaign_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "evidence_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "run_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "archives": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/archive"
+          },
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "implementations": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "amaru",
+              "cardano-node"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/version"
+          },
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "modes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "stock",
+              "patched",
+              "coverage"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true
+        },
+        "suites": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/suite"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "security_result": {
+          "enum": [
+            "pass",
+            "finding",
+            "inconclusive",
+            "harness-invalid",
+            "infrastructure-invalid"
+          ]
+        },
+        "measurement_completeness": {
+          "enum": [
+            "complete",
+            "incomplete"
+          ]
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "campaign_id",
+        "campaign_digest",
+        "evidence_digest",
+        "run_ids",
+        "archives",
+        "implementations",
+        "versions",
+        "modes",
+        "suites",
+        "security_result",
+        "measurement_completeness",
+        "published_at"
+      ],
+      "additionalProperties": false
+    },
+    "catalog": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "v1"
+        },
+        "kind": {
+          "const": "campaign-publication-catalog"
+        },
+        "campaigns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/record"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "campaigns"
+      ],
+      "additionalProperties": false
+    },
+    "trusted_publishers": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "v1"
+        },
+        "kind": {
+          "const": "campaign-trusted-publishers"
+        },
+        "publishers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/publisher"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "publishers"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$comment": "Patterns use (?![\\s\\S]) for a strict end-of-string assertion in Python and ECMAScript; dollar alone accepts a trailing newline in some validators."
+}

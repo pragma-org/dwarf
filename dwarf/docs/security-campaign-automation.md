@@ -15,8 +15,11 @@ The frozen plan starts at `runtime-compatibility-qualification-pending`. The sam
 job then runs the existing real-node qualification against the exact candidate and
 Cardano artifacts. No scenario starts unless every qualification gate passes.
 After a pass it runs the frozen cases and stock measurement exercises, retaining
-partial and failed results as well as completed results. This workflow has no
-commit, merge, release or Pages job and has only `contents: read` authority.
+partial and failed results as well as completed results. Candidate compilation and
+execution keep only `contents: read`. A separate job receives `contents: write` only
+after a complete successful campaign job, reverifies opaque archive receipts and
+signatures, then publishes content-addressed release assets and rolling indexes.
+It never commits, merges, extracts an archive, or receives candidate-controlled code.
 
 ## Submission and reviewed selection
 
@@ -168,11 +171,29 @@ Never infer ownership from a broad prefix or perform global Docker pruning.
 
 ## Publication boundary
 
-This workflow cannot publish. It has no `contents: write`, `pages: write`,
-`id-token: write`, release upload, commit, push or merge step. Build and status
-outputs remain GitHub Actions artifacts. An authorized maintainer must review and
-merge repository changes. A later, separately reviewed publication workflow may
-verify signed campaign archives and update release assets or Pages.
+The build and campaign jobs have read-only repository authority and no publication
+secret. After the campaign command returns success, an isolated publication job
+downloads that run's retained artifact, checks the frozen campaign/evaluation
+identity, every receipt hash, and every workflow-local Ed25519 archive signature.
+It treats archives as opaque bytes and never extracts or executes them. It then
+re-signs those exact bytes with `DWARF_CAMPAIGN_PUBLISHING_KEY_PEM`; the matching
+public key and fingerprint are pinned in `docs/evidence/trusted-publishers.json`.
+
+Each campaign gets a digest-named GitHub Release. Archive filenames include their
+SHA-256, and an existing asset must byte-match on retry. The rolling
+`dwarf-campaign-results` release carries the validated compact campaign catalog and
+a Pages-default manifest. A release records a `pass` or `finding` classification;
+it does not turn a finding into success. Failed readiness, incomplete measurement
+evidence, infrastructure-invalid evidence, cleanup errors, missing pins, or a key
+mismatch block publication while the original Actions artifact remains retained.
+
+The Pages workflow runs after a successful security workflow. It validates the
+rolling catalog against the committed publisher pin, downloads only catalog-bound
+assets, verifies their exact size and SHA-256, and stages them under the Pages
+origin. Automatic defaults remain bounded to ten archives, 10 MiB each and 25 MiB
+total; all other verified archives remain available from their campaign release for
+manual import. Neither workflow commits, pushes, merges, or grants Pages authority
+to candidate execution.
 
 ## Focused offline verification
 

@@ -1,0 +1,1 @@
+{"kind":"campaign-trusted-publishers","publishers":[{"algorithm":"ed25519","public_key_hex":"11048e156598fdb66c32f26d82f4cd0cd02c9a0aed3c10cc2b8c3c8573275b41","signer_id":"ed25519:9c3b7db8add42ad910c6c793dfe46affbc5e7211e3c9e487508e996401bf921a","status":"active"}],"schema_version":"v1"}

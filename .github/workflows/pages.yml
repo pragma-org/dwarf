@@ -8,8 +8,14 @@ on:
       - docs/index.html
       - docs/portable-defaults.js
       - docs/evidence/**
+      - dwarf/profile_manager/campaign_publication.py
+      - dwarf/scripts/ci_stage_pages_campaigns.py
+      - dwarf/spec/v1/campaign-publication.schema.json
       - .github/workflows/pages.yml
   workflow_dispatch:
+  workflow_run:
+    workflows: ["DWARF security campaign"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -23,6 +29,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -31,15 +38,53 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned campaign-index dependencies
+        run: python3 -m pip install --require-hashes -r infrastructure/docker/requirements-framework.txt
+
+      - name: Download verified rolling campaign defaults
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p _published/index _published/archives
+          if gh release view dwarf-campaign-results --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release download dwarf-campaign-results --repo "$GITHUB_REPOSITORY" \
+              --pattern campaigns.json --pattern default-runs.json \
+              --dir _published/index
+            PYTHONPATH=dwarf python3 dwarf/scripts/ci_stage_pages_campaigns.py list-assets \
+              --defaults _published/index/default-runs.json > _published/assets.tsv
+            while IFS=$'\t' read -r release_tag asset_name; do
+              [ -n "$release_tag" ] || continue
+              mkdir -p "_published/archives/$release_tag"
+              gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" \
+                --pattern "$asset_name" --dir "_published/archives/$release_tag"
+            done < _published/assets.tsv
+          fi
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Assemble static site
         run: |
+          set -euo pipefail
           mkdir -p _site/docs
           cp index.html _site/index.html
           cp docs/index.html docs/portable-defaults.js _site/docs/
-          cp -R docs/evidence _site/docs/evidence
+          if [ -f _published/index/default-runs.json ]; then
+            PYTHONPATH=dwarf python3 dwarf/scripts/ci_stage_pages_campaigns.py stage \
+              --committed docs/evidence \
+              --defaults _published/index/default-runs.json \
+              --catalog _published/index/campaigns.json \
+              --downloads _published/archives \
+              --trusted-publishers docs/evidence/trusted-publishers.json \
+              --output _site/docs/evidence
+          else
+            cp -R docs/evidence _site/docs/evidence
+          fi
           touch _site/.nojekyll
 
       - name: Upload Pages artifact
