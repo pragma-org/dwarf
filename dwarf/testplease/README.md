@@ -20,6 +20,11 @@ published as content-addressed release assets and becomes eligible for the bound
 GitHub Pages defaults. Cardano candidate builds and patched taps remain separate
 follow-on lanes.
 
+The Amaru stock build packages the verified binary in a minimal, digest-pinned
+POSIX runtime so qualification can atomically transfer those exact bytes into
+the proven relay wrapper. Retained receipts bind the builder, runtime base,
+binary hash, and final runtime-image identity.
+
 ## Recognized source
 
 Amaru must have a parseable workspace `Cargo.toml` and
