@@ -150,8 +150,8 @@ def _directory_fd(path, budget):
             os.close(fd)
 
 
-def _freeze_source(candidate, destination, *, budget):
-    """Copy regular files via anchored descriptors; reject every symlink/type.
+def _freeze_source(candidate, destination, *, budget, allow_internal_symlinks=False):
+    """Copy files and internal-link text via anchored descriptors.
 
     No source file is hard-linked or executed. The private destination is owned
     by this invocation, and is never mounted with a socket or credentials.
@@ -205,8 +205,14 @@ def _freeze_source(candidate, destination, *, budget):
                         if _fingerprint(os.fstat(source.fileno())) != _fingerprint(before):
                             raise ValueError("candidate source file mutated during snapshot")
                         target.chmod(0o500 if mode & 0o111 else 0o400)
+                elif stat.S_ISLNK(mode):
+                    if not allow_internal_symlinks:
+                        raise ValueError("symlinks are forbidden in retained worker output")
+                    link = os.readlink(name, dir_fd=directory_fd)
+                    budget.check(size=len(os.fsencode(link)))
+                    os.symlink(link, output / name)
                 else:
-                    raise ValueError("symlinks and special files are forbidden in executor source")
+                    raise ValueError("special files are forbidden in executor source")
                 if _fingerprint(os.stat(name, dir_fd=directory_fd, follow_symlinks=False)) != _fingerprint(before):
                     raise ValueError("candidate source entry replaced during snapshot")
         budget.check()
@@ -230,7 +236,7 @@ def _snapshot(candidate, budget):
         source = repository / "dwarf/testplease" / candidate.implementation / candidate.candidate_name
         source.mkdir(parents=True, mode=0o700)
         budget.check()
-        _freeze_source(candidate, source, budget=budget)
+        _freeze_source(candidate, source, budget=budget, allow_internal_symlinks=True)
         budget.check()
         # These pathname readers now see only this invocation's bounded,
         # regular-only private copy. They cannot race the submitted checkout.

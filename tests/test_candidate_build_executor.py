@@ -99,22 +99,31 @@ def test_modified_plan_or_source_is_rejected_with_retained_error(tmp_path, monke
     assert (tmp_path / "out/receipt.json").is_file()
 
 
-@pytest.mark.parametrize("kind", ["internal-link", "escape-link", "fifo"])
+@pytest.mark.parametrize("kind", ["escape-link", "fifo"])
 def test_unsafe_source_entries_fail_closed(tmp_path, monkeypatch, kind):
     candidate = source_candidate(tmp_path / "submitted")
     plan = builds.plan_candidate_builds(candidate)[0]
     if kind == "fifo":
         os.mkfifo(candidate.source_root / "pipe")
     else:
-        target = "Cargo.lock" if kind == "internal-link" else "/etc/passwd"
-        (candidate.source_root / "link").symlink_to(target)
-        if kind == "internal-link":
-            candidate = discover_candidates(tmp_path / "submitted", repository_commit=COMMIT)[0]
-            plan = builds.plan_candidate_builds(candidate)[0]
+        (candidate.source_root / "link").symlink_to("/etc/passwd")
     forbid_processes(monkeypatch)
     receipt = api().execute_candidate_build(plan, directory=tmp_path / "out", lock_path=tmp_path / "host.lock")
     assert receipt["status"] == "error"
     assert not receipt["source_copy_verified"]
+
+
+def test_safe_internal_symlink_survives_isolated_source_snapshot(tmp_path, monkeypatch):
+    candidate = source_candidate(tmp_path / "submitted")
+    (candidate.source_root / "lock-link").symlink_to("Cargo.lock")
+    candidate = discover_candidates(tmp_path / "submitted", repository_commit=COMMIT)[0]
+    plan = builds.plan_candidate_builds(candidate)[0]
+    forbid_processes(monkeypatch)
+
+    receipt = api().execute_candidate_build(plan, directory=tmp_path / "out", lock_path=tmp_path / "host.lock")
+
+    assert receipt["status"] == "blocked"
+    assert receipt["source_copy_verified"] is True
 
 
 def test_original_source_is_not_rescanned_after_snapshot(tmp_path, monkeypatch):
