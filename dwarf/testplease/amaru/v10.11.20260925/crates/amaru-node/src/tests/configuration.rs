@@ -1,0 +1,463 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::{Debug, Formatter},
+    num::NonZeroU8,
+    path::PathBuf,
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
+
+use amaru_kernel::{
+    Anchor, Constitution, ConstitutionalCommitteeStatus, Epoch, EraHistory, Header, IsHeader, MaxString128,
+    NetworkName, Peer, Point, ProtocolParameters, Transaction, TransactionId,
+    cardano::network_block::make_encoded_chain, cbor::WithOriginalBytes,
+};
+use amaru_ledger::{
+    epoch_transition::GovernanceActivity,
+    store::{Columns, Store, TransactionalContext},
+};
+use amaru_mempool::InMemoryMempool;
+use amaru_ouroboros::{
+    BaseReadChainStore, ConnectionsResource, WriteChainStore, in_memory_chain_store::InMemoryChainStore,
+};
+use amaru_pure_stage::trace_buffer::TraceBuffer;
+use amaru_stores::rocksdb::{RocksDB, RocksDbConfig};
+use parking_lot::Mutex;
+
+use crate::{
+    stages::config::{Config, MaxExtraLedgerSnapshots, StoreType},
+    tests::{
+        Action,
+        configuration::NodeType::{NodeUnderTest, UpstreamNode},
+        in_memory_connection_provider::InMemoryConnectionProvider,
+        test_data::{create_transactions, create_transactions_in_mempool},
+    },
+};
+
+/// Configuration for running a test node:
+///
+///  - With a specific chain store and mempool.
+///  - With a specific connections resource which could be implemented in memory or via TCP.
+///  - The chain length is the length of the maximum chain that has been created when generated data
+///  - If this configuration is used for the initiator, it also contains the address of the upstream peer to connect to (the responder).
+///
+#[derive(Clone)]
+pub struct NodeTestConfig {
+    pub chain_store: Arc<InMemoryChainStore>,
+    pub mempool: Arc<InMemoryMempool<WithOriginalBytes<Transaction>>>,
+    pub connections: ConnectionsResource,
+    pub chain_length: usize,
+    pub upstream_peers: Vec<Peer>,
+    pub listen_address: String,
+    pub mailbox_size: usize,
+    pub trace_buffer: Arc<Mutex<TraceBuffer>>,
+    pub seed: u64,
+    pub actions: Vec<Action>,
+    pub node_type: NodeType,
+    pub network_name: NetworkName,
+    /// When set, `make_node_configuration` opens this RocksDB ledger instead of a dummy temp store.
+    pub ledger_dir: Option<PathBuf>,
+    /// When set, `make_node_configuration` opens this RocksDB chain store instead of the in-memory store.
+    pub chain_dir: Option<PathBuf>,
+    /// Simulation clock offset so production header validation sees fragment slots as not-in-the-future.
+    pub global_epoch_offset: Option<Duration>,
+    /// When set, overrides [`Config::target_upstream_peers`] (production default is 3).
+    pub target_upstream_peers: Option<usize>,
+    /// When true, `build_node` does not rewind the chain store to the ledger tip.
+    pub keep_persisted_best_chain: bool,
+    /// When set, overrides [`Config::peer_mix`] (production default includes shared/snapshot/ledger).
+    pub peer_mix: Option<String>,
+    /// BlockFetch initiator pipeline depth forwarded to [`Config::blockfetch_pipeline_n`].
+    pub blockfetch_pipeline_n: NonZeroU8,
+    /// When set, overrides [`Config::share_request_initial_delay`] (production default 300s).
+    pub share_request_initial_delay: Option<Duration>,
+    /// Keeps a dummy ledger tempdir alive until the last node graph holding it is dropped.
+    dummy_ledger: Arc<Mutex<Option<Arc<tempfile::TempDir>>>>,
+}
+
+impl NodeTestConfig {
+    pub(crate) fn dummy_ledger_dir(&self) -> Option<Arc<tempfile::TempDir>> {
+        self.dummy_ledger.lock().clone()
+    }
+}
+
+/// Lives in the graph `Resources` so the dummy ledger directory outlives `NodeTestConfig`.
+pub(crate) struct DummyLedgerDir(#[expect(dead_code)] pub Arc<tempfile::TempDir>);
+
+impl Debug for NodeTestConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeTestConfig")
+            .field("chain_length", &self.chain_length)
+            .field("upstream_peers", &self.upstream_peers)
+            .field("listen_address", &self.listen_address)
+            .field("mailbox_size", &self.mailbox_size)
+            .field("seed", &self.seed)
+            .field("actions", &self.actions)
+            .field("node_type", &self.node_type)
+            .field("ledger_dir", &self.ledger_dir)
+            .field("chain_dir", &self.chain_dir)
+            .field("global_epoch_offset", &self.global_epoch_offset)
+            .field("target_upstream_peers", &self.target_upstream_peers)
+            .field("keep_persisted_best_chain", &self.keep_persisted_best_chain)
+            .field("peer_mix", &self.peer_mix)
+            .field("blockfetch_pipeline_n", &self.blockfetch_pipeline_n)
+            .field("share_request_initial_delay", &self.share_request_initial_delay)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeType {
+    UpstreamNode,
+    NodeUnderTest,
+    DownstreamNode,
+}
+
+impl Default for NodeTestConfig {
+    fn default() -> Self {
+        Self {
+            chain_store: Arc::new(InMemoryChainStore::default()),
+            mempool: Arc::new(InMemoryMempool::default()),
+            connections: Arc::new(InMemoryConnectionProvider::default()),
+            chain_length: 10,
+            upstream_peers: vec![Peer::for_test(3001)],
+            listen_address: "127.0.0.1:3000".to_string(),
+            mailbox_size: 10000,
+            trace_buffer: Arc::new(Mutex::new(TraceBuffer::default())),
+            seed: 42,
+            actions: Vec::new(),
+            network_name: NetworkName::Preprod,
+            node_type: NodeUnderTest,
+            ledger_dir: None,
+            chain_dir: None,
+            global_epoch_offset: None,
+            target_upstream_peers: None,
+            keep_persisted_best_chain: false,
+            peer_mix: None,
+            blockfetch_pipeline_n: NonZeroU8::MIN,
+            share_request_initial_delay: None,
+            dummy_ledger: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+impl NodeTestConfig {
+    /// Enter a tracing span with this node's identifier for logging purposes.
+    pub fn enter_span(&self) -> tracing::span::EnteredSpan {
+        tracing::info_span!("node", id = %self.listen_address).entered()
+    }
+
+    pub fn initiator() -> Self {
+        Self::default()
+            .with_chain_length(INITIATOR_BLOCKS_NB)
+            .with_txs(INITIATOR_TXS_NB)
+            .with_upstream_peer(Peer::for_test(3001))
+            .with_listen_address("127.0.0.1:3000")
+            .with_node_type(NodeUnderTest)
+    }
+
+    pub fn responder() -> Self {
+        Self::default()
+            .with_chain_length(RESPONDER_BLOCKS_NB)
+            .with_txs(RESPONDER_TXS_NB)
+            .with_no_upstream_peers()
+            .with_listen_address("127.0.0.1:3001")
+            .with_node_type(UpstreamNode)
+    }
+
+    #[allow(clippy::panic)]
+    pub fn era_history(&self) -> &EraHistory {
+        self.network_name
+            .as_era_history()
+            .unwrap_or_else(|| panic!("no default EraHistory for network: {}", self.network_name))
+    }
+
+    #[allow(clippy::panic)]
+    pub fn protocol_parameters(&self) -> &ProtocolParameters {
+        self.network_name
+            .as_protocol_parameters()
+            .unwrap_or_else(|| panic!("no default ProtocolParameters for network: {}", self.network_name))
+    }
+
+    pub fn with_no_upstream_peers(mut self) -> Self {
+        self.upstream_peers = vec![];
+        self
+    }
+
+    pub fn with_listen_address(mut self, listen_address: &str) -> Self {
+        self.listen_address = listen_address.to_string();
+        self
+    }
+
+    pub fn with_chain_length(mut self, chain_length: usize) -> Self {
+        self.chain_length = chain_length;
+        self
+    }
+
+    pub fn with_chain_store(mut self, chain_store: Arc<InMemoryChainStore>) -> Self {
+        self.chain_store = chain_store;
+        self
+    }
+
+    pub fn with_mempool(mut self, mempool: Arc<InMemoryMempool<WithOriginalBytes<Transaction>>>) -> Self {
+        self.mempool = mempool;
+        self
+    }
+
+    pub fn with_connections(mut self, connections: ConnectionsResource) -> Self {
+        self.connections = connections;
+        self
+    }
+
+    pub fn with_mailbox_size(mut self, size: usize) -> Self {
+        self.mailbox_size = size;
+        self
+    }
+
+    pub fn with_trace_buffer(mut self, trace_buffer: Arc<Mutex<TraceBuffer>>) -> Self {
+        self.trace_buffer = trace_buffer;
+        self
+    }
+
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    pub fn with_network_name(mut self, network_name: NetworkName) -> Self {
+        self.network_name = network_name;
+        self
+    }
+
+    pub fn with_txs(self, txs_nb: u16) -> Self {
+        create_transactions_in_mempool(self.mempool.clone(), txs_nb);
+        self
+    }
+
+    pub fn with_upstream_peer(mut self, upstream_peer: Peer) -> Self {
+        self.upstream_peers = vec![upstream_peer];
+        self
+    }
+
+    pub fn with_upstream_peers(mut self, upstream_peers: Vec<Peer>) -> Self {
+        self.upstream_peers = upstream_peers;
+        self
+    }
+
+    pub fn with_actions(mut self, actions: Vec<Action>) -> Self {
+        self.actions = actions;
+        self
+    }
+
+    pub fn upstream_peers(&self) -> Vec<Peer> {
+        self.upstream_peers.clone()
+    }
+
+    pub fn with_node_type(mut self, node_type: NodeType) -> Self {
+        self.node_type = node_type;
+        self
+    }
+
+    /// Use matching persistent RocksDB chain and ledger directories instead of in-memory/temp stores.
+    pub fn with_store_dirs(mut self, chain_dir: impl Into<PathBuf>, ledger_dir: impl Into<PathBuf>) -> Self {
+        self.chain_dir = Some(chain_dir.into());
+        self.ledger_dir = Some(ledger_dir.into());
+        self
+    }
+
+    /// Place the simulation clock so Praos slot checks treat `offset` as "now" at t=0.
+    pub fn with_global_epoch_offset(mut self, offset: Duration) -> Self {
+        self.global_epoch_offset = Some(offset);
+        self
+    }
+
+    /// Cap outbound peers. World tests set this to 1 for isolation (one intended hop).
+    /// Dest-keyed pairing still completes `Connected` only for the connect that targeted
+    /// that listener; this cap is not what prevents a relay from stealing the handshake.
+    pub fn with_target_upstream_peers(mut self, n: usize) -> Self {
+        self.target_upstream_peers = Some(n);
+        self
+    }
+
+    /// Leave the chain store's best-chain pointer as persisted (no startup realign).
+    ///
+    /// Sets [`crate::Config::realign_chain_store`] false so a primed store keeps serving
+    /// its already-validated best chain.
+    pub fn with_keep_persisted_best_chain(mut self) -> Self {
+        self.keep_persisted_best_chain = true;
+        self
+    }
+
+    /// Restrict outbound candidate sources (e.g. `static~1` for a one-hop world test).
+    pub fn with_peer_mix(mut self, mix: impl Into<String>) -> Self {
+        self.peer_mix = Some(mix.into());
+        self
+    }
+
+    /// Set BlockFetch initiator pipeline depth (`1` is lock-step, `N > 1` pipelines).
+    pub fn with_blockfetch_pipeline_n(mut self, n: NonZeroU8) -> Self {
+        self.blockfetch_pipeline_n = n;
+        self
+    }
+
+    /// First peer-sharing request this long after an outbound handshake (production 300s).
+    pub fn with_share_request_initial_delay(mut self, delay: Duration) -> Self {
+        self.share_request_initial_delay = Some(delay);
+        self
+    }
+
+    /// Given a list of block headers:
+    ///
+    /// - Store them in the chain store.
+    /// - Create and store blocks for them.
+    /// - Declare that list of header as the best chain.
+    /// - Set the chain anchor and best tip to the first header of the chain.
+    ///
+    #[expect(clippy::unwrap_used)]
+    pub fn with_validated_blocks(self, headers: Vec<Header>) -> Self {
+        let _span = self.enter_span();
+        let chain = make_encoded_chain(headers, self.era_history());
+        for block in chain.iter() {
+            tracing::info!(
+                "storing block for header {} (parent hash: {})",
+                block.header.point(),
+                block.header.parent_hash().unwrap_or(Point::Origin.hash())
+            );
+            self.chain_store.store_header(&block.header).unwrap();
+            self.chain_store.store_block(&block.header.hash(), &block.raw).unwrap();
+            self.chain_store.roll_forward_chain(&block.header.point()).unwrap();
+        }
+
+        if let Some(block) = chain.first() {
+            tracing::info!("set the anchor to {}", block.header.point());
+            self.chain_store.set_anchor_point(&block.header.point()).unwrap();
+            tracing::info!("set the tip to {}", block.header.point());
+            self.chain_store.set_best_chain_tip(&block.header.point()).unwrap();
+        }
+        self
+    }
+
+    /// Create a node configuration from the simulation configuration.
+    /// This sets the ledger and chain store + the upstream peer that is
+    /// used as the initial best-chain tip of the chain store.
+    pub fn make_node_configuration(&self) -> anyhow::Result<Config> {
+        if self.ledger_dir.is_some() != self.chain_dir.is_some() {
+            anyhow::bail!("persistent test nodes require both chain_dir and ledger_dir");
+        }
+
+        let mut config = Config {
+            upstream_peers: self.upstream_peers.iter().map(ToString::to_string).collect(),
+            network_magic: self.network_name.to_network_magic(),
+            ..Default::default()
+        };
+
+        config.ledger_config.era_history = self.era_history().clone();
+        config.ledger_config.network = self.network_name;
+        config.listen_address = self.listen_address.clone();
+        if let Some(n) = self.target_upstream_peers {
+            config.target_upstream_peers = n;
+        }
+        config.realign_chain_store = !self.keep_persisted_best_chain;
+        if let Some(mix) = &self.peer_mix {
+            config.peer_mix = mix.parse().map_err(|e| anyhow::anyhow!("invalid peer-mix `{mix}`: {e}"))?;
+        }
+        config.blockfetch_pipeline_n = self.blockfetch_pipeline_n;
+        if let Some(delay) = self.share_request_initial_delay {
+            config.share_request_initial_delay = delay;
+        }
+
+        if let Some(ledger_dir) = &self.ledger_dir {
+            config.ledger_config.ledger_store = RocksDbConfig::new(ledger_dir.clone());
+            config.ledger_config.max_extra_ledger_snapshots = MaxExtraLedgerSnapshots::All;
+        } else {
+            // Bootstrap a temp RocksDB ledger store whose tip matches the chain store's anchor.
+            // This ensures that build_node's initialize_chain_store won't reset the
+            // chain store's best_chain_hash (only the anchor will be set, which is already
+            // the same as the ledger tip).
+            let chain_anchor = self
+                .chain_store
+                .load_header(&self.chain_store.get_anchor_hash())
+                .map(|h| h.point())
+                .unwrap_or(Point::Origin);
+
+            // Hold the TempDir in `dummy_ledger` (and later graph Resources) so Windows can
+            // delete it after RocksDB closes, instead of leaking a directory per node.
+            let tmp = tempfile::tempdir()?;
+            let ledger_store_config = RocksDbConfig::new(tmp.path().to_path_buf());
+            {
+                let store = RocksDB::empty(&ledger_store_config)?;
+                let governance_activity = GovernanceActivity::default();
+                let pp = self.protocol_parameters();
+                let tx = store.create_transaction();
+                tx.save(
+                    self.era_history(),
+                    pp,
+                    Some(governance_activity),
+                    &chain_anchor,
+                    None,
+                    Columns::empty(),
+                    Columns::empty(),
+                    std::iter::empty(),
+                )?;
+                tx.set_protocol_parameters(pp)?;
+                tx.set_governance_activity(governance_activity)?;
+                // A bootstrapped ledger always has a constitution and a committee status.
+                // These tests never propose a constitution or elect members, so any
+                // constitution anchor will do and the committee starts in no-confidence.
+                tx.set_constitution(&Constitution {
+                    anchor: Anchor {
+                        url: MaxString128::from_str("https://example.com").map_err(anyhow::Error::msg)?,
+                        content_hash: [0; 32].into(),
+                    },
+                    guardrail_script: None,
+                })?;
+                tx.update_constitutional_committee(
+                    &ConstitutionalCommitteeStatus::NoConfidence,
+                    &BTreeMap::new(),
+                    &BTreeSet::new(),
+                )?;
+                tx.commit()?;
+                // initial_stake_distributions needs snapshots at most_recent, most_recent - 1, and
+                // most_recent - 2; take three so that for_epoch(0) and for_epoch(1) both succeed.
+                store.next_snapshot(Epoch::from(0u64))?;
+                store.next_snapshot(Epoch::from(1u64))?;
+                store.next_snapshot(Epoch::from(2u64))?;
+            }
+
+            config.ledger_config.ledger_store = ledger_store_config;
+            *self.dummy_ledger.lock() = Some(Arc::new(tmp));
+        }
+
+        config.chain_store = match &self.chain_dir {
+            Some(chain_dir) => StoreType::RocksDb(RocksDbConfig::new(chain_dir.clone())),
+            None => StoreType::InMem(self.chain_store.clone()),
+        };
+        Ok(config)
+    }
+}
+
+pub const RESPONDER_BLOCKS_NB: usize = 10;
+pub const INITIATOR_BLOCKS_NB: usize = 4;
+
+pub const RESPONDER_TXS_NB: u16 = 10;
+pub const INITIATOR_TXS_NB: u16 = 10;
+
+/// By construction we return the same tx ids as the ones created in the function above
+pub fn get_tx_ids() -> Vec<TransactionId> {
+    create_transactions(RESPONDER_TXS_NB).into_iter().map(|tx| tx.tx_id()).collect()
+}

@@ -1,0 +1,168 @@
+name: Publish Bootstrap Snapshots
+
+# See docs/PUBLISHING_SNAPSHOTS.md for runner provisioning and operations.
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Network to publish snapshots for"
+        required: true
+        type: choice
+        options:
+          - preprod
+          - preview
+          - mainnet
+          - all
+        default: preprod
+      epoch:
+        description: "Target bootstrap epoch (defaults to the latest network epoch)"
+        required: false
+        type: string
+        default: ""
+      skip_verification:
+        description: "Skip the bootstrap smoke test against the published snapshots"
+        required: false
+        type: boolean
+        default: false
+      cardano_node_version:
+        description: "cardano-node release tag to download db-analyser from (must be a published release tag, e.g. 11.0.1)"
+        required: false
+        type: string
+        default: "11.0.1"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_LOG: error
+  CARDANO_NODE_VERSION: ${{ inputs.cardano_node_version }}
+
+jobs:
+  publish:
+    name: Create & publish ${{ matrix.network }} bootstrap snapshots
+    runs-on: [self-hosted, snapshots]
+    timeout-minutes: 2880
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        network: ${{ inputs.network == 'all' && fromJSON('["preview", "preprod", "mainnet"]') || fromJSON(format('["{0}"]', inputs.network)) }}
+    concurrency:
+      group: publish-snapshots-${{ matrix.network }}
+      cancel-in-progress: false
+    env:
+      AMARU_NETWORK: ${{ matrix.network }}
+      INPUT_EPOCH: ${{ inputs.epoch }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # https://github.com/actions/checkout/releases/tag/v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Preflight checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_EPOCH" ]; then
+            if ! [[ "$INPUT_EPOCH" =~ ^[0-9]+$ ]] || [ "$INPUT_EPOCH" -eq 0 ]; then
+              echo "::error::epoch must be a positive integer (non-zero), got '$INPUT_EPOCH'" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Resolve persistent cache directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_ROOT="${{ vars.SNAPSHOTS_CACHE_DIR || '' }}"
+          if [ -z "$CACHE_ROOT" ]; then
+            CACHE_ROOT="$HOME/amaru-snapshots"
+          fi
+          mkdir -p "$CACHE_ROOT/$AMARU_NETWORK"
+          echo "CACHE_ROOT=$CACHE_ROOT" >> "$GITHUB_ENV"
+          echo "AMARU_DIST_DIR=$CACHE_ROOT/$AMARU_NETWORK/dist" >> "$GITHUB_ENV"
+          echo "AMARU_SNAPSHOTS_DIR=$CACHE_ROOT/$AMARU_NETWORK/snapshots" >> "$GITHUB_ENV"
+
+      - name: Install db-analyser
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Linux) os=linux ;;
+            Darwin) os=macos ;;
+            *) echo "::error::unsupported operating system: $(uname -s)" >&2; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64 | amd64) arch=amd64 ;;
+            arm64 | aarch64) arch=arm64 ;;
+            *) echo "::error::unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          asset="cardano-node-$CARDANO_NODE_VERSION-$os-$arch.tar.gz"
+          base_url="https://github.com/IntersectMBO/cardano-node/releases/download/$CARDANO_NODE_VERSION"
+          tmp="$(mktemp -d)"
+          echo "DB_ANALYSER_TMP=$tmp" >> "$GITHUB_ENV"
+          echo "downloading $base_url/$asset"
+          curl -fsSL -o "$tmp/$asset" "$base_url/$asset"
+          curl -fsSL -o "$tmp/sums.txt" "$base_url/cardano-node-$CARDANO_NODE_VERSION-sha256sums.txt"
+          (cd "$tmp" && grep " $asset\$" sums.txt | (sha256sum -c - 2>/dev/null || shasum -a 256 -c -))
+          tar -xzf "$tmp/$asset" -C "$tmp" --strip-components 1
+          rm "$tmp/$asset" "$tmp/sums.txt"
+          echo "$tmp/bin" >> "$GITHUB_PATH"
+
+      - uses: ./.github/actions/stage-peer-snapshots
+
+      - name: Build amaru
+        shell: bash
+        run: |
+          cargo build --release --bin amaru
+
+      - name: Create snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./target/release/amaru snapshot create \
+            --network "$AMARU_NETWORK" \
+            ${INPUT_EPOCH:+--epoch "$INPUT_EPOCH"}
+
+      - name: Publish snapshots to R2 and update index
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AMARU_S3_REGION: auto
+          AMARU_S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          AMARU_S3_BUCKET: ${{ secrets.SNAPSHOTS_BUCKET_NAME }}
+          AMARU_S3_PUBLIC_URL: ${{ vars.SNAPSHOTS_PUBLIC_URL_BASE || secrets.SNAPSHOTS_PUBLIC_URL_BASE }}
+        run: |
+          set -euo pipefail
+          ./target/release/amaru snapshot publish --network "$AMARU_NETWORK"
+
+      - name: Verify published snapshots with a full bootstrap
+        if: ${{ !inputs.skip_verification }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCRATCH="$(mktemp -d)"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          cd "$SCRATCH"
+          "$GITHUB_WORKSPACE/target/release/amaru" node bootstrap \
+            --network "$AMARU_NETWORK" \
+            --ledger-dir "$SCRATCH/ledger.db" \
+            --chain-dir "$SCRATCH/chain.db" \
+            ${INPUT_EPOCH:+--epoch "$INPUT_EPOCH"}
+          test -d "$SCRATCH/ledger.db"
+          test -d "$SCRATCH/chain.db"
+
+      - name: Clean up smoke test scratch directory
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -n "${SCRATCH:-}" ]; then
+            rm -rf "$SCRATCH"
+          fi
+          if [ -n "${DB_ANALYSER_TMP:-}" ]; then
+            rm -rf "$DB_ANALYSER_TMP"
+          fi

@@ -1,0 +1,15 @@
+error: Invalid trace in module test::sub : NON_EXISTENT. Expected one of: SCHEMA
+  --> tests/ui/compile_fail/wrong_schema_in_module.rs:21:1
+   |
+21 | / define_local_schemas! {
+22 | |     test {
+23 | |         sub {
+24 | |             /// Test schema for wrong schema in module test
+...  |
+31 | | }
+   | |_^
+...
+35 |       let _span = trace_span!(crate::test::sub::NON_EXISTENT, first, second = 2_u64);
+   |                   ------------------------------------------------------------------ in this macro invocation
+   |
+   = note: this error originates in the macro `__VALIDATE_TEST_SUB` which comes from the expansion of the macro `trace_span` (in Nightly builds, run with -Z macro-backtrace for more info)

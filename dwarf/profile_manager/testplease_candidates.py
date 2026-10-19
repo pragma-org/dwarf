@@ -126,15 +126,25 @@ def _layouts(root: Path, entries: dict[str, int], prefix: str = "") -> tuple[str
         return (root / (prefix + name)).read_text(encoding="utf-8")
 
     found = []
-    if all(regular(name) for name in (
-        "Cargo.toml", "crates/amaru/Cargo.toml", "crates/amaru/src/main.rs"
-    )):
+    if all(regular(name) for name in ("Cargo.toml", "crates/amaru/Cargo.toml")):
         try:
             workspace = tomllib.loads(text("Cargo.toml"))
             package = tomllib.loads(text("crates/amaru/Cargo.toml"))
-            if isinstance(workspace.get("workspace"), dict) and package.get("package", {}).get("name") == "amaru":
+            binary_paths = ["src/main.rs"]
+            for binary in package.get("bin", []):
+                if isinstance(binary, dict) and binary.get("name") == "amaru" and isinstance(binary.get("path"), str):
+                    binary_paths.append(binary["path"])
+            has_binary = any(
+                not Path(path).is_absolute()
+                and ".." not in Path(path).parts
+                and regular("crates/amaru/" + Path(path).as_posix())
+                for path in binary_paths
+            )
+            if (isinstance(workspace.get("workspace"), dict)
+                    and package.get("package", {}).get("name") == "amaru"
+                    and has_binary):
                 found.append("amaru")
-        except (tomllib.TOMLDecodeError, UnicodeError, AttributeError):
+        except (tomllib.TOMLDecodeError, UnicodeError, AttributeError, TypeError):
             pass
     if regular("cabal.project") and regular("cardano-node/cardano-node.cabal"):
         source_prefix = prefix + "cardano-node/src/"

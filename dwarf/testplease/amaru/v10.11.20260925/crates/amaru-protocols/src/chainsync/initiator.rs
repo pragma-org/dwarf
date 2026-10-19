@@ -1,0 +1,398 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use amaru_kernel::{NetworkPoint, Peer, Point};
+use amaru_observability::{Instrument, debug_record, debug_span, error};
+use amaru_ouroboros::ConnectionId;
+use amaru_ouroboros_traits::SampleAncestorPointsResult;
+use amaru_pure_stage::{DeserializerGuards, Effects, OrTerminateWith, StageRef, Void};
+
+use crate::{
+    chainsync::{
+        PIPELINE_DEPTH,
+        messages::{HeaderContent, Message},
+    },
+    mux::MuxMessage,
+    protocol::{
+        Initiator, Inputs, Miniprotocol, Outcome, PROTO_N2N_CHAIN_SYNC, ProtocolState, StageState, miniprotocol,
+        outcome,
+    },
+    store_effects::StoreEffect,
+};
+
+pub fn register_deserializers() -> DeserializerGuards {
+    vec![
+        amaru_pure_stage::register_data_deserializer::<InitiatorMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(InitiatorState, ChainSyncInitiator)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ChainSyncInitiatorMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ChainSyncInitiator>().boxed(),
+    ]
+}
+
+pub fn initiator() -> Miniprotocol<InitiatorState, ChainSyncInitiator, Initiator> {
+    miniprotocol(PROTO_N2N_CHAIN_SYNC)
+}
+
+/// Message sent to the handler from the consensus pipeline
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum InitiatorMessage {
+    RequestNext,
+    Done,
+}
+
+impl InitiatorMessage {
+    pub fn message_type(&self) -> &str {
+        match self {
+            InitiatorMessage::RequestNext => "RequestNext",
+            InitiatorMessage::Done => "Done",
+        }
+    }
+}
+
+/// Message sent from the handler to the consensus pipeline
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ChainSyncInitiatorMsg {
+    pub peer: Peer,
+    pub conn_id: ConnectionId,
+    pub handler: StageRef<InitiatorMessage>,
+    pub msg: InitiatorResult,
+}
+
+impl ChainSyncInitiatorMsg {
+    pub fn message_type(&self) -> &str {
+        match self.msg {
+            InitiatorResult::Initialize => "Initialize",
+            InitiatorResult::IntersectFound(_, _) => "IntersectFound",
+            InitiatorResult::IntersectNotFound(_) => "IntersectNotFound",
+            InitiatorResult::RollForward(_, _) => "RollForward",
+            InitiatorResult::RollBackward(_, _) => "RollBackward",
+            InitiatorResult::Terminated => "Terminated",
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ChainSyncInitiator {
+    upstream: Option<Point>,
+    peer: Peer,
+    conn_id: ConnectionId,
+    muxer: StageRef<MuxMessage>,
+    pipeline: StageRef<ChainSyncInitiatorMsg>,
+    me: StageRef<InitiatorMessage>,
+    pending_close: bool,
+}
+
+impl ChainSyncInitiator {
+    pub fn new(
+        peer: Peer,
+        conn_id: ConnectionId,
+        muxer: StageRef<MuxMessage>,
+        pipeline: StageRef<ChainSyncInitiatorMsg>,
+    ) -> (InitiatorState, Self) {
+        (
+            InitiatorState::Idle,
+            Self { upstream: None, peer, conn_id, muxer, pipeline, me: StageRef::blackhole(), pending_close: false },
+        )
+    }
+}
+
+impl StageState<InitiatorState, Initiator> for ChainSyncInitiator {
+    type LocalIn = InitiatorMessage;
+
+    async fn local(
+        mut self,
+        proto: &InitiatorState,
+        input: Self::LocalIn,
+        _eff: &Effects<Inputs<Self::LocalIn>>,
+    ) -> anyhow::Result<(Option<<InitiatorState as ProtocolState<Initiator>>::Action>, Self)> {
+        use InitiatorState::*;
+
+        Ok(match (proto, input) {
+            (Idle, InitiatorMessage::RequestNext) if !self.pending_close => (Some(InitiatorAction::RequestNext), self),
+            (CanAwait(_) | MustReply(_), InitiatorMessage::RequestNext) if !self.pending_close => {
+                (Some(InitiatorAction::RequestNext), self)
+            }
+            (Idle, InitiatorMessage::Done) => (Some(InitiatorAction::Done), self),
+            (CanAwait(_) | MustReply(_) | Intersect, InitiatorMessage::Done) => {
+                self.pending_close = true;
+                (None, self)
+            }
+            (this, input) => {
+                anyhow::bail!("invalid state: {:?} <- {:?} (pending_close={})", this, input, self.pending_close)
+            }
+        })
+    }
+
+    async fn network(
+        mut self,
+        proto: &InitiatorState,
+        input: <InitiatorState as ProtocolState<Initiator>>::Out,
+        eff: &Effects<Inputs<Self::LocalIn>>,
+    ) -> anyhow::Result<(Option<<InitiatorState as ProtocolState<Initiator>>::Action>, Self)> {
+        let message_type = input.message_type().to_string();
+        let input = input.into_consensus(eff).await;
+
+        async move {
+            use InitiatorAction::*;
+            let action = match &input {
+                InitiatorResult::Initialize => {
+                    self.me = eff.me_ref().contramap(Inputs::Local);
+                    match intersect_points(eff).await? {
+                        SampleAncestorPointsResult::BestChainTipNotFound => {
+                            return Err(anyhow::anyhow!("no best chain tip found"));
+                        }
+                        SampleAncestorPointsResult::Found(points) => {
+                            Some(Intersect(points.into_iter().map(NetworkPoint::from).collect()))
+                        }
+                    }
+                }
+                InitiatorResult::IntersectFound(_, tip)
+                | InitiatorResult::IntersectNotFound(tip)
+                | InitiatorResult::RollForward(_, tip)
+                | InitiatorResult::RollBackward(_, tip) => {
+                    self.upstream = Some(*tip);
+                    None
+                }
+                InitiatorResult::Terminated => None,
+            };
+            eff.send(
+                &self.pipeline,
+                ChainSyncInitiatorMsg { peer: self.peer, conn_id: self.conn_id, handler: self.me.clone(), msg: input },
+            )
+            .await;
+            if self.pending_close && matches!(proto, InitiatorState::Idle) {
+                return Ok((Some(InitiatorAction::Done), self));
+            }
+            Ok((action, self))
+        }
+        .instrument(debug_span!(protocols::chainsync::initiator::CHAINSYNC_INITIATOR_STAGE, message_type))
+        .await
+    }
+
+    fn muxer(&self) -> &StageRef<MuxMessage> {
+        &self.muxer
+    }
+}
+
+async fn intersect_points(eff: &Effects<Inputs<InitiatorMessage>>) -> anyhow::Result<SampleAncestorPointsResult> {
+    let span = debug_span!(protocols::chainsync::initiator::INTERSECT_POINTS);
+    async {
+        let points = eff.external(StoreEffect::sample_ancestor_points()).await?;
+        debug_record!(protocols::chainsync::initiator::INTERSECT_POINTS, points = points.as_slice());
+        Ok(points)
+    }
+    .instrument(span)
+    .await
+}
+
+#[derive(Debug)]
+pub enum InitiatorAction {
+    Intersect(Vec<NetworkPoint>),
+    RequestNext,
+    Done,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum InitiatorResult {
+    Initialize,
+    IntersectFound(Point, Point),
+    IntersectNotFound(Point),
+    RollForward(HeaderContent, Point),
+    RollBackward(Point, Point),
+    /// Chainsync session ended (connection teardown or mini-protocol stage death).
+    ///
+    /// Emitted by the connection stage (not by the protocol state machine) so `track_peers`
+    /// can purge per-connection state. Correlates with `Initialize` via [`ConnectionId`].
+    Terminated,
+}
+
+impl InitiatorResult {
+    pub fn message_type(&self) -> &str {
+        match self {
+            InitiatorResult::Initialize => "Initialize",
+            InitiatorResult::IntersectFound(_, _) => "IntersectFound",
+            InitiatorResult::IntersectNotFound(_) => "IntersectNotFound",
+            InitiatorResult::RollForward(_, _) => "RollForward",
+            InitiatorResult::RollBackward(_, _) => "RollBackward",
+            InitiatorResult::Terminated => "Terminated",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum InitiatorFromNetwork {
+    Initialize,
+    IntersectFound(NetworkPoint, Point),
+    IntersectNotFound(Point),
+    RollForward(HeaderContent, Point),
+    RollBackward(NetworkPoint, Point),
+    /// Chainsync session ended (connection teardown or mini-protocol stage death).
+    ///
+    /// Emitted by the connection stage (not by the protocol state machine) so `track_peers`
+    /// can purge per-connection state. Correlates with `Initialize` via [`ConnectionId`].
+    Terminated,
+}
+
+impl InitiatorFromNetwork {
+    pub fn message_type(&self) -> &str {
+        match self {
+            InitiatorFromNetwork::Initialize => "Initialize",
+            InitiatorFromNetwork::IntersectFound(_, _) => "IntersectFound",
+            InitiatorFromNetwork::IntersectNotFound(_) => "IntersectNotFound",
+            InitiatorFromNetwork::RollForward(_, _) => "RollForward",
+            InitiatorFromNetwork::RollBackward(_, _) => "RollBackward",
+            InitiatorFromNetwork::Terminated => "Terminated",
+        }
+    }
+
+    async fn into_consensus(self, eff: &Effects<Inputs<InitiatorMessage>>) -> InitiatorResult {
+        match self {
+            InitiatorFromNetwork::Initialize => InitiatorResult::Initialize,
+            InitiatorFromNetwork::IntersectFound(point, tip) => {
+                InitiatorResult::IntersectFound(to_point(eff, point).await, tip)
+            }
+            InitiatorFromNetwork::IntersectNotFound(tip) => InitiatorResult::IntersectNotFound(tip),
+            InitiatorFromNetwork::RollForward(content, tip) => InitiatorResult::RollForward(content, tip),
+            InitiatorFromNetwork::RollBackward(point, tip) => {
+                InitiatorResult::RollBackward(to_point(eff, point).await, tip)
+            }
+            InitiatorFromNetwork::Terminated => InitiatorResult::Terminated,
+        }
+    }
+}
+
+async fn to_point(eff: &Effects<Inputs<InitiatorMessage>>, point: NetworkPoint) -> Point {
+    eff.external(StoreEffect::load_point(point.hash()))
+        .or_terminate_with(eff, async move |_| {
+            error!(protocols::chainsync::initiator::ROLLBACK_POINT_NOT_FOUND, header_hash = point.hash());
+        })
+        .await
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub enum InitiatorState {
+    Idle,
+    CanAwait(u8),
+    MustReply(u8),
+    Intersect,
+    Done,
+}
+
+impl ProtocolState<Initiator> for InitiatorState {
+    type WireMsg = Message;
+    type Action = InitiatorAction;
+    type Out = InitiatorFromNetwork;
+    type Error = Void;
+
+    fn init(&self) -> anyhow::Result<(Outcome<Self::WireMsg, Self::Out, Self::Error>, Self)> {
+        Ok((outcome().result(InitiatorFromNetwork::Initialize), *self))
+    }
+
+    fn network(&self, input: Self::WireMsg) -> anyhow::Result<(Outcome<Self::WireMsg, Self::Out, Self::Error>, Self)> {
+        let _span = debug_span!(
+            protocols::chainsync::initiator::CHAINSYNC_INITIATOR_PROTOCOL,
+            message_type = input.message_type().to_string()
+        );
+        let _guard = _span.enter();
+        use InitiatorState::*;
+
+        Ok(match (self, input) {
+            (Intersect, Message::IntersectFound(point, tip)) => (
+                // only for this first time do we sent two requests
+                // this initiates the desired pipelining behaviour
+                outcome()
+                    .send(Message::RequestNext(PIPELINE_DEPTH))
+                    .want_next()
+                    .result(InitiatorFromNetwork::IntersectFound(point, tip)),
+                CanAwait(1),
+            ),
+            (Intersect, Message::IntersectNotFound(tip)) => {
+                (outcome().result(InitiatorFromNetwork::IntersectNotFound(tip)), Idle)
+            }
+            (CanAwait(n), Message::AwaitReply) => (outcome().want_next(), MustReply(*n)),
+            (CanAwait(n) | MustReply(n), Message::RollForward(content, tip)) => (
+                outcome().result(InitiatorFromNetwork::RollForward(content, tip)),
+                if *n == 0 { Idle } else { CanAwait(*n - 1) },
+            ),
+            (CanAwait(n) | MustReply(n), Message::RollBackward(point, tip)) => (
+                outcome().result(InitiatorFromNetwork::RollBackward(point, tip)),
+                if *n == 0 { Idle } else { CanAwait(*n - 1) },
+            ),
+            (this, input) => anyhow::bail!("invalid state: {:?} <- {:?}", this, input),
+        })
+    }
+
+    fn local(&self, input: Self::Action) -> anyhow::Result<(Outcome<Self::WireMsg, Void, Self::Error>, Self)> {
+        use InitiatorState::*;
+
+        Ok(match (self, input) {
+            (Idle, InitiatorAction::Intersect(points)) => {
+                (outcome().send(Message::FindIntersect(points)).want_next(), Intersect)
+            }
+            (Idle, InitiatorAction::RequestNext) => (outcome().send(Message::RequestNext(1)).want_next(), CanAwait(0)),
+            (CanAwait(n), InitiatorAction::RequestNext) => {
+                (outcome().send(Message::RequestNext(1)).want_next(), CanAwait(*n + 1))
+            }
+            (MustReply(n), InitiatorAction::RequestNext) => {
+                (outcome().send(Message::RequestNext(1)).want_next(), MustReply(*n + 1))
+            }
+            (Idle, InitiatorAction::Done) => (outcome().send(Message::Done).finish(), Done),
+            (this, input) => anyhow::bail!("invalid state: {:?} <- {:?}", this, input),
+        })
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::wildcard_enum_match_arm)]
+pub mod tests {
+    use InitiatorState::*;
+    use Message::*;
+    use amaru_kernel::EraName;
+
+    use super::*;
+    use crate::protocol::ProtoSpec;
+
+    pub fn spec() -> ProtoSpec<InitiatorState, Message, Initiator> {
+        // canonical states and messages
+        let find_intersect = || FindIntersect(vec![NetworkPoint::Origin]);
+        let intersect_found = || IntersectFound(NetworkPoint::Origin, Point::Origin);
+        let intersect_not_found = || IntersectNotFound(Point::Origin);
+        let roll_forward = || RollForward(HeaderContent::with_bytes(vec![], EraName::Conway), Point::Origin);
+        let roll_backward = || RollBackward(NetworkPoint::Origin, Point::Origin);
+
+        let mut spec = ProtoSpec::default();
+        spec.init(Idle, find_intersect(), Intersect);
+        spec.init(Idle, Message::Done, InitiatorState::Done);
+        spec.init(Idle, Message::RequestNext(1), CanAwait(0));
+        spec.resp(Intersect, intersect_found(), Idle);
+        spec.resp(Intersect, intersect_not_found(), Idle);
+        spec.resp(CanAwait(0), AwaitReply, MustReply(0));
+        spec.resp(CanAwait(0), roll_forward(), Idle);
+        spec.resp(CanAwait(0), roll_backward(), Idle);
+        spec.resp(MustReply(0), roll_forward(), Idle);
+        spec.resp(MustReply(0), roll_backward(), Idle);
+        spec
+    }
+
+    #[test]
+    #[ignore = "pipelining cannot be tested yet"]
+    fn test_initiator_protocol() {
+        spec().check(Idle, |msg| match msg {
+            FindIntersect(points) => Some(InitiatorAction::Intersect(points.clone())),
+            RequestNext(1) => Some(InitiatorAction::RequestNext),
+            Message::Done => Some(InitiatorAction::Done),
+            _ => None,
+        });
+    }
+}

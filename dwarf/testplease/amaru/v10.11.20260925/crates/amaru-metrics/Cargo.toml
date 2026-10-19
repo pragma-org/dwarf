@@ -1,0 +1,29 @@
+lints.workspace = true
+
+
+[package]
+name = "amaru-metrics"
+version = "0.1.2"
+edition.workspace = true
+description = "Metrics collection and telemetry primitives for the Amaru Cardano node"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+# External Dependencies
+serde = { workspace = true, features = ["derive", "alloc"] }
+
+[package.metadata.cargo-machete]
+ignored = ["amaru-deps"]
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+
+[target.'cfg(not(target_arch="wasm32"))'.dependencies]
+opentelemetry.workspace = true

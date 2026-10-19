@@ -1,0 +1,37 @@
+# cargo-release workspace configuration
+# https://github.com/crate-ci/cargo-release
+#
+# Usage:
+#   cargo release publish --workspace   # publish all publishable workspace crates
+#   cargo release <level>               # full release cycle (bump, tag, push, publish)
+#
+# Crates excluded from publishing have `publish = false` in their Cargo.toml:
+#   - amaru             (binary)
+#   - amaru-sim         (simulation harness, not a library)
+#   - amaru-uplc        (local UPLC evaluator)
+#
+# Vendor crates (crates/vendor/) are workspace members and are published
+# together with the other workspace crates.
+
+# Only allow releases from the main branch
+allow-branch = ["main"]
+
+# Do not push git changes / create tags automatically in publish-only mode;
+# the full release workflow (cargo release <level>) still handles tagging.
+tag = true
+push = true
+publish = true
+
+# Workspace crates manage their own versions, so library publication can be
+# handled independently from Amaru distribution releases.
+verify = false
+
+# Allow publishing more than 5 new crates in one run (first-time publishes)
+[rate-limit]
+new-packages = 20
+existing-packages = 20
+
+# Let cargo-release verify the tree is clean before proceeding
+pre-release-commit-message = "chore: release {{version}}"
+tag-message = "Release {{version}}"
+tag-name = "v{{version}}"

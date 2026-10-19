@@ -1,0 +1,5 @@
+error: Duplicate field 'peer' in schema VALIDATE_HEADER
+  --> tests/ui/compile_fail/duplicate_field.rs:26:26
+   |
+26 |                 required peer: u64
+   |                          ^^^^

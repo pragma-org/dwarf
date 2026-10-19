@@ -22,10 +22,11 @@ follow-on lanes.
 
 ## Recognized source
 
-Amaru must have a parseable workspace `Cargo.toml`,
-`crates/amaru/Cargo.toml` declaring package `amaru`, and
-`crates/amaru/src/main.rs`. These identify the Cargo workspace/package used by
-DWARF's Amaru build helpers.
+Amaru must have a parseable workspace `Cargo.toml` and
+`crates/amaru/Cargo.toml` declaring package `amaru`. The package must contain
+the default `src/main.rs` binary or declare an `amaru` binary whose relative
+`path` exists inside that package. These identify the Cargo workspace/package
+used by DWARF's Amaru build helpers.
 
 Cardano-node must have `cabal.project`,
 `cardano-node/cardano-node.cabal` declaring package `cardano-node`, and at least

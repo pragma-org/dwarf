@@ -1,0 +1,223 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::{fmt, ops::Deref, str::FromStr};
+
+use crate::{Bytes, cbor};
+
+/// A list of bytes with a fixed size, known at compile time.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FixedBytes<const N: usize>([u8; N]);
+
+impl<const N: usize> fmt::Debug for FixedBytes<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("FixedBytes").field(&hex::encode(self.0.as_slice())).finish()
+    }
+}
+
+impl<const N: usize> FixedBytes<N> {
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
+
+    pub fn as_array(&self) -> &[u8; N] {
+        &self.0
+    }
+
+    fn checked(bytes: &[u8]) -> Result<Self, FixedBytesError> {
+        let got = bytes.len();
+        if got != N {
+            return Err(FixedBytesError::IncorrectSize { expected: N, got });
+        }
+
+        let mut inner = [0u8; N];
+        inner[..got].copy_from_slice(bytes);
+        Ok(Self(inner))
+    }
+
+    pub const fn zeroes() -> Self {
+        Self([0u8; N])
+    }
+}
+
+impl<const N: usize> Deref for FixedBytes<N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl<const N: usize> TryFrom<&[u8]> for FixedBytes<N> {
+    type Error = FixedBytesError;
+
+    fn try_from(xs: &[u8]) -> Result<Self, Self::Error> {
+        Self::checked(xs)
+    }
+}
+
+impl<const N: usize> TryFrom<Vec<u8>> for FixedBytes<N> {
+    type Error = FixedBytesError;
+
+    fn try_from(xs: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::checked(&xs)
+    }
+}
+
+impl<const N: usize> From<[u8; N]> for FixedBytes<N> {
+    fn from(array: [u8; N]) -> Self {
+        Self(array)
+    }
+}
+
+impl<const N: usize> From<FixedBytes<N>> for Vec<u8> {
+    fn from(bytes: FixedBytes<N>) -> Self {
+        bytes.to_vec()
+    }
+}
+
+impl<const N: usize> From<FixedBytes<N>> for Bytes {
+    fn from(bytes: FixedBytes<N>) -> Self {
+        bytes.to_vec().into()
+    }
+}
+
+impl<const N: usize> From<FixedBytes<N>> for String {
+    fn from(bytes: FixedBytes<N>) -> Self {
+        hex::encode(bytes.to_vec())
+    }
+}
+
+impl<const N: usize> TryFrom<String> for FixedBytes<N> {
+    type Error = FixedBytesError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::checked(&hex::decode(value)?)
+    }
+}
+
+impl<const N: usize> FromStr for FixedBytes<N> {
+    type Err = FixedBytesError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s.to_string())
+    }
+}
+
+impl<const N: usize> fmt::Display for FixedBytes<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&hex::encode(self.to_vec()))
+    }
+}
+
+impl<const N: usize> serde::Serialize for FixedBytes<N> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            serializer.serialize_bytes(self.as_slice())
+        }
+    }
+}
+
+struct FixedBytesVisitor<const N: usize>;
+
+impl<'de, const N: usize> serde::de::Visitor<'de> for FixedBytesVisitor<N> {
+    type Value = FixedBytes<N>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "a {N}-byte value as a hex string or a byte string")
+    }
+
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        FixedBytes::<N>::from_str(v).map_err(serde::de::Error::custom)
+    }
+
+    fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+        FixedBytes::<N>::try_from(v).map_err(serde::de::Error::custom)
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let mut bytes = [0u8; N];
+        for (i, slot) in bytes.iter_mut().enumerate() {
+            *slot = seq.next_element()?.ok_or_else(|| serde::de::Error::invalid_length(i, &self))?;
+        }
+        if seq.next_element::<u8>()?.is_some() {
+            return Err(serde::de::Error::invalid_length(N + 1, &self));
+        }
+        Ok(FixedBytes::from(bytes))
+    }
+}
+
+impl<'de, const N: usize> serde::Deserialize<'de> for FixedBytes<N> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(FixedBytesVisitor::<N>)
+    }
+}
+
+impl<const N: usize> schemars::JsonSchema for FixedBytes<N> {
+    fn schema_name() -> String {
+        format!("FixedBytes<{N}>")
+    }
+
+    fn json_schema(_gen: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        super::hash::hex_string_json_schema(N, "hex-encoded bytes")
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+}
+
+impl<'b, C: cbor::HasProtocolVersion, const N: usize> cbor::Decode<'b, C> for FixedBytes<N> {
+    fn decode(d: &mut cbor::Decoder<'b>, ctx: &mut C) -> Result<Self, cbor::decode::Error> {
+        Self::checked(&cbor::decode_bytes_v12_indefinite(d, ctx)?)
+            .map_err(|e| cbor::decode::Error::message(e.to_string()))
+    }
+}
+
+impl<C, const N: usize> cbor::Encode<C> for FixedBytes<N> {
+    fn encode<W: cbor::encode::Write>(
+        &self,
+        e: &mut cbor::Encoder<W>,
+        _ctx: &mut C,
+    ) -> Result<(), cbor::encode::Error<W::Error>> {
+        e.bytes(self.as_slice())?.ok()
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum FixedBytesError {
+    #[error("expected exactly {expected} bytes, got {got}")]
+    IncorrectSize { expected: usize, got: usize },
+
+    #[error(transparent)]
+    InvalidHex(#[from] hex::FromHexError),
+}
+
+#[cfg(test)]
+mod serde_format {
+    use super::*;
+    use crate::utils::serde::bytes::assert_json_hex_and_cbor_bstr;
+
+    #[test]
+    fn json_is_hex_string_and_cbor_is_byte_string() {
+        let payload = [0xabu8; 4];
+        let value = FixedBytes::<4>::from(payload);
+        assert_json_hex_and_cbor_bstr(&value, &payload);
+    }
+}

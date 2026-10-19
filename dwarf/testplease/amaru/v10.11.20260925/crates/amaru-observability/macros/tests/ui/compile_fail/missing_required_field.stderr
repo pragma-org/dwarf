@@ -1,0 +1,15 @@
+error: Missing required field 'third' for schema SCHEMA. Required fields: first, second, third
+  --> tests/ui/compile_fail/missing_required_field.rs:21:1
+   |
+21 | / define_local_schemas! {
+22 | |     test {
+23 | |         sub {
+24 | |             /// Test schema for missing required field test
+...  |
+32 | | }
+   | |_^
+...
+36 |       let _span = trace_span!(crate::test::sub::SCHEMA, first, second = 2_u64);
+   |                   ------------------------------------------------------------ in this macro invocation
+   |
+   = note: this error originates in the macro `__TEST__SUB__SCHEMA_CHECK_THIRD` which comes from the expansion of the macro `trace_span` (in Nightly builds, run with -Z macro-backtrace for more info)

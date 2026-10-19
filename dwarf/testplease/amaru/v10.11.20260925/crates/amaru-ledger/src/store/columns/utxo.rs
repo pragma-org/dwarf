@@ -1,0 +1,89 @@
+// Copyright 2024 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use amaru_iter_borrow::IterBorrow;
+use amaru_kernel::{MemoizedTransactionOutput, TransactionInput};
+
+pub type Key = TransactionInput;
+
+pub type Value = MemoizedTransactionOutput;
+
+/// Iterator used to browse rows from the Pools column. Meant to be referenced using qualified imports.
+pub type Iter<'a, 'b> = IterBorrow<'a, 'b, Key, Option<Value>>;
+
+#[cfg(any(test, feature = "test-utils"))]
+pub mod tests {
+    use amaru_kernel::{
+        Bytes, Hash, Int, MemoizedDatum, MemoizedPlutusData, MemoizedScript, PlutusData, PlutusScript,
+        any_shelley_address,
+        plutus_data::{BigInt, Constr},
+    };
+    use proptest::{option, prelude::*};
+
+    use super::*;
+
+    prop_compose! {
+        pub fn any_txin()(
+            hash in any::<[u8; 32]>(),
+            index in any::<u16>(),
+        ) -> TransactionInput {
+            TransactionInput {
+                transaction_id: Hash::from(hash),
+                index,
+            }
+        }
+    }
+
+    pub fn any_memoized_plutus_script() -> impl Strategy<Value = MemoizedScript> {
+        prop_oneof![
+            prop::collection::vec(any::<u8>(), 1..128)
+                .prop_map(|bytes| { MemoizedScript::PlutusV1Script(PlutusScript::<1>(Bytes::from(bytes))) }),
+            prop::collection::vec(any::<u8>(), 1..128)
+                .prop_map(|bytes| { MemoizedScript::PlutusV2Script(PlutusScript::<2>(Bytes::from(bytes))) }),
+            prop::collection::vec(any::<u8>(), 1..128)
+                .prop_map(|bytes| { MemoizedScript::PlutusV3Script(PlutusScript::<3>(Bytes::from(bytes))) }),
+        ]
+    }
+
+    pub fn any_value() -> impl Strategy<Value = amaru_kernel::Value> {
+        any::<u64>().prop_map(amaru_kernel::Value::Coin)
+    }
+
+    pub fn any_memoized_inline_datum() -> impl Strategy<Value = MemoizedDatum> {
+        any::<i64>().prop_map(|n| {
+            let int_val: Int = n.into();
+            let big_int = BigInt::Int(int_val);
+
+            let pd =
+                PlutusData::constr(Constr { tag: 121, any_constructor: None, fields: vec![PlutusData::int(big_int)] });
+
+            MemoizedDatum::from(MemoizedPlutusData::new(pd))
+        })
+    }
+
+    pub fn any_memoized_transaction_output() -> impl Strategy<Value = MemoizedTransactionOutput> {
+        (
+            any_shelley_address(),
+            any_value(),
+            option::of(any_memoized_inline_datum()),
+            option::of(any_memoized_plutus_script()),
+        )
+            .prop_map(|(address, value, datum_opt, script)| {
+                let datum = datum_opt.unwrap_or(MemoizedDatum::None);
+
+                let is_legacy = matches!(datum, MemoizedDatum::None) && script.is_none();
+                MemoizedTransactionOutput::new(is_legacy, address, value, datum, script)
+            })
+    }
+}

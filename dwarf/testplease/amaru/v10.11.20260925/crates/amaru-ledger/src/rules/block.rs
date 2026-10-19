@@ -1,0 +1,341 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::{
+    fmt::{self, Display},
+    ops::{ControlFlow, Deref, FromResidual, Residual, Try},
+    process::{ExitCode, Termination},
+};
+
+use amaru_kernel::{
+    Block, EraHistory, ExUnits, GlobalParameters, Hash, IsHeader, NetworkName, Point, ProtocolParameters,
+    TransactionId, TransactionIndex, TransactionPointer, TransactionRef, size::SCRIPT,
+};
+use amaru_observability::debug_span;
+use amaru_plutus::arena_pool::ArenaPool;
+use thiserror::Error;
+
+use crate::{
+    context::ValidationContext,
+    epoch_transition::GovernanceActivity,
+    rules::transaction::{
+        self,
+        phase_one::PhaseOneError,
+        phase_two::{ScriptEvaluationError, TagMismatch},
+    },
+};
+
+pub mod body_size;
+pub mod ex_units;
+pub mod header_size;
+pub mod header_version;
+pub mod ref_scripts_size;
+
+/// The single point deciding which validation phase a failure belongs to: phase one rejects the
+/// transaction outright, phase two is a disagreement between the claimed and actual script results.
+#[derive(Debug, Error)]
+pub enum TransactionInvalid {
+    #[error("transaction failed phase one validation: {0}")]
+    PhaseOne(#[from] PhaseOneError),
+    #[error("transaction failed phase two validation: {0}")]
+    PhaseTwo(TagMismatch),
+}
+
+impl From<ScriptEvaluationError> for TransactionInvalid {
+    fn from(err: ScriptEvaluationError) -> Self {
+        match err {
+            ScriptEvaluationError::Preparation(err) => {
+                TransactionInvalid::PhaseOne(PhaseOneError::ScriptPreparation(err))
+            }
+            ScriptEvaluationError::ValidationTagMismatch(err) => TransactionInvalid::PhaseTwo(err),
+        }
+    }
+}
+#[derive(Debug)]
+pub enum InvalidBlockDetails {
+    BlockSizeMismatch {
+        supplied: u64,
+        actual: u64,
+    },
+    TooManyExUnits {
+        provided: ExUnits,
+        max: ExUnits,
+    },
+    HeaderSizeTooBig {
+        supplied: u64,
+        max: u64,
+    },
+    HeaderProtVerTooHigh {
+        header_major: u64,
+        max_major: u64,
+    },
+    RefScriptSizeTooBig {
+        provided: u64,
+        allowed: u64,
+    },
+    Transaction {
+        transaction_id: TransactionId,
+        transaction_index: TransactionIndex,
+        violation: Box<TransactionInvalid>,
+    },
+}
+
+#[derive(Debug)]
+pub enum BlockValidation<A, E> {
+    Valid(A),
+    Invalid(Point, InvalidBlockDetails),
+    Err(E),
+}
+
+pub enum BlockValidationResidual<E> {
+    Invalid(Point, InvalidBlockDetails),
+    Err(E),
+}
+
+fn display_ex_units(ex_units: &ExUnits) -> String {
+    format!("ExUnits {{ mem: {}, steps: {} }}", ex_units.mem, ex_units.steps)
+}
+
+impl Display for InvalidBlockDetails {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InvalidBlockDetails::BlockSizeMismatch { supplied, actual } => {
+                write!(f, "Block size mismatch: supplied {}, actual {}", supplied, actual)
+            }
+            InvalidBlockDetails::TooManyExUnits { provided, max } => {
+                write!(f, "Too many ExUnits: provided {}, max {}", display_ex_units(provided), display_ex_units(max))
+            }
+            InvalidBlockDetails::HeaderSizeTooBig { supplied, max } => {
+                write!(f, "Header size too big: supplied {}, max {}", supplied, max)
+            }
+            InvalidBlockDetails::HeaderProtVerTooHigh { header_major, max_major } => {
+                write!(f, "Header protocol version too high: {} > {}", header_major, max_major)
+            }
+            InvalidBlockDetails::RefScriptSizeTooBig { provided, allowed } => {
+                write!(
+                    f,
+                    "reference scripts total bytes exceeds per-block limit: (provided {provided}, allowed {allowed})",
+                )
+            }
+            InvalidBlockDetails::Transaction { transaction_id, transaction_index, violation } => {
+                write!(f, "Transaction {} at index {} is invalid: {}", transaction_id, transaction_index, violation)
+            }
+        }
+    }
+}
+
+impl<A, E> From<Result<A, E>> for BlockValidation<A, anyhow::Error>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn from(result: Result<A, E>) -> Self {
+        match result {
+            Ok(a) => Self::Valid(a),
+            Err(e) => Self::anyhow(e),
+        }
+    }
+}
+
+impl<A> BlockValidation<A, anyhow::Error> {
+    pub fn bail(msg: String) -> Self {
+        BlockValidation::Err(anyhow::Error::msg(msg))
+    }
+
+    pub fn anyhow<E>(err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        BlockValidation::Err(anyhow::Error::new(err))
+    }
+
+    pub fn context<C>(self, context: C) -> Self
+    where
+        C: std::fmt::Display + Send + Sync + 'static,
+    {
+        match self {
+            BlockValidation::Err(err) => BlockValidation::Err(err.context(context)),
+            BlockValidation::Invalid { .. } | BlockValidation::Valid { .. } => self,
+        }
+    }
+}
+
+impl<A, E> Termination for BlockValidation<A, E> {
+    fn report(self) -> ExitCode {
+        match self {
+            Self::Valid { .. } => ExitCode::SUCCESS,
+            Self::Invalid { .. } | Self::Err { .. } => ExitCode::FAILURE,
+        }
+    }
+}
+
+impl<A, E> Try for BlockValidation<A, E> {
+    type Output = A;
+    type Residual = BlockValidationResidual<E>;
+
+    fn from_output(result: Self::Output) -> Self {
+        Self::Valid(result)
+    }
+
+    fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
+        match self {
+            Self::Valid(result) => ControlFlow::Continue(result),
+            Self::Invalid(tip, violation) => ControlFlow::Break(BlockValidationResidual::Invalid(tip, violation)),
+            Self::Err(err) => ControlFlow::Break(BlockValidationResidual::Err(err)),
+        }
+    }
+}
+
+impl<A, E> FromResidual for BlockValidation<A, E> {
+    fn from_residual(residual: BlockValidationResidual<E>) -> Self {
+        match residual {
+            BlockValidationResidual::Invalid(tip, violation) => BlockValidation::Invalid(tip, violation),
+            BlockValidationResidual::Err(err) => BlockValidation::Err(err),
+        }
+    }
+}
+
+impl<A, E> Residual<A> for BlockValidationResidual<E> {
+    type TryType = BlockValidation<A, E>;
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute<C, S: From<C>>(
+    context: &mut C,
+    arena_pool: &ArenaPool,
+    network: NetworkName,
+    protocol_params: &ProtocolParameters,
+    era_history: &EraHistory,
+    global_parameters: &GlobalParameters,
+    governance_activity: GovernanceActivity,
+    guardrail_script: Option<Hash<SCRIPT>>,
+    block: &Block,
+) -> BlockValidation<(), anyhow::Error>
+where
+    C: ValidationContext<FinalState = S> + fmt::Debug,
+{
+    let _block_guard = debug_span!(ledger::rules::BLOCK).entered();
+
+    let tip = block.point();
+    let slot = block.header.slot();
+
+    let with_block_context = |result| match result {
+        Ok(out) => BlockValidation::Valid(out),
+        Err(err) => BlockValidation::Invalid(tip, err),
+    };
+
+    with_block_context(header_size::block_header_size_valid(block.header_len(), protocol_params))?;
+
+    with_block_context(body_size::block_body_size_valid(block))?;
+
+    // NOTE: No protocol major version in block header
+    //
+    // See: https://github.com/IntersectMBO/ouroboros-consensus/issues/2127
+    //
+    // ```
+    // with_block_context(header_version::block_header_version_valid(&block, protocol_params))?;
+    // ```
+
+    with_block_context(ex_units::block_ex_units_valid(block, protocol_params))?;
+
+    with_block_context(ref_scripts_size::block_ref_scripts_size_valid(
+        block.transaction_bodies.iter().flat_map(|tx| tx.reference_inputs.as_deref().unwrap_or(&[])),
+        context,
+        protocol_params,
+    ))?;
+
+    for (i, transaction) in block {
+        let transaction_id = transaction.tx_id();
+
+        if let Err(violation) = debug_span!(ledger::transaction::VALIDATE, id = transaction_id).in_scope(|| {
+            validate_transaction(
+                context,
+                arena_pool,
+                network,
+                protocol_params,
+                era_history,
+                global_parameters,
+                governance_activity,
+                guardrail_script,
+                TransactionPointer { slot, transaction_index: i as usize },
+                transaction,
+            )
+        }) {
+            return with_block_context(Err(InvalidBlockDetails::Transaction {
+                transaction_id,
+                transaction_index: i,
+                violation: Box::new(violation),
+            }));
+        };
+    }
+
+    BlockValidation::Valid(())
+}
+
+/// Validate a single transaction against a validation context.
+///
+/// This runs:
+///
+/// - Phase-one and phase-two ledger rules.
+/// - Records required verification key witnesses, and consumes the transaction inputs in the provided context after both
+///   phases succeed.
+///
+/// The caller is responsible for preparing the context with the UTxO and other ledger slices required by the transaction.
+#[expect(clippy::too_many_arguments)]
+pub fn validate_transaction<C>(
+    context: &mut C,
+    arena_pool: &ArenaPool,
+    network: NetworkName,
+    protocol_params: &ProtocolParameters,
+    era_history: &EraHistory,
+    global_parameters: &GlobalParameters,
+    governance_activity: GovernanceActivity,
+    guardrail_script: Option<Hash<SCRIPT>>,
+    pointer: TransactionPointer,
+    transaction: TransactionRef<'_>,
+) -> Result<(), TransactionInvalid>
+where
+    C: ValidationContext + fmt::Debug,
+{
+    let consumed_inputs = transaction::phase_one::execute(
+        context,
+        arena_pool,
+        network,
+        protocol_params,
+        era_history,
+        governance_activity,
+        guardrail_script,
+        pointer,
+        transaction.is_expected_valid,
+        transaction.body.clone(),
+        transaction.witnesses.deref(),
+        transaction.auxiliary_data,
+        transaction.len(),
+    )?;
+
+    transaction::phase_two::execute(
+        context,
+        arena_pool,
+        protocol_params,
+        era_history,
+        global_parameters,
+        pointer,
+        transaction.is_expected_valid,
+        transaction.body,
+        transaction.witnesses.deref(),
+    )?;
+
+    consumed_inputs.into_iter().for_each(|input| context.consume(input));
+
+    Ok(())
+}

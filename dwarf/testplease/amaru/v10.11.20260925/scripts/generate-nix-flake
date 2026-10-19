@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./scripts/generate-nix-flake \
+    --version <version> \
+    --base-url <base-url> \
+    --macos-arm64-archive <path> \
+    --linux-arm64-archive <path> \
+    --linux-x86_64-archive <path> \
+    [--output <path>]
+
+Example:
+  ./scripts/generate-nix-flake \
+    --version 10.10.20260607 \
+    --base-url https://github.com/pragma-org/amaru/releases/download/v10.10.20260607 \
+    --macos-arm64-archive release-assets/amaru-10.10.20260607-macos-aarch64.tar.gz \
+    --linux-arm64-archive release-assets/amaru-10.10.20260607-linux-aarch64.tar.gz \
+    --linux-x86_64-archive release-assets/amaru-10.10.20260607-linux-x86_64.tar.gz
+EOF
+}
+
+sri_hash_file() {
+  printf 'sha256-%s' "$(openssl dgst -binary -sha256 "$1" | openssl base64 -A)"
+}
+
+version=""
+base_url=""
+macos_arm64_archive=""
+linux_arm64_archive=""
+linux_x86_64_archive=""
+output="flake.nix"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version)
+      version="${2:?missing value for --version}"
+      shift 2
+      ;;
+    --base-url)
+      base_url="${2:?missing value for --base-url}"
+      shift 2
+      ;;
+    --macos-arm64-archive)
+      macos_arm64_archive="${2:?missing value for --macos-arm64-archive}"
+      shift 2
+      ;;
+    --linux-arm64-archive)
+      linux_arm64_archive="${2:?missing value for --linux-arm64-archive}"
+      shift 2
+      ;;
+    --linux-x86_64-archive)
+      linux_x86_64_archive="${2:?missing value for --linux-x86_64-archive}"
+      shift 2
+      ;;
+    --output)
+      output="${2:?missing value for --output}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$version" || -z "$base_url" || -z "$macos_arm64_archive" || -z "$linux_arm64_archive" || -z "$linux_x86_64_archive" ]]; then
+  usage >&2
+  exit 1
+fi
+
+for archive in "$macos_arm64_archive" "$linux_arm64_archive" "$linux_x86_64_archive"; do
+  if [[ ! -f "$archive" ]]; then
+    echo "archive not found: $archive" >&2
+    exit 1
+  fi
+done
+
+macos_arm64_name="$(basename "$macos_arm64_archive")"
+linux_arm64_name="$(basename "$linux_arm64_archive")"
+linux_x86_64_name="$(basename "$linux_x86_64_archive")"
+
+macos_arm64_hash="$(sri_hash_file "$macos_arm64_archive")"
+linux_arm64_hash="$(sri_hash_file "$linux_arm64_archive")"
+linux_x86_64_hash="$(sri_hash_file "$linux_x86_64_archive")"
+
+mkdir -p "$(dirname "$output")"
+
+cat > "$output" <<EOF
+{
+  description = "Amaru binary distribution";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
+
+  outputs = { self, nixpkgs, flake-utils }:
+    let
+      supportedSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
+    in
+    flake-utils.lib.eachSystem supportedSystems (system:
+      let
+        pkgs = import nixpkgs { inherit system; };
+        release = {
+          x86_64-linux = {
+            archive = "$linux_x86_64_name";
+            hash = "$linux_x86_64_hash";
+          };
+          aarch64-linux = {
+            archive = "$linux_arm64_name";
+            hash = "$linux_arm64_hash";
+          };
+          aarch64-darwin = {
+            archive = "$macos_arm64_name";
+            hash = "$macos_arm64_hash";
+          };
+        }.\${system};
+
+        amaru = pkgs.stdenvNoCC.mkDerivation {
+          pname = "amaru";
+          version = "$version";
+          src = pkgs.fetchurl {
+            url = "$base_url/\${release.archive}";
+            hash = release.hash;
+          };
+
+          dontConfigure = true;
+          dontBuild = true;
+
+          unpackPhase = ''
+            runHook preUnpack
+            mkdir extracted
+            tar -xzf "\$src" -C extracted --strip-components=1
+            cd extracted
+            chmod -R u+w .
+            runHook postUnpack
+          '';
+
+          installPhase = ''
+            runHook preInstall
+            mkdir -p "\$out/bin" "\$out/share"
+            cp "bin/amaru" "\$out/bin/amaru"
+            chmod +x "\$out/bin/amaru"
+            if [ -d "share/doc" ]; then
+              mkdir -p "\$out/share/doc"
+              cp -R "share/doc/." "\$out/share/doc/"
+            fi
+            if [ -d "share/man" ]; then
+              mkdir -p "\$out/share/man"
+              cp -R "share/man/." "\$out/share/man/"
+            fi
+            runHook postInstall
+          '';
+
+          postInstall = ''
+            if [ -f "share/bash-completion/completions/amaru" ]; then
+              mkdir -p "\$out/share/bash-completion/completions"
+              cp "share/bash-completion/completions/amaru" "\$out/share/bash-completion/completions/amaru"
+            fi
+            if [ -f "share/zsh/site-functions/_amaru" ]; then
+              mkdir -p "\$out/share/zsh/site-functions"
+              cp "share/zsh/site-functions/_amaru" "\$out/share/zsh/site-functions/_amaru"
+            fi
+            if [ -f "share/fish/vendor_completions.d/amaru.fish" ]; then
+              mkdir -p "\$out/share/fish/vendor_completions.d"
+              cp "share/fish/vendor_completions.d/amaru.fish" "\$out/share/fish/vendor_completions.d/amaru.fish"
+            fi
+          '';
+
+          meta = with pkgs.lib; {
+            description = "A Cardano blockchain node implementation";
+            homepage = "https://github.com/pragma-org/amaru";
+            license = licenses.asl20;
+            mainProgram = "amaru";
+            platforms = [ system ];
+          };
+        };
+      in {
+        packages = {
+          amaru = amaru;
+          default = amaru;
+        };
+
+        apps = rec {
+          amaru = {
+            type = "app";
+            program = "\${amaru}/bin/amaru";
+          };
+          default = amaru;
+        };
+      })
+    // {
+      overlays.default = final: prev: {
+        amaru = self.packages.\${final.system}.amaru;
+      };
+    };
+}
+EOF
+
+echo "wrote $output"

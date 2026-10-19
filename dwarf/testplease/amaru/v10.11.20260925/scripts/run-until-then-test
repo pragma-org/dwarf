@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$script_dir/lib/ledger-epoch.sh"
+
+usage() {
+  cat <<EOF
+Usage: $0 [--bootstrap] <extra_epochs>
+       $0 [--bootstrap] <bootstrap_epoch> <target_epoch>
+
+Synchronize Amaru through target_epoch and compare its stable ledger snapshots
+with Haskell-node stake-distribution fixtures. Existing ledger and chain
+databases are reused by default. With one argument, infer their bootstrap epoch
+and synchronize extra_epochs after it. With two arguments, bootstrap_epoch and
+target_epoch are absolute epochs. Use --bootstrap to create the databases
+instead, from the latest available snapshots with one argument or at
+bootstrap_epoch with two. Stable ledger snapshots trail epoch transitions by
+two epochs, so snapshots are tested through target_epoch - 2. The script never
+deletes existing databases.
+
+Environment:
+  AMARU_NETWORK                Network to test (default: preprod)
+  BUILD_PROFILE                Cargo profile (default: test)
+  PUBLIC_ENDPOINT              Public fixture URL
+EOF
+}
+
+bootstrap=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --bootstrap)
+      bootstrap=true
+      shift
+      ;;
+    --help | -h)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "Error: unknown option '$1'." >&2
+      usage >&2
+      exit 1
+      ;;
+    *) break ;;
+  esac
+done
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+  usage >&2
+  exit 1
+fi
+
+bootstrap_epoch=""
+target_epoch=""
+last_test_epoch=""
+extra_epochs=""
+
+if [ "$#" -eq 1 ]; then
+  if ! is_epoch_number "$1"; then
+    echo "Error: extra_epochs must be a non-negative integer." >&2
+    exit 1
+  fi
+
+  extra_epochs=$((10#$1))
+  if (( extra_epochs < 2 )); then
+    echo "Error: extra_epochs must be at least 2 to produce a stable snapshot." >&2
+    exit 1
+  fi
+else
+  if ! is_epoch_number "$1" || ! is_epoch_number "$2"; then
+    echo "Error: bootstrap_epoch and target_epoch must be non-negative integers." >&2
+    exit 1
+  fi
+
+  bootstrap_epoch=$((10#$1))
+  target_epoch=$((10#$2))
+
+  if (( target_epoch < bootstrap_epoch + 2 )); then
+    echo "Error: target_epoch must be at least 2 epochs after bootstrap_epoch." >&2
+    exit 1
+  fi
+fi
+
+network="${AMARU_NETWORK:-preprod}"
+build_profile="${BUILD_PROFILE:-test}"
+public_endpoint="${PUBLIC_ENDPOINT:-https://pub-8631964439fd4bc4a92eeb26c8dda3b1.r2.dev}"
+
+require_command() {
+  local command_name="$1"
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "Error: required command '$command_name' is not available." >&2
+    exit 1
+  fi
+}
+
+require_command cargo
+
+repo_root="$(cd "$script_dir/.." && pwd)"
+cd "$repo_root"
+
+ledger_dir="ledger.${network}.db"
+chain_dir="chain.${network}.db"
+fixtures_dir="crates/amaru/tests/conformance/stake-distributions/${network}"
+require_command curl
+
+directory_is_populated() (
+  local directory="$1"
+  local -a entries
+
+  [ -d "$directory" ] || return 1
+  shopt -s dotglob nullglob
+  entries=("$directory"/*)
+  [ "${#entries[@]}" -gt 0 ]
+)
+
+download_fixtures() {
+  local epoch="$bootstrap_epoch"
+  local fixture
+  local json_fixture
+
+  echo "==> Downloading missing $network E2E fixtures for epochs $bootstrap_epoch through $last_test_epoch"
+  while (( epoch <= last_test_epoch )); do
+    fixture="$fixtures_dir/epoch_${epoch}.json.zst"
+    json_fixture="${fixture%.zst}"
+    if [ ! -f "$fixture" ] && [ ! -f "$json_fixture" ]; then
+      curl -fsSL -o "$fixture" "$public_endpoint/${network}/epoch_${epoch}.json.zst"
+    fi
+    epoch=$((epoch + 1))
+  done
+}
+
+fixtures_pid=""
+stop_fixture_download() {
+  if [ -n "$fixtures_pid" ] && kill -0 "$fixtures_pid" 2>/dev/null; then
+    kill "$fixtures_pid" 2>/dev/null || true
+    wait "$fixtures_pid" || true
+  fi
+}
+
+start_fixture_download() {
+  download_fixtures &
+  fixtures_pid=$!
+  trap stop_fixture_download EXIT
+}
+
+bootstrap_node() {
+  AMARU_NETWORK="$network" \
+  AMARU_LEDGER_DIR="$ledger_dir" \
+  AMARU_CHAIN_DIR="$chain_dir" \
+  cargo run --profile "$build_profile" --locked --bin amaru -- node bootstrap "$@"
+}
+
+existing_bootstrap_epoch=""
+if [ "$bootstrap" = "false" ]; then
+  ledger_is_populated=false
+  chain_is_populated=false
+  directory_is_populated "$ledger_dir" && ledger_is_populated=true
+  directory_is_populated "$chain_dir" && chain_is_populated=true
+
+  if [ "$ledger_is_populated" = "false" ] && [ "$chain_is_populated" = "false" ]; then
+    echo "Error: expected populated '$ledger_dir' and '$chain_dir'; pass --bootstrap to create them." >&2
+    exit 1
+  elif [ "$ledger_is_populated" = "false" ]; then
+    echo "Error: '$ledger_dir' is missing or empty while '$chain_dir' is populated." >&2
+    exit 1
+  elif [ "$chain_is_populated" = "false" ]; then
+    echo "Error: '$chain_dir' is missing or empty while '$ledger_dir' is populated." >&2
+    exit 1
+  fi
+
+  existing_bootstrap_epoch="$(infer_ledger_start_epoch "$ledger_dir")"
+  if [ -n "$bootstrap_epoch" ] && (( existing_bootstrap_epoch != bootstrap_epoch )); then
+    echo "Error: existing databases start at epoch $existing_bootstrap_epoch, not requested epoch $bootstrap_epoch." >&2
+    exit 1
+  fi
+fi
+
+if [ -n "$target_epoch" ]; then
+  last_test_epoch=$((target_epoch - 2))
+  run_until_target=(--epoch "$target_epoch")
+  start_fixture_download
+fi
+
+if [ "$bootstrap" = "true" ]; then
+  if [ -n "$bootstrap_epoch" ]; then
+    echo "==> Bootstrapping $network at epoch $bootstrap_epoch"
+    bootstrap_node --epoch "$bootstrap_epoch"
+  else
+    echo "==> Bootstrapping $network at the latest available epoch"
+    (unset AMARU_EPOCH; bootstrap_node)
+  fi
+else
+  echo "==> Reusing existing $network node databases at epoch $existing_bootstrap_epoch"
+fi
+
+if [ -n "$extra_epochs" ]; then
+  if [ "$bootstrap" = "true" ]; then
+    bootstrap_epoch="$(infer_ledger_start_epoch "$ledger_dir")"
+  else
+    bootstrap_epoch="$existing_bootstrap_epoch"
+  fi
+  target_epoch="$(epoch_after "$bootstrap_epoch" "$extra_epochs")"
+  last_test_epoch=$((target_epoch - 2))
+  run_until_target=(--epochs "$extra_epochs")
+  echo "==> Bootstrap starts at epoch $bootstrap_epoch; synchronizing $extra_epochs extra epoch(s) through epoch $target_epoch"
+  start_fixture_download
+fi
+
+echo "==> Running $network until epoch $target_epoch to retain snapshots through epoch $last_test_epoch"
+AMARU_NETWORK="$network" \
+AMARU_LEDGER_DIR="$ledger_dir" \
+AMARU_CHAIN_DIR="$chain_dir" \
+AMARU_UPSTREAM_PEERS="${AMARU_UPSTREAM_PEERS:-1}" \
+AMARU_TRACE="${AMARU_TRACE:-amaru=info}" \
+"$script_dir/run-until" "$build_profile" "${run_until_target[@]}"
+
+echo "==> Waiting for $network E2E fixture downloads"
+wait "$fixtures_pid"
+fixtures_pid=""
+trap - EXIT
+
+test_filters=()
+test_epoch="$bootstrap_epoch"
+while (( test_epoch <= last_test_epoch )); do
+  test_filters+=("compare_${network}_stake_distribution_with_haskell_node::_${test_epoch}_expects")
+  test_epoch=$((test_epoch + 1))
+done
+
+echo "==> Verifying requested $network E2E test cases"
+test_list="$(
+  env AMARU_NETWORK="$network" \
+  cargo test --profile "$build_profile" --locked -p amaru --test summary -- \
+    --list --exact "${test_filters[@]}"
+)"
+
+missing_test_filters=()
+for test_filter in "${test_filters[@]}"; do
+  if ! grep -Fqx -- "${test_filter}: test" <<<"$test_list"; then
+    missing_test_filters+=("$test_filter")
+  fi
+done
+
+if (( ${#missing_test_filters[@]} > 0 )); then
+  echo "Error: requested E2E test cases are missing:" >&2
+  printf '  %s\n' "${missing_test_filters[@]}" >&2
+  exit 1
+fi
+
+echo "==> Validating $network ledger snapshots for epochs $bootstrap_epoch through $last_test_epoch"
+env AMARU_NETWORK="$network" \
+cargo test --profile "$build_profile" --locked -p amaru --test summary -- --exact "${test_filters[@]}"

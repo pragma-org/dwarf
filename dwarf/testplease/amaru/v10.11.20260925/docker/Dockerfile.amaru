@@ -1,0 +1,69 @@
+FROM rust:bookworm AS rustbuilder
+
+RUN apt-get update -y \
+    && apt-get install -y \
+        libclang-dev \
+        ca-certificates \
+        libssl3 \
+        llvm-14-runtime \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /usr/src/amaru
+WORKDIR /usr/src/amaru
+
+# Setup rust toolchain ───────────────────────────────────────────────────────┐
+COPY rust-toolchain.toml /usr/src/amaru/rust-toolchain.toml
+RUN rustup show
+
+# Fetch dependencies ─────────────────────────────────────────────────────────┐
+COPY Cargo.toml Cargo.lock .cargo /usr/src/amaru/
+
+COPY crates/amaru/Cargo.toml /usr/src/amaru/crates/amaru/Cargo.toml
+COPY crates/amaru-consensus/Cargo.toml /usr/src/amaru/crates/amaru-consensus/Cargo.toml
+COPY crates/amaru-iter-borrow/Cargo.toml /usr/src/amaru/crates/amaru-iter-borrow/Cargo.toml
+COPY crates/amaru-kernel/Cargo.toml /usr/src/amaru/crates/amaru-kernel/Cargo.toml
+COPY crates/amaru-ledger/Cargo.toml /usr/src/amaru/crates/amaru-ledger/Cargo.toml
+COPY crates/amaru-mempool/Cargo.toml /usr/src/amaru/crates/amaru-mempool/Cargo.toml
+COPY crates/amaru-metrics/Cargo.toml /usr/src/amaru/crates/amaru-metrics/Cargo.toml
+COPY crates/amaru-minicbor-extra/Cargo.toml /usr/src/amaru/crates/amaru-minicbor-extra/Cargo.toml
+COPY crates/amaru-network/Cargo.toml /usr/src/amaru/crates/amaru-network/Cargo.toml
+COPY crates/amaru-observability/Cargo.toml /usr/src/amaru/crates/amaru-observability/Cargo.toml
+COPY crates/amaru-ouroboros-traits/Cargo.toml /usr/src/amaru/crates/amaru-ouroboros-traits/Cargo.toml
+COPY crates/amaru-ouroboros/Cargo.toml /usr/src/amaru/crates/amaru-ouroboros/Cargo.toml
+COPY crates/amaru-plutus/Cargo.toml /usr/src/amaru/crates/amaru-plutus/Cargo.toml
+COPY crates/amaru-progress-bar/Cargo.toml /usr/src/amaru/crates/amaru-progress-bar/Cargo.toml
+COPY crates/amaru-protocols/Cargo.toml /usr/src/amaru/crates/amaru-protocols/Cargo.toml
+COPY crates/amaru-pure-stage/Cargo.toml /usr/src/amaru/crates/amaru-pure-stage/Cargo.toml
+COPY crates/amaru-sim/Cargo.toml /usr/src/amaru/crates/amaru-sim/Cargo.toml
+COPY crates/amaru-stores/Cargo.toml /usr/src/amaru/crates/amaru-stores/Cargo.toml
+COPY crates/amaru-tracing-json/Cargo.toml /usr/src/amaru/crates/amaru-tracing-json/Cargo.toml
+COPY crates/amaru-uplc/Cargo.toml /usr/src/amaru/crates/amaru-uplc/Cargo.toml
+
+COPY crates/amaru/build.rs /usr/src/amaru/crates/amaru/build.rs
+COPY crates/amaru-ledger/build.rs /usr/src/amaru-ledger/crates/amaru/build.rs
+
+RUN mkdir -p crates/amaru-consensus/benches && touch crates/amaru-consensus/benches/headers_tree.rs
+
+RUN find crates -mindepth 1 -maxdepth 1 -type d \
+    -exec mkdir -p {}/src \; \
+    -exec sh -c 'touch {}/src/lib.rs' \;
+
+RUN cargo fetch
+
+# Compile dependencies ───────────────────────────────────────────────────────┐
+RUN cargo build
+
+# Build amaru ────────────────────────────────────────────────────────────────┐
+
+COPY crates /usr/src/amaru/crates
+RUN find crates -type f -name '*.rs' -exec touch {} + \
+    && cargo build
+
+COPY data /usr/src/amaru/data
+COPY Makefile /usr/src/amaru/
+
+# Setup start script ──────────────────────────────────────────────────────────┐
+COPY docker/start_amaru.sh /usr/local/bin/start_amaru.sh
+RUN chmod +x /usr/local/bin/start_amaru.sh
+
+ENTRYPOINT ["start_amaru.sh"]

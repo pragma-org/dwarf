@@ -1,0 +1,21 @@
+[
+    {
+        "include": [
+            "crates/**/*.rs"
+        ],
+        "exclude": [
+            "crates/vendor/**"
+        ],
+        "license": ".github/license-Apache-2.0.template.rs"
+    },
+    {
+        "include": [
+	        "conformance-tests/**/*.mjs",
+	        "data/**/*.mjs"
+        ],
+        "license": ".github/license-Apache-2.0.template.mjs"
+    },
+    {
+        "include": ["**/*"]
+    }
+]

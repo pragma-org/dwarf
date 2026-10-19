@@ -1,0 +1,63 @@
+lints.workspace = true
+
+[package]
+name = "amaru-stores"
+version = "0.1.2"
+edition.workspace = true
+description = "Storage backends for the Amaru Cardano node"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+autotests = false
+
+[[test]]
+name = "state"
+path = "tests/lib.rs"
+required-features = ["rocksdb"]
+
+[dependencies]
+# External dependencies ───────────────────────────────────────────────────────┐
+anyhow.workspace = true
+hex.workspace = true
+parking_lot.workspace = true
+rand = { workspace = true, optional = true }
+
+# Internal dependencies ───────────────────────────────────────────────────────┐
+amaru-kernel.workspace = true
+amaru-ledger.workspace = true
+amaru-iter-borrow.workspace = true
+amaru-observability.workspace = true
+amaru-ouroboros-traits = { workspace = true, features = [] }
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+[target.'cfg(windows)'.dependencies]
+rocksdb = { workspace = true, optional = true }
+[target.'cfg(target_os = "ios")'.dependencies]
+rocksdb = { workspace = true, optional = true }
+[target.'cfg(all(not(windows), not(target_os = "ios")))'.dependencies]
+rocksdb = { workspace = true, optional = true, features = ["jemalloc"] }
+
+[dev-dependencies]
+# External dependencies ───────────────────────────────────────────────────────┐
+proptest.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+
+# Internal dependencies ───────────────────────────────────────────────────────┐
+amaru-kernel = { workspace = true, features = ["test-utils"] }
+amaru-ledger = { workspace = true, features = ["test-utils"] }
+amaru-ouroboros-traits = { workspace = true, features = ["test-utils"] }
+amaru-plutus.workspace = true
+
+[features]
+default = ["rocksdb"]
+rocksdb = ["dep:rocksdb", "dep:rand"]
+
+[package.metadata.cargo-machete]
+ignored = ["rand", "amaru-deps"]

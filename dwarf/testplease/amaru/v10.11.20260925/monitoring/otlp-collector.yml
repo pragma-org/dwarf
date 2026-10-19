@@ -1,0 +1,52 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+
+processors:
+  batch:
+  # service.name survives as the exported_job label, so dashboards can tell several nodes apart
+  # and select between them (the relay dashboards plot one series per service). Only the
+  # per-instance id is dropped, which is where the label cardinality is.
+  resource/drop_prometheus_labels:
+    attributes:
+      - key: service.instance.id
+        action: delete
+  transform/drop_scope:
+    metric_statements:
+      - context: scope
+        statements:
+          - set(name, "")
+          - set(version, "")
+
+exporters:
+  otlp/tempo:
+    endpoint: "tempo:4317"
+    tls:
+      insecure: true
+  otlphttp/loki:
+    endpoint: "http://loki:3100/otlp"
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    add_metric_suffixes: false
+    # Must comfortably exceed the producer's export interval, or a metric is exposed for only a
+    # fraction of each interval and the dashboards flicker between a value and nothing. The demo
+    # exports every second (OTEL_METRIC_EXPORT_INTERVAL in common/amaru-node.sh), but a node run by
+    # hand uses the SDK default of 60s, so this has to cover that too.
+    metric_expiration: 120s
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [resource/drop_prometheus_labels, transform/drop_scope, batch]
+      exporters: [prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/tempo]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/loki]

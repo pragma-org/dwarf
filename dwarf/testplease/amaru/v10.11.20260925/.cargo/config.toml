@@ -1,0 +1,19 @@
+# Find the full list of available options here: https://doc.rust-lang.org/cargo/reference/config.html
+
+[alias]
+fmt-amaru = "fmt --all -- --check"
+clippy-amaru = "clippy --workspace --all-targets -- -D warnings"
+check-amaru = "check --workspace --all-targets"
+build-amaru = "build --workspace --all-targets"
+deny-amaru = "deny --locked --config .cargo/deny.toml check licenses sources"
+
+[env]
+CLIPPY_CONF_DIR = ".cargo"
+# TODO: currently required for kernel prop tests, should use boxed Arbitrary to avoid this
+RUST_MIN_STACK = { value = "10000000", force = true }
+
+[build]
+rustflags = [
+  "-Zshare-generics",
+  "-Zthreads=8",
+]

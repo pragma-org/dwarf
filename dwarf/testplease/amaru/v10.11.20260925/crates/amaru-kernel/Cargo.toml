@@ -1,0 +1,86 @@
+lints.workspace = true
+
+[package]
+name = "amaru-kernel"
+version = "0.1.2"
+edition.workspace = true
+description = "Core Cardano types, primitives, and domain logic for the Amaru Cardano node"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = []
+test-utils = ["dep:proptest", "dep:rand"]
+tracing = ["amaru-minicbor-extra/tracing"]
+clap = ["dep:clap"]
+
+[dependencies]
+# External dependencies ───────────────────────────────────────────────────────┐
+anyhow.workspace = true
+base58.workspace = true
+bech32.workspace = true
+bytes = { workspace = true, features = ["serde"] }
+clap = { workspace = true, optional = true }
+crc.workspace = true
+cryptoxide.workspace = true
+dashu-base.workspace = true
+dashu-int.workspace = true
+ed25519-dalek.workspace = true
+hex.workspace = true
+itertools.workspace = true
+minicbor.workspace = true
+num.workspace = true
+proptest = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+schemars = { workspace = true, default-features = false, features = ["derive"] }
+serde = { workspace = true, features = ["derive", "rc"] }
+serde_json = { workspace = true, features = [ "std" ] }
+sha3.workspace = true
+stacksafe.workspace = true
+thiserror.workspace = true
+
+# Internal dependencies ───────────────────────────────────────────────────────┐
+amaru-minicbor-extra.workspace = true
+
+[dev-dependencies]
+# External dependencies ───────────────────────────────────────────────────────┐
+criterion.workspace = true
+divan.workspace = true
+insta.workspace = true
+proptest.workspace = true
+rand.workspace = true
+rayon.workspace = true
+test-case.workspace = true
+toml.workspace = true
+# Internal dependencies ───────────────────────────────────────────────────────┐
+cbor4ii.workspace = true
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+sysinfo.workspace = true
+
+[target.'cfg(target_family="wasm")'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }
+
+[[bench]]
+name = "cbor_encoding"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "stack_safe"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "small_collections"
+harness = false
+
+[package.metadata.cargo-machete]
+ignored = ["amaru-deps"]

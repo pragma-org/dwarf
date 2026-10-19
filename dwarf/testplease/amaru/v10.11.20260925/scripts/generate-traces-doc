@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Generate TRACES.md documentation from the JSON schemas
+# Usage: ./scripts/generate-traces-doc
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DOCS_DIR="${REPO_ROOT}/docs"
+OUTPUT_FILE="${DOCS_DIR}/TRACES.md"
+BUILD_PROFILE="${BUILD_PROFILE:-test}"
+
+# Generate current schemas
+SCHEMAS_JSON=$(mktemp)
+SCHEMAS_FILE="${DOCS_DIR}/traces-schema.json"
+trap "rm -f ${SCHEMAS_JSON}" EXIT
+
+# Ensure the amaru binary is up to date
+cargo run --quiet --profile $BUILD_PROFILE --locked --bin amaru -- dev traces dump 1> "${SCHEMAS_JSON}" || {
+  echo "Error generating schemas:" >&2
+  cat "${SCHEMAS_JSON}" >&2
+  exit 1
+}
+cp "${SCHEMAS_JSON}" "${SCHEMAS_FILE}"
+echo "✓ Generated ${SCHEMAS_FILE}"
+
+# Generate markdown from JSON schemas
+cat > "${OUTPUT_FILE}" << 'EOF'
+# Available Spans
+
+This document lists all available spans in Amaru, auto-generated from the code.
+
+For information on how to use and filter these spans, see [monitoring/README.md](../monitoring/README.md).
+
+EOF
+
+# Render one section per target, each with a summary table of its spans and a collapsible
+# field table per span.
+jq -r '
+  # Descriptions are free-form prose, so neutralise the characters that would otherwise be read as
+  # markdown markup or split the row into extra columns.
+  def escape_table_cell: gsub("`"; "\\`") | gsub("\\|"; "\\|");
+
+  def span_row:
+    "| `\(.name)` | `\(.level)` | \(if .public then "public" else "" end) | \(.description // "" | escape_table_cell) | \((.required // []) | join(", ")) | \((.optional // []) | join(", ")) |";
+
+  def field_type:
+    if .type then .type
+    elif .oneOf then "array"
+    elif .prefixItems then "array"
+    else "object"
+    end;
+
+  def field_rows:
+    (.required // []) as $required
+    | (.properties // {})
+    | to_entries
+    | map(. as $field | "| `\($field.key)` | `\($field.value | field_type)` | \(if ($required | index($field.key)) then "✓" else "" end) |");
+
+  def span_details:
+    if ((.properties // {}) | length) > 0 then
+      ["", "<details><summary>span: `\(.name)`</summary>", "", "| field | type | required |", "| --- | --- | --- |"]
+      + field_rows
+      + ["", "</details>"]
+    else
+      []
+    end;
+
+  [.definitions[]] as $spans
+  | [ ($spans | map(.target) | unique)[] as $target
+      | ($spans | map(select(.target == $target)) | sort_by(.name)) as $group
+      | ["", "## target: `\($target)`", "", "| name | level | public | description | required fields | optional fields |", "| --- | --- | --- | --- | --- | --- |"]
+        + ($group | map(span_row))
+        + ($group | map(span_details) | add // [])
+    ]
+  | flatten
+  | .[]
+' "${SCHEMAS_JSON}" >> "${OUTPUT_FILE}"
+
+# Add footer
+cat >> "${OUTPUT_FILE}" << 'EOF'
+
+## Updating This Documentation
+
+This file is auto-generated from the trace schema definitions in the code. To update it, run:
+
+```bash
+./scripts/generate-traces-doc
+```
+
+The schemas are defined using the `define_schemas!` macro in the codebase. Any changes to trace definitions will automatically be reflected in this documentation when the script is run.
+EOF
+
+echo "✓ Generated ${OUTPUT_FILE}"

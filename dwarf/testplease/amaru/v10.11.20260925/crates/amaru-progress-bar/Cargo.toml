@@ -1,0 +1,28 @@
+lints.workspace = true
+
+[package]
+name = "amaru-progress-bar"
+version = "0.1.2"
+edition.workspace = true
+description = "Progress bar abstractions for long-running operations"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+indicatif = { workspace = true, optional = true }
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+
+[features]
+default = []
+terminal = ["indicatif"]
+
+[package.metadata.cargo-machete]
+ignored = ["amaru-deps"]

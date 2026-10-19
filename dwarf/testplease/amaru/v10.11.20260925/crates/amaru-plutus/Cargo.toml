@@ -1,0 +1,38 @@
+[package]
+name = "amaru-plutus"
+version = "0.1.2"
+edition.workspace = true
+description = "Plutus script evaluation utilities for the Amaru Cardano node"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+# External dependencies
+hex.workspace = true
+num.workspace = true
+thiserror.workspace = true
+
+# Internal dependencies
+amaru-kernel.workspace = true
+amaru-uplc.workspace = true
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+test-case.workspace = true
+pretty_assertions.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["amaru-deps"]

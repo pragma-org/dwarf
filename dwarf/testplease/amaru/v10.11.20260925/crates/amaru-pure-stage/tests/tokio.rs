@@ -1,0 +1,192 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::time::Duration;
+
+use amaru_pure_stage::{StageGraph, StageGraphRunning, StageRef, drop_guard::DropGuard, tokio::TokioBuilder};
+use futures_util::StreamExt;
+use tokio::time::timeout;
+
+#[test]
+fn basic() {
+    tracing_subscriber::fmt()
+        .with_test_writer()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .try_init()
+        .ok();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    let mut graph = TokioBuilder::default();
+    let double = graph.stage("double", async |to, msg: u32, eff| {
+        eff.send(&to, msg * 2).await;
+        to
+    });
+    let (out_ref, mut out_rx) = graph.output("output", 10);
+    let double = graph.wire_up(double, out_ref);
+
+    let send_double = graph.input(&double);
+
+    let handle = rt.handle().clone();
+    rt.block_on(async move {
+        // running needs `tokio::spawn` to work
+        let graph = graph.run(handle);
+
+        for i in 0..10 {
+            tracing::info!("sending {}", i);
+            timeout(Duration::from_secs(1), send_double.send(i)).await.unwrap().unwrap();
+        }
+
+        for i in 0..10 {
+            tracing::info!("receiving {}", i);
+            assert_eq!(timeout(Duration::from_secs(1), out_rx.next()).await.unwrap(), Some(i * 2));
+        }
+
+        graph.abort();
+    });
+}
+
+#[test]
+fn add_stage() {
+    #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct ParentState {
+        child_ref: Option<StageRef<u32>>,
+        output: StageRef<u32>,
+    }
+
+    #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct ChildState {
+        value: u32,
+        output: StageRef<u32>,
+    }
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let mut network = TokioBuilder::default();
+
+    // Parent stage that creates a child stage
+    let parent = network.stage("parent", async |mut state: ParentState, msg: u32, eff| {
+        if state.child_ref.is_none() {
+            // Create a child stage within the parent stage
+            let child = eff
+                .stage("child", async |mut state: ChildState, msg: u32, eff| {
+                    state.value += msg;
+                    eff.send(&state.output, state.value).await;
+                    state
+                })
+                .await;
+
+            // Wire up the child stage with initial state that includes the output reference
+            let child_ref = eff.wire_up(child, ChildState { value: 0u32, output: state.output.clone() }).await;
+            state.child_ref = Some(child_ref);
+        }
+
+        // Send a message to the child stage
+        if let Some(ref child) = state.child_ref {
+            eff.send(child, msg).await;
+        }
+
+        state
+    });
+
+    let (output, mut rx) = network.output("output", 10);
+    let parent = network.wire_up(parent, ParentState { child_ref: None, output: output.clone() });
+    let input = network.input(&parent);
+
+    let running = network.run(rt.handle().clone());
+
+    rt.block_on(async move {
+        input.send(42).await.unwrap();
+        assert_eq!(rx.next().await.unwrap(), 42);
+        input.send(42).await.unwrap();
+        assert_eq!(rx.next().await.unwrap(), 84);
+    });
+
+    running.abort();
+}
+
+#[test]
+fn contramap_input_returns_send_error_when_mailbox_is_gone() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let mut graph = TokioBuilder::default();
+    let sink = graph.stage("sink", async |state, _msg: u32, _eff| state);
+    let sink = graph.wire_up(sink, ());
+    let as_u8 = sink.contramap(|x: u8| u32::from(x));
+    let sender = graph.input(&as_u8);
+    drop(graph);
+    assert_eq!(rt.block_on(sender.send(1)), Err(amaru_pure_stage::SendError::new(sink.name().clone())));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn join_reports_stage_panic() {
+    let mut graph = TokioBuilder::default();
+    let stage = graph.stage("panic", async |_state, _msg: (), _eff| -> () {
+        panic!("stage failed");
+    });
+    let stage = graph.wire_up(stage, ());
+    let input = graph.input(stage);
+    let running = graph.run(tokio::runtime::Handle::current());
+
+    input.send(()).await.unwrap();
+    let error = timeout(Duration::from_secs(1), running.join()).await.unwrap().unwrap_err();
+
+    assert!(error.is_panic());
+}
+
+#[tokio::test]
+async fn terminating_dynamic_parent_drops_child() {
+    let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+    let guard = DropGuard::new(dropped_tx, |tx| {
+        let _ = tx.send(());
+    });
+    let mut guard = Some(guard);
+    let mut graph = TokioBuilder::default();
+    let root = graph.stage("root", move |state, start: bool, eff| {
+        let guard = if start { guard.take() } else { None };
+        async move {
+            if let Some(guard) = guard {
+                let mut guard = Some(guard);
+                let parent = eff
+                    .stage("parent", move |state, (): (), eff| {
+                        let guard = guard.take().unwrap();
+                        async move {
+                            let child = eff
+                                .stage("child", move |state, (): (), _eff| {
+                                    let _ = &guard;
+                                    std::future::ready(state)
+                                })
+                                .await;
+                            eff.wire_up(child, ()).await;
+                            eff.terminate::<()>().await;
+                            state
+                        }
+                    })
+                    .await;
+                let parent = eff.supervise(parent, false);
+                let parent = eff.wire_up(parent, ()).await;
+                eff.send(&parent, ()).await;
+            }
+            state
+        }
+    });
+    let root = graph.wire_up(root, ());
+    let input = graph.input(root);
+    let running = graph.run(tokio::runtime::Handle::current());
+    input.send(true).await.unwrap();
+
+    let dropped = timeout(Duration::from_secs(1), dropped_rx).await;
+    assert!(!running.is_terminated());
+    running.request_abort();
+    assert!(running.join().await.unwrap().unexpected_exits.is_empty());
+    dropped.unwrap().unwrap();
+}

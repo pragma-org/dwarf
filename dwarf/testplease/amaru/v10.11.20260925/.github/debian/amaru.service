@@ -1,0 +1,32 @@
+[Unit]
+Description=Amaru Cardano node
+Documentation=https://github.com/pragma-org/amaru
+Wants=time-sync.target network-online.target NetworkManager-wait-online.service
+After=time-sync.target network-online.target NetworkManager-wait-online.service
+
+[Service]
+Type=simple
+User=amaru
+Group=amaru
+EnvironmentFile=-/etc/default/amaru
+EnvironmentFile=-/etc/sysconfig/amaru
+WorkingDirectory=/var/lib/amaru
+StateDirectory=amaru
+RuntimeDirectory=amaru
+ExecStart=/usr/bin/amaru run
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+PrivateDevices=yes
+ProtectHome=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryHigh=1G
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target

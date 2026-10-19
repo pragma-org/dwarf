@@ -1,0 +1,71 @@
+lints.workspace = true
+
+[package]
+name = "amaru-uplc"
+build = "build.rs"
+version = "0.4.0"
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+
+[build-dependencies]
+indoc.workspace = true
+walkdir.workspace = true
+
+[dependencies]
+append-only-vec.workspace = true
+blst.workspace = true
+bumpalo = { workspace = true, features = ["collections"] }
+chumsky = { workspace = true, features = ["pratt"] }
+cryptoxide = { workspace = true, features = ["ripemd160"] }
+hamming.workspace = true
+hex.workspace = true
+minicbor = { workspace = true, features = ["std"] }
+num-bigint.workspace = true
+num.workspace = true
+once_cell.workspace = true
+secp256k1.workspace = true
+stacksafe.workspace = true
+thiserror.workspace = true
+
+# Internal dependencies ───────────────────────────────────────────────────────┐
+amaru-kernel.workspace = true
+amaru-minicbor-extra.workspace = true
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+
+[dev-dependencies]
+criterion = { workspace = true, features = ["html_reports"] }
+divan.workspace = true
+insta.workspace = true
+itertools.workspace = true
+ouroboros.workspace = true
+pretty_assertions.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+test-case.workspace = true
+
+[features]
+alloc_profiler = []
+
+[[bench]]
+name = "simple"
+harness = false
+
+[[bench]]
+name = "use_cases"
+harness = false
+
+[[bench]]
+name = "turbo"
+harness = false
+
+[package.metadata.cargo-machete]
+ignored = ["amaru-deps"]

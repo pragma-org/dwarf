@@ -1,0 +1,146 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use amaru_observability::{Instrument, debug_span};
+use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
+
+use crate::{
+    keepalive::{
+        State,
+        messages::{Cookie, Message},
+    },
+    mux::MuxMessage,
+    protocol::{
+        Inputs, Miniprotocol, Outcome, PROTO_N2N_KEEP_ALIVE, ProtocolState, Responder, StageState, miniprotocol,
+        outcome,
+    },
+};
+
+pub fn register_deserializers() -> DeserializerGuards {
+    vec![
+        amaru_pure_stage::register_data_deserializer::<KeepAliveResponder>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(State, KeepAliveResponder)>().boxed(),
+    ]
+}
+
+pub fn responder() -> Miniprotocol<State, KeepAliveResponder, Responder> {
+    miniprotocol(PROTO_N2N_KEEP_ALIVE.responder())
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct KeepAliveResponder {
+    muxer: StageRef<MuxMessage>,
+}
+
+impl KeepAliveResponder {
+    pub fn new(muxer: StageRef<MuxMessage>) -> (State, Self) {
+        (State::Idle, Self { muxer })
+    }
+}
+
+impl StageState<State, Responder> for KeepAliveResponder {
+    type LocalIn = Void;
+
+    async fn local(
+        self,
+        _proto: &State,
+        input: Self::LocalIn,
+        _eff: &Effects<Inputs<Self::LocalIn>>,
+    ) -> anyhow::Result<(Option<ResponderAction>, Self)> {
+        match input {}
+    }
+
+    async fn network(
+        self,
+        _proto: &State,
+        input: ResponderResult,
+        _eff: &Effects<Inputs<Self::LocalIn>>,
+    ) -> anyhow::Result<(Option<ResponderAction>, Self)> {
+        let cookie = input.cookie.as_u16();
+
+        async move { Ok((Some(ResponderAction::SendResponse(input.cookie)), self)) }
+            .instrument(debug_span!(protocols::keepalive::responder::KEEPALIVE_RESPONDER_STAGE, cookie))
+            .await
+    }
+
+    fn muxer(&self) -> &StageRef<MuxMessage> {
+        &self.muxer
+    }
+}
+
+impl ProtocolState<Responder> for State {
+    type WireMsg = Message;
+    type Action = ResponderAction;
+    type Out = ResponderResult;
+    type Error = Void;
+
+    fn init(&self) -> anyhow::Result<(Outcome<Self::WireMsg, Self::Out, Self::Error>, Self)> {
+        Ok((outcome().want_next(), *self))
+    }
+
+    fn network(&self, input: Self::WireMsg) -> anyhow::Result<(Outcome<Self::WireMsg, Self::Out, Self::Error>, Self)> {
+        let _span = debug_span!(
+            protocols::keepalive::responder::KEEPALIVE_RESPONDER_PROTOCOL,
+            message_type = input.message_type().to_string()
+        );
+        let _guard = _span.enter();
+        use State::*;
+
+        Ok(match (self, input) {
+            (Idle, Message::KeepAlive(cookie)) => (outcome().result(ResponderResult { cookie }), Waiting),
+            (Idle, Message::Done) => (outcome().want_next(), Idle),
+            (this, input) => anyhow::bail!("invalid state: {:?} <- {:?}", this, input),
+        })
+    }
+
+    fn local(&self, input: Self::Action) -> anyhow::Result<(Outcome<Self::WireMsg, Void, Self::Error>, Self)> {
+        use State::*;
+
+        Ok(match (self, input) {
+            (Waiting, ResponderAction::SendResponse(cookie)) => {
+                (outcome().send(Message::ResponseKeepAlive(cookie)).want_next(), Idle)
+            }
+            (this, input) => anyhow::bail!("invalid state: {:?} <- {:?}", this, input),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum ResponderAction {
+    SendResponse(Cookie),
+}
+
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ResponderResult {
+    pub cookie: Cookie,
+}
+
+#[cfg(test)]
+pub mod tests {
+    use crate::{
+        keepalive::{State, messages::Message, responder::ResponderAction},
+        protocol::Responder,
+    };
+
+    #[test]
+    fn test_responder_protocol() {
+        crate::keepalive::spec::<Responder>().check(State::Idle, |msg| match msg {
+            // ResponseKeepAlive is sent by responder (local action)
+            Message::ResponseKeepAlive(cookie) => Some(ResponderAction::SendResponse(*cookie)),
+            // KeepAlive is received from initiator (network message)
+            Message::KeepAlive(_) => None,
+            Message::Done => None,
+        });
+    }
+}

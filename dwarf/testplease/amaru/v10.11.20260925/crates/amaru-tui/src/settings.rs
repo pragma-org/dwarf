@@ -1,0 +1,37 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use crate::{Config, StartupContext};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Settings {
+    pub no_tui: bool,
+    pub startup: StartupContext,
+    pub log_retention_bytes: usize,
+}
+
+impl Settings {
+    pub fn new(no_tui: bool, startup: StartupContext, log_retention_bytes: usize) -> Self {
+        Self { no_tui, startup, log_retention_bytes }
+    }
+
+    pub fn config(&self) -> Config {
+        Config { log_retention_bytes: self.log_retention_bytes, ..Config::default() }
+    }
+
+    pub fn into_parts(self) -> (bool, Config, StartupContext) {
+        let config = self.config();
+        (self.no_tui, config, self.startup)
+    }
+}

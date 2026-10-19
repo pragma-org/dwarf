@@ -1,0 +1,78 @@
+services:
+  otlp-collector:
+    image: otel/opentelemetry-collector-contrib:0.133.0
+    restart: unless-stopped
+    volumes:
+      - "./otlp-collector.yml:/etc/otlp-collector.yml"
+    command: ["--config", "/etc/otlp-collector.yml"]
+    depends_on:
+      - loki
+      - tempo
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:8889:8889"
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - "./prometheus.yml:/etc/prometheus/prometheus.yml"
+      - "prometheus-data:/prometheus"
+    ports:
+      - "9090:9090"
+
+  loki:
+    image: grafana/loki:3.7.2
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - "./loki.yml:/etc/loki/loki.yml"
+      - "loki-data:/loki"
+
+  tempo:
+    image: grafana/tempo:2.9.1
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    depends_on:
+      - prometheus
+    volumes:
+      - "./tempo.yml:/etc/tempo/tempo.yml"
+      - "tempo-data:/var/tempo"
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    depends_on:
+      - loki
+      - prometheus
+      - tempo
+    volumes:
+      - "./grafana.yml:/etc/grafana/provisioning/datasources/datasources.yaml"
+      - "./dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yaml"
+      - "./dashboards:/etc/grafana/dashboards"
+      - "grafana-data:/var/lib/grafana"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor
+      - GF_USERS_DEFAULT_THEME=light
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/amaru-overview.json
+      - GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1s
+    ports:
+      - "80:3000"
+
+volumes:
+  grafana-data:
+  loki-data:
+  prometheus-data:
+  tempo-data:
+
+# Named explicitly so containers outside this stack can join it as `--network monitoring`, rather
+# than the `monitoring_default` compose would derive from the project and network names.
+networks:
+  default:
+    name: monitoring

@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./scripts/generate-winget-manifests \
+    --version <version> \
+    --base-url <base-url> \
+    --windows-x86_64-installer <path> \
+    [--release-date <yyyy-mm-dd>] \
+    [--output-dir <path>] \
+    [--package-identifier <identifier>] \
+    [--publisher <publisher>] \
+    [--package-name <name>] \
+    [--moniker <moniker>]
+
+Example:
+  ./scripts/generate-winget-manifests \
+    --version 10.10.20260607 \
+    --base-url https://github.com/pragma-org/amaru/releases/download/v10.10.20260607 \
+    --windows-x86_64-installer release-assets/amaru-10.10.20260607-windows-x86_64.msi
+EOF
+}
+
+sha256_file() {
+  shasum -a 256 "$1" | awk '{print toupper($1)}'
+}
+
+identifier_path_for() {
+  printf '%s\n' "$1" | tr '.' '/'
+}
+
+default_output_dir_for() {
+  local package_identifier="$1"
+  local version="$2"
+  local first_letter
+  local identifier_path
+  first_letter="$(printf '%s' "${package_identifier:0:1}" | tr '[:upper:]' '[:lower:]')"
+  identifier_path="$(identifier_path_for "$package_identifier")"
+  printf 'manifests/%s/%s/%s\n' "$first_letter" "$identifier_path" "$version"
+}
+
+version=""
+base_url=""
+windows_x86_64_installer=""
+release_date="$(date -u +%Y-%m-%d)"
+output_dir=""
+package_identifier="PRAGMA.Amaru"
+publisher="PRAGMA"
+package_name="Amaru"
+moniker="amaru"
+package_url="https://github.com/pragma-org/amaru"
+publisher_url="https://github.com/pragma-org/amaru"
+publisher_support_url="https://github.com/pragma-org/amaru/issues"
+short_description="A fully open source Cardano node written in Rust."
+license_name="Apache-2.0"
+manifest_schema_version="1.12.0"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version)
+      version="${2:?missing value for --version}"
+      shift 2
+      ;;
+    --base-url)
+      base_url="${2:?missing value for --base-url}"
+      shift 2
+      ;;
+    --windows-x86_64-installer)
+      windows_x86_64_installer="${2:?missing value for --windows-x86_64-installer}"
+      shift 2
+      ;;
+    --release-date)
+      release_date="${2:?missing value for --release-date}"
+      shift 2
+      ;;
+    --output-dir)
+      output_dir="${2:?missing value for --output-dir}"
+      shift 2
+      ;;
+    --package-identifier)
+      package_identifier="${2:?missing value for --package-identifier}"
+      shift 2
+      ;;
+    --publisher)
+      publisher="${2:?missing value for --publisher}"
+      shift 2
+      ;;
+    --package-name)
+      package_name="${2:?missing value for --package-name}"
+      shift 2
+      ;;
+    --moniker)
+      moniker="${2:?missing value for --moniker}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$version" || -z "$base_url" || -z "$windows_x86_64_installer" ]]; then
+  usage >&2
+  exit 1
+fi
+
+if [[ ! -f "$windows_x86_64_installer" ]]; then
+  echo "installer not found: $windows_x86_64_installer" >&2
+  exit 1
+fi
+
+if [[ -z "$output_dir" ]]; then
+  output_dir="$(default_output_dir_for "$package_identifier" "$version")"
+fi
+
+windows_x86_64_name="$(basename "$windows_x86_64_installer")"
+windows_x86_64_sha256="$(sha256_file "$windows_x86_64_installer")"
+
+mkdir -p "$output_dir"
+
+cat > "${output_dir}/${package_identifier}.yaml" <<EOF
+# yaml-language-server: \$schema=https://aka.ms/winget-manifest.version.${manifest_schema_version}.schema.json
+
+PackageIdentifier: ${package_identifier}
+PackageVersion: ${version}
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: ${manifest_schema_version}
+EOF
+
+cat > "${output_dir}/${package_identifier}.installer.yaml" <<EOF
+# yaml-language-server: \$schema=https://aka.ms/winget-manifest.installer.${manifest_schema_version}.schema.json
+
+PackageIdentifier: ${package_identifier}
+PackageVersion: ${version}
+InstallerType: wix
+ReleaseDate: ${release_date}
+Installers:
+  - Architecture: x64
+    InstallerUrl: ${base_url}/${windows_x86_64_name}
+    InstallerSha256: ${windows_x86_64_sha256}
+ManifestType: installer
+ManifestVersion: ${manifest_schema_version}
+EOF
+
+cat > "${output_dir}/${package_identifier}.locale.en-US.yaml" <<EOF
+# yaml-language-server: \$schema=https://aka.ms/winget-manifest.defaultLocale.${manifest_schema_version}.schema.json
+
+PackageIdentifier: ${package_identifier}
+PackageVersion: ${version}
+PackageLocale: en-US
+Publisher: ${publisher}
+PublisherUrl: ${publisher_url}
+PublisherSupportUrl: ${publisher_support_url}
+PackageName: ${package_name}
+PackageUrl: ${package_url}
+Moniker: ${moniker}
+License: ${license_name}
+ShortDescription: ${short_description}
+Tags:
+  - cardano
+  - blockchain
+  - node
+  - ouroboros
+  - rust
+ManifestType: defaultLocale
+ManifestVersion: ${manifest_schema_version}
+EOF
+
+echo "wrote ${output_dir}"

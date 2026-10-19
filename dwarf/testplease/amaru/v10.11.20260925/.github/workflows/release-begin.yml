@@ -1,0 +1,756 @@
+name: Release Begin
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Create a release
+        required: true
+        type: boolean
+        default: false
+  push:
+    branches: ["main", "release/*"]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CARGO_TERM_COLOR: always
+  REGISTRY: ghcr.io
+  DOCKER_IMAGE: ghcr.io/pragma-org/amaru
+
+permissions:
+  contents: read
+  pages: write
+  packages: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-metadata:
+    name: Prepare build metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      is_release: ${{ steps.meta.outputs.is_release }}
+      version: ${{ steps.meta.outputs.version }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      previous_release_tag: ${{ steps.meta.outputs.previous_release_tag }}
+      release_patch: ${{ steps.meta.outputs.release_patch }}
+      msi_version: ${{ steps.meta.outputs.msi_version }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # https://github.com/actions/checkout/releases/tag/v7.0.1
+
+      - name: Determine version
+        id: meta
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+
+          read_amaru_version() {
+            grep -m 1 '^version = "' crates/amaru/Cargo.toml | sed -E 's/^version = "(.*)"$/\1/'
+          }
+
+          count_previous_published_releases() {
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              | jq -s 'map(.[]) | map(select(.draft | not) | select(.published_at != null)) | length'
+          }
+
+          latest_published_release_tag() {
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              | jq -rs 'map(.[]) | map(select(.draft | not) | select(.published_at != null)) | max_by(.published_at).tag_name // empty'
+          }
+
+          if [[ "$REQUESTED_RELEASE" == "true" ]]; then
+            current_version="$(read_amaru_version)"
+
+            if [[ ! "$current_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "expected amaru version to match <major>.<minor>.<patch>, got: $current_version" >&2
+              exit 1
+            fi
+
+            release_patch="$(date -u +%Y%m%d)"
+            version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${release_patch}"
+            msi_patch="$(count_previous_published_releases)"
+            msi_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${msi_patch}"
+            previous_release_tag="$(latest_published_release_tag)"
+
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "release_tag=v$version" >> "$GITHUB_OUTPUT"
+            echo "previous_release_tag=$previous_release_tag" >> "$GITHUB_OUTPUT"
+            echo "release_patch=$release_patch" >> "$GITHUB_OUTPUT"
+            echo "msi_version=$msi_version" >> "$GITHUB_OUTPUT"
+          else
+            current_version="$(read_amaru_version)"
+
+            if [[ ! "$current_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "expected amaru version to match <major>.<minor>.<patch>, got: $current_version" >&2
+              exit 1
+            fi
+
+            if [[ "${BASH_REMATCH[3]}" != "0" ]]; then
+              echo "nightly builds require crates/amaru/Cargo.toml to use a .0 patch version, got: $current_version" >&2
+              exit 1
+            fi
+
+            version="nightly-$(git rev-parse --short=8 HEAD)"
+
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "release_tag=" >> "$GITHUB_OUTPUT"
+            echo "previous_release_tag=" >> "$GITHUB_OUTPUT"
+            echo "release_patch=0" >> "$GITHUB_OUTPUT"
+            echo "msi_version=$current_version" >> "$GITHUB_OUTPUT"
+          fi
+
+  rust-build:
+    name: Build ${{ matrix.environments.title }}
+    timeout-minutes: 60
+    needs: build-metadata
+    strategy:
+      matrix:
+        environments:
+          - title: linux-x86_64
+            target: x86_64-unknown-linux-musl
+            build: zigbuild
+            executable: amaru
+            setup: |
+              sudo apt-get install -y pkg-config musl musl-dev musl-tools rpm
+              if ! cargo deb --version >/dev/null 2>&1; then
+                cargo install cargo-deb
+              fi
+              if ! cargo generate-rpm --version >/dev/null 2>&1; then
+                cargo install cargo-generate-rpm
+              fi
+              sudo snap install zig --classic --beta
+              if ! command -v cargo-zigbuild >/dev/null 2>&1; then
+                cargo install cargo-zigbuild
+              fi
+              rustup target add x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+
+          - title: linux-aarch64
+            target: aarch64-unknown-linux-musl
+            build: zigbuild
+            executable: amaru
+            setup: |
+              sudo apt-get install -y pkg-config musl musl-dev musl-tools rpm
+              if ! cargo deb --version >/dev/null 2>&1; then
+                cargo install cargo-deb
+              fi
+              if ! cargo generate-rpm --version >/dev/null 2>&1; then
+                cargo install cargo-generate-rpm
+              fi
+
+              sudo snap install zig --classic --beta
+              if ! command -v cargo-zigbuild >/dev/null 2>&1; then
+                cargo install cargo-zigbuild
+              fi
+              rustup target add aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+
+          - title: macos-aarch64
+            target: aarch64-apple-darwin
+            build: build
+            executable: amaru
+            runner: macos-15
+
+          - title: windows-x86_64
+            target: x86_64-pc-windows-msvc
+            build: build
+            executable: amaru.exe
+            setup: |
+              if ! cargo wix --version >/dev/null 2>&1; then
+                cargo install cargo-wix
+              fi
+            runner: windows-latest
+
+    runs-on: ${{ matrix.environments.runner }}
+
+    steps:
+      - name: Support longpaths on Windows
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # https://github.com/actions/checkout/releases/tag/v7.0.1
+        with:
+          submodules: true
+
+      - uses: ./.github/actions/stage-peer-snapshots
+
+      - name: cargo build
+        shell: bash
+        env:
+          BUILT_OVERRIDE_amaru_PKG_VERSION_PATCH: ${{ needs.build-metadata.outputs.release_patch }}
+          JEMALLOC_SYS_WITH_MALLOC_CONF: 'background_thread:true,narenas:2,dirty_decay_ms:250,muzzy_decay_ms:0,tcache_max:512'
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ matrix.environments.setup }}" ]]; then
+            ${{ matrix.environments.setup || 'echo "no setup needed..."' }}
+          fi
+          cargo ${{ matrix.environments.build }} --release --locked --target ${{ matrix.environments.target }}
+
+      - name: Update README installation snippets
+        continue-on-error: true
+        shell: bash
+        env:
+          VERSION: ${{ needs.build-metadata.outputs.version }}
+        run: |
+          chmod +x scripts/update-readme-installation-sections
+          ./scripts/update-readme-installation-sections --version "${VERSION}"
+
+      - name: prepare distribution files
+        id: pack
+        shell: bash
+        env:
+          OUT: amaru-${{ needs.build-metadata.outputs.version }}-${{ matrix.environments.title }}
+          BUILT_OVERRIDE_amaru_PKG_VERSION_PATCH: ${{ needs.build-metadata.outputs.release_patch }}
+        run: |
+          make dist \
+            BUILD_PROFILE=release \
+            AMARU_BIN='./target/${{ matrix.environments.target }}/release/${{ matrix.environments.executable }}' \
+            DIST_DIR="$OUT"
+          # Artifact uploads reset file modes, so preserve the executable bit in a tar archive.
+          tar -cf "$OUT.tar" "$OUT"
+          echo "path=$OUT.tar" >> "$GITHUB_OUTPUT"
+
+      - name: Build Debian archive
+        if: ${{ startsWith(matrix.environments.title, 'linux-') }}
+        shell: bash
+        env:
+          VERSION: ${{ needs.build-metadata.outputs.version }}
+          ARCHIVE_SUFFIX: ${{ matrix.environments.title }}
+          BUILT_OVERRIDE_amaru_PKG_VERSION_PATCH: ${{ needs.build-metadata.outputs.release_patch }}
+        run: |
+          make deb \
+            ARCHIVE_ROOT_NAME="amaru-${VERSION}-${ARCHIVE_SUFFIX}" \
+            BUILD_PROFILE=release \
+            AMARU_BIN='./target/${{ matrix.environments.target }}/release/amaru' \
+            PACKAGE_TARGET='${{ matrix.environments.target }}' \
+            DIST_DIR='dist'
+
+      - name: Build RPM archive
+        if: ${{ startsWith(matrix.environments.title, 'linux-') }}
+        shell: bash
+        env:
+          VERSION: ${{ needs.build-metadata.outputs.version }}
+          ARCHIVE_SUFFIX: ${{ matrix.environments.title }}
+          BUILT_OVERRIDE_amaru_PKG_VERSION_PATCH: ${{ needs.build-metadata.outputs.release_patch }}
+        run: |
+          make rpm \
+            ARCHIVE_ROOT_NAME="amaru-${VERSION}-${ARCHIVE_SUFFIX}" \
+            BUILD_PROFILE=release \
+            AMARU_BIN='./target/${{ matrix.environments.target }}/release/amaru' \
+            PACKAGE_TARGET='${{ matrix.environments.target }}' \
+            DIST_DIR='dist'
+
+      - name: Build Windows MSI installer
+        if: ${{ matrix.environments.title == 'windows-x86_64' }}
+        shell: bash
+        env:
+          VERSION: ${{ needs.build-metadata.outputs.version }}
+          MSI_VERSION: ${{ needs.build-metadata.outputs.msi_version }}
+          BUILT_OVERRIDE_amaru_PKG_VERSION_PATCH: ${{ needs.build-metadata.outputs.release_patch }}
+        run: |
+          make msi \
+            ARCHIVE_ROOT_NAME="amaru-${VERSION}-windows-x86_64" \
+            BUILD_PROFILE=release \
+            AMARU_BIN='./target/${{ matrix.environments.target }}/release/${{ matrix.environments.executable }}' \
+            MSI_VERSION="${MSI_VERSION}" \
+            DIST_DIR='dist'
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # https://github.com/actions/upload-artifact/releases/tag/v7.0.1
+        with:
+          name: amaru-${{ needs.build-metadata.outputs.version }}-${{ matrix.environments.title }}
+          path: ${{ steps.pack.outputs.path }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # https://github.com/actions/upload-artifact/releases/tag/v7.0.1
+        if: ${{ startsWith(matrix.environments.title, 'linux-') }}
+        with:
+          name: amaru-${{ needs.build-metadata.outputs.version }}-${{ matrix.environments.title }}-packages
+          path: |
+            amaru-${{ needs.build-metadata.outputs.version }}-${{ matrix.environments.title }}.deb
+            amaru-${{ needs.build-metadata.outputs.version }}-${{ matrix.environments.title }}.rpm
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # https://github.com/actions/upload-artifact/releases/tag/v7.0.1
+        if: ${{ matrix.environments.title == 'windows-x86_64' }}
+        with:
+          name: amaru-${{ needs.build-metadata.outputs.version }}-${{ matrix.environments.title }}-packages
+          path: |
+            amaru-${{ needs.build-metadata.outputs.version }}-${{ matrix.environments.title }}.msi
+
+  cbor-conformance:
+    name: CBOR decoding conformance report
+    timeout-minutes: 60
+    needs: build-metadata
+    runs-on: ubuntu-24.04
+    env:
+      # NOTE: Necessary for cache
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # https://github.com/actions/checkout/releases/tag/v7.0.1
+        with:
+          submodules: true
+
+      - uses: ./.github/actions/cache
+        with:
+          mode: READ
+
+      - uses: ./.github/actions/fetch-cbor-dataset
+
+      - name: Run the decoding conformance suite
+        env:
+          AMARU_TEST_REPORT_DIRECTORY: tests/results
+        run: cargo test --locked -p amaru-kernel --test test_cbor_dataset -- --nocapture
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # https://github.com/actions/upload-artifact/releases/tag/v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: amaru-${{ needs.build-metadata.outputs.version }}-cbor-conformance
+          path: crates/amaru-kernel/tests/results/*.json
+          if-no-files-found: warn
+
+  draft-release:
+    name: Create draft release
+    if: ${{ needs.build-metadata.outputs.is_release == 'true' }}
+    needs: [build-metadata, rust-build, cbor-conformance]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # https://github.com/actions/download-artifact/releases/tag/v8.0.1
+        with:
+          pattern: amaru-${{ needs.build-metadata.outputs.version }}-*
+          path: ./artifacts
+
+      - name: Package release archives
+        shell: bash
+        env:
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+          RELEASE_TAG: ${{ needs.build-metadata.outputs.release_tag }}
+          PREVIOUS_RELEASE_TAG: ${{ needs.build-metadata.outputs.previous_release_tag }}
+          VERSION: ${{ needs.build-metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-assets
+
+          conformance_report="amaru-${VERSION}-cbor-conformance"
+
+          for artifact_dir in ./artifacts/*; do
+            if [[ "$(basename "$artifact_dir")" == "$conformance_report" ]]; then
+              # The suite names the report after the corpus and the protocol version; there is exactly one.
+              find "$artifact_dir" -maxdepth 1 -type f -name '*.json' \
+                -exec cp {} "release-assets/${conformance_report}.json" \;
+              continue
+            fi
+
+            if find "$artifact_dir" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.msi' \) | grep -q .; then
+              find "$artifact_dir" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.msi' \) -exec cp {} release-assets/ \;
+              continue
+            fi
+
+            name="$(basename "$artifact_dir")"
+            staging_archive="$artifact_dir/$name.tar"
+            if [[ ! -f "$staging_archive" ]]; then
+              echo "missing staged distribution archive: $staging_archive" >&2
+              exit 1
+            fi
+
+            if [[ "$name" == *windows-* ]]; then
+              temporary_dir="$(mktemp -d)"
+              tar -C "$temporary_dir" -xf "$staging_archive"
+              (
+                cd "$temporary_dir"
+                zip -qr "$GITHUB_WORKSPACE/release-assets/${name}.zip" "$name"
+              )
+              rm -rf "$temporary_dir"
+            else
+              gzip --no-name --stdout "$staging_archive" > "release-assets/${name}.tar.gz"
+            fi
+          done
+
+          asset_name_for() {
+            basename "$1"
+          }
+
+          asset_url_for() {
+            local asset_name="$1"
+            printf 'https://github.com/%s/releases/download/%s/%s\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$asset_name"
+          }
+
+          checksum_for() {
+            shasum -a 256 "$1" | awk '{print $1}'
+          }
+
+          release_row() {
+            local artifact_type="$1"
+            local extension="$2"
+            local download_links="$3"
+            printf '| %s | `%s` | %s |\n' \
+              "$artifact_type" \
+              "$extension" \
+              "$download_links"
+          }
+
+          asset_link_for() {
+            local label="$1"
+            local asset_name="$2"
+            printf '[%s](%s)' "$label" "$(asset_url_for "$asset_name")"
+          }
+
+          linux_tar_x86_64="amaru-${VERSION}-linux-x86_64.tar.gz"
+          linux_tar_aarch64="amaru-${VERSION}-linux-aarch64.tar.gz"
+          linux_deb_x86_64="amaru-${VERSION}-linux-x86_64.deb"
+          linux_deb_aarch64="amaru-${VERSION}-linux-aarch64.deb"
+          linux_rpm_x86_64="amaru-${VERSION}-linux-x86_64.rpm"
+          linux_rpm_aarch64="amaru-${VERSION}-linux-aarch64.rpm"
+          macos_tar_aarch64="amaru-${VERSION}-macos-aarch64.tar.gz"
+          windows_zip_x86_64="amaru-${VERSION}-windows-x86_64.zip"
+          windows_msi_x86_64="amaru-${VERSION}-windows-x86_64.msi"
+
+          expected_assets=(
+            "$linux_tar_x86_64"
+            "$linux_tar_aarch64"
+            "$linux_deb_x86_64"
+            "$linux_deb_aarch64"
+            "$linux_rpm_x86_64"
+            "$linux_rpm_aarch64"
+            "$macos_tar_aarch64"
+            "$windows_zip_x86_64"
+            "$windows_msi_x86_64"
+            "${conformance_report}.json"
+          )
+
+          checksum_manifest="amaru-${VERSION}-checksums.manifest"
+          : > "release-assets/${checksum_manifest}"
+
+          for asset_name in "${expected_assets[@]}"; do
+            if [[ ! -f "release-assets/${asset_name}" ]]; then
+              echo "missing expected release artifact: ${asset_name}" >&2
+              exit 1
+            fi
+            checksum="$(checksum_for "release-assets/${asset_name}")"
+            printf '%s  %s\n' "$checksum" "$asset_name" >> "release-assets/${checksum_manifest}"
+          done
+
+          linux_rows=(
+            "$(release_row "Pre-compiled executable" ".tar.gz" "$(asset_link_for "aarch64" "$linux_tar_aarch64") \\| $(asset_link_for "x86_64" "$linux_tar_x86_64")")"
+            "$(release_row "Debian package" ".deb" "$(asset_link_for "aarch64" "$linux_deb_aarch64") \\| $(asset_link_for "x86_64" "$linux_deb_x86_64")")"
+            "$(release_row "RPM package" ".rpm" "$(asset_link_for "aarch64" "$linux_rpm_aarch64") \\| $(asset_link_for "x86_64" "$linux_rpm_x86_64")")"
+          )
+
+          macos_rows=(
+            "$(release_row "Pre-compiled executable" ".tar.gz" "$(asset_link_for "aarch64" "$macos_tar_aarch64")")"
+          )
+
+          windows_rows=(
+            "$(release_row "Pre-compiled executable" ".zip" "$(asset_link_for "x86_64" "$windows_zip_x86_64")")"
+            "$(release_row "MSI installer" ".msi" "$(asset_link_for "x86_64" "$windows_msi_x86_64")")"
+          )
+
+          docker_registry_url="https://github.com/${GITHUB_REPOSITORY}/pkgs/container/${DOCKER_IMAGE##*/}"
+          changelog_anchor="${RELEASE_TAG//./}"
+
+          {
+            printf '## Target Milestone\n\n'
+            printf '## Minimum Hardware Requirements\n'
+            printf '|              |                                                          |\n'
+            printf '| ---          | ---                                                      |\n'
+            printf '| Arch         | x86_64 / aarch64                                         |\n'
+            printf '| CPU          | 2+ cores, >=2GHz                                         |\n'
+            printf '| RAM          | 2GiB                                                     |\n'
+            printf '| Storage      | 20-300GiB<sup><a href="#user-content-note-1">1</a></sup> |\n'
+            printf '| Storage type | NVMe/SATA SSD, eMMC, or UFS                              |\n\n'
+            printf '<p id=note-1><small><strong>[1]</strong>\n'
+            printf 'Amaru does not (yet) download the entire chain history on bootstrap. This can be done separately via the <code>amaru mithril sync</code>  command. Therefore, storage requirements may vary depending on the amount of history being synced.</small></p>\n\n'
+            printf '## Changelog\n\n'
+            printf '> [!TIP]\n'
+            printf '>\n'
+            printf '> Want a complete inventory of the changes? Read the [full CHANGELOG.md](https://github.com/%s/blob/main/CHANGELOG.md#%s).\n' "$GITHUB_REPOSITORY" "$changelog_anchor"
+            if [[ -n "$PREVIOUS_RELEASE_TAG" ]]; then
+              printf '>\n'
+              printf '> Want _even more_ details? See the [commit history](https://github.com/%s/compare/%s...%s) since the last release.\n' \
+                "$GITHUB_REPOSITORY" "$PREVIOUS_RELEASE_TAG" "$RELEASE_TAG"
+            fi
+            printf '\n'
+            printf '## Documentation\n\n'
+            printf '| What                                                                                                 | What for                                                             |\n'
+            printf '| ---                                                                                                  | ---                                                                  |\n'
+            printf '| [Getting Started](https://github.com/pragma-org/amaru/tree/main#getting-started)                     | First steps with Amaru                                               |\n'
+            printf '| [Bootstrapping](https://github.com/pragma-org/amaru/blob/main/docs/BOOTSTRAP.md#bootstrap-snapshots) | Creating snapshots and/or restoring from available snapshots         |\n'
+            printf '| [Monitoring](https://github.com/pragma-org/amaru/blob/main/monitoring/README.md#monitoring)          | Filtering traces, understanding metrics and observability in general |\n'
+            printf '| [Using Docker](https://github.com/pragma-org/amaru/tree/main/docker)                                 | Using Amaru with Docker or spinning up local testnets                |\n'
+            printf '| [Submit API](https://github.com/pragma-org/amaru/blob/main/docs/SUBMIT_API.md)                       | Submitting transaction to Amaru local mempool                        |\n'
+            printf '| crates.io / lib (coming soon)                                                                        | Developers using Amaru as a library                                  |\n'
+            printf '## Linux\n\n'
+            printf '| Type | File Extension | Download Links |\n'
+            printf '| --- | --- | --- |\n'
+            printf '%s\n' "${linux_rows[@]}"
+            printf '\n## macOS\n\n'
+            printf '| Type | File Extension | Download Links |\n'
+            printf '| --- | --- | --- |\n'
+            printf '%s\n' "${macos_rows[@]}"
+            printf '\n## Windows\n\n'
+            printf '| Type | File Extension | Download Links |\n'
+            printf '| --- | --- | --- |\n'
+            printf '%s\n' "${windows_rows[@]}"
+            printf '\n## Docker\n\n'
+            printf '| Image | Registry |\n'
+            printf '| --- | --- |\n'
+            printf '| `%s:%s` | [%s](%s) |\n' "$DOCKER_IMAGE" "$RELEASE_TAG" "$docker_registry_url" "$docker_registry_url"
+            printf '\n## CBOR decoding conformance\n\n'
+            printf 'Per-rule results of decoding the [cardano-cbor-dataset](https://github.com/r2rationality/cardano-cbor-dataset) corpus with this build: [%s](%s)\n' \
+              "${conformance_report}.json" "$(asset_url_for "${conformance_report}.json")"
+            printf '\n## Checksum manifest\n\n'
+            printf '[%s](%s)\n' "$checksum_manifest" "$(asset_url_for "$checksum_manifest")"
+          } > release-body.md
+
+          ls -lh release-assets
+
+      - name: Remove stale draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.build-metadata.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          release_endpoint="repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"
+          release_json=""
+
+          if release_json="$(gh api "${release_endpoint}" 2>/dev/null)"; then
+            if [[ "$(jq -r '.draft' <<< "${release_json}")" != "true" ]]; then
+              echo "release ${RELEASE_TAG} already exists and is not a draft; refusing to overwrite it" >&2
+              exit 1
+            fi
+
+            release_id="$(jq -r '.id' <<< "${release_json}")"
+            echo "Deleting stale draft release ${RELEASE_TAG} (id=${release_id})"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+          fi
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Deleting stale tag ${RELEASE_TAG}"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${RELEASE_TAG}"
+          fi
+
+      - name: Create or update draft release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # https://github.com/softprops/action-gh-release/releases/tag/v2.6.2
+        with:
+          draft: true
+          tag_name: ${{ needs.build-metadata.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ needs.build-metadata.outputs.version }}
+          body_path: release-body.md
+          fail_on_unmatched_files: true
+          files: release-assets/*
+
+      - name: Attest release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # https://github.com/actions/attest/releases/tag/v4.2.2
+        with:
+          subject-checksums: release-assets/amaru-${{ needs.build-metadata.outputs.version }}-checksums.manifest
+
+  docker-nightly:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [build-metadata, rust-build]
+    uses: ./.github/workflows/template-docker-publish.yml
+    with:
+      artifact_source: workflow-artifact
+      artifact_version: ${{ needs.build-metadata.outputs.version }}
+      checkout_ref: ${{ github.sha }}
+      image_name: ghcr.io/pragma-org/amaru
+      tag_latest: true
+    secrets: inherit
+
+  merge-artifacts:
+    name: Merge build artifacts
+
+    # Run if:
+    # - The job was not cancelled, and
+    # - The rust-build job succeeded (the cbor conformance might have failed), and
+    # - This is a push to main (not a pull request)
+    if: >-
+      ${{ !cancelled()
+          && needs.rust-build.result == 'success'
+          && github.event_name == 'push'
+          && github.ref == 'refs/heads/main' }}
+    needs: [rust-build, cbor-conformance]
+
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # https://github.com/actions/checkout/releases/tag/v7.0.1
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # https://github.com/actions/download-artifact/releases/tag/v8.0.1
+        with:
+          pattern: amaru-*
+          path: ./artifacts
+
+      - name: Ensure zip is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v zip >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y zip
+          fi
+
+      - name: Prepare combined Github Pages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Names why a report is missing when one is, so the page's log says which job to look at.
+          CBOR_CONFORMANCE_RESULT: ${{ needs.cbor-conformance.result }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/downloads dist/cbor-conformance/main
+
+          version=""
+          for dir in ./artifacts/*; do
+            name="$(basename "$dir")"
+            static_name="$(echo "$name" | sed -E 's/amaru-nightly-[0-9a-f]{8,12}-(.*)/\1/')"
+
+            if [[ -z "$version" ]]; then
+              version="$(echo "$name" | sed -E 's/amaru-(nightly-[0-9a-f]{8,12})-.*/\1/')"
+            fi
+
+            if [[ "$static_name" == cbor-conformance ]]; then
+              while IFS= read -r report; do
+                cp "$report" "dist/cbor-conformance/main/$(basename "$report")"
+              done < <(find "$dir" -maxdepth 1 -type f -name '*.json' | sort)
+              continue
+            fi
+
+            if find "$dir" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.msi' \) | grep -q .; then
+              while IFS= read -r package; do
+                package_name="$(basename "$package" | sed -E 's/amaru-nightly-[0-9a-f]{8,12}-(.*)/\1/')"
+                cp "$package" "dist/downloads/${package_name}"
+              done < <(find "$dir" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.msi' \) | sort)
+              continue
+            fi
+
+            staging_archive="$dir/$name.tar"
+            if [[ ! -f "$staging_archive" ]]; then
+              echo "missing staged distribution archive: $staging_archive" >&2
+              exit 1
+            fi
+
+            if [[ "$static_name" == windows-* ]]; then
+              temporary_dir="$(mktemp -d)"
+              tar -C "$temporary_dir" -xf "$staging_archive"
+              (
+                cd "$temporary_dir"
+                zip -qr "$GITHUB_WORKSPACE/dist/downloads/${static_name}.zip" "$name"
+              )
+              rm -rf "$temporary_dir"
+            else
+              gzip --no-name --stdout "$staging_archive" > "dist/downloads/${static_name}.tar.gz"
+            fi
+          done
+
+          # The conformance report needs to be published to a single fixed URL: 'main/latest.json'
+          # We nevertheless preserve the original report name in case we want to get historical reports in the future.
+          reports=()
+          while IFS= read -r report; do
+            reports+=("$report")
+          done < <(find dist/cbor-conformance/main -maxdepth 1 -type f -name '*.json' | sort)
+
+          case "${#reports[@]}" in
+            0)
+              # The page also carries the nightly downloads, so a missing report must not black it out.
+              # Whatever kept the suite from producing one already shows as a failure of its own job.
+              echo "no conformance report for main (suite result: $CBOR_CONFORMANCE_RESULT);" \
+                   "publishing the page without it" >&2
+              rmdir dist/cbor-conformance/main
+              ;;
+            1)
+              cp "${reports[0]}" dist/cbor-conformance/main/latest.json
+              ;;
+            *)
+              echo "several conformance reports were published; pick which one 'main/latest.json' names:" >&2
+              printf '  %s\n' "${reports[@]}" >&2
+              exit 1
+              ;;
+          esac
+
+          latest_release_tag=""
+          latest_release_url=""
+          latest_release_checksums_url=""
+
+          if latest_release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" 2>/dev/null)"; then
+            latest_release_tag="$(jq -r '.tag_name // ""' <<< "$latest_release_json")"
+            latest_release_url="$(jq -r '.html_url // ""' <<< "$latest_release_json")"
+            latest_release_checksums_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${latest_release_tag}/amaru-${latest_release_tag#v}-checksums.manifest"
+          fi
+
+          # Every deploy replaces the whole site, so the released report is refetched from the release
+          # it belongs to rather than carried over from the previous deploy. That keeps the published
+          # file a copy of the release asset instead of a copy of a copy, and repairs itself if a
+          # deploy ever drops it.
+          if [[ -n "$latest_release_tag" ]]; then
+            mkdir -p dist/cbor-conformance/releases
+            released_report="amaru-${latest_release_tag#v}-cbor-conformance.json"
+            if gh release download "$latest_release_tag" \
+                 --pattern "$released_report" \
+                 --output dist/cbor-conformance/releases/latest.json; then
+              echo "published the conformance report of $latest_release_tag"
+            else
+              echo "release $latest_release_tag has no $released_report asset; publishing without it" >&2
+              rm -rf dist/cbor-conformance/releases
+            fi
+          fi
+
+          artifact_args=()
+          while IFS= read -r artifact; do
+            artifact_args+=(--artifact "$artifact")
+          done < <(find dist/downloads -maxdepth 1 -type f | sort)
+
+          latest_release_args=()
+          if [[ -n "$latest_release_tag" && -n "$latest_release_url" ]]; then
+            latest_release_args+=(
+              --latest-release-tag "$latest_release_tag"
+              --latest-release-url "$latest_release_url"
+            )
+
+            if [[ -n "$latest_release_checksums_url" ]]; then
+              latest_release_args+=(--latest-release-checksums-url "$latest_release_checksums_url")
+            fi
+          fi
+
+          chmod +x scripts/render-nightly-downloads-page
+          ./scripts/render-nightly-downloads-page \
+            --version "$version" \
+            "${latest_release_args[@]}" \
+            "${artifact_args[@]}" \
+            --output dist/index.html
+
+      - name: Upload combined artifact for Github Pages
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # https://github.com/actions/upload-pages-artifact/releases/tag/v5.0.0
+        with:
+          path: dist
+
+  publish:
+    name: Publish to GitHub Pages
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: merge-artifacts
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # https://github.com/actions/deploy-pages/releases/tag/v5.0.1

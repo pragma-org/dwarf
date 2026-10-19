@@ -1,0 +1,136 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use amaru_kernel::{
+    Hash, PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS, Transaction, TransactionBody, TransactionInput, WitnessSet,
+    cbor::{WithOriginalBytes, WithSize},
+    size::TRANSACTION_BODY,
+};
+use amaru_metrics::{MetricsEvent, mempool::MempoolMetrics};
+use amaru_ouroboros::{MempoolMsg, ResourceMempool, TxInsertResult, TxOrigin};
+use amaru_ouroboros_traits::MockBlockValidator;
+use amaru_protocols::store_effects::ResourceParameters;
+use amaru_pure_stage::{
+    DeserializerGuards, Effect, ExternalEffect, StageGraph, UnknownExternalEffect,
+    serde::SendDataValue,
+    simulation::{Run, SimulationBuilder, SimulationRunning},
+    trace_buffer::{TraceBuffer, TraceEntry},
+};
+use tokio::runtime::Runtime;
+
+use super::*;
+use crate::{
+    effects::{
+        RecordMetricsEffect, ResourceBlockValidation, ResourceEraHistory, ResourceTxValidation, ValidateTxEffect,
+    },
+    stages::test_utils::{BufferWriter, Logs, install_test_log_capture, start_in_era},
+};
+
+pub struct TestPrep {
+    pub msg: MempoolMsg,
+    pub rt: Runtime,
+    pub mempool: ResourceMempool<Transaction>,
+    pub validator: ResourceTxValidation,
+    pub chain_store: amaru_protocols::store_effects::ResourceHeaderStore,
+}
+
+#[derive(serde::Serialize)]
+struct InsertEffectPayload {
+    tx: WithOriginalBytes<Transaction>,
+    tx_origin: TxOrigin,
+}
+
+pub fn register_guards() -> DeserializerGuards {
+    vec![
+        amaru_pure_stage::register_data_deserializer::<MempoolStageState>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<MempoolMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Vec<TxInsertResult>>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<ValidateTxEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<RecordMetricsEffect>().boxed(),
+    ]
+}
+
+pub fn setup(prep: &TestPrep) -> (SimulationRunning, DeserializerGuards, Logs) {
+    let logs = install_test_log_capture(BufferWriter::new());
+
+    let guards = register_guards();
+
+    let era_history = &*PREPROD_ERA_HISTORY;
+    let mut network = SimulationBuilder::default()
+        .with_trace_buffer(TraceBuffer::new_shared(100, 1_000_000))
+        .with_global_epoch_offset(start_in_era().relative_time);
+    let global_parameters = &PREPROD_GLOBAL_PARAMETERS;
+
+    network.resources().put::<ResourceParameters>(global_parameters.clone());
+    network.resources().put::<ResourceEraHistory>(era_history.clone());
+    network.resources().put::<ResourceBlockValidation>(std::sync::Arc::new(MockBlockValidator::default()));
+    network.resources().put::<ResourceMempool<Transaction>>(prep.mempool.clone());
+    network.resources().put::<ResourceTxValidation>(prep.validator.clone());
+    network.resources().put::<amaru_protocols::store_effects::ResourceHeaderStore>(prep.chain_store.clone());
+
+    let mempool = network.stage("mempool", stage);
+    let mempool = network.wire_up(mempool, MempoolStageState::default());
+    network.preload(&mempool, [prep.msg.clone()]).unwrap();
+
+    let mut running = network.run(prep.rt.handle());
+    running.run(Run::skip_and_resolve());
+
+    (running, guards, logs.logs())
+}
+
+pub fn te_validate_tx(at_stage: &str, tx: &Transaction) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(at_stage, Box::new(ValidateTxEffect::new(tx))))
+}
+
+pub fn te_insert(at_stage: &str, tx: &WithOriginalBytes<Transaction>, tx_origin: TxOrigin) -> TraceEntry {
+    let payload = InsertEffectPayload { tx: tx.clone(), tx_origin };
+    let value = SendDataValue::from_json("payload", &payload).cast::<SendDataValue>().unwrap().value;
+    let effect: Box<dyn ExternalEffect> = Box::new(UnknownExternalEffect::new(SendDataValue {
+        typetag: "amaru_protocols::mempool_effects::Insert".to_string(),
+        value,
+    }));
+    TraceEntry::suspend(Effect::external(at_stage, effect))
+}
+
+pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: Vec<TxInsertResult>) -> TraceEntry {
+    TraceEntry::suspend(Effect::send(from, to, Box::new(msg)))
+}
+
+pub fn te_mempool_state(at_stage: &str) -> TraceEntry {
+    let value = SendDataValue::from_json("payload", ()).cast::<SendDataValue>().unwrap().value;
+    let effect: Box<dyn ExternalEffect> = Box::new(UnknownExternalEffect::new(SendDataValue {
+        typetag: "amaru_protocols::mempool_effects::State".to_string(),
+        value,
+    }));
+    TraceEntry::suspend(Effect::external(at_stage, effect))
+}
+
+pub fn te_record_metrics(at_stage: &str, metrics: MempoolMetrics) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(
+        at_stage,
+        Box::new(RecordMetricsEffect::new(MetricsEvent::MempoolMetrics(metrics))),
+    ))
+}
+
+pub fn create_transaction(input_index: u16) -> WithOriginalBytes<Transaction> {
+    let tx_input = TransactionInput { transaction_id: Hash::new([1; TRANSACTION_BODY]), index: input_index };
+    let body = TransactionBody::new([tx_input], [], 0);
+    Transaction {
+        body,
+        witnesses: WithSize::<WitnessSet>::default().with_size(1),
+        is_expected_valid: true,
+        auxiliary_data: None,
+    }
+    .into()
+}

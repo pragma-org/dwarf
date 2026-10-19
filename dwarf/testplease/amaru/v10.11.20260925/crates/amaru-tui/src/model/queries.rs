@@ -1,0 +1,169 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::time::{Duration, SystemTime};
+
+use super::*;
+use crate::events::TelemetryRecord;
+
+impl Model {
+    pub fn log_view(&self) -> &[LogViewItem] {
+        self.logs.view()
+    }
+
+    pub fn log_occupancy(&self) -> [(RetentionTier, usize, usize); 4] {
+        self.logs.occupancy()
+    }
+
+    pub fn log_record_is_highlighted(&self, record: &TelemetryRecord) -> bool {
+        self.highlight.as_ref().is_some_and(|regex| regex.is_match(&record.plain_text()))
+    }
+
+    pub fn log_record_is_cursor(&self, record: &TelemetryRecord) -> bool {
+        self.log_cursor.as_ref().is_some_and(|cursor| std::ptr::eq(cursor.as_ref(), record))
+    }
+
+    pub fn log_record_is_selected(&self, record: &TelemetryRecord) -> bool {
+        self.log_selection.is_some_and(|selection| selection.contains(record.at))
+    }
+
+    pub fn selected_log_count(&self) -> Option<usize> {
+        self.log_selection?;
+        Some(self.exported_log_line_count())
+    }
+
+    pub fn log_export_status(&self) -> Option<&str> {
+        self.log_export_status.as_deref()
+    }
+
+    pub fn set_log_export_status(&mut self, status: String) {
+        self.log_export_status = Some(status);
+    }
+
+    /// Currently visible log records in the selected time range, or every visible
+    /// record when nothing is selected.
+    pub fn exported_log_line_count(&self) -> usize {
+        self.exported_log_records().count()
+    }
+
+    pub fn exported_log_text(&self) -> String {
+        let mut text = String::new();
+        for record in self.exported_log_records() {
+            text.push_str(&record.plain_text());
+            text.push('\n');
+        }
+        text
+    }
+
+    fn exported_log_records(&self) -> impl Iterator<Item = &TelemetryRecord> {
+        let selection = self.log_selection;
+        self.logs.view().iter().filter_map(move |item| {
+            let record = item.record()?;
+            if selection.is_some_and(|selection| !selection.contains(record.at)) {
+                return None;
+            }
+            Some(record.as_ref())
+        })
+    }
+
+    pub fn prompt_is_open(&self) -> bool {
+        self.prompt.is_some()
+    }
+
+    pub fn recent_blocks_count(&self) -> u64 {
+        self.block_rate.total_count()
+    }
+
+    pub fn last_block_elapsed(&self, now: Instant) -> Option<Duration> {
+        self.tip.as_ref().map(|tip| now.duration_since(tip.updated_at))
+    }
+
+    pub fn network_epoch_at(&self, now: SystemTime) -> Option<u64> {
+        self.startup.target_epoch_at(now)
+    }
+
+    pub fn sync_progress_at(&self, now: SystemTime) -> Option<(u64, u64, f64)> {
+        let tip = self.tip.as_ref()?;
+        let target_slot = self.startup.target_slot_at(now)?;
+        let current_slot = tip.slot.min(target_slot);
+
+        (target_slot > 0).then_some((current_slot, target_slot, current_slot as f64 / target_slot as f64))
+    }
+
+    pub fn slot_throughput(&self) -> Option<f64> {
+        let tip = self.tip.as_ref()?;
+        let (origin_slot, origin_at) = self.tip_sync_origin?;
+        let advanced_slots = tip.slot.saturating_sub(origin_slot);
+        let elapsed = tip.updated_at.saturating_duration_since(origin_at);
+
+        (!elapsed.is_zero() && advanced_slots > 0).then_some(advanced_slots as f64 / elapsed.as_secs_f64())
+    }
+
+    pub fn sync_eta_at(&self, now: SystemTime) -> Option<Duration> {
+        let tip = self.tip.as_ref()?;
+        let target_slot = self.startup.target_slot_at(now)?;
+        let slot_throughput = self.slot_throughput()?;
+        let remaining_slots = target_slot.saturating_sub(tip.slot);
+
+        (remaining_slots > 0 && slot_throughput > 0.0)
+            .then(|| Duration::from_secs_f64(remaining_slots as f64 / slot_throughput))
+    }
+
+    pub fn recent_transactions_count(&self) -> u64 {
+        self.transaction_rate.total_count()
+    }
+
+    pub fn average_recent_rollback_length(&self) -> Option<f64> {
+        let (count, total) = self
+            .recent_rollbacks
+            .iter()
+            .fold((0_u64, 0_u64), |(count, total), (_, length)| (count + 1, total + *length as u64));
+
+        (count > 0).then_some(total as f64 / count as f64)
+    }
+
+    pub fn recent_rollback_frequency(&self, now: Instant) -> Option<f64> {
+        let origin = if self.recent_rollbacks.len() >= self.config.rollback_sample_capacity {
+            self.recent_rollbacks.front().map(|(at, _)| *at).unwrap_or(self.created_at)
+        } else {
+            self.created_at
+        };
+        let span = now.saturating_duration_since(origin);
+
+        (span > Duration::ZERO).then_some(self.recent_rollbacks.len() as f64 / span.as_secs_f64())
+    }
+
+    pub fn proposals(&self) -> impl Iterator<Item = &ProposalActivity> {
+        self.proposal_order.iter().filter_map(|id| self.proposals_by_id.get(id))
+    }
+
+    pub fn sorted_peers(&self) -> Vec<&PeerState> {
+        let mut peers = self.peers.values().collect::<Vec<_>>();
+        peers.sort_by(|left, right| {
+            left.last_rtt_micros
+                .unwrap_or(u64::MAX)
+                .cmp(&right.last_rtt_micros.unwrap_or(u64::MAX))
+                .then_with(|| left.address.cmp(&right.address))
+        });
+        peers
+    }
+
+    pub fn blocks_per_second(&self) -> f64 {
+        self.block_rate.rate_per_second()
+    }
+
+    pub fn transactions_per_second(&self) -> f64 {
+        self.transaction_rate.rate_per_second()
+    }
+}

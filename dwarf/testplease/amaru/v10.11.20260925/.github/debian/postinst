@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+if ! getent group amaru >/dev/null; then
+    addgroup --system amaru
+fi
+
+if ! getent passwd amaru >/dev/null; then
+    adduser \
+        --system \
+        --ingroup amaru \
+        --home /var/lib/amaru \
+        --no-create-home \
+        --disabled-login \
+        --gecos "Amaru service user" \
+        amaru
+fi
+
+install -d -o amaru -g amaru /var/lib/amaru
+
+#DEBHELPER#

@@ -1,0 +1,107 @@
+name: Template Cargo Test
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_LOG: error
+  # NOTE: Unused below, but necessary if caller references it.
+  RUST_NIGHTLY_TOOLCHAIN: nightly-2026-09-04
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: "Runner to use for the workflow; one of: ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025"
+        required: true
+        type: string
+
+      target:
+        description: "Rust target to use (e.g. x86_64-unknown-linux-gnu)"
+        required: true
+        type: string
+
+      cache-mode:
+        description: "Behaviour for the cache: 'READ' or 'WRITE'"
+        required: true
+        type: string
+
+      command:
+        description: "Command override instead of the default 'test --workspace'. DO NOT include --locked or --target"
+        required: false
+        type: string
+        default: "test --workspace"
+
+      setup:
+        description: "Additional setup command to run prior to build."
+        required: false
+        type: string
+        default: ""
+
+      nocapture:
+        description: "Pass --nocapture and RUST_BACKTRACE=1 so libtest prints stdout/stderr live"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  cargo-test:
+    name: ${{ format('{0} - {1}', inputs.runner, inputs.command) }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 90
+    steps:
+      - name: Support longpaths
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
+      - name: Install LLVM
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install llvm --yes --no-progress
+          Add-Content -Path $env:GITHUB_ENV -Value 'LIBCLANG_PATH=C:\Program Files\LLVM\bin'
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # https://github.com/actions/checkout/releases/tag/v7.0.1
+        with:
+          submodules: true
+
+      - uses: ./.github/actions/stage-peer-snapshots
+
+      - uses: ./.github/actions/cache
+        with:
+          mode: ${{ inputs.cache-mode }}
+
+      - name: Build and Test
+        shell: bash
+        run: |
+          set -e
+
+          if [[ -n "${{ inputs.setup }}" ]]; then
+            echo "Running setup command: ${{ inputs.setup }}"
+            ${{ inputs.setup }}
+          fi
+
+          COMMAND="${{ inputs.command }}"
+          EXTRA=()
+
+          if [[ "${{ inputs.nocapture }}" == "true" ]]; then
+            export RUST_BACKTRACE=1
+            # Panic backtraces only: anyhow Debug otherwise injects "Stack backtrace:"
+            # into tracing captures and breaks log assertions.
+            export RUST_LIB_BACKTRACE=0
+            # `--locked --target` must stay cargo flags; libtest args go after `--`.
+            case "$COMMAND" in
+              test|test\ *) EXTRA=(-- --nocapture) ;;
+            esac
+          fi
+
+          cargo $COMMAND --locked --target "${{ inputs.target }}" "${EXTRA[@]}"
+
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # https://github.com/actions/upload-artifact/releases/tag/v7.0.1
+        with:
+          name: failed-simulation-data
+          path: amaru-sim/test-data

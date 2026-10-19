@@ -1,0 +1,47 @@
+lints.workspace = true
+
+[package]
+name = "amaru-protocols"
+version = "0.1.2"
+edition.workspace = true
+description = "Cardano network mini-protocol implementations for the Amaru Cardano node"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bytes = { workspace = true, features = ["serde"] }
+futures-util.workspace = true
+hex.workspace = true
+minicbor.workspace = true
+serde.workspace = true
+
+amaru-kernel = { "workspace" = true, features = ["test-utils"] }
+amaru-metrics.workspace = true
+amaru-observability.workspace = true
+amaru-ouroboros-traits = { "workspace" = true, features = ["test-utils"] }
+amaru-ouroboros.workspace = true
+amaru-pure-stage.workspace = true
+tokio = { workspace = true, features = ["rt", "time"] }
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+
+[dev-dependencies]
+amaru-mempool.workspace = true
+amaru-network.workspace = true
+hex.workspace = true
+proptest.workspace = true
+socket2.workspace = true
+test-case.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tracing-subscriber.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["amaru-deps"]

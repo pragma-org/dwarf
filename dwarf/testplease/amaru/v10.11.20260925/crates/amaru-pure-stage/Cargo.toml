@@ -1,0 +1,48 @@
+[package]
+name = "amaru-pure-stage"
+version = "0.1.2"
+edition.workspace = true
+description = "A library for building and running simulations of distributed systems."
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/amaru-pure-stage"
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+anyhow.workspace = true
+cbor4ii.workspace = true
+either.workspace = true
+erased-serde.workspace = true
+futures-util.workspace = true
+getrandom = { version = "0.3", features = ["wasm_js"] }
+hex.workspace = true
+parking_lot.workspace = true
+poolshark.workspace = true
+pretty_assertions.workspace = true
+rand = { workspace = true }
+serde = { workspace = true, features = ["derive", "alloc", "rc"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "time", "macros"] }
+tracing-subscriber.workspace = true
+tracing.workspace = true
+typetag.workspace = true
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["getrandom", "amaru-deps"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "time", "rt-multi-thread"] }
+
+[lints]
+workspace = true

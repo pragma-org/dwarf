@@ -1,0 +1,653 @@
+// Copyright 2024 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#[cfg(all(not(target_family = "wasm"), not(target_arch = "riscv32")))]
+const _: () = amaru_deps::AMARU_DEPS_USED;
+
+#[cfg(feature = "rocksdb")]
+pub mod rocksdb;
+
+#[cfg(test)]
+pub mod tests {
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        str::FromStr,
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    use amaru_kernel::any_proposal_id;
+    use amaru_kernel::{
+        Anchor, BlockHeight, Constitution, ConstitutionalCommitteeStatus, Credential, DRepRegistration, Epoch,
+        EraHistory, Hash, Lovelace, MaxString128, MemoizedTransactionOutput, PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
+        PREPROD_ERA_HISTORY, Point, PoolId, PoolParams, RationalNumber, Slot, TransactionInput,
+        any_certificate_pointer, any_credential, any_hash28, any_lovelace, any_pool_params,
+    };
+    #[cfg(not(target_os = "windows"))]
+    use amaru_ledger::store::columns::proposals;
+    use amaru_ledger::{
+        epoch_transition::{GovernanceActivity, GovernanceUpdates, pools_updates::PoolCertificates},
+        state::volatile::Resettable,
+        store::{
+            Columns, ReadStore, Store, StoreError, TransactionalContext, apply_governance_updates,
+            columns::{
+                accounts, cc_members, dreps,
+                slots::tests::any_slot,
+                utxo::tests::{any_memoized_transaction_output, any_txin},
+            },
+        },
+    };
+    use proptest::{prelude::Strategy, strategy::ValueTree, test_runner::TestRunner};
+
+    #[cfg(not(target_os = "windows"))]
+    #[derive(Debug, Clone)]
+    pub struct Fixture {
+        pub account_key: Credential,
+        pub account_row: accounts::Row,
+        pub txin: TransactionInput,
+        pub output: MemoizedTransactionOutput,
+        pub pool_params: PoolParams,
+        pub pool_epoch: Epoch,
+        pub drep_key: Credential,
+        pub drep_row: dreps::Row,
+        pub proposal_key: proposals::Key,
+        pub proposal_row: proposals::Row,
+        pub cc_member_key: Credential,
+        pub cc_member_row: cc_members::Row,
+        pub slot: Slot,
+        pub slot_leader: PoolId,
+    }
+
+    #[cfg(target_os = "windows")]
+    #[derive(Debug, Clone)]
+    pub struct Fixture {
+        pub account_key: Credential,
+        pub account_row: accounts::Row,
+        pub txin: TransactionInput,
+        pub output: MemoizedTransactionOutput,
+        pub pool_params: PoolParams,
+        pub pool_epoch: Epoch,
+        pub drep_key: Credential,
+        pub drep_row: dreps::Row,
+        pub cc_member_key: Credential,
+        pub cc_member_row: cc_members::Row,
+        pub slot: Slot,
+        pub slot_leader: PoolId,
+    }
+
+    pub fn add_test_data_to_store(
+        store: &impl Store,
+        _era_history: &EraHistory,
+        runner: &mut TestRunner,
+    ) -> Result<Fixture, StoreError> {
+        // utxos
+        let txin = any_txin().new_tree(runner).unwrap().current();
+        let output = any_memoized_transaction_output().new_tree(runner).unwrap().current();
+        let utxos_iter = std::iter::once((txin, output.clone()));
+
+        // accounts
+        let account_key = any_credential().new_tree(runner).unwrap().current();
+        let account_key_clone = account_key;
+
+        let account_row =
+            amaru_ledger::store::columns::accounts::tests::any_row(10_000_000).new_tree(runner).unwrap().current();
+
+        let delegatee = match &account_row.pool {
+            Some(pool_pair) => Resettable::Set(*pool_pair),
+            None => Resettable::Reset,
+        };
+
+        let drep = match &account_row.drep {
+            Some(drep_pair) => Resettable::Set(*drep_pair),
+            None => Resettable::Reset,
+        };
+
+        let accounts_iter = std::iter::once((
+            account_key_clone,
+            accounts::Value::Create {
+                pool: delegatee,
+                drep,
+                deposit: account_row.deposit,
+                rewards: account_row.rewards,
+            },
+        ));
+
+        // pools
+        let pool_params = any_pool_params().new_tree(runner).unwrap().current();
+        let registered_at = any_certificate_pointer(u64::MAX).new_tree(runner).unwrap().current();
+        let deposit = any_lovelace().new_tree(runner).unwrap().current();
+        let pool_epoch = Epoch::from(0u64);
+
+        let pools_iter = std::iter::once((pool_params.clone(), registered_at, deposit));
+
+        // dreps
+        let drep_key = any_credential().new_tree(runner).unwrap().current();
+        let mut drep_row =
+            amaru_ledger::store::columns::dreps::tests::any_row(10_000_000).new_tree(runner).unwrap().current();
+
+        if drep_row.anchor.is_none() {
+            drep_row.anchor = Some(Box::new(Anchor {
+                url: MaxString128::from_str("https://example.com").unwrap(),
+                content_hash: Hash::from([0u8; 32]),
+            }));
+        }
+        let anchor = drep_row.anchor.clone().expect("Expected anchor to be Some");
+        let deposit = drep_row.deposit;
+        let registered_at = drep_row.registered_at;
+
+        let drep_iter = std::iter::once((
+            drep_key,
+            (
+                Resettable::Set(anchor),
+                Some(DRepRegistration { deposit, registered_at, valid_until: drep_row.valid_until }),
+            ),
+        ));
+
+        // proposals (Does not generate proposal row on Windows due to stack overflow)
+        #[cfg(not(target_os = "windows"))]
+        let (proposal_iter, proposal_key, proposal_row) = {
+            let proposal_key = any_proposal_id().new_tree(runner).unwrap().current();
+            let proposal_row =
+                amaru_ledger::store::columns::proposals::tests::any_row(10_000_000).new_tree(runner).unwrap().current();
+            (std::iter::once((proposal_key, proposal_row.clone())), proposal_key, proposal_row)
+        };
+
+        #[cfg(target_os = "windows")]
+        let proposal_iter = std::iter::empty();
+
+        let votes_iter = std::iter::empty();
+
+        // cc_members
+        let cc_member_key = any_credential().new_tree(runner).unwrap().current();
+        let mut cc_member_row =
+            amaru_ledger::store::columns::cc_members::tests::any_row().new_tree(runner).unwrap().current();
+
+        // Ensure hot_credential is always Some
+        cc_member_row.status.get_or_insert_with(|| any_credential().new_tree(runner).unwrap().current().into());
+
+        let member_status = cc_member_row.status.unwrap();
+
+        let cc_members_iter = std::iter::once((cc_member_key, (Resettable::Set(member_status), Resettable::Unchanged)));
+
+        let slot = any_slot().new_tree(runner).unwrap().current();
+        let point = Point::Specific(slot, Hash::from([0u8; 32]), BlockHeight::from(u64::from(slot)));
+        let slot_leader = any_hash28().new_tree(runner).unwrap().current();
+
+        {
+            let context = store.create_transaction();
+
+            context.save(
+                &PREPROD_ERA_HISTORY,
+                &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
+                Some(GovernanceActivity::default()),
+                &point,
+                Some(&slot_leader),
+                Columns {
+                    utxo: utxos_iter,
+                    pools: pools_iter,
+                    accounts: accounts_iter,
+                    dreps: drep_iter,
+                    cc_members: cc_members_iter,
+                    proposals: proposal_iter,
+                    votes: votes_iter,
+                },
+                Columns::empty(),
+                std::iter::empty(),
+            )?;
+
+            // A bootstrapped ledger always has a constitution, and an enacted governance update
+            // reads it back to report the guardrails script in force.
+            context.set_constitution(&Constitution {
+                anchor: Anchor {
+                    url: MaxString128::from_str("https://example.com").unwrap(),
+                    content_hash: Hash::from([0u8; 32]),
+                },
+                guardrail_script: None,
+            })?;
+
+            context.commit()?;
+        }
+
+        let stored_account_row = {
+            let context = store.create_transaction();
+            let mut result = None;
+            context.with_accounts(|mut accounts| {
+                result = accounts.find(|(key, _)| *key == account_key).and_then(|(_, row)| *row.borrow());
+            })?;
+            let value =
+                result.ok_or_else(|| StoreError::Internal("Failed to retrieve account after seeding".into()))?;
+            context.commit()?;
+            value
+        };
+
+        Ok(Fixture {
+            account_key,
+            account_row: stored_account_row,
+            txin,
+            output,
+            pool_params,
+            pool_epoch,
+            drep_key,
+            drep_row,
+            #[cfg(not(target_os = "windows"))]
+            proposal_key,
+            #[cfg(not(target_os = "windows"))]
+            proposal_row,
+            cc_member_key,
+            cc_member_row,
+            slot,
+            slot_leader,
+        })
+    }
+
+    pub fn test_read_utxo(store: &impl ReadStore, fixture: &Fixture) {
+        let result = store.utxo(&fixture.txin).expect("failed to read UTXO from store");
+
+        assert_eq!(result, Some(fixture.output.clone()), "UTXO did not match fixture output");
+    }
+
+    pub fn test_read_account(store: &impl ReadStore, fixture: &Fixture) {
+        let stored_account = store.account(&fixture.account_key).expect("failed to read account from store");
+
+        assert!(stored_account.is_some(), "account not found in store for fixture key");
+
+        let stored_account = stored_account.unwrap();
+
+        assert_eq!(stored_account.pool, fixture.account_row.pool, "delegatee mismatch");
+        assert_eq!(stored_account.drep, fixture.account_row.drep, "drep mismatch");
+        assert_eq!(stored_account.rewards, fixture.account_row.rewards, "rewards mismatch");
+        assert_eq!(stored_account.deposit, fixture.account_row.deposit, "deposit mismatch");
+    }
+
+    pub fn test_read_pool(store: &impl ReadStore, fixture: &Fixture) {
+        let pool_id = fixture.pool_params.id;
+        let stored_pool = store.pool(&pool_id).expect("failed to read pool from store");
+
+        assert!(stored_pool.is_some(), "pool not found in store for fixture id");
+
+        let stored_pool = stored_pool.unwrap();
+
+        assert_eq!(stored_pool.current_params, fixture.pool_params, "current pool params mismatch");
+        assert!(stored_pool.pending_certificates.is_empty(), "pending pool certificates mismatch");
+    }
+
+    pub fn test_read_drep(store: &impl ReadStore, fixture: &Fixture) {
+        let stored_drep = store
+            .iter_dreps()
+            .expect("failed to iterate dreps")
+            .find(|(key, _)| key == &fixture.drep_key)
+            .map(|(_, row)| row)
+            .expect("drep not found in store");
+
+        assert_eq!(stored_drep.anchor, fixture.drep_row.anchor, "drep anchor mismatch");
+
+        assert_eq!(stored_drep.deposit, fixture.drep_row.deposit, "drep deposit mismatch");
+
+        assert_eq!(stored_drep.registered_at, fixture.drep_row.registered_at, "drep registration time mismatch");
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    pub fn test_read_proposal(store: &impl Store, fixture: &Fixture) {
+        let stored_proposal = store
+            .iter_proposals()
+            .expect("failed to iterate proposals")
+            .find(|(key, _)| key == &fixture.proposal_key)
+            .map(|(_, row)| row);
+
+        assert!(stored_proposal.is_some(), "proposal not found in store for fixture key");
+
+        let stored_proposal = stored_proposal.unwrap();
+
+        assert_eq!(stored_proposal.proposed_in, fixture.proposal_row.proposed_in, "proposal proposed_in mismatch");
+        assert_eq!(stored_proposal.valid_until, fixture.proposal_row.valid_until, "proposal valid_until mismatch");
+        assert_eq!(stored_proposal.proposal, fixture.proposal_row.proposal, "proposal data mismatch");
+    }
+
+    pub fn test_remove_utxo(store: &impl Store, fixture: &Fixture) -> Result<(), StoreError> {
+        let point = Point::Origin;
+
+        let remove = Columns {
+            utxo: std::iter::once(fixture.txin),
+            pools: std::iter::empty(),
+            accounts: std::iter::empty(),
+            dreps: std::iter::empty(),
+            cc_members: std::iter::empty(),
+            proposals: std::iter::empty(),
+            votes: std::iter::empty(),
+        };
+        let context = store.create_transaction();
+        context.save(
+            &PREPROD_ERA_HISTORY,
+            &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
+            Some(GovernanceActivity::default()),
+            &point,
+            None,
+            Columns::empty(),
+            remove,
+            std::iter::empty(),
+        )?;
+        context.commit()?;
+
+        assert_eq!(store.utxo(&fixture.txin).expect("utxo lookup failed"), None, "utxo was not properly removed");
+
+        Ok(())
+    }
+
+    pub fn test_remove_account(store: &impl Store, fixture: &Fixture) -> Result<(), StoreError> {
+        let point = Point::Origin;
+
+        let remove = Columns {
+            utxo: std::iter::empty(),
+            pools: std::iter::empty(),
+            accounts: std::iter::once(fixture.account_key),
+            dreps: std::iter::empty(),
+            cc_members: std::iter::empty(),
+            proposals: std::iter::empty(),
+            votes: std::iter::empty(),
+        };
+
+        let context = store.create_transaction();
+        context.save(
+            &PREPROD_ERA_HISTORY,
+            &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
+            Some(GovernanceActivity::default()),
+            &point,
+            None,
+            Columns::empty(),
+            remove,
+            std::iter::empty(),
+        )?;
+        context.commit()?;
+
+        assert_eq!(store.account(&fixture.account_key)?, None);
+
+        Ok(())
+    }
+
+    pub fn test_remove_pool(store: &impl Store, fixture: &Fixture) -> Result<(), StoreError> {
+        let point = Point::Origin;
+
+        let remove = Columns {
+            utxo: std::iter::empty(),
+            pools: std::iter::once((fixture.pool_params.id, fixture.pool_epoch)),
+            accounts: std::iter::empty(),
+            dreps: std::iter::empty(),
+            cc_members: std::iter::empty(),
+            proposals: std::iter::empty(),
+            votes: std::iter::empty(),
+        };
+        let context = store.create_transaction();
+        context.save(
+            &PREPROD_ERA_HISTORY,
+            &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
+            Some(GovernanceActivity::default()),
+            &point,
+            None,
+            Columns::empty(),
+            remove,
+            std::iter::empty(),
+        )?;
+        context.commit()?;
+
+        assert_eq!(
+            store.pool(&fixture.pool_params.id)?.expect("Expected pool row").pending_certificates,
+            PoolCertificates::default().with(fixture.pool_epoch),
+            "Expected pool to be scheduled for removal"
+        );
+
+        Ok(())
+    }
+
+    pub fn test_remove_drep(store: &impl Store, fixture: &Fixture) -> Result<(), StoreError> {
+        let point = Point::Origin;
+
+        let drep_registered_at = store
+            .iter_dreps()?
+            .find(|(key, _)| *key == fixture.drep_key)
+            .map(|(_, row)| row.registered_at)
+            .ok_or_else(|| StoreError::Internal("DRep not found before removal".into()))?;
+
+        let remove = Columns {
+            utxo: std::iter::empty(),
+            pools: std::iter::empty(),
+            accounts: std::iter::empty(),
+            dreps: std::iter::once((fixture.drep_key, drep_registered_at)),
+            cc_members: std::iter::empty(),
+            proposals: std::iter::empty(),
+            votes: std::iter::empty(),
+        };
+
+        assert!(store.iter_dreps()?.any(|(key, _)| key == fixture.drep_key), "DRep not present before removal");
+
+        let context = store.create_transaction();
+        context.save(
+            &PREPROD_ERA_HISTORY,
+            &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
+            Some(GovernanceActivity::default()),
+            &point,
+            None,
+            Columns::empty(),
+            remove,
+            std::iter::empty(),
+        )?;
+        context.commit()?;
+
+        let maybe_drep_row = store.iter_dreps()?.find(|(key, _)| *key == fixture.drep_key);
+
+        assert!(maybe_drep_row.is_none(), "DRep row should have been deleted after deregistration");
+
+        Ok(())
+    }
+
+    /// Enacting an `UpdateCommittee` that removes a member drops that cold credential's row, and with
+    /// it the hot-key authorization. Haskell does this by intersecting `csCommitteeCreds` with the
+    /// members of the newly enacted committee, on every epoch transition:
+    ///
+    /// ```haskell
+    /// updateCommitteeState committee (CommitteeState creds) =
+    ///   CommitteeState $ Map.intersection creds members
+    ///   where
+    ///     members = foldMap' committeeMembers committee
+    /// ```
+    ///
+    /// A surviving authorization still satisfies the `VotersDoNotExist` check, which deliberately
+    /// filters on neither the term nor election, so the removed member could keep voting.
+    pub fn test_remove_cc_member_at_epoch_boundary(store: &impl Store, fixture: &Fixture) -> Result<(), StoreError> {
+        let committee =
+            ConstitutionalCommitteeStatus::Trusted { threshold: RationalNumber { numerator: 1, denominator: 2 } };
+
+        let status = fixture.cc_member_row.status.expect("fixture seeds a non empty status");
+        let term = Epoch::from(100);
+
+        let context = store.create_transaction();
+        context.update_constitutional_committee(
+            &committee,
+            &BTreeMap::from([(fixture.cc_member_key, term)]),
+            &BTreeSet::new(),
+        )?;
+        context.commit()?;
+
+        assert_eq!(
+            store.cc_member(&fixture.cc_member_key)?,
+            Some(cc_members::Row { status: Some(status), valid_until: Some(term) }),
+            "an elected member holds both a term and its authorization"
+        );
+
+        let context = store.create_transaction();
+        context.update_constitutional_committee(
+            &committee,
+            &BTreeMap::new(),
+            &BTreeSet::from([fixture.cc_member_key]),
+        )?;
+        context.commit()?;
+
+        assert_eq!(store.cc_member(&fixture.cc_member_key)?, None, "a removed member keeps no authorization");
+
+        Ok(())
+    }
+
+    pub fn test_refund_account(
+        store: &impl Store,
+        fixture: &Fixture,
+        runner: &mut TestRunner,
+    ) -> Result<(), StoreError> {
+        let refund_amount = 100;
+
+        let context = store.create_transaction();
+
+        let mut result = None;
+        context.with_accounts(|mut accounts| {
+            result = accounts
+                .find(|(key, _)| *key == fixture.account_key)
+                .and_then(|(_, row)| row.borrow().as_ref().map(|acc| acc.rewards));
+        })?;
+
+        let rewards_before = result.ok_or_else(|| StoreError::Internal("Missing account before refund".into()))?;
+
+        let unrefunded = context.refund(&fixture.account_key, refund_amount)?;
+        assert_eq!(unrefunded, 0, "Refund to existing account should succeed");
+        context.commit()?;
+
+        let rewards_after = {
+            let context = store.create_transaction();
+            let mut result = None;
+            context.with_accounts(|mut accounts| {
+                result = accounts
+                    .find(|(key, _)| *key == fixture.account_key)
+                    .and_then(|(_, row)| row.borrow().as_ref().map(|acc| acc.rewards));
+            })?;
+            context.commit()?;
+
+            result.ok_or_else(|| StoreError::Internal("Missing account after refund".into()))?
+        };
+
+        assert_eq!(rewards_after, rewards_before + refund_amount, "Rewards should increase by refund amount");
+
+        {
+            let unknown = any_credential().new_tree(runner).unwrap().current();
+            assert_ne!(unknown, fixture.account_key);
+
+            let context = store.create_transaction();
+            let refund_amount = 123;
+            let unrefunded = context.refund(&unknown, refund_amount)?;
+            assert_eq!(unrefunded, refund_amount, "Missing account should return full refund amount");
+            context.commit()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn test_epoch_transition(store: &impl Store) -> Result<(), StoreError> {
+        use amaru_ledger::store::EpochTransitionProgress;
+
+        let context = store.create_transaction();
+
+        let from = None;
+        let to = Some(EpochTransitionProgress::SnapshotTaken);
+
+        let success = context.try_epoch_transition(from, to)?;
+        assert!(success, "Expected epoch transition to succeed when previous state matches");
+
+        let repeat = context.try_epoch_transition(from, to)?;
+        assert!(!repeat, "Expected second transition from outdated state to fail");
+        context.commit()?;
+
+        Ok(())
+    }
+
+    pub fn test_treasury_withdrawal_debits_pots(
+        store: &impl Store,
+        fixture: &Fixture,
+        runner: &mut TestRunner,
+    ) -> Result<(), StoreError> {
+        let withdrawal = 70_000;
+        let initial_treasury = 1_000_000;
+
+        let context = store.create_transaction();
+        context.with_pots(|mut row| row.borrow_mut().treasury = initial_treasury)?;
+        context.commit()?;
+
+        let rewards_before = read_rewards(store, &fixture.account_key)?;
+
+        let context = store.create_transaction();
+        apply_governance_updates(
+            &context,
+            &make_governance_updates(BTreeMap::new(), BTreeMap::from([(fixture.account_key, withdrawal)])),
+        )?;
+        context.commit()?;
+
+        assert_eq!(
+            store.pots()?.treasury,
+            initial_treasury - withdrawal,
+            "an enacted withdrawal must be debited from the treasury"
+        );
+        assert_eq!(
+            read_rewards(store, &fixture.account_key)?,
+            rewards_before + withdrawal,
+            "an enacted withdrawal must be credited to the target account"
+        );
+
+        let unknown = any_credential().new_tree(runner).unwrap().current();
+        assert_ne!(unknown, fixture.account_key);
+
+        let context = store.create_transaction();
+        apply_governance_updates(
+            &context,
+            &make_governance_updates(BTreeMap::new(), BTreeMap::from([(unknown, withdrawal)])),
+        )?;
+        context.commit()?;
+
+        assert_eq!(
+            store.pots()?.treasury,
+            initial_treasury - withdrawal,
+            "a withdrawal to an unregistered account must flow back into the treasury"
+        );
+
+        Ok(())
+    }
+
+    pub fn test_slot_updated(store: &impl Store, fixture: &Fixture) -> Result<(), StoreError> {
+        let issuers: Vec<_> = store.iter_block_issuers()?.collect();
+
+        let found = issuers.iter().any(|(slot, row)| *slot == fixture.slot && row.slot_leader == fixture.slot_leader);
+
+        assert!(found, "expected slot {:?} with issuer {:?} not found", fixture.slot, fixture.slot_leader);
+
+        Ok(())
+    }
+
+    // HELPERS
+
+    fn read_rewards(store: &impl Store, credential: &Credential) -> Result<u64, StoreError> {
+        let context = store.create_transaction();
+        let mut rewards = None;
+        context.with_accounts(|mut accounts| {
+            rewards = accounts
+                .find(|(key, _)| key == credential)
+                .and_then(|(_, row)| row.borrow().as_ref().map(|account| account.rewards));
+        })?;
+        context.commit()?;
+        rewards.ok_or_else(|| StoreError::Internal("missing account".into()))
+    }
+
+    fn make_governance_updates(
+        deposit_refunds: BTreeMap<Credential, Lovelace>,
+        treasury_withdrawals: BTreeMap<Credential, Lovelace>,
+    ) -> GovernanceUpdates {
+        GovernanceUpdates {
+            deposit_refunds,
+            treasury_withdrawals,
+            ..GovernanceUpdates::default(PREPROD_DEFAULT_PROTOCOL_PARAMETERS.clone())
+        }
+    }
+}

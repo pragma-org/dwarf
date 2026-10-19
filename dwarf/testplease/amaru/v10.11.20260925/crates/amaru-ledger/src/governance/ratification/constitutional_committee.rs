@@ -1,0 +1,686 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
+    rc::Rc,
+    sync::LazyLock,
+};
+
+use amaru_kernel::{
+    ConstitutionalCommitteeStatus, ConstitutionalCommitteeUpdate, Credential, Epoch, OrphanProposal, ProposalEnum,
+    Vote, into_safe_ratio,
+    rational_number::{SafeRatio, safe_ratio},
+};
+use amaru_observability::warn;
+use num::Zero;
+
+use crate::store::{ReadStore, StoreError, columns::cc_members};
+
+static ZERO: LazyLock<SafeRatio> = LazyLock::new(SafeRatio::zero);
+
+#[derive(Debug, Clone)]
+pub struct ConstitutionalCommittee {
+    /// Threshold (i.e. ratio of yes over no votes) necessary to reach agreement.
+    threshold: SafeRatio,
+
+    /// Members cold key hashes mapped to their hot key credential, if any and their expiry epoch.
+    members: BTreeMap<Credential, (Option<Credential>, Epoch)>,
+
+    /// Active members for a given ongoing epoch. We memoized the result to avoid re-computing it
+    /// over and over.
+    active_members: RefCell<Option<(Epoch, Rc<BTreeMap<Credential, Credential>>)>>,
+}
+
+impl ConstitutionalCommittee {
+    pub fn new(threshold: SafeRatio, members: BTreeMap<Credential, (Option<Credential>, Epoch)>) -> Self {
+        Self { threshold, members, active_members: RefCell::new(None) }
+    }
+
+    // Restore a constitutional committee from the database.
+    pub fn resolve(
+        db: &impl ReadStore,
+        cc_update: Option<ConstitutionalCommitteeUpdate>,
+    ) -> Result<Option<Self>, StoreError> {
+        match cc_update {
+            Some(ConstitutionalCommitteeUpdate::NoConfidence) => {
+                return Ok(None);
+            }
+            None | Some(ConstitutionalCommitteeUpdate::ChangeMembers { .. }) => {
+                // Handled below; but forcing an exhaustive pattern-match here in case constructors
+                // are ever added.
+            }
+        }
+
+        fn hot_credential_from_row(row: cc_members::Row) -> Option<Credential> {
+            row.status.and_then(|status| Credential::try_from(status).ok())
+        }
+
+        match db.constitutional_committee()? {
+            ConstitutionalCommitteeStatus::NoConfidence => {
+                // Apply an epoch-boundary update if any; the committee is no longer in
+                // no-confidence state.
+                if let Some(ConstitutionalCommitteeUpdate::ChangeMembers { mut added, threshold, .. }) = cc_update {
+                    let mut members: BTreeMap<Credential, (Option<Credential>, Epoch)> = db
+                        .iter_cc_members()?
+                        .filter_map(|(cold_credential, row)| {
+                            if let Some(valid_until) = added.remove(&cold_credential) {
+                                return Some((cold_credential, (hot_credential_from_row(row), valid_until)));
+                            }
+
+                            None
+                        })
+                        .collect();
+
+                    // Remaining members with no hot-delegation.
+                    for (cold_credential, valid_until) in added {
+                        members.insert(cold_credential, (None, valid_until));
+                    }
+
+                    return Ok(Some(Self::new(threshold, members)));
+                }
+
+                Ok(None)
+            }
+
+            ConstitutionalCommitteeStatus::Trusted { threshold } => {
+                // Apply an epoch-boundary update if any; existing members may see their
+                // validity extended, or be removed entirely.
+                if let Some(ConstitutionalCommitteeUpdate::ChangeMembers { removed, mut added, threshold }) = cc_update
+                {
+                    let mut members: BTreeMap<Credential, (Option<Credential>, Epoch)> = db
+                        .iter_cc_members()?
+                        .filter_map(|(cold_credential, row)| {
+                            if let Some(valid_until) = added.remove(&cold_credential) {
+                                return Some((cold_credential, (hot_credential_from_row(row), valid_until)));
+                            }
+
+                            if !removed.contains(&cold_credential) {
+                                return row
+                                    .valid_until
+                                    .map(|valid_until| (cold_credential, (hot_credential_from_row(row), valid_until)));
+                            }
+
+                            None
+                        })
+                        .collect();
+
+                    // Remaining members with no hot-delegation yet.
+                    for (cold_credential, valid_until) in added {
+                        members.insert(cold_credential, (None, valid_until));
+                    }
+
+                    return Ok(Some(Self::new(threshold, members)));
+                }
+
+                let members: BTreeMap<Credential, (Option<Credential>, Epoch)> = db
+                    .iter_cc_members()?
+                    .filter_map(|(cold_credential, row)| {
+                        row.valid_until
+                            .map(|valid_until| (cold_credential, (hot_credential_from_row(row), valid_until)))
+                    })
+                    .collect();
+
+                Ok(Some(Self::new(into_safe_ratio(&threshold), members)))
+            }
+        }
+    }
+
+    /// View the current threshold for that committee.
+    pub fn threshold(&self) -> &SafeRatio {
+        &self.threshold
+    }
+
+    /// Obtain a set of all the hot credentials of known members, even inactive ones. Those are all
+    /// potential voters (although their votes may be invalid).
+    pub fn voters(&self) -> BTreeSet<&Credential> {
+        self.members.values().filter_map(|(hot_credential, _)| hot_credential.as_ref()).collect()
+    }
+
+    /// Add & remove members from a committee, following some constitutional committee update.
+    pub fn update(
+        &mut self,
+        threshold: SafeRatio,
+        added: BTreeMap<Credential, (Option<Credential>, Epoch)>,
+        removed: BTreeSet<&Credential>,
+    ) {
+        self.threshold = threshold;
+
+        // NOTE: members must be removed BEFORE new ones are added. It's possible that
+        // 'added' re-add members that are removed; so we need to land on the same outcome across
+        // all nodes.
+        self.members.retain(|k, _| !removed.contains(k));
+
+        for (cold_cred, (hot_cred, valid_until)) in added.into_iter() {
+            self.members.insert(cold_cred, (hot_cred, valid_until));
+        }
+
+        *self.active_members.borrow_mut() = None;
+    }
+
+    /// Get the subset of cc member that is current active, as per the current epoch. A member is active iif:
+    ///
+    /// - it exists
+    /// - its cold key is delegated to a hot key
+    /// - it hasn't expired yet
+    pub fn active_members(&self, current_epoch: Epoch) -> Rc<BTreeMap<Credential, Credential>> {
+        if let Some((memoized_epoch, active_members)) = self.active_members.borrow().as_ref()
+            && memoized_epoch == &current_epoch
+        {
+            return active_members.clone();
+        }
+
+        let active_members = Rc::new(
+            self.members
+                .iter()
+                .filter_map(|(cold_cred, (hot_cred, valid_until))| {
+                    // tally is always done with an epoch of delay; hence the strict inequality.
+                    if valid_until > &current_epoch { Some((*cold_cred, *hot_cred.as_ref()?)) } else { None }
+                })
+                .collect::<BTreeMap<_, _>>(),
+        );
+
+        *self.active_members.borrow_mut() = Some((current_epoch, active_members.clone()));
+
+        active_members
+    }
+
+    pub fn voting_threshold(
+        &self,
+        current_epoch: Epoch,
+        min_committee_size: u16,
+        proposal: &ProposalEnum,
+    ) -> Option<&SafeRatio> {
+        match proposal {
+            ProposalEnum::Orphan(OrphanProposal::NicePoll) => None,
+
+            ProposalEnum::ConstitutionalCommittee(..) => Some(&ZERO),
+
+            ProposalEnum::ProtocolParameters(..)
+            | ProposalEnum::HardFork(..)
+            | ProposalEnum::Constitution(..)
+            | ProposalEnum::Orphan(OrphanProposal::TreasuryWithdrawal { .. }) => {
+                if self.active_members(current_epoch).len() < (min_committee_size as usize) {
+                    warn!(
+                        ledger::constitutional_committee::IGNORE,
+                        active_members = self.active_members(current_epoch).len(),
+                        min_committee_size,
+                        reason = "committee is below minimum size; ignoring voting threshold entirely"
+                    );
+                    return None;
+                }
+
+                Some(&self.threshold)
+            }
+        }
+    }
+
+    /// Count the ratio of yes votes amongst the active cc members.
+    ///
+    /// - Members that do not vote will count as a default "no" (i.e. increases the denominator);
+    /// - Members that expired are excluded entirely (also from the denominator);
+    /// - Members that have resigned (i.e. no hot keys) are also excluded;
+    pub fn tally(&self, epoch: Epoch, votes: BTreeMap<Credential, &Vote>) -> SafeRatio {
+        let active_members = self.active_members(epoch);
+
+        let hot_credentials = active_members.values().collect::<BTreeSet<_>>();
+
+        // NOTE: do not use 'hot_credential'.len(), as there could be multiple cold credentials
+        // delegated to the same hot credential. But we count cold credentials, not hot ones.
+        let total_active_members = active_members.len() as u64;
+
+        let (yes, no, abstain) = votes.iter().fold((0, 0, 0), |(yes, no, abstain), (hot_cred, vote)| {
+            if hot_credentials.contains(hot_cred) {
+                match vote {
+                    Vote::Yes => (yes + 1, no, abstain),
+                    Vote::No => (yes, no + 1, abstain),
+                    Vote::Abstain => (yes, no, abstain + 1),
+                }
+            } else {
+                (yes, no, abstain)
+            }
+        });
+
+        let span = tracing::Span::current();
+        span.record("votes.committee.yes", yes);
+        span.record("votes.committee.no", no);
+        span.record("votes.committee.abstain", abstain);
+
+        if abstain >= total_active_members {
+            SafeRatio::zero()
+        } else {
+            safe_ratio(yes, total_active_members - abstain)
+        }
+    }
+}
+
+// Tests
+// ----------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        rc::Rc,
+    };
+
+    use amaru_kernel::{
+        Credential, Epoch, NULL_HASH28, SafeRatio, VOTE_NO, VOTE_YES, Vote, any_credential, any_rational_number,
+        any_vote_ref, into_safe_ratio, utils::tests::assert_strategy_sometimes_fails,
+    };
+    use num::{One, Zero};
+    use proptest::{collection, prelude::*, sample, test_runner::RngSeed};
+
+    use super::ConstitutionalCommittee;
+
+    const MIN_ARBITRARY_EPOCH: u64 = 10;
+    const MAX_COMMITTEE_SIZE: usize = 10;
+
+    #[cfg(test)]
+    mod constitutional_committee_resolve {
+        use std::collections::BTreeMap;
+
+        use amaru_kernel::{
+            ConstitutionalCommitteeMemberStatus, ConstitutionalCommitteeStatus, ConstitutionalCommitteeUpdate,
+            Credential, Epoch, RationalNumber, SafeRatio, any_credential, rational_number::safe_ratio,
+            utils::tests::run_strategy_with_seed,
+        };
+        use test_case::test_case;
+
+        use super::super::ConstitutionalCommittee;
+        use crate::store::{ReadStore, StoreError, columns::cc_members};
+
+        type Member = (Credential, Option<Credential>, Option<u64>);
+
+        struct Mock {
+            committee: ConstitutionalCommitteeStatus,
+            members: Vec<(Credential, cc_members::Row)>,
+        }
+
+        impl ReadStore for Mock {
+            fn constitutional_committee(&self) -> Result<ConstitutionalCommitteeStatus, StoreError> {
+                Ok(self.committee.clone())
+            }
+
+            fn iter_cc_members(&self) -> Result<impl Iterator<Item = (Credential, cc_members::Row)>, StoreError> {
+                Ok(self.members.iter().copied())
+            }
+        }
+
+        #[derive(Debug, PartialEq, Eq)]
+        enum ExpectedCommittee {
+            None,
+            Committee { threshold: SafeRatio, members: BTreeMap<Credential, (Option<Credential>, Epoch)> },
+        }
+
+        fn credential(seed: u64) -> Credential {
+            run_strategy_with_seed(seed, any_credential())
+        }
+
+        fn no_confidence() -> ConstitutionalCommitteeStatus {
+            ConstitutionalCommitteeStatus::NoConfidence
+        }
+
+        fn trusted(numerator: u64, denominator: u64) -> ConstitutionalCommitteeStatus {
+            ConstitutionalCommitteeStatus::Trusted { threshold: RationalNumber { numerator, denominator } }
+        }
+
+        fn change_members(
+            removed: &[Credential],
+            added: &[(Credential, u64)],
+            threshold: SafeRatio,
+        ) -> ConstitutionalCommitteeUpdate {
+            ConstitutionalCommitteeUpdate::ChangeMembers {
+                removed: removed.iter().copied().collect(),
+                added: added.iter().copied().map(|(cold, epoch)| (cold, Epoch::from(epoch))).collect(),
+                threshold,
+            }
+        }
+
+        fn stored_member((cold, hot, valid_until): Member) -> (Credential, cc_members::Row) {
+            (
+                cold,
+                cc_members::Row {
+                    valid_until: valid_until.map(Epoch::from),
+                    status: hot.map(ConstitutionalCommitteeMemberStatus::from),
+                },
+            )
+        }
+
+        #[test_case(
+            no_confidence(),
+            vec![
+                (credential(1), Some(credential(10)), Some(99)),
+            ],
+            None
+            => ExpectedCommittee::None;
+            "no confidence without an update"
+        )]
+        #[test_case(
+            trusted(2, 3),
+            vec![
+                (credential(1), Some(credential(10)), Some(99)),
+            ],
+            Some(ConstitutionalCommitteeUpdate::NoConfidence)
+            => ExpectedCommittee::None;
+            "no-confidence update overrides a trusted committee"
+        )]
+        #[test_case(
+            no_confidence(),
+            vec![
+                (credential(1), Some(credential(10)),     None),
+                (credential(2), Some(credential(20)), Some(99)),
+                (credential(3),                 None, Some(99)),
+            ],
+            Some(change_members(
+                &[],
+                &[(credential(1), 100), (credential(3), 300), (credential(4), 400)],
+                safe_ratio(2, 3)
+            ))
+            => ExpectedCommittee::Committee {
+                threshold: safe_ratio(2, 3),
+                members: BTreeMap::from([
+                    (credential(1), (Some(credential(10)), Epoch::from(100))),
+                    (credential(3), (                None, Epoch::from(300))),
+                    (credential(4), (                None, Epoch::from(400))),
+                ]),
+            };
+            "an update restores a committee from no confidence"
+        )]
+        #[test_case(
+            trusted(2, 3),
+            vec![
+                (credential(1), Some(credential(10)), Some(99)),
+                (credential(2), Some(credential(20)), Some(99)),
+                (credential(3), Some(credential(30)),     None),
+                (credential(4),                 None, Some(99)),
+            ],
+            None
+            => ExpectedCommittee::Committee {
+                threshold: safe_ratio(2, 3),
+                members: BTreeMap::from([
+                    (credential(1), (Some(credential(10)), Epoch::from(99))),
+                    (credential(2), (Some(credential(20)), Epoch::from(99))),
+                    (credential(4), (                None, Epoch::from(99))),
+                ]),
+            };
+            "trusted committee keeps only seated members"
+        )]
+        #[test_case(
+            trusted(1, 2),
+            vec![
+                (credential(1), Some(credential(10)), Some(99)),
+                (credential(2), Some(credential(20)), Some(99)),
+                (credential(3), Some(credential(30)),     None),
+            ],
+            Some(change_members(
+                &[credential(1), credential(2)],
+                &[(credential(3), 300), (credential(4), 400)],
+                safe_ratio(3, 4)
+            ))
+            => ExpectedCommittee::Committee {
+                threshold: safe_ratio(3, 4),
+                members: BTreeMap::from([
+                    (credential(3), (Some(credential(30)), Epoch::from(300))),
+                    (credential(4), (                None, Epoch::from(400))),
+                ]),
+            };
+            "update removes, re-adds, and introduces committee members"
+        )]
+        fn resolve(
+            committee: ConstitutionalCommitteeStatus,
+            members: Vec<Member>,
+            update: Option<ConstitutionalCommitteeUpdate>,
+        ) -> ExpectedCommittee {
+            let db = Mock { committee, members: members.into_iter().map(stored_member).collect() };
+            match ConstitutionalCommittee::resolve(&db, update).unwrap() {
+                None => ExpectedCommittee::None,
+                Some(committee) => {
+                    ExpectedCommittee::Committee { threshold: committee.threshold, members: committee.members }
+                }
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_updating_members_invalidate_active((epoch, _, committee) in any_tally()) {
+            let mut committee = (*committee).clone();
+
+            let active_members = committee.active_members(epoch).clone();
+
+            // If no active members, let's add one.
+            if active_members.is_empty() {
+                let cold_credential = Credential::KeyHash(NULL_HASH28);
+                let hot_credential = cold_credential;
+                committee.update(
+                    committee.threshold().clone(),
+                    BTreeMap::from([
+                        (cold_credential, (Some(hot_credential), epoch + 1))
+                    ]),
+                    BTreeSet::new(),
+
+                );
+            // If some active members, let's remove one.
+            } else {
+                let any_active_member = active_members
+                    .keys()
+                    // Pick a somewhat arbitrary member.
+                    .nth(MAX_COMMITTEE_SIZE % active_members.len())
+                    .unwrap();
+
+                committee.update(
+                    committee.threshold().clone(),
+                    BTreeMap::new(),
+                    BTreeSet::from([any_active_member]),
+                );
+            }
+
+            let new_active_members = committee.active_members(epoch);
+
+            prop_assert!(active_members != new_active_members);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_update_remove_then_add((epoch, _, committee) in any_tally()) {
+            let mut committee = (*committee).clone();
+
+            let active_members = committee.active_members(epoch);
+
+            if !active_members.is_empty() {
+                let any_active_member = active_members
+                    .keys()
+                    // Pick a somewhat arbitrary member.
+                    .nth(MAX_COMMITTEE_SIZE % active_members.len())
+                    .unwrap();
+
+                let any_member_state = (None, Epoch::from(999));
+
+                committee.update(
+                    committee.threshold().clone(),
+                    BTreeMap::from([(
+                        *any_active_member,
+                        any_member_state,
+                    )]),
+                    BTreeSet::from([any_active_member]),
+                );
+
+
+                prop_assert_eq!(
+                    committee.members.get(any_active_member),
+                    Some(&any_member_state),
+                );
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_tally_is_never_greater_than_1((epoch, votes, committee) in any_tally()) {
+            let result = committee.tally(
+                epoch,
+                votes,
+            );
+            prop_assert!(result <= SafeRatio::one());
+        }
+    }
+
+    #[test]
+    fn prop_tally_is_sometimes_greater_than_0() {
+        assert_strategy_sometimes_fails(
+            any_tally(),
+            ProptestConfig { rng_seed: RngSeed::Fixed(42), ..ProptestConfig::default() },
+            |(epoch, votes, committee)| {
+                let result = committee.tally(epoch, votes);
+                prop_assert!(result == SafeRatio::zero());
+                Ok(())
+            },
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn prop_tally_changing_votes_to_yes_increases_result((epoch, votes, committee) in any_tally()) {
+            let result_before = committee.tally(
+                epoch,
+                votes.clone(),
+            );
+
+            let active_members = committee.active_members(epoch);
+            let active_voters = active_members.values().collect::<BTreeSet<_>>();
+            let mut some_voted_no = false;
+
+            let votes = votes.into_iter().map(|(k, v)| {
+                if active_voters.contains(&k) && v == &VOTE_NO {
+                    some_voted_no = true;
+                }
+                (k, &VOTE_YES)
+            }).collect();
+
+            let result_after = committee.tally(
+                epoch,
+                votes,
+            );
+
+            prop_assert!(
+                result_before < result_after || !some_voted_no,
+                "before = {result_before:?}\nafter =  {result_after:?}",
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_tally_changing_votes_to_no_decreases_result((epoch, votes, committee) in any_tally()) {
+            let result_before = committee.tally(
+                epoch,
+                votes.clone(),
+            );
+
+            let active_members = committee.active_members(epoch);
+            let active_voters = active_members.values().collect::<BTreeSet<_>>();
+            let mut some_voted_yes = false;
+
+            let votes = votes.into_iter().map(|(k, v)| {
+                if active_voters.contains(&k) && v == &VOTE_YES {
+                    some_voted_yes = true;
+                }
+                (k, &VOTE_NO)
+            }).collect();
+
+            let result_after = committee.tally(
+                epoch,
+                votes,
+            );
+
+            prop_assert!(
+                result_before > result_after || !some_voted_yes,
+                "before = {result_before:?}\nafter =  {result_after:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn prop_tally_sometimes_see_inactive_members() {
+        assert_strategy_sometimes_fails(
+            any_tally(),
+            ProptestConfig { rng_seed: RngSeed::Fixed(42), ..ProptestConfig::default() },
+            |(epoch, _, committee)| {
+                let active_members = committee.active_members(epoch);
+                prop_assert_eq!(active_members.values().collect::<BTreeSet<_>>(), committee.voters());
+                Ok(())
+            },
+        );
+    }
+    pub fn any_tally()
+    -> impl Strategy<Value = (Epoch, BTreeMap<Credential, &'static Vote>, Rc<ConstitutionalCommittee>)> {
+        any_constitutional_committee().prop_flat_map(|committee| {
+            (
+                // We fix the epoch arbitrarily, but in knowledge of 'any_epoch'; so that
+                // most cc are active, but some may be expired.
+                Just(Epoch::from(MIN_ARBITRARY_EPOCH + 1)),
+                any_votes(&committee),
+                Just(Rc::new(committee)),
+            )
+        })
+    }
+
+    // A not-so-arbitrary generator, where epochs are *interesting* (i.e. some generated members
+    // may be active, some may not).
+    prop_compose! {
+        fn any_epoch()(epoch in MIN_ARBITRARY_EPOCH..MIN_ARBITRARY_EPOCH + 3) -> Epoch {
+            Epoch::from(epoch)
+        }
+    }
+
+    prop_compose! {
+        pub fn any_constitutional_committee()(
+            threshold in any_rational_number(),
+            members in collection::btree_map(
+                any_credential(),
+                (
+                    prop_oneof![3 => any_credential().prop_map(Some), 1 => Just(None)],
+                    any_epoch()
+                ),
+                0..MAX_COMMITTEE_SIZE,
+            ),
+        ) -> ConstitutionalCommittee {
+            ConstitutionalCommittee::new(into_safe_ratio(&threshold), members)
+        }
+    }
+
+    pub fn any_votes(
+        committee: &ConstitutionalCommittee,
+    ) -> impl Strategy<Value = BTreeMap<Credential, &'static Vote>> + use<> {
+        let potential_voters = committee.voters().into_iter().cloned().collect::<Vec<_>>();
+
+        let upper_bound = potential_voters.len();
+
+        let actual_voters = if upper_bound <= 1 {
+            prop_oneof![Just(potential_voters), Just(Vec::new()),].boxed()
+        } else {
+            sample::subsequence(potential_voters, 0..upper_bound).boxed()
+        };
+
+        actual_voters
+            .prop_flat_map(|voters| {
+                collection::vec(any_vote_ref(), voters.len())
+                    .prop_map(move |votes| voters.clone().into_iter().zip(votes))
+            })
+            .prop_map(|kvs| kvs.into_iter().collect())
+    }
+}

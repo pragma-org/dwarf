@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./scripts/render-nightly-downloads-page \
+    --version <version> \
+    [--template <path>] \
+    [--output <path>] \
+    [--latest-release-tag <tag>] \
+    [--latest-release-url <url>] \
+    [--latest-release-checksums-url <url>] \
+    [--artifact <path>]
+EOF
+}
+
+version=""
+template=".github/nightly-downloads.template.html"
+output="dist/index.html"
+latest_release_tag=""
+latest_release_url=""
+latest_release_checksums_url=""
+artifacts=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version)
+      version="${2:?missing value for --version}"
+      shift 2
+      ;;
+    --template)
+      template="${2:?missing value for --template}"
+      shift 2
+      ;;
+    --output)
+      output="${2:?missing value for --output}"
+      shift 2
+      ;;
+    --latest-release-tag)
+      latest_release_tag="${2:?missing value for --latest-release-tag}"
+      shift 2
+      ;;
+    --latest-release-url)
+      latest_release_url="${2:?missing value for --latest-release-url}"
+      shift 2
+      ;;
+    --latest-release-checksums-url)
+      latest_release_checksums_url="${2:?missing value for --latest-release-checksums-url}"
+      shift 2
+      ;;
+    --artifact)
+      artifacts+=("${2:?missing value for --artifact}")
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$version" ]]; then
+  usage >&2
+  exit 1
+fi
+
+if [[ ! -f "$template" ]]; then
+  echo "template not found: $template" >&2
+  exit 1
+fi
+
+if [[ ${#artifacts[@]} -eq 0 ]]; then
+  artifacts=(
+    "downloads/linux-aarch64.tar.gz"
+    "downloads/linux-x86_64.tar.gz"
+    "downloads/linux-aarch64.deb"
+    "downloads/linux-x86_64.deb"
+    "downloads/linux-aarch64.rpm"
+    "downloads/linux-x86_64.rpm"
+    "downloads/macos-aarch64.tar.gz"
+    "downloads/windows-x86_64.zip"
+    "downloads/windows-x86_64.msi"
+  )
+fi
+
+mkdir -p "$(dirname "$output")"
+
+artifacts_list_file="$(mktemp)"
+trap 'rm -f "$artifacts_list_file"' EXIT
+printf '%s\n' "${artifacts[@]}" > "$artifacts_list_file"
+
+PAGE_VERSION="$version" \
+LATEST_RELEASE_TAG="$latest_release_tag" \
+LATEST_RELEASE_URL="$latest_release_url" \
+LATEST_RELEASE_CHECKSUMS_URL="$latest_release_checksums_url" \
+TEMPLATE_PATH="$template" \
+OUTPUT_PATH="$output" \
+ARTIFACTS_PATH="$artifacts_list_file" \
+ruby <<'RUBY'
+def artifact_metadata(path)
+  name = File.basename(path)
+  match = name.match(/(?:.*-)?(linux|macos|windows)-([A-Za-z0-9_]+)\.(tar\.gz|deb|rpm|zip|msi)\z/)
+  return nil unless match
+
+  platform, arch, extension = match.captures
+
+  type =
+    case extension
+    when "tar.gz", "zip"
+      "Pre-compiled executable"
+    when "deb"
+      "Debian package"
+    when "rpm"
+      "RPM package"
+    when "msi"
+      "MSI installer"
+    end
+
+  return nil unless type
+
+  {
+    platform: platform,
+    arch: arch,
+    extension: ".#{extension}",
+    type: type,
+    href: "./downloads/#{name}"
+  }
+end
+
+def release_section(tag, url, checksums_url)
+  return "" if tag.empty? || url.empty?
+
+  checksums = if checksums_url.empty?
+    ""
+  else
+    %(<span class="release-separator">&bull;</span><a href="#{checksums_url}">checksum manifest</a>)
+  end
+
+  <<~HTML.chomp
+      <section class="section">
+        <h2>Latest Release</h2>
+        <div class="flex-wrap">
+          <a href="#{url}"><strong>#{tag}</strong></a>
+          #{checksums}
+        </div>
+      </section>
+  HTML
+end
+
+def rows_for(platform, artifacts)
+  type_order = {
+    "Pre-compiled executable" => 0,
+    "Debian package" => 1,
+    "RPM package" => 2,
+    "MSI installer" => 3
+  }
+  arch_order = {
+    "aarch64" => 0,
+    "x86_64" => 1
+  }
+
+  grouped = artifacts
+    .select { |artifact| artifact[:platform] == platform }
+    .group_by { |artifact| [artifact[:type], artifact[:extension]] }
+
+  grouped
+    .sort_by { |(type, _extension), _entries| type_order.fetch(type, 99) }
+    .map do |(type, extension), entries|
+      links = entries
+        .sort_by { |entry| [arch_order.fetch(entry[:arch], 99), entry[:arch]] }
+        .map { |entry| %(<a href="#{entry[:href]}">#{entry[:arch]}</a>) }
+        .join(" | ")
+
+      <<~HTML.chomp
+              <tr>
+                <td>#{type}</td>
+                <td><code>#{extension}</code></td>
+                <td>#{links}</td>
+              </tr>
+      HTML
+    end
+    .join("\n")
+end
+
+template = File.read(ENV.fetch("TEMPLATE_PATH"))
+artifacts = File.readlines(ENV.fetch("ARTIFACTS_PATH"), chomp: true).map { |line| artifact_metadata(line) }.compact
+
+rendered = template
+  .gsub("__VERSION__", ENV.fetch("PAGE_VERSION"))
+  .gsub("__LATEST_RELEASE_SECTION__", release_section(
+    ENV.fetch("LATEST_RELEASE_TAG"),
+    ENV.fetch("LATEST_RELEASE_URL"),
+    ENV.fetch("LATEST_RELEASE_CHECKSUMS_URL")
+  ))
+  .gsub("__LINUX_ROWS__", rows_for("linux", artifacts))
+  .gsub("__MACOS_ROWS__", rows_for("macos", artifacts))
+  .gsub("__WINDOWS_ROWS__", rows_for("windows", artifacts))
+
+File.write(ENV.fetch("OUTPUT_PATH"), rendered)
+RUBY
+
+printf 'Rendered nightly downloads page to %s\n' "$(cd "$(dirname "$output")" && pwd)/$(basename "$output")"

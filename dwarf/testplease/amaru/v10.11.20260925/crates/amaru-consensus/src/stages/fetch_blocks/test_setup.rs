@@ -1,0 +1,302 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::{sync::Arc, time::Duration};
+
+use amaru_kernel::{
+    BlockHeight, EraHistory, Header, HeaderHash, Peer, Point, RawBlock,
+    cardano::network_block::{EncodedTestBlock, make_network_block},
+};
+use amaru_ouroboros_traits::{
+    BaseReadChainStore, MissingBlocks, StoreError, WriteChainStore, in_memory_chain_store::InMemoryChainStore,
+};
+use amaru_protocols::store_effects::{
+    AncestorsBetweenEffect, FindMissingBlocksEffect, GetAnchorHashEffect, GetChildrenEffect, HasBlockEffect,
+    LoadHeaderEffect, LoadHeaderWithValidityEffect, LoadPointEffect, ResourceHeaderStore, StoreBlockEffect,
+    UnvalidatedAncestorHashesEffect,
+};
+use amaru_pure_stage::{
+    DeserializerGuards, Effect, Instant, Name, ScheduleId, ScheduleIds, StageGraph, StageRef,
+    simulation::SimulationRunning, trace_buffer::TraceEntry,
+};
+use tokio::runtime::Runtime;
+
+use super::*;
+use crate::stages::{
+    block_source::BlockSourceMsg,
+    select_chain::SelectChainMsg,
+    test_utils::{Logs, run_simulation},
+};
+
+pub fn test_peer() -> Peer {
+    Peer::for_test(3009)
+}
+
+pub fn make_block_header(block_number: u64, slot: u64, parent: Option<HeaderHash>) -> Header {
+    EncodedTestBlock::from_seed(&amaru_kernel::make_header(block_number, slot, parent), &EraHistory::default()).header
+}
+
+/// Simple header chain for fetch_blocks tests: h0 (genesis) -> h1 -> h2.
+#[derive(Clone)]
+pub struct HeaderChain {
+    pub h0: Header,
+    pub h1: Header,
+    pub h2: Header,
+}
+
+impl HeaderChain {
+    pub fn new() -> Self {
+        let h0 = make_block_header(1, 1, None);
+        let h1 = make_block_header(2, 2, Some(h0.hash()));
+        let h2 = make_block_header(3, 3, Some(h1.hash()));
+        Self { h0, h1, h2 }
+    }
+}
+
+impl Default for HeaderChain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Bundles state, runtime, store, and refs for fetch_blocks tests.
+pub struct TestPrep {
+    pub state: FetchBlocks,
+    pub rt: Runtime,
+    pub cleanup_replies: StageRef<Blocks>,
+    pub headers: HeaderChain,
+    pub store: Arc<InMemoryChainStore>,
+}
+
+impl TestPrep {
+    pub fn store_headers(&self, headers: &[&Header]) {
+        for h in headers {
+            self.store.store_header(h).unwrap();
+        }
+    }
+
+    pub fn store_block(&self, header: &Header) {
+        let block = EncodedTestBlock::from_seed(header, &EraHistory::default());
+        self.store.store_block(&block.header.hash(), &block.raw).unwrap();
+    }
+
+    pub fn raw_block(header: &Header) -> RawBlock {
+        EncodedTestBlock::from_seed(header, &EraHistory::default()).raw
+    }
+
+    pub fn network_block(header: &Header) -> NetworkBlock {
+        make_network_block(header, &EraHistory::default())
+    }
+
+    pub fn set_anchor(&self, hash: HeaderHash) {
+        self.store.set_anchor_point(&self.store.load_point(&hash).unwrap_or(Point::Origin)).unwrap();
+    }
+
+    pub fn set_validity(&self, hash: HeaderHash, valid: bool) {
+        self.store.set_block_valid(&hash, valid).unwrap();
+    }
+
+    pub fn schedule_at(&self, duration: Duration) -> ScheduleId {
+        ScheduleIds::default().next_at(Instant::at_offset(duration, Duration::ZERO))
+    }
+
+    pub fn state_with_request(&self, missing: MissingBlocks, req_id: u64, timeout: ScheduleId) -> FetchBlocks {
+        FetchBlocks { req_id, missing: Some(missing), timeout: Some(timeout), ..self.state.clone() }
+    }
+
+    pub fn state_with_block_height(&self, block_height: u64) -> FetchBlocks {
+        FetchBlocks { block_height: BlockHeight::from(block_height), ..self.state.clone() }
+    }
+}
+
+pub fn register_guards() -> DeserializerGuards {
+    vec![
+        amaru_pure_stage::register_data_deserializer::<FetchBlocks>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Cleanup>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<FetchBlocksMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<SelectChainMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<amaru_kernel::Peer>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<amaru_kernel::cardano::network_block::NetworkBlock>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<DownloadedBlock>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderWithValidityEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<HasBlockEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetChildrenEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadPointEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<StoreBlockEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<FindMissingBlocksEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<UnvalidatedAncestorHashesEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<AncestorsBetweenEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<crate::performance::RecordBlocksRequestedEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<crate::performance::RecordBlockDeliveryEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<crate::performance::RecordFetchFailureEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<crate::performance::SelectPeersForFetchEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<crate::performance::FetchPeerSet>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(Vec<HeaderHash>, bool)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Option<Vec<amaru_kernel::Point>>>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Result<Option<MissingBlocks>, StoreError>>().boxed(),
+    ]
+}
+
+/// Creates test prep with mocked cleanup_replies (named dummy StageRef).
+pub fn test_prep() -> TestPrep {
+    let downstream = StageRef::named_for_tests("downstream");
+    let upstream = StageRef::named_for_tests("upstream");
+    let manager = StageRef::named_for_tests("manager");
+    let block_source = StageRef::named_for_tests("block_source");
+    let peer_selection = StageRef::named_for_tests("peer_selection");
+    let cleanup_replies = StageRef::named_for_tests("cleanup_replies");
+
+    let state =
+        FetchBlocks::for_tests(downstream, upstream, manager, block_source, peer_selection, cleanup_replies.clone());
+
+    TestPrep {
+        state,
+        rt: crate::stages::test_utils::test_runtime(),
+        cleanup_replies,
+        headers: HeaderChain::new(),
+        store: Arc::new(InMemoryChainStore::new()),
+    }
+}
+
+pub fn setup(prep: &TestPrep, msg: FetchBlocksMsg) -> (SimulationRunning, DeserializerGuards, Logs) {
+    setup_with_overrides(prep, [msg], |_| {})
+}
+
+pub fn setup_preload(
+    prep: &TestPrep,
+    messages: impl IntoIterator<Item = FetchBlocksMsg>,
+) -> (SimulationRunning, DeserializerGuards, Logs) {
+    setup_with_overrides(prep, messages, |_| {})
+}
+
+pub fn setup_with_overrides(
+    prep: &TestPrep,
+    messages: impl IntoIterator<Item = FetchBlocksMsg>,
+    overrides: impl FnOnce(&mut SimulationRunning),
+) -> (SimulationRunning, DeserializerGuards, Logs) {
+    let guards = register_guards();
+
+    run_simulation(
+        prep.rt.handle(),
+        guards,
+        |mut network| {
+            let fb = network.stage("fb", stage);
+            let fb = network.wire_up(fb, prep.state.clone());
+            network.preload(&fb, messages).unwrap();
+            network
+        },
+        |resources| {
+            resources.put::<ResourceHeaderStore>(prep.store.clone());
+            resources.put::<crate::performance::ResourcePerformance>(std::sync::Arc::new(
+                crate::performance::Performance::new(),
+            ));
+        },
+        overrides,
+    )
+}
+
+pub fn te_find_missing_blocks(at_stage: &str, start: HeaderHash, limit: usize) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(at_stage, Box::new(FindMissingBlocksEffect::new(start, limit))))
+}
+
+pub fn te_has_block(at_stage: &str, hash: HeaderHash) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(at_stage, Box::new(HasBlockEffect::new(hash))))
+}
+
+pub fn te_ancestors_between(at_stage: &str, from: amaru_kernel::Point, to: HeaderHash) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(at_stage, Box::new(AncestorsBetweenEffect::new(from, to))))
+}
+
+pub fn te_load_header(at_stage: &str, hash: HeaderHash, with_validity: bool) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(
+        at_stage,
+        if with_validity {
+            Box::new(LoadHeaderWithValidityEffect::new(hash))
+        } else {
+            Box::new(LoadHeaderEffect::new(hash))
+        },
+    ))
+}
+
+pub fn te_store_block(at_stage: &str, hash: HeaderHash, block: amaru_kernel::RawBlock) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(at_stage, Box::new(StoreBlockEffect::new(&hash, block))))
+}
+
+pub fn te_schedule(
+    at_stage: impl AsRef<str>,
+    msg: impl amaru_pure_stage::SendData,
+    schedule_id: ScheduleId,
+) -> TraceEntry {
+    TraceEntry::suspend(Effect::Schedule {
+        at_stage: Name::from(at_stage.as_ref()),
+        msg: Box::new(msg),
+        id: schedule_id,
+    })
+}
+
+pub fn te_cancel_schedule(at_stage: impl AsRef<str>, schedule_id: ScheduleId) -> TraceEntry {
+    TraceEntry::suspend(Effect::CancelSchedule { at_stage: Name::from(at_stage.as_ref()), id: schedule_id })
+}
+
+pub fn te_clock(instant: Instant) -> TraceEntry {
+    TraceEntry::Clock(instant)
+}
+
+pub fn te_record_blocks_requested(at_stage: &str, hashes: Vec<HeaderHash>, requested_at: Instant) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(
+        at_stage,
+        Box::new(crate::performance::Performance::record_blocks_requested(hashes, requested_at)),
+    ))
+}
+
+pub fn te_select_peers_for_fetch(at_stage: &str, need: Vec<HeaderHash>, max_peers: usize, now: Instant) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(
+        at_stage,
+        Box::new(crate::performance::Performance::select_peers_for_fetch(crate::performance::SelectPeersParams {
+            need,
+            max_peers,
+            now,
+        })),
+    ))
+}
+
+#[expect(clippy::too_many_arguments)]
+pub fn te_record_block_delivery(
+    at_stage: &str,
+    peer: Peer,
+    hash: HeaderHash,
+    height: BlockHeight,
+    parent: Option<HeaderHash>,
+    at: Instant,
+    response: Duration,
+    bytes: u64,
+) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(
+        at_stage,
+        Box::new(crate::performance::Performance::record_block_delivery(
+            peer, hash, height, parent, at, response, bytes,
+        )),
+    ))
+}
+
+pub fn te_record_fetch_failure(at_stage: &str, peers: Vec<Peer>, at: Instant) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(
+        at_stage,
+        Box::new(crate::performance::Performance::record_fetch_failure(peers, at)),
+    ))
+}

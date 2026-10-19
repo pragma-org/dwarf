@@ -1,0 +1,235 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#[cfg(all(not(target_family = "wasm"), not(target_arch = "riscv32")))]
+const _: () = amaru_deps::AMARU_DEPS_USED;
+
+pub use decode::*;
+use minicbor::{self as cbor, data::Tag};
+mod decode;
+
+mod encode;
+pub use encode::*;
+
+/// The IANA Tag 258: <https://github.com/input-output-hk/cbor-sets-spec/blob/master/CBOR_SETS.md>
+pub static TAG_SET_258: Tag = Tag::new(258);
+
+/// The IANA Tag 259: <https://github.com/shanewholloway/js-cbor-codec/blob/master/docs/CBOR-259-spec--explicit-maps.md>
+pub static TAG_MAP_259: Tag = Tag::new(259);
+
+/// Encode any serialisable value `T` into bytes.
+pub fn to_cbor<T: cbor::Encode<()>>(value: &T) -> Vec<u8> {
+    to_cbor_with(value, &mut ())
+}
+
+/// Encode any serialisable value `T` into bytes.
+pub fn to_cbor_with<C, T: cbor::Encode<C>>(value: &T, ctx: &mut C) -> Vec<u8> {
+    cbor::to_vec_with(value, ctx).unwrap_or_else(|e| unreachable!("serialization in vector should not fail: {e}"))
+}
+
+/// Decode raw bytes into a structured type `T`, assuming no context.
+pub fn from_cbor<T: for<'d> cbor::Decode<'d, ()>>(bytes: &[u8]) -> Option<T> {
+    cbor::decode(bytes).ok()
+}
+
+/// Decode a CBOR input, ensuring that there are no bytes leftovers once decoded. This is handy to
+/// test standalone decoders and ensures that they entirely consume their inputs.
+pub fn from_cbor_no_leftovers<T: for<'d> cbor::Decode<'d, ()>>(bytes: &[u8]) -> Result<T, cbor::decode::Error> {
+    cbor::decode(bytes).map(|NoLeftovers(inner)| inner)
+}
+
+/// Decode a CBOR input, ensuring that there are no bytes leftovers once decoded. This is handy to
+/// test standalone decoders and ensures that they entirely consume their inputs.
+pub fn from_cbor_no_leftovers_with<C, T: for<'d> cbor::Decode<'d, C>>(
+    bytes: &[u8],
+    ctx: &mut C,
+) -> Result<T, cbor::decode::Error> {
+    cbor::decode_with(bytes, ctx).map(|NoLeftovers(inner)| inner)
+}
+
+/// Decode a tagged value, expecting the given tag. For a lenient version, see allow_tag.
+pub fn expect_tag(d: &mut cbor::Decoder<'_>, expected: impl Into<Tag>) -> Result<(), cbor::decode::Error> {
+    let position = d.position();
+    let tag: Tag = d.tag()?;
+    let expected: Tag = expected.into();
+
+    if tag != expected {
+        return Err(
+            cbor::decode::Error::message(format!("invalid CBOR tag: got {tag}, expected {expected}")).at(position)
+        );
+    };
+
+    Ok(())
+}
+
+pub fn allow_tag(d: &mut cbor::Decoder<'_>, expected: Tag) -> Result<(), cbor::decode::Error> {
+    if d.datatype()? == cbor::data::Type::Tag {
+        let position = d.position();
+        let tag = d.tag()?;
+        if tag != expected {
+            return Err(
+                cbor::decode::Error::message(format!("invalid CBOR tag: got {tag}, expected {expected}")).at(position)
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[repr(transparent)]
+struct NoLeftovers<A>(A);
+
+impl<'a, C, A: cbor::Decode<'a, C>> cbor::decode::Decode<'a, C> for NoLeftovers<A> {
+    fn decode(d: &mut cbor::Decoder<'a>, ctx: &mut C) -> Result<Self, cbor::decode::Error> {
+        let inner = d.decode_with(ctx)?;
+
+        if !d.datatype().is_err_and(|e| e.is_end_of_input()) {
+            return Err(cbor::decode::Error::message(format!(
+                "leftovers bytes after decoding after position {}",
+                d.position()
+            )));
+        }
+
+        Ok(NoLeftovers(inner))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use foo::Foo;
+
+    use crate::{cbor, from_cbor, from_cbor_no_leftovers, to_cbor};
+
+    #[test]
+    fn from_cbor_no_leftovers_catches_trailing_breaks() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct TestCase<A>(A);
+
+        // Incomplete decoder that ignores the trailing break caracter.
+        impl<'d, C> cbor::decode::Decode<'d, C> for TestCase<Foo> {
+            fn decode(d: &mut cbor::Decoder<'d>, ctx: &mut C) -> Result<Self, cbor::decode::Error> {
+                d.array()?;
+                Ok(TestCase(Foo { field0: d.decode_with(ctx)?, field1: d.decode_with(ctx)? }))
+            }
+        }
+
+        let original_foo = Foo { field0: 14, field1: 42 };
+
+        let bytes = to_cbor(&AsIndefinite(&original_foo));
+
+        assert_eq!(Some(TestCase(original_foo)), from_cbor(&bytes));
+        assert!(from_cbor_no_leftovers::<TestCase<Foo>>(&bytes).is_err())
+    }
+
+    pub(crate) struct AsIndefinite<A>(pub(crate) A);
+
+    pub(crate) struct AsDefinite<A>(pub(crate) A);
+
+    pub(crate) struct AsMap<A>(pub(crate) A);
+
+    pub(crate) mod foo {
+        use minicbor as cbor;
+
+        use super::{AsDefinite, AsIndefinite, AsMap};
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub(crate) struct Foo {
+            pub(crate) field0: u8,
+            pub(crate) field1: u8,
+        }
+
+        impl<C> cbor::encode::Encode<C> for AsIndefinite<&Foo> {
+            fn encode<W: cbor::encode::Write>(
+                &self,
+                e: &mut cbor::Encoder<W>,
+                ctx: &mut C,
+            ) -> Result<(), cbor::encode::Error<W::Error>> {
+                e.begin_array()?;
+                e.encode_with(self.0.field0, ctx)?;
+                e.encode_with(self.0.field1, ctx)?;
+                e.end()?;
+                Ok(())
+            }
+        }
+
+        impl<C> cbor::encode::Encode<C> for AsIndefinite<AsMap<&Foo>> {
+            fn encode<W: cbor::encode::Write>(
+                &self,
+                e: &mut cbor::Encoder<W>,
+                ctx: &mut C,
+            ) -> Result<(), cbor::encode::Error<W::Error>> {
+                e.begin_map()?;
+                e.encode_with(0_u8, ctx)?;
+                e.encode_with(self.0.0.field0, ctx)?;
+                e.encode_with(1_u8, ctx)?;
+                e.encode_with(self.0.0.field1, ctx)?;
+                e.end()?;
+                Ok(())
+            }
+        }
+
+        impl<C> cbor::encode::Encode<C> for AsDefinite<&Foo> {
+            fn encode<W: cbor::encode::Write>(
+                &self,
+                e: &mut cbor::Encoder<W>,
+                ctx: &mut C,
+            ) -> Result<(), cbor::encode::Error<W::Error>> {
+                e.array(2)?;
+                e.encode_with(self.0.field0, ctx)?;
+                e.encode_with(self.0.field1, ctx)?;
+                Ok(())
+            }
+        }
+
+        impl<C> cbor::encode::Encode<C> for AsDefinite<AsMap<&Foo>> {
+            fn encode<W: cbor::encode::Write>(
+                &self,
+                e: &mut cbor::Encoder<W>,
+                ctx: &mut C,
+            ) -> Result<(), cbor::encode::Error<W::Error>> {
+                e.map(2)?;
+                e.encode_with(0_u8, ctx)?;
+                e.encode_with(self.0.0.field0, ctx)?;
+                e.encode_with(1_u8, ctx)?;
+                e.encode_with(self.0.0.field1, ctx)?;
+                Ok(())
+            }
+        }
+
+        impl<'d, C> cbor::decode::Decode<'d, C> for AsDefinite<Foo> {
+            fn decode(d: &mut cbor::Decoder<'d>, ctx: &mut C) -> Result<Self, cbor::decode::Error> {
+                let len = d.array()?;
+                let foo = Foo { field0: d.decode_with(ctx)?, field1: d.decode_with(ctx)? };
+                match len {
+                    Some(2) => Ok(AsDefinite(foo)),
+                    _ => Err(cbor::decode::Error::message("invalid or missing definite array length")),
+                }
+            }
+        }
+
+        impl<'d, C> cbor::decode::Decode<'d, C> for AsIndefinite<Foo> {
+            fn decode(d: &mut cbor::Decoder<'d>, ctx: &mut C) -> Result<Self, cbor::decode::Error> {
+                let len = d.array()?;
+                let foo = Foo { field0: d.decode_with(ctx)?, field1: d.decode_with(ctx)? };
+                match len {
+                    None if d.datatype()? == cbor::data::Type::Break => {
+                        d.skip()?;
+                        Ok(AsIndefinite(foo))
+                    }
+                    _ => Err(cbor::decode::Error::message("missing indefinite array break")),
+                }
+            }
+        }
+    }
+}

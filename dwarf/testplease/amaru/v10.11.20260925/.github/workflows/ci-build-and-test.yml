@@ -1,0 +1,204 @@
+name: CI Build and Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: Network to run
+        type: choice
+        options: [preprod, preview]
+        required: false
+  push:
+    branches: ["main"]
+  pull_request:
+    types: [opened, synchronize, reopened, converted_to_draft, ready_for_review]
+    branches: ["*"]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_NIGHTLY_TOOLCHAIN: nightly-2026-09-04
+  RUSTUP_LOG: error
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux-x86_64:
+    name: Build/Test x86_64/linux
+    uses: ./.github/workflows/template-cargo-test.yml
+    with:
+      runner: ubuntu-24.04
+      target: x86_64-unknown-linux-gnu
+      cache-mode: ${{ github.ref == 'refs/heads/main' && 'WRITE' || 'READ' }}
+
+  # To populate the cache on the Blacksmith runners too.
+  build-linux-x86_64-blacksmith:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    name: Build/Test x86_64/linux
+    uses: ./.github/workflows/template-cargo-test.yml
+    with:
+      runner: blacksmith-2vcpu-ubuntu-2404
+      target: x86_64-unknown-linux-gnu
+      command: test -p amaru --no-run
+      cache-mode: WRITE
+
+  build-linux-aarch64:
+    name: Build/Test aarch64/linux
+    uses: ./.github/workflows/template-cargo-test.yml
+    with:
+      runner: ubuntu-24.04-arm
+      target: aarch64-unknown-linux-gnu
+      cache-mode: ${{ github.ref == 'refs/heads/main' && 'WRITE' || 'READ' }}
+
+  build-macos-aarch64:
+    name: Build/Test aarch64/macos
+    uses: ./.github/workflows/template-cargo-test.yml
+    with:
+      runner: macos-15
+      target: aarch64-apple-darwin
+      cache-mode: ${{ github.ref == 'refs/heads/main' && 'WRITE' || 'READ' }}
+
+  build-windows-x86_64:
+    name: Build/Test x86_64/windows
+    uses: ./.github/workflows/template-cargo-test.yml
+    with:
+      runner: blacksmith-4vcpu-windows-2025
+      target: x86_64-pc-windows-msvc
+      command: test --tests --workspace --profile dev-debug
+      cache-mode: ${{ github.ref == 'refs/heads/main' && 'WRITE' || 'READ' }}
+
+  build-wasm32:
+    name: Build wasm32
+    needs: [build-linux-x86_64]
+    uses: ./.github/workflows/template-cargo-test.yml
+    with:
+      runner: ubuntu-24.04
+      target: wasm32-unknown-unknown
+      command: build -p amaru-consensus -p amaru-ledger -p amaru-pure-stage
+      cache-mode: READ
+      setup: rustup target add wasm32-unknown-unknown
+
+  build-riscv:
+    name: Build riscv
+    needs: [build-linux-x86_64]
+    uses: ./.github/workflows/template-cargo-test.yml
+    with:
+      runner: ubuntu-24.04
+      target: riscv32gc-unknown-linux-gnu
+      command: +$RUST_NIGHTLY_TOOLCHAIN -Zbuild-std=std,panic_abort build -p amaru-ledger
+      cache-mode: READ
+      setup: |
+        # When targetting RISC-V, the amaru-uplc crate fails to compile.
+        # Providing the specific RISC-V gnu clang compiler to Rust allows it to build
+        rustup component add rust-src --toolchain "$RUST_NIGHTLY_TOOLCHAIN"
+        curl -L -o riscv32-glibc-llvm.tar.xz \
+          "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.11.04/riscv32-glibc-ubuntu-24.04-llvm.tar.xz"
+        tar -xvf riscv32-glibc-llvm.tar.xz
+        export CC_riscv32gc_unknown_linux_gnu="$(pwd)/riscv/bin/riscv32-unknown-linux-gnu-clang"
+
+  snapshots:
+    name: Compare ledger epoch snapshots
+    uses: ./.github/workflows/template-ledger-epoch-snapshots.yml
+    secrets:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      CARDANO_NODE_BUCKET_NAME: ${{ secrets.CARDANO_NODE_BUCKET_NAME }}
+
+  benches:
+    name: Bench
+    needs: [build-linux-x86_64]
+    runs-on: ubuntu-24.04
+    env:
+      # NOTE: Necessary for cache
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # https://github.com/actions/checkout/releases/tag/v7.0.1
+      - uses: ./.github/actions/stage-peer-snapshots
+      - uses: ./.github/actions/cache
+      - name: benches volatile_db
+        shell: bash
+        run: cargo bench --bench volatile_db
+        env:
+          AMARU_BENCH_BLOCK_SIZE: 4096
+
+  cbor-conformance:
+    name: Test CBOR decoding conformance
+    needs: [build-linux-x86_64]
+    runs-on: ubuntu-24.04
+    env:
+      # NOTE: Necessary for cache
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # https://github.com/actions/checkout/releases/tag/v7.0.1
+      - uses: ./.github/actions/cache
+      - uses: ./.github/actions/fetch-cbor-dataset
+
+      - name: Run the decoding conformance suite
+        env:
+          AMARU_TEST_REPORT_DIRECTORY: tests/results
+        run: cargo test --locked -p amaru-kernel --test test_cbor_dataset -- --nocapture
+
+      - name: Upload the conformance report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # https://github.com/actions/upload-artifact/releases/tag/v7.0.1
+        with:
+          name: cbor-conformance-report
+          path: crates/amaru-kernel/tests/results/*.json
+          if-no-files-found: warn
+
+  trace-schemas:
+    name: Test trace schemas & documentation
+    needs: [build-linux-x86_64]
+    runs-on: ubuntu-24.04
+    env:
+      # NOTE: Necessary for cache
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+      BUILD_PROFILE: test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # https://github.com/actions/checkout/releases/tag/v7.0.1
+      - uses: ./.github/actions/stage-peer-snapshots
+      - uses: ./.github/actions/cache
+      - name: Validate trace schemas
+        run: make validate-trace-schemas
+
+      - name: Upload schema diff
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # https://github.com/actions/upload-artifact/releases/tag/v7.0.1
+        with:
+          name: schema-diff
+          path: /tmp/schemas.diff
+      - name: Generate current TRACES.md
+        run: |
+          ./scripts/generate-traces-doc
+          cp docs/TRACES.md /tmp/TRACES-current.md
+          git checkout docs/TRACES.md
+      - name: Compare TRACES.md
+        run: |
+          if diff -u docs/TRACES.md /tmp/TRACES-current.md > /tmp/traces.diff; then
+            echo "✓ TRACES.md is up-to-date"
+          else
+            echo "✗ TRACES.md has changed!"
+            echo ""
+            echo "--- Expected (docs/TRACES.md)"
+            echo "+++ Current (generated)"
+            cat /tmp/traces.diff
+            exit 1
+          fi
+      - name: Show update instructions on failure
+        if: failure()
+        run: |
+          echo "Documentation changes detected. Please run:"
+          echo ""
+          echo "  ./scripts/generate-traces-doc"
+          echo ""
+          echo "If schemas changed, also run:"
+          echo ""
+          echo "  cargo run --bin amaru -- dev traces dump 1> docs/traces-schema.json"
+          echo ""
+          echo "Then commit the updated files."

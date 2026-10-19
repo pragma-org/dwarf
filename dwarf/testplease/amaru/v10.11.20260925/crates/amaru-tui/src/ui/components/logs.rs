@@ -1,0 +1,519 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use amaru_kernel::ByteSize;
+use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::Modifier,
+    text::{Line, Span},
+    widgets::{Block, Paragraph, Wrap},
+};
+
+use super::super::{
+    common::{
+        border_title_chrome_width, border_title_line, border_title_prefix_width, button_label, level_controls_width,
+        panel_borders, panel_padding, render_horizontal_separator, render_scrollbar, scroll_panel_border,
+        scroll_panel_border_type, spans_width, target_controls_width,
+    },
+    format::format_log_wall_time,
+    theme::{
+        emphasis_primary, muted, style_for_level, style_for_level_filter, style_for_log_match, style_for_log_selection,
+        style_for_target, style_for_tier_boundary,
+    },
+};
+use crate::{
+    events::TelemetryRecord,
+    model::{LevelFilter, LogViewItem, Model, RetentionTier, ScrollFocus, TargetFilter},
+    ui::{LogLineHit, Views},
+};
+
+pub(in crate::ui) fn render_logs(frame: &mut Frame<'_>, area: Rect, model: &Model, views: &mut Views) {
+    views.logs_area = area;
+    let focused = model.scroll_focus == ScrollFocus::Logs;
+    let scrollbar_focused = focused && model.log_scrollbar_focused;
+    let title = border_title_line(log_title_spans(model), model.interaction_mode, focused);
+    let wrap_label = button_label("wrap");
+    let toggle_label = button_label(log_toggle_label(model));
+    let toggle = border_title_line(
+        vec![Span::styled(toggle_label.clone(), emphasis_primary(model.interaction_mode))],
+        model.interaction_mode,
+        focused,
+    );
+    let block = Block::default()
+        .title(title)
+        .title_top(toggle.right_aligned())
+        .borders(panel_borders(model.interaction_mode))
+        .border_style(scroll_panel_border(focused, model.interaction_mode))
+        .border_type(scroll_panel_border_type(focused))
+        .padding(panel_padding(model.interaction_mode));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    views.log_toggle = Rect {
+        x: area.x
+            + area.width.saturating_sub(toggle_label.len() as u16 + border_title_chrome_width() + 1)
+            + border_title_prefix_width(),
+        y: area.y,
+        width: toggle_label.len() as u16,
+        height: 1,
+    };
+    views.log_wrap_toggle = Rect {
+        x: area.x + 1 + border_title_prefix_width() + LOGS_TITLE_LABEL.len() as u16 + 2,
+        y: area.y,
+        width: wrap_label.len() as u16,
+        height: 1,
+    };
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(if model.is_copy_mode() {
+            vec![Constraint::Length(1), Constraint::Min(1)]
+        } else {
+            vec![Constraint::Length(1), Constraint::Length(1), Constraint::Min(1)]
+        })
+        .split(inner);
+
+    render_log_controls(frame, layout[0], model, views);
+    if !model.is_copy_mode() {
+        render_horizontal_separator(frame, layout[1], model.interaction_mode, focused);
+    }
+
+    let items = model.log_view();
+    let body = if model.is_copy_mode() { layout[1] } else { layout[2] };
+    views.logs_body = body;
+    if items.len() > body.height as usize && body.width > 0 && body.height > 0 {
+        views.logs_scrollbar =
+            Rect { x: body.x + body.width.saturating_sub(1), y: body.y, width: 1, height: body.height };
+    }
+
+    let window = log_window(items.len(), body.height, model.log_scroll);
+    let lines =
+        items[window.start..window.end].iter().map(|item| log_view_line(item, model, body.width)).collect::<Vec<_>>();
+    let row_counts = line_row_counts(&lines, body.width, model.log_wrap);
+    let (paragraph, _, position) =
+        log_paragraph(lines, body, window.scroll_from_bottom, model.log_wrap, model.log_hscroll);
+    populate_log_hits(views, window.start, &row_counts, body, position);
+    frame.render_widget(paragraph, body);
+
+    let total = items.len();
+    let visible = body.height as usize;
+    let max_position = total.saturating_sub(visible);
+    let position = max_position.saturating_sub(model.log_scroll.min(max_position));
+    render_scrollbar(frame, body, total, visible, position, model.interaction_mode, scrollbar_focused);
+}
+
+/// Ratatui [`Paragraph`] scroll is `u16`, and `area.height + scroll.y` must not overflow.
+/// Keep the rendered window well below that even when lines wrap a few times.
+const MAX_LOG_WINDOW_ITEMS: usize = (u16::MAX as usize) / 8;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LogWindow {
+    start: usize,
+    end: usize,
+    scroll_from_bottom: usize,
+}
+
+fn log_window(item_count: usize, height: u16, scroll_from_bottom: usize) -> LogWindow {
+    let height = height as usize;
+    if item_count == 0 || height == 0 {
+        return LogWindow { start: 0, end: 0, scroll_from_bottom: 0 };
+    }
+
+    let take = scroll_from_bottom.saturating_add(height).min(item_count);
+    if take <= MAX_LOG_WINDOW_ITEMS {
+        return LogWindow { start: item_count - take, end: item_count, scroll_from_bottom };
+    }
+
+    let skip = scroll_from_bottom.min(item_count);
+    let end = item_count - skip;
+    let start = end.saturating_sub(height.min(MAX_LOG_WINDOW_ITEMS));
+    LogWindow { start, end, scroll_from_bottom: 0 }
+}
+
+fn paragraph_vertical_scroll(position: usize, area_height: u16) -> u16 {
+    let max_scroll = u16::MAX.saturating_sub(area_height);
+    u16::try_from(position).unwrap_or(u16::MAX).min(max_scroll)
+}
+
+fn log_paragraph(
+    lines: Vec<Line<'static>>,
+    area: Rect,
+    scroll_from_bottom: usize,
+    wrap: bool,
+    hscroll: usize,
+) -> (Paragraph<'static>, usize, usize) {
+    let paragraph = if wrap { Paragraph::new(lines).wrap(Wrap { trim: false }) } else { Paragraph::new(lines) };
+    let total = paragraph.line_count(area.width);
+    let position = total.saturating_sub(area.height as usize).saturating_sub(scroll_from_bottom);
+    let vertical_scroll = paragraph_vertical_scroll(position, area.height);
+    let horizontal_scroll = if wrap { 0 } else { u16::try_from(hscroll).unwrap_or(u16::MAX) };
+
+    (paragraph.scroll((vertical_scroll, horizontal_scroll)), total, position)
+}
+
+fn render_log_controls(frame: &mut Frame<'_>, area: Rect, model: &Model, views: &mut Views) {
+    let level_width = level_controls_width();
+    let target_width = target_controls_width();
+    let middle_width = area.width.saturating_sub(level_width).saturating_sub(target_width);
+    let occupancy = occupancy_text(model.log_occupancy(), middle_width);
+    let layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(level_width), Constraint::Min(0), Constraint::Length(target_width)])
+        .split(area);
+
+    let level_spans = LevelFilter::ALL
+        .into_iter()
+        .map(|filter| {
+            let style = if filter == model.level_filter {
+                style_for_level_filter(filter).add_modifier(Modifier::BOLD)
+            } else {
+                muted()
+            };
+            views.level_tabs.push((filter, Rect::default()));
+            Span::styled(button_label(filter.label()), style)
+        })
+        .collect::<Vec<_>>();
+    let levels = Paragraph::new(Line::from(level_spans)).alignment(Alignment::Left);
+    frame.render_widget(levels, layout[0]);
+
+    if let Some(occupancy) = occupancy {
+        let usage = Paragraph::new(Line::from(Span::styled(occupancy, muted()))).alignment(Alignment::Center);
+        frame.render_widget(usage, layout[1]);
+    }
+
+    let target_spans = TargetFilter::ALL
+        .into_iter()
+        .map(|filter| {
+            let style = if filter == model.target_filter { emphasis_primary(model.interaction_mode) } else { muted() };
+            views.target_tabs.push((filter, Rect::default()));
+            Span::styled(button_label(filter.label()), style)
+        })
+        .collect::<Vec<_>>();
+    let targets = Paragraph::new(Line::from(target_spans)).alignment(Alignment::Right);
+    frame.render_widget(targets, layout[2]);
+
+    let level_labels = LevelFilter::ALL.into_iter().map(|filter| button_label(filter.label())).collect::<Vec<_>>();
+    let mut level_x = layout[0].x;
+    for ((_, rect), label) in views.level_tabs.iter_mut().zip(level_labels.iter()) {
+        *rect = Rect { x: level_x, y: layout[0].y, width: label.len() as u16, height: layout[0].height };
+        level_x += label.len() as u16;
+    }
+
+    let target_labels = TargetFilter::ALL.into_iter().map(|filter| button_label(filter.label())).collect::<Vec<_>>();
+    let mut target_x =
+        layout[2].x + layout[2].width.saturating_sub(spans_width(target_labels.iter().map(|label| label.len() as u16)));
+    for ((_, rect), label) in views.target_tabs.iter_mut().zip(target_labels.iter()) {
+        *rect = Rect { x: target_x, y: layout[2].y, width: label.len() as u16, height: layout[2].height };
+        target_x += label.len() as u16;
+    }
+}
+
+const OCCUPANCY_PADDING: u16 = 4;
+
+fn occupancy_percent(used: usize, budget: usize) -> u8 {
+    let percent = used.saturating_mul(100).checked_div(budget).unwrap_or(0).min(100);
+    u8::try_from(percent).unwrap_or(100)
+}
+
+fn occupancy_text(occupancy: [(RetentionTier, usize, usize); 4], available: u16) -> Option<String> {
+    use std::fmt::Write;
+
+    let percents = occupancy.map(|(tier, used, budget)| (tier, occupancy_percent(used, budget)));
+    let mut labeled = String::new();
+    for (idx, (tier, percent)) in percents.iter().enumerate() {
+        if idx > 0 {
+            labeled.push_str("  ");
+        }
+        let _ = write!(&mut labeled, "{} {percent}%  ", tier.label());
+    }
+    let used = occupancy.iter().map(|x| x.1).sum::<usize>();
+    let _ = write!(&mut labeled, "  [{}]", ByteSize::from(used).display_iec());
+    if labeled.len() as u16 + OCCUPANCY_PADDING <= available {
+        return Some(labeled);
+    }
+
+    let mut compact = String::from("log %:");
+    for (idx, (_, p)) in percents.iter().enumerate() {
+        use std::fmt::Write;
+        compact.push(if idx == 0 { ' ' } else { ',' });
+        let _ = write!(&mut compact, "{p}");
+    }
+    (compact.len() as u16 + OCCUPANCY_PADDING <= available).then_some(compact)
+}
+
+fn log_toggle_label(model: &Model) -> &'static str {
+    if model.log_pane_mode.is_maximized() { "-" } else { "+" }
+}
+
+const LOGS_TITLE_LABEL: &str = "Logs";
+
+fn log_title_spans(model: &Model) -> Vec<Span<'static>> {
+    let wrap_style =
+        if model.log_wrap { emphasis_primary(model.interaction_mode).add_modifier(Modifier::BOLD) } else { muted() };
+    let mut spans = vec![
+        Span::styled(LOGS_TITLE_LABEL, emphasis_primary(model.interaction_mode)),
+        Span::raw("  "),
+        Span::styled(button_label("wrap"), wrap_style),
+    ];
+    if model.log_scrollbar_focused {
+        spans.push(Span::styled("  scrub", emphasis_primary(model.interaction_mode)));
+    }
+    if !model.log_wrap && model.log_hscroll > 0 {
+        spans.push(Span::styled(format!("  col {}", model.log_hscroll + 1), muted()));
+    }
+    if let Some(count) = model.selected_log_count() {
+        spans.push(Span::styled(format!("  sel {count}"), emphasis_primary(model.interaction_mode)));
+    }
+    if !model.text_filter_pattern.is_empty() {
+        spans.push(Span::styled(format!("  &{}", truncate_pattern(&model.text_filter_pattern)), muted()));
+    }
+    if !model.highlight_pattern.is_empty() {
+        spans.push(Span::styled(format!("  /{}", truncate_pattern(&model.highlight_pattern)), muted()));
+    }
+    spans
+}
+
+fn truncate_pattern(pattern: &str) -> String {
+    const MAX: usize = 24;
+    if pattern.chars().count() <= MAX {
+        pattern.to_string()
+    } else {
+        let truncated: String = pattern.chars().take(MAX.saturating_sub(1)).collect();
+        format!("{truncated}…")
+    }
+}
+
+fn log_view_line(item: &LogViewItem, model: &Model, width: u16) -> Line<'static> {
+    match item {
+        LogViewItem::Record { record, .. } => log_record_line(record.as_ref(), model),
+        LogViewItem::TierBoundary { tier } => {
+            let width = if model.log_wrap {
+                width
+            } else {
+                width.saturating_add(u16::try_from(model.log_hscroll).unwrap_or(u16::MAX))
+            };
+            tier_boundary_line(*tier, width, model.interaction_mode)
+        }
+    }
+}
+
+fn tier_boundary_line(tier: RetentionTier, width: u16, mode: crate::model::InteractionMode) -> Line<'static> {
+    let label = format!(" ↑ {} retention ↑ ", tier.label());
+    let width = width as usize;
+    let line = if width <= label.len() {
+        label
+    } else {
+        let pad = width.saturating_sub(label.len());
+        let left = pad / 2;
+        let right = pad - left;
+        format!("{}{label}{}", "─".repeat(left), "─".repeat(right))
+    };
+    Line::from(Span::styled(line, style_for_tier_boundary(mode))).alignment(Alignment::Left)
+}
+
+fn log_record_line(record: &TelemetryRecord, model: &Model) -> Line<'static> {
+    let fields = crate::model::render_fields(record);
+    let label = record.log_label();
+    let mut spans = vec![
+        Span::styled(format_log_wall_time(record.wall_time), muted()),
+        Span::raw(" "),
+        Span::styled(format!("{:>5}", record.level), style_for_level(record.level).add_modifier(Modifier::BOLD)),
+        Span::raw(" "),
+        Span::styled(record.target.clone(), style_for_target(&record.target).add_modifier(Modifier::BOLD)),
+        Span::raw(" "),
+        Span::styled(label, super::super::theme::emphasis_white()),
+    ];
+
+    if !fields.is_empty() {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(fields, muted()));
+    }
+
+    let mut line = Line::from(spans);
+    if model.log_record_is_selected(record) {
+        line = line.patch_style(style_for_log_selection(model.interaction_mode));
+    }
+    if model.log_record_is_highlighted(record) {
+        line = line.patch_style(style_for_log_match(model.log_record_is_cursor(record), model.interaction_mode));
+    }
+    line
+}
+
+fn line_row_counts(lines: &[Line<'_>], width: u16, wrap: bool) -> Vec<usize> {
+    lines.iter().map(|line| line_row_count(line, width, wrap)).collect()
+}
+
+fn line_row_count(line: &Line<'_>, width: u16, wrap: bool) -> usize {
+    if !wrap || width == 0 {
+        return 1;
+    }
+    Paragraph::new(line.clone()).wrap(Wrap { trim: false }).line_count(width).max(1)
+}
+
+fn populate_log_hits(views: &mut Views, start: usize, row_counts: &[usize], body: Rect, skip_rows: usize) {
+    views.log_hits.clear();
+    if body.height == 0 || body.width == 0 {
+        return;
+    }
+
+    let mut skip = skip_rows;
+    let mut y = body.y;
+    let bottom = body.y.saturating_add(body.height);
+    for (offset, &rows) in row_counts.iter().enumerate() {
+        let view_index = start + offset;
+        for _ in 0..rows.max(1) {
+            if skip > 0 {
+                skip -= 1;
+                continue;
+            }
+            if y >= bottom {
+                return;
+            }
+            views.log_hits.push(LogLineHit { y, view_index });
+            y = y.saturating_add(1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{buffer::Buffer, widgets::Widget};
+
+    use super::*;
+
+    fn buffer_row(buffer: &Buffer, y: u16, width: u16) -> String {
+        (0..width).map(|x| buffer.cell((x, y)).map(|cell| cell.symbol()).unwrap_or("").to_string()).collect()
+    }
+
+    #[test]
+    fn keeps_the_newest_log_visible_when_an_older_log_wraps() {
+        let area = Rect::new(0, 0, 10, 2);
+        let lines = vec![Line::from("old-entry old-entry"), Line::from("new-entry")];
+        let (paragraph, total, position) = log_paragraph(lines, area, 0, true, 0);
+        let mut buffer = Buffer::empty(area);
+
+        paragraph.render(area, &mut buffer);
+
+        assert_eq!(total, 3);
+        assert_eq!(position, 1);
+        assert_eq!(buffer.cell((0, 1)).map(|cell| cell.symbol()), Some("n"));
+    }
+
+    #[test]
+    fn log_window_keeps_a_short_suffix_from_the_tail() {
+        assert_eq!(log_window(0, 2, 0), LogWindow { start: 0, end: 0, scroll_from_bottom: 0 });
+        assert_eq!(log_window(3, 2, 0), LogWindow { start: 1, end: 3, scroll_from_bottom: 0 });
+        assert_eq!(log_window(10, 2, 3), LogWindow { start: 5, end: 10, scroll_from_bottom: 3 });
+    }
+
+    #[test]
+    fn log_window_follows_the_tail_of_a_buffer_larger_than_u16_scroll() {
+        let window = log_window(70_000, 2, 0);
+        assert_eq!(window, LogWindow { start: 69_998, end: 70_000, scroll_from_bottom: 0 });
+    }
+
+    #[test]
+    fn log_window_skips_newest_items_when_scroll_exceeds_the_safe_paragraph() {
+        let scroll = MAX_LOG_WINDOW_ITEMS + 50;
+        let window = log_window(70_000, 2, scroll);
+        assert_eq!(window.end, 70_000 - scroll);
+        assert_eq!(window.start, window.end - 2);
+        assert_eq!(window.scroll_from_bottom, 0);
+    }
+
+    #[test]
+    fn rendering_a_huge_log_view_shows_the_newest_lines_without_panicking() {
+        let area = Rect::new(0, 0, 20, 2);
+        let window = log_window(70_000, area.height, 0);
+        let lines = (window.start..window.end).map(|index| Line::from(format!("line-{index}"))).collect();
+        let (paragraph, total, position) = log_paragraph(lines, area, window.scroll_from_bottom, true, 0);
+        let mut buffer = Buffer::empty(area);
+
+        paragraph.render(area, &mut buffer);
+
+        assert_eq!(total, 2);
+        assert_eq!(position, 0);
+        assert!(buffer_row(&buffer, 1, area.width).starts_with("line-69999"), "{}", buffer_row(&buffer, 1, area.width));
+    }
+
+    #[test]
+    fn nowrap_horizontal_scroll_reveals_the_right_hand_side() {
+        let area = Rect::new(0, 0, 8, 1);
+        let lines = vec![Line::from("abcdefghijklmnop")];
+        let (paragraph, total, position) = log_paragraph(lines, area, 0, false, 4);
+        let mut buffer = Buffer::empty(area);
+
+        paragraph.render(area, &mut buffer);
+
+        assert_eq!(total, 1);
+        assert_eq!(position, 0);
+        assert_eq!(buffer_row(&buffer, 0, area.width).chars().take(8).collect::<String>(), "efghijkl");
+    }
+
+    #[test]
+    fn paragraph_scroll_offset_fits_u16_even_for_huge_positions() {
+        assert_eq!(paragraph_vertical_scroll(10, 20), 10);
+        assert_eq!(paragraph_vertical_scroll(usize::MAX, 20), u16::MAX - 20);
+        assert_eq!(paragraph_vertical_scroll(u16::MAX as usize, 20), u16::MAX - 20);
+    }
+
+    #[test]
+    fn line_row_count_is_one_when_unwrap_or_empty_width() {
+        let line = Line::from("abcdefghijklmnop");
+        assert_eq!(line_row_count(&line, 8, false), 1);
+        assert_eq!(line_row_count(&line, 0, true), 1);
+        assert!(line_row_count(&line, 8, true) > 1);
+    }
+
+    #[test]
+    fn populate_log_hits_maps_wrapped_rows_to_the_same_view_index() {
+        let mut views = Views::default();
+        let body = Rect::new(0, 5, 10, 4);
+        populate_log_hits(&mut views, 10, &[1, 2, 1], body, 0);
+        assert_eq!(
+            views.log_hits,
+            vec![
+                LogLineHit { y: 5, view_index: 10 },
+                LogLineHit { y: 6, view_index: 11 },
+                LogLineHit { y: 7, view_index: 11 },
+                LogLineHit { y: 8, view_index: 12 },
+            ]
+        );
+    }
+
+    #[test]
+    fn populate_log_hits_skips_rows_scrolled_off_the_top() {
+        let mut views = Views::default();
+        let body = Rect::new(0, 0, 10, 2);
+        populate_log_hits(&mut views, 0, &[2, 1], body, 1);
+        assert_eq!(views.log_hits, vec![LogLineHit { y: 0, view_index: 0 }, LogLineHit { y: 1, view_index: 1 }]);
+    }
+
+    #[test]
+    fn occupancy_text_picks_labeled_compact_or_none_from_available_width() {
+        let occupancy = [
+            (RetentionTier::DebugAndUp, 70, 100),
+            (RetentionTier::InfoAndUp, 0, 100),
+            (RetentionTier::WarnAndUp, 10, 100),
+            (RetentionTier::Error, 100, 100),
+        ];
+        let labeled = occupancy_text(occupancy, 80).expect("labeled occupancy");
+        assert!(labeled.contains("debug+ 70%"), "{labeled}");
+        assert!(labeled.contains("error 100%"), "{labeled}");
+
+        let compact = occupancy_text(occupancy, labeled.len() as u16).expect("compact occupancy");
+        assert_eq!(compact, "log %: 70,0,10,100");
+        assert!(occupancy_text(occupancy, 8).is_none());
+    }
+}

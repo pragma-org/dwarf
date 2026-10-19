@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./scripts/update-readme-installation-sections \
+    --version <version> \
+    [--repository <owner/repo>] \
+    [--readme <path>]
+EOF
+}
+
+version=""
+repository="pragma-org/amaru"
+readme="README.md"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version)
+      version="${2:?missing value for --version}"
+      shift 2
+      ;;
+    --repository)
+      repository="${2:?missing value for --repository}"
+      shift 2
+      ;;
+    --readme)
+      readme="${2:?missing value for --readme}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$version" ]]; then
+  usage >&2
+  exit 1
+fi
+
+if [[ ! -f "$readme" ]]; then
+  echo "README not found: $readme" >&2
+  exit 1
+fi
+
+if ! grep -q '<!-- BEGIN GENERATED INSTALLATION -->' "$readme"; then
+  echo "missing BEGIN GENERATED INSTALLATION marker in $readme" >&2
+  exit 1
+fi
+
+if ! grep -q '<!-- END GENERATED INSTALLATION -->' "$readme"; then
+  echo "missing END GENERATED INSTALLATION marker in $readme" >&2
+  exit 1
+fi
+
+snippet="$(mktemp)"
+tmp_readme="$(mktemp)"
+trap 'rm -f "$snippet" "$tmp_readme"' EXIT
+
+cat > "$snippet" <<EOF
+#### <img src="https://raw.githubusercontent.com/pragma-org/amaru/refs/heads/main/.github/icons/docker.svg" height=18 /> Docker Image
+
+\`\`\`console
+docker pull ghcr.io/${repository}:v${version}
+\`\`\`
+
+> [!IMPORTANT]
+> The tag \`:latest\` refers to the latest _nightly build_; not the latest release.
+
+#### <img src="https://raw.githubusercontent.com/pragma-org/amaru/refs/heads/main/.github/icons/homebrew.webp" height=18 /> Homebrew (macOS & Linux)
+
+\`\`\`console
+brew tap ${repository} https://github.com/${repository} && brew trust --tap ${repository}
+brew install amaru
+\`\`\`
+
+#### <img src="https://raw.githubusercontent.com/pragma-org/amaru/refs/heads/main/.github/icons/nix.webp" height=18 /> Nix (macOS & Linux)
+
+\`\`\`console
+nix profile install --no-write-lock-file github:${repository}#amaru
+\`\`\`
+
+#### <img src="https://raw.githubusercontent.com/pragma-org/amaru/refs/heads/main/.github/icons/debian.webp" height=18 /> Debian
+
+\`\`\`console
+VERSION=${version} ARCH=x86_64; curl -fsSL -o amaru-\$VERSION-linux-\$ARCH.deb "https://github.com/${repository}/releases/download/v\$VERSION/amaru-\$VERSION-linux-\$ARCH.deb"
+VERSION=${version} ARCH=x86_64; sudo apt install ./amaru-\$VERSION-linux-\$ARCH.deb
+\`\`\`
+
+Also available for \`ARCH=aarch64\`.
+The Debian package installs a systemd unit and reads overrides from \`/etc/default/amaru\`.
+
+#### <img src="https://raw.githubusercontent.com/pragma-org/amaru/refs/heads/main/.github/icons/red-hat.webp" height=18 /> RPM
+
+\`\`\`console
+VERSION=${version} ARCH=x86_64; curl -fsSL -o amaru-\$VERSION-linux-\$ARCH.rpm "https://github.com/${repository}/releases/download/v\$VERSION/amaru-\$VERSION-linux-\$ARCH.rpm"
+VERSION=${version} ARCH=x86_64; sudo dnf install ./amaru-\$VERSION-linux-\$ARCH.rpm
+\`\`\`
+
+Also available for \`ARCH=aarch64\`.
+The RPM package installs a systemd unit and reads overrides from \`/etc/sysconfig/amaru\`.
+EOF
+
+awk -v snippet_file="$snippet" '
+  /<!-- BEGIN GENERATED INSTALLATION -->/ {
+    print
+    while ((getline line < snippet_file) > 0) {
+      print line
+    }
+    close(snippet_file)
+    skip = 1
+    next
+  }
+  /<!-- END GENERATED INSTALLATION -->/ {
+    skip = 0
+    print
+    next
+  }
+  !skip { print }
+' "$readme" > "$tmp_readme"
+
+mv "$tmp_readme" "$readme"
+
+echo "updated $readme"

@@ -1,0 +1,341 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+pub use crate::{
+    Anchor, Credential, DRep, Epoch, Hash, Lovelace, PoolId, PoolMetadata, RationalNumber, Relay, RewardAccount, cbor,
+    size::{KEY, VRF_KEY},
+};
+use crate::{PoolParams, utils::cbor::SerialisedAsSet};
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Certificate {
+    StakeRegistration(Credential),
+    StakeDeregistration(Credential),
+    StakeDelegation(Credential, PoolId),
+    PoolRegistration(Box<PoolParams>),
+    PoolRetirement(PoolId, Epoch),
+    Reg(Credential, Lovelace),
+    UnReg(Credential, Lovelace),
+    VoteDeleg(Credential, DRep),
+    StakeVoteDeleg(Credential, PoolId, DRep),
+    StakeRegDeleg(Credential, PoolId, Lovelace),
+    VoteRegDeleg(Credential, DRep, Lovelace),
+    StakeVoteRegDeleg(Credential, PoolId, DRep, Lovelace),
+    AuthCommitteeHot(Credential, Credential),
+    ResignCommitteeCold(Credential, Option<Box<Anchor>>),
+    RegDRepCert(Credential, Lovelace, Option<Box<Anchor>>),
+    UnRegDRepCert(Credential, Lovelace),
+    UpdateDRepCert(Credential, Option<Box<Anchor>>),
+}
+
+impl<C: cbor::HasProtocolVersion> cbor::encode::Encode<C> for Certificate {
+    fn encode<W: cbor::encode::Write>(
+        &self,
+        e: &mut cbor::Encoder<W>,
+        ctx: &mut C,
+    ) -> Result<(), cbor::encode::Error<W::Error>> {
+        match self {
+            Self::StakeRegistration(a) => {
+                e.array(2)?;
+                e.u16(0)?;
+                e.encode_with(a, ctx)?;
+            }
+
+            Self::StakeDeregistration(a) => {
+                e.array(2)?;
+                e.u16(1)?;
+                e.encode_with(a, ctx)?;
+            }
+
+            Self::StakeDelegation(a, b) => {
+                e.array(3)?;
+                e.u16(2)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+            }
+
+            Self::PoolRegistration(params) => {
+                let PoolParams { id: operator, vrf, pledge, cost, margin, reward_account, owners, relays, metadata } =
+                    params.as_ref();
+
+                e.array(10)?;
+                e.u16(3)?;
+
+                e.encode_with(operator, ctx)?;
+                e.encode_with(vrf, ctx)?;
+                e.encode_with(pledge, ctx)?;
+                e.encode_with(cost, ctx)?;
+                e.encode_with(margin, ctx)?;
+                e.encode_with(reward_account, ctx)?;
+                e.encode_with(SerialisedAsSet(owners), ctx)?;
+                e.encode_with(relays, ctx)?;
+                e.encode_with(metadata, ctx)?;
+            }
+
+            Self::PoolRetirement(a, b) => {
+                e.array(3)?;
+                e.u16(4)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+            }
+
+            // 5 and 6 removed since the Conway era
+            Self::Reg(a, b) => {
+                e.array(3)?;
+                e.u16(7)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+            }
+
+            Self::UnReg(a, b) => {
+                e.array(3)?;
+                e.u16(8)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+            }
+
+            Self::VoteDeleg(a, b) => {
+                e.array(3)?;
+                e.u16(9)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+            }
+
+            Self::StakeVoteDeleg(a, b, c) => {
+                e.array(4)?;
+                e.u16(10)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+                e.encode_with(c, ctx)?;
+            }
+
+            Self::StakeRegDeleg(a, b, c) => {
+                e.array(4)?;
+                e.u16(11)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+                e.encode_with(c, ctx)?;
+            }
+
+            Self::VoteRegDeleg(a, b, c) => {
+                e.array(4)?;
+                e.u16(12)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+                e.encode_with(c, ctx)?;
+            }
+
+            Self::StakeVoteRegDeleg(a, b, c, d) => {
+                e.array(5)?;
+                e.u16(13)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+                e.encode_with(c, ctx)?;
+                e.encode_with(d, ctx)?;
+            }
+
+            Self::AuthCommitteeHot(a, b) => {
+                e.array(3)?;
+                e.u16(14)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+            }
+
+            Self::ResignCommitteeCold(a, b) => {
+                e.array(3)?;
+                e.u16(15)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+            }
+
+            Self::RegDRepCert(a, b, c) => {
+                e.array(4)?;
+                e.u16(16)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+                e.encode_with(c, ctx)?;
+            }
+
+            Self::UnRegDRepCert(a, b) => {
+                e.array(3)?;
+                e.u16(17)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+            }
+
+            Self::UpdateDRepCert(a, b) => {
+                e.array(3)?;
+                e.u16(18)?;
+                e.encode_with(a, ctx)?;
+                e.encode_with(b, ctx)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<'b, C: cbor::HasProtocolVersion> cbor::decode::Decode<'b, C> for Certificate {
+    fn decode(d: &mut cbor::Decoder<'b>, ctx: &mut C) -> Result<Self, cbor::decode::Error> {
+        cbor::heterogeneous_array(d, |d, assert_len| {
+            let variant = d.u16()?;
+
+            match variant {
+                0 => {
+                    assert_len(2)?;
+                    let a = d.decode_with(ctx)?;
+                    Ok(Self::StakeRegistration(a))
+                }
+
+                1 => {
+                    assert_len(2)?;
+                    let a = d.decode_with(ctx)?;
+                    Ok(Self::StakeDeregistration(a))
+                }
+
+                2 => {
+                    assert_len(3)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    Ok(Self::StakeDelegation(a, b))
+                }
+
+                3 => {
+                    assert_len(10)?;
+                    let id = d.decode_with(ctx)?;
+                    let vrf = d.decode_with(ctx)?;
+                    let pledge = d.decode_with(ctx)?;
+                    let cost = d.decode_with(ctx)?;
+                    let margin = d.decode_with(ctx)?;
+                    let reward_account = d.decode_with(ctx)?;
+                    let SerialisedAsSet(owners) = d.decode_with(ctx)?;
+                    let relays = d.decode_with(ctx)?;
+                    let metadata = d.decode_with(ctx)?;
+
+                    Ok(Self::PoolRegistration(Box::new(PoolParams {
+                        id,
+                        vrf,
+                        pledge,
+                        cost,
+                        margin,
+                        reward_account,
+                        owners,
+                        relays,
+                        metadata,
+                    })))
+                }
+
+                4 => {
+                    assert_len(3)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    Ok(Self::PoolRetirement(a, b))
+                }
+
+                // 5 and 6 removed since the Conway era
+                7 => {
+                    assert_len(3)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    Ok(Self::Reg(a, b))
+                }
+
+                8 => {
+                    assert_len(3)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    Ok(Self::UnReg(a, b))
+                }
+
+                9 => {
+                    assert_len(3)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    Ok(Self::VoteDeleg(a, b))
+                }
+
+                10 => {
+                    assert_len(4)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    let c = d.decode_with(ctx)?;
+                    Ok(Self::StakeVoteDeleg(a, b, c))
+                }
+
+                11 => {
+                    assert_len(4)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    let c = d.decode_with(ctx)?;
+                    Ok(Self::StakeRegDeleg(a, b, c))
+                }
+
+                12 => {
+                    assert_len(4)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    let c = d.decode_with(ctx)?;
+                    Ok(Self::VoteRegDeleg(a, b, c))
+                }
+
+                13 => {
+                    assert_len(5)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    let c = d.decode_with(ctx)?;
+                    let d = d.decode_with(ctx)?;
+                    Ok(Self::StakeVoteRegDeleg(a, b, c, d))
+                }
+
+                14 => {
+                    assert_len(3)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    Ok(Self::AuthCommitteeHot(a, b))
+                }
+
+                15 => {
+                    assert_len(3)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    Ok(Self::ResignCommitteeCold(a, b))
+                }
+
+                16 => {
+                    assert_len(4)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    let c = d.decode_with(ctx)?;
+                    Ok(Self::RegDRepCert(a, b, c))
+                }
+
+                17 => {
+                    assert_len(3)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    Ok(Self::UnRegDRepCert(a, b))
+                }
+
+                18 => {
+                    assert_len(3)?;
+                    let a = d.decode_with(ctx)?;
+                    let b = d.decode_with(ctx)?;
+                    Ok(Self::UpdateDRepCert(a, b))
+                }
+
+                _ => Err(cbor::decode::Error::message("unknown variant id for certificate")),
+            }
+        })
+    }
+}

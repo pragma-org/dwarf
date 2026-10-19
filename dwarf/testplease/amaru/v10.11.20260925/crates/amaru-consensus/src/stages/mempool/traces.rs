@@ -1,0 +1,233 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::collections::BTreeSet;
+
+use amaru_kernel::{Block, Point, Slot, TransactionId, cbor};
+use amaru_metrics::mempool::{
+    MempoolMetricEvent, MempoolMetrics, TxEvictedReason, TxInsertionOrigin, TxInsertionResult,
+};
+use amaru_observability::{debug, info};
+use amaru_ouroboros::MempoolMsg;
+use amaru_ouroboros_traits::{MempoolState, TxInsertResult, TxOrigin, TxRejectReason};
+use amaru_protocols::store_effects::Store;
+
+use crate::effects::{Metrics, MetricsOps};
+
+/// Add traces for a transaction that is candidate for mempool insertion.
+pub(super) fn emit_tx_received(tx_id: &TransactionId, origin: &TxOrigin) {
+    debug!(mempool::transaction::RECEIVED, id = tx_id, origin = tx_origin_label(origin));
+    if let TxOrigin::Remote(peer) = origin {
+        debug!(mempool::transaction::RECEIVED_DETAIL, id = tx_id, peer);
+    }
+}
+
+fn emit_state(mempool_state: MempoolState) {
+    debug!(mempool::state::UPDATE, tx_count = mempool_state.tx_count, size_bytes = mempool_state.size_bytes);
+}
+
+fn should_emit_state_after_insert(result: &TxInsertResult) -> bool {
+    matches!(result, TxInsertResult::Accepted { .. })
+}
+
+fn should_emit_state_after_revalidation(outcome: &RevalidationOutcome) -> bool {
+    !outcome.evicted_tx_ids.is_empty()
+}
+
+/// Add a trace to register the result of a mempool insertion (successful or not).
+/// Emit the corresponding metric.
+pub(super) async fn record_insert(
+    mempool_state: MempoolState,
+    metrics: &Metrics<'_, MempoolMsg>,
+    origin: &TxOrigin,
+    result: &TxInsertResult,
+) {
+    match result {
+        TxInsertResult::Accepted { tx_id, seq_no } => {
+            info!(mempool::transaction::ACCEPTED, id = tx_id, seq_no = seq_no.0, origin = tx_origin_label(origin));
+        }
+        TxInsertResult::Rejected { tx_id, reason } => {
+            let reason_label = reject_reason_label(reason);
+            match reason {
+                TxRejectReason::Invalid(err) => {
+                    let validation_error = err.to_string();
+                    info!(mempool::transaction::REJECTED, id = tx_id, reason = reason_label, validation_error);
+                }
+                TxRejectReason::Duplicate | TxRejectReason::MempoolFull => {
+                    info!(mempool::transaction::REJECTED, id = tx_id, reason = reason_label);
+                }
+            }
+        }
+    }
+    emit_metrics(
+        mempool_state,
+        metrics,
+        MempoolMetricEvent::TxInsertion { origin: tx_origin_metric(origin), result: insertion_result_metric(result) },
+    )
+    .await;
+    if should_emit_state_after_insert(result) {
+        emit_state(mempool_state);
+    }
+}
+
+/// When a new tip is adopted, add a trace recording the result of the transactions revalidations,
+/// and emit metrics
+pub(super) async fn record_revalidation(
+    mempool_state: MempoolState,
+    metrics: &Metrics<'_, MempoolMsg>,
+    store: &Store,
+    tip: Point,
+    outcome: &RevalidationOutcome,
+) {
+    let evicted_count = outcome.evicted_tx_ids.len() as u64;
+
+    if evicted_count > 0 {
+        // An evicted transaction either made it into the adopted block, or a conflicting
+        // transaction spent its inputs.
+        let included = adopted_block_tx_ids(store, &tip).await;
+
+        for tx_id in &outcome.evicted_tx_ids {
+            if included.contains(tx_id) {
+                info!(mempool::transaction::EVICTED, id = tx_id, tip, reason = "included_in_adopted_block");
+            } else {
+                info!(mempool::transaction::EVICTED, id = tx_id, tip, reason = "evicted_after_new_tip");
+            }
+        }
+
+        emit_metrics(
+            mempool_state,
+            metrics,
+            MempoolMetricEvent::TxEvicted { reason: TxEvictedReason::InvalidAfterTip, count: evicted_count },
+        )
+        .await;
+    }
+
+    if evicted_count > 0 || outcome.total_before > 0 {
+        debug!(
+            mempool::transaction::REVALIDATION_DETAIL,
+            tip_slot = outcome.tip_slot,
+            total_before = outcome.total_before,
+            evicted_count,
+            duration_micros = outcome.duration_micros
+        );
+    }
+
+    emit_metrics(mempool_state, metrics, MempoolMetricEvent::Revalidated { duration_micros: outcome.duration_micros })
+        .await;
+    if should_emit_state_after_revalidation(outcome) {
+        emit_state(mempool_state);
+    }
+}
+
+/// The ids of the transactions carried by the newly adopted block.
+/// This shouldn't put too much load on the store, since the block should be in the store already
+/// and "warm" from having been recently validated. If this becomes a concern we can also
+/// pass the validated tx ids from the `validate_block` stage to this stage.
+async fn adopted_block_tx_ids(store: &Store, tip: &Point) -> BTreeSet<TransactionId> {
+    let raw = match store.load_block(&tip.hash()).await {
+        Ok(Some(raw)) => raw,
+        _ => return BTreeSet::new(),
+    };
+    match cbor::decode::<(u16, Block)>(&raw) {
+        Ok((_, block)) => block.transaction_bodies.iter().map(|tx| TransactionId::new(tx.id())).collect(),
+        Err(_) => BTreeSet::new(),
+    }
+}
+
+pub(super) struct RevalidationOutcome {
+    pub(super) tip_slot: Slot,
+    pub(super) total_before: u64,
+    pub(super) evicted_tx_ids: Vec<TransactionId>,
+    pub(super) duration_micros: u64,
+}
+
+async fn emit_metrics(mempool_state: MempoolState, metrics: &Metrics<'_, MempoolMsg>, event: MempoolMetricEvent) {
+    let MempoolState { size_bytes, tx_count } = mempool_state;
+    metrics.record(MempoolMetrics { size_bytes, tx_count, event }.into()).await;
+}
+
+fn tx_origin_label(origin: &TxOrigin) -> String {
+    match origin {
+        TxOrigin::Local => "local",
+        TxOrigin::Remote(_) => "remote",
+    }
+    .to_string()
+}
+
+fn tx_origin_metric(origin: &TxOrigin) -> TxInsertionOrigin {
+    match origin {
+        TxOrigin::Local => TxInsertionOrigin::Local,
+        TxOrigin::Remote(_) => TxInsertionOrigin::Remote,
+    }
+}
+
+fn reject_reason_label(reason: &TxRejectReason) -> String {
+    match reason {
+        TxRejectReason::Invalid(_) => "invalid",
+        TxRejectReason::Duplicate => "duplicate",
+        TxRejectReason::MempoolFull => "mempool_full",
+    }
+    .to_string()
+}
+
+fn insertion_result_metric(result: &TxInsertResult) -> TxInsertionResult {
+    match result {
+        TxInsertResult::Accepted { .. } => TxInsertionResult::Accepted,
+        TxInsertResult::Rejected { reason, .. } => match reason {
+            TxRejectReason::Invalid(_) => TxInsertionResult::RejectedInvalid,
+            TxRejectReason::Duplicate => TxInsertionResult::RejectedDuplicate,
+            TxRejectReason::MempoolFull => TxInsertionResult::RejectedFull,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use amaru_kernel::{Hash, Slot, TransactionId};
+    use amaru_ouroboros_traits::{MempoolSeqNo, TxRejectReason};
+
+    use super::*;
+
+    #[test]
+    fn state_updates_are_only_emitted_for_accepted_insertions() {
+        assert!(should_emit_state_after_insert(&TxInsertResult::Accepted {
+            tx_id: TransactionId::new(Hash::new([1; 32])),
+            seq_no: MempoolSeqNo(1),
+        }));
+
+        assert!(!should_emit_state_after_insert(&TxInsertResult::Rejected {
+            tx_id: TransactionId::new(Hash::new([2; 32])),
+            reason: TxRejectReason::Duplicate,
+        }));
+    }
+
+    #[test]
+    fn state_updates_are_only_emitted_when_revalidation_evicts_transactions() {
+        let no_evictions = RevalidationOutcome {
+            tip_slot: Slot::new(0),
+            total_before: 2,
+            evicted_tx_ids: Vec::new(),
+            duration_micros: 10,
+        };
+        assert!(!should_emit_state_after_revalidation(&no_evictions));
+
+        let with_evictions = RevalidationOutcome {
+            tip_slot: Slot::new(0),
+            total_before: 2,
+            evicted_tx_ids: vec![TransactionId::new(Hash::new([3; 32]))],
+            duration_micros: 10,
+        };
+        assert!(should_emit_state_after_revalidation(&with_evictions));
+    }
+}

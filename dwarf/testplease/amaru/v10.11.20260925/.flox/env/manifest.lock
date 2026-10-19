@@ -1,0 +1,1176 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "schema-version": "1.12.0",
+    "install": {
+      "autoconf": {
+        "pkg-path": "autoconf"
+      },
+      "blst": {
+        "pkg-path": "blst",
+        "outputs": "all"
+      },
+      "cabal-install": {
+        "pkg-path": "cabal-install"
+      },
+      "ghc": {
+        "pkg-path": "ghc"
+      },
+      "libsodium": {
+        "pkg-path": "libsodium",
+        "outputs": "all"
+      },
+      "libtool": {
+        "pkg-path": "libtool"
+      },
+      "pkg-config": {
+        "pkg-path": "pkg-config"
+      },
+      "python3": {
+        "pkg-path": "python3"
+      },
+      "secp256k1": {
+        "pkg-path": "secp256k1",
+        "outputs": "all"
+      }
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "x86_64-darwin",
+        "aarch64-linux",
+        "x86_64-linux"
+      ]
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "autoconf",
+      "broken": false,
+      "derivation": "/nix/store/mykf9gs1bg9k2y0745gymwvnymsbwfil-autoconf-2.73.drv",
+      "description": "Part of the GNU Build System",
+      "install_id": "autoconf",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "autoconf-2.73",
+      "pname": "autoconf",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:12:54.824053Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.73",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/maz4kkn46fs0qdp1d7hf2sp4argija1r-autoconf-2.73-doc",
+        "out": "/nix/store/95l6ii3wvf2jb18qsv6c68zrh0icy124-autoconf-2.73"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "autoconf",
+      "broken": false,
+      "derivation": "/nix/store/kc7a824d6jxkvl42kj30zdxjl4a99n52-autoconf-2.73.drv",
+      "description": "Part of the GNU Build System",
+      "install_id": "autoconf",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "autoconf-2.73",
+      "pname": "autoconf",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:41:21.337860Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.73",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/1z7qbp9f9798p272kk86xiy2kmc22z25-autoconf-2.73-doc",
+        "out": "/nix/store/nm5rd8a2hwcr7hpmj3k9ycw8dfgkfflf-autoconf-2.73"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "autoconf",
+      "broken": false,
+      "derivation": "/nix/store/bia2waqhxwbfc6zkza67v18rj2xa1qc1-autoconf-2.73.drv",
+      "description": "Part of the GNU Build System",
+      "install_id": "autoconf",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "autoconf-2.73",
+      "pname": "autoconf",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:09:00.104573Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.73",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/xcn9y4jclcmrny3v5p3fa09x2sdwmbr0-autoconf-2.73-doc",
+        "out": "/nix/store/fk6643wnsh9bp2ihcsshw13nawn4iqb6-autoconf-2.73"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "autoconf",
+      "broken": false,
+      "derivation": "/nix/store/nbvvyd2hwj5w97dfdj1dn6zq7qxgdbf2-autoconf-2.73.drv",
+      "description": "Part of the GNU Build System",
+      "install_id": "autoconf",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "autoconf-2.73",
+      "pname": "autoconf",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:40:23.943227Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.73",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/z7lc5ii3ygpndqc6k0w71rah3jxjnrw9-autoconf-2.73-doc",
+        "out": "/nix/store/l68kasv0m46dx3lf1972i21jsvwhxa03-autoconf-2.73"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "blst",
+      "broken": false,
+      "derivation": "/nix/store/qn8hkxk9lzvsxk06dv5fhr8a3jll7g3h-blst-0.3.16.drv",
+      "description": "Multilingual BLS12-381 signature library",
+      "install_id": "blst",
+      "license": "ISC",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "blst-0.3.16",
+      "pname": "blst",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:12:54.919780Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.16",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ys0vjdwjiqzia83ysm20yz2xbcw9w2a3-blst-0.3.16"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "blst",
+      "broken": false,
+      "derivation": "/nix/store/8vgghaxm9gdy7aa2vp18fw8yjqvgcl96-blst-0.3.16.drv",
+      "description": "Multilingual BLS12-381 signature library",
+      "install_id": "blst",
+      "license": "ISC",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "blst-0.3.16",
+      "pname": "blst",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:41:21.462464Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.16",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/l16sbiqw3rh8cjc373jaydr5bqk3skmz-blst-0.3.16"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "blst",
+      "broken": false,
+      "derivation": "/nix/store/dz39kq5kwmzrpfbspl8fbnwncs01svrc-blst-0.3.16.drv",
+      "description": "Multilingual BLS12-381 signature library",
+      "install_id": "blst",
+      "license": "ISC",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "blst-0.3.16",
+      "pname": "blst",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:09:00.223041Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.16",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/i11d5z1yngs3kiian0qfy2j4ikizk8qk-blst-0.3.16"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "blst",
+      "broken": false,
+      "derivation": "/nix/store/3l1f1h1mjamfkcdy8p8zavp82gb56x0c-blst-0.3.16.drv",
+      "description": "Multilingual BLS12-381 signature library",
+      "install_id": "blst",
+      "license": "ISC",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "blst-0.3.16",
+      "pname": "blst",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:40:24.080566Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.16",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/q41jg3p588kjxlqsyvf1pnac34gy13xm-blst-0.3.16"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "cabal-install",
+      "broken": false,
+      "derivation": "/nix/store/hk1hhksl67mnlkhiw19c1scmc8w6pna8-cabal-install-3.16.1.0.drv",
+      "description": "The command-line interface for Cabal and Hackage",
+      "install_id": "cabal-install",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "cabal-install-3.16.1.0",
+      "pname": "cabal-install",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:12:54.958135Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.16.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/x5lhhs6zy187zli1xcikxzx9215zcpn8-cabal-install-3.16.1.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "cabal-install",
+      "broken": false,
+      "derivation": "/nix/store/dsmy87gz1q3f49a3wjwagcpabxdhj6cs-cabal-install-3.16.1.0.drv",
+      "description": "The command-line interface for Cabal and Hackage",
+      "install_id": "cabal-install",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "cabal-install-3.16.1.0",
+      "pname": "cabal-install",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:41:21.527023Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.16.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/c5crlgay31plgklhj60ddkmxkh99ldqw-cabal-install-3.16.1.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "cabal-install",
+      "broken": false,
+      "derivation": "/nix/store/91p8g2h3p5zpvhxx3m1d0fsvrzqsr3d2-cabal-install-3.16.1.0.drv",
+      "description": "The command-line interface for Cabal and Hackage",
+      "install_id": "cabal-install",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "cabal-install-3.16.1.0",
+      "pname": "cabal-install",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:09:00.279964Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.16.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/7crlb4czxxcblvxca912h4aa9rsfbqy4-cabal-install-3.16.1.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "cabal-install",
+      "broken": false,
+      "derivation": "/nix/store/qzd29pj4yj1mpykm2i3xmxsgxba0vv5k-cabal-install-3.16.1.0.drv",
+      "description": "The command-line interface for Cabal and Hackage",
+      "install_id": "cabal-install",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "cabal-install-3.16.1.0",
+      "pname": "cabal-install",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:40:24.151976Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.16.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/pvh1ldz8f3qm59q3q9yrrcll6yfsh4bv-cabal-install-3.16.1.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "ghc",
+      "broken": false,
+      "derivation": "/nix/store/yn5mc195a63wyzng1h5sg4dfmph2afar-ghc-9.10.3.drv",
+      "description": "Glasgow Haskell Compiler",
+      "install_id": "ghc",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "ghc-9.10.3",
+      "pname": "ghc",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:12:56.071243Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.10.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/pm47i7lbn6rydyc8ns4dlv32acpx00cl-ghc-9.10.3-doc",
+        "out": "/nix/store/9ykfwdg0frscqp2v0ff8r7ljvjmmzgln-ghc-9.10.3"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "ghc",
+      "broken": false,
+      "derivation": "/nix/store/cdnix7vxkq874crcj6w2ghml4wzrx2l3-ghc-9.10.3.drv",
+      "description": "Glasgow Haskell Compiler",
+      "install_id": "ghc",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "ghc-9.10.3",
+      "pname": "ghc",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:41:23.120660Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.10.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/3kiw6bkv0pgmjzvb7jr9r1g2vilvp980-ghc-9.10.3-doc",
+        "out": "/nix/store/7h4xh484pcjxw9brf2swgmn0q8bawc11-ghc-9.10.3"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "ghc",
+      "broken": false,
+      "derivation": "/nix/store/9q2wyf1s89qvah7xsg3zff1jk9fsgwvz-ghc-9.10.3.drv",
+      "description": "Glasgow Haskell Compiler",
+      "install_id": "ghc",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "ghc-9.10.3",
+      "pname": "ghc",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:09:01.589145Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.10.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/b1c5d2lvnr2rvzm1r144cya6gc56xy7l-ghc-9.10.3-doc",
+        "out": "/nix/store/nnn1cvb8bczv4xvqhlz6risyhdbzypmx-ghc-9.10.3"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "ghc",
+      "broken": false,
+      "derivation": "/nix/store/l994zgm35z7gcdkvah4a4hzq9i1vy4jz-ghc-9.10.3.drv",
+      "description": "Glasgow Haskell Compiler",
+      "install_id": "ghc",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "ghc-9.10.3",
+      "pname": "ghc",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:40:25.894224Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.10.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/d82g4qdgarx0rxbmgf9k68pr5135y1h6-ghc-9.10.3-doc",
+        "out": "/nix/store/61a2wc7hwqg7mqb88g3n1l276zsyrx45-ghc-9.10.3"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "libsodium",
+      "broken": false,
+      "derivation": "/nix/store/4l36pb9pygg982r8ai52h35kbcaksg15-libsodium-1.0.22-unstable-2026-04-09.drv",
+      "description": "Modern and easy-to-use crypto library",
+      "install_id": "libsodium",
+      "license": "ISC",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "libsodium-1.0.22-unstable-2026-04-09",
+      "pname": "libsodium",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:13:14.646008Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2026-04-09",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/myksm3lwfzikgixzkdbrxb607mpckcij-libsodium-1.0.22-unstable-2026-04-09-dev",
+        "out": "/nix/store/1lhfaycm5fznrydp51q1dvgr6acp1xjm-libsodium-1.0.22-unstable-2026-04-09"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "libsodium",
+      "broken": false,
+      "derivation": "/nix/store/flbmfg2a9wyagcggqz55w6ymgbsz5s17-libsodium-1.0.22-unstable-2026-04-09.drv",
+      "description": "Modern and easy-to-use crypto library",
+      "install_id": "libsodium",
+      "license": "ISC",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "libsodium-1.0.22-unstable-2026-04-09",
+      "pname": "libsodium",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:41:48.190228Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2026-04-09",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/c3pk2whzy2i4s2w00swipjswvmhqx001-libsodium-1.0.22-unstable-2026-04-09-debug",
+        "dev": "/nix/store/iqdn0aq1z8w2n0y85207cla2xh3xgm5j-libsodium-1.0.22-unstable-2026-04-09-dev",
+        "out": "/nix/store/nnmiqq34dhr0ranzjivbp0widwc19ya3-libsodium-1.0.22-unstable-2026-04-09"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "libsodium",
+      "broken": false,
+      "derivation": "/nix/store/d69czbg5zbwm4p2wgphdaanqd5a26s4c-libsodium-1.0.22-unstable-2026-04-09.drv",
+      "description": "Modern and easy-to-use crypto library",
+      "install_id": "libsodium",
+      "license": "ISC",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "libsodium-1.0.22-unstable-2026-04-09",
+      "pname": "libsodium",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:09:24.810410Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2026-04-09",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/kxg2vqsgvbjk7c1ywsq4ldy6vyiwiph7-libsodium-1.0.22-unstable-2026-04-09-dev",
+        "out": "/nix/store/iq20lfj0q5q16j4ylmdzaga5ll68ink5-libsodium-1.0.22-unstable-2026-04-09"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "libsodium",
+      "broken": false,
+      "derivation": "/nix/store/j9j744qqzx93m8bps06ri1zylk2kk8xg-libsodium-1.0.22-unstable-2026-04-09.drv",
+      "description": "Modern and easy-to-use crypto library",
+      "install_id": "libsodium",
+      "license": "ISC",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "libsodium-1.0.22-unstable-2026-04-09",
+      "pname": "libsodium",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:40:51.806528Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2026-04-09",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/hkaagh7bm725ld1wrlwnqvh5c2ippz39-libsodium-1.0.22-unstable-2026-04-09-debug",
+        "dev": "/nix/store/cil2vgf2zq49v7w9zbipm1a99kflg0yq-libsodium-1.0.22-unstable-2026-04-09-dev",
+        "out": "/nix/store/bs6w35m2a5hfkpi8lzbvw6zkl35pdx78-libsodium-1.0.22-unstable-2026-04-09"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "libtool",
+      "broken": false,
+      "derivation": "/nix/store/ysyf5bl39fhczkdwpjzgw7rmi2qvcvbm-libtool-2.5.4.drv",
+      "description": "GNU Libtool, a generic library support script",
+      "install_id": "libtool",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "libtool-2.5.4",
+      "pname": "libtool",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:13:14.710965Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.5.4",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "lib": "/nix/store/qc3i6f71iflgq4xbby1yypkawxgxw2rq-libtool-2.5.4-lib",
+        "out": "/nix/store/jjii67kq86zvrignsxqa9yqsi4kc1k9r-libtool-2.5.4"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "libtool",
+      "broken": false,
+      "derivation": "/nix/store/qnfy2ph4fqb4nz1zzn3n9pyb7n3154jf-libtool-2.5.4.drv",
+      "description": "GNU Libtool, a generic library support script",
+      "install_id": "libtool",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "libtool-2.5.4",
+      "pname": "libtool",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:41:48.278121Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.5.4",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "lib": "/nix/store/r9yf9fqq9kv6fr8zyvqys65in6ziyvks-libtool-2.5.4-lib",
+        "out": "/nix/store/sygdjvn1h2xz2ba3kzbcw8a7qy2cwi9g-libtool-2.5.4"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "libtool",
+      "broken": false,
+      "derivation": "/nix/store/4v7nqvzb5blvx2n4bgs5dmc1s9r946g6-libtool-2.5.4.drv",
+      "description": "GNU Libtool, a generic library support script",
+      "install_id": "libtool",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "libtool-2.5.4",
+      "pname": "libtool",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:09:24.896144Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.5.4",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "lib": "/nix/store/irsnc1qypxmm4hg108n8f679rr6lrcw2-libtool-2.5.4-lib",
+        "out": "/nix/store/c89f7pa0g8rmmphsgrsw9356w6q5x5la-libtool-2.5.4"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "libtool",
+      "broken": false,
+      "derivation": "/nix/store/5akrq0li1rniv47m6lnw9sdq2g8wnq8a-libtool-2.5.4.drv",
+      "description": "GNU Libtool, a generic library support script",
+      "install_id": "libtool",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "libtool-2.5.4",
+      "pname": "libtool",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:40:51.897674Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.5.4",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "lib": "/nix/store/9xw59kidx5dh9b0bzk1why292ww1swkd-libtool-2.5.4-lib",
+        "out": "/nix/store/ivn8l2l88sylrnnqd8jwrsm68y7zvcz4-libtool-2.5.4"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "pkg-config",
+      "broken": false,
+      "derivation": "/nix/store/hgfmcqfq0jmdf5vwmjg1l9qgdhbyiyms-pkg-config-wrapper-0.29.2.drv",
+      "description": "Tool that allows packages to find out information about other packages (wrapper script)",
+      "install_id": "pkg-config",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "pkg-config-wrapper-0.29.2",
+      "pname": "pkg-config",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:13:34.958163Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.29.2",
+      "outputs_to_install": [
+        "man",
+        "man",
+        "man",
+        "out",
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/lkf67m0zmwsklfrnxzr90maqhnqcin0c-pkg-config-wrapper-0.29.2-doc",
+        "man": "/nix/store/cww3k17vnqmn3nsbibninhgl3gabz3c9-pkg-config-wrapper-0.29.2-man",
+        "out": "/nix/store/jmy04kpx07ig9sdw478zcwinp8m0lh8w-pkg-config-wrapper-0.29.2"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "pkg-config",
+      "broken": false,
+      "derivation": "/nix/store/1nzw058inpnq5svxbpzx1im999wfvlb3-pkg-config-wrapper-0.29.2.drv",
+      "description": "Tool that allows packages to find out information about other packages (wrapper script)",
+      "install_id": "pkg-config",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "pkg-config-wrapper-0.29.2",
+      "pname": "pkg-config",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:42:19.714452Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.29.2",
+      "outputs_to_install": [
+        "man",
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/7fvjivp8r9pdhv3922508vjgzxidi6kp-pkg-config-wrapper-0.29.2-doc",
+        "man": "/nix/store/zcf4b05gl65i1ixnv9440h1zq15chh5l-pkg-config-wrapper-0.29.2-man",
+        "out": "/nix/store/arqxlwwxqmwycqs5zqcmbzair0mjfxjf-pkg-config-wrapper-0.29.2"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "pkg-config",
+      "broken": false,
+      "derivation": "/nix/store/1lcn6x97s98c9s8sjxv3k3iv05x4qvrh-pkg-config-wrapper-0.29.2.drv",
+      "description": "Tool that allows packages to find out information about other packages (wrapper script)",
+      "install_id": "pkg-config",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "pkg-config-wrapper-0.29.2",
+      "pname": "pkg-config",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:09:50.236832Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.29.2",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/y9vjqqsrn50xv6mar0ffpk3v90xk9n92-pkg-config-wrapper-0.29.2-doc",
+        "man": "/nix/store/9qd0n1nb130ixha7nn5f0hsnz89nl8vw-pkg-config-wrapper-0.29.2-man",
+        "out": "/nix/store/vplhggifvzl90sqphk9b37bjld2wsd5z-pkg-config-wrapper-0.29.2"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "pkg-config",
+      "broken": false,
+      "derivation": "/nix/store/7mq8skw5qdwpypgy5jcci2qxvhmslnvm-pkg-config-wrapper-0.29.2.drv",
+      "description": "Tool that allows packages to find out information about other packages (wrapper script)",
+      "install_id": "pkg-config",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "pkg-config-wrapper-0.29.2",
+      "pname": "pkg-config",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:41:26.190149Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.29.2",
+      "outputs_to_install": [
+        "man",
+        "man",
+        "man",
+        "out",
+        "out",
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/5jahjjs08ip8fmz6fvrm716y1ldypn7l-pkg-config-wrapper-0.29.2-doc",
+        "man": "/nix/store/nb3pmiv91xq2824a0pxdwyp14yrllmw8-pkg-config-wrapper-0.29.2-man",
+        "out": "/nix/store/sq5p43ziv78vxp51rpaajhvz0584lgqw-pkg-config-wrapper-0.29.2"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python3",
+      "broken": false,
+      "derivation": "/nix/store/ffz1bwjdzglryqx0pn3jngal4bz66xfh-python3-3.13.13.drv",
+      "description": "High-level dynamically-typed programming language",
+      "install_id": "python3",
+      "license": "Python-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "python3-3.13.13",
+      "pname": "python3",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:13:37.148341Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.13.13",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/mfkdmplffnbc0av8r6pknl796a6b1r2n-python3-3.13.13"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python3",
+      "broken": false,
+      "derivation": "/nix/store/v13czlpngkramf29nnn8qa0l4svfflwm-python3-3.13.13.drv",
+      "description": "High-level dynamically-typed programming language",
+      "install_id": "python3",
+      "license": "Python-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "python3-3.13.13",
+      "pname": "python3",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:42:22.923986Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.13.13",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/qfb6yj603w8qxd86j0cj7w54l1pv3rkz-python3-3.13.13-debug",
+        "out": "/nix/store/smwd56pl54f0pcjdspgh5vnf20c8xwsc-python3-3.13.13"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python3",
+      "broken": false,
+      "derivation": "/nix/store/5vh9qfs54q47jybcd5zhxmap7lgk2dhg-python3-3.13.13.drv",
+      "description": "High-level dynamically-typed programming language",
+      "install_id": "python3",
+      "license": "Python-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "python3-3.13.13",
+      "pname": "python3",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:09:53.021160Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.13.13",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/1137mc2md1ip5pdslybxl05kysjyh4rg-python3-3.13.13"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python3",
+      "broken": false,
+      "derivation": "/nix/store/d8rrzn9gg475brqyfpdaa3w76gzwmvx4-python3-3.13.13.drv",
+      "description": "High-level dynamically-typed programming language",
+      "install_id": "python3",
+      "license": "Python-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "python3-3.13.13",
+      "pname": "python3",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:41:29.489145Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.13.13",
+      "outputs_to_install": [
+        "out",
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/g2pg1an3v5pm2fmwg1g7dw77ddpqirg7-python3-3.13.13-debug",
+        "out": "/nix/store/l9k0anq0z7zz81zcwy035jfwap9ga6rl-python3-3.13.13"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "secp256k1",
+      "broken": false,
+      "derivation": "/nix/store/hd4imzskc63rlg4fa9vmmpxkk7jdrga4-secp256k1-0.7.1.drv",
+      "description": "Optimized C library for EC operations on curve secp256k1",
+      "install_id": "secp256k1",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "secp256k1-0.7.1",
+      "pname": "secp256k1",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:14:49.660156Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.7.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/5gp96jcylri31rdni71fhyixriqn5x0g-secp256k1-0.7.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "secp256k1",
+      "broken": false,
+      "derivation": "/nix/store/1a7k8zgpv4wq0xiq0yh9ds6ywvy37d59-secp256k1-0.7.1.drv",
+      "description": "Optimized C library for EC operations on curve secp256k1",
+      "install_id": "secp256k1",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "secp256k1-0.7.1",
+      "pname": "secp256k1",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T03:43:48.322536Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.7.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/gbwbzn99y4r8pd837is7i1q4yrm31xy8-secp256k1-0.7.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "secp256k1",
+      "broken": false,
+      "derivation": "/nix/store/z6gij7k6pny30qaxm1a63iyx2qdizf51-secp256k1-0.7.1.drv",
+      "description": "Optimized C library for EC operations on curve secp256k1",
+      "install_id": "secp256k1",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "secp256k1-0.7.1",
+      "pname": "secp256k1",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:11:22.538964Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.7.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/63isvfcj4mqavmcljzhxrpc3x05aksq7-secp256k1-0.7.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "secp256k1",
+      "broken": false,
+      "derivation": "/nix/store/xg4g1hljb6fgfd14379x50il7ym938gc-secp256k1-0.7.1.drv",
+      "description": "Optimized C library for EC operations on curve secp256k1",
+      "install_id": "secp256k1",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "name": "secp256k1-0.7.1",
+      "pname": "secp256k1",
+      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
+      "rev_count": 1027867,
+      "rev_date": "2026-07-05T04:06:12Z",
+      "scrape_date": "2026-07-06T04:43:03.875129Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.7.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/v63d12sl85whvcsa3z6cww1ip9kafwr4-secp256k1-0.7.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

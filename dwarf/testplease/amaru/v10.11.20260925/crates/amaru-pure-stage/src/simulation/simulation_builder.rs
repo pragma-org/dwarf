@@ -1,0 +1,432 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#![expect(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
+
+//! This module contains the [`SimulationBuilder`] and [`SimulationRunning`] types, which are
+//! used to build and run a simulation.
+//!
+//! The simulation is a fully controllable and deterministic [`StageGraph`] for testing purposes.
+//! Execution is controlled entirely via the [`SimulationRunning`] handle returned from
+//! [`SimulationBuilder::run`].
+//!
+
+use std::{
+    any::Any,
+    collections::{BTreeMap, VecDeque},
+    future::Future,
+    marker::PhantomData,
+    sync::{Arc, atomic::AtomicU64},
+    time::Duration,
+};
+
+use parking_lot::Mutex;
+use rand::{SeedableRng, prelude::StdRng};
+use tokio::runtime::{Builder, Handle};
+
+use crate::{
+    BLACKHOLE_NAME, Clock, EPOCH, Instant, Name, PRIORITY_MAILBOX_SIZE, Resources, ScheduleIds, SendData, Sender,
+    StageBuildRef, StageGraph, StageRef,
+    effect::{Effects, StageEffect},
+    effect_box::EffectBox,
+    simulation::{
+        RandStdRng, Run,
+        inputs::Inputs,
+        random::{EvalStrategy, Fifo},
+        replay::Replay,
+        running::SimulationRunning,
+        state::{InitStageData, InitStageState, StageData, StageState, Transition},
+    },
+    stage_name,
+    stage_ref::StageStateRef,
+    trace_buffer::TraceBuffer,
+};
+
+/// A fully controllable and deterministic [`StageGraph`] for testing purposes.
+///
+/// Execution is controlled entirely via the [`SimulationRunning`] handle returned from
+/// [`SimulationBuilder::run`].
+///
+/// Each stage suspends when it needs input (even if a mailbox message is already
+/// waiting) or when it uses an effect such as [`Effects::send`] or [`Effects::wait`].
+/// [`SimulationRunning::run`](crate::simulation::SimulationRunning::run) is the only
+/// way to interpret those effects; a breakpoint stops *before* the matching effect
+/// is interpreted.
+///
+/// Example:
+/// ```rust
+/// use amaru_pure_stage::{Resources, StageGraph, simulation::SimulationBuilder, OutputEffect, ExternalEffect};
+///
+/// let mut network = SimulationBuilder::default();
+/// let stage = network.stage("basic", async |(mut state, out), msg: u32, eff| {
+///     state += msg;
+///     eff.send(&out, state).await;
+///     (state, out)
+/// });
+/// let (output, mut rx) = network.output("output", 10);
+/// let stage = network.wire_up(stage, (1u32, output.clone()));
+///
+/// let rt = tokio::runtime::Runtime::new().unwrap();
+/// let mut running = network.run(rt.handle());
+///
+/// running.run(amaru_pure_stage::simulation::Run::default()).assert_idle();
+/// running.enqueue_msg(&stage, [1]);
+/// running.run(amaru_pure_stage::simulation::Run::skip_and_resolve()).assert_idle();
+/// assert_eq!(rx.drain().collect::<Vec<_>>(), vec![2]);
+/// ```
+pub struct SimulationBuilder {
+    stages: BTreeMap<Name, InitStageData>,
+    stage_counter: usize,
+    effect: EffectBox,
+    clock: Arc<dyn Clock + Send + Sync>,
+    global_epoch_offset: Duration,
+    resources: Resources,
+    schedule_ids: ScheduleIds,
+    mailbox_size: usize,
+    priority_mailbox_size: usize,
+    inputs: Inputs,
+    trace_buffer: Arc<Mutex<TraceBuffer>>,
+    eval_strategy: Box<dyn EvalStrategy>,
+    duration_rng: StdRng,
+}
+
+impl SimulationBuilder {
+    pub fn with_mailbox_size(mut self, size: usize) -> Self {
+        self.mailbox_size = size;
+        self
+    }
+
+    /// Set the maximum number of undelivered self-scheduled messages allowed per stage.
+    ///
+    /// Defaults to [`PRIORITY_MAILBOX_SIZE`]. Exceeding the limit
+    /// panics so schedule storms fail loudly.
+    pub fn with_priority_mailbox_size(mut self, size: usize) -> Self {
+        self.priority_mailbox_size = size;
+        self
+    }
+
+    pub fn with_trace_buffer(mut self, trace_buffer: Arc<Mutex<TraceBuffer>>) -> Self {
+        self.trace_buffer = trace_buffer;
+        self
+    }
+
+    pub fn with_epoch_clock(mut self) -> Self {
+        self.clock = Arc::new(AtomicU64::new(0));
+        self
+    }
+
+    /// Set the global epoch offset for this simulation.
+    /// Instants produced by this simulation's clock will have `duration_since_global_epoch`
+    /// return sim_elapsed + this offset. This is used for Cardano slot arithmetic relative to
+    /// `GlobalParameters::system_start`.
+    pub fn with_global_epoch_offset(mut self, offset: Duration) -> Self {
+        self.global_epoch_offset = offset;
+        self
+    }
+
+    pub fn with_initial_clock(mut self, t: Instant) -> Self {
+        let nanos = t.inner.saturating_duration_since(*EPOCH).as_nanos() as u64;
+        self.clock = Arc::new(AtomicU64::new(nanos));
+        self
+    }
+
+    pub fn with_schedule_ids(mut self, schedule_ids: ScheduleIds) -> Self {
+        self.schedule_ids = schedule_ids;
+        self
+    }
+
+    pub fn with_eval_strategy(mut self, eval_strategy: impl EvalStrategy + 'static) -> Self {
+        self.eval_strategy = Box::new(eval_strategy);
+        self
+    }
+
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        // Distinct derived stream so duration samples do not share the eval-strategy sequence.
+        self.duration_rng = StdRng::seed_from_u64(seed.wrapping_add(0x9E37_79B9_7F4A_7C15));
+        self.with_eval_strategy(RandStdRng(StdRng::seed_from_u64(seed)))
+    }
+
+    pub fn replay(self) -> Replay {
+        let stages = self
+            .stages
+            .into_iter()
+            .map(|(name, data)| {
+                let state = match data.state {
+                    InitStageState::Uninitialized => panic!("forgot to wire up stage `{name}`"),
+                    InitStageState::Idle(state) => StageState::Idle(state),
+                };
+                (
+                    name.clone(),
+                    StageData {
+                        name,
+                        mailbox: data.mailbox,
+                        priority: VecDeque::new(),
+                        tombstones: VecDeque::new(),
+                        state,
+                        transition: data.transition,
+                        waiting: Some(StageEffect::Receive),
+                        senders: VecDeque::new(),
+                        scheduled_pending: 0,
+                        timeouts: Default::default(),
+                        supervised_by: BLACKHOLE_NAME.clone(),
+                        tombstone: None,
+                    },
+                )
+            })
+            .collect();
+        Replay::new(stages, self.effect, self.trace_buffer, self.schedule_ids)
+    }
+
+    /// Start the simulation.
+    ///
+    /// `tokio_handle` is required so a sampled external-effect deadline can force `run()`
+    /// to completion at that simulated instant (wall-clock compute must not reorder events).
+    pub fn run(self, tokio_handle: &Handle) -> SimulationRunning {
+        let Self {
+            stages: s,
+            stage_counter,
+            effect,
+            clock,
+            global_epoch_offset,
+            resources,
+            mailbox_size,
+            priority_mailbox_size,
+            inputs,
+            schedule_ids,
+            trace_buffer,
+            eval_strategy,
+            duration_rng,
+        } = self;
+
+        debug_assert_eq!(stage_counter, s.len());
+
+        let mut stages = BTreeMap::new();
+        for (name, data) in s {
+            let InitStageData { mailbox, state, transition } = data;
+
+            let state = match state {
+                InitStageState::Uninitialized => panic!("forgot to wire up stage `{name}`"),
+                InitStageState::Idle(state) => {
+                    trace_buffer.lock().push_state(&name, &state);
+                    StageState::Idle(state)
+                }
+            };
+            let data = StageData {
+                name: name.clone(),
+                mailbox,
+                priority: VecDeque::new(),
+                tombstones: VecDeque::new(),
+                state,
+                transition,
+                waiting: Some(StageEffect::Receive),
+                senders: VecDeque::new(),
+                scheduled_pending: 0,
+                timeouts: Default::default(),
+                supervised_by: BLACKHOLE_NAME.clone(),
+                tombstone: None,
+            };
+            stages.insert(name, data);
+        }
+        SimulationRunning::new(
+            stages,
+            inputs,
+            effect,
+            clock,
+            resources,
+            mailbox_size,
+            priority_mailbox_size,
+            schedule_ids,
+            trace_buffer,
+            eval_strategy,
+            global_epoch_offset,
+            duration_rng,
+            tokio_handle.clone(),
+        )
+    }
+}
+
+impl Default for SimulationBuilder {
+    fn default() -> Self {
+        let clock = Arc::new(AtomicU64::new(0));
+
+        Self {
+            stages: Default::default(),
+            stage_counter: 0,
+            effect: Default::default(),
+            clock,
+            global_epoch_offset: Duration::ZERO,
+            resources: Resources::default(),
+            mailbox_size: 10,
+            priority_mailbox_size: PRIORITY_MAILBOX_SIZE,
+            inputs: Inputs::new(10),
+            schedule_ids: ScheduleIds::new(),
+            // default is a TraceBuffer that drops all messages
+            trace_buffer: Arc::new(Mutex::new(TraceBuffer::new(0, 0))),
+            eval_strategy: Box::new(Fifo),
+            duration_rng: StdRng::seed_from_u64(0),
+        }
+    }
+}
+
+impl StageGraph for SimulationBuilder {
+    fn stage<Msg, St, F, Fut>(&mut self, name: impl AsRef<str>, mut f: F) -> StageBuildRef<Msg, St, Box<dyn Any + Send>>
+    where
+        F: FnMut(St, Msg, Effects<Msg>) -> Fut + 'static + Send,
+        Fut: Future<Output = St> + 'static + Send,
+        Msg: SendData + serde::de::DeserializeOwned,
+        St: SendData,
+    {
+        // THIS MUST MATCH THE TOKIO BUILDER
+        let name = stage_name(&mut self.stage_counter, name.as_ref());
+        let me = StageRef::new(name.clone());
+        let effects = Effects::new(
+            me,
+            self.effect.clone(),
+            self.clock.clone(),
+            self.global_epoch_offset,
+            self.resources.clone(),
+            self.schedule_ids.clone(),
+            self.trace_buffer.clone(),
+        );
+        let transition: Transition = Box::new(move |state: Box<dyn SendData>, msg: Box<dyn SendData>| {
+            let state = state.cast::<St>().expect("internal state type error");
+            let msg = msg.cast_deserialize::<Msg>().expect("internal message type error");
+            let state = f(*state, msg, effects.clone());
+            Box::pin(async move { Box::new(state.await) as Box<dyn SendData> })
+        });
+
+        if let Some(old) = self.stages.insert(
+            name.clone(),
+            InitStageData { state: InitStageState::Uninitialized, mailbox: VecDeque::new(), transition },
+        ) {
+            #[expect(clippy::panic)]
+            {
+                // names are unique by construction
+                panic!("stage {name} already exists with state {:?}", old);
+            }
+        }
+
+        StageBuildRef { name, network: Box::new(()), _ph: PhantomData }
+    }
+
+    fn wire_up<Msg: SendData, St: SendData>(
+        &mut self,
+        stage: crate::StageBuildRef<Msg, St, Box<dyn Any + Send>>,
+        state: St,
+    ) -> StageStateRef<Msg, St> {
+        let StageBuildRef { name, network: _, _ph } = stage;
+
+        let data = self.stages.get_mut(&name).unwrap();
+        data.state = InitStageState::Idle(Box::new(state));
+
+        StageStateRef::new(name)
+    }
+
+    fn preload<Msg: SendData>(
+        &mut self,
+        stage: impl AsRef<StageRef<Msg>>,
+        messages: impl IntoIterator<Item = Msg>,
+    ) -> Result<(), Box<dyn SendData>> {
+        let stage = stage.as_ref();
+        for msg in messages {
+            let (_name, leftover, payload) = stage.materialize_send(msg);
+            if leftover.is_some() {
+                return Err(Box::new("cannot preload a call-reply StageRef".to_string()));
+            }
+            deliver_message(&mut self.stages, self.mailbox_size, stage.name().clone(), payload)?;
+        }
+        Ok(())
+    }
+
+    fn input<Msg: SendData>(&mut self, stage: impl AsRef<StageRef<Msg>>) -> Sender<Msg> {
+        self.inputs.sender(stage.as_ref())
+    }
+
+    fn resources(&self) -> &Resources {
+        &self.resources
+    }
+}
+
+fn deliver_message(
+    stages: &mut BTreeMap<Name, InitStageData>,
+    mailbox_size: usize,
+    name: Name,
+    msg: Box<dyn SendData>,
+) -> Result<(), Box<dyn SendData>> {
+    let Some(data) = stages.get_mut(&name) else {
+        return Err(Box::new(format!("stage {name} does not exist")));
+    };
+    if data.mailbox.len() >= mailbox_size {
+        return Err(msg);
+    }
+    data.mailbox.push_back(msg);
+    Ok(())
+}
+
+/// Run a function using store effects only inside a stage and get back the result as the stage state.
+pub fn run_function_with_resource<S, R, F, Fut>(r: R, function: F) -> S
+where
+    F: FnMut(Effects<()>) -> Fut + 'static + Send,
+    Fut: Future<Output = S> + 'static + Send,
+    S: SendData + PartialEq + serde::de::DeserializeOwned + serde::Serialize + 'static + Clone,
+    R: Send + Sync + 'static + Clone,
+{
+    run_function(|resources| resources.put::<R>(r), function)
+}
+
+/// Run a function inside a stage and get back the result as the stage state.
+/// Resources can be set with the `set_resources` function and the `test_stage` function might
+/// modify the state (initially set to `None`) to get a value back.
+pub fn run_function<S, FS, F, Fut>(set_resources: FS, mut function: F) -> S
+where
+    FS: FnOnce(&Resources),
+    F: FnMut(Effects<()>) -> Fut + 'static + Send,
+    Fut: Future<Output = S> + 'static + Send,
+    S: SendData + PartialEq + serde::de::DeserializeOwned + serde::Serialize + 'static + Clone,
+{
+    run_test(set_resources, (), move |_, _, eff| {
+        let future = function(eff);
+        async move { Some(future.await) }
+    })
+    .unwrap()
+}
+
+/// Run a function inside a stage and get back the result as the stage state.
+/// Resources can be set with the `set_resources` function and the `test_stage` function might
+/// modify the state (initially set to `None`) to get a value back.
+pub fn run_test<S, T, FS, F, Fut>(set_resources: FS, msg: T, test_stage: F) -> Option<S>
+where
+    FS: FnOnce(&Resources),
+    F: FnMut(Option<S>, T, Effects<T>) -> Fut + 'static + Send,
+    Fut: Future<Output = Option<S>> + 'static + Send,
+    T: SendData + serde::de::DeserializeOwned,
+    S: SendData + PartialEq + serde::de::DeserializeOwned + serde::Serialize + 'static + Clone,
+{
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+    let trace_buffer = TraceBuffer::new_shared(100, 1_000_000);
+    let guard = TraceBuffer::drop_guard(&trace_buffer);
+    let mut network = SimulationBuilder::default().with_trace_buffer(trace_buffer);
+    set_resources(network.resources());
+
+    let stage = network.stage("test_stage", test_stage);
+    let stage = network.wire_up(stage, None);
+    network.preload(&stage, [msg]).unwrap();
+
+    let mut running = network.run(runtime.handle());
+    running.run(Run::skip_and_resolve()).assert_idle();
+
+    let result = running.get_state(&stage).cloned().flatten();
+    guard.defuse();
+    result
+}

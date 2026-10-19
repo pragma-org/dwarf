@@ -1,0 +1,188 @@
+---
+type: architecture
+status: accepted
+---
+
+# Observability
+
+## Context
+
+This decision record documents a general organization for how the Amaru node will collect and report critical operational metrics, logs, and tracing data.
+
+A key component of operating any computing system at scale is observability: tracking what happened, how often something happened, how long it took, how many resources something is consuming, and where potential issues or bottlenecks might be found.
+
+Thus, we would like Amaru to track and report these traces and metrics. We would also like to use industry standards so that users of the Amaru node can swap out their own visualization and aggregation infrastructure as needed.
+
+We would like the codebase to organize the metrics it tracks in a simple, consistent and modular way, such that each module or crate can own a subset of the metrics, while at the same time being consistent and discoverable through reading the code.
+
+## Decision
+
+### General Principles
+
+- By default, the application provides human-readable information on stderr in a pretty format (possibly TUI).
+
+- Additionally, the application will embrace [observability](https://peter.bourgon.org/blog/2017/02/21/metrics-tracing-and-logging.html) and provide logs, traces, spans and metrics using Rust's [tracing](https://docs.rs/tracing/latest/tracing/index.html) ecosystem.
+
+- All traces and spans can be made available on stdout in a structured format (JSON).
+
+- All traces, spans and metrics can be made available via the OpenTelemetry Protocol (OTLP) on the default OTLP ports.
+    - To ease its consumption, we provide a unified monitoring stack using [Grafana](https://grafana.com/), [Tempo](https://grafana.com/oss/tempo/), [Prometheus](https://prometheus.io/), and [Loki](https://grafana.com/oss/loki/).
+
+    - We will use the [opentelemetry-rust](https://github.com/open-telemetry/opentelemetry-rust) crate to collect and report traces and metrics.
+
+    - We will make judicious use of [Spans](https://opentelemetry.io/docs/concepts/observability-primer/#spans) to expose the structured nature of the workload the Amaru node performs.
+
+- How nested span context is encoded on each product sink (console, JSON, OpenTelemetry, TUI)
+  is specified in [EDR-033](./033-tracing-stack-span-encoding.md).
+
+- We define the frontier between logs and traces by following a simple rule:
+    - Any event at the DEBUG level or above is considered a log
+    - Any event at the TRACE level is considered a trace
+
+### Tracing Schemas
+
+To ensure consistency and enable compile-time validation of tracing instrumentation, we use a schema-based approach implemented in the `amaru-observability` crate.
+
+#### Schema Definition
+
+Schemas are defined using the `define_schemas!` macro in a central location (`amaru-observability/src/schemas.rs`). They are organized hierarchically:
+
+- The first two levels define the target of a span, for example `amaru::consensus` or `amaru::ledger`.
+- The other levels (two or three in practice) define the name of the span, for example `header.evolve_nonce` or `block.apply` (
+  see [EDR-026](./026-tracing-span-design.md) for more details).
+
+```rust
+define_schemas! {
+    amaru {
+        consensus {
+            header {
+                EVOLVE_NONCE {
+                    required hash: String
+                }
+                VALIDATE {
+                    required issuer_key: String
+                }
+            }
+        }
+        ledger {
+            block {
+                APPLY {
+                    required point_slot: u64
+                    optional error: String
+                }
+            }
+        }
+    }
+}
+```
+
+Each schema declares:
+
+- **Required fields**: Must be supplied when creating the span, with matching types
+- **Optional fields**: Supplementary context that can be recorded later
+- **Rendering**: an optional `%` (`Display`) or `?` (`Debug`) prefix on the type. Unprefixed
+  primitives and `String` use typed `tracing::Value`; other unprefixed types must implement
+  `Serialize + JsonSchema` and are encoded as CBOR. Declare the owned type (or a slice `[T]`)
+  on the schema; call sites pass `T`, `&T`, or another `Borrow<T>` wrapper and are borrowed
+  (`String` accepts `String` and `&str` with no extra clone). Shorthand (`field`) and `@expr`
+  for a ready-made `tracing::Value` are allowed; `%` / `?` belong on the schema, not the call
+  site.
+
+##### Tags
+
+In addition to fields, a `tags: <name>, ...` entry assigns functional tags to schemas, classifying spans by the kind of work they perform (`setup`, `cpu`, `db`, `io`, etc., see [EDR-026](./026-tracing-span-design.md) for the list of tags).
+
+Tags can be declared at the module level, in which case they are inherited by all the schemas nested below that module, or inside a specific schema, in which case they override the module-level declaration. Each tag is automatically recorded on the corresponding spans as a boolean attribute named `amaru.tag.<name>`.
+
+Since tags are regular span attributes, they can be used to select spans regardless of their target and name with an `EnvFilter` directive: for example `AMARU_LOG='[{amaru.tag.cpu=true}]=trace'` enables all the spans tagged with `cpu`.
+
+Several tags can be combined:
+
+- To select the spans carrying _either_ tag (OR), use one directive per tag: `AMARU_LOG='[{amaru.tag.db=true}]=trace,[{amaru.tag.io=true}]=trace'` enables all the spans tagged with `db` plus all the spans tagged with `io`, because each directive is evaluated independently.
+- To select only the spans carrying _all_ the tags (AND), list the tags inside a single directive: `AMARU_LOG='[{amaru.tag.cpu=true,amaru.tag.db=true}]=trace'` only enables the spans tagged with both `cpu` and `db`.
+
+#### Explicit Span Construction
+
+Amaru now prefers explicit span creation over function-wide instrumentation wrappers. New schema-based tracing should use `debug_span!` or `info_span!` to create a span at the point where the work actually begins, then either enter that span or attach it to a future with `.instrument(...)`.
+
+Note that even though the schema compilation generates full names like `amaru_observability::amaru::consensus::header::EVOLVE_NONCE`, the `info_span!/debug_span!/trace_span!` macros only requires the second target name and the span name, e.g. `consensus::header::EVOLVE_NONCE`.
+
+```rust
+fn evolve_nonce(&self, hash: String) -> Result<Nonce, ConsensusError> {
+    let span = debug_span!(consensus::header::EVOLVE_NONCE, hash);
+    let _guard = span.enter();
+
+    // function body
+}
+```
+
+For async work, the same schema-validated span can be attached directly to the future:
+
+```rust
+async move {
+    apply_block(block).await
+}
+.instrument(debug_span!(ledger::block::APPLY, point_slot))
+.await;
+```
+
+At compile time, `debug_span!` validates:
+
+- The schema exists at the specified path
+- Required fields are supplied when the span is created
+- Field names and types match the schema declaration
+
+This explicit style is preferred because it makes span boundaries visible in the code and works naturally with partial scopes and async pipelines.
+
+#### Span Augmentation
+
+The `trace_record!` macro records fields to the current span with a schema anchor:
+
+```rust
+fn apply_block(block: &Block, point_slot: u64) {
+    let span = debug_span!(ledger::block::APPLY, point_slot);
+    let _guard = span.enter();
+
+    trace_record!(
+        ledger::block::APPLY,
+        block_size = block.size(),
+        tx_count = block.transactions.len()
+    );
+}
+```
+
+This macro is a lightweight way to add context to the current span without creating a new one. The schema constant anchors the recording and documents which schema these fields belong to.
+
+#### Benefits
+
+- **Compile-time safety**: Typos or type mismatches in field names cause compilation errors
+- **Consistency**: All spans follow the same instrumentation pattern
+- **Discoverability**: All schemas are defined in a central, documented location
+- **Flexibility**: Functions can have additional parameters beyond schema fields, and spans can cover exactly the synchronous or asynchronous scope that matters
+
+### Metrics
+
+Each top-level module or crate will (optionally) define its own Metrics module, which exposes a `{CrateName}Metrics` struct, with a `new(..)` method and deriving `Clone`. At the time of this decision record, this would be the Ledger module.
+
+Each module or crate will, if applicable, accept an argument of type `{CrateName}Metrics` during initialization, and store an owned instance of this struct.
+
+Each metrics struct will expose a number of top-level [Counters, Gauges, or Histograms](https://docs.rs/opentelemetry/latest/opentelemetry/metrics/index.html) relevant to its workload, and in the course of performing its work, will update these accordingly. The `new(..)` method will accept an [`SdkMeterProvider`](https://docs.rs/opentelemetry_sdk/latest/opentelemetry_sdk/metrics/struct.SdkMeterProvider.html) and initialize relevant objects with names, descriptions, and units as appropriate.
+
+- [Counters](https://opentelemetry.io/docs/specs/otel/metrics/api/#counter) are used to count discrete or measurable events or quantities that can be accumulated over time, such as number of blocks processed, number of bytes read, etc.
+- [Gauges](https://opentelemetry.io/docs/specs/otel/metrics/api/#gauge) are used to track measurements that only make sense at a point in time, and shouldn't be added, such as current Memory or CPU usage, temperature, etc.
+- [Histograms](https://opentelemetry.io/docs/specs/otel/metrics/api/#histogram) are used to track values where the statistical distributions are important, such as response latencies, where you want to query the 90th percentile, etc.
+
+Such metrics should follow the [Open Telemetry Metrics Semantics conventions](https://opentelemetry.io/docs/specs/semconv/general/metrics/).
+
+The Amaru binary itself will contain a `metrics` module that stores and constructs instances of all other metrics types. It will be responsible for constructing and orchestrating all modules and crates. It will also track common system and process metrics, such as CPU and memory usage.
+
+## Consequences
+
+- Each component of the Amaru node can fully own its own metrics. At the same time, someone wishing to document or explore the metrics supported by the Amaru node has a single entrypoint to begin their exploration.
+
+- Users of the Amaru node can track, aggregate, and alert on the health of the node based on multiple system or component specific metrics. They might notice, for example, that CPU usage hits 100% at epoch boundaries, resulting in missing slot leader checks, which indicates that the machine they are running the node on is underprovisioned.
+
+## References
+
+- [PR #84](https://github.com/pragma-org/amaru/pull/84) - Initial metrics implementation
+- [PR #638](https://github.com/pragma-org/amaru/pull/638) - Tracing schemas and compile-time validation

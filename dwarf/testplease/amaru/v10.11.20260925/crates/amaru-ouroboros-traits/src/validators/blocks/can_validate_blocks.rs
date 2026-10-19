@@ -1,0 +1,122 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::fmt::{Debug, Display, Formatter};
+
+use amaru_kernel::{Block, Point};
+use amaru_metrics::ledger::LedgerMetrics;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+#[async_trait::async_trait]
+pub trait CanValidateBlocks: Send + Sync {
+    async fn roll_forward_block(
+        &self,
+        block: Block,
+    ) -> Result<Result<LedgerMetrics, BlockValidationError>, BlockValidationError>;
+
+    async fn switch_to_fork(&self, fork_point: &Point, to: &Point) -> Result<ForkSwitchOutcome, BlockValidationError>;
+
+    async fn tip(&self) -> Point;
+
+    /// The chain tip of the volatile in-memory ledger view, if any (`VolatileDB::view_back`).
+    /// When `None`, the applied ledger tip is entirely in stable storage.
+    async fn volatile_tip(&self) -> Option<Point>;
+}
+
+/// Error returned when the thread owning the ledger state is no longer running, so requests can
+/// no longer be serviced. Recoverable from a `BlockValidationError` through `downcast_ref`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("the ledger thread has terminated")]
+pub struct LedgerThreadTerminated;
+
+/// A block that failed to apply during a fork switch, with a rendered reason.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InvalidBlock {
+    pub tip: Point,
+    pub reason: String,
+}
+
+/// Outcome of asking the ledger to switch to a fork.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ForkSwitchOutcome {
+    /// Every fork block was applied; the ledger tip is the fork tip.
+    Completed { metrics: LedgerMetrics },
+    /// A block failed to apply but the applied prefix was kept because it already beats the chain
+    /// it replaced; `applied_tip` is the first actual ledger tip after the switch.
+    Partial { applied_tip: Point, metrics: LedgerMetrics, failure: InvalidBlock },
+    /// A block failed to apply and the ledger fully restored its pre-switch state.
+    Failed { failure: InvalidBlock },
+}
+
+#[derive(Debug, Error)]
+pub struct BlockValidationError(anyhow::Error);
+
+impl BlockValidationError {
+    pub fn new(err: anyhow::Error) -> Self {
+        BlockValidationError(err)
+    }
+
+    pub fn to_anyhow(self) -> anyhow::Error {
+        self.0
+    }
+
+    pub fn downcast<T: std::error::Error + Debug + Send + Sync + 'static>(self) -> Result<T, anyhow::Error> {
+        self.0.downcast::<T>()
+    }
+
+    pub fn downcast_ref<T: std::error::Error + Debug + Send + Sync + 'static>(&self) -> Option<&T> {
+        self.0.downcast_ref::<T>()
+    }
+}
+
+impl From<anyhow::Error> for BlockValidationError {
+    fn from(err: anyhow::Error) -> Self {
+        BlockValidationError::new(err)
+    }
+}
+
+impl Display for BlockValidationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BlockValidationError: {}", self.0)
+    }
+}
+
+impl Serialize for BlockValidationError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+/// This deserialization implementation is a best-effort attempt to
+/// recover the error message. The original error type is lost during
+/// serialization, so we can only reconstruct the error message as a string.
+impl<'de> Deserialize<'de> for BlockValidationError {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(BlockValidationError::new(anyhow::anyhow!(s)))
+    }
+}
+
+impl PartialEq for BlockValidationError {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_string() == other.0.to_string()
+    }
+}

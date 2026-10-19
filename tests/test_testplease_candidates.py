@@ -55,6 +55,23 @@ def test_detects_uncompiled_upstream_without_client_configuration(tmp_path, impl
         record.candidate_name = "changed"
 
 
+def test_detects_current_amaru_release_binary_path(tmp_path):
+    source = tmp_path / "dwarf/testplease/amaru/release"
+    write(source, "Cargo.toml", '[workspace]\nmembers = ["crates/*"]\n')
+    write(
+        source,
+        "crates/amaru/Cargo.toml",
+        '[package]\nname = "amaru"\nversion = "10.11.0"\n'
+        '[[bin]]\nname = "amaru"\npath = "src/bin/amaru/main.rs"\n',
+    )
+    write(source, "crates/amaru/src/bin/amaru/main.rs", "fn main() {}\n")
+
+    records = scan(tmp_path)
+
+    assert len(records) == 1
+    assert records[0].source_root == source.resolve()
+
+
 def test_scans_both_implementations_in_stable_name_order(tmp_path):
     candidate(tmp_path, "cardano-node", "second")
     candidate(tmp_path, "amaru", "z-last")

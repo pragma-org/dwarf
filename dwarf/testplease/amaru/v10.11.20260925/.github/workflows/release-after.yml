@@ -1,0 +1,190 @@
+name: Release After
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to finalize
+        required: true
+        type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+
+jobs:
+  release-metadata:
+    name: Determine release metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      base_branch: ${{ steps.meta.outputs.base_branch }}
+      target_commitish: ${{ steps.meta.outputs.target_commitish }}
+      published_at: ${{ steps.meta.outputs.published_at }}
+
+    steps:
+      - name: Determine version
+        id: meta
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          release_tag="${INPUT_RELEASE_TAG:-$EVENT_RELEASE_TAG}"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${release_tag}")"
+          target_commitish="$(jq -r '.target_commitish' <<< "$release_json")"
+          published_at="$(jq -r '.published_at' <<< "$release_json")"
+          base_branch="${DEFAULT_BRANCH}"
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${target_commitish}" >/dev/null 2>&1; then
+            base_branch="${target_commitish}"
+          fi
+
+          echo "base_branch=${base_branch}" >> "$GITHUB_OUTPUT"
+          echo "published_at=${published_at}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "target_commitish=${target_commitish}" >> "$GITHUB_OUTPUT"
+          echo "version=${release_tag#v}" >> "$GITHUB_OUTPUT"
+
+  finalize-release:
+    name: Finalize published release
+    needs: release-metadata
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # https://github.com/actions/checkout/releases/tag/v7.0.1
+        with:
+          ref: ${{ needs.release-metadata.outputs.base_branch }}
+
+      - name: Ensure release tag exists
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.release_tag }}
+          TARGET_COMMITISH: ${{ needs.release-metadata.outputs.target_commitish }}
+        run: |
+          set -euo pipefail
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Tag ${RELEASE_TAG} already exists"
+            exit 0
+          fi
+
+          target_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TARGET_COMMITISH}" --jq .sha)"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${RELEASE_TAG}" \
+            -f sha="${target_sha}"
+
+      - name: Download published release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "${RELEASE_TAG}" --dir dist
+          ls -lh dist
+
+      - name: Generate Homebrew formula
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.release_tag }}
+          VERSION: ${{ needs.release-metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          make homebrew \
+            AMARU_VERSION="${VERSION}" \
+            HOMEBREW_BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}" \
+            HOMEBREW_MACOS_ARM64_ARCHIVE="dist/amaru-${VERSION}-macos-aarch64.tar.gz" \
+            HOMEBREW_LINUX_ARM64_ARCHIVE="dist/amaru-${VERSION}-linux-aarch64.tar.gz" \
+            HOMEBREW_LINUX_X86_64_ARCHIVE="dist/amaru-${VERSION}-linux-x86_64.tar.gz"
+
+      - name: Generate Nix flake
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.release_tag }}
+          VERSION: ${{ needs.release-metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          make nix-flake \
+            AMARU_VERSION="${VERSION}" \
+            NIX_BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}" \
+            NIX_MACOS_ARM64_ARCHIVE="dist/amaru-${VERSION}-macos-aarch64.tar.gz" \
+            NIX_LINUX_ARM64_ARCHIVE="dist/amaru-${VERSION}-linux-aarch64.tar.gz" \
+            NIX_LINUX_X86_64_ARCHIVE="dist/amaru-${VERSION}-linux-x86_64.tar.gz"
+
+      - name: Generate winget manifests
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.release_tag }}
+          VERSION: ${{ needs.release-metadata.outputs.version }}
+          RELEASE_PUBLISHED_AT: ${{ needs.release-metadata.outputs.published_at }}
+        run: |
+          set -euo pipefail
+          make winget \
+            AMARU_VERSION="${VERSION}" \
+            WINGET_BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}" \
+            WINGET_WINDOWS_X86_64_INSTALLER="dist/amaru-${VERSION}-windows-x86_64.msi" \
+            WINGET_RELEASE_DATE="$(printf '%s' "${RELEASE_PUBLISHED_AT}" | cut -dT -f1)"
+
+      - name: Update README installation snippets
+        shell: bash
+        env:
+          VERSION: ${{ needs.release-metadata.outputs.version }}
+        run: |
+          chmod +x scripts/update-readme-installation-sections
+          ./scripts/update-readme-installation-sections --version "${VERSION}"
+
+      - name: Update changelog release headers
+        continue-on-error: true
+        shell: bash
+        env:
+          VERSION: ${{ needs.release-metadata.outputs.version }}
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.release_tag }}
+        run: |
+          python3 scripts/update-changelog-after-release \
+            --version "${VERSION}" \
+            --release-tag "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}"
+
+      - name: Create packaging update PR
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # https://github.com/peter-evans/create-pull-request/releases/tag/v8.1.1
+        with:
+          base: ${{ needs.release-metadata.outputs.base_branch }}
+          branch: release-${{ needs.release-metadata.outputs.release_tag }}
+          delete-branch: true
+          sign-commits: true
+          signoff: true
+          commit-message: "chore: update packages metadata for ${{ needs.release-metadata.outputs.release_tag }}"
+          title: "Update packages metadata for ${{ needs.release-metadata.outputs.release_tag }}"
+          body: |
+            Updates packages metadata generated from the published release [`${{ needs.release-metadata.outputs.release_tag }}`](https://github.com/pragma-org/amaru/releases/tag/${{ needs.release-metadata.outputs.release_tag }}).
+
+            This PR was created automatically by the `release-published` workflow.
+          add-paths: |
+            CHANGELOG.md
+            Formula/**
+            flake.nix
+            README.md
+            manifests/**
+
+  docker-release:
+    needs: release-metadata
+    uses: ./.github/workflows/template-docker-publish.yml
+    with:
+      artifact_source: release-asset
+      artifact_version: ${{ needs.release-metadata.outputs.version }}
+      release_tag: ${{ needs.release-metadata.outputs.release_tag }}
+      checkout_ref: ${{ needs.release-metadata.outputs.target_commitish }}
+      image_name: ghcr.io/pragma-org/amaru
+      tag_version: ${{ needs.release-metadata.outputs.release_tag }}
+    secrets: inherit

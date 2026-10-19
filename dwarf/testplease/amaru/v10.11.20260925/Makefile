@@ -1,0 +1,321 @@
+export AMARU_NETWORK ?= preprod
+export AMARU_PEER_ADDRESS ?= 127.0.0.1:3001
+AWS_DEFAULT_REGION ?= auto
+BUCKET_NAME ?=
+ENDPOINT ?=
+HASKELL_NODE_CONFIG_DIR ?= cardano-node-config/$(AMARU_NETWORK)
+HASKELL_NODE_CONFIG_REPOSITORY := https://raw.githubusercontent.com/input-output-hk/cardano-playground
+HASKELL_NODE_CONFIG_DIRECTORY := static/book.play.dev.cardano.org/environments
+CARDANO_NODE_CONFIG_COMMIT := 791baff19a998a0cee840d6abbd8fcaa23e8f826
+COVERAGE_DIR ?= coverage
+COVERAGE_CRATES ?=
+BUILD_PROFILE ?= release
+DIST_DIR ?= dist
+BUILD_OUTPUT_DIR ?= $(if $(filter dev,$(BUILD_PROFILE)),debug,$(BUILD_PROFILE))
+AMARU_BIN ?= target/$(BUILD_OUTPUT_DIR)/amaru
+DIST_BIN_NAME ?= $(notdir $(AMARU_BIN))
+PACKAGE_TARGET ?=
+AMARU_VERSION ?= $(shell \
+	version="$$(cargo pkgid -p amaru | sed -E 's/.*[@\#]//')"; \
+	if [ -n "$(BUILT_OVERRIDE_amaru_PKG_VERSION_PATCH)" ]; then \
+		printf '%s\n' "$$version" | sed -E 's/^([0-9]+\.[0-9]+)\.[0-9]+(.*)$$/\1.$(BUILT_OVERRIDE_amaru_PKG_VERSION_PATCH)\2/'; \
+	else \
+		printf '%s\n' "$$version"; \
+	fi \
+)
+MSI_VERSION ?= $(AMARU_VERSION)
+ARCHIVE_COMMIT = $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf '%s' unknown)
+ARCHIVE_DIRTY_SUFFIX = $(shell if [ -n "$$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then printf '%s' '+dirty'; fi)
+ARCHIVE_IDENTIFIER = $(if $(AMARU_VERSION),$(AMARU_VERSION),$(ARCHIVE_COMMIT)$(ARCHIVE_DIRTY_SUFFIX))
+ARCHIVE_ROOT_NAME ?= amaru$(if $(ARCHIVE_IDENTIFIER),-$(ARCHIVE_IDENTIFIER),)
+HOMEBREW_BASE_URL ?= https://github.com/pragma-org/amaru/releases/download/$(AMARU_VERSION)
+HOMEBREW_MACOS_ARM64_ARCHIVE ?= ./amaru-$(AMARU_VERSION)-macos-aarch64.tar.gz
+HOMEBREW_LINUX_ARM64_ARCHIVE ?= ./amaru-$(AMARU_VERSION)-linux-aarch64.tar.gz
+HOMEBREW_LINUX_X86_64_ARCHIVE ?= ./amaru-$(AMARU_VERSION)-linux-x86_64.tar.gz
+HOMEBREW_FORMULA_OUTPUT ?= Formula/amaru.rb
+NIX_BASE_URL ?= https://github.com/pragma-org/amaru/releases/download/v$(AMARU_VERSION)
+NIX_MACOS_ARM64_ARCHIVE ?= ./amaru-$(AMARU_VERSION)-macos-aarch64.tar.gz
+NIX_LINUX_ARM64_ARCHIVE ?= ./amaru-$(AMARU_VERSION)-linux-aarch64.tar.gz
+NIX_LINUX_X86_64_ARCHIVE ?= ./amaru-$(AMARU_VERSION)-linux-x86_64.tar.gz
+NIX_FLAKE_OUTPUT ?= flake.nix
+WINGET_BASE_URL ?=
+WINGET_WINDOWS_X86_64_INSTALLER ?=
+WINGET_RELEASE_DATE ?= $(shell date -u +%F)
+TRACES_PORT ?= 8000
+TRACE_CONTRACT ?= data/$(AMARU_NETWORK)/run-until-trace-contract.json
+TRACE_COMPARE_LOG ?= trace-compare.log
+TRACE_COMPARE_SUMMARY_FILE ?= $${GITHUB_STEP_SUMMARY:-/dev/null}
+TRACE_UPDATE_AMARU_TRACE ?= amaru=trace
+TRACE_UPDATE_AMARU_TRACE_EMIT_PRIVATE ?= 1
+
+ifeq (,$(findstring n,$(MAKEFLAGS)))
+TRACE_SUMMARY_OUTPUT_ENABLED := 1
+else
+TRACE_SUMMARY_OUTPUT_ENABLED := 0
+endif
+
+.PHONY: help download-haskell-config coverage-html coverage-lconv check-llvm-cov check-rust-toolchain-version generate-traces-doc compare-trace-contract update-trace-contract serve-traces-doc validate-trace-schemas clean-dist cli-assets dist tarball zip zipball homebrew nix-flake winget deb rpm msi check-zip check-cargo-deb check-cargo-generate-rpm check-cargo-wix refresh fetch-cbor-dataset
+
+help:
+	@echo "\033[1;4mGetting Started:\033[00m"
+	@grep -E '^[a-z]+[^:]+:.*## &start '  Makefile | while read -r l; do printf "  \033[1;32m%s\033[00m:%s\n" "$$(echo $$l | cut -f 1 -d':')" "$$(echo $$l | cut -f 3- -d'#' | sed 's/^ \&start//')"; done
+	@echo ""
+	@echo "\033[1;4mBuilding & Running:\033[00m"
+	@grep -E '^[a-z]+[^:]+:.*## &build '  Makefile | while read -r l; do printf "  \033[1;32m%s\033[00m:%s\n" "$$(echo $$l | cut -f 1 -d':')" "$$(echo $$l | cut -f 3- -d'#' | sed 's/^ \&build//')"; done
+	@echo ""
+	@echo "\033[1;4mDev & Testing:\033[00m"
+	@grep -E '^[a-z]+[^:]+:.*## &test '  Makefile | while read -r l; do printf "  \033[1;32m%s\033[00m:%s\n" "$$(echo $$l | cut -f 1 -d':')" "$$(echo $$l | cut -f 3- -d'#' | sed 's/^ \&test//')"; done
+	@echo ""
+	@echo "\033[1;4mPackaging & Distribution:\033[00m"
+	@grep -E '^[a-z-]+[^:]+:.*## &dist '  Makefile | while read -r l; do printf "  \033[1;32m%s\033[00m:%s\n" "$$(echo $$l | cut -f 1 -d':')" "$$(echo $$l | cut -f 3- -d'#' | sed 's/^ \&dist//')"; done
+	@echo ""
+	@echo "\033[1;4mConfiguration:\033[00m"
+	@grep -E '^[a-zA-Z0-9_]+ \?= '  Makefile | sort | while read -r l; do printf "  \033[36m%s\033[00m=%s\n" "$$(echo $$l | cut -f 1 -d'=')" "$$(echo $$l | cut -f 2- -d'=')"; done
+
+download-haskell-config: ## &start Download Haskell node configuration files for $AMARU_NETWORK
+	mkdir -p $(HASKELL_NODE_CONFIG_DIR)
+
+	curl -fsSL -O --output-dir "$(HASKELL_NODE_CONFIG_DIR)" "$(HASKELL_NODE_CONFIG_REPOSITORY)/$(CARDANO_NODE_CONFIG_COMMIT)/$(HASKELL_NODE_CONFIG_DIRECTORY)/$(AMARU_NETWORK)/alonzo-genesis.json"
+	curl -fsSL -O --output-dir "$(HASKELL_NODE_CONFIG_DIR)" "$(HASKELL_NODE_CONFIG_REPOSITORY)/$(CARDANO_NODE_CONFIG_COMMIT)/$(HASKELL_NODE_CONFIG_DIRECTORY)/$(AMARU_NETWORK)/byron-genesis.json"
+	curl -fsSL -O --output-dir "$(HASKELL_NODE_CONFIG_DIR)" "$(HASKELL_NODE_CONFIG_REPOSITORY)/$(CARDANO_NODE_CONFIG_COMMIT)/$(HASKELL_NODE_CONFIG_DIRECTORY)/$(AMARU_NETWORK)/config.json"
+	curl -fsSL -O --output-dir "$(HASKELL_NODE_CONFIG_DIR)" "$(HASKELL_NODE_CONFIG_REPOSITORY)/$(CARDANO_NODE_CONFIG_COMMIT)/$(HASKELL_NODE_CONFIG_DIRECTORY)/$(AMARU_NETWORK)/conway-genesis.json"
+	curl -fsSL -O --output-dir "$(HASKELL_NODE_CONFIG_DIR)" "$(HASKELL_NODE_CONFIG_REPOSITORY)/$(CARDANO_NODE_CONFIG_COMMIT)/$(HASKELL_NODE_CONFIG_DIRECTORY)/$(AMARU_NETWORK)/peer-snapshot.json"
+	curl -fsSL -O --output-dir "$(HASKELL_NODE_CONFIG_DIR)" "$(HASKELL_NODE_CONFIG_REPOSITORY)/$(CARDANO_NODE_CONFIG_COMMIT)/$(HASKELL_NODE_CONFIG_DIRECTORY)/$(AMARU_NETWORK)/shelley-genesis.json"
+	curl -fsSL -O --output-dir "$(HASKELL_NODE_CONFIG_DIR)" "$(HASKELL_NODE_CONFIG_REPOSITORY)/$(CARDANO_NODE_CONFIG_COMMIT)/$(HASKELL_NODE_CONFIG_DIRECTORY)/$(AMARU_NETWORK)/topology.json"
+
+refresh: ## &start Refresh chain and ledger databases from the latest Mithril snapshot, moving the current ones to *.backup
+	AMARU_NETWORK="$(AMARU_NETWORK)" BUILD_PROFILE="$(BUILD_PROFILE)" INSTALL=true REPLACE_EXISTING=true ./scripts/refresh-from-mithril
+
+generate-traces-doc: ## &build Generate documentation for Amaru's tracing spans
+	@./scripts/generate-traces-doc
+
+serve-traces-doc: generate-traces-doc ## &build Regenerate traces docs and serve docs/traces.html on http://127.0.0.1:$(TRACES_PORT)/traces.html
+	@echo "Serving docs/traces.html at http://127.0.0.1:$(TRACES_PORT)/traces.html"
+	@python3 -m http.server $(TRACES_PORT) --directory docs
+
+validate-trace-schemas: ## &test Validate generated trace schemas against docs/traces-schema.json
+	@cargo run --quiet --profile $(BUILD_PROFILE) --bin amaru -- dev traces dump 1> /tmp/schemas-current.json
+	@./scripts/unused-schemas
+	@set -eu; \
+	jq -S 'walk(if type == "object" then del(.private) else . end)' docs/traces-schema.json > /tmp/expected.json; \
+	jq -S 'walk(if type == "object" then del(.private) else . end)' /tmp/schemas-current.json > /tmp/current.json; \
+	if diff -u /tmp/expected.json /tmp/current.json > /tmp/schemas.diff; then \
+		echo "✓ Schemas are up-to-date"; \
+	else \
+		echo "::group::❌ Schema diff (expected → generated)"; \
+		diff --color=always -u /tmp/expected.json /tmp/current.json || true; \
+		echo "::endgroup::"; \
+		echo "::error title=Schema out of date::Generated schema does not match docs/traces-schema.json"; \
+		{ \
+			echo "## ❌ Schema mismatch"; \
+			echo ""; \
+			echo "The generated schema differs from \`docs/traces-schema.json\`."; \
+			echo ""; \
+			echo "**How to fix:**"; \
+			echo '```bash'; \
+			echo './scripts/generate-traces-doc'; \
+			echo '```'; \
+		} >> "$${GITHUB_STEP_SUMMARY:-/dev/null}"; \
+		exit 1; \
+	fi
+
+check-rust-toolchain-version: ## &test Verify rust-toolchain.toml and Cargo.toml rust-version stay aligned
+	@./scripts/check-rust-toolchain-version
+
+all-ci-checks: ## &test Run all CI checks
+	@$(MAKE) check-rust-toolchain-version
+	@cargo fmt-amaru
+	@cargo clippy-amaru
+	@cargo test --workspace --all-targets
+	@cargo test --doc
+	@$(MAKE) coverage-lconv
+
+ledger-conformance-test-vectors: ## &test Download and update the set of test vectors used for ledger conformance tests
+	curl -Ls https://github.com/cardano-scaling/cardano-blueprint/raw/refs/heads/main/src/ledger/conformance-test-vectors/vectors.tar.gz | \
+	tar -xvf - -C "./crates/amaru-ledger/tests/data/rules-conformance"
+
+ledger-conformance-known-failures: ## &test Update the set of 'known conformance failures' from running the tests
+	@export AMARU_UPDATE_LEDGER_CONFORMANCE_SNAPSHOT_PATH=$$(mktemp); \
+	cargo test -p amaru-ledger --test evaluate_ledger_states -- --test-threads=1; \
+	mv "$$AMARU_UPDATE_LEDGER_CONFORMANCE_SNAPSHOT_PATH" "./crates/amaru-ledger/tests/data/rules-conformance.failures.toml"
+
+fetch-cbor-dataset: ## &test Fetch the CBOR dataset from https://github.com/r2rationality/cardano-cbor-dataset
+	@./scripts/fetch-cbor-dataset
+
+check-llvm-cov: ## &test Check if cargo-llvm-cov is installed, install if not
+	@if ! cargo llvm-cov --version >/dev/null 2>&1; then \
+		echo "cargo-llvm-cov not found. Installing..."; \
+		cargo install cargo-llvm-cov; \
+	else \
+		echo "cargo-llvm-cov is already installed"; \
+	fi
+
+coverage-html: check-llvm-cov ## &test Run test coverage for Amaru
+	cargo llvm-cov \
+		--no-cfg-coverage \
+		--html \
+		--output-dir $(COVERAGE_DIR) $(foreach package,$(COVERAGE_CRATES), --package $(package))
+
+coverage-lconv: ## &test Run test coverage for CI to upload to Codecov
+	cargo llvm-cov \
+		--all-features \
+		--workspace \
+		--lcov \
+		--output-path lcov.info
+
+clean-dist:
+	@for path in "$(DIST_DIR)/bin" "$(DIST_DIR)/share"; do \
+		if [ -e "$$path" ]; then \
+			rm -rf "$$path"; \
+		fi; \
+	done
+
+cli-assets: clean-dist  ## &dist Generate clap-derived man page and shell completions into $(DIST_DIR)
+	@printf 'Generating command-line assets under %s\n' "$(abspath $(DIST_DIR))"
+	@if [ ! -f "$(AMARU_BIN)" ]; then \
+		printf 'Error: expected Amaru binary at %s; build it first or set AMARU_BIN\n' "$(abspath $(AMARU_BIN))" >&2; \
+		exit 1; \
+	fi
+	@"$(AMARU_BIN)" shell-completions --output-dir "$(DIST_DIR)"
+	@if command -v tree >/dev/null 2>&1; then \
+		tree -h "$(DIST_DIR)"; \
+	else \
+		find "$(DIST_DIR)"; \
+	fi
+	@printf 'Generated command-line assets under %s\n' "$(abspath $(DIST_DIR))"
+
+dist: cli-assets ## &dist Stage a distributable Amaru tree under $(DIST_DIR)
+	@printf 'Adding amaru binary and metadata to %s\n' "$(abspath $(DIST_DIR))"
+	@mkdir -p "$(DIST_DIR)/bin"
+	@mkdir -p "$(DIST_DIR)/share/doc/amaru"
+	@if [ ! -f "$(AMARU_BIN)" ]; then \
+		printf 'Error: expected Amaru binary at %s; build it first or set AMARU_BIN\n' "$(abspath $(AMARU_BIN))" >&2; \
+		exit 1; \
+	fi
+	@cp "$(AMARU_BIN)" "$(DIST_DIR)/bin/$(DIST_BIN_NAME)"
+	@chmod +x "$(DIST_DIR)/bin/$(DIST_BIN_NAME)"
+	@cp LICENSE README.md CHANGELOG.md "$(DIST_DIR)/share/doc/amaru/"
+	@if command -v tree >/dev/null 2>&1; then \
+		tree -h "$(DIST_DIR)"; \
+	else \
+		find "$(DIST_DIR)"; \
+	fi
+	@printf 'Staged distribution under %s\n' "$(abspath $(DIST_DIR))"
+
+tarball: dist ## &dist Create a versioned .tar.gz archive from $(DIST_DIR)
+	tmp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	mkdir -p "$$tmp_dir/$(ARCHIVE_ROOT_NAME)"; \
+	cp -R "$(DIST_DIR)"/. "$$tmp_dir/$(ARCHIVE_ROOT_NAME)/"; \
+	LC_ALL=C tar -C "$$tmp_dir" -czf "$(ARCHIVE_ROOT_NAME).tar.gz" "$(ARCHIVE_ROOT_NAME)"; \
+	printf 'Wrote archive %s\n' "$(abspath $(ARCHIVE_ROOT_NAME).tar.gz)"
+
+check-zip:
+	@if ! command -v zip >/dev/null 2>&1; then \
+		echo "Error: zip is not installed; install it first." >&2; \
+		exit 1; \
+	fi
+
+zip: dist check-zip ## &dist Create a versioned .zip archive from $(DIST_DIR)
+	tmp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	mkdir -p "$$tmp_dir/$(ARCHIVE_ROOT_NAME)"; \
+	cp -R "$(DIST_DIR)"/. "$$tmp_dir/$(ARCHIVE_ROOT_NAME)/"; \
+	( cd "$$tmp_dir" && zip -qr "$(abspath $(ARCHIVE_ROOT_NAME).zip)" "$(ARCHIVE_ROOT_NAME)" ); \
+	printf 'Wrote archive %s\n' "$(abspath $(ARCHIVE_ROOT_NAME).zip)"
+
+zipball: zip
+
+homebrew: ## &dist Generate a Homebrew formula from release archives
+	if [ -z "$(HOMEBREW_BASE_URL)" ] || [ -z "$(HOMEBREW_MACOS_ARM64_ARCHIVE)" ] || [ -z "$(HOMEBREW_LINUX_ARM64_ARCHIVE)" ] || [ -z "$(HOMEBREW_LINUX_X86_64_ARCHIVE)" ]; then \
+		echo "Error: set HOMEBREW_BASE_URL, HOMEBREW_MACOS_ARM64_ARCHIVE, HOMEBREW_LINUX_ARM64_ARCHIVE and HOMEBREW_LINUX_X86_64_ARCHIVE." >&2; \
+		exit 1; \
+	fi; \
+	chmod +x scripts/generate-homebrew-formula; \
+	./scripts/generate-homebrew-formula \
+		--version "$(AMARU_VERSION)" \
+		--base-url "$(HOMEBREW_BASE_URL)" \
+		--macos-arm64-archive "$(HOMEBREW_MACOS_ARM64_ARCHIVE)" \
+		--linux-arm64-archive "$(HOMEBREW_LINUX_ARM64_ARCHIVE)" \
+		--linux-x86_64-archive "$(HOMEBREW_LINUX_X86_64_ARCHIVE)" \
+		--output "$(HOMEBREW_FORMULA_OUTPUT)"
+
+nix-flake: ## &dist Generate a Nix flake from release archives
+	if [ -z "$(NIX_BASE_URL)" ] || [ -z "$(NIX_MACOS_ARM64_ARCHIVE)" ] || [ -z "$(NIX_LINUX_ARM64_ARCHIVE)" ] || [ -z "$(NIX_LINUX_X86_64_ARCHIVE)" ]; then \
+		echo "Error: set NIX_BASE_URL, NIX_MACOS_ARM64_ARCHIVE, NIX_LINUX_ARM64_ARCHIVE and NIX_LINUX_X86_64_ARCHIVE." >&2; \
+		exit 1; \
+	fi; \
+	chmod +x scripts/generate-nix-flake; \
+	./scripts/generate-nix-flake \
+		--version "$(AMARU_VERSION)" \
+		--base-url "$(NIX_BASE_URL)" \
+		--macos-arm64-archive "$(NIX_MACOS_ARM64_ARCHIVE)" \
+		--linux-arm64-archive "$(NIX_LINUX_ARM64_ARCHIVE)" \
+		--linux-x86_64-archive "$(NIX_LINUX_X86_64_ARCHIVE)" \
+		--output "$(NIX_FLAKE_OUTPUT)"
+
+winget: ## &dist Generate WinGet manifests from the Windows release installer
+	if [ -z "$(WINGET_BASE_URL)" ] || [ -z "$(WINGET_WINDOWS_X86_64_INSTALLER)" ]; then \
+		echo "Error: set WINGET_BASE_URL and WINGET_WINDOWS_X86_64_INSTALLER." >&2; \
+		exit 1; \
+	fi; \
+	chmod +x scripts/generate-winget-manifests; \
+	./scripts/generate-winget-manifests \
+		--version "$(AMARU_VERSION)" \
+		--base-url "$(WINGET_BASE_URL)" \
+		--windows-x86_64-installer "$(WINGET_WINDOWS_X86_64_INSTALLER)" \
+		--release-date "$(WINGET_RELEASE_DATE)"
+
+check-cargo-deb:
+	@if ! cargo deb --version >/dev/null 2>&1; then \
+		echo "Error: cargo-deb is not installed; run: cargo install cargo-deb" >&2; \
+		exit 1; \
+	fi
+
+deb: dist check-cargo-deb ## &dist Build a .deb package from $(DIST_DIR)
+	if [ -z "$(AMARU_VERSION)" ]; then \
+		echo "Error: AMARU_VERSION must not be empty when building a .deb package." >&2; \
+		exit 1; \
+	fi; \
+	cargo deb --no-build -p amaru $(if $(PACKAGE_TARGET),--target $(PACKAGE_TARGET),) --deb-version "$(AMARU_VERSION)" --output "$(ARCHIVE_ROOT_NAME).deb"; \
+	printf 'Wrote package %s\n' "$(abspath $(ARCHIVE_ROOT_NAME).deb)"
+
+check-cargo-generate-rpm:
+	@if ! cargo generate-rpm --version >/dev/null 2>&1; then \
+		echo "Error: cargo-generate-rpm is not installed; run: cargo install cargo-generate-rpm" >&2; \
+		exit 1; \
+	fi
+
+rpm: dist check-cargo-generate-rpm ## &dist Build an .rpm package from $(DIST_DIR)
+	if [ -z "$(AMARU_VERSION)" ]; then \
+		echo "Error: AMARU_VERSION must not be empty when building an .rpm package." >&2; \
+		exit 1; \
+	fi; \
+	cargo generate-rpm -p crates/amaru $(if $(PACKAGE_TARGET),--target $(PACKAGE_TARGET),) -o "$(ARCHIVE_ROOT_NAME).rpm" --set-metadata='version = "$(AMARU_VERSION)"'; \
+	printf 'Wrote package %s\n' "$(abspath $(ARCHIVE_ROOT_NAME).rpm)"
+
+check-cargo-wix:
+	@if ! cargo wix --version >/dev/null 2>&1; then \
+		echo "Error: cargo-wix is not installed; run: cargo install cargo-wix" >&2; \
+		exit 1; \
+	fi
+
+msi: dist check-cargo-wix ## &dist Build an .msi installer from $(DIST_DIR)
+	set -euo pipefail; \
+	if [ "$$OS" != "Windows_NT" ]; then \
+		echo "Error: .msi packaging is only supported on Windows." >&2; \
+		exit 1; \
+	fi; \
+	if [ -z "$(AMARU_VERSION)" ]; then \
+		echo "Error: AMARU_VERSION must not be empty when building an .msi installer." >&2; \
+		exit 1; \
+	fi; \
+	if [ -z "$(MSI_VERSION)" ]; then \
+		echo "Error: MSI_VERSION must not be empty when building an .msi installer." >&2; \
+		exit 1; \
+	fi; \
+	( \
+		cd crates/amaru; \
+		cargo wix --package amaru --no-build --nocapture --target-bin-dir "$(dir $(abspath $(AMARU_BIN)))" --install-version "$(MSI_VERSION)" --output "../../$(ARCHIVE_ROOT_NAME).msi"; \
+	); \
+	printf 'Wrote installer %s\n' "$(abspath $(ARCHIVE_ROOT_NAME).msi)"

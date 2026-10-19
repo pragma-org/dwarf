@@ -1,0 +1,53 @@
+lints.workspace = true
+
+[package]
+name = "amaru-ouroboros"
+version = "0.1.2"
+edition.workspace = true
+description = "Ouroboros consensus protocol primitives for the Amaru Cardano node"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+# External dependencies ───────────────────────────────────────────────────────┐
+getrandom = { workspace = true, features = ["wasm_js"] }
+hex.workspace = true
+kes-summed-ed25519.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+vrf_dalek.workspace = true
+zeroize.workspace = true
+
+# Internal dependencies ───────────────────────────────────────────────────────┐
+amaru-kernel.workspace = true
+amaru-ouroboros-traits.workspace = true
+amaru-pure-stage.workspace = true
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["getrandom", "amaru-deps"]
+
+[dev-dependencies]
+# External dependencies ───────────────────────────────────────────────────────┐
+ctor.workspace = true
+insta = { workspace = true, features = ["yaml"] }
+proptest.workspace = true
+rand.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(not(std))'.dependencies]
+num = { workspace = true, default-features = false, features = [
+  "alloc",
+  "libm",
+] }

@@ -1,0 +1,37 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+mod capture;
+mod config;
+mod events;
+mod model;
+mod session;
+mod settings;
+mod startup;
+mod terminal_guard;
+mod ui;
+
+pub use amaru_observability::TelemetryCaptureLayer;
+pub use config::{Config, DEFAULT_LOG_RETENTION_BYTES};
+pub use events::TelemetryRecord;
+pub use model::{
+    InteractionMode, LevelFilter, LogViewItem, Page, PaneMode, PromptKind, RetentionTier, ScrollFocus, TargetFilter,
+};
+pub use session::{Session, should_enable};
+pub use settings::Settings;
+pub use startup::{ConfigEntry, ConfigSection, ProcessInfo, RuntimeSettingsSource, StartupContext};
+pub use terminal_guard::emergency_restore_terminal;
+
+/// Back-compat alias: the TUI now installs the shared observability capture layer.
+pub type TracingLayer = TelemetryCaptureLayer;

@@ -1,0 +1,146 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::{net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
+
+use amaru_kernel::{
+    HeaderHash, IsHeader, PREPROD_ERA_HISTORY, Transaction, TransactionId, any_headers_chain_with_root,
+    cardano::network_block::make_encoded_chain, cbor::WithOriginalBytes, make_header, utils::tests::run_strategy,
+};
+use amaru_mempool::InMemoryMempool;
+use amaru_observability::tracing;
+use amaru_ouroboros_traits::{ChainStore, in_memory_chain_store::InMemoryChainStore};
+
+use crate::{
+    protocol_messages::version_number::VersionNumber,
+    tx_submission::{create_transactions, create_transactions_in_mempool},
+};
+
+/// Configuration for running 2 test nodes, initiator and responder communicating over TCP:
+///  - They both have their own chain store and mempool.
+///  - They either listen to a specific address (responder) or connect to a specific address (initiator).
+///  - They can have different chain lengths and number of transactions in their mempool.
+///  - They can have different timeouts and processing waits to simulate slow peers.
+#[derive(Clone)]
+pub(super) struct Configuration {
+    pub(super) chain_store: Arc<InMemoryChainStore>,
+    pub(super) mempool: Arc<InMemoryMempool<WithOriginalBytes<Transaction>>>,
+    pub(super) addr: SocketAddr,
+    pub(super) reconnect_delay: Duration,
+    pub(super) processing_wait: Option<Duration>,
+    pub(super) chain_length: usize,
+    pub(super) slow_manager: bool,
+    pub(super) max_n2n_version: VersionNumber,
+}
+
+impl Configuration {
+    pub(super) fn initiator() -> Self {
+        let initiator = Self {
+            chain_store: Arc::new(InMemoryChainStore::default()),
+            chain_length: 0,
+            mempool: Arc::new(InMemoryMempool::default()),
+            addr: SocketAddr::from(([127, 0, 0, 1], 3000)),
+            reconnect_delay: Duration::from_secs(1),
+            processing_wait: None,
+            slow_manager: false,
+            max_n2n_version: VersionNumber::CURRENT,
+        };
+        initiator.with_best_chain_of_length(INITIATOR_BLOCKS_NB).with_txs(INITIATOR_TXS_NB)
+    }
+
+    pub(super) fn responder() -> Self {
+        let responder = Self {
+            chain_store: Arc::new(InMemoryChainStore::default()),
+            chain_length: 0,
+            mempool: Arc::new(InMemoryMempool::default()),
+            addr: SocketAddr::from(([127, 0, 0, 1], 0)),
+            reconnect_delay: Duration::from_secs(1),
+            processing_wait: None,
+            slow_manager: false,
+            max_n2n_version: VersionNumber::CURRENT,
+        };
+        responder.with_best_chain_of_length(RESPONDER_BLOCKS_NB).with_txs(RESPONDER_TXS_NB)
+    }
+
+    pub(super) fn with_best_chain_of_length(mut self, chain_length: usize) -> Self {
+        initialize_chain_store(chain_length, self.chain_store.as_ref()).unwrap();
+        self.chain_length = chain_length;
+        self
+    }
+
+    pub(super) fn with_txs(self, txs_nb: u16) -> Self {
+        create_transactions_in_mempool(self.mempool.as_ref(), txs_nb);
+        self
+    }
+
+    pub(super) fn with_addr(mut self, addr: SocketAddr) -> Self {
+        self.addr = addr;
+        self
+    }
+
+    pub(super) fn with_slow_manager(mut self) -> Self {
+        self.slow_manager = true;
+        self
+    }
+
+    pub(super) fn with_reconnect_delay(mut self, timeout: Duration) -> Self {
+        self.reconnect_delay = timeout;
+        self
+    }
+
+    pub(super) fn with_processing_wait(mut self, wait: Duration) -> Self {
+        self.processing_wait = Some(wait);
+        self
+    }
+
+    pub(super) fn with_max_n2n_version(mut self, version: VersionNumber) -> Self {
+        self.max_n2n_version = version;
+        self
+    }
+}
+
+pub const RESPONDER_BLOCKS_NB: usize = 10;
+pub const INITIATOR_BLOCKS_NB: usize = 4;
+
+/// Initialize the chain store with a chain of headers.
+/// The responder chain is longer than the initiator chain to force the initiator to catch up.
+fn initialize_chain_store(chain_length: usize, chain_store: &dyn ChainStore) -> anyhow::Result<()> {
+    // Use the same root header for both initiator and responder
+    let origin_hash: HeaderHash =
+        amaru_kernel::Hash::from_str("4df4505d862586f9e2c533c5fbb659f04402664db1b095aba969728abfb77301")?;
+    let root_header = make_header(100_000_000, 100_000_000, Some(origin_hash));
+    let mut seeds = run_strategy(any_headers_chain_with_root(
+        chain_length - 1, // -1 since we already have the root header
+        root_header.point(),
+    ));
+    seeds.insert(0, root_header);
+    let chain = make_encoded_chain(seeds, &PREPROD_ERA_HISTORY);
+    chain_store.set_anchor_point(&chain[0].header.point())?;
+
+    for block in chain.iter() {
+        chain_store.store_header(&block.header)?;
+        chain_store.roll_forward_chain(&block.header.point())?;
+        tracing::info!("storing block for header {}", block.header.point());
+        chain_store.store_block(&block.header.hash(), &block.raw)?;
+    }
+    Ok(())
+}
+
+pub const RESPONDER_TXS_NB: u16 = 10;
+pub const INITIATOR_TXS_NB: u16 = 10;
+
+/// By construction we return the same tx ids as the ones created in the function above
+pub(super) fn get_tx_ids() -> Vec<TransactionId> {
+    create_transactions(RESPONDER_TXS_NB).into_iter().map(|tx| tx.tx_id()).collect()
+}

@@ -1,0 +1,31 @@
+// Copyright 2026 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use crate::{Ed25519Signature, VerificationKey, cbor};
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, cbor::Encode, cbor::Decode)]
+#[cbor(context_bound = "crate::cbor::HasProtocolVersion")]
+pub struct OperationalCert {
+    #[n(0)]
+    pub operational_cert_hot_verification_key: VerificationKey,
+
+    #[n(1)]
+    pub operational_cert_sequence_number: u64,
+
+    #[n(2)]
+    pub operational_cert_kes_period: u64,
+
+    #[n(3)]
+    pub operational_cert_sigma: Ed25519Signature,
+}

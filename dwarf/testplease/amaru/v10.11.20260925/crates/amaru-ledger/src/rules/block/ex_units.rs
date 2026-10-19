@@ -1,0 +1,67 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use amaru_kernel::{ExUnits, HasExUnits, ProtocolParameters};
+
+use super::InvalidBlockDetails;
+
+pub fn block_ex_units_valid(
+    block: &impl HasExUnits,
+    protocol_parameters: &ProtocolParameters,
+) -> Result<(), InvalidBlockDetails> {
+    let pp_max_ex_units = protocol_parameters.max_block_ex_units;
+    let ex_units = block.total_ex_units();
+
+    if ex_units.mem <= pp_max_ex_units.mem && ex_units.steps <= pp_max_ex_units.steps {
+        return Ok(());
+    }
+
+    Err(InvalidBlockDetails::TooManyExUnits {
+        provided: ex_units,
+        max: ExUnits { mem: pp_max_ex_units.mem, steps: pp_max_ex_units.steps },
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use amaru_kernel::{Block, ExUnits, ProtocolParameters, include_cbor};
+    use test_case::test_case;
+
+    use crate::rules::block::InvalidBlockDetails;
+
+    macro_rules! fixture {
+        ($number:literal) => {
+            (
+                include_cbor!(concat!("blocks/preprod/", $number, "/valid.cbor")),
+                amaru_kernel::PREPROD_DEFAULT_PROTOCOL_PARAMETERS.clone(),
+            )
+        };
+        ($number:literal, $pp:expr) => {
+            (include_cbor!(concat!("blocks/preprod/", $number, "/valid.cbor")), $pp)
+        };
+    }
+
+    #[test_case(fixture!("2667657"); "valid ex units")]
+    #[test_case(fixture!("2667657", ProtocolParameters {
+        max_block_ex_units: ExUnits {
+            mem: 0,
+            steps: 0
+        },
+        ..amaru_kernel::PREPROD_DEFAULT_PROTOCOL_PARAMETERS.clone()
+    }) => matches Err(InvalidBlockDetails::TooManyExUnits{provided, max: _})
+    if provided == ExUnits {mem: 1267029, steps: 289959162}; "invalid ex units")]
+    fn test_ex_units((block, protocol_parameters): (Block, ProtocolParameters)) -> Result<(), InvalidBlockDetails> {
+        super::block_ex_units_valid(&block, &protocol_parameters)
+    }
+}

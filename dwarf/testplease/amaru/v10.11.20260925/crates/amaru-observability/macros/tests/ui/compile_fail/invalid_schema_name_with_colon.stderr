@@ -1,0 +1,5 @@
+error: expected curly braces
+  --> tests/ui/compile_fail/invalid_schema_name_with_colon.rs:24:21
+   |
+24 |             VALIDATE-HEADER {
+   |                     ^

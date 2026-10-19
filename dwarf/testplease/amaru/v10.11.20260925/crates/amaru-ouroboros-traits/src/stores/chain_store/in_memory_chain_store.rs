@@ -1,0 +1,614 @@
+// Copyright 2025 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
+
+use amaru_kernel::{Header, HeaderHash, IsHeader, NetworkPoint, ORIGIN_HASH, Point, PoolId, RawBlock, Slot};
+
+use crate::{
+    DiagnosticChainStore, FullChainStore, Nonces, OpcertSequenceNumbers, StoreError, block_addressed_by,
+    header_addressed_by,
+    stores::chain_store::{BaseReadChainStore, ReadChainStore, WriteChainStore},
+};
+
+/// An in-memory implementation of a ChainStore used by the consensus stages.
+#[derive(Clone)]
+pub struct InMemoryChainStore {
+    inner: Arc<Mutex<InMemoryChainStoreInner>>,
+}
+
+impl Default for InMemoryChainStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl InMemoryChainStore {
+    pub fn new() -> InMemoryChainStore {
+        InMemoryChainStore { inner: Arc::new(Mutex::new(InMemoryChainStoreInner::new())) }
+    }
+}
+
+struct InMemoryChainStoreInner {
+    nonces: BTreeMap<HeaderHash, Nonces>,
+    opcert_sequence_numbers: BTreeMap<PoolId, BTreeMap<Slot, BTreeMap<HeaderHash, u64>>>,
+    headers: BTreeMap<HeaderHash, Header>,
+    parent_child_relationship: BTreeMap<HeaderHash, Vec<HeaderHash>>,
+    anchor: Point,
+    best_chain: Point,
+    blocks: BTreeMap<HeaderHash, RawBlock>,
+    chain: Vec<Point>,
+    /// Maps header hash to block validity. None = not yet validated, Some(true) = valid, Some(false) = invalid.
+    block_validity: BTreeMap<HeaderHash, bool>,
+}
+
+impl Default for InMemoryChainStoreInner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl InMemoryChainStoreInner {
+    fn new() -> InMemoryChainStoreInner {
+        InMemoryChainStoreInner {
+            nonces: BTreeMap::new(),
+            opcert_sequence_numbers: BTreeMap::new(),
+            headers: BTreeMap::new(),
+            parent_child_relationship: BTreeMap::new(),
+            anchor: Point::Origin,
+            best_chain: Point::Origin,
+            blocks: BTreeMap::new(),
+            chain: Vec::new(),
+            block_validity: BTreeMap::new(),
+        }
+    }
+
+    /// Record a header, its link to its parent, and the opcert sequence number it declares. Every
+    /// stored header must contribute to the opcert index, otherwise the sequence numbers observed
+    /// on the chain go stale and subsequent headers get rejected as being too far ahead.
+    fn put_header(&mut self, header: &Header) {
+        let hash = header.hash();
+        self.headers.insert(hash, header.clone());
+        let parent_hash = header.parent().unwrap_or(ORIGIN_HASH);
+        let children = self.parent_child_relationship.entry(parent_hash).or_default();
+        if !children.contains(&hash) {
+            children.push(hash);
+        };
+        self.opcert_sequence_numbers
+            .entry(header.pool_id())
+            .or_default()
+            .entry(header.slot())
+            .or_default()
+            .insert(hash, header.op_cert_seq());
+    }
+}
+
+impl BaseReadChainStore for InMemoryChainStore {
+    #[expect(clippy::unwrap_used)]
+    fn load_header(&self, hash: &HeaderHash) -> Option<Header> {
+        let inner = self.inner.lock().unwrap();
+        inner.headers.get(hash).cloned().map(|header| header_addressed_by(header, hash))
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn load_header_with_validity(&self, hash: &HeaderHash) -> Option<(Header, Option<bool>)> {
+        let inner = self.inner.lock().unwrap();
+        let header = inner.headers.get(hash).cloned().map(|header| header_addressed_by(header, hash));
+        let validity = inner.block_validity.get(hash).copied();
+        header.map(|h| (h, validity))
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn get_nonces(&self, header: &HeaderHash) -> Option<Nonces> {
+        let inner = self.inner.lock().unwrap();
+        inner.nonces.get(header).cloned()
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn load_block(&self, hash: &HeaderHash) -> Result<Option<RawBlock>, StoreError> {
+        let inner = self.inner.lock().unwrap();
+        Ok(inner.blocks.get(hash).cloned().map(|block| block_addressed_by(block, hash)))
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn has_block(&self, hash: &HeaderHash) -> Result<bool, StoreError> {
+        let inner = self.inner.lock().unwrap();
+        Ok(inner.blocks.contains_key(hash))
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn has_header(&self, hash: &HeaderHash) -> bool {
+        let inner = self.inner.lock().unwrap();
+        inner.headers.contains_key(hash)
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn get_children(&self, hash: &HeaderHash) -> Vec<HeaderHash> {
+        let inner = self.inner.lock().unwrap();
+        inner.parent_child_relationship.get(hash).cloned().unwrap_or_default()
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn get_anchor_point(&self) -> Point {
+        let inner = self.inner.lock().unwrap();
+        inner.anchor
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn get_best_chain_tip(&self) -> Point {
+        let inner = self.inner.lock().unwrap();
+        inner.best_chain
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn is_on_best_chain(&self, point: NetworkPoint) -> bool {
+        let inner = self.inner.lock().unwrap();
+        is_on_in_memory_best_chain(&inner.chain, point)
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn next_best_chain(&self, point: &Point) -> Option<Point> {
+        let inner = self.inner.lock().unwrap();
+        successor_on_best_chain(&inner.chain, point, |hash| inner.headers.get(hash).and_then(Header::parent))
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn get_latest_opcert_sequence_number(&self, pool_id: &PoolId, header: &Header) -> Result<Option<u64>, StoreError> {
+        let inner = self.inner.lock().unwrap();
+        latest_opcert_sequence_number(
+            &inner.headers,
+            inner.anchor,
+            &inner.opcert_sequence_numbers,
+            &inner.chain,
+            pool_id,
+            header,
+        )
+    }
+}
+
+impl ReadChainStore for InMemoryChainStore {
+    #[expect(clippy::unwrap_used)]
+    fn snapshot(&self) -> Box<dyn BaseReadChainStore + '_> {
+        let inner = self.inner.lock().unwrap();
+        Box::new(InMemConsensusSnapshot {
+            nonces: inner.nonces.clone(),
+            opcert_sequence_numbers: inner.opcert_sequence_numbers.clone(),
+            headers: inner.headers.clone(),
+            parent_child_relationship: inner.parent_child_relationship.clone(),
+            anchor: inner.anchor,
+            best_chain: inner.best_chain,
+            blocks: inner.blocks.clone(),
+            chain: inner.chain.clone(),
+            block_validity: inner.block_validity.clone(),
+        })
+    }
+}
+
+impl WriteChainStore for InMemoryChainStore {
+    #[expect(clippy::unwrap_used)]
+    fn store_header(&self, header: &Header) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.put_header(header);
+        Ok(())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn store_validated_header(&self, header: &Header, nonces: &Nonces) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.put_header(header);
+        inner.nonces.insert(header.hash(), nonces.clone());
+        Ok(())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn put_nonces(&self, header: &HeaderHash, nonces: &Nonces) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.nonces.insert(*header, nonces.clone());
+        Ok(())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn put_opcert_seed(&self, counters: &OpcertSequenceNumbers, at: &Point) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        for (pool_id, counter) in counters.iter() {
+            inner
+                .opcert_sequence_numbers
+                .entry(*pool_id)
+                .or_default()
+                .entry(at.slot_or_default())
+                .or_default()
+                .insert(at.hash(), *counter);
+        }
+        Ok(())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn store_block(&self, hash: &HeaderHash, block: &RawBlock) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.blocks.insert(*hash, (*block).clone());
+        Ok(())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn set_anchor_point(&self, point: &Point) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.anchor = *point;
+        Ok(())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn set_best_chain_tip(&self, tip: &Point) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.best_chain = *tip;
+        Ok(())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn roll_forward_chain(&self, point: &Point) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.chain.push(*point);
+        inner.best_chain = *point;
+        Ok(())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn set_block_valid(&self, hash: &HeaderHash, valid: bool) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.block_validity.insert(*hash, valid);
+        Ok(())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn remove_block_valid(&self, hash: &HeaderHash) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.block_validity.remove(hash);
+        Ok(())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn switch_to_fork(&self, fork_point: &Point, forward_points: &[Point]) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(pos) = inner.chain.iter().rposition(|p| same_chain_point(p, fork_point)) {
+            inner.chain.truncate(pos + 1);
+            inner.chain.extend(forward_points.iter().copied());
+            inner.best_chain = *forward_points.last().unwrap_or(fork_point);
+            Ok(())
+        } else {
+            Err(StoreError::ReadError {
+                error: format!(
+                    "Cannot switch to a fork from point {:?} as it does not exist on the best chain",
+                    fork_point
+                ),
+            })
+        }
+    }
+}
+
+/// Snapshot of the current in-memory consensus store.
+/// It is used to navigate data that is guaranteed to be immutable.
+#[derive(Clone)]
+struct InMemConsensusSnapshot {
+    nonces: BTreeMap<HeaderHash, Nonces>,
+    opcert_sequence_numbers: BTreeMap<PoolId, BTreeMap<Slot, BTreeMap<HeaderHash, u64>>>,
+    headers: BTreeMap<HeaderHash, Header>,
+    parent_child_relationship: BTreeMap<HeaderHash, Vec<HeaderHash>>,
+    anchor: Point,
+    best_chain: Point,
+    blocks: BTreeMap<HeaderHash, RawBlock>,
+    chain: Vec<Point>,
+    block_validity: BTreeMap<HeaderHash, bool>,
+}
+
+impl BaseReadChainStore for InMemConsensusSnapshot {
+    fn load_header(&self, hash: &HeaderHash) -> Option<Header> {
+        self.headers.get(hash).cloned().map(|header| header_addressed_by(header, hash))
+    }
+
+    fn load_header_with_validity(&self, hash: &HeaderHash) -> Option<(Header, Option<bool>)> {
+        let header = self.headers.get(hash).cloned().map(|header| header_addressed_by(header, hash));
+        let validity = self.block_validity.get(hash).copied();
+        header.map(|h| (h, validity))
+    }
+
+    fn get_nonces(&self, header: &HeaderHash) -> Option<Nonces> {
+        self.nonces.get(header).cloned()
+    }
+
+    fn load_block(&self, hash: &HeaderHash) -> Result<Option<RawBlock>, StoreError> {
+        Ok(self.blocks.get(hash).cloned().map(|block| block_addressed_by(block, hash)))
+    }
+
+    fn has_block(&self, hash: &HeaderHash) -> Result<bool, StoreError> {
+        Ok(self.blocks.contains_key(hash))
+    }
+
+    fn has_header(&self, hash: &HeaderHash) -> bool {
+        self.headers.contains_key(hash)
+    }
+
+    fn get_children(&self, hash: &HeaderHash) -> Vec<HeaderHash> {
+        self.parent_child_relationship.get(hash).cloned().unwrap_or_default()
+    }
+
+    fn get_anchor_point(&self) -> Point {
+        self.anchor
+    }
+
+    fn get_best_chain_tip(&self) -> Point {
+        self.best_chain
+    }
+
+    fn is_on_best_chain(&self, point: NetworkPoint) -> bool {
+        is_on_in_memory_best_chain(&self.chain, point)
+    }
+
+    fn next_best_chain(&self, point: &Point) -> Option<Point> {
+        successor_on_best_chain(&self.chain, point, |hash| self.headers.get(hash).and_then(Header::parent))
+    }
+
+    fn get_latest_opcert_sequence_number(&self, pool_id: &PoolId, header: &Header) -> Result<Option<u64>, StoreError> {
+        latest_opcert_sequence_number(
+            &self.headers,
+            self.anchor,
+            &self.opcert_sequence_numbers,
+            &self.chain,
+            pool_id,
+            header,
+        )
+    }
+}
+
+fn latest_opcert_sequence_number(
+    headers: &BTreeMap<HeaderHash, Header>,
+    anchor: Point,
+    opcert_sequence_numbers: &BTreeMap<PoolId, BTreeMap<Slot, BTreeMap<HeaderHash, u64>>>,
+    chain: &[Point],
+    pool_id: &PoolId,
+    header: &Header,
+) -> Result<Option<u64>, StoreError> {
+    let Some(parent) = header.parent() else {
+        return Ok(None);
+    };
+    let Some(as_of_slot) = headers.get(&parent).map(|h| h.slot()) else { return Ok(None) };
+    let anchor_slot = anchor.slot_or_default();
+    let Some(entries) = opcert_sequence_numbers.get(pool_id) else {
+        return Ok(None);
+    };
+
+    // 1. candidate entries in the volatile zone: slot in (anchor_slot, as_of_slot]
+    let (floor, candidates) = if as_of_slot > anchor_slot {
+        let volatile = Slot::from(u64::from(anchor_slot) + 1)..=as_of_slot;
+        let floor = entries.range(volatile.clone()).next().map(|(slot, _)| *slot).unwrap_or(as_of_slot);
+        let candidates: BTreeMap<HeaderHash, u64> =
+            entries.range(volatile).flat_map(|(_, by_hash)| by_hash.iter().map(|(hash, seq)| (*hash, *seq))).collect();
+        (floor, candidates)
+    } else {
+        (as_of_slot, BTreeMap::new())
+    };
+
+    // 2. resolve candidates against the actual lineage of the parent
+    if !candidates.is_empty() {
+        let mut current = parent;
+        loop {
+            if let Some(sequence_number) = candidates.get(&current) {
+                return Ok(Some(*sequence_number));
+            }
+            let Some(current_header) = headers.get(&current) else { break };
+            if current_header.slot() <= floor {
+                break;
+            }
+            match current_header.parent() {
+                Some(parent) => current = parent,
+                None => break,
+            }
+        }
+    }
+
+    // 3. immutable fallback: newest entry at slot <= min(anchor, parent) on the best chain
+    for (slot, by_hash) in entries.range(..=anchor_slot.min(as_of_slot)).rev() {
+        for (hash, sequence_number) in by_hash {
+            if chain.iter().any(|p| p.slot_or_default() == *slot && p.hash() == *hash) {
+                return Ok(Some(*sequence_number));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn same_chain_point(stored: &Point, queried: &Point) -> bool {
+    stored.hash() == queried.hash() && stored.slot_or_default() == queried.slot_or_default()
+}
+
+fn is_on_in_memory_best_chain(chain: &[Point], point: NetworkPoint) -> bool {
+    match point {
+        NetworkPoint::Origin => true,
+        NetworkPoint::Specific(slot, hash) => chain.iter().any(|p| p.slot_or_default() == slot && p.hash() == hash),
+    }
+}
+
+fn get_next_best_chain(chain: &[Point], point: &Point) -> Option<Point> {
+    chain
+        .iter()
+        .find(|p| match point {
+            Point::Origin => true,
+            Point::Specific(slot, _, _) => p.slot_or_default() > *slot,
+        })
+        .copied()
+}
+
+fn successor_on_best_chain(
+    chain: &[Point],
+    point: &Point,
+    parent_of: impl Fn(&HeaderHash) -> Option<HeaderHash>,
+) -> Option<Point> {
+    let next = get_next_best_chain(chain, point)?;
+    match point {
+        Point::Origin => Some(next),
+        Point::Specific(_, hash, _) => parent_of(&next.hash()).is_some_and(|parent| parent == *hash).then_some(next),
+    }
+}
+
+impl DiagnosticChainStore for InMemoryChainStore {
+    #[expect(clippy::unwrap_used)]
+    fn load_headers(&self) -> Box<dyn Iterator<Item = Header> + '_> {
+        let inner = self.inner.lock().unwrap();
+        Box::new(
+            inner
+                .headers
+                .iter()
+                .map(|(hash, header)| header_addressed_by(header.clone(), hash))
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn load_nonces(&self) -> Box<dyn Iterator<Item = (HeaderHash, Nonces)> + '_> {
+        let inner = self.inner.lock().unwrap();
+        Box::new(inner.nonces.clone().into_iter())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn load_opcert_sequence_numbers(&self) -> Box<dyn Iterator<Item = (PoolId, Slot, HeaderHash, u64)> + '_> {
+        let inner = self.inner.lock().unwrap();
+        Box::new(inner.opcert_sequence_numbers.clone().into_iter().flat_map(|(pool_id, slots)| {
+            slots.into_iter().flat_map(move |(slot, hs)| {
+                hs.into_iter().map(move |(header_hash, counter)| (pool_id, slot, header_hash, counter))
+            })
+        }))
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn load_blocks(&self) -> Box<dyn Iterator<Item = (HeaderHash, RawBlock)> + '_> {
+        let inner = self.inner.lock().unwrap();
+        Box::new(
+            inner
+                .blocks
+                .iter()
+                .map(|(hash, block)| (*hash, block_addressed_by(block.clone(), hash)))
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn load_parents_children(&self) -> Box<dyn Iterator<Item = (HeaderHash, Vec<HeaderHash>)> + '_> {
+        let inner = self.inner.lock().unwrap();
+        Box::new(inner.parent_child_relationship.clone().into_iter())
+    }
+}
+
+impl FullChainStore for InMemoryChainStore {}
+
+#[cfg(test)]
+mod tests {
+    use amaru_kernel::{IsHeader, cardano::network_block::EncodedTestBlock, make_header};
+
+    use super::*;
+    use crate::{DiagnosticChainStore, ReadChainStore};
+
+    #[test]
+    #[should_panic(expected = "chain-store integrity failure")]
+    fn load_header_panics_when_header_is_stored_under_the_wrong_hash() {
+        let store = InMemoryChainStore::new();
+        let stored = make_header(1, 0, None);
+        let requested = make_header(2, 1, None).hash();
+        {
+            let mut inner = store.inner.lock().unwrap();
+            inner.headers.insert(requested, stored);
+        }
+        let _ = store.load_header(&requested);
+    }
+
+    #[test]
+    #[should_panic(expected = "chain-store integrity failure")]
+    fn load_header_with_validity_panics_when_header_is_stored_under_the_wrong_hash() {
+        let store = InMemoryChainStore::new();
+        let stored = make_header(1, 0, None);
+        let requested = make_header(2, 1, None).hash();
+        {
+            let mut inner = store.inner.lock().unwrap();
+            inner.headers.insert(requested, stored);
+        }
+        let _ = store.load_header_with_validity(&requested);
+    }
+
+    #[test]
+    #[should_panic(expected = "chain-store integrity failure")]
+    fn snapshot_load_header_panics_when_header_is_stored_under_the_wrong_hash() {
+        let store = InMemoryChainStore::new();
+        let stored = make_header(1, 0, None);
+        let requested = make_header(2, 1, None).hash();
+        {
+            let mut inner = store.inner.lock().unwrap();
+            inner.headers.insert(requested, stored);
+        }
+        let _ = store.snapshot().load_header(&requested);
+    }
+
+    #[test]
+    #[should_panic(expected = "chain-store integrity failure")]
+    fn load_block_panics_when_block_is_stored_under_the_wrong_hash() {
+        let store = InMemoryChainStore::new();
+        let stored = EncodedTestBlock::from_seed(&make_header(1, 0, None), &amaru_kernel::EraHistory::default());
+        let requested =
+            EncodedTestBlock::from_seed(&make_header(2, 1, None), &amaru_kernel::EraHistory::default()).header.hash();
+        {
+            let mut inner = store.inner.lock().unwrap();
+            inner.blocks.insert(requested, stored.raw);
+        }
+        let _ = store.load_block(&requested);
+    }
+
+    #[test]
+    #[should_panic(expected = "chain-store integrity failure")]
+    fn load_headers_panics_when_a_key_does_not_match_the_header() {
+        let store = InMemoryChainStore::new();
+        let stored = make_header(1, 0, None);
+        let requested = make_header(2, 1, None).hash();
+        {
+            let mut inner = store.inner.lock().unwrap();
+            inner.headers.insert(requested, stored);
+        }
+        let _ = store.load_headers().count();
+    }
+
+    #[test]
+    #[should_panic(expected = "chain-store integrity failure")]
+    fn load_block_panics_when_body_hash_does_not_match_header() {
+        let store = InMemoryChainStore::new();
+        let block = EncodedTestBlock::from_seed(&make_header(1, 0, None), &amaru_kernel::EraHistory::default());
+        let mut bytes = block.raw.to_vec();
+        *bytes.last_mut().unwrap() ^= 0xff;
+        store.store_block(&block.header.hash(), &RawBlock::from(bytes.as_slice())).unwrap();
+        let _ = store.load_block(&block.header.hash());
+    }
+
+    #[test]
+    #[should_panic(expected = "chain-store integrity failure")]
+    fn load_blocks_panics_when_a_key_does_not_match_the_block() {
+        let store = InMemoryChainStore::new();
+        let stored = EncodedTestBlock::from_seed(&make_header(1, 0, None), &amaru_kernel::EraHistory::default());
+        let requested =
+            EncodedTestBlock::from_seed(&make_header(2, 1, None), &amaru_kernel::EraHistory::default()).header.hash();
+        {
+            let mut inner = store.inner.lock().unwrap();
+            inner.blocks.insert(requested, stored.raw);
+        }
+        let _ = store.load_blocks().count();
+    }
+}

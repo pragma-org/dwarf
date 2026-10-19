@@ -1,0 +1,124 @@
+---
+source: crates/amaru-kernel/src/cardano/era_history.rs
+expression: "serde_json::to_string_pretty(era_history).expect(\"failed to serialize era history to pretty JSON\")"
+---
+{
+  "stability_window": 25920,
+  "eras": [
+    {
+      "start": {
+        "time": 0,
+        "slot": 0,
+        "epoch": 0
+      },
+      "end": {
+        "time": 0,
+        "slot": 0,
+        "epoch": 0
+      },
+      "params": {
+        "epoch_size_slots": 4320,
+        "slot_length": 20000,
+        "era_name": "Byron"
+      }
+    },
+    {
+      "start": {
+        "time": 0,
+        "slot": 0,
+        "epoch": 0
+      },
+      "end": {
+        "time": 0,
+        "slot": 0,
+        "epoch": 0
+      },
+      "params": {
+        "epoch_size_slots": 86400,
+        "slot_length": 1000,
+        "era_name": "Shelley"
+      }
+    },
+    {
+      "start": {
+        "time": 0,
+        "slot": 0,
+        "epoch": 5
+      },
+      "end": {
+        "time": 0,
+        "slot": 0,
+        "epoch": 0
+      },
+      "params": {
+        "epoch_size_slots": 86400,
+        "slot_length": 1000,
+        "era_name": "Allegra"
+      }
+    },
+    {
+      "start": {
+        "time": 0,
+        "slot": 0,
+        "epoch": 0
+      },
+      "end": {
+        "time": 0,
+        "slot": 0,
+        "epoch": 0
+      },
+      "params": {
+        "epoch_size_slots": 86400,
+        "slot_length": 1000,
+        "era_name": "Mary"
+      }
+    },
+    {
+      "start": {
+        "time": 0,
+        "slot": 0,
+        "epoch": 0
+      },
+      "end": {
+        "time": 259200,
+        "slot": 259200,
+        "epoch": 3
+      },
+      "params": {
+        "epoch_size_slots": 86400,
+        "slot_length": 1000,
+        "era_name": "Alonzo"
+      }
+    },
+    {
+      "start": {
+        "time": 259200,
+        "slot": 259200,
+        "epoch": 3
+      },
+      "end": {
+        "time": 55814400,
+        "slot": 55814400,
+        "epoch": 646
+      },
+      "params": {
+        "epoch_size_slots": 86400,
+        "slot_length": 1000,
+        "era_name": "Babbage"
+      }
+    },
+    {
+      "start": {
+        "time": 55814400,
+        "slot": 55814400,
+        "epoch": 646
+      },
+      "end": null,
+      "params": {
+        "epoch_size_slots": 86400,
+        "slot_length": 1000,
+        "era_name": "Conway"
+      }
+    }
+  ]
+}

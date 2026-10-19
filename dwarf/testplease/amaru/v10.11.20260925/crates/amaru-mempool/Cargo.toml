@@ -1,0 +1,32 @@
+lints.workspace = true
+
+[package]
+name = "amaru-mempool"
+version = "0.1.2"
+edition.workspace = true
+description = "Transaction mempool for the Amaru Cardano node"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+amaru-kernel.workspace = true
+amaru-ouroboros-traits.workspace = true
+parking_lot.workspace = true
+tokio = { "workspace" = true, features = ["time", "macros", "rt"] }
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+assertables.workspace = true
+amaru-kernel = { workspace = true, features = ["test-utils"] }
+
+[package.metadata.cargo-machete]
+ignored = ["amaru-deps"]

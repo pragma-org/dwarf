@@ -1,0 +1,69 @@
+// Copyright 2024 PRAGMA
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// EDR-010 - Ledger Validation Context
+// <https://github.com/pragma-org/amaru/blob/main/engineering-decision-records/010-ledger-validation-context.md>
+#![feature(try_trait_v2, try_trait_v2_residual)]
+
+#[cfg(all(not(target_family = "wasm"), not(target_arch = "riscv32")))]
+const _: () = amaru_deps::AMARU_DEPS_USED;
+
+pub mod bootstrap;
+pub mod context;
+pub mod epoch_transition;
+pub mod governance;
+pub mod observers;
+pub mod registered_relay_addrs;
+pub mod rules;
+pub mod snapshot;
+pub mod startup;
+pub mod state;
+pub mod store;
+pub mod summary;
+
+pub use observers::{AdoptedBlock, LedgerBlockEvent, LedgerObservers, LedgerStateSnapshot, UndoneBlock, UtxoDiff};
+// Piece types for snapshot observers: clone these (not the aggregate StakeSummary).
+pub use summary::{
+    AccountState, PoolState,
+    governance::DRepState,
+    stake_distribution::{StakeDistribution, StakeSummary},
+};
+
+#[macro_export]
+macro_rules! tracing_enabled {
+    ($level:expr $(,)?) => {
+        tracing::enabled!(target: "amaru::ledger", $level)
+    };
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+pub mod tests {
+    use amaru_kernel::{Address, Hash, MemoizedTransactionOutput, TransactionInput, Value};
+
+    #[expect(clippy::unwrap_used)]
+    pub fn fake_input(transaction_id: &str, index: u16) -> TransactionInput {
+        TransactionInput { transaction_id: Hash::from(hex::decode(transaction_id).unwrap().as_slice()), index }
+    }
+
+    #[expect(clippy::expect_used)]
+    pub fn fake_output(address: &str) -> MemoizedTransactionOutput {
+        MemoizedTransactionOutput::new(
+            false,
+            Address::from_hex(address).expect("Invalid hex address"),
+            Value::Coin(0),
+            amaru_kernel::MemoizedDatum::None,
+            None,
+        )
+    }
+}

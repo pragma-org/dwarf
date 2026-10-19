@@ -1,0 +1,24 @@
+lints.workspace = true
+
+[package]
+name = "amaru-iter-borrow"
+version = "0.1.2"
+edition.workspace = true
+description = "Iterator adaptor supporting mutable borrowing of elements"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+minicbor.workspace = true
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["amaru-deps"]

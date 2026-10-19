@@ -1,0 +1,40 @@
+lints.workspace = true
+
+[package]
+name = "amaru-mithril"
+version = "0.1.2"
+edition.workspace = true
+description = "Mithril snapshot download and verification for Amaru"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+# External dependencies ───────────────────────────────────────────────────────┐
+anyhow.workspace = true
+async-trait.workspace = true
+flate2.workspace = true
+mithril-client.workspace = true
+tar.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+
+# Internal dependencies ───────────────────────────────────────────────────────┐
+amaru-kernel.workspace = true
+amaru-observability.workspace = true
+amaru-progress-bar.workspace = true
+
+[target.'cfg(all(not(target_family="wasm"), not(target_arch="riscv32")))'.dependencies]
+amaru-deps.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["-D", "warnings"]
+
+[package.metadata.cargo-machete]
+ignored = ["amaru-deps"]
