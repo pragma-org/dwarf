@@ -386,7 +386,8 @@
                   "sybil",
                   "adversary",
                   "submitter",
-                  "observer"
+                  "observer",
+                  "reference"
                 ],
                 "description": "Behavioural role of the node in the scenario."
               },

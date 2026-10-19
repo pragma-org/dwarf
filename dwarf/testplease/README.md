@@ -12,8 +12,11 @@ both implementations, can be identified in one scan. No `candidate.yaml`, client
 workflow, scenario configuration, or client build command is required. Exact node
 and scenario versions remain run-selected; this intake does not pin them.
 
-This directory currently provides a source identification library contract. Adding
-source does not yet trigger a build, scenario, campaign, measurement, or publication.
+A same-repository push that changes this directory starts the GitHub-hosted
+security-campaign workflow. The current executable lane accepts one changed Amaru
+candidate, builds its stock artifact, qualifies the exact mixed-node pair, and runs
+the frozen security and stock-measurement campaign. Cardano candidate builds, patched
+taps, release publication, and Pages publication remain separate follow-on lanes.
 
 ## Recognized source
 
