@@ -8,6 +8,8 @@ status remains ``unknown``.  Only retained evidence may promote it to
 from __future__ import annotations
 
 import copy
+import hashlib
+import os
 import json
 import re
 from pathlib import Path
@@ -282,8 +284,20 @@ def validate_version_catalog(data: Any) -> dict[str, Any]:
 
 def load_version_catalog(path: str | Path = DEFAULT_CATALOG_PATH) -> dict[str, Any]:
     catalog_path = Path(path)
+    frozen_path = os.environ.get("ADA2_DWARF_CAMPAIGN_CATALOG")
+    frozen_digest = os.environ.get("ADA2_DWARF_CAMPAIGN_CATALOG_SHA256")
+    if frozen_path or frozen_digest:
+        if not frozen_path or not frozen_digest or not re.fullmatch(r"[0-9a-f]{64}", frozen_digest):
+            raise CatalogError("campaign catalog binding is incomplete")
+        selected = Path(frozen_path)
+        if catalog_path != DEFAULT_CATALOG_PATH and catalog_path.resolve() != selected.resolve():
+            raise CatalogError("explicit catalog differs from the frozen campaign catalog")
+        catalog_path = selected
     try:
-        data = json.loads(catalog_path.read_text(encoding="utf-8"))
+        source = catalog_path.read_bytes()
+        if frozen_digest and hashlib.sha256(source).hexdigest() != frozen_digest:
+            raise CatalogError("frozen campaign catalog digest mismatch")
+        data = json.loads(source.decode("utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise CatalogError(f"cannot load version catalog {catalog_path}: {exc}") from exc
     return validate_version_catalog(data)

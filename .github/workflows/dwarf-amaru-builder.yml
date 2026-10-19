@@ -1,0 +1,55 @@
+name: Publish Amaru stock builder
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  publish:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish exact builder recipe
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/amaru-stock-builder.Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: mode=max
+          tags: ghcr.io/j-gainsec/dwarf-amaru-builder:${{ github.sha }}
+      - name: Record immutable builder identity
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          digest = os.environ['IMAGE_DIGEST']
+          if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
+              raise SystemExit('builder publication did not return an immutable digest')
+          Path('builder-identity.json').write_text(json.dumps({
+              'image': 'ghcr.io/j-gainsec/dwarf-amaru-builder@' + digest,
+              'recipe_revision': os.environ['GITHUB_SHA'],
+              'network': 'image-creation-fetch-allowed; not-hermetic',
+              'rust': 'nightly-2026-09-04', 'zig': '0.15.2', 'cargo-zigbuild': '0.23.4'}, sort_keys=True) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amaru-builder-immutable-identity
+          path: builder-identity.json
+          if-no-files-found: error
+          retention-days: 90

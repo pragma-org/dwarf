@@ -167,6 +167,8 @@ def print_banner():
 
 
 def should_suppress_banner(args):
+    if args.command == "campaign":
+        return True
     return getattr(args, "json", False) and (
         args.command in {"wallet", "moog", "antithesis", "migrate"}
         or (args.command == "doctor" and getattr(args, "doctor_command", None) == "storage")
@@ -179,6 +181,20 @@ def build_parser():
 
     subcommands.add_parser("intake")
     subcommands.add_parser("list-profiles")
+    campaign = subcommands.add_parser("campaign", help="Freeze offline security campaign plans.")
+    campaign_sub = campaign.add_subparsers(dest="campaign_command", required=True)
+    campaign_plan = campaign_sub.add_parser("plan", help="Resolve local inputs; no builds or execution.")
+    campaign_plan.add_argument("--repository-root", required=True)
+    campaign_plan.add_argument("--repository-commit", required=True)
+    campaign_plan.add_argument("--candidate", required=True, help="Exact implementation/candidate-name intake identity.")
+    campaign_plan.add_argument("--security-suite", required=True)
+    campaign_plan.add_argument("--measurement-suite", required=True)
+    campaign_plan.add_argument("--selection", required=True, help="Local JSON file of explicit entry/version selections.")
+    campaign_plan.add_argument("--catalog", help="Local release catalog snapshot; no refresh is performed.")
+    campaign_plan.add_argument("--output", help="Write the canonical JSON plan to this file.")
+    campaign_plan.add_argument("--json", action="store_true", help="Emit canonical JSON (the default for campaign plan).")
+    for reserved in ("run", "resume", "verify"):
+        campaign_sub.add_parser(reserved, help="Reserved; not implemented.")
     backup = subcommands.add_parser("backup")
     backup.add_argument("--to", required=True)
     backup.add_argument("--include-bundles", action="store_true")
@@ -3779,6 +3795,35 @@ def cmd_bundle(args):
     return proc.returncode
 
 
+def cmd_campaign(args):
+    """Planning reads local files only; runtime command names fail explicitly."""
+    if args.campaign_command != "plan":
+        print(f"campaign {args.campaign_command} is not implemented; only offline planning is available.", file=sys.stderr)
+        return 2
+    from profile_manager.security_campaign import resolve_security_campaign, serialize_campaign
+    from profile_manager.security_campaign_suite import load_measurement_suite, load_security_campaign_suite
+    from profile_manager.testplease_candidates import discover_candidates
+    from profile_manager.version_catalog import load_version_catalog
+
+    try:
+        candidates = discover_candidates(Path(args.repository_root), repository_commit=args.repository_commit)
+        matches = [c for c in candidates if f"{c.implementation}/{c.candidate_name}" == args.candidate]
+        if len(matches) != 1:
+            raise ValueError("select exactly one discovered implementation/candidate-name")
+        selection = json.loads(Path(args.selection).read_text(encoding="utf-8"))
+        catalog = load_version_catalog(args.catalog) if args.catalog else load_version_catalog()
+        plan = resolve_security_campaign(matches[0], load_security_campaign_suite(args.security_suite),
+                                         load_measurement_suite(args.measurement_suite), selection=selection, catalog=catalog)
+        body = serialize_campaign(plan)
+        if args.output:
+            Path(args.output).write_text(body + "\n", encoding="utf-8")
+        print(body)
+        return 0
+    except (OSError, ValueError) as exc:
+        print(f"campaign plan: {exc}", file=sys.stderr)
+        return 2
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -3789,6 +3834,8 @@ def main(argv=None):
     if args.command == "list-profiles":
         print(profile_list_text(), end="")
         return 0
+    if args.command == "campaign":
+        return cmd_campaign(args)
     if args.command == "backup":
         return cmd_backup(args)
     if args.command == "restore":

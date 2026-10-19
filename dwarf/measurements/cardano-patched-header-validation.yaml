@@ -1,14 +1,14 @@
 schema_version: v1
 id: cardano-patched-header-validation
 title: Cardano header validation verdicts (patched)
-description: Scaffold only. A patched-node header-validation instrumentation tap is not built; this definition reserves the id and reports unavailable until the patched instrumentation lands.
+description: Exact nanoseconds-v3 consensus validateHeader contract. Native envelope and protocol errors are rejected; synchronous evaluation exceptions are unavailable and rethrown. Synchronous instrumentation failures emit only a best-effort constant unavailable record without hash/timing and preserve native results. Asynchronous cancellation propagates immediately without telemetry/fallback. Outer Either timing retains public header hashes and bounded native diagnostics without forcing successful payloads. Patch and collector are implemented; build, probe, calibration and same-boundary normal/adversarial runtime evidence remain unverified.
 output_schema: dwarf/spec/v1/measurement-result.schema.json
 compatibility:
   implementation: cardano-node
   versions: [{version: 11.1.2, source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5}]
   target_modes: [patched]
 collection_mode: patched-node
-required_capabilities: [cardano-patched-header-validation-instrumentation]
+required_capabilities: [cardano-patched-header-validation-instrumentation, cardano-patch-identity]
 default_enabled: false
 overhead_class: low
 collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}

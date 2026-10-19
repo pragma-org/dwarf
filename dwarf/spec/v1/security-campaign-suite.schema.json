@@ -1,0 +1,554 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/security-campaign-suite.schema.json",
+  "title": "DWARF security campaign and measurement suite",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "suite_kind": {
+      "enum": [
+        "security",
+        "measurement"
+      ]
+    },
+    "result_policy": {
+      "const": "security-independent-of-measurement-completeness"
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "coverage_intent": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+                },
+                "scenario_id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+                },
+                "version_policy": {
+                  "const": "operator-selected"
+                },
+                "security_objective": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "target_nodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                },
+                "reference_control": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "workload_fault": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "oracle": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "evidence_rule": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "normal_control": {
+                  "type": "object",
+                  "properties": {
+                    "scenario_id": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+                    },
+                    "success_rule": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "\\S"
+                    }
+                  },
+                  "required": [
+                    "scenario_id",
+                    "success_rule"
+                  ],
+                  "additionalProperties": false
+                },
+                "topology": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "library",
+                        "shared-runtime"
+                      ]
+                    },
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "node_id": {
+                            "type": "string",
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+                          },
+                          "implementation": {
+                            "enum": [
+                              "amaru",
+                              "cardano-node"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "node_id",
+                          "implementation"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "minItems": 1,
+                      "uniqueItems": true
+                    },
+                    "deployment_profile": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "nodes"
+                  ],
+                  "additionalProperties": false
+                },
+                "measurement_attachments": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "https://dwarf.gainpalfam.com/spec/v1/measurement-attachment.schema.json"
+                  },
+                  "minItems": 0,
+                  "uniqueItems": true
+                },
+                "limitations": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S"
+                  },
+                  "minItems": 0,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "id",
+                "scenario_id",
+                "version_policy",
+                "security_objective",
+                "target_nodes",
+                "reference_control",
+                "workload_fault",
+                "oracle",
+                "evidence_rule",
+                "normal_control",
+                "topology",
+                "measurement_attachments",
+                "limitations"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "blocked_candidates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "scenario_id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "activation_condition": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "scenario_id",
+                "reason",
+                "activation_condition"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 0,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "coverage_intent",
+          "entries",
+          "blocked_candidates"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "exercises": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "measurement_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+          },
+          "implementation": {
+            "enum": [
+              "amaru",
+              "cardano-node"
+            ]
+          },
+          "scenario_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+          },
+          "version_policy": {
+            "const": "operator-selected"
+          },
+          "rule": {
+            "type": "object",
+            "properties": {
+              "min_samples": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "required_event": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "outcomes": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "accepted",
+                    "rejected"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "correlation": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "restart": {
+                "const": true
+              },
+              "progress": {
+                "type": "object",
+                "properties": {
+                  "min_blocks": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "min_blocks"
+                ],
+                "additionalProperties": false
+              },
+              "coverage_envelope": {
+                "type": "object",
+                "properties": {
+                  "min_covered_functions": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "required_paths": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "\\S"
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "min_covered_functions",
+                  "required_paths"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [],
+            "additionalProperties": false,
+            "minProperties": 1
+          },
+          "normal_control": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "evidence_rule": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "runtime": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": [
+                  "implemented",
+                  "missing"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "missing"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "reason"
+                  ]
+                }
+              }
+            ]
+          },
+          "fallback": {
+            "type": "object",
+            "properties": {
+              "scenario_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+              },
+              "activation_condition": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "status": {
+                "enum": [
+                  "ready",
+                  "blocked"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            },
+            "required": [
+              "scenario_id",
+              "activation_condition",
+              "status"
+            ],
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "blocked"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "reason"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "measurement_id",
+          "implementation",
+          "scenario_id",
+          "version_policy",
+          "rule",
+          "normal_control",
+          "evidence_rule",
+          "runtime"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "completion_policy": {
+      "type": "object",
+      "properties": {
+        "all_catalog_taps_mapped": {
+          "const": true
+        },
+        "runtime_implementation_required": {
+          "const": true
+        },
+        "non_vacuous_evidence_required": {
+          "const": true
+        },
+        "normal_control_required": {
+          "const": true
+        },
+        "available_is_exercised": {
+          "const": false
+        },
+        "zero_samples_is_exercised": {
+          "const": false
+        }
+      },
+      "required": [
+        "all_catalog_taps_mapped",
+        "runtime_implementation_required",
+        "non_vacuous_evidence_required",
+        "normal_control_required",
+        "available_is_exercised",
+        "zero_samples_is_exercised"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "title",
+    "description",
+    "suite_kind",
+    "result_policy"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "suite_kind": {
+            "const": "security"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "groups"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "exercises"
+              ]
+            },
+            {
+              "required": [
+                "completion_policy"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "suite_kind": {
+            "const": "measurement"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "exercises",
+          "completion_policy"
+        ],
+        "not": {
+          "required": [
+            "groups"
+          ]
+        }
+      }
+    }
+  ]
+}

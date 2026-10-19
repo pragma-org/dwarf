@@ -2177,17 +2177,23 @@ class CborFuzzStructured(LoadPrimitive):
         for i in range(iterations):
             clean = generate_cbor(shape, rng)
             data = mutate_cbor(clean, rng, mutation_rate=mutation_rate)
+            returncode = None
+            timed_out = False
             try:
                 proc = subprocess.run([binary], input=data, capture_output=True,
                                       timeout=per_input_timeout, check=False)
+                returncode = proc.returncode
                 outcome = _classify_shim_outcome(proc.returncode, proc.stdout.decode("utf-8", errors="replace"))
                 stdout = proc.stdout.decode("utf-8", errors="replace")
             except subprocess.TimeoutExpired:
+                timed_out = True
                 outcome = "crash"
                 stdout = ""
             handle.log(
                 phase="load", primitive="cbor_fuzz_structured", level="info", event="iteration",
-                payload={"i": i, "outcome": outcome, "size": len(data), "stdout_head": stdout[:200]},
+                payload={"i": i, "outcome": outcome, "size": len(data), "stdout_head": stdout[:200],
+                         "target_id": target_id, "input_sha256": hashlib.sha256(data).hexdigest(),
+                         "mutated": data != clean, "returncode": returncode, "timed_out": timed_out},
             )
 
         handle.log(

@@ -1,17 +1,17 @@
 schema_version: v1
 id: cardano-patched-blockfetch-handler-queue
 title: Cardano BlockFetch handler queues
-description: Reserved capability definition for a future revision-locked BlockFetch handler queue-depth and queue-residence patch; it is not enabled by the current patched profile.
+description: Exact unbuilt nanoseconds-v4 merged-client-request queue contract. Pending merged-range depth and first-enqueue/dequeue clock brackets give residence lower and upper bounds, never exact residence or a midpoint. Successful native addFetchedBlock service retains public block hashes; it does not measure validation, download or adoption. Per-process trace session, client session, request serial and merge update bind records. Compilation, meaningful probe, paired calibration, same-boundary normal control and non-vacuous workload remain required. The existing patched profile does not enable this tap.
 output_schema: dwarf/spec/v1/measurement-result.schema.json
 compatibility:
   implementation: cardano-node
   versions: [{version: 11.1.2, source_revision: fef83fed01d7926f3de83b3b917be5a4a48768b5}]
   target_modes: [patched]
 collection_mode: patched-node
-required_capabilities: [cardano-patched-blockfetch-queue]
+required_capabilities: [cardano-patched-blockfetch-queue, cardano-patch-identity]
 default_enabled: false
 overhead_class: moderate
 collector: {lifecycle: run, start: before-workload, stop: after-recovery, failure_behavior: warn}
 emitted_artifacts: [measurements/cardano-patched-blockfetch-handler-queue/result.json]
-correlation_identifiers: [run_id, workload_phase, peer_id, block_hash, request_id]
+correlation_identifiers: [run_id, workload_phase, trace_session, client_id, request_id, block_hash]
 threshold_gate: {supported: true, default_enabled: false}

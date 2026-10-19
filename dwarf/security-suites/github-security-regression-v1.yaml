@@ -1,0 +1,607 @@
+schema_version: v1
+id: github-security-regression-v1
+title: GitHub security regression campaign contracts
+description: Version-neutral catalog recipes. Coverage intent is not accepted security coverage; unresolved normal
+  controls, oracles, historical pins and prerequisites remain explicit. Mixed security entries use one heterogeneous
+  runtime and the source recipe's shared workload and assertions. Measurement calibration or mirrored tap runs
+  cannot substitute for that security result. No scenario count establishes completion.
+suite_kind: security
+result_policy: security-independent-of-measurement-completeness
+groups:
+- id: malformed-containment
+  title: Malformed input and containment
+  coverage_intent:
+  - structured CBOR rejection
+  - decoder containment
+  entries:
+  - id: amaru-cbor-tx-body-fuzz-structured
+    scenario_id: amaru-cbor-tx-body-fuzz-structured
+    version_policy: operator-selected
+    security_objective: Reject malformed transaction bodies without escaping the decoder boundary.
+    target_nodes:
+    - node1
+    reference_control: A canonical valid transaction-body seed decodes successfully under the same harness identity.
+    workload_fault: Structured CBOR corpus mutations with valid transaction-body seeds.
+    oracle: Require completed nonempty corpus processing and retained decoder outcomes; a harness-only pass does
+      not establish process containment.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: amaru-cbor-tx-body-fuzz-structured
+      success_rule: A canonical valid transaction-body seed decodes successfully under the same harness identity.
+    topology:
+      mode: library
+      nodes:
+      - node_id: node1
+        implementation: amaru
+    measurement_attachments: []
+    limitations:
+    - Library decoder evidence only; no real-node crash or network-containment claim.
+  - id: cardano-node-cbor-tx-body-fuzz-structured
+    scenario_id: cardano-node-cbor-tx-body-fuzz-structured
+    version_policy: operator-selected
+    security_objective: Reject malformed transaction bodies without escaping the decoder boundary.
+    target_nodes:
+    - node1
+    reference_control: A canonical valid transaction-body seed decodes successfully under the same harness identity.
+    workload_fault: Structured CBOR corpus mutations with valid transaction-body seeds.
+    oracle: Require completed nonempty corpus processing and retained decoder outcomes; a harness-only pass does
+      not establish process containment.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: cardano-node-cbor-tx-body-fuzz-structured
+      success_rule: A canonical valid transaction-body seed decodes successfully under the same harness identity.
+    topology:
+      mode: library
+      nodes:
+      - node_id: node1
+        implementation: cardano-node
+    measurement_attachments: []
+    limitations:
+    - Library decoder evidence only; no real-node crash or network-containment claim.
+  blocked_candidates: &id002 []
+- id: transaction-conformance
+  title: Transaction, ledger, serialization and Plutus
+  coverage_intent:
+  - CBOR serialization differential
+  - transaction admission
+  - Plutus VM differential
+  entries:
+  - id: cardano-amaru-cbor-dataset-plutus-data-differential
+    scenario_id: cardano-amaru-cbor-dataset-plutus-data-differential
+    version_policy: operator-selected
+    security_objective: Compare production Plutus-data decoding against the independent dataset reference.
+    target_nodes:
+    - node1
+    reference_control: Positive dataset controls decode and negative controls reject on both implementations.
+    workload_fault: Process positive and negative Conway dataset categories.
+    oracle: Require all declared categories to be processed with no unexplained candidate/reference mismatch.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: cardano-amaru-cbor-dataset-plutus-data-differential
+      success_rule: Positive dataset controls decode and negative controls reject on both implementations.
+    topology:
+      mode: library
+      nodes:
+      - node_id: node1
+        implementation: amaru
+    measurement_attachments: []
+    limitations:
+    - Library conformance evidence; dataset revision is fixture provenance, not a node-version requirement.
+  - id: ledger-submit-transaction-array-arity-differential-amaru-cardano-node
+    scenario_id: ledger-submit-transaction-array-arity-differential-amaru-cardano-node
+    version_policy: operator-selected
+    security_objective: Reject truncated transaction envelopes at the decoder boundary.
+    target_nodes:
+    - node1
+    - node2
+    reference_control: Independently funded canonical four-element transactions succeed on both nodes.
+    workload_fault: Submit identical three-element transaction arrays to both real nodes.
+    oracle: Correlate same-attempt decoder rejection and independently observed node responsiveness.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: ledger-submit-transaction-array-arity-differential-amaru-cardano-node
+      success_rule: Independently funded canonical four-element transactions succeed on both nodes.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: amaru
+      - node_id: node2
+        implementation: cardano-node
+    measurement_attachments:
+    - node_id: node1
+      implementation: amaru
+      target_mode: stock
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations: &id001 []
+  - id: ledger-submit-empty-redeemers-container-differential-amaru-cardano-node
+    scenario_id: ledger-submit-empty-redeemers-container-differential-amaru-cardano-node
+    version_policy: operator-selected
+    security_objective: Compare redeemer-container decoding and admission boundaries.
+    target_nodes:
+    - node1
+    - node2
+    reference_control: Canonical redeemer containers are accepted with independent funding on each node.
+    workload_fault: Submit empty list/map and omitted redeemers against funded normal controls.
+    oracle: Require same-attempt typed rejection diagnostics; an opaque RejectTx cannot establish a missing-redeemer
+      reason.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: ledger-submit-empty-redeemers-container-differential-amaru-cardano-node
+      success_rule: Canonical redeemer containers are accepted with independent funding on each node.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: amaru
+      - node_id: node2
+        implementation: cardano-node
+    measurement_attachments:
+    - node_id: node1
+      implementation: amaru
+      target_mode: stock
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations: *id001
+  - id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+    scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+    version_policy: operator-selected
+    security_objective: Detect divergent Plutus CEK value evaluation.
+    target_nodes:
+    - node1
+    - node2
+    reference_control: Normal script-value transactions succeed on both nodes before differential cases.
+    workload_fault: Execute the same script-value fixtures on Amaru and cardano-node in one runtime.
+    oracle: Compare phase-2 outcomes and retain exact script/input identity at the same boundary.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+      success_rule: Normal script-value transactions succeed on both nodes before differential cases.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: cardano-node
+      - node_id: node2
+        implementation: amaru
+    measurement_attachments:
+    - node_id: node1
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node2
+      implementation: amaru
+      target_mode: stock
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    limitations: *id001
+  blocked_candidates: *id002
+- id: n2n-containment
+  title: N2N state machine and protocol containment
+  coverage_intent:
+  - mux ingress containment
+  - TxSubmission state machine
+  - mempool failure containment
+  entries:
+  - id: runtime-substrate-mux-ingress-overrun-mixed-amaru
+    scenario_id: runtime-substrate-mux-ingress-overrun-mixed-amaru
+    version_policy: operator-selected
+    security_objective: Contain mux ingress overruns to the offending bearer.
+    target_nodes:
+    - node1
+    - node2
+    reference_control: Healthy peer traffic and tip probes succeed before and after the malformed ingress.
+    workload_fault: Drive receive-side ingress overrun in a shared mixed topology.
+    oracle: Require bearer-scoped failure and independent process health and post-fault progress.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: runtime-substrate-mux-ingress-overrun-mixed-amaru
+      success_rule: Healthy peer traffic and tip probes succeed before and after the malformed ingress.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: amaru
+      - node_id: node2
+        implementation: cardano-node
+    measurement_attachments:
+    - node_id: node1
+      implementation: amaru
+      target_mode: stock
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations: *id001
+  - id: runtime-substrate-txsubmission-unexpected-body-mixed-amaru
+    scenario_id: runtime-substrate-txsubmission-unexpected-body-mixed-amaru
+    version_policy: operator-selected
+    security_objective: Reject unsolicited TxSubmission bodies without poisoning honest peers.
+    target_nodes:
+    - node1
+    - node2
+    reference_control: Ordinary TxSubmission request/body exchange succeeds for each observed node.
+    workload_fault: Send unexpected bodies in the TxSubmission protocol state machine.
+    oracle: Require decisive protocol rejection and continued independent peer responsiveness.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: runtime-substrate-txsubmission-unexpected-body-mixed-amaru
+      success_rule: Ordinary TxSubmission request/body exchange succeeds for each observed node.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: cardano-node
+      - node_id: node2
+        implementation: amaru
+    measurement_attachments:
+    - node_id: node1
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node2
+      implementation: amaru
+      target_mode: stock
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    limitations: *id001
+  - id: runtime-substrate-mempool-failure-containment-mixed-amaru
+    scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+    version_policy: operator-selected
+    security_objective: Contain mempool admission failure while preserving liveness.
+    target_nodes:
+    - node1
+    - node2
+    reference_control: Funded valid transactions are admitted independently on both nodes.
+    workload_fault: Inject invalid transaction admission workload alongside normal mixed-node traffic.
+    oracle: Correlate invalid rejection, normal admission, process health and chain progress.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+      success_rule: Funded valid transactions are admitted independently on both nodes.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: cardano-node
+      - node_id: node2
+        implementation: amaru
+    measurement_attachments:
+    - node_id: node1
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node2
+      implementation: amaru
+      target_mode: stock
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    limitations: *id001
+  blocked_candidates: *id002
+- id: consensus-convergence
+  title: Consensus partition, fork, rollback and convergence
+  coverage_intent:
+  - partition and rejoin
+  - fork selection (blocked)
+  - rollback (blocked)
+  - post-fault convergence
+  entries:
+  - id: phase3-runtime-profile-a-partition-rejoin-primitive
+    scenario_id: phase3-runtime-profile-a-partition-rejoin-primitive
+    version_policy: operator-selected
+    security_objective: Preserve convergence after a bounded network partition.
+    target_nodes:
+    - node1
+    - node2
+    - node3
+    reference_control: Connected baseline nodes progress before partition and agree after rejoin.
+    workload_fault: Partition and rejoin the existing three-node cardano-node profile.
+    oracle: Require partition reachability, successful rejoin and independently recorded post-rejoin progress; helper
+      exit alone is insufficient.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: phase3-runtime-profile-a-partition-rejoin-primitive
+      success_rule: Connected baseline nodes progress before partition and agree after rejoin.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: cardano-node
+      - node_id: node2
+        implementation: cardano-node
+      - node_id: node3
+        implementation: cardano-node
+      deployment_profile: profile-a-haskell-peersharing-disabled
+    measurement_attachments:
+    - node_id: node1
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node3
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node3/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations:
+    - Current scenario assertion checks helper completion only; decisive convergence evidence remains a campaign
+      prerequisite. Mixed fork/rollback coverage remains blocked.
+  blocked_candidates:
+  - scenario_id: consensus-chainhold-upstream-differential
+    reason: Historical source scenario pins node versions; fork-selection migration is pending.
+    activation_condition: Only after this source scenario is migrated to operator-selected node identities and its
+      stated fault, normal control and decisive oracle are reviewed.
+  - scenario_id: consensus-rollback-recovery-within-k-differential
+    reason: Historical source scenario pins node versions; rollback migration is pending.
+    activation_condition: Only after this source scenario is migrated to operator-selected node identities and its
+      stated fault, normal control and decisive oracle are reviewed.
+- id: recovery-pressure
+  title: Restart, recovery, liveness and resource pressure
+  coverage_intent:
+  - restart recovery
+  - tip progress
+  - resource sampling
+  - bounded resource pressure (blocked)
+  entries:
+  - id: m3-runtime-profile-restart-tip-recovery
+    scenario_id: m3-runtime-profile-restart-tip-recovery
+    version_policy: operator-selected
+    security_objective: Recover tip progress after an intentional restart.
+    target_nodes:
+    - node1
+    - node2
+    - node3
+    reference_control: Baseline profile progresses and remains queryable before the restart.
+    workload_fault: Stop and restart the profile, then observe recovery.
+    oracle: Require a real restart and post-restart listener, peer and chain-progress gates.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: m3-runtime-profile-restart-tip-recovery
+      success_rule: Baseline profile progresses and remains queryable before the restart.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: cardano-node
+      - node_id: node2
+        implementation: cardano-node
+      - node_id: node3
+        implementation: cardano-node
+      deployment_profile: profile-a-haskell-peersharing-disabled
+    measurement_attachments:
+    - node_id: node1
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node3
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node3/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations:
+    - Helper success is insufficient without independent recovery and progress evidence.
+  - id: phase3-runtime-profile-a-resource-profile-primitive
+    scenario_id: phase3-runtime-profile-a-resource-profile-primitive
+    version_policy: operator-selected
+    security_objective: Retain resource observations while a real node remains live.
+    target_nodes:
+    - node1
+    - node2
+    - node3
+    reference_control: The unpressured node stays responsive and progresses during the observation.
+    workload_fault: Sample resource use under the profile workload.
+    oracle: Require nonzero real-process samples correlated with node identity and tip progress.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: phase3-runtime-profile-a-resource-profile-primitive
+      success_rule: The unpressured node stays responsive and progresses during the observation.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: cardano-node
+      - node_id: node2
+        implementation: cardano-node
+      - node_id: node3
+        implementation: cardano-node
+      deployment_profile: profile-a-haskell-peersharing-disabled
+    measurement_attachments:
+    - node_id: node1
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node3
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node3/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations:
+    - This entry measures resource use; it does not inject CPU/RAM/disk pressure.
+  blocked_candidates:
+  - scenario_id: runtime-substrate-resource-ram-host-pressure-example-smoke
+    reason: Historical source scenario pins node versions; bounded pressure migration and host-scope review are
+      pending.
+    activation_condition: Only after this source scenario is migrated to operator-selected node identities and its
+      stated fault, normal control and decisive oracle are reviewed.
+- id: measurement-calibration
+  title: Measurement calibration and fallback dispatch
+  coverage_intent:
+  - stock/external calibration
+  - tap-specific fallbacks in node-measurements-v1
+  entries:
+  - id: amaru-measurement-e2e-stock-portable
+    scenario_id: amaru-measurement-e2e-stock-portable
+    version_policy: operator-selected
+    security_objective: Validate observation plumbing with explicit normal controls.
+    target_nodes:
+    - amaru1
+    reference_control: Normal calibration inputs reach the declared boundary and the node stays responsive.
+    workload_fault: Run the portable calibration workload on the selected implementation.
+    oracle: Require workload completion and independent live-node evidence; measurement availability never establishes
+      a security pass.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: amaru-measurement-e2e-stock-portable
+      success_rule: Normal calibration inputs reach the declared boundary and the node stays responsive.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: bootstrap-cardano
+        implementation: cardano-node
+      - node_id: amaru1
+        implementation: amaru
+      deployment_profile: profile-o-amaru-target-latest-confirmed
+    measurement_attachments:
+    - node_id: amaru1
+      implementation: amaru
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/amaru1/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    limitations:
+    - Calibration is supporting evidence only. Required per-tap rules and activation conditions live in the separate
+      measurement suite.
+  - id: cardano-measurement-e2e-stock-portable
+    scenario_id: cardano-measurement-e2e-stock-portable
+    version_policy: operator-selected
+    security_objective: Validate observation plumbing with explicit normal controls.
+    target_nodes:
+    - node1
+    - node2
+    - node3
+    reference_control: Normal calibration inputs reach the declared boundary and the node stays responsive.
+    workload_fault: Run the portable calibration workload on the selected implementation.
+    oracle: Require workload completion and independent live-node evidence; measurement availability never establishes
+      a security pass.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: cardano-measurement-e2e-stock-portable
+      success_rule: Normal calibration inputs reach the declared boundary and the node stays responsive.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: cardano-node
+      - node_id: node2
+        implementation: cardano-node
+      - node_id: node3
+        implementation: cardano-node
+      deployment_profile: profile-n-cardano-latest-confirmed
+    measurement_attachments:
+    - node_id: node1
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    - node_id: node3
+      implementation: cardano-node
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node3/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations:
+    - Calibration is supporting evidence only. Required per-tap rules and activation conditions live in the separate
+      measurement suite.
+  blocked_candidates: *id002

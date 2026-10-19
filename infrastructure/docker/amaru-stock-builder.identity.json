@@ -1,0 +1,13 @@
+{
+  "builder": "ghcr.io/j-gainsec/dwarf-amaru-builder@sha256:653a848d80384259b7b31da732d33b2d5e8fe5001a0a38a98b6fc1a9f1e15a9f",
+  "cargo_zigbuild": "0.23.4",
+  "dockerfile_sha256": "abc465ffc3717c3e581a5b35e546b5e84942485a0a833489bf9b1a7499017db1",
+  "network_policy": "image-creation-fetch-allowed; not-hermetic",
+  "platform": "linux/amd64",
+  "published_at": "2026-10-19T17:49:04Z",
+  "recipe_revision": "37947f2b40cacabb4288392f3a25e9831f1d3343",
+  "rust": "nightly-2026-09-04",
+  "schema_version": "v1",
+  "tag": "ghcr.io/j-gainsec/dwarf-amaru-builder:37947f2b4a3e604570db250e8195810f829d113b",
+  "zig": "0.15.2"
+}

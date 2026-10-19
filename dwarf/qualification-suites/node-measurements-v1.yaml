@@ -1,0 +1,824 @@
+schema_version: v1
+id: node-measurements-v1
+title: Per-node measurement exercise contracts
+description: Every catalog tap is mapped, including stock header verdicts explicitly absent from default profiles.
+  Fallback selection is conditional, never proof of exercise. Known runtime gaps and pinned fallback scenarios block
+  completeness without failing security assertions. Target modes, capabilities and resolved artifact compatibility
+  must be proven by a later planner.
+suite_kind: measurement
+result_policy: security-independent-of-measurement-completeness
+completion_policy:
+  all_catalog_taps_mapped: true
+  runtime_implementation_required: true
+  non_vacuous_evidence_required: true
+  normal_control_required: true
+  available_is_exercised: false
+  zero_samples_is_exercised: false
+exercises:
+- measurement_id: amaru-coverage-production-paths
+  implementation: amaru
+  scenario_id: amaru-cbor-tx-body-fuzz-structured
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    coverage_envelope:
+      min_covered_functions: 1
+      required_paths:
+      - transaction-body/decode
+    correlation:
+    - run_id
+    - input_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: missing
+    reason: No runtime collector factory is registered for this catalog tap. Implementation and target-mode/provenance
+      binding are required before measurement-complete; this task does not implement collectors.
+  fallback:
+    scenario_id: amaru-cbor-tx-body-fuzz-structured
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: amaru-external-restart-readiness
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    restart: true
+    required_event: restart_started
+    progress:
+      min_blocks: 1
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: client-example-restart-recovery-sync-amaru
+    activation_condition: When base calibration has no intentional restart with listener, peer and chain-progress
+      readiness gates.
+    status: blocked
+    reason: Calibration observes unchanged restart counts; the existing decisive restart-readiness scenario pins
+      node versions and needs migration.
+- measurement_id: amaru-external-sync-speed
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 2
+    progress:
+      min_blocks: 1
+    correlation:
+    - run_id
+    - block_hash
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: client-example-restart-recovery-sync-amaru
+    activation_condition: When base calibration lacks a controlled sync range or sufficient real tip samples with
+      block progress.
+    status: blocked
+    reason: Controlled catch-up evidence must be produced after migrating the existing version-pinned recovery/sync
+      scenario.
+- measurement_id: amaru-external-workload-accounting
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+    - input_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: amaru-measurement-e2e-stock-portable
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: amaru-patched-blockfetch-queues
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    correlation:
+    - run_id
+    - block_hash
+    required_event: blockfetch-queue-residence
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: client-example-block-application-amaru
+    activation_condition: When base calibration lacks a retained fetch response or required queue residence event
+      correlated to a real block hash.
+    status: blocked
+    reason: The existing block-application workload pins node versions; migration and blockfetch/queue boundary
+      reachability are required.
+- measurement_id: amaru-patched-header-validation
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 2
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+    - header_hash
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+    reason: Exact aedfe797 nanoseconds-v4 patch/collector contract exists; the real target build, probe, calibration
+      and accepted/rejected header evidence with normal controls are still required.
+  fallback:
+    scenario_id: opcert-header-validation-cases-mixed-1112-amaru-20260918
+    activation_condition: When calibration lacks both accepted and rejected header verdicts correlated by header
+      hash.
+    status: blocked
+    reason: Existing opcert scenario requires version-neutral migration and reviewed valid-header control before
+      selection.
+- measurement_id: amaru-patched-protocol-decode
+  implementation: amaru
+  scenario_id: runtime-substrate-txsubmission-unexpected-body-mixed-amaru
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    correlation:
+    - run_id
+    - protocol
+    - message_type
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: runtime-substrate-txsubmission-unexpected-body-mixed-amaru
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: amaru-patched-txsubmission-residence
+  implementation: amaru
+  scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: amaru-stock-block-epoch
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    progress:
+      min_blocks: 1
+    correlation:
+    - run_id
+    - block_hash
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: amaru-measurement-e2e-stock-portable
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: amaru-stock-fork-switch
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    required_event: fork_switch
+    correlation:
+    - run_id
+    - block_hash
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: consensus-chainhold-upstream-differential
+    activation_condition: When no real fork-switch event is retained from the base campaign.
+    status: blocked
+    reason: Existing fork scenario pins node versions and must be migrated before selection.
+- measurement_id: amaru-stock-header-lifecycle
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    progress:
+      min_blocks: 1
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: amaru-measurement-e2e-stock-portable
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: amaru-stock-header-validation
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 2
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+    - header_hash
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: opcert-header-validation-cases-mixed-1112-amaru-20260918
+    activation_condition: When calibration lacks both accepted and rejected header verdicts correlated by header
+      hash.
+    status: blocked
+    reason: Existing opcert scenario requires version-neutral migration and reviewed valid-header control before
+      selection.
+- measurement_id: amaru-stock-ledger-rules
+  implementation: amaru
+  scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: amaru-stock-mempool
+  implementation: amaru
+  scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: amaru-stock-network
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: amaru-measurement-e2e-stock-portable
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: amaru-stock-plutus-execution
+  implementation: amaru
+  scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: amaru-stock-resources
+  implementation: amaru
+  scenario_id: amaru-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 2
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: amaru-measurement-e2e-stock-portable
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: cardano-coverage-production-paths
+  implementation: cardano-node
+  scenario_id: cardano-node-cbor-tx-body-fuzz-structured
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    coverage_envelope:
+      min_covered_functions: 1
+      required_paths:
+      - transaction-body/decode
+    correlation:
+    - run_id
+    - input_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: missing
+    reason: No runtime collector factory is registered for this catalog tap. Implementation and target-mode/provenance
+      binding are required before measurement-complete; this task does not implement collectors.
+  fallback:
+    scenario_id: cardano-node-cbor-tx-body-fuzz-structured
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: cardano-external-restart-readiness
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    restart: true
+    required_event: restart_started
+    progress:
+      min_blocks: 1
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: client-example-restart-recovery-sync-cardano
+    activation_condition: When base calibration has no intentional restart with listener, peer and chain-progress
+      readiness gates.
+    status: blocked
+    reason: Calibration observes unchanged restart counts; the existing decisive restart-readiness scenario pins
+      node versions and needs migration.
+- measurement_id: cardano-external-sync-speed
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 2
+    progress:
+      min_blocks: 1
+    correlation:
+    - run_id
+    - block_hash
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: client-example-restart-recovery-sync-cardano
+    activation_condition: When base calibration lacks a controlled sync range or sufficient real tip samples with
+      block progress.
+    status: blocked
+    reason: Controlled catch-up evidence must be produced after migrating the existing version-pinned recovery/sync
+      scenario.
+- measurement_id: cardano-external-workload-accounting
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+    - input_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: cardano-measurement-e2e-stock-portable
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: cardano-patched-blockfetch-handler-queue
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    correlation:
+    - run_id
+    - trace_session
+    - client_id
+    - request_id
+    required_event: blockfetch_handler_queue
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+    reason: Exact nanoseconds-v4 patch and strict bracket-bound collector contract implemented. Native typeclass
+      constraint propagation requires a real compile; exact build, probe, calibration, same-boundary control
+      and non-vacuous runtime evidence remain blocked and unverified.
+  fallback:
+    scenario_id: client-example-block-application-cardano
+    activation_condition: When base calibration lacks a retained fetch response or required queue residence event
+      correlated to a real block hash.
+    status: blocked
+    reason: The existing block-application workload pins node versions; migration and blockfetch/queue boundary
+      reachability are required.
+- measurement_id: cardano-patched-header-validation
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 2
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+    - header_hash
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+    reason: Exact fef83fed nanoseconds-v3 source/patch/toolchain contract exists; target build, probe, calibration
+      and accepted/rejected header evidence with normal controls are still required.
+  fallback:
+    scenario_id: opcert-header-validation-cases-mixed-1112-amaru-20260918
+    activation_condition: When calibration lacks both accepted and rejected header verdicts correlated by header
+      hash.
+    status: blocked
+    reason: Existing opcert scenario requires version-neutral migration and reviewed valid-header control before
+      selection.
+- measurement_id: cardano-patched-ledger-plutus-stages
+  implementation: cardano-node
+  scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: cardano-patched-protocol-decode
+  implementation: cardano-node
+  scenario_id: runtime-substrate-txsubmission-unexpected-body-mixed-amaru
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    correlation:
+    - run_id
+    - protocol
+    - message_type
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: runtime-substrate-txsubmission-unexpected-body-mixed-amaru
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: cardano-patched-txsubmission-residence
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    correlation:
+    - run_id
+    - trace_session
+    - peer_id
+    - peer_session
+    - request_id
+    required_event: txsubmission_residence
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Both body-handled and body-omitted native terminal cases require complete
+    joined evidence and a reviewed workload; these handling states must never be relabeled accepted/rejected.
+  runtime:
+    status: implemented
+    reason: Exact-source nanoseconds-v5 patch and strict request/body handling bounds collector contract exist.
+      UNBUILT; exact compile/probe, N2N body workload and omissions, same-boundary normal control, health,
+      calibration remain blockers. The tap-specific joined campaign adapter consumes retained evidence only. Terminal handling
+      does not establish mempool submission or acceptance. No readiness or completion promotion.
+  fallback:
+    scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: blocked
+    reason: The existing mempool workload does not establish this N2N body-handling boundary. A reviewed
+      operator-selected workload, exact build/probe, controls, health and calibration are required.
+- measurement_id: cardano-stock-blockfetch
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    correlation:
+    - run_id
+    - block_hash
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: client-example-block-application-cardano
+    activation_condition: When base calibration lacks a retained fetch response or required queue residence event
+      correlated to a real block hash.
+    status: blocked
+    reason: The existing block-application workload pins node versions; migration and blockfetch/queue boundary
+      reachability are required.
+- measurement_id: cardano-stock-chain-lifecycle
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    progress:
+      min_blocks: 1
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: cardano-measurement-e2e-stock-portable
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: cardano-stock-header-validation
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 2
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+    - header_hash
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: opcert-header-validation-cases-mixed-1112-amaru-20260918
+    activation_condition: When calibration lacks both accepted and rejected header verdicts correlated by header
+      hash.
+    status: blocked
+    reason: Existing opcert scenario requires version-neutral migration and reviewed valid-header control before
+      selection.
+- measurement_id: cardano-stock-ledger-block-epoch
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    progress:
+      min_blocks: 1
+    correlation:
+    - run_id
+    - block_hash
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: cardano-measurement-e2e-stock-portable
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: cardano-stock-network
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: cardano-measurement-e2e-stock-portable
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: cardano-stock-plutus-execution
+  implementation: cardano-node
+  scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: cardano-stock-resources
+  implementation: cardano-node
+  scenario_id: cardano-measurement-e2e-stock-portable
+  version_policy: operator-selected
+  rule:
+    min_samples: 2
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: cardano-measurement-e2e-stock-portable
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready
+- measurement_id: cardano-stock-txsubmission-mempool
+  implementation: cardano-node
+  scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+  version_policy: operator-selected
+  rule:
+    min_samples: 1
+    outcomes:
+    - accepted
+    - rejected
+    correlation:
+    - run_id
+  normal_control: Require successful normal input and live-node control at the same boundary, bound to the selected
+    node and frozen artifact identity.
+  evidence_rule: Retain raw samples/events with exact node ID, implementation, source/executable, scenario digest
+    and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
+    are not exercised. Missing rejected/accepted outcomes remain incomplete.
+  runtime:
+    status: implemented
+  fallback:
+    scenario_id: runtime-substrate-mempool-failure-containment-mixed-amaru
+    activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
+      after the declared boundary, normal control and collector prerequisites are available.
+    status: ready

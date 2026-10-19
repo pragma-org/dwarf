@@ -1,0 +1,385 @@
+name: DWARF security campaign
+
+# No pull_request / pull_request_target: candidate code is untrusted. Compilation
+# and later execution are permitted only after an explicit same-repository push,
+# on disposable hosted runners with read-only repository authority.
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '15 5 * * 1'
+  push:
+    paths:
+      - 'dwarf/testplease/**'
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      has_work: ${{ steps.discovery.outputs.has_work }}
+      trusted_revision: ${{ steps.trusted.outputs.revision }}
+    steps:
+      - name: Checkout reviewed DWARF tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+      - name: Record trusted tool revision
+        id: trusted
+        working-directory: trusted
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Checkout submitted source as data
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: candidate-source
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Install hosted validation dependencies
+        # These are framework parsers only. Never invoke Cargo/Cabal/build hooks,
+        # pip install, or a shell script from candidate-source.
+        run: python3 -m pip install 'PyYAML==6.0.2' 'jsonschema==4.23.0'
+      - name: Discover official release metadata for review
+        if: github.event_name != 'push'
+        working-directory: trusted
+        env:
+          PYTHONPATH: dwarf
+        run: |
+          mkdir -p ../campaign-discovery
+          python3 dwarf/scripts/refresh_version_catalog.py --output ../campaign-discovery/official-catalog-candidate.json
+      - name: Discover and validate source candidates
+        id: discovery
+        working-directory: trusted
+        env:
+          PYTHONPATH: dwarf
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          BEFORE_COMMIT: ${{ github.event.before }}
+          TRUSTED_COMMIT: ${{ steps.trusted.outputs.revision }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          from profile_manager.candidate_builds import plan_candidate_builds, validate_candidate_build_plan
+          from profile_manager.security_campaign_suite import load_security_campaign_suite, load_measurement_suite
+          from profile_manager.testplease_candidates import discover_candidates
+          from profile_manager.version_catalog import load_version_catalog
+
+          def changed_candidate_keys(paths):
+              keys = set()
+              for path in paths:
+                  parts = os.fsdecode(path).split('/')
+                  if (len(parts) >= 5 and parts[:2] == ['dwarf', 'testplease']
+                          and parts[2] in {'amaru', 'cardano-node'}):
+                      keys.add((parts[2], parts[3]))
+              return keys
+
+          def source_records(root, commit, changed):
+              # Intake rejects unsafe/ambiguous layouts before selecting any row.
+              # Candidate source is only read; trusted code owns every build recipe.
+              snapshots = discover_candidates(root, repository_commit=commit)
+              records = []
+              found = set()
+              for candidate in snapshots:
+                  key = (candidate.implementation, candidate.candidate_name)
+                  if key not in changed:
+                      continue
+                  found.add(key)
+                  plans = plan_candidate_builds(candidate)
+                  for plan in plans:
+                      validate_candidate_build_plan(plan)
+                  records.append({
+                      'implementation': candidate.implementation,
+                      'candidate_name': candidate.candidate_name,
+                      'repository_commit': candidate.repository_commit,
+                      'source_tree_digest': candidate.source_tree_digest,
+                      'source_path': f'dwarf/testplease/{key[0]}/{key[1]}',
+                      'build_plans': [{
+                          'variant': plan.variant, 'plan_digest': plan.plan_digest,
+                          'recipe_digest': plan.recipe_digest,
+                          'status': plan.status, 'ready': plan.ready,
+                          'unresolved': list(plan.unresolved),
+                          'patch_set_digest': plan.patch_set_digest,
+                          'harness_digest': plan.harness_digest,
+                      } for plan in plans],
+                  })
+              return records, [list(key) for key in sorted(changed - found)]
+
+          def trusted_inputs(root):
+              security = root / 'dwarf/security-suites/github-security-regression-v1.yaml'
+              measurements = root / 'dwarf/qualification-suites/node-measurements-v1.yaml'
+              catalog = root / 'dwarf/versions/catalog.json'
+              documents = {
+                  'security': (security, load_security_campaign_suite(security)),
+                  'measurements': (measurements, load_measurement_suite(measurements)),
+                  'catalog': (catalog, load_version_catalog(catalog)),
+              }
+              return {name: {'path': path.relative_to(root).as_posix(),
+                             'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                             'document': document}
+                      for name, (path, document) in documents.items()}
+
+          def main():
+              root = Path.cwd()
+              source = root.parent / 'candidate-source'
+              output = root.parent / 'campaign-discovery'
+              output.mkdir(exist_ok=True)
+              commit = os.environ['SOURCE_COMMIT']
+              if not re.fullmatch('[0-9a-f]{40}', commit):
+                  raise ValueError('source commit must be an exact Git identity')
+              push = os.environ['EVENT_NAME'] == 'push'
+              changed = set()
+              if push:
+                  before = os.environ['BEFORE_COMMIT']
+                  if before == '0' * 40:
+                      argv = ['git', 'ls-tree', '-r', '--name-only', '-z', commit, '--', 'dwarf/testplease/']
+                  else:
+                      if not re.fullmatch('[0-9a-f]{40}', before):
+                          raise ValueError('before commit must be an exact Git identity')
+                      # No rename detection: both the old and new directory are
+                      # considered. NUL framing preserves spaces/newlines safely.
+                      argv = ['git', 'diff', '--no-renames', '--name-only', '-z', before, commit, '--', 'dwarf/testplease/']
+                  paths = subprocess.run(argv, cwd=source, check=True, capture_output=True).stdout.split(b'\0')
+                  changed = changed_candidate_keys(paths)
+              manual_stock = os.environ['EVENT_NAME'] == 'workflow_dispatch'
+              if manual_stock:
+                  paths = subprocess.run(['git', 'ls-tree', '-r', '--name-only', '-z', commit, '--', 'dwarf/testplease/amaru/'],
+                                         cwd=source, check=True, capture_output=True).stdout.split(b'\0')
+                  changed = changed_candidate_keys(paths)
+              candidates, removed = source_records(source, commit, changed) if push or manual_stock else ([], [])
+              snapshot = {
+                  'kind': 'security-campaign-discovery', 'schema_version': 'v1',
+                  'status': 'validated' if push else 'official-selection-review-required',
+                  'repository_commit': commit, 'trusted_revision': os.environ['TRUSTED_COMMIT'],
+                  'workflow_run_id': os.environ['WORKFLOW_RUN_ID'], 'runner_class': 'github-hosted',
+                  'trusted_inputs': trusted_inputs(root), 'candidates': candidates,
+                  'removed_candidates': removed,
+                  # Discovery never chooses latest as runtime authority. A future
+                  # reviewed selection must pin releases/peers/artifacts explicitly.
+                  'official_selection': [],
+                  'execution_blocker': 'candidate-build-prerequisites-unresolved',
+              }
+              preview = output / 'official-catalog-candidate.json'
+              if preview.exists():
+                  snapshot['official_metadata_sha256'] = hashlib.sha256(preview.read_bytes()).hexdigest()
+              encoded = json.dumps(snapshot, sort_keys=True, separators=(',', ':')).encode()
+              (output / 'discovery.json').write_bytes(encoded)
+              (output / 'discovery.sha256').write_text(hashlib.sha256(encoded).hexdigest() + '\n')
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+                  stream.write('has_work=' + ('true' if candidates or not push else 'false') + '\n')
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+                  stream.write(f'Validated {len(candidates)} changed source candidates; removed {len(removed)}.\n\n')
+                  stream.write('Real execution blocked: candidate-build-prerequisites-unresolved. Official metadata requires reviewed selection.\n')
+
+          if __name__ == '__main__':
+              main()
+          PY
+      - name: Retain discovery and official metadata previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dwarf-security-campaign-discovery
+          path: campaign-discovery/
+          if-no-files-found: error
+          retention-days: 30
+
+  stock-build:
+    needs: discover
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      needs.discover.outputs.has_work == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.discover.outputs.trusted_revision }}
+          path: stock-trusted
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: stock-source
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: dwarf-security-campaign-discovery
+          path: stock-input
+      - name: Install trusted validation dependencies
+        run: python3 -m pip install 'PyYAML==6.0.2' 'jsonschema==4.23.0'
+      - name: Load committed immutable builder identity
+        id: builder
+        working-directory: stock-trusted
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          identity = json.loads(Path('infrastructure/docker/amaru-stock-builder.identity.json').read_text())
+          image = identity.get('builder', '')
+          if not re.fullmatch(r'ghcr\.io/j-gainsec/dwarf-amaru-builder@sha256:[0-9a-f]{64}', image):
+              raise SystemExit('committed Amaru builder identity is missing or mutable')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write(f'image={image}\n')
+          PY
+      - name: Validate allowed immutable builder before authentication or Docker
+        working-directory: stock-trusted
+        env:
+          PYTHONPATH: dwarf
+          BUILDER_IMAGE: ${{ steps.builder.outputs.image }}
+        run: python3 -m scripts.ci_amaru_stock_build --builder-image "$BUILDER_IMAGE" --validate-builder-only
+      - uses: docker/setup-buildx-action@v3
+      - name: Build only Amaru stock with recorded network dependency fetch
+        working-directory: stock-trusted
+        env:
+          PYTHONPATH: dwarf
+          BUILDER_IMAGE: ${{ steps.builder.outputs.image }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          TRUSTED_COMMIT: ${{ needs.discover.outputs.trusted_revision }}
+          # Used only by trusted host-side snapshot resolution. Docker receives
+          # no GitHub token or runner credential.
+          GITHUB_API_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m scripts.ci_amaru_stock_build \
+            --builder-image "$BUILDER_IMAGE" \
+            --discovery ../stock-input/discovery.json \
+            --source-repository ../stock-source \
+            --directory ../stock-output \
+            --expected-commit "$SOURCE_COMMIT" \
+            --expected-trusted-revision "$TRUSTED_COMMIT"
+      - name: Retain stock build evidence and OCI archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amaru-network-stock-build
+          path: stock-output/
+          if-no-files-found: error
+          retention-days: 30
+
+  campaign:
+    needs: [discover, stock-build]
+    if: >-
+      needs.discover.outputs.has_work == 'true' &&
+      needs.stock-build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    services:
+      candidate-registry:
+        # The registry is job-local and is removed with the disposable runner.
+        # Pin the linux/amd64 manifest, not the mutable registry:2 tag.
+        image: registry@sha256:46faa9a1ae6813194b53921a370f2f4f8c5e1aae228a89bceafef5847a6a3278
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout pinned reviewed preflight tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.discover.outputs.trusted_revision }}
+          path: campaign-trusted
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Download validated discovery data
+        uses: actions/download-artifact@v4
+        with:
+          name: dwarf-security-campaign-discovery
+          path: campaign-input
+      - name: Download hosted stock build
+        uses: actions/download-artifact@v4
+        with:
+          name: amaru-network-stock-build
+          path: campaign-build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install trusted campaign dependencies
+        run: python3 -m pip install --require-hashes -r campaign-trusted/infrastructure/docker/requirements-framework.txt
+      - name: Validate hosted build transfer
+        working-directory: campaign-trusted
+        env:
+          PYTHONPATH: dwarf
+          SOURCE_COMMIT: ${{ github.sha }}
+          TRUSTED_COMMIT: ${{ needs.discover.outputs.trusted_revision }}
+        run: |
+          python3 -m scripts.ci_hosted_campaign_stage \
+            --discovery ../campaign-input/discovery.json \
+            --stock-build ../campaign-build \
+            --directory ../campaign-output \
+            --expected-commit "$SOURCE_COMMIT" \
+            --expected-trusted-revision "$TRUSTED_COMMIT"
+      - name: Register candidate and freeze initial campaign
+        working-directory: campaign-trusted
+        env:
+          PYTHONPATH: dwarf
+        run: |
+          python3 -m scripts.ci_hosted_campaign_plan \
+            --discovery ../campaign-input/discovery.json \
+            --stage ../campaign-output/status.json \
+            --stock-build ../campaign-build \
+            --directory ../campaign-plan
+      - name: Create workflow-local evidence signer
+        working-directory: campaign-trusted
+        env:
+          SIGNING_KEY: ${{ runner.temp }}/dwarf-workflow-evidence.pem
+        run: |
+          umask 077
+          openssl genpkey -algorithm ED25519 -out "$SIGNING_KEY"
+          openssl pkey -in "$SIGNING_KEY" -pubout -out ../campaign-plan/workflow-evidence-public.pem
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          public = Path('../campaign-plan/workflow-evidence-public.pem').read_bytes()
+          Path('../campaign-plan/workflow-evidence-signer.json').write_text(json.dumps({
+              'schema_version': 'v1',
+              'kind': 'workflow-ephemeral-evidence-signer',
+              'classification': 'integrity-only-untrusted-for-publication',
+              'public_key_sha256': hashlib.sha256(public).hexdigest(),
+              'private_key_retained': False,
+          }, sort_keys=True, separators=(',', ':')) + '\n')
+          PY
+      - name: Qualify exact pair and run frozen stock campaign
+        working-directory: campaign-trusted
+        env:
+          PYTHONPATH: dwarf
+          SIGNING_KEY: ${{ runner.temp }}/dwarf-workflow-evidence.pem
+        run: |
+          python3 -m scripts.ci_security_campaign \
+            --manifest ../campaign-plan/manifest.json \
+            --build-observations ../campaign-plan/build-observations.json \
+            --directory ../campaign-runtime \
+            --catalog ../campaign-plan/version-catalog.json \
+            --signing-key "$SIGNING_KEY"
+      - name: Retain hosted campaign inputs and status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dwarf-security-campaign-status
+          path: |
+            campaign-output/
+            campaign-plan/
+            campaign-runtime/
+          if-no-files-found: error
+          retention-days: 30

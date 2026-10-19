@@ -1,0 +1,35 @@
+{
+  "spec_version": "v1",
+  "id": "cardano-measurement-e2e-stock-portable",
+  "title": "Cardano-node stock measurements — operator-selected release",
+  "authors": ["dwarf"],
+  "tags": ["cardano-node", "measurement", "stock", "real-node", "end-to-end", "resolved-plan", "fresh-profile-deploy-required", "digest-pinned-multi-arch"],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "Prepare profile-n-cardano-latest-confirmed through DWARF and verify the operator-selected exact runtime identity before Run is enabled.",
+    "This bounded proof validates the measurement path; it does not establish a performance threshold or vulnerability."
+  ],
+  "target": {"implementation": "cardano-node", "version": "resolved-plan"},
+  "runtime": "devnet",
+  "profile": "profile-n-cardano-latest-confirmed",
+  "measurement_profile": "cardano-security-default",
+  "seed": "0xCA4DA001",
+  "setup": [],
+  "load": [
+    {
+      "primitive": "runtime_cardano_measurement_calibration",
+      "profile_id": "profile-n-cardano-latest-confirmed",
+      "attempts": 100,
+      "case_set": "accepted-and-rejected-v1",
+      "response_timeout_seconds": 2,
+      "observation_seconds": 2,
+      "trace_timeout_seconds": 20,
+      "timeout_seconds": 180,
+      "expected_helper_exit": 0
+    }
+  ],
+  "faults": [],
+  "probes": [],
+  "assertions": [{"primitive": "load_events_are_ok", "min_completed": 1, "min_event_count": 1}],
+  "teardown": []
+}

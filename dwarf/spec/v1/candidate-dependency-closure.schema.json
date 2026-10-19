@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trusted retained candidate dependency closure v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "kind", "source_tree_digest", "recipe_digest", "build_image", "format", "locks", "files", "offline_verification"],
+  "properties": {
+    "schema_version": {"const": "v1"}, "kind": {"const": "candidate-dependency-closure"},
+    "source_tree_digest": {"$ref": "#/$defs/digest"}, "recipe_digest": {"$ref": "#/$defs/digest"},
+    "build_image": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}$"},
+    "format": {"enum": ["cargo-vendor-v1", "cabal-store-v1"]},
+    "locks": {"type": "array", "minItems": 1, "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/file"}},
+    "files": {
+      "type": "array", "minItems": 1, "maxItems": 10000,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["role", "path", "sha256"],
+        "properties": {
+          "role": {"enum": ["cargo-vendor-archive", "cabal-store-archive", "repository-index", "solver-plan", "package-manager-config", "native-dependencies", "runtime-root", "coverage-tools", "dependency-archive"]},
+          "path": {"type": "string", "minLength": 1, "maxLength": 1024}, "sha256": {"$ref": "#/$defs/digest"}
+        }
+      }
+    },
+    "offline_verification": {
+      "type": "object", "additionalProperties": false,
+      "required": ["inputs_sha256", "network", "exit_code", "observed_toolchain", "log"],
+      "properties": {
+        "inputs_sha256": {"$ref": "#/$defs/digest"}, "network": {"const": "none"}, "exit_code": {"const": 0},
+        "observed_toolchain": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "minLength": 1}},
+        "log": {"$ref": "#/$defs/file"}
+      }
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "file": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"type": "string", "minLength": 1, "maxLength": 1024}, "sha256": {"$ref": "#/$defs/digest"}}
+    }
+  }
+}

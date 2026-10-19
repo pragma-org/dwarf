@@ -66,7 +66,7 @@ def materialized_scenario(plan: dict[str, Any]) -> bytes:
     if (plan.get("scenario") or {}).get("digest") != _digest(source_body):
         raise LaunchStoreError("scenario source digest changed after plan resolution")
 
-    materialized = dict(original)
+    materialized = json.loads(json.dumps(original))
     original_profile = original.get("profile")
     selected_profile = (plan.get("profile") or {}).get("id")
     if (
@@ -133,6 +133,19 @@ def materialized_scenario(plan: dict[str, Any]) -> bytes:
             materialized.pop(field, None)
         else:
             materialized[field] = selected
+    for binding in (plan.get("scenario") or {}).get("library_target_bindings") or []:
+        location = binding.get("location")
+        if not isinstance(location, list) or not isinstance(binding.get("manifests_dir"), str):
+            raise LaunchStoreError("library target binding is invalid")
+        entry = materialized
+        try:
+            for component in location:
+                entry = entry[component]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LaunchStoreError("library target binding location changed") from exc
+        if not isinstance(entry, dict) or entry.get("target_id") != binding.get("target_id"):
+            raise LaunchStoreError("library target declaration changed")
+        entry["manifests_dir"] = binding["manifests_dir"]
     for binding in (plan.get("scenario") or {}).get("target_bindings") or []:
         if binding.get("kind") != "resolved-plan":
             continue

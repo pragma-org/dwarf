@@ -1,0 +1,1179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/security-campaign.schema.json",
+  "title": "Frozen offline DWARF security campaign plan",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "v1"
+    },
+    "kind": {
+      "const": "security-campaign-plan"
+    },
+    "campaign_id": {
+      "type": "string",
+      "pattern": "^campaign-[0-9a-f]{64}$"
+    },
+    "campaign_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "run_plan_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "candidate": {
+      "type": "object",
+      "properties": {
+        "implementation": {
+          "enum": [
+            "amaru",
+            "cardano-node"
+          ]
+        },
+        "candidate_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "source_tree_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "implementation",
+        "candidate_name",
+        "repository_commit",
+        "source_tree_digest",
+        "source_path"
+      ],
+      "additionalProperties": false
+    },
+    "selection": {
+      "$ref": "#/$defs/selection"
+    },
+    "suites": {
+      "type": "object",
+      "properties": {
+        "security": {
+          "type": "object",
+          "properties": {
+            "digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "document": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "digest",
+            "document"
+          ],
+          "additionalProperties": false
+        },
+        "measurement": {
+          "type": "object",
+          "properties": {
+            "digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "document": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "digest",
+            "document"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "security",
+        "measurement"
+      ],
+      "additionalProperties": false
+    },
+    "threat_risk_refs": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "declared",
+            "unmapped"
+          ]
+        },
+        "threat_model": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "risk_register": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "status",
+        "threat_model",
+        "risk_register"
+      ],
+      "additionalProperties": false
+    },
+    "definitions": {
+      "type": "object",
+      "properties": {
+        "scenarios": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/frozen"
+          }
+        },
+        "profiles": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/frozen"
+          }
+        },
+        "measurement-profiles": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/frozen"
+          }
+        },
+        "measurements": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/frozen"
+          }
+        }
+      },
+      "required": [
+        "scenarios",
+        "profiles",
+        "measurement-profiles",
+        "measurements"
+      ],
+      "additionalProperties": false
+    },
+    "topologies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mode": {
+            "enum": [
+              "library",
+              "shared-runtime"
+            ]
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "node_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "implementation": {
+                  "enum": [
+                    "amaru",
+                    "cardano-node"
+                  ]
+                },
+                "identity": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "candidate",
+                        "release"
+                      ]
+                    },
+                    "implementation": {
+                      "enum": [
+                        "amaru",
+                        "cardano-node"
+                      ]
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "source_revision": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40}$"
+                    },
+                    "source_tree_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "artifacts": {
+                      "type": "object",
+                      "properties": {
+                        "image_digest": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "binary_digest": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "executable_digest": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "image_digest",
+                        "binary_digest",
+                        "executable_digest"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "qualification": {
+                      "type": "object"
+                    },
+                    "compatibility": {
+                      "$ref": "#/$defs/compatibility"
+                    },
+                    "capabilities": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 0,
+                      "uniqueItems": true
+                    },
+                    "release": {
+                      "type": "object"
+                    },
+                    "mode": {
+                      "enum": [
+                        "stock",
+                        "patched",
+                        "coverage"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "implementation",
+                    "version",
+                    "source_revision",
+                    "source_tree_digest",
+                    "artifacts",
+                    "qualification",
+                    "compatibility",
+                    "capabilities"
+                  ],
+                  "additionalProperties": false
+                },
+                "role": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "node_id",
+                "implementation",
+                "identity"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "deployment_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "mode",
+          "nodes"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "topology_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contract": {
+            "type": "object"
+          },
+          "measurement_attachments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "node_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "implementation": {
+                  "enum": [
+                    "amaru",
+                    "cardano-node"
+                  ]
+                },
+                "measurement_profile": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "result_namespace": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "additional_measurements": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 0,
+                  "uniqueItems": true
+                },
+                "topology_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "planning_resolution": {
+                  "type": "object"
+                },
+                "target_mode": {
+                  "enum": [
+                    "stock",
+                    "patched",
+                    "coverage"
+                  ]
+                }
+              },
+              "required": [
+                "node_id",
+                "implementation",
+                "measurement_profile",
+                "result_namespace",
+                "topology_id",
+                "planning_resolution"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 0
+          },
+          "execution": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "pending-runtime"
+              },
+              "scenario_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "scenario": {
+                "type": "object"
+              },
+              "normal_control": {
+                "type": "object",
+                "properties": {
+                  "scenario_digest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "scenario": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "scenario_digest",
+                  "scenario"
+                ],
+                "additionalProperties": false
+              },
+              "compatibility": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "pending-prerequisites",
+                      "declared-compatible"
+                    ]
+                  },
+                  "missing": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "node_id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "field": {
+                          "enum": [
+                            "era",
+                            "genesis_digest",
+                            "protocol_version"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "node_id",
+                        "field"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "status",
+                  "missing"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "status",
+              "scenario_digest",
+              "scenario",
+              "normal_control",
+              "compatibility"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "topology_id",
+          "contract",
+          "measurement_attachments"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "build_variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "enum": [
+              "stock",
+              "patched",
+              "coverage"
+            ]
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "implementation": {
+                "enum": [
+                  "amaru",
+                  "cardano-node"
+                ]
+              },
+              "candidate_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "repository_commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "source_tree_digest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "source_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "implementation",
+              "candidate_name",
+              "repository_commit",
+              "source_tree_digest",
+              "source_path"
+            ],
+            "additionalProperties": false
+          },
+          "status": {
+            "const": "pending-build"
+          },
+          "artifacts": {
+            "type": "object",
+            "properties": {
+              "image_digest": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "binary_digest": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "executable_digest": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "image_digest",
+              "binary_digest",
+              "executable_digest"
+            ],
+            "additionalProperties": false
+          },
+          "patch_set_digest": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instrumentation_digest": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolchain_digest": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mode",
+          "source",
+          "status",
+          "artifacts",
+          "patch_set_digest",
+          "instrumentation_digest",
+          "toolchain_digest"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 3
+    },
+    "required_tap_cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "measurement_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "implementation": {
+            "enum": [
+              "amaru",
+              "cardano-node"
+            ]
+          },
+          "scenario_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version_policy": {
+            "const": "operator-selected"
+          },
+          "rule": {
+            "type": "object",
+            "minProperties": 1
+          },
+          "normal_control": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_rule": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtime": {
+            "type": "object"
+          },
+          "fallback": {
+            "type": "object"
+          },
+          "topology_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "const": "pending"
+          },
+          "target_modes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "stock",
+                "patched",
+                "coverage"
+              ]
+            },
+            "minItems": 1
+          },
+          "required_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          },
+          "definition_digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "measurement_id",
+          "implementation",
+          "scenario_id",
+          "version_policy",
+          "rule",
+          "normal_control",
+          "evidence_rule",
+          "runtime",
+          "topology_id",
+          "node_id",
+          "status",
+          "target_modes",
+          "required_capabilities",
+          "definition_digest"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "security_result": {
+      "const": "pending"
+    },
+    "measurement_completeness": {
+      "const": "pending"
+    },
+    "readiness": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "pending"
+        },
+        "executed": {
+          "const": false
+        },
+        "qualification_contract": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required_checks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "status",
+        "executed",
+        "qualification_contract",
+        "required_checks"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "campaign_id",
+    "campaign_digest",
+    "run_plan_digest",
+    "candidate",
+    "selection",
+    "suites",
+    "threat_risk_refs",
+    "definitions",
+    "topologies",
+    "entries",
+    "build_variants",
+    "required_tap_cells",
+    "security_result",
+    "measurement_completeness",
+    "readiness"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "selection": {
+      "type": "object",
+      "properties": {
+        "entry_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "implementations": {
+          "type": "object",
+          "properties": {
+            "amaru": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "candidate",
+                    "release"
+                  ]
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "compatibility": {
+                  "$ref": "#/$defs/compatibility"
+                },
+                "capabilities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 0,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kind",
+                "version"
+              ],
+              "additionalProperties": false
+            },
+            "cardano-node": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "candidate",
+                    "release"
+                  ]
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "compatibility": {
+                  "$ref": "#/$defs/compatibility"
+                },
+                "capabilities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 0,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kind",
+                "version"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "build_variants": {
+          "type": "object",
+          "properties": {
+            "stock": {
+              "type": "object",
+              "properties": {
+                "artifacts": {
+                  "type": "object",
+                  "properties": {
+                    "image_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "binary_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "executable_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false
+                },
+                "patch_set_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "instrumentation_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "toolchain_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            "patched": {
+              "type": "object",
+              "properties": {
+                "artifacts": {
+                  "type": "object",
+                  "properties": {
+                    "image_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "binary_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "executable_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false
+                },
+                "patch_set_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "instrumentation_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "toolchain_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            "coverage": {
+              "type": "object",
+              "properties": {
+                "artifacts": {
+                  "type": "object",
+                  "properties": {
+                    "image_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "binary_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "executable_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false
+                },
+                "patch_set_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "instrumentation_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "toolchain_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "threat_risk_refs": {
+          "type": "object",
+          "properties": {
+            "threat_model": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            },
+            "risk_register": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "threat_model",
+            "risk_register"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "implementations"
+      ],
+      "additionalProperties": false
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "era": {
+          "type": "string",
+          "minLength": 1
+        },
+        "genesis_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "protocol_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "frozen": {
+      "type": "object",
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "source_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "document": {
+          "type": "object"
+        },
+        "behavior_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "digest",
+        "source_digest",
+        "document"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

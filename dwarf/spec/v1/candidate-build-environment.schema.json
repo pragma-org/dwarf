@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trusted candidate build environment v1 (declaration, not execution)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "implementation", "variant", "source_tree_digest", "recipe_digest", "platform", "build_image", "runtime_base_image", "toolchain", "toolchain_probes", "dependency_closure", "packaging", "isolation"],
+  "properties": {
+    "schema_version": {"const": "v1"},
+    "kind": {"const": "candidate-build-environment"},
+    "implementation": {"enum": ["amaru", "cardano-node"]},
+    "variant": {"enum": ["stock", "patched", "compiler-coverage"]},
+    "source_tree_digest": {"$ref": "#/$defs/digest"},
+    "recipe_digest": {"$ref": "#/$defs/digest"},
+    "platform": {"const": "linux/amd64"},
+    "build_image": {"$ref": "#/$defs/image"},
+    "runtime_base_image": {"$ref": "#/$defs/image"},
+    "dependency_closure": {"$ref": "#/$defs/file"},
+    "toolchain": {
+      "type": "object", "minProperties": 1,
+      "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 128}
+    },
+    "toolchain_probes": {
+      "type": "array", "minItems": 1, "maxItems": 32,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["tool", "argv", "stdout_sha256"],
+        "properties": {
+          "tool": {"type": "string", "minLength": 1},
+          "argv": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"type": "string", "minLength": 1, "maxLength": 1024}},
+          "stdout_sha256": {"$ref": "#/$defs/digest"}
+        }
+      }
+    },
+    "packaging": {
+      "type": "object", "additionalProperties": false,
+      "required": ["method", "executable_path", "entrypoint"],
+      "properties": {
+        "method": {"enum": ["copy-static-elf-v1", "copy-elf-runtime-closure-v1"]},
+        "executable_path": {"type": "string", "pattern": "^/usr/local/bin/[a-zA-Z0-9][a-zA-Z0-9._-]*$"},
+        "entrypoint": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "string"}}
+      }
+    },
+    "isolation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["network", "host_socket", "secrets", "source_read_only", "outputs", "root_filesystem_read_only", "privileged", "capabilities", "no_new_privileges", "uid", "gid", "cpus", "memory_bytes", "pids", "timeout_seconds", "output_bytes"],
+      "properties": {
+        "network": {"const": "none"}, "host_socket": {"const": false}, "secrets": {"const": false},
+        "source_read_only": {"const": true}, "outputs": {"const": "owned-writable"},
+        "root_filesystem_read_only": {"const": true}, "privileged": {"const": false},
+        "capabilities": {"const": []}, "no_new_privileges": {"const": true},
+        "uid": {"type": "integer", "minimum": 1, "maximum": 65534},
+        "gid": {"type": "integer", "minimum": 1, "maximum": 65534},
+        "cpus": {"type": "integer", "minimum": 1, "maximum": 64},
+        "memory_bytes": {"type": "integer", "minimum": 1, "maximum": 137438953472},
+        "pids": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 14400},
+        "output_bytes": {"type": "integer", "minimum": 1, "maximum": 137438953472}
+      }
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "image": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}$"},
+    "file": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"type": "string", "minLength": 1, "maxLength": 1024}, "sha256": {"$ref": "#/$defs/digest"}}
+    }
+  }
+}

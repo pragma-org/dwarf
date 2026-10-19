@@ -937,6 +937,8 @@ def run_qualification(
     sample_seconds: float = 10.0,
     dry_run: bool = False,
     progress: Callable[[dict[str, Any]], None] | None = None,
+    amaru_runtime_interface: str | None = None,
+    operator_stock_content_id: str | None = None,
 ) -> dict[str, Any]:
     catalog = load_version_catalog(catalog_path)
     candidate, cardano_release, amaru_release = _candidate_versions(
@@ -967,6 +969,7 @@ def run_qualification(
         cardano_experimental_protocols=cardano_experimental_protocols_policy(
             scope, candidate.get("cardano_version")
         ),
+        amaru_runtime_interface=amaru_runtime_interface,
     )
     compose_file = evidence_root / "qualification-compose.json"
     compose_file.write_text(json.dumps(model, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -1048,6 +1051,9 @@ def run_qualification(
             amaru_version=candidate.get("amaru_version"),
             cardano_image=cardano_image,
             amaru_image=amaru_image,
+            amaru_runtime_interface=amaru_runtime_interface,
+            operator_stock_registration_expected=operator_stock_content_id is not None,
+            operator_stock_content_id=operator_stock_content_id,
         )
         (evidence_root / "identity.json").write_text(
             json.dumps(identity, indent=2, sort_keys=True) + "\n", encoding="utf-8"

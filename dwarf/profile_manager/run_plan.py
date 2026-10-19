@@ -732,7 +732,7 @@ def _scenario_substrate_bindings(scenario, preview) -> list[dict[str, Any]]:
                 f"scenario {scenario.id} has no resolved {node['impl']} release for {node['id']}",
                 field="versions",
             )
-        compact = _compact_release(release)
+        compact = _compact_release(release, pin_image=True)
         required = ("version", "source_revision", "image_reference", "image_digest")
         missing = [field for field in required if compact.get(field) in (None, "")]
         if missing:
@@ -762,7 +762,9 @@ def _scenario_substrate_bindings(scenario, preview) -> list[dict[str, Any]]:
     return bindings
 
 
-def _compact_release(release: dict[str, Any]) -> dict[str, Any]:
+def _compact_release(
+    release: dict[str, Any], *, pin_image: bool = False
+) -> dict[str, Any]:
     artifact = next(
         (
             item
@@ -775,7 +777,26 @@ def _compact_release(release: dict[str, Any]) -> dict[str, Any]:
         artifact.get("operator_registration") if artifact else None
     )
     execution_reference = artifact.get("reference") if artifact else None
-    if (
+    if pin_image:
+        digest = artifact.get("digest") if artifact else None
+        if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
+            raise RunPlanError(
+                "resolved scenario substrate image_digest must be immutable sha256",
+                field="versions",
+            )
+        if not isinstance(execution_reference, str) or not execution_reference:
+            raise RunPlanError(
+                "resolved scenario substrate image reference is missing", field="versions"
+            )
+        if "@" in execution_reference:
+            if execution_reference.rsplit("@", 1)[1] != digest:
+                raise RunPlanError(
+                    "resolved scenario substrate image reference digest does not match image_digest",
+                    field="versions",
+                )
+        else:
+            execution_reference = f"{execution_reference}@{digest}"
+    elif (
         isinstance(execution_reference, str)
         and "@" not in execution_reference
         and _DIGEST.fullmatch(str(artifact.get("digest") or ""))
@@ -1209,6 +1230,8 @@ def resolve_run_plan(
     *,
     capability_context: dict[str, Any] | None = None,
     request_controller=None,
+    catalog: dict[str, Any] | None = None,
+    catalog_revision: str | None = None,
 ) -> dict[str, Any]:
     if isinstance(request, dict):
         request = RunPlanRequest.from_mapping(request)
@@ -1333,6 +1356,7 @@ def resolve_run_plan(
         try:
             preview = build_deployment_version_preview(
                 profile_data,
+                **({"catalog": catalog, "catalog_revision": catalog_revision} if catalog is not None else {}),
                 operator_registration_id=selected_operator_registration_id,
                 request_controller=request_controller,
             )
@@ -1354,7 +1378,10 @@ def resolve_run_plan(
     elif (substrate_version_profile := _scenario_substrate_version_profile(scenario, request)) is not None:
         profile_data = substrate_version_profile
         try:
-            preview = build_deployment_version_preview(profile_data)
+            preview = build_deployment_version_preview(
+                profile_data,
+                **({"catalog": catalog, "catalog_revision": catalog_revision} if catalog is not None else {}),
+            )
             enforce_deployment_version_gate(
                 preview,
                 acknowledge_unknown=request.acknowledge_unknown_versions,
@@ -1374,7 +1401,8 @@ def resolve_run_plan(
         release = (preview.get("resolved") or {}).get(effective_target["implementation"])
         if release:
             effective_target["version"] = release["version"]
-            effective_target["source_revision"] = release.get("source_revision")
+            if profile is None:
+                effective_target["source_revision"] = release.get("source_revision")
     effective_scenario = replace(
         scenario,
         target=effective_target,
@@ -1396,7 +1424,11 @@ def resolve_run_plan(
     target_bindings = _scenario_target_bindings(
         effective_scenario, measurements.get("target_identity") or {}
     )
-    substrate_bindings = _scenario_substrate_bindings(effective_scenario, preview)
+    substrate_bindings = (
+        _scenario_substrate_bindings(effective_scenario, preview)
+        if profile is None
+        else []
+    )
     cells, primitive_names = _primitive_inventory(effective_scenario)
     capability = _capability_context(capability_context)
     conformance_adapters = _conformance_bindings(
@@ -1427,11 +1459,11 @@ def resolve_run_plan(
             ),
             "unknown_acknowledged": request.acknowledge_unknown_versions,
             "resolved": {
-                name: _compact_release(release)
+                name: _compact_release(release, pin_image=profile is None)
                 for name, release in (preview.get("resolved") or {}).items()
             },
             "supporting": {
-                name: _compact_release(release)
+                name: _compact_release(release, pin_image=profile is None)
                 for name, release in (preview.get("supporting") or {}).items()
             },
         }

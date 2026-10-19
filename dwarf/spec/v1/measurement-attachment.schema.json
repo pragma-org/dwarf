@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwarf.gainpalfam.com/spec/v1/measurement-attachment.schema.json",
+  "title": "DWARF exact-node measurement attachment",
+  "type": "object",
+  "properties": {
+    "node_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+    },
+    "implementation": {
+      "enum": [
+        "amaru",
+        "cardano-node"
+      ]
+    },
+    "measurement_profile": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "result_namespace": {
+      "type": "string",
+      "pattern": "^nodes/[a-zA-Z0-9][a-zA-Z0-9._-]*/measurements/[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+    },
+    "additional_measurements": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "target_mode": {
+      "enum": [
+        "stock",
+        "patched",
+        "coverage"
+      ],
+      "default": "stock",
+      "description": "Mode of this node in the same security run; omitted means stock, never an independently substituted mirror."
+    }
+  },
+  "required": [
+    "node_id",
+    "implementation",
+    "measurement_profile",
+    "result_namespace"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,50 @@
+{
+  "spec_version": "v1",
+  "id": "amaru-measurement-e2e-stock-portable",
+  "title": "Amaru stock measurements — operator-selected release",
+  "authors": ["dwarf"],
+  "tags": [
+    "amaru",
+    "measurement",
+    "stock",
+    "real-node",
+    "end-to-end",
+    "resolved-plan",
+    "fresh-profile-deploy-required"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "Prepare profile-o-amaru-target-latest-confirmed through DWARF and verify the operator-selected exact runtime identity before Run is enabled.",
+    "This bounded proof validates the measurement path; it does not establish a performance threshold or vulnerability."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "resolved-plan"
+  },
+  "runtime": "devnet",
+  "profile": "profile-o-amaru-target-latest-confirmed",
+  "measurement_profile": "amaru-security-default",
+  "seed": "0xA11CE501",
+  "setup": [],
+  "load": [
+    {
+      "primitive": "runtime_amaru_measurement_calibration",
+      "profile_id": "profile-o-amaru-target-latest-confirmed",
+      "attempts": 100,
+      "case_set": "accepted-and-rejected-v1",
+      "response_timeout_seconds": 2,
+      "timeout_seconds": 180,
+      "expected_helper_exit": 0
+    }
+  ],
+  "faults": [],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "min_completed": 1,
+      "min_event_count": 1
+    }
+  ],
+  "teardown": []
+}

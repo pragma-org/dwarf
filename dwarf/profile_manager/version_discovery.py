@@ -261,6 +261,10 @@ def load_effective_version_catalog(
     *, state_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     source = load_version_catalog(source_path)
+    # Campaign execution supplies an exact byte-bound catalog. Runtime release
+    # discovery overlays must not change that already-qualified selection.
+    if os.environ.get("ADA2_DWARF_CAMPAIGN_CATALOG") or os.environ.get("ADA2_DWARF_CAMPAIGN_CATALOG_SHA256"):
+        return source
     try:
         candidate = json.loads(candidate_path(state_dir).read_text(encoding="utf-8"))
         merged, _ = merge_discovery_candidate(source, candidate)
@@ -268,6 +272,87 @@ def load_effective_version_catalog(
     except (OSError, json.JSONDecodeError, ValueError):
         # An invalid runtime overlay must never make retained defaults unusable.
         return source
+
+
+def create_measurement_compatibility_proposal(
+    manifest: dict[str, Any], evidence: dict[str, Any]
+) -> dict[str, Any]:
+    """Return detached review data after evaluating retained campaign evidence.
+
+    The caller must authenticate the retained evidence before supplying it, as
+    required by the campaign evaluator. An exit status or success badge is not
+    evidence. This function performs no discovery or writes, never changes a
+    catalog/default, and always returns a pending review. Its schema is separate
+    from the version catalog, so discovery cannot merge it as qualification.
+    """
+    # Local imports avoid the resolver/planner's catalog-discovery dependency.
+    from profile_manager.campaign_evidence import evaluate_campaign_evidence
+    from profile_manager.security_campaign import _digest
+
+    evaluation = evaluate_campaign_evidence(manifest, evidence)
+    if (not evaluation["security_validity"]["security_valid"]
+            or not evaluation["measurement_completeness"]["measurement_complete"]):
+        raise ValueError("compatibility proposal requires valid security and complete measurement evidence")
+    definitions = manifest["definitions"]
+    # The evaluator checks result correlation against required_tap_cells, not
+    # the separate definition map. Bind both before proposing qualification.
+    cell_digests = {}
+    fields = ("topology_id", "node_id", "measurement_id", "mode")
+    for cell in manifest["required_tap_cells"]:
+        definition = definitions["measurements"].get(cell["measurement_id"])
+        digest = cell.get("definition_digest")
+        if (not isinstance(definition, dict) or not isinstance(digest, str)
+                or not DIGEST.fullmatch(digest) or definition.get("digest") != digest):
+            raise ValueError("measurement definition/cell digest binding is missing or inconsistent")
+        for mode in cell["target_modes"]:
+            key = tuple(cell[field] for field in fields[:-1]) + (mode,)
+            if key in cell_digests:
+                raise ValueError("duplicate or ambiguous measurement definition/cell binding")
+            cell_digests[key] = digest
+    topologies = {row["id"]: row for row in manifest["topologies"]}
+    builds = {row["mode"]: row for row in evidence.get("builds", [])}
+    bindings = []
+    for row in sorted(evidence["measurements"], key=lambda item: (
+            item["topology_id"], item["node_id"], item["measurement_id"], item["mode"])):
+        key = tuple(row[field] for field in fields)
+        if key not in cell_digests:
+            raise ValueError("measurement definition/cell binding is missing")
+        result = row["result"]
+        scenario_id = result["provenance"]["scenario_id"]
+        scenario = definitions["scenarios"][scenario_id]
+        topology = topologies[row["topology_id"]]
+        node = next(node for node in topology["nodes"] if node["node_id"] == row["node_id"])
+        profiles = sorted({attachment["measurement_profile"]
+            for entry in manifest["entries"] for attachment in entry["measurement_attachments"]
+            if attachment["topology_id"] == row["topology_id"] and attachment["node_id"] == row["node_id"]})
+        deployment_profile = topology.get("deployment_profile")
+        bindings.append({
+            "topology_id": row["topology_id"], "node_id": row["node_id"], "mode": row["mode"],
+            "target_identity": result["target"],
+            "release": node["identity"].get("release"),
+            "build": builds.get(row["mode"]) if node["identity"]["kind"] == "candidate" else None,
+            "patch_set_sha256": result["target"].get("patch_set_sha256"),
+            "measurement_id": row["measurement_id"],
+            "definition_digest": cell_digests[key],
+            "measurement_profiles": [{"id": profile_id, "definition_digest":
+                definitions["measurement-profiles"][profile_id]["digest"]} for profile_id in profiles],
+            "deployment_profile": ({"id": deployment_profile, "definition_digest":
+                definitions["profiles"][deployment_profile]["digest"]} if deployment_profile else None),
+            "scenario_id": scenario_id, "scenario_digest": scenario["digest"],
+            "scenario_behavior_digest": scenario.get("behavior_digest"),
+            "run_id": result["run_id"], "normal_control": row["normal_control"],
+            "evidence_digest": _digest(row),
+        })
+    proposal = copy.deepcopy({
+        "schema_version": "v1", "kind": "measurement-compatibility-proposal",
+        "review_state": "pending", "proposed_status": "confirmed",
+        "campaign_id": manifest["campaign_id"], "campaign_digest": manifest["campaign_digest"],
+        "evidence_digest": evaluation["measurement_completeness"]["evidence_digest"],
+        "evaluation_digest": _digest(evaluation), "candidate": manifest["candidate"],
+        "definitions": definitions, "bindings": bindings,
+    })
+    proposal["proposal_digest"] = _digest(proposal)
+    return proposal
 
 
 def perform_release_refresh(
