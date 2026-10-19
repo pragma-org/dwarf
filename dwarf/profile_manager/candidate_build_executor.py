@@ -453,6 +453,7 @@ def _discovered_candidates(document, repository, commit, trusted_revision):
         raise ValueError("only discovered source candidates are accepted; official selection requires review")
     if document.get("status") not in {"validated", "official-selection-review-required"}:
         raise ValueError("discovery was not validated")
+    repository = Path(os.path.abspath(os.fspath(repository)))
     selected, seen = [], set()
     for row in rows:
         key = (row["implementation"], row["candidate_name"])

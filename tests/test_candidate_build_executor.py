@@ -345,6 +345,20 @@ def save_discovery(path, doc):
     path.with_suffix(".sha256").write_text(hashlib.sha256(path.read_bytes()).hexdigest() + "\n")
 
 
+def test_discovery_normalizes_trusted_relative_repository_before_snapshot(tmp_path, monkeypatch):
+    _, doc = discovery_inputs(tmp_path)
+    trusted = tmp_path / "trusted"
+    trusted.mkdir()
+    monkeypatch.chdir(trusted)
+
+    selected = api()._discovered_candidates(doc, Path("../submitted"), COMMIT, "b" * 40)
+    candidate, _ = selected[0]
+
+    assert ".." not in candidate.source_root.parts
+    with api()._snapshot(candidate, api()._SourceBudget()) as frozen:
+        assert frozen.source_tree_digest == candidate.source_tree_digest
+
+
 def test_discovery_gate_revalidates_plans_and_emits_no_observed_builds(tmp_path, monkeypatch):
     path, _ = discovery_inputs(tmp_path)
     forbid_processes(monkeypatch)
