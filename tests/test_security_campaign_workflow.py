@@ -126,6 +126,7 @@ def test_official_metadata_is_review_only_and_suites_are_fixed():
     assert 'qualification-suites/node-measurements-v1.yaml' in script
     assert 'versions/catalog.json' in script
     assert 'official-selection-review-required' in script
+    assert "'validated' if push or manual_stock" in script
     api = discovery()
     suites = api['trusted_inputs'](ROOT)
     assert len(suites['security']['document']['groups']) == 6

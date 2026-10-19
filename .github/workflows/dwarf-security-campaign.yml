@@ -162,7 +162,10 @@ jobs:
               candidates, removed = source_records(source, commit, changed) if push or manual_stock else ([], [])
               snapshot = {
                   'kind': 'security-campaign-discovery', 'schema_version': 'v1',
-                  'status': 'validated' if push else 'official-selection-review-required',
+                  # An authorized workflow_dispatch explicitly accepts the
+                  # already committed candidate source. Scheduled metadata
+                  # refreshes remain review-only and never execute candidates.
+                  'status': 'validated' if push or manual_stock else 'official-selection-review-required',
                   'repository_commit': commit, 'trusted_revision': os.environ['TRUSTED_COMMIT'],
                   'workflow_run_id': os.environ['WORKFLOW_RUN_ID'], 'runner_class': 'github-hosted',
                   'trusted_inputs': trusted_inputs(root), 'candidates': candidates,
