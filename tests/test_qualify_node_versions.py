@@ -277,6 +277,88 @@ def test_modern_amaru_identity_uses_extractor_artifact_and_target_binary(monkeyp
     assert "/target/amaru" in amaru["version_command"]
 
 
+def test_modern_stock_amaru_identity_uses_recorded_executable_digest(monkeypatch):
+    target_image = "localhost:5000/dwarf/amaru-candidate@sha256:" + "9" * 64
+    target_image_id = "sha256:" + "a" * 64
+    wrapper_image_id = "sha256:" + "b" * 64
+    cardano_image_id = "sha256:" + "c" * 64
+    executable_digest = "sha256:" + "e" * 64
+    containers = {
+        "p1": "p1-container",
+        "p2": "p2-container",
+        "p3": "p3-container",
+        "relay1": "relay1-container",
+        "relay2": "relay2-container",
+        "amaru-consumer": "consumer-container",
+        "amaru-relay-1": "amaru-one",
+        "amaru-relay-2": "amaru-two",
+        "amaru-target-extract": "amaru-extractor",
+    }
+    monkeypatch.setattr(qualification, "_project_containers", lambda _project: containers)
+    monkeypatch.setattr(
+        qualification,
+        "_image_id",
+        lambda image: (
+            target_image_id
+            if image == target_image
+            else wrapper_image_id
+            if image == CONTROL_AMARU_IMAGE
+            else cardano_image_id
+        ),
+    )
+
+    def fake_run(args, **_kwargs):
+        if args[:2] == ["docker", "inspect"]:
+            container = args[2]
+            image_id = (
+                target_image_id
+                if container == "amaru-extractor"
+                else wrapper_image_id
+                if container.startswith("amaru-")
+                else cardano_image_id
+            )
+            return qualification.subprocess.CompletedProcess(args, 0, image_id + "\n", "")
+        if args[:3] in (["docker", "exec", "amaru-one"], ["docker", "exec", "amaru-two"]):
+            if args[3:5] == ["/target/amaru", "--version"]:
+                return qualification.subprocess.CompletedProcess(
+                    args, 0, "Amaru 10.11.0 (9e17196)\n", ""
+                )
+            if args[3:5] == ["sha256sum", "/target/amaru"]:
+                return qualification.subprocess.CompletedProcess(
+                    args, 0, "e" * 64 + "  /target/amaru\n", ""
+                )
+            return qualification.subprocess.CompletedProcess(args, 127, "", "missing")
+        if args[:2] == ["docker", "exec"]:
+            return qualification.subprocess.CompletedProcess(
+                args, 0, "cardano-node 11.1.2\n", ""
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setattr(qualification, "_run", fake_run)
+    observation = qualification._identity_observation(
+        "candidate",
+        scope="mixed",
+        cardano_version="11.1.2",
+        amaru_version="10.11.0",
+        cardano_image="cardano-image",
+        amaru_image=target_image,
+        amaru_runtime_interface="extracted-binary",
+        measurement_target_identity={
+            "version": "10.11.0",
+            "source_revision": "d" * 40,
+            "target_mode": "stock",
+            "image": target_image,
+            "executable_digest": executable_digest,
+        },
+    )
+
+    assert observation["matched"] is True
+    relay = observation["services"]["amaru-relay-1"]
+    assert relay["identity_basis"] == "recorded-stock-executable"
+    assert relay["executable_digest_reported"] == executable_digest
+    assert relay["executable_digest_matched"] is True
+
+
 def test_operator_registered_stock_identity_uses_validated_content_id_not_label(
     monkeypatch,
 ):

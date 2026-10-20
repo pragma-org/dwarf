@@ -544,6 +544,11 @@ def _versioned_node(node_id, role, release, *, supporting=False):
         runtime_interface = artifact.get("runtime_interface")
         if isinstance(runtime_interface, str) and runtime_interface:
             node["amaru_runtime_interface"] = runtime_interface
+        executable_digest = artifact.get("executable_digest")
+        if isinstance(executable_digest, str) and re.fullmatch(
+            r"sha256:[0-9a-f]{64}", executable_digest
+        ):
+            node["executable_digest"] = executable_digest
     if isinstance(release.get("operator_registration"), dict):
         node["operator_registration"] = json.loads(
             json.dumps(release["operator_registration"])

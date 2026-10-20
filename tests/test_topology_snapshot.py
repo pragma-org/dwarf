@@ -1626,6 +1626,7 @@ def test_default_profile_omits_unselected_operator_identity():
 
 
 def test_catalog_amaru_artifact_preserves_extracted_binary_runtime_interface():
+    executable_digest = "sha256:" + "c" * 64
     release = {
         "implementation": "amaru",
         "version": "10.11.0",
@@ -1635,6 +1636,7 @@ def test_catalog_amaru_artifact_preserves_extracted_binary_runtime_interface():
             "availability": "available",
             "reference": "localhost:5000/dwarf/amaru-candidate",
             "digest": "sha256:" + "b" * 64,
+            "executable_digest": executable_digest,
             "runtime_interface": "extracted-binary",
         }],
     }
@@ -1644,6 +1646,7 @@ def test_catalog_amaru_artifact_preserves_extracted_binary_runtime_interface():
     )
 
     assert node["amaru_runtime_interface"] == "extracted-binary"
+    assert node["executable_digest"] == executable_digest
 
 
 def test_real_operator_registration_change_never_earns_default_migration_reuse():

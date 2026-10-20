@@ -772,6 +772,38 @@ def _identity_observation(
                 and expected_image_id == operator_stock_content_id
                 and artifact_image_id == expected_image_id
             )
+        elif (
+            service in AMARU_RELAYS
+            and modern_amaru
+            and isinstance(measurement_target_identity, dict)
+            and measurement_target_identity.get("target_mode") == "stock"
+            and measurement_target_identity.get("image") == amaru_image
+            and re.fullmatch(
+                r"sha256:[0-9a-f]{64}",
+                str(measurement_target_identity.get("executable_digest") or ""),
+            )
+        ):
+            identity_basis = "recorded-stock-executable"
+            executable_result = _run(
+                ["docker", "exec", container, "sha256sum", "/target/amaru"],
+                timeout=30,
+            )
+            if executable_result.returncode == 0:
+                executable_digest_reported = (
+                    "sha256:" + executable_result.stdout.split()[0]
+                )
+            executable_digest_matched = bool(
+                executable_digest_reported
+                == measurement_target_identity.get("executable_digest")
+            )
+            artifact_match = bool(
+                expected
+                and str(expected) in output
+                and measurement_target_identity.get("version") == expected
+                and expected_image_id
+                and artifact_image_id == expected_image_id
+                and executable_digest_matched
+            )
         else:
             artifact_match = identity_matches(
                 expected_version=str(expected or ""),
