@@ -771,6 +771,70 @@
       },
       "minItems": 1
     },
+    "execution_policy": {
+      "type": "object",
+      "properties": {
+        "strategy": {
+          "const": "patched-first-stock-fallback"
+        },
+        "primary_mode": {
+          "const": "patched"
+        },
+        "fallback_mode": {
+          "const": "stock"
+        },
+        "calibration": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "pending"
+            },
+            "stock_scenario_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "patched_scenario_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "status",
+            "stock_scenario_id",
+            "patched_scenario_id"
+          ],
+          "additionalProperties": false
+        },
+        "security_authority": {
+          "type": "object",
+          "properties": {
+            "patched_results": {
+              "const": "provisional"
+            },
+            "stock_replay": {
+              "const": "required"
+            },
+            "replay_input": {
+              "const": "exact-retained-input"
+            }
+          },
+          "required": [
+            "patched_results",
+            "stock_replay",
+            "replay_input"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "strategy",
+        "primary_mode",
+        "fallback_mode",
+        "calibration",
+        "security_authority"
+      ],
+      "additionalProperties": false
+    },
     "security_result": {
       "const": "pending"
     },
@@ -823,6 +887,7 @@
     "entries",
     "build_variants",
     "required_tap_cells",
+    "execution_policy",
     "security_result",
     "measurement_completeness",
     "readiness"

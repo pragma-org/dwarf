@@ -70,6 +70,31 @@ def test_freezes_exact_inputs_without_inventing_build_or_security_results(inputs
     assert result["threat_risk_refs"]["status"] == "unmapped"
 
 
+def test_freezes_patched_first_stock_fallback_and_replay_policy(inputs):
+    result = plan(inputs)
+    assert result["execution_policy"] == {
+        "strategy": "patched-first-stock-fallback",
+        "primary_mode": "patched",
+        "fallback_mode": "stock",
+        "calibration": {
+            "status": "pending",
+            "stock_scenario_id": "amaru-measurement-overhead-calibration-stock",
+            "patched_scenario_id": "amaru-measurement-overhead-calibration-patched",
+        },
+        "security_authority": {
+            "patched_results": "provisional",
+            "stock_replay": "required",
+            "replay_input": "exact-retained-input",
+        },
+    }
+    assert result["definitions"]["scenarios"][
+        result["execution_policy"]["calibration"]["stock_scenario_id"]
+    ]["digest"].startswith("sha256:")
+    assert result["definitions"]["scenarios"][
+        result["execution_policy"]["calibration"]["patched_scenario_id"]
+    ]["digest"].startswith("sha256:")
+
+
 def test_mixed_is_one_shared_heterogeneous_topology_with_per_node_identity_and_taps(inputs):
     result = plan(inputs)
     assert len(result["topologies"]) == 1

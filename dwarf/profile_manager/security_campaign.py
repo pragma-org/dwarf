@@ -33,6 +33,16 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _TREE = re.compile(r"^[0-9a-f]{64}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _NETWORK_FIELDS = ("era", "genesis_digest", "protocol_version")
+_CALIBRATION_SCENARIOS = {
+    "amaru": {
+        "stock_scenario_id": "amaru-measurement-overhead-calibration-stock",
+        "patched_scenario_id": "amaru-measurement-overhead-calibration-patched",
+    },
+    "cardano-node": {
+        "stock_scenario_id": "cardano-measurement-overhead-calibration-stock",
+        "patched_scenario_id": "cardano-measurement-overhead-calibration-patched",
+    },
+}
 
 
 def serialize_campaign(document: dict[str, Any]) -> str:
@@ -265,6 +275,9 @@ def resolve_security_campaign(
         freeze("scenarios", exercise["scenario_id"])
         if exercise.get("fallback"):
             freeze("scenarios", exercise["fallback"]["scenario_id"])
+    calibration = deepcopy(_CALIBRATION_SCENARIOS[candidate.implementation])
+    for scenario_id in calibration.values():
+        freeze("scenarios", scenario_id)
     topologies, frozen_entries = {}, []
     for entry in entries:
         scenario = freeze("scenarios", entry["scenario_id"])
@@ -338,6 +351,17 @@ def resolve_security_campaign(
               "threat_risk_refs": {"status": "declared" if any(refs.values()) else "unmapped", **refs},
               "definitions": definitions, "topologies": [topologies[key] for key in sorted(topologies)],
               "entries": frozen_entries, "build_variants": variants, "required_tap_cells": cells,
+              "execution_policy": {
+                  "strategy": "patched-first-stock-fallback",
+                  "primary_mode": "patched",
+                  "fallback_mode": "stock",
+                  "calibration": {"status": "pending", **calibration},
+                  "security_authority": {
+                      "patched_results": "provisional",
+                      "stock_replay": "required",
+                      "replay_input": "exact-retained-input",
+                  },
+              },
               "security_result": "pending", "measurement_completeness": "pending",
               "readiness": {"status": "pending", "executed": False,
                             "qualification_contract": "qualify_node_versions.run_qualification",
