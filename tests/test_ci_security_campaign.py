@@ -1058,7 +1058,7 @@ def test_mixed_runtime_rejects_frozen_execution_drift_before_subprocess(mixed_ru
         runtime.run(manifest, entry['contract']['scenario_id'], entry=entry, topology_id=entry['topology_id'])
 
 
-@pytest.mark.parametrize('modes', [('patched', 'stock'), ('coverage', 'stock'), ('patched', 'patched')])
+@pytest.mark.parametrize('modes', [('coverage', 'stock'), ('patched', 'patched')])
 def test_mixed_runtime_rejects_unsupported_per_node_modes_before_resolution(mixed_runtime, monkeypatch, modes):
     from profile_manager import run_plan
     manifest, runtime = mixed_runtime
@@ -1070,6 +1070,20 @@ def test_mixed_runtime_rejects_unsupported_per_node_modes_before_resolution(mixe
         runtime.run(manifest, entry['contract']['scenario_id'], entry=entry, topology_id=entry['topology_id'])
 
 
+def test_mixed_runtime_selects_patched_candidate_beside_stock_release(mixed_runtime):
+    manifest, _runtime = mixed_runtime
+    topology = manifest['topologies'][0]
+    candidate = next(node for node in topology['nodes'] if node['identity']['kind'] == 'candidate')
+    release = next(node for node in topology['nodes'] if node['identity']['kind'] == 'release')
+    candidate['identity']['mode'] = 'patched'
+    release['identity']['mode'] = 'stock'
+    assert api._node_modes(topology) == {
+        candidate['node_id']: 'patched',
+        release['node_id']: 'stock',
+    }
+    assert api._security_mode(topology) == 'patched'
+
+
 @pytest.mark.parametrize("catalog_first_stock", [False, True])
 def test_preflight_uses_frozen_candidate_mode_instead_of_stock(campaign, tmp_path, monkeypatch, catalog_first_stock):
     from profile_manager import version_catalog
@@ -1079,8 +1093,11 @@ def test_preflight_uses_frozen_candidate_mode_instead_of_stock(campaign, tmp_pat
     campaign['topologies'][0]['nodes'][0]['identity']['mode'] = 'patched'
     builds = evidence(campaign)['builds']
     builds[0]['artifacts']['image_digest'] = 'sha256:' + '0' * 64
+    builds[0]['runtime_image_config_id'] = 'sha256:' + '2' * 64
+    builds[1]['runtime_image_config_id'] = 'sha256:' + '3' * 64
     release = {'source_revision': 'a' * 40, 'artifacts': [
-        {'kind': 'oci', 'availability': 'available', 'digest': builds[1]['artifacts']['image_digest']}]}
+        {'kind': 'oci', 'availability': 'available', 'digest': builds[1]['artifacts']['image_digest'],
+         'config_image_id': builds[1]['runtime_image_config_id']}]}
     if catalog_first_stock:
         release['artifacts'].insert(0, {'kind': 'oci', 'availability': 'available',
                                        'digest': builds[0]['artifacts']['image_digest']})
@@ -1095,6 +1112,7 @@ def test_preflight_uses_frozen_candidate_mode_instead_of_stock(campaign, tmp_pat
     else:
         assert runtime.preflight(campaign, builds)['passed'] is True
         assert len(calls) == 1
+        assert calls[0]['operator_stock_content_id'] == builds[1]['runtime_image_config_id']
 
 
 def test_mixed_security_plan_defers_per_node_measurements_without_changing_intent(mixed_runtime, monkeypatch):
@@ -1142,7 +1160,7 @@ def test_mixed_execution_rejects_topology_contract_drift(mixed_runtime, monkeypa
 def test_mixed_nonstock_preflight_fails_before_qualification(mixed_runtime, monkeypatch):
     from scripts import qualify_node_versions
     manifest, runtime = mixed_runtime
-    manifest['topologies'][0]['nodes'][0]['identity']['mode'] = 'patched'
+    manifest['topologies'][0]['nodes'][0]['identity']['mode'] = 'coverage'
     monkeypatch.setattr(qualify_node_versions, 'run_qualification', lambda **kwargs: pytest.fail('unexpected qualification'))
     with pytest.raises(ValueError, match='unsupported-per-node-mode'):
         runtime.preflight(manifest, runtime.builds)
@@ -1166,7 +1184,7 @@ def test_mixed_materialized_binding_drift_is_rejected_before_subprocess(mixed_ru
 
 def test_mixed_campaign_rejects_unsupported_modes_before_runtime_adapter(mixed_runtime, monkeypatch, tmp_path):
     manifest, runtime = mixed_runtime
-    manifest['topologies'][0]['nodes'][0]['identity']['mode'] = 'patched'
+    manifest['topologies'][0]['nodes'][0]['identity']['mode'] = 'coverage'
     freeze(manifest)
     monkeypatch.setattr(runtime, 'projects', lambda: pytest.fail('unexpected runtime inventory'))
     monkeypatch.setattr(runtime, 'preflight', lambda *args: pytest.fail('unexpected runtime preflight'))

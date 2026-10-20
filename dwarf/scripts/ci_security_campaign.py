@@ -192,13 +192,29 @@ def _evaluate(manifest, state):
     state["status"] = campaign_evaluation_status(manifest, state["evaluation"])
 
 
+def _node_modes(topology, fallback="stock"):
+    """Return the frozen node-mode map accepted by the hosted runtime."""
+    result = {}
+    for node in topology["nodes"]:
+        mode = node["identity"].get("mode", fallback)
+        if mode not in {"stock", "patched"}:
+            raise ValueError("unsupported-per-node-mode: security execution supports stock or patched nodes")
+        if node["identity"].get("kind") == "release" and mode != "stock":
+            raise ValueError("unsupported-per-node-mode: release instrumentation has no observed build provenance")
+        result[node["node_id"]] = mode
+    return result
+
+
 def _security_mode(topology, fallback="stock"):
-    """The heterogeneous adapter currently supports stock artifacts only."""
-    modes = {node["identity"].get("mode", fallback) for node in topology["nodes"]}
-    heterogeneous = len({node["implementation"] for node in topology["nodes"]}) > 1
-    if len(modes) != 1 or (heterogeneous and modes != {"stock"}):
-        raise ValueError("unsupported-per-node-mode: heterogeneous security execution requires all-stock nodes")
-    return next(iter(modes))
+    """Select the candidate lane while retaining every node's frozen mode."""
+    modes = _node_modes(topology, fallback)
+    candidates = [node for node in topology["nodes"] if node["identity"].get("kind") == "candidate"]
+    if len(candidates) == 1:
+        return modes[candidates[0]["node_id"]]
+    unique = set(modes.values())
+    if len(unique) != 1:
+        raise ValueError("unsupported-per-node-mode: security execution has ambiguous candidate modes")
+    return next(iter(unique))
 
 
 def _execution_compatibility_error(entry, topology, *, qualified=False, allow_pending=False):
@@ -537,7 +553,11 @@ class LocalRuntime:
             producer = versions.get("cardano-node") or self.producer_version
             if not producer:
                 raise ValueError("Amaru readiness requires an explicitly selected supporting producer version")
-            candidate_build = next((row for row in builds if row.get("mode") == "stock"), {})
+            candidate_node = next((node for node in topology["nodes"]
+                                   if node["identity"].get("kind") == "candidate"
+                                   and node["implementation"] == "amaru"), None)
+            candidate_mode = (candidate_node or {}).get("identity", {}).get("mode", "stock")
+            candidate_build = next((row for row in builds if row.get("mode") == candidate_mode), {})
             amaru_release = (resolve_release(catalog, "amaru", versions["amaru"])
                              if "amaru" in versions else None)
             amaru_artifact = next((item for item in (amaru_release or {}).get("artifacts", [])
