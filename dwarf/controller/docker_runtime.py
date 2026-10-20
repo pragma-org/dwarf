@@ -2059,6 +2059,7 @@ class DockerRuntime:
                 name.startswith(compose_project + "-")
                 or (
                     isinstance(labels, dict)
+                    and labels.get(_INSTALLATION) == self.installation_id
                     and labels.get(_TOPOLOGY) == topology_id
                 )
             )

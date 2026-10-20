@@ -5575,6 +5575,37 @@ def test_amaru_project_preflight_scopes_node_and_support_services(monkeypatch, t
         )
 
 
+def test_amaru_project_preflight_ignores_same_topology_from_other_installation(
+    monkeypatch, tmp_path
+):
+    topology_id = "profile-owned"
+    project = "dwarf-profile-local-profile-owned"
+    foreign_project = "dwarf-profile-existing-profile-owned"
+    foreign = _container(
+        f"{foreign_project}-p1-1",
+        {
+            "io.dwarf.managed": "true",
+            "io.dwarf.installation": "existing",
+            "io.dwarf.topology": topology_id,
+            "io.dwarf.component": "node",
+            "com.docker.compose.project": foreign_project,
+            "com.docker.compose.service": "p1",
+        },
+    )
+    runtime = DockerRuntime(installation_id="local", state_dir=tmp_path)
+    monkeypatch.setattr(runtime, "_all_containers", lambda: [foreign])
+    monkeypatch.setattr(runtime, "_inspect_optional", lambda *_args: None)
+
+    before, network = runtime._project_preflight(
+        topology_id,
+        project,
+        "runtime_amaru_control_substrate.py",
+    )
+
+    assert before == []
+    assert network is None
+
+
 def test_amaru_repair_refuses_running_containers_with_stale_semantic_gates(
     monkeypatch, tmp_path
 ):

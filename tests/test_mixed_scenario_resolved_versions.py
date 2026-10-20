@@ -97,6 +97,8 @@ def test_selected_pair_is_frozen_into_launch_provenance(
     assert retained_plan["readiness"]["profile_required"] is False
     assert retained_plan["versions"]["selection_kind"] == "scenario-substrate"
     assert len(retained_plan["scenario"]["substrate_bindings"]) == 2
+    if scenario_id == "runtime-substrate-mempool-failure-containment-mixed-amaru":
+        assert frozen["substrate"]["compose_mode"] == "docker"
     assert all(
         binding["kind"] == "resolved-plan"
         for binding in retained_plan["scenario"]["substrate_bindings"]
