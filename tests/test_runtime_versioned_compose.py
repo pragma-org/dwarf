@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -1156,7 +1157,7 @@ def test_bootstrap_producer_command_uses_synthesized_cardano_db_and_exact_image(
     command = bootstrap.bootstrap_producer_command(layout=layout)
 
     assert bootstrap.DEFAULT_BOOTSTRAP_PRODUCER_IMAGE in command
-    assert command[command.index("--user") + 1] == "1000:1000"
+    assert command[command.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
     assert f"{layout['cardano_state_roots']['1']}:/cardano/state" in command
     assert f"{layout['cardano_state_roots']['1']}:/cardano/state:ro" not in command
     assert f"{layout['config_roots']['1']}:/cardano/config:ro" in command
@@ -1164,6 +1165,27 @@ def test_bootstrap_producer_command_uses_synthesized_cardano_db_and_exact_image(
     assert "/cardano/config/configs" in command
     assert "/bundle" in command
     assert "testnet_42" in command
+
+
+def test_bootstrap_write_commands_use_the_executing_host_identity(monkeypatch, tmp_path):
+    monkeypatch.setattr(bootstrap.os, "getuid", lambda: 1001)
+    monkeypatch.setattr(bootstrap.os, "getgid", lambda: 121)
+    layout = {
+        "network_name": "testnet_42",
+        "workspace_root": str(tmp_path / "workspace"),
+        "generated_root": str(tmp_path / "workspace" / "generated"),
+        "workload_funding_request": str(tmp_path / "workspace" / "workload-funding.json"),
+        "governance_guardrails_request": None,
+        "config_roots": {"1": str(tmp_path / "configs" / "1")},
+        "cardano_state_roots": {"1": str(tmp_path / "state" / "1")},
+        "amaru_state_roots": {"1": str(tmp_path / "amaru-state" / "1")},
+    }
+
+    cardano_command, amaru_command = bootstrap.loader_commands(layout=layout)
+    producer_command = bootstrap.bootstrap_producer_command(layout=layout)
+
+    for command in (cardano_command, amaru_command, producer_command):
+        assert command[command.index("--user") + 1] == "1001:121"
 
 
 def test_bootstrap_commands_translate_controller_paths_for_host_docker(tmp_path):

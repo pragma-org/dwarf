@@ -12,6 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 
 from profile_manager.candidate_build_executor import _owned_directory, _save
@@ -64,8 +65,8 @@ def stage_hosted_build(discovery_path, stock_build, directory, *, expected_commi
                 or discovery.get("status") != "validated"):
             raise ValueError("discovery identity or validation state mismatch")
         candidates = [row for row in discovery.get("candidates", []) if row.get("implementation") == "amaru"]
-        if not candidates:
-            raise ValueError("no Amaru candidate was selected")
+        if len(candidates) != 1:
+            raise ValueError("initial hosted campaign requires exactly one Amaru candidate")
 
         builder = _load_regular(ROOT / "infrastructure/docker/amaru-stock-builder.identity.json")["builder"]
         stock_build = Path(stock_build)
@@ -107,6 +108,19 @@ def stage_hosted_build(discovery_path, stock_build, directory, *, expected_commi
             })
         if len(seen) != len(discovered):
             raise ValueError("a discovered Amaru candidate has no unique stock build")
+        candidate = status["candidates"][0]
+        executable = stock_build / candidate["lane"] / "executable"
+        host_bin = output / "host-tools" / "bin"
+        host_bin.mkdir(parents=True, mode=0o700)
+        host_amaru = host_bin / "amaru"
+        shutil.copyfile(executable, host_amaru)
+        host_amaru.chmod(0o555)
+        if _sha256(host_amaru) != candidate["files"]["executable"]:
+            raise ValueError("host-tool copy differs from verified candidate executable")
+        candidate["host_tool"] = {
+            "path": "host-tools/bin/amaru",
+            "sha256": candidate["files"]["executable"],
+        }
         status.update(status="staged", discovery_sha256=discovery_sha,
                       reason="hosted-campaign-runtime-registration-pending")
         if run is not None:

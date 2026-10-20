@@ -307,8 +307,17 @@ def run_campaign(manifest, *, directory, runtime, builds, resume=False, lock_pat
                         topology = next(row for row in manifest["topologies"] if row["id"] == entry["topology_id"])
                         mode = _security_mode(topology, mode)
                     control_id = entry["contract"]["normal_control"]["scenario_id"] if entry else scenario_id
-                    control = runtime.run(manifest, control_id, mode=mode, topology_id=(entry or cell)["topology_id"],
-                                          **({"execution_entry": entry} if entry else {}))
+                    control = runtime.run(
+                        manifest,
+                        control_id,
+                        mode=mode,
+                        topology_id=(entry or cell)["topology_id"],
+                        **(
+                            {"execution_entry": entry}
+                            if entry
+                            else {"plan_cell": cell}
+                        ),
+                    )
                     if not control.get("execution_complete"):
                         raise RuntimeError("normal control execution failed")
                     record["control"] = deepcopy(control)
@@ -370,6 +379,7 @@ def run_campaign(manifest, *, directory, runtime, builds, resume=False, lock_pat
             # All security workloads, controls and assertions have been evaluated
             # before the calibration/fallback lane can start.
             _evaluate(manifest, state)
+            attempted_measurement_recipes = set()
             for cell in sorted(manifest["required_tap_cells"], key=lambda row: (row["topology_id"], row["node_id"], row["measurement_id"])):
                 for mode in sorted(cell["target_modes"]):
                     key = _cell_key(cell, mode)
@@ -381,11 +391,27 @@ def run_campaign(manifest, *, directory, runtime, builds, resume=False, lock_pat
                             continue
                     if cell["runtime"]["status"] != "implemented":
                         continue
-                    attempt(key, cell["scenario_id"], cell=cell, mode=mode)
+                    recipe = (
+                        cell["topology_id"],
+                        cell["node_id"],
+                        cell["scenario_id"],
+                        mode,
+                    )
+                    if recipe not in attempted_measurement_recipes:
+                        attempted_measurement_recipes.add(recipe)
+                        attempt(key, cell["scenario_id"], cell=cell, mode=mode)
                     if _measurement_result(state, cell, mode)["state"] != "verified":
                         fallback = cell.get("fallback", {})
                         if fallback.get("status") == "ready" and fallback["scenario_id"] != cell["scenario_id"]:
-                            attempt(key, fallback["scenario_id"], cell=cell, mode=mode)
+                            fallback_recipe = (
+                                cell["topology_id"],
+                                cell["node_id"],
+                                fallback["scenario_id"],
+                                mode,
+                            )
+                            if fallback_recipe not in attempted_measurement_recipes:
+                                attempted_measurement_recipes.add(fallback_recipe)
+                                attempt(key, fallback["scenario_id"], cell=cell, mode=mode)
             return state
         finally:
             # The runtime registers exact projects from canonical runs it starts.
@@ -659,7 +685,7 @@ class LocalRuntime:
             raise ValueError("materialized security execution differs from the frozen contract")
         plan["campaign_execution_digest"] = _digest(execution)
 
-    def run(self, manifest, scenario_id, *, entry=None, execution_entry=None, cell=None, mode="stock", control=None, topology_id=None):
+    def run(self, manifest, scenario_id, *, entry=None, execution_entry=None, cell=None, plan_cell=None, mode="stock", control=None, topology_id=None):
         from profile_manager.launch_store import create_launch
         if not _ID.fullmatch(scenario_id) or scenario_id not in manifest["definitions"]["scenarios"]:
             raise ValueError("scenario must be a frozen trusted catalog identifier")
@@ -667,7 +693,14 @@ class LocalRuntime:
         bound_entry = entry or execution_entry
         if bound_entry:
             mode = _security_mode(topology, mode)
-        plan = self._plan(manifest, scenario_id, topology, mode, bound_entry, cell)
+        plan = self._plan(
+            manifest,
+            scenario_id,
+            topology,
+            mode,
+            bound_entry,
+            cell or plan_cell,
+        )
         launches = self.directory / "launches"
         launch = create_launch(plan, root=launches)
         binding = self._catalog_binding()

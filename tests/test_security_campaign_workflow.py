@@ -170,6 +170,8 @@ def test_hosted_campaign_consumes_and_validates_build_artifact():
     assert '--expected-commit "$SOURCE_COMMIT"' in gate['run']
     assert '--expected-trusted-revision "$TRUSTED_COMMIT"' in gate['run']
     assert '--stock-build ../campaign-build' in gate['run']
+    assert 'campaign-output/host-tools/bin' in gate['run']
+    assert '$GITHUB_PATH' in gate['run']
     downloads = [s for s in workflow()['jobs']['campaign']['steps'] if s.get('uses', '').startswith('actions/download-artifact@')]
     assert {s['with']['name'] for s in downloads} == {
         'dwarf-security-campaign-discovery', 'amaru-network-stock-build'}

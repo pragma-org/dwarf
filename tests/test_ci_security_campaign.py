@@ -41,7 +41,7 @@ class Runtime:
                 "qualified_topology_ids": ([row["id"] for row in manifest["topologies"]]
                                            if self.preflight_passed else [])}
 
-    def run(self, manifest, scenario_id, *, entry=None, execution_entry=None, cell=None, mode="stock", control=None, topology_id=None):
+    def run(self, manifest, scenario_id, *, entry=None, execution_entry=None, cell=None, plan_cell=None, mode="stock", control=None, topology_id=None):
         key = entry["id"] if entry else cell["measurement_id"] if cell else "control"
         self.calls.append((key, scenario_id, mode))
         self.serial += 1
@@ -352,6 +352,54 @@ def test_calibration_control_uses_its_exact_topology(campaign, tmp_path):
     runtime.run = execute
     run(campaign, tmp_path, runtime)
     assert seen and all(topology == cell["topology_id"] for topology in seen)
+
+
+def test_calibration_control_keeps_its_per_node_plan_binding(campaign, tmp_path):
+    campaign, cell = single_cell(campaign)
+    runtime = Runtime(campaign, tmp_path)
+    seen = []
+    original = runtime.run
+
+    def execute(manifest, scenario_id, **kwargs):
+        if kwargs.get("cell") is None and scenario_id == cell["scenario_id"]:
+            seen.append(kwargs.get("plan_cell"))
+        return original(manifest, scenario_id, **kwargs)
+
+    runtime.run = execute
+    run(campaign, tmp_path, runtime)
+
+    assert seen == [cell]
+
+
+def test_shared_measurement_recipe_runs_once_per_node_and_mode(campaign, tmp_path):
+    shared = [
+        deepcopy(cell)
+        for cell in campaign["required_tap_cells"]
+        if cell["implementation"] == "amaru"
+        and cell["scenario_id"] == "amaru-measurement-e2e-stock-portable"
+    ][:2]
+    assert len(shared) == 2
+    for cell in shared:
+        cell["target_modes"] = ["stock"]
+        cell["runtime"] = {"status": "implemented"}
+        cell["fallback"] = {
+            "scenario_id": cell["scenario_id"],
+            "status": "ready",
+            "activation_condition": "unsatisfied rule",
+        }
+    campaign["required_tap_cells"] = shared
+    freeze(campaign)
+    runtime = Runtime(campaign, tmp_path)
+    runtime.samples = False
+
+    run(campaign, tmp_path, runtime)
+
+    recipe_calls = [
+        call
+        for call in runtime.calls
+        if isinstance(call, tuple) and call[1] == shared[0]["scenario_id"]
+    ]
+    assert len(recipe_calls) == 2  # one control and one measured execution
 
 
 def test_archive_failure_does_not_erase_security_finding(campaign, tmp_path):

@@ -339,6 +339,7 @@ jobs:
             --directory ../campaign-output \
             --expected-commit "$SOURCE_COMMIT" \
             --expected-trusted-revision "$TRUSTED_COMMIT"
+          echo "$GITHUB_WORKSPACE/campaign-output/host-tools/bin" >> "$GITHUB_PATH"
       - name: Register candidate and freeze initial campaign
         working-directory: campaign-trusted
         env:

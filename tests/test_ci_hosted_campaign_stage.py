@@ -61,6 +61,13 @@ def test_verified_hosted_build_is_loaded_and_inspected_without_claiming_campaign
     assert result["published"] is False
     assert result["candidates"][0]["files"]["runtime.docker.tar"]
     assert result["candidates"][0]["runtime_image_config_id"] == "sha256:" + "e" * 64
+    host_tool = tmp_path / "output/host-tools/bin/amaru"
+    assert host_tool.read_bytes() == (stock / "stock-0000/executable").read_bytes()
+    assert result["candidates"][0]["host_tool"] == {
+        "path": "host-tools/bin/amaru",
+        "sha256": hashlib.sha256(host_tool.read_bytes()).hexdigest(),
+    }
+    assert host_tool.stat().st_mode & 0o777 == 0o555
     assert calls[0][:2] == ["docker", "load"]
     assert calls[1][:3] == ["docker", "image", "inspect"]
 

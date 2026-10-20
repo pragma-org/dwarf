@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -22,6 +23,11 @@ DEFAULT_BOOTSTRAP_PRODUCER_IMAGE = (
     "ghcr.io/lambdasistemi/amaru-bootstrap-producer@"
     "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36"
 )
+
+
+def _docker_bind_user() -> str:
+    """Run bind-writing helpers as the owner of the staged host workspace."""
+    return f"{os.getuid()}:{os.getgid()}"
 
 
 def _copy_tree_contents(source: Path, destination: Path) -> None:
@@ -236,7 +242,7 @@ def loader_commands(*, layout: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -
         "run",
         "--rm",
         "--user",
-        "1000:1000",
+        _docker_bind_user(),
         "--read-only",
         "--cap-drop=ALL",
         "--security-opt",
@@ -283,7 +289,7 @@ def loader_commands(*, layout: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -
         "run",
         "--rm",
         "--user",
-        "1000:1000",
+        _docker_bind_user(),
         "--read-only",
         "--cap-drop=ALL",
         "--security-opt",
@@ -425,7 +431,7 @@ def bootstrap_producer_command(
         "run",
         "--rm",
         "--user",
-        "1000:1000",
+        _docker_bind_user(),
         "--read-only",
         "--cap-drop=ALL",
         "--security-opt",
