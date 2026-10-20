@@ -1154,7 +1154,7 @@ def _docker_compose_body(
             "cap_drop": ["ALL"],
             "security_opt": ["no-new-privileges:true"],
             "tmpfs": ["/tmp", "/run"],
-            "entrypoint": ["bash", "-lc"],
+            "entrypoint": (["/bin/sh", "-ec"] if node["impl"] == "amaru" else ["bash", "-lc"]),
             "command": command,
         }
         if node["impl"] == "amaru":

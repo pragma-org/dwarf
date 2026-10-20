@@ -318,9 +318,9 @@ def run_campaign(manifest, *, directory, runtime, builds, resume=False, lock_pat
                             else {"plan_cell": cell}
                         ),
                     )
+                    record["control"] = deepcopy(control)
                     if not control.get("execution_complete"):
                         raise RuntimeError("normal control execution failed")
-                    record["control"] = deepcopy(control)
                     record["archives"].append(runtime.archive(control["run_id"]))
                     if not runtime.verify_archive(record["archives"][-1]):
                         raise RuntimeError("normal control archive verification failed")

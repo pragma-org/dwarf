@@ -42,12 +42,21 @@ def _proc_exists(pid: int, proc_root: Path) -> bool:
     return (proc_root / str(pid) / "status").exists()
 
 
-def _pid_matches_node(pid: int, proc_root: Path) -> bool:
+def _process_names(node: dict) -> set[str]:
+    implementation = str(node.get("impl") or node.get("implementation") or "")
+    if implementation == "amaru":
+        return {"amaru"}
+    if implementation == "cardano-node":
+        return {"cardano-node"}
+    return {"amaru", "cardano-node"}
+
+
+def _pid_matches_node(pid: int, proc_root: Path, node: dict) -> bool:
     status_path = proc_root / str(pid) / "status"
     if not status_path.exists():
         return False
     status_text = status_path.read_text(encoding="utf-8", errors="replace")
-    return "Name:\tcardano-node" in status_text
+    return any(f"Name:\t{name}" in status_text for name in _process_names(node))
 
 
 def _scan_for_runtime_process(node: dict) -> dict:
@@ -75,7 +84,7 @@ def _scan_for_runtime_process(node: dict) -> dict:
         if len(parts) < 3:
             continue
         pid_text, comm, args = parts
-        if comm != "cardano-node":
+        if comm not in _process_names(node):
             continue
         port_match = re.search(r"--port\s+(\d+)", args)
         port = int(port_match.group(1)) if port_match else runtime_port
@@ -133,7 +142,7 @@ def resolve_target_process(runtime_metadata_path: Path, target_node: str, *, pro
             pid = int(Path(pid_file).read_text(encoding="utf-8").strip())
         except (OSError, ValueError):
             pid = None
-        if pid is not None and _proc_exists(pid, proc_root) and _pid_matches_node(pid, proc_root):
+        if pid is not None and _proc_exists(pid, proc_root) and _pid_matches_node(pid, proc_root, node):
             return {"pid": pid, "port": int(node.get("port") or 0), "node": node}
     return _scan_for_runtime_process(node)
 

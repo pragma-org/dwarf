@@ -188,6 +188,33 @@ def test_successful_runs_roundtrip_and_failure_retains_partial_results(campaign,
     assert "dwarf-substrate-other-operator" not in runtime.removed
 
 
+def test_failed_normal_control_retains_native_diagnostics(campaign, tmp_path, monkeypatch):
+    runtime = Runtime(campaign, tmp_path)
+    original = runtime.run
+
+    def incomplete_control(*args, **kwargs):
+        if kwargs.get("execution_entry") is not None:
+            return {
+                "run_id": "run-control-failed",
+                "execution_complete": False,
+                "native_assertions": [
+                    {"primitive": "runtime_compose_substrate", "outcome": "unexpected_exit"}
+                ],
+                "control": {"status": "unknown"},
+                "measurements": [],
+            }
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(runtime, "run", incomplete_control)
+
+    state, _ = run(campaign, tmp_path, runtime)
+
+    record = state["cells"]["security:" + campaign["entries"][0]["id"]]
+    assert record["status"] == "failed"
+    assert record["control"]["run_id"] == "run-control-failed"
+    assert record["control"]["native_assertions"][0]["outcome"] == "unexpected_exit"
+
+
 def test_resume_only_failed_cells_and_rechecks_completed_archive(campaign, tmp_path):
     campaign, cell = single_cell(campaign)
     runtime = Runtime(campaign, tmp_path)

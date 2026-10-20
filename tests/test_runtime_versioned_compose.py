@@ -1010,6 +1010,7 @@ def test_versioned_amaru_service_migrates_bootstrap_state_before_run():
     assert "AMARU_TRACE" not in service["environment"]
     assert "exec amaru run" in service["command"][0]
     assert '--era-history "/amaru/amaru1/era-history.json"' in service["command"][0]
+    assert service["entrypoint"] == ["/bin/sh", "-ec"]
 
 
 def test_public_amaru_service_uses_declared_external_peer_and_bootstraps_real_network():
