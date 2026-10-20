@@ -306,6 +306,27 @@ def plan_hosted_campaign(discovery_path, stage_path, stock_build, directory, *,
         )
         manifest, deferred_measurements = _hosted_measurement_campaign(
             manifest, primary_mode=decision["primary_mode"])
+        if decision["primary_mode"] == "patched":
+            stock_manifest = resolve_security_campaign(
+                snapshot,
+                _security_suite_for_mode(
+                    load_security_campaign_suite(
+                        ROOT / "dwarf/security-suites/github-security-regression-v1.yaml"
+                    ),
+                    "amaru",
+                    "stock",
+                ),
+                load_measurement_suite(
+                    ROOT / "dwarf/qualification-suites/node-measurements-v1.yaml"
+                ),
+                selection=selection,
+                catalog=catalog,
+            )
+            stock_manifest, _ = _hosted_measurement_campaign(
+                stock_manifest, primary_mode="stock"
+            )
+        else:
+            stock_manifest = deepcopy(manifest)
         builds = []
         for row in observations:
             if row.get("status") != "built":
@@ -317,11 +338,13 @@ def plan_hosted_campaign(discovery_path, stage_path, stock_build, directory, *,
                 build["patch_set_digest"] = row["patch_set_digest"]
             builds.append(build)
         _save(output / "manifest.json", manifest)
+        _save(output / "stock-manifest.json", stock_manifest)
         _save(output / "build-observations.json", builds)
         _save(output / "candidate-registration.json", {"images": registrations,
                                                          "execution_decision": decision})
         files = {name: _sha256(output / name) for name in (
             "version-catalog.json", "selection.json", "manifest.json",
+            "stock-manifest.json",
             "build-observations.json", "candidate-registration.json")}
         status.update(status="planned", reason="runtime-compatibility-qualification-pending",
                       candidate_version=version, supporting_cardano_version=cardano["version"],

@@ -217,6 +217,7 @@ def test_hosted_plan_registers_patched_primary_and_stock_replay_artifacts(tmp_pa
     assert {row["mode"] for row in observations} == {"stock", "patched"}
     assert next(row for row in observations if row["mode"] == "patched")["patch_set_digest"] == PATCH
     manifest = json.loads((tmp_path / "out/manifest.json").read_text())
+    stock_manifest = json.loads((tmp_path / "out/stock-manifest.json").read_text())
     candidate = next(node for node in manifest["topologies"][0]["nodes"]
                      if node["identity"]["kind"] == "candidate")
     reference = next(node for node in manifest["topologies"][0]["nodes"]
@@ -225,3 +226,19 @@ def test_hosted_plan_registers_patched_primary_and_stock_replay_artifacts(tmp_pa
     assert reference["identity"]["mode"] == "stock"
     assert any(cell["node_id"] == candidate["node_id"] and cell["target_modes"] == ["patched"]
                for cell in manifest["required_tap_cells"])
+    stock_candidates = [
+        node
+        for topology in stock_manifest["topologies"]
+        for node in topology["nodes"]
+        if node["identity"]["kind"] == "candidate"
+    ]
+    assert stock_candidates
+    assert {node["identity"]["mode"] for node in stock_candidates} == {"stock"}
+    assert {
+        mode
+        for cell in stock_manifest["required_tap_cells"]
+        if cell["implementation"] == "amaru"
+        for mode in cell["target_modes"]
+    } == {"stock"}
+    assert manifest["campaign_digest"] != stock_manifest["campaign_digest"]
+    assert result["files"]["stock-manifest.json"]

@@ -24,6 +24,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from profile_manager.campaign_evidence import evaluate_campaign_evidence
+from profile_manager.measurement_collectors.amaru_patched import paired_overhead_calibration
 from profile_manager.run_ledger import atomic_write_bytes
 from profile_manager.security_campaign import (
     _check_pair, _digest, _freeze_definition, _pair_status, _schema_validate, campaign_evaluation_status,
@@ -34,6 +35,57 @@ ROOT = Path(__file__).resolve().parents[2]
 HOST_LOCK = Path("/tmp/dwarf-security-campaign.lock")
 _ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _PROJECT = re.compile(r"^dwarf-substrate-[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def decide_patched_primary(
+    stock_result,
+    patched_result,
+    *,
+    expected_source_revision,
+    expected_patch_set_sha256,
+    maximum_absolute_percent_delta=5.0,
+):
+    """Select one campaign lane from a retained paired calibration."""
+    common = {"fallback_mode": "stock", "retry_build": False}
+    if any(result.get("status") != "available" for result in (stock_result, patched_result)):
+        return {
+            **common,
+            "status": "failed",
+            "selected_mode": "stock",
+            "reason": "paired-calibration-execution-unavailable",
+            "calibration": None,
+        }
+    calibration = paired_overhead_calibration(
+        stock_result,
+        patched_result,
+        minimum_samples=30,
+        maximum_absolute_percent_delta=maximum_absolute_percent_delta,
+        expected_source_revision=expected_source_revision,
+        expected_patch_set_sha256=expected_patch_set_sha256,
+    )
+    if calibration["status"] != "available":
+        return {
+            **common,
+            "status": "failed",
+            "selected_mode": "stock",
+            "reason": "paired-calibration-invalid",
+            "calibration": calibration,
+        }
+    if calibration["observer_overhead"]["within_limit"] is not True:
+        return {
+            **common,
+            "status": "failed",
+            "selected_mode": "stock",
+            "reason": "paired-calibration-overhead-exceeded",
+            "calibration": calibration,
+        }
+    return {
+        **common,
+        "status": "passed",
+        "selected_mode": "patched",
+        "reason": "paired-calibration-passed",
+        "calibration": calibration,
+    }
 
 
 @contextmanager

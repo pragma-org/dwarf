@@ -415,6 +415,31 @@ def test_paired_calibration_requires_identity_workload_and_sample_parity():
     assert any("terminal outcome counts" in reason for reason in outcome_mismatch["reasons"])
 
 
+def test_paired_calibration_accepts_campaign_observed_candidate_identity():
+    source_revision = "f" * 40
+    patch_set_sha256 = "sha256:" + "e" * 64
+    stock = _calibration_run("stock", 40, 100.0)
+    patched = _calibration_run("patched", 40, 103.0)
+    for leg in (stock, patched):
+        leg["target"]["version"] = "candidate-future"
+        leg["target"]["source_revision"] = source_revision
+    patched["target"]["patch_set_sha256"] = patch_set_sha256
+
+    result = paired_overhead_calibration(
+        stock,
+        patched,
+        minimum_samples=30,
+    )
+
+    assert result["status"] == "available"
+    assert result["target_identity"] == {
+        "implementation": "amaru",
+        "version": "candidate-future",
+        "source_revision": source_revision,
+        "patch_set_sha256": patch_set_sha256,
+    }
+
+
 def test_paired_calibration_reports_over_limit_without_hiding_measurements():
     result = paired_overhead_calibration(
         _calibration_run("stock", 40, 100.0),

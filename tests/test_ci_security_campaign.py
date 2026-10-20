@@ -108,6 +108,70 @@ def run(manifest, tmp_path, runtime=None, **kwargs):
                             builds=runtime.ev["builds"], lock_path=tmp_path / "host.lock", **kwargs), runtime
 
 
+def calibration_leg(mode, *, source="f" * 40, patch="sha256:" + "e" * 64,
+                    status="available", mean=100.0):
+    target = {
+        "implementation": "amaru",
+        "version": "candidate",
+        "source_revision": source,
+        "mode": mode,
+        "image_digest": "sha256:" + ("a" if mode == "stock" else "b") * 64,
+    }
+    if mode == "patched":
+        target["patch_set_sha256"] = patch
+    return {
+        "status": status,
+        "target": target,
+        "workload_identity": {"scenario_id": "calibration", "seed": "0xA11CE",
+                              "workload_digest": "sha256:" + "c" * 64,
+                              "attempt_count": 40},
+        "runner": {"script": "calibration.py", "script_sha256": "sha256:" + "d" * 64},
+        "timing_policy": {"clock": "monotonic-perf-counter-ns", "warmup": "none"},
+        "hardware": {"architecture": "x86_64", "logical_cpu_count": 8},
+        "attempts": {"total": 40, "outcomes": {"rejected": 40}},
+        "measurements": {"handshake_rejection_roundtrip": {
+            "unit": "us", "sample_count": 40, "mean": mean, "median": mean,
+            "p95": mean, "p99": mean,
+        }},
+    }
+
+
+def test_patched_primary_requires_successful_bounded_calibration():
+    decision = api.decide_patched_primary(
+        calibration_leg("stock"),
+        calibration_leg("patched", mean=103.0),
+        expected_source_revision="f" * 40,
+        expected_patch_set_sha256="sha256:" + "e" * 64,
+    )
+    assert decision["selected_mode"] == "patched"
+    assert decision["status"] == "passed"
+    assert decision["reason"] == "paired-calibration-passed"
+
+
+@pytest.mark.parametrize("case", ["execution", "overhead", "identity"])
+def test_patched_calibration_failure_selects_stock_once(case):
+    stock = calibration_leg("stock")
+    patched = calibration_leg("patched", mean=103.0)
+    if case == "execution":
+        patched["status"] = "unavailable"
+    elif case == "overhead":
+        patched["measurements"]["handshake_rejection_roundtrip"].update(
+            mean=110.0, median=110.0, p95=110.0, p99=110.0
+        )
+    else:
+        patched["target"]["source_revision"] = "0" * 40
+    decision = api.decide_patched_primary(
+        stock,
+        patched,
+        expected_source_revision="f" * 40,
+        expected_patch_set_sha256="sha256:" + "e" * 64,
+    )
+    assert decision["selected_mode"] == "stock"
+    assert decision["status"] == "failed"
+    assert decision["reason"].startswith("paired-calibration-")
+    assert decision["retry_build"] is False
+
+
 def test_readiness_precedes_deterministic_security_workloads_and_faults(campaign, tmp_path):
     extra = deepcopy(campaign["entries"][0])
     extra["id"] = "z-last"

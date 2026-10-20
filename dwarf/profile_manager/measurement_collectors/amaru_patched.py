@@ -545,8 +545,8 @@ def paired_overhead_calibration(
     minimum_samples: int = 30,
     maximum_absolute_percent_delta: float = 5.0,
     expected_implementation: str = "amaru",
-    expected_source_revision: str = AMARU_SOURCE_REVISION,
-    expected_patch_set_sha256: str = AMARU_MEASUREMENT_PATCH_SHA256,
+    expected_source_revision: str | None = None,
+    expected_patch_set_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Compare common real-node metrics only after strict paired-run parity gates."""
     overhead_limit = _finite_number(maximum_absolute_percent_delta)
@@ -563,9 +563,28 @@ def paired_overhead_calibration(
         reasons.append("stock and patched source identity must match")
     if patched_target.get("implementation") != expected_implementation:
         reasons.append("patched implementation is not the audited implementation")
-    if patched_target.get("source_revision") != expected_source_revision:
+    observed_source_revision = patched_target.get("source_revision")
+    observed_patch_set_sha256 = patched_target.get("patch_set_sha256")
+    normalized_patch_digest = (
+        observed_patch_set_sha256.removeprefix("sha256:")
+        if isinstance(observed_patch_set_sha256, str)
+        else ""
+    )
+    if not isinstance(observed_source_revision, str) or not observed_source_revision:
+        reasons.append("patched source revision is missing")
+    if len(normalized_patch_digest) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized_patch_digest
+    ):
+        reasons.append("patched patch-set identity is not an immutable SHA-256 digest")
+    if (
+        expected_source_revision is not None
+        and observed_source_revision != expected_source_revision
+    ):
         reasons.append("patched source revision is not the audited revision")
-    if patched_target.get("patch_set_sha256") != expected_patch_set_sha256:
+    if (
+        expected_patch_set_sha256 is not None
+        and observed_patch_set_sha256 != expected_patch_set_sha256
+    ):
         reasons.append("patched patch-set identity is not the audited patch")
     if stock.get("workload_identity") != patched.get("workload_identity"):
         reasons.append("paired workload identity must match exactly")
@@ -669,6 +688,16 @@ def paired_overhead_calibration(
         "hardware": stock.get("hardware") if available else None,
         "attempts": stock.get("attempts") if available else None,
         "workload_identity": stock.get("workload_identity") if available else None,
+        "target_identity": (
+            {
+                "implementation": patched_target.get("implementation"),
+                "version": patched_target.get("version"),
+                "source_revision": observed_source_revision,
+                "patch_set_sha256": observed_patch_set_sha256,
+            }
+            if available
+            else None
+        ),
         "metrics": metrics if available else {},
         "observer_overhead": {
             "acceptance_limit_absolute_percent_delta": overhead_limit,
