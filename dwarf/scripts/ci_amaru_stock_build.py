@@ -33,6 +33,7 @@ RUST = "nightly-2026-09-04"
 NETWORK = "dependency-fetch-allowed; not-hermetic; not-offline"
 CONFIGS_REPOSITORY = "cardano-foundation/cardano-configurations"
 PEER_NETWORKS = ("mainnet", "preprod", "preview")
+TRUSTED_ROOT = Path(__file__).resolve().parents[2]
 # Fixed trusted script. No candidate metadata is interpolated into shell text.
 BUILD_SCRIPT = """set -eu
 export HOME=/work CARGO_HOME=/work/cargo CARGO_TARGET_DIR=/work/target
@@ -60,6 +61,14 @@ with open('/work/synthetic-git.json', 'w') as stream:
                'submission_time': os.environ['DWARF_SOURCE_DATE']}, stream, sort_keys=True)
 PY
 export AMARU_SKIP_PEER_SNAPSHOT_FETCH=1
+if [ "$DWARF_BUILD_VARIANT" = patched ]; then
+  set -- /patches/*.patch
+  test -f "$1"
+  for patch in "$@"; do
+    git apply --check --whitespace=error-all "$patch"
+    git apply --whitespace=error-all "$patch"
+  done
+fi
 rustc --version
 cargo --version
 cargo-zigbuild --version
@@ -157,12 +166,15 @@ def _validated_peer_snapshots(directory, source_date):
     return receipt
 
 
-def build_stock(candidate, *, directory, builder_image=None, source_date=None, peer_snapshots=None,
-                declared=None, run=subprocess.run):
+def _build_variant(candidate, *, variant, directory, builder_image=None, source_date=None, peer_snapshots=None,
+                   declared=None, run=subprocess.run):
+    if variant not in {"stock", "patched"}:
+        raise ValueError("hosted Amaru variant must be stock or patched")
     image = validate_builder(builder_image)  # before any Docker pull/run
     snapshot_receipt = _validated_peer_snapshots(peer_snapshots, source_date)
     output = _owned_directory(directory)
-    receipt = {"kind": "amaru-network-stock-build", "status": "partial", "ready": False,
+    receipt = {"kind": f"amaru-network-{variant}-build", "variant": variant,
+               "status": "partial", "ready": False,
                "builder_image": image, "network": NETWORK, "dependency_closure": "not-retained",
                "runtime_base_image": RUNTIME_BASE_IMAGE,
                "repository_commit": candidate.repository_commit, "source_tree_digest": candidate.source_tree_digest,
@@ -171,7 +183,9 @@ def build_stock(candidate, *, directory, builder_image=None, source_date=None, p
     _save(output / "receipt.json", receipt)
     worker_output = output / "worker-output"
     worker_output.mkdir(mode=0o700)
-    name = "dwarf-amaru-stock-" + uuid.uuid4().hex
+    patch_input = output / "worker-patches"
+    patch_input.mkdir(mode=0o700)
+    name = f"dwarf-amaru-{variant}-" + uuid.uuid4().hex
     started = False
     try:
         budget = _SourceBudget()
@@ -182,7 +196,26 @@ def build_stock(candidate, *, directory, builder_image=None, source_date=None, p
             if declared is not None and declared != [
                     {key: getattr(p, key) for key in ("variant", "plan_digest", "recipe_digest")} for p in plans]:
                 raise ValueError("discovered trusted recipes changed")
-            plan = plans[0]
+            plan = plans[0 if variant == "stock" else 1]
+            if variant == "patched":
+                if not plan.patch_set_digest:
+                    receipt.update(status="unavailable", reason="no-compatible-trusted-patch")
+                    return receipt
+                patch_records = []
+                for index, item in enumerate(row for row in plan.inputs
+                                             if row.origin == "trusted" and row.path.endswith(".patch")):
+                    source = TRUSTED_ROOT / item.path
+                    if source.is_symlink() or not source.is_file() or sha256(source) != item.sha256:
+                        raise ValueError("trusted patch input changed after planning")
+                    target = patch_input / f"{index:04d}.patch"
+                    shutil.copyfile(source, target)
+                    patch_records.append({"path": item.path, "sha256": item.sha256,
+                                          "worker_name": target.name})
+                if not patch_records:
+                    raise ValueError("compatible patched plan has no trusted patch inputs")
+                receipt["patch_set_digest"] = "sha256:" + plan.patch_set_digest.removeprefix("sha256:")
+                _save(output / "patch-inputs.json", {"patch_set_digest": receipt["patch_set_digest"],
+                                                      "patches": patch_records})
             if dict(plan.toolchain).get("rust") != RUST:
                 raise ValueError("candidate Rust identity differs from this exact builder")
             shutil.copyfile(frozen.source_root / "Cargo.lock", output / "Cargo.lock")
@@ -201,8 +234,10 @@ def build_stock(candidate, *, directory, builder_image=None, source_date=None, p
                      "--cpus", "2", "--memory", "8g", "--pids-limit", "256", "--network", "bridge", "--tmpfs", "/tmp:rw,nosuid,nodev",
                      "--env", f"DWARF_SOURCE_COMMIT={candidate.repository_commit}",
                      "--env", f"DWARF_SOURCE_DATE={source_date}",
+                     "--env", f"DWARF_BUILD_VARIANT={variant}",
                      "--mount", f"type=bind,src={frozen.source_root},dst=/source,readonly",
                      "--mount", f"type=bind,src={Path(peer_snapshots).absolute()},dst=/peer-snapshots,readonly",
+                     "--mount", f"type=bind,src={patch_input},dst=/patches,readonly",
                      "--mount", f"type=bind,src={worker_output},dst=/work", image, "/bin/sh", "-c", BUILD_SCRIPT],
                     check=True, stdout=log, stderr=subprocess.STDOUT, timeout=3600)
                 # Candidate code can write only staging, never retained evidence.
@@ -227,7 +262,8 @@ def build_stock(candidate, *, directory, builder_image=None, source_date=None, p
                 archive = output / "runtime.docker.tar"
                 if archive.exists() or archive.is_symlink():
                     raise ValueError("runtime archive path was populated by candidate")
-                runtime_name = "dwarf/amaru-candidate:" + frozen.source_tree_digest[:16]
+                runtime_name = ("dwarf/amaru-candidate:" if variant == "stock"
+                                else "dwarf/amaru-candidate-patched:") + frozen.source_tree_digest[:16]
                 receipt["runtime_image_name"] = runtime_name
                 run(["docker", "buildx", "build", "--network=none", "--platform", "linux/amd64", "--provenance=false",
                      "--output", f"type=docker,name={runtime_name},dest={output / 'runtime.docker.tar'}", str(context)],
@@ -246,22 +282,33 @@ def build_stock(candidate, *, directory, builder_image=None, source_date=None, p
             except Exception as exc:
                 receipt.update(status="error", detail="worker cleanup failed: " + str(exc)[:2048])
         # Keep requested evidence, not Cargo caches or intermediate build trees.
-        for dirname in ("worker-output", "runtime-context"):
+        for dirname in ("worker-output", "worker-patches", "runtime-context"):
             path = output / dirname
             if path.is_symlink():
                 path.unlink()
             elif path.is_dir():
                 shutil.rmtree(path)
-        for filename in ("Cargo.lock", "fetch-policy.json", "fetch-metadata.json", "synthetic-git.json",
+        for filename in ("Cargo.lock", "fetch-policy.json", "fetch-metadata.json", "synthetic-git.json", "patch-inputs.json",
                          "peer-snapshots.json", "build.log", "cleanup.log", "executable", "runtime.docker.tar"):
             path = output / filename
             if path.is_file() and not path.is_symlink():
                 receipt["files"][filename] = sha256(path)
-        if receipt["status"] == "built" and not {"Cargo.lock", "fetch-metadata.json", "synthetic-git.json",
-                "peer-snapshots.json", "build.log", "executable", "runtime.docker.tar"} <= receipt["files"].keys():
+        required = {"Cargo.lock", "fetch-metadata.json", "synthetic-git.json",
+                    "peer-snapshots.json", "build.log", "executable", "runtime.docker.tar"}
+        if variant == "patched":
+            required.add("patch-inputs.json")
+        if receipt["status"] == "built" and not required <= receipt["files"].keys():
             receipt.update(status="error", detail="required retained build output missing")
         _save(output / "receipt.json", receipt)
     return receipt
+
+
+def build_stock(candidate, **kwargs):
+    return _build_variant(candidate, variant="stock", **kwargs)
+
+
+def build_patched(candidate, **kwargs):
+    return _build_variant(candidate, variant="patched", **kwargs)
 
 
 def main(argv=None):
@@ -290,14 +337,24 @@ def main(argv=None):
     peer_snapshots = output / "peer-snapshots"
     prepare_peer_snapshots(peer_snapshots, source_date)
     statuses = []
+    variants = []
     for candidate, declared in selected:
         if candidate.implementation != "amaru":
             continue  # no other implementation/lane executes
-        statuses.append(build_stock(candidate, directory=output / f"stock-{len(statuses):04d}",
-                                    builder_image=args.builder_image, source_date=source_date,
-                                    peer_snapshots=peer_snapshots, declared=declared)["status"])
+        index = len(statuses)
+        stock = build_stock(candidate, directory=output / f"stock-{index:04d}",
+                            builder_image=args.builder_image, source_date=source_date,
+                            peer_snapshots=peer_snapshots, declared=declared)
+        patched = build_patched(candidate, directory=output / f"patched-{index:04d}",
+                                builder_image=args.builder_image, source_date=source_date,
+                                peer_snapshots=peer_snapshots, declared=declared)
+        statuses.append(stock["status"])
+        variants.extend({"candidate_index": index, "variant": row["variant"],
+                         "status": row["status"], "reason": row.get("reason") or row.get("detail")}
+                        for row in (stock, patched))
     _save(output / "summary.json", {"statuses": statuses, "network": NETWORK,
-          "other_lanes": "blocked", "runtime_ready": False, "published": False})
+          "variants": variants, "other_lanes": "compiler-coverage-blocked",
+          "runtime_ready": False, "published": False})
     return 0 if statuses and all(s == "built" for s in statuses) else 1
 
 

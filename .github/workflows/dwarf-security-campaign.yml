@@ -199,7 +199,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  stock-build:
+  candidate-build:
     needs: discover
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
@@ -251,7 +251,7 @@ jobs:
           BUILDER_IMAGE: ${{ steps.builder.outputs.image }}
         run: python3 -m scripts.ci_amaru_stock_build --builder-image "$BUILDER_IMAGE" --validate-builder-only
       - uses: docker/setup-buildx-action@v3
-      - name: Build only Amaru stock with recorded network dependency fetch
+      - name: Build Amaru stock and compatible patched variant with recorded network dependency fetch
         working-directory: stock-trusted
         env:
           PYTHONPATH: dwarf
@@ -269,20 +269,20 @@ jobs:
             --directory ../stock-output \
             --expected-commit "$SOURCE_COMMIT" \
             --expected-trusted-revision "$TRUSTED_COMMIT"
-      - name: Retain stock build evidence and OCI archive
+      - name: Retain candidate build evidence and OCI archives
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: amaru-network-stock-build
+          name: amaru-network-candidate-builds
           path: stock-output/
           if-no-files-found: error
           retention-days: 30
 
   campaign:
-    needs: [discover, stock-build]
+    needs: [discover, candidate-build]
     if: >-
       needs.discover.outputs.has_work == 'true' &&
-      needs.stock-build.result == 'success'
+      needs.candidate-build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -308,10 +308,10 @@ jobs:
         with:
           name: dwarf-security-campaign-discovery
           path: campaign-input
-      - name: Download hosted stock build
+      - name: Download hosted candidate builds
         uses: actions/download-artifact@v4
         with:
-          name: amaru-network-stock-build
+          name: amaru-network-candidate-builds
           path: campaign-build
       - uses: actions/setup-python@v5
         with:

@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from test_candidate_builds import COMMIT, source_candidate
+from profile_manager import candidate_builds
+from profile_manager.testplease_candidates import discover_candidates
+from test_candidate_builds import COMMIT, source_candidate, trusted_patch, write
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = "ghcr.io/j-gainsec/dwarf-amaru-builder@sha256:" + "a" * 64
@@ -93,6 +95,48 @@ def test_fixed_locked_build_retains_network_metadata_logs_and_computed_hashes(tm
     assert not (tmp_path / "out/worker-output").exists()
 
 
+def test_compatible_patched_build_is_distinct_and_applies_only_trusted_patch_inputs(tmp_path, monkeypatch):
+    candidate = source_candidate(tmp_path / "source")
+    trusted_patch(tmp_path, monkeypatch)
+    monkeypatch.setattr(api(), "TRUSTED_ROOT", candidate_builds.TRUSTED_ROOT)
+    write(candidate.source_root, "input.txt", "before\n")
+    candidate = discover_candidates(tmp_path / "source", repository_commit=COMMIT)[0]
+    peer_snapshots = snapshots(tmp_path)
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:2] == ["docker", "run"]:
+            work = Path(next(value for value in argv if value.startswith("type=bind,src=") and ",dst=/work" in value).split(",")[1].removeprefix("src="))
+            (work / "executable").write_bytes(b"patched executable")
+            (work / "fetch-metadata.json").write_text('{"packages":[]}')
+            (work / "synthetic-git.json").write_text('{"commit":"' + "e" * 40 + '"}')
+            kwargs["stdout"].write(b"patched build log\n")
+        if argv[:3] == ["docker", "buildx", "build"]:
+            output = Path(argv[argv.index("--output") + 1].split("dest=", 1)[1])
+            output.write_bytes(b"patched Docker archive")
+
+    receipt = api().build_patched(
+        candidate,
+        directory=tmp_path / "patched",
+        builder_image=PIN,
+        source_date="2026-10-19T12:00:00+00:00",
+        peer_snapshots=peer_snapshots,
+        run=run,
+    )
+    assert receipt["status"] == "built"
+    assert receipt["variant"] == "patched"
+    assert receipt["patch_set_digest"].startswith("sha256:")
+    assert receipt["runtime_image_name"].startswith("dwarf/amaru-candidate-patched:")
+    docker_run = next(argv for argv in calls if argv[:2] == ["docker", "run"])
+    assert any(value.endswith(",dst=/patches,readonly") for value in docker_run)
+    assert "DWARF_BUILD_VARIANT=patched" in docker_run
+    assert "git apply --check --whitespace=error-all" in api().BUILD_SCRIPT
+    assert receipt["files"]["patch-inputs.json"] == hashlib.sha256(
+        (tmp_path / "patched/patch-inputs.json").read_bytes()
+    ).hexdigest()
+
+
 def test_trusted_peer_snapshot_resolver_retains_exact_commit_urls_and_hashes(tmp_path):
     commit = "d" * 40
     calls = []
@@ -129,7 +173,7 @@ def test_builder_recipe_and_campaign_use_committed_identity_on_hosted_runners():
     assert publisher["permissions"] == {"contents": "read"}
     assert publisher["jobs"]["publish"]["permissions"]["packages"] == "write"
     campaign = yaml.safe_load((ROOT / ".github/workflows/dwarf-security-campaign.yml").read_text())
-    job = campaign["jobs"]["stock-build"]
+    job = campaign["jobs"]["candidate-build"]
     assert job["runs-on"] == "ubuntu-latest"
     assert "needs.discover.outputs.has_work == 'true'" in job["if"]
     assert "inputs." not in str(job)
