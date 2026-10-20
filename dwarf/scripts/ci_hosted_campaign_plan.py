@@ -28,10 +28,10 @@ REGISTRY_REPOSITORY = "localhost:5000/dwarf/amaru-candidate"
 INITIAL_SECURITY_ENTRIES = (
     "ledger-submit-transaction-array-arity-differential-amaru-cardano-node",
     "ledger-submit-empty-redeemers-container-differential-amaru-cardano-node",
-    "runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru",
-    "runtime-substrate-mux-ingress-overrun-mixed-amaru",
-    "runtime-substrate-txsubmission-unexpected-body-mixed-amaru",
-    "runtime-substrate-mempool-failure-containment-mixed-amaru",
+    "ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node",
+    "ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node",
+    "ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node",
+    "governance-zero-denominator-admission-differential-amaru-cardano-node",
 )
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _TREE = re.compile(r"^[0-9a-f]{64}$")

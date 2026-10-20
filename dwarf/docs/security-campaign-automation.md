@@ -14,6 +14,10 @@ does not reuse same-version compatibility evidence from an official Amaru build.
 The frozen plan starts at `runtime-compatibility-qualification-pending`. The same
 job then runs the existing real-node qualification against the exact candidate and
 Cardano artifacts. No scenario starts unless every qualification gate passes.
+The campaign job installs the official Cardano 11.1.2 `cardano-testnet`,
+`cardano-cli` and `cardano-node` support binaries from the architecture-specific
+release archive only after its committed SHA-256 matches. These tools create and
+inspect the isolated Docker devnet; they do not replace either frozen node image.
 After a pass it runs the frozen cases and stock measurement exercises, retaining
 partial and failed results as well as completed results. Candidate compilation and
 execution keep only `contents: read`. A separate job receives `contents: write` only
@@ -124,6 +128,13 @@ qualification, and authorizes only the frozen topology IDs covered by a passing
 observation. It then runs controls, security workloads and grouped stock exercises.
 The first executable lane is stock. The patched and compiler-coverage plans
 remain explicit future lanes and cannot borrow the stock artifact identity.
+
+The initial Amaru lane selects six Docker-backed cases: transaction-array arity,
+empty redeemers, inline-datum tag-24 trailing data, the compact multiasset
+boundary, deep UPLC Delay stack safety and the governance zero-denominator
+admission comparison. The governance case is a validation/conformance check. A
+difference is reported as a bug unless separate impact evidence supports a
+security classification.
 
 The runtime adapter consumes observed builds; it does not build them. Its local
 interface is:

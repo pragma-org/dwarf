@@ -318,6 +318,14 @@ jobs:
           python-version: "3.12"
       - name: Install trusted campaign dependencies
         run: python3 -m pip install --require-hashes -r campaign-trusted/infrastructure/docker/requirements-framework.txt
+      - name: Install pinned Cardano support tools
+        working-directory: campaign-trusted
+        env:
+          PYTHONPATH: dwarf
+          SUPPORT_DIRECTORY: ${{ runner.temp }}/cardano-support
+        run: |
+          python3 -m scripts.ci_cardano_support_tools --directory "$SUPPORT_DIRECTORY"
+          echo "$SUPPORT_DIRECTORY" >> "$GITHUB_PATH"
       - name: Validate hosted build transfer
         working-directory: campaign-trusted
         env:

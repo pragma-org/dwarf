@@ -57,6 +57,12 @@ def test_triggers_are_controlled_and_have_no_pr_execution():
     assert data['permissions'] == {'contents': 'read'}
 
 
+def test_campaign_installs_checksum_pinned_cardano_support_tools():
+    install = step('campaign', 'Install pinned Cardano support tools')
+    assert 'python3 -m scripts.ci_cardano_support_tools' in install['run']
+    assert '$GITHUB_PATH' in install['run']
+
+
 def test_discovery_uses_trusted_hosted_code_and_read_only_checkout():
     job = workflow()['jobs']['discover']
     assert job['runs-on'] == 'ubuntu-latest'

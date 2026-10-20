@@ -172,6 +172,166 @@ groups:
       additional_measurements:
       - cardano-stock-header-validation
     limitations: *id001
+  - id: ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node
+    scenario_id: ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node
+    version_policy: operator-selected
+    security_objective: Reject trailing CBOR inside an inline-datum tag-24 byte string without losing node responsiveness.
+    target_nodes:
+    - node1
+    - node2
+    reference_control: Canonical inline-datum transactions use the same funding and submission boundary on both nodes.
+    workload_fault: Append one byte inside the nested tag-24 byte string and submit the same mutation to both nodes.
+    oracle: Compare same-attempt admission outcomes and retain independent post-attempt node responsiveness.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node
+      success_rule: Canonical inline-datum transactions reach the same submission boundary on both nodes.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: amaru
+      - node_id: node2
+        implementation: cardano-node
+    measurement_attachments:
+    - node_id: node1
+      implementation: amaru
+      target_mode: stock
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations: *id001
+  - id: ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node
+    scenario_id: ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node
+    version_policy: operator-selected
+    security_objective: Enforce the compact multiasset decoder boundary consistently without losing node responsiveness.
+    target_nodes:
+    - node1
+    - node2
+    reference_control: A funded multiasset transaction below the compact-storage boundary reaches both nodes.
+    workload_fault: Submit the same 1,489-entry compact-value boundary case to both nodes.
+    oracle: Compare same-attempt boundary outcomes and retain independent post-attempt node responsiveness.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node
+      success_rule: The funded below-boundary multiasset control reaches the same submission boundary on both nodes.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: amaru
+      - node_id: node2
+        implementation: cardano-node
+    measurement_attachments:
+    - node_id: node1
+      implementation: amaru
+      target_mode: stock
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations:
+    - This tests the compact-value decoder guard, not maxValueSize or maxTxSize.
+  - id: ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node
+    scenario_id: ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node
+    version_policy: operator-selected
+    security_objective: Process a deeply nested UPLC Delay decoder vector without stack failure or lost responsiveness.
+    target_nodes:
+    - node1
+    - node2
+    reference_control: A callable shallow V1 minting policy reaches both nodes under the same funding path.
+    workload_fault: Submit the same 28,000-level recursive Delay-term vector to both nodes.
+    oracle: Compare same-attempt decoder outcomes, target adoption evidence and independent node responsiveness.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
+      endpoint loss alone does not prove a crash.
+    normal_control:
+      scenario_id: ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node
+      success_rule: The shallow callable V1 control reaches the same execution boundary on both nodes.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: amaru
+      - node_id: node2
+        implementation: cardano-node
+    measurement_attachments:
+    - node_id: node1
+      implementation: amaru
+      target_mode: stock
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations:
+    - Admission without retained target adoption is incomplete stack-safety evidence.
+  - id: governance-zero-denominator-admission-differential-amaru-cardano-node
+    scenario_id: governance-zero-denominator-admission-differential-amaru-cardano-node
+    version_policy: operator-selected
+    security_objective: Compare governance parameter admission as a validation and conformance check.
+    target_nodes:
+    - node1
+    - node2
+    reference_control: The matched nonzero denominator proposal reaches both nodes through the same submission path.
+    workload_fault: Submit an otherwise matched governance parameter proposal with a zero denominator to both nodes.
+    oracle: Retain conclusive per-node admission outcomes and the matched nonzero control; report a difference as a
+      validation or conformance bug unless separate impact evidence establishes security significance.
+    evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
+      assertion results and successful matched-control evidence. Admission does not establish ratification, enactment,
+      deposit handling or epoch-transition impact.
+    normal_control:
+      scenario_id: governance-zero-denominator-matched-nonzero-control-amaru-cardano-node
+      success_rule: The matched nonzero denominator proposal reaches both nodes through the same submission path.
+    topology:
+      mode: shared-runtime
+      nodes:
+      - node_id: node1
+        implementation: amaru
+      - node_id: node2
+        implementation: cardano-node
+    measurement_attachments:
+    - node_id: node1
+      implementation: amaru
+      target_mode: stock
+      measurement_profile: amaru-security-default
+      result_namespace: nodes/node1/measurements/stock
+      additional_measurements:
+      - amaru-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
+    limitations:
+    - Treat any admission difference as a validation or conformance bug unless separate impact testing supports more.
   - id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
     scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
     version_policy: operator-selected

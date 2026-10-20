@@ -80,6 +80,10 @@ def test_hosted_candidate_is_registered_and_frozen_without_inventing_compatibili
                                             ["docker", "image", "inspect"]]
     manifest = json.loads((tmp_path / "out/manifest.json").read_text())
     assert len(manifest["entries"]) == 6
+    assert all(
+        entry["execution"]["scenario"].get("substrate", {}).get("compose_mode") == "docker"
+        for entry in manifest["entries"]
+    )
     assert len(manifest["required_tap_cells"]) == 23
     assert len({(cell["implementation"], cell["measurement_id"])
                 for cell in manifest["required_tap_cells"]}) == 23
