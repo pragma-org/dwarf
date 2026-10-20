@@ -1625,6 +1625,27 @@ def test_default_profile_omits_unselected_operator_identity():
     assert "operator_overlay_revision" not in desired
 
 
+def test_catalog_amaru_artifact_preserves_extracted_binary_runtime_interface():
+    release = {
+        "implementation": "amaru",
+        "version": "10.11.0",
+        "source_revision": "a" * 40,
+        "artifacts": [{
+            "kind": "oci",
+            "availability": "available",
+            "reference": "localhost:5000/dwarf/amaru-candidate",
+            "digest": "sha256:" + "b" * 64,
+            "runtime_interface": "extracted-binary",
+        }],
+    }
+
+    node = profiles_module._versioned_node(
+        "amaru1", "consumer", release
+    )
+
+    assert node["amaru_runtime_interface"] == "extracted-binary"
+
+
 def test_real_operator_registration_change_never_earns_default_migration_reuse():
     before = _catalog_enrichment_substrate()
     after = json.loads(json.dumps(before))

@@ -953,6 +953,20 @@ class LocalRuntime:
     def recipe(self, manifest, scenario_id, *, cell, mode, topology_id):
         """Retain one exact profile for a measurement control/result pair."""
 
+        scenario = manifest["definitions"]["scenarios"][scenario_id]["document"]
+        topology = next(
+            row for row in manifest["topologies"] if row["id"] == topology_id
+        )
+        substrate = scenario.get("substrate") or {}
+        if (
+            not scenario.get("profile")
+            and not topology.get("deployment_profile")
+            and isinstance(substrate.get("nodes"), list)
+            and substrate["nodes"]
+        ):
+            yield
+            return
+
         profile_id, deployment = self._recipe_deployment(
             manifest,
             scenario_id,

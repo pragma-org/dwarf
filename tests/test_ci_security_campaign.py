@@ -369,6 +369,46 @@ def test_local_runtime_repeated_recipe_uses_fresh_mutation_ids(
     assert calls[1][1] != calls[3][1]
 
 
+def test_local_runtime_inline_substrate_recipe_owns_its_lifecycle(
+    campaign, tmp_path, monkeypatch
+):
+    manifest, cell = single_cell(campaign)
+    scenario = manifest["definitions"]["scenarios"][cell["scenario_id"]][
+        "document"
+    ]
+    scenario.pop("profile", None)
+    scenario["substrate"] = {
+        "compose_mode": "docker",
+        "nodes": [{"id": "node1", "impl": "amaru"}],
+    }
+    topology = next(
+        row for row in manifest["topologies"] if row["id"] == cell["topology_id"]
+    )
+    topology.pop("deployment_profile", None)
+    runtime = api.LocalRuntime(
+        tmp_path / "runtime",
+        catalog_path=tmp_path / "catalog.json",
+        producer_version=None,
+        signing_key=tmp_path / "key",
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_recipe_deployment",
+        lambda *args, **kwargs: pytest.fail(
+            "inline substrate must not receive a separate profile deployment"
+        ),
+    )
+
+    with runtime.recipe(
+        manifest,
+        cell["scenario_id"],
+        cell=cell,
+        mode="stock",
+        topology_id=cell["topology_id"],
+    ):
+        pass
+
+
 def test_local_runtime_recipe_builds_the_frozen_exact_deployment(
     campaign, tmp_path, monkeypatch
 ):
