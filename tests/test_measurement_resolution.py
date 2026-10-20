@@ -295,6 +295,49 @@ def test_implicit_default_resolves_available_taps_and_explains_skips():
     assert all("missing capabilities" in entry["reason"] for entry in resolution["skipped"])
 
 
+def test_unconfirmed_release_version_is_runnable_and_not_experimental():
+    scenario = _scenario(
+        profile="none",
+        measurements=[{"id": "amaru-stock-header-lifecycle", "enabled": True}],
+    )
+
+    resolution = resolve_measurements(
+        scenario,
+        target_identity=_identity(
+            version="10.11.0",
+            source_revision="d79223a000000000000000000000000000000000",
+        ),
+        capabilities={"amaru-header-lifecycle-metrics", "amaru-json-traces"},
+    )
+
+    resolved = resolution["resolved"][0]
+    assert resolved["compatibility"] == {
+        "state": "unconfirmed",
+        "reason": "exact release has no confirmed tap evidence",
+    }
+    assert resolved["experimental_consent"] is False
+    assert resolution["incompatible"] == []
+    assert resolution["experimental"] == []
+
+
+def test_unconfirmed_revision_for_recorded_version_is_runnable():
+    scenario = _scenario(
+        profile="none",
+        measurements=[{"id": "amaru-stock-header-lifecycle", "enabled": True}],
+    )
+
+    resolution = resolve_measurements(
+        scenario,
+        target_identity=_identity(source_revision="f" * 40),
+        capabilities={"amaru-header-lifecycle-metrics", "amaru-json-traces"},
+    )
+
+    assert resolution["resolved"][0]["compatibility"] == {
+        "state": "unconfirmed",
+        "reason": "exact source revision has no confirmed tap evidence",
+    }
+
+
 def test_explicit_none_disables_implicit_defaults():
     resolution = resolve_measurements(
         _scenario(profile="none"),
@@ -383,8 +426,6 @@ def test_launch_override_cannot_smuggle_an_implicit_or_unsupported_gate():
 @pytest.mark.parametrize(
     ("measurement_id", "identity_updates", "capabilities", "message"),
     [
-        ("amaru-stock-mempool", {"version": "10.11.0"}, {"amaru-mempool-metrics", "amaru-json-traces"}, "version"),
-        ("amaru-stock-mempool", {"source_revision": "c" * 40}, {"amaru-mempool-metrics", "amaru-json-traces"}, "source revision"),
         ("amaru-patched-protocol-decode", {}, {"amaru-measurement-patch-protocol-decode", "amaru-patch-identity"}, "target mode"),
         ("amaru-stock-mempool", {}, {"amaru-mempool-metrics"}, "missing capabilities"),
     ],

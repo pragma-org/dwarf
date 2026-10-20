@@ -266,18 +266,18 @@ def _measurement_classification(
                 "reason": "operator-declared source revision is unverified",
             }
     elif matching_version is None:
-        supported = ", ".join(item["version"] for item in compatibility["versions"])
+        # The catalog records identities that have produced confirmed tap
+        # evidence.  It is evidence history, not a version allowlist: a new
+        # release must remain measurable so the campaign can produce the first
+        # confirmation for it.
         version_state = {
-            "state": "incompatible",
-            "reason": f"version {target['version']} is unsupported; expected {supported}",
+            "state": "unconfirmed",
+            "reason": "exact release has no confirmed tap evidence",
         }
     elif matching_version["source_revision"] != target["source_revision"]:
         version_state = {
-            "state": "incompatible",
-            "reason": (
-                f"source revision {target['source_revision']} does not match "
-                f"{matching_version['source_revision']}"
-            ),
+            "state": "unconfirmed",
+            "reason": "exact source revision has no confirmed tap evidence",
         }
     else:
         version_state = {"state": "confirmed", "reason": "exact release contract matches"}
@@ -315,6 +315,8 @@ def _measurement_classification(
             if state["state"] == "unknown"
         ]
         return {"state": "unknown", "reason": "; ".join(reasons)}, capability
+    if version_state["state"] == "unconfirmed":
+        return version_state, capability
     return {"state": "confirmed", "reason": "exact target contract matches"}, capability
 
 

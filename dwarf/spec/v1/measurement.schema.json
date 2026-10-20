@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dwarf.gainpalfam.com/spec/v1/measurement.schema.json",
   "title": "DWARF measurement definition",
-  "description": "A reusable, version-qualified observation tap independent from scenario security semantics.",
+  "description": "A reusable observation tap with confirmed-version evidence independent from scenario security semantics.",
   "type": "object",
   "required": [
     "schema_version",
@@ -58,7 +58,7 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "description": "Exact release and source revision pairs qualified for this tap.",
+          "description": "Exact release and source revision pairs with confirmed tap evidence. This history is not an execution allowlist; unlisted versions remain runnable and are reported as unconfirmed.",
           "items": {
             "type": "object",
             "required": ["version", "source_revision"],
@@ -78,7 +78,7 @@
         }
       },
       "additionalProperties": false,
-      "description": "Exact implementation, source, and executable-mode compatibility."
+      "description": "Implementation and executable-mode compatibility plus exact identities with prior confirmed evidence."
     },
     "collection_mode": {
       "type": "string",
