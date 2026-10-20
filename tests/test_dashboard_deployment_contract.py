@@ -167,6 +167,15 @@ def test_runtime_image_pins_docker_compose_plugin():
     assert "docker-compose=${DOCKER_COMPOSE_VERSION}" in dockerfile
 
 
+def test_runtime_image_allows_host_uid_to_traverse_packaged_source():
+    dockerfile = (ROOT / "infrastructure/docker/dwarf-fw.Dockerfile").read_text(
+        encoding="utf-8"
+    )
+
+    assert "chmod 755 /home/dwarf" in dockerfile
+    assert "chmod 700 /home/dwarf/.ssh" in dockerfile
+
+
 def test_runtime_image_pins_qualified_adapter_shared_libraries():
     dockerfile = (ROOT / "infrastructure/docker/dwarf-fw.Dockerfile").read_text(
         encoding="utf-8"

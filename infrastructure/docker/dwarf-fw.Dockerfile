@@ -68,6 +68,7 @@ RUN apt-get update \
 
 RUN useradd --create-home --uid 1000 dwarf \
     && mkdir -p /home/dwarf/.ssh /home/dwarf/dwarf-fw /var/dwarf/runs /var/dwarf/state /var/dwarf/bundles \
+    && chmod 755 /home/dwarf \
     && chmod 700 /home/dwarf/.ssh \
     && chown -R dwarf:dwarf /home/dwarf /var/dwarf
 
