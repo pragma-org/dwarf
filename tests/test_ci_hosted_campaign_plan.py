@@ -1,4 +1,5 @@
 """Focused contracts for hosted candidate registration and campaign planning."""
+from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
@@ -215,7 +216,11 @@ def test_hosted_plan_registers_patched_primary_and_stock_replay_artifacts(tmp_pa
     assert result["execution_decision"]["primary_mode"] == "patched"
     observations = json.loads((tmp_path / "out/build-observations.json").read_text())
     assert {row["mode"] for row in observations} == {"stock", "patched"}
-    assert next(row for row in observations if row["mode"] == "patched")["patch_set_digest"] == PATCH
+    patched_observation = next(row for row in observations if row["mode"] == "patched")
+    assert patched_observation["patch_set_digest"] == PATCH
+    assert patched_observation["build_result_sha256"] == (
+        "sha256:" + hashlib.sha256((patched_lane / "receipt.json").read_bytes()).hexdigest()
+    )
     manifest = json.loads((tmp_path / "out/manifest.json").read_text())
     stock_manifest = json.loads((tmp_path / "out/stock-manifest.json").read_text())
     candidate = next(node for node in manifest["topologies"][0]["nodes"]
@@ -241,4 +246,16 @@ def test_hosted_plan_registers_patched_primary_and_stock_replay_artifacts(tmp_pa
         for mode in cell["target_modes"]
     } == {"stock"}
     assert manifest["campaign_digest"] != stock_manifest["campaign_digest"]
+    for primary_entry, stock_entry in zip(manifest["entries"], stock_manifest["entries"]):
+        assert primary_entry["id"] == stock_entry["id"]
+        primary_contract = deepcopy(primary_entry["contract"])
+        stock_contract = deepcopy(stock_entry["contract"])
+        primary_contract.pop("measurement_attachments", None)
+        stock_contract.pop("measurement_attachments", None)
+        assert primary_contract == stock_contract
+        assert primary_entry["execution"] == stock_entry["execution"]
+        scenario_id = primary_entry["contract"]["scenario_id"]
+        assert manifest["definitions"]["scenarios"][scenario_id]["digest"] == (
+            stock_manifest["definitions"]["scenarios"][scenario_id]["digest"]
+        )
     assert result["files"]["stock-manifest.json"]

@@ -69,6 +69,15 @@ This reuses the existing stock image and costs runtime, not compilation. Later
 optimization can replay only the assertions needed for publication if that
 still preserves pass authority.
 
+The implemented comparison does not equate a matching seed with a matching
+input. It requires the complete retained, same-boundary input-digest set to be
+equal for the patched and stock result of each security entry. Instrumentation
+attachments may differ between the two manifests; the frozen security recipe,
+scenario definition, execution contract, candidate source and per-run contract
+digests must still agree. The replay phase runs security entries and their
+normal controls only. It does not repeat measurement cells or compile either
+variant.
+
 ## Evidence and Failure States
 
 The campaign status records the selected primary mode, calibration decision,
@@ -93,6 +102,18 @@ final slice adds paired calibration and stock replay to the hosted workflow.
 Cardano candidate compilation follows the same contracts when its hosted builder
 is available; unsupported Cardano patched builds remain explicit rather than
 being simulated.
+
+## Implemented Hosted Flow
+
+The planner emits a patched-primary manifest and a separate immutable stock
+manifest. Runtime qualification selects artifacts by explicit mode rather than
+catalog order. The campaign runs stock calibration, patched calibration, one
+selected full campaign, and, only when patched is selected, a stock security
+replay. The selected state retains the replay archive receipts and a digested
+authority record. Publication refuses patched-primary output when the replay is
+missing, incomplete, or does not retain the same input set. A disagreement is
+published explicitly with the stock classification; it is never collapsed into
+the patched result.
 
 ## Focused Verification
 

@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 
 from profile_manager import campaign_publication
-from profile_manager.security_campaign import resolve_security_campaign
+from profile_manager.security_campaign import digest_security_campaign, resolve_security_campaign
 from profile_manager.security_campaign_suite import load_measurement_suite, load_security_campaign_suite
 from profile_manager.testplease_candidates import CandidateSnapshot
 from scripts import ci_publish_campaign as api
@@ -99,6 +99,35 @@ def test_prepare_reverifies_and_resigns_opaque_campaign_archives(inputs):
     assert defaults["archives"][0]["run_id"] == "run-1"
     assert defaults["archives"][0]["release_tag"] == campaign["campaign_id"]
     assert defaults["archives"][0]["url"].startswith("runs/run-1-")
+
+
+def test_patched_primary_cannot_publish_without_stock_replay_authority(inputs):
+    campaign, state, _trust, manifest, state_path, trust_path, key, runtime, output = inputs
+    campaign["topologies"][0]["nodes"][0]["identity"]["mode"] = "patched"
+    campaign["campaign_digest"] = digest_security_campaign(campaign)
+    campaign["campaign_id"] = "campaign-" + campaign["campaign_digest"].split(":")[1]
+    state["campaign_digest"] = campaign["campaign_digest"]
+    for record in state["evaluation"].values():
+        record["campaign_id"] = campaign["campaign_id"]
+        record["campaign_digest"] = campaign["campaign_digest"]
+    dump(manifest, campaign)
+    dump(state_path, state)
+
+    with pytest.raises(ValueError, match="stock replay authority"):
+        api.prepare(manifest_path=manifest, state_path=state_path, runtime_root=runtime,
+            trusted_publishers_path=trust_path, signing_key_path=key, output=output,
+            repository="pragma-org/dwarf", published_at="2026-10-19T00:00:00Z")
+
+
+def test_receipt_map_includes_separately_retained_stock_replay_cells():
+    primary = {"run_id": "primary", "archive": "a", "signature": "s"}
+    replay = {"run_id": "replay", "archive": "b", "signature": "t"}
+    state = {
+        "cells": {"security:case": {"archives": [primary]}},
+        "stock_replay": {"cells": {"security:case": {"archives": [replay]}}},
+    }
+
+    assert api._receipt_map(state) == {"primary": primary, "replay": replay}
 
 
 def test_prepare_rejects_a_post_run_archive_change(inputs):

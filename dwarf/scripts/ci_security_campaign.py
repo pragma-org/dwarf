@@ -23,7 +23,10 @@ import sys
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from profile_manager.campaign_evidence import evaluate_campaign_evidence
+from profile_manager.campaign_evidence import (
+    evaluate_campaign_evidence,
+    evaluate_stock_replay_authority,
+)
 from profile_manager.measurement_collectors.amaru_patched import paired_overhead_calibration
 from profile_manager.run_ledger import atomic_write_bytes
 from profile_manager.security_campaign import (
@@ -187,6 +190,13 @@ def _save(path, state):
     atomic_write_bytes(path, (serialize_campaign(state) + "\n").encode())
 
 
+def _write_document(path, document):
+    """Write an immutable contract without adding checkpoint-only fields."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_bytes(path, (serialize_campaign(document) + "\n").encode())
+
+
 def _evidence(manifest, state):
     from profile_manager.campaign_evidence import _measurement, _security
     security, security_ranks, measurements, seen = {}, {}, {}, {}
@@ -296,7 +306,17 @@ def _measurement_result(state, cell, mode):
                 if all(row[field] == cell[field] for field in ("topology_id", "node_id", "measurement_id")) and row["mode"] == mode)
 
 
-def run_campaign(manifest, *, directory, runtime, builds, resume=False, lock_path=HOST_LOCK):
+def run_campaign(
+    manifest,
+    *,
+    directory,
+    runtime,
+    builds,
+    resume=False,
+    lock_path=HOST_LOCK,
+    phase="full",
+    calibration_mode=None,
+):
     """Run once, or explicitly retry missing/failed cells of the same snapshot.
 
     Runtime is the sole side-effect adapter. All decisions use the existing
@@ -304,6 +324,10 @@ def run_campaign(manifest, *, directory, runtime, builds, resume=False, lock_pat
     verification. A failure in one scenario never discards earlier evidence.
     """
     validate_campaign(manifest)
+    if phase not in {"full", "calibration", "security-replay"}:
+        raise ValueError("campaign phase must be full, calibration or security-replay")
+    if phase == "calibration" and calibration_mode not in {"stock", "patched"}:
+        raise ValueError("calibration phase requires stock or patched mode")
     for topology in manifest["topologies"]:
         _security_mode(topology)
     directory = Path(directory)
@@ -320,9 +344,12 @@ def run_campaign(manifest, *, directory, runtime, builds, resume=False, lock_pat
                 raise ValueError("resume requires the same frozen campaign")
             if state.get("builds") != builds:
                 raise ValueError("resume requires identical build observations")
+            if state.get("phase", "full") != phase:
+                raise ValueError("resume requires the same campaign phase")
         else:
             state = {"schema_version": "v1", "campaign_digest": manifest["campaign_digest"],
-                     "builds": deepcopy(builds), "readiness": {"passed": False}, "cells": {}, "cleanup_errors": []}
+                     "phase": phase, "builds": deepcopy(builds), "readiness": {"passed": False},
+                     "cells": {}, "cleanup_errors": []}
             atomic_write_bytes(directory / "manifest.json", (serialize_campaign(manifest) + "\n").encode())
         _evaluate(manifest, state)
         topologies = {row["id"]: row for row in manifest["topologies"]}
@@ -362,6 +389,65 @@ def run_campaign(manifest, *, directory, runtime, builds, resume=False, lock_pat
                             and all(receipt_files_valid(receipt) and runtime.verify_archive(receipt) for receipt in receipts))
                 except (RuntimeError, ValueError, OSError):
                     return False
+
+            if phase == "calibration":
+                key = f"calibration:{calibration_mode}"
+                if valid_previous(key):
+                    return state
+                scenario_id = manifest["execution_policy"]["calibration"][
+                    f"{calibration_mode}_scenario_id"
+                ]
+                topology = next(
+                    (
+                        row
+                        for row in manifest["topologies"]
+                        if any(
+                            node["identity"].get("kind") == "candidate"
+                            and node["identity"].get("mode", "stock")
+                            == calibration_mode
+                            for node in row["nodes"]
+                        )
+                    ),
+                    None,
+                )
+                if topology is None:
+                    raise ValueError(
+                        f"frozen campaign has no {calibration_mode} candidate topology"
+                    )
+                record = {
+                    "status": "running",
+                    "attempts": 1,
+                    "archives": [],
+                    "history": [],
+                }
+                state["cells"][key] = record
+                _save(checkpoint, state)
+                try:
+                    result = runtime.run(
+                        manifest,
+                        scenario_id,
+                        mode=calibration_mode,
+                        topology_id=topology["id"],
+                    )
+                    record["result"] = deepcopy(result)
+                    if not result.get("execution_complete"):
+                        raise RuntimeError("calibration scenario execution failed")
+                    receipt = runtime.archive(result["run_id"])
+                    record["archives"].append(receipt)
+                    if not runtime.verify_archive(receipt):
+                        raise RuntimeError("calibration archive verification failed")
+                    calibration_result = runtime.calibration_result(result["run_id"])
+                    record["calibration_result"] = calibration_result
+                    record["status"] = (
+                        "complete"
+                        if calibration_result.get("status") == "available"
+                        else "incomplete"
+                    )
+                except Exception as exc:
+                    record.update(status="failed", error=f"{type(exc).__name__}: {exc}")
+                _evaluate(manifest, state)
+                _save(checkpoint, state)
+                return state
 
             def attempt(key, scenario_id, *, entry=None, cell=None, mode="stock"):
                 previous = state["cells"].get(key, {})
@@ -438,18 +524,25 @@ def run_campaign(manifest, *, directory, runtime, builds, resume=False, lock_pat
                     _evaluate(manifest, state)
                 _save(checkpoint, state)
 
-            for entry in sorted(manifest["entries"], key=lambda row: row["id"]):
-                key = "security:" + entry["id"]
-                verdict = next(row for row in state["evaluation"]["security_validity"]["entries"] if row["entry_id"] == entry["id"])
-                if valid_previous(key) and verdict["classification"] in {"pass", "finding"}:
-                    continue
-                attempt(key, entry["contract"]["scenario_id"], entry=entry)
-            # All security workloads, controls and assertions have been evaluated
-            # before the calibration/fallback lane can start.
+            if phase in {"full", "security-replay"}:
+                for entry in sorted(manifest["entries"], key=lambda row: row["id"]):
+                    key = "security:" + entry["id"]
+                    verdict = next(row for row in state["evaluation"]["security_validity"]["entries"] if row["entry_id"] == entry["id"])
+                    if valid_previous(key) and verdict["classification"] in {"pass", "finding"}:
+                        continue
+                    attempt(key, entry["contract"]["scenario_id"], entry=entry)
+            # Security replay deliberately stops here: the selected primary
+            # campaign owns measurement completeness, while this lane supplies
+            # only exact-input stock authority for its security assertions.
             _evaluate(manifest, state)
+            if phase == "security-replay":
+                return state
             attempted_measurement_recipes = set()
-            for cell in sorted(manifest["required_tap_cells"], key=lambda row: (row["topology_id"], row["node_id"], row["measurement_id"])):
+            cells = manifest["required_tap_cells"]
+            for cell in sorted(cells, key=lambda row: (row["topology_id"], row["node_id"], row["measurement_id"])):
                 for mode in sorted(cell["target_modes"]):
+                    if phase == "calibration" and mode != calibration_mode:
+                        continue
                     key = _cell_key(cell, mode)
                     exercise = _measurement_result(state, cell, mode)
                     if exercise["state"] == "verified":
@@ -490,6 +583,122 @@ def run_campaign(manifest, *, directory, runtime, builds, resume=False, lock_pat
                 state["cleanup_errors"].append(f"{type(exc).__name__}: {exc}")
             _evaluate(manifest, state)
             _save(checkpoint, state)
+
+
+def run_patched_first_campaign(
+    primary_manifest,
+    stock_manifest,
+    *,
+    directory,
+    runtime,
+    builds,
+    resume=False,
+    lock_path=HOST_LOCK,
+):
+    """Calibrate both retained variants, checkpoint one decision, then run it."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    patched_build = next(
+        (row for row in builds if row.get("mode") == "patched"), None
+    )
+    if patched_build is None:
+        raise ValueError("patched-first campaign requires a patched build observation")
+    patch_set = patched_build.get("patch_set_digest")
+    if not isinstance(patch_set, str):
+        raise ValueError("patched build observation has no patch-set identity")
+
+    stock_state = run_campaign(
+        stock_manifest,
+        directory=directory / "calibration-stock",
+        runtime=runtime,
+        builds=builds,
+        resume=resume,
+        lock_path=lock_path,
+        phase="calibration",
+        calibration_mode="stock",
+    )
+    patched_state = run_campaign(
+        primary_manifest,
+        directory=directory / "calibration-patched",
+        runtime=runtime,
+        builds=builds,
+        resume=resume,
+        lock_path=lock_path,
+        phase="calibration",
+        calibration_mode="patched",
+    )
+
+    def retained_result(state, mode):
+        record = state.get("cells", {}).get(f"calibration:{mode}", {})
+        result = record.get("calibration_result")
+        return result if isinstance(result, dict) else {"status": "unavailable"}
+
+    decision = decide_patched_primary(
+        retained_result(stock_state, "stock"),
+        retained_result(patched_state, "patched"),
+        expected_source_revision=primary_manifest["candidate"]["repository_commit"],
+        expected_patch_set_sha256=patch_set,
+    )
+    selected_manifest = (
+        primary_manifest if decision["selected_mode"] == "patched" else stock_manifest
+    )
+    decision = {
+        **decision,
+        "primary_campaign_digest": primary_manifest["campaign_digest"],
+        "stock_campaign_digest": stock_manifest["campaign_digest"],
+        "selected_campaign_digest": selected_manifest["campaign_digest"],
+    }
+    _write_document(directory / "calibration-decision.json", decision)
+    _write_document(directory / "selected-manifest.json", selected_manifest)
+    campaign = run_campaign(
+        selected_manifest,
+        directory=directory / "selected",
+        runtime=runtime,
+        builds=builds,
+        resume=resume,
+        lock_path=lock_path,
+    )
+    stock_replay = None
+    if decision["selected_mode"] == "patched":
+        stock_replay = run_campaign(
+            stock_manifest,
+            directory=directory / "stock-replay",
+            runtime=runtime,
+            builds=builds,
+            resume=resume,
+            lock_path=lock_path,
+            phase="security-replay",
+        )
+        authority = evaluate_stock_replay_authority(
+            primary_manifest,
+            campaign["evaluation"],
+            campaign,
+            stock_manifest,
+            stock_replay["evaluation"],
+            stock_replay,
+        )
+        campaign["evaluation"]["stock_replay_authority"] = authority
+        campaign.setdefault("status", {}).update(
+            security_authority=authority["authority"],
+            security_result=(
+                authority["stock_security_result"]
+                if authority["authority"] != "patched-primary-stock-replay-incomplete"
+                else "inconclusive"
+            ),
+        )
+        campaign["stock_replay"] = {
+            "campaign_digest": stock_manifest["campaign_digest"],
+            "cells": deepcopy(stock_replay["cells"]),
+        }
+        _save(directory / "selected" / "state.json", campaign)
+        _write_document(directory / "stock-replay-authority.json", authority)
+    return {
+        "decision": decision,
+        "stock_calibration": stock_state,
+        "patched_calibration": patched_state,
+        "campaign": campaign,
+        "stock_replay": stock_replay,
+    }
 
 
 class LocalRuntime:
@@ -566,6 +775,82 @@ class LocalRuntime:
             atomic_write_bytes(binding_path, (serialize_campaign(binding) + "\n").encode())
         return {**binding, "catalog": load_version_catalog(frozen_path)}
 
+    def _campaign_measurement_target(self, manifest, topology, mode, catalog):
+        if mode != "patched":
+            return None
+        candidates = [
+            node
+            for node in topology["nodes"]
+            if node["identity"].get("kind") == "candidate"
+        ]
+        if len(candidates) != 1 or candidates[0]["implementation"] != "amaru":
+            raise ValueError("patched campaign requires one Amaru candidate target")
+        identity = candidates[0]["identity"]
+        build = next((row for row in self.builds if row.get("mode") == mode), None)
+        if build is None or build.get("source") != manifest["candidate"]:
+            raise ValueError("patched campaign has no verified candidate build")
+        release = next(
+            (
+                row
+                for row in catalog.get("releases", [])
+                if row.get("implementation") == "amaru"
+                and row.get("version") == identity["version"]
+            ),
+            None,
+        )
+        if release is None or release.get("source_revision") != identity["source_revision"]:
+            raise ValueError("patched campaign catalog differs from candidate source identity")
+        artifacts = build.get("artifacts") or {}
+        artifact = next(
+            (
+                row
+                for row in release.get("artifacts", [])
+                if row.get("kind") == "oci"
+                and row.get("mode") == "patched"
+                and row.get("availability") == "available"
+                and row.get("digest") == artifacts.get("image_digest")
+            ),
+            None,
+        )
+        if artifact is None:
+            raise ValueError("patched campaign catalog has no verified build artifact")
+        patch_set = str(build.get("patch_set_digest") or "")
+        values = {
+            "image_digest": artifacts.get("image_digest"),
+            "executable_digest": artifacts.get("executable_digest"),
+            "build_result_sha256": build.get("build_result_sha256"),
+            "runtime_probe_log_sha256": build.get("runtime_probe_log_sha256"),
+        }
+        if artifact.get("executable_digest") != values["executable_digest"]:
+            raise ValueError("patched campaign executable identity differs from catalog")
+        if artifact.get("patch_set_digest") != patch_set:
+            raise ValueError("patched campaign patch identity differs from catalog")
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", patch_set):
+            raise ValueError("patched campaign patch identity is not immutable")
+        if any(
+            not re.fullmatch(r"sha256:[0-9a-f]{64}", str(value or ""))
+            for value in values.values()
+        ):
+            raise ValueError("patched campaign target provenance is incomplete")
+        reference = str(artifact.get("reference") or "")
+        if not reference or "@" in reference:
+            raise ValueError("patched campaign registry reference is invalid")
+        return {
+            "implementation": "amaru",
+            "version": identity["version"],
+            "source_revision": identity["source_revision"],
+            "target_mode": "patched",
+            "image": reference + "@" + values["image_digest"],
+            "patch_set_sha256": patch_set.removeprefix("sha256:"),
+            **values,
+        }
+
+
+    @staticmethod
+    def _retain_runtime_qualification(build, observation):
+        if build.get("mode") == "patched" and observation.get("passed") is True:
+            build["runtime_probe_log_sha256"] = _digest(observation)
+
     def preflight(self, manifest, builds):
         from profile_manager.version_catalog import load_version_catalog, resolve_release
         from scripts.qualify_node_versions import BASE_PACKAGE, run_qualification
@@ -588,11 +873,12 @@ class LocalRuntime:
                     if build is None or build.get("source") != manifest["candidate"]:
                         raise ValueError("readiness requires an observed frozen-mode build of the frozen candidate")
                     artifacts = build["artifacts"]
-                # Qualification chooses the first available exact OCI artifact.
-                # Matching a later artifact would qualify another build mode.
+                # Qualification selects the exact frozen mode before comparing
+                # its immutable artifact identity; catalog order has no authority.
                 selected_artifact = next((artifact for artifact in release.get("artifacts", [])
                                           if artifact.get("kind") == "oci" and artifact.get("availability") == "available"
-                                          and artifact.get("digest")), {})
+                                          and artifact.get("digest")
+                                          and artifact.get("mode", "stock") == identity.get("mode", "stock")), {})
                 if (release["source_revision"] != identity["source_revision"]
                         or selected_artifact.get("digest") != artifacts["image_digest"]):
                     raise ValueError("readiness catalog differs from the frozen node/build identity")
@@ -613,7 +899,8 @@ class LocalRuntime:
             amaru_release = (resolve_release(catalog, "amaru", versions["amaru"])
                              if "amaru" in versions else None)
             amaru_artifact = next((item for item in (amaru_release or {}).get("artifacts", [])
-                                   if item.get("kind") == "oci" and item.get("availability") == "available"), {})
+                                   if item.get("kind") == "oci" and item.get("availability") == "available"
+                                   and item.get("mode", "stock") == candidate_mode), {})
             content_id = (candidate_build.get("runtime_image_config_id")
                           if any(node["identity"]["kind"] == "candidate"
                                  and node["implementation"] == "amaru"
@@ -631,6 +918,8 @@ class LocalRuntime:
                 observations.append(observation)
             else:
                 observation = qualifications[qualification_key]
+            if candidate_build:
+                self._retain_runtime_qualification(candidate_build, observation)
             if observation.get("passed") is True:
                 qualified_topology_ids.append(topology["id"])
         self.qualified_topology_ids = set(qualified_topology_ids)
@@ -669,9 +958,18 @@ class LocalRuntime:
             kwargs["measurement_overrides"] = [{"id": measurement_id, "enabled": True}
                                                 for measurement_id in grouped]
         binding = self._catalog_binding()
+        measurement_target_override = self._campaign_measurement_target(
+            manifest,
+            topology,
+            mode,
+            binding["catalog"],
+        )
         from profile_manager.deployment_versions import version_catalog_revision
         plan = resolve_run_plan(RunPlanRequest(**kwargs), catalog=binding["catalog"],
-                                catalog_revision=version_catalog_revision(catalog=binding["catalog"]))
+                                catalog_revision=version_catalog_revision(catalog=binding["catalog"]),
+                                capability_context={
+                                    "measurement_target_override": measurement_target_override
+                                } if measurement_target_override else None)
         if entry and "execution" in entry and len({node["implementation"] for node in topology["nodes"]}) > 1:
             # Profileless substrate plans otherwise return an unspecified empty
             # measurement context; freeze the explicit opt-out in the launch.
@@ -803,6 +1101,23 @@ class LocalRuntime:
         return read_native_evidence(manifest, run_dir, scenario_id=scenario_id, topology=topology,
                                     mode=mode, plan=plan, entry=entry, cell=cell, control=control)
 
+    def calibration_result(self, run_id):
+        if not _ID.fullmatch(str(run_id)):
+            raise ValueError("calibration result requires a canonical run ID")
+        path = (
+            self.runs
+            / run_id
+            / "outputs"
+            / "amaru-measurement-calibration"
+            / "result.json"
+        )
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("calibration result is missing from the canonical run")
+        result = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(result, dict):
+            raise ValueError("calibration result must be a JSON object")
+        return result
+
     def archive(self, run_id):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", run_id):
             raise ValueError("invalid canonical run ID")
@@ -833,6 +1148,11 @@ class LocalRuntime:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument(
+        "--stock-manifest",
+        type=Path,
+        help="Frozen stock fallback/replay manifest for a patched-first campaign.",
+    )
     parser.add_argument("--build-observations", type=Path, required=True, help="Frozen build evidence JSON array; no source build is performed.")
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--catalog", type=Path, required=True)
@@ -848,10 +1168,43 @@ def main(argv=None):
         if not isinstance(builds, list):
             raise ValueError("build observations must be a JSON array")
         runtime = LocalRuntime(args.directory, catalog_path=args.catalog, producer_version=args.producer_version, signing_key=args.signing_key)
-        state = run_campaign(manifest, directory=args.directory, runtime=runtime, builds=builds, resume=args.resume)
+        candidate_modes = {
+            node["identity"].get("mode", "stock")
+            for topology in manifest["topologies"]
+            for node in topology["nodes"]
+            if node["identity"].get("kind") == "candidate"
+        }
+        if "patched" in candidate_modes:
+            if args.stock_manifest is None:
+                raise ValueError("patched-first execution requires --stock-manifest")
+            stock_manifest = json.loads(args.stock_manifest.read_text())
+            result = run_patched_first_campaign(
+                manifest,
+                stock_manifest,
+                directory=args.directory,
+                runtime=runtime,
+                builds=builds,
+                resume=args.resume,
+            )
+            state = result["campaign"]
+        else:
+            _write_document(args.directory / "selected-manifest.json", manifest)
+            state = run_campaign(
+                manifest,
+                directory=args.directory / "selected",
+                runtime=runtime,
+                builds=builds,
+                resume=args.resume,
+            )
         print(serialize_campaign({**state["status"], "readiness_passed": state["readiness"].get("passed") is True,
                                   "cleanup_errors": state["cleanup_errors"]}))
+        authority = state["status"].get("security_authority")
+        authority_valid = authority is None or authority in {
+            "patched-primary-stock-confirmed",
+            "patched-primary-stock-disagrees",
+        }
         return 0 if (state["readiness"].get("passed") is True and not state["cleanup_errors"]
+                     and authority_valid
                      and state["evaluation"]["security_validity"]["security_valid"]
                      and state["evaluation"]["measurement_completeness"]["measurement_complete"]
                      and all(cell["status"] == "complete" for cell in state["cells"].values())) else 1

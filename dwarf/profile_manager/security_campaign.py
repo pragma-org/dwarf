@@ -78,9 +78,88 @@ def campaign_evaluation_status(manifest: dict[str, Any], evaluation: dict[str, A
         raise ValueError("evaluation records refer to different evidence")
     if security.get("classification") not in {"pass", "finding", "inconclusive", "harness-invalid", "infrastructure-invalid"} or not isinstance(measurements.get("measurement_complete"), bool):
         raise ValueError("invalid derived campaign status")
-    return {"campaign_id": manifest["campaign_id"], "campaign_digest": manifest["campaign_digest"],
-            "evidence_digest": security["evidence_digest"], "security_result": security["classification"],
-            "measurement_completeness": "complete" if measurements["measurement_complete"] else "incomplete"}
+    security_result = security["classification"]
+    result = {"campaign_id": manifest["campaign_id"], "campaign_digest": manifest["campaign_digest"],
+              "evidence_digest": security["evidence_digest"], "security_result": security_result,
+              "measurement_completeness": "complete" if measurements["measurement_complete"] else "incomplete"}
+    replay = evaluation.get("stock_replay_authority")
+    if replay is not None:
+        replay_entries = replay.get("entries") if isinstance(replay, dict) else None
+        if (not isinstance(replay, dict) or replay.get("schema_version") != "v1"
+                or replay.get("kind") != "campaign-stock-replay-authority"
+                or replay.get("primary_campaign_digest") != manifest["campaign_digest"]
+                or replay.get("primary_evidence_digest") != security["evidence_digest"]
+                or replay.get("authority") not in {
+                    "patched-primary-stock-confirmed",
+                    "patched-primary-stock-disagrees",
+                    "patched-primary-stock-replay-incomplete",
+                }
+                or replay.get("stock_security_result") not in {
+                    "pass", "finding", "inconclusive", "harness-invalid", "infrastructure-invalid"
+                }
+                or not isinstance(replay_entries, list)
+                or not replay_entries
+                or not _DIGEST.fullmatch(str(replay.get("stock_campaign_digest") or ""))
+                or not _DIGEST.fullmatch(str(replay.get("stock_evidence_digest") or ""))
+                or replay.get("authority_digest")
+                != _digest({key: value for key, value in replay.items() if key != "authority_digest"})):
+            raise ValueError("invalid stock replay authority record")
+        seen = set()
+        complete_authority = replay["authority"] != "patched-primary-stock-replay-incomplete"
+        for entry in replay_entries:
+            if (not isinstance(entry, dict) or not isinstance(entry.get("entry_id"), str)
+                    or not entry["entry_id"] or entry["entry_id"] in seen
+                    or entry.get("authority") not in {"confirmed", "disagrees", "incomplete"}
+                    or entry.get("primary_classification") not in {
+                        "pass", "finding", "inconclusive", "harness-invalid", "infrastructure-invalid"
+                    }
+                    or entry.get("stock_classification") not in {
+                        "pass", "finding", "inconclusive", "harness-invalid", "infrastructure-invalid"
+                    }
+                    or not isinstance(entry.get("matched_input_digests"), list)
+                    or any(not isinstance(value, str) or not _DIGEST.fullmatch(value)
+                           for value in entry["matched_input_digests"])
+                    or complete_authority and (
+                        entry["authority"] == "incomplete"
+                        or not entry["matched_input_digests"]
+                        or not isinstance(entry.get("primary_run_id"), str)
+                        or not entry.get("primary_run_id")
+                        or not isinstance(entry.get("stock_run_id"), str)
+                        or not entry.get("stock_run_id")
+                    )):
+                raise ValueError("invalid stock replay authority entry")
+            seen.add(entry["entry_id"])
+        entry_authorities = {entry["authority"] for entry in replay_entries}
+        expected_authority = (
+            "patched-primary-stock-replay-incomplete"
+            if "incomplete" in entry_authorities
+            else "patched-primary-stock-disagrees"
+            if "disagrees" in entry_authorities
+            else "patched-primary-stock-confirmed"
+        )
+        stock_result = next(
+            (value for value in (
+                "harness-invalid", "infrastructure-invalid", "finding", "inconclusive", "pass"
+            ) if any(entry["stock_classification"] == value for entry in replay_entries)),
+            "inconclusive",
+        )
+        if (replay["authority"] != expected_authority
+                or replay["stock_security_result"] != stock_result
+                or any(
+                    entry["authority"] == "confirmed"
+                    and entry["primary_classification"] != entry["stock_classification"]
+                    or entry["authority"] == "disagrees"
+                    and entry["primary_classification"] == entry["stock_classification"]
+                    for entry in replay_entries
+                )):
+            raise ValueError("stock replay authority does not match its entries")
+        result["security_authority"] = replay["authority"]
+        result["security_result"] = (
+            replay["stock_security_result"]
+            if replay["authority"] != "patched-primary-stock-replay-incomplete"
+            else "inconclusive"
+        )
+    return result
 
 
 def _schema_validate(document: dict[str, Any], *, selection: bool = False) -> None:

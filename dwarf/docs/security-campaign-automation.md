@@ -1,13 +1,13 @@
 # Security campaign automation
 
 `.github/workflows/dwarf-security-campaign.yml` implements zero-configuration
-GitHub-hosted discovery, Amaru stock builds and build-artifact staging. A push that
+GitHub-hosted discovery, Amaru stock and patched builds, and build-artifact staging. A push that
 changes `dwarf/testplease/**` starts the flow. Manual dispatch processes the
 currently tracked Amaru candidates. Candidate compilation and every follow-on job
 run on disposable `ubuntu-latest` runners.
 
-The stock build and disposable runtime registration are functional. The campaign
-job loads the verified Docker archive, pushes it only to a job-local registry, and
+The variant builds and disposable runtime registration are functional. The campaign
+job loads each verified Docker archive, pushes it only to a job-local registry, and
 freezes the resulting manifest digest, image config ID, executable digest, source
 identity, selected Cardano release and six initial real-node security cases. It
 does not reuse same-version compatibility evidence from an official Amaru build.
@@ -18,7 +18,8 @@ The campaign job installs the official Cardano 11.1.2 `cardano-testnet`,
 `cardano-cli` and `cardano-node` support binaries from the architecture-specific
 release archive only after its committed SHA-256 matches. These tools create and
 inspect the isolated Docker devnet; they do not replace either frozen node image.
-After a pass it runs the frozen cases and stock measurement exercises, retaining
+After a pass it calibrates stock and patched artifacts, selects one primary lane,
+runs the frozen cases and compatible measurement exercises, retaining
 partial and failed results as well as completed results. Candidate compilation and
 execution keep only `contents: read`. A separate job receives `contents: write` only
 after a complete successful campaign job, reverifies opaque archive receipts and
@@ -82,13 +83,14 @@ separately verified instrumentation provenance and is currently rejected here.
 Known genesis, era or protocol conflicts reject planning. Missing compatibility
 stays `pending-prerequisites`; matching declarations are not runtime readiness.
 
-Measurement exercise cells and any mirrored calibration runs remain supporting
+Measurement exercise cells and paired calibration runs remain supporting
 evidence. They cannot replace the entry's mixed security scenario or its controls
-and cross-implementation assertions. The first stock plan keeps one required cell
-for each of 23 stock-compatible taps. Taps that share an implementation, node and
-exercise scenario are enabled in one run. Eleven patched or coverage-only taps stay
-listed in the retained suite and plan status as deferred until their separately
-verified build lanes exist.
+and cross-implementation assertions. The stock fallback plan keeps compatible
+stock cells; the patched primary plan keeps compatible passive and internal cells.
+Taps that share an implementation, node and exercise scenario are enabled in one
+run. Unsupported patched or coverage taps remain explicit and unavailable until
+their separately verified build lanes exist. Known working versions are evidence
+history, not an allowlist.
 
 ## Execution boundary and build preflight
 
@@ -125,9 +127,18 @@ remain pending because neither matching static declarations nor a successful bui
 proves runtime compatibility. The executor deduplicates equivalent version-pair
 qualification requests, requires the exact candidate config image ID during that
 qualification, and authorizes only the frozen topology IDs covered by a passing
-observation. It then runs controls, security workloads and grouped stock exercises.
-The first executable lane is stock. The patched and compiler-coverage plans
-remain explicit future lanes and cannot borrow the stock artifact identity.
+observation. It then performs a short stock/patched calibration and checkpoints
+one selection. A valid patched calibration runs the full patched campaign;
+missing, invalid or excess-overhead calibration selects stock once without
+rebuilding. The compiler-coverage mode remains a separate future lane and cannot borrow
+another artifact identity.
+
+When patched is selected, the same six security entries and controls run once
+more against the already built stock image. This replay skips measurement cells.
+DWARF requires equality of the complete retained same-boundary input-digest set
+before it labels an entry stock-confirmed or stock-disagrees. A matching seed
+alone is not exact-input evidence. Missing or unequal input sets leave replay
+incomplete and block publication.
 
 The initial Amaru lane selects six Docker-backed cases: transaction-array arity,
 empty redeemers, inline-datum tag-24 trailing data, the compact multiasset
@@ -142,6 +153,7 @@ interface is:
 ```bash
 PYTHONPATH=dwarf python3 dwarf/scripts/ci_security_campaign.py \
   --manifest campaign/manifest.json \
+  --stock-manifest campaign/stock-manifest.json \
   --build-observations campaign/build-observations.json \
   --directory campaign/runtime \
   --catalog campaign/version-catalog.json \
@@ -193,8 +205,11 @@ public key and fingerprint are pinned in `docs/evidence/trusted-publishers.json`
 Each campaign gets a digest-named GitHub Release. Archive filenames include their
 SHA-256, and an existing asset must byte-match on retry. The rolling
 `dwarf-campaign-results` release carries the validated compact campaign catalog and
-a Pages-default manifest. A release records a `pass` or `finding` classification;
-it does not turn a finding into success. Failed readiness, incomplete measurement
+a Pages-default manifest. A patched-primary release also records
+`patched-primary-stock-confirmed` or `patched-primary-stock-disagrees`, and uses
+the retained stock classification as its publication result. A release records a
+`pass` or `finding` classification; it does not turn a finding into success.
+Failed readiness, incomplete replay, incomplete measurement
 evidence, infrastructure-invalid evidence, cleanup errors, missing pins, or a key
 mismatch block publication while the original Actions artifact remains retained.
 

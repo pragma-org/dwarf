@@ -372,7 +372,7 @@ jobs:
               'private_key_retained': False,
           }, sort_keys=True, separators=(',', ':')) + '\n')
           PY
-      - name: Qualify exact pair and run frozen stock campaign
+      - name: Calibrate variants and run selected frozen campaign
         working-directory: campaign-trusted
         env:
           PYTHONPATH: dwarf
@@ -380,6 +380,7 @@ jobs:
         run: |
           python3 -m scripts.ci_security_campaign \
             --manifest ../campaign-plan/manifest.json \
+            --stock-manifest ../campaign-plan/stock-manifest.json \
             --build-observations ../campaign-plan/build-observations.json \
             --directory ../campaign-runtime \
             --catalog ../campaign-plan/version-catalog.json \
@@ -456,8 +457,8 @@ jobs:
           printf '%s' "$PUBLISHING_KEY" > "$key_path"
           published_at=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)
           PYTHONPATH=publication-trusted/dwarf python3 publication-trusted/dwarf/scripts/ci_publish_campaign.py \
-            --manifest publication-input/campaign-plan/manifest.json \
-            --state publication-input/campaign-runtime/state.json \
+            --manifest publication-input/campaign-runtime/selected-manifest.json \
+            --state publication-input/campaign-runtime/selected/state.json \
             --runtime-root publication-input/campaign-runtime \
             --trusted-publishers publication-trusted/docs/evidence/trusted-publishers.json \
             --signing-key "$key_path" \

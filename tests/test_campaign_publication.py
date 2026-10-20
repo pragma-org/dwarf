@@ -88,6 +88,39 @@ def test_compact_record_and_validated_versioned_files(publication):
         validator(json.loads((ROOT / "docs/evidence" / name).read_text()), *([publication[3]] if name == "campaigns.json" else []))
 
 
+def test_compact_record_retains_explicit_stock_replay_authority(publication):
+    campaign, evaluation, _archives, _trust = publication
+    authority = {
+        "schema_version": "v1",
+        "kind": "campaign-stock-replay-authority",
+        "primary_campaign_digest": campaign["campaign_digest"],
+        "stock_campaign_digest": "sha256:" + "a" * 64,
+        "primary_evidence_digest": evaluation["security_validity"]["evidence_digest"],
+        "stock_evidence_digest": "sha256:" + "b" * 64,
+        "authority": "patched-primary-stock-confirmed",
+        "stock_security_result": "finding",
+        "entries": [{
+            "entry_id": "case",
+            "authority": "confirmed",
+            "primary_run_id": "run-1",
+            "stock_run_id": "run-1",
+            "primary_classification": "finding",
+            "stock_classification": "finding",
+            "matched_input_digests": ["sha256:" + "c" * 64],
+        }],
+    }
+    authority["authority_digest"] = "sha256:" + hashlib.sha256(
+        api.serialize_publication(authority).encode()
+    ).hexdigest()
+    evaluation["stock_replay_authority"] = authority
+
+    record = build(publication)
+
+    assert record["security_result"] == "finding"
+    assert record["security_authority"] == "patched-primary-stock-confirmed"
+    api.add_publication(api.empty_catalog(), record, publication[3])
+
+
 @pytest.mark.parametrize("mutation", ["untrusted", "development-source", "development-key", "wrong-key", "bad-signature", "bad-run", "bad-hash", "modified-bytes", "bad-manifest", "bad-signed-payload", "exclusions", "unsigned", "campaign-id", "campaign-digest", "evaluation", "missing-run", "duplicate-run"])
 def test_rejects_untrusted_or_mismatched_identities(publication, mutation):
     campaign, evaluation, archives, trust = publication

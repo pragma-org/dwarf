@@ -28,6 +28,7 @@ class Runtime:
         self.samples = True
         self.security_measurements = []
         self.owned_projects = set()
+        self.calibration_results = {}
         self.before = {"dwarf-substrate-existing"}
         self.removed = []
 
@@ -46,6 +47,7 @@ class Runtime:
         self.calls.append((key, scenario_id, mode))
         self.serial += 1
         run_id = f"run-{self.serial}"
+        self.calibration_results[run_id] = calibration_leg(mode)
         self.owned_projects.add("dwarf-substrate-" + run_id)
         if key in self.fail:
             raise RuntimeError("scenario failed after creating its project")
@@ -83,6 +85,9 @@ class Runtime:
                 row["result"]["sample_count"] = 0
             result["measurements"] = [row]
         return result
+
+    def calibration_result(self, run_id):
+        return deepcopy(self.calibration_results[run_id])
 
     def archive(self, run_id):
         self.calls.append(("archive", run_id))
@@ -170,6 +175,129 @@ def test_patched_calibration_failure_selects_stock_once(case):
     assert decision["status"] == "failed"
     assert decision["reason"].startswith("paired-calibration-")
     assert decision["retry_build"] is False
+
+
+def test_calibration_phase_runs_only_the_frozen_mode_scenario(campaign, tmp_path):
+    scenario_id = campaign["execution_policy"]["calibration"]["stock_scenario_id"]
+
+    state, runtime = run(
+        campaign,
+        tmp_path,
+        phase="calibration",
+        calibration_mode="stock",
+    )
+
+    calls = [call for call in runtime.calls if isinstance(call, tuple) and call[0] not in {"archive", "verify"}]
+    assert calls == [("control", scenario_id, "stock")]
+    assert state["cells"]["calibration:stock"]["status"] == "complete"
+    assert state["cells"]["calibration:stock"]["calibration_result"]["status"] == "available"
+    assert not any(key.startswith("security:") for key in state["cells"])
+
+
+def test_local_runtime_reads_only_the_canonical_calibration_result(tmp_path):
+    runtime = api.LocalRuntime.__new__(api.LocalRuntime)
+    runtime.runs = tmp_path / "runs"
+    result_path = (
+        runtime.runs
+        / "run-1"
+        / "outputs"
+        / "amaru-measurement-calibration"
+        / "result.json"
+    )
+    result_path.parent.mkdir(parents=True)
+    expected = calibration_leg("patched")
+    result_path.write_text(json.dumps(expected))
+
+    assert runtime.calibration_result("run-1") == expected
+    with pytest.raises(ValueError, match="canonical run ID"):
+        runtime.calibration_result("../run-1")
+
+
+@pytest.mark.parametrize("patched_mean, expected_mode", [(103.0, "patched"), (110.0, "stock")])
+def test_patched_first_campaign_calibrates_before_selecting_one_manifest(
+    campaign, tmp_path, monkeypatch, patched_mean, expected_mode
+):
+    primary = deepcopy(campaign)
+    stock = deepcopy(campaign)
+    primary["campaign_id"] = "campaign-primary"
+    primary["campaign_digest"] = "sha256:" + "1" * 64
+    stock["campaign_id"] = "campaign-stock"
+    stock["campaign_digest"] = "sha256:" + "2" * 64
+    calls = []
+
+    def execute(manifest, **kwargs):
+        phase = kwargs.get("phase", "full")
+        mode = kwargs.get("calibration_mode")
+        calls.append((phase, mode, manifest["campaign_id"]))
+        if phase == "calibration":
+            mean = patched_mean if mode == "patched" else 100.0
+            return {"cells": {f"calibration:{mode}": {
+                "status": "complete",
+                "calibration_result": calibration_leg(
+                    mode,
+                    source=primary["candidate"]["repository_commit"],
+                    mean=mean,
+                ),
+            }}}
+        return {
+            "selected_campaign_id": manifest["campaign_id"],
+            "campaign_digest": manifest["campaign_digest"],
+            "cells": {},
+            "evaluation": {"security_validity": {}, "measurement_completeness": {}},
+        }
+
+    monkeypatch.setattr(api, "run_campaign", execute)
+    authority = {
+        "authority": "patched-primary-stock-confirmed",
+        "stock_security_result": "pass",
+        "entries": [],
+    }
+    monkeypatch.setattr(api, "evaluate_stock_replay_authority", lambda *args: deepcopy(authority))
+    result = api.run_patched_first_campaign(
+        primary,
+        stock,
+        directory=tmp_path / "campaign",
+        runtime=object(),
+        builds=[{"mode": "patched", "patch_set_digest": "sha256:" + "e" * 64}],
+        lock_path=tmp_path / "host.lock",
+    )
+
+    assert calls[:2] == [
+        ("calibration", "stock", "campaign-stock"),
+        ("calibration", "patched", "campaign-primary"),
+    ]
+    selected = primary if expected_mode == "patched" else stock
+    assert calls[2] == ("full", None, selected["campaign_id"])
+    if expected_mode == "patched":
+        assert calls[3] == ("security-replay", None, stock["campaign_id"])
+        assert result["stock_replay"]["selected_campaign_id"] == stock["campaign_id"]
+        assert result["campaign"]["evaluation"]["stock_replay_authority"] == authority
+    else:
+        assert len(calls) == 3
+        assert result["stock_replay"] is None
+    assert result["decision"]["selected_mode"] == expected_mode
+    assert result["campaign"]["selected_campaign_id"] == selected["campaign_id"]
+    retained_manifest = json.loads((tmp_path / "campaign/selected-manifest.json").read_text())
+    assert retained_manifest == selected
+    assert "checkpoint_digest" not in retained_manifest
+    assert "checkpoint_digest" not in json.loads(
+        (tmp_path / "campaign/calibration-decision.json").read_text()
+    )
+
+
+def test_security_replay_phase_skips_measurement_cells(campaign, tmp_path):
+    campaign, cell = single_cell(campaign)
+    cell["runtime"] = {"status": "implemented"}
+    cell["fallback"] = {"status": "blocked", "reason": "not needed"}
+    freeze(campaign)
+
+    state, runtime = run(campaign, tmp_path, phase="security-replay")
+
+    executed = [call[0] for call in runtime.calls if isinstance(call, tuple)
+                and call[0] not in {"archive", "verify"}]
+    assert executed == ["control", campaign["entries"][0]["id"]]
+    assert state["phase"] == "security-replay"
+    assert not any(key.startswith("measurement:") for key in state["cells"])
 
 
 def test_readiness_precedes_deterministic_security_workloads_and_faults(campaign, tmp_path):
@@ -572,6 +700,151 @@ def test_runtime_plan_rejects_unbound_artifacts_before_scenario_execution(campai
         runtime._plan(campaign, campaign["entries"][0]["contract"]["scenario_id"], campaign["topologies"][0], "stock", campaign["entries"][0], None)
     assert requests[0].amaru_version == "proposal"
     assert requests[0].version_policy == "exact"
+
+
+def test_campaign_patched_target_is_derived_from_verified_build_and_catalog(campaign, tmp_path):
+    runtime = api.LocalRuntime(
+        tmp_path,
+        catalog_path=tmp_path / "catalog",
+        producer_version="99.1.2",
+        signing_key=tmp_path / "key",
+    )
+    topology = campaign["topologies"][0]
+    candidate = next(
+        node for node in topology["nodes"] if node["identity"]["kind"] == "candidate"
+    )
+    candidate["identity"]["mode"] = "patched"
+    image_digest = "sha256:" + "7" * 64
+    executable_digest = "sha256:" + "6" * 64
+    patch_set = "sha256:" + "5" * 64
+    runtime.builds = [{
+        "mode": "patched",
+        "source": campaign["candidate"],
+        "artifacts": {
+            "image_digest": image_digest,
+            "executable_digest": executable_digest,
+        },
+        "patch_set_digest": patch_set,
+        "build_result_sha256": "sha256:" + "4" * 64,
+        "runtime_probe_log_sha256": "sha256:" + "3" * 64,
+    }]
+    catalog = {"releases": [{
+        "implementation": "amaru",
+        "version": candidate["identity"]["version"],
+        "source_revision": candidate["identity"]["source_revision"],
+        "artifacts": [{
+            "kind": "oci",
+            "mode": "patched",
+            "availability": "available",
+            "reference": "localhost:5000/dwarf/amaru-candidate",
+            "digest": image_digest,
+            "executable_digest": executable_digest,
+            "patch_set_digest": patch_set,
+        }],
+    }]}
+
+    target = runtime._campaign_measurement_target(
+        campaign, topology, "patched", catalog
+    )
+
+    assert target == {
+        "implementation": "amaru",
+        "version": candidate["identity"]["version"],
+        "source_revision": candidate["identity"]["source_revision"],
+        "target_mode": "patched",
+        "image": "localhost:5000/dwarf/amaru-candidate@" + image_digest,
+        "image_digest": image_digest,
+        "executable_digest": executable_digest,
+        "patch_set_sha256": patch_set.removeprefix("sha256:"),
+        "build_result_sha256": "sha256:" + "4" * 64,
+        "runtime_probe_log_sha256": "sha256:" + "3" * 64,
+    }
+
+
+def test_successful_runtime_qualification_is_bound_to_the_patched_build(tmp_path):
+    runtime = api.LocalRuntime(
+        tmp_path,
+        catalog_path=tmp_path / "catalog",
+        producer_version="99.1.2",
+        signing_key=tmp_path / "key",
+    )
+    build = {"mode": "patched"}
+    observation = {"passed": True, "image_id": "sha256:" + "2" * 64}
+
+    runtime._retain_runtime_qualification(build, observation)
+
+    assert build["runtime_probe_log_sha256"] == api._digest(observation)
+
+
+def test_runtime_plan_passes_campaign_owned_patched_target_override(
+    campaign, tmp_path, monkeypatch
+):
+    from profile_manager import deployment_versions, run_plan
+
+    runtime = api.LocalRuntime(
+        tmp_path,
+        catalog_path=tmp_path / "catalog",
+        producer_version="99.1.2",
+        signing_key=tmp_path / "key",
+    )
+    topology = campaign["topologies"][0]
+    candidate = next(
+        node for node in topology["nodes"] if node["identity"]["kind"] == "candidate"
+    )
+    candidate["identity"]["mode"] = "patched"
+    image_digest = "sha256:" + "7" * 64
+    executable_digest = "sha256:" + "6" * 64
+    patch_set = "sha256:" + "5" * 64
+    runtime.builds = [{
+        "mode": "patched",
+        "source": campaign["candidate"],
+        "artifacts": {"image_digest": image_digest, "executable_digest": executable_digest},
+        "patch_set_digest": patch_set,
+        "build_result_sha256": "sha256:" + "4" * 64,
+        "runtime_probe_log_sha256": "sha256:" + "3" * 64,
+    }]
+    catalog = {"releases": [{
+        "implementation": "amaru",
+        "version": candidate["identity"]["version"],
+        "source_revision": candidate["identity"]["source_revision"],
+        "artifacts": [{
+            "kind": "oci", "mode": "patched", "availability": "available",
+            "reference": "localhost:5000/dwarf/amaru-candidate", "digest": image_digest,
+            "executable_digest": executable_digest, "patch_set_digest": patch_set,
+        }],
+    }]}
+    monkeypatch.setattr(runtime, "_catalog_binding", lambda: {
+        "path": str(tmp_path / "catalog"), "sha256": "0" * 64, "catalog": catalog,
+    })
+    monkeypatch.setattr(deployment_versions, "version_catalog_revision", lambda **kwargs: "sha256:" + "0" * 64)
+    captured = {}
+
+    def resolve(request, **kwargs):
+        captured.update(kwargs)
+        resolved = {}
+        for node in topology["nodes"]:
+            identity = node["identity"]
+            artifacts = (
+                runtime.builds[0]["artifacts"]
+                if identity["kind"] == "candidate"
+                else identity["artifacts"]
+            )
+            resolved[node["implementation"]] = {
+                "version": identity["version"],
+                "source_revision": identity["source_revision"],
+                "image_digest": artifacts["image_digest"],
+            }
+        return {"versions": {"resolved": resolved}, "measurements": {
+            "target_identity": {"mode": "patched"}
+        }}
+
+    monkeypatch.setattr(run_plan, "resolve_run_plan", resolve)
+    scenario_id = campaign["execution_policy"]["calibration"]["patched_scenario_id"]
+    runtime._plan(campaign, scenario_id, topology, "patched", None, None)
+
+    target = captured["capability_context"]["measurement_target_override"]
+    assert target["source_revision"] == candidate["identity"]["source_revision"]
+    assert target["patch_set_sha256"] == patch_set.removeprefix("sha256:")
 
 
 def test_native_scenario_without_boundary_index_remains_inconclusive(campaign, tmp_path, monkeypatch):
@@ -1160,7 +1433,7 @@ def test_preflight_uses_frozen_candidate_mode_instead_of_stock(campaign, tmp_pat
     builds[0]['runtime_image_config_id'] = 'sha256:' + '2' * 64
     builds[1]['runtime_image_config_id'] = 'sha256:' + '3' * 64
     release = {'source_revision': 'a' * 40, 'artifacts': [
-        {'kind': 'oci', 'availability': 'available', 'digest': builds[1]['artifacts']['image_digest'],
+        {'kind': 'oci', 'mode': 'patched', 'availability': 'available', 'digest': builds[1]['artifacts']['image_digest'],
          'config_image_id': builds[1]['runtime_image_config_id']}]}
     if catalog_first_stock:
         release['artifacts'].insert(0, {'kind': 'oci', 'availability': 'available',
@@ -1169,14 +1442,9 @@ def test_preflight_uses_frozen_candidate_mode_instead_of_stock(campaign, tmp_pat
     monkeypatch.setattr(version_catalog, 'resolve_release', lambda *args: release)
     calls = []
     monkeypatch.setattr(qualify_node_versions, 'run_qualification', lambda **kwargs: calls.append(kwargs) or {'passed': True})
-    if catalog_first_stock:
-        with pytest.raises(ValueError, match='readiness catalog differs'):
-            runtime.preflight(campaign, builds)
-        assert calls == []
-    else:
-        assert runtime.preflight(campaign, builds)['passed'] is True
-        assert len(calls) == 1
-        assert calls[0]['operator_stock_content_id'] == builds[1]['runtime_image_config_id']
+    assert runtime.preflight(campaign, builds)['passed'] is True
+    assert len(calls) == 1
+    assert calls[0]['operator_stock_content_id'] == builds[1]['runtime_image_config_id']
 
 
 def test_mixed_security_plan_defers_per_node_measurements_without_changing_intent(mixed_runtime, monkeypatch):

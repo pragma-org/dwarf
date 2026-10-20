@@ -8,6 +8,14 @@
 
 **Tech Stack:** Python 3.12, GitHub Actions YAML, Docker/Buildx, JSON Schema, pytest.
 
+**Implementation checkpoint (2026-10-20):** Tasks 1-8 are implemented in the
+current integration worktree. The planner retains separate stock and patched
+manifests, calibration selects one lane without rebuilding, runtime resolution
+uses a campaign-owned exact patched target, and patched security classifications
+receive a security-only stock replay. Publication requires complete retained
+input-digest equality and records confirmed or disagreeing authority. No hosted
+smoke or full campaign has been dispatched from this checkpoint.
+
 ---
 
 ### Task 1: Freeze the patched-first policy contract
@@ -134,6 +142,11 @@
 3. Schedule stock replay without rebuilding and link both run IDs.
 4. Publish the explicit authority state; never collapse disagreement.
 5. Run the focused evaluator/publication tests and commit.
+
+Implemented detail: replay compares the complete same-boundary input-digest set
+for every target node. It permits measurement attachment differences while
+requiring the same security contract, scenario and execution recipe. The stock
+phase skips measurement cells and reuses the staged stock artifact.
 
 ### Task 8: Integrate the hosted workflow without a long campaign
 

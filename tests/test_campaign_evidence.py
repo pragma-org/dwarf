@@ -102,6 +102,87 @@ def cell_result(manifest, ev):
     return api.evaluate_campaign_evidence(manifest, ev)["measurement_completeness"]["cells"][0]
 
 
+def replay_inputs(campaign):
+    stock = deepcopy(campaign)
+    primary = deepcopy(campaign)
+    primary["topologies"][0]["nodes"][0]["identity"]["mode"] = "patched"
+    freeze(primary)
+    primary_evidence = evidence(primary)
+    primary_row = primary_evidence["security"][0]
+    primary_row["mode"] = "patched"
+    for targets in (primary_row["targets"], primary_row["normal_control"]["targets"]):
+        targets["node1"]["mode"] = "patched"
+        targets["node1"]["patch_set_sha256"] = "d" * 64
+    stock_evidence = evidence(stock)
+    stock_row = stock_evidence["security"][0]
+    stock_row["run_id"] = "stock-run-1"
+    stock_row["normal_control"]["run_id"] = "stock-control-1"
+    for observation in stock_row["reachability"] + stock_row["oracle"]["observations"]:
+        observation["run_id"] = "stock-run-1"
+    primary_evaluation = api.evaluate_campaign_evidence(primary, primary_evidence)
+    stock_evaluation = api.evaluate_campaign_evidence(stock, stock_evidence)
+    entry_id = stock["entries"][0]["id"]
+    primary_state = {"cells": {"security:" + entry_id: {"result": {"security": primary_row}}}}
+    stock_state = {"cells": {"security:" + entry_id: {"result": {"security": stock_row}}}}
+    return primary, primary_evaluation, primary_state, stock, stock_evaluation, stock_state
+
+
+def test_exact_input_stock_replay_confirms_patched_security_classification(campaign):
+    inputs = replay_inputs(campaign)
+    result = api.evaluate_stock_replay_authority(*inputs)
+
+    assert result["authority"] == "patched-primary-stock-confirmed"
+    assert result["stock_security_result"] == "pass"
+    assert result["entries"][0]["authority"] == "confirmed"
+    assert result["entries"][0]["matched_input_digests"] == [D]
+    assert result["entries"][0]["primary_run_id"] == "run-1"
+    assert result["entries"][0]["stock_run_id"] == "stock-run-1"
+
+
+def test_exact_input_stock_replay_preserves_classification_disagreement(campaign):
+    primary, primary_evaluation, primary_state, stock, _stock_evaluation, stock_state = replay_inputs(campaign)
+    stock_row = next(iter(stock_state["cells"].values()))["result"]["security"]
+    stock_row["assertions"][0]["result"] = "fail"
+    stock_evidence = evidence(stock)
+    stock_evidence["security"] = [stock_row]
+    stock_evaluation = api.evaluate_campaign_evidence(stock, stock_evidence)
+
+    result = api.evaluate_stock_replay_authority(
+        primary, primary_evaluation, primary_state,
+        stock, stock_evaluation, stock_state,
+    )
+
+    assert result["authority"] == "patched-primary-stock-disagrees"
+    assert result["stock_security_result"] == "finding"
+    assert result["entries"][0]["primary_classification"] == "pass"
+    assert result["entries"][0]["stock_classification"] == "finding"
+
+
+def test_stock_replay_without_a_matching_retained_input_is_incomplete(campaign):
+    inputs = list(replay_inputs(campaign))
+    stock_state = inputs[-1]
+    stock_row = next(iter(stock_state["cells"].values()))["result"]["security"]
+    for observation in stock_row["reachability"] + stock_row["oracle"]["observations"]:
+        observation["input_digest"] = "sha256:" + "9" * 64
+
+    result = api.evaluate_stock_replay_authority(*inputs)
+
+    assert result["authority"] == "patched-primary-stock-replay-incomplete"
+    assert result["entries"][0]["matched_input_digests"] == []
+
+
+def test_campaign_status_uses_stock_classification_and_exposes_replay_authority(campaign):
+    inputs = replay_inputs(campaign)
+    authority = api.evaluate_stock_replay_authority(*inputs)
+    primary, evaluation = inputs[:2]
+    evaluation["stock_replay_authority"] = authority
+
+    status = planner.campaign_evaluation_status(primary, evaluation)
+
+    assert status["security_result"] == "pass"
+    assert status["security_authority"] == "patched-primary-stock-confirmed"
+
+
 def test_pass_is_deterministic_and_does_not_mutate_retained_inputs(campaign):
     ev = evidence(campaign)
     before = deepcopy((campaign, ev))

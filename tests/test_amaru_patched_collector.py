@@ -439,6 +439,16 @@ def test_paired_calibration_accepts_campaign_observed_candidate_identity():
         "patch_set_sha256": patch_set_sha256,
     }
 
+    patched["target"]["patch_set_sha256"] = patch_set_sha256.removeprefix("sha256:")
+    normalized = paired_overhead_calibration(
+        stock,
+        patched,
+        minimum_samples=30,
+        expected_source_revision=source_revision,
+        expected_patch_set_sha256=patch_set_sha256,
+    )
+    assert normalized["status"] == "available"
+
 
 def test_paired_calibration_reports_over_limit_without_hiding_measurements():
     result = paired_overhead_calibration(

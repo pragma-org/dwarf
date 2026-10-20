@@ -142,11 +142,11 @@ def test_official_metadata_is_review_only_and_suites_are_fixed():
 def test_execution_has_shared_host_lock_isolation_and_no_publishing_credentials():
     job = workflow()['jobs']['campaign']
     assert job['runs-on'] == 'ubuntu-latest'
-    assert job['needs'] == ['discover', 'stock-build']
+    assert job['needs'] == ['discover', 'candidate-build']
     assert job['permissions'] == {'contents': 'read'}
     assert 'environment' not in job
     assert 'concurrency' not in job
-    assert "needs.stock-build.result == 'success'" in job['if']
+    assert "needs.candidate-build.result == 'success'" in job['if']
     checkouts = [s for s in job['steps'] if s.get('uses', '').startswith('actions/checkout@')]
     assert len(checkouts) == 1
     assert checkouts[0]['with']['ref'] == '${{ needs.discover.outputs.trusted_revision }}'
@@ -174,7 +174,7 @@ def test_hosted_campaign_consumes_and_validates_build_artifact():
     assert '$GITHUB_PATH' in gate['run']
     downloads = [s for s in workflow()['jobs']['campaign']['steps'] if s.get('uses', '').startswith('actions/download-artifact@')]
     assert {s['with']['name'] for s in downloads} == {
-        'dwarf-security-campaign-discovery', 'amaru-network-stock-build'}
+        'dwarf-security-campaign-discovery', 'amaru-network-candidate-builds'}
     job = workflow()['jobs']['campaign']
     service = job['services']['candidate-registry']
     assert service['image'] == 'registry@sha256:46faa9a1ae6813194b53921a370f2f4f8c5e1aae228a89bceafef5847a6a3278'
@@ -187,10 +187,11 @@ def test_hosted_campaign_consumes_and_validates_build_artifact():
     dependencies = step('campaign', 'Install trusted campaign dependencies')
     assert '--require-hashes' in dependencies['run']
     assert 'infrastructure/docker/requirements-framework.txt' in dependencies['run']
-    execute = step('campaign', 'Qualify exact pair and run frozen stock campaign')
+    execute = step('campaign', 'Calibrate variants and run selected frozen campaign')
     assert 'continue-on-error' not in execute
     assert 'python3 -m scripts.ci_security_campaign' in execute['run']
     assert '--manifest ../campaign-plan/manifest.json' in execute['run']
+    assert '--stock-manifest ../campaign-plan/stock-manifest.json' in execute['run']
     assert '--catalog ../campaign-plan/version-catalog.json' in execute['run']
     signer = step('campaign', 'Create workflow-local evidence signer')
     assert 'integrity-only-untrusted-for-publication' in signer['run']
@@ -211,6 +212,8 @@ def test_publication_is_isolated_from_candidate_execution_and_release_only():
     verifier = step('publication', 'Reverify and sign opaque publication assets')
     assert 'DWARF_CAMPAIGN_PUBLISHING_KEY_PEM' in json.dumps(verifier)
     assert 'ci_publish_campaign.py' in verifier['run']
+    assert '--manifest publication-input/campaign-runtime/selected-manifest.json' in verifier['run']
+    assert '--state publication-input/campaign-runtime/selected/state.json' in verifier['run']
     release = step('publication', 'Publish immutable campaign assets and rolling indexes')['run']
     assert 'gh release create' in release and 'gh release upload' in release
     assert 'cmp ' in release

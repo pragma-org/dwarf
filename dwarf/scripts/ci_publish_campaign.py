@@ -72,19 +72,25 @@ def _publisher(key_path: Path, trusted: dict) -> tuple[Ed25519PrivateKey, str, s
 
 def _receipt_map(state: dict) -> dict[str, dict]:
     result: dict[str, dict] = {}
-    cells = state.get("cells")
-    if not isinstance(cells, dict):
-        raise ValueError("campaign state has no cells")
-    for cell in cells.values():
-        if not isinstance(cell, dict):
-            raise ValueError("campaign state cell is invalid")
-        for receipt in cell.get("archives") or []:
-            if not isinstance(receipt, dict) or not _RUN_ID.fullmatch(str(receipt.get("run_id") or "")):
-                raise ValueError("campaign archive receipt is invalid")
-            run_id = receipt["run_id"]
-            if run_id in result and result[run_id] != receipt:
-                raise ValueError("campaign has conflicting archive receipts")
-            result[run_id] = receipt
+    groups = [("campaign", state.get("cells"))]
+    replay = state.get("stock_replay")
+    if replay is not None:
+        if not isinstance(replay, dict):
+            raise ValueError("campaign stock replay state is invalid")
+        groups.append(("stock replay", replay.get("cells")))
+    for label, cells in groups:
+        if not isinstance(cells, dict):
+            raise ValueError(f"{label} state has no cells")
+        for cell in cells.values():
+            if not isinstance(cell, dict):
+                raise ValueError(f"{label} state cell is invalid")
+            for receipt in cell.get("archives") or []:
+                if not isinstance(receipt, dict) or not _RUN_ID.fullmatch(str(receipt.get("run_id") or "")):
+                    raise ValueError("campaign archive receipt is invalid")
+                run_id = receipt["run_id"]
+                if run_id in result and result[run_id] != receipt:
+                    raise ValueError("campaign has conflicting archive receipts")
+                result[run_id] = receipt
     return result
 
 
@@ -223,6 +229,17 @@ def prepare(*, manifest_path: Path, state_path: Path, runtime_root: Path,
     if not isinstance(evaluation, dict):
         raise ValueError("campaign retained no evaluation")
     status = publication.campaign_evaluation_status(campaign, evaluation)
+    patched_primary = any(
+        node["identity"].get("kind") == "candidate"
+        and node["identity"].get("mode", "stock") == "patched"
+        for topology in campaign["topologies"]
+        for node in topology["nodes"]
+    )
+    if patched_primary and status.get("security_authority") not in {
+        "patched-primary-stock-confirmed",
+        "patched-primary-stock-disagrees",
+    }:
+        raise ValueError("patched primary requires complete stock replay authority")
     if status["security_result"] not in {"pass", "finding"} or status["measurement_completeness"] != "complete":
         raise ValueError("campaign security/measurement evaluation is incomplete")
     required = publication._run_ids(evaluation)

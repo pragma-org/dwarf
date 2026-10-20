@@ -655,7 +655,9 @@ def amaru_control_topology_shape(substrate):
     }
 
 
-def versioned_substrate_for_profile(profile, version_preview):
+def versioned_substrate_for_profile(
+    profile, version_preview, *, measurement_target_override=None
+):
     """Translate a frozen profile version preview into a real Docker substrate.
 
     Amaru does not currently forge a standalone fresh devnet.  An
@@ -701,26 +703,68 @@ def versioned_substrate_for_profile(profile, version_preview):
         for index in range(1, profile.amaru_node_count + 1):
             nodes.append(_versioned_node(f"amaru{index}", "consumer", amaru_release))
 
-    if profile.measurement_target_mode not in {"stock", "patched"}:
+    measurement_target_mode = (
+        measurement_target_override.get("target_mode")
+        if isinstance(measurement_target_override, dict)
+        else profile.measurement_target_mode
+    )
+    if measurement_target_mode not in {"stock", "patched"}:
         raise ValueError("measurement_target_mode must be stock or patched")
-    if profile.measurement_target_mode == "patched":
+    if measurement_target_mode == "patched":
         if profile.amaru_node_count:
             implementation = "amaru"
-            from profile_manager.measurement_targets import resolve_patched_amaru_target
+            if measurement_target_override is None:
+                from profile_manager.measurement_targets import resolve_patched_amaru_target
 
-            target = resolve_patched_amaru_target(profile)
+                target = resolve_patched_amaru_target(profile)
+            else:
+                target = dict(measurement_target_override)
         elif profile.node_count:
             implementation = "cardano-node"
-            from profile_manager.measurement_targets import resolve_patched_cardano_target
+            if measurement_target_override is None:
+                from profile_manager.measurement_targets import resolve_patched_cardano_target
 
-            target = resolve_patched_cardano_target(profile)
+                target = resolve_patched_cardano_target(profile)
+            else:
+                target = dict(measurement_target_override)
         else:
             raise ValueError("patched measurement target requires at least one target node")
+        if measurement_target_override is not None:
+            release = resolved.get(implementation) or {}
+            expected = {
+                "implementation": implementation,
+                "version": release.get("version"),
+                "source_revision": release.get("source_revision"),
+                "target_mode": "patched",
+            }
+            if any(target.get(field) != value for field, value in expected.items()):
+                raise ValueError(
+                    "campaign measurement target differs from the resolved patched target"
+                )
+            if not re.fullmatch(r"[0-9a-f]{40}", str(target.get("source_revision") or "")):
+                raise ValueError("campaign patched target requires an exact source revision")
+            if not re.fullmatch(r"[0-9a-f]{64}", str(target.get("patch_set_sha256") or "")):
+                raise ValueError("campaign patched target requires an exact patch-set sha256")
+            for field in (
+                "image_digest",
+                "executable_digest",
+                "build_result_sha256",
+                "runtime_probe_log_sha256",
+            ):
+                if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(target.get(field) or "")):
+                    raise ValueError(
+                        f"campaign patched target requires immutable {field}"
+                    )
+            if not re.fullmatch(
+                r"[^\s]+@sha256:[0-9a-f]{64}", str(target.get("image") or "")
+            ):
+                raise ValueError("campaign patched target requires an immutable image")
         for node in nodes:
             if node["impl"] != implementation:
                 continue
             patched_identity = {
-                "image": target.get("runtime_image_reference")
+                "image": target.get("image")
+                or target.get("runtime_image_reference")
                 or target["image_reference"],
                 "image_digest": target["image_digest"],
                 "executable_digest": target["executable_digest"],
@@ -817,7 +861,7 @@ def versioned_substrate_for_profile(profile, version_preview):
         "unknown_acknowledged": bool(version_preview.get("unknown_acknowledged", False)),
         "catalog_revision": version_preview.get("catalog_revision"),
         "catalog_snapshot": selected_catalog_snapshot,
-        "measurement_target_mode": profile.measurement_target_mode,
+        "measurement_target_mode": measurement_target_mode,
         "amaru_json_traces": profile.amaru_json_traces,
         "cardano_measurement_traces": profile.cardano_measurement_traces,
         "plutus_v2_genesis": profile.plutus_v2_genesis,

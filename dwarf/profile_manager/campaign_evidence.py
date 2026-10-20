@@ -27,6 +27,7 @@ must verify retained run files/build attestations before supplying the index.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 import re
@@ -622,6 +623,169 @@ def evaluate_campaign_evidence(manifest: dict[str, Any], evidence: dict[str, Any
                                   "security_valid": bool(entries) and all(entry["classification"] in {"pass", "finding"} for entry in entries), "entries": entries},
             "measurement_completeness": {**common, "kind": "campaign-measurement-completeness",
                                          "measurement_complete": bool(cells) and all(cell["state"] == "verified" for cell in cells), "cells": cells}}
+
+
+def _retained_security_results(state: dict) -> dict[str, dict]:
+    cells = _object(state.get("cells"), "campaign state cells")
+    results = {}
+    for key, cell in cells.items():
+        if not isinstance(key, str) or not key.startswith("security:"):
+            continue
+        result = _object(_object(cell, "campaign state cell").get("result"), "security cell result")
+        row = _object(result.get("security"), "retained security result")
+        entry_id = _text(row.get("entry_id"), "retained security entry_id")
+        if entry_id in results:
+            raise ValueError(f"duplicate retained security replay result: {entry_id}")
+        results[entry_id] = row
+    return results
+
+
+def _shared_result_inputs(row: dict, target_nodes: list[str]) -> set[str]:
+    run_id = _text(row.get("run_id"), "retained security run_id")
+    boundary = _text(row.get("boundary"), "retained security boundary")
+    reached = {node: set() for node in target_nodes}
+    observed = {node: set() for node in target_nodes}
+    for signal in _rows(row.get("reachability", []), "retained security reachability"):
+        key = _observation_key(signal, run_id, boundary)
+        if key and key[0] in reached and _count(signal.get("activity_count", 0), "reachability.activity_count") > 0:
+            reached[key[0]].add(key[1])
+    oracle = _object(row.get("oracle", {}), "retained security oracle")
+    for signal in _rows(oracle.get("observations", []), "retained security oracle observations"):
+        key = _observation_key(signal, run_id, boundary)
+        if key and key[0] in observed:
+            observed[key[0]].add(key[1])
+    per_node = [reached[node] & observed[node] for node in target_nodes]
+    return set.intersection(*per_node) if per_node else set()
+
+
+def evaluate_stock_replay_authority(
+    primary_manifest: dict,
+    primary_evaluation: dict,
+    primary_state: dict,
+    stock_manifest: dict,
+    stock_evaluation: dict,
+    stock_state: dict,
+) -> dict:
+    """Bind patched classifications to stock runs with the same retained input.
+
+    This is a comparison of already evaluated evidence. It never turns a
+    deterministic recipe or matching seed into an exact-input claim: at least
+    one same-boundary input digest must occur in both retained runs for every
+    target node.
+    """
+    for manifest in (primary_manifest, stock_manifest):
+        _schema_validate(manifest)
+        if manifest.get("campaign_digest") != digest_security_campaign(manifest):
+            raise ValueError("stock replay manifest digest mismatch")
+    if primary_manifest.get("candidate") != stock_manifest.get("candidate"):
+        raise ValueError("stock replay candidate differs from patched primary")
+
+    def candidate_modes(manifest):
+        return {
+            node["identity"].get("mode", "stock")
+            for topology in manifest["topologies"]
+            for node in topology["nodes"]
+            if node["identity"].get("kind") == "candidate"
+        }
+
+    if candidate_modes(primary_manifest) != {"patched"} or candidate_modes(stock_manifest) != {"stock"}:
+        raise ValueError("stock replay requires patched primary and stock replay manifests")
+
+    primary_entries = {entry["id"]: entry for entry in primary_manifest["entries"]}
+    stock_entries = {entry["id"]: entry for entry in stock_manifest["entries"]}
+    if set(primary_entries) != set(stock_entries):
+        raise ValueError("stock replay entry set differs from patched primary")
+    for entry_id in primary_entries:
+        primary_entry, stock_entry = primary_entries[entry_id], stock_entries[entry_id]
+        scenario_id = primary_entry["contract"]["scenario_id"]
+        # Instrumentation attachments intentionally differ between lanes. They
+        # do not define the security workload, fault, oracle or input recipe.
+        primary_contract = deepcopy(primary_entry["contract"])
+        stock_contract = deepcopy(stock_entry["contract"])
+        primary_contract.pop("measurement_attachments", None)
+        stock_contract.pop("measurement_attachments", None)
+        if (primary_contract != stock_contract
+                or primary_manifest["definitions"]["scenarios"][scenario_id]["digest"]
+                != stock_manifest["definitions"]["scenarios"].get(scenario_id, {}).get("digest")
+                or _digest(primary_entry.get("execution")) != _digest(stock_entry.get("execution"))):
+            raise ValueError("stock replay scenario/input recipe differs from patched primary")
+
+    def evaluated(evaluation, manifest, label):
+        record = _object(evaluation.get("security_validity"), f"{label} security evaluation")
+        if (record.get("kind") != "campaign-security-validity"
+                or record.get("campaign_id") != manifest["campaign_id"]
+                or record.get("campaign_digest") != manifest["campaign_digest"]):
+            raise ValueError(f"{label} security evaluation differs from its campaign")
+        return _index(_rows(record.get("entries"), f"{label} security entries"), ("entry_id",), f"{label} security entry")
+
+    primary_evaluated = evaluated(primary_evaluation, primary_manifest, "primary")
+    stock_evaluated = evaluated(stock_evaluation, stock_manifest, "stock replay")
+    primary_results = _retained_security_results(primary_state)
+    stock_results = _retained_security_results(stock_state)
+    rows = []
+    for entry_id in sorted(primary_entries):
+        primary_verdict = primary_evaluated.get((entry_id,), {})
+        stock_verdict = stock_evaluated.get((entry_id,), {})
+        primary_row = primary_results.get(entry_id, {})
+        stock_row = stock_results.get(entry_id, {})
+        target_nodes = primary_entries[entry_id]["contract"]["target_nodes"]
+        primary_inputs = _shared_result_inputs(primary_row, target_nodes) if primary_row else set()
+        stock_inputs = _shared_result_inputs(stock_row, target_nodes) if stock_row else set()
+        matched = sorted(primary_inputs & stock_inputs)
+        primary_classification = primary_verdict.get("classification", "inconclusive")
+        stock_classification = stock_verdict.get("classification", "inconclusive")
+        decisive = {"pass", "finding"}
+        complete = (
+            primary_classification in decisive
+            and stock_classification in decisive
+            and bool(matched)
+            and primary_inputs == stock_inputs
+            and primary_verdict.get("run_id") == primary_row.get("run_id")
+            and stock_verdict.get("run_id") == stock_row.get("run_id")
+            and primary_row.get("scenario_digest") == stock_row.get("scenario_digest")
+            and primary_row.get("contract_digest") == _digest(primary_entries[entry_id]["contract"])
+            and stock_row.get("contract_digest") == _digest(stock_entries[entry_id]["contract"])
+            and primary_row.get("execution_digest") == stock_row.get("execution_digest")
+        )
+        authority = (
+            "confirmed" if complete and primary_classification == stock_classification
+            else "disagrees" if complete
+            else "incomplete"
+        )
+        rows.append({
+            "entry_id": entry_id,
+            "authority": authority,
+            "primary_run_id": primary_row.get("run_id"),
+            "stock_run_id": stock_row.get("run_id"),
+            "primary_classification": primary_classification,
+            "stock_classification": stock_classification,
+            "matched_input_digests": matched,
+        })
+
+    if any(row["authority"] == "incomplete" for row in rows):
+        authority = "patched-primary-stock-replay-incomplete"
+    elif any(row["authority"] == "disagrees" for row in rows):
+        authority = "patched-primary-stock-disagrees"
+    else:
+        authority = "patched-primary-stock-confirmed"
+    stock_classifications = [row["stock_classification"] for row in rows]
+    stock_result = next(
+        (value for value in _PRECEDENCE if value in stock_classifications),
+        "inconclusive",
+    )
+    result = {
+        "schema_version": "v1",
+        "kind": "campaign-stock-replay-authority",
+        "primary_campaign_digest": primary_manifest["campaign_digest"],
+        "stock_campaign_digest": stock_manifest["campaign_digest"],
+        "primary_evidence_digest": primary_evaluation["security_validity"]["evidence_digest"],
+        "stock_evidence_digest": stock_evaluation["security_validity"]["evidence_digest"],
+        "authority": authority,
+        "stock_security_result": stock_result,
+        "entries": rows,
+    }
+    result["authority_digest"] = _digest(result)
+    return result
 
 
 def _read_json(path: Path) -> dict:

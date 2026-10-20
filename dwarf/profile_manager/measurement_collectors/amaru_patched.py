@@ -583,7 +583,8 @@ def paired_overhead_calibration(
         reasons.append("patched source revision is not the audited revision")
     if (
         expected_patch_set_sha256 is not None
-        and observed_patch_set_sha256 != expected_patch_set_sha256
+        and normalized_patch_digest
+        != expected_patch_set_sha256.removeprefix("sha256:")
     ):
         reasons.append("patched patch-set identity is not the audited patch")
     if stock.get("workload_identity") != patched.get("workload_identity"):

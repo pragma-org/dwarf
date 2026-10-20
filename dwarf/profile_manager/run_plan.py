@@ -866,6 +866,11 @@ def _capability_context(value: dict[str, Any] | None) -> dict[str, Any]:
             for reference, identity in (supplied.get("inspected_images") or {}).items()
             if isinstance(reference, str) and isinstance(identity, dict)
         },
+        "measurement_target_override": (
+            dict(supplied["measurement_target_override"])
+            if isinstance(supplied.get("measurement_target_override"), dict)
+            else None
+        ),
     }
 
 
@@ -1112,6 +1117,7 @@ def _measurement_context(
     *,
     run_overrides: list[dict[str, Any]] | None = None,
     experimental_consent: dict[str, Any] | None = None,
+    measurement_target_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if profile is None or preview is None:
         return {
@@ -1129,12 +1135,20 @@ def _measurement_context(
     ):
         return explicit_no_measurements_context()
     implementation = scenario.target["implementation"]
-    mode = profile.measurement_target_mode
+    mode = (
+        measurement_target_override.get("target_mode")
+        if isinstance(measurement_target_override, dict)
+        else profile.measurement_target_mode
+    )
     image_reference = image_digest = image_manifest_digest = executable_digest = None
     node = None
     try:
         if mode == "patched":
-            substrate = versioned_substrate_for_profile(profile, preview)
+            substrate = versioned_substrate_for_profile(
+                profile,
+                preview,
+                measurement_target_override=measurement_target_override,
+            )
             node = next(
                 (
                     item
@@ -1414,12 +1428,14 @@ def resolve_run_plan(
             else scenario.measurement_profile
         ),
     )
+    capability = _capability_context(capability_context)
     measurements = _measurement_context(
         effective_scenario,
         profile,
         preview,
         run_overrides=request.measurement_overrides,
         experimental_consent=request.experimental_measurement_consent,
+        measurement_target_override=capability["measurement_target_override"],
     )
     target_bindings = _scenario_target_bindings(
         effective_scenario, measurements.get("target_identity") or {}
@@ -1430,7 +1446,6 @@ def resolve_run_plan(
         else []
     )
     cells, primitive_names = _primitive_inventory(effective_scenario)
-    capability = _capability_context(capability_context)
     conformance_adapters = _conformance_bindings(
         effective_scenario,
         registry_root=capability["measurement_target_registry"],
@@ -1468,7 +1483,13 @@ def resolve_run_plan(
             },
         }
         if profile is not None:
-            substrate = versioned_substrate_for_profile(profile, preview)
+            substrate = versioned_substrate_for_profile(
+                profile,
+                preview,
+                measurement_target_override=capability[
+                    "measurement_target_override"
+                ],
+            )
             desired_topology = desired_topology_from_substrate(profile.id, substrate)
             topology_shape = substrate.get("actual_topology")
             versions.update(

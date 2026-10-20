@@ -209,6 +209,13 @@
             "infrastructure-invalid"
           ]
         },
+        "security_authority": {
+          "enum": [
+            "patched-primary-stock-confirmed",
+            "patched-primary-stock-disagrees",
+            "patched-primary-stock-replay-incomplete"
+          ]
+        },
         "measurement_completeness": {
           "enum": [
             "complete",

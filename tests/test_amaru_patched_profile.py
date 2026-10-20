@@ -1,4 +1,6 @@
 import json
+from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 
@@ -142,6 +144,41 @@ def test_patched_profile_substitutes_only_amaru_image_and_preserves_control_life
     assert "DWARF patched-target wrapper compatibility probe" in command
     assert IMAGE_ID in command
     assert f"docker pull {amaru['image']}" not in command
+
+
+def test_campaign_target_override_replaces_legacy_profile_pin_without_registry():
+    profile = replace(_profile(), measurement_target_mode="stock")
+    preview = deepcopy(build_deployment_version_preview(profile.__dict__))
+    source_revision = "9" * 40
+    patch_set = "8" * 64
+    preview["resolved"]["amaru"].update(
+        version="candidate-future",
+        source_revision=source_revision,
+    )
+    target = {
+        "implementation": "amaru",
+        "version": "candidate-future",
+        "source_revision": source_revision,
+        "target_mode": "patched",
+        "image": "localhost:5000/dwarf/amaru-candidate@sha256:" + "7" * 64,
+        "image_digest": "sha256:" + "7" * 64,
+        "executable_digest": "sha256:" + "6" * 64,
+        "patch_set_sha256": patch_set,
+        "build_result_sha256": "sha256:" + "5" * 64,
+        "runtime_probe_log_sha256": "sha256:" + "4" * 64,
+    }
+
+    substrate = versioned_substrate_for_profile(
+        profile,
+        preview,
+        measurement_target_override=target,
+    )
+
+    amaru = next(node for node in substrate["nodes"] if node["impl"] == "amaru")
+    assert amaru["version"] == "candidate-future"
+    assert amaru["source_revision"] == source_revision
+    assert amaru["image"] == target["image"]
+    assert amaru["patch_set_sha256"] == patch_set
 
 
 def test_imported_target_uses_config_content_id_and_preserves_manifest_provenance(

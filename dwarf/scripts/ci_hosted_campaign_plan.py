@@ -271,6 +271,7 @@ def plan_hosted_campaign(discovery_path, stage_path, stock_build, directory, *,
             registrations.append(registered)
             observations.append({"mode": mode, "status": "built",
                                  "patch_set_digest": registered.get("patch_set_digest"),
+                                 "build_result_sha256": "sha256:" + _sha256(lane / "receipt.json"),
                                  "artifacts": {"image_digest": registered["manifest_digest"],
                                                "binary_digest": executable_digest,
                                                "executable_digest": executable_digest},
@@ -279,7 +280,9 @@ def plan_hosted_campaign(discovery_path, stage_path, stock_build, directory, *,
             raise ValueError("stock and patched builds report different Amaru versions")
         version = next(iter(versions))
         decision = select_primary_mode(observations)
-        registrations.sort(key=lambda row: (row["mode"] != decision["primary_mode"], row["mode"]))
+        # Keep the ordinary catalog default stock. Patched execution is selected
+        # only through the campaign-owned target override and exact build receipt.
+        registrations.sort(key=lambda row: (row["mode"] != "stock", row["mode"]))
 
         base_catalog = load_version_catalog(catalog_path)
         cardano = resolve_default(base_catalog, "cardano-only")["release"]
@@ -336,6 +339,8 @@ def plan_hosted_campaign(discovery_path, stage_path, stock_build, directory, *,
                      "runtime_image_config_id": row["runtime_image_config_id"]}
             if row.get("patch_set_digest"):
                 build["patch_set_digest"] = row["patch_set_digest"]
+            if row.get("build_result_sha256"):
+                build["build_result_sha256"] = row["build_result_sha256"]
             builds.append(build)
         _save(output / "manifest.json", manifest)
         _save(output / "stock-manifest.json", stock_manifest)
