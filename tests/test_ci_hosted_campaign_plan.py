@@ -11,6 +11,7 @@ TRUSTED = "b" * 40
 TREE = "c" * 64
 CONFIG = "sha256:" + "d" * 64
 MANIFEST = "sha256:" + "e" * 64
+PATCH = "sha256:" + "f" * 64
 
 
 def save(path, value):
@@ -120,3 +121,38 @@ def test_hosted_plan_rejects_loaded_image_identity_change(tmp_path):
     result = api.plan_hosted_campaign(discovery, stage, stock, tmp_path / "out", run=run)
     assert result["status"] == "error"
     assert result["reason"] == "hosted-campaign-plan-invalid"
+
+
+def test_patched_build_is_selected_as_primary_with_stock_replay():
+    decision = api.select_primary_mode([
+        {"mode": "stock", "status": "built", "artifacts": {"image_digest": MANIFEST}},
+        {"mode": "patched", "status": "built", "patch_set_digest": PATCH,
+         "artifacts": {"image_digest": "sha256:" + "1" * 64}},
+    ])
+    assert decision == {
+        "primary_mode": "patched",
+        "fallback_mode": "stock",
+        "reason": "compatible-patched-build-observed",
+        "calibration_required": True,
+        "stock_replay_required": True,
+    }
+
+
+def test_missing_patched_build_selects_stock_with_explicit_unavailability():
+    decision = api.select_primary_mode([
+        {"mode": "stock", "status": "built", "artifacts": {"image_digest": MANIFEST}},
+        {"mode": "patched", "status": "unavailable", "reason": "no-compatible-trusted-patch"},
+    ])
+    assert decision["primary_mode"] == "stock"
+    assert decision["reason"] == "patch-unavailable:no-compatible-trusted-patch"
+    assert decision["calibration_required"] is False
+
+
+def test_failed_patched_build_selects_stock_without_hiding_failure():
+    decision = api.select_primary_mode([
+        {"mode": "stock", "status": "built", "artifacts": {"image_digest": MANIFEST}},
+        {"mode": "patched", "status": "error", "reason": "trusted-patch-build-failed"},
+    ])
+    assert decision["primary_mode"] == "stock"
+    assert decision["reason"] == "patch-build-failed:trusted-patch-build-failed"
+    assert decision["stock_replay_required"] is False

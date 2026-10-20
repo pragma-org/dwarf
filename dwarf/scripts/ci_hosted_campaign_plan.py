@@ -39,6 +39,40 @@ _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _VERSION = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._+-]{0,127}$")
 
 
+def select_primary_mode(builds: list[dict]) -> dict:
+    """Choose execution mode from independently observed build outcomes.
+
+    A missing or failed patched lane is a stock fallback, not a candidate
+    rejection. Stock must always be a complete immutable build because it is the
+    submitted-source authority and the replay target.
+    """
+    by_mode = {}
+    for row in builds:
+        mode = row.get("mode")
+        if mode in by_mode:
+            raise ValueError(f"duplicate hosted build observation: {mode}")
+        by_mode[mode] = row
+    stock = by_mode.get("stock", {})
+    if (stock.get("status") != "built"
+            or not _DIGEST.fullmatch(str(stock.get("artifacts", {}).get("image_digest", "")))):
+        raise ValueError("hosted campaign requires an immutable successful stock build")
+    patched = by_mode.get("patched")
+    common = {"fallback_mode": "stock"}
+    if patched is None:
+        return {**common, "primary_mode": "stock", "reason": "patch-unavailable:missing-patched-build-observation",
+                "calibration_required": False, "stock_replay_required": False}
+    if patched.get("status") != "built":
+        category = "patch-build-failed" if patched.get("status") == "error" else "patch-unavailable"
+        reason = str(patched.get("reason") or "unspecified")
+        return {**common, "primary_mode": "stock", "reason": f"{category}:{reason}",
+                "calibration_required": False, "stock_replay_required": False}
+    if (not _DIGEST.fullmatch(str(patched.get("patch_set_digest", "")))
+            or not _DIGEST.fullmatch(str(patched.get("artifacts", {}).get("image_digest", "")))):
+        raise ValueError("successful patched build lacks immutable artifact or patch identity")
+    return {**common, "primary_mode": "patched", "reason": "compatible-patched-build-observed",
+            "calibration_required": True, "stock_replay_required": True}
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
