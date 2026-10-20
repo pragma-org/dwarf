@@ -1081,6 +1081,7 @@ def test_public_amaru_service_uses_declared_external_peer_and_bootstraps_real_ne
     )["services"]["amaru1"]
     command = service["command"][0]
 
+    assert "mkdir -p /amaru/amaru1 /logs/amaru1; cd /amaru/amaru1" in command
     assert "amaru bootstrap" in command
     assert '--network "preview"' in command
     assert '--peer-address "preview-node.play.dev.cardano.org:3001"' in command

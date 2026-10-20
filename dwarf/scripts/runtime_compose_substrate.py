@@ -1092,6 +1092,7 @@ def _docker_compose_body(
             command_parts = [
                 "set -euo pipefail",
                 f"mkdir -p {state_root} /logs/{node['id']}",
+                f"cd {state_root}",
             ]
             if _amaru_bootstrap_required(network_name):
                 command_parts.append(
