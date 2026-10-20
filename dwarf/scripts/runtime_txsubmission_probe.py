@@ -97,6 +97,10 @@ def _encode_cbor_uint(value: int) -> bytes:
     raise ValueError(f"uint out of supported range: {value}")
 
 
+def _handshake_propose_payload(network_magic: int) -> bytes:
+    return b"\x82\x00\xa1\x0a\x82" + _encode_cbor_uint(network_magic) + b"\xf4"
+
+
 def _encode_cbor_array(length: int) -> bytes:
     return bytes([0x80 + length]) if length < 24 else bytes([0x98]) + bytes([length])
 
@@ -202,9 +206,12 @@ def run_probe(
     response_timeout_seconds: float = 2.0,
     receive_bytes: int = 64,
 ) -> dict:
+    network_magic = 42
     if target_port is None:
         if runtime_metadata_path is None:
             raise RuntimeError("runtime metadata or a verified target port is required")
+        runtime_metadata = json.loads(runtime_metadata_path.read_text(encoding="utf-8"))
+        network_magic = int(runtime_metadata.get("network_magic", 42))
         node = _load_runtime_node(runtime_metadata_path, target_node)
         port = int(node["port"])
     else:
@@ -212,7 +219,7 @@ def run_probe(
         if port <= 0 or port > 65535:
             raise RuntimeError("verified target port is invalid")
     case = MODE_CASES[mode]
-    handshake_payload = bytes.fromhex(HANDSHAKE_PROPOSE_HEX)
+    handshake_payload = _handshake_propose_payload(network_magic)
     txsubmission_init_payload = bytes.fromhex(TXSUBMISSION_INIT_HEX)
     handshake_frame = _encode_mux_sdu(handshake_payload, mini_protocol_num=0)
     txsubmission_init_frame = _encode_mux_sdu(txsubmission_init_payload, mini_protocol_num=4)

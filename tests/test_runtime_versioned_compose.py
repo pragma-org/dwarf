@@ -326,6 +326,55 @@ def test_versioned_compose_nodes_are_discoverable_as_dwarf_managed():
     assert labels["ada2.service"] == "node1"
 
 
+def test_versioned_compose_nodes_run_as_the_runtime_tree_owner():
+    node = {
+        "id": "node1",
+        "impl": "cardano-node",
+        "listen_address": "127.0.0.1:33001",
+        "host_slot_index": 1,
+        "image": "ghcr.io/intersectmbo/cardano-node:11.1.2@sha256:" + "a" * 64,
+    }
+
+    body = compose._docker_compose_body(
+        compose_project="dwarf-profile-versioned-local",
+        nodes=[node],
+        network_name="testnet_42",
+        runtime_user="1001:1001",
+    )
+
+    assert body["services"]["node1"]["user"] == "1001:1001"
+
+
+def test_runtime_user_matches_the_bind_mount_owner(tmp_path):
+    stat = tmp_path.stat()
+
+    assert compose._runtime_user(tmp_path) == f"{stat.st_uid}:{stat.st_gid}"
+
+
+def test_bundle_runtime_view_keeps_the_live_short_socket_path(tmp_path):
+    runtime_root = tmp_path / "r"
+    output_dir = tmp_path / ("long-output-directory-" * 5)
+    socket_path = runtime_root / "socket" / "node1.sock"
+    socket_path.parent.mkdir(parents=True)
+    socket_path.touch()
+    metadata_path = runtime_root / "runtime.json"
+    metadata = {
+        "haskell_nodes": [
+            {"id": "node1", "impl": "cardano-node", "socket_path": str(socket_path)}
+        ],
+        "amaru_nodes": [],
+    }
+
+    bundled = compose._emit_bundle_runtime_view(
+        output_dir=output_dir,
+        metadata_path=metadata_path,
+        metadata=metadata,
+    )
+    body = json.loads(bundled.read_text())
+
+    assert body["nodes"][0]["socket_path"] == str(socket_path)
+
+
 def test_controller_owned_compose_labels_nodes_and_network_for_exact_inventory():
     node = {
         "id": "node1",

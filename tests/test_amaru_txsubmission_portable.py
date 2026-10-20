@@ -21,6 +21,15 @@ class _Handle:
         self.logs.append(entry)
 
 
+def test_handshake_proposal_uses_the_selected_network_magic():
+    assert runtime_txsubmission_probe._handshake_propose_payload(2).hex() == (
+        "8200a10a8202f4"
+    )
+    assert runtime_txsubmission_probe._handshake_propose_payload(42).hex() == (
+        runtime_txsubmission_probe.HANDSHAKE_PROPOSE_HEX
+    )
+
+
 def _primitive_schema():
     return json.loads(
         Path("dwarf/primitives/load/runtime_txsubmission_probe.schema.json").read_text()

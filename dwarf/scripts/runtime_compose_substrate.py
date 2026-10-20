@@ -924,7 +924,6 @@ def _emit_bundle_runtime_view(*, output_dir: Path, metadata_path: Path, metadata
                 if mirror.exists() or mirror.is_symlink():
                     mirror.unlink()
                 mirror.symlink_to(source)
-                mirrored["socket_path"] = str(mirror)
         mirrored_nodes.append(mirrored)
     bundle_metadata = dict(metadata)
     bundle_metadata["nodes"] = mirrored_nodes
@@ -1026,6 +1025,7 @@ def _docker_compose_body(
     controller_ownership: dict | None = None,
     docker_host_runtime_root: str | None = None,
     amaru_txsubmission_trace: bool = False,
+    runtime_user: str = "1000:1000",
 ) -> dict:
     services = {}
     for node in nodes:
@@ -1149,7 +1149,7 @@ def _docker_compose_body(
                 f"{volume_root}/env:/env",
                 f"{volume_root}/logs:/logs",
             ],
-            "user": "1000:1000",
+            "user": runtime_user,
             "read_only": True,
             "cap_drop": ["ALL"],
             "security_opt": ["no-new-privileges:true"],
@@ -1198,6 +1198,11 @@ def _docker_compose_body(
         "services": services,
         "networks": {"default": network},
     }
+
+
+def _runtime_user(runtime_root: Path) -> str:
+    owner = runtime_root.stat()
+    return f"{owner.st_uid}:{owner.st_gid}"
 
 
 def _inspect_docker_node(*, compose_project: str, node: dict) -> dict:
@@ -1421,6 +1426,7 @@ def _compose_substrate_docker(
         amaru_txsubmission_trace=bool(
             plan.get("amaru_txsubmission_trace", False)
         ),
+        runtime_user=_runtime_user(runtime_root),
     )
     if plan.get("controller_ownership"):
         for service in compose_body["services"].values():

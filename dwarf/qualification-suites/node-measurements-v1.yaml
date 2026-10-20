@@ -385,12 +385,14 @@ exercises:
     and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
     are not exercised. Missing rejected/accepted outcomes remain incomplete.
   runtime:
-    status: implemented
+    status: missing
+    reason: The selected differential scenario references a corpus fixture that is not packaged and its current probe only replays declared expected fields; it does not submit a real Plutus transaction or retain target execution evidence.
   fallback:
     scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
     activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
       after the declared boundary, normal control and collector prerequisites are available.
-    status: ready
+    status: blocked
+    reason: Add a version-neutral funded Plutus transaction workload with real accepted and rejected outcomes before enabling this fallback.
 - measurement_id: amaru-stock-resources
   implementation: amaru
   scenario_id: amaru-measurement-e2e-stock-portable
@@ -773,12 +775,14 @@ exercises:
     and correlation. Evaluate every rule conjunctively. Available, unknown, unavailable and zero-sample results
     are not exercised. Missing rejected/accepted outcomes remain incomplete.
   runtime:
-    status: implemented
+    status: missing
+    reason: The selected differential scenario references a corpus fixture that is not packaged and its current probe only replays declared expected fields; it does not submit a real Plutus transaction or retain target execution evidence.
   fallback:
     scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
     activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
       after the declared boundary, normal control and collector prerequisites are available.
-    status: ready
+    status: blocked
+    reason: Add a version-neutral funded Plutus transaction workload with real accepted and rejected outcomes before enabling this fallback.
 - measurement_id: cardano-stock-resources
   implementation: cardano-node
   scenario_id: cardano-measurement-e2e-stock-portable
