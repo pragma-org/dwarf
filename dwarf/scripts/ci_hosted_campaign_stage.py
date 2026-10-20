@@ -22,6 +22,7 @@ _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _HEX = re.compile(r"^[0-9a-f]{64}$")
 _REQUIRED = ("Cargo.lock", "fetch-metadata.json", "synthetic-git.json", "peer-snapshots.json",
              "build.log", "executable", "runtime.docker.tar")
+_REQUIRED_PATCHED = (*_REQUIRED, "patch-inputs.json")
 
 
 def _sha256(path: Path) -> str:
@@ -72,7 +73,9 @@ def stage_hosted_build(discovery_path, stock_build, directory, *, expected_commi
         stock_build = Path(stock_build)
         summary = _load_regular(stock_build / "summary.json")
         lanes = sorted(path for path in stock_build.glob("stock-*") if path.is_dir() and not path.is_symlink())
-        if summary.get("statuses") != ["built"] * len(candidates) or len(lanes) != len(candidates):
+        patched_lanes = sorted(path for path in stock_build.glob("patched-*") if path.is_dir() and not path.is_symlink())
+        if (summary.get("statuses") != ["built"] * len(candidates) or len(lanes) != len(candidates)
+                or len(patched_lanes) not in {0, len(candidates)}):
             raise ValueError("stock-build summary or lane count differs from discovery")
 
         discovered = {(row["source_path"], row["repository_commit"], row["source_tree_digest"]): row
@@ -97,7 +100,8 @@ def stage_hosted_build(discovery_path, stock_build, directory, *, expected_commi
                     raise ValueError(f"stock-build artifact failed verification: {name}")
                 verified[name] = expected
             row = discovered[key]
-            status["candidates"].append({
+            stock_variant = {
+                "mode": "stock", "status": "built",
                 "candidate_name": row["candidate_name"],
                 "repository_commit": key[1],
                 "source_tree_digest": key[2],
@@ -105,7 +109,45 @@ def stage_hosted_build(discovery_path, stock_build, directory, *, expected_commi
                 "runtime_image_name": receipt.get("runtime_image_name"),
                 "lane": lane.name,
                 "files": verified,
-            })
+            }
+            candidate_record = {**stock_variant, "variants": [stock_variant]}
+            patched_lane = stock_build / lane.name.replace("stock-", "patched-", 1)
+            if patched_lane in patched_lanes:
+                patched_receipt = _load_regular(patched_lane / "receipt.json")
+                patched = {
+                    "mode": "patched", "status": patched_receipt.get("status"),
+                    "candidate_name": row["candidate_name"], "repository_commit": key[1],
+                    "source_tree_digest": key[2], "builder_image": builder,
+                    "runtime_image_name": patched_receipt.get("runtime_image_name"),
+                    "lane": patched_lane.name,
+                    "reason": patched_receipt.get("reason") or patched_receipt.get("detail"),
+                }
+                if patched["status"] == "built":
+                    if (patched_receipt.get("kind") != "amaru-network-patched-build"
+                            or patched_receipt.get("variant") != "patched"
+                            or patched_receipt.get("builder_image") != builder
+                            or patched_receipt.get("repository_commit") != key[1]
+                            or patched_receipt.get("source_tree_digest") != key[2]
+                            or not re.fullmatch(r"sha256:[0-9a-f]{64}", str(patched_receipt.get("patch_set_digest", "")))
+                            or patched_receipt.get("runtime_image_name") != "dwarf/amaru-candidate-patched:" + str(key[2])[:16]):
+                        raise ValueError("patched-build receipt identity differs from discovery")
+                    patched_files = patched_receipt.get("files")
+                    if not isinstance(patched_files, dict):
+                        raise ValueError("patched-build receipt files are missing")
+                    verified_patched = {}
+                    for name in _REQUIRED_PATCHED:
+                        path = patched_lane / name
+                        expected = patched_files.get(name)
+                        if (path.is_symlink() or not path.is_file() or not _HEX.fullmatch(str(expected))
+                                or _sha256(path) != expected):
+                            raise ValueError(f"patched-build artifact failed verification: {name}")
+                        verified_patched[name] = expected
+                    patched.update(files=verified_patched,
+                                   patch_set_digest=patched_receipt["patch_set_digest"])
+                elif patched["status"] not in {"unavailable", "error"}:
+                    raise ValueError("patched-build receipt has invalid status")
+                candidate_record["variants"].append(patched)
+            status["candidates"].append(candidate_record)
         if len(seen) != len(discovered):
             raise ValueError("a discovered Amaru candidate has no unique stock build")
         candidate = status["candidates"][0]
@@ -125,21 +167,26 @@ def stage_hosted_build(discovery_path, stock_build, directory, *, expected_commi
                       reason="hosted-campaign-runtime-registration-pending")
         if run is not None:
             for candidate in status["candidates"]:
-                archive = stock_build / candidate["lane"] / "runtime.docker.tar"
-                run(["docker", "load", "--input", str(archive)], check=True, capture_output=True,
-                    text=True, timeout=300)
-                image_name = candidate["runtime_image_name"]
-                inspected = run(["docker", "image", "inspect", image_name], check=True,
-                                capture_output=True, text=True, timeout=60)
-                decoded = json.loads(inspected.stdout)
-                image = decoded[0] if isinstance(decoded, list) and len(decoded) == 1 else None
-                config_id = image.get("Id") if isinstance(image, dict) else None
-                if (not re.fullmatch(r"sha256:[0-9a-f]{64}", str(config_id))
-                        or image.get("Os") != "linux" or image.get("Architecture") != "amd64"
-                        or image_name not in (image.get("RepoTags") or [])
-                        or (image.get("Config") or {}).get("Entrypoint") != ["/usr/local/bin/amaru"]):
-                    raise ValueError("loaded runtime image identity or platform differs")
-                candidate["runtime_image_config_id"] = config_id
+                for variant in candidate["variants"]:
+                    if variant["status"] != "built":
+                        continue
+                    archive = stock_build / variant["lane"] / "runtime.docker.tar"
+                    run(["docker", "load", "--input", str(archive)], check=True, capture_output=True,
+                        text=True, timeout=300)
+                    image_name = variant["runtime_image_name"]
+                    inspected = run(["docker", "image", "inspect", image_name], check=True,
+                                    capture_output=True, text=True, timeout=60)
+                    decoded = json.loads(inspected.stdout)
+                    image = decoded[0] if isinstance(decoded, list) and len(decoded) == 1 else None
+                    config_id = image.get("Id") if isinstance(image, dict) else None
+                    if (not re.fullmatch(r"sha256:[0-9a-f]{64}", str(config_id))
+                            or image.get("Os") != "linux" or image.get("Architecture") != "amd64"
+                            or image_name not in (image.get("RepoTags") or [])
+                            or (image.get("Config") or {}).get("Entrypoint") != ["/usr/local/bin/amaru"]):
+                        raise ValueError("loaded runtime image identity or platform differs")
+                    variant["runtime_image_config_id"] = config_id
+                    if variant["mode"] == "stock":
+                        candidate["runtime_image_config_id"] = config_id
             status["reason"] = "hosted-campaign-plan-registration-pending"
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
         status.update(status="error", reason="hosted-build-transfer-invalid", detail=str(exc)[:2048])

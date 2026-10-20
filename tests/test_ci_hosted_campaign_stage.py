@@ -9,6 +9,7 @@ from scripts import ci_hosted_campaign_stage as api
 COMMIT = "a" * 40
 TRUSTED = "b" * 40
 TREE = "c" * 64
+PATCH = "sha256:" + "f" * 64
 
 
 def write_json(path, value):
@@ -79,3 +80,53 @@ def test_tampered_hosted_build_is_rejected(tmp_path):
                                     expected_commit=COMMIT, expected_trusted_revision=TRUSTED)
     assert result["status"] == "error"
     assert result["reason"] == "hosted-build-transfer-invalid"
+
+
+def test_stock_and_patched_archives_are_verified_and_loaded_independently(tmp_path):
+    discovery, builds = inputs(tmp_path)
+    lane = builds / "patched-0000"
+    files = {}
+    for name in (*api._REQUIRED, "patch-inputs.json"):
+        path = lane / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(("patched:" + name).encode())
+        files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    builder = json.loads((api.ROOT / "infrastructure/docker/amaru-stock-builder.identity.json").read_text())["builder"]
+    write_json(lane / "receipt.json", {
+        "kind": "amaru-network-patched-build", "variant": "patched", "status": "built",
+        "builder_image": builder, "source_path": "dwarf/testplease/amaru/candidate",
+        "runtime_image_name": "dwarf/amaru-candidate-patched:" + TREE[:16],
+        "repository_commit": COMMIT, "source_tree_digest": TREE,
+        "patch_set_digest": PATCH, "files": files,
+    })
+    write_json(builds / "summary.json", {
+        "statuses": ["built"],
+        "variants": [
+            {"candidate_index": 0, "variant": "stock", "status": "built", "reason": None},
+            {"candidate_index": 0, "variant": "patched", "status": "built", "reason": None},
+        ],
+    })
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["docker", "image", "inspect"]:
+            name = argv[-1]
+            config = "sha256:" + ("e" if "patched" not in name else "9") * 64
+            return type("Result", (), {"stdout": json.dumps([{
+                "Id": config, "Os": "linux", "Architecture": "amd64", "RepoTags": [name],
+                "Config": {"Entrypoint": ["/usr/local/bin/amaru"]},
+            }]), "stderr": "", "returncode": 0})()
+        return type("Result", (), {"stdout": "Loaded image\n", "stderr": "", "returncode": 0})()
+
+    result = api.stage_hosted_build(
+        discovery, builds, tmp_path / "output",
+        expected_commit=COMMIT, expected_trusted_revision=TRUSTED, run=run,
+    )
+    assert result["status"] == "staged"
+    variants = {row["mode"]: row for row in result["candidates"][0]["variants"]}
+    assert set(variants) == {"stock", "patched"}
+    assert variants["stock"]["runtime_image_config_id"] == "sha256:" + "e" * 64
+    assert variants["patched"]["runtime_image_config_id"] == "sha256:" + "9" * 64
+    assert variants["patched"]["patch_set_digest"] == PATCH
+    assert [call[:2] for call in calls].count(["docker", "load"]) == 2

@@ -156,3 +156,72 @@ def test_failed_patched_build_selects_stock_without_hiding_failure():
     assert decision["primary_mode"] == "stock"
     assert decision["reason"] == "patch-build-failed:trusted-patch-build-failed"
     assert decision["stock_replay_required"] is False
+
+
+def test_hosted_plan_registers_patched_primary_and_stock_replay_artifacts(tmp_path):
+    discovery, builds, stage = inputs(tmp_path)
+    patched_lane = builds / "patched-0000"
+    patched_lane.mkdir()
+    patched_executable = patched_lane / "executable"
+    patched_executable.write_bytes(b"patched executable")
+    save(patched_lane / "fetch-metadata.json", {"packages": [{
+        "name": "amaru", "version": "10.11.0",
+        "targets": [{"name": "amaru", "kind": ["bin"]}],
+    }]})
+    save(patched_lane / "receipt.json", {
+        "kind": "amaru-network-patched-build", "variant": "patched", "status": "built",
+        "repository_commit": COMMIT, "source_tree_digest": TREE,
+        "runtime_image_name": "dwarf/amaru-candidate-patched:" + TREE[:16],
+        "patch_set_digest": PATCH,
+        "files": {
+            "executable": hashlib.sha256(patched_executable.read_bytes()).hexdigest(),
+            "fetch-metadata.json": hashlib.sha256((patched_lane / "fetch-metadata.json").read_bytes()).hexdigest(),
+        },
+    })
+    staged = json.loads(stage.read_text())
+    stock_variant = {
+        "mode": "stock", "status": "built", "lane": "stock-0000",
+        "runtime_image_name": "dwarf/amaru-candidate:" + TREE[:16],
+        "runtime_image_config_id": CONFIG,
+        "files": staged["candidates"][0]["files"],
+    }
+    staged["candidates"][0]["variants"] = [stock_variant, {
+        "mode": "patched", "status": "built", "lane": "patched-0000",
+        "runtime_image_name": "dwarf/amaru-candidate-patched:" + TREE[:16],
+        "runtime_image_config_id": "sha256:" + "9" * 64,
+        "patch_set_digest": PATCH,
+        "files": {
+            "executable": hashlib.sha256(patched_executable.read_bytes()).hexdigest(),
+            "fetch-metadata.json": hashlib.sha256((patched_lane / "fetch-metadata.json").read_bytes()).hexdigest(),
+        },
+    }]
+    save(stage, staged)
+
+    def run(argv, **kwargs):
+        if argv[:3] == ["docker", "image", "inspect"]:
+            target = argv[-1]
+            patched = target.endswith("-patched")
+            config = "sha256:" + ("9" if patched else "d") * 64
+            digest = "sha256:" + ("1" if patched else "e") * 64
+            return type("Result", (), {"stdout": json.dumps([{
+                "Id": config, "RepoDigests": [api.REGISTRY_REPOSITORY + "@" + digest],
+                "RepoTags": [target], "Os": "linux", "Architecture": "amd64",
+                "Config": {"Entrypoint": ["/usr/local/bin/amaru"]},
+            }]), "stderr": "", "returncode": 0})()
+        return type("Result", (), {"stdout": "", "stderr": "", "returncode": 0})()
+
+    result = api.plan_hosted_campaign(discovery, stage, builds, tmp_path / "out", run=run)
+    assert result["status"] == "planned"
+    assert result["execution_decision"]["primary_mode"] == "patched"
+    observations = json.loads((tmp_path / "out/build-observations.json").read_text())
+    assert {row["mode"] for row in observations} == {"stock", "patched"}
+    assert next(row for row in observations if row["mode"] == "patched")["patch_set_digest"] == PATCH
+    manifest = json.loads((tmp_path / "out/manifest.json").read_text())
+    candidate = next(node for node in manifest["topologies"][0]["nodes"]
+                     if node["identity"]["kind"] == "candidate")
+    reference = next(node for node in manifest["topologies"][0]["nodes"]
+                     if node["identity"]["kind"] == "release")
+    assert candidate["identity"]["mode"] == "patched"
+    assert reference["identity"]["mode"] == "stock"
+    assert any(cell["node_id"] == candidate["node_id"] and cell["target_modes"] == ["patched"]
+               for cell in manifest["required_tap_cells"])
