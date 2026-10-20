@@ -38,6 +38,17 @@ def freeze(manifest):
     return manifest
 
 
+def test_campaign_freezes_profiles_for_every_executable_scenario(campaign_plan):
+    referenced = {
+        frozen["document"]["profile"]
+        for frozen in campaign_plan["definitions"]["scenarios"].values()
+        if frozen["document"].get("profile")
+    }
+
+    assert referenced
+    assert referenced <= set(campaign_plan["definitions"]["profiles"])
+
+
 def evidence(manifest):
     builds = [{"mode": mode, "source": deepcopy(manifest["candidate"]),
                "artifacts": {key: D for key in ("image_digest", "binary_digest", "executable_digest")},

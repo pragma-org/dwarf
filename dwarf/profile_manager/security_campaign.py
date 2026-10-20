@@ -347,20 +347,27 @@ def resolve_security_campaign(
             definitions[catalog_name][definition_id] = _freeze_definition(catalog_name, definition_id)
         return definitions[catalog_name][definition_id]
 
+    def freeze_scenario(definition_id: str) -> dict[str, Any]:
+        scenario = freeze("scenarios", definition_id)
+        profile_id = scenario["document"].get("profile")
+        if profile_id:
+            freeze("profiles", profile_id)
+        return scenario
+
     # Include all exercise and conditional fallback recipes, including explicitly
     # blocked historical pins. They are retained contracts, never runnable defaults.
     for exercise in measurements["exercises"]:
         freeze("measurements", exercise["measurement_id"])
-        freeze("scenarios", exercise["scenario_id"])
+        freeze_scenario(exercise["scenario_id"])
         if exercise.get("fallback"):
-            freeze("scenarios", exercise["fallback"]["scenario_id"])
+            freeze_scenario(exercise["fallback"]["scenario_id"])
     calibration = deepcopy(_CALIBRATION_SCENARIOS[candidate.implementation])
     for scenario_id in calibration.values():
-        freeze("scenarios", scenario_id)
+        freeze_scenario(scenario_id)
     topologies, frozen_entries = {}, []
     for entry in entries:
-        scenario = freeze("scenarios", entry["scenario_id"])
-        control = freeze("scenarios", entry["normal_control"]["scenario_id"])
+        scenario = freeze_scenario(entry["scenario_id"])
+        control = freeze_scenario(entry["normal_control"]["scenario_id"])
         if entry["topology"].get("deployment_profile"):
             freeze("profiles", entry["topology"]["deployment_profile"])
         topology = deepcopy(entry["topology"])

@@ -209,6 +209,31 @@ def test_required_patch_rejects_toolchain_incompatibility(tmp_path, monkeypatch)
         builds.plan_candidate_builds(candidate, require_patch=True)
 
 
+def test_checked_in_amaru_candidate_selects_its_exact_reviewed_patch():
+    source_root = builds.TRUSTED_ROOT / "dwarf/testplease/amaru/v10.11.20260925"
+    if not source_root.is_dir():
+        pytest.skip("public testplease candidate is not mirrored in this repository")
+    candidates = discover_candidates(builds.TRUSTED_ROOT, repository_commit=COMMIT)
+    candidate = next(
+        row
+        for row in candidates
+        if row.source_root == source_root
+    )
+
+    patched = builds.plan_candidate_builds(candidate, require_patch=True)[1]
+
+    assert patched.asset_reference_revision == "eaf8ac3fa309f2a174c045454c276194c9312b8d"
+    assert patched.patch_set_digest is not None
+    assert any(
+        row.path.endswith(
+            "measurement-patches-nanoseconds-v3/"
+            "eaf8ac3fa309f2a174c045454c276194c9312b8d/"
+            "0001-dwarf-measurement-nanoseconds-v3.patch"
+        )
+        for row in patched.inputs
+    )
+
+
 def test_changed_trusted_recipe_and_patch_are_rejected(tmp_path, monkeypatch):
     candidate = source_candidate(tmp_path / "repo")
     _, patch = trusted_patch(tmp_path, monkeypatch)

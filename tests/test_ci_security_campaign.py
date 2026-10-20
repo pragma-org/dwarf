@@ -1,8 +1,11 @@
 """Bounded orchestration tests: runtime operations are isolated at one adapter."""
 from copy import deepcopy
+from contextlib import contextmanager
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -211,6 +214,318 @@ def test_local_runtime_reads_only_the_canonical_calibration_result(tmp_path):
     assert runtime.calibration_result("run-1") == expected
     with pytest.raises(ValueError, match="canonical run ID"):
         runtime.calibration_result("../run-1")
+
+
+def test_measurement_control_and_result_share_one_prepared_recipe(campaign, tmp_path):
+    manifest, cell = single_cell(campaign)
+
+    class RecipeRuntime(Runtime):
+        @contextmanager
+        def recipe(self, manifest, scenario_id, *, cell, mode, topology_id):
+            identity = (topology_id, cell["node_id"], scenario_id, mode)
+            self.calls.append(("recipe-enter", identity))
+            try:
+                yield
+            finally:
+                self.calls.append(("recipe-exit", identity))
+
+    runtime = RecipeRuntime(manifest, tmp_path)
+    state, runtime = run(manifest, tmp_path, runtime=runtime)
+
+    identity = (cell["topology_id"], cell["node_id"], cell["scenario_id"], "stock")
+    assert [call for call in runtime.calls if call[0] == "recipe-enter"] == [
+        ("recipe-enter", identity)
+    ]
+    assert [call for call in runtime.calls if call[0] == "recipe-exit"] == [
+        ("recipe-exit", identity)
+    ]
+    scenario_calls = [
+        call for call in runtime.calls
+        if len(call) == 3 and call[1] == cell["scenario_id"]
+    ]
+    assert scenario_calls == [
+        ("control", cell["scenario_id"], "stock"),
+        (cell["measurement_id"], cell["scenario_id"], "stock"),
+    ]
+    assert state["cells"][api._cell_key(cell, "stock")]["status"] == "complete"
+
+
+def test_local_runtime_recipe_removes_the_exact_profile_after_failure(
+    campaign, tmp_path, monkeypatch
+):
+    manifest, cell = single_cell(campaign)
+    runtime = api.LocalRuntime(
+        tmp_path / "runtime",
+        catalog_path=tmp_path / "catalog.json",
+        producer_version="99.0.0",
+        signing_key=tmp_path / "key",
+    )
+    project = "dwarf-profile-gh-campaign-profile-o-amaru-target-latest-confirmed"
+    topology_id = "profile-o-amaru-target-latest-confirmed"
+    deployment = {
+        "adapter": "runtime_amaru_control_substrate.py",
+        "compose_project": project,
+        "substrate": {
+            "profile_id": topology_id,
+            "nodes": [
+                {
+                    "target_mode": "stock",
+                    "image": "example.invalid/cardano@sha256:" + "a" * 64,
+                },
+                {
+                    "target_mode": "patched",
+                    "image": "sha256:" + "b" * 64,
+                },
+            ],
+        },
+    }
+    calls = []
+
+    class DockerRuntime:
+        def apply(self, plan, execution_id, cancel_event):
+            calls.append(
+                (
+                    deepcopy(plan),
+                    execution_id,
+                    cancel_event.is_set(),
+                    os.environ.get("DWARF_GOLDEN_IMAGES"),
+                )
+            )
+            return {"status": "applied", "topology_id": topology_id}
+
+    monkeypatch.setattr(
+        runtime,
+        "_recipe_deployment",
+        lambda *args, **kwargs: (topology_id, deployment),
+        raising=False,
+    )
+    monkeypatch.setattr(runtime, "_docker_runtime", lambda: DockerRuntime(), raising=False)
+    monkeypatch.setenv("DWARF_GOLDEN_IMAGES", "prior-allowlist")
+
+    with pytest.raises(RuntimeError, match="measured run failed"):
+        with runtime.recipe(
+            manifest,
+            cell["scenario_id"],
+            cell=cell,
+            mode="stock",
+            topology_id=cell["topology_id"],
+        ):
+            raise RuntimeError("measured run failed")
+
+    assert [call[0]["action"] for call in calls] == ["deploy", "remove"]
+    expected_golden = "example.invalid/cardano@sha256:" + "a" * 64
+    assert [call[3] for call in calls] == [expected_golden, expected_golden]
+    assert os.environ["DWARF_GOLDEN_IMAGES"] == "prior-allowlist"
+    assert calls[0][0]["deployment"] == deployment
+    assert calls[1][0] == {
+        "action": "remove",
+        "topology_id": topology_id,
+        "deployment": deployment,
+    }
+    assert project not in runtime.owned_projects
+
+
+def test_local_runtime_repeated_recipe_uses_fresh_mutation_ids(
+    campaign, tmp_path, monkeypatch
+):
+    manifest, cell = single_cell(campaign)
+    runtime = api.LocalRuntime(
+        tmp_path / "runtime",
+        catalog_path=tmp_path / "catalog.json",
+        producer_version=None,
+        signing_key=tmp_path / "key",
+    )
+    profile_id = "profile-n-cardano-latest-confirmed"
+    deployment = {
+        "adapter": "runtime_compose_substrate.py",
+        "compose_project": "dwarf-profile-gh-campaign-" + profile_id,
+        "substrate": {"profile_id": profile_id, "nodes": []},
+    }
+    calls = []
+
+    class DockerRuntime:
+        def apply(self, plan, execution_id, cancel_event):
+            calls.append((plan["action"], execution_id))
+            return {"status": "applied"}
+
+    monkeypatch.setattr(
+        runtime,
+        "_recipe_deployment",
+        lambda *args, **kwargs: (profile_id, deployment),
+    )
+    monkeypatch.setattr(runtime, "_docker_runtime", lambda: DockerRuntime())
+    for _ in range(2):
+        with runtime.recipe(
+            manifest,
+            cell["scenario_id"],
+            cell=cell,
+            mode="stock",
+            topology_id=cell["topology_id"],
+        ):
+            pass
+
+    assert [action for action, _ in calls] == ["deploy", "remove", "deploy", "remove"]
+    assert calls[0][1] != calls[2][1]
+    assert calls[1][1] != calls[3][1]
+
+
+def test_local_runtime_recipe_builds_the_frozen_exact_deployment(
+    campaign, tmp_path, monkeypatch
+):
+    from profile_manager import deployment_versions, profiles
+
+    manifest, cell = single_cell(campaign)
+    runtime = api.LocalRuntime(
+        tmp_path / "runtime",
+        catalog_path=tmp_path / "catalog.json",
+        producer_version="99.0.0",
+        signing_key=tmp_path / "key",
+    )
+    scenario_id = cell["scenario_id"]
+    profile_id = manifest["definitions"]["scenarios"][scenario_id]["document"][
+        "profile"
+    ]
+    expected_desired = {"schema_version": "v1", "topology_id": profile_id}
+    captured = {}
+    monkeypatch.setattr(
+        runtime,
+        "_catalog_binding",
+        lambda: {"catalog": {"releases": []}, "path": "frozen", "sha256": "0" * 64},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_plan",
+        lambda *args, **kwargs: {
+            "profile": {"id": profile_id},
+            "versions": {
+                "resolved": {"amaru": {"version": "proposal"}},
+                "expected_desired_topology": expected_desired,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_campaign_measurement_target",
+        lambda *args, **kwargs: {"target_mode": "patched"},
+    )
+
+    def preview(profile_data, catalog, *, catalog_revision):
+        captured["profile_data"] = profile_data
+        captured["catalog"] = catalog
+        captured["catalog_revision"] = catalog_revision
+        return {"resolved": {}, "supporting": {}}
+
+    def substrate(profile, version_preview, *, measurement_target_override=None):
+        captured["profile"] = profile
+        captured["override"] = measurement_target_override
+        return {
+            "profile_id": profile.id,
+            "deployment_adapter": "amaru-control",
+            "compose_mode": "docker",
+            "host_strategy": "local",
+            "nodes": [],
+        }
+
+    monkeypatch.setattr(deployment_versions, "build_deployment_version_preview", preview)
+    monkeypatch.setattr(deployment_versions, "version_catalog_revision", lambda **kwargs: "rev")
+    monkeypatch.setattr(profiles, "versioned_substrate_for_profile", substrate)
+    monkeypatch.setattr(
+        profiles,
+        "desired_topology_from_substrate",
+        lambda frozen_profile_id, value: expected_desired,
+    )
+    monkeypatch.setenv("DWARF_INSTALLATION_ID", "gh-campaign")
+    monkeypatch.setenv("DWARF_CONTROLLER_HOST_STATE_DIR", "/host/runtime-state")
+
+    actual_profile_id, deployment = runtime._recipe_deployment(
+        manifest,
+        scenario_id,
+        cell=cell,
+        mode="patched",
+        topology_id=cell["topology_id"],
+    )
+
+    assert actual_profile_id == profile_id
+    assert captured["profile_data"]["version_policy"] == "exact"
+    assert captured["profile_data"]["amaru_version"] == "proposal"
+    assert captured["override"] == {"target_mode": "patched"}
+    assert deployment["adapter"] == "runtime_amaru_control_substrate.py"
+    assert deployment["compose_project"] == f"dwarf-profile-gh-campaign-{profile_id}"
+    assert deployment["substrate"]["controller_ownership"] == {
+        "installation_id": "gh-campaign",
+        "topology_id": profile_id,
+    }
+    assert deployment["substrate"]["docker_host_runtime_root"] == (
+        f"/host/runtime-state/controller/topology-runtimes/{profile_id}/current"
+    )
+
+
+def test_local_runtime_recipe_rejects_an_unfrozen_resolved_profile(
+    campaign, tmp_path, monkeypatch
+):
+    manifest, cell = single_cell(campaign)
+    runtime = api.LocalRuntime(
+        tmp_path / "runtime",
+        catalog_path=tmp_path / "missing-catalog.json",
+        producer_version=None,
+        signing_key=tmp_path / "key",
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_plan",
+        lambda *args, **kwargs: {
+            "profile": {"id": "profile-not-frozen"},
+            "versions": {"expected_desired_topology": {}},
+        },
+    )
+
+    with pytest.raises(ValueError, match="resolved.*frozen deployment profile"):
+        runtime._recipe_deployment(
+            manifest,
+            cell["scenario_id"],
+            cell=cell,
+            mode="stock",
+            topology_id=cell["topology_id"],
+        )
+
+
+def test_local_runtime_cleanup_uses_profile_lifecycle_for_owned_volumes(
+    tmp_path, monkeypatch
+):
+    runtime = api.LocalRuntime(
+        tmp_path / "runtime",
+        catalog_path=tmp_path / "catalog.json",
+        producer_version=None,
+        signing_key=tmp_path / "key",
+    )
+    profile_id = "profile-n-cardano-latest-confirmed"
+    project = "dwarf-profile-gh-campaign-profile-n-cardano-latest-confirmed"
+    deployment = {
+        "adapter": "runtime_compose_substrate.py",
+        "compose_project": project,
+        "substrate": {"profile_id": profile_id},
+    }
+    calls = []
+
+    class DockerRuntime:
+        def apply(self, plan, execution_id, cancel_event):
+            calls.append(deepcopy(plan))
+            return {"status": "applied"}
+
+    runtime.owned_projects.add(project)
+    runtime._profile_projects[project] = (profile_id, deployment)
+    monkeypatch.setattr(runtime, "_docker_runtime", lambda: DockerRuntime())
+
+    runtime.cleanup({project})
+
+    assert calls == [
+        {
+            "action": "remove",
+            "topology_id": profile_id,
+            "deployment": deployment,
+        }
+    ]
+    assert project not in runtime.owned_projects
 
 
 @pytest.mark.parametrize("patched_mean, expected_mode", [(103.0, "patched"), (110.0, "stock")])
@@ -880,6 +1195,59 @@ def test_native_scenario_without_boundary_index_remains_inconclusive(campaign, t
     assert hashlib.sha256(snapshot.read_bytes()).hexdigest() == environment["ADA2_DWARF_CAMPAIGN_CATALOG_SHA256"]
 
 
+def test_local_runtime_preserves_pre_run_failure_diagnostics(campaign, tmp_path, monkeypatch):
+    from profile_manager import launch_store
+
+    runtime = api.LocalRuntime(
+        tmp_path,
+        catalog_path=tmp_path / "catalog",
+        producer_version="99.1.2",
+        signing_key=tmp_path / "key",
+    )
+    scenario_id = campaign["entries"][0]["contract"]["scenario_id"]
+    monkeypatch.setattr(runtime, "_plan", lambda *args: {})
+    monkeypatch.setattr(
+        runtime,
+        "_catalog_binding",
+        lambda: {"path": str(tmp_path / "catalog"), "sha256": "0" * 64},
+    )
+    launch = tmp_path / "launch"
+    launch.mkdir()
+    (launch / "scenario.yaml").write_text("{}")
+    monkeypatch.setattr(
+        launch_store,
+        "create_launch",
+        lambda *args, **kwargs: {
+            "path": launch,
+            "launch_id": "launch-" + "a" * 24,
+        },
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            1,
+            stdout="",
+            stderr=(
+                "MeasurementExecutionError: fresh deployed runtime is unavailable: "
+                "/var/dwarf/state/profiles/runtime.json\n"
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="return code 1.*fresh deployed runtime is unavailable",
+    ):
+        runtime.run(
+            campaign,
+            scenario_id,
+            entry=campaign["entries"][0],
+            topology_id=campaign["topologies"][0]["id"],
+        )
+
+
 def test_complete_calibration_wins_over_incomplete_security_observation(campaign):
     campaign, cell = single_cell(campaign)
     ev = evidence(campaign)
@@ -1351,6 +1719,9 @@ def test_mixed_runtime_consumes_materialized_frozen_recipe_in_one_subprocess(mix
     calls = []
     def command(argv, **kwargs):
         calls.append((argv, kwargs))
+        assert kwargs["env"]["ADA2_DWARF_REMOTE_BASE"] == str(
+            runtime.profile_runtime_base
+        )
         body = json.loads(Path(argv[4]).read_text())
         expected = entry['execution']['scenario']
         assert body['load'] == expected['load']

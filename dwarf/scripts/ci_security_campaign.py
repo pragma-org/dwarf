@@ -9,7 +9,7 @@ The checkpoint is private operator state, not a publication catalog.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 import fcntl
 import hashlib
@@ -19,6 +19,8 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import threading
+import uuid
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -38,6 +40,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HOST_LOCK = Path("/tmp/dwarf-security-campaign.lock")
 _ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _PROJECT = re.compile(r"^dwarf-substrate-[a-z0-9]+(?:-[a-z0-9]+)*$")
+_PROFILE_PROJECT = re.compile(r"^dwarf-profile-[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def decide_patched_primary(
@@ -460,60 +463,73 @@ def run_campaign(
                     if entry:
                         topology = next(row for row in manifest["topologies"] if row["id"] == entry["topology_id"])
                         mode = _security_mode(topology, mode)
-                    control_id = entry["contract"]["normal_control"]["scenario_id"] if entry else scenario_id
-                    control = runtime.run(
-                        manifest,
-                        control_id,
-                        mode=mode,
-                        topology_id=(entry or cell)["topology_id"],
-                        **(
-                            {"execution_entry": entry}
-                            if entry
-                            else {"plan_cell": cell}
-                        ),
+                    topology_id = (entry or cell)["topology_id"]
+                    lifecycle = (
+                        runtime.recipe(
+                            manifest,
+                            scenario_id,
+                            cell=cell,
+                            mode=mode,
+                            topology_id=topology_id,
+                        )
+                        if cell and hasattr(runtime, "recipe")
+                        else nullcontext()
                     )
-                    record["control"] = deepcopy(control)
-                    if not control.get("execution_complete"):
-                        raise RuntimeError("normal control execution failed")
-                    record["archives"].append(runtime.archive(control["run_id"]))
-                    if not runtime.verify_archive(record["archives"][-1]):
-                        raise RuntimeError("normal control archive verification failed")
-                    record["control_verified"] = True
-                    _save(checkpoint, state)
-                    result = runtime.run(manifest, scenario_id, entry=entry, cell=cell, mode=mode, control=control, topology_id=(entry or cell)["topology_id"])
-                    record["result"] = result
-                    if result.get("security", {}).get("run_id", result["run_id"]) != result["run_id"] or any(
-                            row.get("result", {}).get("run_id") != result["run_id"] for row in result.get("measurements", [])):
-                        record["rejected_result"] = record.pop("result")
-                        raise ValueError("scenario evidence belongs to another run")
-                    accepted_measurements, rejected_measurements = [], []
-                    for measured in result.get("measurements", []):
-                        expected_control = deepcopy(control.get("control"))
-                        if expected_control:
-                            expected_control["targets"] = {node: target for node, target in expected_control.get("targets", {}).items()
-                                                           if node == measured["node_id"]}
-                        if (not expected_control or expected_control.get("status") != "pass"
-                                or measured.get("normal_control") != expected_control):
-                            rejected_measurements.append(measured)
+                    with lifecycle:
+                        control_id = entry["contract"]["normal_control"]["scenario_id"] if entry else scenario_id
+                        control = runtime.run(
+                            manifest,
+                            control_id,
+                            mode=mode,
+                            topology_id=topology_id,
+                            **(
+                                {"execution_entry": entry}
+                                if entry
+                                else {"plan_cell": cell}
+                            ),
+                        )
+                        record["control"] = deepcopy(control)
+                        if not control.get("execution_complete"):
+                            raise RuntimeError("normal control execution failed")
+                        record["archives"].append(runtime.archive(control["run_id"]))
+                        if not runtime.verify_archive(record["archives"][-1]):
+                            raise RuntimeError("normal control archive verification failed")
+                        record["control_verified"] = True
+                        _save(checkpoint, state)
+                        result = runtime.run(manifest, scenario_id, entry=entry, cell=cell, mode=mode, control=control, topology_id=topology_id)
+                        record["result"] = result
+                        if result.get("security", {}).get("run_id", result["run_id"]) != result["run_id"] or any(
+                                row.get("result", {}).get("run_id") != result["run_id"] for row in result.get("measurements", [])):
+                            record["rejected_result"] = record.pop("result")
+                            raise ValueError("scenario evidence belongs to another run")
+                        accepted_measurements, rejected_measurements = [], []
+                        for measured in result.get("measurements", []):
+                            expected_control = deepcopy(control.get("control"))
+                            if expected_control:
+                                expected_control["targets"] = {node: target for node, target in expected_control.get("targets", {}).items()
+                                                               if node == measured["node_id"]}
+                            if (not expected_control or expected_control.get("status") != "pass"
+                                    or measured.get("normal_control") != expected_control):
+                                rejected_measurements.append(measured)
+                            else:
+                                accepted_measurements.append(measured)
+                        result["measurements"] = accepted_measurements
+                        if rejected_measurements:
+                            record["rejected_measurements"] = rejected_measurements
+                            record["error"] = "measurement normal control differs from the exact successful verified campaign control"
+                        _save(checkpoint, state)  # Retain native evidence even if export fails.
+                        if not result.get("execution_complete"):
+                            raise RuntimeError("scenario execution failed")
+                        record["archives"].append(runtime.archive(result["run_id"]))
+                        if not runtime.verify_archive(record["archives"][-1]):
+                            raise RuntimeError("scenario archive verification failed")
+                        _evaluate(manifest, state)
+                        if entry:
+                            verdict = next(row for row in state["evaluation"]["security_validity"]["entries"] if row["entry_id"] == entry["id"])
+                            complete = verdict["classification"] in {"pass", "finding"}
                         else:
-                            accepted_measurements.append(measured)
-                    result["measurements"] = accepted_measurements
-                    if rejected_measurements:
-                        record["rejected_measurements"] = rejected_measurements
-                        record["error"] = "measurement normal control differs from the exact successful verified campaign control"
-                    _save(checkpoint, state)  # Retain native evidence even if export fails.
-                    if not result.get("execution_complete"):
-                        raise RuntimeError("scenario execution failed")
-                    record["archives"].append(runtime.archive(result["run_id"]))
-                    if not runtime.verify_archive(record["archives"][-1]):
-                        raise RuntimeError("scenario archive verification failed")
-                    _evaluate(manifest, state)
-                    if entry:
-                        verdict = next(row for row in state["evaluation"]["security_validity"]["entries"] if row["entry_id"] == entry["id"])
-                        complete = verdict["classification"] in {"pass", "finding"}
-                    else:
-                        complete = _measurement_result(state, cell, mode)["state"] == "verified"
-                    record["status"] = "complete" if complete else "incomplete"
+                            complete = _measurement_result(state, cell, mode)["state"] == "verified"
+                        record["status"] = "complete" if complete else "incomplete"
                 except Exception as exc:
                     record.update(status="failed", error=f"{type(exc).__name__}: {exc}")
                 try:
@@ -719,12 +735,15 @@ class LocalRuntime:
         self.signing_key = Path(signing_key).resolve()
         self.actor = actor
         self.owned_projects = set()
+        self._profile_projects = {}
         self.builds = []
         self.qualified_topology_ids = set()
+        self._last_command_result = None
 
     def _command(self, argv, *, env=None, check=True):
         result = subprocess.run(argv, cwd=ROOT, env={**os.environ, **(env or {})},
                                 capture_output=True, text=True, timeout=1800)
+        self._last_command_result = result
         if check and result.returncode:
             raise RuntimeError(f"command failed ({result.returncode}): {Path(argv[0]).name}: {result.stderr[-2000:]}")
         return result.stdout
@@ -734,14 +753,41 @@ class LocalRuntime:
         # cleanup. Exactly the smoke helper's complete-label filtering semantics.
         containers = self._command(["docker", "ps", "-a", "--format", '{{.Label "com.docker.compose.project"}}'])
         networks = self._command(["docker", "network", "ls", "--format", '{{.Label "com.docker.compose.project"}}'])
-        return {name for name in (containers + "\n" + networks).splitlines() if _PROJECT.fullmatch(name)}
+        return {
+            name
+            for name in (containers + "\n" + networks).splitlines()
+            if _PROJECT.fullmatch(name) or _PROFILE_PROJECT.fullmatch(name)
+        }
 
     def cleanup(self, projects):
-        if not set(projects) <= self.owned_projects or any(not _PROJECT.fullmatch(project) for project in projects):
+        if not set(projects) <= self.owned_projects or any(
+            not (_PROJECT.fullmatch(project) or _PROFILE_PROJECT.fullmatch(project))
+            for project in projects
+        ):
             raise ValueError("cleanup requires exact owned campaign projects")
         errors = []
         for project in sorted(projects):
             try:
+                if project in self._profile_projects:
+                    profile_id, deployment = self._profile_projects[project]
+                    with self._deployment_golden_images(deployment):
+                        removed = self._docker_runtime().apply(
+                            {
+                                "action": "remove",
+                                "topology_id": profile_id,
+                                "deployment": deployment,
+                            },
+                            "campaign-cleanup-"
+                            + hashlib.sha256(project.encode()).hexdigest()[:16]
+                            + "-"
+                            + uuid.uuid4().hex[:12],
+                            threading.Event(),
+                        )
+                    if removed.get("status") != "applied":
+                        raise RuntimeError("campaign profile cleanup did not apply")
+                    self._profile_projects.pop(project, None)
+                    self.owned_projects.discard(project)
+                    continue
                 label = "label=com.docker.compose.project=" + project
                 containers = self._command(["docker", "ps", "-aq", "--filter", label]).split()
                 if containers:
@@ -749,10 +795,215 @@ class LocalRuntime:
                 networks = self._command(["docker", "network", "ls", "-q", "--filter", label]).split()
                 if networks:
                     self._command(["docker", "network", "rm", *networks])
+                self.owned_projects.discard(project)
             except Exception as exc:
                 errors.append(f"{project}: {exc}")
         if errors:
             raise RuntimeError("; ".join(errors))
+
+    def _docker_runtime(self):
+        from controller.docker_runtime import DockerRuntime
+
+        installation_id = str(os.environ.get("DWARF_INSTALLATION_ID") or "")
+        host_state_dir = str(
+            os.environ.get("DWARF_CONTROLLER_HOST_STATE_DIR") or ""
+        )
+        if not installation_id or not host_state_dir:
+            raise ValueError(
+                "campaign profile deployment requires controller installation and host state identity"
+            )
+        return DockerRuntime(
+            installation_id=installation_id,
+            state_dir=self.state,
+            host_state_dir=host_state_dir,
+        )
+
+    @property
+    def profile_runtime_base(self):
+        return self.state / "controller" / "topology-runtimes"
+
+    @contextmanager
+    def _deployment_golden_images(self, deployment):
+        images = sorted(
+            {
+                str(node.get("image") or "")
+                for node in (deployment.get("substrate") or {}).get("nodes") or []
+                if node.get("target_mode", "stock") == "stock"
+            }
+        )
+        if any(not re.search(r"@sha256:[0-9a-f]{64}$", image) for image in images):
+            raise ValueError("campaign stock image identity is not immutable")
+        previous = os.environ.get("DWARF_GOLDEN_IMAGES")
+        os.environ["DWARF_GOLDEN_IMAGES"] = ",".join(images)
+        try:
+            yield
+        finally:
+            if previous is None:
+                os.environ.pop("DWARF_GOLDEN_IMAGES", None)
+            else:
+                os.environ["DWARF_GOLDEN_IMAGES"] = previous
+
+    def _recipe_deployment(
+        self, manifest, scenario_id, *, cell, mode, topology_id
+    ):
+        from profile_manager.deployment_versions import (
+            build_deployment_version_preview,
+            version_catalog_revision,
+        )
+        from profile_manager.profiles import (
+            Profile,
+            desired_topology_from_substrate,
+            versioned_substrate_for_profile,
+        )
+
+        topology = next(
+            (
+                row
+                for row in manifest["topologies"]
+                if row["id"] == topology_id
+            ),
+            None,
+        )
+        if topology is None:
+            raise ValueError("measurement recipe topology is not frozen")
+        plan = self._plan(manifest, scenario_id, topology, mode, None, cell)
+        profile_id = str((plan.get("profile") or {}).get("id") or "")
+        frozen_profile = manifest["definitions"]["profiles"].get(profile_id)
+        if not _ID.fullmatch(profile_id) or not isinstance(frozen_profile, dict):
+            raise ValueError(
+                "resolved measurement recipe has no frozen deployment profile"
+            )
+        profile_data = deepcopy(frozen_profile.get("document"))
+        if not isinstance(profile_data, dict) or profile_data.get("id") != profile_id:
+            raise ValueError("frozen measurement profile identity is invalid")
+        binding = self._catalog_binding()
+        resolved = (plan.get("versions") or {}).get("resolved") or {}
+        for implementation, field in (
+            ("cardano-node", "cardano_version"),
+            ("amaru", "amaru_version"),
+        ):
+            selected = resolved.get(implementation)
+            if isinstance(selected, dict) and selected.get("version"):
+                profile_data[field] = selected["version"]
+        profile_data["version_policy"] = "exact"
+        profile_data["compatibility_pair"] = None
+        previous_remote_base = os.environ.get("ADA2_DWARF_REMOTE_BASE")
+        os.environ["ADA2_DWARF_REMOTE_BASE"] = str(self.profile_runtime_base)
+        try:
+            profile = Profile.from_dict(profile_data)
+        finally:
+            if previous_remote_base is None:
+                os.environ.pop("ADA2_DWARF_REMOTE_BASE", None)
+            else:
+                os.environ["ADA2_DWARF_REMOTE_BASE"] = previous_remote_base
+        revision = version_catalog_revision(catalog=binding["catalog"])
+        preview = build_deployment_version_preview(
+            profile_data,
+            binding["catalog"],
+            catalog_revision=revision,
+        )
+        if preview.get("blocked"):
+            raise ValueError("measurement recipe version resolution is blocked")
+        target_override = self._campaign_measurement_target(
+            manifest,
+            topology,
+            mode,
+            binding["catalog"],
+        )
+        substrate = versioned_substrate_for_profile(
+            profile,
+            preview,
+            measurement_target_override=target_override,
+        )
+        expected = (plan.get("versions") or {}).get("expected_desired_topology")
+        if desired_topology_from_substrate(profile_id, substrate) != expected:
+            raise ValueError(
+                "campaign profile deployment differs from the frozen run plan"
+            )
+        installation_id = str(os.environ.get("DWARF_INSTALLATION_ID") or "")
+        host_state_dir = Path(
+            str(os.environ.get("DWARF_CONTROLLER_HOST_STATE_DIR") or "")
+        )
+        if not installation_id or not host_state_dir.is_absolute():
+            raise ValueError("campaign profile host identity is unavailable")
+        substrate["controller_ownership"] = {
+            "installation_id": installation_id,
+            "topology_id": profile_id,
+        }
+        substrate["docker_host_runtime_root"] = str(
+            host_state_dir
+            / "controller"
+            / "topology-runtimes"
+            / profile_id
+            / "current"
+        )
+        adapter = (
+            "runtime_amaru_control_substrate.py"
+            if substrate.get("deployment_adapter") == "amaru-control"
+            else "runtime_compose_substrate.py"
+        )
+        return profile_id, {
+            "schema_version": "v1",
+            "adapter": adapter,
+            "compose_project": f"dwarf-profile-{installation_id}-{profile_id}",
+            "substrate": substrate,
+        }
+
+    @contextmanager
+    def recipe(self, manifest, scenario_id, *, cell, mode, topology_id):
+        """Retain one exact profile for a measurement control/result pair."""
+
+        profile_id, deployment = self._recipe_deployment(
+            manifest,
+            scenario_id,
+            cell=cell,
+            mode=mode,
+            topology_id=topology_id,
+        )
+        project = str(deployment.get("compose_project") or "")
+        if not _PROFILE_PROJECT.fullmatch(project):
+            raise ValueError("campaign profile project identity is invalid")
+        docker = self._docker_runtime()
+        execution = _digest(
+            {
+                "campaign": manifest["campaign_digest"],
+                "profile": profile_id,
+                "topology": topology_id,
+                "scenario": scenario_id,
+                "node": cell["node_id"],
+                "mode": mode,
+            }
+        ).removeprefix("sha256:")[:16] + "-" + uuid.uuid4().hex[:12]
+        self.owned_projects.add(project)
+        self._profile_projects[project] = (profile_id, deployment)
+        with self._deployment_golden_images(deployment):
+            deployed = docker.apply(
+                {
+                    "action": "deploy",
+                    "topology_id": profile_id,
+                    "deployment": deployment,
+                },
+                f"campaign-{execution}-deploy",
+                threading.Event(),
+            )
+            if deployed.get("status") != "applied":
+                raise RuntimeError("campaign profile deployment did not apply")
+            try:
+                yield
+            finally:
+                removed = docker.apply(
+                    {
+                        "action": "remove",
+                        "topology_id": profile_id,
+                        "deployment": deployment,
+                    },
+                    f"campaign-{execution}-remove",
+                    threading.Event(),
+                )
+                if removed.get("status") != "applied":
+                    raise RuntimeError("campaign profile removal did not apply")
+                self._profile_projects.pop(project, None)
+                self.owned_projects.discard(project)
 
     def _catalog_binding(self):
         from profile_manager.version_catalog import load_version_catalog
@@ -1084,6 +1335,7 @@ class LocalRuntime:
                 str(launch["path"] / "scenario.yaml"), "--backend", "local-devnet", "--origin", "ci",
                 "--runs-dir", str(self.runs), "--state-dir", str(self.state)],
                 env={"ADA2_DWARF_LAUNCH_ID": launch["launch_id"], "ADA2_DWARF_LAUNCH_ROOT": str(launches),
+                     "ADA2_DWARF_REMOTE_BASE": str(self.profile_runtime_base),
                      "ADA2_DWARF_CAMPAIGN_CATALOG": binding["path"],
                      "ADA2_DWARF_CAMPAIGN_CATALOG_SHA256": binding["sha256"]}, check=False)
         finally:
@@ -1094,7 +1346,17 @@ class LocalRuntime:
                     self.owned_projects.add("dwarf-substrate-" + path.name.lower())
         ids = re.findall(r"^run_id: ([A-Za-z0-9-]+)$", output, re.MULTILINE)
         if len(ids) != 1:
-            raise RuntimeError("scenario did not return one canonical run ID")
+            result = self._last_command_result
+            if result is not None:
+                diagnostic = " ".join((result.stderr or "").split())[-2000:]
+                detail = f" (return code {result.returncode})"
+                if diagnostic:
+                    detail += f": {diagnostic}"
+            else:
+                detail = ""
+            raise RuntimeError(
+                "scenario did not return one canonical run ID" + detail
+            )
         run_id = ids[0]
         run_dir = self.runs / run_id
         from profile_manager.campaign_runtime_evidence import read_native_evidence

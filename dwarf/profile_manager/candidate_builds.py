@@ -39,6 +39,7 @@ _ENVELOPE = (
 # These are audited asset identities, not accepted candidate-version defaults.
 _PATCHES = {
     "amaru": (
+        "dwarf/targets/amaru/measurement-patches-nanoseconds-v3/eaf8ac3fa309f2a174c045454c276194c9312b8d/manifest.json",
         "dwarf/targets/amaru/measurement-patches-nanoseconds-v3/b159172f25a9c389f82f20bca4f15e3032791638/manifest.json",
         "dwarf/targets/amaru/measurement-patches-nanoseconds-v3/aedfe797a5b8ef00d8b362be40b47a52c3b4a379/manifest.json",
         "dwarf/targets/amaru/measurement-patches-nanoseconds-v2/d3a6dafcced78f5809a96619e883cf04911d2bdc/manifest.json",

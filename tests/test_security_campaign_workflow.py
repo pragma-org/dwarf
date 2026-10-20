@@ -57,10 +57,14 @@ def test_triggers_are_controlled_and_have_no_pr_execution():
     assert data['permissions'] == {'contents': 'read'}
 
 
-def test_campaign_installs_checksum_pinned_cardano_support_tools():
-    install = step('campaign', 'Install pinned Cardano support tools')
-    assert 'python3 -m scripts.ci_cardano_support_tools' in install['run']
-    assert '$GITHUB_PATH' in install['run']
+def test_campaign_builds_the_trusted_controller_boundary():
+    build = step('campaign', 'Build trusted campaign controller')
+    assert build['working-directory'] == 'campaign-trusted'
+    assert 'infrastructure/docker/dwarf-fw.Dockerfile' in build['run']
+    assert 'infrastructure/docker/dwarf-controller.Dockerfile' in build['run']
+    assert '--build-arg DWARF_SOURCE_REVISION="$TRUSTED_COMMIT"' in build['run']
+    assert 'docker image inspect' in build['run']
+    assert 'controller_image=' in build['run']
 
 
 def test_discovery_uses_trusted_hosted_code_and_read_only_checkout():
@@ -189,10 +193,14 @@ def test_hosted_campaign_consumes_and_validates_build_artifact():
     assert 'infrastructure/docker/requirements-framework.txt' in dependencies['run']
     execute = step('campaign', 'Calibrate variants and run selected frozen campaign')
     assert 'continue-on-error' not in execute
-    assert 'python3 -m scripts.ci_security_campaign' in execute['run']
-    assert '--manifest ../campaign-plan/manifest.json' in execute['run']
-    assert '--stock-manifest ../campaign-plan/stock-manifest.json' in execute['run']
-    assert '--catalog ../campaign-plan/version-catalog.json' in execute['run']
+    assert 'python3 -m scripts.ci_hosted_campaign_runtime outer' in execute['run']
+    assert '--controller-image "$CONTROLLER_IMAGE"' in execute['run']
+    assert '--expected-controller-revision "$TRUSTED_COMMIT"' in execute['run']
+    assert '--runtime-directory "$GITHUB_WORKSPACE/campaign-runtime"' in execute['run']
+    assert execute['env']['HELPER_IMAGE'] == (
+        'ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:'
+        'ae1938a2ebdefa9cdf340021774e3a2551afd2da48d855fb2ba829cede13fb34'
+    )
     signer = step('campaign', 'Create workflow-local evidence signer')
     assert 'integrity-only-untrusted-for-publication' in signer['run']
     assert 'private_key_retained' in signer['run']

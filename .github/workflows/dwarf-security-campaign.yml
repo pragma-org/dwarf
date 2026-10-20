@@ -318,14 +318,30 @@ jobs:
           python-version: "3.12"
       - name: Install trusted campaign dependencies
         run: python3 -m pip install --require-hashes -r campaign-trusted/infrastructure/docker/requirements-framework.txt
-      - name: Install pinned Cardano support tools
+      - name: Build trusted campaign controller
+        id: controller
         working-directory: campaign-trusted
         env:
-          PYTHONPATH: dwarf
-          SUPPORT_DIRECTORY: ${{ runner.temp }}/cardano-support
+          TRUSTED_COMMIT: ${{ needs.discover.outputs.trusted_revision }}
         run: |
-          python3 -m scripts.ci_cardano_support_tools --directory "$SUPPORT_DIRECTORY"
-          echo "$SUPPORT_DIRECTORY" >> "$GITHUB_PATH"
+          set -euo pipefail
+          docker build \
+            --file infrastructure/docker/dwarf-fw.Dockerfile \
+            --tag dwarf/framework:campaign \
+            --build-arg DWARF_SOURCE_REVISION="$TRUSTED_COMMIT" \
+            --build-arg DWARF_COMPONENT_ROLE=controller \
+            --build-arg DWARF_CATALOG_REVISION="$TRUSTED_COMMIT" \
+            .
+          docker build \
+            --file infrastructure/docker/dwarf-controller.Dockerfile \
+            --tag dwarf/controller:campaign \
+            --build-arg DWARF_FRAMEWORK_IMAGE=dwarf/framework:campaign \
+            --build-arg DWARF_SOURCE_REVISION="$TRUSTED_COMMIT" \
+            --build-arg DWARF_CATALOG_REVISION="$TRUSTED_COMMIT" \
+            --build-arg TARGETARCH=amd64 \
+            .
+          controller_image=$(docker image inspect --format '{{.Id}}' dwarf/controller:campaign)
+          echo "controller_image=$controller_image" >> "$GITHUB_OUTPUT"
       - name: Validate hosted build transfer
         working-directory: campaign-trusted
         env:
@@ -377,14 +393,18 @@ jobs:
         env:
           PYTHONPATH: dwarf
           SIGNING_KEY: ${{ runner.temp }}/dwarf-workflow-evidence.pem
+          CONTROLLER_IMAGE: ${{ steps.controller.outputs.controller_image }}
+          TRUSTED_COMMIT: ${{ needs.discover.outputs.trusted_revision }}
+          HELPER_IMAGE: ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:ae1938a2ebdefa9cdf340021774e3a2551afd2da48d855fb2ba829cede13fb34
         run: |
-          python3 -m scripts.ci_security_campaign \
-            --manifest ../campaign-plan/manifest.json \
-            --stock-manifest ../campaign-plan/stock-manifest.json \
-            --build-observations ../campaign-plan/build-observations.json \
-            --directory ../campaign-runtime \
-            --catalog ../campaign-plan/version-catalog.json \
-            --signing-key "$SIGNING_KEY"
+          python3 -m scripts.ci_hosted_campaign_runtime outer \
+            --controller-image "$CONTROLLER_IMAGE" \
+            --expected-controller-revision "$TRUSTED_COMMIT" \
+            --helper-image "$HELPER_IMAGE" \
+            --workspace "$GITHUB_WORKSPACE" \
+            --runtime-directory "$GITHUB_WORKSPACE/campaign-runtime" \
+            --signing-key "$SIGNING_KEY" \
+            --installation-id "github-${{ github.run_id }}-${{ github.run_attempt }}"
       - name: Retain hosted campaign inputs and status
         if: always()
         uses: actions/upload-artifact@v4
