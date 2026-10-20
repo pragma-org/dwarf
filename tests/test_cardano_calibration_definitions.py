@@ -171,6 +171,54 @@ def test_controller_detection_preserves_host_mode_but_fails_closed_in_controller
         calibration._controller_container()
 
 
+def test_controller_detection_uses_explicit_hosted_container_name(monkeypatch):
+    controller_name = "dwarf-controller-github-run-123"
+    controller = {
+        "Id": "b" * 64,
+        "Name": "/" + controller_name,
+        "Config": {"Labels": {
+            "io.dwarf.application": "true",
+            "io.dwarf.component": "controller",
+        }},
+    }
+    monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", "/var/dwarf/runs")
+    monkeypatch.setenv("HOSTNAME", "ephemeral-container-hostname")
+    monkeypatch.setenv("DWARF_CONTROLLER_CONTAINER_ID", controller_name)
+    observed = []
+
+    def run(command, **_kwargs):
+        observed.append(command)
+        return subprocess.CompletedProcess(
+            command, 0, stdout=json.dumps([controller]), stderr=""
+        )
+
+    monkeypatch.setattr(calibration, "_run", run)
+
+    assert calibration._controller_container() == controller
+    assert observed == [["docker", "inspect", controller_name]]
+
+
+def test_cardano_calibration_cli_accepts_portable_accepted_and_rejected_case_set(
+    monkeypatch, tmp_path
+):
+    received = {}
+
+    def run_leg(**kwargs):
+        received.update(kwargs)
+        return {"node_trace": {"record_count": 1, "protocol_record_count": 1}}
+
+    monkeypatch.setattr(calibration, "run_leg", run_leg)
+
+    assert calibration.main([
+        "leg",
+        "--runtime-root", str(tmp_path / "runtime"),
+        "--output-dir", str(tmp_path / "output"),
+        "--attempts", "30",
+        "--case-set", "accepted-and-rejected-v1",
+    ]) == 0
+    assert received["case_set"] == "accepted-and-rejected-v1"
+
+
 def test_cardano_plutus_workload_uses_the_target_container_socket(
     tmp_path, monkeypatch
 ):

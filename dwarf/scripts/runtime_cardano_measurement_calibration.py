@@ -20,6 +20,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from scripts.runtime_amaru_measurement_calibration import (
+    ACCEPTANCE_CASE_SET,
     CLIENT_INVALID_CASE_SET,
     DEFAULT_CASE_SET,
     VERSION_TABLE_FORWARD_COMPAT_CASE_SET,
@@ -227,7 +228,10 @@ def _inspect_container(identifier: str) -> dict[str, Any]:
 
 def _controller_container() -> dict[str, Any] | None:
     """Return the installed controller identity, or None for direct host mode."""
-    identifier = str(os.environ.get("HOSTNAME") or "")
+    explicit_identifier = str(
+        os.environ.get("DWARF_CONTROLLER_CONTAINER_ID") or ""
+    )
+    identifier = explicit_identifier or str(os.environ.get("HOSTNAME") or "")
     controller_mode = (
         str(os.environ.get("ADA2_DWARF_RUNS_DIR") or "") == "/var/dwarf/runs"
     )
@@ -256,10 +260,14 @@ def _controller_container() -> dict[str, Any] | None:
         labels.get("io.dwarf.application") != "true"
         or labels.get("io.dwarf.component") != "controller"
     ):
-        raise RuntimeError("HOSTNAME does not identify the installed DWARF controller")
+        raise RuntimeError("container does not identify the installed DWARF controller")
     inspected_id = str(inspected.get("Id") or "")
-    if not inspected_id.startswith(identifier):
-        raise RuntimeError("controller container identity does not match HOSTNAME")
+    inspected_name = str(inspected.get("Name") or "").removeprefix("/")
+    identity_matches = inspected_id.startswith(identifier)
+    if explicit_identifier:
+        identity_matches = identity_matches or inspected_name == identifier
+    if not identity_matches:
+        raise RuntimeError("controller container identity does not match its identifier")
     return inspected
 
 
@@ -1266,7 +1274,16 @@ def main(argv: list[str] | None = None) -> int:
     leg.add_argument("--output-dir", type=Path, required=True)
     leg.add_argument("--attempts", type=int, default=100)
     leg.add_argument("--timeout-seconds", type=float, default=2.0)
-    leg.add_argument("--case-set", choices=[DEFAULT_CASE_SET, CLIENT_INVALID_CASE_SET, VERSION_TABLE_FORWARD_COMPAT_CASE_SET], default=DEFAULT_CASE_SET)
+    leg.add_argument(
+        "--case-set",
+        choices=[
+            DEFAULT_CASE_SET,
+            ACCEPTANCE_CASE_SET,
+            CLIENT_INVALID_CASE_SET,
+            VERSION_TABLE_FORWARD_COMPAT_CASE_SET,
+        ],
+        default=DEFAULT_CASE_SET,
+    )
     leg.add_argument("--observation-seconds", type=float, default=2.0)
     leg.add_argument("--trace-timeout-seconds", type=float, default=20.0)
     leg.add_argument("--plutus-transactions", type=int, default=0)

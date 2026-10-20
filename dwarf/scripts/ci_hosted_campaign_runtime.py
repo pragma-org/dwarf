@@ -267,6 +267,7 @@ def build_controller_command(
         raise ValueError("helper image must be an exact GHCR repository digest")
     if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,127}", installation_id):
         raise ValueError("installation identity is invalid")
+    controller_name = f"dwarf-controller-{installation_id}"
     workspace = workspace.resolve()
     runtime_directory = runtime_directory.resolve()
     signing_key = signing_key.resolve()
@@ -278,6 +279,8 @@ def build_controller_command(
         "docker",
         "run",
         "--rm",
+        "--name",
+        controller_name,
         "--network",
         "host",
         "--user",
@@ -322,6 +325,7 @@ def build_controller_command(
         "ADA2_DWARF_LAUNCH_ROOT=/var/dwarf/launches",
         "ADA2_DWARF_RUN_LEDGER_ROOT=/var/dwarf/run-ledger",
         f"DWARF_CONTROLLER_HOST_STATE_DIR={state}",
+        f"DWARF_CONTROLLER_CONTAINER_ID={controller_name}",
         f"DWARF_INSTALLATION_ID={installation_id}",
         "DWARF_HOST_OS=linux",
         "DWARF_HOST_ARCH=amd64",

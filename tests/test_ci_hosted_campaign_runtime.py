@@ -35,6 +35,8 @@ def test_controller_command_preserves_installed_runtime_contract(tmp_path):
     )
 
     assert command[:3] == ["docker", "run", "--rm"]
+    controller_name = "dwarf-controller-github-run-123"
+    assert command[command.index("--name") + 1] == controller_name
     assert "--network" in command and command[command.index("--network") + 1] == "host"
     assert "--hostname" not in command
     assert "io.dwarf.application=true" in command
@@ -49,6 +51,7 @@ def test_controller_command_preserves_installed_runtime_contract(tmp_path):
     assert "ADA2_DWARF_RUNS_DIR=/var/dwarf/runs" in command
     assert "ADA2_DWARF_STATE_DIR=/var/dwarf/runtime-state" in command
     assert f"DWARF_CONTROLLER_HOST_STATE_DIR={runtime / 'runtime-state'}" in command
+    assert f"DWARF_CONTROLLER_CONTAINER_ID={controller_name}" in command
     assert f"DWARF_LOCALTXSUBMISSION_HELPER_IMAGE={helper}" in command
     assert "DWARF_RUN_ARTIFACT_BASE_URL=http://172.17.0.1:8787" in command
     assert command[command.index("--entrypoint") + 1] == "python3"
