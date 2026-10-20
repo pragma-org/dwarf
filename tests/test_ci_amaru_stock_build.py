@@ -78,8 +78,10 @@ def test_fixed_locked_build_retains_network_metadata_logs_and_computed_hashes(tm
     assert "git init" in api().BUILD_SCRIPT
     assert any(argv[:2] == ["docker", "pull"] and argv[-1] == PIN for argv in calls)
     assert runtime_dockerfile == [
+        f"FROM {PIN} AS dwarf-ca-certificates\n"
         "FROM docker.io/library/busybox:1.37.0-musl@"
         "sha256:dc88b80842580654294472735332ec7c7789a4010ec9a68b69f9b88c19abede6\n"
+        "COPY --from=dwarf-ca-certificates /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt\n"
         "COPY executable /usr/local/bin/amaru\n"
         'ENTRYPOINT ["/usr/local/bin/amaru"]\n'
     ]
@@ -87,6 +89,7 @@ def test_fixed_locked_build_retains_network_metadata_logs_and_computed_hashes(tm
         "docker.io/library/busybox:1.37.0-musl@"
         "sha256:dc88b80842580654294472735332ec7c7789a4010ec9a68b69f9b88c19abede6"
     )
+    assert receipt["runtime_ca_bundle_image"] == PIN
     docker_run = next(argv for argv in calls if argv[:2] == ["docker", "run"])
     assert any(value.endswith(",dst=/peer-snapshots,readonly") for value in docker_run)
     assert "DWARF_SOURCE_DATE=2026-10-19T12:00:00+00:00" in docker_run

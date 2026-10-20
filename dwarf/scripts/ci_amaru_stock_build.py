@@ -177,6 +177,7 @@ def _build_variant(candidate, *, variant, directory, builder_image=None, source_
                "status": "partial", "ready": False,
                "builder_image": image, "network": NETWORK, "dependency_closure": "not-retained",
                "runtime_base_image": RUNTIME_BASE_IMAGE,
+               "runtime_ca_bundle_image": image,
                "repository_commit": candidate.repository_commit, "source_tree_digest": candidate.source_tree_digest,
                "source_date": source_date, "peer_snapshot_inputs": snapshot_receipt,
                "files": {}, "commands": BUILD_SCRIPT.splitlines()}
@@ -255,7 +256,9 @@ def _build_variant(candidate, *, variant, directory, builder_image=None, source_
                 shutil.copyfile(binary, context / "executable")
                 (context / "executable").chmod(0o555)
                 (context / "Dockerfile").write_text(
+                    f"FROM {image} AS dwarf-ca-certificates\n"
                     f"FROM {RUNTIME_BASE_IMAGE}\n"
+                    "COPY --from=dwarf-ca-certificates /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt\n"
                     "COPY executable /usr/local/bin/amaru\n"
                     'ENTRYPOINT ["/usr/local/bin/amaru"]\n'
                 )
