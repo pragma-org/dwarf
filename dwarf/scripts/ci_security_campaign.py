@@ -1164,7 +1164,12 @@ class LocalRuntime:
                         scope=scope, catalog_path=Path(binding["path"]), base_package=BASE_PACKAGE,
                         state_dir=self.state, cardano_version=producer, amaru_version=versions.get("amaru"),
                         amaru_runtime_interface=amaru_artifact.get("runtime_interface"),
-                        operator_stock_content_id=content_id)
+                        operator_stock_content_id=content_id,
+                        docker_host_state_dir=(
+                            Path(os.environ["DWARF_CONTROLLER_HOST_STATE_DIR"])
+                            if os.environ.get("DWARF_CONTROLLER_HOST_STATE_DIR")
+                            else None
+                        ))
                 qualifications[qualification_key] = observation
                 observations.append(observation)
             else:

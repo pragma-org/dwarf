@@ -15,6 +15,7 @@ import itertools
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -900,6 +901,62 @@ def _render_baseline(package: Path) -> dict[str, Any]:
         raise QualificationError("baseline Compose render was not JSON") from error
 
 
+def _stage_host_bind_sources(
+    model: dict[str, Any],
+    *,
+    base_package: Path,
+    local_assets: Path,
+    docker_host_assets: Path,
+) -> None:
+    """Stage trusted qualification assets and translate binds for a host daemon."""
+
+    base_package = base_package.resolve()
+    if not base_package.is_dir():
+        raise QualificationError(f"baseline package is missing: {base_package}")
+    if not docker_host_assets.is_absolute() or ".." in docker_host_assets.parts:
+        raise QualificationError("Docker host qualification asset root is invalid")
+    if local_assets.exists():
+        raise QualificationError(
+            f"qualification asset staging destination already exists: {local_assets}"
+        )
+    shutil.copytree(base_package, local_assets)
+
+    def translated(source: str, service_name: str) -> str:
+        candidate = Path(source)
+        if not candidate.is_absolute():
+            return source
+        try:
+            relative = candidate.resolve().relative_to(base_package)
+        except ValueError as exc:
+            raise QualificationError(
+                f"{service_name} bind source is outside the trusted baseline package: {source}"
+            ) from exc
+        return str(docker_host_assets / relative)
+
+    for service_name, service in (model.get("services") or {}).items():
+        if not isinstance(service, dict):
+            raise QualificationError(f"{service_name} service must be a mapping")
+        rewritten: list[Any] = []
+        for volume in service.get("volumes") or []:
+            if isinstance(volume, dict):
+                updated = dict(volume)
+                if updated.get("type") == "bind":
+                    updated["source"] = translated(
+                        str(updated.get("source") or ""), service_name
+                    )
+                rewritten.append(updated)
+                continue
+            if not isinstance(volume, str):
+                raise QualificationError(f"{service_name} volume is invalid")
+            source, separator, remainder = volume.partition(":")
+            rewritten.append(
+                f"{translated(source, service_name)}:{remainder}"
+                if separator and Path(source).is_absolute()
+                else volume
+            )
+        service["volumes"] = rewritten
+
+
 def _candidate_versions(
     catalog: dict[str, Any],
     scope: str,
@@ -939,6 +996,7 @@ def run_qualification(
     progress: Callable[[dict[str, Any]], None] | None = None,
     amaru_runtime_interface: str | None = None,
     operator_stock_content_id: str | None = None,
+    docker_host_state_dir: Path | None = None,
 ) -> dict[str, Any]:
     catalog = load_version_catalog(catalog_path)
     candidate, cardano_release, amaru_release = _candidate_versions(
@@ -971,6 +1029,20 @@ def run_qualification(
         ),
         amaru_runtime_interface=amaru_runtime_interface,
     )
+    if docker_host_state_dir is not None:
+        state_root = state_dir.resolve()
+        host_state_root = Path(docker_host_state_dir)
+        if not host_state_root.is_absolute() or ".." in host_state_root.parts:
+            raise QualificationError("Docker host state root is invalid")
+        relative_evidence_root = evidence_root.relative_to(state_root)
+        _stage_host_bind_sources(
+            model,
+            base_package=base_package,
+            local_assets=evidence_root / "qualification-assets",
+            docker_host_assets=(
+                host_state_root / relative_evidence_root / "qualification-assets"
+            ),
+        )
     compose_file = evidence_root / "qualification-compose.json"
     compose_file.write_text(json.dumps(model, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     fresh = _project_is_fresh(project)

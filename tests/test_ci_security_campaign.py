@@ -991,11 +991,13 @@ def test_preflight_reuses_readiness_with_explicit_producer_and_frozen_artifact(c
     monkeypatch.setattr(version_catalog, "load_version_catalog", lambda path: {})
     monkeypatch.setattr(version_catalog, "resolve_release", lambda *args: release)
     calls = []
+    monkeypatch.setenv("DWARF_CONTROLLER_HOST_STATE_DIR", "/host/runtime-state")
     monkeypatch.setattr(qualify_node_versions, "run_qualification", lambda **kwargs: calls.append(kwargs) or {"passed": True})
     result = runtime.preflight(campaign, ev["builds"])
     assert result["passed"] is True
     assert calls[0]["scope"] == "amaru-only"
     assert calls[0]["base_package"] == qualify_node_versions.BASE_PACKAGE
+    assert calls[0]["docker_host_state_dir"] == Path("/host/runtime-state")
     assert calls[0]["cardano_version"] == "99.1.2"
     assert calls[0]["amaru_version"] == "proposal"
     release["source_revision"] = "b" * 40

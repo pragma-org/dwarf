@@ -48,6 +48,45 @@ def _release(implementation, version, released_at, *, channel="stable", digest="
     }
 
 
+def test_hosted_qualification_stages_trusted_bind_sources_for_docker_host(tmp_path):
+    package = tmp_path / "trusted-package"
+    package.mkdir()
+    (package / "testnet.yaml").write_text("networkMagic: 42\n")
+    (package / "amaru-runtime").mkdir()
+    (package / "amaru-runtime" / "global-parameters.json").write_text("{}\n")
+    local_assets = tmp_path / "state" / "qualification-assets"
+    host_assets = Path("/host/runtime-state/version-qualifications/q/qualification-assets")
+    model = {
+        "services": {
+            "configurator": {
+                "volumes": [
+                    {
+                        "type": "bind",
+                        "source": str(package / "testnet.yaml"),
+                        "target": "/testnet.yaml",
+                    },
+                    f"{package / 'amaru-runtime'}:/amaru-runtime:ro",
+                    "p1-configs:/configs/1",
+                ]
+            }
+        }
+    }
+
+    qualification._stage_host_bind_sources(
+        model,
+        base_package=package,
+        local_assets=local_assets,
+        docker_host_assets=host_assets,
+    )
+
+    volumes = model["services"]["configurator"]["volumes"]
+    assert volumes[0]["source"] == str(host_assets / "testnet.yaml")
+    assert volumes[1] == f"{host_assets / 'amaru-runtime'}:/amaru-runtime:ro"
+    assert volumes[2] == "p1-configs:/configs/1"
+    assert (local_assets / "testnet.yaml").read_text() == "networkMagic: 42\n"
+    assert (local_assets / "amaru-runtime" / "global-parameters.json").is_file()
+
+
 def _catalog():
     cardano_new = _release("cardano-node", "11.1.2", "2026-09-17T00:00:00Z", digest="1" * 64)
     cardano_old = _release("cardano-node", "10.7.1", "2026-04-15T00:00:00Z", digest="2" * 64)
