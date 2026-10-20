@@ -591,9 +591,16 @@ class LocalRuntime:
                 self._bind_execution(manifest, scenario_id, topology, entry, plan)
             return plan
         target = plan.get("measurements", {}).get("target_identity", {})
+        target_node_id = cell.get("node_id") if cell else None
         for node in topology["nodes"]:
             identity = node["identity"]
             actual = resolved.get(node["implementation"], {})
+            # A per-node calibration scenario may deploy only its target
+            # implementation even when the cell came from a qualified mixed
+            # topology. Every implementation the plan does deploy is still
+            # checked below, and the target node may never be omitted.
+            if cell and not actual and node["node_id"] != target_node_id:
+                continue
             expected_artifacts = identity["artifacts"]
             if identity["kind"] == "candidate":
                 build = next((row for row in self.builds if row["mode"] == mode), {})

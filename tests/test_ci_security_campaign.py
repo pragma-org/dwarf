@@ -1183,6 +1183,45 @@ def test_measurement_plan_enables_all_stock_taps_sharing_one_exercise(mixed_runt
         cell['measurement_id'] for cell in cells}
 
 
+def test_measurement_plan_may_omit_unrelated_mixed_topology_implementation(
+    mixed_runtime, monkeypatch
+):
+    from profile_manager import run_plan
+
+    manifest, runtime = mixed_runtime
+    topology = manifest["topologies"][0]
+    candidate_implementation = manifest["candidate"]["implementation"]
+    cell = next(
+        row for row in manifest["required_tap_cells"]
+        if row["topology_id"] == topology["id"]
+        and row["implementation"] != candidate_implementation
+        and row["runtime"]["status"] == "implemented"
+        and "stock" in row["target_modes"]
+    )
+    node = next(row for row in topology["nodes"] if row["node_id"] == cell["node_id"])
+    identity = node["identity"]
+
+    def resolve(request, **kwargs):
+        return {
+            "scenario": {
+                "runtime": "devnet",
+                "target": {"implementation": cell["implementation"]},
+            },
+            "versions": {"resolved": {cell["implementation"]: {
+                "version": identity["version"],
+                "source_revision": identity["source_revision"],
+                "image_digest": identity["artifacts"]["image_digest"],
+            }}},
+            "measurements": {"target_identity": {"mode": "stock"}},
+        }
+
+    monkeypatch.setattr(run_plan, "resolve_run_plan", resolve)
+    plan = runtime._plan(
+        manifest, cell["scenario_id"], topology, "stock", None, cell
+    )
+    assert set(plan["versions"]["resolved"]) == {cell["implementation"]}
+
+
 def test_legacy_local_runtime_launch_omits_execution_binding(mixed_runtime, monkeypatch):
     from profile_manager import run_plan
     manifest, runtime = mixed_runtime
