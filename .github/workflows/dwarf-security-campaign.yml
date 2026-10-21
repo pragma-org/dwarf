@@ -507,7 +507,9 @@ jobs:
     permissions:
       contents: read
     outputs:
-      execution_matrix: ${{ steps.matrix.outputs.value }}
+      amaru_solo_matrix: ${{ steps.matrix.outputs.amaru_solo }}
+      cardano_solo_matrix: ${{ steps.matrix.outputs.cardano_solo }}
+      mixed_matrix: ${{ steps.matrix.outputs.mixed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -541,16 +543,24 @@ jobs:
             --build-observations ../prepared-input/campaign-plan/build-observations.json \
             --calibration-root ../calibration-input \
             --directory ../campaign-selected
-      - name: Export execution matrix
+      - name: Export ordered local scenario matrices
         id: matrix
         run: |
           python3 - <<'PY'
           import json
           import os
           from pathlib import Path
-          value = json.dumps(json.loads(Path('campaign-selected/execution-matrix.json').read_text()), separators=(',', ':'))
           with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
-              stream.write('value=' + value + '\n')
+              for output, phase in (
+                  ('amaru_solo', 'amaru-solo'),
+                  ('cardano_solo', 'cardano-solo'),
+                  ('mixed', 'mixed'),
+              ):
+                  value = json.dumps(
+                      json.loads(Path(f'campaign-selected/{phase}-matrix.json').read_text()),
+                      separators=(',', ':'),
+                  )
+                  stream.write(output + '=' + value + '\n')
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -559,13 +569,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  campaign:
+  amaru_solo:
+    name: Amaru solo / ${{ matrix.shard }}
     needs: [discover, prepare, select]
     if: needs.select.result == 'success'
     strategy:
       fail-fast: false
       max-parallel: 6
-      matrix: ${{ fromJSON(needs.select.outputs.execution_matrix) }}
+      matrix: ${{ fromJSON(needs.select.outputs.amaru_solo_matrix) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -584,93 +595,87 @@ jobs:
           persist-credentials: false
           submodules: false
           lfs: false
-      - uses: actions/download-artifact@v4
+      - name: Run existing local Amaru scenario and export its evidence
+        uses: ./campaign-trusted/.github/actions/dwarf-campaign-shard
         with:
-          name: dwarf-security-campaign-prepared
-          path: prepared-input
-      - uses: actions/download-artifact@v4
+          trusted-revision: ${{ needs.discover.outputs.trusted_revision }}
+          source-commit: ${{ github.sha }}
+          shard: ${{ matrix.shard }}
+
+  cardano_solo:
+    name: Cardano solo / ${{ matrix.shard }}
+    needs: [discover, prepare, select, amaru_solo]
+    if: >-
+      always() &&
+      needs.select.result == 'success' &&
+      needs.amaru_solo.result != 'cancelled'
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.select.outputs.cardano_solo_matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    services:
+      candidate-registry:
+        image: registry@sha256:46faa9a1ae6813194b53921a370f2f4f8c5e1aae228a89bceafef5847a6a3278
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout pinned reviewed runner tools
+        uses: actions/checkout@v4
         with:
-          name: dwarf-security-campaign-selected
-          path: campaign-selected
-      - uses: actions/download-artifact@v4
+          ref: ${{ needs.discover.outputs.trusted_revision }}
+          path: campaign-trusted
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Run existing local Cardano scenario and export its evidence
+        uses: ./campaign-trusted/.github/actions/dwarf-campaign-shard
         with:
-          name: dwarf-security-campaign-discovery
-          path: campaign-input
-      - uses: actions/download-artifact@v4
+          trusted-revision: ${{ needs.discover.outputs.trusted_revision }}
+          source-commit: ${{ github.sha }}
+          shard: ${{ matrix.shard }}
+
+  mixed:
+    name: Mixed / ${{ matrix.shard }}
+    needs: [discover, prepare, select, cardano_solo]
+    if: >-
+      always() &&
+      needs.select.result == 'success' &&
+      needs.cardano_solo.result != 'cancelled'
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.select.outputs.mixed_matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    services:
+      candidate-registry:
+        image: registry@sha256:46faa9a1ae6813194b53921a370f2f4f8c5e1aae228a89bceafef5847a6a3278
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout pinned reviewed runner tools
+        uses: actions/checkout@v4
         with:
-          name: amaru-network-candidate-builds
-          path: campaign-build
-      - uses: actions/setup-python@v5
+          ref: ${{ needs.discover.outputs.trusted_revision }}
+          path: campaign-trusted
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Run existing local mixed scenario and export its evidence
+        uses: ./campaign-trusted/.github/actions/dwarf-campaign-shard
         with:
-          python-version: "3.12"
-      - name: Install trusted campaign dependencies
-        run: python3 -m pip install --require-hashes -r campaign-trusted/infrastructure/docker/requirements-framework.txt
-      - name: Restore exact controller and candidate registry
-        working-directory: campaign-trusted
-        env:
-          PYTHONPATH: dwarf
-          SOURCE_COMMIT: ${{ github.sha }}
-          TRUSTED_COMMIT: ${{ needs.discover.outputs.trusted_revision }}
-        run: |
-          set -euo pipefail
-          docker load --input ../prepared-input/controller-image.tar
-          controller_image=$(cat ../prepared-input/controller-image-id.txt)
-          test "$(docker image inspect --format '{{.Id}}' "$controller_image")" = "$controller_image"
-          python3 -m scripts.ci_hosted_campaign_stage \
-            --discovery ../campaign-input/discovery.json \
-            --stock-build ../campaign-build \
-            --directory ../runtime-stage \
-            --expected-commit "$SOURCE_COMMIT" \
-            --expected-trusted-revision "$TRUSTED_COMMIT"
-          echo "$GITHUB_WORKSPACE/runtime-stage/host-tools/bin" >> "$GITHUB_PATH"
-          python3 -m scripts.ci_hosted_campaign_plan \
-            --discovery ../campaign-input/discovery.json \
-            --stage ../runtime-stage/status.json \
-            --stock-build ../campaign-build \
-            --directory ../runtime-plan
-          for name in manifest.json stock-manifest.json build-observations.json version-catalog.json; do
-            cmp "../runtime-plan/$name" "../prepared-input/campaign-plan/$name"
-          done
-          cp -R ../prepared-input/campaign-plan ../campaign-plan
-          cp ../campaign-selected/manifest.json ../campaign-plan/manifest.json
-          cp ../campaign-selected/stock-manifest.json ../campaign-plan/stock-manifest.json
-      - name: Create shard-local evidence signer
-        run: |
-          set -euo pipefail
-          mkdir -p campaign-runtime
-          umask 077
-          openssl genpkey -algorithm ED25519 -out "$RUNNER_TEMP/dwarf-workflow-evidence.pem"
-          openssl pkey -in "$RUNNER_TEMP/dwarf-workflow-evidence.pem" -pubout -out campaign-runtime/workflow-evidence-public.pem
-      - name: Run one frozen campaign workload
-        env:
-          PYTHONPATH: campaign-trusted/dwarf
-          HELPER_IMAGE: ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:ae1938a2ebdefa9cdf340021774e3a2551afd2da48d855fb2ba829cede13fb34
-          TRUSTED_COMMIT: ${{ needs.discover.outputs.trusted_revision }}
-        run: |
-          controller_image=$(cat prepared-input/controller-image-id.txt)
-          python3 -m scripts.ci_hosted_campaign_runtime outer \
-            --controller-image "$controller_image" \
-            --expected-controller-revision "$TRUSTED_COMMIT" \
-            --helper-image "$HELPER_IMAGE" \
-            --workspace "$GITHUB_WORKSPACE" \
-            --runtime-directory "$GITHUB_WORKSPACE/campaign-runtime" \
-            --signing-key "$RUNNER_TEMP/dwarf-workflow-evidence.pem" \
-            --installation-id "github-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}" \
-            --work-item "$GITHUB_WORKSPACE/campaign-selected/work-items/${{ matrix.shard }}.json" \
-            --work-item-inventory "$GITHUB_WORKSPACE/campaign-selected/execution-work-items.json"
-      - name: Retain workload shard
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dwarf-workload-${{ matrix.shard }}
-          path: |
-            campaign-runtime/
-            campaign-selected/work-items/${{ matrix.shard }}.json
-          if-no-files-found: error
-          retention-days: 30
+          trusted-revision: ${{ needs.discover.outputs.trusted_revision }}
+          source-commit: ${{ github.sha }}
+          shard: ${{ matrix.shard }}
 
   aggregate:
-    needs: [discover, select, campaign]
+    needs: [discover, select, amaru_solo, cardano_solo, mixed]
     if: always() && needs.select.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -11,6 +11,7 @@ import shutil
 from profile_manager.campaign_work_items import (
     calibration_work_items,
     execution_work_items,
+    phase_work_items,
     validate_work_item,
 )
 from profile_manager.forensic import atomic_write_bytes
@@ -144,12 +145,18 @@ def select_execution(primary_manifest, stock_manifest, builds, calibration_state
     _write(directory / "execution-decision.json", decision)
     _write(directory / "execution-work-items.json", inventory)
     _emit_items(directory, inventory, "execution-matrix.json")
+    phases = phase_work_items(inventory)
+    for phase, items in phases.items():
+        _write(directory / f"{phase}-matrix.json", _matrix(items))
     status = {
         "status": "selected",
         "selected_mode": selected_mode,
         "reason": decision["reason"],
         "stock_replay_required": replay,
         "work_item_count": len(inventory["items"]),
+        "phase_work_item_counts": {
+            phase: len(items) for phase, items in phases.items()
+        },
         "blocker_count": len(inventory["blockers"]),
         "inventory_digest": inventory["inventory_digest"],
     }

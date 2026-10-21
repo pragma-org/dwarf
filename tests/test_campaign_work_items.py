@@ -51,7 +51,9 @@ def test_execution_items_group_measurements_by_runtime_recipe(campaign_plan):
     measurement = [item for item in inventory["items"] if item["kind"] == "measurement"]
 
     assert [item["entry_id"] for item in security] == [manifest["entries"][0]["id"]]
+    assert {item["phase"] for item in security} == {"amaru-solo"}
     assert len(measurement) == 1
+    assert measurement[0]["phase"] == "amaru-solo"
     assert measurement[0]["measurement_ids"] == sorted([base["measurement_id"], second["measurement_id"]])
     assert inventory["blockers"] == [{
         "measurement_id": "missing-measurement",
@@ -76,6 +78,76 @@ def test_patched_execution_adds_one_stock_replay_per_security_entry(campaign_pla
     assert len(replays) == len(stock["entries"])
     assert replays[0]["manifest_role"] == "stock"
     assert replays[0]["campaign_digest"] == stock["campaign_digest"]
+
+
+def test_execution_items_are_partitioned_amaru_cardano_then_mixed():
+    inventory = {"items": [
+        {"item_id": "mixed", "phase": "mixed"},
+        {"item_id": "amaru", "phase": "amaru-solo"},
+        {"item_id": "cardano", "phase": "cardano-solo"},
+    ]}
+
+    phases = api.phase_work_items(inventory)
+
+    assert list(phases) == ["amaru-solo", "cardano-solo", "mixed"]
+    assert [[item["item_id"] for item in phases[phase]] for phase in phases] == [
+        ["amaru"], ["cardano"], ["mixed"]
+    ]
+
+
+def test_mixed_campaign_runs_per_node_measurements_before_shared_security(campaign_plan):
+    manifest = deepcopy(campaign_plan)
+    topology = manifest["topologies"][0]
+    topology["nodes"].append({
+        "node_id": "node2",
+        "identity": {
+            **deepcopy(topology["nodes"][0]["identity"]),
+            "implementation": "cardano-node",
+            "kind": "release",
+        },
+    })
+    implemented = deepcopy(manifest["required_tap_cells"][0])
+    implemented.update(runtime={"status": "implemented"}, target_modes=["stock"])
+    cardano = deepcopy(implemented)
+    cardano.update(
+        implementation="cardano-node",
+        measurement_id="cardano-stock-resources",
+        node_id="node2",
+        definition_digest="sha256:" + "8" * 64,
+    )
+    manifest["required_tap_cells"] = [implemented, cardano]
+    frozen(manifest)
+
+    phases = api.phase_work_items(api.execution_work_items(manifest))
+
+    assert {item["kind"] for item in phases["amaru-solo"]} == {"measurement"}
+    assert {item["kind"] for item in phases["cardano-solo"]} == {"measurement"}
+    assert {item["kind"] for item in phases["mixed"]} == {"security"}
+
+
+def test_measurement_using_existing_mixed_scenario_stays_in_mixed_phase(campaign_plan):
+    manifest = deepcopy(campaign_plan)
+    cell = deepcopy(manifest["required_tap_cells"][0])
+    cell.update(
+        runtime={"status": "implemented"},
+        target_modes=["stock"],
+        scenario_id="existing-mixed-scenario",
+    )
+    manifest["required_tap_cells"] = [cell]
+    manifest["definitions"]["scenarios"]["existing-mixed-scenario"] = {
+        "document": {
+            "substrate": {"nodes": [
+                {"id": "node1", "impl": "amaru"},
+                {"id": "node2", "impl": "cardano-node"},
+            ]}
+        }
+    }
+    frozen(manifest)
+
+    phases = api.phase_work_items(api.execution_work_items(manifest))
+
+    assert {item["kind"] for item in phases["amaru-solo"]} == {"security"}
+    assert {item["kind"] for item in phases["mixed"]} == {"measurement"}
 
 
 def test_work_item_validation_rejects_tampering(campaign_plan):

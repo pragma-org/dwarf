@@ -98,6 +98,12 @@ def test_selector_uses_patched_after_paired_calibration(manifests, tmp_path):
     assert result["stock_replay_required"] is True
     selected = json.loads((tmp_path / "selected/execution-work-items.json").read_text())
     assert any(row["kind"] == "stock-replay" for row in selected["items"])
+    assert sum(result["phase_work_item_counts"].values()) == len(selected["items"])
+    assert result["phase_work_item_counts"]["amaru-solo"]
+    assert result["phase_work_item_counts"]["cardano-solo"] == 0
+    assert json.loads((tmp_path / "selected/amaru-solo-matrix.json").read_text())["include"]
+    assert json.loads((tmp_path / "selected/cardano-solo-matrix.json").read_text()) == {"include": []}
+    assert len(json.loads((tmp_path / "selected/mixed-matrix.json").read_text())["include"]) == result["phase_work_item_counts"]["mixed"]
 
 
 def test_selector_falls_back_to_stock_when_patched_calibration_is_unavailable(manifests, tmp_path):

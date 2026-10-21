@@ -171,6 +171,20 @@ stock replay. A security item keeps its normal control and tested scenario in th
 same runner. The candidate build and trusted controller image are each produced
 once, retained by immutable identity, and restored by the individual runners.
 
+Workload scheduling preserves the existing local DWARF execution path. Every
+shard ultimately invokes `cardano-profile scenario run`, followed by the existing
+bundle sign, export, import and verification commands. Actions does not redefine
+scenario phases, measurement taps or evidence formatting. It only transports the
+one-time build artifacts and assigns frozen local runs to disposable runners.
+
+Executable work is partitioned by the scenario's actual topology and runs in
+this dependency order: **Amaru solo, Cardano solo, then mixed**. A measurement
+recipe whose existing scenario requires both implementations stays in the mixed
+phase even when the tap targets one node. Within each phase, independent scenarios
+fan out to separate runners with a bounded parallelism of six. A later phase waits
+for the preceding phase to finish; retained failures remain visible but do not hide
+independent evidence from the later phases.
+
 The hosted job creates its signing key after candidate compilation, outside the
 candidate container. It retains only the public key and labels the signer
 `integrity-only-untrusted-for-publication`; the private key expires with the runner.

@@ -35,19 +35,24 @@ The workflow has six stages:
    mode. A missing or failed patched lane selects stock; stock calibration must
    succeed.
 5. **Execute** expands the selected manifest into one matrix job per unique
-   workload. Security entries, measurement recipes not already exercised by a
-   selected security entry, and required stock security replays are independent
-   work items. Each runner restores the exact prepared controller and candidate
-   artifacts, runs only its assigned work item, and uploads its complete or
-   failed checkpoint plus canonical run archives.
+   workload. It reuses the existing local scenario, measurement and bundle
+   commands. Work runs in three dependent phases: Amaru solo, Cardano solo, then
+   mixed. Independent items inside a phase run in parallel. Security entries,
+   measurement recipes not already exercised by a selected security entry, and
+   required stock security replays are separate work items. Each runner restores
+   the exact prepared controller and candidate artifacts, runs only its assigned
+   local work item, and uploads its complete or failed checkpoint plus canonical
+   run archives.
 6. **Aggregate and publish** downloads every shard, verifies its campaign,
    build, work-item, archive, and checkpoint identities, rejects duplicate or
    missing work items, merges the evidence, evaluates the full frozen manifest,
    and passes only a complete combined result to the existing publication job.
 
-The matrix uses `fail-fast: false`. One runner failure therefore does not cancel
-other evidence-producing jobs. The aggregation job always runs after the
-matrix, but publication still requires a valid complete campaign result.
+Each phase matrix uses `fail-fast: false`. One runner failure therefore does not
+cancel sibling evidence-producing jobs. A later topology phase waits for the
+preceding phase to finish and preserves its failure without suppressing independent
+later evidence. The aggregation job always runs after the phase jobs,
+but publication still requires a valid complete campaign result.
 
 ## Work-item model
 
@@ -130,6 +135,7 @@ is a separate policy change and is not required for fan-out.
   aggregation, and publication jobs.
 - Candidate and controller build steps occur once, outside the execution matrix.
 - Every matrix job accepts exactly one manifest-derived work item.
+- Phase dependencies enforce Amaru solo, Cardano solo, then mixed.
 - A failed matrix job does not cancel sibling jobs.
 - Aggregation detects missing, duplicate, conflicting, or altered shard data.
 - The aggregate state remains compatible with the current publication verifier.

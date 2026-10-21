@@ -9,6 +9,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / '.github/workflows/dwarf-security-campaign.yml'
+SHARD_ACTION = ROOT / '.github/actions/dwarf-campaign-shard/action.yml'
 
 
 def workflow():
@@ -145,29 +146,48 @@ def test_official_metadata_is_review_only_and_suites_are_fixed():
     assert all(value['sha256'] for value in suites.values())
 
 
-def test_execution_uses_one_read_only_runner_per_workload_without_fail_fast():
-    job = workflow()['jobs']['campaign']
-    assert job['runs-on'] == 'ubuntu-latest'
-    assert job['needs'] == ['discover', 'prepare', 'select']
-    assert job['permissions'] == {'contents': 'read'}
-    assert job['strategy']['fail-fast'] == 'false'
-    assert job['strategy']['max-parallel'] == '6'
-    assert job['strategy']['matrix'] == '${{ fromJSON(needs.select.outputs.execution_matrix) }}'
-    assert job['timeout-minutes'] == '90'
-    checkouts = [s for s in job['steps'] if s.get('uses', '').startswith('actions/checkout@')]
-    assert len(checkouts) == 1
-    assert checkouts[0]['with']['ref'] == '${{ needs.discover.outputs.trusted_revision }}'
-    assert checkouts[0]['with']['persist-credentials'] == 'false'
-    text = json.dumps(job)
-    assert 'secrets.' not in text
-    assert 'contents: write' not in text
-    assert 'docker system prune' not in text
-    execute = step('campaign', 'Run one frozen campaign workload')
-    assert '--work-item ' in execute['run']
-    assert '--work-item-inventory ' in execute['run']
-    upload = step('campaign', 'Retain workload shard')
+def test_execution_uses_existing_local_run_path_in_ordered_runner_phases():
+    data = workflow()
+    expected = {
+        'amaru_solo': (['discover', 'prepare', 'select'], 'amaru_solo_matrix'),
+        'cardano_solo': (['discover', 'prepare', 'select', 'amaru_solo'], 'cardano_solo_matrix'),
+        'mixed': (['discover', 'prepare', 'select', 'cardano_solo'], 'mixed_matrix'),
+    }
+    for name, (needs, matrix) in expected.items():
+        job = data['jobs'][name]
+        assert job['runs-on'] == 'ubuntu-latest'
+        assert job['needs'] == needs
+        assert job['permissions'] == {'contents': 'read'}
+        assert job['strategy']['fail-fast'] == 'false'
+        assert job['strategy']['max-parallel'] == '6'
+        assert job['strategy']['matrix'] == '${{ fromJSON(needs.select.outputs.' + matrix + ') }}'
+        assert job['timeout-minutes'] == '90'
+        checkouts = [s for s in job['steps'] if s.get('uses', '').startswith('actions/checkout@')]
+        assert len(checkouts) == 1
+        assert checkouts[0]['with']['ref'] == '${{ needs.discover.outputs.trusted_revision }}'
+        assert checkouts[0]['with']['persist-credentials'] == 'false'
+        action = next(s for s in job['steps'] if s.get('uses', '').endswith('dwarf-campaign-shard'))
+        assert action['with']['shard'] == '${{ matrix.shard }}'
+        text = json.dumps(job)
+        assert 'secrets.' not in text
+        assert 'contents: write' not in text
+        assert 'docker system prune' not in text
+
+    assert data['jobs']['amaru_solo']['if'] == "needs.select.result == 'success'"
+    assert "needs.amaru_solo.result != 'cancelled'" in data['jobs']['cardano_solo']['if']
+    assert "needs.cardano_solo.result != 'cancelled'" in data['jobs']['mixed']['if']
+
+    action = yaml.load(SHARD_ACTION.read_text(), Loader=yaml.BaseLoader)
+    action_text = json.dumps(action)
+    assert 'scripts.ci_hosted_campaign_runtime outer' in action_text
+    assert '--work-item ' in action_text
+    assert '--work-item-inventory ' in action_text
+    executor = (ROOT / 'dwarf/scripts/ci_security_campaign.py').read_text()
+    assert '"dwarf/cardano-profile", "scenario", "run"' in executor
+    assert '[*base, "export", run_id' in executor
+    upload = next(s for s in action['runs']['steps'] if s.get('name') == 'Retain local run evidence bundle')
     assert upload['if'] == 'always()'
-    assert '${{ matrix.shard }}' in upload['with']['name']
+    assert '${{ inputs.shard }}' in upload['with']['name']
 
 
 def test_fanout_stages_are_identity_bound_and_aggregate_before_publication():
@@ -194,6 +214,7 @@ def test_fanout_stages_are_identity_bound_and_aggregate_before_publication():
     assert '--calibration-root ../calibration-input' in selector['run']
 
     aggregate = workflow()['jobs']['aggregate']
+    assert aggregate['needs'] == ['discover', 'select', 'amaru_solo', 'cardano_solo', 'mixed']
     assert aggregate['if'] == "always() && needs.select.result == 'success'"
     merger = step('aggregate', 'Verify and aggregate every campaign shard')
     assert 'ci_campaign_fanout aggregate' in merger['run']
@@ -232,6 +253,10 @@ def test_all_inline_python_and_shell_syntax_is_valid():
                 ast.parse(python_script(name, entry['name']))
             if 'run' in entry:
                 subprocess.run(['bash', '-n'], input=entry['run'], text=True, check=True, capture_output=True)
+    action = yaml.load(SHARD_ACTION.read_text(), Loader=yaml.BaseLoader)
+    for entry in action['runs']['steps']:
+        if 'run' in entry:
+            subprocess.run(['bash', '-n'], input=entry['run'], text=True, check=True, capture_output=True)
 
 
 def test_runbook_exposes_blockers_resume_and_owned_cleanup():

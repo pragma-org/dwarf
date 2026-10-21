@@ -1,0 +1,103 @@
+name: Run one DWARF local scenario shard
+description: Restore the frozen candidate and invoke the canonical local DWARF scenario and bundle path.
+inputs:
+  trusted-revision:
+    description: Reviewed DWARF revision used to build and execute the shard.
+    required: true
+  source-commit:
+    description: Submitted candidate repository commit.
+    required: true
+  shard:
+    description: Frozen work-item shard identifier.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: dwarf-security-campaign-prepared
+        path: prepared-input
+    - uses: actions/download-artifact@v4
+      with:
+        name: dwarf-security-campaign-selected
+        path: campaign-selected
+    - uses: actions/download-artifact@v4
+      with:
+        name: dwarf-security-campaign-discovery
+        path: campaign-input
+    - uses: actions/download-artifact@v4
+      with:
+        name: amaru-network-candidate-builds
+        path: campaign-build
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install trusted campaign dependencies
+      shell: bash
+      run: python3 -m pip install --require-hashes -r campaign-trusted/infrastructure/docker/requirements-framework.txt
+    - name: Restore exact controller and candidate registry
+      shell: bash
+      working-directory: campaign-trusted
+      env:
+        PYTHONPATH: dwarf
+        SOURCE_COMMIT: ${{ inputs.source-commit }}
+        TRUSTED_COMMIT: ${{ inputs.trusted-revision }}
+      run: |
+        set -euo pipefail
+        docker load --input ../prepared-input/controller-image.tar
+        controller_image=$(cat ../prepared-input/controller-image-id.txt)
+        test "$(docker image inspect --format '{{.Id}}' "$controller_image")" = "$controller_image"
+        python3 -m scripts.ci_hosted_campaign_stage \
+          --discovery ../campaign-input/discovery.json \
+          --stock-build ../campaign-build \
+          --directory ../runtime-stage \
+          --expected-commit "$SOURCE_COMMIT" \
+          --expected-trusted-revision "$TRUSTED_COMMIT"
+        echo "$GITHUB_WORKSPACE/runtime-stage/host-tools/bin" >> "$GITHUB_PATH"
+        python3 -m scripts.ci_hosted_campaign_plan \
+          --discovery ../campaign-input/discovery.json \
+          --stage ../runtime-stage/status.json \
+          --stock-build ../campaign-build \
+          --directory ../runtime-plan
+        for name in manifest.json stock-manifest.json build-observations.json version-catalog.json; do
+          cmp "../runtime-plan/$name" "../prepared-input/campaign-plan/$name"
+        done
+        cp -R ../prepared-input/campaign-plan ../campaign-plan
+        cp ../campaign-selected/manifest.json ../campaign-plan/manifest.json
+        cp ../campaign-selected/stock-manifest.json ../campaign-plan/stock-manifest.json
+    - name: Create shard-local evidence signer
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p campaign-runtime
+        umask 077
+        openssl genpkey -algorithm ED25519 -out "$RUNNER_TEMP/dwarf-workflow-evidence.pem"
+        openssl pkey -in "$RUNNER_TEMP/dwarf-workflow-evidence.pem" -pubout -out campaign-runtime/workflow-evidence-public.pem
+    - name: Run one existing local DWARF scenario
+      shell: bash
+      env:
+        PYTHONPATH: campaign-trusted/dwarf
+        HELPER_IMAGE: ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:ae1938a2ebdefa9cdf340021774e3a2551afd2da48d855fb2ba829cede13fb34
+        TRUSTED_COMMIT: ${{ inputs.trusted-revision }}
+      run: |
+        controller_image=$(cat prepared-input/controller-image-id.txt)
+        python3 -m scripts.ci_hosted_campaign_runtime outer \
+          --controller-image "$controller_image" \
+          --expected-controller-revision "$TRUSTED_COMMIT" \
+          --helper-image "$HELPER_IMAGE" \
+          --workspace "$GITHUB_WORKSPACE" \
+          --runtime-directory "$GITHUB_WORKSPACE/campaign-runtime" \
+          --signing-key "$RUNNER_TEMP/dwarf-workflow-evidence.pem" \
+          --installation-id "github-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.shard }}" \
+          --work-item "$GITHUB_WORKSPACE/campaign-selected/work-items/${{ inputs.shard }}.json" \
+          --work-item-inventory "$GITHUB_WORKSPACE/campaign-selected/execution-work-items.json"
+    - name: Retain local run evidence bundle
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: dwarf-workload-${{ inputs.shard }}
+        path: |
+          campaign-runtime/
+          campaign-selected/work-items/${{ inputs.shard }}.json
+        if-no-files-found: error
+        retention-days: 30
