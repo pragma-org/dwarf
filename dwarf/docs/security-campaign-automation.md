@@ -48,7 +48,10 @@ all candidate layouts and rejects ambiguity, unsafe names and escaping symlinks.
 The complete tree digest includes build support, executable bits and symlink text.
 The repository commit, source digest and each variant plan digest are retained.
 
-Manual dispatch has no arbitrary inputs and builds all tracked Amaru candidates.
+Manual dispatch exposes one reviewed choice: `stock-solo` or `full`. It builds
+all tracked Amaru candidates; it accepts no client command, scenario, image or
+version input. `stock-solo` is the default manual scope. Push-triggered campaigns
+and the complete campaign path use `full`.
 The weekly schedule only refreshes and retains official-release metadata for
 review; it does not build or execute an unreviewed release. Refresh does not modify
 the committed version catalog or silently select a release for execution.
@@ -176,6 +179,17 @@ shard ultimately invokes `cardano-profile scenario run`, followed by the existin
 bundle sign, export, import and verification commands. Actions does not redefine
 scenario phases, measurement taps or evidence formatting. It only transports the
 one-time build artifacts and assigns frozen local runs to disposable runners.
+
+The bounded `stock-solo` scope builds only the submitted Amaru stock artifact,
+runs `amaru-measurement-e2e-stock-portable`, and then runs
+`cardano-measurement-e2e-stock-portable` against the selected stock Cardano
+release. Cardano starts only after the Amaru shard succeeds. The proof authority
+is deliberately limited to the non-vacuous `amaru-stock-resources` and
+`cardano-stock-resources` results plus their signed portable bundles. Every other
+collector output remains in the bundles, while excluded measurements and known
+full-campaign blockers remain explicit deferred metadata. A successful aggregate
+is labelled `stock-solo` and `scoped-complete`, reports security as `not-run`, and
+cannot enter the full release or Pages publication job.
 
 Executable work is partitioned by the scenario's actual topology and runs in
 this dependency order: **Amaru solo, Cardano solo, then mixed**. A measurement

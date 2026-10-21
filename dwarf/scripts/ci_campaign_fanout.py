@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 
 from profile_manager.campaign_work_items import (
+    _finish,
     calibration_work_items,
     execution_work_items,
     phase_work_items,
@@ -32,9 +33,28 @@ def _matrix(items):
     return {"include": [{"shard": item["shard"]} for item in items]}
 
 
-def _inventory(kind, campaign_digest, items, *, blockers=None):
+def inventory_digest(inventory):
     from profile_manager.campaign_work_items import _digest
 
+    body = {
+        "items": inventory.get("items", []),
+        "blockers": inventory.get("blockers", []),
+    }
+    if inventory.get("scope"):
+        body.update(
+            scope=inventory["scope"],
+            claim=inventory.get("claim"),
+            deferred_full_campaign_blockers=inventory.get(
+                "deferred_full_campaign_blockers", []
+            ),
+            deferred_full_campaign_measurements=inventory.get(
+                "deferred_full_campaign_measurements", []
+            ),
+        )
+    return _digest(body)
+
+
+def _inventory(kind, campaign_digest, items, *, blockers=None):
     body = {
         "schema_version": "v1",
         "kind": kind,
@@ -42,10 +62,120 @@ def _inventory(kind, campaign_digest, items, *, blockers=None):
         "items": deepcopy(items),
         "blockers": deepcopy(blockers or []),
     }
-    body["inventory_digest"] = _digest(
-        {"items": body["items"], "blockers": body["blockers"]}
-    )
+    body["inventory_digest"] = inventory_digest(body)
     return body
+
+
+def scope_execution_inventory(inventory, scope):
+    """Freeze the work authorized by a hosted workflow scope."""
+
+    if scope == "full":
+        return deepcopy(inventory)
+    if scope != "stock-solo":
+        raise ValueError("campaign execution scope is invalid")
+    candidates = [
+        deepcopy(item)
+        for item in inventory.get("items", [])
+        if item.get("kind") == "measurement"
+        and item.get("mode") == "stock"
+        and item.get("phase") in {"amaru-solo", "cardano-solo"}
+    ]
+    expected = {
+        ("amaru", "amaru-solo"),
+        ("cardano-node", "cardano-solo"),
+    }
+    observed = {(item.get("implementation"), item.get("phase")) for item in candidates}
+    if observed != expected or len(candidates) != 2:
+        raise ValueError(
+            "stock-solo proof requires exactly one Amaru and one Cardano stock measurement recipe"
+        )
+    proof_measurements = {
+        "amaru": "amaru-stock-resources",
+        "cardano-node": "cardano-stock-resources",
+    }
+    selected = []
+    for item in candidates:
+        measurement_id = proof_measurements[item["implementation"]]
+        if measurement_id not in item.get("measurement_ids", []):
+            raise ValueError(
+                f"stock-solo proof measurement is absent: {measurement_id}"
+            )
+        body = {
+            key: deepcopy(value)
+            for key, value in item.items()
+            if key not in {"work_item_digest", "shard"}
+        }
+        body["measurement_ids"] = [measurement_id]
+        selected.append(_finish(body))
+    selected.sort(key=lambda item: item["phase"])
+    selected_measurements = {
+        measurement_id
+        for item in selected
+        for measurement_id in item["measurement_ids"]
+    }
+    all_measurements = {
+        measurement_id
+        for item in inventory.get("items", [])
+        if item.get("kind") == "measurement"
+        for measurement_id in item.get("measurement_ids", [])
+    }
+    result = {
+        "schema_version": "v1",
+        "kind": inventory.get("kind"),
+        "campaign_digest": inventory.get("campaign_digest"),
+        "scope": "stock-solo",
+        "claim": "hosted-stock-execution-and-portable-evidence",
+        "items": selected,
+        "blockers": [],
+        "deferred_full_campaign_blockers": deepcopy(inventory.get("blockers", [])),
+        "deferred_full_campaign_measurements": sorted(
+            all_measurements - selected_measurements
+        ),
+    }
+    result["inventory_digest"] = inventory_digest(result)
+    return result
+
+
+def stock_solo_proof_status(
+    inventory, *, item_success, readiness_passed, cleanup_errors
+):
+    """Evaluate the bounded stock proof without claiming a full campaign."""
+
+    items = inventory.get("items", [])
+    expected = {
+        ("amaru", "amaru-solo"),
+        ("cardano-node", "cardano-solo"),
+    }
+    observed = {
+        (item.get("implementation"), item.get("phase"))
+        for item in items
+        if item.get("kind") == "measurement" and item.get("mode") == "stock"
+    }
+    complete = (
+        inventory.get("scope") == "stock-solo"
+        and len(items) == 2
+        and observed == expected
+        and item_success
+        and not inventory.get("blockers")
+        and readiness_passed is True
+        and not cleanup_errors
+    )
+    return {
+        "status": "complete" if complete else "incomplete",
+        "proof_scope": "stock-solo",
+        "proof_claim": inventory.get("claim"),
+        "measurement_completeness": (
+            "scoped-complete" if complete else "scoped-incomplete"
+        ),
+        "security_result": "not-run",
+        "full_campaign_deferred": True,
+        "deferred_full_campaign_blockers": deepcopy(
+            inventory.get("deferred_full_campaign_blockers", [])
+        ),
+        "deferred_full_campaign_measurements": deepcopy(
+            inventory.get("deferred_full_campaign_measurements", [])
+        ),
+    }
 
 
 def _emit_items(directory: Path, inventory: dict, matrix_name: str) -> None:
@@ -102,7 +232,15 @@ def _calibration_result(state, mode):
     )
 
 
-def select_execution(primary_manifest, stock_manifest, builds, calibration_states, directory):
+def select_execution(
+    primary_manifest,
+    stock_manifest,
+    builds,
+    calibration_states,
+    directory,
+    *,
+    scope="full",
+):
     """Select stock/patched once, then emit the executable workload matrix."""
 
     directory = Path(directory)
@@ -139,6 +277,7 @@ def select_execution(primary_manifest, stock_manifest, builds, calibration_state
         stock_manifest=stock_manifest if replay else None,
         stock_replay_required=replay,
     )
+    inventory = scope_execution_inventory(inventory, scope)
     _write(directory / "selected-manifest.json", selected)
     _write(directory / "manifest.json", primary_manifest)
     _write(directory / "stock-manifest.json", stock_manifest)
@@ -153,11 +292,15 @@ def select_execution(primary_manifest, stock_manifest, builds, calibration_state
         "selected_mode": selected_mode,
         "reason": decision["reason"],
         "stock_replay_required": replay,
+        "scope": scope,
         "work_item_count": len(inventory["items"]),
         "phase_work_item_counts": {
             phase: len(items) for phase, items in phases.items()
         },
         "blocker_count": len(inventory["blockers"]),
+        "deferred_full_campaign_blocker_count": len(
+            inventory.get("deferred_full_campaign_blockers", [])
+        ),
         "inventory_digest": inventory["inventory_digest"],
     }
     _write(directory / "fanout-status.json", status)
@@ -211,11 +354,7 @@ def aggregate_execution(
     """Verify every assigned shard and merge it into the publication layout."""
 
     from profile_manager.campaign_evidence import evaluate_stock_replay_authority
-    from profile_manager.campaign_work_items import _digest as inventory_digest
-
-    if inventory.get("inventory_digest") != inventory_digest(
-        {"items": inventory.get("items", []), "blockers": inventory.get("blockers", [])}
-    ):
+    if inventory.get("inventory_digest") != inventory_digest(inventory):
         raise ValueError("execution work-item inventory digest mismatch")
     allowed = inventory.get("items", [])
     expected = {item["work_item_digest"]: item for item in allowed}
@@ -302,24 +441,38 @@ def aggregate_execution(
     _write(directory / "selected-manifest.json", selected_manifest)
     _write(directory / "stock-manifest.json", stock_manifest)
     _save(directory / "selected/state.json", primary_state)
-    status_complete = (
-        item_success
-        and not inventory.get("blockers")
-        and primary_state["readiness"].get("passed") is True
-        and not primary_state["cleanup_errors"]
-        and primary_state["status"].get("measurement_completeness") == "complete"
-        and primary_state["status"].get("security_result") in {"pass", "finding"}
-        and primary_state["status"].get("security_authority")
-        in {None, "patched-primary-stock-confirmed", "patched-primary-stock-disagrees"}
-    )
-    result = {
-        "status": "complete" if status_complete else "incomplete",
+    common = {
         "campaign_id": selected_manifest["campaign_id"],
         "campaign_digest": selected_manifest["campaign_digest"],
         "work_item_count": len(allowed),
         "blockers": deepcopy(inventory.get("blockers", [])),
-        **primary_state["status"],
     }
+    if inventory.get("scope") == "stock-solo":
+        proof = stock_solo_proof_status(
+            inventory,
+            item_success=item_success,
+            readiness_passed=primary_state["readiness"].get("passed"),
+            cleanup_errors=primary_state["cleanup_errors"],
+        )
+        primary_state["stock_solo_proof"] = deepcopy(proof)
+        primary_state["full_campaign_status"] = deepcopy(primary_state["status"])
+        result = {**common, **proof}
+    else:
+        status_complete = (
+            item_success
+            and not inventory.get("blockers")
+            and primary_state["readiness"].get("passed") is True
+            and not primary_state["cleanup_errors"]
+            and primary_state["status"].get("measurement_completeness") == "complete"
+            and primary_state["status"].get("security_result") in {"pass", "finding"}
+            and primary_state["status"].get("security_authority")
+            in {None, "patched-primary-stock-confirmed", "patched-primary-stock-disagrees"}
+        )
+        result = {
+            **common,
+            "status": "complete" if status_complete else "incomplete",
+            **primary_state["status"],
+        }
     _write(directory / "aggregate-status.json", result)
     return result
 
@@ -363,6 +516,7 @@ def main(argv=None):
         command.add_argument("--directory", type=Path, required=True)
     select.add_argument("--build-observations", type=Path, required=True)
     select.add_argument("--calibration-root", type=Path, required=True)
+    select.add_argument("--scope", choices=("full", "stock-solo"), default="full")
     aggregate.add_argument("--manifest", type=Path, required=True)
     aggregate.add_argument("--stock-manifest", type=Path, required=True)
     aggregate.add_argument("--inventory", type=Path, required=True)
@@ -383,6 +537,7 @@ def main(argv=None):
                 builds,
                 _load_states(args.calibration_root),
                 args.directory,
+                scope=args.scope,
             )
         else:
             result = aggregate_execution(

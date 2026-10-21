@@ -135,6 +135,67 @@ def test_selector_rejects_failed_stock_calibration(manifests, tmp_path):
         )
 
 
+def test_stock_solo_scope_keeps_exactly_one_stock_measurement_per_implementation():
+    inventory = {
+        "schema_version": "v1",
+        "kind": "campaign-work-item-inventory",
+        "campaign_digest": "sha256:" + "a" * 64,
+        "items": [
+            {"item_id": "amaru", "kind": "measurement", "phase": "amaru-solo",
+             "implementation": "amaru", "mode": "stock", "measurement_ids": [
+                 "amaru-external-restart-readiness", "amaru-stock-resources",
+             ]},
+            {"item_id": "cardano", "kind": "measurement", "phase": "cardano-solo",
+             "implementation": "cardano-node", "mode": "stock", "measurement_ids": [
+                 "cardano-external-restart-readiness", "cardano-stock-resources",
+             ]},
+            {"item_id": "mixed", "kind": "security", "phase": "mixed"},
+        ],
+        "blockers": [{"measurement_id": "deferred-full-campaign-gap"}],
+    }
+
+    scoped = api.scope_execution_inventory(inventory, "stock-solo")
+
+    assert [row["item_id"] for row in scoped["items"]] == ["amaru", "cardano"]
+    assert [row["measurement_ids"] for row in scoped["items"]] == [
+        ["amaru-stock-resources"], ["cardano-stock-resources"]
+    ]
+    assert scoped["blockers"] == []
+    assert scoped["deferred_full_campaign_blockers"] == inventory["blockers"]
+    assert scoped["deferred_full_campaign_measurements"] == [
+        "amaru-external-restart-readiness",
+        "cardano-external-restart-readiness",
+    ]
+    assert scoped["scope"] == "stock-solo"
+    assert scoped["claim"] == "hosted-stock-execution-and-portable-evidence"
+    assert scoped["inventory_digest"] == api.inventory_digest(scoped)
+
+
+def test_stock_solo_status_is_scoped_complete_without_security_claim():
+    inventory = {
+        "scope": "stock-solo",
+        "items": [
+            {"kind": "measurement", "phase": "amaru-solo", "implementation": "amaru", "mode": "stock"},
+            {"kind": "measurement", "phase": "cardano-solo", "implementation": "cardano-node", "mode": "stock"},
+        ],
+        "blockers": [],
+        "deferred_full_campaign_blockers": [{"measurement_id": "later"}],
+    }
+
+    result = api.stock_solo_proof_status(
+        inventory,
+        item_success=True,
+        readiness_passed=True,
+        cleanup_errors=[],
+    )
+
+    assert result["status"] == "complete"
+    assert result["measurement_completeness"] == "scoped-complete"
+    assert result["security_result"] == "not-run"
+    assert result["full_campaign_deferred"] is True
+    assert result["deferred_full_campaign_blockers"] == [{"measurement_id": "later"}]
+
+
 def shard_state(manifest, item, root):
     from test_campaign_evidence import evidence, measurement
     from scripts.ci_security_campaign import _digest, _evaluate

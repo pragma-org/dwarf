@@ -314,6 +314,19 @@ def build_patched(candidate, **kwargs):
     return _build_variant(candidate, variant="patched", **kwargs)
 
 
+def build_variants(candidate, *, output, index, stock_only=False, **kwargs):
+    """Build the trusted hosted variants selected by the workflow scope."""
+
+    receipts = [build_stock(
+        candidate, directory=Path(output) / f"stock-{index:04d}", **kwargs
+    )]
+    if not stock_only:
+        receipts.append(build_patched(
+            candidate, directory=Path(output) / f"patched-{index:04d}", **kwargs
+        ))
+    return receipts
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--builder-image", required=True)
@@ -323,6 +336,7 @@ def main(argv=None):
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--expected-commit")
     parser.add_argument("--expected-trusted-revision")
+    parser.add_argument("--stock-only", action="store_true")
     args = parser.parse_args(argv)
     validate_builder(args.builder_image)
     if args.validate_builder_only:
@@ -345,18 +359,27 @@ def main(argv=None):
         if candidate.implementation != "amaru":
             continue  # no other implementation/lane executes
         index = len(statuses)
-        stock = build_stock(candidate, directory=output / f"stock-{index:04d}",
-                            builder_image=args.builder_image, source_date=source_date,
-                            peer_snapshots=peer_snapshots, declared=declared)
-        patched = build_patched(candidate, directory=output / f"patched-{index:04d}",
-                                builder_image=args.builder_image, source_date=source_date,
-                                peer_snapshots=peer_snapshots, declared=declared)
+        common = {
+            "builder_image": args.builder_image,
+            "source_date": source_date,
+            "peer_snapshots": peer_snapshots,
+            "declared": declared,
+        }
+        receipts = build_variants(
+            candidate,
+            output=output,
+            index=index,
+            stock_only=args.stock_only,
+            **common,
+        )
+        stock = receipts[0]
         statuses.append(stock["status"])
         variants.extend({"candidate_index": index, "variant": row["variant"],
                          "status": row["status"], "reason": row.get("reason") or row.get("detail")}
-                        for row in (stock, patched))
+                        for row in receipts)
     _save(output / "summary.json", {"statuses": statuses, "network": NETWORK,
           "variants": variants, "other_lanes": "compiler-coverage-blocked",
+          "requested_variants": ["stock"] if args.stock_only else ["stock", "patched"],
           "runtime_ready": False, "published": False})
     return 0 if statuses and all(s == "built" for s in statuses) else 1
 

@@ -4,7 +4,16 @@ name: DWARF security campaign
 # and later execution are permitted only after an explicit same-repository push,
 # on disposable hosted runners with read-only repository authority.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      campaign_scope:
+        description: Run the bounded stock proof or the complete configured campaign.
+        required: true
+        type: choice
+        default: stock-solo
+        options:
+          - stock-solo
+          - full
   schedule:
     - cron: '15 5 * * 1'
   push:
@@ -13,6 +22,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  CAMPAIGN_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.campaign_scope || 'full' }}
 
 jobs:
   discover:
@@ -23,6 +35,7 @@ jobs:
     outputs:
       has_work: ${{ steps.discovery.outputs.has_work }}
       trusted_revision: ${{ steps.trusted.outputs.revision }}
+      campaign_scope: ${{ steps.discovery.outputs.campaign_scope }}
     steps:
       - name: Checkout reviewed DWARF tools
         uses: actions/checkout@v4
@@ -65,6 +78,7 @@ jobs:
           BEFORE_COMMIT: ${{ github.event.before }}
           TRUSTED_COMMIT: ${{ steps.trusted.outputs.revision }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
+          CAMPAIGN_SCOPE: ${{ env.CAMPAIGN_SCOPE }}
         run: |
           python3 - <<'PY'
           import hashlib
@@ -140,6 +154,9 @@ jobs:
               commit = os.environ['SOURCE_COMMIT']
               if not re.fullmatch('[0-9a-f]{40}', commit):
                   raise ValueError('source commit must be an exact Git identity')
+              campaign_scope = os.environ.get('CAMPAIGN_SCOPE', 'full')
+              if campaign_scope not in {'stock-solo', 'full'}:
+                  raise ValueError('campaign scope is invalid')
               push = os.environ['EVENT_NAME'] == 'push'
               changed = set()
               if push:
@@ -166,6 +183,7 @@ jobs:
                   # already committed candidate source. Scheduled metadata
                   # refreshes remain review-only and never execute candidates.
                   'status': 'validated' if push or manual_stock else 'official-selection-review-required',
+                  'campaign_scope': campaign_scope,
                   'repository_commit': commit, 'trusted_revision': os.environ['TRUSTED_COMMIT'],
                   'workflow_run_id': os.environ['WORKFLOW_RUN_ID'], 'runner_class': 'github-hosted',
                   'trusted_inputs': trusted_inputs(root), 'candidates': candidates,
@@ -183,6 +201,7 @@ jobs:
               (output / 'discovery.sha256').write_text(hashlib.sha256(encoded).hexdigest() + '\n')
               with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
                   stream.write('has_work=' + ('true' if candidates or not push else 'false') + '\n')
+                  stream.write('campaign_scope=' + campaign_scope + '\n')
               with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
                   stream.write(f'Validated {len(candidates)} changed source candidates; removed {len(removed)}.\n\n')
                   stream.write('Real execution blocked: candidate-build-prerequisites-unresolved. Official metadata requires reviewed selection.\n')
@@ -251,7 +270,7 @@ jobs:
           BUILDER_IMAGE: ${{ steps.builder.outputs.image }}
         run: python3 -m scripts.ci_amaru_stock_build --builder-image "$BUILDER_IMAGE" --validate-builder-only
       - uses: docker/setup-buildx-action@v3
-      - name: Build Amaru stock and compatible patched variant with recorded network dependency fetch
+      - name: Build selected Amaru candidate variants
         working-directory: stock-trusted
         env:
           PYTHONPATH: dwarf
@@ -261,9 +280,16 @@ jobs:
           # Used only by trusted host-side snapshot resolution. Docker receives
           # no GitHub token or runner credential.
           GITHUB_API_TOKEN: ${{ github.token }}
+          STOCK_ONLY: ${{ needs.discover.outputs.campaign_scope == 'stock-solo' && 'true' || 'false' }}
         run: |
+          set -euo pipefail
+          scope_args=()
+          if [[ "$STOCK_ONLY" == "true" ]]; then
+            scope_args+=(--stock-only)
+          fi
           python3 -m scripts.ci_amaru_stock_build \
             --builder-image "$BUILDER_IMAGE" \
+            "${scope_args[@]}" \
             --discovery ../stock-input/discovery.json \
             --source-repository ../stock-source \
             --directory ../stock-output \
@@ -536,12 +562,14 @@ jobs:
         working-directory: campaign-trusted
         env:
           PYTHONPATH: dwarf
+          CAMPAIGN_SCOPE: ${{ needs.discover.outputs.campaign_scope }}
         run: |
           python3 -m scripts.ci_campaign_fanout select \
             --manifest ../prepared-input/campaign-plan/manifest.json \
             --stock-manifest ../prepared-input/campaign-plan/stock-manifest.json \
             --build-observations ../prepared-input/campaign-plan/build-observations.json \
             --calibration-root ../calibration-input \
+            --scope "$CAMPAIGN_SCOPE" \
             --directory ../campaign-selected
       - name: Export ordered local scenario matrices
         id: matrix
@@ -608,7 +636,10 @@ jobs:
     if: >-
       always() &&
       needs.select.result == 'success' &&
-      needs.amaru_solo.result != 'cancelled'
+      ((needs.discover.outputs.campaign_scope == 'stock-solo' &&
+        needs.amaru_solo.result == 'success') ||
+       (needs.discover.outputs.campaign_scope == 'full' &&
+        needs.amaru_solo.result != 'cancelled'))
     strategy:
       fail-fast: false
       max-parallel: 6
@@ -643,6 +674,7 @@ jobs:
     needs: [discover, prepare, select, cardano_solo]
     if: >-
       always() &&
+      needs.discover.outputs.campaign_scope == 'full' &&
       needs.select.result == 'success' &&
       needs.cardano_solo.result != 'cancelled'
     strategy:
@@ -727,7 +759,9 @@ jobs:
 
   publication:
     needs: [discover, aggregate]
-    if: needs.aggregate.result == 'success'
+    if: >-
+      needs.discover.outputs.campaign_scope == 'full' &&
+      needs.aggregate.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:

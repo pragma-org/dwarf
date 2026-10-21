@@ -54,8 +54,36 @@ def test_triggers_are_controlled_and_have_no_pr_execution():
     assert set(data['on']) == {'workflow_dispatch', 'schedule', 'push'}
     assert data['on']['push']['paths'] == ['dwarf/testplease/**']
     assert data['on']['schedule'][0]['cron']
-    assert not data['on']['workflow_dispatch'].get('inputs')
+    scope = data['on']['workflow_dispatch']['inputs']['campaign_scope']
+    assert scope['type'] == 'choice'
+    assert scope['default'] == 'stock-solo'
+    assert scope['options'] == ['stock-solo', 'full']
     assert data['permissions'] == {'contents': 'read'}
+
+
+def test_stock_solo_dispatch_builds_and_runs_only_ordered_stock_proof():
+    data = workflow()
+    assert data['env']['CAMPAIGN_SCOPE'] == (
+        "${{ github.event_name == 'workflow_dispatch' && inputs.campaign_scope || 'full' }}"
+    )
+    discover = data['jobs']['discover']
+    assert discover['outputs']['campaign_scope'] == '${{ steps.discovery.outputs.campaign_scope }}'
+
+    build = step('candidate-build', 'Build selected Amaru candidate variants')
+    assert 'STOCK_ONLY' in build['env']
+    assert '--stock-only' in build['run']
+
+    select = step('select', 'Select calibrated mode and freeze execution matrix')
+    assert '--scope "$CAMPAIGN_SCOPE"' in select['run']
+    assert select['env']['CAMPAIGN_SCOPE'] == '${{ needs.discover.outputs.campaign_scope }}'
+
+    cardano_condition = data['jobs']['cardano_solo']['if']
+    assert "needs.discover.outputs.campaign_scope == 'stock-solo'" in cardano_condition
+    assert "needs.amaru_solo.result == 'success'" in cardano_condition
+    mixed_condition = data['jobs']['mixed']['if']
+    assert "needs.discover.outputs.campaign_scope == 'full'" in mixed_condition
+    publication_condition = data['jobs']['publication']['if']
+    assert "needs.discover.outputs.campaign_scope == 'full'" in publication_condition
 
 
 def test_prepare_builds_the_trusted_controller_once_and_exports_it():
@@ -226,7 +254,8 @@ def test_publication_is_isolated_from_candidate_execution_and_release_only():
     data = workflow()
     publication = data['jobs']['publication']
     assert publication['needs'] == ['discover', 'aggregate']
-    assert publication['if'] == "needs.aggregate.result == 'success'"
+    assert "needs.discover.outputs.campaign_scope == 'full'" in publication['if']
+    assert "needs.aggregate.result == 'success'" in publication['if']
     assert publication['permissions'] == {'actions': 'read', 'contents': 'write'}
     assert publication['concurrency']['cancel-in-progress'] in {False, 'false'}
     assert step('publication', 'Download completed campaign')['with']['name'] == 'dwarf-security-campaign-status'
@@ -298,9 +327,10 @@ def test_complete_push_discovery_retains_every_changed_directory(tmp_path, monke
     assert [row['candidate_name'] for row in document['candidates']] == ['one', 'two']
     assert document['removed_candidates'] == [['amaru', 'removed']]
     assert document['trusted_revision'] == 'c' * 40
+    assert document['campaign_scope'] == 'full'
     assert document['execution_blocker'] == 'candidate-build-prerequisites-unresolved'
     assert document['official_selection'] == []
-    assert outputs.read_text() == 'has_work=true\n'
+    assert outputs.read_text() == 'has_work=true\ncampaign_scope=full\n'
     assert calls[0][0][1] == ('ls-tree' if initial else 'diff')
     assert calls[0][1]['cwd'] == submitted
 

@@ -32,6 +32,23 @@ def snapshots(tmp_path):
     return root
 
 
+def test_stock_only_variant_selection_never_invokes_patched_builder(tmp_path, monkeypatch):
+    calls = []
+    candidate = object()
+
+    monkeypatch.setattr(api(), "build_stock", lambda value, **kwargs: calls.append("stock") or {
+        "variant": "stock", "status": "built",
+    })
+    monkeypatch.setattr(api(), "build_patched", lambda value, **kwargs: calls.append("patched") or {
+        "variant": "patched", "status": "built",
+    })
+
+    receipts = api().build_variants(candidate, output=tmp_path, index=0, stock_only=True)
+
+    assert calls == ["stock"]
+    assert [row["variant"] for row in receipts] == ["stock"]
+
+
 @pytest.mark.parametrize("image", [None, "ghcr.io/j-gainsec/dwarf-amaru-builder:latest", "ghcr.io/other/builder@sha256:" + "a" * 64])
 def test_unconfigured_mutable_or_foreign_builder_never_launches(tmp_path, image):
     calls = []
