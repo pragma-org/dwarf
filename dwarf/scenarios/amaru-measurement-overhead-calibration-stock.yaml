@@ -17,7 +17,7 @@
   "load": [
     {
       "primitive": "runtime_amaru_measurement_calibration",
-      "runtime_root": "/opt/dwarf/cardano-profiles/profile-r-amaru-measurement-stock-control",
+      "profile_id": "profile-r-amaru-measurement-stock-control",
       "attempts": 40,
       "timeout_seconds": 180,
       "expected_helper_exit": 0

@@ -17,7 +17,7 @@
   "load": [
     {
       "primitive": "runtime_amaru_measurement_calibration",
-      "runtime_root": "/opt/dwarf/cardano-profiles/profile-q-amaru-measurement-patched",
+      "profile_id": "profile-q-amaru-measurement-patched",
       "attempts": 40,
       "timeout_seconds": 180,
       "expected_helper_exit": 0

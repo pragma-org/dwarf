@@ -50,8 +50,8 @@ def test_calibration_scenarios_parse_and_have_identical_fixed_workloads():
         assert parsed.runtime == "devnet"
 
     assert stock["seed"] == patched["seed"]
-    stock_load = {**stock["load"][0], "runtime_root": "<paired>"}
-    patched_load = {**patched["load"][0], "runtime_root": "<paired>"}
+    stock_load = {**stock["load"][0], "profile_id": "<paired>"}
+    patched_load = {**patched["load"][0], "profile_id": "<paired>"}
     assert stock_load == patched_load
     assert stock_load["primitive"] == "runtime_amaru_measurement_calibration"
     assert stock_load["attempts"] == 40
@@ -59,6 +59,24 @@ def test_calibration_scenarios_parse_and_have_identical_fixed_workloads():
     assert stock["measurement_profile"] == "amaru-security-default"
     assert patched["measurement_profile"] == "amaru-security-patched"
     assert stock["assertions"] == patched["assertions"]
+
+
+def test_campaign_calibration_scenarios_resolve_the_active_profile_runtime():
+    for scenario_id, profile_id in (
+        (
+            "amaru-measurement-overhead-calibration-stock",
+            "profile-r-amaru-measurement-stock-control",
+        ),
+        (
+            "amaru-measurement-overhead-calibration-patched",
+            "profile-q-amaru-measurement-patched",
+        ),
+    ):
+        document = _document(scenario_id)
+        load = document["load"][0]
+
+        assert load["profile_id"] == profile_id
+        assert "runtime_root" not in load
 
 
 def test_calibration_helper_default_is_installed_source_relative():
