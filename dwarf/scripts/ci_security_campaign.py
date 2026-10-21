@@ -452,12 +452,24 @@ def run_campaign(
                 state["cells"][key] = record
                 _save(checkpoint, state)
                 try:
-                    result = runtime.run(
-                        manifest,
-                        scenario_id,
-                        mode=calibration_mode,
-                        topology_id=topology["id"],
+                    lifecycle = (
+                        runtime.recipe(
+                            manifest,
+                            scenario_id,
+                            cell=None,
+                            mode=calibration_mode,
+                            topology_id=topology["id"],
+                        )
+                        if hasattr(runtime, "recipe")
+                        else nullcontext()
                     )
+                    with lifecycle:
+                        result = runtime.run(
+                            manifest,
+                            scenario_id,
+                            mode=calibration_mode,
+                            topology_id=topology["id"],
+                        )
                     record["result"] = deepcopy(result)
                     if not result.get("execution_complete"):
                         raise RuntimeError("calibration scenario execution failed")
@@ -1077,7 +1089,7 @@ class LocalRuntime:
                 "profile": profile_id,
                 "topology": topology_id,
                 "scenario": scenario_id,
-                "node": cell["node_id"],
+                "node": cell["node_id"] if cell else "calibration",
                 "mode": mode,
             }
         ).removeprefix("sha256:")[:16] + "-" + uuid.uuid4().hex[:12]
@@ -1398,6 +1410,41 @@ class LocalRuntime:
                 if build.get("source") != manifest["candidate"]:
                     raise ValueError(f"missing observed {mode} build of frozen candidate")
                 expected_artifacts = build["artifacts"]
+            if (
+                mode == "patched"
+                and entry is None
+                and cell is None
+                and scenario_id
+                == manifest.get("execution_policy", {})
+                .get("calibration", {})
+                .get("patched_scenario_id")
+                and plan.get("profile")
+                and identity["kind"] == "candidate"
+                and identity.get("mode", "stock") == "patched"
+                and node["implementation"] == calibration_target
+            ):
+                expected_target = {
+                    key: measurement_target_override[key]
+                    for key in (
+                        "implementation",
+                        "version",
+                        "source_revision",
+                        "image_digest",
+                        "executable_digest",
+                        "patch_set_sha256",
+                        "build_result_sha256",
+                        "runtime_probe_log_sha256",
+                    )
+                }
+                expected_target["mode"] = "patched"
+                if any(
+                    target.get(key) != expected
+                    for key, expected in expected_target.items()
+                ):
+                    raise ValueError(
+                        "patched calibration target differs from verified build"
+                    )
+                actual = {**actual, "image_digest": target["image_digest"]}
             if any(actual.get(field) != expected for field, expected in {
                     "version": identity["version"], "source_revision": identity["source_revision"],
                     "image_digest": expected_artifacts["image_digest"]}.items()):

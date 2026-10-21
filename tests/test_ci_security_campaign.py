@@ -239,6 +239,41 @@ def test_calibration_phase_runs_only_the_frozen_mode_scenario(campaign, tmp_path
     assert not any(key.startswith("security:") for key in state["cells"])
 
 
+def test_calibration_phase_prepares_and_removes_its_profile_recipe(campaign, tmp_path):
+    scenario_id = campaign["execution_policy"]["calibration"]["stock_scenario_id"]
+    topology_id = campaign["topologies"][0]["id"]
+
+    class RecipeRuntime(Runtime):
+        @contextmanager
+        def recipe(self, manifest, selected_scenario_id, *, cell, mode, topology_id):
+            identity = (topology_id, cell, selected_scenario_id, mode)
+            self.calls.append(("recipe-enter", identity))
+            try:
+                yield
+            finally:
+                self.calls.append(("recipe-exit", identity))
+
+    runtime = RecipeRuntime(campaign, tmp_path)
+    state, runtime = run(
+        campaign,
+        tmp_path,
+        runtime=runtime,
+        phase="calibration",
+        calibration_mode="stock",
+    )
+
+    identity = (topology_id, None, scenario_id, "stock")
+    assert ("recipe-enter", identity) in runtime.calls
+    assert ("recipe-exit", identity) in runtime.calls
+    assert runtime.calls.index(("recipe-enter", identity)) < runtime.calls.index(
+        ("control", scenario_id, "stock")
+    )
+    assert runtime.calls.index(("control", scenario_id, "stock")) < runtime.calls.index(
+        ("recipe-exit", identity)
+    )
+    assert state["cells"]["calibration:stock"]["status"] == "complete"
+
+
 def test_local_runtime_reads_only_the_canonical_calibration_result(tmp_path):
     runtime = api.LocalRuntime.__new__(api.LocalRuntime)
     runtime.runs = tmp_path / "runs"
@@ -377,6 +412,144 @@ def test_local_runtime_recipe_removes_the_exact_profile_after_failure(
     assert project not in runtime.owned_projects
     assert "ADA2_DWARF_RUN_NETWORK" not in os.environ
     assert "ADA2_DWARF_REMOTE_BASE" not in os.environ
+
+
+def test_local_runtime_calibration_recipe_accepts_no_measurement_cell(
+    campaign, tmp_path, monkeypatch
+):
+    runtime = api.LocalRuntime(
+        tmp_path / "runtime",
+        catalog_path=tmp_path / "catalog.json",
+        producer_version="99.0.0",
+        signing_key=tmp_path / "key",
+    )
+    profile_id = "profile-r-amaru-measurement-stock-control"
+    deployment = {
+        "adapter": "runtime_amaru_control_substrate.py",
+        "compose_project": "dwarf-profile-gh-campaign-" + profile_id,
+        "substrate": {"profile_id": profile_id, "nodes": []},
+    }
+    actions = []
+
+    class DockerRuntime:
+        def apply(self, plan, execution_id, cancel_event):
+            actions.append(plan["action"])
+            return {"status": "applied"}
+
+        def resolve_run_network(self, selected_profile_id):
+            assert selected_profile_id == profile_id
+            return deployment["compose_project"] + "-default"
+
+    monkeypatch.setattr(
+        runtime,
+        "_recipe_deployment",
+        lambda *args, **kwargs: (profile_id, deployment),
+    )
+    monkeypatch.setattr(runtime, "_docker_runtime", lambda: DockerRuntime())
+
+    with runtime.recipe(
+        campaign,
+        campaign["execution_policy"]["calibration"]["stock_scenario_id"],
+        cell=None,
+        mode="stock",
+        topology_id=campaign["topologies"][0]["id"],
+    ):
+        pass
+
+    assert actions == ["deploy", "remove"]
+
+
+@pytest.mark.parametrize("mode", ["stock", "patched"])
+def test_calibration_recipe_validates_mode_specific_candidate_identity(
+    campaign, tmp_path, monkeypatch, mode
+):
+    manifest = deepcopy(campaign)
+    topology = manifest["topologies"][0]
+    candidate = topology["nodes"][0]
+    candidate["identity"]["mode"] = mode
+    stock_image = "sha256:" + "d" * 64
+    patched_image = "sha256:" + "e" * 64
+    stock_executable = "sha256:" + "1" * 64
+    patched_executable = "sha256:" + "2" * 64
+    patch_set = "sha256:" + "3" * 64
+    builds = deepcopy(evidence(manifest)["builds"])
+    stock_build = next(row for row in builds if row["mode"] == "stock")
+    stock_build["artifacts"].update(
+        image_digest=stock_image,
+        executable_digest=stock_executable,
+        binary_digest=stock_executable,
+    )
+    patched_build = next(row for row in builds if row["mode"] == "patched")
+    patched_build["artifacts"].update(
+        image_digest=patched_image,
+        executable_digest=patched_executable,
+        binary_digest=patched_executable,
+    )
+    patched_build.update(
+        patch_set_digest=patch_set,
+        build_result_sha256="sha256:" + "4" * 64,
+        runtime_probe_log_sha256="sha256:" + "5" * 64,
+    )
+    catalog = json.loads(
+        (Path(__file__).resolve().parents[1] / "dwarf/versions/catalog.json").read_text()
+    )
+    candidate_release = deepcopy(
+        next(row for row in catalog["releases"] if row["implementation"] == "amaru")
+    )
+    candidate_release.update(
+        version="proposal",
+        source_revision="a" * 40,
+        artifacts=[
+            {
+                "kind": "oci", "mode": "stock", "availability": "available",
+                "reference": "example.invalid/amaru:stock", "digest": stock_image,
+                "executable_digest": stock_executable,
+            },
+            {
+                "kind": "oci", "mode": "patched", "availability": "available",
+                "reference": "example.invalid/amaru:patched", "digest": patched_image,
+                "executable_digest": patched_executable,
+                "patch_set_digest": patch_set,
+            },
+        ],
+        verification={
+            "amaru-only": {
+                "status": "unknown", "default": False,
+                "reason": "candidate fixture", "evidence": [], "issues": [],
+            }
+        },
+    )
+    catalog["releases"].append(candidate_release)
+    runtime = api.LocalRuntime(
+        tmp_path / "runtime",
+        catalog_path=tmp_path / "catalog.json",
+        producer_version=None,
+        signing_key=tmp_path / "key",
+    )
+    runtime.builds = builds
+    monkeypatch.setattr(
+        runtime,
+        "_catalog_binding",
+        lambda: {"path": "fixture", "sha256": "0" * 64, "catalog": catalog},
+    )
+    monkeypatch.setenv("DWARF_INSTALLATION_ID", "fixture")
+    monkeypatch.setenv("DWARF_CONTROLLER_HOST_STATE_DIR", "/host/runtime-state")
+    scenario_id = manifest["execution_policy"]["calibration"][f"{mode}_scenario_id"]
+
+    _, deployment = runtime._recipe_deployment(
+        manifest,
+        scenario_id,
+        cell=None,
+        mode=mode,
+        topology_id=topology["id"],
+    )
+
+    target = next(
+        node for node in deployment["substrate"]["nodes"] if node["impl"] == "amaru"
+    )
+    expected_image = stock_image if mode == "stock" else patched_image
+    assert target["target_mode"] == mode
+    assert target["image"].endswith("@" + expected_image)
 
 
 def test_local_runtime_repeated_recipe_uses_fresh_mutation_ids(
