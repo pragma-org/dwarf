@@ -1534,14 +1534,8 @@ class DockerRuntime:
             self._attachment_path(str(record.get("execution_id") or "")), record
         )
 
-    def _attach_run_network(
-        self,
-        profile_id: str,
-        execution_id: str,
-        *,
-        cancel_event: threading.Event | None = None,
-    ) -> dict[str, Any] | None:
-        """Join the one owned topology network needed by a profile-bound run."""
+    def resolve_run_network(self, profile_id: str) -> str:
+        """Return the one owned topology network shared by the profile nodes."""
 
         from profile_manager.profiles import runtime_root
 
@@ -1643,10 +1637,21 @@ class DockerRuntime:
             raise DockerRuntimeError(
                 "managed topology must expose exactly one owned run network"
             )
+        return next(iter(common_owned_networks))
+
+    def _attach_run_network(
+        self,
+        profile_id: str,
+        execution_id: str,
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> dict[str, Any] | None:
+        """Join the one owned topology network needed by a profile-bound run."""
+
         controller_id = str(os.environ.get("HOSTNAME") or "")
         if not controller_id or not _INSTALLATION_ID.fullmatch(controller_id):
             raise DockerRuntimeError("controller container identity is unavailable")
-        network_name = next(iter(common_owned_networks))
+        network_name = self.resolve_run_network(profile_id)
         attachment = {
             "schema_version": "v1",
             "execution_id": execution_id,

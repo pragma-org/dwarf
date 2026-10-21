@@ -20,7 +20,7 @@
   "runtime": "devnet",
   "substrate": {
     "compose_mode": "docker",
-    "network": "preview",
+    "network": "testnet_42",
     "nodes": [
       {
         "id": "node1",

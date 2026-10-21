@@ -99,6 +99,13 @@ def test_selected_pair_is_frozen_into_launch_provenance(
     assert len(retained_plan["scenario"]["substrate_bindings"]) == 2
     if scenario_id == "runtime-substrate-mempool-failure-containment-mixed-amaru":
         assert frozen["substrate"]["compose_mode"] == "docker"
+        assert frozen["substrate"]["network"] == "testnet_42"
+        observation = next(
+            step
+            for step in frozen["load"]
+            if step["primitive"] == "runtime_multi_node_observation"
+        )
+        assert observation["network_magic"] == 42
     assert all(
         binding["kind"] == "resolved-plan"
         for binding in retained_plan["scenario"]["substrate_bindings"]

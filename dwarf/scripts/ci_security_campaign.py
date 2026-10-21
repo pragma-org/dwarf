@@ -1002,9 +1002,25 @@ class LocalRuntime:
             )
             if deployed.get("status") != "applied":
                 raise RuntimeError("campaign profile deployment did not apply")
+            previous_run_network = os.environ.get("ADA2_DWARF_RUN_NETWORK")
+            previous_remote_base = os.environ.get("ADA2_DWARF_REMOTE_BASE")
             try:
+                os.environ["ADA2_DWARF_REMOTE_BASE"] = str(
+                    self.profile_runtime_base
+                )
+                os.environ["ADA2_DWARF_RUN_NETWORK"] = docker.resolve_run_network(
+                    profile_id
+                )
                 yield
             finally:
+                if previous_run_network is None:
+                    os.environ.pop("ADA2_DWARF_RUN_NETWORK", None)
+                else:
+                    os.environ["ADA2_DWARF_RUN_NETWORK"] = previous_run_network
+                if previous_remote_base is None:
+                    os.environ.pop("ADA2_DWARF_REMOTE_BASE", None)
+                else:
+                    os.environ["ADA2_DWARF_REMOTE_BASE"] = previous_remote_base
                 removed = docker.apply(
                     {
                         "action": "remove",

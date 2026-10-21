@@ -293,6 +293,10 @@ def test_local_runtime_recipe_removes_the_exact_profile_after_failure(
             )
             return {"status": "applied", "topology_id": topology_id}
 
+        def resolve_run_network(self, selected_profile_id):
+            assert selected_profile_id == topology_id
+            return project + "-default"
+
     monkeypatch.setattr(
         runtime,
         "_recipe_deployment",
@@ -302,6 +306,8 @@ def test_local_runtime_recipe_removes_the_exact_profile_after_failure(
     monkeypatch.setattr(runtime, "_docker_runtime", lambda: DockerRuntime(), raising=False)
     monkeypatch.setenv("DWARF_GOLDEN_IMAGES", "prior-allowlist")
 
+    monkeypatch.delenv("ADA2_DWARF_RUN_NETWORK", raising=False)
+    monkeypatch.delenv("ADA2_DWARF_REMOTE_BASE", raising=False)
     with pytest.raises(RuntimeError, match="measured run failed"):
         with runtime.recipe(
             manifest,
@@ -310,6 +316,10 @@ def test_local_runtime_recipe_removes_the_exact_profile_after_failure(
             mode="stock",
             topology_id=cell["topology_id"],
         ):
+            assert os.environ["ADA2_DWARF_REMOTE_BASE"] == str(
+                runtime.profile_runtime_base
+            )
+            assert os.environ["ADA2_DWARF_RUN_NETWORK"] == project + "-default"
             raise RuntimeError("measured run failed")
 
     assert [call[0]["action"] for call in calls] == ["deploy", "remove"]
@@ -323,6 +333,8 @@ def test_local_runtime_recipe_removes_the_exact_profile_after_failure(
         "deployment": deployment,
     }
     assert project not in runtime.owned_projects
+    assert "ADA2_DWARF_RUN_NETWORK" not in os.environ
+    assert "ADA2_DWARF_REMOTE_BASE" not in os.environ
 
 
 def test_local_runtime_repeated_recipe_uses_fresh_mutation_ids(
@@ -347,6 +359,10 @@ def test_local_runtime_repeated_recipe_uses_fresh_mutation_ids(
         def apply(self, plan, execution_id, cancel_event):
             calls.append((plan["action"], execution_id))
             return {"status": "applied"}
+
+        def resolve_run_network(self, selected_profile_id):
+            assert selected_profile_id == profile_id
+            return deployment["compose_project"] + "-default"
 
     monkeypatch.setattr(
         runtime,

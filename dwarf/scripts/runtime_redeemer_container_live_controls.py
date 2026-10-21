@@ -1547,16 +1547,21 @@ def _wait_for_target_adoption(
 def _submit_amaru_container(container_id: str, payload: bytes) -> dict[str, Any]:
     """Submit raw bytes to the already-running Amaru built-in API."""
 
-    script = (
-        'length="$1"; exec 3<>/dev/tcp/127.0.0.1/3011; '
-        "printf 'POST /api/submit/tx HTTP/1.1\\r\\nHost: localhost\\r\\n"
-        "Content-Type: application/cbor\\r\\nContent-Length: %s\\r\\n"
-        "Connection: close\\r\\n\\r\\n' \"$length\" >&3; cat >&3; cat <&3"
+    request = (
+        b"POST /api/submit/tx HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/cbor\r\n"
+        + f"Content-Length: {len(payload)}\r\n".encode("ascii")
+        + b"Connection: close\r\n\r\n"
+        + payload
     )
     try:
         result = subprocess.run(
-            ["docker", "exec", "-i", container_id, "bash", "-c", script, "dwarf-submit", str(len(payload))],
-            input=payload,
+            [
+                "docker", "exec", "-i", container_id,
+                "/bin/busybox", "nc", "-w", "30", "127.0.0.1", "3011",
+            ],
+            input=request,
             capture_output=True,
             check=False,
             timeout=30,
@@ -1670,7 +1675,13 @@ def _submit_reference_raw(
         raise RuntimeError("raw LocalTxSubmission runtime identity is incomplete")
 
     inspected = _inspect_container(container_id)
-    labels = (inspected.get("Config") or {}).get("Labels") or {}
+    container_config = inspected.get("Config") or {}
+    labels = container_config.get("Labels") or {}
+    runtime_user = str(container_config.get("User") or "")
+    if not re.fullmatch(r"(?:0|[1-9][0-9]*):(?:0|[1-9][0-9]*)", runtime_user):
+        raise RuntimeError(
+            "raw LocalTxSubmission reference has no exact numeric runtime user"
+        )
     expected = {
         "installation_id": installation_id,
         "compose_project": compose_project,
@@ -1770,7 +1781,7 @@ def _submit_reference_raw(
         "--pids-limit", "64",
         "--memory", "128m",
         "--cpus", "1",
-        "--user", "1000:1000",
+        "--user", runtime_user,
         "--volumes-from", f"{container_id}:ro",
         "--entrypoint", "/usr/local/bin/dwarf-localtx-submit-raw",
         helper_image,

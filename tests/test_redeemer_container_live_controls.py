@@ -822,6 +822,42 @@ def test_submit_timeout_is_retained_as_unavailable(monkeypatch, tmp_path, submit
     assert result["http"] == 0
 
 
+def test_amaru_submit_uses_busybox_netcat_and_sends_one_http_request(monkeypatch):
+    payload = bytes.fromhex("8401a0a0f5")
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            b"HTTP/1.1 202 Accepted\r\nContent-Length: 8\r\n\r\naccepted",
+            b"",
+        )
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    result = _submit_amaru_container("a" * 64, payload)
+
+    assert result == {"http": 202, "body": "accepted"}
+    command, kwargs = calls[0]
+    assert command == [
+        "docker",
+        "exec",
+        "-i",
+        "a" * 64,
+        "/bin/busybox",
+        "nc",
+        "-w",
+        "30",
+        "127.0.0.1",
+        "3011",
+    ]
+    assert kwargs["input"].startswith(b"POST /api/submit/tx HTTP/1.1\r\n")
+    assert b"Content-Length: 5\r\n" in kwargs["input"]
+    assert kwargs["input"].endswith(b"\r\n\r\n" + payload)
+
+
 def test_reference_cli_decode_failure_is_not_reported_as_a_node_response(
     monkeypatch, tmp_path
 ):
@@ -873,6 +909,7 @@ def _raw_reference_inspect():
         "Id": "a" * 64,
         "Image": "sha256:" + "b" * 64,
         "Config": {
+            "User": "1001:1001",
             "Labels": {
                 "com.docker.compose.project": "dwarf-substrate-run-1",
                 "io.dwarf.managed": "true",
@@ -957,6 +994,9 @@ def test_raw_reference_submit_preserves_exact_bytes_and_one_shot_confinement(
     assert ["--volumes-from", "a" * 64 + ":ro"] == command[
         command.index("--volumes-from") : command.index("--volumes-from") + 2
     ]
+    assert ["--user", "1001:1001"] == command[
+        command.index("--user") : command.index("--user") + 2
+    ]
     assert helper in command
     assert payload not in command
     assert kwargs["text"] is True
@@ -968,6 +1008,27 @@ def test_raw_reference_submit_preserves_exact_bytes_and_one_shot_confinement(
         "source_revision": "7" * 40,
         "component": "dwarf-localtx-submit-raw",
     }
+
+
+@pytest.mark.parametrize("runtime_user", ["", "root", "1001", "1001:group", "-1:1001"])
+def test_raw_reference_submit_rejects_unbound_runtime_user(
+    monkeypatch, runtime_user
+):
+    inspect = _raw_reference_inspect()
+    inspect["Config"]["User"] = runtime_user
+    monkeypatch.setenv("DWARF_INSTALLATION_ID", "install-test")
+    monkeypatch.setattr(live_controls, "_inspect_container", lambda _identifier: inspect)
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: calls.append(True))
+
+    with pytest.raises(RuntimeError, match="numeric runtime user"):
+        _submit_reference_raw(
+            runtime=_raw_reference_runtime(),
+            reference=_raw_reference_node(),
+            payload=b"tx",
+            helper_image="sha256:" + "d" * 64,
+        )
+    assert calls == []
 
 
 def test_raw_reference_submit_rejects_mutable_or_mismatched_helper_image(monkeypatch):
