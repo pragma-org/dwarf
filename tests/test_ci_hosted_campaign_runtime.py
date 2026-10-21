@@ -62,6 +62,39 @@ def test_controller_command_preserves_installed_runtime_contract(tmp_path):
     ]
 
 
+def test_controller_command_binds_one_work_item_and_its_inventory(tmp_path):
+    workspace = tmp_path / "workspace"
+    runtime = workspace / "campaign-runtime"
+    workspace.mkdir()
+    runtime.mkdir()
+    signer = tmp_path / "signer.pem"
+    signer.write_text("private key fixture")
+    lock = tmp_path / "campaign.lock"
+    lock.touch()
+    item = workspace / "campaign-plan/work-item.json"
+    inventory = workspace / "campaign-plan/work-items.json"
+
+    command = api.build_controller_command(
+        controller_image="sha256:" + "a" * 64,
+        helper_image="ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:" + "b" * 64,
+        workspace=workspace,
+        runtime_directory=runtime,
+        signing_key=signer,
+        host_lock=lock,
+        docker_socket=Path("/var/run/docker.sock"),
+        docker_socket_gid=998,
+        host_uid=1001,
+        host_gid=1001,
+        installation_id="github-run-123-item",
+        artifact_base_url="http://172.17.0.1:8787",
+        work_item=item,
+        work_item_inventory=inventory,
+    )
+
+    assert command[command.index("--work-item") + 1] == str(item)
+    assert command[command.index("--work-item-inventory") + 1] == str(inventory)
+
+
 def test_helper_identity_requires_exact_amd64_provenance():
     reference = "ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:" + "b" * 64
     inspected = {

@@ -6,23 +6,26 @@ changes `dwarf/testplease/**` starts the flow. Manual dispatch processes the
 currently tracked Amaru candidates. Candidate compilation and every follow-on job
 run on disposable `ubuntu-latest` runners.
 
-The variant builds and disposable runtime registration are functional. The campaign
+The variant builds and disposable runtime registration are functional. The prepare
 job loads each verified Docker archive, pushes it only to a job-local registry, and
 freezes the resulting manifest digest, image config ID, executable digest, source
 identity, selected Cardano release and six initial real-node security cases. It
 does not reuse same-version compatibility evidence from an official Amaru build.
-The frozen plan starts at `runtime-compatibility-qualification-pending`. The same
-job then runs the existing real-node qualification against the exact candidate and
-Cardano artifacts. No scenario starts unless every qualification gate passes.
-The campaign job installs the official Cardano 11.1.2 `cardano-testnet`,
+The frozen plan starts at `runtime-compatibility-qualification-pending`. Each
+isolated runner then runs the existing real-node qualification against the exact
+candidate and Cardano artifacts. No scenario starts unless every qualification
+gate passes. The runner installs the official Cardano 11.1.2 `cardano-testnet`,
 `cardano-cli` and `cardano-node` support binaries from the architecture-specific
 release archive only after its committed SHA-256 matches. These tools create and
 inspect the isolated Docker devnet; they do not replace either frozen node image.
-After a pass it calibrates stock and patched artifacts, selects one primary lane,
-runs the frozen cases and compatible measurement exercises, retaining
-partial and failed results as well as completed results. Candidate compilation and
-execution keep only `contents: read`. A separate job receives `contents: write` only
-after a complete successful campaign job, reverifies opaque archive receipts and
+After preparation, two calibration runners evaluate stock and patched artifacts.
+A selector freezes one primary lane. GitHub then assigns each security entry,
+grouped measurement recipe and required stock replay to its own matrix runner.
+The matrix uses `fail-fast: false`, so one failed workload does not cancel sibling
+evidence. An aggregation job rejects missing, duplicate or identity-mismatched
+shards and evaluates one combined campaign. Candidate compilation and execution
+keep only `contents: read`. A separate job receives `contents: write` only after a
+complete successful aggregate, reverifies opaque archive receipts and
 signatures, then publishes content-addressed release assets and rolling indexes.
 It never commits, merges, extracts an archive, or receives candidate-controlled code.
 
@@ -94,8 +97,8 @@ history, not an allowlist.
 
 ## Execution boundary and build preflight
 
-Discovery, compilation and campaign staging use separate disposable
-`ubuntu-latest` jobs. No pull-request event runs candidate code. Both repository
+Discovery, compilation, preparation, calibration, workload execution and
+aggregation use separate disposable `ubuntu-latest` jobs. No pull-request event runs candidate code. Both repository
 checkouts disable credential persistence, submodules and LFS. Only reviewed DWARF
 tools enter `PYTHONPATH`, and candidate metadata cannot supply a command, builder,
 scenario or output path.
@@ -127,8 +130,9 @@ remain pending because neither matching static declarations nor a successful bui
 proves runtime compatibility. The executor deduplicates equivalent version-pair
 qualification requests, requires the exact candidate config image ID during that
 qualification, and authorizes only the frozen topology IDs covered by a passing
-observation. It then performs a short stock/patched calibration and checkpoints
-one selection. A valid patched calibration runs the full patched campaign;
+observation. Stock and patched calibration run as two isolated jobs, after which
+one selector checkpoints the decision. A valid patched calibration runs the
+patched work-item matrix;
 missing, invalid or excess-overhead calibration selects stock once without
 rebuilding. The compiler-coverage mode remains a separate future lane and cannot borrow
 another artifact identity.
@@ -147,8 +151,8 @@ admission comparison. The governance case is a validation/conformance check. A
 difference is reported as a bug unless separate impact evidence supports a
 security classification.
 
-The runtime adapter consumes observed builds; it does not build them. Its local
-interface is:
+The runtime adapter consumes observed builds; it does not build them. The serial
+local interface remains available for diagnosis and explicit resume:
 
 ```bash
 PYTHONPATH=dwarf python3 dwarf/scripts/ci_security_campaign.py \
@@ -160,6 +164,13 @@ PYTHONPATH=dwarf python3 dwarf/scripts/ci_security_campaign.py \
   --signing-key /operator-controlled/private-signing-key
 ```
 
+The hosted workflow instead supplies `--work-item` and
+`--work-item-inventory`. The item is derived from the frozen manifest and can
+select only one calibration leg, security entry, grouped measurement recipe or
+stock replay. A security item keeps its normal control and tested scenario in the
+same runner. The candidate build and trusted controller image are each produced
+once, retained by immutable identity, and restored by the individual runners.
+
 The hosted job creates its signing key after candidate compilation, outside the
 candidate container. It retains only the public key and labels the signer
 `integrity-only-untrusted-for-publication`; the private key expires with the runner.
@@ -168,8 +179,9 @@ publisher status and cannot authorize release or Pages publication.
 
 ## Retention, resume and cleanup
 
-Discovery, build evidence and staged campaign inputs are retained for **30 days**
-as Actions artifacts. They are evidence for this workflow run, not published reports.
+Discovery, build evidence, prepared inputs, calibration shards, workload shards
+and the aggregate are retained for **30 days** as Actions artifacts. They are
+evidence for this workflow run, not published reports.
 Preserve sealed runs, checkpoint files, frozen inputs, raw exercise evidence,
 archive/signature receipts and cleanup errors before disposable workers are removed.
 Long-term signed evidence belongs in immutable release assets after verification.
@@ -194,8 +206,9 @@ Never infer ownership from a broad prefix or perform global Docker pruning.
 
 ## Publication boundary
 
-The build and campaign jobs have read-only repository authority and no publication
-secret. After the campaign command returns success, an isolated publication job
+The build, preparation, calibration, workload and aggregation jobs have read-only
+repository authority and no publication secret. After aggregation returns success,
+an isolated publication job
 downloads that run's retained artifact, checks the frozen campaign/evaluation
 identity, every receipt hash, and every workflow-local Ed25519 archive signature.
 It treats archives as opaque bytes and never extracts or executes them. It then
@@ -224,7 +237,7 @@ to candidate execution.
 ## Focused offline verification
 
 ```bash
-PYTHONPATH=dwarf python3 -m pytest -q tests/test_candidate_build_executor.py tests/test_candidate_builds.py tests/test_security_campaign_workflow.py tests/test_ci_security_campaign.py
+PYTHONPATH=dwarf python3 -m pytest -q tests/test_campaign_work_items.py tests/test_ci_campaign_fanout.py tests/test_security_campaign_workflow.py tests/test_ci_security_campaign.py
 git diff --check
 ```
 

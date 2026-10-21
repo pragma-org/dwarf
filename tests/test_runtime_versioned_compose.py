@@ -1017,6 +1017,23 @@ ERROR amaru_pure_stage::types: failed to decode message from network err=decode 
     assert parsed["ready"] is False
 
 
+def test_amaru_runtime_progress_recovers_after_handshake_decode_and_chain_progress():
+    text = """
+INFO amaru::consensus: chainsync.intersect_found peer="node2:3001" current="[259129, h'aaa', 2579]" highest="[345447, h'bbb', 3463]"
+ERROR amaru_pure_stage::types: failed to decode message from network err=decode error: expected array length 4 for label 0, got: Some(5)
+INFO amaru::protocols: manager.peer.handshake_completed peer="node2:3001" conn_id=1 full_duplex=true
+INFO amaru::consensus: tip.adopt slot=345447 header_hash="ccc" block_height=3463 max_block_height=3463 suppressed=0
+"""
+
+    parsed = compose._parse_amaru_runtime_progress(text)
+
+    assert parsed["observed_signals"] == ["handshake-decode-error"]
+    assert parsed["blocking_signals"] == []
+    assert parsed["advanced"] is True
+    assert parsed["converged"] is True
+    assert parsed["ready"] is True
+
+
 def test_amaru_runtime_progress_rejects_one_block_then_vrf_failure():
     text = """
 INFO build_ledger tip.hash=aaa tip.slot=259181

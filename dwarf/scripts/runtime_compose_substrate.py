@@ -404,7 +404,7 @@ def _parse_amaru_runtime_progress(text: str) -> dict:
         "future-rollback": r"attempted roll back in the future",
         "handshake-decode-error": r"failed to decode message from network[^\n]*decode error",
     }
-    blocking_signals = [
+    observed_signals = [
         name
         for name, pattern in blocking_patterns.items()
         if re.search(pattern, text or "", flags=re.IGNORECASE)
@@ -428,6 +428,23 @@ def _parse_amaru_runtime_progress(text: str) -> dict:
         and latest_adopted_slot is not None
         and latest_adopted_slot >= highest_peer_slot
     )
+    handshake_completed = bool(
+        re.search(r"\bmanager\.peer\.handshake_completed\b", text or "")
+    )
+    # A candidate may reject one incompatible handshake and immediately
+    # negotiate a working connection. Once a retained successful handshake and
+    # real chain convergence prove recovery, that earlier decode remains useful
+    # evidence but must not invalidate substrate readiness.
+    blocking_signals = [
+        signal
+        for signal in observed_signals
+        if not (
+            signal == "handshake-decode-error"
+            and handshake_completed
+            and advanced
+            and converged
+        )
+    ]
     return {
         "bootstrap_slot": bootstrap_slot,
         "highest_peer_slot": highest_peer_slot,
@@ -436,6 +453,7 @@ def _parse_amaru_runtime_progress(text: str) -> dict:
         "intersection_found": bool(highest_slots),
         "advanced": advanced,
         "converged": converged,
+        "observed_signals": observed_signals,
         "blocking_signals": blocking_signals,
         "ready": bool(advanced and converged and not blocking_signals),
     }

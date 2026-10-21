@@ -319,6 +319,7 @@ def run_campaign(
     lock_path=HOST_LOCK,
     phase="full",
     calibration_mode=None,
+    work_item=None,
 ):
     """Run once, or explicitly retry missing/failed cells of the same snapshot.
 
@@ -331,6 +332,19 @@ def run_campaign(
         raise ValueError("campaign phase must be full, calibration or security-replay")
     if phase == "calibration" and calibration_mode not in {"stock", "patched"}:
         raise ValueError("calibration phase requires stock or patched mode")
+    if work_item is not None:
+        if work_item.get("campaign_digest") != manifest["campaign_digest"]:
+            raise ValueError("work item belongs to another campaign")
+        if work_item.get("kind") not in {
+            "calibration", "security", "measurement", "stock-replay"
+        }:
+            raise ValueError("work item kind is invalid")
+        if work_item["kind"] == "calibration" and (
+            phase != "calibration" or work_item.get("mode") != calibration_mode
+        ):
+            raise ValueError("calibration work item differs from selected phase")
+        if work_item["kind"] == "stock-replay" and phase != "security-replay":
+            raise ValueError("stock replay work item requires security-replay phase")
     for topology in manifest["topologies"]:
         _security_mode(topology)
     directory = Path(directory)
@@ -349,14 +363,26 @@ def run_campaign(
                 raise ValueError("resume requires identical build observations")
             if state.get("phase", "full") != phase:
                 raise ValueError("resume requires the same campaign phase")
+            if state.get("work_item") != work_item:
+                raise ValueError("resume requires the same frozen work item")
         else:
             state = {"schema_version": "v1", "campaign_digest": manifest["campaign_digest"],
                      "phase": phase, "builds": deepcopy(builds), "readiness": {"passed": False},
-                     "cells": {}, "cleanup_errors": []}
+                     "work_item": deepcopy(work_item), "cells": {}, "cleanup_errors": []}
             atomic_write_bytes(directory / "manifest.json", (serialize_campaign(manifest) + "\n").encode())
         _evaluate(manifest, state)
         topologies = {row["id"]: row for row in manifest["topologies"]}
-        blockers = [f"{entry['id']}: {reason}" for entry in manifest["entries"]
+        active_entries = manifest["entries"]
+        if work_item is not None:
+            entry_id = work_item.get("entry_id")
+            active_entries = (
+                [entry for entry in manifest["entries"] if entry["id"] == entry_id]
+                if work_item["kind"] in {"security", "stock-replay"}
+                else []
+            )
+            if work_item["kind"] in {"security", "stock-replay"} and len(active_entries) != 1:
+                raise ValueError("work item security entry is not frozen in the campaign")
+        blockers = [f"{entry['id']}: {reason}" for entry in active_entries
                     if (reason := _execution_compatibility_error(
                         entry, topologies[entry["topology_id"]], allow_pending=True))]
         if blockers:
@@ -372,7 +398,7 @@ def run_campaign(
             if state["readiness"].get("passed") is not True:
                 return state
             qualified = set(state["readiness"].get("qualified_topology_ids", []))
-            unresolved = [entry["id"] for entry in manifest["entries"]
+            unresolved = [entry["id"] for entry in active_entries
                           if _execution_compatibility_error(
                               entry, topologies[entry["topology_id"]],
                               qualified=entry["topology_id"] in qualified)]
@@ -541,7 +567,10 @@ def run_campaign(
                 _save(checkpoint, state)
 
             if phase in {"full", "security-replay"}:
-                for entry in sorted(manifest["entries"], key=lambda row: row["id"]):
+                security_entries = active_entries
+                if work_item is not None and work_item["kind"] == "measurement":
+                    security_entries = []
+                for entry in sorted(security_entries, key=lambda row: row["id"]):
                     key = "security:" + entry["id"]
                     verdict = next(row for row in state["evaluation"]["security_validity"]["entries"] if row["entry_id"] == entry["id"])
                     if valid_previous(key) and verdict["classification"] in {"pass", "finding"}:
@@ -557,6 +586,21 @@ def run_campaign(
             cells = manifest["required_tap_cells"]
             for cell in sorted(cells, key=lambda row: (row["topology_id"], row["node_id"], row["measurement_id"])):
                 for mode in sorted(cell["target_modes"]):
+                    if work_item is not None:
+                        if work_item["kind"] != "measurement":
+                            continue
+                        if any(
+                            work_item.get(field) != value
+                            for field, value in {
+                                "topology_id": cell["topology_id"],
+                                "node_id": cell["node_id"],
+                                "scenario_id": cell["scenario_id"],
+                                "mode": mode,
+                            }.items()
+                        ):
+                            continue
+                        if cell["measurement_id"] not in work_item.get("measurement_ids", []):
+                            continue
                     if phase == "calibration" and mode != calibration_mode:
                         continue
                     key = _cell_key(cell, mode)
@@ -599,6 +643,55 @@ def run_campaign(
                 state["cleanup_errors"].append(f"{type(exc).__name__}: {exc}")
             _evaluate(manifest, state)
             _save(checkpoint, state)
+
+
+def work_item_succeeded(state, work_item):
+    """Return success for one assigned shard without claiming full completion."""
+
+    if state.get("work_item") != work_item or state.get("cleanup_errors"):
+        return False
+    kind = work_item["kind"]
+    if kind == "calibration":
+        key = f"calibration:{work_item['mode']}"
+        record = state.get("cells", {}).get(key, {})
+        return (
+            record.get("status") == "complete"
+            and record.get("calibration_result", {}).get("status") == "available"
+        )
+    if kind in {"security", "stock-replay"}:
+        return state.get("cells", {}).get("security:" + work_item["entry_id"], {}).get("status") == "complete"
+    if kind == "measurement":
+        for measurement_id in work_item["measurement_ids"]:
+            key = "measurement:" + ":".join(
+                [
+                    work_item["topology_id"],
+                    work_item["node_id"],
+                    measurement_id,
+                    work_item["mode"],
+                ]
+            )
+            # Grouped evidence may be stored under the representative cell key.
+            # The evaluator is the authority for every requested tap.
+            result = next(
+                (
+                    row
+                    for row in state.get("evaluation", {})
+                    .get("measurement_completeness", {})
+                    .get("cells", [])
+                    if row.get("topology_id") == work_item["topology_id"]
+                    and row.get("node_id") == work_item["node_id"]
+                    and row.get("measurement_id") == measurement_id
+                    and row.get("mode") == work_item["mode"]
+                ),
+                None,
+            )
+            if result is None or result.get("state") != "verified":
+                return False
+        return any(
+            key.startswith("measurement:") and record.get("status") == "complete"
+            for key, record in state.get("cells", {}).items()
+        )
+    return False
 
 
 def run_patched_first_campaign(
@@ -1274,6 +1367,16 @@ class LocalRuntime:
             return plan
         target = plan.get("measurements", {}).get("target_identity", {})
         target_node_id = cell.get("node_id") if cell else None
+        calibration_ids = set(
+            manifest.get("execution_policy", {}).get("calibration", {}).values()
+        )
+        calibration_target = (
+            manifest["definitions"]["scenarios"][scenario_id]["document"]
+            .get("target", {})
+            .get("implementation")
+            if scenario_id in calibration_ids
+            else None
+        )
         for node in topology["nodes"]:
             identity = node["identity"]
             actual = resolved.get(node["implementation"], {})
@@ -1282,6 +1385,12 @@ class LocalRuntime:
             # topology. Every implementation the plan does deploy is still
             # checked below, and the target node may never be omitted.
             if cell and not actual and node["node_id"] != target_node_id:
+                continue
+            if (
+                calibration_target
+                and not actual
+                and node["implementation"] != calibration_target
+            ):
                 continue
             expected_artifacts = identity["artifacts"]
             if identity["kind"] == "candidate":
@@ -1347,6 +1456,7 @@ class LocalRuntime:
             raise ValueError("scenario must be a frozen trusted catalog identifier")
         topology = next(row for row in manifest["topologies"] if row["id"] == (topology_id or manifest["topologies"][0]["id"]))
         bound_entry = entry or execution_entry
+        bound_cell = cell or plan_cell
         if bound_entry:
             mode = _security_mode(topology, mode)
         plan = self._plan(
@@ -1355,7 +1465,7 @@ class LocalRuntime:
             topology,
             mode,
             bound_entry,
-            cell or plan_cell,
+            bound_cell,
         )
         launches = self.directory / "launches"
         launch = create_launch(plan, root=launches)
@@ -1396,7 +1506,7 @@ class LocalRuntime:
         run_dir = self.runs / run_id
         from profile_manager.campaign_runtime_evidence import read_native_evidence
         return read_native_evidence(manifest, run_dir, scenario_id=scenario_id, topology=topology,
-                                    mode=mode, plan=plan, entry=entry, cell=cell, control=control)
+                                    mode=mode, plan=plan, entry=entry, cell=bound_cell, control=control)
 
     def calibration_result(self, run_id):
         if not _ID.fullmatch(str(run_id)):
@@ -1456,15 +1566,62 @@ def main(argv=None):
     parser.add_argument("--producer-version", help="Explicit supporting Cardano producer for an Amaru-only readiness check.")
     parser.add_argument("--signing-key", type=Path, required=True)
     parser.add_argument("--resume", action="store_true", help="Retry only missing/failed cells of this exact snapshot.")
+    parser.add_argument("--work-item", type=Path, help="Run one immutable hosted fan-out item.")
+    parser.add_argument("--work-item-inventory", type=Path, help="Frozen inventory authorizing --work-item.")
     args = parser.parse_args(argv)
     try:
         if not args.signing_key.is_file():
             raise ValueError("operator signing key is missing")
         manifest = json.loads(args.manifest.read_text())
+        stock_manifest = json.loads(args.stock_manifest.read_text()) if args.stock_manifest else None
         builds = json.loads(args.build_observations.read_text())
         if not isinstance(builds, list):
             raise ValueError("build observations must be a JSON array")
         runtime = LocalRuntime(args.directory, catalog_path=args.catalog, producer_version=args.producer_version, signing_key=args.signing_key)
+        if bool(args.work_item) != bool(args.work_item_inventory):
+            raise ValueError("work item and inventory must be supplied together")
+        work_item = None
+        if args.work_item:
+            from profile_manager.campaign_work_items import validate_work_item
+
+            item_document = json.loads(args.work_item.read_text())
+            inventory = json.loads(args.work_item_inventory.read_text())
+            work_item = validate_work_item(item_document, inventory.get("items", []))
+            selected_manifest = stock_manifest if work_item["manifest_role"] == "stock" else manifest
+            if selected_manifest is None:
+                raise ValueError("stock work item requires a stock manifest")
+            if work_item["campaign_digest"] != selected_manifest["campaign_digest"]:
+                raise ValueError("work item campaign differs from selected manifest")
+            phase = (
+                "calibration"
+                if work_item["kind"] == "calibration"
+                else "security-replay"
+                if work_item["kind"] == "stock-replay"
+                else "full"
+            )
+            _write_document(args.directory / "selected-manifest.json", selected_manifest)
+            state = run_campaign(
+                selected_manifest,
+                directory=args.directory / "selected",
+                runtime=runtime,
+                builds=builds,
+                resume=args.resume,
+                phase=phase,
+                calibration_mode=work_item.get("mode") if phase == "calibration" else None,
+                work_item=work_item,
+            )
+            print(
+                serialize_campaign(
+                    {
+                        **state["status"],
+                        "work_item": work_item["item_id"],
+                        "work_item_complete": work_item_succeeded(state, work_item),
+                        "readiness_passed": state["readiness"].get("passed") is True,
+                        "cleanup_errors": state["cleanup_errors"],
+                    }
+                )
+            )
+            return 0 if work_item_succeeded(state, work_item) else 1
         candidate_modes = {
             node["identity"].get("mode", "stock")
             for topology in manifest["topologies"]
@@ -1474,7 +1631,6 @@ def main(argv=None):
         if "patched" in candidate_modes:
             if args.stock_manifest is None:
                 raise ValueError("patched-first execution requires --stock-manifest")
-            stock_manifest = json.loads(args.stock_manifest.read_text())
             result = run_patched_first_campaign(
                 manifest,
                 stock_manifest,

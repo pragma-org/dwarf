@@ -250,6 +250,7 @@ def run_inline_datum_tag24_boundary(
         _checked,
         _containerized_cardano_workload,
         _controller_container,
+        _inspect_container,
         _query_utxo,
         _transaction_id,
     )
@@ -260,6 +261,7 @@ def run_inline_datum_tag24_boundary(
     from scripts.runtime_redeemer_container_live_controls import (
         _envelope,
         _query_reference_tip,
+        _reference_tx_submission_propagation_gate,
         _select_funding_input,
         _submit_amaru_container,
         _submit_reference_raw,
@@ -291,6 +293,9 @@ def run_inline_datum_tag24_boundary(
     network_magic = int(runtime["network_magic"])
     socket_path = str(reference.get("container_socket_path") or "")
     helper_image = str(os.environ.get("DWARF_LOCALTXSUBMISSION_HELPER_IMAGE") or "")
+    target_propagation_gate = _reference_tx_submission_propagation_gate(
+        reference, inspect_container=_inspect_container
+    )
 
     with _containerized_cardano_workload(
         runtime_root=runtime_root,
@@ -518,6 +523,9 @@ def run_inline_datum_tag24_boundary(
                         transaction_id=built["transaction_id"],
                         initial_tip=pre_submit_tip,
                         evidence_path=inclusion_path,
+                        target_propagation_gate=(
+                            target_propagation_gate if role == "target" else None
+                        ),
                     )
                     included = True
                 except RuntimeError:
@@ -597,6 +605,11 @@ def run_inline_datum_tag24_boundary(
                     transaction_id=built["transaction_id"],
                     initial_tip=pre_submit_tip,
                     evidence_path=inclusion_path,
+                    target_propagation_gate=(
+                        target_propagation_gate
+                        if classifications.get("target") == "accepted"
+                        else None
+                    ),
                 )
                 included = True
             except RuntimeError:

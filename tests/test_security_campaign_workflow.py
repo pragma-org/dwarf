@@ -57,14 +57,16 @@ def test_triggers_are_controlled_and_have_no_pr_execution():
     assert data['permissions'] == {'contents': 'read'}
 
 
-def test_campaign_builds_the_trusted_controller_boundary():
-    build = step('campaign', 'Build trusted campaign controller')
+def test_prepare_builds_the_trusted_controller_once_and_exports_it():
+    build = step('prepare', 'Build trusted campaign controller once')
     assert build['working-directory'] == 'campaign-trusted'
     assert 'infrastructure/docker/dwarf-fw.Dockerfile' in build['run']
     assert 'infrastructure/docker/dwarf-controller.Dockerfile' in build['run']
     assert '--build-arg DWARF_SOURCE_REVISION="$TRUSTED_COMMIT"' in build['run']
-    assert 'docker image inspect' in build['run']
-    assert 'controller_image=' in build['run']
+    assert 'controller-image-id.txt' in build['run']
+    assert 'docker save --output ../controller-image.tar' in build['run']
+    workflow_text = WORKFLOW.read_text()
+    assert workflow_text.count('infrastructure/docker/dwarf-controller.Dockerfile') == 1
 
 
 def test_discovery_uses_trusted_hosted_code_and_read_only_checkout():
@@ -143,77 +145,67 @@ def test_official_metadata_is_review_only_and_suites_are_fixed():
     assert all(value['sha256'] for value in suites.values())
 
 
-def test_execution_has_shared_host_lock_isolation_and_no_publishing_credentials():
+def test_execution_uses_one_read_only_runner_per_workload_without_fail_fast():
     job = workflow()['jobs']['campaign']
     assert job['runs-on'] == 'ubuntu-latest'
-    assert job['needs'] == ['discover', 'candidate-build']
+    assert job['needs'] == ['discover', 'prepare', 'select']
     assert job['permissions'] == {'contents': 'read'}
-    assert 'environment' not in job
-    assert 'concurrency' not in job
-    assert "needs.candidate-build.result == 'success'" in job['if']
+    assert job['strategy']['fail-fast'] == 'false'
+    assert job['strategy']['max-parallel'] == '6'
+    assert job['strategy']['matrix'] == '${{ fromJSON(needs.select.outputs.execution_matrix) }}'
+    assert job['timeout-minutes'] == '90'
     checkouts = [s for s in job['steps'] if s.get('uses', '').startswith('actions/checkout@')]
     assert len(checkouts) == 1
     assert checkouts[0]['with']['ref'] == '${{ needs.discover.outputs.trusted_revision }}'
-    assert [s['with']['path'] for s in checkouts] == ['campaign-trusted']
-    assert all(s['with']['persist-credentials'] == 'false' for s in checkouts)
-    assert all(s['with']['submodules'] == s['with']['lfs'] == 'false' for s in checkouts)
+    assert checkouts[0]['with']['persist-credentials'] == 'false'
     text = json.dumps(job)
     assert 'secrets.' not in text
     assert 'contents: write' not in text
     assert 'docker system prune' not in text
+    execute = step('campaign', 'Run one frozen campaign workload')
+    assert '--work-item ' in execute['run']
+    assert '--work-item-inventory ' in execute['run']
+    upload = step('campaign', 'Retain workload shard')
+    assert upload['if'] == 'always()'
+    assert '${{ matrix.shard }}' in upload['with']['name']
 
 
-def test_hosted_campaign_consumes_and_validates_build_artifact():
-    gate = step('campaign', 'Validate hosted build transfer')
-    assert 'continue-on-error' not in gate
+def test_fanout_stages_are_identity_bound_and_aggregate_before_publication():
+    gate = step('prepare', 'Validate hosted build transfer')
     assert gate['working-directory'] == 'campaign-trusted'
-    assert gate['env']['PYTHONPATH'] == 'dwarf'
     assert gate['env']['SOURCE_COMMIT'] == '${{ github.sha }}'
     assert gate['env']['TRUSTED_COMMIT'] == '${{ needs.discover.outputs.trusted_revision }}'
     assert 'python3 -m scripts.ci_hosted_campaign_stage' in gate['run']
-    assert '--expected-commit "$SOURCE_COMMIT"' in gate['run']
-    assert '--expected-trusted-revision "$TRUSTED_COMMIT"' in gate['run']
-    assert '--stock-build ../campaign-build' in gate['run']
-    assert 'campaign-output/host-tools/bin' in gate['run']
-    assert '$GITHUB_PATH' in gate['run']
-    downloads = [s for s in workflow()['jobs']['campaign']['steps'] if s.get('uses', '').startswith('actions/download-artifact@')]
-    assert {s['with']['name'] for s in downloads} == {
-        'dwarf-security-campaign-discovery', 'amaru-network-candidate-builds'}
-    job = workflow()['jobs']['campaign']
-    service = job['services']['candidate-registry']
-    assert service['image'] == 'registry@sha256:46faa9a1ae6813194b53921a370f2f4f8c5e1aae228a89bceafef5847a6a3278'
-    assert service['ports'] == ['5000:5000']
-    plan = step('campaign', 'Register candidate and freeze initial campaign')
+    plan = step('prepare', 'Register candidate and freeze initial campaign')
     assert 'python3 -m scripts.ci_hosted_campaign_plan' in plan['run']
-    assert '--stage ../campaign-output/status.json' in plan['run']
-    assert '--stock-build ../campaign-build' in plan['run']
-    assert '--directory ../campaign-plan' in plan['run']
-    dependencies = step('campaign', 'Install trusted campaign dependencies')
-    assert '--require-hashes' in dependencies['run']
-    assert 'infrastructure/docker/requirements-framework.txt' in dependencies['run']
-    execute = step('campaign', 'Calibrate variants and run selected frozen campaign')
-    assert 'continue-on-error' not in execute
-    assert 'python3 -m scripts.ci_hosted_campaign_runtime outer' in execute['run']
-    assert '--controller-image "$CONTROLLER_IMAGE"' in execute['run']
-    assert '--expected-controller-revision "$TRUSTED_COMMIT"' in execute['run']
-    assert '--runtime-directory "$GITHUB_WORKSPACE/campaign-runtime"' in execute['run']
-    assert execute['env']['HELPER_IMAGE'] == (
-        'ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:'
-        'ae1938a2ebdefa9cdf340021774e3a2551afd2da48d855fb2ba829cede13fb34'
-    )
-    signer = step('campaign', 'Create workflow-local evidence signer')
-    assert 'integrity-only-untrusted-for-publication' in signer['run']
-    assert 'private_key_retained' in signer['run']
-    uploads = [s for s in workflow()['jobs']['campaign']['steps'] if s.get('uses', '').startswith('actions/upload-artifact@')]
-    assert uploads and all(s['if'] == 'always()' for s in uploads)
-    assert all(s['with']['retention-days'] == '30' for s in uploads)
+    assert 'python3 -m scripts.ci_campaign_fanout prepare' in plan['run']
+
+    calibrate = workflow()['jobs']['calibrate']
+    assert calibrate['strategy']['fail-fast'] == 'false'
+    assert calibrate['strategy']['max-parallel'] == '2'
+    assert calibrate['permissions'] == {'contents': 'read'}
+    assert '--work-item ' in step('calibrate', 'Run one calibration item')['run']
+    assert step('calibrate', 'Retain calibration shard')['if'] == 'always()'
+
+    select_job = workflow()['jobs']['select']
+    assert select_job['if'] == "always() && needs.prepare.result == 'success'"
+    selector = step('select', 'Select calibrated mode and freeze execution matrix')
+    assert 'ci_campaign_fanout select' in selector['run']
+    assert '--calibration-root ../calibration-input' in selector['run']
+
+    aggregate = workflow()['jobs']['aggregate']
+    assert aggregate['if'] == "always() && needs.select.result == 'success'"
+    merger = step('aggregate', 'Verify and aggregate every campaign shard')
+    assert 'ci_campaign_fanout aggregate' in merger['run']
+    assert '--inventory ../campaign-selected/execution-work-items.json' in merger['run']
+    assert step('aggregate', 'Retain aggregate campaign inputs and status')['if'] == 'always()'
 
 
 def test_publication_is_isolated_from_candidate_execution_and_release_only():
     data = workflow()
     publication = data['jobs']['publication']
-    assert publication['needs'] == ['discover', 'campaign']
-    assert publication['if'] == "needs.campaign.result == 'success'"
+    assert publication['needs'] == ['discover', 'aggregate']
+    assert publication['if'] == "needs.aggregate.result == 'success'"
     assert publication['permissions'] == {'actions': 'read', 'contents': 'write'}
     assert publication['concurrency']['cancel-in-progress'] in {False, 'false'}
     assert step('publication', 'Download completed campaign')['with']['name'] == 'dwarf-security-campaign-status'

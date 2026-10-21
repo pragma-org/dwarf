@@ -66,8 +66,7 @@ def run_inside(args) -> int:
         )
         try:
             _wait_for_listener("127.0.0.1", 8787)
-            return _campaign_main(
-                [
+            campaign_args = [
                     "--manifest",
                     str(args.manifest),
                     "--stock-manifest",
@@ -81,7 +80,16 @@ def run_inside(args) -> int:
                     "--signing-key",
                     str(args.signing_key),
                 ]
-            )
+            if getattr(args, "work_item", None) is not None:
+                campaign_args.extend(
+                    [
+                        "--work-item",
+                        str(args.work_item),
+                        "--work-item-inventory",
+                        str(args.work_item_inventory),
+                    ]
+                )
+            return _campaign_main(campaign_args)
         finally:
             dashboard.terminate()
             try:
@@ -240,6 +248,8 @@ def run_outer(args) -> int:
         host_gid=os.getgid(),
         installation_id=args.installation_id,
         artifact_base_url=f"http://{gateway}:8787",
+        work_item=getattr(args, "work_item", None),
+        work_item_inventory=getattr(args, "work_item_inventory", None),
     )
     return int(_run_command(command, check=False).returncode)
 
@@ -258,6 +268,8 @@ def build_controller_command(
     host_gid: int,
     installation_id: str,
     artifact_base_url: str,
+    work_item: Path | None = None,
+    work_item_inventory: Path | None = None,
 ) -> list[str]:
     """Build the exact controller-shaped Docker invocation for one hosted job."""
 
@@ -355,6 +367,17 @@ def build_controller_command(
             "/run/workflow-evidence.pem",
         )
     )
+    if work_item is not None:
+        if work_item_inventory is None:
+            raise ValueError("work item inventory is required with a work item")
+        command.extend(
+            (
+                "--work-item",
+                str(work_item),
+                "--work-item-inventory",
+                str(work_item_inventory),
+            )
+        )
     return command
 
 
@@ -365,6 +388,8 @@ def _add_campaign_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--catalog", type=Path, required=True)
     parser.add_argument("--signing-key", type=Path, required=True)
+    parser.add_argument("--work-item", type=Path)
+    parser.add_argument("--work-item-inventory", type=Path)
 
 
 def main(argv=None) -> int:
@@ -380,6 +405,8 @@ def main(argv=None) -> int:
     outer.add_argument("--runtime-directory", type=Path, required=True)
     outer.add_argument("--signing-key", type=Path, required=True)
     outer.add_argument("--installation-id", required=True)
+    outer.add_argument("--work-item", type=Path)
+    outer.add_argument("--work-item-inventory", type=Path)
     outer.add_argument(
         "--docker-socket", type=Path, default=Path("/var/run/docker.sock")
     )

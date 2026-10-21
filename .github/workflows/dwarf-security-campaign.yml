@@ -278,19 +278,19 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  campaign:
+  prepare:
     needs: [discover, candidate-build]
     if: >-
       needs.discover.outputs.has_work == 'true' &&
       needs.candidate-build.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 45
     permissions:
       contents: read
+    outputs:
+      calibration_matrix: ${{ steps.matrix.outputs.value }}
     services:
       candidate-registry:
-        # The registry is job-local and is removed with the disposable runner.
-        # Pin the linux/amd64 manifest, not the mutable registry:2 tag.
         image: registry@sha256:46faa9a1ae6813194b53921a370f2f4f8c5e1aae228a89bceafef5847a6a3278
         ports:
           - 5000:5000
@@ -318,7 +318,7 @@ jobs:
           python-version: "3.12"
       - name: Install trusted campaign dependencies
         run: python3 -m pip install --require-hashes -r campaign-trusted/infrastructure/docker/requirements-framework.txt
-      - name: Build trusted campaign controller
+      - name: Build trusted campaign controller once
         id: controller
         working-directory: campaign-trusted
         env:
@@ -341,7 +341,8 @@ jobs:
             --build-arg TARGETARCH=amd64 \
             .
           controller_image=$(docker image inspect --format '{{.Id}}' dwarf/controller:campaign)
-          echo "controller_image=$controller_image" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$controller_image" > ../controller-image-id.txt
+          docker save --output ../controller-image.tar dwarf/controller:campaign
       - name: Validate hosted build transfer
         working-directory: campaign-trusted
         env:
@@ -366,60 +367,362 @@ jobs:
             --stage ../campaign-output/status.json \
             --stock-build ../campaign-build \
             --directory ../campaign-plan
-      - name: Create workflow-local evidence signer
-        working-directory: campaign-trusted
-        env:
-          SIGNING_KEY: ${{ runner.temp }}/dwarf-workflow-evidence.pem
+          python3 -m scripts.ci_campaign_fanout prepare \
+            --manifest ../campaign-plan/manifest.json \
+            --stock-manifest ../campaign-plan/stock-manifest.json \
+            --directory ../campaign-prepared
+      - name: Export calibration matrix
+        id: matrix
         run: |
-          umask 077
-          openssl genpkey -algorithm ED25519 -out "$SIGNING_KEY"
-          openssl pkey -in "$SIGNING_KEY" -pubout -out ../campaign-plan/workflow-evidence-public.pem
           python3 - <<'PY'
-          import hashlib
           import json
+          import os
           from pathlib import Path
-
-          public = Path('../campaign-plan/workflow-evidence-public.pem').read_bytes()
-          Path('../campaign-plan/workflow-evidence-signer.json').write_text(json.dumps({
-              'schema_version': 'v1',
-              'kind': 'workflow-ephemeral-evidence-signer',
-              'classification': 'integrity-only-untrusted-for-publication',
-              'public_key_sha256': hashlib.sha256(public).hexdigest(),
-              'private_key_retained': False,
-          }, sort_keys=True, separators=(',', ':')) + '\n')
+          value = json.dumps(json.loads(Path('campaign-prepared/calibration-matrix.json').read_text()), separators=(',', ':'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write('value=' + value + '\n')
           PY
-      - name: Calibrate variants and run selected frozen campaign
+      - name: Retain immutable preparation and controller
+        uses: actions/upload-artifact@v4
+        with:
+          name: dwarf-security-campaign-prepared
+          path: |
+            campaign-output/
+            campaign-plan/
+            campaign-prepared/
+            controller-image-id.txt
+            controller-image.tar
+          if-no-files-found: error
+          retention-days: 30
+
+  calibrate:
+    needs: [discover, prepare]
+    if: needs.prepare.result == 'success'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.prepare.outputs.calibration_matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    services:
+      candidate-registry:
+        image: registry@sha256:46faa9a1ae6813194b53921a370f2f4f8c5e1aae228a89bceafef5847a6a3278
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout pinned reviewed runner tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.discover.outputs.trusted_revision }}
+          path: campaign-trusted
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: dwarf-security-campaign-prepared
+          path: prepared-input
+      - uses: actions/download-artifact@v4
+        with:
+          name: dwarf-security-campaign-discovery
+          path: campaign-input
+      - uses: actions/download-artifact@v4
+        with:
+          name: amaru-network-candidate-builds
+          path: campaign-build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install trusted campaign dependencies
+        run: python3 -m pip install --require-hashes -r campaign-trusted/infrastructure/docker/requirements-framework.txt
+      - name: Restore exact controller and candidate registry
         working-directory: campaign-trusted
         env:
           PYTHONPATH: dwarf
-          SIGNING_KEY: ${{ runner.temp }}/dwarf-workflow-evidence.pem
-          CONTROLLER_IMAGE: ${{ steps.controller.outputs.controller_image }}
+          SOURCE_COMMIT: ${{ github.sha }}
           TRUSTED_COMMIT: ${{ needs.discover.outputs.trusted_revision }}
-          HELPER_IMAGE: ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:ae1938a2ebdefa9cdf340021774e3a2551afd2da48d855fb2ba829cede13fb34
         run: |
+          set -euo pipefail
+          docker load --input ../prepared-input/controller-image.tar
+          controller_image=$(cat ../prepared-input/controller-image-id.txt)
+          test "$(docker image inspect --format '{{.Id}}' "$controller_image")" = "$controller_image"
+          python3 -m scripts.ci_hosted_campaign_stage \
+            --discovery ../campaign-input/discovery.json \
+            --stock-build ../campaign-build \
+            --directory ../runtime-stage \
+            --expected-commit "$SOURCE_COMMIT" \
+            --expected-trusted-revision "$TRUSTED_COMMIT"
+          echo "$GITHUB_WORKSPACE/runtime-stage/host-tools/bin" >> "$GITHUB_PATH"
+          python3 -m scripts.ci_hosted_campaign_plan \
+            --discovery ../campaign-input/discovery.json \
+            --stage ../runtime-stage/status.json \
+            --stock-build ../campaign-build \
+            --directory ../runtime-plan
+          for name in manifest.json stock-manifest.json build-observations.json version-catalog.json; do
+            cmp "../runtime-plan/$name" "../prepared-input/campaign-plan/$name"
+          done
+          cp -R ../prepared-input/campaign-plan ../campaign-plan
+      - name: Create shard-local evidence signer
+        run: |
+          set -euo pipefail
+          mkdir -p campaign-runtime
+          umask 077
+          openssl genpkey -algorithm ED25519 -out "$RUNNER_TEMP/dwarf-workflow-evidence.pem"
+          openssl pkey -in "$RUNNER_TEMP/dwarf-workflow-evidence.pem" -pubout -out campaign-runtime/workflow-evidence-public.pem
+      - name: Run one calibration item
+        env:
+          PYTHONPATH: campaign-trusted/dwarf
+          HELPER_IMAGE: ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:ae1938a2ebdefa9cdf340021774e3a2551afd2da48d855fb2ba829cede13fb34
+          TRUSTED_COMMIT: ${{ needs.discover.outputs.trusted_revision }}
+        run: |
+          controller_image=$(cat prepared-input/controller-image-id.txt)
           python3 -m scripts.ci_hosted_campaign_runtime outer \
-            --controller-image "$CONTROLLER_IMAGE" \
+            --controller-image "$controller_image" \
             --expected-controller-revision "$TRUSTED_COMMIT" \
             --helper-image "$HELPER_IMAGE" \
             --workspace "$GITHUB_WORKSPACE" \
             --runtime-directory "$GITHUB_WORKSPACE/campaign-runtime" \
-            --signing-key "$SIGNING_KEY" \
-            --installation-id "github-${{ github.run_id }}-${{ github.run_attempt }}"
-      - name: Retain hosted campaign inputs and status
+            --signing-key "$RUNNER_TEMP/dwarf-workflow-evidence.pem" \
+            --installation-id "github-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}" \
+            --work-item "$GITHUB_WORKSPACE/prepared-input/campaign-prepared/work-items/${{ matrix.shard }}.json" \
+            --work-item-inventory "$GITHUB_WORKSPACE/prepared-input/campaign-prepared/calibration-work-items.json"
+      - name: Retain calibration shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dwarf-calibration-${{ matrix.shard }}
+          path: |
+            campaign-runtime/
+            prepared-input/campaign-prepared/work-items/${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  select:
+    needs: [discover, prepare, calibrate]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      execution_matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.discover.outputs.trusted_revision }}
+          path: campaign-trusted
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: dwarf-security-campaign-prepared
+          path: prepared-input
+      - name: Download retained calibration shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dwarf-calibration-*
+          path: calibration-input
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install trusted campaign dependencies
+        run: python3 -m pip install --require-hashes -r campaign-trusted/infrastructure/docker/requirements-framework.txt
+      - name: Select calibrated mode and freeze execution matrix
+        working-directory: campaign-trusted
+        env:
+          PYTHONPATH: dwarf
+        run: |
+          python3 -m scripts.ci_campaign_fanout select \
+            --manifest ../prepared-input/campaign-plan/manifest.json \
+            --stock-manifest ../prepared-input/campaign-plan/stock-manifest.json \
+            --build-observations ../prepared-input/campaign-plan/build-observations.json \
+            --calibration-root ../calibration-input \
+            --directory ../campaign-selected
+      - name: Export execution matrix
+        id: matrix
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          value = json.dumps(json.loads(Path('campaign-selected/execution-matrix.json').read_text()), separators=(',', ':'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write('value=' + value + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dwarf-security-campaign-selected
+          path: campaign-selected/
+          if-no-files-found: error
+          retention-days: 30
+
+  campaign:
+    needs: [discover, prepare, select]
+    if: needs.select.result == 'success'
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.select.outputs.execution_matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    services:
+      candidate-registry:
+        image: registry@sha256:46faa9a1ae6813194b53921a370f2f4f8c5e1aae228a89bceafef5847a6a3278
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout pinned reviewed runner tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.discover.outputs.trusted_revision }}
+          path: campaign-trusted
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: dwarf-security-campaign-prepared
+          path: prepared-input
+      - uses: actions/download-artifact@v4
+        with:
+          name: dwarf-security-campaign-selected
+          path: campaign-selected
+      - uses: actions/download-artifact@v4
+        with:
+          name: dwarf-security-campaign-discovery
+          path: campaign-input
+      - uses: actions/download-artifact@v4
+        with:
+          name: amaru-network-candidate-builds
+          path: campaign-build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install trusted campaign dependencies
+        run: python3 -m pip install --require-hashes -r campaign-trusted/infrastructure/docker/requirements-framework.txt
+      - name: Restore exact controller and candidate registry
+        working-directory: campaign-trusted
+        env:
+          PYTHONPATH: dwarf
+          SOURCE_COMMIT: ${{ github.sha }}
+          TRUSTED_COMMIT: ${{ needs.discover.outputs.trusted_revision }}
+        run: |
+          set -euo pipefail
+          docker load --input ../prepared-input/controller-image.tar
+          controller_image=$(cat ../prepared-input/controller-image-id.txt)
+          test "$(docker image inspect --format '{{.Id}}' "$controller_image")" = "$controller_image"
+          python3 -m scripts.ci_hosted_campaign_stage \
+            --discovery ../campaign-input/discovery.json \
+            --stock-build ../campaign-build \
+            --directory ../runtime-stage \
+            --expected-commit "$SOURCE_COMMIT" \
+            --expected-trusted-revision "$TRUSTED_COMMIT"
+          echo "$GITHUB_WORKSPACE/runtime-stage/host-tools/bin" >> "$GITHUB_PATH"
+          python3 -m scripts.ci_hosted_campaign_plan \
+            --discovery ../campaign-input/discovery.json \
+            --stage ../runtime-stage/status.json \
+            --stock-build ../campaign-build \
+            --directory ../runtime-plan
+          for name in manifest.json stock-manifest.json build-observations.json version-catalog.json; do
+            cmp "../runtime-plan/$name" "../prepared-input/campaign-plan/$name"
+          done
+          cp -R ../prepared-input/campaign-plan ../campaign-plan
+          cp ../campaign-selected/manifest.json ../campaign-plan/manifest.json
+          cp ../campaign-selected/stock-manifest.json ../campaign-plan/stock-manifest.json
+      - name: Create shard-local evidence signer
+        run: |
+          set -euo pipefail
+          mkdir -p campaign-runtime
+          umask 077
+          openssl genpkey -algorithm ED25519 -out "$RUNNER_TEMP/dwarf-workflow-evidence.pem"
+          openssl pkey -in "$RUNNER_TEMP/dwarf-workflow-evidence.pem" -pubout -out campaign-runtime/workflow-evidence-public.pem
+      - name: Run one frozen campaign workload
+        env:
+          PYTHONPATH: campaign-trusted/dwarf
+          HELPER_IMAGE: ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:ae1938a2ebdefa9cdf340021774e3a2551afd2da48d855fb2ba829cede13fb34
+          TRUSTED_COMMIT: ${{ needs.discover.outputs.trusted_revision }}
+        run: |
+          controller_image=$(cat prepared-input/controller-image-id.txt)
+          python3 -m scripts.ci_hosted_campaign_runtime outer \
+            --controller-image "$controller_image" \
+            --expected-controller-revision "$TRUSTED_COMMIT" \
+            --helper-image "$HELPER_IMAGE" \
+            --workspace "$GITHUB_WORKSPACE" \
+            --runtime-directory "$GITHUB_WORKSPACE/campaign-runtime" \
+            --signing-key "$RUNNER_TEMP/dwarf-workflow-evidence.pem" \
+            --installation-id "github-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}" \
+            --work-item "$GITHUB_WORKSPACE/campaign-selected/work-items/${{ matrix.shard }}.json" \
+            --work-item-inventory "$GITHUB_WORKSPACE/campaign-selected/execution-work-items.json"
+      - name: Retain workload shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dwarf-workload-${{ matrix.shard }}
+          path: |
+            campaign-runtime/
+            campaign-selected/work-items/${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: [discover, select, campaign]
+    if: always() && needs.select.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.discover.outputs.trusted_revision }}
+          path: campaign-trusted
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: dwarf-security-campaign-selected
+          path: campaign-selected
+      - name: Download all retained workload shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dwarf-workload-*
+          path: campaign-shards
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned aggregation dependencies
+        run: python3 -m pip install --require-hashes -r campaign-trusted/infrastructure/docker/requirements-framework.txt
+      - name: Verify and aggregate every campaign shard
+        working-directory: campaign-trusted
+        env:
+          PYTHONPATH: dwarf
+        run: |
+          python3 -m scripts.ci_campaign_fanout aggregate \
+            --manifest ../campaign-selected/selected-manifest.json \
+            --stock-manifest ../campaign-selected/stock-manifest.json \
+            --inventory ../campaign-selected/execution-work-items.json \
+            --shard-root ../campaign-shards \
+            --directory ../campaign-runtime
+      - name: Retain aggregate campaign inputs and status
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dwarf-security-campaign-status
           path: |
-            campaign-output/
-            campaign-plan/
+            campaign-selected/
             campaign-runtime/
           if-no-files-found: error
           retention-days: 30
 
   publication:
-    needs: [discover, campaign]
-    if: needs.campaign.result == 'success'
+    needs: [discover, aggregate]
+    if: needs.aggregate.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:

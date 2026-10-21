@@ -10,6 +10,7 @@ import subprocess
 import pytest
 
 from profile_manager.campaign_evidence import evaluate_campaign_evidence
+from profile_manager.campaign_work_items import execution_work_items
 from profile_manager.security_campaign import _digest
 from scripts import ci_security_campaign as api
 from test_campaign_evidence import campaign_plan, evidence, freeze, measurement, single_cell
@@ -142,6 +143,47 @@ def calibration_leg(mode, *, source="f" * 40, patch="sha256:" + "e" * 64,
             "p95": mean, "p99": mean,
         }},
     }
+
+
+def test_security_work_item_runs_only_its_selected_entry(campaign, tmp_path):
+    second = deepcopy(campaign["entries"][0])
+    second["id"] = "second-security-entry"
+    campaign["entries"].append(second)
+    freeze(campaign)
+    runtime = Runtime(campaign, tmp_path)
+    item = next(
+        row
+        for row in execution_work_items(campaign)["items"]
+        if row["kind"] == "security" and row["entry_id"] == campaign["entries"][0]["id"]
+    )
+
+    state, _ = run(campaign, tmp_path, runtime, work_item=item)
+
+    assert "security:" + campaign["entries"][0]["id"] in state["cells"]
+    assert "security:second-security-entry" not in state["cells"]
+    assert api.work_item_succeeded(state, item) is True
+
+
+def test_measurement_work_item_skips_security_and_other_recipes(campaign, tmp_path):
+    campaign, cell = single_cell(campaign)
+    cell["runtime"] = {"status": "implemented"}
+    freeze(campaign)
+    runtime = Runtime(campaign, tmp_path)
+    item = next(row for row in execution_work_items(campaign)["items"] if row["kind"] == "measurement")
+
+    state, _ = run(campaign, tmp_path, runtime, work_item=item)
+
+    assert not any(key.startswith("security:") for key in state["cells"])
+    assert list(state["cells"]) == [api._cell_key(cell, "stock")]
+    assert api.work_item_succeeded(state, item) is True
+
+
+def test_work_item_success_does_not_claim_full_campaign_completion(campaign, tmp_path):
+    item = next(row for row in execution_work_items(campaign)["items"] if row["kind"] == "security")
+    state, _ = run(campaign, tmp_path, Runtime(campaign, tmp_path), work_item=item)
+
+    assert api.work_item_succeeded(state, item) is True
+    assert state["status"]["measurement_completeness"] == "incomplete"
 
 
 def test_patched_primary_requires_successful_bounded_calibration():
@@ -1220,6 +1262,69 @@ def test_runtime_plan_passes_campaign_owned_patched_target_override(
     assert target["patch_set_sha256"] == patch_set.removeprefix("sha256:")
 
 
+def test_per_node_calibration_does_not_require_unselected_reference_artifact(
+    campaign, tmp_path, monkeypatch
+):
+    from profile_manager import deployment_versions, run_plan
+
+    runtime = api.LocalRuntime(
+        tmp_path,
+        catalog_path=tmp_path / "catalog",
+        producer_version="99.1.2",
+        signing_key=tmp_path / "key",
+    )
+    topology = campaign["topologies"][0]
+    candidate = next(
+        node for node in topology["nodes"] if node["identity"]["kind"] == "candidate"
+    )
+    topology["nodes"].append({
+        "node_id": "node2",
+        "implementation": "cardano-node",
+        "role": "reference",
+        "identity": {
+            "kind": "release",
+            "implementation": "cardano-node",
+            "version": "11.1.2",
+            "source_revision": "f" * 40,
+            "artifacts": {"image_digest": "sha256:" + "8" * 64},
+        },
+    })
+    image_digest = "sha256:" + "7" * 64
+    runtime.builds = [{
+        "mode": "stock",
+        "source": campaign["candidate"],
+        "artifacts": {
+            "image_digest": image_digest,
+            "executable_digest": "sha256:" + "6" * 64,
+        },
+    }]
+    monkeypatch.setattr(runtime, "_catalog_binding", lambda: {
+        "path": str(tmp_path / "catalog"), "sha256": "0" * 64, "catalog": {"releases": []},
+    })
+    monkeypatch.setattr(
+        deployment_versions,
+        "version_catalog_revision",
+        lambda **kwargs: "sha256:" + "0" * 64,
+    )
+    monkeypatch.setattr(
+        run_plan,
+        "resolve_run_plan",
+        lambda *_args, **_kwargs: {
+            "versions": {"resolved": {"amaru": {
+                "version": candidate["identity"]["version"],
+                "source_revision": candidate["identity"]["source_revision"],
+                "image_digest": image_digest,
+            }}},
+            "measurements": {"target_identity": {"mode": "stock"}},
+        },
+    )
+
+    scenario_id = campaign["execution_policy"]["calibration"]["stock_scenario_id"]
+    plan = runtime._plan(campaign, scenario_id, topology, "stock", None, None)
+
+    assert set(plan["versions"]["resolved"]) == {"amaru"}
+
+
 def test_native_scenario_without_boundary_index_remains_inconclusive(campaign, tmp_path, monkeypatch):
     from profile_manager import launch_store
     runtime = api.LocalRuntime(tmp_path, catalog_path=tmp_path / "catalog", producer_version="99.1.2", signing_key=tmp_path / "key")
@@ -1495,6 +1600,71 @@ def test_native_calibration_positive_transcript_produces_a_usable_control(campai
     attempt["request_sha256"] = "sha256:" + "0" * 64
     (calibration / "attempts.ndjson").write_text(json.dumps(attempt) + "\n")
     assert read_native_evidence(campaign, run_dir, scenario_id=cell["scenario_id"], topology=campaign["topologies"][0], mode="stock", plan={})["control"]["status"] == "unknown"
+
+
+def test_per_node_measurement_control_requires_only_its_selected_node(campaign, tmp_path):
+    from profile_manager.campaign_runtime_evidence import read_native_evidence
+
+    campaign, cell = single_cell(campaign)
+    topology = campaign["topologies"][0]
+    topology["nodes"].append({
+        "node_id": "node2",
+        "implementation": "cardano-node",
+        "role": "reference",
+        "identity": {
+            "kind": "release",
+            "implementation": "cardano-node",
+            "version": "11.1.2",
+            "source_revision": "f" * 40,
+            "artifacts": {"image_digest": "sha256:" + "8" * 64},
+        },
+    })
+    ev = evidence(campaign)
+    run_dir = tmp_path / "control-native"
+    calibration = run_dir / "outputs/amaru-measurement-calibration"
+    calibration.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(json.dumps({"exit_status": "pass"}))
+    (run_dir / "assertions.json").write_text("[]")
+    target = ev["security"][0]["targets"]["node1"]
+    report = {
+        "schema_version": 1,
+        "status": "available",
+        "target": target,
+        "target_health": {"checks": {
+            "target_running_before": True,
+            "target_running_after": True,
+            "target_not_oom_killed": True,
+            "target_restart_count_unchanged": True,
+            "honest_chain_progressed": True,
+            "no_fatal_signals": True,
+        }},
+    }
+    (calibration / "result.json").write_text(json.dumps(report))
+    request = b"positive-wire-control"
+    attempt = {
+        "attempt_id": "handshake-0000",
+        "outcome": "accepted",
+        "detail": "accept-response",
+        "listener_reached": True,
+        "expected_external_outcome": "accepted",
+        "request_hex": request.hex(),
+        "request_sha256": "sha256:" + hashlib.sha256(request).hexdigest(),
+        "response_hex": "00",
+    }
+    (calibration / "attempts.ndjson").write_text(json.dumps(attempt) + "\n")
+
+    result = read_native_evidence(
+        campaign,
+        run_dir,
+        scenario_id=cell["scenario_id"],
+        topology=topology,
+        mode="stock",
+        plan={},
+        cell=cell,
+    )
+
+    assert result["control"]["status"] == "pass"
+    assert set(result["control"]["targets"]) == {cell["node_id"]}
 
 
 def test_library_launch_materializes_frozen_catalog_directory(campaign, tmp_path, monkeypatch):

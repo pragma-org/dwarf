@@ -415,12 +415,28 @@ def _observe_connection_state(
                     "docker",
                     "exec",
                     container_name,
-                    "bash",
-                    "-lc",
-                    f"exec 3<>/dev/tcp/127.0.0.1/{container_port}; exec 3>&-; exec 3<&-",
+                    "/bin/busybox",
+                    "nc",
+                    "-z",
+                    "-w",
+                    "1",
+                    "127.0.0.1",
+                    str(container_port),
                 ],
                 timeout=10,
             )
+            if connect_proc.returncode != 0:
+                connect_proc = _run(
+                    [
+                        "docker",
+                        "exec",
+                        container_name,
+                        "bash",
+                        "-lc",
+                        f"exec 3<>/dev/tcp/127.0.0.1/{container_port}; exec 3>&-; exec 3<&-",
+                    ],
+                    timeout=10,
+                )
             if connect_proc.returncode == 0:
                 connect_successes += 1
             else:

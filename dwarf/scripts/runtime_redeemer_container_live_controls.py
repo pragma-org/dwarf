@@ -2010,6 +2010,9 @@ def run_fresh_funded_live_controls(
     socket_path = str(reference.get("container_socket_path") or "")
     target_container = str(target["container_id"])
     helper_image = str(os.environ.get("DWARF_LOCALTXSUBMISSION_HELPER_IMAGE") or "")
+    target_propagation_gate = _reference_tx_submission_propagation_gate(
+        reference, inspect_container=_inspect_container
+    )
     if not (
         _REPO_DIGEST_IMAGE.fullmatch(helper_image)
         or _CONFIG_ID_IMAGE.fullmatch(helper_image)
@@ -2236,6 +2239,9 @@ def run_fresh_funded_live_controls(
                     transaction_id=transaction_id,
                     initial_tip=initial_tip,
                     evidence_path=output_dir / f"{case_id}-{role}-inclusion.json",
+                    target_propagation_gate=(
+                        target_propagation_gate if role == "target" else None
+                    ),
                 )
             except RuntimeError:
                 return False

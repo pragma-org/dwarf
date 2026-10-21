@@ -534,11 +534,19 @@ def read_native_evidence(manifest, run_dir, *, scenario_id, topology, mode, plan
                 positives.append({"run_id": run_id, "node_id": node_id, "input_digest": digest,
                                   "diagnostic": "retained positive Handshake acceptance with independent live process and chain progress",
                                   "attempt_id": attempt.get("attempt_id"), "outcome": "accepted"})
+    control_nodes = (
+        {cell["node_id"]}
+        if cell is not None
+        else {node["node_id"] for node in topology["nodes"]}
+    )
+    control_targets = {
+        node_id: target for node_id, target in targets.items() if node_id in control_nodes
+    }
     control_record = {"run_id": run_id, "scenario_id": scenario_id,
                       "scenario_digest": manifest["definitions"]["scenarios"][scenario_id]["digest"],
-                      "targets": targets, "status": "pass" if positives and set(targets) == {node["node_id"] for node in topology["nodes"]}
-                      and {row["node_id"] for row in positives} == set(targets) else "unknown",
-                      "evidence": positives, "assertions": []}
+                      "targets": control_targets, "status": "pass" if positives and set(control_targets) == control_nodes
+                      and {row["node_id"] for row in positives if row["node_id"] in control_nodes} == control_nodes else "unknown",
+                      "evidence": [row for row in positives if row["node_id"] in control_nodes], "assertions": []}
     execution_bound = bool(plan.get("campaign_execution_digest")) and (entry is None or "execution" in entry)
     requires_shared_control = execution_bound or (entry is not None and "execution" in entry)
     if requires_shared_control and len({node["identity"]["implementation"] for node in topology["nodes"]}) > 1:

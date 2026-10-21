@@ -12,6 +12,8 @@ def test_container_connection_state_is_observed_in_container_namespace(monkeypat
     def fake_run(command, **_kwargs):
         if command[:3] == ["docker", "inspect", "--format"]:
             return SimpleNamespace(returncode=0, stdout="1234\n", stderr="")
+        if command[:3] == ["docker", "exec", "cardano-node1"] and command[3:6] == ["/bin/busybox", "nc", "-z"]:
+            return SimpleNamespace(returncode=127, stdout="", stderr="busybox: not found\n")
         if command[:3] == ["docker", "exec", "cardano-node1"] and command[3:5] == ["bash", "-lc"]:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
         if command == ["docker", "exec", "cardano-node1", "ss", "-tan"]:
@@ -88,6 +90,8 @@ def test_missing_container_ss_is_optional_but_tip_and_responsiveness_are_retaine
     def fake_run(command, **_kwargs):
         if command[:3] == ["docker", "inspect", "--format"]:
             return SimpleNamespace(returncode=0, stdout="4321\n", stderr="")
+        if command[:3] == ["docker", "exec", "amaru-node1"] and command[3:6] == ["/bin/busybox", "nc", "-z"]:
+            return SimpleNamespace(returncode=127, stdout="", stderr="busybox: not found\n")
         if command[:3] == ["docker", "exec", "amaru-node1"] and command[3:5] == ["bash", "-lc"]:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
         if command == ["docker", "exec", "amaru-node1", "ss", "-tan"]:
@@ -130,3 +134,48 @@ def test_missing_container_ss_is_optional_but_tip_and_responsiveness_are_retaine
         ).read_text()
     )
     assert persisted["socket_observation"]["status"] == "unavailable"
+
+
+def test_minimal_container_uses_busybox_for_loopback_connection(monkeypatch, tmp_path):
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        if command[:3] == ["docker", "inspect", "--format"]:
+            return SimpleNamespace(returncode=0, stdout="4321\n", stderr="")
+        if command == [
+            "docker",
+            "exec",
+            "amaru-node1",
+            "/bin/busybox",
+            "nc",
+            "-z",
+            "-w",
+            "1",
+            "127.0.0.1",
+            "5001",
+        ]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if command == ["docker", "exec", "amaru-node1", "ss", "-tan"]:
+            return SimpleNamespace(returncode=127, stdout="", stderr="ss: command not found\n")
+        raise AssertionError(command)
+
+    monkeypatch.setattr(observation, "_run", fake_run)
+
+    result = observation._observe_connection_state(
+        runtime_metadata_path=tmp_path / "runtime.json",
+        node={
+            "name": "node1",
+            "port": 34401,
+            "container_name": "amaru-node1",
+            "container_listen_address": "node1:5001",
+        },
+        known_ports={34401: "node1"},
+        known_container_ips={"10.0.0.2": "node1"},
+        target_host="127.0.0.1",
+        connect_attempts=1,
+    )
+
+    assert result["responsive"] is True
+    assert result["connect_successes"] == 1
+    assert any(command[3:6] == ["/bin/busybox", "nc", "-z"] for command in commands)
