@@ -51,20 +51,19 @@ def source(root, name):
 
 def test_triggers_are_controlled_and_have_no_pr_execution():
     data = workflow()
-    assert set(data['on']) == {'workflow_dispatch', 'schedule', 'push'}
+    assert set(data['on']) == {'workflow_dispatch', 'push'}
     assert data['on']['push']['paths'] == ['dwarf/testplease/**']
-    assert data['on']['schedule'][0]['cron']
     scope = data['on']['workflow_dispatch']['inputs']['campaign_scope']
     assert scope['type'] == 'choice'
-    assert scope['default'] == 'stock-solo'
-    assert scope['options'] == ['stock-solo', 'full']
+    assert scope['default'] == 'stock-amaru'
+    assert scope['options'] == ['stock-amaru', 'stock-solo', 'full']
     assert data['permissions'] == {'contents': 'read'}
 
 
 def test_stock_solo_dispatch_builds_and_runs_only_ordered_stock_proof():
     data = workflow()
     assert data['env']['CAMPAIGN_SCOPE'] == (
-        "${{ github.event_name == 'workflow_dispatch' && inputs.campaign_scope || 'full' }}"
+        "${{ github.event_name == 'workflow_dispatch' && inputs.campaign_scope || 'stock-amaru' }}"
     )
     discover = data['jobs']['discover']
     assert discover['outputs']['campaign_scope'] == '${{ steps.discovery.outputs.campaign_scope }}'
@@ -82,8 +81,8 @@ def test_stock_solo_dispatch_builds_and_runs_only_ordered_stock_proof():
     assert "needs.amaru_solo.result == 'success'" in cardano_condition
     mixed_condition = data['jobs']['mixed']['if']
     assert "needs.discover.outputs.campaign_scope == 'full'" in mixed_condition
-    publication_condition = data['jobs']['publication']['if']
-    assert "needs.discover.outputs.campaign_scope == 'full'" in publication_condition
+    assert 'publication' not in data['jobs']
+    assert build['env']['STOCK_ONLY'] == "${{ needs.discover.outputs.campaign_scope != 'full' && 'true' || 'false' }}"
 
 
 def test_prepare_builds_the_trusted_controller_once_and_exports_it():
@@ -250,28 +249,14 @@ def test_fanout_stages_are_identity_bound_and_aggregate_before_publication():
     assert step('aggregate', 'Retain aggregate campaign inputs and status')['if'] == 'always()'
 
 
-def test_publication_is_isolated_from_candidate_execution_and_release_only():
+def test_stock_execution_requires_no_repository_signing_secret():
     data = workflow()
-    publication = data['jobs']['publication']
-    assert publication['needs'] == ['discover', 'aggregate']
-    assert "needs.discover.outputs.campaign_scope == 'full'" in publication['if']
-    assert "needs.aggregate.result == 'success'" in publication['if']
-    assert publication['permissions'] == {'actions': 'read', 'contents': 'write'}
-    assert publication['concurrency']['cancel-in-progress'] in {False, 'false'}
-    assert step('publication', 'Download completed campaign')['with']['name'] == 'dwarf-security-campaign-status'
-    verifier = step('publication', 'Reverify and sign opaque publication assets')
-    assert 'DWARF_CAMPAIGN_PUBLISHING_KEY_PEM' in json.dumps(verifier)
-    assert 'ci_publish_campaign.py' in verifier['run']
-    assert '--manifest publication-input/campaign-runtime/selected-manifest.json' in verifier['run']
-    assert '--state publication-input/campaign-runtime/selected/state.json' in verifier['run']
-    release = step('publication', 'Publish immutable campaign assets and rolling indexes')['run']
-    assert 'gh release create' in release and 'gh release upload' in release
-    assert 'cmp ' in release
+    assert 'publication' not in data['jobs']
     text = WORKFLOW.read_text()
-    assert 'pages: write' not in text
-    assert 'id-token: write' not in text
+    assert 'secrets.' not in text
+    assert 'contents: write' not in text
+    assert 'gh release create' not in text
     assert 'git push' not in text
-    assert 'gh pr merge' not in text
 
 
 def test_all_inline_python_and_shell_syntax_is_valid():
@@ -327,10 +312,10 @@ def test_complete_push_discovery_retains_every_changed_directory(tmp_path, monke
     assert [row['candidate_name'] for row in document['candidates']] == ['one', 'two']
     assert document['removed_candidates'] == [['amaru', 'removed']]
     assert document['trusted_revision'] == 'c' * 40
-    assert document['campaign_scope'] == 'full'
+    assert document['campaign_scope'] == 'stock-amaru'
     assert document['execution_blocker'] == 'candidate-build-prerequisites-unresolved'
     assert document['official_selection'] == []
-    assert outputs.read_text() == 'has_work=true\ncampaign_scope=full\n'
+    assert outputs.read_text() == 'has_work=true\ncampaign_scope=stock-amaru\n'
     assert calls[0][0][1] == ('ls-tree' if initial else 'diff')
     assert calls[0][1]['cwd'] == submitted
 

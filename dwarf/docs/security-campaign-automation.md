@@ -1,33 +1,23 @@
 # Security campaign automation
 
 `.github/workflows/dwarf-security-campaign.yml` implements zero-configuration
-GitHub-hosted discovery, Amaru stock and patched builds, and build-artifact staging. A push that
+GitHub-hosted discovery, stock Amaru builds, and build-artifact staging. A push that
 changes `dwarf/testplease/**` starts the flow. Manual dispatch processes the
 currently tracked Amaru candidates. Candidate compilation and every follow-on job
 run on disposable `ubuntu-latest` runners.
 
-The variant builds and disposable runtime registration are functional. The prepare
-job loads each verified Docker archive, pushes it only to a job-local registry, and
-freezes the resulting manifest digest, image config ID, executable digest, source
-identity, selected Cardano release and six initial real-node security cases. It
-does not reuse same-version compatibility evidence from an official Amaru build.
-The frozen plan starts at `runtime-compatibility-qualification-pending`. Each
-isolated runner then runs the existing real-node qualification against the exact
-candidate and Cardano artifacts. No scenario starts unless every qualification
-gate passes. The runner installs the official Cardano 11.1.2 `cardano-testnet`,
-`cardano-cli` and `cardano-node` support binaries from the architecture-specific
-release archive only after its committed SHA-256 matches. These tools create and
-inspect the isolated Docker devnet; they do not replace either frozen node image.
-After preparation, two calibration runners evaluate stock and patched artifacts.
-A selector freezes one primary lane. GitHub then assigns each security entry,
-grouped measurement recipe and required stock replay to its own matrix runner.
-The matrix uses `fail-fast: false`, so one failed workload does not cancel sibling
-evidence. An aggregation job rejects missing, duplicate or identity-mismatched
-shards and evaluates one combined campaign. Candidate compilation and execution
-keep only `contents: read`. A separate job receives `contents: write` only after a
-complete successful aggregate, reverifies opaque archive receipts and
-signatures, then publishes content-addressed release assets and rolling indexes.
-It never commits, merges, extracts an archive, or receives candidate-controlled code.
+The default is the bounded stock Amaru proof. Preparation retains exact candidate
+source, executable and image identities. The frozen plan begins at
+`runtime-compatibility-qualification-pending`; the existing runtime qualification
+must pass before scenarios start. The existing `ci_security_campaign.py` runner
+uses the local DWARF scenario and export paths, with owned-resource cleanup.
+
+Cardano-solo, mixed, patched and compiler-coverage support are retained for future
+validation, not enabled by the default scope. All execution jobs run on
+`ubuntu-latest` with read-only repository permissions. No `contents: write`
+permission or repository signing secret is required. The runner stages synthetic
+Git identity metadata in `synthetic-git.json`; it does not execute candidate build
+hooks during discovery or change the ordinary local DWARF pipeline.
 
 ## Submission and reviewed selection
 
@@ -48,13 +38,16 @@ all candidate layouts and rejects ambiguity, unsafe names and escaping symlinks.
 The complete tree digest includes build support, executable bits and symlink text.
 The repository commit, source digest and each variant plan digest are retained.
 
-Manual dispatch exposes one reviewed choice: `stock-solo` or `full`. It builds
-all tracked Amaru candidates; it accepts no client command, scenario, image or
-version input. `stock-solo` is the default manual scope. Push-triggered campaigns
-and the complete campaign path use `full`.
-The weekly schedule only refreshes and retains official-release metadata for
-review; it does not build or execute an unreviewed release. Refresh does not modify
-the committed version catalog or silently select a release for execution.
+Manual dispatch defaults to `stock-amaru`. A source push also uses `stock-amaru`.
+This builds only stock Amaru, performs its calibration, runs its existing control
+and measured scenario, and verifies the resulting evidence. It does not wait for
+Cardano-solo or mixed workloads. The support devnet still uses Cardano producer
+and qualification nodes required by the existing Amaru runtime.
+
+`stock-solo` (Amaru then Cardano) and `full` (the wider campaign) remain available
+for later validation. Their job definitions are preserved; they are not part of
+the default run or a claim of current end-to-end success. The weekly metadata
+schedule has been removed from this execution workflow.
 
 Trusted tools are checked out separately from the default branch and their exact
 revision is retained. Submitted source is checked out separately at the event SHA
@@ -212,7 +205,7 @@ and the aggregate are retained for **30 days** as Actions artifacts. They are
 evidence for this workflow run, not published reports.
 Preserve sealed runs, checkpoint files, frozen inputs, raw exercise evidence,
 archive/signature receipts and cleanup errors before disposable workers are removed.
-Long-term signed evidence belongs in immutable release assets after verification.
+Download evidence before artifact expiry; automatic release publication is currently deferred.
 Actions expiration alone must never trigger destructive cleanup or an automatic rerun.
 
 An explicit retry uses the same candidate snapshot, suite digest, catalog binding
@@ -234,33 +227,14 @@ Never infer ownership from a broad prefix or perform global Docker pruning.
 
 ## Publication boundary
 
-The build, preparation, calibration, workload and aggregation jobs have read-only
-repository authority and no publication secret. After aggregation returns success,
-an isolated publication job
-downloads that run's retained artifact, checks the frozen campaign/evaluation
-identity, every receipt hash, and every workflow-local Ed25519 archive signature.
-It treats archives as opaque bytes and never extracts or executes them. It then
-re-signs those exact bytes with `DWARF_CAMPAIGN_PUBLISHING_KEY_PEM`; the matching
-public key and fingerprint are pinned in `docs/evidence/trusted-publishers.json`.
+The current workflow retains downloadable Actions artifacts for 30 days. It does
+not publish releases or change Pages defaults. It requires no repository signing
+secret or user-supplied signing key. Native evidence receipts continue to use an
+automatically generated temporary per-job key; this needs no user configuration.
 
-Each campaign gets a digest-named GitHub Release. Archive filenames include their
-SHA-256, and an existing asset must byte-match on retry. The rolling
-`dwarf-campaign-results` release carries the validated compact campaign catalog and
-a Pages-default manifest. A patched-primary release also records
-`patched-primary-stock-confirmed` or `patched-primary-stock-disagrees`, and uses
-the retained stock classification as its publication result. A release records a
-`pass` or `finding` classification; it does not turn a finding into success.
-Failed readiness, incomplete replay, incomplete measurement
-evidence, infrastructure-invalid evidence, cleanup errors, missing pins, or a key
-mismatch block publication while the original Actions artifact remains retained.
-
-The Pages workflow runs after a successful security workflow. It validates the
-rolling catalog against the committed publisher pin, downloads only catalog-bound
-assets, verifies their exact size and SHA-256, and stages them under the Pages
-origin. Automatic defaults remain bounded to ten archives, 10 MiB each and 25 MiB
-total; all other verified archives remain available from their campaign release for
-manual import. Neither workflow commits, pushes, merges, or grants Pages authority
-to candidate execution.
+The former release-publication job and its repository-secret requirement have
+been removed. Pages retains its independent push/manual workflow. Publishing new
+campaigns to Releases or Pages is deferred; it must not block the working Amaru run.
 
 ## Focused offline verification
 

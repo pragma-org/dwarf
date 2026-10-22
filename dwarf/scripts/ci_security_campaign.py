@@ -842,6 +842,7 @@ class LocalRuntime:
         self.owned_projects = set()
         self._profile_projects = {}
         self.builds = []
+        self._image_executable_hashes = {}
         self.qualified_topology_ids = set()
         self._last_command_result = None
 
@@ -1497,6 +1498,66 @@ class LocalRuntime:
             raise ValueError("materialized security execution differs from the frozen contract")
         plan["campaign_execution_digest"] = _digest(execution)
 
+    def _native_artifact_bindings(self, manifest, topology, mode, run_dir):
+        """Retain CI-only executable identities for native image-based evidence."""
+        bindings = {}
+        for node in topology["nodes"]:
+            identity = node["identity"]
+            implementation = node["implementation"]
+            helper = {"amaru": "amaru", "cardano-node": "cardano"}.get(implementation)
+            if helper is None:
+                continue
+            path = Path(run_dir) / f"outputs/{helper}-measurement-calibration/result.json"
+            if not path.is_file():
+                continue
+            observed = json.loads(path.read_text()).get("target") or {}
+            expected_mode = mode if identity["kind"] == "candidate" else identity.get("mode", "stock")
+            if (any(observed.get(key) != identity[key] for key in ("implementation", "version", "source_revision"))
+                    or observed.get("mode") != expected_mode):
+                continue
+            artifacts = identity["artifacts"]
+            if identity["kind"] == "candidate":
+                build = next((row for row in self.builds if row.get("mode") == mode), {})
+                if build.get("source") != manifest["candidate"]:
+                    raise ValueError("native evidence has no verified candidate build")
+                artifacts = build.get("artifacts") or {}
+            image_digest = artifacts.get("image_digest")
+            if (not re.fullmatch(r"sha256:[0-9a-f]{64}", str(image_digest))
+                    or observed.get("image_digest") != image_digest):
+                continue
+            executable = artifacts.get("executable_digest")
+            basis = "retained-candidate-build" if identity["kind"] == "candidate" else "frozen-release-artifact"
+            if not executable and identity["kind"] == "release":
+                cache_key = (implementation, image_digest)
+                if cache_key not in self._image_executable_hashes:
+                    images = [row for row in identity.get("release", {}).get("artifacts", [])
+                              if row.get("kind") == "oci" and row.get("digest") == image_digest
+                              and row.get("availability") == "available"]
+                    if len(images) != 1:
+                        raise ValueError("native evidence has no unique frozen release image")
+                    repository = images[0]["reference"].split("@", 1)[0]
+                    if repository.rfind(":") > repository.rfind("/"):
+                        repository = repository[:repository.rfind(":")]
+                    binary = {"amaru": "amaru", "cardano-node": "cardano-node"}[implementation]
+                    output = self._command(["docker", "run", "--rm", "--pull=never", "--network", "none",
+                        "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                        "--entrypoint", "/bin/sh", repository + "@" + image_digest,
+                        "-c", 'exec sha256sum "$(command -v ' + binary + ')"'])
+                    match = re.fullmatch(r"([0-9a-f]{64})\s+\S+\s*", output)
+                    if match is None:
+                        raise ValueError("immutable image did not report one executable hash")
+                    self._image_executable_hashes[cache_key] = "sha256:" + match.group(1)
+                executable = self._image_executable_hashes[cache_key]
+                basis = "immutable-image-executable-hash"
+            if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(executable)):
+                raise ValueError("native evidence lacks a verified executable identity")
+            bindings[node["node_id"]] = {**{key: identity[key] for key in ("implementation", "version", "source_revision")},
+                "mode": expected_mode, "image_digest": image_digest, "executable_digest": executable,
+                "identity_basis": basis}
+        if bindings:
+            _save(self.directory / "inputs" / (Path(run_dir).name + "-artifact-bindings.json"), bindings)
+        return bindings
+
     def run(self, manifest, scenario_id, *, entry=None, execution_entry=None, cell=None, plan_cell=None, mode="stock", control=None, topology_id=None):
         from profile_manager.launch_store import create_launch
         if not _ID.fullmatch(scenario_id) or scenario_id not in manifest["definitions"]["scenarios"]:
@@ -1522,6 +1583,8 @@ class LocalRuntime:
         run_root = self.runs
         run_root.mkdir(parents=True, exist_ok=True)
         before = {path.name for path in run_root.iterdir() if path.is_dir()}
+        from scripts import ci_cardano_health
+        health_observation = ci_cardano_health.begin(manifest, topology, mode, plan, bound_cell, launch["launch_id"])
         try:
             output = self._command([sys.executable, "dwarf/cardano-profile", "scenario", "run",
                 str(launch["path"] / "scenario.yaml"), "--backend", "local-devnet", "--origin", "ci",
@@ -1551,12 +1614,15 @@ class LocalRuntime:
             )
         run_id = ids[0]
         run_dir = self.runs / run_id
+        health_observations = ci_cardano_health.finish(health_observation, run_dir)
         from profile_manager.campaign_runtime_evidence import read_native_evidence
         return read_native_evidence(manifest, run_dir, scenario_id=scenario_id, topology=topology,
-                                    mode=mode, plan=plan, entry=entry, cell=bound_cell, control=control)
+                                    mode=mode, plan=plan, entry=entry, cell=bound_cell, control=control,
+                                    artifact_bindings=self._native_artifact_bindings(manifest, topology, mode, run_dir),
+                                    health_observations=health_observations)
 
     def calibration_result(self, run_id):
-        if not _ID.fullmatch(str(run_id)):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", str(run_id)):
             raise ValueError("calibration result requires a canonical run ID")
         path = (
             self.runs

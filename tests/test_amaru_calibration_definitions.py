@@ -79,6 +79,22 @@ def test_campaign_calibration_scenarios_resolve_the_active_profile_runtime():
         assert "runtime_root" not in load
 
 
+def test_campaign_calibration_scenarios_require_their_single_completed_load():
+    expected = [
+        {
+            "primitive": "load_events_are_ok",
+            "min_completed": 1,
+            "min_event_count": 1,
+        }
+    ]
+
+    for scenario_id in (
+        "amaru-measurement-overhead-calibration-stock",
+        "amaru-measurement-overhead-calibration-patched",
+    ):
+        assert _document(scenario_id)["assertions"] == expected
+
+
 def test_calibration_helper_default_is_installed_source_relative():
     helper = Path(RuntimeAmaruMeasurementCalibration._DEFAULT_HELPER)
 

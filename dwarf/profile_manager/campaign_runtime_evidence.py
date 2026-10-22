@@ -469,7 +469,68 @@ def _normalized_signals(tap_id, rows, result, *, collector=None):
     return samples, events
 
 
-def read_native_evidence(manifest, run_dir, *, scenario_id, topology, mode, plan, entry=None, cell=None, control=None):
+def _resource_node_binding(measured, collector, samples, node_id, helper):
+    """Project a native service alias only through a retained container observation."""
+    if measured.get("measurement_id") not in {"amaru-stock-resources", "cardano-stock-resources"}:
+        return None
+    target = collector.get("target") or {}
+    alias, container = target.get("node"), target.get("container_id")
+    observer = (helper or {}).get("observer") or {}
+    observed = observer.get("container")
+    identity = measured.get("target") or {}
+    if (not helper or not helper.get("healthy") or not samples
+            or not isinstance(alias, str) or not alias or alias == node_id
+            or not isinstance(container, str) or not re.fullmatch(r"[0-9a-f]{64}", container)
+            or not isinstance(observed, str) or not re.fullmatch(r"[0-9a-f]{12,64}", observed)
+            or not container.startswith(observed)
+            or observer.get("implementation") != identity.get("implementation")
+            or any(identity.get(key) != helper["target"].get(key) for key in
+                   ("implementation", "version", "source_revision", "image_digest", "mode"))):
+        return None
+    for sample in samples:
+        if (not isinstance(sample, dict) or sample.get("target_node") != alias
+                or sample.get("node_id") not in {None, node_id}
+                or sample.get("container_id") != container
+                or sample.get("container_name") != target.get("container_name")):
+            return None
+    projected = [dict(sample, native_target_node=alias, target_node=node_id) for sample in samples]
+    binding = {"native_target_node": alias, "node_id": node_id, "container_id": container,
+               "observer_container": observed, "helper_artifact": helper["artifact"]}
+    return projected, binding
+
+
+def _bound_native_target(target, node_id, artifact_bindings):
+    """Carry a verified image's executable identity into the CI projection."""
+    binding = (artifact_bindings or {}).get(node_id) or {}
+    keys = ("implementation", "version", "source_revision", "image_digest", "mode")
+    if (target.get("executable_digest") is None
+            and _DIGEST.fullmatch(str(binding.get("image_digest") or ""))
+            and _DIGEST.fullmatch(str(binding.get("executable_digest") or ""))
+            and all(target.get(key) == binding.get(key) for key in keys)):
+        return {**target, "executable_digest": binding["executable_digest"]}
+    return target
+
+
+def _project_tap_definition(manifest, run_dir, tap_id, measured):
+    """Bridge native source-byte hashes to the campaign's frozen document hash."""
+    frozen = manifest["definitions"]["measurements"][tap_id]
+    source_digest = frozen.get("source_digest")
+    if not source_digest or measured.get("correlation", {}).get("definition_digest") != source_digest:
+        return measured
+    selection = _json(run_dir, "measurements/selection.json", {})
+    selected = [row for row in selection.get("resolution", {}).get("available", []) if row.get("id") == tap_id]
+    if (len(selected) != 1 or selected[0].get("definition_digest") != source_digest
+            or selected[0].get("definition") != frozen["document"]
+            or _digest(selected[0]["definition"]) != frozen["digest"]):
+        return measured
+    projected = deepcopy(measured)
+    projected["correlation"]["definition_digest"] = frozen["digest"]
+    projected["provenance"] = {**projected.get("provenance", {}), "native_definition_digest": source_digest}
+    return projected
+
+
+def read_native_evidence(manifest, run_dir, *, scenario_id, topology, mode, plan, entry=None, cell=None, control=None,
+                         artifact_bindings=None, health_observations=None):
     run_dir = Path(run_dir)
     run_id = run_dir.name
     native = _json(run_dir, "manifest.json", {})
@@ -506,6 +567,7 @@ def read_native_evidence(manifest, run_dir, *, scenario_id, topology, mode, plan
     # Existing calibration legs retain positive wire controls and independent
     # process/progress observations. Their helper-local run_id names an output
     # subdirectory; containment in this canonical run binds the actual run ID.
+    helper_bindings = {}
     for implementation in ("amaru", "cardano"):
         relative = f"outputs/{implementation}-measurement-calibration"
         report = _json(run_dir, relative + "/result.json", {})
@@ -514,13 +576,26 @@ def read_native_evidence(manifest, run_dir, *, scenario_id, topology, mode, plan
         if len(matching) != 1:
             continue
         node_id = matching[0]
+        target = _bound_native_target(target, node_id, artifact_bindings)
         if node_id in targets and targets[node_id] != target:
             raise ValueError("conflicting native target identity observations")
         targets[node_id] = deepcopy(target)
-        checks = (report.get("target_health") or {}).get("checks", {})
+        health = report.get("target_health") or {}
+        health_artifact = relative + "/result.json"
+        observed_health = (health_observations or {}).get(node_id) or {}
+        if (implementation == "cardano" and "target_health" not in report and observed_health.get("run_id") == run_id
+                and observed_health.get("campaign_digest") == manifest["campaign_digest"]
+                and observed_health.get("node_id") == node_id
+                and observed_health.get("target") == report.get("target")
+                and _json(run_dir, "outputs/ci-cardano-health/result.json") == observed_health):
+            health = observed_health
+            health_artifact = "outputs/ci-cardano-health/result.json"
+        checks = health.get("checks", {})
         required_checks = {"target_running_before", "target_running_after", "target_not_oom_killed",
                            "target_restart_count_unchanged", "honest_chain_progressed", "no_fatal_signals"}
-        healthy = all(checks.get(key) is True for key in required_checks)
+        healthy = not health.get("errors") and all(checks.get(key) is True for key in required_checks)
+        helper_bindings[node_id] = {"target": target, "healthy": healthy,
+            "observer": health.get("observer"), "artifact": health_artifact}
         for attempt in _ndjson(run_dir, relative + "/attempts.ndjson"):
             try:
                 request = bytes.fromhex(attempt.get("request_hex", ""))
@@ -575,6 +650,13 @@ def read_native_evidence(manifest, run_dir, *, scenario_id, topology, mode, plan
             continue
         if measured.get("run_id") != run_id or measured.get("measurement_id") != tap_id:
             raise ValueError("native per-tap result belongs to another run/tap")
+        measured = _project_tap_definition(manifest, run_dir, tap_id, measured)
+        target = _bound_native_target(measured.get("target", {}), required["node_id"], artifact_bindings)
+        if target != measured.get("target"):
+            measured = deepcopy(measured)
+            measured["target"] = target
+            measured["provenance"] = {**measured.get("provenance", {}),
+                "campaign_artifact_binding": deepcopy(artifact_bindings[required["node_id"]])}
         samples, normalized = [], []
         collector = {}
         for artifact in measured.get("artifacts", []):
@@ -604,6 +686,13 @@ def read_native_evidence(manifest, run_dir, *, scenario_id, topology, mode, plan
                 measured["sample_count"] = 1
         # Bind only a reported node, or a unique implementation in this topology.
         reported = (collector.get("target") or {}).get("node")
+        binding = _resource_node_binding(measured, collector, samples, required["node_id"],
+                                         helper_bindings.get(required["node_id"]))
+        if binding is not None:
+            samples, lineage = binding
+            reported = required["node_id"]
+            measured = deepcopy(measured)
+            measured["provenance"] = {**measured.get("provenance", {}), "campaign_node_binding": lineage}
         signals = samples + normalized
         ids = {row.get("target_node", row.get("node_id")) for row in signals} - {None}
         if tap_id == "cardano-patched-txsubmission-residence":

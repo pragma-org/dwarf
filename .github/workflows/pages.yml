@@ -13,9 +13,6 @@ on:
       - dwarf/spec/v1/campaign-publication.schema.json
       - .github/workflows/pages.yml
   workflow_dispatch:
-  workflow_run:
-    workflows: ["DWARF security campaign"]
-    types: [completed]
 
 permissions:
   contents: read
@@ -29,7 +26,6 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

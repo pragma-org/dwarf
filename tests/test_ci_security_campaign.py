@@ -274,12 +274,13 @@ def test_calibration_phase_prepares_and_removes_its_profile_recipe(campaign, tmp
     assert state["cells"]["calibration:stock"]["status"] == "complete"
 
 
-def test_local_runtime_reads_only_the_canonical_calibration_result(tmp_path):
+@pytest.mark.parametrize("run_id", ["run-1", "20261021T231743Z-e19ab420"])
+def test_local_runtime_reads_only_the_canonical_calibration_result(tmp_path, run_id):
     runtime = api.LocalRuntime.__new__(api.LocalRuntime)
     runtime.runs = tmp_path / "runs"
     result_path = (
         runtime.runs
-        / "run-1"
+        / run_id
         / "outputs"
         / "amaru-measurement-calibration"
         / "result.json"
@@ -288,7 +289,7 @@ def test_local_runtime_reads_only_the_canonical_calibration_result(tmp_path):
     expected = calibration_leg("patched")
     result_path.write_text(json.dumps(expected))
 
-    assert runtime.calibration_result("run-1") == expected
+    assert runtime.calibration_result(run_id) == expected
     with pytest.raises(ValueError, match="canonical run ID"):
         runtime.calibration_result("../run-1")
 
@@ -2573,3 +2574,117 @@ def test_malformed_execution_contract_topology_rejects_before_runtime(campaign, 
     with pytest.raises(ValueError, match='execution contract topology must be an object'):
         run(campaign, tmp_path, runtime=runtime)
     assert runtime.calls == []
+
+@pytest.mark.parametrize("mismatch", [None, "container", "alias", "target", "observer"])
+def test_native_resource_service_alias_requires_same_observed_container(campaign, tmp_path, mismatch):
+    from profile_manager.campaign_runtime_evidence import read_native_evidence
+    campaign, cell = single_cell(campaign)
+    ev = evidence(campaign)
+    result = measurement(campaign, cell, ev)["result"]
+    result["result_kind"] = "resource"
+    run_dir = tmp_path / result["run_id"]
+    collector = run_dir / "measurements/collectors" / cell["measurement_id"]
+    collector.mkdir(parents=True)
+    tap = run_dir / "measurements" / cell["measurement_id"]
+    tap.mkdir(parents=True)
+    helper = run_dir / "outputs/amaru-measurement-calibration"
+    helper.mkdir(parents=True)
+    container_id = "ab" * 32
+    sample = {"target_node": "amaru-relay-1", "container_id": container_id,
+              "container_name": "test-amaru-relay-1", "rss_bytes": 4096, "sample_index": 0}
+    target = deepcopy(result["target"])
+    observer = {"container": container_id[:12], "implementation": "amaru"}
+    if mismatch == "container": sample["container_id"] = "cd" * 32
+    if mismatch == "alias": sample["target_node"] = "amaru-relay-2"
+    if mismatch == "target": target["image_digest"] = "sha256:" + "e" * 64
+    if mismatch == "observer": observer["container"] = "cd" * 6
+    (helper / "result.json").write_text(json.dumps({"target": target, "target_health": {
+        "observer": observer, "checks": {key: True for key in (
+            "target_running_before", "target_running_after", "target_not_oom_killed",
+            "target_restart_count_unchanged", "honest_chain_progressed", "no_fatal_signals")}}}))
+    (collector / "samples.json").write_text(json.dumps([sample]))
+    (collector / "result.json").write_text(json.dumps({"target": {
+        "node": "amaru-relay-1", "container_id": container_id,
+        "container_name": "test-amaru-relay-1"}}))
+    result["artifacts"] = [f"measurements/collectors/{cell['measurement_id']}/{name}"
+                           for name in ("samples.json", "result.json")]
+    (tap / "result.json").write_text(json.dumps(result))
+    control = {"control": measurement(campaign, cell, ev)["normal_control"]}
+    output = read_native_evidence(campaign, run_dir, scenario_id=cell["scenario_id"],
+                                 topology=campaign["topologies"][0], mode="stock", plan={}, cell=cell, control=control)
+    if mismatch:
+        assert output["measurements"] == []
+        return
+    assert len(output["measurements"]) == 1
+    row = output["measurements"][0]
+    assert row["samples"][0]["target_node"] == cell["node_id"]
+    assert row["samples"][0]["native_target_node"] == "amaru-relay-1"
+    assert json.loads((collector / "samples.json").read_text()) == [sample]
+    ev["measurements"] = [row]
+    assert evaluate_campaign_evidence(campaign, ev)["measurement_completeness"]["measurement_complete"] is True
+
+@pytest.mark.parametrize("mismatch", [None, "definition", "binding-source", "native-executable"])
+def test_native_tap_provenance_bridges_exact_frozen_source_and_image(campaign, tmp_path, mismatch):
+    from profile_manager.campaign_runtime_evidence import read_native_evidence
+    campaign, cell = single_cell(campaign)
+    ev = evidence(campaign)
+    result = measurement(campaign, cell, ev)["result"]
+    binding = deepcopy(result["target"])
+    result["target"].pop("executable_digest")
+    if mismatch == "binding-source": binding["source_revision"] = "e" * 40
+    if mismatch == "native-executable": result["target"]["executable_digest"] = "sha256:" + "e" * 64
+    frozen = campaign["definitions"]["measurements"][cell["measurement_id"]]
+    source_digest = frozen["source_digest"]
+    result["correlation"]["definition_digest"] = source_digest
+    selected = {"id": cell["measurement_id"], "definition_digest": source_digest,
+                "definition": deepcopy(frozen["document"])}
+    if mismatch == "definition": selected["definition"]["title"] = "Changed definition"
+    run_dir = tmp_path / result["run_id"]
+    tap_dir = run_dir / "measurements" / cell["measurement_id"]
+    collector = run_dir / "measurements/collectors" / cell["measurement_id"]
+    collector.mkdir(parents=True); tap_dir.mkdir(parents=True)
+    (run_dir / "measurements/selection.json").write_text(json.dumps({"resolution": {"available": [selected]}}))
+    result["artifacts"] = [f"measurements/collectors/{cell['measurement_id']}/samples.json"]
+    (collector / "samples.json").write_text(json.dumps([{"target_node": "node1", "rss_bytes": 4096, "sample_index": 0}]))
+    (tap_dir / "result.json").write_text(json.dumps(result))
+    native = read_native_evidence(campaign, run_dir, scenario_id=cell["scenario_id"], topology=campaign["topologies"][0],
+        mode="stock", plan={}, cell=cell, control={"control": measurement(campaign, cell, ev)["normal_control"]},
+        artifact_bindings={"node1": binding})
+    ev["measurements"] = native["measurements"]
+    evaluated = evaluate_campaign_evidence(campaign, ev)["measurement_completeness"]
+    assert evaluated["measurement_complete"] is (mismatch is None)
+    assert json.loads((tap_dir / "result.json").read_text()) == result
+    if mismatch is None:
+        projected = native["measurements"][0]["result"]
+        assert projected["provenance"]["native_definition_digest"] == source_digest
+        assert projected["target"]["executable_digest"] == binding["executable_digest"]
+
+@pytest.mark.parametrize("kind", ["candidate", "release"])
+def test_ci_artifact_bindings_keep_executable_identity_out_of_local_flow(campaign, tmp_path, monkeypatch, kind):
+    runtime = api.LocalRuntime(tmp_path, catalog_path=tmp_path/'catalog.json', producer_version='11.1.2', signing_key=tmp_path/'key')
+    runtime.builds = evidence(campaign)['builds']
+    node = deepcopy(campaign['topologies'][0]['nodes'][0])
+    observed = deepcopy(evidence(campaign)['security'][0]['targets']['node1'])
+    image = observed['image_digest']
+    if kind == 'release':
+        node['implementation'] = node['identity']['implementation'] = observed['implementation'] = 'cardano-node'
+        node['identity']['kind'] = 'release'
+        node['identity']['artifacts']['image_digest'] = image
+        node['identity']['release'] = {'artifacts': [{'kind':'oci','availability':'available','digest':image,'reference':'example/cardano:reviewed'}]}
+    folder = tmp_path/'runs/run-1'/('outputs/amaru-measurement-calibration' if kind=='candidate' else 'outputs/cardano-measurement-calibration')
+    folder.mkdir(parents=True)
+    (folder/'result.json').write_text(json.dumps({'target':observed}))
+    calls=[]
+    def command(argv, **kwargs):
+        calls.append(argv)
+        return 'f'*64 + '  /usr/local/bin/cardano-node\n'
+    monkeypatch.setattr(runtime, '_command', command)
+    bindings = runtime._native_artifact_bindings(campaign, {'nodes':[node]}, 'stock', tmp_path/'runs/run-1')
+    assert bindings['node1']['executable_digest'] == ('sha256:'+'f'*64 if kind=='release' else observed['executable_digest'])
+    if kind=='release':
+        assert '--network' in calls[0] and 'none' in calls[0] and '--read-only' in calls[0]
+        assert 'example/cardano@'+image in calls[0]
+    else:
+        assert calls == []
+    runtime._native_artifact_bindings(campaign, {'nodes':[node]}, 'stock', tmp_path/'runs/run-1')
+    assert len(calls) == (1 if kind=='release' else 0)

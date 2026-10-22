@@ -11,13 +11,11 @@ def workflow():
     return yaml.safe_load(WORKFLOW.read_text())
 
 
-def test_pages_redeploys_only_after_successful_campaign_workflow():
+def test_pages_remains_independent_of_campaign_execution():
     data = workflow()
     triggers = data[True]
-    assert triggers["workflow_run"]["workflows"] == ["DWARF security campaign"]
-    assert triggers["workflow_run"]["types"] == ["completed"]
-    job = data["jobs"]["deploy"]
-    assert "workflow_run.conclusion == 'success'" in job["if"]
+    assert set(triggers) == {"push", "workflow_dispatch"}
+    assert "if" not in data["jobs"]["deploy"]
     assert data["permissions"] == {"contents": "read", "actions": "read", "pages": "write", "id-token": "write"}
 
 

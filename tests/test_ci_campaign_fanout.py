@@ -315,3 +315,76 @@ def test_aggregate_rejects_altered_checkpoint(manifests, tmp_path):
 
     with pytest.raises(ValueError, match="checkpoint digest"):
         api.aggregate_execution(selected, stock, inventory, [state_path], tmp_path / "aggregate")
+
+
+def test_rebase_native_export_ignores_other_signature_copy(tmp_path):
+    import hashlib
+    from pathlib import Path
+
+    lane = tmp_path / 'shard'
+    runtime = lane / 'campaign-runtime'
+    run_id = '20261022T053847Z-73c9f65b'
+    export = runtime / 'runs' / run_id / 'outputs' / 'export'
+    export.mkdir(parents=True)
+    other = export.parent / 'signature'
+    other.mkdir()
+    (other / 'signature.json').write_bytes(b'other signature')
+    receipt = {'run_id': run_id}
+    for field, name in [('archive', run_id + '-bundle-export.tar.gz'), ('signature', 'signature.json')]:
+        payload = field.encode()
+        (export / name).write_bytes(payload)
+        receipt[field] = '/old/job/campaign-runtime/runs/' + run_id + '/outputs/export/' + name
+        receipt[field + '_sha256'] = hashlib.sha256(payload).hexdigest()
+    state = {'cells': {'cell': {'archives': [receipt]}}}
+    api._rebase_receipts(state, runtime / 'primary/state.json', tmp_path / 'aggregate')
+    assert Path(receipt['signature']).read_bytes() == b'signature'
+
+
+@pytest.mark.parametrize('problem', ['tampered', 'symlink'])
+def test_rebase_native_export_rejects_invalid_source(tmp_path, problem):
+    import hashlib
+
+    runtime = tmp_path / 'shard/campaign-runtime'
+    run_id = 'run-example'
+    export = runtime / 'runs' / run_id / 'outputs/export'
+    export.mkdir(parents=True)
+    name = run_id + '-bundle-export.tar.gz'
+    if problem == 'symlink':
+        outside = tmp_path / 'outside'
+        outside.write_bytes(b'expected')
+        (export / name).symlink_to(outside)
+    else:
+        (export / name).write_bytes(b'tampered')
+    receipt = {'run_id': run_id, 'archive': '/old/runs/' + run_id + '/outputs/export/' + name,
+               'archive_sha256': hashlib.sha256(b'expected').hexdigest()}
+    with pytest.raises(ValueError):
+        api._rebase_receipts({'cells': {'cell': {'archives': [receipt]}}}, runtime / 'primary/state.json', tmp_path / 'aggregate')
+
+
+def test_stock_amaru_scope_completes_without_cardano_and_rejects_extra_items():
+    inventory = {
+        "kind": "campaign-work-item-inventory", "campaign_digest": "sha256:" + "a" * 64,
+        "items": [
+            {"item_id": "amaru", "kind": "measurement", "phase": "amaru-solo",
+             "implementation": "amaru", "mode": "stock", "measurement_ids": ["amaru-stock-resources"]},
+            {"item_id": "cardano", "kind": "measurement", "phase": "cardano-solo",
+             "implementation": "cardano-node", "mode": "stock", "measurement_ids": ["cardano-stock-resources"]},
+            {"item_id": "mixed", "kind": "security", "phase": "mixed"},
+        ],
+        "blockers": [{"measurement_id": "not-exercised-by-this-proof"}],
+    }
+    scoped = api.scope_execution_inventory(inventory, "stock-amaru")
+    assert [row["item_id"] for row in scoped["items"]] == ["amaru"]
+    assert scoped["inventory_digest"] == api.inventory_digest(scoped)
+    assert scoped["deferred_full_campaign_blockers"] == inventory["blockers"]
+    result = api.stock_solo_proof_status(scoped, item_success=True, readiness_passed=True, cleanup_errors=[])
+    assert result["status"] == "complete"
+    assert result["proof_scope"] == "stock-amaru"
+    assert result["measurement_completeness"] == "scoped-complete"
+    assert result["security_result"] == "not-run"
+    for overrides in ({"item_success": False}, {"readiness_passed": False}, {"cleanup_errors": ["residue"]}):
+        arguments = dict(item_success=True, readiness_passed=True, cleanup_errors=[])
+        arguments.update(overrides)
+        assert api.stock_solo_proof_status(scoped, **arguments)["status"] == "incomplete"
+    scoped["items"].append(inventory["items"][1])
+    assert api.stock_solo_proof_status(scoped, item_success=True, readiness_passed=True, cleanup_errors=[])["status"] == "incomplete"

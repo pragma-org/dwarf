@@ -71,23 +71,26 @@ def scope_execution_inventory(inventory, scope):
 
     if scope == "full":
         return deepcopy(inventory)
-    if scope != "stock-solo":
+    if scope not in {"stock-solo", "stock-amaru"}:
         raise ValueError("campaign execution scope is invalid")
+    phases = {"amaru-solo"} if scope == "stock-amaru" else {"amaru-solo", "cardano-solo"}
     candidates = [
         deepcopy(item)
         for item in inventory.get("items", [])
         if item.get("kind") == "measurement"
         and item.get("mode") == "stock"
-        and item.get("phase") in {"amaru-solo", "cardano-solo"}
+        and item.get("phase") in phases
     ]
     expected = {
         ("amaru", "amaru-solo"),
         ("cardano-node", "cardano-solo"),
     }
+    if scope == "stock-amaru":
+        expected = {("amaru", "amaru-solo")}
     observed = {(item.get("implementation"), item.get("phase")) for item in candidates}
-    if observed != expected or len(candidates) != 2:
+    if observed != expected or len(candidates) != len(expected):
         raise ValueError(
-            "stock-solo proof requires exactly one Amaru and one Cardano stock measurement recipe"
+            f"{scope} proof requires exactly one stock measurement recipe per selected implementation"
         )
     proof_measurements = {
         "amaru": "amaru-stock-resources",
@@ -98,7 +101,7 @@ def scope_execution_inventory(inventory, scope):
         measurement_id = proof_measurements[item["implementation"]]
         if measurement_id not in item.get("measurement_ids", []):
             raise ValueError(
-                f"stock-solo proof measurement is absent: {measurement_id}"
+                f"{scope} proof measurement is absent: {measurement_id}"
             )
         body = {
             key: deepcopy(value)
@@ -123,7 +126,7 @@ def scope_execution_inventory(inventory, scope):
         "schema_version": "v1",
         "kind": inventory.get("kind"),
         "campaign_digest": inventory.get("campaign_digest"),
-        "scope": "stock-solo",
+        "scope": scope,
         "claim": "hosted-stock-execution-and-portable-evidence",
         "items": selected,
         "blockers": [],
@@ -151,9 +154,12 @@ def stock_solo_proof_status(
         for item in items
         if item.get("kind") == "measurement" and item.get("mode") == "stock"
     }
+    scope = inventory.get("scope")
+    if scope == "stock-amaru":
+        expected = {("amaru", "amaru-solo")}
     complete = (
-        inventory.get("scope") == "stock-solo"
-        and len(items) == 2
+        scope in {"stock-solo", "stock-amaru"}
+        and len(items) == len(expected)
         and observed == expected
         and item_success
         and not inventory.get("blockers")
@@ -162,7 +168,7 @@ def stock_solo_proof_status(
     )
     return {
         "status": "complete" if complete else "incomplete",
-        "proof_scope": "stock-solo",
+        "proof_scope": scope,
         "proof_claim": inventory.get("claim"),
         "measurement_completeness": (
             "scoped-complete" if complete else "scoped-incomplete"
@@ -320,17 +326,29 @@ def _rebase_receipts(state, state_path: Path, destination: Path) -> None:
     for record in state.get("cells", {}).values():
         for receipt in record.get("archives", []):
             run_id = str(receipt.get("run_id") or "")
-            if not run_id:
-                raise ValueError("shard archive receipt has no run ID")
+            if not run_id or Path(run_id).name != run_id or run_id in (".", ".."):
+                raise ValueError("shard archive receipt has invalid run ID")
             export = destination / "runs" / run_id / "outputs" / "export"
             export.mkdir(parents=True, exist_ok=True)
             for field in ("archive", "signature"):
-                name = Path(str(receipt.get(field) or "")).name
+                recorded = Path(str(receipt.get(field) or ""))
+                name = recorded.name
+                native_suffix = ("runs", run_id, "outputs", "export", name)
+                if not name:
+                    raise ValueError("shard receipt file has no name")
+                if recorded.parts[-5:] == native_suffix:
+                    # Native exports also retain outputs/signature/signature.json.
+                    # Rebase the recorded export location, not its basename.
+                    candidates = [source_root / "campaign-runtime" / Path(*native_suffix)]
+                else:
+                    candidates = source_root.rglob(name)
                 matches = [
                     path
-                    for path in source_root.rglob(name)
+                    for path in candidates
                     if path.is_file()
-                    and not path.is_symlink()
+                    and path.resolve().is_relative_to(source_root.resolve())
+                    and not any(part.is_symlink() for part in (path, *path.parents)
+                                if part.is_relative_to(source_root))
                     and (run_id in path.parts or run_id in path.name)
                 ]
                 if len(matches) != 1:
@@ -447,7 +465,7 @@ def aggregate_execution(
         "work_item_count": len(allowed),
         "blockers": deepcopy(inventory.get("blockers", [])),
     }
-    if inventory.get("scope") == "stock-solo":
+    if inventory.get("scope") in {"stock-solo", "stock-amaru"}:
         proof = stock_solo_proof_status(
             inventory,
             item_success=item_success,
@@ -516,7 +534,7 @@ def main(argv=None):
         command.add_argument("--directory", type=Path, required=True)
     select.add_argument("--build-observations", type=Path, required=True)
     select.add_argument("--calibration-root", type=Path, required=True)
-    select.add_argument("--scope", choices=("full", "stock-solo"), default="full")
+    select.add_argument("--scope", choices=("full", "stock-solo", "stock-amaru"), default="full")
     aggregate.add_argument("--manifest", type=Path, required=True)
     aggregate.add_argument("--stock-manifest", type=Path, required=True)
     aggregate.add_argument("--inventory", type=Path, required=True)
