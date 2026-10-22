@@ -1,3 +1,7 @@
+import json
+
+import pytest
+
 from profile_manager.measurement_collectors.amaru_external import (
     RestartReadinessCollector,
     SyncSpeedCollector,
@@ -89,6 +93,43 @@ def test_factory_registry_omits_sync_without_a_trusted_tip_probe(tmp_path):
     )
 
     assert "amaru-external-sync-speed" not in factories
+
+
+@pytest.mark.parametrize("revision", ["eaf8ac3fa309f2a174c045454c276194c9312b8d", None])
+@pytest.mark.parametrize("has_verdict", [True, False])
+@pytest.mark.parametrize("measurement_id", ["amaru-stock-header-validation", "amaru-stock-header-lifecycle"])
+def test_header_factory_uses_trusted_target_revision_not_scenario_parameters(
+    tmp_path, revision, has_verdict, measurement_id
+):
+    trace = tmp_path / "amaru.ndjson"
+    trace.write_text("")
+    factories = build_amaru_measurement_factories(
+        runtime_metadata_path=tmp_path / "runtime.json", target_node="amaru-1",
+        json_trace_paths=[trace], otlp_trace_paths=[], tip_probe=None,
+        target_identity={"source_revision": revision, "mode": "stock"},
+    )
+    entry = _entry(measurement_id)
+    entry["parameters"]["source_revision"] = "0" * 40
+    collector = factories[entry["id"]](entry)
+    context = CollectorContext(
+        measurement_id=entry["id"], definition=entry["definition"],
+        parameters=entry["parameters"], run_dir=tmp_path,
+        collector_dir=tmp_path / "collector",
+    )
+    collector.prepare(context)
+    collector.start(context)
+    if has_verdict:
+        trace.write_text(json.dumps({"fields": {
+            "message": "chain.tip_accepted", "outcome": "new_tip", "header_hash": "cafe",
+        }}) + "\n")
+
+    result = collector.finalize(context)
+    assert result["source_revision"] == revision
+    assert json.loads((context.collector_dir / "result.json").read_text())["source_revision"] == revision
+    if measurement_id == "amaru-stock-header-validation":
+        assert result["measurements"]["header_validation"]["status"] == (
+            "available" if has_verdict else "unavailable"
+        )
 
 
 def test_factory_registry_adds_patched_collectors_only_for_exact_patched_identity(tmp_path):

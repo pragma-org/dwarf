@@ -1,0 +1,41 @@
+diff --git a/crates/amaru-consensus/src/validate_header.rs b/crates/amaru-consensus/src/validate_header.rs
+--- a/crates/amaru-consensus/src/validate_header.rs
++++ b/crates/amaru-consensus/src/validate_header.rs
+@@ -55,6 +55,37 @@
+ /// with the header itself, so that stored nonces always denote a fully validated header.
+ #[allow(clippy::result_large_err)]
+ pub fn validate_header(
++    header: &Header,
++    consensus_parameters: Arc<ConsensusParameters>,
++    store: Arc<dyn ChainStore>,
++    pool_summaries: Arc<PoolSummaries>,
++    era_history: Arc<EraHistory>,
++) -> Result<Nonces, ValidateHeaderError> {
++    let started = std::time::Instant::now();
++    let result = validate_header_inner(header, consensus_parameters, store, pool_summaries, era_history);
++    let elapsed_nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
++    // Missing local prerequisites are not evidence of an invalid header.
++    let (outcome, error_kind) = match &result {
++        Ok(_) => ("accepted", "none"),
++        Err(ValidateHeaderError::Assert(_)) => ("rejected", "praos-assertion"),
++        Err(ValidateHeaderError::Nonces(_)) => ("unavailable", "nonces"),
++        Err(ValidateHeaderError::Consensus(_)) => ("unavailable", "consensus-prerequisite"),
++    };
++    amaru_observability::tracing::debug!(
++        target: "amaru::consensus::measurement",
++        header_hash = %header.hash(),
++        boundary = "consensus-validate-header",
++        outcome,
++        error_kind,
++        elapsed_nanos,
++        elapsed_micros = elapsed_nanos / 1_000,
++        "measurement.header_validation"
++    );
++    result
++}
++
++#[allow(clippy::result_large_err)]
++fn validate_header_inner(
+     header: &Header,
+     consensus_parameters: Arc<ConsensusParameters>,
+     store: Arc<dyn ChainStore>,

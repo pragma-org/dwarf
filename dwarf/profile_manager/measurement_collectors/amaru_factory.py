@@ -45,8 +45,9 @@ def build_amaru_measurement_factories(
     json_paths = tuple(Path(path) for path in json_trace_paths)
     otlp_paths = tuple(Path(path) for path in otlp_trace_paths)
     stock_options: dict[str, Any] = {}
-    if target_identity is not None and target_identity.get("source_revision"):
-        stock_options["source_revision"] = str(target_identity["source_revision"])
+    if target_identity is not None:
+        revision = target_identity.get("source_revision")
+        stock_options["source_revision"] = str(revision) if revision is not None else None
     factories = build_amaru_stock_factories(
         json_trace_paths=json_paths,
         otlp_trace_paths=otlp_paths,
@@ -85,7 +86,8 @@ def build_amaru_measurement_factories(
 
     factories["amaru-stock-resources"] = build_resource_collector
     factories["amaru-stock-header-validation"] = lambda entry: AmaruHeaderValidationCollector(
-        entry, trace_paths=json_paths, allow_missing_at_start=allow_missing_trace_sources
+        entry, trace_paths=json_paths, allow_missing_at_start=allow_missing_trace_sources,
+        **stock_options,
     )
     factories["amaru-external-workload-accounting"] = (
         lambda entry: WorkloadAccountingCollector(entry)

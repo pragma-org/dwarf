@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -29,11 +30,16 @@ AMARU_BLOCK_APPLICATION_NANOSECOND_PATCH_SHA256 = (
 AMARU_20260918_NANOSECOND_V3_PATCH_SHA256 = (
     "47787f152bc7bdcd645d5d32125f6658847812c447fd375ede44d31b546620f6"
 )
+AMARU_20260918_NANOSECOND_V4_PATCH_SHA256 = (
+    "46777913e69114e7a43419414cdfe36e21a526d7f344741df403e55c7b32ec9d"
+)
+HEADER_VALIDATION_MEASUREMENT_ID = "amaru-patched-header-validation"
 AMARU_MEASUREMENT_REVISIONS = {
     AMARU_MEASUREMENT_PATCH_SHA256: "whole-microseconds-v1",
     AMARU_NANOSECOND_PATCH_SHA256: "nanoseconds-v2",
     AMARU_BLOCK_APPLICATION_NANOSECOND_PATCH_SHA256: "nanoseconds-v3",
     AMARU_20260918_NANOSECOND_V3_PATCH_SHA256: "nanoseconds-v3",
+    AMARU_20260918_NANOSECOND_V4_PATCH_SHA256: "nanoseconds-v4",
 }
 AMARU_MEASUREMENT_SOURCES = {
     AMARU_MEASUREMENT_PATCH_SHA256: frozenset({AMARU_SOURCE_REVISION}),
@@ -46,6 +52,9 @@ AMARU_MEASUREMENT_SOURCES = {
     AMARU_20260918_NANOSECOND_V3_PATCH_SHA256: frozenset(
         {AMARU_20260918_SOURCE_REVISION}
     ),
+    AMARU_20260918_NANOSECOND_V4_PATCH_SHA256: frozenset(
+        {AMARU_20260918_SOURCE_REVISION}
+    ),
 }
 DEFAULT_MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_PATHS = 16
@@ -56,6 +65,7 @@ PATCHED_MEASUREMENT_IDS = (
 )
 
 _EVENT_KINDS = {
+    "header_validation": "header-validation",
     "protocol_ingress": "protocol-ingress",
     "protocol_decode": "protocol-decode",
     "handshake_negotiation": "handshake-negotiation",
@@ -103,6 +113,8 @@ def _is_measurement_record(record: Mapping[str, Any]) -> bool:
     fields = record.get("fields")
     target = record.get("target")
     message = fields.get("message") if isinstance(fields, dict) else None
+    if target == "amaru::consensus::measurement":
+        return isinstance(message, str) and message == "measurement.header_validation"
     return target == "amaru::protocols::measurement" or (
         target == "amaru::protocols"
         and isinstance(message, str)
@@ -115,9 +127,35 @@ def _normalize_event(record: dict[str, Any]) -> dict[str, Any] | None:
     target = record.get("target")
     if not _is_measurement_record(record):
         return None
-    name = _event_name(record)
+    name = (
+        "header_validation"
+        if target == "amaru::consensus::measurement"
+        else _event_name(record)
+    )
     if name not in _EVENT_KINDS or not isinstance(fields, dict):
         return None
+    if name == "header_validation":
+        if target != "amaru::consensus::measurement":
+            raise ValueError("invalid-header-validation-target")
+        if fields.get("boundary") != "consensus-validate-header":
+            raise ValueError("invalid-header-validation-boundary")
+        header_hash = fields.get("header_hash")
+        if not isinstance(header_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", header_hash):
+            raise ValueError("invalid-header-validation-hash")
+        allowed_errors = {
+            "accepted": {"none"},
+            "rejected": {"praos-assertion"},
+            "unavailable": {"nonces", "consensus-prerequisite"},
+        }
+        outcome, error_kind = fields.get("outcome"), fields.get("error_kind")
+        if (
+            not isinstance(outcome, str)
+            or not isinstance(error_kind, str)
+            or error_kind not in allowed_errors.get(outcome, set())
+        ):
+            raise ValueError("invalid-header-validation-outcome")
+        if "elapsed_nanos" not in fields:
+            raise ValueError("missing-header-validation-nanoseconds")
     normalized_fields = dict(fields)
     for nanos_field, micros_field in _TIMING_FIELDS:
         if nanos_field not in fields and micros_field not in fields:
@@ -139,6 +177,7 @@ def _normalize_event(record: dict[str, Any]) -> dict[str, Any] | None:
         "fields": normalized_fields,
     }
     for source, destination in (
+        ("header_hash", "header_hash"),
         ("peer", "peer_id"),
         ("id", "tx_id"),
         ("request_id", "request_id"),
@@ -267,6 +306,29 @@ def _by_outcome(
 def _build_measurements(
     measurement_id: str, events: list[dict[str, Any]]
 ) -> dict[str, Any]:
+    if measurement_id == HEADER_VALIDATION_MEASUREMENT_ID:
+        verdicts = [
+            event for event in events
+            if event["kind"] == "header-validation"
+            and event["fields"]["outcome"] in {"accepted", "rejected"}
+        ]
+        unavailable = [
+            event for event in events
+            if event["kind"] == "header-validation"
+            and event["fields"]["outcome"] == "unavailable"
+        ]
+        return {
+            "header_validation": _samples(verdicts, "header-validation", "elapsed_micros"),
+            "header_validation_by_outcome": _by_outcome(
+                verdicts, "header-validation", "elapsed_micros"
+            ),
+            "unavailable_prerequisites": _samples(
+                unavailable, "header-validation", "elapsed_micros"
+            ),
+            "unavailable_by_error_kind": _by_outcome(
+                unavailable, "header-validation", "elapsed_micros", "error_kind"
+            ),
+        }
     if measurement_id == "amaru-patched-protocol-decode":
         handshake_events = [
             event
@@ -379,9 +441,26 @@ def resolve_amaru_measurement_revision(
     return measurement_revision
 
 
+def supports_amaru_header_validation(identity: Mapping[str, Any]) -> bool:
+    """Recognize the exact patch contract, without claiming its target is built."""
+    return (
+        identity.get("implementation") == "amaru"
+        and identity.get("mode") == "patched"
+        and identity.get("source_revision") == AMARU_20260918_SOURCE_REVISION
+        and identity.get("patch_set_sha256") == AMARU_20260918_NANOSECOND_V4_PATCH_SHA256
+    )
+
+
 def _validate_identity(identity: Mapping[str, Any]) -> str:
     if identity.get("implementation") != "amaru" or identity.get("mode") != "patched":
         raise ValueError("patched collector requires an Amaru target in patched mode")
+    candidate = identity.get("experimental_instrumentation")
+    if candidate is not None and identity.get("identity_kind") == "operator-local-config":
+        from profile_manager.experimental_instrumentation import validate_candidate
+        validate_candidate(candidate, identity)
+        if identity.get("patch_set_sha256") != candidate["patch_set_sha256"]:
+            raise ValueError("experimental patch-set identity does not match target")
+        return candidate["measurement_revision"]
     measurement_revision = resolve_amaru_measurement_revision(
         identity.get("source_revision"), identity.get("patch_set_sha256")
     )
@@ -419,13 +498,19 @@ class AmaruPatchedCollector:
         self._markers: list[dict[str, Any]] = []
 
     def prepare(self, context) -> None:
-        if self.measurement_id not in PATCHED_MEASUREMENT_IDS:
+        if self.measurement_id not in (*PATCHED_MEASUREMENT_IDS, HEADER_VALIDATION_MEASUREMENT_ID):
             raise ValueError(f"unsupported patched measurement: {self.measurement_id}")
         if not self.json_paths or len(self.json_paths) > MAX_SOURCE_PATHS:
             raise ValueError(f"between 1 and {MAX_SOURCE_PATHS} trace paths are required")
         if self.max_source_bytes <= 0 or self.max_source_bytes > 64 * 1024 * 1024:
             raise ValueError("max_source_bytes must be within 1..67108864")
         self.measurement_revision = _validate_identity(self.target_identity)
+        if self.measurement_id == HEADER_VALIDATION_MEASUREMENT_ID:
+            if not supports_amaru_header_validation(self.target_identity):
+                raise ValueError("header validation requires the exact nanoseconds-v4 source and patch set")
+            for field in ("image_digest", "executable_digest", "build_result_sha256", "runtime_probe_log_sha256"):
+                if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(self.target_identity.get(field) or "")):
+                    raise ValueError(f"header validation requires immutable {field} provenance")
         for path in self.json_paths:
             if not path.is_file() and not self.allow_missing_at_start:
                 raise FileNotFoundError(f"Amaru patched telemetry source is unavailable: {path}")
@@ -503,6 +588,24 @@ class AmaruPatchedCollector:
                 .as_posix(),
             },
         }
+        if self.measurement_id == HEADER_VALIDATION_MEASUREMENT_ID:
+            outcomes = {
+                event["fields"]["outcome"] for event in loaded["events"]
+                if event["kind"] == "header-validation"
+            }
+            observed = {"accepted", "rejected"} <= outcomes
+            result["exercise"] = {
+                "status": (
+                    "pending-control-evidence"
+                    if observed and not result["export"]["incomplete"]
+                    else "incomplete"
+                ),
+                "required_outcomes_observed": observed,
+                "measurement_complete": False,
+                "normal_control": "requires-retained-same-boundary-control",
+                "correlation": ["run_id", "header_hash"],
+                "reason": "Timing samples do not prove normal controls, frozen node/scenario identity or campaign completeness.",
+            }
         context.write_json("result.json", result)
         return result
 
@@ -528,7 +631,10 @@ def build_amaru_patched_factories(
             max_source_bytes=max_source_bytes,
         )
 
-    return {measurement_id: factory for measurement_id in PATCHED_MEASUREMENT_IDS}
+    ids = list(PATCHED_MEASUREMENT_IDS)
+    if supports_amaru_header_validation(identity):
+        ids.append(HEADER_VALIDATION_MEASUREMENT_ID)
+    return {measurement_id: factory for measurement_id in ids}
 
 
 def _finite_number(value: Any) -> float | None:

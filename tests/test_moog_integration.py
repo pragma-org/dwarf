@@ -390,6 +390,20 @@ def test_apply_moog_setup_form_saves_values_and_preserves_blank_secrets():
     assert updated.moog["enabled"] is True
 
 
+def test_partial_moog_setup_preserves_omitted_enabled_secrets_and_unrelated_settings():
+    config = DeploymentConfig.from_dict({"host": "unchanged-host", "moog": {
+        "enabled": True, "github_user": "old-user", "github_pat": "test-existing-secret",
+        "antithesis_user": "existing-tenant-user"}})
+    updated = apply_moog_setup_form(config, {"github_user": ["new-user"], "github_pat": [""]}, partial=True)
+    assert updated.host == "unchanged-host"
+    assert updated.moog["enabled"] is True
+    assert updated.moog["github_user"] == "new-user"
+    assert updated.moog["github_pat"] == "test-existing-secret"
+    assert updated.moog["antithesis_user"] == "existing-tenant-user"
+    disabled = apply_moog_setup_form(updated, {"enabled": ["false"]}, partial=True)
+    assert disabled.moog["enabled"] is False
+
+
 def test_moog_health_command_checks_public_state_without_reading_secrets():
     command = build_moog_health_command(DEFAULT_MOOG_CONFIG)
 

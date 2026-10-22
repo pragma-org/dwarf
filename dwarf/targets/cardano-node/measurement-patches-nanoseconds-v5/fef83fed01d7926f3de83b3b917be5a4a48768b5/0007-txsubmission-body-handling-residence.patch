@@ -1,0 +1,303 @@
+--- a/api/lib/Ouroboros/Network/DwarfMeasurement.hs
++++ b/api/lib/Ouroboros/Network/DwarfMeasurement.hs
+@@ -13,6 +13,7 @@
+   , dwarfQueueStamp
+   , emitDwarfBlockFetch
+   , measureDwarfFetchedBlock
++  , emitDwarfTxSubmission
+   ) where
+ 
+ import Control.Concurrent.MVar (MVar, newMVar, withMVar)
+@@ -292,3 +293,57 @@
+       emitDwarfBlockFetch "service" clientId requestId updateIndex 0
+         started ended blockHash `seq` pure native
+     Nothing -> pure native
++
++
++-- | Native V2 request/body handling metadata only. Every diagnostic thunk is
++-- forced under the synchronous-only guard. No transaction body is serialized.
++{-# NOINLINE emitDwarfTxSubmission #-}
++emitDwarfTxSubmission :: String -> Word64 -> Word64 -> String -> String -> String
++                      -> Int -> Int -> Int -> Int -> Maybe Word64 -> Maybe Word64 -> ()
++emitDwarfTxSubmission phase peerSession requestId peerId txId outcome txIndex txCount pending inflight started ended =
++  unsafePerformIO $ do
++    sink <- tryHeaderInstrumentation (evaluate measurementHandle)
++    case sink of
++      Right (Just lock) -> do
++        emitted <- tryHeaderInstrumentation $ do
++          (start, end) <- case (started, ended) of
++            (Just a, Just b) | a <= b -> pure (a, b)
++            _ -> ioError (userError "unavailable clock")
++          let boundedTxId = take 257 txId
++              boundedPeerId = take 257 peerId
++          if peerSession == 0 || requestId == 0 || txCount < 1 || txCount > 65536
++              || txIndex < 1 || txIndex > txCount || pending < 0 || pending > 65536
++              || inflight < 0 || inflight > 65536 || null boundedTxId
++              || length boundedTxId > 256 || null boundedPeerId || length boundedPeerId > 256
++              || any (\c -> c < ' ' || c > '~') boundedPeerId
++              || any (\c -> c < ' ' || c > '~') boundedTxId
++            then ioError (userError "unavailable tx metadata")
++            else pure ()
++          encoded <- evaluate $ LBS.toStrict $ encode $ object
++            [ "schema_version" .= ("v1" :: String)
++            , "target" .= ("cardano-node::measurement" :: String)
++            , "event" .= ("txsubmission_residence" :: String)
++            , "boundary" .= ("inbound-v2-request-body-handling" :: String)
++            , "phase" .= phase
++            , "trace_session" .= dwarfTraceSession
++            , "peer_session" .= peerSession
++            , "peer_id" .= boundedPeerId
++            , "request_id" .= requestId
++            , "tx_id" .= boundedTxId
++            , "outcome" .= outcome
++            , "tx_index" .= txIndex
++            , "request_tx_count" .= txCount
++            , "pending_depth" .= pending
++            , "inflight_depth" .= inflight
++            , "started_monotonic_ns" .= start
++            , "ended_monotonic_ns" .= end
++            ]
++          withMVar lock $ \handle -> BS.hPutStrLn handle encoded
++        case emitted of
++          Right () -> pure ()
++          Left _ -> do
++            _ <- tryHeaderInstrumentation $ withMVar lock $ \handle ->
++              BS.hPutStrLn handle
++                "{\"schema_version\":\"v1\",\"target\":\"cardano-node::measurement\",\"event\":\"txsubmission_residence\",\"boundary\":\"inbound-v2-request-body-handling\",\"phase\":\"unavailable\"}"
++            pure ()
++      _ -> pure ()
+--- a/lib/Ouroboros/Network/TxSubmission/Inbound/V2.hs
++++ b/lib/Ouroboros/Network/TxSubmission/Inbound/V2.hs
+@@ -16,6 +16,8 @@
+   , TxSubmissionInitDelay (..)
+   ) where
+ 
++import Data.IntMap.Strict qualified as IntMap
++import Data.IntSet qualified as IntSet
+ import Data.List.NonEmpty qualified as NonEmpty
+ import Data.Map.Strict qualified as Map
+ import Data.Maybe (mapMaybe)
+@@ -32,6 +34,8 @@
+ 
+ import Network.TypedProtocol
+ 
++import Ouroboros.Network.DwarfMeasurement (dwarfBlockFetchEnabled, dwarfQueueStamp,
++           emitDwarfTxSubmission)
+ import Ouroboros.Network.Protocol.TxSubmission2.Server
+ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
+            SizeInBytes)
+@@ -127,7 +131,7 @@
+   :: forall txid tx idx m err.
+      ( MonadDelay m
+      , MonadTimer m
+-     , MonadThrow m
++     , MonadCatch m
+      , Ord txid
+      , Show txid
+      , Typeable txid
+@@ -146,6 +150,8 @@
+     TxSubmissionMempoolWriter { txId, mempoolAddTxs }
+     txSize
+     PeerTxAPI {
++      dwarfPeerSession,
++      dwarfPeerId,
+       awaitSharedChange,
+       runNextPeerAction,
+       runNextPeerActionPipelined,
+@@ -265,16 +271,37 @@
+                     -> [TxKey]
+                     -> StatefulM (PeerTxLocalState tx) n txid tx m
+     requestTxBodies n txKeys = StatefulM $ \peerState -> do
++      requestStarted <- dwarfQueueStamp
+       txsToRequest <- resolveTxRequest peerState txKeys
++      -- The resolver returns a lazy Map.fromList expression. Force its native
++      -- structure/strict values before ending request construction. This work
++      -- is required to encode the request; native exceptions stay outside all
++      -- telemetry catches, and no transaction body is inspected.
++      let requestCount = Map.size txsToRequest
++      if dwarfBlockFetchEnabled
++        then requestCount `seq` pure ()
++        else pure ()
++      requestEnded <- dwarfQueueStamp
++      let serial = peerDwarfNextRequest peerState
++          next | serial == 0 || serial == maxBound = 0
++               | otherwise = serial + 1
++          peerStateDwarf = if dwarfBlockFetchEnabled
++            then peerState { peerDwarfNextRequest = next,
++                             peerDwarfBodyRequests = peerDwarfBodyRequests peerState StrictSeq.|> serial }
++            else peerState
++      mapM_ (\(txIndex, txid') -> emitDwarfTxSubmission "request" dwarfPeerSession serial dwarfPeerId
++                (show txid') "pending" txIndex requestCount (IntMap.size (peerDownloadedTxs peerState))
++                (IntSet.size (peerRequestedTxs peerState)) requestStarted requestEnded `seq` pure ())
++        (zip [1..] (Map.keys txsToRequest))
+       traceWith tracer (TraceTxInboundRequestTxs (Map.keys txsToRequest))
+ 
+       -- Record the start of the download episode on the first outstanding
+       -- body request.  Subsequent pipelined requests leave the start time
+       -- unchanged so we measure from first-send to last-receive.
+       sendTime <- getMonotonicTime
+-      let peerState' = case peerDownloadStartTime peerState of
+-                            Nothing -> peerState { peerDownloadStartTime = Just sendTime }
+-                            Just _  -> peerState
++      let peerState' = case peerDownloadStartTime peerStateDwarf of
++                            Nothing -> peerStateDwarf { peerDownloadStartTime = Just sendTime }
++                            Just _  -> peerStateDwarf
+       pure $ SendMsgRequestTxsPipelined txsToRequest
+                (continueWithStateM (continueAfterBodyRequests (Succ n)) peerState')
+ 
+@@ -383,6 +410,7 @@
+         continueWithStateM (continueAfterReplies n) peerState'
+ 
+       CollectTxs requested txs -> do
++        bodyStarted <- dwarfQueueStamp
+         let received = Map.fromList [ (txId tx, tx) | tx <- txs ]
+             wrongSizedTxs = collectWrongSizedTxs requested received
+         unless (Map.keysSet received `Set.isSubsetOf` Map.keysSet requested) $
+@@ -392,8 +420,24 @@
+           let protocolError = ProtocolErrorTxSizeError wrongSizedTxs
+           traceWith tracer (TraceTxInboundError protocolError)
+           throwIO protocolError
++        bodyEnded <- dwarfQueueStamp
++        let (serial, remaining) = case peerDwarfBodyRequests peerState of
++              StrictSeq.Empty -> (0, StrictSeq.empty)
++              x StrictSeq.:<| xs -> (x, xs)
++            peerStateDwarf = peerState { peerDwarfBodyRequests = remaining }
++            emit phase state started ended (txIndex, txid') =
++              let outcome | phase == "body" && Map.member txid' received = "body-returned"
++                          | Map.member txid' received = "body-handled"
++                          | otherwise = "body-omitted"
++              in emitDwarfTxSubmission phase dwarfPeerSession serial dwarfPeerId (show txid') outcome txIndex (Map.size requested)
++                   (IntMap.size (peerDownloadedTxs state)) (IntSet.size (peerRequestedTxs state))
++                   started ended `seq` pure ()
++        mapM_ (emit "body" peerState bodyStarted bodyEnded) (zip [1..] (Map.keys requested))
+         now <- getMonotonicTime
+-        (penaltyCount, peerState') <- applyReceivedTxs now [ (txId tx, tx) | tx <- txs ] peerState
++        handlingStarted <- dwarfQueueStamp
++        (penaltyCount, peerState') <- applyReceivedTxs now [ (txId tx, tx) | tx <- txs ] peerStateDwarf
++        handlingEnded <- dwarfQueueStamp
++        mapM_ (emit "terminal" peerState' handlingStarted handlingEnded) (zip [1..] (Map.keys requested))
+         peerState'' <-
+           if penaltyCount == 0
+              then pure peerState'
+--- a/lib/Ouroboros/Network/TxSubmission/Inbound/V2/Types.hs
++++ b/lib/Ouroboros/Network/TxSubmission/Inbound/V2/Types.hs
+@@ -429,6 +429,10 @@
+     -- 'nextPeerAction' / 'nextPeerActionPipelined' when an action is
+     -- chosen and inspected in 'serverIdle' to decide whether to skip
+     -- 'awaitSharedChange' on an Active->Idle transition.
++    -- Diagnostic serials are separate from native protocol/coordination state.
++    -- Zero permanently disables identity after overflow; never reuse a serial.
++    peerDwarfNextRequest       :: !Word64,
++    peerDwarfBodyRequests      :: !(StrictSeq Word64),
+     peerPhase                 :: !PeerPhase,
+ 
+     -- | Unacknowledged txids in the order advertised by the peer.
+@@ -476,6 +480,8 @@
+ 
+ emptyPeerTxLocalState :: PeerTxLocalState tx
+ emptyPeerTxLocalState = PeerTxLocalState {
++    peerDwarfNextRequest       = 1,
++    peerDwarfBodyRequests      = StrictSeq.empty,
+     peerPhase                 = PeerIdle,
+     peerUnacknowledgedTxIds   = StrictSeq.empty,
+     peerAvailableTxIds        = IntMap.empty,
+--- a/lib/Ouroboros/Network/TxSubmission/Inbound/V2/Registry.hs
++++ b/lib/Ouroboros/Network/TxSubmission/Inbound/V2/Registry.hs
+@@ -31,6 +31,7 @@
+ import Data.Word (Word64)
+ import GHC.Stack (HasCallStack)
+ 
++import Ouroboros.Network.DwarfMeasurement (dwarfBlockFetchEnabled)
+ import Ouroboros.Network.Protocol.TxSubmission2.Type
+ import Ouroboros.Network.RegisteredDelay (RegisteredDelay)
+ import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
+@@ -61,7 +62,7 @@
+ -- compute the @liveAdvertised@ union; 'snapshotCounters' reads the
+ -- counter cells to aggregate for emission.
+ type PeerTxRegistry m peeraddr =
+-       StrictTVar m (Map peeraddr (PeerTxInFlightVar m, TxSubmissionCountersVar m))
++       StrictTVar m (Word64, Map peeraddr (PeerTxInFlightVar m, TxSubmissionCountersVar m))
+ 
+ newSharedTxStateVar
+   :: MonadSTM m
+@@ -78,7 +79,7 @@
+ newPeerTxRegistry
+   :: MonadSTM m
+   => m (PeerTxRegistry m peeraddr)
+-newPeerTxRegistry = newTVarIO Map.empty
++newPeerTxRegistry = newTVarIO (1, Map.empty)
+ 
+ -- | Central bookkeeping thread for V2.
+ --
+@@ -155,7 +156,7 @@
+   => PeerTxRegistry m peeraddr
+   -> STM m IntSet
+ snapshotLiveReferences registry = do
+-    peers <- readTVar registry
++    (_, peers) <- readTVar registry
+     pifs  <- traverse (readTVar . fst) (Map.elems peers)
+     pure $! IntSet.unions (map pifAcksPending pifs)
+ 
+@@ -175,7 +176,7 @@
+   -> STM m TxSubmissionCounters
+ snapshotCounters retiredCountersVar registry = do
+     retired <- readTVar retiredCountersVar
+-    peers   <- readTVar registry
++    (_, peers) <- readTVar registry
+     live    <- traverse (readTVar . snd) (Map.elems peers)
+     pure $! mconcat (retired : live)
+ 
+@@ -187,6 +188,8 @@
+ -- helper that needs peer-local state should take it explicitly as an
+ -- argument.
+ data PeerTxAPI m txid tx = PeerTxAPI {
++    dwarfPeerSession :: Word64,
++    dwarfPeerId :: String,
+     -- | Wait until either 'sharedGeneration' moves past the given
+     -- value or the optional timeout expires.
+     awaitSharedChange    :: Word64
+@@ -268,9 +271,18 @@
+     acquire = do
+       peerInFlightVar <- newTVarIO emptyPeerTxInFlight
+       peerCountersVar <- newTVarIO mempty
+-      atomically $ modifyTVar registry
+-                     (Map.insert peeraddr (peerInFlightVar, peerCountersVar))
+-      pure (peerInFlightVar, peerCountersVar)
++      -- Force the opt-in flag outside STM; sink opening is diagnostic IO.
++      let enabled = dwarfBlockFetchEnabled
++      enabled `seq` pure ()
++      session <- atomically $ do
++        (next, peers) <- readTVar registry
++        let session = if enabled then next else 0
++            next' | not enabled = next
++                  | next == 0 || next == maxBound = 0
++                  | otherwise = next + 1
++        writeTVar registry (next', Map.insert peeraddr (peerInFlightVar, peerCountersVar) peers)
++        pure session
++      pure (peerInFlightVar, peerCountersVar, session)
+ 
+     -- On exit: reverse this peer's in-flight contributions to shared
+     -- state, flush its accumulated counters into the retired
+@@ -279,16 +291,19 @@
+     -- commit in one transaction so 'snapshotCounters' counts this peer
+     -- exactly once: via its live cell before exit, via the retired
+     -- accumulator after.
+-    release (peerInFlightVar, peerCountersVar) = do
++    release (peerInFlightVar, peerCountersVar, _) = do
+       now <- getMonotonicTime
+       atomically $ do
+         pif <- readTVar peerInFlightVar
+         modifyTVar sharedStateVar (scrubFromPeerInFlight peeraddr now pif)
+         peerCounters <- readTVar peerCountersVar
+         modifyTVar retiredCountersVar (<> peerCounters)
+-        modifyTVar registry (Map.delete peeraddr)
++        modifyTVar registry (\(next, peers) -> (next, Map.delete peeraddr peers))
+ 
+-    run (peerInFlightVar, peerCountersVar) = io PeerTxAPI {
++    run (peerInFlightVar, peerCountersVar, session) = io PeerTxAPI {
++          dwarfPeerSession = session
++        , dwarfPeerId = show peeraddr
++        ,
+           awaitSharedChange = awaitSharedChangeImp sharedStateVar
+         , runNextPeerAction = runNextPeerActionImp policy sharedStateVar
+                                 peerInFlightVar peerCountersVar peeraddr

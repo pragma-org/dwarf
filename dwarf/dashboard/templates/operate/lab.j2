@@ -1,0 +1,41 @@
+{% extends "operate/_lab_base.j2" %}
+{% block main %}
+<link rel="stylesheet" href="/static/css/lab.css?v={{ asset_v }}">
+<section class="lab-entry dk" aria-labelledby="lab-title" data-basic-reducer="skip">
+  <div class="lab-entry__heading">
+    <img src="/static/dwarf-logo.png" width="88" height="88" alt="">
+    <p class="eyebrow">DWARF · the lab</p>
+    <h1 id="lab-title">Where will you run?</h1>
+    <p class="dk-plain">Choose your environment. Shape the experiment.</p>
+  </div>
+  <div class="dk-spread dk-spread--two">
+    <div>
+      <a class="dk-card dk-deal" style="--i:0" href="/run" data-lab-destination="local" aria-labelledby="lab-local">
+        <div class="dk-face"><div class="dk-face__body">
+          <div class="dk-kicker"><span>I · Local</span><span aria-hidden="true">♦</span></div>
+          <svg class="lab-entry__symbol" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="18" y="17" width="64" height="46" rx="5"/><path d="M18 51h64M50 63v17M35 81h30M30 33l8 7 12-15"/><circle cx="67" cy="34" r="5"/></svg>
+          <h2 id="lab-local" class="dk-title">Local</h2>
+          <p class="dk-sub">Build and run an experiment on your local DWARF environment.</p>
+          <span class="lab-entry__meta">Topology · versions · scenarios · taps</span>
+          <span class="lab-entry__action">Open Local wizard <span aria-hidden="true">→</span></span>
+        </div></div>
+      </a>
+      <div class="dk-pos">Your environment · local execution</div>
+    </div>
+    <div>
+      <a class="dk-card dk-deal" style="--i:1" href="/run/antithesis" data-lab-destination="antithesis" aria-labelledby="lab-antithesis">
+        <div class="dk-face"><div class="dk-face__body">
+          <div class="dk-kicker"><span>II · Antithesis</span><span aria-hidden="true">◇</span></div>
+          <svg class="lab-entry__symbol" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M50 15 80 33v34L50 85 20 67V33Z M20 33l30 18 30-18M50 51v34M35 24l30 18v34M65 24 35 42v34"/><circle cx="50" cy="51" r="6" fill="var(--dk-face)"/></svg>
+          <h2 id="lab-antithesis" class="dk-title">Antithesis</h2>
+          <p class="dk-sub">Design a remote experiment for deterministic testing with Antithesis.</p>
+          <span class="lab-entry__meta">Wizard available · launch coming later</span>
+          <span class="lab-entry__action">Open Antithesis wizard <span aria-hidden="true">→</span></span>
+        </div></div>
+      </a>
+      <div class="dk-pos">Remote environment · dedicated workflow</div>
+    </div>
+  </div>
+  <div class="dk-row dk-center"><a class="dk-btn" href="/operate">← Operate</a></div>
+</section>
+{% endblock %}

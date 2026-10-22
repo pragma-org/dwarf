@@ -1,0 +1,43 @@
+diff --git a/ouroboros-consensus/src/ouroboros-consensus/Ouroboros/Consensus/HeaderValidation.hs b/ouroboros-consensus/src/ouroboros-consensus/Ouroboros/Consensus/HeaderValidation.hs
+--- a/ouroboros-consensus/src/ouroboros-consensus/Ouroboros/Consensus/HeaderValidation.hs
++++ b/ouroboros-consensus/src/ouroboros-consensus/Ouroboros/Consensus/HeaderValidation.hs
+@@ -75,6 +75,7 @@
+ import Control.Monad (unless, when)
+ import Control.Monad.Except
+   ( Except
++  , except
+   , runExcept
+   , throwError
+   , withExcept
+@@ -101,6 +102,7 @@
+ import Ouroboros.Consensus.Util (whenJust)
+ import Ouroboros.Consensus.Util.Assert
+ import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
++import Ouroboros.Network.DwarfMeasurement (measureDwarfHeader)
+ 
+ {-------------------------------------------------------------------------------
+   Preliminary: annotated tip
+@@ -505,7 +507,22 @@
+   Header blk ->
+   Ticked (HeaderState blk) ->
+   Except (HeaderError blk) (HeaderState blk)
+-validateHeader cfg ledgerView hdr st = do
++validateHeader cfg ledgerView hdr st =
++  except $ measureDwarfHeader (show (headerHash hdr)) classifyError show $
++    runExcept $ validateHeaderInner cfg ledgerView hdr st
++ where
++  classifyError HeaderProtocolError{} = "header-protocol"
++  classifyError HeaderEnvelopeError{} = "header-envelope"
++
++-- The native checks and their ordering remain unchanged.
++validateHeaderInner ::
++  (BlockSupportsProtocol blk, ValidateEnvelope blk) =>
++  TopLevelConfig blk ->
++  LedgerView (BlockProtocol blk) ->
++  Header blk ->
++  Ticked (HeaderState blk) ->
++  Except (HeaderError blk) (HeaderState blk)
++validateHeaderInner cfg ledgerView hdr st = do
+   withExcept HeaderEnvelopeError $
+     validateEnvelope
+       cfg

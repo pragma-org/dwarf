@@ -108,6 +108,7 @@ A failed node-image download stops startup.
 
 Open [http://127.0.0.1:8787/](http://127.0.0.1:8787/).
 Select **Start run** to open `/run`.
+
 Readiness checks are part of installation; `status.sh` is not a required installation step.
 For an optional diagnostic, run:
 
@@ -169,6 +170,20 @@ python3 dwarf/cardano-profile scenario validate --semantic dwarf/scenarios/clien
 ```
 
 A real-node scenario still needs its specified images, tools, topology, data, ports, storage, and hardware.
+
+## Run with Antithesis
+
+Select **Enter the lab → Antithesis**, or open `/run/antithesis`.
+The separate wizard guides you through topology, node versions, scenario,
+measurement taps, package preparation, and run/evidence.
+Generate a package with DWARF, supply a package URL, or use existing Compose
+files and images on the DWARF host. Build and publish the required images,
+validate the package, check readiness, then submit through MOOG.
+
+Configure MOOG in the wizard's settings section. Package preparation reports
+which selections are connected. Run results record available and unavailable
+measurements. The Local wizard remains at `/run`; the GitHub Actions workflow
+described above remains a separate execution path.
 
 ## Run a real-node test
 

@@ -1,0 +1,36 @@
+diff --git a/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs b/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs
+index 5df48ea..aeb2e9a 100644
+--- a/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs
++++ b/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs
+@@ -142,6 +142,7 @@ import Ouroboros.Consensus.Util.CBOR
+   )
+ import Ouroboros.Consensus.Util.IndexedMemPack
+ import Ouroboros.Consensus.Util.Versioned
++import Ouroboros.Network.DwarfMeasurement (measureDwarfEither, measureDwarfPure)
+ 
+ {-------------------------------------------------------------------------------
+   Config
+@@ -563,7 +564,10 @@ instance ShelleyBasedEra era => IsLedger LedgerState (ShelleyBlock proto era) wh
+       , shelleyLedgerTransition
+       , shelleyLedgerLatestPerasCertRound
+       } =
+-      appTick globals shelleyLedgerState slotNo <&> \l' ->
++      ( if isNewEpoch ei (shelleyTipSlotNo <$> shelleyLedgerTip) slotNo
++          then measureDwarfPure "epoch-transition"
++          else id
++      ) (appTick globals shelleyLedgerState slotNo) <&> \l' ->
+         TickedShelleyLedgerState
+           { untickedShelleyLedgerTip = shelleyLedgerTip
+           , tickedShelleyLedgerTransition =
+@@ -619,7 +623,10 @@ instance
+   --
+   applyBlockLedgerResultWithValidation doValidate evs =
+-    liftEither ..: applyHelper appBlk
++    liftEither
++      ..: ( measureDwarfEither "block-application"
++              ..: applyHelper appBlk
++          )
+    where
+     -- Apply the BBODY transition using the ticked state
+     appBlk =
+       fmap (uncurry (flip LedgerResult)) ..: case evs of

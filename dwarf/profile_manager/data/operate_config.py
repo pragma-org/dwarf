@@ -191,11 +191,13 @@ def moog_setup_payload(config, environ: dict[str, str] | None = None) -> dict[st
     return {"fields": fields, "groups": groups, "commands": commands}
 
 
-def apply_moog_setup_form(config, form: dict[str, list[str]]):
+def apply_moog_setup_form(config, form: dict[str, list[str]], *, partial: bool = False):
     current = normalize_moog_config(getattr(config, "moog", None))
     updated = dict(current)
     for meta in MOOG_SETUP_FIELDS:
         key = meta["key"]
+        if partial and key not in form:
+            continue
         if meta.get("kind") == "checkbox":
             updated[key] = _truthy(_first_form_value(form, key))
             continue

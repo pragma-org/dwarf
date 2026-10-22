@@ -1,7 +1,10 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from profile_manager.measurement_collectors.amaru_stock import (
+    AmaruHeaderValidationCollector,
     AmaruStockCollector,
     build_amaru_stock_factories,
     load_amaru_telemetry,
@@ -11,6 +14,34 @@ from scripts import runtime_amaru_measurement_collector
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.mark.parametrize("has_verdict", [True, False])
+@pytest.mark.parametrize("revision", ["eaf8ac3fa309f2a174c045454c276194c9312b8d", None])
+def test_header_validation_reports_bound_source_revision_even_when_unavailable(tmp_path, has_verdict, revision):
+    trace = tmp_path / "amaru.ndjson"
+    trace.write_text("")
+    entry = {"id": "amaru-stock-header-validation", "definition": {}, "parameters": {}}
+    context = CollectorContext(
+        measurement_id=entry["id"], definition={}, parameters={}, run_dir=tmp_path,
+        collector_dir=tmp_path / "collector",
+    )
+    options = {"source_revision": revision} if revision is not None else {}
+    collector = AmaruHeaderValidationCollector(entry, trace_paths=[trace], **options)
+    collector.prepare(context)
+    collector.start(context)
+    if has_verdict:
+        trace.write_text(json.dumps({"fields": {
+            "message": "chain.tip_accepted", "outcome": "new_tip", "header_hash": "cafe",
+        }}) + "\n")
+    result = collector.finalize(context)
+
+    expected_revision = revision or "b159172f25a9c389f82f20bca4f15e3032791638"
+    assert result["source_revision"] == expected_revision
+    assert result["measurements"]["header_validation"]["status"] == (
+        "available" if has_verdict else "unavailable"
+    )
+    assert json.loads((context.collector_dir / "result.json").read_text())["source_revision"] == expected_revision
 
 
 def test_exact_b159_json_and_otlp_fixtures_normalize_all_audited_signal_families():

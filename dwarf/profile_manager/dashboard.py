@@ -4927,6 +4927,12 @@ def _status_profile_id(route: str) -> str | None:
 
 
 def render_route_html(route, *, token=None):
+    # These pages own their execution destination; never enter the Local resolver.
+    lab_path = route.split("?", 1)[0].rstrip("/")
+    if lab_path in {"/lab", "/run/antithesis"}:
+        from profile_manager.views.lab import render_lab, render_antithesis_run_wizard
+
+        return render_lab() if lab_path == "/lab" else render_antithesis_run_wizard(token=token)
     # Slice 42: /operate/compare/runs is the only path that consumes query
     # args (left=<id>&right=<id>). Branch off before stripping the query.
     if route.startswith("/operate/compare/runs"):
@@ -5274,6 +5280,15 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
             except ValueError:
                 self._send(400, "text/plain; charset=utf-8", b"invalid content length\n")
                 return
+            if clean_path.startswith("/api/antithesis-run/topology/") and (length < 0 or length > 8192):
+                self._send(413, "application/json; charset=utf-8", b'{"ok":false,"error":{"message":"Topology request is too large."}}')
+                return
+            if clean_path.startswith("/api/antithesis-run/versions/") and (length < 0 or length > 16384):
+                self._send(413, "application/json; charset=utf-8", b'{"ok":false,"error":{"message":"Version request is too large."}}')
+                return
+            if clean_path.startswith("/api/antithesis-run/package/") and (length < 0 or length > 32768):
+                self._send(413, "application/json; charset=utf-8", b'{"ok":false,"error":{"message":"Package request is too large."}}')
+                return
             if clean_path == "/api/versions/import-binary":
                 from profile_manager.binary_imports import MAX_IMPORT_REQUEST_BYTES
 
@@ -5293,6 +5308,27 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                     return
                 self.connection.settimeout(120)
             body_bytes = self.rfile.read(length) if length > 0 else b""
+            if clean_path.startswith("/api/antithesis-run/package/"):
+                from profile_manager.data.antithesis_package import dispatch_package_request
+
+                status, ctype, response_body = dispatch_package_request(method="POST", path=self.path, body=body_bytes, expected_token=expected_token)
+                self._send(status, ctype, response_body, extra_headers={"Cache-Control": "no-store"})
+                return
+            if clean_path.startswith("/api/antithesis-run/versions/"):
+                from profile_manager.data.antithesis_versions import dispatch_versions_request
+
+                status, ctype, response_body = dispatch_versions_request(method="POST", path=self.path, body=body_bytes)
+                self._send(status, ctype, response_body, extra_headers={"Cache-Control": "no-store"})
+                return
+            from profile_manager.data.antithesis_topology import dispatch_topology_request as dispatch_remote_topology
+
+            remote_topology = dispatch_remote_topology(
+                method="POST", path=self.path, body=body_bytes, expected_token=expected_token
+            )
+            if remote_topology is not None:
+                status, ctype, response_body = remote_topology
+                self._send(status, ctype, response_body)
+                return
             if clean_path == "/api/versions/import-binary" and len(body_bytes) != length:
                 self._send(
                     400,
@@ -5478,21 +5514,33 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                     self._send(status, ctype, response_body)
                     return
             if self.path.split("?", 1)[0] == "/api/moog/setup":
+                wants_json = "application/json" in (self.headers.get("Accept") or "")
                 ok, err = check_form_token(
                     self.path, body_bytes, expected=expected_token
                 )
                 if not ok:
+                    if wants_json:
+                        self._send(403, "application/json; charset=utf-8", b'{"ok":false,"error":"Configuration was not saved: invalid dashboard token."}')
+                        return
                     self._send(403, "text/plain; charset=utf-8", f"{err}\n".encode("utf-8"))
                     return
                 from profile_manager.config import DeploymentConfig, config_exists, load_config, save_config
-                from profile_manager.data.operate_config import apply_moog_setup_form
+                from profile_manager.data.operate_config import apply_moog_setup_form, moog_setup_payload
                 form = parse_qs(body_bytes.decode("utf-8", errors="replace"), keep_blank_values=True)
                 try:
                     current_config = load_config() if config_exists() else DeploymentConfig.from_dict({})
-                    updated = apply_moog_setup_form(current_config, form)
+                    updated = apply_moog_setup_form(current_config, form, partial=wants_json)
                     save_config(updated)
                 except Exception as exc:
+                    if wants_json:
+                        self._send(500, "application/json; charset=utf-8", b'{"ok":false,"error":"Configuration could not be saved. Check the configuration file and its write permissions, then retry."}')
+                        return
                     self._send(500, "text/plain; charset=utf-8", f"failed to save Moog setup: {exc}\n".encode("utf-8"))
+                    return
+                if wants_json:
+                    self._send(200, "application/json; charset=utf-8",
+                               json.dumps({"ok": True, "setup": moog_setup_payload(updated)}).encode("utf-8"),
+                               extra_headers={"Cache-Control": "no-store"})
                     return
                 self._send(303, "text/plain; charset=utf-8", b"", extra_headers={"Location": "/operate/config?saved=moog"})
                 return
@@ -5735,6 +5783,25 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
 
         def do_GET(self):
             self._resolve_view()
+            if self.path.split("?", 1)[0].startswith("/api/antithesis-run/package/"):
+                from profile_manager.data.antithesis_package import dispatch_package_request
+
+                status, ctype, response_body = dispatch_package_request(method="GET", path=self.path)
+                self._send(status, ctype, response_body, extra_headers={"Cache-Control": "no-store"})
+                return
+            if self.path.split("?", 1)[0].startswith("/api/antithesis-run/versions/"):
+                from profile_manager.data.antithesis_versions import dispatch_versions_request
+
+                status, ctype, response_body = dispatch_versions_request(method="GET", path=self.path)
+                self._send(status, ctype, response_body, extra_headers={"Cache-Control": "no-store"})
+                return
+            from profile_manager.data.antithesis_topology import dispatch_topology_request as dispatch_remote_topology
+
+            remote_topology = dispatch_remote_topology(method="GET", path=self.path)
+            if remote_topology is not None:
+                status, ctype, response_body = remote_topology
+                self._send(status, ctype, response_body)
+                return
             _stub = self._basic_reference_stub(self.path.split("?",1)[0])
             if _stub is not None:
                 self._send(200, "text/html; charset=utf-8", _stub.encode("utf-8")); return

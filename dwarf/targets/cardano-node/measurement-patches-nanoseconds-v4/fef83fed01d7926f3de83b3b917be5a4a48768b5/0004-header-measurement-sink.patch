@@ -1,0 +1,105 @@
+diff --git a/api/lib/Ouroboros/Network/DwarfMeasurement.hs b/api/lib/Ouroboros/Network/DwarfMeasurement.hs
+--- a/api/lib/Ouroboros/Network/DwarfMeasurement.hs
++++ b/api/lib/Ouroboros/Network/DwarfMeasurement.hs
+@@ -8,11 +8,13 @@
+   ( emitDwarfProtocolMeasurement
+   , measureDwarfEither
+   , measureDwarfPure
++  , measureDwarfHeader
+   ) where
+ 
+ import Control.Concurrent.MVar (MVar, newMVar, withMVar)
+-import Control.Exception (evaluate)
++import Control.Exception (SomeAsyncException, SomeException, evaluate, fromException, throwIO, try)
+ import Data.Aeson (encode, object, (.=))
++import qualified Data.ByteString.Char8 as BS
+ import qualified Data.ByteString.Lazy.Char8 as LBS
+ import Data.Word (Word64)
+ import GHC.Clock (getMonotonicTimeNSec)
+@@ -107,3 +109,86 @@
+     (endedNs - startedNs)
+     ((endedNs - startedNs) `div` 1000)
+   pure result
++
++
++-- | Only the outer Either constructor is evaluated, as the native caller does.
++-- Never evaluate or show a successful payload. Disabled tracing returns the
++-- original thunk. Keep native evaluation separate from all instrumentation:
++-- diagnostic, clock, encoding and sink failures cannot replace its result.
++{-# NOINLINE measureDwarfHeader #-}
++measureDwarfHeader :: String -> (e -> String) -> (e -> String) -> Either e a -> Either e a
++measureDwarfHeader headerHash classifyError renderError value = unsafePerformIO $ do
++  sink <- tryHeaderInstrumentation (evaluate measurementHandle)
++  case sink of
++    Left _ -> pure value
++    Right Nothing -> pure value
++    Right (Just lock) -> do
++      started <- tryHeaderInstrumentation getMonotonicTimeNSec
++      evaluated <- try (evaluate value)
++      -- Native cancellation must leave before any further instrumentation.
++      case evaluated of
++        Left failure -> rethrowHeaderAsync failure
++        Right _ -> pure ()
++      emitted <- tryHeaderInstrumentation $ do
++        startedNs <- either throwIO pure started
++        endedNs <- getMonotonicTimeNSec
++        let elapsedNs = endedNs - startedNs
++            (outcome, errorKind, reason) = case evaluated of
++              Right (Right _) -> ("accepted", "none", "")
++              Right (Left err) -> ("rejected", classifyError err, renderError err)
++              Left _ -> ("unavailable", "evaluation-exception", "")
++            -- Public hash only: never serialize a header or successful state.
++            boundedHash = take 65 headerHash
++            boundedReason = map sanitize (take 1024 reason)
++            sanitize c | c >= ' ' && c <= '~' = c
++                       | otherwise = '?'
++        -- Force the entire JSON before writing, inside the instrumentation
++        -- guard. This also contains every lazy classification/render thunk.
++        encoded <- evaluate $ LBS.toStrict $ encode $ object
++          [ "schema_version" .= ("v1" :: String)
++          , "target" .= ("cardano-node::measurement" :: String)
++          , "event" .= ("header_validation" :: String)
++          , "boundary" .= ("consensus-validate-header" :: String)
++          , "header_hash" .= boundedHash
++          , "outcome" .= (outcome :: String)
++          , "error_kind" .= errorKind
++          , "reason" .= boundedReason
++          , "ended_monotonic_ns" .= endedNs
++          , "elapsed_nanos" .= elapsedNs
++          , "duration_us" .= (elapsedNs `div` 1000)
++          ]
++        withMVar lock $ \handle -> BS.hPutStrLn handle encoded
++      case emitted of
++        Left _ -> emitHeaderUnavailable lock
++        Right () -> pure ()
++      -- Preserve the original synchronous native exception after telemetry.
++      case evaluated of
++        Left failure -> throwIO (failure :: SomeException)
++        Right result -> pure result
++
++
++tryHeaderInstrumentation :: IO a -> IO (Either SomeException a)
++tryHeaderInstrumentation action = do
++  result <- try action
++  case result of
++    Left failure -> rethrowHeaderAsync failure >> pure result
++    Right _ -> pure result
++
++
++rethrowHeaderAsync :: SomeException -> IO ()
++rethrowHeaderAsync failure =
++  -- SomeAsyncException includes ThreadKilled, UserInterrupt and custom async
++  -- exceptions. Do not render it or attempt a second, potentially blocking IO.
++  case fromException failure :: Maybe SomeAsyncException of
++    Just _ -> throwIO failure
++    Nothing -> pure ()
++
++
++-- Constant, bounded fallback: no header/diagnostic thunk, no timing fabrication.
++-- Synchronous write failures preserve native semantics; async cancels at once.
++emitHeaderUnavailable :: MVar Handle -> IO ()
++emitHeaderUnavailable lock = do
++  _ <- tryHeaderInstrumentation $ withMVar lock $ \handle ->
++    BS.hPutStrLn handle
++      "{\"schema_version\":\"v1\",\"target\":\"cardano-node::measurement\",\"event\":\"header_validation\",\"boundary\":\"consensus-validate-header\",\"outcome\":\"unavailable\",\"error_kind\":\"instrumentation-exception\"}"
++  pure ()

@@ -1,0 +1,275 @@
+{% extends "operate/_lab_base.j2" %}
+{% macro step_header(number, title) %}<header><span>{{ number }}</span><div><h2>{{ title }}</h2></div></header>{% endmacro %}
+{% block main %}
+<link rel="stylesheet" href="/static/css/lab.css?v={{ asset_v }}">
+<section id="run-wizard" class="run-wizard run-wizard--basic antithesis-wizard" data-antithesis-wizard data-basic-reducer="skip" data-antithesis-token="{{ token }}">
+  <div class="antithesis-destination"><a class="dk-btn" href="/lab">← Choose environment</a><span class="eyebrow">Execution · Antithesis</span></div>
+  <div class="lab-entry__heading">
+    <img src="/static/dwarf-logo.png" width="88" height="88" alt="">
+    <h1>Antithesis run</h1><p class="dk-plain">The same decisions. A dedicated remote environment.</p>
+  </div>
+  <aside class="antithesis-notice" aria-labelledby="antithesis-availability">
+    <strong id="antithesis-availability">Prepare, verify delivery, then submit through MOOG</strong>
+    <p>Prepare generated or supplied test files in Step 5, then check delivery and submit through MOOG. Supported node artifacts bind to generated target images. Preparation reports which workloads and measurement taps are connected; collected results show which measurements were available.</p>
+  </aside>
+  <noscript><p class="antithesis-notice">Enable JavaScript to resolve and save topology configurations, filter choices and review selections. Preparation and launch are unavailable.</p></noscript>
+  <nav class="run-wizard__progress" aria-label="Antithesis run stages"><ol>
+    {% for key, label in [('topology','Topology'),('versions','Versions'),('scenario','Scenario'),('measurements','Measurement taps'),('review','Prepare'),('launch','Run + evidence')] %}
+    <li><a href="#run-stage-{{ key }}"><span>{{ loop.index }}</span>{{ label }}</a></li>
+    {% endfor %}
+  </ol></nav>
+  <div class="run-wizard__layout">
+    <section id="run-stage-topology" class="run-wizard__step run-wizard__step--wide">
+      {{ step_header('01', 'Topology') }}
+      <p><strong id="antithesis-topology-choice">Scenario default</strong></p>
+      <p>The scenario determines the nodes and their connections. Only override this when your experiment needs a specific topology.</p>
+      <button type="button" id="antithesis-reset-topology" class="dk-btn" hidden>Use scenario default</button>
+      <details id="antithesis-topology-override"><summary>Override topology (optional)</summary>
+      <p>Reuse a saved configuration or design a new Antithesis environment. Running local nodes are not reused.</p>
+      <fieldset class="run-choice-grid"><legend>Topology source</legend>
+        <label><input type="radio" name="topology-source" value="saved" checked> <strong>Use a saved configuration</strong></label>
+        <label><input type="radio" name="topology-source" value="new"> <strong>Design a new configuration</strong></label>
+      </fieldset>
+      <div id="antithesis-saved-topology"><label for="antithesis-profile">Configuration</label>
+        <select id="antithesis-profile"><option value="">Scenario default</option>
+          <optgroup id="antithesis-remote-configurations" label="Saved Antithesis configurations"></optgroup>
+          <optgroup label="Local profiles · remote import not supported">
+          {% for p in catalog.profiles %}<option value="local:{{ p.id }}">{{ p.label }} · requires a remote topology contract</option>{% endfor %}
+          </optgroup>
+        </select>
+      </div>
+      <fieldset id="antithesis-new-topology" hidden disabled><legend>New Antithesis configuration</legend>
+        <label for="antithesis-config-name">Configuration name</label><input id="antithesis-config-name" placeholder="My Antithesis experiment" maxlength="120">
+        <label for="antithesis-template">Implementation and topology</label><select id="antithesis-template"><option value="">Loading remote templates…</option></select>
+        <div class="run-wizard__version-grid">
+          <label>Cardano target nodes<input id="antithesis-cardano-count" type="number" min="0" step="1" readonly></label>
+          <label>Amaru target nodes<input id="antithesis-amaru-count" type="number" min="0" step="1" readonly></label>
+        </div>
+        <label>Network magic<input id="antithesis-network-magic" type="number" readonly></label>
+        <p class="dk-note" id="antithesis-template-reason">Counts and network magic come from the selected remote template. Additional shapes are not implemented yet.</p>
+      </fieldset>
+      <div class="dk-row"><button type="button" id="antithesis-resolve-topology" class="dk-btn" disabled>Resolve topology</button><button type="button" id="antithesis-save-topology" class="dk-btn" disabled>Save configuration</button><button type="button" id="antithesis-reload-topologies" class="dk-btn">Reload configurations</button></div>
+      <details><summary>What does resolution check?</summary><p>Resolution checks the remote service inventory, declared dependencies, configured peer references and input files. Supporting producers and bootstrap services are shown separately from your targets. Generated genesis and producer peer files must still be materialized and verified during Prepare. No containers have been started, no images have been qualified, and no workload or measurement collector has been added.</p></details>
+      </details>
+      <p id="antithesis-topology-state" class="run-wizard__selection" role="status" aria-live="polite">Loading topology catalog…</p>
+      <div id="antithesis-topology-preview" hidden>
+        <dl id="antithesis-topology-summary" class="antithesis-review"></dl>
+        <details><summary>Service graph, peer mappings and source inputs</summary><pre id="antithesis-topology-details"></pre></details>
+      </div>
+      <button type="button" id="antithesis-review-stale-topology" class="dk-btn" hidden>Review as a new configuration</button>
+    </section>
+    <section id="run-stage-versions" class="run-wizard__step run-wizard__step--wide">
+      {{ step_header('02', 'Node versions') }}
+      <label for="antithesis-policy">Version policy</label><select id="antithesis-policy"><option value="profile-default">Scenario / configuration default</option><option value="latest-confirmed">latest-confirmed · Local catalog default</option><option value="latest-stable">latest-stable</option><option value="exact">Exact versions</option></select>
+      <fieldset id="antithesis-exact-versions" hidden disabled><legend>Exact version selection</legend><div class="run-wizard__version-grid">
+        {% for implementation, label in [('cardano-node','Cardano-node'),('amaru','Amaru')] %}
+        <label>{{ label }}<select id="antithesis-version-{{ implementation }}"><option value="">Choose a version</option>
+          {% for v in catalog.versions if v.implementation == implementation %}<option value="{{ v.version }}" data-revision="{{ v.source_revision }}">{{ v.version }} · {{ v.channel }}</option>{% endfor %}
+        </select></label>
+        {% endfor %}
+      </div></fieldset>
+      <details><summary>Experimental node source, binary or image</summary>
+        <p class="dk-note">Prepare a node artifact using the existing DWARF build and binary packaging helpers. Paths refer to the DWARF host. A completed artifact replaces that implementation's catalog image in generated packages. Source builds use existing recipes and toolchains; commit source changes before building.</p>
+        {% for implementation, label in [('cardano-node','Cardano-node'),('amaru','Amaru')] %}
+        <fieldset data-antithesis-node="{{ implementation }}"><legend>{{ label }}</legend>
+          {% if implementation == 'cardano-node' %}<p class="dk-note">Cardano source builds require a recipe for the exact commit. For other commits, supply a compiled Linux/amd64 binary or image with the Stock variant.</p>{% endif %}
+          <label>Node input<select data-node-field="kind"><option value="catalog">Catalog image</option><option value="binary">Compiled binary / archive</option><option value="source">Source directory or official Git repository</option><option value="image">Image on the DWARF Docker host</option></select></label>
+          <div data-node-inputs hidden>
+            <label>Path, repository URL or image reference<input data-node-field="location" type="text" spellcheck="false"></label>
+            <label>Version label<input data-node-field="version" type="text" placeholder="Selected version or experimental label"></label>
+            <label>Source commit<input data-node-field="revision" type="text" placeholder="Full commit; source directories use HEAD" spellcheck="false"></label>
+            <label>Packaging base image (optional)<input data-node-field="base_image" type="text" placeholder="Default: shared catalog runtime image" spellcheck="false"></label>
+            <button type="button" class="dk-btn" data-node-release>Use resolved release source</button>
+            <button type="button" class="dk-btn" data-node-prepare>Prepare node artifact</button>
+            <p data-node-status role="status">No artifact prepared.</p>
+          </div>
+        </fieldset>
+        {% endfor %}
+      </details>
+      <label for="antithesis-build">Build variant</label><select id="antithesis-build"><option value="stock">Stock</option><option value="instrumented">Instrumented / patched</option></select>
+      <label><input type="checkbox" id="antithesis-experimental"> Record experimental testing intent</label>
+      <p class="dk-note">Inspect release facts here. Step 5 applies supported stock releases to the generated target and reports exactly which images changed. Supplied packages retain their own images. Unknown identity or compatibility does not itself exclude a release; missing image references and patch recipes remain explicit gaps.</p>
+      <div class="dk-row"><button type="button" id="antithesis-resolve-versions" class="dk-btn" disabled>Resolve version choices</button><button type="button" id="antithesis-reload-versions" class="dk-btn">Reload release catalog</button></div>
+      <p id="antithesis-versions-state" class="run-wizard__selection" role="status" aria-live="polite">Loading release catalog…</p>
+      <div id="antithesis-versions-preview" hidden>
+        <ul id="antithesis-version-issues"></ul>
+        <div id="antithesis-version-releases"></div>
+        <details><summary>Baseline service images and requested target releases</summary><div id="antithesis-version-services"></div></details>
+        <details><summary>Assessment identity and full details</summary><pre id="antithesis-version-details"></pre></details>
+      </div>
+      <details><summary>Artifact identity and qualification</summary><p>Preparation must bind exact source revisions, image digests, platform, patch identity and collector contracts. Experimental consent must be reviewed against that exact artifact before launch.</p></details>
+    </section>
+    <section id="run-stage-scenario" class="run-wizard__step run-wizard__step--wide">
+      {{ step_header('03', 'Scenario') }}
+      <label for="antithesis-scenario-search">Find a scenario</label><input id="antithesis-scenario-search" type="search" placeholder="Search name, exact variant or implementation">
+      <label for="antithesis-scenario">Exact scenario variant</label><select id="antithesis-scenario"><option value="">Choose a scenario</option>
+        {% for s in catalog.scenarios %}<option value="{{ s.id }}" data-search="{{ (s.title ~ ' ' ~ s.id ~ ' ' ~ s.implementation)|lower }}">{{ s.title }} · {{ s.id }}</option>{% endfor %}
+      </select><p id="antithesis-scenario-count" class="dk-note" role="status">{{ catalog.scenarios|length }} catalog scenarios · remote support not evaluated</p>
+      <p class="run-wizard__selection" id="antithesis-selected-scenario">No scenario selected.</p>
+      <p class="dk-note">All catalog variants are shown for planning. Each operation and assertion still needs a supported remote implementation.</p>
+    </section>
+    <section id="run-stage-measurements" class="run-wizard__step run-wizard__step--wide">
+      {{ step_header('04', 'Measurement taps') }}
+      <label for="antithesis-measurement-profile">Measurement profile</label><select id="antithesis-measurement-profile"><option value="">Choose taps individually</option>
+        {% for p in catalog.measurement_profiles %}<option value="{{ p.id }}" data-tap-ids='{{ p.tap_ids|tojson }}'>{{ p.title }}</option>{% endfor %}
+      </select>
+      <p class="dk-note">Choosing a profile replaces the draft tap selection with its enabled taps. No automatic scenario defaults are applied yet.</p>
+      <details open><summary>Individual taps <span id="antithesis-tap-count">· 0 selected</span></summary>
+        <label for="antithesis-tap-search">Find a tap</label><input id="antithesis-tap-search" type="search" placeholder="Search name, collection mode or target mode">
+        <div class="antithesis-taps">
+          {% for t in catalog.taps %}<div class="antithesis-tap" data-tap-row>
+            <label><input type="checkbox" name="antithesis-tap" value="{{ t.id }}"> <strong>{{ t.title }}</strong></label>
+            <p>{{ t.description }}</p><small>{{ t.mode }}{% if t.target_modes %} · {{ t.target_modes|join(', ') }}{% endif %} · connection checked during preparation; availability recorded in results</small>
+          </div>{% else %}<p>No measurement definitions are available.</p>{% endfor %}
+        </div><p id="antithesis-tap-search-state" class="dk-note" role="status"></p>
+      </details>
+      <p class="run-wizard__selection">Passive and patched taps both require a remote collector. Selected taps are preserved even when their build requirements have not been resolved.</p>
+    </section>
+    <section id="run-stage-review" class="run-wizard__step run-wizard__step--wide">
+      {{ step_header('05', 'Review and prepare') }}
+      <fieldset class="antithesis-package-sources" aria-describedby="antithesis-package-note"><legend>Test package source</legend>
+        <label><input type="radio" name="antithesis-package-source" value="build" checked> <strong>Build with Dwarf</strong><span>Assemble the environment from your wizard choices.</span></label>
+        <label><input type="radio" name="antithesis-package-source" value="url"> <strong>Use a package URL</strong><span>Provide an existing test archive.</span></label>
+        <label><input type="radio" name="antithesis-package-source" value="existing"> <strong>Use existing Compose/images</strong><span>Provide assets available on the Dwarf host.</span></label>
+      </fieldset>
+      <fieldset id="antithesis-package-url-fields" hidden disabled><legend>Package location</legend>
+        <label for="antithesis-package-url">Archive URL (ZIP or tar.gz)</label><input id="antithesis-package-url" type="url" placeholder="https://…" maxlength="4096" spellcheck="false" aria-describedby="antithesis-package-note">
+      </fieldset>
+      <fieldset id="antithesis-package-existing-fields" hidden disabled><legend>Existing assets</legend>
+        <label for="antithesis-compose-path">Compose project path</label><input id="antithesis-compose-path" placeholder="/path/on/dwarf-host/test-environment" maxlength="4096" spellcheck="false">
+        <label for="antithesis-image-references">Image references (one per line)</label><textarea id="antithesis-image-references" rows="3" maxlength="16384" placeholder="my-node:experimental&#10;my-workload:test" spellcheck="false"></textarea>
+        <p class="dk-note">Enter a Compose project path, image references, or both. An image supplies part of the environment; it does not describe the complete test.</p>
+      </fieldset>
+      <p id="antithesis-package-note" class="dk-note">Build with Dwarf uses the existing native generator. URL input accepts direct public HTTPS ZIP or tar.gz archives, including repository archive URLs. Existing Compose paths refer to this Dwarf host. Preparation saves files and reports missing inputs; it does not build images, publish or submit. Limits: 32 MiB and 2048 members. Switching sources keeps your entries.</p>
+      <p id="antithesis-package-selection-note" class="dk-note" hidden>Wizard choices remain requested intent. They have not been applied to the supplied package or images.</p>
+      {% include 'operate/_antithesis_settings.j2' %}
+      <div class="run-wizard__version-grid">
+        <label>Requested duration (hours)<input id="antithesis-duration" type="number" min="1" step="1" value="1"></label>
+        <label>Fault policy<select id="antithesis-faults"><option value="off">Off — control run</option><option value="on">On — requires qualification</option></select></label>
+      </div>
+      <p class="dk-note">Duration and fault settings are draft requests. Provider limits have not been checked.</p>
+      <dl id="antithesis-review" class="antithesis-review"><dt>Execution</dt><dd>Antithesis · unsubmitted draft</dd></dl>
+      <button type="button" id="antithesis-preview-package" class="dk-btn" disabled>Generate package preview</button>
+      <p id="antithesis-package-state" class="run-wizard__selection" role="status" aria-live="polite">Select a scenario to generate a package preview.</p>
+      <div id="antithesis-package-preview" hidden>
+        <h3>What your selections changed</h3>
+        <p id="antithesis-engine-summary"></p>
+        <p class="dk-note">Applied means present in these preview files, not verified at runtime. Recorded only means the request is preserved but has not changed the test.</p>
+        <div class="antithesis-input-table" tabindex="0" role="region" aria-label="Applied and recorded selections">
+          <table><thead><tr><th scope="col">Selection</th><th scope="col">Status</th><th scope="col">Effect on this preview</th></tr></thead>
+            <tbody id="antithesis-input-dispositions"></tbody>
+          </table>
+        </div>
+        <details><summary>Generated services, images and configuration</summary>
+          <p class="dk-note">These are the native scenario environment's emitted references. Images have not been built or checked. A separate topology preview is not included here.</p>
+          <ul id="antithesis-engine-services"></ul>
+          <p id="antithesis-engine-configs"></p>
+        </details>
+        <h3>Generated files and missing implementations</h3>
+        <ul id="antithesis-package-issues"></ul>
+        <p class="dk-note">This preview is incomplete. It is not a prepared test or evidence that the experiment works.</p>
+        <a id="antithesis-package-download" class="dk-btn">Download preview ZIP</a>
+        <label for="antithesis-package-file">Inspect a generated file</label><select id="antithesis-package-file"></select>
+        <pre id="antithesis-package-file-content" tabindex="0" aria-label="Generated file contents"></pre>
+      </div>
+      <p id="antithesis-prepare-reason">Prepare package acquires the selected source and saves a snapshot with a receipt. A staged package may still have missing inputs or implementation gaps.</p>
+      <button type="button" id="antithesis-prepare" class="cta cta--ghost" disabled aria-describedby="antithesis-prepare-reason">Prepare package</button>
+      <p id="antithesis-preparation-state" role="status" aria-live="polite" class="run-wizard__selection">Select a source to prepare.</p>
+      <div id="antithesis-preparation-result" hidden>
+        <h3>Saved package</h3>
+        <p id="antithesis-preparation-summary"></p>
+        <ul id="antithesis-preparation-issues"></ul>
+        <a id="antithesis-preparation-download" class="dk-btn">Download staged assets</a>
+        <details><summary>Inspect preparation receipt</summary><pre id="antithesis-preparation-receipt" tabindex="0"></pre></details>
+      </div>
+      <h3>Build generated images</h3>
+      <p class="dk-note">Build the images declared by a saved Dwarf-generated package on this Dwarf host. This saves a separate package; publication and remote validation are still required.</p>
+      <button type="button" id="antithesis-build-images" class="cta cta--ghost" disabled>Build images</button>
+      <p id="antithesis-image-build-state" role="status" aria-live="polite" class="run-wizard__selection">Prepare a generated package first.</p>
+      <div id="antithesis-image-build-result" hidden>
+        <p id="antithesis-image-build-summary"></p>
+        <a id="antithesis-image-build-download" class="dk-btn">Download built package</a>
+        <details><summary>Inspect image build receipt</summary><pre id="antithesis-image-build-receipt" tabindex="0"></pre></details>
+      </div>
+      <h3>Publish generated images</h3>
+      <p class="dk-note">Choose a GHCR repository prefix. Each built service gets a separate package and unique tag. Push uses the Docker login on this Dwarf host. After pushing, make those packages public in GitHub and verify them here.</p>
+      <label>GHCR repository prefix<input id="antithesis-publication-prefix" type="text" placeholder="ghcr.io/owner/dwarf" autocomplete="off"></label>
+      <button type="button" id="antithesis-publication-create" class="dk-btn" disabled>Prepare publication handoff</button>
+      <p id="antithesis-publication-state" class="run-wizard__selection" role="status" aria-live="polite">Build a generated package first.</p>
+      <button type="button" id="antithesis-publication-resume" class="dk-btn" hidden>Recover operation status</button>
+      <ul id="antithesis-publication-images"></ul>
+      <button type="button" id="antithesis-publication-push" class="cta cta--ghost" disabled>Push images to GHCR</button>
+      <button type="button" id="antithesis-publication-verify-images" class="dk-btn" disabled>Verify public images</button>
+      <p class="dk-note">Verification reads public manifests and image configs without your login. It does not qualify runtime behavior or exercise image layers.</p>
+      <div id="antithesis-publication-export" hidden>
+        <h3>Publish the runtime package</h3>
+        <p>Extract this ZIP into a dedicated directory in your public GitHub repository, preserve executable permissions, and commit it. Use the exact commit below. The inspection snapshot stays in Dwarf.</p>
+        <a id="antithesis-publication-download" class="dk-btn">Download public package</a>
+        <details><summary>Inspect publication receipt</summary><pre id="antithesis-publication-receipt" tabindex="0"></pre></details>
+      </div>
+      <div class="run-wizard__version-grid">
+        <label>Public GitHub repository<input id="antithesis-publication-repository" placeholder="owner/repository" autocomplete="off"></label>
+        <label>Full Git commit<input id="antithesis-publication-commit" placeholder="40-character commit SHA" autocomplete="off"></label>
+        <label>Package directory<input id="antithesis-publication-directory" placeholder="antithesis/my-scenario" autocomplete="off"></label>
+        <label>Requester GitHub name<input id="antithesis-publication-requester" autocomplete="off"></label>
+        <label>Attempt<input id="antithesis-publication-try" type="number" value="1" min="1" max="9999"></label>
+      </div>
+      <p class="dk-note">The request uses saved DWARF settings and this package's original duration and fault selection. Save configuration changes before checking. Each attempt identifies one MOOG request; recovery never increments it automatically.</p>
+      <button type="button" id="antithesis-publication-verify-git" class="dk-btn" disabled>Verify Git assets and prepare request</button>
+      <div id="antithesis-publication-request-result" hidden>
+        <h3>MOOG request for review</h3>
+        <p id="antithesis-publication-request-summary"></p>
+        <p class="dk-note">Nothing has been submitted. Review package checks below. Fresh local validation and the actual remote config image still require evidence. Requester registration, repository whitelist, credentials, duplicate requests and remote qualification also remain unchecked.</p>
+        <details><summary>Inspect existing-engine request and checks</summary><pre id="antithesis-publication-request" tabindex="0"></pre></details>
+      </div>
+    </section>
+    <section class="run-wizard__step run-wizard__step--wide" aria-labelledby="antithesis-validation-heading">
+      <h3 id="antithesis-validation-heading">Check the Antithesis package</h3>
+      <p>Check a saved package from any of the three input paths. Choose the exact snapshot: staged inputs, built images, or the public export.</p>
+      <label for="antithesis-validation-source">Package snapshot</label>
+      <select id="antithesis-validation-source"><option value="">Prepare a package first</option></select>
+      <div class="antithesis-settings-actions">
+        <button type="button" id="antithesis-validation-static" class="dk-btn" disabled>Check package</button>
+        <button type="button" id="antithesis-validation-artifacts" class="dk-btn" disabled>Inspect images/config image</button>
+        <button type="button" id="antithesis-validation-recover" class="dk-btn" hidden>Recover validation status</button>
+      </div>
+      <p class="dk-note">Package checks read saved files. Image inspection checks local image metadata and public GHCR access, then builds the MOOG config-image candidate and compares its packaged files without starting it. It uses Docker on this Dwarf host and may download the Debian base image. Service images are not pulled. Runtime behavior and other registries still need verification.</p>
+      <p id="antithesis-validation-state" role="status" aria-live="polite" class="run-wizard__selection">Prepare a package first.</p>
+      <div id="antithesis-validation-result" hidden>
+        <p id="antithesis-validation-summary"></p>
+        <ul id="antithesis-validation-findings"></ul>
+        <details><summary>Inspect all checks and saved evidence</summary><pre id="antithesis-validation-receipt" tabindex="0"></pre></details>
+      </div>
+    </section>
+    <section id="run-stage-launch" class="run-wizard__step run-wizard__step--wide">
+      {{ step_header('06', 'Run and evidence') }}
+      <p id="antithesis-submit-reason">Check the selected package snapshot and public Git target above. Readiness verifies delivery and requester access; compatibility and runtime behavior remain part of the experiment.</p>
+      <button type="button" id="antithesis-submission-check" class="dk-btn" disabled>Check submission readiness</button>
+      <button type="button" id="antithesis-submit" class="cta" disabled aria-describedby="antithesis-submit-reason">Submit to Antithesis</button>
+      <p id="antithesis-submission-state" class="run-wizard__selection" role="status" aria-live="polite" data-state="unchecked">No submission. Check readiness first.</p>
+      <p class="dk-note">Saved readiness checks and their limits:</p>
+      <ul id="antithesis-submission-checks"></ul>
+      <p id="antithesis-submission-identity" class="dk-note"></p>
+      <label for="antithesis-submission-lookup">Saved submission check ID</label>
+      <input id="antithesis-submission-lookup" autocomplete="off" placeholder="32-character check ID">
+      <div class="antithesis-settings-actions">
+        <button type="button" id="antithesis-submission-recover" class="dk-btn" disabled>Recover saved status</button>
+        <button type="button" id="antithesis-submission-refresh" class="dk-btn" disabled>Refresh from MOOG</button>
+      </div>
+      <p class="dk-note">Submission sends one request using the existing DWARF/MOOG requester. A lost acknowledgement requires recovery. Refresh reads status without submitting again. A completed run can contain findings; completion does not establish a passing verdict.</p>
+      <details id="antithesis-submission-result" hidden><summary>Inspect readiness and run receipt</summary><pre id="antithesis-submission-receipt" tabindex="0"></pre></details>
+    </section>
+  </div>
+</section>
+<script src="/static/js/antithesis-run-wizard.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/antithesis-topology.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/antithesis-settings.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/antithesis-versions.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/antithesis-artifacts.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/antithesis-package.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/antithesis-preparation.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/antithesis-image-build.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/antithesis-publication.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/antithesis-package-validation.js?v={{ asset_v }}" defer></script>
+<script src="/static/js/antithesis-submission.js?v={{ asset_v }}" defer></script>
+{% endblock %}

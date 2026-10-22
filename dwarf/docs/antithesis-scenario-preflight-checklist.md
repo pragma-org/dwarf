@@ -1,5 +1,10 @@
 # DWARF Antithesis scenario preflight checklist
 
+**Start with the [canonical scenario specification](../../antithesis/spec.md).**
+It defines the Compose/image requirements, applicability, source map and
+per-scenario evidence record. This checklist retains the detailed operational
+gates and historical pitfalls. Neither document certifies existing bundles.
+
 **Purpose:** decide whether a new Cardano/Amaru scenario is genuinely ready for
 Antithesis, without confusing generator output, setup validation, or an accepted
 request with an executed test.
@@ -58,6 +63,11 @@ missing earlier level.
 
 ## C. Generator and artifact checks
 
+- [ ] Complete spec requirements C01–C15 against the final Compose and config
+  image, including `init: true`, explicit service/container name correspondence,
+  default logging, absent pull policies, and no `internal: true` networks in the
+  submitted artifact. Keep local isolation overrides separate.
+
 - [ ] Run DWARF semantic validation and the generator's Stage-2 verifier.
 - [ ] Confirm the selected fuzz primitive maps to a built adversary mode and the
   generated topology actually routes that adversary to the target.
@@ -72,6 +82,12 @@ missing earlier level.
   under `/opt/antithesis/test/v1`, executable modes for the image's default
   user, and no inherited templates. A startup `cp`, `chmod`, deletion, or bind
   mount is not pre-entrypoint catalog proof.
+- [ ] For bundled loaders, include the builder's coherent libc family and reject
+  unresolved `ldd` output even when the command exits zero. Hash all staged
+  dependencies and verify the actual binary. Exercise a dependency-bearing
+  `/etc/ld.so.preload` fixture and observe its load marker; ordinary local
+  startup alone missed the patched Cardano missing-pthread failure. A synthetic
+  probe is not proof of the real Antithesis ABI and must not be published.
 - [ ] Confirm the driver does not emit `setup_complete`; setup belongs to the
   system readiness path.
 - [ ] Confirm the package is self-contained and has no `.env`, PAT, wallet,
@@ -175,6 +191,9 @@ Immediately after launch, verify the run is doing the intended work:
   clean test result—and stop spending time on its property summary.
 - [ ] Wait for terminal completion before making campaign claims. `accepted`,
   `in_progress`, or a green always-property with zero encounters is not proof.
+- [ ] Classify MOOG `finished/failure` from the actual terminal report. It can
+  mean setup failure or findings after a completed campaign. When proxy/list
+  discovery fails, use the finished fact's direct signed report URL privately.
 - [ ] Save run ID, workbench ID/version, commit, image digests, build logs,
   first-timeline evidence, and terminal triage report together.
 
@@ -253,6 +272,16 @@ Immediately after launch, verify the run is doing the intended work:
     into a dedicated workload image with build-layer mode `0755`; do not repair
     executable bits in the entrypoint.
 
+21. **Incomplete custom runtime under Antithesis preload:** the patched Cardano
+    run exited 127 before setup because node-only `ldd` staging omitted
+    `libpthread.so.0`. Preserve ordinary dependencies plus the same-builder
+    libc family and verify a dependency-bearing preload. Do not copy a foreign
+    base-image libc or silently ignore `ldd` lines reporting `not found`.
+22. **Terminal transport state mistaken for campaign success:** both a setup
+    failure and a completed campaign with findings yielded MOOG finished/failure.
+    Direct signed reports remained accessible despite proxy 404s and an empty
+    run listing. Classify the actual report, not the discovery endpoint.
+
 ## Decision rule
 
 Mark a scenario **READY FOR PAID ANTITHESIS** only when sections A–G are complete,
@@ -305,6 +334,7 @@ the complete upstream mixed-net contract.
 - Moog workbench `moog`: pinned Antithesis run checklist, requester runbook,
   fault-exclusion incident, prior run ledger, and mixed phase-1 differential note.
 - Antithesis docs: [Docker Compose setup](https://antithesis.com/docs/setup/docker_compose/),
+  [Docker settings and network restrictions](https://antithesis.com/docs/best_practices/docker_best_practices/),
   [Writing tests](https://antithesis.com/docs/product/writing_tests/),
   [Launching tests](https://antithesis.com/docs/product/launching_tests/),
   [Optimizing for testing](https://antithesis.com/docs/best_practices/optimizing/),

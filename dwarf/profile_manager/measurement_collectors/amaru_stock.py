@@ -721,7 +721,7 @@ class AmaruStockCollector:
         include_existing: bool = False,
         allow_missing_at_start: bool = False,
         max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
-        source_revision: str = AMARU_SOURCE_REVISION,
+        source_revision: str | None = AMARU_SOURCE_REVISION,
     ) -> None:
         self.entry = entry
         self.measurement_id = entry["id"]
@@ -834,7 +834,7 @@ def build_amaru_stock_factories(
     include_existing: bool = False,
     allow_missing_at_start: bool = False,
     max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
-    source_revision: str = AMARU_SOURCE_REVISION,
+    source_revision: str | None = AMARU_SOURCE_REVISION,
 ) -> dict[str, Any]:
     """Bind trusted deployment-owned inputs to each stock collector factory."""
     json_paths = tuple(Path(path) for path in json_trace_paths)
@@ -868,12 +868,14 @@ class AmaruHeaderValidationCollector:
         trace_paths: Iterable[str | Path],
         allow_missing_at_start: bool = False,
         max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
+        source_revision: str | None = AMARU_SOURCE_REVISION,
     ) -> None:
         self.entry = entry
         self.measurement_id = entry["id"]
         self.trace_paths = [Path(path) for path in trace_paths]
         self.allow_missing_at_start = allow_missing_at_start
         self.max_source_bytes = max_source_bytes
+        self.source_revision = source_revision
         self._offsets: dict[Path, int] = {}
 
     def prepare(self, context) -> None:
@@ -909,7 +911,7 @@ class AmaruHeaderValidationCollector:
             result = {
                 "schema_version": "v1",
                 "measurement_id": self.measurement_id,
-                "source_revision": AMARU_SOURCE_REVISION,
+                "source_revision": self.source_revision,
                 "measurements": {
                     "header_validation": {
                         "status": "unavailable",
@@ -932,7 +934,7 @@ class AmaruHeaderValidationCollector:
             result = {
                 "schema_version": "v1",
                 "measurement_id": self.measurement_id,
-                "source_revision": AMARU_SOURCE_REVISION,
+                "source_revision": self.source_revision,
                 "measurements": {
                     "header_validation": {"status": "available", "unit": "count", "value": counts}
                 },

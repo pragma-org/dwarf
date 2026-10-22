@@ -1,0 +1,35 @@
+<details class="antithesis-settings">
+  <summary id="antithesis-settings-heading">Antithesis configuration</summary>
+  <p>Review or edit the same Moog + Antithesis settings available in DWARF Settings. Saving updates shared DWARF configuration for future operations.</p>
+  <p class="dk-note">Saved credentials stay masked. Leave a secret blank to keep it. Environment values are shown read-only; change those in the dashboard's environment. These settings do not confirm the configuration of the remote agent or oracle.</p>
+  <form id="antithesis-settings-form" action="/api/moog/setup" method="post" autocomplete="off">
+    <input type="hidden" name="token" value="{{ token }}">
+    <fieldset id="antithesis-settings-fields">
+      <legend>Current settings</legend>
+      {% for group_name in ['Antithesis', 'GitHub target', 'Moog runtime', 'Agent service'] %}
+      {% for group in moog_setup.groups if group.name == group_name %}
+      <details{% if group.name == 'Antithesis' %} open{% endif %}>
+        <summary>{{ group.name }}</summary>
+        <div class="run-wizard__version-grid">
+        {% for field in group.fields %}
+          <label class="antithesis-settings__field">
+            <span>{{ 'Saved duration default (hours)' if field.key == 'duration_hours' else field.label }}</span>
+            <input data-setting="{{ field.key }}" name="{{ field.key }}"
+              type="{{ field.kind if field.kind in ['checkbox', 'password'] else 'text' }}"
+              {% if field.kind == 'checkbox' %}value="true"{% if field.value %} checked{% endif %}{% else %}value="{{ field.value }}" placeholder="{{ field.placeholder }}"{% endif %}
+              {% if field.source.startswith('env:') %}disabled{% endif %}
+              autocomplete="{{ 'new-password' if field.secret else 'off' }}">
+            <small data-setting-source="{{ field.key }}">{{ field.source }}{% if field.secret %} · {{ 'configured' if field.configured else 'not configured' }}{% endif %}</small>
+            <small>{{ 'Shared default for other operations; the requested duration below belongs to this run draft.' if field.key == 'duration_hours' else field.help }}</small>
+          </label>
+        {% endfor %}
+        </div>
+      </details>
+      {% endfor %}
+      {% endfor %}
+    </fieldset>
+    <button id="antithesis-save-settings" class="dk-btn" type="submit" disabled>Save shared configuration</button>
+    <p id="antithesis-settings-state" class="dk-note" role="status" aria-live="polite">Current configuration loaded. Saving settings does not prepare or submit a run.</p>
+    <noscript><p>Enable JavaScript to save configuration here without leaving the wizard.</p></noscript>
+  </form>
+</details>

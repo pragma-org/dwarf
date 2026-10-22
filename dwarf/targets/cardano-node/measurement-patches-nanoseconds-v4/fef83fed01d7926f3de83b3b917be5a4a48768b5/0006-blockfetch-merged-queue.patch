@@ -1,0 +1,514 @@
+diff --git a/api/lib/Ouroboros/Network/DwarfMeasurement.hs b/api/lib/Ouroboros/Network/DwarfMeasurement.hs
+--- a/api/lib/Ouroboros/Network/DwarfMeasurement.hs
++++ b/api/lib/Ouroboros/Network/DwarfMeasurement.hs
+@@ -9,15 +9,22 @@
+   , measureDwarfEither
+   , measureDwarfPure
+   , measureDwarfHeader
++  , dwarfBlockFetchEnabled
++  , dwarfQueueStamp
++  , emitDwarfBlockFetch
++  , measureDwarfFetchedBlock
+   ) where
+ 
+ import Control.Concurrent.MVar (MVar, newMVar, withMVar)
+ import Control.Exception (SomeAsyncException, SomeException, evaluate, fromException, throwIO, try)
++import Control.Monad.Class.MonadThrow qualified as MC
++import Control.Monad.Class.MonadTime (MonadMonotonicTimeNSec, getMonotonicTimeNSec)
+ import Data.Aeson (encode, object, (.=))
+ import qualified Data.ByteString.Char8 as BS
+ import qualified Data.ByteString.Lazy.Char8 as LBS
+ import Data.Word (Word64)
+-import GHC.Clock (getMonotonicTimeNSec)
++import Numeric (showHex)
++import System.Random (randomIO)
+ import System.Environment (lookupEnv)
+ import System.IO (BufferMode (LineBuffering), Handle, IOMode (AppendMode),
+                   hSetBuffering, openFile)
+@@ -192,3 +199,96 @@
+     BS.hPutStrLn handle
+       "{\"schema_version\":\"v1\",\"target\":\"cardano-node::measurement\",\"event\":\"header_validation\",\"boundary\":\"consensus-validate-header\",\"outcome\":\"unavailable\",\"error_kind\":\"instrumentation-exception\"}"
+   pure ()
++
++
++-- A process-local random 128-bit trace namespace separates restarted nodes.
++-- Its construction/forcing is contained by the diagnostic encoding guard.
++{-# NOINLINE dwarfTraceSession #-}
++dwarfTraceSession :: String
++dwarfTraceSession = unsafePerformIO $ do
++  a <- randomIO :: IO Word64
++  b <- randomIO :: IO Word64
++  let hex n = let s = showHex n "" in replicate (16 - length s) '0' ++ s
++  pure (hex a ++ hex b)
++
++
++-- | Force this flag before entering STM: opening a diagnostic sink is IO.
++{-# NOINLINE dwarfBlockFetchEnabled #-}
++dwarfBlockFetchEnabled :: Bool
++dwarfBlockFetchEnabled = unsafePerformIO $ do
++  sink <- tryHeaderInstrumentation (evaluate measurementHandle)
++  pure $ case sink of
++    Right (Just _) -> True
++    _ -> False
++
++
++-- | Clock IO stays outside retried STM. Synchronous diagnostic failure cannot
++-- change native progress; SomeAsyncException always cancels immediately.
++dwarfQueueStamp :: (MC.MonadCatch m, MonadMonotonicTimeNSec m) => m (Maybe Word64)
++dwarfQueueStamp =
++  if dwarfBlockFetchEnabled
++    then MC.catch (Just <$> getMonotonicTimeNSec) $ \failure ->
++      case fromException failure :: Maybe SomeAsyncException of
++        Just _ -> MC.throwIO (failure :: SomeException)
++        Nothing -> pure Nothing
++    else pure Nothing
++
++
++-- | Only bounded metadata enters the sink; never serialize a block or payload.
++-- Both clock endpoints bracket native calls, not STM commit instants.
++{-# NOINLINE emitDwarfBlockFetch #-}
++emitDwarfBlockFetch :: String -> Word64 -> Word64 -> Word64 -> Int
++                   -> Maybe Word64 -> Maybe Word64 -> String -> ()
++emitDwarfBlockFetch phase clientId requestId updateIndex depth started ended blockHash =
++  unsafePerformIO $ do
++    sink <- tryHeaderInstrumentation (evaluate measurementHandle)
++    case sink of
++      Right (Just lock) -> do
++        emitted <- tryHeaderInstrumentation $ do
++          (start, end) <- case (started, ended) of
++            (Just a, Just b) | a <= b -> pure (a, b)
++            _ -> ioError (userError "unavailable clock")
++          let boundedHash = take 65 blockHash
++          if clientId == 0 || requestId == 0 || updateIndex == 0
++              || depth < 0 || depth > 65536
++            then ioError (userError "unavailable queue metadata")
++            else pure ()
++          encoded <- evaluate $ LBS.toStrict $ encode $ object
++            [ "schema_version" .= ("v1" :: String)
++            , "target" .= ("cardano-node::measurement" :: String)
++            , "event" .= ("blockfetch_handler_queue" :: String)
++            , "boundary" .= ("client-merged-request" :: String)
++            , "phase" .= phase
++            , "trace_session" .= dwarfTraceSession
++            , "client_id" .= clientId
++            , "request_id" .= requestId
++            , "update_index" .= updateIndex
++            , "queue_depth" .= depth
++            , "started_monotonic_ns" .= start
++            , "ended_monotonic_ns" .= end
++            , "block_hash" .= boundedHash
++            ]
++          withMVar lock $ \handle -> BS.hPutStrLn handle encoded
++        case emitted of
++          Right () -> pure ()
++          Left _ -> do
++            _ <- tryHeaderInstrumentation $ withMVar lock $ \handle ->
++              BS.hPutStrLn handle
++                "{\"schema_version\":\"v1\",\"target\":\"cardano-node::measurement\",\"event\":\"blockfetch_handler_queue\",\"boundary\":\"client-merged-request\",\"phase\":\"unavailable\"}"
++            pure ()
++      _ -> pure ()
++
++
++-- | The native addFetchedBlock action is deliberately outside every telemetry
++-- catch. Preserve its result and exceptions without inspecting either payload.
++measureDwarfFetchedBlock :: (MC.MonadCatch m, MonadMonotonicTimeNSec m)
++                        => Word64 -> Maybe (Word64, Word64) -> String -> m a -> m a
++measureDwarfFetchedBlock clientId pending blockHash action = do
++  started <- dwarfQueueStamp
++  native <- action
++  ended <- dwarfQueueStamp
++  case pending of
++    Just (requestId, updateIndex) ->
++      emitDwarfBlockFetch "service" clientId requestId updateIndex 0
++        started ended blockHash `seq` pure native
++    Nothing -> pure native
+diff --git a/lib/Ouroboros/Network/BlockFetch/ClientState.hs b/lib/Ouroboros/Network/BlockFetch/ClientState.hs
+--- a/lib/Ouroboros/Network/BlockFetch/ClientState.hs
++++ b/lib/Ouroboros/Network/BlockFetch/ClientState.hs
+@@ -24,6 +24,7 @@
+   , FetchRequest (..)
+   , addNewFetchRequest
+   , acknowledgeFetchRequest
++  , acknowledgeFetchRequestDwarf
+   , startedFetchBatch
+   , completeBlockDownload
+   , completeFetchBatch
+@@ -36,6 +37,10 @@
+   , PeersOrder (..)
+   ) where
+ 
++import Data.Word (Word64)
++import Control.Monad.Class.MonadThrow (MonadCatch)
++import Ouroboros.Network.DwarfMeasurement (dwarfBlockFetchEnabled, dwarfQueueStamp, emitDwarfBlockFetch)
++
+ import Data.List as List (foldl')
+ import Data.Maybe (mapMaybe)
+ import Data.Semigroup (Last (..))
+@@ -118,6 +123,10 @@
+        -- it is not used as a one-place queue: the requests can be updated
+        -- before being accepted.
+        --
++       fetchClientDwarfId :: Word64,
++       -- Sidecar only: request serial and currently pending (serial, merges).
++       -- Allocated/updated/taken with the native client state, never a global map.
++       fetchClientDwarfQueueVar :: StrictTVar m (Word64, Maybe (Word64, Word64)),
+        fetchClientRequestVar  :: TFetchRequestVar m header
+      }
+ 
+@@ -125,6 +134,8 @@
+ newFetchClientStateVars = do
+     fetchClientInFlightVar <- newTVar initialPeerFetchInFlight
+     fetchClientStatusVar   <- newTVar PeerFetchStatusStarting
++    let fetchClientDwarfId = 0 -- registry assigns a unique nonzero session ID
++    fetchClientDwarfQueueVar <- newTVar (0, Nothing)
+     fetchClientRequestVar  <- newTFetchRequestVar
+     return FetchClientStateVars {..}
+ 
+@@ -481,7 +492,7 @@
+ -- only operation that grows the in-flight blocks, and is only used by the
+ -- fetch decision logic thread.
+ --
+-addNewFetchRequest :: (MonadSTM m, HasHeader header)
++addNewFetchRequest :: (MonadSTM m, MonadCatch m, MonadMonotonicTime m, HasHeader header)
+                    => Tracer m (TraceFetchClientState header)
+                    -> (header -> SizeInBytes)
+                    -> FetchRequest header
+@@ -492,9 +503,12 @@
+                    FetchClientStateVars{
+                      fetchClientRequestVar,
+                      fetchClientInFlightVar,
+-                     fetchClientStatusVar
++                     fetchClientStatusVar,
++                     fetchClientDwarfId,
++                     fetchClientDwarfQueueVar
+                    } = do
+-    (inflight', currentStatus') <- atomically $ do
++    started <- dwarfQueueStamp
++    (inflight', currentStatus', pending, depth) <- atomically $ do
+ 
+       -- Add a new fetch request, or extend or merge with the existing
+       -- unacknowledged one.
+@@ -524,8 +538,24 @@
+ 
+       --TODO: think about status aberrant
+ 
+-      return (inflight', currentStatus')
+-
++      pending <- if dwarfBlockFetchEnabled then do
++        (serial, old) <- readTVar fetchClientDwarfQueueVar
++        let next = case old of
++              Just (requestId, updates) | updates < maxBound -> Just (requestId, updates + 1)
++              Nothing | serial < maxBound -> Just (serial + 1, 1)
++              _ -> Nothing
++            serial' = maybe serial fst next
++        writeTVar fetchClientDwarfQueueVar (serial', next)
++        pure next
++        else pure Nothing
++      return (inflight', currentStatus', pending, length (fetchRequestFragments mergedReq))
++
++    ended <- dwarfQueueStamp
++    case pending of
++      Just (requestId, updateIndex) ->
++        emitDwarfBlockFetch "enqueue" fetchClientDwarfId requestId updateIndex depth
++          started ended "" `seq` pure ()
++      Nothing -> pure ()
+     traceWith tracer $
+       AddedFetchRequest
+         addedReq
+@@ -540,22 +570,44 @@
+ 
+ -- | This is used by the fetch client threads.
+ --
+-acknowledgeFetchRequest :: MonadSTM m
++acknowledgeFetchRequest :: (MonadSTM m, MonadCatch m, MonadMonotonicTime m)
+                         => Tracer m (TraceFetchClientState header)
+                         -> ControlMessageSTM m
+                         -> FetchClientStateVars m header
+-                        -> m (Maybe
+-                               ( FetchRequest header
+-                               , PeerGSV
+-                               , PeerFetchInFlightLimits ))
+-acknowledgeFetchRequest tracer controlMessageSTM FetchClientStateVars {fetchClientRequestVar} = do
+-    result <-
+-      timeoutWithControlMessage controlMessageSTM (takeTFetchRequestVar fetchClientRequestVar)
+-    case result of
+-      Nothing -> return result
+-      Just (request, _, _) -> do
++                        -> m (Maybe (FetchRequest header, PeerGSV, PeerFetchInFlightLimits))
++acknowledgeFetchRequest tracer controlMessageSTM vars =
++    fst <$> acknowledgeFetchRequestDwarf tracer controlMessageSTM vars
++
++-- The sidecar is consumed in the same STM transaction as the native merged
++-- request. Control termination and native take/retry semantics remain intact.
++acknowledgeFetchRequestDwarf :: (MonadSTM m, MonadCatch m, MonadMonotonicTime m)
++                            => Tracer m (TraceFetchClientState header)
++                            -> ControlMessageSTM m
++                            -> FetchClientStateVars m header
++                            -> m ( Maybe (FetchRequest header, PeerGSV, PeerFetchInFlightLimits)
++                                 , Maybe (Word64, Word64))
++acknowledgeFetchRequestDwarf tracer controlMessageSTM
++    FetchClientStateVars {fetchClientRequestVar, fetchClientDwarfId, fetchClientDwarfQueueVar} = do
++    started <- dwarfQueueStamp
++    combined <- timeoutWithControlMessage controlMessageSTM $ do
++      result <- takeTFetchRequestVar fetchClientRequestVar
++      pending <- if dwarfBlockFetchEnabled then do
++        (serial, pending) <- readTVar fetchClientDwarfQueueVar
++        writeTVar fetchClientDwarfQueueVar (serial, Nothing)
++        pure pending
++        else pure Nothing
++      pure (result, pending)
++    ended <- dwarfQueueStamp
++    case combined of
++      Nothing -> return (Nothing, Nothing)
++      Just (result@(request, _, _), pending) -> do
++        case pending of
++          Just (requestId, updateIndex) ->
++            emitDwarfBlockFetch "dequeue" fetchClientDwarfId requestId updateIndex 0
++              started ended "" `seq` pure ()
++          Nothing -> pure ()
+         traceWith tracer (AcknowledgedFetchRequest request)
+-        return result
++        return (Just result, pending)
+ 
+ startedFetchBatch :: MonadSTM m
+                   => Tracer m (TraceFetchClientState header)
+diff --git a/lib/Ouroboros/Network/BlockFetch/ClientRegistry.hs b/lib/Ouroboros/Network/BlockFetch/ClientRegistry.hs
+--- a/lib/Ouroboros/Network/BlockFetch/ClientRegistry.hs
++++ b/lib/Ouroboros/Network/BlockFetch/ClientRegistry.hs
+@@ -24,6 +24,7 @@
+ import Control.Concurrent.Class.MonadSTM.Strict
+ import Control.Exception (assert)
+ import Control.Monad (unless)
++import Data.Word (Word64)
+ import Control.Monad.Class.MonadAsync
+ import Control.Monad.Class.MonadFork (MonadFork (throwTo),
+            MonadThread (ThreadId, myThreadId))
+@@ -55,6 +56,7 @@
+                 ),
+        fetchRegistry
+          :: StrictTVar  m (Map peer (FetchClientStateVars m header)),
++       dwarfNextClientId :: StrictTVar m Word64,
+        syncRegistry
+          :: StrictTVar  m (Map peer (ThreadId m, StrictTMVar m (), StrictTMVar m ()))
+     }
+@@ -64,6 +66,7 @@
+                        => m (FetchClientRegistry peer header block m)
+ newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarIO
+                                              <*> newTVarIO Map.empty
++                                             <*> newTVarIO 1
+                                              <*> newTVarIO Map.empty
+ 
+ -- | This is needed to start a block fetch client. It provides the required
+@@ -80,7 +83,7 @@
+                    -> peer
+                    -> (FetchClientContext header block m -> m a)
+                    -> m a
+-bracketFetchClient FetchClientRegistry { ctxVar, fetchRegistry, syncRegistry }
++bracketFetchClient FetchClientRegistry { ctxVar, fetchRegistry, syncRegistry, dwarfNextClientId }
+                    KeepAliveRegistry { dqRegistry, keepRegistry, dyingRegistry }
+                    _version peer action = do
+     ksVar <- newEmptyTMVarIO
+@@ -116,7 +119,11 @@
+         -- allocate the policy specific for this peer's negotiated version
+         policy <- mkPolicy
+ 
+-        stateVars <- newFetchClientStateVars
++        initialStateVars <- newFetchClientStateVars
++        clientId <- readTVar dwarfNextClientId
++        -- Saturate at zero on exhaustion: never reuse an instrumentation ID.
++        writeTVar dwarfNextClientId (if clientId == 0 || clientId == maxBound then 0 else clientId + 1)
++        let stateVars = initialStateVars { fetchClientDwarfId = clientId }
+         modifyTVar fetchRegistry $ \m ->
+           assert (peer `Map.notMember` m) $
+           Map.insert peer stateVars m
+diff --git a/lib/Ouroboros/Network/BlockFetch/Client.hs b/lib/Ouroboros/Network/BlockFetch/Client.hs
+--- a/lib/Ouroboros/Network/BlockFetch/Client.hs
++++ b/lib/Ouroboros/Network/BlockFetch/Client.hs
+@@ -29,6 +29,8 @@
+ import Control.Monad.Class.MonadTime.SI
+ 
+ import Control.Tracer (traceWith)
++import Data.Word (Word64)
++import Ouroboros.Network.DwarfMeasurement (measureDwarfFetchedBlock)
+ 
+ import Ouroboros.Network.Block
+ 
+@@ -41,7 +43,7 @@
+ import Ouroboros.Network.AnchoredFragment qualified as AF
+ import Ouroboros.Network.BlockFetch.ClientState (FetchClientContext (..),
+            FetchClientPolicy (..), FetchClientStateVars (..), FetchRequest (..),
+-           TraceFetchClientState (..), acknowledgeFetchRequest,
++           TraceFetchClientState (..), acknowledgeFetchRequestDwarf,
+            completeBlockDownload, completeFetchBatch, fetchClientCtxStateVars,
+            rejectedFetchBatch, startedFetchBatch)
+ import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
+@@ -70,7 +72,7 @@
+ -- work in conjunction with our fetch logic.
+ --
+ blockFetchClient :: forall header block versionNumber m.
+-                    (MonadSTM m, MonadThrow m, MonadTime m,
++                    (MonadSTM m, MonadCatch m, MonadTime m,
+                      MonadMonotonicTime m, HasHeader header,
+                      HasHeader block, HeaderHash header ~ HeaderHash block)
+                  => versionNumber
+@@ -121,19 +123,20 @@
+       -- in-flight, and the tracking state that the fetch logic uses now
+       -- reflects that.
+       --
+-      result <-
+-          acknowledgeFetchRequest tracer controlMessageSTM stateVars
++      (result, pending) <-
++          acknowledgeFetchRequestDwarf tracer controlMessageSTM stateVars
+ 
+       case result of
+         Nothing -> do
+           traceWith tracer (ClientTerminating $ natToInt outstanding)
+           return $ senderTerminate outstanding
+         Just (request, gsvs, inflightlimits) ->
+-          return $ senderActive outstanding gsvs inflightlimits
++          return $ senderActive outstanding pending gsvs inflightlimits
+                                 (fetchRequestFragments request)
+ 
+     senderActive :: forall n.
+                     Nat n
++                 -> Maybe (Word64, Word64)
+                  -> PeerGSV
+                  -> PeerFetchInFlightLimits
+                  -> [AnchoredFragment header]
+@@ -141,7 +144,7 @@
+ 
+     -- We now do have some requests that we have accepted but have yet to
+     -- actually send out. Lets send out the first one.
+-    senderActive outstanding gsvs inflightlimits (fragment:fragments) =
++    senderActive outstanding pending gsvs inflightlimits (fragment:fragments) =
+       Effect $ do
+         {-
+         now <- getMonotonicTime
+@@ -172,11 +175,11 @@
+         return $
+           YieldPipelined
+             (MsgRequestRange (castRange range))
+-            (receiverBusy range fragment inflightlimits)
+-            (senderActive (Succ outstanding) gsvs inflightlimits fragments)
++            (receiverBusy pending range fragment inflightlimits)
++            (senderActive (Succ outstanding) pending gsvs inflightlimits fragments)
+ 
+     -- And when we run out, go back to idle.
+-    senderActive outstanding _ _ [] = senderIdle outstanding
++    senderActive outstanding _ _ _ [] = senderIdle outstanding
+ 
+ 
+     -- Terminate the sender; 'controlMessageSTM' returned 'Terminate'.
+@@ -190,12 +193,13 @@
+               (\_ -> senderTerminate n)
+ 
+ 
+-    receiverBusy :: ChainRange (Point header)
++    receiverBusy :: Maybe (Word64, Word64)
++                 -> ChainRange (Point header)
+                  -> AnchoredFragment header
+                  -> PeerFetchInFlightLimits
+                  -> Receiver (BlockFetch block (Point block))
+                              BFBusy BFIdle m ()
+-    receiverBusy range fragment inflightlimits =
++    receiverBusy pending range fragment inflightlimits =
+       ReceiverAwait \case
+         -- The server is reporting that the range we asked for does not exist.
+         -- This can happen (even if we didn't make any mistakes) if their
+@@ -219,16 +223,17 @@
+         MsgStartBatch ->
+           ReceiverEffect $ do
+             startedFetchBatch tracer inflightlimits range stateVars
+-            return (receiverStreaming inflightlimits range headers)
++            return (receiverStreaming pending inflightlimits range headers)
+           where
+             headers = AF.toOldestFirst fragment
+ 
+-    receiverStreaming :: PeerFetchInFlightLimits
++    receiverStreaming :: Maybe (Word64, Word64)
++                      -> PeerFetchInFlightLimits
+                       -> ChainRange (Point header)
+                       -> [header]
+                       -> Receiver (BlockFetch block (Point block))
+                                   BFStreaming BFIdle m ()
+-    receiverStreaming inflightlimits range headers =
++    receiverStreaming pending inflightlimits range headers =
+       ReceiverAwait $ \msg ->
+         case (msg, headers) of
+           (MsgBatchDone, []) -> ReceiverEffect $ do
+@@ -265,7 +270,9 @@
+             -- interleaving
+ 
+             -- Add the block to the chain DB, notifying of any new chains.
+-            addFetchedBlock (castPoint (blockPoint header)) block
++            measureDwarfFetchedBlock (fetchClientDwarfId stateVars) pending
++              (show (blockHash header)) $
++              addFetchedBlock (castPoint (blockPoint header)) block
+ 
+             let blockDelay = diffUTCTime now (headerForgeUTCTime header)
+ 
+@@ -286,7 +293,7 @@
+             completeBlockDownload tracer blockFetchSize inflightlimits
+                                   header blockDelay stateVars
+ 
+-            return (receiverStreaming inflightlimits range headers')
++            return (receiverStreaming pending inflightlimits range headers')
+ 
+           (MsgBatchDone, _:_) -> ReceiverEffect $
+             throwIO BlockFetchProtocolFailureTooFewBlocks
+diff --git a/lib/Ouroboros/Network/BlockFetch/State.hs b/lib/Ouroboros/Network/BlockFetch/State.hs
+--- a/lib/Ouroboros/Network/BlockFetch/State.hs
++++ b/lib/Ouroboros/Network/BlockFetch/State.hs
+@@ -31,6 +31,7 @@
+ import Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked (StrictTVar,
+            newTVarIO, readTVarIO, writeTVar)
+ import Control.Exception (assert)
++import Control.Monad.Class.MonadThrow (MonadCatch)
+ import Control.Monad.Class.MonadSTM
+ import Control.Monad.Class.MonadTime.SI
+ import Control.Monad.Class.MonadTimer.SI
+@@ -60,6 +61,7 @@
+      , HeaderHash header ~ HeaderHash block
+      , MonadDelay m
+      , MonadTimer m
++     , MonadCatch m
+      , Ord peer
+      , Hashable peer
+      )
+@@ -123,7 +125,7 @@
+   :: (Hashable peer, Ord peer,
+       HasHeader header, HasHeader block,
+       HeaderHash header ~ HeaderHash block,
+-      MonadTimer m)
++      MonadTimer m, MonadCatch m)
+   => Tracer m (TraceDecisionEvent peer header)
+   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
+   -> FetchDecisionPolicy header
+@@ -285,7 +287,7 @@
+ -- request variables that are shared with the threads running the block fetch
+ -- protocol with each peer.
+ --
+-fetchLogicIterationAct :: (MonadSTM m, HasHeader header)
++fetchLogicIterationAct :: (MonadSTM m, MonadCatch m, MonadMonotonicTime m, HasHeader header)
+                        => Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
+                        -> FetchDecisionPolicy header
+                        -> [(FetchDecision (FetchRequest header),
+diff --git a/lib/Ouroboros/Network/BlockFetch.hs b/lib/Ouroboros/Network/BlockFetch.hs
+--- a/lib/Ouroboros/Network/BlockFetch.hs
++++ b/lib/Ouroboros/Network/BlockFetch.hs
+@@ -109,6 +109,7 @@
+ import Data.Hashable (Hashable)
+ import Data.Void
+ 
++import Control.Monad.Class.MonadThrow (MonadCatch)
+ import Control.Monad.Class.MonadSTM
+ import Control.Monad.Class.MonadTime.SI
+ import Control.Monad.Class.MonadTimer.SI
+@@ -182,6 +183,7 @@
+                    , HeaderHash header ~ HeaderHash block
+                    , MonadDelay m
+                    , MonadTimer m
++                   , MonadCatch m
+                    , Ord addr
+                    , Hashable addr
+                    )

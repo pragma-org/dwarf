@@ -64,7 +64,9 @@ Keep credentials and configuration private.
 
 | Route | Purpose |
 |---|---|
-| `/run` | Configure, prepare, and start a run |
+| `/lab` | Choose Local or Antithesis execution |
+| `/run` | Configure, prepare, and start a Local run |
+| `/run/antithesis` | Prepare an Antithesis package, check readiness, submit through MOOG, and follow status |
 | `/operate` | Operations overview |
 | `/operate/scenarios` | Scenario catalog |
 | `/operate/targets` | Target catalog |

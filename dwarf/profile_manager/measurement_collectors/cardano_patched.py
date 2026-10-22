@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from profile_manager.measurement_collectors import cardano_blockfetch_queue as queue
+from profile_manager.measurement_collectors import cardano_txsubmission_residence as txsubmission
 from profile_manager.measurement_correlation import correlate_measurement_events
 from profile_manager.measurement_precision import precise_microseconds
 from profile_manager.measurement_report import distribution_summary
@@ -21,7 +24,15 @@ CARDANO_MEASUREMENT_PATCH_SHA256 = (
 CARDANO_NANOSECOND_PATCH_SHA256 = (
     "1c52fa42b7fd9ee3403165a5269ae851665536d2b920ed8be6fdbe490d1ed93c"
 )
+CARDANO_HEADER_PATCH_SHA256 = "037a27a21b1956d019c73df09c5a60780f88a2402810c79fae81d537c515acc7"
+CARDANO_BLOCKFETCH_PATCH_SHA256 = "a31c97952f26eae5f5320815b8e435f0b8a30bc0911ff1f56d4b6e9756bc6882"
+CARDANO_TXSUBMISSION_PATCH_SHA256 = "95991a736b2e187ace2ec9873f0f10ffdc0ebd432269857dfbc2c74041371d0c"
+CARDANO_HEADER_TOOLCHAIN = {"ghc": "9.6.7", "cabal": "3.16.0.0"}
+HEADER_VALIDATION_MEASUREMENT_ID = "cardano-patched-header-validation"
 CARDANO_MEASUREMENT_REVISIONS = {
+    CARDANO_TXSUBMISSION_PATCH_SHA256: "nanoseconds-v5",
+    CARDANO_HEADER_PATCH_SHA256: "nanoseconds-v3",
+    CARDANO_BLOCKFETCH_PATCH_SHA256: "nanoseconds-v4",
     CARDANO_MEASUREMENT_PATCH_SHA256: "whole-microseconds-v1",
     CARDANO_NANOSECOND_PATCH_SHA256: "nanoseconds-v2",
 }
@@ -63,7 +74,51 @@ def _bounded_read(path: Path, *, max_bytes: int, start: int = 0) -> tuple[bytes,
     return data, available > len(data)
 
 
+def _normalize_header(record: Mapping[str, Any]) -> dict[str, Any]:
+    if (record.get("schema_version") != "v1"
+            or record.get("target") != "cardano-node::measurement"
+            or record.get("boundary") != "consensus-validate-header"):
+        raise ValueError("invalid-header-validation-boundary")
+    if record.get("outcome") == "unavailable" and record.get("error_kind") == "instrumentation-exception":
+        expected = {"schema_version": "v1", "target": "cardano-node::measurement",
+                    "event": "header_validation", "boundary": "consensus-validate-header",
+                    "outcome": "unavailable", "error_kind": "instrumentation-exception"}
+        if record != expected:
+            raise ValueError("invalid-header-instrumentation-fallback")
+        return {"kind": "header-validation", **expected}
+    header_hash = record.get("header_hash")
+    if not isinstance(header_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", header_hash):
+        raise ValueError("invalid-header-validation-hash")
+    outcome, error_kind, reason = record.get("outcome"), record.get("error_kind"), record.get("reason")
+    allowed = {"accepted": {"none"}, "rejected": {"header-protocol", "header-envelope"},
+               "unavailable": {"evaluation-exception"}}
+    if (not isinstance(outcome, str) or not isinstance(error_kind, str)
+            or error_kind not in allowed.get(outcome, set())
+            or not isinstance(reason, str) or len(reason) > 1024
+            or any(ord(c) < 32 or ord(c) > 126 for c in reason)
+            or (outcome != "rejected" and reason) or (outcome == "rejected" and not reason)):
+        raise ValueError("invalid-header-validation-outcome")
+    nanos = record.get("elapsed_nanos")
+    ended = record.get("ended_monotonic_ns")
+    micros = record.get("duration_us")
+    if (isinstance(nanos, bool) or not isinstance(nanos, int) or not 0 <= nanos < 2**64
+            or isinstance(ended, bool) or not isinstance(ended, int) or not nanos <= ended < 2**64
+            or isinstance(micros, bool) or not isinstance(micros, int) or micros != nanos // 1000):
+        raise ValueError("invalid-header-validation-timing")
+    return {"kind": "header-validation", "target": record["target"],
+            "boundary": record["boundary"], "header_hash": header_hash,
+            "outcome": outcome, "error_kind": error_kind, "reason": reason,
+            "elapsed_nanos": nanos, "duration_us": nanos / 1000,
+            "ended_monotonic_ns": ended}
+
+
 def _normalize(record: Mapping[str, Any]) -> dict[str, Any] | None:
+    if record.get("event") == "txsubmission_residence":
+        return txsubmission.normalize(record)
+    if record.get("event") == "blockfetch_handler_queue":
+        return queue.normalize(record)
+    if record.get("event") == "header_validation":
+        return _normalize_header(record)
     if record.get("target") != "cardano-node::measurement":
         return None
     event_name = record.get("event")
@@ -198,12 +253,22 @@ def _by_outcome(events: list[dict[str, Any]]) -> dict[str, Any]:
 def _measurements(
     measurement_id: str, events: list[dict[str, Any]]
 ) -> dict[str, Any]:
+    if measurement_id == txsubmission.MEASUREMENT_ID:
+        # This tap requires a complete multi-row join in finalize.
+        return {}
     if measurement_id == "cardano-patched-protocol-decode":
         selected = [event for event in events if event["kind"] == "protocol-receive-decode"]
         return {
             "protocol_receive_decode": _distribution(selected),
             "protocol_receive_decode_by_outcome": _by_outcome(selected),
         }
+    if measurement_id == HEADER_VALIDATION_MEASUREMENT_ID:
+        selected = [e for e in events if e["kind"] == "header-validation"]
+        verdicts = [e for e in selected if e["outcome"] in {"accepted", "rejected"}]
+        unavailable = [e for e in selected if e["outcome"] == "unavailable"]
+        return {"header_validation": _distribution(verdicts),
+                "header_validation_by_outcome": _by_outcome(verdicts),
+                "header_prerequisite_unavailable": _distribution(e for e in unavailable if "duration_us" in e)}
     result = {}
     for stage, key in (
         ("block-application", "block_application"),
@@ -214,6 +279,34 @@ def _measurements(
         result[key] = _distribution(selected)
         result[f"{key}_by_outcome"] = _by_outcome(selected)
     return result
+
+
+def supports_cardano_header_validation(identity: Mapping[str, Any]) -> bool:
+    """Recognize one unbuilt patch contract; this does not prove runtime readiness."""
+    return (identity.get("implementation") == "cardano-node"
+            and identity.get("mode") == "patched"
+            and identity.get("source_revision") == CARDANO_SOURCE_REVISION
+            and identity.get("patch_set_sha256") in {CARDANO_HEADER_PATCH_SHA256, CARDANO_BLOCKFETCH_PATCH_SHA256, CARDANO_TXSUBMISSION_PATCH_SHA256}
+            and identity.get("toolchain") == CARDANO_HEADER_TOOLCHAIN)
+
+
+def supports_cardano_blockfetch_queue(identity: Mapping[str, Any]) -> bool:
+    """One exact unbuilt contract; no build, probe or runtime readiness claim."""
+    return (identity.get("implementation") == "cardano-node"
+            and identity.get("mode") == "patched"
+            and identity.get("source_revision") == CARDANO_SOURCE_REVISION
+            and identity.get("patch_set_sha256") in {CARDANO_BLOCKFETCH_PATCH_SHA256, CARDANO_TXSUBMISSION_PATCH_SHA256}
+            and identity.get("toolchain") == CARDANO_HEADER_TOOLCHAIN)
+
+
+def supports_cardano_txsubmission_residence(identity: Mapping[str, Any]) -> bool:
+    """Exact unbuilt contract only; never a readiness or mempool admission claim."""
+    return (identity.get("implementation") == "cardano-node"
+            and identity.get("mode") == "patched"
+            and identity.get("version") == "11.1.2"
+            and identity.get("source_revision") == CARDANO_SOURCE_REVISION
+            and identity.get("patch_set_sha256") == CARDANO_TXSUBMISSION_PATCH_SHA256
+            and identity.get("toolchain") == CARDANO_HEADER_TOOLCHAIN)
 
 
 def _validate_identity(identity: Mapping[str, Any]) -> str:
@@ -251,9 +344,20 @@ class CardanoPatchedCollector:
         self._offsets: dict[Path, int] = {}
 
     def prepare(self, context) -> None:
-        if self.measurement_id not in PATCHED_MEASUREMENT_IDS:
+        if self.measurement_id not in (*PATCHED_MEASUREMENT_IDS, HEADER_VALIDATION_MEASUREMENT_ID, queue.MEASUREMENT_ID, txsubmission.MEASUREMENT_ID):
             raise ValueError(f"unsupported patched measurement: {self.measurement_id}")
         self.measurement_revision = _validate_identity(self.target_identity)
+        if self.measurement_id in {HEADER_VALIDATION_MEASUREMENT_ID, queue.MEASUREMENT_ID, txsubmission.MEASUREMENT_ID}:
+            support = {queue.MEASUREMENT_ID: supports_cardano_blockfetch_queue,
+                       txsubmission.MEASUREMENT_ID: supports_cardano_txsubmission_residence,
+                       HEADER_VALIDATION_MEASUREMENT_ID: supports_cardano_header_validation}[self.measurement_id]
+            if not support(self.target_identity):
+                raise ValueError("measurement requires exact source, patch and toolchain")
+            for field in ("image_digest", "executable_digest", "build_result_sha256", "runtime_probe_log_sha256"):
+                if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(self.target_identity.get(field) or "")):
+                    raise ValueError(f"measurement requires immutable {field} provenance")
+        if self.max_source_bytes <= 0 or self.max_source_bytes > 64 * 1024 * 1024:
+            raise ValueError("max_source_bytes must be within 1..67108864")
         if not self.json_paths or len(self.json_paths) > MAX_SOURCE_PATHS:
             raise ValueError(f"between 1 and {MAX_SOURCE_PATHS} trace paths are required")
         for path in self.json_paths:
@@ -324,6 +428,33 @@ class CardanoPatchedCollector:
         result["export"]["incomplete"] = bool(
             loaded["rejected_record_count"] or loaded["truncated_sources"]
         )
+        if self.measurement_id == HEADER_VALIDATION_MEASUREMENT_ID:
+            headers = [e for e in loaded["events"] if e["kind"] == "header-validation"]
+            observed = {"accepted", "rejected"} <= {e["outcome"] for e in headers}
+            unavailable = sum(e["outcome"] == "unavailable" for e in headers)
+            result["exercise"] = {
+                "status": "pending-control-evidence" if observed and not unavailable and not result["export"]["incomplete"] else "incomplete",
+                "required_outcomes_observed": observed,
+                "unavailable_event_count": unavailable,
+                "measurement_complete": False,
+                "normal_control": "requires-retained-same-boundary-control",
+                "correlation": ["run_id", "header_hash"],
+                "reason": "Samples alone do not prove same-boundary controls, frozen node/scenario identity or runtime completeness.",
+            }
+        if self.measurement_id == queue.MEASUREMENT_ID:
+            metrics, exercise, joined = queue.summarize(loaded["events"], incomplete=result["export"]["incomplete"])
+            result["measurements"] = metrics
+            result["exercise"] = exercise
+            result["export"]["incomplete"] = result["export"]["incomplete"] or exercise["status"] == "incomplete"
+            context.write_json("queue-correlations.json", joined)
+            result["artifacts"]["queue_correlations"] = context.artifact_path("queue-correlations.json").relative_to(context.run_dir).as_posix()
+        if self.measurement_id == txsubmission.MEASUREMENT_ID:
+            metrics, exercise, joined = txsubmission.summarize(loaded["events"], incomplete=result["export"]["incomplete"])
+            result["measurements"] = metrics
+            result["exercise"] = exercise
+            result["export"]["incomplete"] |= exercise["status"] == "incomplete"
+            context.write_json("txsubmission-correlations.json", joined)
+            result["artifacts"]["txsubmission_correlations"] = context.artifact_path("txsubmission-correlations.json").relative_to(context.run_dir).as_posix()
         context.write_json("result.json", result)
         return result
 
@@ -347,4 +478,11 @@ def build_cardano_patched_factories(
             max_source_bytes=max_source_bytes,
         )
 
-    return {measurement_id: factory for measurement_id in PATCHED_MEASUREMENT_IDS}
+    ids = list(PATCHED_MEASUREMENT_IDS)
+    if supports_cardano_header_validation(identity):
+        ids.append(HEADER_VALIDATION_MEASUREMENT_ID)
+    if supports_cardano_blockfetch_queue(identity):
+        ids.append(queue.MEASUREMENT_ID)
+    if supports_cardano_txsubmission_residence(identity):
+        ids.append(txsubmission.MEASUREMENT_ID)
+    return {measurement_id: factory for measurement_id in ids}
