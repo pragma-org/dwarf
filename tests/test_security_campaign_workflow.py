@@ -56,7 +56,7 @@ def test_triggers_are_controlled_and_have_no_pr_execution():
     scope = data['on']['workflow_dispatch']['inputs']['campaign_scope']
     assert scope['type'] == 'choice'
     assert scope['default'] == 'stock-amaru'
-    assert scope['options'] == ['stock-amaru', 'stock-solo', 'full']
+    assert scope['options'] == ['stock-amaru', 'stock-cardano', 'stock-solo', 'full']
     assert data['permissions'] == {'contents': 'read'}
 
 
@@ -77,6 +77,8 @@ def test_stock_solo_dispatch_builds_and_runs_only_ordered_stock_proof():
     assert select['env']['CAMPAIGN_SCOPE'] == '${{ needs.discover.outputs.campaign_scope }}'
 
     cardano_condition = data['jobs']['cardano_solo']['if']
+    assert "needs.discover.outputs.campaign_scope == 'stock-cardano' ||" in cardano_condition
+    assert 'always()' in cardano_condition
     assert "needs.discover.outputs.campaign_scope == 'stock-solo'" in cardano_condition
     assert "needs.amaru_solo.result == 'success'" in cardano_condition
     mixed_condition = data['jobs']['mixed']['if']
@@ -200,7 +202,7 @@ def test_execution_uses_existing_local_run_path_in_ordered_runner_phases():
         assert 'contents: write' not in text
         assert 'docker system prune' not in text
 
-    assert data['jobs']['amaru_solo']['if'] == "needs.select.result == 'success'"
+    assert data['jobs']['amaru_solo']['if'] == "needs.select.result == 'success' && needs.discover.outputs.campaign_scope != 'stock-cardano'"
     assert "needs.amaru_solo.result != 'cancelled'" in data['jobs']['cardano_solo']['if']
     assert "needs.cardano_solo.result != 'cancelled'" in data['jobs']['mixed']['if']
 

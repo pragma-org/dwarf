@@ -7,12 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       campaign_scope:
-        description: Stock Amaru is verified locally. Other scopes are retained for continued validation.
+        description: Stock Amaru and Cardano passed locally. Choose one or both for hosted validation.
         required: true
         type: choice
         default: stock-amaru
         options:
           - stock-amaru
+          - stock-cardano
           - stock-solo
           - full
   push:
@@ -154,7 +155,7 @@ jobs:
               if not re.fullmatch('[0-9a-f]{40}', commit):
                   raise ValueError('source commit must be an exact Git identity')
               campaign_scope = os.environ.get('CAMPAIGN_SCOPE', 'stock-amaru')
-              if campaign_scope not in {'stock-amaru', 'stock-solo', 'full'}:
+              if campaign_scope not in {'stock-amaru', 'stock-cardano', 'stock-solo', 'full'}:
                   raise ValueError('campaign scope is invalid')
               push = os.environ['EVENT_NAME'] == 'push'
               changed = set()
@@ -599,7 +600,7 @@ jobs:
   amaru_solo:
     name: Amaru solo / ${{ matrix.shard }}
     needs: [discover, prepare, select]
-    if: needs.select.result == 'success'
+    if: needs.select.result == 'success' && needs.discover.outputs.campaign_scope != 'stock-cardano'
     strategy:
       fail-fast: false
       max-parallel: 6
@@ -635,7 +636,8 @@ jobs:
     if: >-
       always() &&
       needs.select.result == 'success' &&
-      ((needs.discover.outputs.campaign_scope == 'stock-solo' &&
+      (needs.discover.outputs.campaign_scope == 'stock-cardano' ||
+       (needs.discover.outputs.campaign_scope == 'stock-solo' &&
         needs.amaru_solo.result == 'success') ||
        (needs.discover.outputs.campaign_scope == 'full' &&
         needs.amaru_solo.result != 'cancelled'))

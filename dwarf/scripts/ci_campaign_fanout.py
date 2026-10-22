@@ -71,9 +71,13 @@ def scope_execution_inventory(inventory, scope):
 
     if scope == "full":
         return deepcopy(inventory)
-    if scope not in {"stock-solo", "stock-amaru"}:
+    if scope not in {"stock-solo", "stock-amaru", "stock-cardano"}:
         raise ValueError("campaign execution scope is invalid")
-    phases = {"amaru-solo"} if scope == "stock-amaru" else {"amaru-solo", "cardano-solo"}
+    phases = {
+        "stock-amaru": {"amaru-solo"},
+        "stock-cardano": {"cardano-solo"},
+        "stock-solo": {"amaru-solo", "cardano-solo"},
+    }[scope]
     candidates = [
         deepcopy(item)
         for item in inventory.get("items", [])
@@ -87,6 +91,8 @@ def scope_execution_inventory(inventory, scope):
     }
     if scope == "stock-amaru":
         expected = {("amaru", "amaru-solo")}
+    elif scope == "stock-cardano":
+        expected = {("cardano-node", "cardano-solo")}
     observed = {(item.get("implementation"), item.get("phase")) for item in candidates}
     if observed != expected or len(candidates) != len(expected):
         raise ValueError(
@@ -157,8 +163,10 @@ def stock_solo_proof_status(
     scope = inventory.get("scope")
     if scope == "stock-amaru":
         expected = {("amaru", "amaru-solo")}
+    elif scope == "stock-cardano":
+        expected = {("cardano-node", "cardano-solo")}
     complete = (
-        scope in {"stock-solo", "stock-amaru"}
+        scope in {"stock-solo", "stock-amaru", "stock-cardano"}
         and len(items) == len(expected)
         and observed == expected
         and item_success
@@ -465,7 +473,7 @@ def aggregate_execution(
         "work_item_count": len(allowed),
         "blockers": deepcopy(inventory.get("blockers", [])),
     }
-    if inventory.get("scope") in {"stock-solo", "stock-amaru"}:
+    if inventory.get("scope") in {"stock-solo", "stock-amaru", "stock-cardano"}:
         proof = stock_solo_proof_status(
             inventory,
             item_success=item_success,
@@ -534,7 +542,7 @@ def main(argv=None):
         command.add_argument("--directory", type=Path, required=True)
     select.add_argument("--build-observations", type=Path, required=True)
     select.add_argument("--calibration-root", type=Path, required=True)
-    select.add_argument("--scope", choices=("full", "stock-solo", "stock-amaru"), default="full")
+    select.add_argument("--scope", choices=("full", "stock-solo", "stock-amaru", "stock-cardano"), default="full")
     aggregate.add_argument("--manifest", type=Path, required=True)
     aggregate.add_argument("--stock-manifest", type=Path, required=True)
     aggregate.add_argument("--inventory", type=Path, required=True)

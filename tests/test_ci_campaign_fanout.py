@@ -361,7 +361,11 @@ def test_rebase_native_export_rejects_invalid_source(tmp_path, problem):
         api._rebase_receipts({'cells': {'cell': {'archives': [receipt]}}}, runtime / 'primary/state.json', tmp_path / 'aggregate')
 
 
-def test_stock_amaru_scope_completes_without_cardano_and_rejects_extra_items():
+@pytest.mark.parametrize("scope,selected_id,other_index", [
+    ("stock-amaru", "amaru", 1),
+    ("stock-cardano", "cardano", 0),
+])
+def test_single_stock_scope_completes_without_other_node_and_rejects_extra_items(scope, selected_id, other_index):
     inventory = {
         "kind": "campaign-work-item-inventory", "campaign_digest": "sha256:" + "a" * 64,
         "items": [
@@ -373,18 +377,18 @@ def test_stock_amaru_scope_completes_without_cardano_and_rejects_extra_items():
         ],
         "blockers": [{"measurement_id": "not-exercised-by-this-proof"}],
     }
-    scoped = api.scope_execution_inventory(inventory, "stock-amaru")
-    assert [row["item_id"] for row in scoped["items"]] == ["amaru"]
+    scoped = api.scope_execution_inventory(inventory, scope)
+    assert [row["item_id"] for row in scoped["items"]] == [selected_id]
     assert scoped["inventory_digest"] == api.inventory_digest(scoped)
     assert scoped["deferred_full_campaign_blockers"] == inventory["blockers"]
     result = api.stock_solo_proof_status(scoped, item_success=True, readiness_passed=True, cleanup_errors=[])
     assert result["status"] == "complete"
-    assert result["proof_scope"] == "stock-amaru"
+    assert result["proof_scope"] == scope
     assert result["measurement_completeness"] == "scoped-complete"
     assert result["security_result"] == "not-run"
     for overrides in ({"item_success": False}, {"readiness_passed": False}, {"cleanup_errors": ["residue"]}):
         arguments = dict(item_success=True, readiness_passed=True, cleanup_errors=[])
         arguments.update(overrides)
         assert api.stock_solo_proof_status(scoped, **arguments)["status"] == "incomplete"
-    scoped["items"].append(inventory["items"][1])
+    scoped["items"].append(inventory["items"][other_index])
     assert api.stock_solo_proof_status(scoped, item_success=True, readiness_passed=True, cleanup_errors=[])["status"] == "incomplete"

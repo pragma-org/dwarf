@@ -44,6 +44,11 @@ and measured scenario, and verifies the resulting evidence. It does not wait for
 Cardano-solo or mixed workloads. The support devnet still uses Cardano producer
 and qualification nodes required by the existing Amaru runtime.
 
+`stock-cardano` selects only the Cardano workload and its evidence aggregation.
+It skips the Amaru workload and mixed jobs, but retains the same shared Amaru
+build, calibration and pair qualification used in the locally verified workflow.
+This is a Cardano-only workload scope, not yet a Cardano-only preparation path.
+
 `stock-solo` (Amaru then Cardano) and `full` (the wider campaign) remain available
 for later validation. Their job definitions are preserved; they are not part of
 the default run or a claim of current end-to-end success. The weekly metadata
