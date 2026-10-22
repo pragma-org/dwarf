@@ -29,6 +29,7 @@ def test_pages_downloads_only_catalog_bound_release_assets_then_stages_same_orig
     assert "ci_stage_pages_campaigns.py stage" in assemble
     assert "--trusted-publishers docs/evidence/trusted-publishers.json" in assemble
     assert "_site/docs/evidence" in assemble
+    assert "docs/antithesis-import.js" in assemble
 
 
 def test_pages_shell_steps_parse():

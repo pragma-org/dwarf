@@ -40,6 +40,22 @@
       "run_id": "20261017T195819Z-6721da4e",
       "implementation": "cardano-node",
       "version": "11.1.2"
+    },
+    {
+      "url": "runs/antithesis-taps-20261022.tar.gz",
+      "size_bytes": 1593136,
+      "sha256": "afb3518b3bb43b95c6336766a074d40c8dff2aa840198137fca0bb7aac9115f3",
+      "format": "dwarf-antithesis-snapshots",
+      "targets": [
+        {
+          "implementation": "amaru",
+          "version": "10.11.20260918"
+        },
+        {
+          "implementation": "cardano-node",
+          "version": "11.1.2"
+        }
+      ]
     }
   ]
 }

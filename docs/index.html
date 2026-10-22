@@ -10311,6 +10311,7 @@ function initMeasurementOverview(viz) {
 document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
 
 </script>
+<script src="./antithesis-import.js"></script>
 <script data-inlined="js/portable-archive.js">
 /* Browser-local DWARF run archive handling: gzip + tar parsing with explicit
  * limits, independent archive-manifest hashing, and detached-signature
@@ -10485,14 +10486,14 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     return segments.join("/");
   }
 
-  function parseTar(bytes, limits) {
+  function parseTar(bytes, limits, options) {
     var bounds = withLimits(limits);
     var entries = [];
     var seen = Object.create(null);
     var topDirs = Object.create(null);
     var offset = 0;
     var expanded = 0;
-    var pax = null;
+    var pax = null, longName = null;
     var headers = 0;
     var ended = false;
     while (offset + 512 <= bytes.length) {
@@ -10506,6 +10507,14 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       var typeflag = header[156] === 0 ? "0" : String.fromCharCode(header[156]);
       var size = parseSize(header, 124);
       var dataStart = offset + 512;
+      if (typeflag === "L" && options && options.allowGnuLongNames) {
+        if (longName !== null || size > bounds.maxPathLength + 1 || dataStart + size > bytes.length) throw ArchiveError("bad-long-name", "invalid GNU long filename");
+        var nameBytes = bytes.subarray(dataStart, dataStart + size);
+        if (!nameBytes.length || nameBytes[nameBytes.length - 1] !== 0 || nameBytes.subarray(0, -1).includes(0)) throw ArchiveError("bad-long-name", "GNU filename must have one trailing terminator");
+        longName = decoder.decode(nameBytes.subarray(0, -1));
+        offset = dataStart + Math.ceil(size / 512) * 512;
+        continue;
+      }
       if (typeflag === "x") {
         if (size > MAX_PAX_BYTES) throw ArchiveError("bad-pax", "PAX header is too large");
         if (dataStart + size > bytes.length) throw ArchiveError("truncated", "PAX header is truncated");
@@ -10520,6 +10529,10 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       var magic = fieldText(header, 257, 6);
       var prefix = magic.indexOf("ustar") === 0 ? fieldText(header, 345, 155) : "";
       var rawPath = pax && Object.prototype.hasOwnProperty.call(pax, "path") ? pax.path : (prefix ? prefix + "/" + name : name);
+      if (longName !== null) {
+        if (pax && Object.prototype.hasOwnProperty.call(pax, "path")) throw ArchiveError("bad-long-name", "conflicting tar filename extensions");
+        rawPath = longName; longName = null;
+      }
       if (pax && Object.prototype.hasOwnProperty.call(pax, "size")) {
         if (!/^[0-9]+$/.test(pax.size)) throw ArchiveError("bad-size", "PAX size is not a decimal number");
         size = Number(pax.size);
@@ -10540,6 +10553,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       if (type === "dir" || path.indexOf("/") !== -1) topDirs[path.split("/")[0]] = true;
       offset = dataStart + Math.ceil(size / 512) * 512;
     }
+    if (longName !== null) throw ArchiveError("bad-long-name", "GNU filename has no following entry");
     if (!ended) {
       throw ArchiveError("truncated", offset < bytes.length
         ? "archive ends inside a header (" + (bytes.length - offset) + " trailing bytes)"
@@ -10551,7 +10565,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     }
     var roots = Object.keys(topDirs);
     if (roots.length === 0) throw ArchiveError("no-root", "archive has no run directory");
-    if (roots.length > 1) throw ArchiveError("multiple-roots", "archive has more than one top-level directory: " + roots.join(", "));
+    if (roots.length > 1 && !(options && options.allowMultipleRoots)) throw ArchiveError("multiple-roots", "archive has more than one top-level directory: " + roots.join(", "));
     return {entries: entries, rootName: roots[0]};
   }
 
@@ -10986,12 +11000,20 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     var raw = new Uint8Array(await tarball.arrayBuffer());
     // Parse once before pairing batch signatures: filenames are not run identities.
     // The callback only selects a candidate; the existing verifier still decides trust.
-    var parsed = null, model = null, archiveError = null, expandedBytes = 0;
+    var parsed = null, model = null, archiveError = null, expandedBytes = 0, convertedModels = null;
     try {
       var bytes = await gunzipWithLimit(new Blob([raw]), bounds);
       expandedBytes = bytes.byteLength;
-      parsed = parseTar(bytes, bounds);
-      model = await buildArchiveModel(parsed, bytes);
+      var ordinaryParseError = null;
+      try { parsed = parseTar(bytes, bounds); }
+      catch (error) {
+        if (!["multiple-roots", "unsupported-entry"].includes(error.code) || !root.DwarfAntithesisImport) throw error;
+        ordinaryParseError = error;
+        parsed = parseTar(bytes, bounds, {allowMultipleRoots: true, allowGnuLongNames: true});
+      }
+      if (root.DwarfAntithesisImport) convertedModels = await root.DwarfAntithesisImport.convert(parsed, bytes, api, raw);
+      if (!convertedModels && ordinaryParseError) throw ordinaryParseError;
+      model = convertedModels ? convertedModels[0] : await buildArchiveModel(parsed, bytes);
     } catch (error) {
       archiveError = {code: error && error.code ? error.code : "archive-error", message: String(error && error.message ? error.message : error)};
       if (error && Number.isFinite(error.expandedBytes)) expandedBytes = error.expandedBytes;
@@ -11017,9 +11039,15 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       ? {verdict: "tampered", reason: signatureReason, signingActor: null, keySource: null, operatorWarning: null, publicKeyHex: null, schemaVersion: null, signedTargetRunId: null, identityBound: false}
       : await verifyDetachedSignature({tarballBytes: raw, tarballName: tarball.name, signature: signature, present: Boolean(signatureFile)});
     var result = {verification: verification, parsed: parsed, model: model, archiveError: archiveError, limits: bounds, expandedBytes: expandedBytes};
+    if (convertedModels) {
+      result.models = convertedModels;
+      // A signature for original bytes is never presented as an attestation of
+      // the browser-derived target records. Failed signatures stay failed.
+      if (verification.verdict === "verified") result.verification = Object.assign({}, verification, {verdict: "unsigned", reason: "derived_antithesis_records", identityBound: false});
+    }
     // A valid signature issued for another run is not provenance for this
     // archive: the signed run id must equal the archive's own identity.
-    if (result.model && verification.verdict === "verified" && verification.identityBound && verification.signedTargetRunId !== result.model.runId) {
+    if (!convertedModels && result.model && verification.verdict === "verified" && verification.identityBound && verification.signedTargetRunId !== result.model.runId) {
       result.verification = Object.assign({}, verification, {
         verdict: "tampered", reason: "signed_run_identity_mismatch", signatureValid: true, archiveRunId: result.model.runId
       });
@@ -11648,6 +11676,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       !model.identityConsistent ? "mismatched-run" : model.manifestHashMatches !== true ? "unbound" : "bound";
     return Object.assign({run_id: model.runId, sources: [], manifest_hash: chain.manifest_hash, source_validity_exclusion: sourceValidityExclusion(model.evidenceFiles),
       evidence_state: evidenceState, evidence_identity: evidenceState === "bound" ? chain.manifest_hash : null,
+      derived_import_identity: model.antithesisImport ? model.antithesisImport.identity : null,
       scenario_id: text(scenario.id) || text(report.scenario), scenario_sha256: text(scenario.sha256), scenario_behavior_sha256: behaviorDigest,
       scenario_title: text(scenario.title) || text(dict(model.scenarioDocument).title),
       provenance_notes: model.scenarioCanonicalSafe === false ? ["Scenario contains floating-point or wide-integer JSON; browser comparison is conservatively pinned to its exact scenario digest"] : [],
@@ -11688,7 +11717,14 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       var contentKey = comparisonContentKey(record);
       var cost = 2 * (JSON.stringify(input).length + contentKey.length);
       if (sessionBytes + cost > LIMITS.maxSessionBytes) throw fault("session-data-limit", "session data limit of 64 MiB reached; clear imports or reopen the page");
-      var same = entries.find(function (e) { return record.evidence_state === "bound" && e.record.evidence_state === "bound" && record.evidence_identity === e.record.evidence_identity && contentKey === e.contentKey; });
+      var same = entries.find(function (e) {
+        var bound = record.evidence_state === "bound" && e.record.evidence_state === "bound" && record.evidence_identity === e.record.evidence_identity;
+        // Browser-derived identity deduplicates identical conversions; it is not
+        // promoted to an original manifest binding or signature verification.
+        var derived = record.evidence_state === "absent" && e.record.evidence_state === "absent" &&
+          /^[0-9a-f]{64}$/.test(record.derived_import_identity || "") && record.derived_import_identity === e.record.derived_import_identity;
+        return (bound || derived) && contentKey === e.contentKey;
+      });
       if (same) {
         if (same.verifications.length >= LIMITS.maxSources) throw fault("source-limit", "source limit reached for this run");
         var replacesExcluded = !input.exclusion && same.exclusion;
@@ -11771,7 +11807,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     return {key: canonical(hashed), parts: parts, missing: missing};
   }
   function groupKey(record, rollup) {
-    if (rollup === "run") return "run|" + record.run_id;
+    if (rollup === "run" || (record.runtime === "antithesis" && record.derived_import_identity)) return "run|" + record.run_id;
     return record.provenance_state !== "complete" ? "incomplete|" + record.run_id : IDENTITY.map(function (k) { return record[k] || ""; }).join("|");
   }
   // Round the actual IEEE-754 value, ties to even, as Python's fixed formatter
@@ -11878,11 +11914,15 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     var rollup = filters.rollup === "run" ? "run" : "exact", catalog = presentationCatalog || {};
     var categories = catalog.categories || [{id: "uncategorized", label: "Other metrics"}], categoryOrder = Object.create(null), categoryLabels = Object.create(null);
     categories.forEach(function (c, i) { categoryOrder[c.id] = i; categoryLabels[c.id] = c.label; });
+    function concept(record, id) {
+      return root.DwarfAntithesisImport && root.DwarfAntithesisImport.comparisonMetric ?
+        root.DwarfAntithesisImport.comparisonMetric(record, id, record.metrics[id]) : null;
+    }
     function describe(id) { return ownValue(catalog.by_metric, id) || {title: humanize(id), category: "uncategorized"}; }
     var options = {implementations: [], versions: [], scenarios: [], categories: [], metrics: []};
     records.forEach(function (r) {
       options.implementations.push(r.implementation); options.versions.push(r.version); options.scenarios.push(r.scenario_id);
-      Object.keys(r.metrics || {}).forEach(function (id) { options.metrics.push(id); options.categories.push(describe(id).category); });
+      Object.keys(r.metrics || {}).forEach(function (id) { var mapped = concept(r, id); options.metrics.push(mapped ? mapped.id : id); options.categories.push((mapped || describe(id)).category); });
     });
     Object.keys(options).forEach(function (k) { options[k] = sortedUnique(options[k]); });
     options.category_labels = categoryLabels; options.applied = filters;
@@ -11918,23 +11958,24 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
         label: label, rollup_blocked: [], metric_ids: [], run_ids: [], run_count: 0, session_order: number(record.session_order) == null ? Infinity : record.session_order});
       var group = groupsMap.get(key); group.run_count += 1; group.run_ids.push(record.run_id);
       Object.keys(record.metrics || {}).sort().forEach(function (metricId) {
-        var info = describe(metricId);
-        if ((filters.metric && filters.metric !== metricId) || (filters.category && filters.category !== info.category)) return;
-        var metric = record.metrics[metricId], fp = fingerprint(record, metricId, metric);
-        if (!rowsMap.has(fp.key)) rowsMap.set(fp.key, {fingerprint: fp.key, fingerprint_parts: fp.parts, provenance_missing: fp.missing,
-          provenance_complete: !fp.missing.length, metric_id: metricId, title: info.title, category: info.category, category_label: categoryLabels[info.category] || info.category,
-          comparison_direction: info.comparison_direction || "neutral",
+        var mapped = concept(record, metricId), info = mapped || describe(metricId), displayId = mapped ? mapped.id : metricId;
+        if ((filters.metric && filters.metric !== displayId && filters.metric !== metricId) || (filters.category && filters.category !== info.category)) return;
+        var metric = record.metrics[metricId], fp = fingerprint(record, metricId, metric), rowKey = mapped ? mapped.key : fp.key;
+        if (!rowsMap.has(rowKey)) rowsMap.set(rowKey, {fingerprint: rowKey, fingerprint_parts: mapped ? {concept: displayId, runtime: record.runtime, unit: metric.unit} : fp.parts, provenance_missing: fp.missing,
+          provenance_complete: !fp.missing.length, metric_id: displayId, title: info.title, category: info.category, category_label: categoryLabels[info.category] || info.category,
+          comparison_direction: mapped ? "neutral" : info.comparison_direction || "neutral",
           runtime: fp.parts.runtime, mode: fp.parts.mode, measurement_profile_id: fp.parts.measurement_profile_id, collector_digests: fp.parts.collector_digests,
           unit: metric.unit || "", scenario_id: record.scenario_id, cells: Object.create(null), contributors: new Map()});
         group.metric_ids.push(metricId);
-        var row = rowsMap.get(fp.key), contributors = row.contributors.get(key) || [], state = cellState(metric);
-        contributors.push({run_id: record.run_id, run_url: "#run/" + record.run_id, sources: record.sources || [], state: state,
+        var row = rowsMap.get(rowKey), contributors = row.contributors.get(key) || [], state = cellState(metric);
+        if (mapped) { row.concept_grouped = true; row.concept_note = mapped.note; row.provenance_missing = sortedUnique(row.provenance_missing.concat(fp.missing)); row.provenance_complete = !row.provenance_missing.length; }
+        contributors.push(Object.assign({run_id: record.run_id, run_url: "#run/" + record.run_id, sources: record.sources || [], state: state,
           value: state === "available" || state === "observed-zero" ? metric.primary_value : null, sample_count: metric.sample_count, reason: metric.reason || null, evidence_state: record.evidence_state,
-          bundle_url: "#live:/runs/" + record.run_id + "/bundle", unit: metric.unit || "", status: metric.status, fingerprint: fp.key});
+          bundle_url: "#live:/runs/" + record.run_id + "/bundle", unit: metric.unit || "", status: metric.status, fingerprint: fp.key}, mapped ? {metric_id: metricId, boundary: mapped.boundary, fingerprint_parts: fp.parts, display_fingerprint: rowKey} : {}));
         row.contributors.set(key, contributors);
-        var alternateKey = canonical([key, metricId]);
+        var alternateKey = canonical([key, displayId]);
         if (!alternatives.has(alternateKey)) alternatives.set(alternateKey, new Set());
-        alternatives.get(alternateKey).add(fp.key);
+        alternatives.get(alternateKey).add(rowKey);
       });
     });
     var groups = Array.from(groupsMap.values()).sort(function (a, b) { return a.key < b.key ? -1 : 1; });
@@ -11986,7 +12027,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     var baseline = groupsMap.has(filters.baseline) ? filters.baseline : "", stateTotals = {}, disagreements = [];
     STATES.forEach(function (state) { stateTotals[state] = 0; });
     rows.forEach(function (row) {
-      if (baseline && row.cells[baseline].value) {
+      if (!row.concept_grouped && baseline && row.cells[baseline].value) {
         var base = row.cells[baseline].value;
         groups.forEach(function (g) { var c = row.cells[g.key]; if (c.value !== null) c.delta_percent = roundEven((c.value - base) / base * 100, 3); });
       }
@@ -11994,7 +12035,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       presentRow(row, groups);
       Object.keys(row.state_counts).forEach(function (state) { stateTotals[state] += row.state_counts[state]; });
       var numeric = groups.filter(function (g) { return row.cells[g.key].value !== null; });
-      if (numeric.length > 1) {
+      if (!row.concept_grouped && numeric.length > 1) {
         var values = numeric.map(function (g) { return row.cells[g.key].value; }), low = Math.min.apply(null, values), high = Math.max.apply(null, values);
         var spread = low > 0 ? (high - low) / low : high > 0 ? 1 : 0;
         if (spread > 0.25) {
@@ -12075,6 +12116,12 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
         summary.expandedBytes += outcome.expandedBytes || 0;
         item.verification = outcome.verification || null;
         if (outcome.archiveError || !outcome.model) throw fault(outcome.archiveError && outcome.archiveError.code || "archive-error", outcome.archiveError && outcome.archiveError.message || "archive has no run model");
+        var importedModels = outcome.models || [outcome.model];
+        summary.total += importedModels.length - 1;
+        for (var targetIndex = 0; targetIndex < importedModels.length; targetIndex += 1) {
+          if (targetIndex) { summary.results.push(item); summary.completed += 1; item = {name: file.name, status: "failed", verification: outcome.verification}; }
+          outcome.model = importedModels[targetIndex];
+        try {
         var record = await normalize(outcome.model), check = outcome.model.archiveManifestCheck;
         record.source_validity_exclusion = sourceValidityExclusion(outcome.model.evidenceFiles);
         var exclusion = outcome.verification && outcome.verification.verdict === "tampered" ? "detached signature: " + outcome.verification.reason :
@@ -12087,13 +12134,18 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
         var added = store.add({record: record, source: file.name, verification: outcome.verification, model: model, detail: detail, exclusion: exclusion, batchGeneration: batchGeneration});
         Object.assign(item, added, {exclusion: exclusion}); summary[added.status] += 1;
         if (added.status !== "cancelled" && options.onChange) options.onChange(added);
+        } catch (targetError) {
+          item.run_id = outcome.model.runId;
+          item.code = targetError.code || "import-error"; item.error = String(targetError.message || targetError); summary.failed += 1;
+        }
+        }
       } catch (error) {
         if (Number.isFinite(error.expandedBytes)) summary.expandedBytes += error.expandedBytes;
         item.code = error.code || "import-error"; item.error = String(error.message || error); summary.failed += 1;
       } finally {
         // Do not retain the preceding archive's full parsed JSON/entry index
         // while the next archive decompresses. The store owns bounded copies.
-        outcome = null; model = null; record = null;
+        outcome = null; model = null; record = null; importedModels = null;
       }
       summary.results.push(item); summary.completed += 1; notify(file.name);
       // Yield between archives so status, keyboard and navigation remain responsive.
@@ -12258,7 +12310,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     container.appendChild(heading);
     container.appendChild(dl(doc, [
       ["run id", manifest.run_id],
-      ["identity consistent", model.identityConsistent ? "yes (manifest, chain and directory agree)" : "no — manifest/chain run id differs from the archive directory"],
+      ["identity consistent", model.antithesisImport ? "derived view; original run manifest and chain not retained" : model.identityConsistent ? "yes (manifest, chain and directory agree)" : "no — manifest/chain run id differs from the archive directory"],
       ["scenario", scenario.id],
       ["target", [target.implementation, target.version].filter(Boolean).join(" ")],
       ["source revision", target.source_revision],
@@ -12658,7 +12710,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     var key = row.fingerprint, owners = anchorOwners.get(key) || new Set();
     Object.keys(row.cells).forEach(function (groupKey) {
       row.cells[groupKey].contributors.forEach(function (c) {
-        if (c.fingerprint === key) (anchorRecords.get(c.run_id) || []).forEach(function (record) { owners.add(record); });
+        if (c.fingerprint === key || c.display_fingerprint === key) (anchorRecords.get(c.run_id) || []).forEach(function (record) { owners.add(record); });
       });
     }); anchorOwners.set(key, owners);
     if (metricIds.has(key)) return metricIds.get(key);
@@ -12716,13 +12768,13 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
   }
   function contributors(node, cell) {
     var list = el('ul', null, 'mc-contributors'); (cell.contributors || []).slice(0, 200).forEach(function (c) {
-      var row = el('li'); row.appendChild(runLink(c.run_id)); row.appendChild(el('span', ' · ' + c.state + (c.value == null ? '' : ' · ' + api.formatValue(c.value) + ' ' + c.unit) + ' · ' + (c.sample_count == null ? 'samples not retained' : c.sample_count + ' samples') + (c.reason ? ' · ' + c.reason : '') + (c.incompatible_with ? ' · differs in ' + c.incompatible_with.join(', ') : '') + ' · evidence ' + (c.evidence_state || 'unknown') + ' · sources ' + (c.sources || []).join(', ')));
+      var row = el('li'); row.appendChild(runLink(c.run_id)); row.appendChild(el('span', ' · ' + c.state + (c.value == null ? '' : ' · ' + api.formatValue(c.value) + ' ' + c.unit) + ' · ' + (c.sample_count == null ? 'samples not retained' : c.sample_count + ' samples') + (c.reason ? ' · ' + c.reason : '') + (c.incompatible_with ? ' · differs in ' + c.incompatible_with.join(', ') : '') + (c.boundary ? ' · ' + c.boundary + ' · metric ' + c.metric_id + ' · source fingerprint ' + c.fingerprint : '') + ' · evidence ' + (c.evidence_state || 'unknown') + ' · sources ' + (c.sources || []).join(', ')));
       var bundle = el('a', ' · bundle (live dashboard)'); bundle.href = '#live:/runs/' + encodeURIComponent(c.run_id) + '/bundle'; row.appendChild(bundle); list.appendChild(row);
     }); node.appendChild(list);
   }
   function provenance(row, groups) {
     return disclosure('Provenance, fingerprint and contributors', 'mc-metric__fingerprint', function (node) {
-      if (!row.provenance_complete) node.appendChild(el('p', 'Incomplete provenance: ' + row.provenance_missing.join(', ') + '; isolated by run', 'mc-metric__warn'));
+      if (!row.provenance_complete) node.appendChild(el('p', 'Incomplete provenance: ' + row.provenance_missing.join(', ') + (row.concept_grouped ? '; shown by concept with separate run samples' : '; isolated by run'), 'mc-metric__warn'));
       if (row.incompatibility) node.appendChild(el('p', 'Incompatible builds: ' + row.incompatibility.fields.join(', ') + ' (' + row.incompatibility.reason + ')', 'mc-metric__warn'));
       node.appendChild(facts(Object.assign({scenario: row.scenario_id, fingerprint: row.fingerprint}, row.fingerprint_parts)));
       groups.forEach(function (g) { node.appendChild(el('h4', g.label_short)); contributors(node, row.cells[g.key]); });
@@ -12774,6 +12826,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     });
     disclosures.appendChild(workloads.control); disclosures.appendChild(builds.control); disclosures.appendChild(workloads.panel); disclosures.appendChild(builds.panel);
     if (!disclosureHost) section.appendChild(disclosures);
+    if (rows.some(function (row) { return row.concept_grouped; })) section.appendChild(el('p', 'Antithesis measurements are grouped by concept. Each node retains its own samples and timing boundaries.', 'mc-note'));
     var category = null, categoryNode;
     (result.focus_required ? [] : rows).forEach(function (row) {
       if (row.category !== category) { category = row.category; categoryNode = el('section', null, 'mc-category'); categoryNode.appendChild(el('h3', row.category_label, 'mc-category__title')); section.appendChild(categoryNode); }
@@ -12785,7 +12838,15 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
         var track = el('span', null, 'mc-bar__track'); track.setAttribute('aria-hidden', 'true'); track.appendChild(el('span', '', 'mc-bar__zero'));
         if (b.marker_percent != null) { var fill = el('span', '', 'mc-bar__fill'); fill.setAttribute('style', 'left:' + b.start_percent + '%;width:' + (b.end_percent - b.start_percent) + '%'); track.appendChild(fill); var marker = el('span', '', 'mc-bar__marker'); marker.setAttribute('style', 'left:' + b.marker_percent + '%'); track.appendChild(marker); }
         bar.appendChild(track); var value = el('span', null, 'mc-bar__reading' + (best.has(group.key) ? ' mc-best' : '')); if (best.has(group.key)) value.setAttribute('title', 'Preferred ' + row.comparison_direction + ' value among visible builds'); reading(value, b, row, false); bar.appendChild(value); bars.appendChild(bar);
-      }); card.appendChild(bars); if (filters.show_provenance === '1') card.appendChild(provenance(row, groups)); categoryNode.appendChild(card);
+      }); card.appendChild(bars);
+      if (row.concept_grouped) card.appendChild(disclosure('Sources and measurement boundaries', 'mc-metric__fingerprint', function (node) {
+        node.appendChild(el('p', row.concept_note));
+        groups.forEach(function (g) { var cell = row.cells[g.key]; if (!cell.contributors.length) return;
+          node.appendChild(el('h4', g.label_short));
+          cell.contributors.forEach(function (c) { node.appendChild(el('p', c.boundary + ' · ' + c.metric_id + ' · ' + (c.sample_count == null ? 'samples not retained' : c.sample_count + ' samples') + (c.reason ? ' · ' + c.reason : ''))); });
+        });
+      }));
+      if (filters.show_provenance === '1') card.appendChild(provenance(row, groups)); categoryNode.appendChild(card);
     }); container.appendChild(section);
   }
   function renderComparison() {
@@ -12856,10 +12917,14 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     if (controls) {
       // Choices come from the entire included session, independently of current
       // predicates, so one filter cannot silently delete another valid choice.
-      var metricInfo = (payload.presentation_catalog || {}).by_metric || {}, categoryLabels = Object.create(null);
+      var metricInfo = Object.assign({}, (payload.presentation_catalog || {}).by_metric || {}), categoryLabels = Object.create(null);
       ((payload.presentation_catalog || {}).categories || []).forEach(function (c) { categoryLabels[c.id] = c.label; });
       function unique(values) { return Array.from(new Set(values.filter(Boolean))).sort(); }
-      var metricChoices = unique(snapshot.records.flatMap(function (r) { return Object.keys(r.metrics || {}); }));
+      var metricChoices = unique(snapshot.records.flatMap(function (r) { return Object.keys(r.metrics || {}).map(function (id) {
+        var mapped = root.DwarfAntithesisImport && root.DwarfAntithesisImport.comparisonMetric ? root.DwarfAntithesisImport.comparisonMetric(r, id, r.metrics[id]) : null;
+        if (mapped) { metricInfo[mapped.id] = mapped; return mapped.id; }
+        return id;
+      }); }));
       var choices = {scenarios: unique(snapshot.records.map(function (r) { return r.scenario_id; })),
         implementations: unique(snapshot.records.map(function (r) { return r.implementation; })), versions: unique(snapshot.records.map(function (r) { return r.version; })),
         metrics: metricChoices, categories: unique(metricChoices.map(function (id) { return Object.prototype.hasOwnProperty.call(metricInfo, id) ? metricInfo[id].category : 'uncategorized'; })), category_labels: categoryLabels};

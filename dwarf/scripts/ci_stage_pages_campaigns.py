@@ -13,6 +13,7 @@ from profile_manager.campaign_publication import validate_catalog, validate_trus
 from profile_manager.security_campaign import serialize_campaign
 
 _SCHEMA = "dwarf.default-run-archives.v1"
+_ANTITHESIS = "dwarf-antithesis-snapshots"
 _TAG = re.compile(r"campaign-[0-9a-f]{64}")
 _ASSET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.tar\.gz")
 _SHA = re.compile(r"[0-9a-f]{64}")
@@ -35,9 +36,17 @@ def validate_defaults(document: dict) -> list[dict]:
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("Pages default archive entry is invalid")
-        required = ("url", "size_bytes", "sha256", "run_id", "implementation", "version")
+        antithesis = row.get("format") == _ANTITHESIS
+        required = ("url", "size_bytes", "sha256") if antithesis else ("url", "size_bytes", "sha256", "run_id", "implementation", "version")
         if any(row.get(field) in (None, "") for field in required):
             raise ValueError("Pages default archive entry is incomplete")
+        if antithesis:
+            targets = row.get("targets")
+            if (not isinstance(targets, list) or not 1 <= len(targets) <= 16
+                    or any(not isinstance(t, dict) or t.get("implementation") not in {"amaru", "cardano-node"}
+                           or not isinstance(t.get("version"), str) or not t["version"] for t in targets)
+                    or row.get("release_tag") is not None or row.get("asset_name") is not None):
+                raise ValueError("Pages Antithesis snapshot metadata is invalid")
         url = row["url"]
         if not isinstance(url, str) or not url.startswith("runs/") or not _ASSET.fullmatch(url[5:]):
             raise ValueError("Pages default archive URL is unsafe")
@@ -77,6 +86,20 @@ def _hash(path: Path) -> str:
 def stage(*, committed: Path, defaults_path: Path, catalog_path: Path,
           downloads: Path, output: Path, trusted_publishers_path: Path) -> None:
     defaults, catalog, trusted = load(defaults_path), load(catalog_path), load(trusted_publishers_path)
+    rows = validate_defaults(defaults)
+    # Repository-owned Antithesis snapshots remain defaults when the rolling
+    # campaign release supplies its separate, validated run list.
+    retained = [row for row in validate_defaults(load(committed / "default-runs.json"))
+                if row.get("format") == _ANTITHESIS]
+    by_url = {row["url"]: row for row in rows}
+    combined = list(rows)
+    for row in retained:
+        if row["url"] in by_url:
+            if by_url[row["url"]] != row:
+                raise ValueError("Pages committed Antithesis default conflicts with rolling defaults")
+        else:
+            combined.append(row)
+    defaults = {**defaults, "archives": combined}
     rows = validate_defaults(defaults)
     validate_trusted_publishers(trusted)
     validate_catalog(catalog, trusted)

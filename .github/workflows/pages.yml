@@ -7,6 +7,7 @@ on:
       - index.html
       - docs/index.html
       - docs/portable-defaults.js
+      - docs/antithesis-import.js
       - docs/evidence/**
       - dwarf/profile_manager/campaign_publication.py
       - dwarf/scripts/ci_stage_pages_campaigns.py
@@ -69,7 +70,7 @@ jobs:
           set -euo pipefail
           mkdir -p _site/docs
           cp index.html _site/index.html
-          cp docs/index.html docs/portable-defaults.js _site/docs/
+          cp docs/index.html docs/portable-defaults.js docs/antithesis-import.js _site/docs/
           if [ -f _published/index/default-runs.json ]; then
             PYTHONPATH=dwarf python3 dwarf/scripts/ci_stage_pages_campaigns.py stage \
               --committed docs/evidence \

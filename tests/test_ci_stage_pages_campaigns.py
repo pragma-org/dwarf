@@ -18,7 +18,23 @@ def test_committed_default_archives_stage_with_validated_empty_campaign_catalog(
         trusted_publishers_path=ROOT / "docs/evidence/trusted-publishers.json")
     assert json.loads((output / "default-runs.json").read_text())["archives"]
     assert (output / "campaigns.json").is_file()
-    assert len(list((output / "runs").glob("*.tar.gz"))) == 5
+    assert len(list((output / "runs").glob("*.tar.gz"))) == 6
+
+
+def test_rolling_defaults_retain_committed_antithesis_archive(tmp_path):
+    committed = ROOT / "docs/evidence"
+    defaults = json.loads((committed / "default-runs.json").read_text())
+    defaults["archives"] = defaults["archives"][:1]
+    rolling = tmp_path / "rolling.json"
+    rolling.write_text(json.dumps(defaults))
+    output = tmp_path / "output"
+    api.stage(committed=committed, defaults_path=rolling,
+        catalog_path=committed / "campaigns.json", downloads=tmp_path / "downloads",
+        output=output, trusted_publishers_path=committed / "trusted-publishers.json")
+    rows = json.loads((output / "default-runs.json").read_text())["archives"]
+    assert len(rows) == 2
+    assert rows[-1]["format"] == "dwarf-antithesis-snapshots"
+    assert (output / rows[-1]["url"]).read_bytes() == (committed / rows[-1]["url"]).read_bytes()
 
 
 def test_release_asset_listing_is_bounded_and_path_safe():
