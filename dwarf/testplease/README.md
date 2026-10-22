@@ -1,5 +1,30 @@
 # Source intake
 
+## Run submitted Amaru source on GitHub
+
+Put one complete Amaru source tree in `dwarf/testplease/amaru/<candidate-name>/`,
+with `Cargo.toml`, `Cargo.lock`, and `crates/` at that directory's root.
+Commit and push the change to this repository with write access. The push starts
+**DWARF security campaign** with `stock-amaru`: build, preparation, calibration,
+the stock measurement scenario and its control, then evidence export.
+No `candidate.yaml`, client workflow, scenario configuration or client build
+command is required.
+
+You can also open **Actions → DWARF security campaign → Run workflow** and select
+`stock-amaru`, `stock-cardano` (the configured Cardano-node **11.1.2** release),
+or `stock-solo` (Amaru followed by Cardano). Manual runs use the committed Amaru
+candidate for shared preparation.
+
+Download the run's `dwarf-workload-measurement-*` Actions artifact and extract
+its ZIP. Import the `.tar.gz` files under
+`campaign-runtime/runs/<run-id>/outputs/export/` into the
+[DWARF results viewer](https://pragma-org.github.io/dwarf/) using
+**Runs → Import → Open read-only**. Imported runs are available in both
+**Runs** and **Comparison** in that browser session.
+See the [complete quick-start](../../README.md#quick-start-with-github-actions).
+
+## Recognized intake directories
+
 Place an ordinary **uncompiled upstream source tree** directly in either location:
 
 ```text
@@ -12,13 +37,10 @@ both implementations, can be identified in one scan. No `candidate.yaml`, client
 workflow, scenario configuration, or client build command is required. Exact node
 and scenario versions remain run-selected; this intake does not pin them.
 
-A same-repository push that changes this directory starts the GitHub-hosted
-security-campaign workflow. The current executable lane accepts one changed Amaru
-candidate, builds its stock artifact, qualifies the exact mixed-node pair, and runs
-the frozen security and stock-measurement campaign. A complete verified campaign is
-published as content-addressed release assets and becomes eligible for the bounded
-GitHub Pages defaults. Cardano candidate builds and patched taps remain separate
-follow-on lanes.
+The executable source-build path accepts one changed Amaru candidate. Cardano
+source recognition is an intake capability; the supported `stock-cardano`
+workflow uses the configured release. Completed stock workflows retain downloadable
+Actions artifacts for 30 days. The viewer opens those archives through local import.
 
 The Amaru stock build packages the verified binary in a minimal, digest-pinned
 POSIX runtime so qualification can atomically transfer those exact bytes into

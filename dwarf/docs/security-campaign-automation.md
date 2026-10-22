@@ -12,12 +12,35 @@ source, executable and image identities. The frozen plan begins at
 must pass before scenarios start. The existing `ci_security_campaign.py` runner
 uses the local DWARF scenario and export paths, with owned-resource cleanup.
 
-Cardano-solo, mixed, patched and compiler-coverage support are retained for future
-validation, not enabled by the default scope. All execution jobs run on
+Stock Amaru and stock Cardano solo workflows have completed successfully on
+GitHub-hosted runners. Mixed, patched and compiler-coverage support are retained
+for future validation, not enabled by the default scope. All execution jobs run on
 `ubuntu-latest` with read-only repository permissions. No `contents: write`
 permission or repository signing secret is required. The runner stages synthetic
 Git identity metadata in `synthetic-git.json`; it does not execute candidate build
 hooks during discovery or change the ordinary local DWARF pipeline.
+
+## Supported workflow and retained results
+
+Follow the [GitHub Actions quick-start](../../README.md#quick-start-with-github-actions)
+to submit Amaru source, choose a manual scope, download the workload artifacts,
+and import the exported `.tar.gz` files into the
+[Runs and Comparison viewer](https://pragma-org.github.io/dwarf/).
+The configured Cardano target for this workflow is **Cardano-node 11.1.2**.
+
+Verified on 2026-10-22:
+
+| Hosted scope | Completed workflow | Control run | Measured run |
+| --- | --- | --- | --- |
+| `stock-amaru` | [39742790999](https://github.com/pragma-org/dwarf/actions/runs/39742790999) | `20261022T091232Z-d1a13778` | `20261022T091255Z-d80d60c6` |
+| `stock-cardano` | [39743755887](https://github.com/pragma-org/dwarf/actions/runs/39743755887) | `20261022T091328Z-c7da9b25` | `20261022T091343Z-896a7baf` |
+
+Both workflows completed aggregation, retained all nine selected collector
+records per run, and exported control and measured archives with matching receipt
+hashes. Availability is recorded per metric. All four archives were imported into
+the live GitHub Pages viewer; 174 metric entries matched their retained reports
+for status, primary value, unit and sample count. The run details and comparison
+views were checked, including unavailable metrics.
 
 ## Submission and reviewed selection
 
@@ -49,10 +72,11 @@ It skips the Amaru workload and mixed jobs, but retains the same shared Amaru
 build, calibration and pair qualification used in the locally verified workflow.
 This is a Cardano-only workload scope, not yet a Cardano-only preparation path.
 
-`stock-solo` (Amaru then Cardano) and `full` (the wider campaign) remain available
-for later validation. Their job definitions are preserved; they are not part of
-the default run or a claim of current end-to-end success. The weekly metadata
-schedule has been removed from this execution workflow.
+`stock-solo` runs Amaru then Cardano. Its workload jobs passed local `act`
+validation; aggregation passed in a continuation using the retained artifacts.
+The table above records separate hosted successes for the two solo scopes.
+`full` retains the wider campaign definitions for later validation.
+The weekly metadata schedule has been removed from this execution workflow.
 
 Trusted tools are checked out separately from the default branch and their exact
 revision is retained. Submitted source is checked out separately at the event SHA

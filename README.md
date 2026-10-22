@@ -20,6 +20,61 @@ Only retained evidence from a real-node run can support a runtime claim.
 The repository contains code, definitions, schemas, build scripts, and documented evidence identities.
 It does not contain private retained runtime bundles, operator logs, credentials, or local machine state.
 
+## Quick start with GitHub Actions
+
+Run stock node measurements on GitHub-hosted runners and view the results in your
+browser. You do not need to install DWARF or Docker locally for this flow.
+
+### Submit Amaru source
+
+1. Put one complete Amaru source tree in
+   `dwarf/testplease/amaru/<candidate-name>/`. Put `Cargo.toml`, `Cargo.lock`,
+   and `crates/` directly inside that directory. See the
+   [source layout guide](dwarf/testplease/README.md).
+2. Commit and push the source change to this repository using an account with
+   write access. That push starts **DWARF security campaign** with the
+   `stock-amaru` scope. No `candidate.yaml` or client build script is needed.
+3. Open the [workflow run](https://github.com/pragma-org/dwarf/actions/workflows/dwarf-security-campaign.yml).
+   It builds the submitted source, prepares and calibrates the runtime, runs the
+   stock measurement scenario with its control, and exports the evidence.
+
+### Start a run manually
+
+Open **Actions → DWARF security campaign → Run workflow**. Select the branch and
+choose a campaign scope, then click **Run workflow**:
+
+| Scope | Workload |
+| --- | --- |
+| `stock-amaru` | Stock measurements for the submitted Amaru source. This is the default. |
+| `stock-cardano` | Stock measurements for the configured Cardano-node **11.1.2** release. |
+| `stock-solo` | Amaru stock measurements, followed by Cardano stock measurements. |
+
+Manual runs use the committed Amaru source for the shared preparation steps.
+The repository includes a source candidate for this purpose.
+The solo scenarios retain resource, workload, sync, network, header and block
+measurements, with availability recorded for each metric.
+
+### View the output
+
+1. When the workflow finishes, open its summary and download the
+   `dwarf-workload-measurement-*` artifact for each workload. Actions retains
+   these artifacts for **30 days**.
+2. Extract the downloaded ZIP. Inside it, find the control and measured run
+   archives at `campaign-runtime/runs/<run-id>/outputs/export/*.tar.gz`.
+3. Open the [DWARF results viewer](https://pragma-org.github.io/dwarf/).
+   On **Runs**, expand **Import**, choose the `.tar.gz` files, and click
+   **Open read-only**. You can select several archives together.
+4. Open a run to inspect its assertions, measurements and evidence. Open
+   **Comparison** to compare the imported results. In **Filters**, choose the
+   workload and set **Grouping → Individual runs** to see the control and
+   measured run separately. Enable **Include unmeasured metrics** to inspect
+   unavailable signals.
+
+Import reads the files locally in your browser. To share results, share the
+archives so another person can import them into the viewer.
+Read the [runner guide](dwarf/docs/security-campaign-automation.md) for execution
+details and the verified hosted-run records.
+
 ## Quick start with Docker
 
 Install these host tools first:
