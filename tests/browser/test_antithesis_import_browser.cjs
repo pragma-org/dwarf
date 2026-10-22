@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '../..');
 const server = spawn('python3', ['-u', '-c', `
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from functools import partial
-server = ThreadingHTTPServer(('127.0.0.1', 0), partial(SimpleHTTPRequestHandler, directory='docs'))
+server = ThreadingHTTPServer(('127.0.0.1', 0), partial(SimpleHTTPRequestHandler, directory=${process.env.DWARF_PREVIEW_ROOT === '1' ? "'.'" : "'docs'"}))
 print(server.server_port, flush=True)
 server.serve_forever()
 `], {cwd: root, stdio: ['ignore', 'pipe', 'pipe']});

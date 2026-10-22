@@ -36,3 +36,12 @@ def test_pages_shell_steps_parse():
     for step in workflow()["jobs"]["deploy"]["steps"]:
         if "run" in step:
             subprocess.run(["bash", "-n"], input=step["run"], text=True, check=True, capture_output=True)
+
+
+def test_root_viewer_matches_docs_viewer_with_relative_asset_paths():
+    expected = (ROOT / "docs/index.html").read_text()
+    expected = expected.replace('src="./antithesis-import.js"', 'src="./docs/antithesis-import.js"')
+    expected = expected.replace('src="./portable-defaults.js"', 'src="./docs/portable-defaults.js"')
+    expected = expected.replace('data-dwarf-default-runs="./evidence/default-runs.json"',
+                                'data-dwarf-default-runs="./docs/evidence/default-runs.json"')
+    assert (ROOT / "index.html").read_text() == expected
