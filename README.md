@@ -304,36 +304,6 @@ Older whole-microsecond evidence remains readable.
 A zero, an `available` flag, or a completed collector does not prove metric coverage.
 The report must contain the required samples or events within the workload window.
 
-## Measurement program
-
-The five-card program records separate evidence for Amaru and Cardano-node:
-
-1. **CBOR decoding:** Decode outcomes, round-trip consistency, and decode timing.
-   The retained old Amaru failure remains a security finding.
-   The exact upstream fixed revision passes the same corpus.
-2. **Plutus VM:** Valid and expected-invalid on-chain Plutus V2 transactions, evaluator outcomes, exposed budgets, and continued progress.
-3. **Invalid mini-protocol:** Malformed Handshake containment, liveness, timing, and resource cost.
-   The accepted whole-microsecond revision remains unchanged.
-4. **Block application:** Canonical progress, chain selection, fork evidence, correlations, timing, convergence, and fatal-health checks.
-5. **Restart and sync:** A real restart, readiness gates, controlled sync progress, speed, and resource windows.
-
-The five frozen cards have accepted evidence for both implementations.
-They do not prove mixed-node performance, production performance, or complete metric coverage in one scenario.
-Read the [client-card evidence index](dwarf/docs/client-examples/README.md) for run identities and measurement revisions.
-Read the [compatibility audit](docs/measurement-full-metrics-compatibility-audit.md) for missing metric results.
-
-The additive Card 06 sends signed payments to each implementation.
-Each retained run has 35 attempts: 30 accepted payments and 5 expected duplicate-payment rejections.
-There are zero timeouts.
-The evidence includes durations, offered transaction and byte rates, target correlations, progress, and resource samples.
-It is not an Amaru-versus-Cardano benchmark.
-
-Separate Card 02 runs retain Plutus workload accounting for each implementation.
-Each run has 60 attempts: 30 accepted, 30 expected-invalid, and 0 timed out.
-The evidence includes offered bytes, terminal outcomes, and durations.
-Open `/learn/measurements` for evidence identities.
-Open `/learn/measurement-coverage` for threat, risk, scenario, surface, and tap relationships.
-
 ## Results and evidence
 
 A run retains its resolved manifest, assertion results, event log, probe outputs, and measurement data.
@@ -436,18 +406,6 @@ Use prerequisite checks, topology readiness, and retained run evidence for those
 Read the [CI validation guide](dwarf/docs/ci-validation-gate.md).
 Run Antithesis harness tests separately in their documented context.
 Repository-wide collection can encounter duplicate test-module names.
-
-## Security, reporting, and claim limits
-
-Do not commit tokens, wallets, private keys, credentials, logs, runtime state, or private bundles.
-Keep secrets in the supported local configuration.
-Review bundle contents before you share them.
-Report vulnerabilities through [SECURITY.md](SECURITY.md).
-
-DWARF retains failed security assertions as findings.
-It does not change them to passes.
-Collector failures remain separate unless the contract makes them gating.
-Definitions and configured collectors do not prove complete metric coverage, implementation equivalence, stable benchmark thresholds, or production safety.
 
 ## Project and documentation
 
