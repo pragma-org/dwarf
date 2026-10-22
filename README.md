@@ -173,17 +173,81 @@ A real-node scenario still needs its specified images, tools, topology, data, po
 
 ## Run with Antithesis
 
-Select **Enter the lab → Antithesis**, or open `/run/antithesis`.
-The separate wizard guides you through topology, node versions, scenario,
-measurement taps, package preparation, and run/evidence.
-Generate a package with DWARF, supply a package URL, or use existing Compose
-files and images on the DWARF host. Build and publish the required images,
-validate the package, check readiness, then submit through MOOG.
+Use Antithesis to run a packaged test environment through DWARF's MOOG
+integration. Select **Enter the lab → Antithesis**, or open
+[http://127.0.0.1:8787/run/antithesis](http://127.0.0.1:8787/run/antithesis)
+on your DWARF installation. For a remote installation, use its dashboard URL.
 
-Configure MOOG in the wizard's settings section. Package preparation reports
-which selections are connected. Run results record available and unavailable
-measurements. The Local wizard remains at `/run`; the GitHub Actions workflow
-described above remains a separate execution path.
+### Set up access
+
+Use a DWARF host with Docker and the build tools required by your selected node
+artifacts. Open the wizard's settings section and configure the existing MOOG
+requester: its connection settings, token, requester wallet and GitHub identity.
+Use a requester and repository registered with your MOOG deployment, with access
+to the Antithesis tenant. Save the settings before checking submission readiness.
+
+For generated packages, sign in to GHCR with Docker on the DWARF host. You also
+need a public GitHub repository for the exported test package. The wizard uses
+the host's Docker login to push images; package visibility is set in GitHub.
+
+### Choose the test
+
+1. **Topology:** Keep the scenario default or select a supported Antithesis
+   configuration. The page shows target nodes and supporting services.
+2. **Node versions:** Select catalog releases or prepare node artifacts from
+   source, a compiled binary/archive, or an image on the DWARF Docker host.
+   File paths refer to the DWARF host.
+3. **Scenario:** Select the workload you want to run.
+4. **Measurement taps:** Select a measurement profile or individual taps.
+5. **Review and prepare:** Choose the package source, duration and fault policy.
+   Review which selections are applied to the package.
+
+| Package source | Use it for |
+| --- | --- |
+| **Build with Dwarf** | Generate test files from your wizard choices. |
+| **Use a package URL** | Load an existing ZIP or tar.gz from a direct public HTTPS URL. |
+| **Use existing Compose/images** | Use a Compose project path, image references, or both on the DWARF host. |
+
+Select **Generate package preview** for a generated package, then select
+**Prepare package** to save its files and receipt. Supplied packages retain their
+own configuration and images. Preparation reports connected workloads and taps,
+plus any missing inputs.
+
+### Build and deliver a generated package
+
+1. Select **Build images** for the saved generated package.
+2. Enter a GHCR repository prefix, such as `ghcr.io/your-org/dwarf`.
+   Select **Prepare publication handoff**, then **Push images to GHCR**.
+3. Make the resulting packages public in GitHub, then select
+   **Verify public images** in DWARF.
+4. Select **Download public package**. Extract the ZIP into a dedicated directory
+   in your public GitHub repository. Preserve executable permissions and commit
+   the files.
+5. Enter the repository, full commit SHA, package directory, requester GitHub
+   name and attempt number. Select **Verify Git assets and prepare request**.
+
+For an existing package, use its published images and exact Git package location.
+The generated-image build and publication controls apply to DWARF-generated
+packages.
+
+### Submit and follow the run
+
+1. Select the saved package snapshot. Use **Check package** and
+   **Inspect images/config image** to review the package and delivery checks.
+2. Select **Check submission readiness**. Resolve any blocking items it reports.
+3. Select **Submit to Antithesis**. Keep the saved submission check ID and receipt.
+4. Use **Refresh from MOOG** to follow the request. After a reload or lost
+   response, use **Recover saved status** with the saved ID.
+5. Open **Run history** at `/operate/runs` to find the external run record.
+   Inspect the retained status, receipt and available evidence. Measurement
+   results record which signals were available and which were unavailable.
+
+Preparation, publication and submission are separate steps. Refreshing status
+follows the existing request without submitting another run. Local execution
+remains at `/run`, and GitHub Actions campaigns use their existing workflow.
+
+See the [Antithesis package checklist](dwarf/docs/antithesis-scenario-preflight-checklist.md)
+and [scenario setup contract](antithesis/spec.md) for package and harness details.
 
 ## Run a real-node test
 
