@@ -20,6 +20,10 @@ DEPLOYMENT_ADAPTERS = {
     "amaru-control",
 }
 VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
+AMARU_VERSION_IDENTITY_PATTERN = re.compile(
+    r"\bAmaru\s+v?(?P<version>[0-9][0-9A-Za-z.\-]*)\s+"
+    r"\((?P<commit>[0-9a-f]{7,40})(?P<dirty>\+dirty)?\)"
+)
 NODE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 NETWORK_PATTERN = re.compile(r"^(mainnet|preprod|preview|testnet_[1-9][0-9]*)$")
 PUBLIC_NETWORK_MAGIC = {"mainnet": 764824073, "preprod": 1, "preview": 2}
@@ -29,8 +33,18 @@ SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 SHA64_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 INSTALLATION_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 OPERATOR_REGISTRATION_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+SOURCE_REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 TRANSFER_SOURCE_INSTALLATION_ID_PATTERN = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+)
+LOCAL_ARTIFACT_IDENTITY_FIELDS = (
+    "image_config_id",
+    "executable_digest",
+    "platform",
+    "runtime_interface",
+    "operator_registration_id",
+    "controller_installation_id",
+    "operator_overlay_revision",
 )
 
 
@@ -226,15 +240,7 @@ def normalize_substrate(substrate: dict) -> dict:
                 f"substrate.nodes[{index}].target_mode must be stock or patched"
             )
         measurement_identity: dict[str, str] = {"target_mode": target_mode}
-        local_identity_fields = (
-            "image_config_id",
-            "executable_digest",
-            "platform",
-            "runtime_interface",
-            "operator_registration_id",
-            "controller_installation_id",
-            "operator_overlay_revision",
-        )
+        local_identity_fields = LOCAL_ARTIFACT_IDENTITY_FIELDS
         local_identity_supplied = any(
             node.get(field) is not None for field in local_identity_fields
         )
@@ -623,14 +629,47 @@ def verify_running_node_version(
     combined = f"{result.stdout}\n{result.stderr}".strip()
     reported = _extract_version(combined)
     requested = str(node["version"])
-    satisfied = result.returncode == 0 and reported is not None and (
+    exact_version = result.returncode == 0 and reported is not None and (
         requested == "any" or reported == requested
     )
+    amaru_identity = AMARU_VERSION_IDENTITY_PATTERN.search(combined)
+    reported_source_revision = (
+        amaru_identity.group("commit") if amaru_identity is not None else None
+    )
+    reported_dirty = (
+        bool(amaru_identity.group("dirty")) if amaru_identity is not None else None
+    )
+    expected_source_revision = str(node.get("source_revision") or "")
+    local_source_attested = (
+        not exact_version
+        and result.returncode == 0
+        and node.get("impl") == "amaru"
+        and reported is not None
+        and all(node.get(field) for field in LOCAL_ARTIFACT_IDENTITY_FIELDS)
+        and SOURCE_REVISION_PATTERN.fullmatch(expected_source_revision) is not None
+        and reported_source_revision is not None
+        and len(reported_source_revision) >= 7
+        and expected_source_revision.startswith(reported_source_revision)
+        and reported_dirty is False
+    )
+    satisfied = exact_version or local_source_attested
+    if exact_version:
+        status = "running-version-verified"
+        version_match_mode = "exact-version"
+    elif local_source_attested:
+        status = "running-operator-artifact-verified"
+        version_match_mode = "operator-local-source-revision"
+    else:
+        status = "running-version-mismatch"
+        version_match_mode = "none"
     return {
-        "status": "running-version-verified" if satisfied else "running-version-mismatch",
+        "status": status,
         "satisfied": satisfied,
         "requested_version": requested,
         "reported_version": reported,
+        "reported_source_revision": reported_source_revision,
+        "reported_dirty": reported_dirty,
+        "version_match_mode": version_match_mode,
         "version_output": combined,
         "command": command,
     }
@@ -664,6 +703,9 @@ def build_version_provenance(substrate: dict, nodes: list[dict]) -> dict:
                 "requested_version": node.get("version"),
                 "resolved_version": node.get("resolved_version"),
                 "reported_version": identity.get("reported_version"),
+                "reported_source_revision": identity.get("reported_source_revision"),
+                "reported_dirty": identity.get("reported_dirty"),
+                "version_match_mode": identity.get("version_match_mode"),
                 "source_revision": node.get("source_revision"),
                 "image_ref": node.get("image_ref") or node.get("image"),
                 "image_id": node.get("image_id"),

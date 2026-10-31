@@ -282,6 +282,69 @@ def test_running_container_must_report_requested_node_version():
     assert bad["reported_version"] == "10.7.1"
 
 
+def test_local_amaru_release_may_attest_label_with_clean_source_revision():
+    source_revision = "23031e0ed4423b9cb899da030d515cb69d203749"
+    config_id = "sha256:" + "9" * 64
+    node = {
+        **_substrate(image=config_id)["nodes"][0],
+        "impl": "amaru",
+        "version": "10.11.20261029",
+        "source_revision": source_revision,
+        "image_config_id": config_id,
+        "executable_digest": "sha256:" + "8" * 64,
+        "platform": "linux/amd64",
+        "runtime_interface": "extracted-binary",
+        "operator_registration_id": "registration-release-build-selected-stock",
+        "controller_installation_id": "install-selected",
+        "operator_overlay_revision": "7" * 64,
+    }
+
+    def runner(command, **kwargs):
+        return _result(command, stdout="Amaru 10.11.0 (23031e0)\n")
+
+    result = verify_running_node_version("candidate-amaru1-1", node, runner=runner)
+
+    assert result["satisfied"] is True
+    assert result["status"] == "running-operator-artifact-verified"
+    assert result["version_match_mode"] == "operator-local-source-revision"
+    assert result["reported_version"] == "10.11.0"
+    assert result["reported_source_revision"] == "23031e0"
+    assert result["reported_dirty"] is False
+
+
+@pytest.mark.parametrize(
+    "version_output",
+    [
+        "Amaru 10.11.0 (aaaaaaaa)",
+        "Amaru 10.11.0 (23031e0+dirty)",
+        "Amaru 10.11.0",
+    ],
+)
+def test_local_amaru_release_fails_closed_without_clean_matching_revision(version_output):
+    config_id = "sha256:" + "9" * 64
+    node = {
+        **_substrate(image=config_id)["nodes"][0],
+        "impl": "amaru",
+        "version": "10.11.20261029",
+        "source_revision": "23031e0ed4423b9cb899da030d515cb69d203749",
+        "image_config_id": config_id,
+        "executable_digest": "sha256:" + "8" * 64,
+        "platform": "linux/amd64",
+        "runtime_interface": "extracted-binary",
+        "operator_registration_id": "registration-release-build-selected-stock",
+        "controller_installation_id": "install-selected",
+        "operator_overlay_revision": "7" * 64,
+    }
+
+    def runner(command, **kwargs):
+        return _result(command, stdout=version_output)
+
+    result = verify_running_node_version("candidate-amaru1-1", node, runner=runner)
+
+    assert result["satisfied"] is False
+    assert result["status"] == "running-version-mismatch"
+
+
 def test_running_container_must_use_the_resolved_image_id():
     node = {"id": "node1", "image_id": IMAGE_ID, "image_ref": "example:11.1.2"}
 
@@ -305,6 +368,9 @@ def test_version_provenance_is_bundle_safe_and_exact():
         "version_identity": {
             "status": "running-version-verified",
             "reported_version": "11.1.2",
+            "reported_source_revision": "d" * 40,
+            "reported_dirty": False,
+            "version_match_mode": "exact-version",
             "satisfied": True,
         },
     }
@@ -318,6 +384,9 @@ def test_version_provenance_is_bundle_safe_and_exact():
     assert provenance["catalog_revision"] == "c" * 64
     assert provenance["nodes"][0]["image_digest"] == DIGEST
     assert provenance["nodes"][0]["reported_version"] == "11.1.2"
+    assert provenance["nodes"][0]["reported_source_revision"] == "d" * 40
+    assert provenance["nodes"][0]["reported_dirty"] is False
+    assert provenance["nodes"][0]["version_match_mode"] == "exact-version"
     assert "password" not in json.dumps(provenance).lower()
 
 
