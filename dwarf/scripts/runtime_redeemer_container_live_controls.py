@@ -1547,19 +1547,12 @@ def _wait_for_target_adoption(
 def _submit_amaru_container(container_id: str, payload: bytes) -> dict[str, Any]:
     """Submit raw bytes to the already-running Amaru built-in API."""
 
-    request = (
-        b"POST /api/submit/tx HTTP/1.1\r\n"
-        b"Host: localhost\r\n"
-        b"Content-Type: application/cbor\r\n"
-        + f"Content-Length: {len(payload)}\r\n".encode("ascii")
-        + b"Connection: close\r\n\r\n"
-        + payload
-    )
     controller = _controller_container()
     helper_image = str((controller or {}).get("Image") or "")
     if (
         re.fullmatch(r"[0-9a-f]{64}", container_id) is None
         or re.fullmatch(r"sha256:[0-9a-f]{64}", helper_image) is None
+        or len(payload) > 16 * 1024 * 1024
     ):
         return {
             "http": 0,
@@ -1567,18 +1560,18 @@ def _submit_amaru_container(container_id: str, payload: bytes) -> dict[str, Any]
             "transport": "Amaru submit helper identity unavailable",
         }
     helper = (
-        "import socket,sys\n"
-        "request=sys.stdin.buffer.read()\n"
-        "response=bytearray()\n"
-        "with socket.create_connection(('127.0.0.1',3011),30) as stream:\n"
-        " stream.settimeout(30)\n"
-        " stream.sendall(request)\n"
-        " stream.shutdown(socket.SHUT_WR)\n"
-        " while len(response)<65536:\n"
-        "  block=stream.recv(min(4096,65536-len(response)))\n"
-        "  if not block: break\n"
-        "  response.extend(block)\n"
-        "sys.stdout.buffer.write(response)\n"
+        "import http.client,json,sys\n"
+        "payload=sys.stdin.buffer.read(16777217)\n"
+        "if len(payload)>16777216: raise RuntimeError('request too large')\n"
+        "connection=http.client.HTTPConnection('127.0.0.1',3011,timeout=30)\n"
+        "try:\n"
+        " connection.request('POST','/api/submit/tx',body=payload,headers={'Content-Type':'application/cbor'})\n"
+        " response=connection.getresponse()\n"
+        " body=response.read(65537)\n"
+        " if len(body)>65536: raise RuntimeError('response too large')\n"
+        " print(json.dumps({'http':response.status,'body_hex':body.hex()},separators=(',',':')))\n"
+        "finally:\n"
+        " connection.close()\n"
     )
     try:
         result = subprocess.run(
@@ -1596,7 +1589,7 @@ def _submit_amaru_container(container_id: str, payload: bytes) -> dict[str, Any]
                 helper_image,
                 "-c", helper,
             ],
-            input=request,
+            input=payload,
             capture_output=True,
             check=False,
             timeout=35,
@@ -1605,12 +1598,14 @@ def _submit_amaru_container(container_id: str, payload: bytes) -> dict[str, Any]
         return {"http": 0, "body": "", "transport": "Amaru submit timed out or failed"}
     if result.returncode != 0:
         return {"http": 0, "body": "", "transport": "amaru submit API unavailable"}
-    header, _, raw_body = result.stdout.partition(b"\r\n\r\n")
-    first = header.splitlines()[0].decode("ascii", "replace") if header else ""
-    parts = first.split()
     try:
-        status = int(parts[1])
-    except (IndexError, ValueError):
+        decoded = json.loads(result.stdout)
+        status = int(decoded["http"])
+        encoded_body = decoded["body_hex"]
+        if not 100 <= status <= 599 or not isinstance(encoded_body, str) or len(encoded_body) > 131072:
+            raise ValueError("invalid helper response")
+        raw_body = bytes.fromhex(encoded_body)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return {"http": 0, "body": "", "transport": "invalid Amaru submit response"}
     return {"http": status, "body": raw_body[:4096].decode("utf-8", "replace")}
 

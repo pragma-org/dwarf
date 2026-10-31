@@ -837,7 +837,7 @@ def test_amaru_submit_uses_attested_controller_image_in_target_network(monkeypat
         return subprocess.CompletedProcess(
             command,
             0,
-            b"HTTP/1.1 202 Accepted\r\nContent-Length: 8\r\n\r\naccepted",
+            b'{"http":202,"body_hex":"6163636570746564"}',
             b"",
         )
 
@@ -864,10 +864,30 @@ def test_amaru_submit_uses_attested_controller_image_in_target_network(monkeypat
         command.index("--security-opt") : command.index("--security-opt") + 2
     ]
     assert ["--entrypoint", "python3", helper_image, "-c"] == command[-5:-1]
-    assert "socket.create_connection" in command[-1]
-    assert kwargs["input"].startswith(b"POST /api/submit/tx HTTP/1.1\r\n")
-    assert b"Content-Length: 5\r\n" in kwargs["input"]
-    assert kwargs["input"].endswith(b"\r\n\r\n" + payload)
+    assert "http.client.HTTPConnection" in command[-1]
+    assert "shutdown(" not in command[-1]
+    assert kwargs["input"] == payload
+
+
+def test_amaru_submit_rejects_malformed_helper_response(monkeypatch):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, b"not-json", b""
+        ),
+    )
+    monkeypatch.setattr(
+        live_controls,
+        "_controller_container",
+        lambda: {"Image": "sha256:" + "b" * 64},
+    )
+
+    assert _submit_amaru_container("a" * 64, b"tx") == {
+        "http": 0,
+        "body": "",
+        "transport": "invalid Amaru submit response",
+    }
 
 
 def test_reference_cli_decode_failure_is_not_reported_as_a_node_response(
