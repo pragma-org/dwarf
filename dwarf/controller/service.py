@@ -459,7 +459,7 @@ class ControllerService:
             state = record.get("state")
             expected_execution_id = path.stem
             artifact_cleanup_pending = bool(
-                record.get("operation") == Operation.ARTIFACT_PACKAGE.value
+                record.get("operation") in {Operation.ARTIFACT_PACKAGE.value, Operation.RELEASE_PREPARE.value}
                 and (
                     state in {"running", "cancelling"}
                     or record.get("artifact_cleanup") == "failed"
@@ -467,7 +467,7 @@ class ControllerService:
             )
             artifact_cleanup = record.get("artifact_cleanup")
             if artifact_cleanup_pending:
-                cleanup = getattr(self.runtime, "cleanup_artifact_package", None)
+                cleanup = getattr(self.runtime, "cleanup_release_build" if record.get("operation") == Operation.RELEASE_PREPARE.value else "cleanup_artifact_package", None)
                 try:
                     if not callable(cleanup):
                         raise RuntimeError("artifact cleanup is unavailable")
@@ -536,6 +536,7 @@ class ControllerService:
             not in {
                 Operation.ARTIFACT_PACKAGE.value,
                 Operation.IMAGE_DOWNLOAD.value,
+                Operation.RELEASE_PREPARE.value,
                 Operation.TOPOLOGY_APPLY.value,
                 Operation.RUN_EXECUTE.value,
             }
@@ -564,7 +565,7 @@ class ControllerService:
         expected_plan_sha256 = (
             parameters.get("executable_sha256")
             if operation == Operation.ARTIFACT_PACKAGE.value
-            else parameters.get("digest") if operation == Operation.IMAGE_DOWNLOAD.value
+            else parameters.get("digest") if operation in {Operation.IMAGE_DOWNLOAD.value, Operation.RELEASE_PREPARE.value}
             else parameters.get("plan_digest")
         )
         valid = (
@@ -581,7 +582,7 @@ class ControllerService:
         )
         if not valid:
             return False
-        if operation in {Operation.ARTIFACT_PACKAGE.value, Operation.IMAGE_DOWNLOAD.value}:
+        if operation in {Operation.ARTIFACT_PACKAGE.value, Operation.IMAGE_DOWNLOAD.value, Operation.RELEASE_PREPARE.value}:
             result = record.get("result")
             return (
                 isinstance(result, dict)
@@ -589,7 +590,7 @@ class ControllerService:
                 and (
                     (
                         record.get("state") == "applied"
-                        and result.get("status") == ("downloaded" if operation == Operation.IMAGE_DOWNLOAD.value else "packaged")
+                        and result.get("status") == ({Operation.IMAGE_DOWNLOAD.value: "downloaded", Operation.RELEASE_PREPARE.value: "prepared"}.get(operation, "packaged"))
                     )
                     or (
                         record.get("state") == "cancelled"
@@ -706,6 +707,10 @@ class ControllerService:
     def _execute(self, request: ControllerRequest) -> tuple[int, dict[str, Any]]:
         if request.operation is Operation.INVENTORY_GET:
             return 200, _thaw(self.runtime.inventory())
+        if request.operation is Operation.IMAGE_AVAILABILITY:
+            return 200, {"schema_version": "v1",
+                         **_thaw(self.runtime.image_availability(dict(request.parameters))),
+                         "installation_id": self.installation_id, "inspected_at": _utc_now()}
         if request.operation is Operation.IMAGE_INSPECT:
             inspected = _thaw(
                 self.runtime.inspect_image(
@@ -730,7 +735,7 @@ class ControllerService:
                 "installation_id": self.installation_id,
                 "inspected_at": _utc_now(),
             }
-        if request.operation in {Operation.ARTIFACT_PACKAGE, Operation.IMAGE_DOWNLOAD}:
+        if request.operation in {Operation.ARTIFACT_PACKAGE, Operation.IMAGE_DOWNLOAD, Operation.RELEASE_PREPARE}:
             return self._idempotent(request, self._artifact_start)
         if request.operation is Operation.TOPOLOGY_HEALTH:
             return 200, _thaw(
@@ -799,10 +804,13 @@ class ControllerService:
         execution_path = self.executions_dir / f"{execution_id}.json"
         accepted_at = str(execution["accepted_at"])
         downloading = request.operation is Operation.IMAGE_DOWNLOAD
-        artifact_digest = parameters["digest"] if downloading else parameters["executable_sha256"]
+        preparing = request.operation is Operation.RELEASE_PREPARE
+        release_operation = downloading or preparing
+        terminal_status = "prepared" if preparing else "downloaded" if downloading else "packaged"
+        artifact_digest = parameters["digest"] if release_operation else parameters["executable_sha256"]
         before = (
             {key: parameters[key] for key in ("implementation", "version", "digest")}
-            if downloading else {key: parameters[key] for key in ("import_id", "executable_sha256")}
+            if release_operation else {key: parameters[key] for key in ("import_id", "executable_sha256")}
         )
         lock_started = time.monotonic()
         acquired = False
@@ -819,7 +827,7 @@ class ControllerService:
                 result = {"status": "cancelled"}
             else:
                 result = _thaw(
-                    (self.runtime.download_image if downloading
+                    (self.runtime.prepare_release if preparing else self.runtime.download_image if downloading
                      else self.runtime.package_artifact)(
                         parameters,
                         execution_id,
@@ -828,7 +836,7 @@ class ControllerService:
                     )
                 )
             status = "cancelled" if result.get("status") == "cancelled" else "applied"
-            if status == "applied" and result.get("status") != ("downloaded" if downloading else "packaged"):
+            if status == "applied" and result.get("status") != terminal_status:
                 raise RuntimeError("artifact operation returned an invalid terminal result")
             completed_at = _utc_now()
             receipt_path = self._write_receipt(
@@ -915,6 +923,8 @@ class ControllerService:
             "run_id": record.get("run_id"),
             "result": record.get("result"),
             "failure": record.get("failure"),
+            **({"progress": self.runtime.release_build_progress(execution_id)}
+               if record.get("operation") == Operation.RELEASE_PREPARE.value else {}),
         }
 
     def _run_resolution_request(

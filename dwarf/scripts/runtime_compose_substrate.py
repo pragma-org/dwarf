@@ -1050,7 +1050,7 @@ def _docker_compose_body(
         host, port_text = node["listen_address"].rsplit(":", 1)
         if node["impl"] == "cardano-node":
             patched_measurement_trace_setup = ""
-            if node.get("target_mode") == "patched":
+            if node.get("target_mode") == "patched" or ((node.get("operator_registration") or {}).get("source_build") or {}).get("variant") == "instrumented":
                 patched_measurement_trace_setup = (
                     f"touch /logs/{node['id']}/cardano-measurement.ndjson "
                     f"/logs/{node['id']}/cardano-plutus.ndjson && "
@@ -1195,7 +1195,7 @@ def _docker_compose_body(
                         ),
                     }
                 )
-        elif node.get("target_mode") == "patched":
+        elif node.get("target_mode") == "patched" or ((node.get("operator_registration") or {}).get("source_build") or {}).get("variant") == "instrumented":
             services[node["id"]]["environment"] = {
                 "DWARF_CARDANO_MEASUREMENT_TRACE": (
                     f"/logs/{node['id']}/cardano-measurement.ndjson"

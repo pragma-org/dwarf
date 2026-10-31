@@ -260,11 +260,16 @@ def build_deployment_version_preview(
                     if operator_state_dir is not None
                     else None
                 )
-                recovered = retained_import_executable_digest(
-                    operator_selection["registration"],
-                    staging_root=import_root,
-                    request_controller=request_controller,
-                )
+                if operator_selection["registration"].get("source_build"):
+                    from profile_manager.release_build_identity import retained_build_executable_digest
+                    recovered = retained_build_executable_digest(
+                        operator_selection["registration"], request_controller=request_controller)
+                else:
+                    recovered = retained_import_executable_digest(
+                        operator_selection["registration"],
+                        staging_root=import_root,
+                        request_controller=request_controller,
+                    )
                 operator_selection = {
                     **operator_selection,
                     "registration": {
@@ -475,7 +480,7 @@ def build_measurement_target_identity(
                 "measurement-config-reference-mismatch",
                 "local target execution reference differs from its config image ID",
             )
-        return {
+        identity = {
             "implementation": implementation,
             "version": version,
             "source_revision": source_revision,
@@ -498,6 +503,8 @@ def build_measurement_target_identity(
             "qualification_status": preview.get("status"),
             "known_incompatible_measurements": [],
         }
+        from profile_manager.release_build_identity import instrumented_identity
+        return instrumented_identity(registration, identity)
     if not isinstance(source_revision, str) or not _SOURCE_REVISION.fullmatch(source_revision):
         raise DeploymentVersionGateError(
             "measurement-revision-missing", "resolved target has no exact source revision"

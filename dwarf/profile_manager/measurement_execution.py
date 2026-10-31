@@ -259,7 +259,8 @@ def _operator_local_identity(
     for field in ("verified_instrumentation",):
         if registration.get(field) is not None:
             identity[field] = registration[field]
-    return identity
+    from profile_manager.release_build_identity import instrumented_identity
+    return instrumented_identity(registration, identity)
 
 
 def _stock_amaru_identity(
@@ -787,8 +788,12 @@ def prepare_scenario_measurements(
                 runtime_root / "logs" / target_node / "cardano-plutus.ndjson",
             )
     if identity.get("identity_kind") == "operator-local-config":
+        if implementation == "amaru" and identity["mode"] == "patched":
+            capabilities = set(AMARU_PATCHED_CAPABILITIES)
         instrumentation = identity.get("verified_instrumentation") or {}
         capabilities = set(capabilities) | set(instrumentation.get("capabilities") or [])
+        if implementation == "amaru" and runtime.get("amaru_json_traces") is not True:
+            capabilities -= AMARU_JSON_TRACE_CAPABILITIES
         if not isinstance(expected_resolution, dict):
             raise MeasurementExecutionError(
                 "local measurements require the frozen launch resolution"

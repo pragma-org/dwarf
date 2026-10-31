@@ -155,6 +155,8 @@ services:
       ADA2_DWARF_VERSION_IMPORTS_DIR: /var/dwarf/version-imports
       # Docker uses host paths, not paths inside this controller container.
       DWARF_CONTROLLER_HOST_STATE_DIR: ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/controller-state
+      # Revalidate retained source-build receipts during controller-side plan resolution.
+      DWARF_CONTROLLER_URL: http://127.0.0.1:8790
       # Compose requires a writable client-config directory even when it does
       # not use credentials. Keep it private and ephemeral on the existing
       # controller-only /tmp tmpfs while the root filesystem stays read-only.

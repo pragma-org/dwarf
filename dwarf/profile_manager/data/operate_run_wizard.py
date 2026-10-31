@@ -403,6 +403,7 @@ def run_wizard_catalog(
                 "config_image_id": row["config_image_id"],
                 "manifest_digest": row.get("manifest_digest"),
                 "platform": row["platform"],
+                "build_variant": (row.get("source_build") or {}).get("variant"),
                 "source_declared": bool(
                     (row.get("provenance") or {}).get("source_revision")
                 ),

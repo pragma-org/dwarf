@@ -1041,6 +1041,18 @@ if (wizard && form) {
       requestedRelease = true;
     }
   }
+  const requestedBuild = releaseParams.get('operator_registration_id');
+  if (requestedBuild) {
+    const select = wizard.querySelector('#run-operator-registration');
+    const option = select && [...select.options].find(item => item.value === requestedBuild);
+    if (!option || (releaseParams.get('build_image') && option.dataset.configImageId !== releaseParams.get('build_image'))) {
+      releaseSelectionError = {field:'operator_registration_id', message:'The requested build is unavailable or its image identity has changed. Return to Versions and select the retained build.'};
+    } else {
+      select.value = requestedBuild;
+      syncExclusiveVersionSelection(select);
+      requestedRelease = true;
+    }
+  }
   const initialAction = requestedRelease ? 'resolve' : initialPlanAction(bootstrap, scenarioSelect?.value);
   if (releaseSelectionError) renderError(releaseSelectionError, false);
   else if (initialAction === 'render-plan') renderPlan(bootstrap.default_plan, bootstrap.default_plan_digest);

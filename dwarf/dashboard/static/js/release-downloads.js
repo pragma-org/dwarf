@@ -6,6 +6,7 @@
     const status = row.querySelector('[data-download-status]');
     const use = row.querySelector('[data-use-release]');
     let busy = false;
+    let retryCheck = false;
     async function update(start = false) {
       if (busy) return;
       busy = true;
@@ -18,6 +19,8 @@
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Download status unavailable');
+        retryCheck = false;
+        button.textContent = 'Download upstream image only';
         const running = ['running', 'cancelling'].includes(result.state);
         const available = result.state === 'available';
         use.hidden = !available;
@@ -29,17 +32,19 @@
           status.textContent = 'Downloading and verifying image…';
           window.setTimeout(() => update(), 1500);
         } else {
-          status.textContent = result.failure || (result.state === 'missing' ? 'Not downloaded through DWARF.' : 'Download ' + result.state + '. Retry to continue.');
+          status.textContent = result.failure || (result.state === 'missing' ? 'Not installed locally.' : result.state === 'wrong-platform' ? 'Not installed for this platform.' : 'Download ' + result.state + '. Retry to continue.');
           button.disabled = false;
         }
       } catch (error) {
-        status.textContent = error.message;
+        retryCheck = true;
+        button.textContent = 'Retry';
+        status.textContent = 'Couldn’t check availability. ' + error.message;
         use.hidden = true;
         button.hidden = false;
         button.disabled = false;
       } finally { busy = false; }
     }
-    button.addEventListener('click', () => update(true));
+    button.addEventListener('click', () => update(!retryCheck));
     update();
   });
 })();

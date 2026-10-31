@@ -1,0 +1,217 @@
+{
+  "base_image": "ghcr.io/pragma-org/amaru@sha256:a5173e2049d4c16f4574cb84495da4578c606d77332105b54cd674961076648c",
+  "build": {
+    "binary": "target/x86_64-unknown-linux-musl/release/amaru",
+    "command": [
+      "cargo",
+      "+nightly-2026-09-04",
+      "zigbuild",
+      "--locked",
+      "--release",
+      "-p",
+      "amaru",
+      "--bin",
+      "amaru",
+      "--target",
+      "x86_64-unknown-linux-musl"
+    ],
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_TERM_COLOR": "never",
+      "CARGO_ZIGBUILD_ZIG_COMMAND": "python-zig"
+    }
+  },
+  "build_tools": {
+    "cargo-zigbuild": "0.23.4",
+    "target": "x86_64-unknown-linux-musl",
+    "zig": "0.15.2"
+  },
+  "changed_paths": [
+    "crates/amaru-ledger/src/state.rs",
+    "crates/amaru-observability/src/schemas.rs",
+    "crates/amaru-protocols/src/blockfetch/initiator.rs",
+    "crates/amaru-protocols/src/handshake/responder.rs",
+    "crates/amaru-protocols/src/mux.rs",
+    "crates/amaru-protocols/src/protocol/miniprotocol.rs",
+    "crates/amaru-protocols/src/tx_submission/initiator.rs",
+    "crates/amaru-protocols/src/tx_submission/responder.rs"
+  ],
+  "instrumentation": [
+    {
+      "all_outcomes_timed": false,
+      "boundaries": [
+        "mux-cbor-item",
+        "mini-protocol-decode",
+        "handshake-negotiation"
+      ],
+      "capability": "live-protocol-cbor-decode",
+      "coverage_limitations": [
+        "BlockFetch typestate conversion probes use a separate protocol_variant_decode diagnostic event. A message can produce multiple probes, including malformed-input probes; these events are excluded from protocol message counts, rejection counts, and timing aggregates. Whole-message BlockFetch state admission is not measured by protocol_decode."
+      ],
+      "diagnostic_events": [
+        "amaru::protocols/measurement.protocol_variant_decode"
+      ],
+      "events": [
+        "amaru::protocols/measurement.protocol_ingress",
+        "amaru::protocols/measurement.protocol_decode",
+        "amaru::protocols/measurement.handshake_negotiation"
+      ],
+      "outcomes": [
+        "framed",
+        "malformed",
+        "decoded",
+        "accepted",
+        "rejected",
+        "not_attempted",
+        "refused",
+        "query"
+      ],
+      "timing_precision": {
+        "authoritative_field_unit": "nanoseconds",
+        "compatibility_field_unit": "whole-microseconds",
+        "derivation": "same monotonic duration; compatibility value is integer nanoseconds divided by 1000"
+      }
+    },
+    {
+      "all_outcomes_timed": false,
+      "capability": "blockfetch-handler-queue",
+      "coverage_limitations": [
+        "Handler duration is emitted only when the handler returns; termination paths do not return. Block-body decode rejection remains timed."
+      ],
+      "events": [
+        "amaru::protocols/measurement.blockfetch_handler",
+        "amaru::protocols/measurement.blockfetch_block_decode",
+        "amaru::protocols/measurement.blockfetch_queue_residence"
+      ],
+      "outcomes": [
+        "accepted",
+        "rejected",
+        "completed",
+        "dequeued",
+        "replaced",
+        "cancelled"
+      ],
+      "timing_precision": {
+        "authoritative_field_unit": "nanoseconds",
+        "compatibility_field_unit": "whole-microseconds",
+        "derivation": "same monotonic duration; compatibility value is integer nanoseconds divided by 1000"
+      }
+    },
+    {
+      "all_outcomes_timed": false,
+      "capability": "txsubmission2-residence",
+      "coverage_limitations": [
+        "Outstanding transaction measurements are not drained on every peer or protocol termination path. For example, rejection of one invalid body can leave another pending transaction without a terminal residence event."
+      ],
+      "events": [
+        "amaru::protocols/measurement.txsubmission_depth",
+        "amaru::protocols/measurement.txsubmission_residence",
+        "amaru::protocols/measurement.txsubmission_blocking_residence"
+      ],
+      "outcomes": [
+        "accepted",
+        "rejected_invalid",
+        "rejected_mempool_full",
+        "rejected_duplicate",
+        "protocol_rejected",
+        "mempool_timeout",
+        "body_timeout",
+        "omitted",
+        "already_present",
+        "fulfilled",
+        "cancelled",
+        "mempool_error",
+        "rejected"
+      ],
+      "timing_precision": {
+        "authoritative_field_unit": "nanoseconds",
+        "compatibility_field_unit": "whole-microseconds",
+        "derivation": "same monotonic duration; compatibility value is integer nanoseconds divided by 1000"
+      }
+    },
+    {
+      "all_outcomes_timed": true,
+      "boundary": "stable-ledger-block-application",
+      "capability": "block-application",
+      "events": [
+        "amaru::ledger/measurement.block_apply"
+      ],
+      "outcomes": [
+        "completed",
+        "error"
+      ],
+      "timing_precision": {
+        "authoritative_field_unit": "nanoseconds",
+        "compatibility_field_unit": "whole-microseconds",
+        "derivation": "same monotonic duration; compatibility value is integer nanoseconds divided by 1000"
+      }
+    }
+  ],
+  "measurement_revision": "nanoseconds-v3",
+  "patch_set_sha256": "ca10dff8c451576a3d7677f74f5d56cd75e90a52d483747a39cfa31a01815f1b",
+  "patches": [
+    {
+      "path": "0001-dwarf-measurement-nanoseconds-v3.patch",
+      "preimages": [
+        {
+          "path": "crates/amaru-ledger/src/state.rs",
+          "sha256": "4100601fb0683503ae298bbba581e3be9e0fa5457e4410e8ab6f00449ce8463a"
+        },
+        {
+          "path": "crates/amaru-observability/src/schemas.rs",
+          "sha256": "ebf7d3e25f0f7b8f2401949f804c09be948531f4e235fac24b002e4f225484e8"
+        },
+        {
+          "path": "crates/amaru-protocols/src/blockfetch/initiator.rs",
+          "sha256": "99a1fb5fdf75abbdebb5cb485ac22d86f9b07f47f3203f1d55d8ddd23231b106"
+        },
+        {
+          "path": "crates/amaru-protocols/src/handshake/responder.rs",
+          "sha256": "430b8f9f013962422782d40329178facdd2e7f54efa62f16ba5352dec064a70f"
+        },
+        {
+          "path": "crates/amaru-protocols/src/mux.rs",
+          "sha256": "5be644a1fad1336eb09eb75cacd83accca3b43faeb83012a4136315b9c25b2d1"
+        },
+        {
+          "path": "crates/amaru-protocols/src/protocol/miniprotocol.rs",
+          "sha256": "0f738d49fa5c88a523d1907ebe52bb4e0566e2ac8ed00eeaf9b6d4ab445230ac"
+        },
+        {
+          "path": "crates/amaru-protocols/src/tx_submission/initiator.rs",
+          "sha256": "b6963b04e3be1d49e835e7bea5136e3e17ad28a4070f52a833a82506ab6cba94"
+        },
+        {
+          "path": "crates/amaru-protocols/src/tx_submission/responder.rs",
+          "sha256": "dc22a6076a74191e497d782074637c7a6f1a2668016add42a71eefce1e84d7d4"
+        }
+      ],
+      "sha256": "0d6658cad64ad2ceee40c33c152b825f77a95b114903655c4ab604fd07959458"
+    }
+  ],
+  "runtime_probe_image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+  "schema_version": 1,
+  "source": {
+    "release": "10.11.20261029",
+    "repository": "https://github.com/pragma-org/amaru.git",
+    "revision": "23031e0ed4423b9cb899da030d515cb69d203749",
+    "tag": "v10.11.20261029"
+  },
+  "supersedes_measurement_revision": "nanoseconds-v2",
+  "target": "amaru-measurement-nanoseconds-v3",
+  "toolchain": "nightly-2026-09-04",
+  "validation": {
+    "compiled": false,
+    "ported_from_source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d",
+    "required_checks": [
+      "exact-toolchain-format",
+      "locked-release-build",
+      "protocol-and-ledger-tests",
+      "trace-schema-regeneration-and-validation",
+      "runtime-measurement-probe"
+    ],
+    "runtime_probe_image_status": "inherited-immutable-helper-not-yet-validated-for-this-release",
+    "runtime_qualified": false,
+    "status": "candidate"
+  }
+}

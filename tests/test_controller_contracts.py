@@ -540,3 +540,27 @@ def test_audit_receipt_requires_digests_and_bundle_relative_artifacts():
                 "artifact_paths": ["/etc/shadow"],
             }
         )
+
+
+def test_image_availability_is_read_only_and_accepts_only_catalog_identity():
+    body = _request('image.availability', implementation='cardano-node', version='11.1.2', digest=DIGEST)
+    request = parse_request(body)
+    assert request.operation is Operation.IMAGE_AVAILABILITY
+    assert request.idempotency_key is None
+    assert dict(request.parameters) == {'implementation': 'cardano-node', 'version': '11.1.2', 'digest': DIGEST}
+    for change in ({'image': IMAGE}, {'digest': 'latest'}, {'implementation': 'other'}, {'timeout_seconds': 21}):
+        with pytest.raises(ContractError):
+            parse_request({**body, **change})
+
+
+def test_release_prepare_contract_pins_source_and_allows_bounded_compile_time():
+    body = _request('release.prepare', implementation='amaru', version='10.11.20261029',
+                    digest=DIGEST, source_revision='b' * 40, execution_id='build-one',
+                    idempotency_key='build-one', timeout_seconds=43200)
+    parsed = parse_request(body)
+    assert parsed.operation.value == 'release.prepare'
+    assert parsed.parameters['source_revision'] == 'b' * 40
+    for changes in ({'source_revision': 'main'}, {'timeout_seconds': 43201},
+                    {'repository': 'https://evil.example/node'}, {'idempotency_key': None}):
+        with pytest.raises(ContractError):
+            parse_request({**body, **changes})

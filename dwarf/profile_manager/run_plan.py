@@ -1186,6 +1186,7 @@ def _measurement_context(
         ):
             if node is not None and node.get(field) not in (None, ""):
                 identity[field] = node[field]
+        mode = identity["mode"]
         if implementation == "amaru" and mode == "patched":
             capabilities = set(AMARU_PATCHED_CAPABILITIES)
         elif implementation == "amaru":

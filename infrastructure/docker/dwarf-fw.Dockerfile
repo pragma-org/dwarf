@@ -76,6 +76,7 @@ WORKDIR /home/dwarf/dwarf-fw
 
 COPY dwarf/ /home/dwarf/dwarf-fw/dwarf/
 COPY antithesis/cardano_amaru_relay_bootstrap_control/ /home/dwarf/dwarf-fw/antithesis/cardano_amaru_relay_bootstrap_control/
+COPY antithesis/components/dwarf-adversary/coverage-docker/Dockerfile /home/dwarf/dwarf-fw/antithesis/components/dwarf-adversary/coverage-docker/Dockerfile
 COPY infrastructure/docker/dwarf-fw-entrypoint.sh /usr/local/bin/dwarf-fw-entrypoint
 COPY infrastructure/docker/requirements-framework.txt /tmp/requirements-framework.txt
 

@@ -33,18 +33,19 @@ def release_download(implementation, version, *, digest=None, start=False, contr
                     raise
                 status = {'state': 'interrupted'}
             state = status['state']
-            if state == 'applied':
-                # Receipts are history, not evidence that an image is still installed.
-                try:
-                    inspected = controller('image.inspect', {
-                        'implementation': implementation, 'version': version, 'image': selected['image']}, 20)
-                    if (inspected.get('platform') != selected['platform']
-                            or selected['image'] not in inspected.get('manifest_references', [])):
-                        raise ValueError('Local image identity differs from the selected release')
-                    state = 'available'
-                except TopologyActionError:
-                    state = 'unavailable'
             failure = (status.get('failure') or {}).get('message')
+        if state not in {'running', 'cancelling'}:
+            # Availability belongs to Docker, not to our download-job history.
+            # A failed check propagates; it must never authorize a fresh pull.
+            observed = controller('image.availability', {
+                'implementation': implementation, 'version': version, 'digest': selected['digest']}, 20)
+            state = observed.get('state')
+            if state not in {'available', 'missing', 'wrong-platform'}:
+                raise ValueError('Controller returned an invalid image availability state')
+            if state == 'available' and (
+                    observed.get('platform') != selected['platform']
+                    or selected['image'] not in observed.get('manifest_references', [])):
+                raise ValueError('Local image identity differs from the selected release')
         if start and state not in {'running', 'cancelling', 'available'}:
             execution_id = 'download-' + uuid.uuid4().hex
             job = {'execution_id': execution_id, **selected}

@@ -594,6 +594,7 @@ def resolve_measurements(
             "operator_overlay_revision",
             "controller_installation_id",
             "verified_instrumentation",
+            "source_build",
             "known_incompatible_measurements",
         )
     }

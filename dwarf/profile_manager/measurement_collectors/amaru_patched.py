@@ -452,6 +452,11 @@ def supports_amaru_header_validation(identity: Mapping[str, Any]) -> bool:
 
 
 def _validate_identity(identity: Mapping[str, Any]) -> str:
+    if identity.get('implementation') != 'amaru' or identity.get('mode') != 'patched':
+        raise ValueError('patched collector implementation or mode differs')
+    if identity.get('source_build') is not None:
+        from profile_manager.release_build_identity import validate_collector_identity
+        return validate_collector_identity(identity)
     if identity.get("implementation") != "amaru" or identity.get("mode") != "patched":
         raise ValueError("patched collector requires an Amaru target in patched mode")
     candidate = identity.get("experimental_instrumentation")

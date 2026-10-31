@@ -60,8 +60,9 @@ def test_download_retains_one_job_and_rechecks_availability(tmp_path, monkeypatc
         if operation == 'image.download': return {'execution_id': parameters['execution_id']}
         if operation == 'execution.status':
             return {'state': 'applied' if terminal else 'running', 'result': {'status': 'downloaded'}}
-        if operation == 'image.inspect':
-            return {'platform': 'linux/amd64', 'manifest_references': [parameters['image']],
+        if operation == 'image.availability':
+            if not terminal: return {'state': 'missing'}
+            return {'state': 'available', 'platform': 'linux/amd64', 'manifest_references': ['ghcr.io/pragma-org/amaru@' + parameters['digest']],
                     'config_image_id': 'sha256:' + 'b' * 64}
         raise AssertionError(operation)
     a = release_downloads.release_download('amaru', '10.11.20261029', start=True, controller=controller)
@@ -71,7 +72,7 @@ def test_download_retains_one_job_and_rechecks_availability(tmp_path, monkeypatc
     terminal = True
     result = release_downloads.release_download('amaru', '10.11.20261029', start=False, controller=controller)
     assert result['state'] == 'available'
-    assert calls[-1] == 'image.inspect'
+    assert calls[-1] == 'image.availability'
     assert 'amaru_version=10.11.20261029' in result['run_url']
 
 
@@ -111,10 +112,10 @@ def test_removed_image_can_be_downloaded_again(tmp_path, monkeypatch):
     def controller(operation, parameters, timeout, **kwargs):
         if operation == 'image.download': pulls.append(parameters); return parameters
         if operation == 'execution.status': return {'state': 'applied', 'result': {'status': 'downloaded'}}
-        if operation == 'image.inspect': raise TopologyActionError('Docker image inspect failed')
+        if operation == 'image.availability': return {'state': 'missing'}
     release_downloads.release_download('amaru', '10.11.20261029', start=True, controller=controller)
     result = release_downloads.release_download('amaru', '10.11.20261029', start=False, controller=controller)
-    assert result['state'] == 'unavailable'
+    assert result['state'] == 'missing'
     release_downloads.release_download('amaru', '10.11.20261029', start=True, controller=controller)
     assert len(pulls) == 2
 
@@ -155,3 +156,91 @@ def test_stale_rendered_digest_cannot_start_download(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         release_downloads.release_download('amaru', '10.11.20261029', digest='sha256:'+'c'*64,
                                            start=True, controller=controller)
+
+
+def test_existing_cardano_image_is_available_without_download_receipt(tmp_path, monkeypatch):
+    from profile_manager import release_downloads, version_discovery
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT', str(tmp_path))
+    monkeypatch.setenv('DWARF_HOST_ARCH', 'amd64')
+    monkeypatch.setattr(version_discovery, 'load_effective_version_catalog', candidate_catalog)
+    calls = []
+    def controller(operation, parameters, timeout, **kwargs):
+        calls.append(operation)
+        assert operation == 'image.availability'
+        assert parameters['version'] == '11.1.2'
+        return {'state': 'available', 'platform': 'linux/amd64',
+                'manifest_references': ['ghcr.io/intersectmbo/cardano-node@' + parameters['digest']],
+                'config_image_id': 'sha256:' + 'b' * 64}
+    result = release_downloads.release_download('cardano-node', '11.1.2', controller=controller)
+    assert result['state'] == 'available'
+    assert result['execution_id'] is None
+    assert 'cardano_version=11.1.2' in result['run_url']
+    assert calls == ['image.availability']
+    assert not list(tmp_path.rglob('*.json'))
+
+
+@pytest.mark.parametrize('start', [False, True])
+def test_availability_error_is_not_missing_and_cannot_start_pull(tmp_path, monkeypatch, start):
+    from profile_manager import release_downloads, version_discovery
+    from profile_manager.topology_actions import TopologyActionError
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT', str(tmp_path))
+    monkeypatch.setenv('DWARF_HOST_ARCH', 'amd64')
+    monkeypatch.setattr(version_discovery, 'load_effective_version_catalog', candidate_catalog)
+    calls = []
+    def controller(operation, parameters, timeout, **kwargs):
+        calls.append(operation)
+        raise TopologyActionError('controller is unavailable')
+    with pytest.raises(TopologyActionError, match='controller is unavailable'):
+        release_downloads.release_download('amaru', '10.11.20261029', start=start, controller=controller)
+    assert calls == ['image.availability']
+    assert not list(tmp_path.rglob('*.json'))
+
+
+@pytest.mark.parametrize('returncode,stdout,stderr,expected', [
+    (1, '[]', 'Error response from daemon: No such image: {image}', 'missing'),
+    (1, '', 'Cannot connect to the Docker daemon', 'error'),
+    (0, 'not-json', '', 'error'),
+    (0, '[]', '', 'error'),
+    (1, '[]', 'Error response from daemon: No such image: another-image', 'error'),
+])
+def test_runtime_availability_distinguishes_absence_from_failed_check(tmp_path, monkeypatch, returncode, stdout, stderr, expected):
+    from controller.docker_runtime import DockerRuntime, DockerResult, DockerRuntimeError
+    from profile_manager import version_discovery
+    monkeypatch.setenv('DWARF_HOST_ARCH', 'amd64')
+    monkeypatch.setattr(version_discovery, 'load_effective_version_catalog', candidate_catalog)
+    image = 'ghcr.io/pragma-org/amaru@sha256:' + 'a' * 64
+    calls = []
+    def runner(argv, timeout, execution_id):
+        calls.append(argv)
+        return DockerResult(returncode, stdout, stderr.format(image=image))
+    runtime = DockerRuntime(installation_id='test', state_dir=tmp_path, runner=runner)
+    params = {'implementation': 'amaru', 'version': '10.11.20261029', 'digest': 'sha256:' + 'a' * 64}
+    if expected == 'missing':
+        assert runtime.image_availability(params)['state'] == 'missing'
+    else:
+        with pytest.raises(DockerRuntimeError):
+            runtime.image_availability(params)
+    assert all(argv[1:3] == ('image', 'inspect') for argv in calls)
+
+
+@pytest.mark.parametrize('architecture,reference,state', [
+    ('amd64', 'ghcr.io/pragma-org/amaru', 'available'),
+    ('arm64', 'ghcr.io/pragma-org/amaru', 'wrong-platform'),
+    ('amd64', 'unrelated.example/amaru', 'error'),
+])
+def test_runtime_availability_verifies_repository_digest_and_platform(tmp_path, monkeypatch, architecture, reference, state):
+    from controller.docker_runtime import DockerRuntime, DockerResult, DockerRuntimeError
+    from profile_manager import version_discovery
+    monkeypatch.setenv('DWARF_HOST_ARCH', 'amd64')
+    monkeypatch.setattr(version_discovery, 'load_effective_version_catalog', candidate_catalog)
+    def runner(argv, timeout, execution_id):
+        return DockerResult(0, json.dumps([{'Id': 'sha256:' + 'b' * 64,
+            'RepoDigests': [reference + '@sha256:' + 'a' * 64], 'Os': 'linux',
+            'Architecture': architecture, 'Config': {}}]), '')
+    runtime = DockerRuntime(installation_id='test', state_dir=tmp_path, runner=runner)
+    params = {'implementation': 'amaru', 'version': '10.11.20261029', 'digest': 'sha256:' + 'a' * 64}
+    if state == 'error':
+        with pytest.raises(DockerRuntimeError, match='manifest identity differs'):
+            runtime.image_availability(params)
+    else:
+        assert runtime.image_availability(params)['state'] == state

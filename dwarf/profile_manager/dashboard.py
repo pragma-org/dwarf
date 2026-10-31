@@ -3145,7 +3145,8 @@ def dispatch_topology_configuration_request(
 
 def dispatch_version_download_request(*, method, path, expected_token, body=b""):
     clean = urlsplit(path).path
-    if clean not in {"/api/versions/download", "/api/versions/download/status"}:
+    if clean not in {"/api/versions/download", "/api/versions/download/status",
+                     "/api/versions/prepare", "/api/versions/prepare/status"}:
         return None
     ctype = "application/json; charset=utf-8"
     if method != "POST":
@@ -3157,10 +3158,12 @@ def dispatch_version_download_request(*, method, path, expected_token, body=b"")
     if set(form) - {"implementation", "version", "digest", "token"} or not (form.get("digest") or [""])[0]:
         return 409, ctype, b'{"ok":false,"error":"unexpected download fields"}'
     from profile_manager.release_downloads import release_download
+    from profile_manager.release_preparations import release_preparation
+    action = release_preparation if "/prepare" in clean else release_download
     try:
-        payload = release_download((form.get("implementation") or [""])[0],
+        payload = action((form.get("implementation") or [""])[0],
             (form.get("version") or [""])[0], digest=(form.get("digest") or [""])[0],
-            start=clean.endswith("/download"))
+            start=clean.endswith(("/download", "/prepare")))
         return 202 if payload["state"] == "running" else 200, ctype, json.dumps(payload).encode()
     except (OSError, RuntimeError, ValueError) as exc:
         return 409, ctype, json.dumps({"ok": False, "error": str(exc)}).encode()

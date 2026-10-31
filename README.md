@@ -330,14 +330,24 @@ Open **Operate → Versions** at `/operate/versions`.
 Select **Fetch Latest Version** for Amaru or Cardano to request release metadata.
 An open dashboard page does not repeatedly request GitHub releases.
 Metadata discovery does not download, deploy, or qualify a node.
-For a verified public release image that supports your installation, select
-**Download image** in its release row. DWARF downloads the immutable image,
-shows download status, and verifies its local identity. Once it shows
-**Available locally**, select **Use in a run** to open `/run` with that exact
-version selected. Choose a topology and scenario, acknowledge unknown
-compatibility where required, then prepare and run. Downloading does not
-change compatibility decisions or defaults; it does not compile or instrument
-source code.
+Select **Download & build** to acquire the exact release and compile two separate
+images: **Stock** for passive taps and **Instrumented** for passive plus compiled
+taps. Each build retains its source, executable, image, patch and compiler
+identities. Progress survives leaving the page. Select **Use stock build** or
+**Use instrumented build** to carry that exact image into Run.
+
+Source builds currently require Linux/amd64 and network access for build
+dependencies. Node compiler containers are limited to two CPUs, 8 GiB memory and
+512 processes. A missing exact-source instrumentation recipe is shown as blocked;
+it does not discard the stock result. Compilation and executable smoke checks do
+not qualify scenarios or prove that measurements have been exercised. Run keeps
+its explicit unknown-compatibility and experimental-tap consent checks.
+
+**Download upstream image only** retains the download-only path. **Available
+locally** reflects Docker's current immutable image and platform, including images
+installed outside DWARF. Select **Use in a run**, choose a topology and scenario,
+then prepare and run. Neither preparation nor downloading changes compatibility
+decisions or preferred defaults.
 DWARF reports GitHub rate limits as errors, not as missing versions.
 
 For a local build, import a compatible Docker image or a supported **Linux ELF** binary or archive.

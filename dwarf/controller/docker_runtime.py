@@ -251,6 +251,18 @@ class DockerRuntime:
             self.state_dir / "controller" / "run-network-attachments"
         )
 
+    def prepare_release(self, parameters, execution_id, *, timeout, cancel_event):
+        from controller.release_builds import prepare_release
+        return prepare_release(self, parameters, execution_id, timeout, cancel_event)
+
+    def release_build_progress(self, execution_id):
+        from controller.release_builds import read_progress
+        return read_progress(self, execution_id)
+
+    def cleanup_release_build(self, parameters, execution_id):
+        from controller.release_builds import cleanup
+        return cleanup(self, execution_id)
+
     def _approved_image_identities(self) -> set[str]:
         return {
             _immutable_image_identity(item.strip())
@@ -292,6 +304,9 @@ class DockerRuntime:
         inspected = self._json(
             self._run(("image", "inspect", image), timeout=20), "image inspect"
         )
+        return self._checked_image_identity(inspected, image=image, implementation=implementation)
+
+    def _checked_image_identity(self, inspected, *, image: str, implementation: str) -> dict[str, Any]:
         if (
             not isinstance(inspected, list)
             or len(inspected) != 1
@@ -330,6 +345,28 @@ class DockerRuntime:
                 item, implementation=implementation
             ),
         }
+
+    def image_availability(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Read local availability without treating daemon failures as absence."""
+        from profile_manager.release_images import installation_platform, resolve_release_image
+        selected = resolve_release_image(parameters["implementation"], parameters["version"],
+            platform=installation_platform(), digest=parameters["digest"])
+        image = selected["image"]
+        result = self._run(("image", "inspect", image), timeout=20, output_limit=1024 * 1024)
+        # Docker CLI has no structured error status. Recognize only its exact,
+        # reference-bound absence response; everything else is a failed check.
+        missing_messages = {
+            f"Error response from daemon: No such image: {image}",
+            f"Error: No such image: {image}",
+        }
+        if (result.returncode == 1 and result.stdout.strip() == "[]"
+                and result.stderr.strip() in missing_messages):
+            return {**selected, "state": "missing"}
+        inspected = self._checked_image_identity(self._json(result, "image availability"),
+            image=image, implementation=selected["implementation"])
+        if inspected["platform"] != selected["platform"]:
+            return {**selected, "state": "wrong-platform", "observed_platform": inspected["platform"]}
+        return {**selected, **inspected, "state": "available"}
 
     def download_image(self, parameters, execution_id, *, timeout, cancel_event):
         """Acquire only a current catalog's public, platform-compatible digest."""
@@ -1837,10 +1874,14 @@ class DockerRuntime:
         execution_id: str | None = None,
         *,
         output_limit: int | None = None,
+        output_path: Path | None = None,
     ) -> DockerResult:
         argv = [self.docker_binary, *arguments]
         if self._external_runner is not None:
             result = self._external_runner(tuple(argv), timeout, execution_id)
+            if output_path is not None:
+                data = (result.stdout + result.stderr).encode('utf-8', errors='replace')
+                output_path.write_bytes(data[:output_limit] if output_limit else data)
             if output_limit is not None and (
                 len(result.stdout.encode("utf-8", errors="replace"))
                 + len(result.stderr.encode("utf-8", errors="replace"))
@@ -1848,6 +1889,7 @@ class DockerRuntime:
             ):
                 raise DockerRuntimeError("Docker operation output exceeded limit")
             return result
+        retained_log = output_path.open('wb') if output_path is not None else None
         try:
             process = subprocess.Popen(
                 argv,
@@ -1859,6 +1901,8 @@ class DockerRuntime:
                 start_new_session=True,
             )
         except OSError as exc:
+            if retained_log is not None:
+                retained_log.close()
             raise DockerRuntimeError("Docker CLI is unavailable") from exc
         if execution_id is not None:
             with self._process_lock:
@@ -1866,6 +1910,9 @@ class DockerRuntime:
         try:
             if output_limit is None:
                 stdout, stderr = process.communicate(timeout=timeout)
+                if retained_log is not None:
+                    retained_log.write((stdout + stderr).encode('utf-8', errors='replace'))
+                    retained_log.flush()
             else:
                 assert process.stdout is not None and process.stderr is not None
                 selected = selectors.DefaultSelector()
@@ -1885,6 +1932,9 @@ class DockerRuntime:
                             if not chunk:
                                 selected.unregister(key.fileobj)
                                 continue
+                            if retained_log is not None:
+                                retained_log.write(chunk[:max(0, output_limit - total)])
+                                retained_log.flush()
                             total += len(chunk)
                             if total > output_limit:
                                 if process.poll() is None:
@@ -1922,6 +1972,8 @@ class DockerRuntime:
             self._stop_process_group(process.pid)
             raise DockerRuntimeError("Docker operation timed out") from exc
         finally:
+            if retained_log is not None:
+                retained_log.close()
             if execution_id is not None:
                 with self._process_lock:
                     self._processes.pop(execution_id, None)

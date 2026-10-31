@@ -2546,3 +2546,56 @@ def test_release_download_failure_is_safe_and_terminal(tmp_path):
     assert 'registry access' in terminal['failure']['message']
     assert 'sensitive registry output' not in json.dumps(terminal)
     assert terminal['audit_receipt']
+
+
+def test_image_availability_dispatch_is_read_only_and_returns_installation_identity(tmp_path):
+    runtime = FakeRuntime()
+    calls = []
+    def availability(parameters):
+        calls.append(parameters)
+        return {'state': 'missing', 'implementation': parameters['implementation'], 'digest': parameters['digest']}
+    runtime.image_availability = availability
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    status, result = _dispatch(service, _request('image.availability',
+        implementation='cardano-node', version='11.1.2', digest=DIGEST))
+    assert status == 200
+    assert result['state'] == 'missing'
+    assert result['installation_id'] == 'test-install'
+    assert calls == [{'implementation': 'cardano-node', 'version': '11.1.2', 'digest': DIGEST}]
+    assert list(service.executions_dir.glob('*.json')) == []
+
+
+def test_release_prepare_retains_independent_variants_and_receipt_on_restart(tmp_path):
+    runtime = FakeRuntime()
+    gate = threading.Event()
+    def prepare(parameters, execution_id, *, timeout, cancel_event):
+        assert gate.wait(2)
+        return {'status': 'prepared', 'variants': {'stock': {'state': 'ready'},
+                'instrumented': {'state': 'blocked', 'message': 'No exact patch'}}}
+    runtime.prepare_release = prepare
+    runtime.release_build_progress = lambda execution_id: {'stage': 'stock'}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    request = _request('release.prepare', implementation='amaru', version='10.11.20261029',
+        digest=DIGEST, source_revision='b' * 40, execution_id='build-one',
+        idempotency_key='build-one', timeout_seconds=43200)
+    status, accepted = _dispatch(service, request)
+    assert status == 202
+    assert _dispatch(service, request) == (status, accepted)
+    _, active = _dispatch(service, _request('execution.status', execution_id='build-one'))
+    assert active['progress'] == {'stage': 'stock'}
+    gate.set()
+    for _ in range(100):
+        _, terminal = _dispatch(service, _request('execution.status', execution_id='build-one'))
+        if terminal['state'] != 'running': break
+        time.sleep(.01)
+    assert terminal['state'] == 'applied'
+    restarted = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, retained = _dispatch(restarted, _request('execution.status', execution_id='build-one'))
+    assert retained['result']['variants']['stock']['state'] == 'ready'
+    assert retained['result']['variants']['instrumented']['state'] == 'blocked'
+    path = restarted.executions_dir / 'build-one.json'
+    record = json.loads(path.read_text())
+    record['result']['variants']['instrumented']['state'] = 'ready'
+    path.write_text(json.dumps(record))
+    _, tampered = _dispatch(restarted, _request('execution.status', execution_id='build-one'))
+    assert tampered['state'] == 'interrupted'
