@@ -811,6 +811,11 @@ def test_submit_timeout_is_retained_as_unavailable(monkeypatch, tmp_path, submit
 
     monkeypatch.setattr(subprocess, "run", timeout)
     if submitter == "amaru":
+        monkeypatch.setattr(
+            live_controls,
+            "_controller_container",
+            lambda: {"Image": "sha256:" + "b" * 64},
+        )
         result = _submit_amaru_container("a" * 64, b"tx")
     else:
         result = _submit_reference_cli(
@@ -822,9 +827,10 @@ def test_submit_timeout_is_retained_as_unavailable(monkeypatch, tmp_path, submit
     assert result["http"] == 0
 
 
-def test_amaru_submit_uses_busybox_netcat_and_sends_one_http_request(monkeypatch):
+def test_amaru_submit_uses_attested_controller_image_in_target_network(monkeypatch):
     payload = bytes.fromhex("8401a0a0f5")
     calls = []
+    helper_image = "sha256:" + "b" * 64
 
     def run(command, **kwargs):
         calls.append((command, kwargs))
@@ -836,23 +842,29 @@ def test_amaru_submit_uses_busybox_netcat_and_sends_one_http_request(monkeypatch
         )
 
     monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(
+        live_controls,
+        "_controller_container",
+        lambda: {"Image": helper_image},
+    )
 
     result = _submit_amaru_container("a" * 64, payload)
 
     assert result == {"http": 202, "body": "accepted"}
     command, kwargs = calls[0]
-    assert command == [
-        "docker",
-        "exec",
-        "-i",
-        "a" * 64,
-        "/bin/busybox",
-        "nc",
-        "-w",
-        "30",
-        "127.0.0.1",
-        "3011",
+    assert command[:4] == ["docker", "run", "--rm", "-i"]
+    assert ["--network", "container:" + "a" * 64] == command[
+        command.index("--network") : command.index("--network") + 2
     ]
+    assert "--read-only" in command
+    assert ["--cap-drop", "ALL"] == command[
+        command.index("--cap-drop") : command.index("--cap-drop") + 2
+    ]
+    assert ["--security-opt", "no-new-privileges:true"] == command[
+        command.index("--security-opt") : command.index("--security-opt") + 2
+    ]
+    assert ["--entrypoint", "python3", helper_image, "-c"] == command[-5:-1]
+    assert "socket.create_connection" in command[-1]
     assert kwargs["input"].startswith(b"POST /api/submit/tx HTTP/1.1\r\n")
     assert b"Content-Length: 5\r\n" in kwargs["input"]
     assert kwargs["input"].endswith(b"\r\n\r\n" + payload)

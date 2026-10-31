@@ -1555,16 +1555,51 @@ def _submit_amaru_container(container_id: str, payload: bytes) -> dict[str, Any]
         + b"Connection: close\r\n\r\n"
         + payload
     )
+    controller = _controller_container()
+    helper_image = str((controller or {}).get("Image") or "")
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", container_id) is None
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", helper_image) is None
+    ):
+        return {
+            "http": 0,
+            "body": "",
+            "transport": "Amaru submit helper identity unavailable",
+        }
+    helper = (
+        "import socket,sys\n"
+        "request=sys.stdin.buffer.read()\n"
+        "response=bytearray()\n"
+        "with socket.create_connection(('127.0.0.1',3011),30) as stream:\n"
+        " stream.settimeout(30)\n"
+        " stream.sendall(request)\n"
+        " stream.shutdown(socket.SHUT_WR)\n"
+        " while len(response)<65536:\n"
+        "  block=stream.recv(min(4096,65536-len(response)))\n"
+        "  if not block: break\n"
+        "  response.extend(block)\n"
+        "sys.stdout.buffer.write(response)\n"
+    )
     try:
         result = subprocess.run(
             [
-                "docker", "exec", "-i", container_id,
-                "/bin/busybox", "nc", "-w", "30", "127.0.0.1", "3011",
+                "docker", "run", "--rm", "-i",
+                "--network", f"container:{container_id}",
+                "--read-only",
+                "--cap-drop", "ALL",
+                "--security-opt", "no-new-privileges:true",
+                "--pids-limit", "64",
+                "--memory", "128m",
+                "--user", "65534:65534",
+                "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m",
+                "--entrypoint", "python3",
+                helper_image,
+                "-c", helper,
             ],
             input=request,
             capture_output=True,
             check=False,
-            timeout=30,
+            timeout=35,
         )
     except (subprocess.TimeoutExpired, OSError):
         return {"http": 0, "body": "", "transport": "Amaru submit timed out or failed"}
