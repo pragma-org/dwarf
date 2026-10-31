@@ -60,6 +60,17 @@ def _stage_loader_scripts(scripts_root: Path) -> None:
         "amaru import-headers --network ${NETWORK_NAME} --config-dir ${BASEDIR} "
         "--chain-dir ${BASEDIR}/chain.${NETWORK_NAME}.db",
     )
+    # Direct legacy-loader overrides must fail before modifying snapshots.
+    # The normal synthetic devnet path uses the pinned bootstrap producer.
+    guard = """for action in convert-ledger-state import-ledger-state import-headers import-nonces; do
+    if ! amaru "$action" --help >/dev/null 2>&1; then
+        echo 'Legacy snapshot imports are unavailable; use the pinned relay bootstrap producer' >&2
+        exit 64
+    fi
+done
+
+"""
+    amaru_loader = amaru_loader.replace("for i in ${BASEDIR}/[0-9]*; do", guard + "for i in ${BASEDIR}/[0-9]*; do")
     amaru_loader_path.write_text(amaru_loader, encoding="utf-8")
     funding_loader_path = scripts_root / "apply-workload-funding.sh"
     shutil.copy2(

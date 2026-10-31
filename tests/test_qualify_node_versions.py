@@ -589,7 +589,7 @@ def test_transform_mixed_is_namespaced_and_changes_only_target_artifacts():
     relay = transformed["services"]["amaru-relay-1"]
     assert relay["image"] == CONTROL_AMARU_IMAGE
     assert relay["entrypoint"] == "amaru-relay-bootstrap"
-    assert relay["environment"]["AMARU_BIN"] == "/target/amaru"
+    assert relay["environment"]["AMARU_BIN"] == "/target/amaru-launch"
     assert relay["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
     assert relay["environment"]["AMARU_PEER"] == "p1.example:3001"
     assert "AMARU_PEER_MIX" not in relay["environment"]
@@ -1176,3 +1176,27 @@ def test_transform_leaves_configurator_untouched_without_a_pin():
         "set -euo pipefail\n/configurator.sh\n"
     ]
     assert transformed["x-dwarf-qualification"]["cardano_experimental_protocols"] is None
+
+
+@pytest.mark.parametrize('nested', [False, True])
+def test_extracted_amaru_launcher_adapts_cli_without_changing_target_identity(tmp_path, nested):
+    model = transform_compose_model(_compose_model(), scope='amaru-only',
+        project='dwarf-qual-cli-check', cardano_image=None,
+        amaru_image='ghcr.io/pragma-org/amaru@sha256:' + '9' * 64)
+    assert model['services']['amaru-relay-1']['environment']['AMARU_BIN'] == '/target/amaru-launch'
+    executable = tmp_path / 'source-amaru'
+    executable.write_text('#!' + sys.executable + '\nimport json, sys\n'
+        + 'args=sys.argv[1:]\n'
+        + f'if args == ["node", "run", "--help"]: sys.exit({0 if nested else 2})\n'
+        + 'print(json.dumps(args))\n')
+    executable.chmod(0o755)
+    script = _extractor_container_command(model).replace('/usr/local/bin/amaru', str(executable)).replace('/target', str(tmp_path))
+    extracted = subprocess.run(['/bin/sh', '-ec', script], capture_output=True, text=True)
+    assert extracted.returncode == 0, extracted.stderr
+    assert (tmp_path / 'amaru').read_bytes() == executable.read_bytes()
+    args = ['run', '--network', 'testnet_42', '--peer-address', 'peer.example:3001']
+    result = subprocess.run([str(tmp_path / 'amaru-launch'), *args], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == (['node'] if nested else []) + args
+    version = subprocess.run([str(tmp_path / 'amaru-launch'), '--version'], capture_output=True, text=True)
+    assert json.loads(version.stdout) == ['--version']

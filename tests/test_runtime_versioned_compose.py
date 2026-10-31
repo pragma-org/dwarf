@@ -1074,7 +1074,7 @@ def test_versioned_amaru_service_migrates_bootstrap_state_before_run():
         "error,amaru=info,amaru_pure_stage=warn,amaru::consensus=debug"
     )
     assert "AMARU_TRACE" not in service["environment"]
-    assert "exec amaru run" in service["command"][0]
+    assert 'exec "$$@" run' in service["command"][0]
     assert '--era-history "/amaru/amaru1/era-history.json"' in service["command"][0]
     assert service["entrypoint"] == ["/bin/sh", "-ec"]
 
@@ -1099,7 +1099,7 @@ def test_public_amaru_service_uses_declared_external_peer_and_bootstraps_real_ne
     command = service["command"][0]
 
     assert "mkdir -p /amaru/amaru1 /logs/amaru1; cd /amaru/amaru1" in command
-    assert "amaru bootstrap" in command
+    assert '"$$@" bootstrap' in command
     assert '--network "preview"' in command
     assert '--peer-address "preview-node.play.dev.cardano.org:3001"' in command
     assert service["image"].endswith("@sha256:" + "c" * 64)
@@ -1354,3 +1354,62 @@ def test_producer_bundle_maps_named_databases_into_each_runtime_target(tmp_path)
     assert json.loads((target_config / "shelley-genesis.json").read_text(encoding="utf-8"))["systemStart"] == "2026-09-14T00:00:00Z"
     assert json.loads((target_config / "topology.json").read_text(encoding="utf-8"))["localRoots"] == []
     assert (target_keys / "byron-delegation.cert").read_text(encoding="utf-8") == "producer-credential\n"
+
+
+@pytest.mark.parametrize('nested', [False, True])
+def test_amaru_compose_selects_actual_cli_for_bootstrap_and_run(tmp_path, nested):
+    node = {'id': 'amaru1', 'impl': 'amaru', 'listen_address': '127.0.0.1:39000',
+            'host_slot_index': 1, 'chain_dir': '/tmp/chain.preview.db',
+            'ledger_dir': '/tmp/ledger.preview.db', 'fallback_peer_addresses': ['peer:3001'],
+            'image': 'ghcr.io/pragma-org/amaru@sha256:' + 'c' * 64}
+    command = compose._docker_compose_body(compose_project='cli-test', nodes=[node],
+        network_name='preview')['services']['amaru1']['command'][0]
+    fake = tmp_path / 'amaru'
+    log = tmp_path / 'argv.jsonl'
+    fake.write_text('#!/usr/bin/env python3\nimport json, sys\nargs=sys.argv[1:]\n'
+        + f'if args == ["node", "run", "--help"]: sys.exit({0 if nested else 2})\n'
+        + f'expected={nested!r}\n'
+        + 'assert (args[0] == "node") == expected, args\n'
+        + f'with open({str(log)!r}, "a") as f: f.write(json.dumps(args)+"\\n")\n')
+    fake.chmod(0o755)
+    script = command.replace('$$', '$').replace('/amaru/amaru1', str(tmp_path / 'state')).replace('/logs/amaru1', str(tmp_path / 'logs'))
+    result = subprocess.run(['bash', '-ec', script], env={**os.environ, 'PATH': str(tmp_path)+':'+os.environ['PATH']},
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    offset = 1 if nested else 0
+    assert [call[offset] for call in calls] == ['bootstrap', 'run']
+    assert calls[1][calls[1].index('--peer-address') + 1] == 'peer:3001'
+
+
+@pytest.mark.parametrize('nested', [False, True])
+def test_host_amaru_launch_uses_detected_command_tree(tmp_path, monkeypatch, nested):
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        code = 0 if command[1:] != ['node', 'run', '--help'] or nested else 2
+        return common.CommandResult(command, code, '', '')
+    monkeypatch.setattr(compose, 'run_command', run)
+    monkeypatch.setattr(compose, '_ensure_tmux_session_absent', lambda _: None)
+    node = {'id': 'a1', 'session': 'a1', 'state_root': str(tmp_path / 'state'),
+            'log_path': str(tmp_path / 'node.log'), 'bootstrap_stdout': str(tmp_path / 'boot.out'),
+            'bootstrap_stderr': str(tmp_path / 'boot.err'), 'ledger_dir': '/state/ledger',
+            'chain_dir': '/state/chain', 'peer_addresses': ['peer:3001'], 'effective_peer_address': 'peer:3001',
+            'listen_address': '127.0.0.1:5001', 'pid_file': str(tmp_path / 'pid')}
+    compose._launch_amaru_node(node, network_name='preview', binary_path='/exact/amaru', runtime_root=tmp_path)
+    assert calls[0] == ['/exact/amaru', 'node', 'run', '--help']
+    assert calls[1][1:3] == (['node', 'bootstrap'] if nested else ['bootstrap', '--network'])
+    assert ('"node" "run"' in json.loads(calls[-1][-1].removeprefix("bash -lc "))) == nested
+
+
+def test_legacy_snapshot_loader_rejects_new_cli_before_conversion(tmp_path):
+    scripts = tmp_path / 'scripts'
+    bootstrap._stage_loader_scripts(scripts)
+    fake_bin = tmp_path / 'bin'; fake_bin.mkdir()
+    fake = fake_bin / 'amaru'
+    fake.write_text('#!/bin/sh\nexit 2\n'); fake.chmod(0o755)
+    result = subprocess.run(['bash', str(scripts / 'amaru-loader.sh')],
+        env={**os.environ, 'PATH': str(fake_bin)+':'+os.environ['PATH'], 'BASEDIR': str(tmp_path / 'data')},
+        capture_output=True, text=True)
+    assert result.returncode == 64
+    assert 'Legacy snapshot imports are unavailable; use the pinned relay bootstrap producer' in result.stderr

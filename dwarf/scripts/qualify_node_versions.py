@@ -16,6 +16,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import time
@@ -31,6 +32,8 @@ REPOSITORY_ROOT = DWARF_ROOT.parent
 for import_root in (DWARF_ROOT, SCRIPT_DIR):
     if str(import_root) not in sys.path:
         sys.path.insert(0, str(import_root))
+
+from runtime_amaru_cli import launcher_script
 
 from check_cardano_amaru_topology import (  # noqa: E402
     AMARU_CONSUMER,
@@ -348,7 +351,7 @@ def transform_compose_model(
                 # is retained as an exited extraction service, so its immutable
                 # artifact identity remains mechanically observable.
                 service["image"] = CONTROL_AMARU_IMAGE
-                environment["AMARU_BIN"] = "/target/amaru"
+                environment["AMARU_BIN"] = "/target/amaru-launch"
                 environment["AMARU_MIGRATE_CHAIN_DB"] = "true"
                 _append_volume(service, "amaru-target-bin", "/target")
                 dependencies = service.setdefault("depends_on", {})
@@ -383,6 +386,12 @@ def transform_compose_model(
                 'cp /usr/local/bin/amaru "$$temporary"; '
                 'chmod 0755 "$$temporary"; '
                 'mv -f "$$temporary" /target/amaru; '
+                'temporary=$$(mktemp /target/.amaru-launch.XXXXXX); '
+                + 'printf %s ' + shlex.quote(launcher_script().replace('$', '$$'))
+                + ' > "$$temporary"; '
+                + 'chmod 0755 "$$temporary"; '
+                + 'mv -f "$$temporary" /target/amaru-launch; '
+                +
                 "temporary=; "
                 "trap - 0 1 2 3 15"
             ],

@@ -1364,7 +1364,7 @@ def test_patched_binary_artifact_keeps_proven_wrapper_and_uses_extractor():
     for service_name in ("amaru-relay-1", "amaru-relay-2"):
         relay = model["services"][service_name]
         assert relay["entrypoint"] == "amaru-relay-bootstrap"
-        assert relay["environment"]["AMARU_BIN"] == "/target/amaru"
+        assert relay["environment"]["AMARU_BIN"] == "/target/amaru-launch"
         assert relay["environment"]["AMARU_MIGRATE_CHAIN_DB"] == "true"
         assert relay["environment"]["AMARU_PEER_MIX"] == "static!1"
         assert relay["environment"]["AMARU_UPSTREAM_PEERS"] == "1"

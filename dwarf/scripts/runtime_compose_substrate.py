@@ -18,6 +18,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from runtime_amaru_cli import shell_command_selection
+
 from runtime_substrate_common import (
     allocate_node_plan,
     build_version_provenance,
@@ -806,12 +808,14 @@ def _launch_haskell_node(node: dict, *, runtime_root: Path, binary_path: str, pu
 
 def _launch_amaru_node(node: dict, *, network_name: str, binary_path: str, runtime_root: Path) -> None:
     _ensure_tmux_session_absent(node["session"])
+    probe = run_command([binary_path, "node", "run", "--help"], timeout=20)
+    cli = [binary_path, "node"] if probe.returncode == 0 else [binary_path]
     Path(node["state_root"]).mkdir(parents=True, exist_ok=True)
     Path(node["log_path"]).parent.mkdir(parents=True, exist_ok=True)
     if _amaru_bootstrap_required(network_name):
         bootstrap = run_command(
             [
-                binary_path,
+                *cli,
                 "bootstrap",
                 "--network",
                 network_name,
@@ -844,7 +848,7 @@ def _launch_amaru_node(node: dict, *, network_name: str, binary_path: str, runti
     if not peer_addresses:
         raise RuntimeError(f"no peer address available for {node['id']}")
     command_parts = [
-        binary_path,
+        *cli,
         "run",
         "--network",
         network_name,
@@ -1111,17 +1115,18 @@ def _docker_compose_body(
                 "set -euo pipefail",
                 f"mkdir -p {state_root} /logs/{node['id']}",
                 f"cd {state_root}",
+                shell_command_selection(),
             ]
             if _amaru_bootstrap_required(network_name):
                 command_parts.append(
-                    "amaru bootstrap "
+                    '"$$@" bootstrap '
                     f"--network {json.dumps(network_name)} "
                     f"--ledger-dir {json.dumps(f'{state_root}/{ledger_name}')} "
                     f"--chain-dir {json.dumps(f'{state_root}/{chain_name}')}"
                 )
             peer_args = " ".join(f"--peer-address {json.dumps(peer_address)}" for peer_address in peer_addresses)
             command_parts.append(
-                "exec amaru run "
+                'exec "$$@" run '
                 f"--network {json.dumps(network_name)} "
                 f"{peer_args} "
                 "--listen-address 0.0.0.0:5001 "
