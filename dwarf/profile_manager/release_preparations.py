@@ -113,7 +113,9 @@ def release_preparation(implementation, version, *, digest=None, start=False, co
                         or not isinstance(result.get('variants'), dict)
                         or set(result['variants']) != {'stock', 'instrumented'}):
                     raise ValueError('Controller build result differs from the selected release')
-                variants = {k: dict(v) for k, v in result['variants'].items()}
+                progress_variants = variants
+                variants = {k: {**v, 'log_tail': (progress_variants.get(k) or {}).get('log_tail')}
+                            for k, v in result['variants'].items()}
                 for variant, row in variants.items():
                     if row.get('state') == 'ready':
                         try:

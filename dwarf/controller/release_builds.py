@@ -104,7 +104,7 @@ def _cleanup_name(runtime, execution_id, name):
     observed = inspected[0].get('Config', {}).get('Labels') or {}
     if any(observed.get(key) != value for key, value in _labels(runtime, execution_id).items()):
         raise ValueError('Release build container ownership differs')
-    removed = runtime._run(('rm', '-f', name), timeout=30, output_limit=_MAX_JSON)
+    removed = runtime._run(('rm', '-f', '-v', name), timeout=30, output_limit=_MAX_JSON)
     if removed.returncode:
         raise ValueError('Release build container cleanup failed')
 

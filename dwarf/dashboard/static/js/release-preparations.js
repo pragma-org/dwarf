@@ -38,18 +38,19 @@
           const heading = document.createElement('strong');
           heading.textContent = label;
           const text = document.createElement('p');
-          text.textContent = [build.state, build.stage, build.message].filter(Boolean).join(' · ');
+          text.textContent = [build.state, build.stage, build.message?.slice(0, 240)].filter(Boolean).join(' · ');
           block.append(heading, text);
           if (build.state === 'ready' && build.run_url?.startsWith('/run?')) {
             const link = document.createElement('a');
             link.className = 'dk-btn'; link.href = build.run_url;
             link.textContent = 'Use ' + key + ' build'; block.append(link);
           }
-          const diagnostic = build.log_tail || build.diagnostic;
+          const diagnostic = build.log_tail || build.diagnostic || (build.message?.length > 240 ? build.message : null);
           if (diagnostic) {
             const detail = document.createElement('details');
             const summary = document.createElement('summary'); summary.textContent = 'Build log';
             const log = document.createElement('pre'); log.textContent = String(diagnostic).slice(-8192);
+            log.style.maxWidth = 'min(32rem, 60vw)'; log.style.overflowX = 'auto';
             detail.append(summary, log); block.append(detail);
           }
           variants.append(block);

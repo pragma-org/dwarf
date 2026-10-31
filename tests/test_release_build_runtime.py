@@ -154,7 +154,7 @@ def test_packaged_image_hash_mismatch_is_rejected_and_owned_container_removed(ru
     runtime._run = run
     with pytest.raises(ValueError, match='Packaged executable differs'):
         builds._check_packaged_executable(context, 'stock', DIGEST, '/usr/local/bin/amaru', DIGEST)
-    assert calls[-1][0] == 'rm'
+    assert calls[-1][:3] == ('rm', '-f', '-v')
     assert not (directory / 'packaged-executable').exists()
 
 
