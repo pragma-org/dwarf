@@ -156,6 +156,91 @@ def test_loaded_scenario_serializes_exact_node_artifact_identity_into_setup_conf
         primitive.run(handle, None)
 
 
+def test_loaded_scenario_preserves_operator_local_identity_for_setup_configs(
+    monkeypatch, tmp_path
+):
+    body = json.loads(CASE_PATH.read_text())
+    target = next(
+        node for node in body["substrate"]["nodes"] if node["impl"] == "amaru"
+    )
+    config_id = "sha256:" + "9" * 64
+    local_identity = {
+        "image_config_id": config_id,
+        "executable_digest": "sha256:" + "8" * 64,
+        "platform": "linux/amd64",
+        "runtime_interface": "extracted-binary",
+        "operator_registration_id": "registration-release-build-selected-stock",
+        "controller_installation_id": "install-selected",
+        "operator_overlay_revision": "sha256:" + "7" * 64,
+    }
+    target.update(
+        {
+            "identity_binding": "resolved-plan",
+            "image": config_id,
+            **local_identity,
+        }
+    )
+    frozen_path = tmp_path / "scenario.yaml"
+    frozen_path.write_text(json.dumps(body))
+    parsed = scenario.load_scenario(frozen_path)
+    parsed_target = next(
+        node for node in parsed.substrate["nodes"] if node["impl"] == "amaru"
+    )
+    assert {field: parsed_target[field] for field in local_identity} == local_identity
+
+    observed = []
+
+    def successful_runtime(command, **_kwargs):
+        config = json.loads(Path(command[-1]).read_text())
+        serialized_target = next(
+            node
+            for node in config["substrate"]["nodes"]
+            if node["impl"] == "amaru"
+        )
+        observed.append(
+            {field: serialized_target[field] for field in local_identity}
+        )
+        output_dir = Path(config["output_dir"])
+        if "runtime_install_version.py" in str(command[1]):
+            (output_dir / "install-report.json").write_text(json.dumps({"nodes": []}))
+        else:
+            (output_dir / "compose-report.json").write_text(json.dumps({"nodes": []}))
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    monkeypatch.setattr(primitives.subprocess, "run", successful_runtime)
+    handle = _Handle(tmp_path / "run")
+    shared_state = {}
+    for ref in parsed.setup:
+        primitive_type = {
+            "runtime_install_version": primitives.RuntimeInstallVersion,
+            "runtime_compose_substrate": primitives.RuntimeComposeSubstrate,
+        }[ref.primitive]
+        primitive = primitive_type(params=ref.params)
+        primitive.bound_substrate = parsed.substrate
+        primitive.bound_state = shared_state
+        primitive.run(handle, None)
+
+    assert observed == [local_identity, local_identity]
+
+
+def test_loaded_scenario_rejects_partial_operator_local_identity(tmp_path):
+    body = json.loads(CASE_PATH.read_text())
+    target = next(
+        node for node in body["substrate"]["nodes"] if node["impl"] == "amaru"
+    )
+    target.update(
+        {
+            "identity_binding": "resolved-plan",
+            "image_config_id": "sha256:" + "9" * 64,
+        }
+    )
+    frozen_path = tmp_path / "scenario.yaml"
+    frozen_path.write_text(json.dumps(body))
+
+    with pytest.raises(scenario.ScenarioValidationError, match="identity is incomplete"):
+        scenario.load_scenario(frozen_path)
+
+
 def test_loaded_governance_fixture_reaches_runtime_compose_config(monkeypatch, tmp_path):
     parsed = scenario.load_scenario(GOVERNANCE_CASE_PATH)
     compose_ref = next(

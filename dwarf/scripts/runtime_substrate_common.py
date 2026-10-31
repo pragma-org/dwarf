@@ -287,7 +287,7 @@ def normalize_substrate(substrate: dict) -> dict:
                     f"substrate.nodes[{index}].controller_installation_id is invalid"
                 )
             overlay_revision = str(node["operator_overlay_revision"])
-            if not SHA64_PATTERN.fullmatch(overlay_revision):
+            if not SHA256_PATTERN.fullmatch(overlay_revision):
                 raise ValueError(
                     f"substrate.nodes[{index}].operator_overlay_revision must be an exact sha256"
                 )

@@ -70,7 +70,7 @@ def test_normalize_substrate_preserves_local_compiled_artifact_identity():
             "runtime_interface": "extracted-binary",
             "operator_registration_id": "registration-release-build-ece2067b72e048208d3dceedb8bc7b48-stock",
             "controller_installation_id": "install-selected",
-            "operator_overlay_revision": "7" * 64,
+            "operator_overlay_revision": "sha256:" + "7" * 64,
         }
     )
 
@@ -113,7 +113,7 @@ def test_normalize_substrate_rejects_mismatched_local_config_identity():
             "runtime_interface": "extracted-binary",
             "operator_registration_id": "registration-release-build-selected-stock",
             "controller_installation_id": "install-selected",
-            "operator_overlay_revision": "7" * 64,
+            "operator_overlay_revision": "sha256:" + "7" * 64,
         }
     )
 
@@ -296,7 +296,7 @@ def test_local_amaru_release_may_attest_label_with_clean_source_revision():
         "runtime_interface": "extracted-binary",
         "operator_registration_id": "registration-release-build-selected-stock",
         "controller_installation_id": "install-selected",
-        "operator_overlay_revision": "7" * 64,
+        "operator_overlay_revision": "sha256:" + "7" * 64,
     }
 
     def runner(command, **kwargs):
@@ -333,7 +333,7 @@ def test_local_amaru_release_fails_closed_without_clean_matching_revision(versio
         "runtime_interface": "extracted-binary",
         "operator_registration_id": "registration-release-build-selected-stock",
         "controller_installation_id": "install-selected",
-        "operator_overlay_revision": "7" * 64,
+        "operator_overlay_revision": "sha256:" + "7" * 64,
     }
 
     def runner(command, **kwargs):
@@ -404,7 +404,7 @@ def test_version_provenance_retains_local_compiled_identity_without_digest_confl
                     "runtime_interface": "extracted-binary",
                     "operator_registration_id": "registration-release-build-ece2067b72e048208d3dceedb8bc7b48-stock",
                     "controller_installation_id": "install-selected",
-                    "operator_overlay_revision": "7" * 64,
+                    "operator_overlay_revision": "sha256:" + "7" * 64,
                 }
             ],
         }
@@ -428,4 +428,4 @@ def test_version_provenance_retains_local_compiled_identity_without_digest_confl
     assert provenance["executable_digest"] == "sha256:" + "8" * 64
     assert provenance["operator_registration_id"].endswith("-stock")
     assert provenance["controller_installation_id"] == "install-selected"
-    assert provenance["operator_overlay_revision"] == "7" * 64
+    assert provenance["operator_overlay_revision"] == "sha256:" + "7" * 64

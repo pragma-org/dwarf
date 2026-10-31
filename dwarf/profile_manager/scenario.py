@@ -32,6 +32,18 @@ ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 HOST_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 SUBSTRATE_NETWORK_PATTERN = re.compile(r"^(mainnet|preprod|preview|testnet_[1-9][0-9]*)$")
 VALID_SUBSTRATE_COMPOSE_MODES = ("host", "docker")
+LOCAL_ARTIFACT_IDENTITY_FIELDS = (
+    "image_config_id",
+    "executable_digest",
+    "platform",
+    "runtime_interface",
+    "operator_registration_id",
+    "controller_installation_id",
+    "operator_overlay_revision",
+)
+_IMMUTABLE_SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+_OPERATOR_REGISTRATION_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+_INSTALLATION_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _DECIMAL_SEED_PATTERN = re.compile(r"^(0|[1-9][0-9]*)$")
 _HEX_SEED_PATTERN = re.compile(r"^0[xX][0-9a-fA-F]+$")
 _MAX_SEED = (1 << 64) - 1
@@ -459,6 +471,69 @@ def _validate_substrate(value):
         }
         if "supporting" in node:
             normalized_node["supporting"] = supporting
+        local_identity_supplied = any(
+            node.get(field) is not None for field in LOCAL_ARTIFACT_IDENTITY_FIELDS
+        )
+        if local_identity_supplied:
+            missing = [
+                field for field in LOCAL_ARTIFACT_IDENTITY_FIELDS if not node.get(field)
+            ]
+            if missing:
+                raise ScenarioValidationError(
+                    f"substrate.nodes[{index}] local artifact identity is incomplete: "
+                    + ", ".join(missing)
+                )
+            if identity_binding != "resolved-plan":
+                raise ScenarioValidationError(
+                    f"substrate.nodes[{index}] local artifact identity requires resolved-plan binding"
+                )
+            if (
+                _IMMUTABLE_SHA256_PATTERN.fullmatch(str(node["image_config_id"]))
+                is None
+                or image != node["image_config_id"]
+            ):
+                raise ScenarioValidationError(
+                    f"substrate.nodes[{index}].image_config_id must equal the immutable image"
+                )
+            if (
+                _IMMUTABLE_SHA256_PATTERN.fullmatch(str(node["executable_digest"]))
+                is None
+            ):
+                raise ScenarioValidationError(
+                    f"substrate.nodes[{index}].executable_digest must be immutable"
+                )
+            if node["platform"] not in {"linux/amd64", "linux/arm64"}:
+                raise ScenarioValidationError(
+                    f"substrate.nodes[{index}].platform is unsupported"
+                )
+            if node["runtime_interface"] != "extracted-binary":
+                raise ScenarioValidationError(
+                    f"substrate.nodes[{index}].runtime_interface is unsupported"
+                )
+            if _OPERATOR_REGISTRATION_ID_PATTERN.fullmatch(
+                str(node["operator_registration_id"])
+            ) is None:
+                raise ScenarioValidationError(
+                    f"substrate.nodes[{index}].operator_registration_id is invalid"
+                )
+            if _INSTALLATION_ID_PATTERN.fullmatch(
+                str(node["controller_installation_id"])
+            ) is None:
+                raise ScenarioValidationError(
+                    f"substrate.nodes[{index}].controller_installation_id is invalid"
+                )
+            if _IMMUTABLE_SHA256_PATTERN.fullmatch(
+                str(node["operator_overlay_revision"])
+            ) is None:
+                raise ScenarioValidationError(
+                    f"substrate.nodes[{index}].operator_overlay_revision must be immutable"
+                )
+            normalized_node.update(
+                {
+                    field: str(node[field])
+                    for field in LOCAL_ARTIFACT_IDENTITY_FIELDS
+                }
+            )
         normalized_nodes.append(normalized_node)
     topology = value.get("topology") or {}
     if not isinstance(topology, dict):
