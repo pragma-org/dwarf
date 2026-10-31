@@ -23,8 +23,14 @@ frozen target identity.
 The first executable case is the value-coin `i64` boundary crash regression.
 It uses the operator-selected Amaru as the sole security target and a catalog
 Cardano node only as the honest producer required to create the private
-devnet. The `i64::MAX` boundary control runs before the byte-identical
-`i64::MAX + 1` mutant; both must reject and the target must remain responsive.
+devnet. One fail-closed workload constructs a valid included control and two
+fresh signed transactions from isolated generated-genesis inputs. The
+`i64::MAX` boundary control must reject while the target remains live before
+the `i64::MAX + 1` mutant is submitted. Both rejection oracles require the
+value-conservation diagnostic; decode, spent-input, fee, conflict, and unknown
+client errors remain inconclusive. A fixed 1 ADA fee prevents the CBOR-size
+change from becoming a fee oracle. After the mutant, the boundary transaction
+is resubmitted to detect a dead mempool even when the container remains live.
 
 The governance, ExUnits, and unregistered-DRep candidates are not promoted into
 this first live batch. Governance and ExUnits require a qualified exact mixed
@@ -68,7 +74,8 @@ security assertion is a retained result, not a framework retry trigger.
 Focused tests first reproduce the current bug: inline scenarios did not forward
 the selected local registration and launch freezing required a registry
 manifest digest. After the repair, tests verify registry and local-config
-materialization separately, target/supporting scope, fixed-width fixture
-mutation, exact-result assertions, and scenario semantic validation. Deployment verification then checks
+materialization separately, target/supporting scope, exact CBOR coin mutation,
+strict rejection classification, post-mutant service health, fresh-input
+assessment, and scenario semantic validation. Deployment verification then checks
 the rendered plan before Prepare, runs one control/case at a time, and inspects
 the retained manifest, assertions, exact identities, node health, and cleanup.

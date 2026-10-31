@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime_value_coin_overflow_regression params",
+  "type": "object",
+  "required": [
+    "runtime_metadata_path",
+    "target_node",
+    "reference_node",
+    "output_dir"
+  ],
+  "properties": {
+    "runtime_metadata_path": { "type": "string", "minLength": 1 },
+    "target_node": { "type": "string", "minLength": 1 },
+    "reference_node": { "type": "string", "minLength": 1 },
+    "output_dir": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

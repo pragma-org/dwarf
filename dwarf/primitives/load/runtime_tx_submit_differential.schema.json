@@ -2,10 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "runtime_tx_submit_differential params",
   "type": "object",
-  "required": ["primitive"],
-  "oneOf": [
-    {"required": ["tx_file"], "not": {"required": ["tx_hex"]}},
-    {"required": ["tx_hex"], "not": {"required": ["tx_file"]}}
+  "required": [
+    "primitive",
+    "tx_file"
   ],
   "properties": {
     "primitive": {
@@ -22,10 +21,6 @@
     },
     "tx_file": {
       "type": "string"
-    },
-    "tx_hex": {
-      "type": "string",
-      "pattern": "^(?:[0-9a-fA-F]{2})+$"
     },
     "runtime_metadata_path": {
       "type": "string"
@@ -59,18 +54,6 @@
         "crash",
         "unknown"
       ]
-    },
-    "hex_replacements": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["from", "to"],
-        "properties": {
-          "from": {"type": "string", "pattern": "^[0-9a-fA-F]+$"},
-          "to": {"type": "string", "pattern": "^[0-9a-fA-F]+$"}
-        },
-        "additionalProperties": false
-      }
     }
   },
   "additionalProperties": true

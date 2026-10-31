@@ -245,56 +245,18 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
         rd = _run_dir(handle)
         out = rd / self.params.get("output_dir", f"outputs/{self.primitive_name}")
         out.mkdir(parents=True, exist_ok=True)
-        tx_file = self.params.get("tx_file")
-        tx_hex = self.params.get("tx_hex")
-        if bool(tx_file) == bool(tx_hex):
-            raise ValueError("exactly one of tx_file or tx_hex is required")
-        tx_path = None
-        if tx_hex:
+        tx_path = Path(self.params["tx_file"])
+        if not tx_path.is_absolute():
+            tx_path = rd / tx_path
+        raw = tx_path.read_bytes()
+        # accept either a raw CBOR tx (.cbor) or a cardano-cli text envelope ({"cborHex": ...})
+        payload = raw
+        stripped = raw.lstrip()[:1]
+        if stripped == b"{":
             try:
-                payload = bytes.fromhex(str(tx_hex))
-            except ValueError as exc:
-                raise ValueError("tx_hex must contain hexadecimal transaction bytes") from exc
-            tx_source = "inline-hex"
-        else:
-            tx_path = Path(str(tx_file))
-            if not tx_path.is_absolute():
-                tx_path = rd / tx_path
-            raw = tx_path.read_bytes()
-            # Accept raw CBOR or a cardano-cli text envelope.
-            payload = raw
-            stripped = raw.lstrip()[:1]
-            if stripped == b"{":
-                try:
-                    payload = bytes.fromhex(json.loads(raw.decode("utf-8"))["cborHex"])
-                except Exception:  # noqa: BLE001
-                    payload = raw
-            tx_source = str(tx_path)
-        payload_mutations = []
-        for index, replacement in enumerate(self.params.get("hex_replacements") or []):
-            if not isinstance(replacement, dict) or set(replacement) != {"from", "to"}:
-                raise ValueError(
-                    f"hex_replacements[{index}] must contain exactly from and to"
-                )
-            try:
-                before = bytes.fromhex(str(replacement["from"]))
-                after = bytes.fromhex(str(replacement["to"]))
-            except ValueError as exc:
-                raise ValueError(
-                    f"hex_replacements[{index}] must use hexadecimal bytes"
-                ) from exc
-            if not before or len(before) != len(after):
-                raise ValueError(
-                    f"hex_replacements[{index}] must be non-empty and fixed-width"
-                )
-            if payload.count(before) != 1:
-                raise ValueError(
-                    f"hex_replacements[{index}].from must occur exactly once"
-                )
-            payload = payload.replace(before, after, 1)
-            payload_mutations.append(
-                {"from": before.hex(), "to": after.hex()}
-            )
+                payload = bytes.fromhex(json.loads(raw.decode("utf-8"))["cborHex"])
+            except Exception:  # noqa: BLE001
+                payload = raw
 
         nodes = {}
         rmp = self.params.get("runtime_metadata_path")
@@ -317,10 +279,7 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
             return _node_submit_url(nodes, self.params.get(f"{role}_node", ""))
 
         target_url, ref_url = url_for("target"), url_for("reference")
-        result = {"primitive": self.primitive_name, "tx_file": str(tx_path) if tx_path else None,
-                  "tx_source": tx_source,
-                  "payload_sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
-                  "payload_mutations": payload_mutations,
+        result = {"primitive": self.primitive_name, "tx_file": str(tx_path),
                   "target_node": self.params.get("target_node"), "reference_node": self.params.get("reference_node"),
                   "target": {"url": target_url, **(_submit(target_url, payload) if target_url else {"outcome": "unknown", "note": "no target submit-api resolved"})},
                   "reference": {"url": ref_url, **(_submit(ref_url, payload) if ref_url else {"outcome": "unknown", "note": "no reference submit-api resolved"})}}
@@ -682,55 +641,87 @@ class RuntimeTransactionArrayArityDifferential(LoadPrimitive):
         return report
 
 
+class RuntimeValueCoinOverflowRegression(LoadPrimitive):
+    """Run fresh-funded valid, i64 boundary, and overflow cases against Amaru."""
+
+    primitive_name = "runtime_value_coin_overflow_regression"
+    bound_substrate = None
+
+    def run(self, handle, rng):
+        run_dir = _run_dir(handle)
+        output_dir = run_dir / self.params.get(
+            "output_dir", "outputs/value-coin-overflow"
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        metadata_path = Path(self.params["runtime_metadata_path"])
+        if not metadata_path.is_absolute():
+            metadata_path = run_dir / metadata_path
+        runtime = json.loads(metadata_path.read_text(encoding="utf-8"))
+        target_node = str(self.params["target_node"])
+        reference_node = str(self.params["reference_node"])
+        nodes = {
+            str(node.get("id")): node
+            for node in (self.bound_substrate or {}).get("nodes", [])
+            if isinstance(node, dict)
+        }
+        target_identity = nodes.get(target_node)
+        reference_identity = nodes.get(reference_node)
+        if not isinstance(target_identity, dict) or not isinstance(
+            reference_identity, dict
+        ):
+            raise RuntimeError(
+                "value-overflow regression requires resolved target and supporting nodes"
+            )
+        from scripts.runtime_value_coin_overflow import (
+            run_value_coin_overflow_regression,
+        )
+
+        report = run_value_coin_overflow_regression(
+            runtime=runtime,
+            output_dir=output_dir,
+            target_node=target_node,
+            reference_node=reference_node,
+            expected_target_version=str(target_identity["version"]),
+            expected_target_source=str(target_identity["source_revision"]),
+            expected_reference_version=str(reference_identity["version"]),
+            expected_reference_source=str(reference_identity["source_revision"]),
+        )
+        report.update(
+            {
+                "primitive": self.primitive_name,
+                "target_node": target_node,
+                "reference_node": reference_node,
+            }
+        )
+        (output_dir / "result.json").write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        return report
+
+
 class SubmitOutcomeMatches(AssertionPrimitive):
     """Pass iff the recorded submit outcomes match expectation (per node: accept|reject|crash)."""
 
     def evaluate(self, handle):
         rd = _run_dir(handle)
         exp_t = str(self.params.get("expected_target_outcome") or "accept")
-        has_reference_expectation = "expected_reference_outcome" in self.params
-        exp_r = (
-            str(self.params["expected_reference_outcome"])
-            if has_reference_expectation
-            else None
-        )
+        exp_r = str(self.params.get("expected_reference_outcome") or "reject")
         observed = None
-        result_path = self.params.get("result_path")
-        paths = (
-            [rd / str(result_path)]
-            if result_path
-            else list(rd.rglob("runtime_tx_submit_differential/result.json"))
-        )
-        for p in paths:
+        for p in rd.rglob("runtime_tx_submit_differential/result.json"):
             try:
                 observed = json.loads(p.read_text())
             except Exception:  # noqa: BLE001
                 pass
         obs_t = (observed or {}).get("target", {}).get("outcome")
         obs_r = (observed or {}).get("reference", {}).get("outcome")
-        ok = (
-            observed is not None
-            and obs_t == exp_t
-            and (not has_reference_expectation or obs_r == exp_r)
-        )
-        expected = {"target": exp_t}
-        observed_values = {"target": obs_t}
-        if has_reference_expectation:
-            expected["reference"] = exp_r
-            observed_values["reference"] = obs_r
+        ok = observed is not None and obs_t == exp_t and obs_r == exp_r
         return {
             "primitive": "submit_outcome_matches",
             "params": dict(self.params),
-            "evaluated_value": {
-                "expected": expected,
-                "observed": observed_values,
-            },
+            "evaluated_value": {"expected": {"target": exp_t, "reference": exp_r},
+                                "observed": {"target": obs_t, "reference": obs_r}},
             "result": "pass" if ok else "fail",
-            "note": (
-                None
-                if ok
-                else f"expected {expected}, observed {observed_values}"
-            ),
+            "note": None if ok else f"expected target={exp_t}/reference={exp_r}, observed target={obs_t}/reference={obs_r}",
         }
 
 
@@ -910,4 +901,38 @@ class TransactionArrayArityDifferentialMatches(AssertionPrimitive):
             "data_points_used": [status] if isinstance(status, dict) else [],
             "result": "pass" if ok else "fail",
             "note": None if ok else "transaction-array boundary evidence is incomplete or inconclusive",
+        }
+
+
+class ValueCoinOverflowRegressionPassed(AssertionPrimitive):
+    """Pass only when the fresh-funded overflow mutant rejects and Amaru survives."""
+
+    def evaluate(self, handle):
+        path = _run_dir(handle) / self.params.get(
+            "result_path", "outputs/value-coin-overflow/result.json"
+        )
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            report = {}
+        status = report.get("regression_status") if isinstance(report, dict) else None
+        ok = bool(
+            isinstance(status, dict)
+            and status.get("complete") is True
+            and status.get("regression_passed") is True
+            and status.get("security_finding_observed") is False
+        )
+        if isinstance(status, dict) and status.get("security_finding_observed") is True:
+            note = "fresh-funded value-overflow security finding observed"
+        elif not ok:
+            note = "value-overflow regression evidence is incomplete or inconclusive"
+        else:
+            note = None
+        return {
+            "primitive": "value_coin_overflow_regression_passed",
+            "params": dict(self.params),
+            "evaluated_value": status or {},
+            "data_points_used": [status] if isinstance(status, dict) else [],
+            "result": "pass" if ok else "fail",
+            "note": note,
         }

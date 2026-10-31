@@ -436,24 +436,30 @@ def _validate_substrate(value):
             raise ScenarioValidationError(
                 f"substrate.nodes[{index}].identity_binding must be frozen or resolved-plan"
             )
+        supporting = node.get("supporting", False)
+        if not isinstance(supporting, bool):
+            raise ScenarioValidationError(
+                f"substrate.nodes[{index}].supporting must be a boolean when present"
+            )
         node_host = node.get("host")
         if host_strategy == "explicit":
             if node_host not in host_ids:
                 raise ScenarioValidationError(f"substrate.nodes[{index}].host must reference a declared substrate.hosts id")
         elif node_host is not None:
             raise ScenarioValidationError("substrate.nodes[*].host requires substrate.host_strategy='explicit'")
-        normalized_nodes.append(
-            {
-                "id": node_id,
-                "impl": impl,
-                "version": version,
-                "role": role,
-                "host": node_host,
-                "image": image,
-                "source_revision": source_revision,
-                "identity_binding": identity_binding,
-            }
-        )
+        normalized_node = {
+            "id": node_id,
+            "impl": impl,
+            "version": version,
+            "role": role,
+            "host": node_host,
+            "image": image,
+            "source_revision": source_revision,
+            "identity_binding": identity_binding,
+        }
+        if "supporting" in node:
+            normalized_node["supporting"] = supporting
+        normalized_nodes.append(normalized_node)
     topology = value.get("topology") or {}
     if not isinstance(topology, dict):
         raise ScenarioValidationError("substrate.topology must be a mapping")

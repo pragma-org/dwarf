@@ -2037,8 +2037,10 @@ def compose_substrate(
             "image_ref",
             "image_id",
             "image_digest",
+            "image_config_id",
             "repo_digests",
             "requested_digest",
+            "requested_config_id",
             "source_revision",
         ):
             if provenance_key in resolved[node["id"]]:

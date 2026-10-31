@@ -17,7 +17,7 @@
   "promotion_blockers": [
     "This is an Amaru-target regression; the Cardano producer is qualified transaction-delivery infrastructure, not a differential oracle.",
     "A passing run establishes only the selected exact artifact and private devnet contract.",
-    "The i64::MAX control and i64::MAX+1 mutant intentionally have invalidated witnesses; the regression oracle is clean rejection plus target liveness."
+    "The workload constructs and signs fresh transactions from three isolated generated-genesis inputs; the regression oracle is clean rejection plus independently inspected target liveness."
   ],
   "target": {
     "implementation": "amaru",
@@ -67,26 +67,11 @@
   ],
   "load": [
     {
-      "primitive": "runtime_tx_submit_differential",
-      "output_dir": "outputs/i64-max-control",
-      "tx_hex": "84a300d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b8000000000000000021a000f4240a1008182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858400ea211987936a7de86e5330eae779efe1aa5b6b932b7b95fb85b81933ee7af13903eae245472ce1ff8f3454911ca3478f0252ccdec2588ee8509965db0fcee0df5f6",
+      "primitive": "runtime_value_coin_overflow_regression",
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "amaru1",
-      "expected_target_outcome": "reject",
-      "hex_replacements": [
-        {
-          "from": "1b8000000000000000",
-          "to": "1b7fffffffffffffff"
-        }
-      ]
-    },
-    {
-      "primitive": "runtime_tx_submit_differential",
-      "output_dir": "outputs/i64-overflow-mutant",
-      "tx_hex": "84a300d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b8000000000000000021a000f4240a1008182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858400ea211987936a7de86e5330eae779efe1aa5b6b932b7b95fb85b81933ee7af13903eae245472ce1ff8f3454911ca3478f0252ccdec2588ee8509965db0fcee0df5f6",
-      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
-      "target_node": "amaru1",
-      "expected_target_outcome": "reject"
+      "reference_node": "producer1",
+      "output_dir": "outputs/value-coin-overflow"
     },
     {
       "primitive": "runtime_multi_node_observation",
@@ -103,14 +88,8 @@
   "probes": [],
   "assertions": [
     {
-      "primitive": "submit_outcome_matches",
-      "expected_target_outcome": "reject",
-      "result_path": "outputs/i64-max-control/result.json"
-    },
-    {
-      "primitive": "submit_outcome_matches",
-      "expected_target_outcome": "reject",
-      "result_path": "outputs/i64-overflow-mutant/result.json"
+      "primitive": "value_coin_overflow_regression_passed",
+      "result_path": "outputs/value-coin-overflow/result.json"
     },
     {"primitive": "all_nodes_responsive"}
   ],

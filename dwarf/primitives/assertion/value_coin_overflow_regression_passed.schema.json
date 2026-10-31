@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "value_coin_overflow_regression_passed params",
+  "type": "object",
+  "required": ["primitive"],
+  "properties": {
+    "primitive": {"const": "value_coin_overflow_regression_passed"},
+    "result_path": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

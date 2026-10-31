@@ -6,7 +6,11 @@ import pytest
 
 import profile_manager.run_plan as run_plan_module
 from profile_manager.launch_store import create_launch
-from profile_manager.run_plan import RunPlanError, RunPlanRequest, resolve_run_plan
+from profile_manager.run_plan import (
+    RunPlanError,
+    RunPlanRequest,
+    resolve_run_plan,
+)
 
 
 AMARU = {
@@ -261,6 +265,106 @@ def test_inline_substrate_materializes_local_config_identity(monkeypatch, tmp_pa
         "controller_installation_id": installation,
         "operator_overlay_revision": overlay_revision,
     }
+    launch = create_launch(plan, root=tmp_path / "launches")
+    frozen = json.loads(launch["path"].joinpath("scenario.yaml").read_text())
+    amaru = next(node for node in frozen["substrate"]["nodes"] if node["impl"] == "amaru")
+    assert amaru["image"] == config_id
+    assert amaru["image_config_id"] == config_id
+    assert "image_digest" not in amaru
+
+
+def test_inline_substrate_prefers_operator_config_identity_when_manifest_exists(
+    monkeypatch, tmp_path
+):
+    config_id = "sha256:" + "9" * 64
+    manifest_digest = "sha256:" + "7" * 64
+    executable_digest = "sha256:" + "8" * 64
+    selected = "registration-release-build-selected-stock"
+    installation = "install-selected"
+    registration = {
+        "registration_id": selected,
+        "implementation": "amaru",
+        "version": "10.11.20261029",
+        "image_reference": "local/amaru:stock",
+        "manifest_digest": manifest_digest,
+        "config_image_id": config_id,
+        "executable_digest": executable_digest,
+        "platform": "linux/amd64",
+        "runtime_interface": "extracted-binary",
+        "controller_installation_id": installation,
+        "inspected_at": "2026-10-31T06:04:45Z",
+        "provenance": {
+            "source_revision": "23031e0ed4423b9cb899da030d515cb69d203749",
+            "public": None,
+            "qualification": "unverified",
+        },
+    }
+
+    def preview(_profile_data, *, operator_registration_id=None, **_kwargs):
+        assert operator_registration_id == selected
+        release = {
+            "implementation": "amaru",
+            "version": registration["version"],
+            "source_revision": registration["provenance"]["source_revision"],
+            "artifacts": [{
+                "kind": "oci",
+                "availability": "available",
+                "reference": registration["image_reference"],
+                "digest": manifest_digest,
+                "config_image_id": config_id,
+                "executable_digest": executable_digest,
+                "platforms": [registration["platform"]],
+                "public": False,
+                "runtime_interface": registration["runtime_interface"],
+                "operator_registration": registration,
+            }],
+            "operator_registration": registration,
+        }
+        cardano_release = {
+            "implementation": "cardano-node",
+            "version": CARDANO["version"],
+            "source_revision": CARDANO["source_revision"],
+            "artifacts": [{
+                "kind": "oci",
+                "availability": "available",
+                "reference": CARDANO["image"],
+                "digest": CARDANO["image_digest"],
+                "platforms": ["linux/amd64"],
+                "public": True,
+            }],
+        }
+        return {
+            "policy": "exact",
+            "policy_source": "explicit",
+            "scope": "mixed",
+            "status": "unknown",
+            "reason": "operator-selected local Amaru",
+            "catalog_revision": "c" * 64,
+            "operator_overlay_revision": "d" * 64,
+            "operator_registration_id": selected,
+            "pair": None,
+            "requires_acknowledgement": True,
+            "resolved": {"amaru": release, "cardano-node": cardano_release},
+            "supporting": {},
+        }
+
+    monkeypatch.setattr(run_plan_module, "build_deployment_version_preview", preview)
+    plan = resolve_run_plan(
+        RunPlanRequest(
+            scenario_id="runtime-substrate-mux-ingress-overrun-mixed-amaru",
+            operator_registration_id=selected,
+            acknowledge_unknown_versions=True,
+            measurement_profile="none",
+        )
+    )
+    binding = next(
+        item
+        for item in plan["scenario"]["substrate_bindings"]
+        if item["declared"]["impl"] == "amaru"
+    )
+    assert binding["resolved"]["image"] == config_id
+    assert binding["resolved"]["image_config_id"] == config_id
+    assert "image_digest" not in binding["resolved"]
     launch = create_launch(plan, root=tmp_path / "launches")
     frozen = json.loads(launch["path"].joinpath("scenario.yaml").read_text())
     amaru = next(node for node in frozen["substrate"]["nodes"] if node["impl"] == "amaru")

@@ -3708,6 +3708,15 @@
       ],
       "version": "0.1.0"
     },
+    "runtime_value_coin_overflow_regression": {
+      "class": "RuntimeValueCoinOverflowRegression",
+      "family": "load",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/load/runtime_value_coin_overflow.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["amaru"],
+      "version": "0.1.0"
+    },
     "submit_outcome_matches": {
       "class": "SubmitOutcomeMatches",
       "family": "assertion",
@@ -3805,6 +3814,15 @@
         "cardano-node",
         "amaru"
       ],
+      "version": "0.1.0"
+    },
+    "value_coin_overflow_regression_passed": {
+      "class": "ValueCoinOverflowRegressionPassed",
+      "family": "assertion",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/assertion/value_coin_overflow_regression_passed.schema.json",
+      "runtimes": ["devnet"],
+      "supports": ["amaru"],
       "version": "0.1.0"
     },
     "invalid_tx_body_differential": {

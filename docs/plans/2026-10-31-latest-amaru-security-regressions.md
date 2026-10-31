@@ -4,7 +4,7 @@
 
 **Goal:** Bind inline security scenarios to the selected local Amaru build, run the first decisive Amaru-only crash regression, and retain real-node results.
 
-**Architecture:** Extend the existing scenario-substrate resolver and launch materializer with a distinct operator-local config identity shape. Preserve historical finding scenarios and create resolved-plan regression variants that reuse their fixtures and real primitives.
+**Architecture:** Extend the existing scenario-substrate resolver and launch materializer with a distinct operator-local config identity shape. Preserve historical finding scenarios and add a resolved-plan, fresh-funded regression workload.
 
 **Tech Stack:** Python 3, pytest, JSON-shaped YAML scenarios, Docker Compose, Playwright dashboard workflow.
 
@@ -44,10 +44,11 @@
 - Test: `tests/test_submit_security_regressions.py`
 
 1. Treat a marked Cardano producer as supporting infrastructure so the target resolution remains Amaru-only.
-2. Add auditable fixed-width fixture mutation and exact result-path assertions.
-3. Add the `i64::MAX` control followed by the `i64::MAX + 1` mutant.
-4. Require clean target rejection for both and post-mutant node responsiveness.
-5. Validate the scenario semantically and commit it.
+2. Add a fresh-funded workload that constructs three independently signed transactions from generated-genesis credentials.
+3. Require a valid included control, then the `i64::MAX` value-conservation rejection and liveness gate before submitting the `i64::MAX + 1` mutant.
+4. Use a fixed high fee, fail closed on non-value diagnostics, and resubmit the boundary after the mutant to prove the mempool still responds.
+5. Retain exact inputs, body/payload hashes, responses, and independent container health.
+6. Validate the scenario semantically and commit it.
 
 ### Task 4: Verify and deploy the DWARF change
 

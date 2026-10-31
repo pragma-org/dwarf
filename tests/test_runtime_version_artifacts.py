@@ -256,9 +256,11 @@ def test_locally_built_image_may_be_pinned_by_its_inspected_image_id():
 
     assert result["satisfied"] is True
     assert result["status"] == "image-present"
-    assert result["requested_digest"] == IMAGE_ID
+    assert result["requested_digest"] is None
+    assert result["requested_config_id"] == IMAGE_ID
     assert result["image_id"] == IMAGE_ID
-    assert result["image_digest"] == IMAGE_ID
+    assert result["image_config_id"] == IMAGE_ID
+    assert result["image_digest"] is None
 
 
 def test_running_container_must_report_requested_node_version():
@@ -317,3 +319,44 @@ def test_version_provenance_is_bundle_safe_and_exact():
     assert provenance["nodes"][0]["image_digest"] == DIGEST
     assert provenance["nodes"][0]["reported_version"] == "11.1.2"
     assert "password" not in json.dumps(provenance).lower()
+
+
+def test_version_provenance_retains_local_compiled_identity_without_digest_conflation():
+    config_id = "sha256:" + "9" * 64
+    normalized = normalize_substrate(
+        {
+            **_substrate(image=config_id),
+            "nodes": [
+                {
+                    **_substrate(image=config_id)["nodes"][0],
+                    "image_config_id": config_id,
+                    "executable_digest": "sha256:" + "8" * 64,
+                    "platform": "linux/amd64",
+                    "runtime_interface": "extracted-binary",
+                    "operator_registration_id": "registration-release-build-ece2067b72e048208d3dceedb8bc7b48-stock",
+                    "controller_installation_id": "install-selected",
+                    "operator_overlay_revision": "7" * 64,
+                }
+            ],
+        }
+    )
+    node = {
+        **normalized["nodes"][0],
+        "image_ref": config_id,
+        "image_id": config_id,
+        "image_digest": None,
+        "resolved_version": "11.1.2",
+        "version_identity": {
+            "status": "running-version-verified",
+            "reported_version": "11.1.2",
+        },
+    }
+
+    provenance = build_version_provenance(normalized, [node])["nodes"][0]
+
+    assert provenance["image_digest"] is None
+    assert provenance["image_config_id"] == config_id
+    assert provenance["executable_digest"] == "sha256:" + "8" * 64
+    assert provenance["operator_registration_id"].endswith("-stock")
+    assert provenance["controller_installation_id"] == "install-selected"
+    assert provenance["operator_overlay_revision"] == "7" * 64

@@ -809,17 +809,23 @@ def _compact_release(
     if pin_image:
         digest = artifact.get("digest") if artifact else None
         local_config_id = artifact.get("config_image_id") if artifact else None
-        if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
-            if (
-                not isinstance(operator_registration, dict)
-                or not isinstance(local_config_id, str)
-                or not _DIGEST.fullmatch(local_config_id)
+        if isinstance(operator_registration, dict):
+            if not isinstance(local_config_id, str) or not _DIGEST.fullmatch(
+                local_config_id
             ):
                 raise RunPlanError(
-                    "resolved scenario substrate requires an immutable manifest digest or local config image id",
+                    "operator-local scenario substrate requires a config image id",
                     field="versions",
                 )
+            # A local registration binds the physical Docker image by config
+            # ID. An optional registry manifest remains provenance, not the
+            # execution identity of the inspected local image.
             execution_reference = local_config_id
+        elif not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
+            raise RunPlanError(
+                "resolved scenario substrate requires an immutable manifest digest or local config image id",
+                field="versions",
+            )
         elif not isinstance(execution_reference, str) or not execution_reference:
             raise RunPlanError(
                 "resolved scenario substrate image reference is missing", field="versions"

@@ -551,6 +551,8 @@ def resolve_docker_image_for_node(
         result = runner(command)
     except FileNotFoundError:
         result = CommandResult(command, 127, "", "docker not found")
+    requested_digest = image_ref.rsplit("@", 1)[1] if "@sha256:" in image_ref else None
+    requested_config_id = image_ref if SHA256_PATTERN.fullmatch(image_ref) else None
     base = {
         "resolved_binary": f"docker-image:{image_ref}",
         "resolved_version": node["version"],
@@ -558,8 +560,10 @@ def resolve_docker_image_for_node(
         "image_ref": image_ref,
         "image_id": None,
         "image_digest": None,
+        "image_config_id": None,
         "repo_digests": [],
-        "requested_digest": image_ref.rsplit("@", 1)[1] if "@sha256:" in image_ref else None,
+        "requested_digest": requested_digest,
+        "requested_config_id": requested_config_id,
         "source_revision": node.get("source_revision"),
     }
     if result.returncode != 0:
@@ -573,26 +577,34 @@ def resolve_docker_image_for_node(
         return {**base, "status": "image-inspect-invalid", "satisfied": False, "error": str(exc)}
     repo_digests = [str(value) for value in (body.get("RepoDigests") or [])]
     available_digests = [value.rsplit("@", 1)[1] for value in repo_digests if "@sha256:" in value]
-    requested_digest = base["requested_digest"]
     image_id = str(body.get("Id") or "") or None
-    local_image_id_match = bool(requested_digest and requested_digest == image_id)
-    image_digest = requested_digest if (
-        requested_digest in available_digests or local_image_id_match
-    ) else (
+    if (
+        requested_digest
+        and requested_digest == image_id
+        and requested_digest not in available_digests
+    ):
+        requested_config_id = requested_digest
+        requested_digest = None
+    local_image_id_match = bool(requested_config_id and requested_config_id == image_id)
+    image_digest = requested_digest if requested_digest in available_digests else (
         available_digests[0] if available_digests else None
     )
     resolved = {
         **base,
         "image_id": image_id,
         "image_digest": image_digest,
+        "image_config_id": image_id if local_image_id_match else None,
         "repo_digests": repo_digests,
+        "requested_digest": requested_digest,
+        "requested_config_id": requested_config_id,
     }
     if (
         requested_digest
         and requested_digest not in available_digests
-        and not local_image_id_match
     ):
         return {**resolved, "status": "image-digest-mismatch", "satisfied": False}
+    if requested_config_id and not local_image_id_match:
+        return {**resolved, "status": "image-config-id-mismatch", "satisfied": False}
     return {**resolved, "status": "image-present", "satisfied": True}
 
 
@@ -635,6 +647,7 @@ def verify_running_container_artifact(container_image_id: str, node: dict) -> di
         "expected_image_id": expected or None,
         "container_image_id": actual or None,
         "image_digest": node.get("image_digest"),
+        "image_config_id": node.get("image_config_id"),
     }
 
 
@@ -655,6 +668,13 @@ def build_version_provenance(substrate: dict, nodes: list[dict]) -> dict:
                 "image_ref": node.get("image_ref") or node.get("image"),
                 "image_id": node.get("image_id"),
                 "image_digest": node.get("image_digest"),
+                "image_config_id": node.get("image_config_id"),
+                "executable_digest": node.get("executable_digest"),
+                "platform": node.get("platform"),
+                "runtime_interface": node.get("runtime_interface"),
+                "operator_registration_id": node.get("operator_registration_id"),
+                "controller_installation_id": node.get("controller_installation_id"),
+                "operator_overlay_revision": node.get("operator_overlay_revision"),
                 "identity_status": identity.get("status"),
                 "supporting": bool(node.get("supporting", False)),
             }
