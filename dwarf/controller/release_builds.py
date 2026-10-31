@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 _JOB = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 _DIGEST = re.compile(r'^sha256:[0-9a-f]{64}$')
 _VARIANTS = ('stock', 'instrumented')
-_ROLES = ('compile', 'version', 'interface', 'identity')
+_ROLES = ('compile', 'version', 'help', 'interface', 'identity')
 _MAX_JSON = 1024 * 1024
 _MAX_LOG = 8 * 1024 * 1024
 
@@ -431,13 +431,21 @@ def _build_variant(context, variant):
     context.stage(variant, 'smoke-check')
     _check_packaged_executable(context, variant, image, binary, metadata['executable_digest'])
     version = context.container(variant, 'version', image, ['--version'], entrypoint=entrypoint)
-    interface = context.container(variant, 'interface', image, ['run', '--help'], entrypoint=entrypoint)
+    command = ['run']
+    if implementation == 'amaru':
+        help_text = context.container(variant, 'help', image, ['--help'], entrypoint=entrypoint)
+        # New Amaru releases group lifecycle commands under `node`; determine
+        # this from the actual executable, not a version-string threshold.
+        if re.search(r'^\s{2,}node\s+\S', help_text, re.MULTILINE):
+            command = ['node', 'run']
+    interface = context.container(variant, 'interface', image, [*command, '--help'], entrypoint=entrypoint)
     if not version.strip() or not interface.strip():
         raise ValueError('Built executable returned no version or runtime interface')
     if implementation == 'amaru' and observed.get('runtime_interface') != 'extracted-binary':
         raise ValueError('Built Amaru image does not expose the required executable interface')
     result = {'state': 'ready', 'mode': 'stock' if variant == 'stock' else 'patched',
-        **metadata, **observed, 'image_reference': image, 'source_revision': context.selected['source_revision'],
+        **metadata, **observed, 'image_reference': image, 'runtime_command': command,
+        'source_revision': context.selected['source_revision'],
         'implementation': implementation, 'version': context.selected['version'],
         'controller_installation_id': context.runtime.installation_id, 'completed_at': _now(),
         'recipe_sha256': _hash(path), 'qualification': 'unverified', 'compatibility': 'unknown-until-run',

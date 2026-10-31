@@ -167,7 +167,8 @@ def test_compiler_evidence_rejects_parent_symlink(runtime):
         builds._json(root / 'output' / 'result.json')
 
 
-def test_ready_variant_keeps_exact_image_and_unqualified_checks(runtime, monkeypatch):
+@pytest.mark.parametrize('modern', [False, True])
+def test_ready_variant_keeps_exact_image_and_unqualified_checks(runtime, monkeypatch, modern):
     context = builds.BuildContext(runtime, {**PARAMS, 'image': 'ghcr.io/pragma-org/amaru@' + DIGEST},
                                   'build-test', 60, threading.Event())
     expected = 'sha256:' + 'c' * 64
@@ -177,7 +178,15 @@ def test_ready_variant_keeps_exact_image_and_unqualified_checks(runtime, monkeyp
     monkeypatch.setattr(builds, '_compile_amaru', compile_source)
     monkeypatch.setattr(builds, '_check_packaged_executable', lambda *args: None)
     context.run = lambda *args, **kw: ''
-    context.container = lambda *args, **kw: 'amaru --version run --help'
+    calls = []
+    def smoke(variant, role, image, command, **kwargs):
+        calls.append(command)
+        if command == ['--help']:
+            return 'Commands:\n  node  Manage and operate the Amaru node\n' if modern else 'Commands:\n  run  Run the node\n'
+        if command == ['run', '--help'] and modern:
+            raise RuntimeError("error: unrecognized subcommand 'run'")
+        return 'amaru help and version'
+    context.container = smoke
     runtime.inspect_image = lambda *args, **kw: {'config_image_id': expected,
         'platform': 'linux/amd64', 'runtime_interface': 'extracted-binary', 'manifest_references': []}
     result = builds._build_variant(context, 'stock')
@@ -188,6 +197,8 @@ def test_ready_variant_keeps_exact_image_and_unqualified_checks(runtime, monkeyp
     assert result['qualification'] == 'unverified'
     assert result['compatibility'] == 'unknown-until-run'
     assert 'completed_at' in result
+    assert result['runtime_command'] == (['node', 'run'] if modern else ['run'])
+    assert result['runtime_command'] + ['--help'] in calls
 
 
 def test_deadline_exhaustion_does_not_launch_a_builder(runtime, monkeypatch):
