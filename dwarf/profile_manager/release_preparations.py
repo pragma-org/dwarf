@@ -84,8 +84,10 @@ def _register(selected, job, result, variant, controller):
                                'build_image': row['config_image_id'], 'measurement_profile': measurement_profile})
 
 
-def release_preparation(implementation, version, *, digest=None, start=False, controller=None):
+def release_preparation(implementation, version, *, digest=None, source_revision=None, start=False, controller=None):
     selected = resolve_source(implementation, version, digest=digest)
+    if source_revision is not None and source_revision != selected['source_revision']:
+        raise ValueError('The selected source revision changed; refresh Versions before building')
     controller = controller or controller_request
     root = storage_roots().state / 'release-preparations'
     root.mkdir(parents=True, exist_ok=True)

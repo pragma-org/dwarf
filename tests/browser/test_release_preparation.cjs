@@ -10,6 +10,7 @@ const {chromium} = require('playwright');
       const req = route.request();
       assert.equal(req.method(), 'POST');
       assert.equal(new URLSearchParams(req.postData()).get('token'), 'secret');
+      assert.equal(new URLSearchParams(req.postData()).get('source_revision'), 'b'.repeat(40));
       if (req.url().endsWith('/prepare')) starts++;
       else polls++;
       const done = starts && polls > 1;
@@ -18,7 +19,7 @@ const {chromium} = require('playwright');
         instrumented:{state:'blocked',message:'No exact instrumentation patch'}
       }:{stock:{state:starts?'building':'pending'},instrumented:{state:'pending'}}}});
     });
-    await page.route('http://dwarf.test/', route => route.fulfill({contentType:'text/html',body:`<input data-version-refresh-token value="secret"><div data-release-prepare data-implementation="amaru" data-version="one" data-digest="sha256:abc"><button data-prepare-release>Download &amp; build</button><output data-prepare-status></output><div data-build-variants></div></div>`}));
+    await page.route('http://dwarf.test/', route => route.fulfill({contentType:'text/html',body:`<input data-version-refresh-token value="secret"><div data-release-prepare data-source-revision="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" data-implementation="amaru" data-version="one" data-digest="sha256:abc"><button data-prepare-release>Download &amp; build</button><output data-prepare-status></output><div data-build-variants></div></div>`}));
     await page.goto('http://dwarf.test/');
     await page.addScriptTag({content:fs.readFileSync('dwarf/dashboard/static/js/release-preparations.js','utf8')});
     await page.locator('[data-prepare-status]').filter({hasText:'Build stock'}).waitFor();

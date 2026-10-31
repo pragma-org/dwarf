@@ -85,3 +85,10 @@ def test_ready_stock_registered_even_if_instrumented_blocked(setup):
     assert registrations[0]['provenance']['qualification'] == 'unverified'
     release_preparation('amaru','test-build',controller=controller)
     assert len(load_operator_registrations()['registrations']) == 1
+
+
+def test_stale_source_selection_rejected_before_start(setup):
+    from profile_manager.release_preparations import release_preparation
+    with pytest.raises(ValueError, match='source revision changed'):
+        release_preparation('amaru', 'test-build', source_revision='f'*40, start=True,
+            controller=lambda *a, **kw: pytest.fail('stale source must not submit'))

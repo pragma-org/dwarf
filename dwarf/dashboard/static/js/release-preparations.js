@@ -13,7 +13,7 @@
       if (start) status.textContent = 'Starting source preparation…';
       try {
         const body = new URLSearchParams({token, implementation:row.dataset.implementation,
-          version:row.dataset.version, digest:row.dataset.digest});
+          version:row.dataset.version, digest:row.dataset.digest, source_revision:row.dataset.sourceRevision});
         const response = await fetch('/api/versions/prepare' + (start ? '' : '/status'), {
           method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body
         });

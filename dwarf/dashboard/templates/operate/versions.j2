@@ -78,7 +78,7 @@
             <td><span class="version-identity-pill version-identity-pill--{{ 'amaru' if release.implementation == 'amaru' else 'cardano' }}" data-version-implementation-pill>{{ 'Amaru' if release.implementation == 'amaru' else 'Cardano' }}</span></td>
             <td><span class="version-identity-pill" data-version-value-pill title="{{ release.version }}" aria-label="Release version: {{ release.version }}">{{ release.version }}</span><small>{{ release.channel }} · <time datetime="{{ release.released_exact }}" title="{{ release.released_exact }}">{{ release.released_human }}</time></small></td>
             <td><span class="version-status version-status--{{ release.artifact_eligibility }}" data-artifact-eligibility="{{ release.artifact_eligibility }}" title="{{ release.artifact_eligibility_label }}" aria-label="Artifact eligibility: {{ release.artifact_eligibility_label }}">{{ release.artifact_eligibility_display_label }}</span>
-              {% if release.downloadable %}<div data-release-prepare data-implementation="{{ release.implementation }}" data-version="{{ release.version }}" data-digest="{{ release.artifact_digest }}">
+              {% if release.downloadable %}<div data-release-prepare data-source-revision="{{ release.source_revision }}" data-implementation="{{ release.implementation }}" data-version="{{ release.version }}" data-digest="{{ release.artifact_digest }}">
                 <button type="button" class="dk-btn" data-prepare-release>Download &amp; build</button>
                 <output data-prepare-status aria-live="polite"></output>
                 <div data-build-variants></div>

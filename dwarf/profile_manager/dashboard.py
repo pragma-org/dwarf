@@ -3155,7 +3155,11 @@ def dispatch_version_download_request(*, method, path, expected_token, body=b"")
     if not ok:
         return 401, ctype, json.dumps({"ok": False, "error": error}).encode()
     form = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
-    if set(form) - {"implementation", "version", "digest", "token"} or not (form.get("digest") or [""])[0]:
+    preparing = "/prepare" in clean
+    allowed = {"implementation", "version", "digest", "token"} | ({"source_revision"} if preparing else set())
+    if (set(form) - allowed or not (form.get("digest") or [""])[0]
+            or any(len(values) != 1 for values in form.values())
+            or preparing and not (form.get("source_revision") or [""])[0]):
         return 409, ctype, b'{"ok":false,"error":"unexpected download fields"}'
     from profile_manager.release_downloads import release_download
     from profile_manager.release_preparations import release_preparation
@@ -3163,7 +3167,8 @@ def dispatch_version_download_request(*, method, path, expected_token, body=b"")
     try:
         payload = action((form.get("implementation") or [""])[0],
             (form.get("version") or [""])[0], digest=(form.get("digest") or [""])[0],
-            start=clean.endswith(("/download", "/prepare")))
+            start=clean.endswith(("/download", "/prepare")),
+            **({"source_revision": form["source_revision"][0]} if preparing else {}))
         return 202 if payload["state"] == "running" else 200, ctype, json.dumps(payload).encode()
     except (OSError, RuntimeError, ValueError) as exc:
         return 409, ctype, json.dumps({"ok": False, "error": str(exc)}).encode()
