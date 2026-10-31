@@ -63,8 +63,6 @@ def test_submit_outcome_matches_target_only_fails_closed_when_result_missing(tmp
 def test_runtime_submit_applies_auditable_fixed_width_hex_replacement(
     monkeypatch, tmp_path
 ):
-    transaction = tmp_path / "overflow.cbor"
-    transaction.write_bytes(bytes.fromhex("a11b8000000000000000"))
     submitted = []
 
     def submit(_url, payload):
@@ -74,7 +72,7 @@ def test_runtime_submit_applies_auditable_fixed_width_hex_replacement(
     monkeypatch.setattr(submit_module, "_submit", submit)
     result = RuntimeTxSubmitDifferential(
         params={
-            "tx_file": "overflow.cbor",
+            "tx_hex": "a11b8000000000000000",
             "target_submit_api": "http://127.0.0.1:8090",
             "output_dir": "outputs/control",
             "hex_replacements": [
@@ -90,6 +88,7 @@ def test_runtime_submit_applies_auditable_fixed_width_hex_replacement(
     assert result["payload_mutations"] == [
         {"from": "1b8000000000000000", "to": "1b7fffffffffffffff"}
     ]
+    assert result["tx_source"] == "inline-hex"
 
 
 def test_latest_amaru_value_overflow_scenario_has_boundary_control_and_support_node():
@@ -112,6 +111,8 @@ def test_latest_amaru_value_overflow_scenario_has_boundary_control_and_support_n
         for step in scenario["load"]
         if step["primitive"] == "runtime_tx_submit_differential"
     ]
+    assert all("tx_file" not in step for step in submits)
+    assert len({step["tx_hex"] for step in submits}) == 1
     assert [step["output_dir"] for step in submits] == [
         "outputs/i64-max-control",
         "outputs/i64-overflow-mutant",

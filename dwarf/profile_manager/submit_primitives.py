@@ -245,18 +245,31 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
         rd = _run_dir(handle)
         out = rd / self.params.get("output_dir", f"outputs/{self.primitive_name}")
         out.mkdir(parents=True, exist_ok=True)
-        tx_path = Path(self.params["tx_file"])
-        if not tx_path.is_absolute():
-            tx_path = rd / tx_path
-        raw = tx_path.read_bytes()
-        # accept either a raw CBOR tx (.cbor) or a cardano-cli text envelope ({"cborHex": ...})
-        payload = raw
-        stripped = raw.lstrip()[:1]
-        if stripped == b"{":
+        tx_file = self.params.get("tx_file")
+        tx_hex = self.params.get("tx_hex")
+        if bool(tx_file) == bool(tx_hex):
+            raise ValueError("exactly one of tx_file or tx_hex is required")
+        tx_path = None
+        if tx_hex:
             try:
-                payload = bytes.fromhex(json.loads(raw.decode("utf-8"))["cborHex"])
-            except Exception:  # noqa: BLE001
-                payload = raw
+                payload = bytes.fromhex(str(tx_hex))
+            except ValueError as exc:
+                raise ValueError("tx_hex must contain hexadecimal transaction bytes") from exc
+            tx_source = "inline-hex"
+        else:
+            tx_path = Path(str(tx_file))
+            if not tx_path.is_absolute():
+                tx_path = rd / tx_path
+            raw = tx_path.read_bytes()
+            # Accept raw CBOR or a cardano-cli text envelope.
+            payload = raw
+            stripped = raw.lstrip()[:1]
+            if stripped == b"{":
+                try:
+                    payload = bytes.fromhex(json.loads(raw.decode("utf-8"))["cborHex"])
+                except Exception:  # noqa: BLE001
+                    payload = raw
+            tx_source = str(tx_path)
         payload_mutations = []
         for index, replacement in enumerate(self.params.get("hex_replacements") or []):
             if not isinstance(replacement, dict) or set(replacement) != {"from", "to"}:
@@ -304,7 +317,8 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
             return _node_submit_url(nodes, self.params.get(f"{role}_node", ""))
 
         target_url, ref_url = url_for("target"), url_for("reference")
-        result = {"primitive": self.primitive_name, "tx_file": str(tx_path),
+        result = {"primitive": self.primitive_name, "tx_file": str(tx_path) if tx_path else None,
+                  "tx_source": tx_source,
                   "payload_sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
                   "payload_mutations": payload_mutations,
                   "target_node": self.params.get("target_node"), "reference_node": self.params.get("reference_node"),

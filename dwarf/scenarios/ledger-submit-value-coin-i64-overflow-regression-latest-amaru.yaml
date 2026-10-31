@@ -69,7 +69,7 @@
     {
       "primitive": "runtime_tx_submit_differential",
       "output_dir": "outputs/i64-max-control",
-      "tx_file": "antithesis/cardano_amaru_adversarial/fixture/ledger_submit/value-overflow-preflight.cbor",
+      "tx_hex": "84a300d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b8000000000000000021a000f4240a1008182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858400ea211987936a7de86e5330eae779efe1aa5b6b932b7b95fb85b81933ee7af13903eae245472ce1ff8f3454911ca3478f0252ccdec2588ee8509965db0fcee0df5f6",
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "amaru1",
       "expected_target_outcome": "reject",
@@ -83,7 +83,7 @@
     {
       "primitive": "runtime_tx_submit_differential",
       "output_dir": "outputs/i64-overflow-mutant",
-      "tx_file": "antithesis/cardano_amaru_adversarial/fixture/ledger_submit/value-overflow-preflight.cbor",
+      "tx_hex": "84a300d90102818258209708b921e619b34a6fafc375ebd46bf65d77eed427f953eabed2b9da9212c4a100018182581d60e5a5ddb03fe37059627fede71458401e0dd97bb371b3bd7cce0d23271b8000000000000000021a000f4240a1008182582016ca8eeb26ae9774130d27a8c6f166d7f8e3ca0f9cc79b349e5077774217daf858400ea211987936a7de86e5330eae779efe1aa5b6b932b7b95fb85b81933ee7af13903eae245472ce1ff8f3454911ca3478f0252ccdec2588ee8509965db0fcee0df5f6",
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "amaru1",
       "expected_target_outcome": "reject"
