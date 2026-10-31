@@ -1050,6 +1050,13 @@ if (wizard && form) {
     } else {
       select.value = requestedBuild;
       syncExclusiveVersionSelection(select);
+      const requestedMeasurements = releaseParams.get('measurement_profile');
+      const measurements = wizard.querySelector('#run-measurements');
+      if (requestedMeasurements && measurements && [...measurements.options].some(item => item.value === requestedMeasurements)) {
+        measurements.value = requestedMeasurements;
+      } else if (requestedMeasurements) {
+        releaseSelectionError = {field:'measurement_profile', message:'The requested build measurement profile is unavailable. Return to Versions and select the current build.'};
+      }
       requestedRelease = true;
     }
   }

@@ -79,8 +79,9 @@ def _register(selected, job, result, variant, controller):
             break
         except StaleOperatorVersionState:
             if attempt == 2: raise
+    measurement_profile = ('amaru' if selected['implementation'] == 'amaru' else 'cardano') + '-security-' + ('patched' if variant == 'instrumented' else 'default')
     return '/run?' + urlencode({'operator_registration_id': registration['registration_id'],
-                               'build_image': row['config_image_id']})
+                               'build_image': row['config_image_id'], 'measurement_profile': measurement_profile})
 
 
 def release_preparation(implementation, version, *, digest=None, start=False, controller=None):

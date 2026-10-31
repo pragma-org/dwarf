@@ -77,6 +77,7 @@ def test_ready_stock_registered_even_if_instrumented_blocked(setup):
     result = release_preparation('amaru','test-build',controller=controller)
     stock = result['variants']['stock']
     assert 'operator_registration_id=' in stock['run_url']
+    assert 'measurement_profile=amaru-security-default' in stock['run_url']
     assert result['variants']['instrumented']['state'] == 'blocked'
     registrations = load_operator_registrations()['registrations']
     assert len(registrations) == 1
