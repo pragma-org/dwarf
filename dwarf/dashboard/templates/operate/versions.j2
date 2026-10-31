@@ -77,7 +77,12 @@
           <tr data-version-release-row data-release-id="{{ release.release_id }}" data-version-search="{{ release.search_text }}" data-version-implementation="{{ release.implementation }}" data-version-channel="{{ release.channel }}" data-version-qualification="{{ release.qualification_filter }}" data-version-sort-implementation="{{ release.sort_implementation }}" data-version-sort-release="{{ release.sort_release }}" data-version-sort-artifact="{{ release.sort_artifact }}" data-version-sort-qualification="{{ release.sort_qualification }}" data-version-sort-default="{{ release.sort_default }}" data-version-sort-technical="{{ release.sort_technical }}">
             <td><span class="version-identity-pill version-identity-pill--{{ 'amaru' if release.implementation == 'amaru' else 'cardano' }}" data-version-implementation-pill>{{ 'Amaru' if release.implementation == 'amaru' else 'Cardano' }}</span></td>
             <td><span class="version-identity-pill" data-version-value-pill title="{{ release.version }}" aria-label="Release version: {{ release.version }}">{{ release.version }}</span><small>{{ release.channel }} · <time datetime="{{ release.released_exact }}" title="{{ release.released_exact }}">{{ release.released_human }}</time></small></td>
-            <td><span class="version-status version-status--{{ release.artifact_eligibility }}" data-artifact-eligibility="{{ release.artifact_eligibility }}" title="{{ release.artifact_eligibility_label }}" aria-label="Artifact eligibility: {{ release.artifact_eligibility_label }}">{{ release.artifact_eligibility_display_label }}</span></td>
+            <td><span class="version-status version-status--{{ release.artifact_eligibility }}" data-artifact-eligibility="{{ release.artifact_eligibility }}" title="{{ release.artifact_eligibility_label }}" aria-label="Artifact eligibility: {{ release.artifact_eligibility_label }}">{{ release.artifact_eligibility_display_label }}</span>
+              {% if release.downloadable %}<div data-release-download data-implementation="{{ release.implementation }}" data-version="{{ release.version }}" data-digest="{{ release.artifact_digest }}">
+                <button type="button" class="dk-btn" data-download-image>Download image</button>
+                <output data-download-status aria-live="polite"></output>
+                <a class="dk-btn" data-use-release hidden>Use in a run</a>
+              </div>{% endif %}</td>
             <td>{% for scope, record in release.scope_statuses.items() %}<span class="version-status version-status--{{ record.status }}">{{ scope }} · {{ record.status }}</span>{% endfor %}</td>
             <td>{% if release.default_scopes %}{% for scope in release.default_scopes %}<span class="version-status version-status--default" data-version-default="yes">{{ scope }}</span>{% endfor %}{% else %}<span class="version-status version-status--neutral" data-version-default="no">No</span>{% endif %}</td>
             <td><button class="version-detail-toggle" type="button" data-version-detail-toggle aria-expanded="false" aria-controls="version-release-detail-{{ loop.index }}">Details</button></td>
@@ -184,4 +189,5 @@
   }
 })();
 </script>
+<script src="/static/js/release-downloads.js"></script>
 {% endblock %}

@@ -406,3 +406,7 @@ body[data-ui="basic"] .cfg-save { grid-column:1 / -1; justify-self:start; }
   body[data-ui="basic"] .definition-editor [data-editor-panel="structured"] > .definition-editor__fields,
   body[data-ui="basic"] .scenario-builder__section, body[data-ui="basic"] .profile-version-panel { padding:14px; }
 }
+
+/* Release acquisition stays alongside eligibility without implying qualification. */
+body[data-ui="basic"] [data-release-download] { display:grid; justify-items:start; gap:6px; margin-top:8px; min-width:160px; max-width:240px; white-space:normal; }
+body[data-ui="basic"] [data-download-status] { font-size:12px; line-height:1.4; }

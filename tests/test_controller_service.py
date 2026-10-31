@@ -2497,3 +2497,52 @@ def test_restart_rejects_execution_identity_or_intent_tampering(tmp_path, tamper
         assert observed["audit_receipt"] is None
     retained = json.loads(target_path.read_text())
     assert retained["state"] == "interrupted"
+
+
+def test_release_download_has_audited_async_result_and_survives_restart(tmp_path):
+    runtime = FakeRuntime()
+    gate = threading.Event()
+    calls = []
+    def download(parameters, execution_id, *, timeout, cancel_event):
+        calls.append(parameters)
+        assert gate.wait(2)
+        return {'status': 'downloaded', 'image': 'ghcr.io/pragma-org/amaru@' + DIGEST,
+                'config_image_id': 'sha256:' + 'b' * 64, 'platform': 'linux/amd64'}
+    runtime.download_image = download
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    request = _request('image.download', timeout_seconds=60, idempotency_key='download-test',
+        execution_id='download-test', implementation='amaru', version='10.11.20261029', digest=DIGEST)
+    status, accepted = _dispatch(service, request)
+    assert status == 202
+    assert _dispatch(service, request) == (status, accepted)
+    gate.set()
+    for _ in range(100):
+        _, terminal = _dispatch(service, _request('execution.status', execution_id='download-test'))
+        if terminal['state'] != 'running': break
+        time.sleep(.01)
+    assert terminal['state'] == 'applied'
+    assert len(calls) == 1
+    restarted = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, retained = _dispatch(restarted, _request('execution.status', execution_id='download-test'))
+    assert retained['state'] == 'applied'
+    assert retained['result']['status'] == 'downloaded'
+
+
+def test_release_download_failure_is_safe_and_terminal(tmp_path):
+    runtime = FakeRuntime()
+    def download(*args, **kwargs):
+        raise DockerRuntimeError('sensitive registry output', code='release_download_failed', stage='image_download')
+    runtime.download_image = download
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    status, _ = _dispatch(service, _request('image.download', timeout_seconds=60,
+        idempotency_key='download-fail', execution_id='download-fail',
+        implementation='amaru', version='10.11.20261029', digest=DIGEST))
+    assert status == 202
+    for _ in range(100):
+        _, terminal = _dispatch(service, _request('execution.status', execution_id='download-fail'))
+        if terminal['state'] != 'running': break
+        time.sleep(.01)
+    assert terminal['state'] == 'failed'
+    assert 'registry access' in terminal['failure']['message']
+    assert 'sensitive registry output' not in json.dumps(terminal)
+    assert terminal['audit_receipt']

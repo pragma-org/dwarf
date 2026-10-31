@@ -330,6 +330,14 @@ Open **Operate → Versions** at `/operate/versions`.
 Select **Fetch Latest Version** for Amaru or Cardano to request release metadata.
 An open dashboard page does not repeatedly request GitHub releases.
 Metadata discovery does not download, deploy, or qualify a node.
+For a verified public release image that supports your installation, select
+**Download image** in its release row. DWARF downloads the immutable image,
+shows download status, and verifies its local identity. Once it shows
+**Available locally**, select **Use in a run** to open `/run` with that exact
+version selected. Choose a topology and scenario, acknowledge unknown
+compatibility where required, then prepare and run. Downloading does not
+change compatibility decisions or defaults; it does not compile or instrument
+source code.
 DWARF reports GitHub rate limits as errors, not as missing versions.
 
 For a local build, import a compatible Docker image or a supported **Linux ELF** binary or archive.

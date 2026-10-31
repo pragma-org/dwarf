@@ -3143,6 +3143,29 @@ def dispatch_topology_configuration_request(
         )
 
 
+def dispatch_version_download_request(*, method, path, expected_token, body=b""):
+    clean = urlsplit(path).path
+    if clean not in {"/api/versions/download", "/api/versions/download/status"}:
+        return None
+    ctype = "application/json; charset=utf-8"
+    if method != "POST":
+        return 405, ctype, b'{"ok":false,"error":"use POST"}'
+    ok, error = check_form_token(path, body, expected=expected_token)
+    if not ok:
+        return 401, ctype, json.dumps({"ok": False, "error": error}).encode()
+    form = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+    if set(form) - {"implementation", "version", "digest", "token"} or not (form.get("digest") or [""])[0]:
+        return 409, ctype, b'{"ok":false,"error":"unexpected download fields"}'
+    from profile_manager.release_downloads import release_download
+    try:
+        payload = release_download((form.get("implementation") or [""])[0],
+            (form.get("version") or [""])[0], digest=(form.get("digest") or [""])[0],
+            start=clean.endswith("/download"))
+        return 202 if payload["state"] == "running" else 200, ctype, json.dumps(payload).encode()
+    except (OSError, RuntimeError, ValueError) as exc:
+        return 409, ctype, json.dumps({"ok": False, "error": str(exc)}).encode()
+
+
 def dispatch_version_refresh_request(*, method, path, expected_token, body=b""):
     """Start one authenticated, serialized official-release refresh."""
     if urlsplit(path).path != "/api/versions/refresh":
@@ -5416,6 +5439,11 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                     self._send_stream(status, ctype, response_body)
                 else:
                     self._send(status, ctype, response_body)
+                return
+            version_download = dispatch_version_download_request(
+                method="POST", path=self.path, body=body_bytes, expected_token=expected_token)
+            if version_download is not None:
+                self._send(*version_download)
                 return
             binary_import = dispatch_binary_import_request(
                 method="POST",

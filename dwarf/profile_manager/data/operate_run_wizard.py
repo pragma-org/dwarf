@@ -32,7 +32,7 @@ from profile_manager.run_plan import (
     digest_run_plan,
     resolve_run_plan,
 )
-from profile_manager.version_catalog import load_version_catalog
+from profile_manager import version_discovery
 from profile_manager.version_discovery import (
     load_operator_registration,
     load_operator_registrations,
@@ -346,7 +346,7 @@ def run_wizard_catalog(
         }
         for record in measurement_records
     ]
-    version_catalog = load_version_catalog()
+    version_catalog = version_discovery.load_effective_version_catalog()
     versions = []
     for release in version_catalog["releases"]:
         artifact = next(

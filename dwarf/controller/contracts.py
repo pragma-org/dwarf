@@ -25,6 +25,7 @@ class ContractError(ValueError):
 class Operation(str, Enum):
     INVENTORY_GET = "inventory.get"
     IMAGE_INSPECT = "image.inspect"
+    IMAGE_DOWNLOAD = "image.download"
     ARTIFACT_PACKAGE = "artifact.package"
     TOPOLOGY_HEALTH = "topology.health"
     TOPOLOGY_PLAN = "topology.plan"
@@ -45,6 +46,7 @@ _TOP_LEVEL = {
 }
 _PARAMETERS: dict[Operation, frozenset[str]] = {
     Operation.INVENTORY_GET: frozenset(),
+    Operation.IMAGE_DOWNLOAD: frozenset({"implementation", "version", "digest", "execution_id"}),
     Operation.IMAGE_INSPECT: frozenset(
         {"implementation", "version", "image", "declared_source_revision"}
     ),
@@ -77,6 +79,7 @@ _PARAMETERS: dict[Operation, frozenset[str]] = {
 _TIMEOUT_CEILINGS = {
     Operation.INVENTORY_GET: 10,
     Operation.IMAGE_INSPECT: 20,
+    Operation.IMAGE_DOWNLOAD: 1800,
     Operation.ARTIFACT_PACKAGE: 1800,
     # The native Amaru verifier takes two fresh semantic samples and is
     # independently bounded at 120 seconds in DockerRuntime.  Expose the same
@@ -95,6 +98,7 @@ _TIMEOUT_CEILINGS = {
     Operation.LOGS_STREAM: 30,
 }
 _MUTATIONS = {
+    Operation.IMAGE_DOWNLOAD,
     Operation.ARTIFACT_PACKAGE,
     Operation.TOPOLOGY_APPLY,
     Operation.TOPOLOGY_SAVE,
@@ -253,6 +257,14 @@ def _validate_topology(value: Any) -> dict[str, Any]:
 def _validate_parameters(operation: Operation, raw: Mapping[str, Any]) -> dict[str, Any]:
     if operation is Operation.INVENTORY_GET:
         return {}
+    if operation is Operation.IMAGE_DOWNLOAD:
+        implementation = raw.get("implementation")
+        version = _text(raw.get("version"), "version", maximum=64)
+        if implementation not in {"amaru", "cardano-node"} or not _VERSION.fullmatch(version):
+            raise ContractError("release selection is invalid")
+        return {"implementation": implementation, "version": version,
+                "digest": _digest(raw.get("digest"), "digest"),
+                "execution_id": _identifier(raw.get("execution_id"), "execution_id")}
     if operation is Operation.IMAGE_INSPECT:
         implementation = raw.get("implementation")
         if implementation not in {"amaru", "cardano-node"}:

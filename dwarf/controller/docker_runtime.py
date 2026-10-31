@@ -331,6 +331,30 @@ class DockerRuntime:
             ),
         }
 
+    def download_image(self, parameters, execution_id, *, timeout, cancel_event):
+        """Acquire only a current catalog's public, platform-compatible digest."""
+        from profile_manager.release_images import installation_platform, resolve_release_image
+        selected = resolve_release_image(parameters["implementation"], parameters["version"],
+            platform=installation_platform(), digest=parameters["digest"])
+        if cancel_event.is_set():
+            return {"status": "cancelled"}
+        image = selected["image"]
+        try:
+            inspected = self.inspect_image(image, implementation=selected["implementation"])
+        except DockerRuntimeError:
+            inspected = None
+        if inspected is None or inspected["platform"] != selected["platform"]:
+            pulled = self._run(("pull", "--platform", selected["platform"], image),
+                               timeout=timeout, execution_id=execution_id)
+            if cancel_event.is_set():
+                return {"status": "cancelled"}
+            if pulled.returncode != 0:
+                raise DockerRuntimeError("Release image download failed", code="release_download_failed", stage="image_download")
+        inspected = self.inspect_image(image, implementation=selected["implementation"])
+        if inspected["platform"] != selected["platform"]:
+            raise DockerRuntimeError("Downloaded image platform differs from installation")
+        return {"status": "downloaded", **selected, **inspected}
+
     @staticmethod
     def _read_private_regular(
         directory_fd: int, name: str, *, maximum: int
@@ -967,6 +991,26 @@ class DockerRuntime:
         approved = self._approved_image_identities()
         if approved and _immutable_image_identity(image) in approved:
             return None
+        # Acquisition is independent of qualification. Accept a newly downloaded
+        # official catalog image only after checking its complete immutable identity
+        # and installed platform. Plan resolution still enforces scoped consent.
+        from profile_manager.release_images import installation_platform, resolve_release_image
+        from profile_manager.version_discovery import load_effective_version_catalog
+        catalog = load_effective_version_catalog()
+        for release in catalog["releases"]:
+            if not any(str(artifact.get("digest") or "") and image.endswith("@" + artifact["digest"])
+                       for artifact in release.get("artifacts", [])):
+                continue
+            try:
+                selected = resolve_release_image(release["implementation"], release["version"],
+                    platform=installation_platform(), catalog=catalog)
+            except ValueError:
+                continue
+            if image == selected["image"]:
+                inspected = self.inspect_image(image, implementation=selected["implementation"])
+                if inspected["platform"] == selected["platform"]:
+                    return None
+                raise DockerRuntimeError("catalog image platform differs from installation")
         raise DockerRuntimeError("target is not an approved golden image")
 
     def _verify_qualified_local_image(

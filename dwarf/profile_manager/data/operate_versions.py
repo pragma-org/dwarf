@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from profile_manager.deployment_versions import version_catalog_revision
+from profile_manager.release_images import installation_platform, resolve_release_image
 from profile_manager.operator_version_decisions import (
     OperatorVersionDecisionLedger,
     active_decisions,
@@ -187,10 +188,17 @@ def version_catalog_view() -> dict[str, Any]:
         implementation_label = (
             "Amaru" if release["implementation"] == "amaru" else "Cardano"
         )
+        try:
+            resolve_release_image(release["implementation"], release["version"],
+                                  platform=installation_platform(), catalog=catalog)
+            downloadable = True
+        except ValueError:
+            downloadable = False
         releases.append(
             {
                 **release,
                 "release_id": f"{release['implementation']}:{release['version']}",
+                "downloadable": downloadable,
                 "released_exact": release.get("released_at"),
                 "released_human": _human_date(release.get("released_at")),
                 "artifact_reference": artifact.get("reference"),

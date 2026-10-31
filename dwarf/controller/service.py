@@ -146,6 +146,7 @@ def _bounded_failure(exc: BaseException, *, secret: str) -> dict[str, Any]:
     code = str(getattr(exc, "failure_code", "") or "")
     stage = str(getattr(exc, "failure_stage", "") or "")
     artifact_failures = {
+        ("release_download_failed", "image_download"): "Release image download failed; check registry access and retry.",
         ("staged_artifact_invalid", "artifact_copy"): "staged artifact identity changed",
         ("staged_artifact_expired", "artifact_copy"): "staged artifact expired",
         ("staged_artifact_unavailable", "artifact_copy"): "staged artifact is unavailable",
@@ -534,6 +535,7 @@ class ControllerService:
             operation
             not in {
                 Operation.ARTIFACT_PACKAGE.value,
+                Operation.IMAGE_DOWNLOAD.value,
                 Operation.TOPOLOGY_APPLY.value,
                 Operation.RUN_EXECUTE.value,
             }
@@ -562,6 +564,7 @@ class ControllerService:
         expected_plan_sha256 = (
             parameters.get("executable_sha256")
             if operation == Operation.ARTIFACT_PACKAGE.value
+            else parameters.get("digest") if operation == Operation.IMAGE_DOWNLOAD.value
             else parameters.get("plan_digest")
         )
         valid = (
@@ -578,7 +581,7 @@ class ControllerService:
         )
         if not valid:
             return False
-        if operation == Operation.ARTIFACT_PACKAGE.value:
+        if operation in {Operation.ARTIFACT_PACKAGE.value, Operation.IMAGE_DOWNLOAD.value}:
             result = record.get("result")
             return (
                 isinstance(result, dict)
@@ -586,7 +589,7 @@ class ControllerService:
                 and (
                     (
                         record.get("state") == "applied"
-                        and result.get("status") == "packaged"
+                        and result.get("status") == ("downloaded" if operation == Operation.IMAGE_DOWNLOAD.value else "packaged")
                     )
                     or (
                         record.get("state") == "cancelled"
@@ -727,8 +730,8 @@ class ControllerService:
                 "installation_id": self.installation_id,
                 "inspected_at": _utc_now(),
             }
-        if request.operation is Operation.ARTIFACT_PACKAGE:
-            return self._idempotent(request, self._package_artifact_start)
+        if request.operation in {Operation.ARTIFACT_PACKAGE, Operation.IMAGE_DOWNLOAD}:
+            return self._idempotent(request, self._artifact_start)
         if request.operation is Operation.TOPOLOGY_HEALTH:
             return 200, _thaw(
                 self.runtime.topology_health(request.parameters["topology_id"])
@@ -749,7 +752,7 @@ class ControllerService:
             return 200, _thaw(self.runtime.logs(**dict(request.parameters)))
         raise AssertionError(f"unhandled operation: {request.operation}")
 
-    def _package_artifact_start(
+    def _artifact_start(
         self, request: ControllerRequest
     ) -> tuple[int, dict[str, Any]]:
         parameters = dict(request.parameters)
@@ -764,7 +767,7 @@ class ControllerService:
             "operation": request.operation.value,
             "request_sha256": self._intent_sha256(request),
             "request_parameters": _thaw(request.parameters),
-            "plan_sha256": parameters["executable_sha256"],
+            "plan_sha256": parameters.get("executable_sha256", parameters.get("digest")),
             "topology_id": None,
             "state": "running",
             "accepted_at": accepted_at,
@@ -776,7 +779,7 @@ class ControllerService:
             self._cancellations[execution_id] = cancellation
             _atomic_json(execution_path, execution)
             worker = threading.Thread(
-                target=self._package_artifact_worker,
+                target=self._artifact_worker,
                 args=(request, execution, cancellation),
                 daemon=True,
                 name=f"dwarf-{execution_id}",
@@ -785,7 +788,7 @@ class ControllerService:
             worker.start()
         return 202, {"status": "accepted", "execution_id": execution_id}
 
-    def _package_artifact_worker(
+    def _artifact_worker(
         self,
         request: ControllerRequest,
         execution: dict[str, Any],
@@ -795,6 +798,12 @@ class ControllerService:
         execution_id = str(parameters["execution_id"])
         execution_path = self.executions_dir / f"{execution_id}.json"
         accepted_at = str(execution["accepted_at"])
+        downloading = request.operation is Operation.IMAGE_DOWNLOAD
+        artifact_digest = parameters["digest"] if downloading else parameters["executable_sha256"]
+        before = (
+            {key: parameters[key] for key in ("implementation", "version", "digest")}
+            if downloading else {key: parameters[key] for key in ("import_id", "executable_sha256")}
+        )
         lock_started = time.monotonic()
         acquired = False
         process_lock = None
@@ -810,7 +819,8 @@ class ControllerService:
                 result = {"status": "cancelled"}
             else:
                 result = _thaw(
-                    self.runtime.package_artifact(
+                    (self.runtime.download_image if downloading
+                     else self.runtime.package_artifact)(
                         parameters,
                         execution_id,
                         timeout=remaining,
@@ -818,19 +828,16 @@ class ControllerService:
                     )
                 )
             status = "cancelled" if result.get("status") == "cancelled" else "applied"
-            if status == "applied" and result.get("status") != "packaged":
-                raise RuntimeError("artifact packaging returned an invalid terminal result")
+            if status == "applied" and result.get("status") != ("downloaded" if downloading else "packaged"):
+                raise RuntimeError("artifact operation returned an invalid terminal result")
             completed_at = _utc_now()
             receipt_path = self._write_receipt(
                 request=request,
                 status=status,
                 accepted_at=accepted_at,
                 completed_at=completed_at,
-                plan_sha256=parameters["executable_sha256"],
-                before={
-                    "import_id": parameters["import_id"],
-                    "executable_sha256": parameters["executable_sha256"],
-                },
+                plan_sha256=artifact_digest,
+                before=before,
                 after=result,
             )
             _atomic_json(
@@ -851,11 +858,8 @@ class ControllerService:
                 status="failed",
                 accepted_at=accepted_at,
                 completed_at=completed_at,
-                plan_sha256=parameters["executable_sha256"],
-                before={
-                    "import_id": parameters["import_id"],
-                    "executable_sha256": parameters["executable_sha256"],
-                },
+                plan_sha256=artifact_digest,
+                before=before,
                 after={"status": "failed", "failure": failure},
                 failure=failure,
             )

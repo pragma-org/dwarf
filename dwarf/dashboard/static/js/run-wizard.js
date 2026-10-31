@@ -1022,8 +1022,28 @@ if (wizard && form) {
   syncTopologyKind();
   syncTopologyPanels();
   filterScenarios();
-  const initialAction = initialPlanAction(bootstrap, scenarioSelect?.value);
-  if (initialAction === 'render-plan') renderPlan(bootstrap.default_plan, bootstrap.default_plan_digest);
+  // Links from Versions select only catalogued releases; Prepare still requires consent.
+  const releaseParams = new URLSearchParams(window.location.search);
+  let requestedRelease = false;
+  let releaseSelectionError = null;
+  for (const [parameter, selector] of [['amaru_version', '#run-amaru-version'], ['cardano_version', '#run-cardano-version']]) {
+    const value = releaseParams.get(parameter);
+    const select = wizard.querySelector(selector);
+    const option = value && select && [...select.options].find(option => option.value === value);
+    const expectedDigest = releaseParams.get('release_digest');
+    if (value && (!option || (expectedDigest && option.dataset.artifactDigest !== expectedDigest))) {
+      releaseSelectionError = {field: 'versions', message: 'The requested release is unavailable or its image has changed. Return to Versions and select its current exact image.'};
+      continue;
+    }
+    if (value && option) {
+      select.value = value;
+      wizard.querySelector('#run-version-policy').value = 'exact';
+      requestedRelease = true;
+    }
+  }
+  const initialAction = requestedRelease ? 'resolve' : initialPlanAction(bootstrap, scenarioSelect?.value);
+  if (releaseSelectionError) renderError(releaseSelectionError, false);
+  else if (initialAction === 'render-plan') renderPlan(bootstrap.default_plan, bootstrap.default_plan_digest);
   else if (initialAction === 'render-error') renderError(bootstrap.default_error, false);
   else if (initialAction === 'resolve') resolvePlan();
 }
