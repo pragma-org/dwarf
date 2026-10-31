@@ -51,7 +51,7 @@ def test_prepared_binary_is_consumed_by_mixed_victims(monkeypatch):
     import yaml
     compose=yaml.safe_load(result['files']['environment/docker-compose.yaml'])
     assert compose['services']['amaru-target-extract']['image']==row['reference']
-    assert compose['services']['sm-amaru-victim']['environment']['AMARU_BIN']=='/target/amaru'
+    assert compose['services']['sm-amaru-victim']['environment']['AMARU_BIN']=='/target/amaru-launch'
     assert result['version_binding']['node_artifacts']['amaru']['id']==row['id']
 
 

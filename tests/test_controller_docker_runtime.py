@@ -3904,7 +3904,7 @@ def test_prepare_topology_uses_exact_operator_registered_config_image(
         service = model["services"][service_name]
         assert service["image"] == CONTROL_AMARU_IMAGE
         assert service["entrypoint"] == "amaru-relay-bootstrap"
-        assert service["environment"]["AMARU_BIN"] == "/target/amaru"
+        assert service["environment"]["AMARU_BIN"] == "/target/amaru-launch"
         assert service["depends_on"]["amaru-target-extract"] == {
             "condition": "service_completed_successfully",
             "required": True,

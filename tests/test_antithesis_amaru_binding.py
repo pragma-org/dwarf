@@ -43,7 +43,7 @@ def test_versions_reach_actual_binaries_and_preserve_support_harness(catalog, sc
         service=body['services'][name]
         assert service['image']==baseline['services'][name]['image']
         assert service['entrypoint']=='amaru-relay-bootstrap'
-        assert service['environment']['AMARU_BIN']=='/target/amaru'
+        assert service['environment']['AMARU_BIN']=='/target/amaru-launch'
         assert service['depends_on']['amaru-target-extract']['condition']=='service_completed_successfully'
         assert any(isinstance(m,dict) and m['source']=='amaru-target-bin' and m['target']=='/target' and m['read_only'] for m in service['volumes'])
         binding=next(s for s in report['services'] if s['service']==name)
@@ -185,7 +185,7 @@ def test_changed_control_contract_does_not_claim_binding(catalog,monkeypatch,dri
     assert 'amaru-target-extract' not in compose(result)['services']
 
 
-@pytest.mark.parametrize('drift', ['binary-path','source-image','dependency','volume','command','exception'])
+@pytest.mark.parametrize('drift', ['binary-path','source-image','dependency','volume','command','launcher','exception'])
 def test_changed_assembly_does_not_apply_partial_changes(catalog,monkeypatch,drift):
     from scripts import qualify_node_versions as assembly
     original=assembly.transform_compose_model
@@ -197,6 +197,9 @@ def test_changed_assembly_does_not_apply_partial_changes(catalog,monkeypatch,dri
         elif drift=='dependency':relay['depends_on'].pop('amaru-target-extract')
         elif drift=='volume':relay['volumes']=[m for m in relay['volumes'] if isinstance(m,str)]
         elif drift=='command':result['services']['amaru-target-extract']['command']=['true']
+        elif drift=='launcher':
+            service = result['services']['amaru-target-extract']
+            service['command'][0] = service['command'][0].replace('exec /target/amaru node', 'exec /bin/false node')
         return result
     monkeypatch.setattr(assembly,'transform_compose_model',changed)
     result=generate(case())

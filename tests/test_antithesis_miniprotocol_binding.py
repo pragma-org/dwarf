@@ -54,7 +54,7 @@ def test_selected_versions_reach_workload_victims_and_existing_control(catalog, 
         assert binding['role'] == 'target'
     if version != '10.11.0':
         victim = services['sm-amaru-victim']
-        assert victim['environment']['AMARU_BIN'] == '/target/amaru'
+        assert victim['environment']['AMARU_BIN'] == '/target/amaru-launch'
         assert victim['depends_on']['amaru-target-extract']['condition'] == 'service_completed_successfully'
         assert {'type':'volume','source':'amaru-target-bin','target':'/target','read_only':True} in victim['volumes']
     for name in ('sm-cardano-fuzzer','sm-amaru-fuzzer'):

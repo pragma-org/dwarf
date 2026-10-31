@@ -14,9 +14,9 @@ from profile_manager.amaru_runtime import uses_modern_amaru_runtime_interface
 
 COMPOSE = 'environment/docker-compose.yaml'
 AMARU_TARGETS = {'amaru-relay-1', 'amaru-relay-2'}
-# Reviewed atomic extraction program from the existing helper at d35c0e7.
+# Reviewed atomic binary + CLI-launcher extraction program at 53779.
 # Pin the complete program so a changed branch cannot silently skip the copy.
-_EXTRACTION_COMMAND_SHA256 = '110e61ca6f12191552aa393dcbee99cb04363407d19d3e86825dcda735389cd6'
+_EXTRACTION_COMMAND_SHA256 = 'acc3b22300ebc5bfcc234700289ce495db23a6f503200f33142be3155bc5e70c'
 
 
 def default_scope(scenario):
@@ -66,7 +66,7 @@ def _assembled_amaru(compose, reference, mode, scope, assembly):
         expected = copy.deepcopy(original)
         expected['image'] = assembly.CONTROL_AMARU_IMAGE if modern else reference
         if modern:
-            expected['environment'].update(AMARU_BIN='/target/amaru', AMARU_MIGRATE_CHAIN_DB='true')
+            expected['environment'].update(AMARU_BIN='/target/amaru-launch', AMARU_MIGRATE_CHAIN_DB='true')
             expected['volumes'].append({'type':'volume', 'source':'amaru-target-bin',
                                        'target':'/target', 'read_only':True})
             expected['depends_on'][assembly.AMARU_TARGET_EXTRACT] = {
