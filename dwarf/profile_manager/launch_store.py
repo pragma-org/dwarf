@@ -195,8 +195,28 @@ def materialized_scenario(plan: dict[str, Any]) -> bytes:
             entry.get(field) != value for field, value in declared.items()
         ):
             raise LaunchStoreError("resolved substrate binding declaration changed")
-        required = {"version", "source_revision", "image", "image_digest"}
-        if set(resolved) != required or any(not resolved[field] for field in required):
+        registry_identity = {"version", "source_revision", "image", "image_digest"}
+        local_identity = {
+            "version",
+            "source_revision",
+            "image",
+            "image_config_id",
+            "executable_digest",
+            "platform",
+            "runtime_interface",
+            "operator_registration_id",
+            "controller_installation_id",
+            "operator_overlay_revision",
+        }
+        required = frozenset(resolved)
+        if (
+            required not in {frozenset(registry_identity), frozenset(local_identity)}
+            or any(not resolved[field] for field in required)
+            or (
+                required == local_identity
+                and resolved["image"] != resolved["image_config_id"]
+            )
+        ):
             raise LaunchStoreError("resolved substrate binding identity is incomplete")
         entry.update(resolved)
     for binding in (plan.get("scenario") or {}).get(

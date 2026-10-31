@@ -38,6 +38,9 @@
     },
     "source_primitive": {
       "type": "string"
+    },
+    "result_path": {
+      "type": "string"
     }
   },
   "additionalProperties": true

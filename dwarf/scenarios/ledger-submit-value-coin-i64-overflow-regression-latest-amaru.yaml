@@ -1,0 +1,123 @@
+{
+  "spec_version": "v1",
+  "id": "ledger-submit-value-coin-i64-overflow-regression-latest-amaru",
+  "title": "Latest Amaru value-coin i64 boundary crash regression",
+  "authors": ["dwarf"],
+  "tags": [
+    "amaru",
+    "coin-overflow",
+    "crash",
+    "dos",
+    "latest-release",
+    "ledger",
+    "security",
+    "submit"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "This is an Amaru-target regression; the Cardano producer is qualified transaction-delivery infrastructure, not a differential oracle.",
+    "A passing run establishes only the selected exact artifact and private devnet contract.",
+    "The i64::MAX control and i64::MAX+1 mutant intentionally have invalidated witnesses; the regression oracle is clean rejection plus target liveness."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "resolved-plan"
+  },
+  "runtime": "devnet",
+  "measurement_profile": "none",
+  "seed": "0xC01A0F10",
+  "substrate": {
+    "compose_mode": "docker",
+    "network": "testnet_42",
+    "nodes": [
+      {
+        "id": "amaru1",
+        "impl": "amaru",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
+        "role": "submitter"
+      },
+      {
+        "id": "producer1",
+        "impl": "cardano-node",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
+        "role": "producer",
+        "supporting": true
+      }
+    ],
+    "topology": {
+      "edges": [
+        {"from": "amaru1", "to": "producer1"},
+        {"from": "producer1", "to": "amaru1"}
+      ]
+    }
+  },
+  "setup": [
+    {
+      "primitive": "runtime_install_version",
+      "output_dir": "outputs/substrate-install"
+    },
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose",
+      "healthy_timeout_seconds": 360,
+      "timeout_seconds": 600
+    }
+  ],
+  "load": [
+    {
+      "primitive": "runtime_tx_submit_differential",
+      "output_dir": "outputs/i64-max-control",
+      "tx_file": "antithesis/cardano_amaru_adversarial/fixture/ledger_submit/value-overflow-preflight.cbor",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "amaru1",
+      "expected_target_outcome": "reject",
+      "hex_replacements": [
+        {
+          "from": "1b8000000000000000",
+          "to": "1b7fffffffffffffff"
+        }
+      ]
+    },
+    {
+      "primitive": "runtime_tx_submit_differential",
+      "output_dir": "outputs/i64-overflow-mutant",
+      "tx_file": "antithesis/cardano_amaru_adversarial/fixture/ledger_submit/value-overflow-preflight.cbor",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "amaru1",
+      "expected_target_outcome": "reject"
+    },
+    {
+      "primitive": "runtime_multi_node_observation",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "node_ids": ["amaru1", "producer1"],
+      "observation_window_seconds": 8,
+      "sample_interval_seconds": 1,
+      "network_magic": 42,
+      "observation_primitives": ["tip_state", "connection_state"],
+      "output_dir": "outputs/multi-node-observation"
+    }
+  ],
+  "faults": [],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "submit_outcome_matches",
+      "expected_target_outcome": "reject",
+      "result_path": "outputs/i64-max-control/result.json"
+    },
+    {
+      "primitive": "submit_outcome_matches",
+      "expected_target_outcome": "reject",
+      "result_path": "outputs/i64-overflow-mutant/result.json"
+    },
+    {"primitive": "all_nodes_responsive"}
+  ],
+  "teardown": [
+    {
+      "primitive": "runtime_teardown_substrate",
+      "output_dir": "outputs/substrate-teardown"
+    }
+  ]
+}

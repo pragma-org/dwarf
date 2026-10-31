@@ -54,6 +54,18 @@
         "crash",
         "unknown"
       ]
+    },
+    "hex_replacements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to"],
+        "properties": {
+          "from": {"type": "string", "pattern": "^[0-9a-fA-F]+$"},
+          "to": {"type": "string", "pattern": "^[0-9a-fA-F]+$"}
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": true

@@ -681,8 +681,9 @@ def _scenario_substrate_version_profile(scenario, request) -> dict[str, Any] | N
             f"scenario {scenario.id} mixes frozen and resolved-plan substrate nodes",
             field="scenario_id",
         )
-    cardano_count = sum(node.get("impl") == "cardano-node" for node in nodes)
-    amaru_count = sum(node.get("impl") == "amaru" for node in nodes)
+    target_nodes = [node for node in nodes if node.get("supporting") is not True]
+    cardano_count = sum(node.get("impl") == "cardano-node" for node in target_nodes)
+    amaru_count = sum(node.get("impl") == "amaru" for node in target_nodes)
     network = str(substrate.get("network") or "")
     network_magic = int(network.removeprefix("testnet_")) if network.startswith("testnet_") else 42
     explicit_release_selection = any(
@@ -733,7 +734,21 @@ def _scenario_substrate_bindings(scenario, preview) -> list[dict[str, Any]]:
                 field="versions",
             )
         compact = _compact_release(release, pin_image=True)
-        required = ("version", "source_revision", "image_reference", "image_digest")
+        local_registration = compact.get("operator_registration")
+        required = ["version", "source_revision", "image_reference"]
+        if isinstance(local_registration, dict):
+            required.extend(
+                [
+                    "image_config_id",
+                    "executable_digest",
+                    "image_platform",
+                    "runtime_interface",
+                    "operator_registration_id",
+                    "controller_installation_id",
+                ]
+            )
+        else:
+            required.append("image_digest")
         missing = [field for field in required if compact.get(field) in (None, "")]
         if missing:
             raise RunPlanError(
@@ -741,6 +756,25 @@ def _scenario_substrate_bindings(scenario, preview) -> list[dict[str, Any]]:
                 + ", ".join(missing),
                 field="versions",
             )
+        resolved = {
+            "version": compact["version"],
+            "source_revision": compact["source_revision"],
+            "image": compact["image_reference"],
+        }
+        if isinstance(local_registration, dict):
+            resolved.update(
+                {
+                    "image_config_id": compact["image_config_id"],
+                    "executable_digest": compact["executable_digest"],
+                    "platform": compact["image_platform"],
+                    "runtime_interface": compact["runtime_interface"],
+                    "operator_registration_id": compact["operator_registration_id"],
+                    "controller_installation_id": compact["controller_installation_id"],
+                    "operator_overlay_revision": preview.get("operator_overlay_revision"),
+                }
+            )
+        else:
+            resolved["image_digest"] = compact["image_digest"]
         bindings.append(
             {
                 "kind": "resolved-plan",
@@ -751,12 +785,7 @@ def _scenario_substrate_bindings(scenario, preview) -> list[dict[str, Any]]:
                     "role": node["role"],
                     "identity_binding": "resolved-plan",
                 },
-                "resolved": {
-                    "version": compact["version"],
-                    "source_revision": compact["source_revision"],
-                    "image": compact["image_reference"],
-                    "image_digest": compact["image_digest"],
-                },
+                "resolved": resolved,
             }
         )
     return bindings
@@ -779,22 +808,29 @@ def _compact_release(
     execution_reference = artifact.get("reference") if artifact else None
     if pin_image:
         digest = artifact.get("digest") if artifact else None
+        local_config_id = artifact.get("config_image_id") if artifact else None
         if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
-            raise RunPlanError(
-                "resolved scenario substrate image_digest must be immutable sha256",
-                field="versions",
-            )
-        if not isinstance(execution_reference, str) or not execution_reference:
+            if (
+                not isinstance(operator_registration, dict)
+                or not isinstance(local_config_id, str)
+                or not _DIGEST.fullmatch(local_config_id)
+            ):
+                raise RunPlanError(
+                    "resolved scenario substrate requires an immutable manifest digest or local config image id",
+                    field="versions",
+                )
+            execution_reference = local_config_id
+        elif not isinstance(execution_reference, str) or not execution_reference:
             raise RunPlanError(
                 "resolved scenario substrate image reference is missing", field="versions"
             )
-        if "@" in execution_reference:
+        elif "@" in execution_reference:
             if execution_reference.rsplit("@", 1)[1] != digest:
                 raise RunPlanError(
                     "resolved scenario substrate image reference digest does not match image_digest",
                     field="versions",
                 )
-        else:
+        elif digest:
             execution_reference = f"{execution_reference}@{digest}"
     elif (
         isinstance(execution_reference, str)
@@ -823,6 +859,23 @@ def _compact_release(
         ),
         "image_public": artifact.get("public") is True if artifact else False,
         "image_config_id": artifact.get("config_image_id") if artifact else None,
+        "executable_digest": artifact.get("executable_digest") if artifact else None,
+        "image_platform": (
+            artifact.get("platforms", [None])[0]
+            if artifact and len(artifact.get("platforms") or []) == 1
+            else None
+        ),
+        "runtime_interface": artifact.get("runtime_interface") if artifact else None,
+        "operator_registration_id": (
+            operator_registration.get("registration_id")
+            if isinstance(operator_registration, dict)
+            else None
+        ),
+        "controller_installation_id": (
+            operator_registration.get("controller_installation_id")
+            if isinstance(operator_registration, dict)
+            else None
+        ),
         "operator_registration": operator_registration,
     }
 
@@ -1401,6 +1454,8 @@ def resolve_run_plan(
             preview = build_deployment_version_preview(
                 profile_data,
                 **({"catalog": catalog, "catalog_revision": catalog_revision} if catalog is not None else {}),
+                operator_registration_id=request.operator_registration_id,
+                request_controller=request_controller,
             )
             enforce_deployment_version_gate(
                 preview,

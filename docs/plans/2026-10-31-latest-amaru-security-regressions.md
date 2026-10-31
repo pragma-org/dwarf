@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Bind inline security scenarios to the selected local Amaru build, add four regression variants, deploy them, and retain real-node results.
+**Goal:** Bind inline security scenarios to the selected local Amaru build, run the first decisive Amaru-only crash regression, and retain real-node results.
 
 **Architecture:** Extend the existing scenario-substrate resolver and launch materializer with a distinct operator-local config identity shape. Preserve historical finding scenarios and create resolved-plan regression variants that reuse their fixtures and real primitives.
 
@@ -35,20 +35,19 @@
 4. Verify the failing test passes and existing resolved-pair tests remain green.
 5. Commit the resolver repair.
 
-### Task 3: Add executable latest-release regression scenarios
+### Task 3: Add the executable latest-release crash regression
 
 **Files:**
-- Create: `dwarf/scenarios/ledger-submit-value-coin-overflow-regression-amaru-cardano-node.yaml`
-- Create: `dwarf/scenarios/ledger-arithmetic-exunits-overflow-regression-amaru-cardano-node.yaml`
-- Create: `dwarf/scenarios/ledger-submit-updatedrep-unregistered-regression-amaru-cardano-node.yaml`
-- Preserve: `dwarf/scenarios/governance-zero-denominator-*.yaml`
-- Test: `tests/test_latest_amaru_security_regressions.py`
+- Create: `dwarf/scenarios/ledger-submit-value-coin-i64-overflow-regression-latest-amaru.yaml`
+- Modify: `dwarf/profile_manager/submit_primitives.py`
+- Modify: submit primitive schemas
+- Test: `tests/test_submit_security_regressions.py`
 
-1. Write semantic tests requiring resolved-plan identities, valid controls where supported, reject/parity expectations, health observation, and teardown.
-2. Run the focused test and verify it fails because the variants do not exist.
-3. Add the minimal scenario variants by reusing audited fixtures and primitives.
-4. Validate each scenario semantically and run the focused test.
-5. Commit the regression scenarios.
+1. Treat a marked Cardano producer as supporting infrastructure so the target resolution remains Amaru-only.
+2. Add auditable fixed-width fixture mutation and exact result-path assertions.
+3. Add the `i64::MAX` control followed by the `i64::MAX + 1` mutant.
+4. Require clean target rejection for both and post-mutant node responsiveness.
+5. Validate the scenario semantically and commit it.
 
 ### Task 4: Verify and deploy the DWARF change
 
@@ -60,14 +59,13 @@
 3. Build clean framework/controller images on `cardano-box` from the committed archive.
 4. Confirm no active controller execution, replace only the two DWARF app containers, and verify health/revision labels.
 
-### Task 5: Execute the four-case batch
+### Task 5: Execute the first decisive case
 
 **Files:**
 - Retained runtime evidence under the DWARF run store.
 
-1. Resolve and inspect the nonzero governance control with the exact local build.
-2. Prepare once, run the control, and inspect terminal evidence.
-3. Run the zero-denominator malformed case only if its control is valid.
-4. Run value overflow, ExUnits overflow, and unregistered-DRep regressions sequentially.
-5. After each run, verify exact target identity, assertion results, independent node health, and owned-resource cleanup before proceeding.
-6. Report canonical run URLs and distinguish framework failures, regression passes, and security findings.
+1. Resolve and inspect the value-overflow scenario with the exact local build and catalog supporting producer.
+2. Prepare and run through the normal dashboard flow.
+3. Verify the boundary control result before interpreting the mutant.
+4. Verify exact target identity, assertion results, independent node health, and owned-resource cleanup.
+5. Report the canonical run URL and distinguish framework failure, regression pass, or security finding.

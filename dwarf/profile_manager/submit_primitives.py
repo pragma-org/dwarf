@@ -257,6 +257,31 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
                 payload = bytes.fromhex(json.loads(raw.decode("utf-8"))["cborHex"])
             except Exception:  # noqa: BLE001
                 payload = raw
+        payload_mutations = []
+        for index, replacement in enumerate(self.params.get("hex_replacements") or []):
+            if not isinstance(replacement, dict) or set(replacement) != {"from", "to"}:
+                raise ValueError(
+                    f"hex_replacements[{index}] must contain exactly from and to"
+                )
+            try:
+                before = bytes.fromhex(str(replacement["from"]))
+                after = bytes.fromhex(str(replacement["to"]))
+            except ValueError as exc:
+                raise ValueError(
+                    f"hex_replacements[{index}] must use hexadecimal bytes"
+                ) from exc
+            if not before or len(before) != len(after):
+                raise ValueError(
+                    f"hex_replacements[{index}] must be non-empty and fixed-width"
+                )
+            if payload.count(before) != 1:
+                raise ValueError(
+                    f"hex_replacements[{index}].from must occur exactly once"
+                )
+            payload = payload.replace(before, after, 1)
+            payload_mutations.append(
+                {"from": before.hex(), "to": after.hex()}
+            )
 
         nodes = {}
         rmp = self.params.get("runtime_metadata_path")
@@ -280,6 +305,8 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
 
         target_url, ref_url = url_for("target"), url_for("reference")
         result = {"primitive": self.primitive_name, "tx_file": str(tx_path),
+                  "payload_sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+                  "payload_mutations": payload_mutations,
                   "target_node": self.params.get("target_node"), "reference_node": self.params.get("reference_node"),
                   "target": {"url": target_url, **(_submit(target_url, payload) if target_url else {"outcome": "unknown", "note": "no target submit-api resolved"})},
                   "reference": {"url": ref_url, **(_submit(ref_url, payload) if ref_url else {"outcome": "unknown", "note": "no reference submit-api resolved"})}}
@@ -647,23 +674,49 @@ class SubmitOutcomeMatches(AssertionPrimitive):
     def evaluate(self, handle):
         rd = _run_dir(handle)
         exp_t = str(self.params.get("expected_target_outcome") or "accept")
-        exp_r = str(self.params.get("expected_reference_outcome") or "reject")
+        has_reference_expectation = "expected_reference_outcome" in self.params
+        exp_r = (
+            str(self.params["expected_reference_outcome"])
+            if has_reference_expectation
+            else None
+        )
         observed = None
-        for p in rd.rglob("runtime_tx_submit_differential/result.json"):
+        result_path = self.params.get("result_path")
+        paths = (
+            [rd / str(result_path)]
+            if result_path
+            else list(rd.rglob("runtime_tx_submit_differential/result.json"))
+        )
+        for p in paths:
             try:
                 observed = json.loads(p.read_text())
             except Exception:  # noqa: BLE001
                 pass
         obs_t = (observed or {}).get("target", {}).get("outcome")
         obs_r = (observed or {}).get("reference", {}).get("outcome")
-        ok = observed is not None and obs_t == exp_t and obs_r == exp_r
+        ok = (
+            observed is not None
+            and obs_t == exp_t
+            and (not has_reference_expectation or obs_r == exp_r)
+        )
+        expected = {"target": exp_t}
+        observed_values = {"target": obs_t}
+        if has_reference_expectation:
+            expected["reference"] = exp_r
+            observed_values["reference"] = obs_r
         return {
             "primitive": "submit_outcome_matches",
             "params": dict(self.params),
-            "evaluated_value": {"expected": {"target": exp_t, "reference": exp_r},
-                                "observed": {"target": obs_t, "reference": obs_r}},
+            "evaluated_value": {
+                "expected": expected,
+                "observed": observed_values,
+            },
             "result": "pass" if ok else "fail",
-            "note": None if ok else f"expected target={exp_t}/reference={exp_r}, observed target={obs_t}/reference={obs_r}",
+            "note": (
+                None
+                if ok
+                else f"expected {expected}, observed {observed_values}"
+            ),
         }
 
 

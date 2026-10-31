@@ -20,17 +20,17 @@ frozen target identity.
 
 ## Scope
 
-The first executable batch contains four cases whose primitives perform real
-node interactions in the public installation:
+The first executable case is the value-coin `i64` boundary crash regression.
+It uses the operator-selected Amaru as the sole security target and a catalog
+Cardano node only as the honest producer required to create the private
+devnet. The `i64::MAX` boundary control runs before the byte-identical
+`i64::MAX + 1` mutant; both must reject and the target must remain responsive.
 
-- value accumulation overflow: target and reference must reject; both remain
-  responsive;
-- zero-denominator governance admission: run the matched nonzero control first,
-  then the malformed case with conclusive per-node outcomes;
-- ExUnits redeemer-sum overflow: the selected Amaru must preserve validation
-  parity with cardano-node;
-- unregistered DRep update: target and reference must reject; both remain
-  responsive.
+The governance, ExUnits, and unregistered-DRep candidates are not promoted into
+this first live batch. Governance and ExUnits require a qualified exact mixed
+pair. The retained unregistered-DRep fixture lacks an independent fresh-funded
+control on the generated substrate, so a solo run would be masked or
+inconclusive.
 
 Collateral-witness and invalid-donation block-apply regressions remain out of
 this batch because the public block forge/serve primitives are explicit stubs or
@@ -47,24 +47,28 @@ materializer accepts exactly one of those two identity shapes and fails closed
 on missing or mixed fields.
 
 The run-plan resolver must pass `operator_registration_id` into inline
-substrate version resolution. The selected Amaru registration replaces only the
-Amaru member; cardano-node remains the catalog-resolved reference. The retained
+substrate version resolution. Inline nodes marked `supporting` do not widen the
+target resolution scope, so the selected Amaru registration is permitted by the
+existing Amaru-only gate; cardano-node remains catalog-resolved production
+infrastructure. The retained
 plan and materialized scenario must both name source revision
 `23031e0ed4423b9cb899da030d515cb69d203749` and config image ID
 `sha256:a3d96666253abb713f53a1c1f7c0b5cb8b75a406036b7fe9ce116f26be7a71f1`.
 
 ## Stop conditions
 
-Stop a run and preserve evidence if the selected identity changes, a normal
-control fails, either node becomes unresponsive, the malformed transaction is
-accepted unexpectedly, or DWARF cannot classify a submission outcome. A failed
+Stop a run and preserve evidence if the selected identity changes, the boundary
+control does not cleanly reject, either node becomes unresponsive, the malformed
+transaction is accepted or crashes the target, or DWARF cannot classify a
+submission outcome. A failed
 security assertion is a retained result, not a framework retry trigger.
 
 ## Verification
 
-Focused tests must first reproduce the current bug: selecting a local build for
-an inline resolved-plan scenario still yields the old catalog Amaru. After the
-repair, tests verify registry and local-config materialization separately and
-semantic validation for all new scenarios. Deployment verification then checks
+Focused tests first reproduce the current bug: inline scenarios did not forward
+the selected local registration and launch freezing required a registry
+manifest digest. After the repair, tests verify registry and local-config
+materialization separately, target/supporting scope, fixed-width fixture
+mutation, exact-result assertions, and scenario semantic validation. Deployment verification then checks
 the rendered plan before Prepare, runs one control/case at a time, and inspects
 the retained manifest, assertions, exact identities, node health, and cleanup.

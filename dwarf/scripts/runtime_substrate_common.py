@@ -28,6 +28,7 @@ PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,80}$")
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 SHA64_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 INSTALLATION_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+OPERATOR_REGISTRATION_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 TRANSFER_SOURCE_INSTALLATION_ID_PATTERN = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
 )
@@ -225,6 +226,68 @@ def normalize_substrate(substrate: dict) -> dict:
                 f"substrate.nodes[{index}].target_mode must be stock or patched"
             )
         measurement_identity: dict[str, str] = {"target_mode": target_mode}
+        local_identity_fields = (
+            "image_config_id",
+            "executable_digest",
+            "platform",
+            "runtime_interface",
+            "operator_registration_id",
+            "controller_installation_id",
+            "operator_overlay_revision",
+        )
+        local_identity_supplied = any(
+            node.get(field) is not None for field in local_identity_fields
+        )
+        if local_identity_supplied:
+            missing = [field for field in local_identity_fields if not node.get(field)]
+            if missing:
+                raise ValueError(
+                    f"substrate.nodes[{index}] local artifact identity is incomplete: "
+                    + ", ".join(missing)
+                )
+            image_config_id = str(node["image_config_id"])
+            executable_digest = str(node["executable_digest"])
+            if not SHA256_PATTERN.fullmatch(image_config_id):
+                raise ValueError(
+                    f"substrate.nodes[{index}].image_config_id must be an immutable sha256"
+                )
+            if image != image_config_id:
+                raise ValueError(
+                    f"substrate.nodes[{index}].image must equal image_config_id for a local artifact"
+                )
+            if not SHA256_PATTERN.fullmatch(executable_digest):
+                raise ValueError(
+                    f"substrate.nodes[{index}].executable_digest must be an immutable sha256"
+                )
+            platform = str(node["platform"])
+            if platform not in {"linux/amd64", "linux/arm64"}:
+                raise ValueError(
+                    f"substrate.nodes[{index}].platform must be linux/amd64 or linux/arm64"
+                )
+            if node["runtime_interface"] != "extracted-binary":
+                raise ValueError(
+                    f"substrate.nodes[{index}].runtime_interface must be extracted-binary"
+                )
+            if not OPERATOR_REGISTRATION_ID_PATTERN.fullmatch(
+                str(node["operator_registration_id"])
+            ):
+                raise ValueError(
+                    f"substrate.nodes[{index}].operator_registration_id is invalid"
+                )
+            if not INSTALLATION_ID_PATTERN.fullmatch(
+                str(node["controller_installation_id"])
+            ):
+                raise ValueError(
+                    f"substrate.nodes[{index}].controller_installation_id is invalid"
+                )
+            overlay_revision = str(node["operator_overlay_revision"])
+            if not SHA64_PATTERN.fullmatch(overlay_revision):
+                raise ValueError(
+                    f"substrate.nodes[{index}].operator_overlay_revision must be an exact sha256"
+                )
+            measurement_identity.update(
+                {field: str(node[field]) for field in local_identity_fields}
+            )
         if target_mode == "patched":
             patch_set = str(node.get("patch_set_sha256") or "")
             if not SHA64_PATTERN.fullmatch(patch_set):

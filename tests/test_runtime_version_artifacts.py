@@ -58,6 +58,69 @@ def test_normalize_substrate_preserves_exact_version_provenance():
     assert normalized["nodes"][0]["source_revision"] == "d" * 40
 
 
+def test_normalize_substrate_preserves_local_compiled_artifact_identity():
+    config_id = "sha256:" + "9" * 64
+    executable_digest = "sha256:" + "8" * 64
+    substrate = _substrate(image=config_id)
+    substrate["nodes"][0].update(
+        {
+            "image_config_id": config_id,
+            "executable_digest": executable_digest,
+            "platform": "linux/amd64",
+            "runtime_interface": "extracted-binary",
+            "operator_registration_id": "registration-release-build-ece2067b72e048208d3dceedb8bc7b48-stock",
+            "controller_installation_id": "install-selected",
+            "operator_overlay_revision": "7" * 64,
+        }
+    )
+
+    normalized = normalize_substrate(substrate)
+
+    assert {
+        field: normalized["nodes"][0][field]
+        for field in (
+            "image",
+            "image_config_id",
+            "executable_digest",
+            "platform",
+            "runtime_interface",
+            "operator_registration_id",
+            "controller_installation_id",
+            "operator_overlay_revision",
+        )
+    } == {
+        field: substrate["nodes"][0][field]
+        for field in (
+            "image",
+            "image_config_id",
+            "executable_digest",
+            "platform",
+            "runtime_interface",
+            "operator_registration_id",
+            "controller_installation_id",
+            "operator_overlay_revision",
+        )
+    }
+
+
+def test_normalize_substrate_rejects_mismatched_local_config_identity():
+    substrate = _substrate(image="sha256:" + "9" * 64)
+    substrate["nodes"][0].update(
+        {
+            "image_config_id": "sha256:" + "a" * 64,
+            "executable_digest": "sha256:" + "8" * 64,
+            "platform": "linux/amd64",
+            "runtime_interface": "extracted-binary",
+            "operator_registration_id": "registration-release-build-selected-stock",
+            "controller_installation_id": "install-selected",
+            "operator_overlay_revision": "7" * 64,
+        }
+    )
+
+    with pytest.raises(ValueError, match="image must equal image_config_id"):
+        normalize_substrate(substrate)
+
+
 def test_normalize_substrate_preserves_validated_controller_ownership():
     substrate = {
         **_substrate(),
