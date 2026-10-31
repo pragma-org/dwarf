@@ -1386,3 +1386,27 @@ def test_historical_runtime_estimate_does_not_invent_a_value(tmp_path):
         "sample_count": 0,
         "basis": "no-matching-retained-runs",
     }
+
+
+@pytest.mark.parametrize('observation,expected', [('missing','requires-build'), ('changed','requires-build'), ('present','ready')])
+def test_instrumented_local_config_requires_actual_inspection_not_manifest_digest(observation, expected):
+    plan = _operator_plan(manifest=False)
+    record = plan['versions']['resolved']['amaru']
+    config_id = record['image_config_id']
+    plan['measurements']['target_identity'] = {
+        'implementation': 'amaru', 'mode': 'patched',
+        'identity_kind': 'operator-local-config',
+        'image_reference': record['image_reference'],
+        'image_digest': config_id, 'image_config_id': config_id,
+        'source_build': {'variant': 'instrumented'},
+    }
+    context = {'host_os':'linux', 'host_arch':'amd64',
+               'available_image_digests':[config_id], 'inspected_images':{}}
+    if observation != 'missing':
+        context['inspected_images'][record['image_reference']] = {
+            'config_image_id': config_id if observation == 'present' else 'sha256:'+'c'*64,
+            'platform':'linux/amd64'}
+    result = classify_run_availability(plan, capability_context=context)
+    assert result['state'] == expected
+    assert result['required_images'][0]['digest'] is None
+    assert result['required_images'][0]['config_image_id'] == config_id

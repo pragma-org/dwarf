@@ -895,7 +895,12 @@ def classify_run_availability(
             records[str(implementation)] = dict(record)
     identity = (plan.get("measurements") or {}).get("target_identity") or {}
     locally_qualified_digest = None
-    if identity.get("implementation") and identity.get("image_digest"):
+    # Local measurement identities use image_digest for the executable's Docker
+    # config identity. Keep the physical registration's manifest/config fields
+    # separate, and require fresh inspection instead of the qualified-target
+    # shortcut used by published patched targets.
+    if (identity.get("implementation") and identity.get("image_digest")
+            and identity.get("identity_kind") != "operator-local-config"):
         implementation = str(identity["implementation"])
         if identity.get("mode") == "patched" and identity.get("image_reference"):
             # A patched identity exists only after the strict local registry
