@@ -50,6 +50,8 @@ class FakeDockerRuntime(FakeRuntime):
         arguments = tuple(arguments)
         self.commands.append(arguments)
         self.command_kwargs.append(dict(_kwargs))
+        if arguments[0] == "run" and "--entrypoint" in arguments:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
         if arguments[0] == "run":
             mount = arguments[arguments.index("--mount") + 1]
             workspace = Path(mount.split("src=", 1)[1].split(",dst=", 1)[0])
@@ -108,6 +110,28 @@ class FakeDockerRuntime(FakeRuntime):
             self.labels.pop(arguments[-1], None)
             return SimpleNamespace(returncode=0, stdout=arguments[-1], stderr="")
         raise AssertionError(arguments)
+
+
+class OwnershipBoundaryRuntime(FakeDockerRuntime):
+    def __init__(self, root: Path):
+        super().__init__(root)
+        self.ownership_restored = False
+
+    def _run(self, arguments, **kwargs):
+        arguments = tuple(arguments)
+        if arguments[0] == "run" and "--entrypoint" in arguments:
+            self.commands.append(arguments)
+            self.command_kwargs.append(dict(kwargs))
+            self.ownership_restored = True
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        result = super()._run(arguments, **kwargs)
+        if arguments[0] == "run":
+            mount = arguments[arguments.index("--mount") + 1]
+            workspace = Path(mount.split("src=", 1)[1].split(",dst=", 1)[0])
+            disposable = workspace / "source" / "target"
+            disposable.mkdir(parents=True)
+            (disposable / "builder-owned").write_text("root-or-nobody-owned\n")
+        return result
 
 
 def _requirement(version: str = "10.11.20260925") -> dict:
@@ -275,6 +299,96 @@ def test_published_cache_contains_evidence_only(tmp_path):
     ]
 
 
+def test_default_builder_restores_builder_owned_workspace_before_cleanup(
+    tmp_path, monkeypatch
+):
+    runtime = OwnershipBoundaryRuntime(tmp_path)
+    requirement = _requirement()
+    original_rmtree = library_builds.shutil.rmtree
+
+    def require_ownership_restore(path, *args, **kwargs):
+        selected = Path(path)
+        if (
+            selected.name.startswith("library-ownership-boundary-")
+            and (selected / "source" / "target" / "builder-owned").exists()
+            and not runtime.ownership_restored
+        ):
+            raise PermissionError("builder-owned workspace cannot be removed")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(library_builds.shutil, "rmtree", require_ownership_restore)
+
+    prepared = prepare_library_targets(
+        runtime,
+        [requirement],
+        execution_id="library-ownership-boundary",
+        timeout=30,
+        cancel_event=threading.Event(),
+    )[0]
+
+    cleanup = next(
+        command
+        for command in runtime.commands
+        if command[0] == "run" and "--entrypoint" in command
+    )
+    assert cleanup[cleanup.index("--entrypoint") + 1] == "chown"
+    assert "--no-dereference" in cleanup
+    assert cleanup[cleanup.index("--name") + 1].endswith("-ownership")
+    capabilities = [
+        cleanup[index + 1]
+        for index, value in enumerate(cleanup)
+        if value == "--cap-add"
+    ]
+    assert capabilities == ["CHOWN", "DAC_OVERRIDE"]
+    assert cleanup[cleanup.index("--network") + 1] == "none"
+    assert runtime.ownership_restored is True
+    assert prepared["cache_status"] == "built"
+    assert not any((runtime.state_dir / "library-targets" / "staging").iterdir())
+
+
+def test_cleanup_failure_keeps_cache_unpublished_and_retains_complete_build_log(
+    tmp_path, monkeypatch
+):
+    runtime = FakeRuntime(tmp_path)
+    requirement = _requirement()
+    original_rmtree = library_builds.shutil.rmtree
+    cleanup_failed = False
+
+    def fail_after_log_would_be_lost(path, *args, **kwargs):
+        nonlocal cleanup_failed
+        selected = Path(path)
+        if (
+            not cleanup_failed
+            and selected.name.startswith("library-cleanup-evidence-")
+        ):
+            cleanup_failed = True
+            (selected / "build.log").unlink()
+            raise PermissionError("disposable workspace cleanup refused")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(library_builds.shutil, "rmtree", fail_after_log_would_be_lost)
+
+    with pytest.raises(
+        LibraryTargetBuildError, match="disposable workspace cleanup refused"
+    ):
+        prepare_library_targets(
+            runtime,
+            [requirement],
+            execution_id="library-cleanup-evidence",
+            timeout=30,
+            cancel_event=threading.Event(),
+            builder=_builder([]),
+        )
+
+    cache = runtime.state_dir / "library-targets" / "cache"
+    assert list(cache.iterdir()) == []
+    retained_logs = list(
+        (runtime.state_dir / "library-targets" / "failures").rglob("build.log")
+    )
+    assert len(retained_logs) == 1
+    assert retained_logs[0].read_text() == "compiled exact source\n"
+
+
 def test_default_builder_runs_in_pinned_execution_host_container(tmp_path):
     runtime = FakeDockerRuntime(tmp_path)
     requirement = _requirement()
@@ -367,6 +481,8 @@ class PartialLogDockerRuntime(FakeDockerRuntime):
     def _run(self, arguments, **kwargs):
         arguments = tuple(arguments)
         if arguments[0] != "run":
+            return super()._run(arguments, **kwargs)
+        if "--entrypoint" in arguments:
             return super()._run(arguments, **kwargs)
         self.commands.append(arguments)
         self.command_kwargs.append(dict(kwargs))

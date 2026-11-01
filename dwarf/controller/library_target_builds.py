@@ -359,6 +359,61 @@ def _cleanup_builder_container(runtime, requirement: dict[str, Any], name: str) 
         raise LibraryTargetBuildError("library target builder cleanup failed")
 
 
+def _restore_builder_workspace_ownership(
+    runtime,
+    requirement: dict[str, Any],
+    host_workspace: Path,
+) -> None:
+    name = _container_name(runtime, requirement) + "-ownership"
+    arguments = [
+        "run",
+        "--rm",
+        "--name",
+        name,
+        "--platform",
+        requirement["platform"],
+        "--network",
+        "none",
+        "--cpus",
+        "0.25",
+        "--memory",
+        "128m",
+        "--pids-limit",
+        "32",
+        "--security-opt",
+        "no-new-privileges",
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "CHOWN",
+        "--cap-add",
+        "DAC_OVERRIDE",
+    ]
+    for key, value in _builder_labels(runtime, requirement).items():
+        arguments += ["--label", f"{key}={value}"]
+    arguments += [
+        "--mount",
+        f"type=bind,src={host_workspace},dst=/work",
+        "--entrypoint",
+        "chown",
+        requirement["builder_image"],
+        "-R",
+        "--no-dereference",
+        f"{os.getuid()}:{os.getgid()}",
+        "/work",
+    ]
+    try:
+        restored = runtime._run(
+            tuple(arguments), timeout=120, output_limit=_MAX_RECEIPT
+        )
+    finally:
+        _cleanup_builder_container(runtime, requirement, name)
+    if restored.returncode:
+        raise LibraryTargetBuildError(
+            "library target workspace ownership cleanup failed"
+        )
+
+
 def _default_builder(
     requirement: dict[str, Any],
     workspace: Path,
@@ -446,8 +501,15 @@ def _default_builder(
                 "see the retained build log"
             )
     finally:
-        workspace.chmod(0o700)
-        _cleanup_builder_container(runtime, requirement, name)
+        try:
+            _cleanup_builder_container(runtime, requirement, name)
+        finally:
+            try:
+                _restore_builder_workspace_ownership(
+                    runtime, requirement, host_workspace
+                )
+            finally:
+                workspace.chmod(0o700)
     built = workspace / "executable"
     result_record = _bounded_result(workspace / "result.json")
     upstream_lock = workspace / "upstream-Cargo.lock"
@@ -568,6 +630,7 @@ def _prepare_one(
         stage = root / "staging" / f"{execution_id}-{key[:16]}-{uuid.uuid4().hex}"
         stage.mkdir(mode=0o700)
         log_path = stage / "build.log"
+        failure_log_path = log_path
         publish = None
         try:
             metadata = builder(
@@ -665,6 +728,7 @@ def _prepare_one(
             publish.mkdir(mode=0o700)
             shutil.copyfile(binary, publish / "executable")
             shutil.copyfile(log_path, publish / "build.log")
+            failure_log_path = publish / "build.log"
             shutil.copyfile(upstream_lock, publish / "upstream-Cargo.lock")
             shutil.copyfile(effective_lock, publish / "effective-Cargo.lock")
             (publish / "executable").chmod(0o500)
@@ -676,17 +740,27 @@ def _prepare_one(
                 raise LibraryTargetBuildError(
                     "library target preparation was cancelled"
                 )
+            shutil.rmtree(stage)
             os.replace(publish, destination)
             publish = None
+            failure_log_path = destination / "build.log"
             destination.chmod(0o500)
-            shutil.rmtree(stage)
         except BaseException as exc:
             try:
-                _retain_failure(root, execution_id, requirement, log_path, exc)
+                _retain_failure(
+                    root,
+                    execution_id,
+                    requirement,
+                    failure_log_path,
+                    exc,
+                )
             except (OSError, ValueError):
                 pass
             if publish is not None:
                 shutil.rmtree(publish, ignore_errors=True)
+            elif destination.exists() and failure_log_path.parent == destination:
+                destination.chmod(0o700)
+                shutil.rmtree(destination, ignore_errors=True)
             shutil.rmtree(stage, ignore_errors=True)
             if isinstance(exc, LibraryTargetBuildError):
                 raise
