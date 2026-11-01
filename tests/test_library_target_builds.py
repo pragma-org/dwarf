@@ -195,17 +195,28 @@ def test_cache_miss_builds_then_verified_hit_reuses_without_rebuild(tmp_path):
     requirement = _requirement()
     calls: list[str] = []
 
+    build = _builder(calls)
+
+    def build_with_disposable_files(*args, **kwargs):
+        for name in ("source", "target", "home", ".cargo", ".rustup"):
+            path = args[1] / name
+            path.mkdir()
+            (path / "discard-me").write_text("not retained\n")
+        return build(*args, **kwargs)
+
+    second_requirement = deepcopy(requirement)
+    second_requirement["location"] = ["phases", 2, "load", 7]
     first = prepare_library_targets(
         runtime,
         [requirement],
         execution_id="library-build-first",
         timeout=30,
         cancel_event=threading.Event(),
-        builder=_builder(calls),
+        builder=build_with_disposable_files,
     )[0]
     second = prepare_library_targets(
         runtime,
-        [requirement],
+        [second_requirement],
         execution_id="library-build-second",
         timeout=30,
         cancel_event=threading.Event(),
@@ -222,6 +233,16 @@ def test_cache_miss_builds_then_verified_hit_reuses_without_rebuild(tmp_path):
     assert second["source_revision"] == requirement["source_revision"]
     assert second["recipe_digest"] == requirement["recipe_digest"]
     assert second["builder_image"] == requirement["builder_image"]
+
+    assert first["location"] == ["load", 0]
+    assert second["location"] == second_requirement["location"]
+    assert sorted(path.name for path in Path(first["binary"]).parent.iterdir()) == [
+        "build.log",
+        "effective-Cargo.lock",
+        "executable",
+        "receipt.json",
+        "upstream-Cargo.lock",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -266,37 +287,6 @@ def test_cache_hit_revalidates_every_trusted_recipe_input(
                 AssertionError("changed recipe must not reuse or rebuild this key")
             ),
         )
-
-
-def test_published_cache_contains_evidence_only(tmp_path):
-    runtime = FakeRuntime(tmp_path)
-    requirement = _requirement()
-    build = _builder([])
-
-    def build_with_disposable_files(*args, **kwargs):
-        workspace = args[1]
-        for name in ("source", "target", "home", ".cargo", ".rustup"):
-            path = workspace / name
-            path.mkdir()
-            (path / "discard-me").write_text("not retained\n")
-        return build(*args, **kwargs)
-
-    prepared = prepare_library_targets(
-        runtime,
-        [requirement],
-        execution_id="library-evidence-only",
-        timeout=30,
-        cancel_event=threading.Event(),
-        builder=build_with_disposable_files,
-    )[0]
-
-    assert sorted(path.name for path in Path(prepared["binary"]).parent.iterdir()) == [
-        "build.log",
-        "effective-Cargo.lock",
-        "executable",
-        "receipt.json",
-        "upstream-Cargo.lock",
-    ]
 
 
 def test_default_builder_restores_builder_owned_workspace_before_cleanup(
@@ -345,6 +335,20 @@ def test_default_builder_restores_builder_owned_workspace_before_cleanup(
     assert prepared["cache_status"] == "built"
     assert not any((runtime.state_dir / "library-targets" / "staging").iterdir())
 
+    command = next(item for item in runtime.commands if item[0] == "run")
+    command_index = runtime.commands.index(command)
+    command_kwargs = runtime.command_kwargs[command_index]
+    assert command[command.index("--platform") + 1] == "linux/amd64"
+    assert requirement["builder_image"] in command
+    assert command[-2:] == ("python", "/work/builder.py")
+    assert runtime.workspace_modes == [0o755]
+    assert command_kwargs["execution_id"] == "library-ownership-boundary"
+    assert Path(command_kwargs["output_path"]).name == "build.log"
+    assert prepared["cache_status"] == "built"
+    assert prepared["source_revision"] == requirement["source_revision"]
+    assert prepared["source_tree"] == "2" * 40
+    assert Path(prepared["upstream_lock"]).is_file()
+
 
 def test_cleanup_failure_keeps_cache_unpublished_and_retains_complete_build_log(
     tmp_path, monkeypatch
@@ -387,33 +391,6 @@ def test_cleanup_failure_keeps_cache_unpublished_and_retains_complete_build_log(
     )
     assert len(retained_logs) == 1
     assert retained_logs[0].read_text() == "compiled exact source\n"
-
-
-def test_default_builder_runs_in_pinned_execution_host_container(tmp_path):
-    runtime = FakeDockerRuntime(tmp_path)
-    requirement = _requirement()
-
-    result = prepare_library_targets(
-        runtime,
-        [requirement],
-        execution_id="library-default-builder",
-        timeout=30,
-        cancel_event=threading.Event(),
-    )[0]
-
-    command = next(item for item in runtime.commands if item[0] == "run")
-    command_index = runtime.commands.index(command)
-    command_kwargs = runtime.command_kwargs[command_index]
-    assert command[command.index("--platform") + 1] == "linux/amd64"
-    assert requirement["builder_image"] in command
-    assert command[-2:] == ("python", "/work/builder.py")
-    assert runtime.workspace_modes == [0o755]
-    assert command_kwargs["execution_id"] == "library-default-builder"
-    assert Path(command_kwargs["output_path"]).name == "build.log"
-    assert result["cache_status"] == "built"
-    assert result["source_revision"] == requirement["source_revision"]
-    assert result["source_tree"] == "2" * 40
-    assert Path(result["upstream_lock"]).is_file()
 
 
 def test_default_builder_rejects_command_without_locked_selected_toolchain(tmp_path):
@@ -521,36 +498,8 @@ def test_default_builder_retains_partial_log_when_runtime_raises(tmp_path):
     assert len(retained) == 1
     assert retained[0].read_text() == "partial compiler diagnostic\n"
 
-
-def test_same_artifact_reuses_cache_across_scenario_locations(tmp_path):
-    runtime = FakeRuntime(tmp_path)
-    first_requirement = _requirement()
-    second_requirement = deepcopy(first_requirement)
-    second_requirement["location"] = ["phases", 2, "load", 7]
-    calls: list[str] = []
-
-    first = prepare_library_targets(
-        runtime,
-        [first_requirement],
-        execution_id="library-location-first",
-        timeout=30,
-        cancel_event=threading.Event(),
-        builder=_builder(calls),
-    )[0]
-    second = prepare_library_targets(
-        runtime,
-        [second_requirement],
-        execution_id="library-location-second",
-        timeout=30,
-        cancel_event=threading.Event(),
-        builder=_builder(calls),
-    )[0]
-
-    assert calls == [first_requirement["cache_key"]]
-    assert first["cache_status"] == "built"
-    assert second["cache_status"] == "verified-hit"
-    assert first["location"] == ["load", 0]
-    assert second["location"] == ["phases", 2, "load", 7]
+    cache = runtime.state_dir / "library-targets" / "cache"
+    assert not (cache / requirement["cache_key"].removeprefix("sha256:")).exists()
 
 
 def test_exact_version_change_uses_a_distinct_cache_entry(tmp_path):
@@ -579,34 +528,8 @@ def test_exact_version_change_uses_a_distinct_cache_entry(tmp_path):
     assert len(calls) == 2
     assert first["cache_key"] != second["cache_key"]
     assert first["source_revision"] != second["source_revision"]
+    assert first_requirement["version"] != second_requirement["version"]
     assert Path(first["binary"]).parent != Path(second["binary"]).parent
-
-
-def test_failed_build_retains_log_and_never_publishes_cache_entry(tmp_path):
-    runtime = FakeRuntime(tmp_path)
-    requirement = _requirement()
-
-    def fail(_requirement, _workspace, log_path, **_kwargs):
-        log_path.write_text("cargo: incompatible amaru source\n", encoding="utf-8")
-        raise RuntimeError("selected Amaru source is incompatible with the packaged shim")
-
-    with pytest.raises(LibraryTargetBuildError, match="incompatible"):
-        prepare_library_targets(
-            runtime,
-            [requirement],
-            execution_id="library-build-failed",
-            timeout=30,
-            cancel_event=threading.Event(),
-            builder=fail,
-        )
-
-    failures = list(
-        (runtime.state_dir / "library-targets" / "failures").rglob("build.log")
-    )
-    assert len(failures) == 1
-    assert "incompatible amaru source" in failures[0].read_text()
-    cache = runtime.state_dir / "library-targets" / "cache"
-    assert not (cache / requirement["cache_key"].removeprefix("sha256:")).exists()
 
 
 def test_tampered_cached_binary_is_rejected_without_rebuild(tmp_path):

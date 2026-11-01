@@ -57,6 +57,26 @@ def test_direct_cli_library_run_reports_exact_preparation_prerequisite(
     assert "Select an exact Amaru version in Operate Run" in error
     assert "use Prepare and Run there" in error
 
+    document = json.loads(
+        (ROOT / "dwarf/scenarios/amaru-cbor-tx-body-fuzz.yaml").read_text()
+    )
+    document["id"] = "phased-unqualified-amaru-library"
+    document["phases"] = [
+        {
+            "id": "fuzz-phase",
+            "title": "Fuzz phase",
+            "load": document.pop("load"),
+            "probes": document.pop("probes"),
+            "assertions": document.pop("assertions"),
+        }
+    ]
+    scenario = tmp_path / "phased-unqualified-amaru-library.yaml"
+    scenario.write_text(json.dumps(document), encoding="utf-8")
+
+    args.path = str(scenario)
+    assert cli.cmd_scenario(args) == 1
+    assert "use Prepare and Run there" in capsys.readouterr().err
+
 
 def test_direct_cli_preserves_qualified_custom_library_manifest(tmp_path, monkeypatch):
     monkeypatch.delenv("ADA2_DWARF_LAUNCH_ID", raising=False)
@@ -88,30 +108,6 @@ def test_direct_cli_preserves_qualified_custom_library_manifest(tmp_path, monkey
     run_service._enforce_direct_library_prerequisites(
         run_service.scenario_module.load_scenario(scenario)
     )
-
-
-def test_direct_cli_guard_finds_library_target_inside_phases(tmp_path, monkeypatch):
-    monkeypatch.delenv("ADA2_DWARF_LAUNCH_ID", raising=False)
-    document = json.loads(
-        (ROOT / "dwarf/scenarios/amaru-cbor-tx-body-fuzz.yaml").read_text()
-    )
-    document["id"] = "phased-unqualified-amaru-library"
-    document["phases"] = [
-        {
-            "id": "fuzz-phase",
-            "title": "Fuzz phase",
-            "load": document.pop("load"),
-            "probes": document.pop("probes"),
-            "assertions": document.pop("assertions"),
-        }
-    ]
-    scenario = tmp_path / "phased-unqualified-amaru-library.yaml"
-    scenario.write_text(json.dumps(document), encoding="utf-8")
-
-    with pytest.raises(run_service.RunServiceError, match="use Prepare and Run there"):
-        run_service._enforce_direct_library_prerequisites(
-            run_service.scenario_module.load_scenario(scenario)
-        )
 
 
 @pytest.mark.parametrize(

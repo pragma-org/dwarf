@@ -1113,57 +1113,13 @@ def test_run_launch_without_preflight_still_prepares_and_freezes_exact_library_t
         for path in launch["path"].rglob("*")
         if path.is_file()
     }
-    cache = tmp_path / "prepared-cache"
-    cache.mkdir()
-    binary = cache / "executable"
-    binary.write_bytes(_package_elf())
-    binary.chmod(0o500)
-    for name, body in (
-        ("build.log", b"cargo build --locked\n"),
-        ("upstream-Cargo.lock", b"version = 4\n"),
-        ("effective-Cargo.lock", b"version = 4\n[[package]]\n"),
-    ):
-        (cache / name).write_bytes(body)
-    receipt = cache / "receipt.json"
-    receipt.write_text(json.dumps({"source_revision": requirement["source_revision"]}))
+    prepared = _fake_prepared_library_target(tmp_path / "prepared-cache", requirement)
+    binary = Path(prepared["binary"])
     prepared_calls = []
 
     def prepare(_runtime, requirements, **kwargs):
         prepared_calls.append((requirements, kwargs))
-        return [
-            {
-                **requirement,
-                "binary": str(binary),
-                "receipt": str(receipt),
-                "receipt_sha256": "sha256:"
-                + hashlib.sha256(receipt.read_bytes()).hexdigest(),
-                "build_log": str(cache / "build.log"),
-                "upstream_lock": str(cache / "upstream-Cargo.lock"),
-                "effective_lock": str(cache / "effective-Cargo.lock"),
-                "binary_sha256": "sha256:" + hashlib.sha256(binary.read_bytes()).hexdigest(),
-                "build_log_sha256": "sha256:"
-                + hashlib.sha256((cache / "build.log").read_bytes()).hexdigest(),
-                "upstream_lock_sha256": "sha256:"
-                + hashlib.sha256((cache / "upstream-Cargo.lock").read_bytes()).hexdigest(),
-                "effective_lock_sha256": "sha256:"
-                + hashlib.sha256((cache / "effective-Cargo.lock").read_bytes()).hexdigest(),
-                "source_commit": requirement["source_revision"],
-                "source_tree": "1" * 40,
-                "selected_toolchain": "nightly-2026-09-04",
-                "rustc_version": "rustc test",
-                "cargo_version": "cargo test",
-                "build_command": [
-                    "cargo",
-                    "+nightly-2026-09-04",
-                    "build",
-                    "--locked",
-                    "--release",
-                    "-p",
-                    "dwarf-amaru-library-target",
-                ],
-                "cache_status": "verified-hit",
-            }
-        ]
+        return [prepared]
 
     monkeypatch.setattr(
         "controller.library_target_builds.prepare_library_targets", prepare

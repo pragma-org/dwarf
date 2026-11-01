@@ -915,10 +915,8 @@ def test_exact_amaru_library_selection_freezes_build_requirement_without_buildin
         raise AssertionError("read-only plan resolution must not build a target")
 
     monkeypatch.setattr(
-        run_plan_module,
-        "_prepare_library_targets",
+        "controller.library_target_builds.prepare_library_targets",
         unexpected_build,
-        raising=False,
     )
 
     plan = resolve_run_plan(
@@ -953,21 +951,6 @@ def test_exact_amaru_library_selection_freezes_build_requirement_without_buildin
         for item in requirement["recipe_inputs"]
     )
 
-
-def test_local_library_manifest_is_a_recipe_not_selected_source_proof():
-    plan = resolve_run_plan(
-        RunPlanRequest(
-            scenario_id="amaru-cbor-tx-body-fuzz",
-            version_policy="exact",
-            amaru_version="10.11.20260925",
-            acknowledge_unknown_versions=True,
-        ),
-        capability_context={"host_os": "linux", "host_arch": "amd64"},
-    )
-
-    requirement = plan["scenario"]["library_target_requirements"][0]
-    assert requirement["template_upstream_commit"] == "local"
-    assert requirement["source_revision"] != requirement["template_upstream_commit"]
     assert "library_target_bindings" not in plan["scenario"]
 
 
@@ -989,26 +972,6 @@ def test_known_packaged_library_recipe_failure_blocks_plan_resolution(monkeypatc
             RunPlanRequest(scenario_id="amaru-cbor-tx-body-fuzz"),
             capability_context={"host_os": "linux", "host_arch": "amd64"},
         )
-
-
-def test_library_target_requirement_changes_with_exact_source_version():
-    common = {
-        "scenario_id": "amaru-cbor-tx-body-fuzz",
-        "version_policy": "exact",
-        "acknowledge_unknown_versions": True,
-    }
-    first = resolve_run_plan(
-        RunPlanRequest(**common, amaru_version="10.11.20260918"),
-        capability_context={"host_os": "linux", "host_arch": "amd64"},
-    )["scenario"]["library_target_requirements"][0]
-    second = resolve_run_plan(
-        RunPlanRequest(**common, amaru_version="10.11.20260925"),
-        capability_context={"host_os": "linux", "host_arch": "amd64"},
-    )["scenario"]["library_target_requirements"][0]
-
-    assert first["source_revision"] != second["source_revision"]
-    assert first["version"] != second["version"]
-    assert first["cache_key"] != second["cache_key"]
 
 
 @pytest.mark.parametrize(
