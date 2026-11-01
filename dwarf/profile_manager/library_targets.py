@@ -17,7 +17,16 @@ _PLATFORM = re.compile(r"^linux/(?:amd64|arm64)$")
 _REPOSITORIES = {
     "amaru": "https://github.com/pragma-org/amaru.git",
 }
-_BUILDER_TRANSFORM = "amaru-library-target-v1"
+_BUILDER_TRANSFORM = "amaru-library-target-v2"
+_SUPPORTED_AMARU_TARGETS = frozenset(
+    {
+        "amaru-cbor-decode-auxiliary-data",
+        "amaru-cbor-decode-block",
+        "amaru-cbor-decode-block-header",
+        "amaru-cbor-decode-certificate",
+        "amaru-cbor-decode-tx-body",
+    }
+)
 
 
 class LibraryTargetError(ValueError):
@@ -105,9 +114,9 @@ def _target_refs(scenario):
 def _recipe(target_id: str, manifests_dir: str) -> dict[str, Any]:
     if not _TARGET_ID.fullmatch(target_id):
         raise LibraryTargetError("library target id is invalid")
-    if target_id != "amaru-cbor-decode-tx-body":
+    if target_id not in _SUPPORTED_AMARU_TARGETS:
         raise LibraryTargetError(
-            "automatic library preparation currently supports only the proven Amaru tx-body target"
+            "automatic library preparation supports only explicitly approved Amaru targets"
         )
     if manifests_dir != "dwarf/targets/manifests":
         raise LibraryTargetError(
@@ -198,7 +207,7 @@ def automatic_preparation_supported(scenario) -> bool:
         target_id = str(ref.params.get("target_id") or "")
         manifests_dir = str(ref.params.get("manifests_dir") or "")
         if (
-            target_id != "amaru-cbor-decode-tx-body"
+            target_id not in _SUPPORTED_AMARU_TARGETS
             or manifests_dir != "dwarf/targets/manifests"
         ):
             return False

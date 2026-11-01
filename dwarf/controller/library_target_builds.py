@@ -134,7 +134,7 @@ def _validate_requirement(requirement: dict[str, Any]) -> dict[str, Any]:
         or not requirement["toolchain"]
         or not isinstance(requirement["builder_image"], str)
         or "@sha256:" not in requirement["builder_image"]
-        or requirement["builder_transform"] != "amaru-library-target-v1"
+        or requirement["builder_transform"] != "amaru-library-target-v2"
         or requirement["template_upstream_commit"] != "local"
         or not isinstance(requirement["location"], list)
         or not isinstance(requirement["recipe_inputs"], list)

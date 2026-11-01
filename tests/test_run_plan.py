@@ -41,6 +41,33 @@ from profile_manager.run_presentation import (
 
 ELF_AMD64 = b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 10 + b"\x3e\x00"
 
+NEW_AMARU_LIBRARY_TARGETS = (
+    (
+        "amaru-cbor-block-fuzz",
+        "amaru-cbor-block-fuzz-structured",
+        "amaru-cbor-decode-block",
+        "decode_block.rs",
+    ),
+    (
+        "amaru-cbor-block-header-fuzz",
+        "amaru-cbor-block-header-fuzz-structured",
+        "amaru-cbor-decode-block-header",
+        "decode_block_header.rs",
+    ),
+    (
+        "amaru-cbor-certificate-fuzz",
+        "amaru-cbor-certificate-fuzz-structured",
+        "amaru-cbor-decode-certificate",
+        "decode_certificate.rs",
+    ),
+    (
+        "amaru-cbor-auxiliary-data-fuzz",
+        "amaru-cbor-auxiliary-data-fuzz-structured",
+        "amaru-cbor-decode-auxiliary-data",
+        "decode_auxiliary_data.rs",
+    ),
+)
+
 
 def _write_imported_amaru_20260918_target(tmp_path, monkeypatch):
     manifest = "sha256:" + "f" * 64
@@ -880,6 +907,114 @@ def test_default_gui_amaru_library_selection_resolves_version_and_requirement():
     ]
 
 
+@pytest.mark.parametrize(
+    "scenario_id,_structured_id,target_id,source_name", NEW_AMARU_LIBRARY_TARGETS
+)
+@pytest.mark.parametrize("selection", ("exact", "default"))
+def test_new_amaru_library_targets_resolve_exact_and_default_versions(
+    scenario_id, _structured_id, target_id, source_name, selection
+):
+    request = RunPlanRequest(
+        scenario_id=scenario_id,
+        **(
+            {
+                "version_policy": "exact",
+                "amaru_version": "10.11.20260925",
+                "acknowledge_unknown_versions": True,
+            }
+            if selection == "exact"
+            else {}
+        ),
+    )
+
+    plan = resolve_run_plan(
+        request,
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+
+    assert plan["versions"]["policy"] == (
+        "exact" if selection == "exact" else "latest-confirmed"
+    )
+    assert plan["scenario"]["target"]["version"] != "any"
+    assert re.fullmatch(
+        r"[0-9a-f]{40}", plan["scenario"]["target"]["source_revision"]
+    )
+    requirement = plan["scenario"]["library_target_requirements"][0]
+    assert requirement["target_id"] == target_id
+    assert requirement["version"] == plan["scenario"]["target"]["version"]
+    assert requirement["source_revision"] == plan["scenario"]["target"][
+        "source_revision"
+    ]
+    assert requirement["source_path"] == (
+        f"dwarf/targets/amaru/src/bin/{source_name}"
+    )
+    assert requirement["template_manifest"] == (
+        f"dwarf/targets/manifests/{target_id}.yaml"
+    )
+    assert requirement["builder_transform"] == "amaru-library-target-v2"
+
+
+def test_new_amaru_library_targets_have_target_qualified_recipe_and_cache_identities():
+    requirements = [
+        resolve_run_plan(
+            RunPlanRequest(
+                scenario_id=scenario_id,
+                version_policy="exact",
+                amaru_version="10.11.20260925",
+                acknowledge_unknown_versions=True,
+            ),
+            capability_context={"host_os": "linux", "host_arch": "amd64"},
+        )["scenario"]["library_target_requirements"][0]
+        for scenario_id, _structured_id, _target_id, _source_name in NEW_AMARU_LIBRARY_TARGETS
+    ]
+
+    assert len({item["target_id"] for item in requirements}) == 4
+    assert len({item["recipe_digest"] for item in requirements}) == 4
+    assert len({item["cache_key"] for item in requirements}) == 4
+
+
+@pytest.mark.parametrize(
+    "scenario_id,structured_id,_target_id,_source_name", NEW_AMARU_LIBRARY_TARGETS
+)
+def test_new_amaru_library_target_cache_is_shared_across_blind_and_structured_scenarios(
+    scenario_id, structured_id, _target_id, _source_name
+):
+    def requirement(selected_scenario):
+        return resolve_run_plan(
+            RunPlanRequest(
+                scenario_id=selected_scenario,
+                version_policy="exact",
+                amaru_version="10.11.20260925",
+                acknowledge_unknown_versions=True,
+            ),
+            capability_context={"host_os": "linux", "host_arch": "amd64"},
+        )["scenario"]["library_target_requirements"][0]
+
+    blind = requirement(scenario_id)
+    structured = requirement(structured_id)
+
+    assert blind["target_id"] == structured["target_id"]
+    assert blind["recipe_digest"] == structured["recipe_digest"]
+    assert blind["cache_key"] == structured["cache_key"]
+
+
+@pytest.mark.parametrize(
+    "target_id,supported",
+    [
+        *[(item[2], True) for item in NEW_AMARU_LIBRARY_TARGETS],
+        ("amaru-cbor-decode-plutus-data", False),
+    ],
+)
+def test_automatic_amaru_library_recipe_allowlist_remains_bounded(target_id, supported):
+    from profile_manager.library_targets import LibraryTargetError, _recipe
+
+    if supported:
+        assert _recipe(target_id, "dwarf/targets/manifests")["target_id"] == target_id
+    else:
+        with pytest.raises(LibraryTargetError, match="supports only"):
+            _recipe(target_id, "dwarf/targets/manifests")
+
+
 def test_exact_cardano_library_selection_is_not_sent_to_amaru_preparation():
     plan = resolve_run_plan(
         RunPlanRequest(
@@ -945,7 +1080,7 @@ def test_exact_amaru_library_selection_freezes_build_requirement_without_buildin
     assert requirement["platform"] == "linux/amd64"
     assert re.fullmatch(r"sha256:[0-9a-f]{64}", requirement["recipe_digest"])
     assert requirement["template_upstream_commit"] == "local"
-    assert requirement["builder_transform"] == "amaru-library-target-v1"
+    assert requirement["builder_transform"] == "amaru-library-target-v2"
     assert any(
         item["path"] == "dwarf/scripts/amaru_library_target_builder.py"
         for item in requirement["recipe_inputs"]

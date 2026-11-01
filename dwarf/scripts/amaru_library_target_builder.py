@@ -12,10 +12,19 @@ import subprocess
 import tomllib
 
 
-TRANSFORM_VERSION = "amaru-library-target-v1"
+TRANSFORM_VERSION = "amaru-library-target-v2"
 _TARGET = re.compile(r"^[a-z][a-z0-9-]{0,127}$")
 _REVISION = re.compile(r"^[0-9a-f]{40}$")
 _TOOLCHAIN = re.compile(r"^(?:nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]+\.[0-9]+\.[0-9]+)$")
+_SUPPORTED_TARGETS = frozenset(
+    {
+        "amaru-cbor-decode-auxiliary-data",
+        "amaru-cbor-decode-block",
+        "amaru-cbor-decode-block-header",
+        "amaru-cbor-decode-certificate",
+        "amaru-cbor-decode-tx-body",
+    }
+)
 
 
 def _sha256(path: Path) -> str:
@@ -73,7 +82,7 @@ def _request(root: Path) -> dict:
         or not re.fullmatch(
             r"sha256:[0-9a-f]{64}", str(value["target_source_sha256"])
         )
-        or value["target_id"] != "amaru-cbor-decode-tx-body"
+        or value["target_id"] not in _SUPPORTED_TARGETS
     ):
         raise ValueError("builder request identity is invalid")
     return value

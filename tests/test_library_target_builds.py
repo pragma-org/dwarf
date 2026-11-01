@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
 import stat
 import threading
@@ -18,7 +19,18 @@ from controller.library_target_builds import (
     prepare_library_targets,
 )
 from controller.docker_runtime import DockerRuntimeError
+from profile_manager.launch_store import _freeze_prepared_library_targets
+from profile_manager.primitives import load_target_manifest
 from profile_manager.run_plan import RunPlanRequest, resolve_run_plan
+from scripts import amaru_library_target_builder
+
+
+NEW_AMARU_LIBRARY_TARGETS = (
+    ("amaru-cbor-block-fuzz", "amaru-cbor-decode-block"),
+    ("amaru-cbor-block-header-fuzz", "amaru-cbor-decode-block-header"),
+    ("amaru-cbor-certificate-fuzz", "amaru-cbor-decode-certificate"),
+    ("amaru-cbor-auxiliary-data-fuzz", "amaru-cbor-decode-auxiliary-data"),
+)
 
 
 class FakeRuntime:
@@ -134,10 +146,14 @@ class OwnershipBoundaryRuntime(FakeDockerRuntime):
         return result
 
 
-def _requirement(version: str = "10.11.20260925") -> dict:
+def _requirement(
+    version: str = "10.11.20260925",
+    *,
+    scenario_id: str = "amaru-cbor-tx-body-fuzz",
+) -> dict:
     plan = resolve_run_plan(
         RunPlanRequest(
-            scenario_id="amaru-cbor-tx-body-fuzz",
+            scenario_id=scenario_id,
             version_policy="exact",
             amaru_version=version,
             acknowledge_unknown_versions=True,
@@ -145,6 +161,37 @@ def _requirement(version: str = "10.11.20260925") -> dict:
         capability_context={"host_os": "linux", "host_arch": "amd64"},
     )
     return plan["scenario"]["library_target_requirements"][0]
+
+
+@pytest.mark.parametrize(
+    "target_id,supported",
+    [
+        *[(item[1], True) for item in NEW_AMARU_LIBRARY_TARGETS],
+        ("amaru-cbor-decode-plutus-data", False),
+    ],
+)
+def test_builder_request_accepts_only_explicitly_supported_amaru_targets(
+    tmp_path, target_id, supported
+):
+    (tmp_path / "request.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "dwarf.library-target-builder-request.v1",
+                "transform_version": "amaru-library-target-v2",
+                "source_repository": "https://github.com/pragma-org/amaru.git",
+                "source_revision": "a" * 40,
+                "target_id": target_id,
+                "target_source_sha256": "sha256:" + "b" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    if supported:
+        assert amaru_library_target_builder._request(tmp_path)["target_id"] == target_id
+    else:
+        with pytest.raises(ValueError, match="builder request identity"):
+            amaru_library_target_builder._request(tmp_path)
 
 
 def _builder(calls: list[str], *, delay: float = 0):
@@ -619,38 +666,52 @@ def test_concurrent_same_requirement_performs_one_build(tmp_path):
     assert results[0]["binary_sha256"] == results[1]["binary_sha256"]
 
 
-def test_frozen_target_manifest_rejects_binary_tampering_before_execution(tmp_path):
-    from profile_manager.primitives import load_target_manifest
-
-    manifests = tmp_path / "manifests"
-    manifests.mkdir()
-    binary = tmp_path / "executable"
-    binary.write_bytes(b"verified executable")
-    binary.chmod(0o500)
-    digest = "sha256:" + hashlib.sha256(binary.read_bytes()).hexdigest()
-    (manifests / "amaru-cbor-decode-tx-body.yaml").write_text(
-        json.dumps(
-            {
-                "id": "amaru-cbor-decode-tx-body",
-                "binary": str(binary),
-                "input_format": "stdin_bytes",
-                "implementation": "amaru",
-                "language": "rust",
-                "upstream_commit": "b" * 40,
-                "invariants": [],
-                "dwarf_build_evidence": {"binary_sha256": digest},
-            }
+@pytest.mark.parametrize("scenario_id,target_id", NEW_AMARU_LIBRARY_TARGETS)
+def test_new_target_generated_manifest_freezes_identity_and_verifies_binary_before_execution(
+    tmp_path, scenario_id, target_id
+):
+    plan = resolve_run_plan(
+        RunPlanRequest(
+            scenario_id=scenario_id,
+            version_policy="exact",
+            amaru_version="10.11.20260925",
+            acknowledge_unknown_versions=True,
         ),
-        encoding="utf-8",
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+    requirement = plan["scenario"]["library_target_requirements"][0]
+    prepared = prepare_library_targets(
+        FakeRuntime(tmp_path),
+        [requirement],
+        execution_id=f"library-freeze-{target_id}",
+        timeout=30,
+        cancel_event=threading.Event(),
+        builder=_builder([]),
+    )
+    stage = tmp_path / "private-launch-stage"
+    destination = tmp_path / "private-launch"
+    stage.mkdir()
+
+    derived = _freeze_prepared_library_targets(
+        plan,
+        prepared,
+        stage=stage,
+        destination=destination,
+    )
+    os.replace(stage, destination)
+    binding = derived["scenario"]["library_target_bindings"][0]
+    manifest = load_target_manifest(
+        target_id,
+        manifests_dir=binding["manifests_dir"],
     )
 
-    assert load_target_manifest(
-        "amaru-cbor-decode-tx-body", manifests_dir=manifests
-    ).binary == str(binary)
-    binary.chmod(0o700)
-    binary.write_bytes(b"changed after freeze")
+    assert manifest.id == target_id
+    assert manifest.upstream_commit == requirement["source_revision"]
+    assert Path(manifest.binary).is_file()
+    assert binding["identity"]["binary_sha256"] == prepared[0]["binary_sha256"]
 
+    binary = Path(manifest.binary)
+    binary.chmod(0o700)
+    binary.write_bytes(b"tampered after the exact target was frozen")
     with pytest.raises(ValueError, match="binary digest"):
-        load_target_manifest(
-            "amaru-cbor-decode-tx-body", manifests_dir=manifests
-        )
+        load_target_manifest(target_id, manifests_dir=binding["manifests_dir"])
