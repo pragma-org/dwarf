@@ -2147,7 +2147,7 @@ def _active_upstream_peer_count(run_dir):
 
 
 def _extract_outcomes_from_dir(run_dir):
-    """Read log.ndjson from an arbitrary run dir and return iteration outcomes."""
+    """Read parser outcomes from an arbitrary run directory."""
     outcomes = []
     log_path = run_dir / "log.ndjson"
     if not log_path.exists():
@@ -2159,8 +2159,16 @@ def _extract_outcomes_from_dir(run_dir):
             entry = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if entry.get("event") == "iteration" and entry.get("phase") == "load":
-            outcomes.append(dict(entry.get("payload") or {}))
+        is_iteration = entry.get("event") == "iteration"
+        is_edge_case = (
+            entry.get("event") == "case"
+            and entry.get("primitive") == "cbor_edge_cases"
+        )
+        if entry.get("phase") == "load" and (is_iteration or is_edge_case):
+            payload = dict(entry.get("payload") or {})
+            if is_edge_case and "input_id" not in payload and payload.get("name"):
+                payload["input_id"] = payload["name"]
+            outcomes.append(payload)
     return outcomes
 
 
@@ -2296,22 +2304,8 @@ def _run_phase(handle, rng, registry, scen, refs, phase, ignore_errors=False, sh
 
 
 def _extract_outcomes(handle):
-    """Re-read the forensic log.ndjson to collect cbor_fuzz_target iteration events."""
-    outcomes = []
-    log_path = handle.run_dir / "log.ndjson"
-    if not log_path.exists():
-        return outcomes
-    for line in log_path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if entry.get("event") == "iteration" and entry.get("phase") == "load":
-            payload = entry.get("payload") or {}
-            outcomes.append(dict(payload))
-    return outcomes
+    """Re-read the forensic log and collect parser outcomes."""
+    return _extract_outcomes_from_dir(handle.run_dir)
 
 
 _SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")

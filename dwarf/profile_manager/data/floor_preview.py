@@ -20,9 +20,8 @@ Implementation notes:
   (takes a runner handle with ``.run_dir``). Both are called the same
   way the runner calls them (scenario.py:628-631).
 - ``_extract_outcomes_from_dir`` is the production extractor that
-  feeds ``evaluate_outcomes``; we reuse it verbatim. (This is the
-  F-017 ``event="iteration"``-only blind spot — the floor-preview
-  reproduces it faithfully because that's what the runner does.)
+  feeds ``evaluate_outcomes``; we reuse it verbatim, including its
+  support for fuzz iterations and curated CBOR edge-case records.
 - A minimal fake handle exposes only ``.run_dir`` because every
   ``evaluate`` codepath we have to reproduce ultimately falls back
   to reading log.ndjson via ``_events_from_handle`` when there is

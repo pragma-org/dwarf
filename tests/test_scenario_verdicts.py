@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from profile_manager import cli, forensic
+from profile_manager import cli, forensic, primitives, scenario
 from profile_manager.data.operate_run import _security_execution_section, operate_run_detail
 from profile_manager.run_ledger import RunLedger
 from profile_manager.scenario_verdict import evaluate_scenario_verdict
@@ -43,6 +43,97 @@ def _measurement(*, gated: bool, state: str, gate_result: str) -> dict:
         },
         "gate_failed": gated and gate_result == "fail",
     }
+
+
+def _write_log(run_dir, entries):
+    run_dir.mkdir()
+    (run_dir / "log.ndjson").write_text(
+        "".join(json.dumps(entry) + "\n" for entry in entries),
+        encoding="utf-8",
+    )
+
+
+def test_cbor_edge_case_records_feed_the_existing_parser_assertion(tmp_path):
+    run_dir = tmp_path / "run"
+    _write_log(
+        run_dir,
+        [
+            {
+                "phase": "load",
+                "primitive": "cbor_fuzz_target",
+                "event": "iteration",
+                "payload": {"i": 0, "input_id": "fuzz-0", "outcome": "ok"},
+            },
+            {
+                "phase": "load",
+                "primitive": "cbor_edge_cases",
+                "event": "case",
+                "payload": {"name": "empty_input", "size": 0, "outcome": "clean_error"},
+            },
+            {
+                "phase": "load",
+                "primitive": "cbor_edge_cases",
+                "event": "case",
+                "payload": {"name": "timed_out", "size": 3, "outcome": "crash"},
+            },
+            {
+                "phase": "load",
+                "primitive": "unrelated_load",
+                "event": "case",
+                "payload": {"name": "not-a-parser-case", "outcome": "crash"},
+            },
+        ],
+    )
+
+    outcomes = scenario._extract_outcomes_from_dir(run_dir)
+    result = primitives.ParseSucceedsOrCleanError().evaluate_outcomes(outcomes)
+
+    assert outcomes == [
+        {"i": 0, "input_id": "fuzz-0", "outcome": "ok"},
+        {
+            "name": "empty_input",
+            "size": 0,
+            "outcome": "clean_error",
+            "input_id": "empty_input",
+        },
+        {
+            "name": "timed_out",
+            "size": 3,
+            "outcome": "crash",
+            "input_id": "timed_out",
+        },
+    ]
+    assert result["evaluated_value"] == {
+        "ok": 1,
+        "clean_error": 1,
+        "crash": 1,
+        "min_outcomes_count": 1,
+        "total_outcomes": 3,
+    }
+    assert result["data_points_used"] == [{"input_id": "timed_out", "size": 3}]
+    assert result["result"] == "fail"
+
+
+def test_cbor_edge_case_assertion_still_fails_on_zero_case_population(tmp_path):
+    run_dir = tmp_path / "run"
+    _write_log(
+        run_dir,
+        [
+            {
+                "phase": "load",
+                "primitive": "cbor_edge_cases",
+                "event": "completed",
+                "payload": {"case_count": 0},
+            }
+        ],
+    )
+
+    outcomes = scenario._extract_outcomes_from_dir(run_dir)
+    result = primitives.ParseSucceedsOrCleanError().evaluate_outcomes(outcomes)
+
+    assert outcomes == []
+    assert result["evaluated_value"]["total_outcomes"] == 0
+    assert result["result"] == "fail"
 
 
 def test_zero_assertions_cannot_produce_a_passing_scenario_verdict():
