@@ -1912,6 +1912,27 @@ def load_target_manifest(target_id, *, manifests_dir):
     if not path.exists():
         raise FileNotFoundError(f"target manifest not found: {path}")
     data = json.loads(path.read_text(encoding="utf-8"))
+    build_evidence = data.get("dwarf_build_evidence")
+    if build_evidence is not None:
+        expected = (
+            build_evidence.get("binary_sha256")
+            if isinstance(build_evidence, dict)
+            else None
+        )
+        binary = _resolve_runtime_path(data.get("binary", ""))
+        if (
+            not isinstance(expected, str)
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", expected) is None
+            or binary.is_symlink()
+            or not binary.is_file()
+        ):
+            raise ValueError("frozen library target binary identity is invalid")
+        digest = hashlib.sha256()
+        with binary.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        if "sha256:" + digest.hexdigest() != expected:
+            raise ValueError("frozen library target binary digest differs")
     return TargetManifest(
         id=data["id"],
         binary=data["binary"],

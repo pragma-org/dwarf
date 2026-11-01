@@ -3040,6 +3040,15 @@ def cmd_scenario(args):
             return 0 if verify["state"] == "pass" else 1
         from profile_manager import run_service
 
+        if getattr(args, "origin", "cli") == "cli":
+            try:
+                run_service._enforce_direct_library_prerequisites(
+                    scenario_module.load_scenario(args.path)
+                )
+            except run_service.RunServiceError as exc:
+                print(f"FAIL: {exc}", file=sys.stderr)
+                return 1
+
         result = run_service.execute_run(
             run_service.RunRequest(
                 scenario_path=args.path,

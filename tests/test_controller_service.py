@@ -37,6 +37,7 @@ class FakeRuntime:
         self.package_failure = None
         self.package_cleanup_calls = []
         self.package_cleanup_failure = False
+        self.library_prepare_calls = []
 
     def health(self):
         return {"docker": "ok", "socket": "ok"}
@@ -79,6 +80,27 @@ class FakeRuntime:
         self.package_cleanup_calls.append((parameters, execution_id))
         if self.package_cleanup_failure:
             raise DockerRuntimeError("cleanup failed")
+
+    def prepare_library_targets(
+        self, parameters, execution_id, *, timeout, cancel_event
+    ):
+        self.library_prepare_calls.append(
+            (parameters, execution_id, timeout, cancel_event)
+        )
+        return {
+            "status": "prepared",
+            "requirements_digest": parameters["requirements_digest"],
+            "targets": [
+                {
+                    "target_id": "amaru-cbor-decode-tx-body",
+                    "cache_key": "sha256:" + "c" * 64,
+                    "source_revision": parameters["source_revision"],
+                    "recipe_digest": "sha256:" + "d" * 64,
+                    "binary_sha256": "sha256:" + "e" * 64,
+                    "cache_status": "built",
+                }
+            ],
+        }
 
     def topology_health(self, topology_id):
         return {
@@ -818,6 +840,41 @@ def test_run_failure_is_identical_across_execution_receipt_response_and_idempote
     assert "Bearer" not in encoded
     assert "INLINE_SECRET" not in encoded
     assert "token=" not in encoded
+
+
+def test_run_fallback_reports_reviewed_incompatible_library_source(tmp_path):
+    class IncompatibleRunRuntime(FakeRuntime):
+        def run_launch(self, **kwargs):
+            raise DockerRuntimeError(
+                "selected Amaru source is incompatible with the packaged library "
+                "target; see the retained build log",
+                code="library_target_source_incompatible",
+                stage="library_target_build",
+            )
+
+    service = ControllerService(
+        TOKEN, tmp_path, IncompatibleRunRuntime(), "rev", "test-install"
+    )
+    status, response = _dispatch(
+        service,
+        _request(
+            "run.execute",
+            launch_id="launch-0123456789abcdef01234567",
+            plan_digest=DIGEST,
+            execution_id="run-execution-library-incompatible",
+            idempotency_key="run-library-incompatible",
+        ),
+    )
+
+    assert status == 500
+    assert response["failure"]["type"] == "DockerRuntimeError"
+    assert response["failure"]["message"] == (
+        "selected Amaru source is incompatible with the packaged library "
+        "target; see the retained build log"
+    )
+    assert response["failure"]["code"] == "library_target_source_incompatible"
+    assert response["failure"]["stage"] == "library_target_build"
+    assert response["failure"]["trace"]
 
 
 def test_run_resolution_failure_retains_safe_errno_and_trusted_trace(tmp_path):
@@ -2599,3 +2656,134 @@ def test_release_prepare_retains_independent_variants_and_receipt_on_restart(tmp
     path.write_text(json.dumps(record))
     _, tampered = _dispatch(restarted, _request('execution.status', execution_id='build-one'))
     assert tampered['state'] == 'interrupted'
+
+
+def test_library_prepare_uses_idempotent_mutation_and_returns_validated_receipt(tmp_path):
+    runtime = FakeRuntime()
+    service = ControllerService(TOKEN, tmp_path, runtime, "revision-123", "test-install")
+    request = _request(
+        "library.prepare",
+        scenario_id="amaru-cbor-tx-body-fuzz",
+        version="10.11.20261029",
+        source_revision="b" * 40,
+        platform="linux/amd64",
+        requirements_digest=DIGEST,
+        execution_id="library-build-one",
+        idempotency_key="library-build-one",
+        timeout_seconds=14400,
+    )
+
+    first = _dispatch(service, request)
+    second = _dispatch(service, request)
+
+    assert first == second
+    assert first[0] == 200
+    assert first[1]["status"] == "applied"
+    assert first[1]["result"]["status"] == "prepared"
+    assert len(runtime.library_prepare_calls) == 1
+    receipt = json.loads((tmp_path / first[1]["audit_receipt"]).read_text())
+    assert receipt["operation"] == "library.prepare"
+    assert receipt["plan_sha256"] == DIGEST
+
+
+def test_library_prepare_cancelled_during_build_finishes_cancelled(tmp_path):
+    from controller.library_target_builds import LibraryTargetBuildError
+
+    class CancelledLibraryRuntime(FakeRuntime):
+        def __init__(self):
+            super().__init__()
+            self.started = threading.Event()
+
+        def prepare_library_targets(
+            self, parameters, execution_id, *, timeout, cancel_event
+        ):
+            self.started.set()
+            assert cancel_event.wait(timeout=2)
+            raise LibraryTargetBuildError("library target preparation was cancelled")
+
+    runtime = CancelledLibraryRuntime()
+    service = ControllerService(TOKEN, tmp_path, runtime, "revision-123", "test-install")
+    execution_id = "library-build-cancelled"
+    request = _request(
+        "library.prepare",
+        scenario_id="amaru-cbor-tx-body-fuzz",
+        version="10.11.20261029",
+        source_revision="b" * 40,
+        platform="linux/amd64",
+        requirements_digest=DIGEST,
+        execution_id=execution_id,
+        idempotency_key=execution_id,
+        timeout_seconds=14400,
+    )
+    response = []
+    worker = threading.Thread(target=lambda: response.append(_dispatch(service, request)))
+    worker.start()
+    assert runtime.started.wait(timeout=1)
+
+    status, cancelling = _dispatch(
+        service,
+        _request(
+            "execution.cancel",
+            execution_id=execution_id,
+            reason="operator requested cancellation",
+            idempotency_key="cancel-library-build-one",
+        ),
+    )
+    assert status == 200
+    assert cancelling["status"] == "cancelling"
+    worker.join(timeout=2)
+
+    assert response[0][0] == 200
+    assert response[0][1]["status"] == "cancelled"
+    assert response[0][1]["result"] == {
+        "status": "cancelled",
+        "requirements_digest": DIGEST,
+        "targets": [],
+    }
+    _, terminal = _dispatch(
+        service, _request("execution.status", execution_id=execution_id)
+    )
+    assert terminal["state"] == "cancelled"
+    assert terminal["failure"] is None
+
+
+def test_library_prepare_reports_reviewed_incompatible_source_failure(tmp_path):
+    from controller.library_target_builds import LibraryTargetBuildError
+
+    class IncompatibleLibraryRuntime(FakeRuntime):
+        def prepare_library_targets(
+            self, parameters, execution_id, *, timeout, cancel_event
+        ):
+            raise LibraryTargetBuildError(
+                "selected Amaru source is incompatible with the packaged library "
+                "target; see the retained build log"
+            )
+
+    service = ControllerService(
+        TOKEN, tmp_path, IncompatibleLibraryRuntime(), "revision-123", "test-install"
+    )
+    status, payload = _dispatch(
+        service,
+        _request(
+            "library.prepare",
+            scenario_id="amaru-cbor-tx-body-fuzz",
+            version="10.11.20261029",
+            source_revision="b" * 40,
+            platform="linux/amd64",
+            requirements_digest=DIGEST,
+            execution_id="library-build-incompatible",
+            idempotency_key="library-build-incompatible",
+            timeout_seconds=14400,
+        ),
+    )
+
+    assert status == 500
+    assert payload["failure"] == {
+        "type": "LibraryTargetBuildError",
+        "message": (
+            "selected Amaru source is incompatible with the packaged library "
+            "target; see the retained build log"
+        ),
+        "code": "library_target_source_incompatible",
+        "stage": "library_target_build",
+    }

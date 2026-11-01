@@ -29,6 +29,7 @@ from profile_manager.run_ledger import (
 _ORIGINS = frozenset({"cli", "dashboard", "scheduler", "replay", "ci", "external"})
 _BACKENDS = frozenset({"local", "antithesis", "moog", "external"})
 _SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
+_REVISION = re.compile(r"^[0-9a-f]{40}$")
 
 
 class RunServiceError(RuntimeError):
@@ -170,6 +171,48 @@ def _resolved_paths(request: RunRequest) -> tuple[Path, Path, Path]:
         else Path(scenario_module.DEFAULT_REGISTRY_PATH)
     )
     return runs.resolve(), state.resolve(), registry.resolve()
+
+
+def _enforce_direct_library_prerequisites(scenario: Any) -> None:
+    """Keep direct CLI runs from using an unqualified packaged Amaru shim."""
+
+    if scenario.runtime != "library" or scenario.target.get("implementation") != "amaru":
+        return
+    from profile_manager.library_targets import _target_refs
+
+    references = [
+        ref
+        for _location, ref in _target_refs(scenario)
+        if ref.params.get("target_id") == "amaru-cbor-decode-tx-body"
+    ]
+    for reference in references:
+        manifests_dir = Path(str(reference.params.get("manifests_dir") or ""))
+        if not manifests_dir.is_absolute():
+            manifests_dir = Path(__file__).resolve().parents[2] / manifests_dir
+        manifest_path = manifests_dir / "amaru-cbor-decode-tx-body.yaml"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RunServiceError(
+                "Amaru library target amaru-cbor-decode-tx-body is not prepared. "
+                "Select an exact Amaru version in Operate Run, then use Prepare and "
+                "Run there."
+            ) from exc
+        binary = Path(str(manifest.get("binary") or ""))
+        if not binary.is_absolute():
+            binary = Path(__file__).resolve().parents[2] / binary
+        if (
+            not _REVISION.fullmatch(str(manifest.get("upstream_commit") or ""))
+            or binary.is_symlink()
+            or not binary.is_file()
+        ):
+            raise RunServiceError(
+                "Amaru library target amaru-cbor-decode-tx-body is not qualified "
+                "for an exact source revision. Select an exact Amaru version in "
+                "Operate Run, then use Prepare and Run there. Direct CLI execution "
+                "requires an already-qualified custom manifest or a controller-frozen "
+                "launch."
+            )
 
 
 def _resolve_execution(request: RunRequest) -> _ResolvedExecution:
@@ -430,6 +473,7 @@ def execute_run(request: RunRequest) -> dict[str, Any]:
             f"backend {request.backend!r} execution is not implemented by the local Run Service"
         )
     execution = _resolve_execution(request)
+    _enforce_direct_library_prerequisites(execution.scenario_definition)
     plan = execution.plan
     handle = scenario_module.run_scenario(
         execution.scenario_path,

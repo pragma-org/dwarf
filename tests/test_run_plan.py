@@ -862,6 +862,52 @@ def test_library_scenario_does_not_require_mixed_topology_or_profile():
     assert plan["readiness"]["profile_required"] is False
 
 
+def test_default_gui_amaru_library_selection_resolves_version_and_requirement():
+    plan = resolve_run_plan(
+        RunPlanRequest(scenario_id="amaru-cbor-tx-body-fuzz"),
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+
+    assert plan["versions"]["policy"] == "latest-confirmed"
+    assert plan["scenario"]["target"]["version"] != "any"
+    assert re.fullmatch(
+        r"[0-9a-f]{40}", plan["scenario"]["target"]["source_revision"]
+    )
+    requirement = plan["scenario"]["library_target_requirements"][0]
+    assert requirement["version"] == plan["scenario"]["target"]["version"]
+    assert requirement["source_revision"] == plan["scenario"]["target"][
+        "source_revision"
+    ]
+
+
+def test_exact_cardano_library_selection_is_not_sent_to_amaru_preparation():
+    plan = resolve_run_plan(
+        RunPlanRequest(
+            scenario_id="cardano-node-cbor-tx-body-fuzz",
+            version_policy="exact",
+            cardano_version="11.1.2",
+        ),
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+
+    assert plan["scenario"]["target"] == {
+        "implementation": "cardano-node",
+        "version": "any",
+    }
+    assert plan["versions"] is None
+    assert plan["scenario"]["library_target_requirements"] == []
+
+
+def test_pinned_library_scenario_without_packaged_target_recipe_is_not_remapped():
+    plan = resolve_run_plan(
+        RunPlanRequest(scenario_id="runtime-credential-ceremony-example-smoke")
+    )
+
+    assert plan["scenario"]["target"]["version"] == "10.7.1"
+    assert plan["versions"] is None
+    assert plan["scenario"]["library_target_requirements"] == []
+
+
 def test_exact_amaru_library_selection_freezes_build_requirement_without_building(
     monkeypatch,
 ):
@@ -901,6 +947,11 @@ def test_exact_amaru_library_selection_freezes_build_requirement_without_buildin
     assert requirement["platform"] == "linux/amd64"
     assert re.fullmatch(r"sha256:[0-9a-f]{64}", requirement["recipe_digest"])
     assert requirement["template_upstream_commit"] == "local"
+    assert requirement["builder_transform"] == "amaru-library-target-v1"
+    assert any(
+        item["path"] == "dwarf/scripts/amaru_library_target_builder.py"
+        for item in requirement["recipe_inputs"]
+    )
 
 
 def test_local_library_manifest_is_a_recipe_not_selected_source_proof():
@@ -918,6 +969,26 @@ def test_local_library_manifest_is_a_recipe_not_selected_source_proof():
     assert requirement["template_upstream_commit"] == "local"
     assert requirement["source_revision"] != requirement["template_upstream_commit"]
     assert "library_target_bindings" not in plan["scenario"]
+
+
+def test_known_packaged_library_recipe_failure_blocks_plan_resolution(monkeypatch):
+    from profile_manager import library_targets
+
+    def changed_recipe(*_args, **_kwargs):
+        raise library_targets.LibraryTargetError(
+            "trusted packaged library target recipe identity changed"
+        )
+
+    monkeypatch.setattr(library_targets, "_recipe", changed_recipe)
+
+    with pytest.raises(
+        RunPlanError,
+        match="trusted packaged library target recipe identity changed",
+    ):
+        resolve_run_plan(
+            RunPlanRequest(scenario_id="amaru-cbor-tx-body-fuzz"),
+            capability_context={"host_os": "linux", "host_arch": "amd64"},
+        )
 
 
 def test_library_target_requirement_changes_with_exact_source_version():

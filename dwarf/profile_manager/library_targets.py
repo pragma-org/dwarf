@@ -17,6 +17,7 @@ _PLATFORM = re.compile(r"^linux/(?:amd64|arm64)$")
 _REPOSITORIES = {
     "amaru": "https://github.com/pragma-org/amaru.git",
 }
+_BUILDER_TRANSFORM = "amaru-library-target-v1"
 
 
 class LibraryTargetError(ValueError):
@@ -29,6 +30,50 @@ def _sha256(body: bytes) -> str:
 
 def _canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def library_requirements_digest(requirements: list[dict[str, Any]]) -> str:
+    if not isinstance(requirements, list) or not requirements:
+        raise LibraryTargetError("library target requirements are missing")
+    return _sha256(_canonical(requirements))
+
+
+def resolve_controller_requirements(
+    *,
+    scenario_id: str,
+    version: str,
+    source_revision: str,
+    platform: str,
+    expected_digest: str,
+) -> list[dict[str, Any]]:
+    """Independently re-resolve one controller request from active catalogs."""
+
+    from profile_manager.run_plan import RunPlanRequest, resolve_run_plan
+
+    architecture = platform.removeprefix("linux/")
+    plan = resolve_run_plan(
+        RunPlanRequest(
+            scenario_id=scenario_id,
+            version_policy="exact",
+            amaru_version=version,
+            acknowledge_unknown_versions=True,
+        ),
+        capability_context={"host_os": "linux", "host_arch": architecture},
+    )
+    target = (plan.get("scenario") or {}).get("target") or {}
+    requirements = (plan.get("scenario") or {}).get(
+        "library_target_requirements"
+    ) or []
+    if (
+        target.get("implementation") != "amaru"
+        or target.get("version") != version
+        or target.get("source_revision") != source_revision
+        or library_requirements_digest(requirements) != expected_digest
+    ):
+        raise LibraryTargetError(
+            "selected Amaru library requirement differs from the active catalogs"
+        )
+    return requirements
 
 
 def _regular_file(path: Path, *, root: Path, label: str) -> Path:
@@ -60,6 +105,10 @@ def _target_refs(scenario):
 def _recipe(target_id: str, manifests_dir: str) -> dict[str, Any]:
     if not _TARGET_ID.fullmatch(target_id):
         raise LibraryTargetError("library target id is invalid")
+    if target_id != "amaru-cbor-decode-tx-body":
+        raise LibraryTargetError(
+            "automatic library preparation currently supports only the proven Amaru tx-body target"
+        )
     if manifests_dir != "dwarf/targets/manifests":
         raise LibraryTargetError(
             "automatic library preparation requires the packaged target manifest catalog"
@@ -86,9 +135,10 @@ def _recipe(target_id: str, manifests_dir: str) -> dict[str, Any]:
 
     crate = DWARF_ROOT / "targets" / "amaru"
     cargo_path = _regular_file(crate / "Cargo.toml", root=crate, label="library Cargo recipe")
-    lock_path = _regular_file(crate / "Cargo.lock", root=crate, label="library Cargo lock")
-    toolchain_path = _regular_file(
-        crate / "rust-toolchain.toml", root=crate, label="library Rust toolchain"
+    builder_path = _regular_file(
+        DWARF_ROOT / "scripts" / "amaru_library_target_builder.py",
+        root=DWARF_ROOT / "scripts",
+        label="library target builder",
     )
     try:
         cargo = tomllib.loads(cargo_path.read_text(encoding="utf-8"))
@@ -102,18 +152,18 @@ def _recipe(target_id: str, manifests_dir: str) -> dict[str, Any]:
         source_path = _regular_file(
             crate / source_relative, root=crate, label="library target source"
         )
-        toolchain = tomllib.loads(toolchain_path.read_text(encoding="utf-8"))[
-            "toolchain"
-        ]["channel"]
     except (OSError, UnicodeError, tomllib.TOMLDecodeError, KeyError, TypeError) as exc:
         raise LibraryTargetError("library Rust recipe is invalid") from exc
-    if not isinstance(toolchain, str) or not toolchain:
-        raise LibraryTargetError("library Rust toolchain is not pinned")
 
     from scripts.experimental_amaru_instrumentation import BUILDER_BASE
 
     inputs = []
-    for path in (manifest_path, cargo_path, lock_path, toolchain_path, source_path):
+    for path in (
+        manifest_path,
+        cargo_path,
+        source_path,
+        builder_path,
+    ):
         inputs.append(
             {
                 "path": path.relative_to(ROOT).as_posix(),
@@ -124,8 +174,9 @@ def _recipe(target_id: str, manifests_dir: str) -> dict[str, Any]:
         "schema_version": "dwarf.library-target-recipe.v1",
         "target_id": target_id,
         "implementation": "amaru",
-        "toolchain": toolchain,
+        "toolchain": "selected-source",
         "builder_image": BUILDER_BASE,
+        "builder_transform": _BUILDER_TRANSFORM,
         "binary_name": target_id,
         "source_path": source_path.relative_to(ROOT).as_posix(),
         "template_manifest": manifest_path.relative_to(ROOT).as_posix(),
@@ -133,6 +184,26 @@ def _recipe(target_id: str, manifests_dir: str) -> dict[str, Any]:
         "inputs": inputs,
     }
     return {**recipe, "recipe_digest": _sha256(_canonical(recipe))}
+
+
+def automatic_preparation_supported(scenario) -> bool:
+    """Return true only for packaged Amaru recipes owned by this feature."""
+
+    if scenario.runtime != "library" or scenario.target.get("implementation") != "amaru":
+        return False
+    refs = list(_target_refs(scenario))
+    if not refs:
+        return False
+    for _location, ref in refs:
+        target_id = str(ref.params.get("target_id") or "")
+        manifests_dir = str(ref.params.get("manifests_dir") or "")
+        if (
+            target_id != "amaru-cbor-decode-tx-body"
+            or manifests_dir != "dwarf/targets/manifests"
+        ):
+            return False
+        _recipe(target_id, manifests_dir)
+    return True
 
 
 def library_target_requirements(
@@ -181,6 +252,7 @@ def library_target_requirements(
             "platform": platform,
             "recipe_digest": recipe["recipe_digest"],
             "builder_image": recipe["builder_image"],
+            "builder_transform": recipe["builder_transform"],
             "toolchain": recipe["toolchain"],
         }
         cache_key = _sha256(_canonical(identity))
@@ -193,6 +265,7 @@ def library_target_requirements(
                 "source_path": recipe["source_path"],
                 "template_manifest": recipe["template_manifest"],
                 "template_upstream_commit": recipe["template_upstream_commit"],
+                "builder_transform": recipe["builder_transform"],
                 "recipe_inputs": recipe["inputs"],
             }
         )

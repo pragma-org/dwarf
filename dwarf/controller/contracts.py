@@ -28,6 +28,7 @@ class Operation(str, Enum):
     IMAGE_AVAILABILITY = "image.availability"
     IMAGE_DOWNLOAD = "image.download"
     RELEASE_PREPARE = "release.prepare"
+    LIBRARY_PREPARE = "library.prepare"
     ARTIFACT_PACKAGE = "artifact.package"
     TOPOLOGY_HEALTH = "topology.health"
     TOPOLOGY_PLAN = "topology.plan"
@@ -50,6 +51,16 @@ _PARAMETERS: dict[Operation, frozenset[str]] = {
     Operation.INVENTORY_GET: frozenset(),
     Operation.IMAGE_AVAILABILITY: frozenset({"implementation", "version", "digest"}),
     Operation.RELEASE_PREPARE: frozenset({"implementation", "version", "digest", "source_revision", "execution_id"}),
+    Operation.LIBRARY_PREPARE: frozenset(
+        {
+            "scenario_id",
+            "version",
+            "source_revision",
+            "platform",
+            "requirements_digest",
+            "execution_id",
+        }
+    ),
     Operation.IMAGE_DOWNLOAD: frozenset({"implementation", "version", "digest", "execution_id"}),
     Operation.IMAGE_INSPECT: frozenset(
         {"implementation", "version", "image", "declared_source_revision"}
@@ -86,6 +97,7 @@ _TIMEOUT_CEILINGS = {
     Operation.IMAGE_AVAILABILITY: 20,
     Operation.IMAGE_DOWNLOAD: 1800,
     Operation.RELEASE_PREPARE: 43200,
+    Operation.LIBRARY_PREPARE: 14400,
     Operation.ARTIFACT_PACKAGE: 1800,
     # The native Amaru verifier takes two fresh semantic samples and is
     # independently bounded at 120 seconds in DockerRuntime.  Expose the same
@@ -105,6 +117,7 @@ _TIMEOUT_CEILINGS = {
 }
 _MUTATIONS = {
     Operation.RELEASE_PREPARE,
+    Operation.LIBRARY_PREPARE,
     Operation.IMAGE_DOWNLOAD,
     Operation.ARTIFACT_PACKAGE,
     Operation.TOPOLOGY_APPLY,
@@ -279,6 +292,26 @@ def _validate_parameters(operation: Operation, raw: Mapping[str, Any]) -> dict[s
                 raise ContractError("source_revision must be an exact commit")
             result["source_revision"] = revision
         return result
+    if operation is Operation.LIBRARY_PREPARE:
+        version = _text(raw.get("version"), "version", maximum=64)
+        if not _VERSION.fullmatch(version):
+            raise ContractError("version is invalid")
+        revision = raw.get("source_revision")
+        if not isinstance(revision, str) or not _SOURCE_REVISION.fullmatch(revision):
+            raise ContractError("source_revision must be an exact commit")
+        platform = raw.get("platform")
+        if platform not in {"linux/amd64", "linux/arm64"}:
+            raise ContractError("platform is unsupported")
+        return {
+            "scenario_id": _identifier(raw.get("scenario_id"), "scenario_id"),
+            "version": version,
+            "source_revision": revision,
+            "platform": platform,
+            "requirements_digest": _digest(
+                raw.get("requirements_digest"), "requirements_digest"
+            ),
+            "execution_id": _identifier(raw.get("execution_id"), "execution_id"),
+        }
     if operation is Operation.IMAGE_INSPECT:
         implementation = raw.get("implementation")
         if implementation not in {"amaru", "cardano-node"}:

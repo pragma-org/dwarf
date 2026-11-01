@@ -23,7 +23,11 @@ from profile_manager.operator_version_decisions import OperatorVersionDecisionLe
 from profile_manager.profiles import desired_topology_for_profile, find_profile
 from profile_manager.topology_actions import TopologyActionService
 from profile_manager.scenario import load_scenario
-from profile_manager.launch_store import create_launch, record_launch_preflight
+from profile_manager.launch_store import (
+    create_launch,
+    record_launch_preflight,
+    retain_launch_inputs,
+)
 from profile_manager.run_plan import digest_run_plan, resolve_run_plan
 from scripts.runtime_amaru_control_substrate import (
     BASE_PACKAGE as AMARU_CONTROL_BASE_PACKAGE,
@@ -56,6 +60,67 @@ def _package_elf(*, machine=62):
     header[6] = 1
     header[18:20] = machine.to_bytes(2, "little")
     return bytes(header) + b"fixture"
+
+
+def _fake_prepared_library_target(root: Path, requirement: dict) -> dict:
+    root.mkdir()
+    binary = root / "executable"
+    binary.write_bytes(_package_elf())
+    binary.chmod(0o500)
+    for name, body in (
+        ("build.log", b"cargo build --locked\n"),
+        ("upstream-Cargo.lock", b"version = 4\n"),
+        ("effective-Cargo.lock", b"version = 4\n[[package]]\n"),
+    ):
+        (root / name).write_bytes(body)
+    receipt = root / "receipt.json"
+    receipt.write_text(json.dumps({"source_revision": requirement["source_revision"]}))
+
+    def digest(path: Path) -> str:
+        return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+    return {
+        **requirement,
+        "binary": str(binary),
+        "receipt": str(receipt),
+        "receipt_sha256": digest(receipt),
+        "build_log": str(root / "build.log"),
+        "upstream_lock": str(root / "upstream-Cargo.lock"),
+        "effective_lock": str(root / "effective-Cargo.lock"),
+        "binary_sha256": digest(binary),
+        "build_log_sha256": digest(root / "build.log"),
+        "upstream_lock_sha256": digest(root / "upstream-Cargo.lock"),
+        "effective_lock_sha256": digest(root / "effective-Cargo.lock"),
+        "source_commit": requirement["source_revision"],
+        "source_tree": "1" * 40,
+        "selected_toolchain": "nightly-2026-09-04",
+        "rustc_version": "rustc test",
+        "cargo_version": "cargo test",
+        "build_command": [
+            "cargo",
+            "+nightly-2026-09-04",
+            "build",
+            "--locked",
+            "--release",
+            "-p",
+            "dwarf-amaru-library-target",
+        ],
+        "cache_status": "verified-hit",
+    }
+
+
+def _patch_prepared_library_target(monkeypatch, tmp_path: Path, plan: dict, name: str):
+    requirements = plan["scenario"].get("library_target_requirements") or []
+    if not requirements:
+        return
+    prepared = [
+        _fake_prepared_library_target(tmp_path / f"prepared-{name}-{index}", requirement)
+        for index, requirement in enumerate(requirements)
+    ]
+    monkeypatch.setattr(
+        "controller.library_target_builds.prepare_library_targets",
+        lambda _runtime, _requirements, **_kwargs: prepared,
+    )
 
 
 def _stage_package(
@@ -969,6 +1034,12 @@ def test_run_launch_revalidates_plan_and_uses_only_retained_identifier(
     monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(state))
     monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(bundles))
     plan = resolve_run_plan({"scenario_id": "edge-cases-cbor-tx-body-amaru"})
+    requirement = plan["scenario"]["library_target_requirements"][0]
+    prepared = _fake_prepared_library_target(tmp_path / "prepared-cache", requirement)
+    monkeypatch.setattr(
+        "controller.library_target_builds.prepare_library_targets",
+        lambda _runtime, _requirements, **_kwargs: [prepared],
+    )
     digest = digest_run_plan(plan)
     launch = create_launch(plan, root=launches)
     observed = []
@@ -1010,8 +1081,229 @@ def test_run_launch_revalidates_plan_and_uses_only_retained_identifier(
     assert execution_id == "run-execution-0123456789abcdef"
     assert f"ADA2_DWARF_LAUNCH_ID={launch['launch_id']}" in argv
     assert str(launch["path"] / "scenario.yaml") not in argv
-    assert Path(argv[-3]).read_bytes() == (launch["path"] / "scenario.yaml").read_bytes()
+    assert Path(argv[-3]).read_bytes() != (launch["path"] / "scenario.yaml").read_bytes()
+    assert json.loads(Path(argv[-3]).read_text())["load"][0]["manifests_dir"] != "dwarf/targets/manifests"
     assert argv[-2:] == ("--origin", "dashboard")
+
+
+def test_run_launch_without_preflight_still_prepares_and_freezes_exact_library_target(
+    tmp_path, monkeypatch
+):
+    launches = tmp_path / "launches"
+    runs = tmp_path / "runs"
+    state = tmp_path / "state"
+    bundles = tmp_path / "bundles"
+    for path in (runs, state, bundles):
+        path.mkdir()
+    monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(runs))
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(state))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(bundles))
+    monkeypatch.setenv("DWARF_HOST_OS", "linux")
+    monkeypatch.setenv("DWARF_HOST_ARCH", "amd64")
+    plan = resolve_run_plan(
+        {"scenario_id": "amaru-cbor-tx-body-fuzz"},
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+    requirement = plan["scenario"]["library_target_requirements"][0]
+    digest = digest_run_plan(plan)
+    launch = create_launch(plan, root=launches)
+    assert not (launch["path"] / "preflight.json").exists()
+    original = {
+        path.relative_to(launch["path"]).as_posix(): path.read_bytes()
+        for path in launch["path"].rglob("*")
+        if path.is_file()
+    }
+    cache = tmp_path / "prepared-cache"
+    cache.mkdir()
+    binary = cache / "executable"
+    binary.write_bytes(_package_elf())
+    binary.chmod(0o500)
+    for name, body in (
+        ("build.log", b"cargo build --locked\n"),
+        ("upstream-Cargo.lock", b"version = 4\n"),
+        ("effective-Cargo.lock", b"version = 4\n[[package]]\n"),
+    ):
+        (cache / name).write_bytes(body)
+    receipt = cache / "receipt.json"
+    receipt.write_text(json.dumps({"source_revision": requirement["source_revision"]}))
+    prepared_calls = []
+
+    def prepare(_runtime, requirements, **kwargs):
+        prepared_calls.append((requirements, kwargs))
+        return [
+            {
+                **requirement,
+                "binary": str(binary),
+                "receipt": str(receipt),
+                "receipt_sha256": "sha256:"
+                + hashlib.sha256(receipt.read_bytes()).hexdigest(),
+                "build_log": str(cache / "build.log"),
+                "upstream_lock": str(cache / "upstream-Cargo.lock"),
+                "effective_lock": str(cache / "effective-Cargo.lock"),
+                "binary_sha256": "sha256:" + hashlib.sha256(binary.read_bytes()).hexdigest(),
+                "build_log_sha256": "sha256:"
+                + hashlib.sha256((cache / "build.log").read_bytes()).hexdigest(),
+                "upstream_lock_sha256": "sha256:"
+                + hashlib.sha256((cache / "upstream-Cargo.lock").read_bytes()).hexdigest(),
+                "effective_lock_sha256": "sha256:"
+                + hashlib.sha256((cache / "effective-Cargo.lock").read_bytes()).hexdigest(),
+                "source_commit": requirement["source_revision"],
+                "source_tree": "1" * 40,
+                "selected_toolchain": "nightly-2026-09-04",
+                "rustc_version": "rustc test",
+                "cargo_version": "cargo test",
+                "build_command": [
+                    "cargo",
+                    "+nightly-2026-09-04",
+                    "build",
+                    "--locked",
+                    "--release",
+                    "-p",
+                    "dwarf-amaru-library-target",
+                ],
+                "cache_status": "verified-hit",
+            }
+        ]
+
+    monkeypatch.setattr(
+        "controller.library_target_builds.prepare_library_targets", prepare
+    )
+    observed = {}
+
+    def adapter(argv, _timeout, _execution_id):
+        scenario_path = Path(argv[-3])
+        scenario = json.loads(scenario_path.read_text())
+        manifests = Path(scenario["load"][0]["manifests_dir"])
+        frozen_manifest = json.loads(
+            (manifests / "amaru-cbor-decode-tx-body.yaml").read_text()
+        )
+        observed["scenario"] = scenario
+        observed["manifest"] = frozen_manifest
+        observed["library_root"] = manifests.parent
+        run_id = "20261101T120000Z-library-controller"
+        run_dir = runs / run_id
+        run_dir.mkdir()
+        observed["retained"] = retain_launch_inputs(
+            launch["launch_id"],
+            run_dir=run_dir,
+            root=scenario_path.parent.parent,
+        )
+        (run_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "exit_status": "pass",
+                    "execution": {"security_verdict": "pass"},
+                }
+            )
+        )
+        return DockerResult(0, f"run_id: {run_id}\n", "")
+
+    runtime = DockerRuntime(
+        installation_id="install",
+        state_dir=tmp_path / "controller-state",
+        host_state_dir="/srv/dwarf",
+        launch_root=launches,
+        adapter_runner=adapter,
+    )
+    result = runtime.run_launch(
+        launch_id=launch["launch_id"],
+        plan_digest=digest,
+        execution_id="run-execution-library-target",
+        timeout=2400,
+    )
+
+    assert result["run_id"] == "20261101T120000Z-library-controller"
+    assert len(prepared_calls) == 1
+    assert prepared_calls[0][0] == [requirement]
+    assert observed["manifest"]["upstream_commit"] == requirement["source_revision"]
+    frozen_binary = Path(observed["manifest"]["binary"])
+    assert frozen_binary.read_bytes() == binary.read_bytes()
+    assert {
+        "build.log",
+        "effective-Cargo.lock",
+        "executable",
+        "manifests",
+        "receipt.json",
+        "upstream-Cargo.lock",
+    } <= {path.name for path in observed["library_root"].iterdir()}
+    retained_library = observed["retained"] / "library-targets"
+    assert (retained_library / requirement["cache_key"].removeprefix("sha256:") / "executable").read_bytes() == binary.read_bytes()
+    assert (
+        retained_library
+        / requirement["cache_key"].removeprefix("sha256:")
+        / "receipt.json"
+    ).is_file()
+    assert original == {
+        path.relative_to(launch["path"]).as_posix(): path.read_bytes()
+        for path in launch["path"].rglob("*")
+        if path.is_file()
+    }
+
+
+@pytest.mark.parametrize("tamper_kind", ("receipt", "template"))
+def test_run_launch_rejects_library_evidence_changed_after_cache_validation(
+    tmp_path, monkeypatch, tamper_kind
+):
+    launches = tmp_path / "launches"
+    for name in ("runs", "state", "bundles"):
+        path = tmp_path / name
+        path.mkdir()
+        monkeypatch.setenv(f"ADA2_DWARF_{name.upper()}_DIR", str(path))
+    monkeypatch.setenv("DWARF_HOST_OS", "linux")
+    monkeypatch.setenv("DWARF_HOST_ARCH", "amd64")
+    plan = resolve_run_plan(
+        {"scenario_id": "amaru-cbor-tx-body-fuzz"},
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+    requirement = plan["scenario"]["library_target_requirements"][0]
+    launch = create_launch(plan, root=launches)
+    record_launch_preflight(
+        launch["launch_id"],
+        {"state": "ready", "checks": [{"id": "framework", "passed": True}]},
+        root=launches,
+    )
+    prepared = _fake_prepared_library_target(tmp_path / "prepared", requirement)
+    original_read_bytes = Path.read_bytes
+
+    def prepare(_runtime, _requirements, **_kwargs):
+        if tamper_kind == "receipt":
+            Path(prepared["receipt"]).write_text('{"changed":true}\n')
+        else:
+            template = (
+                Path(__file__).resolve().parents[1]
+                / requirement["template_manifest"]
+            ).resolve()
+
+            def read_bytes(path):
+                body = original_read_bytes(path)
+                return body + b" " if path.resolve() == template else body
+
+            monkeypatch.setattr(Path, "read_bytes", read_bytes)
+        return [prepared]
+
+    monkeypatch.setattr(
+        "controller.library_target_builds.prepare_library_targets", prepare
+    )
+    runtime = DockerRuntime(
+        installation_id="install",
+        state_dir=tmp_path / "controller-state",
+        host_state_dir="/srv/dwarf",
+        launch_root=launches,
+        adapter_runner=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("tampered evidence must not execute")
+        ),
+    )
+
+    with pytest.raises(
+        DockerRuntimeError, match="could not materialize trusted launch inputs"
+    ):
+        runtime.run_launch(
+            launch_id=launch["launch_id"],
+            plan_digest=digest_run_plan(plan),
+            execution_id=f"run-execution-tamper-{tamper_kind}",
+            timeout=2400,
+        )
 
 
 def test_run_launch_reuses_controller_verified_local_registration_context(
@@ -1250,6 +1542,7 @@ def test_run_launch_missing_identity_retains_bounded_adapter_result(
     monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(state))
     monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(bundles))
     plan = resolve_run_plan({"scenario_id": "edge-cases-cbor-tx-body-amaru"})
+    _patch_prepared_library_target(monkeypatch, tmp_path, plan, "missing-identity")
     launch = create_launch(plan, root=launches)
     runtime = DockerRuntime(
         installation_id="install",
@@ -1321,6 +1614,7 @@ def test_real_run_dispatch_seals_missing_identity_failure_without_reexecution(
     monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(state))
     monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(bundles))
     plan = resolve_run_plan({"scenario_id": "edge-cases-cbor-tx-body-amaru"})
+    _patch_prepared_library_target(monkeypatch, tmp_path, plan, "sealed-failure")
     launch = create_launch(plan, root=launches)
     calls = []
 
@@ -1538,6 +1832,7 @@ def test_run_launch_revalidates_user_scenario_from_separate_controller_catalog(
 
     monkeypatch.setenv("ADA2_DWARF_SCENARIOS_DIR", str(dashboard_scenarios))
     plan = resolve_run_plan({"scenario_id": scenario_id})
+    _patch_prepared_library_target(monkeypatch, tmp_path, plan, "user-catalog")
     digest = digest_run_plan(plan)
     launch = create_launch(plan, root=launches)
     monkeypatch.setenv("ADA2_DWARF_SCENARIOS_DIR", str(controller_scenarios))
@@ -1607,6 +1902,7 @@ def test_run_launch_executes_controller_private_snapshot_not_mutable_shared_inpu
     monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(state))
     monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(bundles))
     plan = resolve_run_plan({"scenario_id": "edge-cases-cbor-tx-body-amaru"})
+    _patch_prepared_library_target(monkeypatch, tmp_path, plan, "private-snapshot")
     launch = create_launch(plan, root=launches)
     record_launch_preflight(
         launch["launch_id"],
@@ -1665,7 +1961,10 @@ def test_run_launch_executes_controller_private_snapshot_not_mutable_shared_inpu
 
     assert result["run_id"] == "20261008T120000Z-private-snapshot"
     assert observed["executed_path"] != launch["path"] / "scenario.yaml"
-    assert observed["executed_bytes"] == trusted_scenario
+    assert observed["executed_bytes"] != trusted_scenario
+    executed = json.loads(observed["executed_bytes"])
+    assert executed["id"] == "edge-cases-cbor-tx-body-amaru"
+    assert Path(executed["load"][0]["manifests_dir"]).is_absolute()
     assert observed["launch_root"].is_relative_to(
         tmp_path / "controller-state" / "controller" / "run-launches"
     )

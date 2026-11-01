@@ -564,3 +564,33 @@ def test_release_prepare_contract_pins_source_and_allows_bounded_compile_time():
                     {'repository': 'https://evil.example/node'}, {'idempotency_key': None}):
         with pytest.raises(ContractError):
             parse_request({**body, **changes})
+
+
+def test_library_prepare_contract_is_bounded_and_exact():
+    body = _request(
+        "library.prepare",
+        scenario_id="amaru-cbor-tx-body-fuzz",
+        version="10.11.20261029",
+        source_revision="b" * 40,
+        platform="linux/amd64",
+        requirements_digest=DIGEST,
+        execution_id="library-build-one",
+        idempotency_key="library-build-one",
+        timeout_seconds=14400,
+    )
+
+    parsed = parse_request(body)
+
+    assert parsed.operation is Operation.LIBRARY_PREPARE
+    assert parsed.parameters["scenario_id"] == "amaru-cbor-tx-body-fuzz"
+    assert parsed.parameters["source_revision"] == "b" * 40
+    for changes in (
+        {"scenario_id": "../../unsafe"},
+        {"source_revision": "main"},
+        {"platform": "darwin/arm64"},
+        {"requirements_digest": "sha256:bad"},
+        {"implementation": "cardano-node"},
+        {"timeout_seconds": 14401},
+    ):
+        with pytest.raises(ContractError):
+            parse_request({**body, **changes})

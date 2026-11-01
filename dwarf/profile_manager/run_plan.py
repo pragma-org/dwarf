@@ -716,10 +716,22 @@ def _scenario_substrate_version_profile(scenario, request) -> dict[str, Any] | N
     return data
 
 
+def _automatic_library_preparation_supported(scenario) -> bool:
+    from profile_manager.library_targets import (
+        LibraryTargetError,
+        automatic_preparation_supported,
+    )
+
+    try:
+        return automatic_preparation_supported(scenario)
+    except LibraryTargetError as exc:
+        raise RunPlanError(str(exc), field="scenario_id") from exc
+
+
 def _library_version_profile(scenario, request) -> dict[str, Any] | None:
     """Project an explicitly selected library release onto the version resolver."""
 
-    if scenario.runtime != "library":
+    if not _automatic_library_preparation_supported(scenario):
         return None
     implementation = scenario.target["implementation"]
     selected_version = (
@@ -738,8 +750,6 @@ def _library_version_profile(scenario, request) -> dict[str, Any] | None:
             request.operator_registration_id,
         )
     )
-    if not explicit and declared_version == "any":
-        return None
     selected_version = selected_version or (
         declared_version if declared_version != "any" else None
     )
@@ -754,7 +764,7 @@ def _library_version_profile(scenario, request) -> dict[str, Any] | None:
         "shared_genesis": True,
         "measurement_target_mode": "stock",
         "version_policy": request.version_policy
-        or ("exact" if selected_version else "latest-stable"),
+        or ("exact" if selected_version else "latest-confirmed"),
         "version_policy_source": "explicit" if explicit else "scenario",
     }
     if implementation == "amaru" and selected_version:
@@ -1549,7 +1559,7 @@ def resolve_run_plan(
     )
     capability = _capability_context(capability_context)
     library_target_requirements = []
-    if scenario.runtime == "library" and preview is not None:
+    if _automatic_library_preparation_supported(scenario) and preview is not None:
         selected_release = (preview.get("resolved") or {}).get(
             effective_target["implementation"]
         )

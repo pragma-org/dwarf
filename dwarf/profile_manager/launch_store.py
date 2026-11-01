@@ -17,6 +17,7 @@ from profile_manager.data.scenarios import _scenarios_dir
 
 
 _LAUNCH_ID = re.compile(r"^launch-[0-9a-f]{24}$")
+_SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 class LaunchStoreError(ValueError):
@@ -49,6 +50,191 @@ def _digest(body: bytes) -> str:
 def _write_private(path: Path, body: bytes) -> None:
     path.write_bytes(body)
     path.chmod(0o600)
+
+
+def _copy_verified(
+    source: str,
+    destination: Path,
+    *,
+    expected_digest: str | None,
+    executable: bool = False,
+) -> str:
+    path = Path(source)
+    if path.is_symlink() or not path.is_file():
+        raise LaunchStoreError("prepared library target evidence is missing or unsafe")
+    body = path.read_bytes()
+    observed = _digest(body)
+    if expected_digest is not None and observed != expected_digest:
+        raise LaunchStoreError("prepared library target evidence digest changed")
+    destination.write_bytes(body)
+    destination.chmod(0o500 if executable else 0o400)
+    return observed
+
+
+def _freeze_prepared_library_targets(
+    plan: dict[str, Any],
+    prepared: list[dict[str, Any]],
+    *,
+    stage: Path,
+    destination: Path,
+) -> dict[str, Any]:
+    """Copy verified build evidence into a controller-private launch snapshot."""
+
+    requirements = (plan.get("scenario") or {}).get(
+        "library_target_requirements"
+    ) or []
+    if not requirements:
+        if prepared:
+            raise LaunchStoreError("prepared library targets were not requested")
+        return plan
+    if not isinstance(prepared, list) or len(prepared) != len(requirements):
+        raise LaunchStoreError("prepared library target count differs from the plan")
+
+    derived = json.loads(json.dumps(plan))
+    bindings = []
+    retained = []
+    frozen_by_key: dict[str, dict[str, Any]] = {}
+    identity_fields = (
+        "cache_key",
+        "target_id",
+        "implementation",
+        "version",
+        "source_repository",
+        "source_revision",
+        "platform",
+        "recipe_digest",
+        "builder_image",
+        "builder_transform",
+        "toolchain",
+    )
+    for requirement, result in zip(requirements, prepared, strict=True):
+        if (
+            not isinstance(requirement, dict)
+            or not isinstance(result, dict)
+            or result.get("location") != requirement.get("location")
+            or any(result.get(field) != requirement.get(field) for field in identity_fields)
+        ):
+            raise LaunchStoreError("prepared library target identity differs from the plan")
+        cache_key = str(requirement.get("cache_key") or "")
+        key = cache_key.removeprefix("sha256:")
+        if not _SHA256.fullmatch(cache_key):
+            raise LaunchStoreError("prepared library target cache identity is invalid")
+        frozen = frozen_by_key.get(cache_key)
+        if frozen is None:
+            root = stage / "library-targets" / key
+            manifests = root / "manifests"
+            manifests.mkdir(parents=True, mode=0o700)
+            expected = {
+                "executable": result.get("binary_sha256"),
+                "build.log": result.get("build_log_sha256"),
+                "upstream-Cargo.lock": result.get("upstream_lock_sha256"),
+                "effective-Cargo.lock": result.get("effective_lock_sha256"),
+            }
+            sources = {
+                "executable": result.get("binary"),
+                "build.log": result.get("build_log"),
+                "upstream-Cargo.lock": result.get("upstream_lock"),
+                "effective-Cargo.lock": result.get("effective_lock"),
+            }
+            observed = {}
+            for name, source in sources.items():
+                digest = expected[name]
+                if not isinstance(source, str) or not _SHA256.fullmatch(str(digest or "")):
+                    raise LaunchStoreError("prepared library target evidence identity is invalid")
+                observed[name] = _copy_verified(
+                    source,
+                    root / name,
+                    expected_digest=digest,
+                    executable=name == "executable",
+                )
+            receipt_source = result.get("receipt")
+            receipt_expected = result.get("receipt_sha256")
+            if (
+                not isinstance(receipt_source, str)
+                or not _SHA256.fullmatch(str(receipt_expected or ""))
+            ):
+                raise LaunchStoreError("prepared library target receipt is missing")
+            receipt_digest = _copy_verified(
+                receipt_source,
+                root / "receipt.json",
+                expected_digest=str(receipt_expected),
+            )
+
+            template_path = Path(str(requirement.get("template_manifest") or ""))
+            if template_path.is_absolute() or ".." in template_path.parts:
+                raise LaunchStoreError("library target manifest path is unsafe")
+            template = Path(__file__).resolve().parents[2] / template_path
+            if template.is_symlink() or not template.is_file():
+                raise LaunchStoreError("library target manifest template is unavailable")
+            recipe_inputs = {
+                str(item.get("path") or ""): str(item.get("sha256") or "")
+                for item in requirement.get("recipe_inputs") or []
+                if isinstance(item, dict)
+            }
+            template_expected = recipe_inputs.get(template_path.as_posix())
+            try:
+                template_body = template.read_bytes()
+                if (
+                    not _SHA256.fullmatch(str(template_expected or ""))
+                    or _digest(template_body) != template_expected
+                ):
+                    raise LaunchStoreError(
+                        "library target manifest recipe identity changed"
+                    )
+                manifest = json.loads(template_body.decode("utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise LaunchStoreError("library target manifest template is invalid") from exc
+            if manifest.get("id") != requirement.get("target_id"):
+                raise LaunchStoreError("library target manifest identity differs")
+            final_root = destination / "library-targets" / key
+            manifest["binary"] = str((final_root / "executable").resolve())
+            manifest["upstream_commit"] = requirement["source_revision"]
+            manifest["dwarf_build_evidence"] = {
+                "cache_key": cache_key,
+                "version": requirement["version"],
+                "source_revision": requirement["source_revision"],
+                "source_tree": result.get("source_tree"),
+                "recipe_digest": requirement["recipe_digest"],
+                "builder_image": requirement["builder_image"],
+                "builder_transform": requirement["builder_transform"],
+                "selected_toolchain": result.get("selected_toolchain"),
+                "rustc_version": result.get("rustc_version"),
+                "cargo_version": result.get("cargo_version"),
+                "build_command": result.get("build_command"),
+                "binary_sha256": observed["executable"],
+                "build_log_sha256": observed["build.log"],
+                "upstream_lock_sha256": observed["upstream-Cargo.lock"],
+                "effective_lock_sha256": observed["effective-Cargo.lock"],
+                "receipt_sha256": receipt_digest,
+            }
+            manifest_path = manifests / f"{requirement['target_id']}.yaml"
+            _write_private(manifest_path, _canonical_bytes(manifest))
+            manifest_path.chmod(0o400)
+            root.chmod(0o500)
+            manifests.chmod(0o500)
+            frozen = {
+                "manifests_dir": str((final_root / "manifests").resolve()),
+                "evidence": manifest["dwarf_build_evidence"],
+            }
+            frozen_by_key[cache_key] = frozen
+        bindings.append(
+            {
+                "location": requirement["location"],
+                "target_id": requirement["target_id"],
+                "manifests_dir": frozen["manifests_dir"],
+                "identity": frozen["evidence"],
+            }
+        )
+        retained.append(
+            {
+                "location": requirement["location"],
+                "target_id": requirement["target_id"],
+                **frozen["evidence"],
+            }
+        )
+    derived["scenario"]["library_target_bindings"] = bindings
+    derived["scenario"]["prepared_library_targets"] = retained
+    return derived
 
 
 def materialized_scenario(plan: dict[str, Any]) -> bytes:
@@ -282,6 +468,7 @@ def _store_launch(
     launch_id: str,
     base: Path,
     preflight: dict[str, Any] | None = None,
+    prepared_library_targets: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(plan, dict) or plan.get("schema_version") != 1:
         raise LaunchStoreError("resolved run plan is invalid")
@@ -293,7 +480,15 @@ def _store_launch(
     stage = base / f".{launch_id}.tmp-{secrets.token_hex(4)}"
     stage.mkdir(mode=0o700)
     try:
-        expected_artifacts = expected_launch_artifacts(plan)
+        stored_source = plan
+        if prepared_library_targets is not None:
+            stored_source = _freeze_prepared_library_targets(
+                plan,
+                prepared_library_targets,
+                stage=stage,
+                destination=destination,
+            )
+        expected_artifacts = expected_launch_artifacts(stored_source)
         scenario_body = expected_artifacts["scenario.yaml"]
         _write_private(stage / "scenario.yaml", scenario_body)
 
@@ -301,7 +496,7 @@ def _store_launch(
         if profile_body is not None:
             _write_private(stage / "profile.json", profile_body)
 
-        stored_plan = json.loads(json.dumps(plan))
+        stored_plan = json.loads(json.dumps(stored_source))
         stored_plan.update(
             {
                 "launch_id": launch_id,
@@ -337,6 +532,7 @@ def materialize_launch_snapshot(
     launch_id: str,
     root: str | Path,
     preflight: dict[str, Any] | None = None,
+    prepared_library_targets: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Regenerate trusted launch inputs below a controller-private root."""
 
@@ -345,6 +541,7 @@ def materialize_launch_snapshot(
         launch_id=validate_launch_id(launch_id),
         base=launch_root(root),
         preflight=preflight,
+        prepared_library_targets=prepared_library_targets,
     )
 
 
@@ -445,6 +642,73 @@ def retain_launch_inputs(
         target = destination / source.name
         shutil.copyfile(source, target)
         target.chmod(0o600)
+    prepared = (launch["plan"].get("scenario") or {}).get(
+        "prepared_library_targets"
+    ) or []
+    retained_keys = set()
+    for item in prepared:
+        cache_key = str(item.get("cache_key") or "")
+        key = cache_key.removeprefix("sha256:")
+        target_id = str(item.get("target_id") or "")
+        if (
+            not _SHA256.fullmatch(cache_key)
+            or not target_id
+            or cache_key in retained_keys
+        ):
+            if cache_key in retained_keys:
+                continue
+            raise LaunchStoreError("retained library target identity is invalid")
+        retained_keys.add(cache_key)
+        source_root = launch["directory"] / "library-targets" / key
+        source_manifest = source_root / "manifests" / f"{target_id}.yaml"
+        expected_files = {
+            "executable": item.get("binary_sha256"),
+            "build.log": item.get("build_log_sha256"),
+            "upstream-Cargo.lock": item.get("upstream_lock_sha256"),
+            "effective-Cargo.lock": item.get("effective_lock_sha256"),
+            "receipt.json": item.get("receipt_sha256"),
+        }
+        if (
+            source_root.is_symlink()
+            or not source_root.is_dir()
+            or source_manifest.is_symlink()
+            or not source_manifest.is_file()
+            or any(not _SHA256.fullmatch(str(value or "")) for value in expected_files.values())
+        ):
+            raise LaunchStoreError("retained library target evidence is invalid")
+        try:
+            manifest = json.loads(source_manifest.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise LaunchStoreError("retained library target manifest is invalid") from exc
+        expected_binary = source_root / "executable"
+        if (
+            manifest.get("id") != target_id
+            or manifest.get("upstream_commit") != item.get("source_revision")
+            or Path(str(manifest.get("binary") or "")) != expected_binary.resolve()
+            or manifest.get("dwarf_build_evidence") != {
+                key: value
+                for key, value in item.items()
+                if key not in {"location", "target_id"}
+            }
+        ):
+            raise LaunchStoreError("retained library target manifest identity differs")
+        target_root = destination / "library-targets" / key
+        target_manifests = target_root / "manifests"
+        target_manifests.mkdir(parents=True, mode=0o700)
+        for name, expected_digest in expected_files.items():
+            _copy_verified(
+                str(source_root / name),
+                target_root / name,
+                expected_digest=str(expected_digest),
+                executable=name == "executable",
+            )
+        _copy_verified(
+            str(source_manifest),
+            target_manifests / source_manifest.name,
+            expected_digest=None,
+        )
+        target_manifests.chmod(0o500)
+        target_root.chmod(0o500)
     return destination
 
 

@@ -7,6 +7,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import stat
 import time
 import threading
@@ -142,9 +143,33 @@ def _bounded_failure(exc: BaseException, *, secret: str) -> dict[str, Any]:
             "runtime_asset_permission_denied",
             "adapter_asset_staging",
         ),
+        (
+            "DockerRuntimeError",
+            "selected Amaru source is incompatible with the packaged library "
+            "target; see the retained build log",
+            "library_target_source_incompatible",
+            "library_target_build",
+        ),
     }
     code = str(getattr(exc, "failure_code", "") or "")
     stage = str(getattr(exc, "failure_stage", "") or "")
+    library_failures = {
+        (
+            "selected Amaru source is incompatible with the packaged library "
+            "target; see the retained build log"
+        ): (
+            "library_target_source_incompatible",
+            "library_target_build",
+        ),
+    }
+    if failure_type == "LibraryTargetBuildError" and message in library_failures:
+        library_code, library_stage = library_failures[message]
+        return {
+            "type": failure_type,
+            "message": message,
+            "code": library_code,
+            "stage": library_stage,
+        }
     artifact_failures = {
         ("release_download_failed", "image_download"): "Release image download failed; check registry access and retry.",
         ("staged_artifact_invalid", "artifact_copy"): "staged artifact identity changed",
@@ -537,6 +562,7 @@ class ControllerService:
                 Operation.ARTIFACT_PACKAGE.value,
                 Operation.IMAGE_DOWNLOAD.value,
                 Operation.RELEASE_PREPARE.value,
+                Operation.LIBRARY_PREPARE.value,
                 Operation.TOPOLOGY_APPLY.value,
                 Operation.RUN_EXECUTE.value,
             }
@@ -566,6 +592,7 @@ class ControllerService:
             parameters.get("executable_sha256")
             if operation == Operation.ARTIFACT_PACKAGE.value
             else parameters.get("digest") if operation in {Operation.IMAGE_DOWNLOAD.value, Operation.RELEASE_PREPARE.value}
+            else parameters.get("requirements_digest") if operation == Operation.LIBRARY_PREPARE.value
             else parameters.get("plan_digest")
         )
         valid = (
@@ -582,7 +609,7 @@ class ControllerService:
         )
         if not valid:
             return False
-        if operation in {Operation.ARTIFACT_PACKAGE.value, Operation.IMAGE_DOWNLOAD.value, Operation.RELEASE_PREPARE.value}:
+        if operation in {Operation.ARTIFACT_PACKAGE.value, Operation.IMAGE_DOWNLOAD.value, Operation.RELEASE_PREPARE.value, Operation.LIBRARY_PREPARE.value}:
             result = record.get("result")
             return (
                 isinstance(result, dict)
@@ -590,7 +617,7 @@ class ControllerService:
                 and (
                     (
                         record.get("state") == "applied"
-                        and result.get("status") == ({Operation.IMAGE_DOWNLOAD.value: "downloaded", Operation.RELEASE_PREPARE.value: "prepared"}.get(operation, "packaged"))
+                        and result.get("status") == ({Operation.IMAGE_DOWNLOAD.value: "downloaded", Operation.RELEASE_PREPARE.value: "prepared", Operation.LIBRARY_PREPARE.value: "prepared"}.get(operation, "packaged"))
                     )
                     or (
                         record.get("state") == "cancelled"
@@ -737,6 +764,8 @@ class ControllerService:
             }
         if request.operation in {Operation.ARTIFACT_PACKAGE, Operation.IMAGE_DOWNLOAD, Operation.RELEASE_PREPARE}:
             return self._idempotent(request, self._artifact_start)
+        if request.operation is Operation.LIBRARY_PREPARE:
+            return self._idempotent(request, self._library_prepare)
         if request.operation is Operation.TOPOLOGY_HEALTH:
             return 200, _thaw(
                 self.runtime.topology_health(request.parameters["topology_id"])
@@ -890,6 +919,202 @@ class ControllerService:
             with self._lock:
                 self._cancellations.pop(execution_id, None)
                 self._background_threads.discard(threading.current_thread())
+
+    @staticmethod
+    def _validated_library_result(value: Any, requirements_digest: str) -> dict[str, Any]:
+        result = _thaw(value)
+        if (
+            not isinstance(result, dict)
+            or set(result) != {"status", "requirements_digest", "targets"}
+            or result.get("status") != "prepared"
+            or result.get("requirements_digest") != requirements_digest
+            or not isinstance(result.get("targets"), list)
+            or not result["targets"]
+            or len(result["targets"]) > 16
+        ):
+            raise RuntimeError("library preparation returned an invalid terminal result")
+        fields = {
+            "target_id",
+            "cache_key",
+            "source_revision",
+            "recipe_digest",
+            "binary_sha256",
+            "cache_status",
+        }
+        for item in result["targets"]:
+            if (
+                not isinstance(item, dict)
+                or set(item) != fields
+                or re.fullmatch(r"[a-z][a-z0-9-]{0,127}", str(item.get("target_id") or "")) is None
+                or re.fullmatch(r"[0-9a-f]{40}", str(item.get("source_revision") or "")) is None
+                or any(
+                    re.fullmatch(r"sha256:[0-9a-f]{64}", str(item.get(name) or "")) is None
+                    for name in ("cache_key", "recipe_digest", "binary_sha256")
+                )
+                or item.get("cache_status") not in {"built", "verified-hit"}
+            ):
+                raise RuntimeError("library preparation returned invalid target evidence")
+        return result
+
+    def _library_prepare(
+        self, request: ControllerRequest
+    ) -> tuple[int, dict[str, Any]]:
+        parameters = dict(request.parameters)
+        execution_id = str(parameters["execution_id"])
+        execution_path = self.executions_dir / f"{execution_id}.json"
+        accepted_at = _utc_now()
+        cancellation = threading.Event()
+        execution = {
+            "schema_version": "v1",
+            "execution_id": execution_id,
+            "request_id": request.request_id,
+            "operation": request.operation.value,
+            "request_sha256": self._intent_sha256(request),
+            "request_parameters": _thaw(request.parameters),
+            "plan_sha256": parameters["requirements_digest"],
+            "topology_id": None,
+            "state": "running",
+            "accepted_at": accepted_at,
+            "completed_at": None,
+        }
+        with self._lock:
+            if execution_path.exists():
+                raise ControllerConflict("execution id already exists")
+            self._cancellations[execution_id] = cancellation
+            _atomic_json(execution_path, execution)
+        lock_started = time.monotonic()
+        acquired = False
+        process_lock = None
+        try:
+            acquired = self._mutation_lock.acquire(timeout=request.timeout_seconds)
+            if not acquired:
+                raise TimeoutError("controller mutation lock timed out")
+            remaining = max(
+                1, int(request.timeout_seconds - (time.monotonic() - lock_started))
+            )
+            process_lock = self._acquire_process_lock(remaining)
+            if cancellation.is_set():
+                result = {
+                    "status": "cancelled",
+                    "requirements_digest": parameters["requirements_digest"],
+                    "targets": [],
+                }
+            else:
+                result = self._validated_library_result(
+                    self.runtime.prepare_library_targets(
+                        parameters,
+                        execution_id,
+                        timeout=remaining,
+                        cancel_event=cancellation,
+                    ),
+                    parameters["requirements_digest"],
+                )
+            if cancellation.is_set():
+                result = {
+                    "status": "cancelled",
+                    "requirements_digest": parameters["requirements_digest"],
+                    "targets": [],
+                }
+            status = "cancelled" if cancellation.is_set() else "applied"
+            completed_at = _utc_now()
+            receipt_path = self._write_receipt(
+                request=request,
+                status=status,
+                accepted_at=accepted_at,
+                completed_at=completed_at,
+                plan_sha256=parameters["requirements_digest"],
+                before=execution,
+                after=result,
+            )
+            terminal = {
+                **execution,
+                "state": status,
+                "completed_at": completed_at,
+                "audit_receipt": receipt_path,
+                "result": result,
+            }
+            _atomic_json(execution_path, terminal)
+            return 200, {
+                "status": status,
+                "execution_id": execution_id,
+                "result": result,
+                "audit_receipt": receipt_path,
+            }
+        except Exception as exc:
+            from controller.library_target_builds import LibraryTargetBuildError
+
+            if (
+                cancellation.is_set()
+                and isinstance(exc, LibraryTargetBuildError)
+                and str(exc) == "library target preparation was cancelled"
+            ):
+                completed_at = _utc_now()
+                result = {
+                    "status": "cancelled",
+                    "requirements_digest": parameters["requirements_digest"],
+                    "targets": [],
+                }
+                receipt_path = self._write_receipt(
+                    request=request,
+                    status="cancelled",
+                    accepted_at=accepted_at,
+                    completed_at=completed_at,
+                    plan_sha256=parameters["requirements_digest"],
+                    before=execution,
+                    after=result,
+                )
+                _atomic_json(
+                    execution_path,
+                    {
+                        **execution,
+                        "state": "cancelled",
+                        "completed_at": completed_at,
+                        "audit_receipt": receipt_path,
+                        "result": result,
+                    },
+                )
+                return 200, {
+                    "status": "cancelled",
+                    "execution_id": execution_id,
+                    "result": result,
+                    "audit_receipt": receipt_path,
+                }
+            completed_at = _utc_now()
+            failure = _bounded_failure(exc, secret=self.token)
+            receipt_path = self._write_receipt(
+                request=request,
+                status="failed",
+                accepted_at=accepted_at,
+                completed_at=completed_at,
+                plan_sha256=parameters["requirements_digest"],
+                before=execution,
+                after={"status": "failed", "failure": failure},
+                failure=failure,
+            )
+            _atomic_json(
+                execution_path,
+                {
+                    **execution,
+                    "state": "failed",
+                    "completed_at": completed_at,
+                    "audit_receipt": receipt_path,
+                    "failure": failure,
+                },
+            )
+            raise ControllerExecutionFailed(
+                "controller library preparation failed",
+                execution_id=execution_id,
+                audit_receipt=receipt_path,
+                failure=failure,
+            ) from exc
+        finally:
+            if process_lock is not None:
+                fcntl.flock(process_lock, fcntl.LOCK_UN)
+                os.close(process_lock)
+            if acquired:
+                self._mutation_lock.release()
+            with self._lock:
+                self._cancellations.pop(execution_id, None)
 
     def _status(self, request: ControllerRequest) -> dict[str, Any]:
         execution_id = str(request.parameters["execution_id"])

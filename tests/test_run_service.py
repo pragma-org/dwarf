@@ -26,6 +26,120 @@ SCENARIO = ROOT / "dwarf/scenarios/edge-cases-cbor-tx-body-amaru.yaml"
 PARITY_SCENARIO = ROOT / "tests/fixtures/run-service-parity.yaml"
 
 
+def test_direct_cli_library_run_reports_exact_preparation_prerequisite(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.delenv("ADA2_DWARF_LAUNCH_ID", raising=False)
+    monkeypatch.setattr(
+        run_service,
+        "execute_run",
+        lambda _request: (_ for _ in ()).throw(
+            AssertionError("unqualified target must not execute")
+        ),
+    )
+    args = Namespace(
+        scenario_command="run",
+        path=str(ROOT / "dwarf/scenarios/amaru-cbor-tx-body-fuzz.yaml"),
+        runs_dir=tmp_path / "runs",
+        state_dir=tmp_path / "state",
+        registry_path=None,
+        backend="local-devnet",
+        origin="cli",
+        out=None,
+        registry=None,
+        tag="latest",
+        json=False,
+        fuzz_iterations=None,
+    )
+
+    assert cli.cmd_scenario(args) == 1
+    error = capsys.readouterr().err
+    assert "Select an exact Amaru version in Operate Run" in error
+    assert "use Prepare and Run there" in error
+
+
+def test_direct_cli_preserves_qualified_custom_library_manifest(tmp_path, monkeypatch):
+    monkeypatch.delenv("ADA2_DWARF_LAUNCH_ID", raising=False)
+    manifests = tmp_path / "manifests"
+    manifests.mkdir()
+    binary = tmp_path / "qualified-target"
+    binary.write_bytes(b"qualified")
+    binary.chmod(0o500)
+    (manifests / "amaru-cbor-decode-tx-body.yaml").write_text(
+        json.dumps(
+            {
+                "id": "amaru-cbor-decode-tx-body",
+                "binary": str(binary),
+                "implementation": "amaru",
+                "upstream_commit": "b" * 40,
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = json.loads(
+        (ROOT / "dwarf/scenarios/amaru-cbor-tx-body-fuzz.yaml").read_text()
+    )
+    document["id"] = "custom-qualified-amaru-library"
+    document["target"]["version"] = "10.11.custom"
+    document["load"][0]["manifests_dir"] = str(manifests)
+    scenario = tmp_path / "custom-qualified-amaru-library.yaml"
+    scenario.write_text(json.dumps(document), encoding="utf-8")
+
+    run_service._enforce_direct_library_prerequisites(
+        run_service.scenario_module.load_scenario(scenario)
+    )
+
+
+def test_direct_cli_guard_finds_library_target_inside_phases(tmp_path, monkeypatch):
+    monkeypatch.delenv("ADA2_DWARF_LAUNCH_ID", raising=False)
+    document = json.loads(
+        (ROOT / "dwarf/scenarios/amaru-cbor-tx-body-fuzz.yaml").read_text()
+    )
+    document["id"] = "phased-unqualified-amaru-library"
+    document["phases"] = [
+        {
+            "id": "fuzz-phase",
+            "title": "Fuzz phase",
+            "load": document.pop("load"),
+            "probes": document.pop("probes"),
+            "assertions": document.pop("assertions"),
+        }
+    ]
+    scenario = tmp_path / "phased-unqualified-amaru-library.yaml"
+    scenario.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(run_service.RunServiceError, match="use Prepare and Run there"):
+        run_service._enforce_direct_library_prerequisites(
+            run_service.scenario_module.load_scenario(scenario)
+        )
+
+
+@pytest.mark.parametrize(
+    ("origin", "launch_id"),
+    (("scheduler", None), ("dashboard", "launch-stale-unprepared")),
+)
+def test_local_execution_never_bypasses_unqualified_library_target(
+    tmp_path, monkeypatch, origin, launch_id
+):
+    if launch_id is None:
+        monkeypatch.delenv("ADA2_DWARF_LAUNCH_ID", raising=False)
+    else:
+        monkeypatch.setenv("ADA2_DWARF_LAUNCH_ID", launch_id)
+
+    with pytest.raises(
+        run_service.RunServiceError,
+        match="controller-frozen launch",
+    ):
+        run_service.execute_run(
+            run_service.RunRequest(
+                scenario_path=ROOT / "dwarf/scenarios/amaru-cbor-tx-body-fuzz.yaml",
+                origin=origin,
+                runs_dir=tmp_path / "runs",
+                state_dir=tmp_path / "state",
+            )
+        )
+
+
 def test_resolved_plan_is_adapter_invariant_but_retains_honest_invocation(tmp_path):
     common = {
         "scenario_path": SCENARIO,

@@ -106,7 +106,7 @@ const html = `<!doctype html><body><section id="run-wizard"
     <span data-basic-plan="scenario"></span><span data-basic-plan="profile"></span><span data-basic-plan="target"></span><span data-basic-plan="measurements"></span><span data-basic-plan="digest"></span>
     <div data-basic-run-stage="prepare"></div><div data-basic-run-stage="run"></div><span data-basic-run-gate></span><span data-basic-run-status></span>
     <label data-destructive-confirmation hidden><input type="checkbox" name="confirm_topology_change"></label>
-    <button type="button" data-run-action="prepare">Prepare</button><button type="submit" data-run-action="start">Run</button><button type="button" data-run-action="start-basic">Run basic</button>
+    <button type="button" data-run-action="prepare">Prepare</button><button type="button" data-run-action="cancel-library" hidden>Cancel library build</button><button type="submit" data-run-action="start">Run</button><button type="button" data-run-action="start-basic">Run basic</button>
     <p data-run-prepare-status></p><p data-run-launch-status></p><pre data-run-prepare-log></pre>
   </form>
   <script id="run-wizard-bootstrap" type="application/json">${JSON.stringify({scenarios: [scenario], measurement_profiles: [], default_scenario_id: scenarioId, default_plan: plan, default_plan_digest: 'sha256:initial'})}</script>
@@ -125,16 +125,27 @@ const html = `<!doctype html><body><section id="run-wizard"
     await page.goto('http://dwarf.test/run');
     await page.evaluate((refreshedPlan) => {
       window.__prepareBodies = [];
+      window.__cancelBodies = [];
       window.__duringPrepare = null;
-      window.fetch = (_url, options = {}) => {
+      window.fetch = (url, options = {}) => {
+        if (String(url).startsWith('/api/topology/actions')) {
+          window.__cancelBodies.push(JSON.parse(options.body));
+          return Promise.resolve(new Response(JSON.stringify({ok: true}), {
+            status: 200,
+            headers: {'Content-Type': 'application/json'},
+          }));
+        }
         window.__prepareBodies.push(JSON.parse(options.body));
         const encode = (name, payload) => new TextEncoder().encode(`event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`);
         const body = new ReadableStream({start(controller) {
+          window.setTimeout(() => controller.enqueue(encode('library_target', {
+            state: 'building', execution_id: 'library-build-0123456789abcdef',
+          })), 5);
           window.setTimeout(() => controller.enqueue(encode('plan_refresh', {
             previous_plan_digest: 'sha256:initial',
             plan_digest: 'sha256:refreshed',
             plan: refreshedPlan,
-          })), 10);
+          })), 30);
           window.setTimeout(() => {
             window.__duringPrepare = {
               scenario: document.querySelector('#run-scenario').value,
@@ -161,7 +172,26 @@ const html = `<!doctype html><body><section id="run-wizard"
     }, plan);
     await page.addScriptTag({path: script});
     await page.waitForFunction(() => document.querySelector('[data-experimental-measurement-consent]')?.checked === true);
-    await page.evaluate(() => prepareRun());
+    await page.evaluate(() => { window.__preparePromise = prepareRun(); });
+    await page.waitForFunction(() => {
+      const button = document.querySelector('[data-run-action="cancel-library"]');
+      return button && !button.hidden && !button.disabled;
+    });
+    const building = await page.evaluate(() => ({
+      status: document.querySelector('[data-run-prepare-status]').textContent,
+      cancelVisible: !document.querySelector('[data-run-action="cancel-library"]').hidden,
+    }));
+    assert.equal(building.cancelVisible, true);
+    assert.match(building.status, /Building the exact selected Amaru library target/);
+    await page.click('[data-run-action="cancel-library"]');
+    await page.waitForFunction(() => window.__cancelBodies.length === 1);
+    const cancelBody = await page.evaluate(() => window.__cancelBodies[0]);
+    assert.deepEqual(cancelBody, {
+      operation: 'cancel',
+      execution_id: 'library-build-0123456789abcdef',
+      reason: 'operator requested library preparation cancellation',
+    });
+    await page.evaluate(() => window.__preparePromise);
     const during = await page.evaluate(() => window.__duringPrepare);
     assert.deepEqual(during, {
       scenario: scenarioId, profile: profileId, registration: registrationId,

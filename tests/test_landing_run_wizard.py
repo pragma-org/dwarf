@@ -3162,7 +3162,12 @@ def test_run_start_uses_retained_launch_through_local_cli_without_control_shim(
     catalog_scenario = (
         dashboard._scenarios_dir() / "edge-cases-cbor-tx-body-amaru.yaml"
     )
-    assert (launch / "scenario.yaml").read_bytes() == catalog_scenario.read_bytes()
+    launched = json.loads((launch / "scenario.yaml").read_text())
+    catalog = json.loads(catalog_scenario.read_text())
+    assert launched["id"] == catalog["id"]
+    assert launched["target"] == plan["scenario"]["target"]
+    assert launched["load"][0]["manifests_dir"] == "dwarf/targets/manifests"
+    assert catalog["target"]["version"] == "any"
 
 
 def test_installed_run_start_executes_in_controller_not_hardened_dashboard(
@@ -3272,6 +3277,163 @@ def test_installed_run_start_reports_safe_controller_failure_and_actual_exit_cod
     assert '"exit_code": 37' in output
     assert '"exit_code": 126' not in output
     assert "secret" not in output
+
+
+def test_prepare_automatically_prepares_selected_amaru_library_target():
+    from profile_manager.run_plan import RunPlanRequest, digest_run_plan, resolve_run_plan
+
+    plan = resolve_run_plan(
+        RunPlanRequest(scenario_id="amaru-cbor-tx-body-fuzz"),
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+    digest = digest_run_plan(plan)
+    calls = []
+
+    def controller(operation, parameters, timeout, idempotency_key=None):
+        calls.append((operation, parameters, timeout, idempotency_key))
+        return {
+            "status": "applied",
+            "result": {
+                "status": "prepared",
+                "requirements_digest": parameters["requirements_digest"],
+                "targets": [{"target_id": "amaru-cbor-decode-tx-body"}],
+            },
+            "audit_receipt": "controller/controller-audit/audit-library.json",
+        }
+
+    events = list(
+        dashboard._prepare_run_plan(
+            plan,
+            digest,
+            request_controller=controller,
+        )
+    )
+
+    assert calls[0][0] == "library.prepare"
+    assert calls[0][1]["scenario_id"] == "amaru-cbor-tx-body-fuzz"
+    assert calls[0][1]["version"] == plan["scenario"]["target"]["version"]
+    assert calls[0][1]["source_revision"] == plan["scenario"]["target"][
+        "source_revision"
+    ]
+    assert calls[0][2] == 14400
+    assert events[0]["stage"] == "library_target"
+    assert events[0]["state"] == "building"
+    assert events[0]["execution_id"].startswith("library-execution-")
+    assert events[1]["stage"] == "library_target"
+    assert events[1]["state"] == "prepared"
+    assert events[-1]["state"] == "blocked"
+    assert events[-1]["reason_code"] == "availability_requires-build"
+
+
+def test_library_preparation_does_not_clear_incompatible_measurement_gate():
+    from copy import deepcopy
+
+    from profile_manager.run_plan import RunPlanRequest, digest_run_plan, resolve_run_plan
+
+    plan = deepcopy(
+        resolve_run_plan(
+            RunPlanRequest(scenario_id="amaru-cbor-tx-body-fuzz"),
+            capability_context={"host_os": "linux", "host_arch": "amd64"},
+        )
+    )
+    plan["availability"] = {"state": "ready"}
+    plan["measurements"] = {
+        "profile": None,
+        "requested": [{"id": "active-test", "enabled": True}],
+        "resolved": [],
+        "incompatible": [{"id": "active-test", "reason": "unsupported"}],
+    }
+    digest = digest_run_plan(plan)
+
+    def controller(_operation, parameters, _timeout, idempotency_key=None):
+        assert idempotency_key == parameters["execution_id"]
+        return {
+            "status": "applied",
+            "result": {
+                "status": "prepared",
+                "requirements_digest": parameters["requirements_digest"],
+                "targets": [{"target_id": "amaru-cbor-decode-tx-body"}],
+            },
+        }
+
+    events = list(
+        dashboard._prepare_run_plan(
+            plan,
+            digest,
+            request_controller=controller,
+        )
+    )
+
+    assert events[0]["state"] == "building"
+    assert events[1]["state"] == "prepared"
+    assert events[-1]["state"] == "blocked"
+    assert events[-1]["reason_code"] == "measurement_incompatible"
+    assert events[-1]["measurement_compatible"] is False
+
+
+def test_prepare_stream_reports_clear_incompatible_amaru_library_failure():
+    from profile_manager.run_plan import RunPlanRequest, digest_run_plan, resolve_run_plan
+    from profile_manager.topology_actions import TopologyActionError
+
+    request = RunPlanRequest(scenario_id="amaru-cbor-tx-body-fuzz")
+    plan = resolve_run_plan(request)
+
+    def controller(*_args, **_kwargs):
+        raise TopologyActionError(
+            "controller library preparation failed",
+            failure={
+                "type": "LibraryTargetBuildError",
+                "message": (
+                    "selected Amaru source is incompatible with the packaged library "
+                    "target; see the retained build log"
+                ),
+                "code": "library_target_source_incompatible",
+                "stage": "library_target_build",
+            },
+        )
+
+    status, content_type, stream = dashboard.dispatch_run_prepare_request(
+        method="POST",
+        path="/api/run/prepare?token=secret",
+        body=json.dumps(
+            {
+                "request": plan["request"],
+                "plan_digest": digest_run_plan(plan),
+            }
+        ).encode(),
+        expected_token="secret",
+        request_controller=controller,
+    )
+    output = b"".join(stream).decode()
+
+    assert status == 200
+    assert content_type.startswith("text/event-stream")
+    assert "selected Amaru source is incompatible" in output
+    assert "retained build log" in output
+
+
+def test_prepare_does_not_call_library_operation_for_unsupported_scenario():
+    from profile_manager.run_plan import RunPlanRequest, digest_run_plan, resolve_run_plan
+
+    plan = resolve_run_plan(
+        RunPlanRequest(
+            scenario_id="cardano-node-cbor-tx-body-fuzz",
+            version_policy="exact",
+            cardano_version="11.1.2",
+        ),
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+    events = list(
+        dashboard._prepare_run_plan(
+            plan,
+            digest_run_plan(plan),
+            request_controller=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("unsupported scenario must not prepare an Amaru target")
+            ),
+        )
+    )
+
+    assert events[-1]["state"] == "ready"
 
 
 def test_failed_mixed_readiness_stops_before_execution(tmp_path, monkeypatch):

@@ -22,6 +22,7 @@ let experimentalMeasurementConsent = null;
 let destructiveConfirmation = null;
 let seedResolveTimer = null;
 let seedLastSubmittedValue = null;
+let activeLibraryExecutionId = null;
 
 try { bootstrap = JSON.parse(bootstrapNode?.textContent || '{}'); } catch (_error) { bootstrap = {}; }
 
@@ -757,6 +758,8 @@ async function prepareRun() {
     return;
   }
   const sequence = ++prepareSequence;
+  activeLibraryExecutionId = null;
+  nodes('[data-run-action="cancel-library"]').forEach((button) => { button.hidden = true; });
   preparedPlanDigest = null;
   disableAction('prepare', true);
   disableAction('start', true);
@@ -789,6 +792,15 @@ async function prepareRun() {
       let payload = {};
       try { payload = JSON.parse(data); } catch (_error) { payload = {detail: data}; }
       appendPrepareLog(`${eventName}: ${payload.detail || payload.state || payload.action || data}`);
+      if (eventName === 'library_target' && payload.state === 'building' && typeof payload.execution_id === 'string') {
+        activeLibraryExecutionId = payload.execution_id;
+        nodes('[data-run-action="cancel-library"]').forEach((button) => { button.hidden = false; button.disabled = false; });
+        setText('[data-run-prepare-status]', 'Building the exact selected Amaru library target. This can take several minutes.');
+      }
+      if (eventName === 'library_target' && payload.state === 'prepared') {
+        activeLibraryExecutionId = null;
+        nodes('[data-run-action="cancel-library"]').forEach((button) => { button.hidden = true; });
+      }
       if (eventName === 'plan_refresh') {
         if (
           sequence !== prepareSequence
@@ -844,6 +856,32 @@ async function prepareRun() {
     setBasicStage('prepare', 'blocked');
     setLogoState('blocked', String(error));
     disableAction('prepare', false);
+  } finally {
+    activeLibraryExecutionId = null;
+    nodes('[data-run-action="cancel-library"]').forEach((button) => { button.hidden = true; });
+  }
+}
+async function cancelLibraryBuild() {
+  const executionId = activeLibraryExecutionId;
+  if (!executionId) return;
+  nodes('[data-run-action="cancel-library"]').forEach((button) => { button.disabled = true; });
+  setText('[data-run-prepare-status]', 'Cancelling the library build after safe cleanup…');
+  try {
+    const response = await fetch(`/api/topology/actions?token=${encodeURIComponent(dashboardToken)}`, {
+      method: 'POST',
+      headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        operation: 'cancel',
+        execution_id: executionId,
+        reason: 'operator requested library preparation cancellation',
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Cancel failed: HTTP ${response.status}`);
+    setText('[data-run-prepare-status]', 'Cancellation requested. Waiting for the builder to clean up.');
+  } catch (error) {
+    setText('[data-run-prepare-status]', String(error));
+    nodes('[data-run-action="cancel-library"]').forEach((button) => { button.disabled = false; });
   }
 }
 async function startRun() {
@@ -1011,6 +1049,7 @@ if (wizard && form) {
     resolvePlan();
   });
   nodes('[data-run-action="prepare"]').forEach((button) => button.addEventListener('click', prepareRun));
+  nodes('[data-run-action="cancel-library"]').forEach((button) => button.addEventListener('click', cancelLibraryBuild));
   wizard.querySelector('[data-run-action="start-basic"]')?.addEventListener('click', startRun);
   form.addEventListener('submit', (event) => { event.preventDefault(); startRun(); });
   const requestedScenario = new URLSearchParams(window.location.search).get('scenario');

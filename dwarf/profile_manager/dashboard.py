@@ -3,12 +3,14 @@ import fcntl
 import json
 import mimetypes
 import os
+import queue
 import re
 import shutil
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -1986,6 +1988,7 @@ def _prepare_run_plan(
     readiness_timeout: float = 120,
     destructive_confirmation: dict | None = None,
     capability_context: dict | None = None,
+    request_controller=None,
 ):
     """Prepare a resolved run through the reviewed topology action adapter."""
     from profile_manager.data.operate_topology_health import (
@@ -2006,6 +2009,109 @@ def _prepare_run_plan(
     operator_registration_id = (plan.get("versions") or {}).get(
         "operator_registration_id"
     )
+
+    library_requirements = (plan.get("scenario") or {}).get(
+        "library_target_requirements"
+    ) or []
+    if library_requirements:
+        if request_controller is None:
+            raise ValueError(
+                "automatic Amaru library preparation requires the local controller"
+            )
+        from profile_manager.library_targets import library_requirements_digest
+
+        requirements_digest = library_requirements_digest(library_requirements)
+        first = library_requirements[0]
+        if any(
+            item.get("version") != first.get("version")
+            or item.get("source_revision") != first.get("source_revision")
+            or item.get("platform") != first.get("platform")
+            for item in library_requirements
+        ):
+            raise ValueError("library target requirements do not share one exact source")
+        execution_id = "library-execution-" + uuid.uuid4().hex
+        yield {
+            "stage": "library_target",
+            "state": "building",
+            "plan_digest": plan_digest,
+            "requirements_digest": requirements_digest,
+            "execution_id": execution_id,
+            "detail": "Preparing the exact selected Amaru library target.",
+        }
+        controller_result: queue.Queue = queue.Queue(maxsize=1)
+
+        def prepare_library() -> None:
+            try:
+                controller_result.put(
+                    (
+                        True,
+                        request_controller(
+                            "library.prepare",
+                            {
+                                "scenario_id": plan["scenario"]["id"],
+                                "version": first["version"],
+                                "source_revision": first["source_revision"],
+                                "platform": first["platform"],
+                                "requirements_digest": requirements_digest,
+                                "execution_id": execution_id,
+                            },
+                            14400,
+                            execution_id,
+                        ),
+                    )
+                )
+            except BaseException as exc:  # noqa: BLE001 - return to request thread
+                controller_result.put((False, exc))
+
+        worker = threading.Thread(
+            target=prepare_library,
+            name=f"dwarf-{execution_id}",
+            daemon=True,
+        )
+        worker.start()
+        while True:
+            try:
+                succeeded, outcome = controller_result.get(timeout=15)
+                break
+            except queue.Empty:
+                yield {
+                    "stage": "library_target",
+                    "state": "building",
+                    "plan_digest": plan_digest,
+                    "requirements_digest": requirements_digest,
+                    "execution_id": execution_id,
+                    "detail": "The exact Amaru library target build is still running.",
+                }
+        if not succeeded:
+            failure = getattr(outcome, "failure", {})
+            if (
+                isinstance(failure, dict)
+                and failure.get("code") == "library_target_source_incompatible"
+                and failure.get("stage") == "library_target_build"
+                and isinstance(failure.get("message"), str)
+            ):
+                raise ValueError(failure["message"])
+            raise outcome
+        response = outcome
+        result = response.get("result") if isinstance(response, dict) else None
+        if (
+            response.get("status") != "applied"
+            or not isinstance(result, dict)
+            or result.get("status") != "prepared"
+            or result.get("requirements_digest") != requirements_digest
+            or not isinstance(result.get("targets"), list)
+            or not result["targets"]
+        ):
+            raise ValueError("controller did not verify the selected Amaru library target")
+        yield {
+            "stage": "library_target",
+            "state": "prepared",
+            "plan_digest": plan_digest,
+            "requirements_digest": requirements_digest,
+            "execution_id": response.get("execution_id") or execution_id,
+            "audit_receipt": response.get("audit_receipt"),
+            "targets": result["targets"],
+        }
 
     if not profile_id:
         status = _run_plan_preparation_status(plan, plan_digest, None)
@@ -2614,6 +2720,12 @@ def dispatch_run_prepare_request(
     if len(body) > 8192:
         payload = {"ok": False, "error": {"field": "request", "message": "request body is too large"}}
         return (413, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+    if request_controller is None and os.environ.get(
+        "DWARF_CONTROLLER_URL"
+    ) and os.environ.get("DWARF_CONTROLLER_TOKEN"):
+        from profile_manager.topology_actions import controller_request
+
+        request_controller = controller_request
     try:
         value = json.loads(body.decode("utf-8"))
         if not isinstance(value, dict) or set(value) - {
@@ -2705,6 +2817,7 @@ def dispatch_run_prepare_request(
                         current_digest,
                         destructive_confirmation=value.get("destructive_confirmation"),
                         capability_context=capability_context,
+                        request_controller=request_controller,
                     )
                     if preparer is None
                     else selected_preparer(plan, current_digest)

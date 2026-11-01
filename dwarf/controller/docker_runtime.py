@@ -255,6 +255,42 @@ class DockerRuntime:
         from controller.release_builds import prepare_release
         return prepare_release(self, parameters, execution_id, timeout, cancel_event)
 
+    def prepare_library_targets(
+        self, parameters, execution_id, *, timeout, cancel_event
+    ):
+        from controller.library_target_builds import prepare_library_targets
+        from profile_manager.library_targets import resolve_controller_requirements
+
+        requirements = resolve_controller_requirements(
+            scenario_id=parameters["scenario_id"],
+            version=parameters["version"],
+            source_revision=parameters["source_revision"],
+            platform=parameters["platform"],
+            expected_digest=parameters["requirements_digest"],
+        )
+        prepared = prepare_library_targets(
+            self,
+            requirements,
+            execution_id=execution_id,
+            timeout=timeout,
+            cancel_event=cancel_event,
+        )
+        return {
+            "status": "prepared",
+            "requirements_digest": parameters["requirements_digest"],
+            "targets": [
+                {
+                    "target_id": item["target_id"],
+                    "cache_key": item["cache_key"],
+                    "source_revision": item["source_revision"],
+                    "recipe_digest": item["recipe_digest"],
+                    "binary_sha256": item["binary_sha256"],
+                    "cache_status": item["cache_status"],
+                }
+                for item in prepared
+            ],
+        }
+
     def release_build_progress(self, execution_id):
         from controller.release_builds import read_progress
         return read_progress(self, execution_id)
@@ -1523,6 +1559,49 @@ class DockerRuntime:
             if not isinstance(preflight, dict) or preflight.get("state") != "ready":
                 raise DockerRuntimeError("launch preflight is not ready")
 
+        prepared_library_targets = None
+        library_requirements = (resolved.get("scenario") or {}).get(
+            "library_target_requirements"
+        ) or []
+        run_timeout = timeout
+        if library_requirements:
+            from controller.library_target_builds import (
+                LibraryTargetBuildError,
+                prepare_library_targets,
+            )
+
+            preparation_started = time.monotonic()
+            try:
+                prepared_library_targets = prepare_library_targets(
+                    self,
+                    library_requirements,
+                    execution_id=execution_id,
+                    timeout=timeout,
+                    cancel_event=cancellation,
+                )
+            except LibraryTargetBuildError as exc:
+                if cancellation.is_set():
+                    return {"status": "cancelled", "run_id": None, "exit_code": 130}
+                if str(exc) == (
+                    "selected Amaru source is incompatible with the packaged "
+                    "library target; see the retained build log"
+                ):
+                    raise DockerRuntimeError(
+                        str(exc),
+                        code="library_target_source_incompatible",
+                        stage="library_target_build",
+                    ) from exc
+                raise DockerRuntimeError(
+                    str(exc),
+                    code="library_target_preparation_failed",
+                    stage="library_target_preparation",
+                ) from exc
+            if cancellation.is_set():
+                return {"status": "cancelled", "run_id": None, "exit_code": 130}
+            run_timeout = max(
+                1, timeout - max(0, int(time.monotonic() - preparation_started))
+            )
+
         private_launch_root = (
             self.state_dir / "controller" / "run-launches" / execution_id
         )
@@ -1532,6 +1611,7 @@ class DockerRuntime:
                 launch_id=launch_id,
                 root=private_launch_root,
                 preflight=preflight,
+                prepared_library_targets=prepared_library_targets,
             )
         except (LaunchStoreError, OSError, ValueError) as exc:
             raise DockerRuntimeError(
@@ -1571,7 +1651,7 @@ class DockerRuntime:
                     *command[1:],
                 )
             result = self._run_adapter(
-                attached_command, timeout, execution_id, cancel_event=cancellation
+                attached_command, run_timeout, execution_id, cancel_event=cancellation
             )
             if cancellation.is_set() and result.returncode != 0:
                 return {"status": "cancelled", "run_id": None, "exit_code": 130}
