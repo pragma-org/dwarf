@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from dataclasses import replace
 
 import pytest
@@ -859,6 +860,84 @@ def test_library_scenario_does_not_require_mixed_topology_or_profile():
     assert plan["profile"] is None
     assert plan["readiness"]["mixed_topology_required"] is False
     assert plan["readiness"]["profile_required"] is False
+
+
+def test_exact_amaru_library_selection_freezes_build_requirement_without_building(
+    monkeypatch,
+):
+    def unexpected_build(*_args, **_kwargs):
+        raise AssertionError("read-only plan resolution must not build a target")
+
+    monkeypatch.setattr(
+        run_plan_module,
+        "_prepare_library_targets",
+        unexpected_build,
+        raising=False,
+    )
+
+    plan = resolve_run_plan(
+        RunPlanRequest(
+            scenario_id="amaru-cbor-tx-body-fuzz",
+            version_policy="exact",
+            amaru_version="10.11.20260925",
+            acknowledge_unknown_versions=True,
+        ),
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+
+    assert plan["scenario"]["target"] == {
+        "implementation": "amaru",
+        "version": "10.11.20260925",
+        "source_revision": "eaf8ac3fa309f2a174c045454c276194c9312b8d",
+    }
+    assert plan["versions"]["policy"] == "exact"
+    requirement = plan["scenario"]["library_target_requirements"][0]
+    assert requirement["target_id"] == "amaru-cbor-decode-tx-body"
+    assert requirement["location"] == ["load", 0]
+    assert requirement["implementation"] == "amaru"
+    assert requirement["version"] == "10.11.20260925"
+    assert requirement["source_repository"] == "https://github.com/pragma-org/amaru.git"
+    assert requirement["source_revision"] == "eaf8ac3fa309f2a174c045454c276194c9312b8d"
+    assert requirement["platform"] == "linux/amd64"
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}", requirement["recipe_digest"])
+    assert requirement["template_upstream_commit"] == "local"
+
+
+def test_local_library_manifest_is_a_recipe_not_selected_source_proof():
+    plan = resolve_run_plan(
+        RunPlanRequest(
+            scenario_id="amaru-cbor-tx-body-fuzz",
+            version_policy="exact",
+            amaru_version="10.11.20260925",
+            acknowledge_unknown_versions=True,
+        ),
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+
+    requirement = plan["scenario"]["library_target_requirements"][0]
+    assert requirement["template_upstream_commit"] == "local"
+    assert requirement["source_revision"] != requirement["template_upstream_commit"]
+    assert "library_target_bindings" not in plan["scenario"]
+
+
+def test_library_target_requirement_changes_with_exact_source_version():
+    common = {
+        "scenario_id": "amaru-cbor-tx-body-fuzz",
+        "version_policy": "exact",
+        "acknowledge_unknown_versions": True,
+    }
+    first = resolve_run_plan(
+        RunPlanRequest(**common, amaru_version="10.11.20260918"),
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )["scenario"]["library_target_requirements"][0]
+    second = resolve_run_plan(
+        RunPlanRequest(**common, amaru_version="10.11.20260925"),
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )["scenario"]["library_target_requirements"][0]
+
+    assert first["source_revision"] != second["source_revision"]
+    assert first["version"] != second["version"]
+    assert first["cache_key"] != second["cache_key"]
 
 
 @pytest.mark.parametrize(

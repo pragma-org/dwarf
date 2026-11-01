@@ -716,6 +716,54 @@ def _scenario_substrate_version_profile(scenario, request) -> dict[str, Any] | N
     return data
 
 
+def _library_version_profile(scenario, request) -> dict[str, Any] | None:
+    """Project an explicitly selected library release onto the version resolver."""
+
+    if scenario.runtime != "library":
+        return None
+    implementation = scenario.target["implementation"]
+    selected_version = (
+        request.amaru_version
+        if implementation == "amaru"
+        else request.cardano_version
+    )
+    declared_version = scenario.target.get("version")
+    explicit = any(
+        value is not None
+        for value in (
+            request.version_policy,
+            request.cardano_version,
+            request.amaru_version,
+            request.compatibility_pair,
+            request.operator_registration_id,
+        )
+    )
+    if not explicit and declared_version == "any":
+        return None
+    selected_version = selected_version or (
+        declared_version if declared_version != "any" else None
+    )
+    data = {
+        "id": f"scenario-{scenario.id}-library-version-selection",
+        "label": f"{scenario.title} library version selection",
+        "haskell_count": 1 if implementation == "cardano-node" else 0,
+        "amaru_count": 1 if implementation == "amaru" else 0,
+        "network_magic": 42,
+        "peer_sharing": False,
+        "topology_pattern": "local-mesh",
+        "shared_genesis": True,
+        "measurement_target_mode": "stock",
+        "version_policy": request.version_policy
+        or ("exact" if selected_version else "latest-stable"),
+        "version_policy_source": "explicit" if explicit else "scenario",
+    }
+    if implementation == "amaru" and selected_version:
+        data["amaru_version"] = selected_version
+    if implementation == "cardano-node" and selected_version:
+        data["cardano_version"] = selected_version
+    return data
+
+
 def _scenario_substrate_bindings(scenario, preview) -> list[dict[str, Any]]:
     if preview is None:
         return []
@@ -1454,8 +1502,12 @@ def resolve_run_plan(
                     ),
                 },
             ) from exc
-    elif (substrate_version_profile := _scenario_substrate_version_profile(scenario, request)) is not None:
-        profile_data = substrate_version_profile
+    elif (
+        version_profile := _library_version_profile(scenario, request)
+    ) is not None or (
+        version_profile := _scenario_substrate_version_profile(scenario, request)
+    ) is not None:
+        profile_data = version_profile
         try:
             preview = build_deployment_version_preview(
                 profile_data,
@@ -1496,6 +1548,26 @@ def resolve_run_plan(
         ),
     )
     capability = _capability_context(capability_context)
+    library_target_requirements = []
+    if scenario.runtime == "library" and preview is not None:
+        selected_release = (preview.get("resolved") or {}).get(
+            effective_target["implementation"]
+        )
+        if selected_release is None:
+            raise RunPlanError(
+                "library scenario has no exact selected release", field="versions"
+            )
+        try:
+            from profile_manager.library_targets import library_target_requirements as resolve_library_targets
+
+            library_target_requirements = resolve_library_targets(
+                effective_scenario,
+                release=selected_release,
+                catalog=preview.get("catalog_snapshot") or {},
+                platform=capability["container_platform"],
+            )
+        except ValueError as exc:
+            raise RunPlanError(str(exc), field="scenario_id") from exc
     measurements = _measurement_context(
         effective_scenario,
         profile,
@@ -1609,6 +1681,7 @@ def resolve_run_plan(
             "target_bindings": target_bindings,
             "substrate_bindings": substrate_bindings,
             "required_conformance_adapters": conformance_adapters,
+            "library_target_requirements": library_target_requirements,
         },
         "profile": (
             {
