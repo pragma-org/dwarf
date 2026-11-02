@@ -1798,10 +1798,13 @@ def compare_preflight(scenario_path) -> dict[str, Any]:
             manifests_dir = Path(
                 os.path.expanduser(os.path.expandvars(str(config["manifests_dir"])))
             ).resolve()
-            dataset_runtime._load_target(str(config["reference_target_id"]), manifests_dir)
-            dataset_runtime._load_target(str(config["candidate_target_id"]), manifests_dir)
             verifier_binary = config.get("reference_verifier_binary")
             verifier_image = config.get("reference_verifier_image")
+            reference_target_id = config.get("reference_target_id")
+            verifier_configured = bool(verifier_binary) or bool(verifier_image)
+            if reference_target_id and not verifier_configured:
+                dataset_runtime._load_target(str(reference_target_id), manifests_dir)
+            dataset_runtime._load_target(str(config["candidate_target_id"]), manifests_dir)
             if bool(verifier_binary) == bool(verifier_image):
                 raise ValueError(
                     "configure exactly one reference_verifier_binary or reference_verifier_image"

@@ -77,6 +77,101 @@ def _qualified_dataset_load(tmp_path: Path) -> dict:
     }
 
 
+def _hermetic_dataset_load(tmp_path: Path) -> dict:
+    repo = tmp_path / "dataset-repo"
+    dataset = repo / "dataset" / "conway-123-100"
+    dataset.mkdir(parents=True)
+    manifests = tmp_path / "manifests"
+    manifests.mkdir()
+    return {
+        "primitive": "runtime_cardano_cbor_dataset_differential",
+        "dataset_repo_dir": str(repo),
+        "dataset_dir": str(dataset),
+        "expected_source_revision": dataset_runtime.QUALIFIED_DATASET_REVISION,
+        "source_repository": dataset_runtime.QUALIFIED_DATASET_REPOSITORY,
+        "era": "conway",
+        "rule": "plutus_data",
+        "samples_per_category": 1,
+        "manifests_dir": str(manifests),
+        "candidate_target_id": "amaru-target",
+    }
+
+
+def _mock_dataset_preflight_dependencies(monkeypatch):
+    loaded_targets = []
+    monkeypatch.setattr(
+        dataset_runtime,
+        "validate_qualified_dataset_contract",
+        lambda _config: None,
+    )
+    monkeypatch.setattr(
+        dataset_runtime,
+        "_git_revision",
+        lambda _repo: dataset_runtime.QUALIFIED_DATASET_REVISION,
+    )
+    monkeypatch.setattr(
+        dataset_runtime,
+        "_select_inputs",
+        lambda *_args: [Path("fixture.cbor")],
+    )
+
+    def load_target(target_id, manifests_dir):
+        loaded_targets.append((target_id, manifests_dir))
+        return {"id": target_id}
+
+    monkeypatch.setattr(dataset_runtime, "_load_target", load_target)
+    return loaded_targets
+
+
+def test_compare_preflight_accepts_verifier_image_without_reference_target(
+    tmp_path, monkeypatch
+):
+    load = _hermetic_dataset_load(tmp_path)
+    load["reference_verifier_image"] = "qualified-verifier@sha256:" + "a" * 64
+    loaded_targets = _mock_dataset_preflight_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        dataset_runtime,
+        "_inspect_container_image",
+        lambda _docker, _image: {"os": "linux", "architecture": "amd64"},
+    )
+    scenario_path = _scenario(tmp_path / "verifier-image.yaml", load=[load])
+
+    assert scenario.compare_preflight(scenario_path) == {
+        "ready": True,
+        "code": "ready",
+        "message": "Compare requirements are available.",
+        "requirement": None,
+    }
+    assert [target_id for target_id, _manifests_dir in loaded_targets] == [
+        "amaru-target"
+    ]
+
+
+def test_compare_preflight_rejects_missing_verifier_image_without_reference_target(
+    tmp_path, monkeypatch
+):
+    load = _hermetic_dataset_load(tmp_path)
+    load["reference_verifier_image"] = "missing-verifier@sha256:" + "b" * 64
+    loaded_targets = _mock_dataset_preflight_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        dataset_runtime,
+        "_inspect_container_image",
+        lambda *_args: (_ for _ in ()).throw(
+            RuntimeError("reference verifier image is unavailable")
+        ),
+    )
+    scenario_path = _scenario(tmp_path / "missing-verifier-image.yaml", load=[load])
+
+    result = scenario.compare_preflight(scenario_path)
+
+    assert result["ready"] is False
+    assert result["code"] == "compare-requirement-unavailable"
+    assert "reference verifier image is unavailable" in result["message"]
+    assert [target_id for target_id, _manifests_dir in loaded_targets] == [
+        "amaru-target"
+    ]
+
+
 def test_compare_preflight_blocks_unconfigured_qualified_dataset_before_dispatch(
     tmp_path, monkeypatch
 ):
