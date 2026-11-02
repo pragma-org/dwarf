@@ -1,5 +1,6 @@
 """Resolve trusted library target recipes without building them."""
 from __future__ import annotations
+from dataclasses import replace
 
 import hashlib
 import json
@@ -98,17 +99,35 @@ def _regular_file(path: Path, *, root: Path, label: str) -> Path:
 
 def _target_refs(scenario):
     sections = ("setup", "load", "faults", "probes", "assertions", "teardown")
+
+    def normalized(ref):
+        if "target_id" in ref.params and "manifests_dir" in ref.params:
+            return ref
+        if (
+            ref.primitive == "runtime_cardano_cbor_dataset_differential"
+            and "candidate_target_id" in ref.params
+            and "manifests_dir" in ref.params
+        ):
+            return replace(
+                ref,
+                params={
+                    **ref.params,
+                    "target_id": ref.params["candidate_target_id"],
+                },
+            )
+        return None
+
     if scenario.phases:
         for phase_index, phase in enumerate(scenario.phases):
             for section in sections:
                 for ref_index, ref in enumerate(getattr(phase, section)):
-                    if "target_id" in ref.params and "manifests_dir" in ref.params:
-                        yield ["phases", phase_index, section, ref_index], ref
+                    if target_ref := normalized(ref):
+                        yield ["phases", phase_index, section, ref_index], target_ref
         return
     for section in sections:
         for ref_index, ref in enumerate(getattr(scenario, section)):
-            if "target_id" in ref.params and "manifests_dir" in ref.params:
-                yield [section, ref_index], ref
+            if target_ref := normalized(ref):
+                yield [section, ref_index], target_ref
 
 
 def _recipe(target_id: str, manifests_dir: str) -> dict[str, Any]:

@@ -20,8 +20,13 @@ from controller.library_target_builds import (
 )
 from controller.docker_runtime import DockerRuntimeError
 from profile_manager.launch_store import _freeze_prepared_library_targets
+from profile_manager.library_targets import (
+    LibraryTargetError,
+    library_target_requirements,
+)
 from profile_manager.primitives import load_target_manifest
 from profile_manager.run_plan import RunPlanRequest, resolve_run_plan
+from profile_manager.scenario import PrimitiveRef
 from scripts import amaru_library_target_builder
 
 
@@ -161,6 +166,71 @@ def _requirement(
         capability_context={"host_os": "linux", "host_arch": "amd64"},
     )
     return plan["scenario"]["library_target_requirements"][0]
+
+
+def _differential_candidate_scenario(
+    candidate_target_id: str,
+    *,
+    manifests_dir: str = "dwarf/targets/manifests",
+):
+    empty = []
+    return SimpleNamespace(
+        runtime="library",
+        target={"implementation": "amaru", "version": "any"},
+        phases=[],
+        setup=empty,
+        load=[
+            PrimitiveRef(
+                primitive="runtime_cardano_cbor_dataset_differential",
+                params={
+                    "candidate_target_id": candidate_target_id,
+                    "reference_target_id": "cardano-node-cbor-decode-tx-body",
+                    "manifests_dir": manifests_dir,
+                },
+            )
+        ],
+        faults=empty,
+        probes=empty,
+        assertions=empty,
+        teardown=empty,
+    )
+
+
+def _candidate_requirements(candidate_target_id: str, **scenario_options):
+    return library_target_requirements(
+        _differential_candidate_scenario(
+            candidate_target_id,
+            **scenario_options,
+        ),
+        release={
+            "implementation": "amaru",
+            "version": "10.11.20261029",
+            "source_revision": "23031e0ed4423b9cb899da030d515cb69d203749",
+        },
+        catalog={"sources": {"amaru": "https://github.com/pragma-org/amaru.git"}},
+        platform="linux/amd64",
+    )
+
+
+def test_differential_candidate_yields_one_on_demand_library_requirement():
+    requirements = _candidate_requirements("amaru-cbor-decode-tx-body")
+
+    assert len(requirements) == 1
+    assert requirements[0]["target_id"] == "amaru-cbor-decode-tx-body"
+    assert requirements[0]["location"] == ["load", 0]
+
+
+def test_differential_candidate_rejects_unsupported_amaru_target():
+    with pytest.raises(LibraryTargetError, match="explicitly approved Amaru targets"):
+        _candidate_requirements("amaru-cbor-decode-plutus-data")
+
+
+def test_differential_candidate_requires_canonical_manifest_catalog():
+    with pytest.raises(LibraryTargetError, match="packaged target manifest catalog"):
+        _candidate_requirements(
+            "amaru-cbor-decode-tx-body",
+            manifests_dir="targets/manifests",
+        )
 
 
 @pytest.mark.parametrize(
