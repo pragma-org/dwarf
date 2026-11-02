@@ -161,6 +161,135 @@ def _run(tmp_path: Path, monkeypatch, **config_options) -> dict:
     return json.loads(report_path.read_text(encoding="utf-8"))
 
 
+@pytest.mark.parametrize("head_mode", ["detached", "loose-ref", "packed-ref"])
+def test_git_revision_reads_repository_metadata_without_git(
+    tmp_path, monkeypatch, head_mode
+):
+    repo = tmp_path / "dataset-repository"
+    git_dir = repo / ".git"
+    git_dir.mkdir(parents=True)
+    revision = dataset_runtime.QUALIFIED_DATASET_REVISION
+    if head_mode == "detached":
+        (git_dir / "HEAD").write_text(revision + "\n", encoding="utf-8")
+    else:
+        (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        if head_mode == "loose-ref":
+            ref = git_dir / "refs/heads/main"
+            ref.parent.mkdir(parents=True)
+            ref.write_text(revision + "\n", encoding="utf-8")
+        else:
+            (git_dir / "packed-refs").write_text(
+                "# pack-refs with: peeled fully-peeled sorted\n"
+                f"{revision} refs/heads/main\n",
+                encoding="utf-8",
+            )
+
+    def forbidden_subprocess(*_args, **_kwargs):
+        raise AssertionError("Git metadata resolution must not execute a process")
+
+    monkeypatch.setattr(dataset_runtime.subprocess, "run", forbidden_subprocess)
+
+    assert dataset_runtime._git_revision(repo) == revision
+
+
+@pytest.mark.parametrize("layout", ["missing-head", "unresolved-ref"])
+def test_git_revision_rejects_unreadable_repository_metadata(tmp_path, layout):
+    repo = tmp_path / "dataset-repository"
+    git_dir = repo / ".git"
+    git_dir.mkdir(parents=True)
+    if layout == "unresolved-ref":
+        (git_dir / "HEAD").write_text("ref: refs/heads/missing\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="dataset Git metadata"):
+        dataset_runtime._git_revision(repo)
+
+
+def test_container_verifier_maps_run_output_to_controller_host_mount(
+    tmp_path, monkeypatch
+):
+    output_dir = tmp_path / "controller-runs/run-1/outputs/differential"
+    stage_dir = output_dir / "reference-dataset"
+    stage_dir.mkdir(parents=True)
+    expected_relative = Path("run-1/outputs/differential")
+    host_runs = Path("/host/dwarf-public-9999/runs")
+    observed = []
+
+    monkeypatch.setattr(
+        dataset_runtime,
+        "_controller_container",
+        lambda: {"Id": "controller"},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        dataset_runtime,
+        "_owned_run_output_relative",
+        lambda path: (path, expected_relative),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        dataset_runtime,
+        "_mount_source",
+        lambda inspected, destination, *, writable: (
+            str(host_runs)
+            if inspected == {"Id": "controller"}
+            and destination == "/var/dwarf/runs"
+            and writable is True
+            else pytest.fail("unexpected controller mount lookup")
+        ),
+        raising=False,
+    )
+
+    def fake_run(command, **_kwargs):
+        observed.append(command)
+        if command[:3] == ["docker", "image", "inspect"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(
+                    [
+                        {
+                            "Id": "sha256:" + "a" * 64,
+                            "RepoDigests": [],
+                            "Architecture": "amd64",
+                            "Os": "linux",
+                            "Config": {"Labels": {}},
+                        }
+                    ]
+                ),
+                stderr="",
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="verified\n", stderr="")
+
+    monkeypatch.setattr(dataset_runtime.subprocess, "run", fake_run)
+
+    result = dataset_runtime._run_reference_verifier(
+        {
+            "era": "conway",
+            "reference_verifier_image": "cardano-cbor-dataset:a7561cd",
+            "reference_verifier_platform": "linux/amd64",
+            "docker_binary": "docker",
+        },
+        output_dir,
+        stage_dir,
+    )
+
+    run_command = observed[1]
+    assert run_command[run_command.index("-v") + 1] == (
+        f"{host_runs / expected_relative}:/output"
+    )
+    assert f"{output_dir}:/output" not in run_command
+    assert "CBOR_COVERAGE_DIR=/output/reference-coverage" in run_command
+    assert run_command[-5:] == [
+        "verify",
+        "--era",
+        "conway",
+        "deserialize",
+        "/output/reference-dataset",
+    ]
+    assert "--entrypoint" not in run_command
+    assert result["passed"] is True
+
+
 def test_verifier_derived_reference_is_label_independent(tmp_path, monkeypatch):
     report = _run(
         tmp_path,

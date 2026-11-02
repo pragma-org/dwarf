@@ -12,10 +12,17 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
 from pathlib import Path
+
+from scripts.runtime_cardano_measurement_calibration import (
+    _controller_container,
+    _mount_source,
+    _owned_run_output_relative,
+)
 
 
 REQUIRED_CATEGORIES = ("valid", "zap-1", "zap-2", "zap-3")
@@ -24,6 +31,7 @@ QUALIFIED_DATASET_REPOSITORY = (
 )
 QUALIFIED_DATASET_REVISION = "a7561cd063550c2218898571520f14c3674efe91"
 QUALIFIED_DATASET_ERA = "conway"
+_GIT_SHA1 = re.compile(r"[0-9a-fA-F]{40}")
 QUALIFIED_DATASET_RULES = frozenset(
     {
         "plutus_data",
@@ -78,15 +86,57 @@ def _sha256_file(path: Path) -> str:
 
 
 def _git_revision(repo_dir: Path) -> str:
-    proc = subprocess.run(
-        ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise ValueError(f"dataset repository is not a readable Git checkout: {repo_dir}")
-    return proc.stdout.strip()
+    git_dir = repo_dir / ".git"
+    head_path = git_dir / "HEAD"
+    if (
+        not git_dir.is_dir()
+        or git_dir.is_symlink()
+        or not head_path.is_file()
+        or head_path.is_symlink()
+    ):
+        raise ValueError(f"dataset Git metadata is unreadable: {git_dir}")
+    try:
+        head = head_path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"dataset Git metadata is unreadable: {head_path}") from exc
+
+    def revision(value: str, source: Path) -> str:
+        value = value.strip().lower()
+        if _GIT_SHA1.fullmatch(value) is None:
+            raise ValueError(f"dataset Git metadata has an invalid revision: {source}")
+        return value
+
+    if not head.startswith("ref:"):
+        return revision(head, head_path)
+
+    ref = head.removeprefix("ref:").strip()
+    ref_path = Path(ref)
+    if (
+        not ref
+        or ref_path.is_absolute()
+        or ".." in ref_path.parts
+        or not ref_path.parts
+        or ref_path.parts[0] != "refs"
+    ):
+        raise ValueError(f"dataset Git metadata has an invalid HEAD ref: {head_path}")
+    loose_ref = git_dir / ref_path
+    if loose_ref.is_file() and not loose_ref.is_symlink():
+        try:
+            return revision(loose_ref.read_text(encoding="utf-8"), loose_ref)
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(f"dataset Git metadata is unreadable: {loose_ref}") from exc
+
+    packed_refs = git_dir / "packed-refs"
+    if packed_refs.is_file() and not packed_refs.is_symlink():
+        try:
+            lines = packed_refs.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(f"dataset Git metadata is unreadable: {packed_refs}") from exc
+        for line in lines:
+            fields = line.strip().split(maxsplit=1)
+            if len(fields) == 2 and fields[1] == ref:
+                return revision(fields[0], packed_refs)
+    raise ValueError(f"dataset Git metadata cannot resolve HEAD ref {ref}: {git_dir}")
 
 
 def _load_target(target_id: str, manifests_dir: Path) -> dict:
@@ -270,6 +320,14 @@ def _run_reference_verifier(config: dict, output_dir: Path, stage_dir: Path) -> 
         docker_binary = str(config.get("docker_binary", "docker"))
         image_provenance = _inspect_container_image(docker_binary, str(verifier_image))
         platform = str(config.get("reference_verifier_platform", "linux/amd64"))
+        bind_output_dir = output_dir
+        controller = _controller_container()
+        if controller is not None:
+            _output_absolute, output_relative = _owned_run_output_relative(output_dir)
+            host_runs = Path(
+                _mount_source(controller, "/var/dwarf/runs", writable=True)
+            )
+            bind_output_dir = host_runs / output_relative
         command = [
             docker_binary,
             "run",
@@ -279,7 +337,7 @@ def _run_reference_verifier(config: dict, output_dir: Path, stage_dir: Path) -> 
             "-e",
             "CBOR_COVERAGE_DIR=/output/reference-coverage",
             "-v",
-            f"{output_dir}:/output",
+            f"{bind_output_dir}:/output",
             str(verifier_image),
             "verify",
             "--era",
