@@ -171,6 +171,8 @@ services:
       DWARF_LOCALTXSUBMISSION_HELPER_IMAGE: ${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE:-}
       DWARF_RUN_ARTIFACT_BASE_URL: ${DWARF_RUN_ARTIFACT_BASE_URL:-}
     volumes:
+      # An optional full Cardano-CBOR-dataset repository bind is merged here
+      # by docker-compose.cbor-dataset.yml only when DWARF_CBOR_DATASET_DIR is set.
       - dwarf-runs:/var/dwarf/runs
       - dwarf-controller-state:/var/dwarf/controller-state
       - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/profiles:/var/dwarf/dashboard-state/profiles:ro

@@ -1,0 +1,9 @@
+services:
+  dwarf-controller:
+    volumes:
+      - type: bind
+        source: "${DWARF_CBOR_DATASET_DIR:?set DWARF_CBOR_DATASET_DIR to the absolute Cardano CBOR dataset repository}"
+        target: "${DWARF_CBOR_DATASET_DIR:?set DWARF_CBOR_DATASET_DIR to the absolute Cardano CBOR dataset repository}"
+        read_only: true
+        bind:
+          create_host_path: false

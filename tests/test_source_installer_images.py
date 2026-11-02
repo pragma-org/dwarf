@@ -27,6 +27,7 @@ def run_delivery(tmp_path, *, present=(), failure="", images=None, helper=False)
     available = tmp_path / "available"
     available.write_text("\n".join(present) + "\n")
     env = dict(os.environ)
+    env.pop("DWARF_CBOR_DATASET_DIR", None)
     env.update(
         DWARF_RUNTIME_ROOT=str(tmp_path / "runtime"),
         DWARF_CONTROLLER_TOKEN="test-token-" + "x" * 40,
@@ -62,6 +63,73 @@ export -f docker
     command += '\nsource "$COMMON"\nensure_golden_images\n' if helper else '\nbash "$DEPLOY"\n'
     result = subprocess.run(["bash", "-c", command], env=env, capture_output=True, text=True)
     return result, calls.read_text().splitlines() if calls.exists() else []
+
+
+def run_compose_helper(tmp_path, *, dataset_dir=None):
+    calls = tmp_path / "compose-calls"
+    env = {
+        **os.environ,
+        "DWARF_RUNTIME_ROOT": str(tmp_path / "runtime"),
+        "CALLS": str(calls),
+    }
+    if dataset_dir is None:
+        env.pop("DWARF_CBOR_DATASET_DIR", None)
+    else:
+        env["DWARF_CBOR_DATASET_DIR"] = str(dataset_dir)
+    command = f'''
+set -euo pipefail
+docker() {{ printf '%s\\n' "$*" >> "$CALLS"; }}
+export -f docker
+source "{ROOT / "delivery/scripts/common.sh"}"
+compose config
+'''
+    result = subprocess.run(
+        ["bash", "-c", command], env=env, capture_output=True, text=True
+    )
+    return result, calls.read_text().splitlines() if calls.exists() else []
+
+
+def test_compose_omits_optional_cbor_dataset_override_when_unset(tmp_path):
+    result, calls = run_compose_helper(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert len(calls) == 1
+    assert "docker-compose.dwarf.yml config" in calls[0]
+    assert "docker-compose.cbor-dataset.yml" not in calls[0]
+
+
+def test_compose_mounts_full_cbor_dataset_repo_only_when_configured(tmp_path):
+    dataset = tmp_path / "cardano-cbor-dataset"
+    (dataset / ".git").mkdir(parents=True)
+
+    result, calls = run_compose_helper(tmp_path, dataset_dir=dataset)
+
+    assert result.returncode == 0, result.stderr
+    assert len(calls) == 1
+    assert "docker-compose.dwarf.yml" in calls[0]
+    assert "docker-compose.cbor-dataset.yml config" in calls[0]
+
+
+def test_compose_rejects_missing_cbor_dataset_without_creating_it(tmp_path):
+    dataset = tmp_path / "missing-cardano-cbor-dataset"
+
+    result, calls = run_compose_helper(tmp_path, dataset_dir=dataset)
+
+    assert result.returncode != 0
+    assert "DWARF_CBOR_DATASET_DIR" in result.stderr
+    assert calls == []
+    assert not dataset.exists()
+
+
+def test_compose_rejects_cbor_dataset_without_full_git_directory(tmp_path):
+    dataset = tmp_path / "cardano-cbor-dataset"
+    dataset.mkdir()
+
+    result, calls = run_compose_helper(tmp_path, dataset_dir=dataset)
+
+    assert result.returncode != 0
+    assert "full .git directory" in result.stderr
+    assert calls == []
 
 
 def test_fresh_deploy_pulls_missing_target_before_starting_containers(tmp_path):

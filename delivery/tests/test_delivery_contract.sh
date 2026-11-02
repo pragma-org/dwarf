@@ -189,6 +189,12 @@ fi
 grep -q 'DWARF_DASHBOARD_BIND:-127.0.0.1' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
 grep -q "dwarf-fw" "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
 grep -q "dwarf-controller" "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
+test -f "${PACKAGE_ROOT}/delivery/docker-compose.cbor-dataset.yml"
+grep -q 'source: "${DWARF_CBOR_DATASET_DIR:?' "${PACKAGE_ROOT}/delivery/docker-compose.cbor-dataset.yml"
+grep -q 'target: "${DWARF_CBOR_DATASET_DIR:?' "${PACKAGE_ROOT}/delivery/docker-compose.cbor-dataset.yml"
+grep -q 'read_only: true' "${PACKAGE_ROOT}/delivery/docker-compose.cbor-dataset.yml"
+grep -q 'create_host_path: false' "${PACKAGE_ROOT}/delivery/docker-compose.cbor-dataset.yml"
+grep -q 'DWARF_CBOR_DATASET_DIR' "${PACKAGE_ROOT}/delivery/scripts/common.sh"
 grep -q 'DWARF_DOCKER_SOCKET_PATH:-/var/run/docker.sock' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
 if awk '/^  dwarf-fw:/{dashboard=1} /^  dwarf-controller:/{dashboard=0} dashboard && /docker.sock/{found=1} END{exit found ? 0 : 1}' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"; then
   echo "dashboard service must not receive the Docker socket" >&2

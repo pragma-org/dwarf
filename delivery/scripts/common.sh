@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PACKAGE_ROOT=$(cd "${SCRIPT_DIR}/../.." && pwd)
 COMPOSE_FILE="${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
+CBOR_DATASET_COMPOSE_FILE="${PACKAGE_ROOT}/delivery/docker-compose.cbor-dataset.yml"
 
 if [[ -f "${PACKAGE_ROOT}/.env" ]]; then
   # Match Compose's precedence: values explicitly exported by the caller win
@@ -20,6 +21,7 @@ fi
 
 DWARF_IMAGE=${DWARF_IMAGE:-dwarf/framework:current}
 DWARF_CONTROLLER_IMAGE=${DWARF_CONTROLLER_IMAGE:-dwarf/controller:current}
+DWARF_CBOR_DATASET_DIR=${DWARF_CBOR_DATASET_DIR:-}
 DWARF_CONTAINER_NAME=${DWARF_CONTAINER_NAME:-dwarf-fw}
 DWARF_DASHBOARD_BIND=${DWARF_DASHBOARD_BIND:-127.0.0.1}
 DWARF_DASHBOARD_PORT=${DWARF_DASHBOARD_PORT:-8787}
@@ -81,6 +83,7 @@ DWARF_SSH_KNOWN_HOSTS=${DWARF_SSH_KNOWN_HOSTS:-${DWARF_RUNTIME_ROOT}/state/ssh_k
 
 export DWARF_IMAGE
 export DWARF_CONTROLLER_IMAGE
+export DWARF_CBOR_DATASET_DIR
 export DWARF_CONTAINER_NAME
 export DWARF_DASHBOARD_BIND
 export DWARF_DASHBOARD_PORT
@@ -163,6 +166,7 @@ ensure_package_layout() {
     "${PACKAGE_ROOT}/infrastructure/docker/dwarf-fw-entrypoint.sh"
     "${PACKAGE_ROOT}/infrastructure/docker/requirements-framework.txt"
     "${COMPOSE_FILE}"
+    "${CBOR_DATASET_COMPOSE_FILE}"
   )
 
   for path in "${required[@]}"; do
@@ -662,8 +666,30 @@ seed_measurement_profiles() {
   done
 }
 
+validate_optional_cbor_dataset_dir() {
+  local dataset_dir=${DWARF_CBOR_DATASET_DIR:-}
+  [[ -n "${dataset_dir}" ]] || return 0
+  if [[ "${dataset_dir}" != /* || "${dataset_dir}" == / || "${dataset_dir}" == *$'\n'* ]]; then
+    echo "DWARF_CBOR_DATASET_DIR must be a safe absolute directory path" >&2
+    return 1
+  fi
+  if [[ ! -d "${dataset_dir}" || -L "${dataset_dir}" ]]; then
+    echo "DWARF_CBOR_DATASET_DIR must identify an existing real directory" >&2
+    return 1
+  fi
+  if [[ ! -d "${dataset_dir}/.git" || -L "${dataset_dir}/.git" ]]; then
+    echo "DWARF_CBOR_DATASET_DIR must contain its full .git directory" >&2
+    return 1
+  fi
+}
+
 compose() {
-  docker compose -f "${COMPOSE_FILE}" "$@"
+  local -a compose_files=(-f "${COMPOSE_FILE}")
+  if [[ -n "${DWARF_CBOR_DATASET_DIR:-}" ]]; then
+    validate_optional_cbor_dataset_dir
+    compose_files+=(-f "${CBOR_DATASET_COMPOSE_FILE}")
+  fi
+  docker compose "${compose_files[@]}" "$@"
 }
 
 container_running() {
@@ -703,6 +729,7 @@ Image: ${DWARF_IMAGE}
 Container: ${DWARF_CONTAINER_NAME}
 Dashboard: ${DWARF_DASHBOARD_BIND}:${DWARF_DASHBOARD_PORT}
 Runtime root: ${DWARF_RUNTIME_ROOT}
+CBOR dataset: ${DWARF_CBOR_DATASET_DIR:-disabled}
 Moog bootstrap: ${DWARF_MOOG_BOOTSTRAP}
 EOF
 }

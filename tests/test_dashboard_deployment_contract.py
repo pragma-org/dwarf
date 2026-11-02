@@ -125,6 +125,19 @@ def test_controller_uses_ephemeral_private_docker_config_with_read_only_root():
     assert "/home/dwarf/.docker" not in controller
 
 
+def test_controller_optional_cbor_dataset_override_is_same_path_read_only_bind():
+    override = (
+        ROOT / "delivery/docker-compose.cbor-dataset.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "dwarf-controller:" in override
+    assert 'source: "${DWARF_CBOR_DATASET_DIR:?' in override
+    assert 'target: "${DWARF_CBOR_DATASET_DIR:?' in override
+    assert "read_only: true" in override
+    assert "create_host_path: false" in override
+    assert "dwarf-fw:" not in override
+
+
 def test_controller_receives_optional_raw_submission_helper_identity():
     compose = (ROOT / "delivery/docker-compose.dwarf.yml").read_text(encoding="utf-8")
     dashboard, controller = compose.split("\n  dwarf-controller:\n", 1)
@@ -402,6 +415,7 @@ def test_build_image_uses_ephemeral_archived_context(tmp_path):
         "infrastructure/docker/dwarf-fw-entrypoint.sh": "#!/usr/bin/env bash\n",
         "infrastructure/docker/requirements-framework.txt": "",
         "delivery/docker-compose.dwarf.yml": "services: {}\n",
+        "delivery/docker-compose.cbor-dataset.yml": "services: {}\n",
     }
     for relative, content in required_files.items():
         destination = checkout / relative
