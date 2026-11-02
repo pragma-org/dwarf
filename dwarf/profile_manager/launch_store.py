@@ -329,7 +329,20 @@ def materialized_scenario(plan: dict[str, Any]) -> bytes:
                 entry = entry[component]
         except (KeyError, IndexError, TypeError) as exc:
             raise LaunchStoreError("library target binding location changed") from exc
-        if not isinstance(entry, dict) or entry.get("target_id") != binding.get("target_id"):
+        if not isinstance(entry, dict):
+            raise LaunchStoreError("library target declaration changed")
+        declared_target_id = entry.get("target_id")
+        if entry.get("primitive") == "runtime_cardano_cbor_dataset_differential":
+            candidate_target_id = entry.get("candidate_target_id")
+            if (
+                declared_target_id is not None
+                and candidate_target_id is not None
+                and declared_target_id != candidate_target_id
+            ):
+                raise LaunchStoreError("library target declaration changed")
+            if declared_target_id is None:
+                declared_target_id = candidate_target_id
+        if declared_target_id != binding.get("target_id"):
             raise LaunchStoreError("library target declaration changed")
         entry["manifests_dir"] = binding["manifests_dir"]
     for binding in (plan.get("scenario") or {}).get("target_bindings") or []:

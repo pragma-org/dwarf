@@ -1197,6 +1197,77 @@ def test_run_launch_without_preflight_still_prepares_and_freezes_exact_library_t
     }
 
 
+def test_run_launch_materializes_differential_candidate_library_target(
+    tmp_path, monkeypatch
+):
+    launches = tmp_path / "launches"
+    runs = tmp_path / "runs"
+    state = tmp_path / "state"
+    bundles = tmp_path / "bundles"
+    for path in (runs, state, bundles):
+        path.mkdir()
+    monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(runs))
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(state))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(bundles))
+    monkeypatch.setenv("DWARF_HOST_OS", "linux")
+    monkeypatch.setenv("DWARF_HOST_ARCH", "amd64")
+    plan = resolve_run_plan(
+        {
+            "scenario_id": "cardano-amaru-cbor-dataset-tx-body-differential",
+            "version_policy": "exact",
+            "amaru_version": "10.11.20260925",
+            "acknowledge_unknown_versions": True,
+        },
+        capability_context={"host_os": "linux", "host_arch": "amd64"},
+    )
+    requirement = plan["scenario"]["library_target_requirements"][0]
+    digest = digest_run_plan(plan)
+    launch = create_launch(plan, root=launches)
+    prepared = _fake_prepared_library_target(tmp_path / "prepared-differential", requirement)
+    monkeypatch.setattr(
+        "controller.library_target_builds.prepare_library_targets",
+        lambda _runtime, _requirements, **_kwargs: [prepared],
+    )
+    observed = {}
+
+    def adapter(argv, _timeout, _execution_id):
+        scenario_path = Path(argv[-3])
+        scenario = json.loads(scenario_path.read_text())
+        observed["load"] = scenario["load"][0]
+        run_id = "20261102T120000Z-differential-library-controller"
+        run_dir = runs / run_id
+        run_dir.mkdir()
+        (run_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "exit_status": "pass",
+                    "execution": {"security_verdict": "pass"},
+                }
+            )
+        )
+        return DockerResult(0, f"run_id: {run_id}\n", "")
+
+    runtime = DockerRuntime(
+        installation_id="install",
+        state_dir=tmp_path / "controller-state",
+        host_state_dir="/srv/dwarf",
+        launch_root=launches,
+        adapter_runner=adapter,
+    )
+    result = runtime.run_launch(
+        launch_id=launch["launch_id"],
+        plan_digest=digest,
+        execution_id="run-execution-differential-target",
+        timeout=2400,
+    )
+
+    assert result["run_id"] == "20261102T120000Z-differential-library-controller"
+    assert observed["load"]["candidate_target_id"] == requirement["target_id"]
+    assert "target_id" not in observed["load"]
+    assert observed["load"]["manifests_dir"] != "dwarf/targets/manifests"
+
+
 @pytest.mark.parametrize("tamper_kind", ("receipt", "template"))
 def test_run_launch_rejects_library_evidence_changed_after_cache_validation(
     tmp_path, monkeypatch, tamper_kind

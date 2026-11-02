@@ -14,12 +14,17 @@ from types import SimpleNamespace
 import pytest
 
 import controller.library_target_builds as library_builds
+import profile_manager.launch_store as launch_store
 from controller.library_target_builds import (
     LibraryTargetBuildError,
     prepare_library_targets,
 )
 from controller.docker_runtime import DockerRuntimeError
-from profile_manager.launch_store import _freeze_prepared_library_targets
+from profile_manager.launch_store import (
+    LaunchStoreError,
+    _freeze_prepared_library_targets,
+    materialized_scenario,
+)
 from profile_manager.library_targets import (
     LibraryTargetError,
     library_target_requirements,
@@ -231,6 +236,88 @@ def test_differential_candidate_requires_canonical_manifest_catalog():
             "amaru-cbor-decode-tx-body",
             manifests_dir="targets/manifests",
         )
+
+
+def _materialize_library_binding(
+    tmp_path, monkeypatch, entry, *, binding_target="amaru-cbor-decode-tx-body"
+):
+    scenario_id = "differential-library-binding-regression"
+    original = {
+        "id": scenario_id,
+        "target": {"implementation": "amaru", "version": "any"},
+        "seed": 1,
+        "load": [entry],
+    }
+    body = json.dumps(original).encode()
+    scenarios = tmp_path / "scenarios"
+    scenarios.mkdir()
+    (scenarios / f"{scenario_id}.yaml").write_bytes(body)
+    monkeypatch.setattr(launch_store, "_scenarios_dir", lambda: scenarios)
+    plan = {
+        "scenario": {
+            "id": scenario_id,
+            "digest": "sha256:" + hashlib.sha256(body).hexdigest(),
+            "target": original["target"],
+            "seed": original["seed"],
+            "library_target_bindings": [
+                {
+                    "location": ["load", 0],
+                    "target_id": binding_target,
+                    "manifests_dir": str(tmp_path / "frozen-manifests"),
+                }
+            ],
+        }
+    }
+    return json.loads(materialized_scenario(plan))
+
+
+def test_differential_candidate_binding_rejects_mismatched_candidate_target(
+    tmp_path, monkeypatch
+):
+    with pytest.raises(LaunchStoreError, match="library target declaration changed"):
+        _materialize_library_binding(
+            tmp_path,
+            monkeypatch,
+            {
+                "primitive": "runtime_cardano_cbor_dataset_differential",
+                "candidate_target_id": "amaru-cbor-decode-block",
+                "manifests_dir": "dwarf/targets/manifests",
+            },
+        )
+
+
+def test_differential_reference_target_is_never_used_as_candidate_binding(
+    tmp_path, monkeypatch
+):
+    with pytest.raises(LaunchStoreError, match="library target declaration changed"):
+        _materialize_library_binding(
+            tmp_path,
+            monkeypatch,
+            {
+                "primitive": "runtime_cardano_cbor_dataset_differential",
+                "reference_target_id": "amaru-cbor-decode-tx-body",
+                "manifests_dir": "dwarf/targets/manifests",
+            },
+        )
+
+
+def test_normal_library_target_binding_materialization_is_unchanged(
+    tmp_path, monkeypatch
+):
+    materialized = _materialize_library_binding(
+        tmp_path,
+        monkeypatch,
+        {
+            "primitive": "cbor_fuzz",
+            "target_id": "amaru-cbor-decode-tx-body",
+            "manifests_dir": "dwarf/targets/manifests",
+        },
+    )
+
+    assert materialized["load"][0]["target_id"] == "amaru-cbor-decode-tx-body"
+    assert materialized["load"][0]["manifests_dir"] == str(
+        tmp_path / "frozen-manifests"
+    )
 
 
 @pytest.mark.parametrize(
