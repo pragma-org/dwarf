@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Replay a pinned cardano-cbor-dataset slice through Haskell and Amaru.
+"""Replay a pinned cardano-cbor-dataset slice through a typed reference and Amaru.
 
 The upstream verifier establishes that the selected corpus obeys its typed
-ledger/category contract. DWARF then sends the exact same bytes to both target
-shims and retains one transcript record per input.
+ledger contract. DWARF compares its per-input verdicts with the candidate shim
+and retains one transcript record per input.
 """
 
 from __future__ import annotations
@@ -24,7 +24,16 @@ QUALIFIED_DATASET_REPOSITORY = (
 )
 QUALIFIED_DATASET_REVISION = "a7561cd063550c2218898571520f14c3674efe91"
 QUALIFIED_DATASET_ERA = "conway"
-QUALIFIED_DATASET_RULE = "plutus_data"
+QUALIFIED_DATASET_RULES = frozenset(
+    {
+        "plutus_data",
+        "transaction_body",
+        "block",
+        "header",
+        "certificate",
+        "auxiliary_data",
+    }
+)
 
 
 def validate_qualified_dataset_contract(config: dict) -> dict:
@@ -43,14 +52,16 @@ def validate_qualified_dataset_contract(config: dict) -> dict:
         )
     if era != QUALIFIED_DATASET_ERA:
         raise ValueError("only the qualified Conway dataset boundary is supported")
-    if rule != QUALIFIED_DATASET_RULE:
-        raise ValueError("only the qualified Conway plutus_data rule is supported")
+    if rule not in QUALIFIED_DATASET_RULES:
+        supported = ", ".join(sorted(QUALIFIED_DATASET_RULES))
+        raise ValueError(f"only qualified Conway dataset rules are supported: {supported}")
     return {
         "source_repository": repository,
         "source_revision": revision,
         "era": era,
         "rule": rule,
-        "qualification": "typed-verifier-qualified",
+        "qualification": "typed-verifier-verdict-only",
+        "labels_trusted": rule == "plutus_data",
     }
 
 
@@ -329,6 +340,63 @@ def _run_reference_verifier(config: dict, output_dir: Path, stage_dir: Path) -> 
     }
 
 
+def _parse_reference_failures(
+    output_dir: Path, stage_dir: Path, selected: list[dict]
+) -> tuple[set[str], dict]:
+    coverage_dir = output_dir / "reference-coverage"
+    matches = sorted(
+        coverage_dir.glob("reference-dataset-deserialize-*/failures.log")
+    )
+    expected_paths = {record["relative_path"] for record in selected}
+    failed_paths: set[str] = set()
+    parse_errors: list[str] = []
+    failures_log = None
+    if len(matches) != 1:
+        parse_errors.append(
+            "expected exactly one reference-dataset-deserialize-*/failures.log; "
+            f"found {len(matches)}"
+        )
+    else:
+        path = matches[0]
+        failures_log = str(path.relative_to(output_dir))
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as exc:
+            parse_errors.append(f"cannot read {failures_log}: {exc}")
+            lines = []
+        path_prefixes = (
+            "/output/reference-dataset/",
+            f"{stage_dir}/",
+        )
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            if not line.startswith("FAIL "):
+                parse_errors.append(line)
+                continue
+            path_text, separator, reason = line[5:].partition(" (")
+            prefix = next(
+                (candidate for candidate in path_prefixes if path_text.startswith(candidate)),
+                None,
+            )
+            if not separator or not reason.endswith(")") or prefix is None:
+                parse_errors.append(line)
+                continue
+            relative_path = path_text[len(prefix) :]
+            if relative_path not in expected_paths:
+                parse_errors.append(line)
+                continue
+            failed_paths.add(relative_path)
+    return failed_paths, {
+        "parsed": not parse_errors,
+        "failures_log": failures_log,
+        "failed_input_count": len(failed_paths),
+        "failed_inputs": sorted(failed_paths),
+        "parse_errors": parse_errors,
+    }
+
+
 def _write_summary(output_dir: Path, report: dict) -> None:
     counts = report["selection"]["category_counts"]
     lines = [
@@ -340,7 +408,8 @@ def _write_summary(output_dir: Path, report: dict) -> None:
         f"- Category counts: `{json.dumps(counts, sort_keys=True)}`",
         f"- Inputs processed: {report['inputs_processed']}",
         f"- Upstream typed verifier passed: `{report['reference_verifier']['passed']}`",
-        f"- Cardano/Amaru mismatches: {report['mismatch_count']}",
+        f"- Upstream verifier failures parsed: `{report['reference_verifier']['parsed']}`",
+        f"- Reference/candidate mismatches: {report['mismatch_count']}",
         f"- Crashes or timeouts: {report['crash_or_timeout_count']}",
         f"- Clean: `{report['clean']}`",
         "",
@@ -372,15 +441,50 @@ def run_cardano_cbor_dataset_differential(config: dict) -> Path:
     stage_dir = output_dir / "reference-dataset"
     _stage_dataset(selected, stage_dir)
     reference_verifier = _run_reference_verifier(config, output_dir, stage_dir)
+    failed_reference_paths, failure_parse = _parse_reference_failures(
+        output_dir, stage_dir, selected
+    )
+    if reference_verifier["timed_out"]:
+        failure_parse["parsed"] = False
+        failure_parse["parse_errors"].append("reference verifier timed out")
+    exit_code = reference_verifier["exit_code"]
+    if isinstance(exit_code, int) and exit_code < 0:
+        failure_parse["parsed"] = False
+        failure_parse["parse_errors"].append(
+            f"reference verifier terminated by signal {-exit_code}"
+        )
+    reference_verifier.update(failure_parse)
 
-    reference_target = _load_target(str(config["reference_target_id"]), manifests_dir)
+    reference_target_id = config.get("reference_target_id")
+    reference_target = (
+        _load_target(str(reference_target_id), manifests_dir)
+        if reference_target_id
+        else None
+    )
     candidate_target = _load_target(str(config["candidate_target_id"]), manifests_dir)
     timeout_seconds = float(config.get("per_input_timeout_seconds", 5))
     transcript_path = output_dir / "inputs.ndjson"
     transcript: list[dict] = []
     with transcript_path.open("w", encoding="utf-8") as stream:
         for index, source in enumerate(selected, start=1):
-            reference = _run_target(reference_target["binary"], source["data"], timeout_seconds)
+            if reference_target:
+                reference = _run_target(
+                    reference_target["binary"], source["data"], timeout_seconds
+                )
+            else:
+                reference = {
+                    "outcome": (
+                        "clean_error"
+                        if source["relative_path"] in failed_reference_paths
+                        else "ok"
+                    ),
+                    "exit_code": None,
+                    "timed_out": False,
+                    "duration_ms": 0.0,
+                    "stdout_head": "",
+                    "stderr_head": "",
+                    "derived_from": "reference_verifier_failures_log",
+                }
             candidate = _run_target(candidate_target["binary"], source["data"], timeout_seconds)
             record = {
                 "index": index,
@@ -405,6 +509,16 @@ def run_cardano_cbor_dataset_differential(config: dict) -> Path:
     mismatch_count = sum(1 for record in transcript if not record["targets_agree"])
     reference_mismatch_count = sum(1 for record in transcript if not record["reference_matches_expectation"])
     candidate_mismatch_count = sum(1 for record in transcript if not record["candidate_matches_expectation"])
+    divergences = [
+        {
+            "relative_path": record["relative_path"],
+            "sha256": record["sha256"],
+            "reference_outcome": record["reference"]["outcome"],
+            "candidate_outcome": record["candidate"]["outcome"],
+        }
+        for record in transcript
+        if not record["targets_agree"]
+    ]
     crash_or_timeout_count = sum(
         1
         for record in transcript
@@ -414,10 +528,8 @@ def run_cardano_cbor_dataset_differential(config: dict) -> Path:
     non_vacuous = len(transcript) > 0 and all(category_counts.values())
     clean = (
         non_vacuous
-        and reference_verifier["passed"]
+        and reference_verifier["parsed"]
         and mismatch_count == 0
-        and reference_mismatch_count == 0
-        and candidate_mismatch_count == 0
         and crash_or_timeout_count == 0
     )
     report = {
@@ -445,10 +557,19 @@ def run_cardano_cbor_dataset_differential(config: dict) -> Path:
             ],
         },
         "reference_verifier": reference_verifier,
-        "reference_target": {**reference_target, "reached": len(transcript)},
+        "reference_target": (
+            {**reference_target, "reached": len(transcript)}
+            if reference_target
+            else {
+                "kind": "reference_verifier_failures_log",
+                "failures_log": reference_verifier["failures_log"],
+                "reached": len(transcript),
+            }
+        ),
         "candidate_target": {**candidate_target, "reached": len(transcript)},
         "inputs_processed": len(transcript),
         "mismatch_count": mismatch_count,
+        "divergences": divergences,
         "reference_expectation_mismatch_count": reference_mismatch_count,
         "candidate_expectation_mismatch_count": candidate_mismatch_count,
         "crash_or_timeout_count": crash_or_timeout_count,

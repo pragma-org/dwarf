@@ -10,7 +10,6 @@
     "era",
     "rule",
     "manifests_dir",
-    "reference_target_id",
     "candidate_target_id",
     "output_dir"
   ],

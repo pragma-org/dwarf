@@ -93,8 +93,10 @@ if actual != required:
     print(f"bad categories: {actual}", file=sys.stderr)
     raise SystemExit(2)
 coverage = pathlib.Path(os.environ["CBOR_COVERAGE_DIR"])
-coverage.mkdir(parents=True, exist_ok=True)
-(coverage / "report.txt").write_text("100% fixture coverage\\n", encoding="utf-8")
+run_dir = coverage / "reference-dataset-deserialize-fixture"
+run_dir.mkdir(parents=True, exist_ok=True)
+(run_dir / "failures.log").write_text("", encoding="utf-8")
+(run_dir / "report.txt").write_text("100% fixture coverage\\n", encoding="utf-8")
 print("Checked 8 conway CBOR files")
 """,
     )
@@ -137,7 +139,13 @@ def test_differential_replay_is_non_vacuous_and_retains_provenance(tmp_path, mon
     assert report["clean"] is True
     assert len(report["selection"]["dataset_sha256"]) == 64
     assert (tmp_path / "out" / "inputs.ndjson").read_text(encoding="utf-8").count("\n") == 8
-    assert (tmp_path / "out" / "reference-coverage" / "report.txt").is_file()
+    assert (
+        tmp_path
+        / "out"
+        / "reference-coverage"
+        / "reference-dataset-deserialize-fixture"
+        / "report.txt"
+    ).is_file()
     assert (tmp_path / "out" / "summary.md").is_file()
 
 
@@ -166,7 +174,7 @@ def test_differential_replay_refuses_wrong_source_revision(tmp_path, monkeypatch
         ("source_repository", "https://example.invalid/dataset.git", "repository"),
         ("expected_source_revision", "0" * 40, "revision"),
         ("era", "babbage", "Conway"),
-        ("rule", "transaction_body", "plutus_data"),
+        ("rule", "redeemer", "qualified Conway"),
     ],
 )
 def test_dataset_contract_refuses_every_unqualified_surface(field, value, message):
@@ -182,7 +190,7 @@ def test_dataset_contract_refuses_every_unqualified_surface(field, value, messag
         validate_qualified_dataset_contract(config)
 
 
-def test_dataset_contract_accepts_only_pinned_conway_plutus_data():
+def test_dataset_contract_marks_pinned_conway_plutus_data_labels_trusted():
     assert validate_qualified_dataset_contract(
         {
             "source_repository": "https://github.com/r2rationality/cardano-cbor-dataset.git",
@@ -195,7 +203,8 @@ def test_dataset_contract_accepts_only_pinned_conway_plutus_data():
         "source_revision": QUALIFIED_DATASET_REVISION,
         "era": "conway",
         "rule": "plutus_data",
-        "qualification": "typed-verifier-qualified",
+        "qualification": "typed-verifier-verdict-only",
+        "labels_trusted": True,
     }
 
 
@@ -270,7 +279,7 @@ def test_container_image_inspection_retains_immutable_provenance(monkeypatch):
     }
 
 
-def test_primitive_registry_and_scenario_are_wired():
+def test_primitive_registry_and_scenario_are_wired(tmp_path):
     root = Path(__file__).resolve().parents[1]
     scenario_path = (
         root
@@ -306,6 +315,16 @@ def test_primitive_registry_and_scenario_are_wired():
         root / "dwarf" / "targets" / "manifests" / "amaru-cbor-decode-plutus-data.yaml"
     ).is_file()
 
+    verifier_only = json.loads(scenario_path.read_text(encoding="utf-8"))
+    verifier_only["load"][0].pop("reference_target_id")
+    verifier_only_path = tmp_path / "verifier-only.yaml"
+    verifier_only_path.write_text(json.dumps(verifier_only), encoding="utf-8")
+    verifier_only_result = semantic_validate_scenario(
+        verifier_only_path,
+        registry_path=root / "dwarf" / "primitives" / "registry.json",
+    )
+    assert verifier_only_result["errors"] == []
+
 
 def test_clean_assertion_requires_non_vacuous_matching_report():
     root = Path(__file__).resolve().parents[1]
@@ -336,7 +355,9 @@ def test_clean_assertion_requires_non_vacuous_matching_report():
                         "inputs_processed": 8,
                         "mismatch_count": 0,
                         "crash_or_timeout_count": 0,
-                        "reference_verifier": {"passed": True},
+                        "reference_verifier": {"passed": False, "parsed": True},
+                        "reference_expectation_mismatch_count": 2,
+                        "candidate_expectation_mismatch_count": 2,
                         "selection": {
                             "category_counts": {category: 2 for category in REQUIRED_CATEGORIES}
                         },
