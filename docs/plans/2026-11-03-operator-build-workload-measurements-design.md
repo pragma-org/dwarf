@@ -95,8 +95,7 @@ Collector contract facts (checked against the live 20261029 log and source)
   (run dir 28 MB, export 1.0 MB gzip). `bundle_export.py` tars the whole run
   dir with no trim option; `ci_stage_pages_campaigns.py` only enforces the
   10 MB / 25 MB caps. A 1 200 s window at `AMARU_LOG=debug` would be on the
-  order of 80 times larger, so the Pages caps cannot be met by the current
-  export as it stands (see 4.6).
+  order of 80 times larger, so the caps are raised (see 4.6).
 - The Amaru run-level trace window (`outputs/amaru-measurement-run/raw/
   amaru-relay-1.ndjson`) spans from measurement start to finalize, so every
   load entry is inside it. The Cardano stock taps read the calibration leg's
@@ -248,40 +247,29 @@ the identity check at implementation time.
 ### 4.6 Pages comparison set and archive size
 
 Replace the four handshake-only archives in `docs/evidence/default-runs.json`
-with the four workload archives (same 10-entry cap; 10 MB per archive,
-25 MB total).
+with the four workload archives (10-entry cap unchanged).
 
-The full run bundles will not fit (section 3, archive size). Two measures,
-both needed, in this order of effect:
+The full run bundles will not fit the current 10 MB / 25 MB caps (section 3,
+archive size). Decision (user, 2026-11-03): **no export variant, no
+trimming; the Pages set carries the full bundles and the caps are raised.**
+The default Pages flow must support these archives as they are.
 
-1. **Pages export variant.** Extend `dwarf/scripts/bundle_export.py` (and the
-   dashboard `GET /runs/<id>/bundle`) with a `variant=pages` option that
-   writes a second, separately signed archive: it keeps everything the full
-   bundle has except the per-collector raw copies
-   (`measurements/collectors/*/raw/`), which duplicate the run-level window
-   already kept once in `outputs/amaru-measurement-run/raw/` (Amaru) and
-   `outputs/cardano-measurement-calibration/raw/` (cardano). Each collector's
-   `result.json` keeps its `artifacts` list and gains
-   `raw_omitted_in_variant: pages` so provenance stays explicit. Normalized
-   and correlation files stay. The full bundle remains the evidence of record
-   (box run dir + `~/dwarf-exports`). Estimated Amaru archive after this:
-   one raw window of roughly 100 KB/s × window, gzip ≈ 20–25×, so about
-   4–6 MB for a 1 200 s window.
-2. **Trace noise.** The Amaru operator profile runs with `AMARU_LOG=debug`
-   (all targets). The collectors consume `amaru::consensus`, `amaru::ledger`
-   and `amaru::protocols` only. The relay filter comes from
-   `antithesis/cardano_amaru_relay_bootstrap_control/docker-compose.yaml`
-   (`AMARU_LOG: debug` on the relay services); set it to
-   `debug,amaru::stores=info,amaru::network=info,amaru::blockperf=info`
-   (the stores/network spans are most of the volume). This changes the
-   profile's deployed compose, so profile-o is redeployed once (≈20 min
-   bootstrap). Verify after the first Amaru run that every
-   expected tap still fills before trimming further.
-
-The builder exports the first Amaru patched run, checks the `pages` archive
-size against the cap, and only then runs the remaining three. If it is still
-over 10 MB, shorten the window (fewer Plutus pairs, `minimum_blocks: 10`)
-before touching retention further.
+- Raise the caps in both places that enforce them, in lockstep:
+  `dwarf/scripts/ci_stage_pages_campaigns.py` (`_MAX_ARCHIVE_BYTES`,
+  `_MAX_TOTAL_BYTES`) and the viewer `docs/portable-defaults.js`
+  (`MAX_ARCHIVE_BYTES`, `MAX_TOTAL_BYTES`). New values: 95 MiB per archive
+  (GitHub rejects any file over 100 MB; that limit cannot be raised) and
+  950 MiB total (10 archives x 95 MiB; GitHub Pages sites have a 1 GB soft
+  limit). `_MAX_ARCHIVES` stays 10. Update tests that pin the old numbers.
+- `AMARU_LOG=debug` stays as deployed; nothing in the trace is dropped.
+- The builder exports the first Amaru patched run and checks its size. If an
+  archive approaches 95 MiB, the metric-neutral fallback is a relay log
+  filter of `debug,amaru::stores=info,amaru::network=info,
+  amaru::blockperf=info` in
+  `antithesis/cardano_amaru_relay_bootstrap_control/docker-compose.yaml`
+  (no collector reads those targets), applied only after telling the user.
+- Expected sizes with full retention: Amaru archives in the tens of MB
+  (the per-collector raw copies dominate), cardano archives smaller.
 
 ### 4.7 Tests
 
@@ -319,8 +307,6 @@ patched header-validation (v3 patch has no such instrumentation).
 - Exact parameter names/schemas in `dwarf/primitives/load/*.schema.json`
   (both calibration schemas are `additionalProperties: false`, so every new
   parameter is added there).
-- The `pages` export variant's wire shape (query parameter on the existing
-  bundle route vs. a sibling route) and its test.
 - Where to host the shared Amaru producer helper (import from
   `runtime_controlled_plutus_transactions` vs. move to the cardano helper).
 - How `run_plutus_workload` is parameterised for the consumer socket
