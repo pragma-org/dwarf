@@ -75,8 +75,28 @@ Collector contract facts (checked against the live 20261029 log and source)
   only knows `manager.peer.connected`, so `peer_connected` is always 0.
 - Amaru runs tx-submission in both roles: responder for `amaru-consumer` and
   `amaru-relay-2`, initiator toward `p1` (protocol 4 decode events seen in
-  both roles). Transactions submitted to `amaru-consumer` therefore enter
-  `amaru-relay-1`'s mempool over N2N, and Amaru offers them to `p1`.
+  both roles). In Ouroboros tx-submission the roles are reversed relative to
+  chain-sync: the **initiator supplies** its mempool (`txSubmissionOutbound`,
+  it answers `MsgRequestTxIds`) and the **responder pulls** into its mempool
+  (`txSubmissionInbound`). Amaru's schema confirms both halves (responder:
+  "transaction received from a peer was handed to the mempool"; initiator:
+  "blocking RequestTxIds waits until the mempool reaches seq_no").
+  Transactions submitted to `amaru-consumer` (initiator toward
+  `amaru-relay-1`) therefore enter `amaru-relay-1`'s mempool over N2N, and
+  Amaru (initiator toward `p1`) offers them to `p1`. The p1 fallback in 4.2
+  exists so a wrong reading of this does not stall the run.
+- The live 20261029 `tip.update` record carries `epoch`, `slot`,
+  `slot_in_epoch`, `block_height`, `header_hash`, `tx_count` in `fields`.
+  The existing parser `extract_latest_adopted_tip` keeps only height, hash
+  and slot, so the epoch wait in 4.2 reads `fields.epoch` from the raw record.
+- Archive size: the patched handshake run (about 15 s of window) holds a
+  1.5 MB raw window in `outputs/amaru-measurement-run/raw/` and each of the 14
+  collectors retains its own copy under `measurements/collectors/*/raw/`
+  (run dir 28 MB, export 1.0 MB gzip). `bundle_export.py` tars the whole run
+  dir with no trim option; `ci_stage_pages_campaigns.py` only enforces the
+  10 MB / 25 MB caps. A 1 200 s window at `AMARU_LOG=debug` would be on the
+  order of 80 times larger, so the Pages caps cannot be met by the current
+  export as it stands (see 4.6).
 - The Amaru run-level trace window (`outputs/amaru-measurement-run/raw/
   amaru-relay-1.ndjson`) spans from measurement start to finalize, so every
   load entry is inside it. The Cardano stock taps read the calibration leg's
@@ -181,9 +201,10 @@ unset):
   program as the V2 file, declared `PlutusScriptV3`). The cardano profile keeps
   V2.
 - `--epoch-transitions K` (default 0). After the workload, poll the relay's
-  `tip.update` records and return once the `epoch` field has advanced by K
-  (timeout `epoch_timeout_seconds`, default 260 = one 200 s epoch + margin).
-  This replaces a blind sleep and records `epoch_before`/`epoch_after` in
+  raw `tip.update` records (`fields.epoch`, not the height/hash/slot parser)
+  and return once the epoch has advanced by K (timeout
+  `epoch_timeout_seconds`, default 260 = one 200 s epoch + margin). This
+  replaces a blind sleep and records `epoch_before`/`epoch_after` in
   `result.json`.
 - `workload_identity` includes the new parameters when set.
 - The primitive passes `plutus_transactions`, `submission_entry`,
@@ -224,13 +245,43 @@ identity, add `cardano-patched-header-validation`,
 them out and record that as a boundary in the run notes. Builder decides from
 the identity check at implementation time.
 
-### 4.6 Pages comparison set
+### 4.6 Pages comparison set and archive size
 
 Replace the four handshake-only archives in `docs/evidence/default-runs.json`
-with the four workload archives (same 10-entry cap; size cap 10 MB each,
-25 MB total — the longer window makes the Amaru archives larger, so the
-builder checks sizes after export and trims `raw/` if needed via the export
-path's existing limits, not by hand-editing archives).
+with the four workload archives (same 10-entry cap; 10 MB per archive,
+25 MB total).
+
+The full run bundles will not fit (section 3, archive size). Two measures,
+both needed, in this order of effect:
+
+1. **Pages export variant.** Extend `dwarf/scripts/bundle_export.py` (and the
+   dashboard `GET /runs/<id>/bundle`) with a `variant=pages` option that
+   writes a second, separately signed archive: it keeps everything the full
+   bundle has except the per-collector raw copies
+   (`measurements/collectors/*/raw/`), which duplicate the run-level window
+   already kept once in `outputs/amaru-measurement-run/raw/` (Amaru) and
+   `outputs/cardano-measurement-calibration/raw/` (cardano). Each collector's
+   `result.json` keeps its `artifacts` list and gains
+   `raw_omitted_in_variant: pages` so provenance stays explicit. Normalized
+   and correlation files stay. The full bundle remains the evidence of record
+   (box run dir + `~/dwarf-exports`). Estimated Amaru archive after this:
+   one raw window of roughly 100 KB/s × window, gzip ≈ 20–25×, so about
+   4–6 MB for a 1 200 s window.
+2. **Trace noise.** The Amaru operator profile runs with `AMARU_LOG=debug`
+   (all targets). The collectors consume `amaru::consensus`, `amaru::ledger`
+   and `amaru::protocols` only. The relay filter comes from
+   `antithesis/cardano_amaru_relay_bootstrap_control/docker-compose.yaml`
+   (`AMARU_LOG: debug` on the relay services); set it to
+   `debug,amaru::stores=info,amaru::network=info,amaru::blockperf=info`
+   (the stores/network spans are most of the volume). This changes the
+   profile's deployed compose, so profile-o is redeployed once (≈20 min
+   bootstrap). Verify after the first Amaru run that every
+   expected tap still fills before trimming further.
+
+The builder exports the first Amaru patched run, checks the `pages` archive
+size against the cap, and only then runs the remaining three. If it is still
+over 10 MB, shorten the window (fewer Plutus pairs, `minimum_blocks: 10`)
+before touching retention further.
 
 ### 4.7 Tests
 
@@ -265,7 +316,11 @@ patched header-validation (v3 patch has no such instrumentation).
 
 ## 6. Left to the builder
 
-- Exact parameter names/schemas in `dwarf/primitives/load/*.schema.json`.
+- Exact parameter names/schemas in `dwarf/primitives/load/*.schema.json`
+  (both calibration schemas are `additionalProperties: false`, so every new
+  parameter is added there).
+- The `pages` export variant's wire shape (query parameter on the existing
+  bundle route vs. a sibling route) and its test.
 - Where to host the shared Amaru producer helper (import from
   `runtime_controlled_plutus_transactions` vs. move to the cardano helper).
 - How `run_plutus_workload` is parameterised for the consumer socket
