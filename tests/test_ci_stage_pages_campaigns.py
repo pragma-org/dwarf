@@ -18,7 +18,7 @@ def test_committed_default_archives_stage_with_validated_empty_campaign_catalog(
         trusted_publishers_path=ROOT / "docs/evidence/trusted-publishers.json")
     assert json.loads((output / "default-runs.json").read_text())["archives"]
     assert (output / "campaigns.json").is_file()
-    assert len(list((output / "runs").glob("*.tar.gz"))) == 6
+    assert len(list((output / "runs").glob("*.tar.gz"))) == 10
 
 
 def test_rolling_defaults_retain_committed_antithesis_archive(tmp_path):
