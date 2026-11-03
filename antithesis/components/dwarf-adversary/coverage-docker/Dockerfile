@@ -21,7 +21,9 @@ ARG LIBSODIUM_REV=dbb48cce5429cb6585c9034f002568964f1ce567
 ARG SECP256K1_REV=v0.3.2
 ARG BLST_REV=v0.3.14
 RUN git clone https://github.com/intersectmbo/libsodium && cd libsodium \
- && git checkout $LIBSODIUM_REV && ./autogen.sh -s && ./configure && make -j"$(nproc)" && make install && ldconfig && cd / && rm -rf libsodium
+ && git checkout $LIBSODIUM_REV && ./autogen.sh -s \
+ && cp /usr/share/automake-*/config.sub /usr/share/automake-*/config.guess build-aux/ \
+ && ./configure && make -j"$(nproc)" && make install && ldconfig && cd / && rm -rf libsodium
 RUN git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 \
  && git checkout $SECP256K1_REV && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-experimental \
  && make -j"$(nproc)" && make install && ldconfig && cd / && rm -rf secp256k1
