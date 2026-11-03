@@ -216,7 +216,7 @@ def test_corrected_cardano_contract_preserves_actual_identity_in_results(tmp_pat
         compat.build_factories(json_trace_paths=[trace],target_identity=invalid)
 
 
-@pytest.mark.parametrize('field,bad', [('source_revision','0'*40),('version','other'),('toolchain',{}),('patch_set_sha256','0'*64),('engine','local')])
+@pytest.mark.parametrize('field,bad', [('source_revision','0'*40),('version','other'),('toolchain',{}),('patch_set_sha256','0'*64),('engine','other')])
 def test_corrected_cardano_bridge_rejects_other_contracts(field,bad):
     from profile_manager import antithesis_cardano_bridge as bridge
     identity=dict(implementation='cardano-node',version='11.1.2',mode='patched',engine='antithesis',

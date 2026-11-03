@@ -232,7 +232,18 @@ def _recipe(selected, variant):
     if exact and manifest['source']['revision'] != selected['source_revision']:
         raise ValueError('Recipe source revision differs from selected release')
     builder.verify_patch_set(path.parent, manifest)
+    if implementation == 'cardano-node' and variant == 'instrumented':
+        from profile_manager import antithesis_cardano_bridge as bridge
+        if manifest['patch_set_sha256'] == bridge.BASE_HASH:
+            # v5 alone does not compile; apply the verified import correction
+            # and carry its composite identity through build and registration.
+            manifest = bridge.composite_manifest(manifest)
     return path, manifest, exact
+
+
+def _bridge():
+    from profile_manager import antithesis_cardano_bridge
+    return antithesis_cardano_bridge
 
 
 def _copy_recipe(path, manifest, work):
@@ -243,6 +254,9 @@ def _copy_recipe(path, manifest, work):
             raise ValueError('Recipe patch path is unsafe')
         destination = work / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if relative.name == _bridge().PATCH_NAME and patch.get('sha256') == _bridge().CORRECTION_HASH:
+            destination.write_text(_bridge().CORRECTION)
+            continue
         shutil.copyfile(path.parent / relative, destination)
 
 

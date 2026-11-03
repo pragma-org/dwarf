@@ -83,6 +83,24 @@ def test_instrumentation_requires_exact_manifest(runtime):
         builds._recipe(selected, 'instrumented')
 
 
+def test_cardano_instrumented_recipe_carries_verified_import_correction(runtime, tmp_path):
+    from profile_manager import antithesis_cardano_bridge as bridge
+    from scripts.build_cardano_measurement_target import verify_patch_set
+    selected = {'implementation': 'cardano-node', 'source_revision': bridge.SOURCE_REVISION}
+    path, stock, exact = builds._recipe(selected, 'stock')
+    assert exact and stock['patch_set_sha256'] == bridge.BASE_HASH
+    _, manifest, exact = builds._recipe(selected, 'instrumented')
+    assert exact and manifest['patch_set_sha256'] == bridge.COMPOSITE_HASH
+    assert manifest['measurement_revision'] == bridge.REVISION
+    assert manifest['patches'][-1]['path'] == bridge.PATCH_NAME
+    assert manifest['instrumentation'] == stock['instrumentation']
+    work = tmp_path / 'work'; work.mkdir()
+    builds._copy_recipe(path, manifest, work)
+    assert verify_patch_set(work, manifest)['patch_set_sha256'] == bridge.COMPOSITE_HASH
+    assert json.loads((work / 'manifest.json').read_text())['patch_set_sha256'] == bridge.COMPOSITE_HASH
+    assert (work / bridge.PATCH_NAME).read_text() == bridge.CORRECTION
+
+
 def test_builder_mount_and_resources_are_bounded(runtime):
     calls = []
     def run(args, **kw):
