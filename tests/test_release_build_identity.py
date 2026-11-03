@@ -18,6 +18,71 @@ def registration():
         'instrumentation_evidence_sha256':'sha256:'+'d'*64}}
 
 
+CARDANO_REV = 'fef83fed01d7926f3de83b3b917be5a4a48768b5'
+
+
+def cardano_registration():
+    from profile_manager import antithesis_cardano_bridge as bridge
+    return {'implementation':'cardano-node', 'version':'11.1.2', 'config_image_id':'sha256:'+'a'*64,
+      'executable_digest':'sha256:'+'b'*64,'controller_installation_id':'test',
+      'provenance':{'source_revision':CARDANO_REV,'qualification':'unverified'},
+      'source_build':{'variant':'instrumented','build_result_sha256':'sha256:'+'c'*64,
+        'patch_set_sha256':bridge.COMPOSITE_HASH,'measurement_revision':bridge.REVISION,
+        'instrumentation_evidence_sha256':'sha256:'+'d'*64}}
+
+
+def test_local_cardano_build_resolves_through_verified_import_correction():
+    from profile_manager import antithesis_cardano_bridge as bridge
+    from profile_manager.release_build_identity import build_manifest, instrumented_identity, validate_collector_identity
+    reg = cardano_registration()
+    manifest = build_manifest('cardano-node', CARDANO_REV, reg['source_build'])
+    assert manifest['patch_set_sha256'] == bridge.COMPOSITE_HASH
+    assert manifest['measurement_revision'] == bridge.REVISION
+    assert manifest['compatibility'] == bridge.contract()
+    assert manifest['patches'][-1]['path'] == bridge.PATCH_NAME
+    identity = {'implementation':'cardano-node','version':'11.1.2','source_revision':CARDANO_REV,
+                'image_config_id':reg['config_image_id'],'executable_digest':reg['executable_digest'],
+                'controller_installation_id':'test','mode':'stock','identity_kind':'operator-local-config'}
+    value = instrumented_identity(reg, identity)
+    assert value['patch_set_sha256'] == bridge.COMPOSITE_HASH
+    assert value['measurement_revision'] == bridge.REVISION
+    assert value['compatibility'] == bridge.contract()
+    assert value['toolchain'] == {'ghc':'9.6.7','cabal':'3.16.0.0'}
+    assert validate_collector_identity(value) == bridge.REVISION
+    # Mixed identities (base hash with the corrected revision, or the reverse) match no packaged recipe.
+    for key, bad in (('patch_set_sha256', bridge.BASE_HASH), ('measurement_revision', 'nanoseconds-v5')):
+        with pytest.raises(ValueError, match='no matching'):
+            build_manifest('cardano-node', CARDANO_REV, {**reg['source_build'], key: bad})
+    with pytest.raises(ValueError, match='no matching'):
+        build_manifest('cardano-node', 'b'*40, reg['source_build'])
+
+
+def test_local_corrected_cardano_collectors_validate_against_base_recipe():
+    from profile_manager import antithesis_cardano_bridge as bridge
+    from profile_manager.measurement_collectors import cardano_patched as shared
+    from profile_manager.measurement_collectors.cardano_factory import build_cardano_measurement_factories
+    from profile_manager.release_build_identity import instrumented_identity
+    reg = cardano_registration()
+    identity = instrumented_identity(reg, {'implementation':'cardano-node','version':'11.1.2','source_revision':CARDANO_REV,
+                'image_config_id':reg['config_image_id'],'executable_digest':reg['executable_digest'],
+                'controller_installation_id':'test','mode':'stock','identity_kind':'operator-local-config'})
+    identity['runtime_probe_log_sha256'] = 'sha256:'+'e'*64
+    assert 'engine' not in identity
+    base = bridge._base_identity(identity)
+    assert base['patch_set_sha256'] == bridge.BASE_HASH
+    assert base['source_build']['patch_set_sha256'] == bridge.BASE_HASH
+    assert shared._validate_identity(base) == 'nanoseconds-v5'
+    assert shared.supports_cardano_txsubmission_residence(base)
+    factories = build_cardano_measurement_factories(runtime_metadata_path='runtime.json', target_node='node1',
+        trace_paths=[], tip_probe=None, allow_missing_trace_sources=True, target_identity=identity)
+    for tap in ('cardano-patched-protocol-decode', 'cardano-patched-header-validation', shared.txsubmission.MEASUREMENT_ID):
+        collector = factories[tap]({'id': tap})
+        assert isinstance(collector, bridge.CompatibleCollector)
+        assert collector.target_identity == identity
+    with pytest.raises(ValueError, match='compatibility'):
+        bridge.build_factories(json_trace_paths=[], target_identity={**identity, 'engine': 'other'})
+
+
 def test_compiled_identity_is_patched_but_unqualified_and_exact():
     from profile_manager.release_build_identity import instrumented_identity
     reg = registration()

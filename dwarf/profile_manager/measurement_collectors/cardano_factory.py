@@ -10,8 +10,8 @@ from profile_manager.measurement_collectors.amaru_external import (
     WorkloadAccountingCollector,
 )
 from profile_manager.measurement_collectors.cardano_resources import CardanoResourceCollector
-from profile_manager.measurement_collectors.cardano_patched import (
-    build_cardano_patched_factories,
+from profile_manager.antithesis_cardano_bridge import (
+    build_factories as build_cardano_patched_factories,
 )
 from profile_manager.measurement_collectors.cardano_stock import (
     build_cardano_stock_factories,

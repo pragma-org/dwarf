@@ -23,6 +23,9 @@ def build_manifest(implementation, revision, build):
         if (manifest.get('patch_set_sha256') == build.get('patch_set_sha256')
                 and manifest.get('measurement_revision', 'v1') == build.get('measurement_revision')):
             return manifest
+    from profile_manager import antithesis_cardano_bridge as bridge
+    if bridge.is_composite_build(implementation, revision, build):
+        return bridge.composite_manifest(bridge.base_patch_manifest())
     raise ValueError('Compiled instrumentation has no matching exact-source patch recipe')
 
 
@@ -40,8 +43,10 @@ def instrumented_identity(registration, identity):
     manifest = build_manifest(expected['implementation'], expected['source_revision'], build)
     from profile_manager.measurement_execution import AMARU_PATCHED_CAPABILITIES, CARDANO_PATCHED_CAPABILITIES
     capabilities = AMARU_PATCHED_CAPABILITIES if expected['implementation'] == 'amaru' else CARDANO_PATCHED_CAPABILITIES
+    corrected = ({'measurement_revision': manifest['measurement_revision'], 'toolchain': manifest['toolchain'],
+                  'compatibility': manifest['compatibility']} if manifest.get('compatibility') else {})
     return {**identity, 'mode':'patched', 'image_digest':expected['image_config_id'],
-            'source_build':dict(build), 'patch_set_sha256':manifest['patch_set_sha256'],
+            'source_build':dict(build), 'patch_set_sha256':manifest['patch_set_sha256'], **corrected,
             'build_result_sha256':build['build_result_sha256'],
             'verified_instrumentation':{'capabilities':sorted(capabilities),
                 'evidence_sha256':build['instrumentation_evidence_sha256'],
