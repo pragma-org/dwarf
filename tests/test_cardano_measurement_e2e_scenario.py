@@ -192,6 +192,40 @@ def test_cardano_runtime_identity_fails_closed_on_digest_mismatch():
         calibration._target(body)
 
 
+def test_cardano_runtime_identity_accepts_operator_local_build():
+    body = _runtime_body()
+    config_id = "sha256:" + "2" * 64
+    registration = {
+        "registration_id": "registration-local",
+        "implementation": "cardano-node",
+        "version": "11.1.2",
+        "config_image_id": config_id,
+        "executable_digest": "sha256:" + "3" * 64,
+        "platform": "linux/amd64",
+        "controller_installation_id": "install-test",
+        "provenance": {"source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5", "qualification": "unverified"},
+    }
+    snapshot = body["version_provenance"]["catalog_snapshot"]
+    snapshot.update(operator_registration_id="registration-local", operator_overlay_revision="sha256:" + "4" * 64)
+    release = snapshot["selected_releases"][0]
+    release["operator_registration"] = registration
+    release["artifacts"] = [{"kind": "oci", "availability": "available", "digest": None}]
+    node = body["nodes"][0]
+    node.update(image_ref=config_id, artifact_identity={"satisfied": True, "image_digest": config_id, "image_ref": config_id})
+
+    target, resolved = calibration._target(body)
+
+    assert resolved is node
+    assert target["identity_kind"] == "operator-local-config"
+    assert target["mode"] == "stock"
+    assert target["image_config_id"] == config_id
+    assert target["executable_digest"] == "sha256:" + "3" * 64
+    # A deployed image that differs from the registration still fails closed.
+    node["artifact_identity"]["image_digest"] = "sha256:" + "9" * 64
+    with pytest.raises(RuntimeError, match="does not match"):
+        calibration._target(body)
+
+
 def test_cardano_runtime_identity_accepts_exact_patched_target():
     body = _runtime_body()
     node = body["nodes"][0]

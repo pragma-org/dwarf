@@ -839,6 +839,20 @@ def _release(runtime: dict[str, Any]) -> dict[str, Any]:
 
 def _target(runtime: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     release = _release(runtime)
+    if isinstance(release.get("operator_registration"), dict):
+        # A controller-built (operator-local) release has no catalog image
+        # digest; prove it the same way the Amaru helper does, through the
+        # registration-aware resolver shared with scenario measurement setup.
+        from types import SimpleNamespace
+        from profile_manager.measurement_execution import _stock_cardano_identity
+
+        return _stock_cardano_identity(
+            runtime,
+            SimpleNamespace(
+                profile=str(runtime.get("profile_id") or ""),
+                target={"implementation": "cardano-node", "version": release.get("version")},
+            ),
+        )
     node = next(
         (node for node in (runtime.get("nodes") or []) if node.get("impl") == "cardano-node"),
         None,
