@@ -62,6 +62,12 @@ def validate_defaults(document: dict) -> list[dict]:
             raise ValueError("Pages default archives exceed the total byte limit")
         if not isinstance(row["sha256"], str) or not _SHA.fullmatch(row["sha256"]):
             raise ValueError("Pages default archive digest is invalid")
+        # Coverage: a flagged archive must satisfy the tap coverage rule at staging time;
+        # an exception names why a thin snapshot (Antithesis) is still a default.
+        if row.get("coverage_rule") not in (None, True, False):
+            raise ValueError("Pages default archive coverage_rule must be a boolean")
+        if row.get("coverage_exception") is not None and (not isinstance(row["coverage_exception"], str) or not row["coverage_exception"]):
+            raise ValueError("Pages default archive coverage_exception must name a reason")
         release_tag, asset = row.get("release_tag"), row.get("asset_name")
         if (release_tag is None) != (asset is None):
             raise ValueError("Pages release-backed archive binding is incomplete")
@@ -82,6 +88,19 @@ def _hash(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def check_coverage_rule(archive: Path) -> None:
+    """Refuse a default archive whose retained report fails the tap coverage rule."""
+    from profile_manager.tap_coverage import coverage_report, report_from_archive, report_identity
+
+    report = report_from_archive(archive)
+    implementation, mode = report_identity(report)
+    result = coverage_report(report.get("measurements") or {}, implementation, mode)
+    problems = [f"{row['concept']} ({', '.join(row['ids'])})" for row in result["missing"]]
+    problems += [f"unbound id {raw_id}" for raw_id in result["unbound_ids"]]
+    if problems:
+        raise ValueError(f"Pages default archive {archive.name} fails the tap coverage rule: " + "; ".join(problems))
 
 
 def stage(*, committed: Path, defaults_path: Path, catalog_path: Path,
@@ -126,6 +145,8 @@ def stage(*, committed: Path, defaults_path: Path, catalog_path: Path,
             source = committed / "runs" / name
         if not source.is_file() or source.stat().st_size != row["size_bytes"] or _hash(source) != row["sha256"]:
             raise ValueError(f"Pages default archive bytes do not match {name}")
+        if row.get("coverage_rule"):
+            check_coverage_rule(source)
         if source.resolve() != (runs / name).resolve():
             shutil.copyfile(source, runs / name)
     (output / "default-runs.json").write_text(serialize_campaign(defaults) + "\n", encoding="utf-8")

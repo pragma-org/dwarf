@@ -1,0 +1,56 @@
+{
+  "schema_version": "v1",
+  "description": "Measurement concepts allowed to have no value on a retained Pages default run, each with the reason. Everything not listed here must carry a value on at least one run of its implementation and mode. Provisional entries are expected to clear after the 2026-11-04 reruns and are removed once they do.",
+  "exceptions": [
+    {
+      "implementation": "amaru",
+      "modes": ["stock", "patched"],
+      "concept": "header-arrival-offset",
+      "reason": "Amaru 10.11.20261029 exports header receipt in the global epoch and slot start in chain-relative time; the interval is not measurable on this release."
+    },
+    {
+      "implementation": "amaru",
+      "modes": ["patched"],
+      "concept": "header-validation-time",
+      "reason": "The Amaru nanoseconds-v3 patch set for 10.11.20261029 carries no header-validation tap; porting the 20260918 nanoseconds-v4 tap is a separate Rust job."
+    },
+    {
+      "implementation": "cardano-node",
+      "modes": ["stock"],
+      "concept": "epoch-transition-time",
+      "reason": "Stock cardano-node exposes no single authoritative epoch-transition interval; the patched run carries epoch_transition."
+    },
+    {
+      "implementation": "cardano-node",
+      "modes": ["stock"],
+      "concept": "plutus-execution-time",
+      "reason": "Stock cardano-node exposes no authoritative per-execution Plutus wall-clock interval; the patched run carries plutus_vm."
+    },
+    {
+      "implementation": "cardano-node",
+      "modes": ["stock"],
+      "concept": "handler-queue-residence",
+      "reason": "Stock cardano-node does not emit the audited internal BlockFetch handler-queue boundary; the patched run carries the queue residence bounds."
+    },
+    {
+      "implementation": "cardano-node",
+      "modes": ["stock"],
+      "concept": "txsubmission-residence",
+      "reason": "Stock cardano-node does not emit a continuous TxSubmission request-to-mempool residence interval; the patched run carries the residence bounds."
+    },
+    {
+      "implementation": "cardano-node",
+      "modes": ["stock", "patched"],
+      "concept": "mempool-sync-time",
+      "reason": "Provisional: TraceMempoolSynced is Debug-level; the Mempool namespace is raised to Debug for the reruns.",
+      "provisional": true
+    },
+    {
+      "implementation": "amaru",
+      "modes": ["patched"],
+      "concept": "handler-queue-residence",
+      "reason": "Provisional: BlockFetch queue residence needs pending requests; the controlled sync range is raised to 200 blocks for the reruns.",
+      "provisional": true
+    }
+  ]
+}

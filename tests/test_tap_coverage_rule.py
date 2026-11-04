@@ -1,0 +1,92 @@
+"""The tap coverage rule: every measurement concept bound for a run's implementation and
+mode has a value on at least one of its bound ids, or is a documented exception."""
+import io
+import json
+import tarfile
+from pathlib import Path
+
+import pytest
+
+from profile_manager.tap_coverage import (
+    coverage_report,
+    load_coverage_exceptions,
+    report_identity,
+    rule_holds,
+)
+
+ROOT = Path(__file__).resolve().parents[1]
+RUNS = ROOT / "docs/evidence/runs"
+WORKLOAD_ARCHIVES = {
+    "amaru-stock": "20261104T013138Z-572908c9-bundle-export.tar.gz",
+    "amaru-patched": "20261104T004457Z-8901e42d-bundle-export.tar.gz",
+    "cardano-stock": "20261104T022354Z-c6fd2046-bundle-export.tar.gz",
+    "cardano-patched": "20261104T024915Z-b1a2f8cb-bundle-export.tar.gz",
+}
+
+
+def _report(archive: Path) -> dict:
+    with tarfile.open(archive, "r:gz") as tar:
+        member = next(m for m in tar.getmembers() if m.name.endswith("/measurements/report.json"))
+        return json.loads(tar.extractfile(member).read())
+
+
+def test_exception_catalog_is_well_formed():
+    exceptions = load_coverage_exceptions()
+    assert exceptions["schema_version"] == "v1"
+    for row in exceptions["exceptions"]:
+        assert row["implementation"] in {"amaru", "cardano-node"}
+        assert set(row["modes"]) <= {"stock", "patched"} and row["modes"]
+        assert row["reason"]
+    concepts = {(r["implementation"], r["concept"]) for r in exceptions["exceptions"]}
+    assert ("amaru", "header-arrival-offset") in concepts
+
+
+@pytest.mark.parametrize("leg", sorted(WORKLOAD_ARCHIVES))
+def test_retained_2026_11_04_reports_name_their_gaps_today(leg):
+    report = _report(RUNS / WORKLOAD_ARCHIVES[leg])
+    implementation, mode = report_identity(report)
+    assert (implementation, mode) == {"amaru-stock": ("amaru", "stock"), "amaru-patched": ("amaru", "patched"),
+                                      "cardano-stock": ("cardano-node", "stock"), "cardano-patched": ("cardano-node", "patched")}[leg]
+    result = coverage_report(report["measurements"], implementation, mode)
+    assert "restart-readiness" in result["covered"] and "keepalive-round-trip-time" in result["covered"]
+    missing = {row["concept"] for row in result["missing"]}
+    # The known gaps of the first workload runs (design §1), before the fixes rerun.
+    assert "workload-backlog" in missing and "resident-memory" in missing and "submit-to-mempool-visibility-time" in missing
+    if implementation == "amaru":
+        assert "header-arrival-offset" in {row["concept"] for row in result["excepted"]}
+    assert result["unbound_ids"] == []
+    assert rule_holds(report) is False
+
+
+def test_rule_holds_on_a_complete_synthetic_report():
+    amaru_stock = _report(RUNS / WORKLOAD_ARCHIVES["amaru-stock"])
+    metrics = {}
+    for metric_id, raw in amaru_stock["measurements"].items():
+        unit = (raw.get("all") or raw).get("unit") if isinstance(raw, dict) else None
+        metrics[metric_id] = {"status": "available", "unit": unit or "events", "median": 3.0, "sample_count": 4, "value": 3}
+    result = coverage_report(metrics, "amaru", "stock")
+    assert result["missing"] == [] and result["unbound_ids"] == []
+    assert rule_holds({**amaru_stock, "measurements": metrics}) is True
+
+
+def test_zero_counts_only_with_evidence():
+    metrics = {"mempool_rejected": {"status": "available", "unit": "events", "value": 0}}
+    assert coverage_report(metrics, "amaru", "stock")["missing"][0]["concept"] == "mempool-rejected-count"
+    metrics["mempool_rejected"]["offered_count"] = 40
+    assert coverage_report(metrics, "amaru", "stock")["missing"] == []
+    verdicts = {"header_validation": {"status": "available", "unit": "count", "value": {"accepted": 5, "rejected": 0}}}
+    assert "header-validation-verdicts" in coverage_report(verdicts, "cardano-node", "stock")["covered"]
+
+
+def test_pages_staging_enforces_the_rule_for_flagged_entries(tmp_path):
+    from scripts import ci_stage_pages_campaigns as api
+    row = {"url": "runs/" + WORKLOAD_ARCHIVES["amaru-stock"], "size_bytes": 1, "sha256": "a" * 64,
+           "run_id": "20261104T013138Z-572908c9", "implementation": "amaru", "version": "10.11.20261029",
+           "coverage_rule": True}
+    api.validate_defaults({"schema_version": api._SCHEMA, "archives": [row]})
+    api.validate_defaults({"schema_version": api._SCHEMA, "archives": [{**row, "coverage_rule": None, "coverage_exception": "Antithesis snapshot: bounded trace window"}]})
+    with pytest.raises(ValueError, match="coverage"):
+        api.validate_defaults({"schema_version": api._SCHEMA, "archives": [{**row, "coverage_rule": "yes"}]})
+    # A flagged archive whose report fails the rule is refused with the missing list.
+    with pytest.raises(ValueError, match="workload-backlog"):
+        api.check_coverage_rule(RUNS / WORKLOAD_ARCHIVES["amaru-stock"])
