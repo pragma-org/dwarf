@@ -268,7 +268,10 @@ def _measurements(
         unavailable = [e for e in selected if e["outcome"] == "unavailable"]
         return {"header_validation": _distribution(verdicts),
                 "header_validation_by_outcome": _by_outcome(verdicts),
-                "header_prerequisite_unavailable": _distribution(e for e in unavailable if "duration_us" in e)}
+                # Every header-validation record could have been an unavailable-prerequisite
+                # case: that count makes an empty distribution an evidenced zero.
+                "header_prerequisite_unavailable": {**_distribution(e for e in unavailable if "duration_us" in e),
+                                                    "offered_count": len(selected)}}
     result = {}
     for stage, key in (
         ("block-application", "block_application"),

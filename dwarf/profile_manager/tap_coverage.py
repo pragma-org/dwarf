@@ -61,11 +61,14 @@ def metric_has_value(raw: Any) -> bool:
         if value is None:
             value = primary.get(key)
     number = _number(value)
+    offered = _number(primary.get("offered_count")) or 0
     if number is None:
-        return False
+        # An empty distribution whose collector states what it could have sampled is a
+        # zero-occurrence reading (no event of this kind among ``offered_count``).
+        return (_number(primary.get("sample_count")) == 0) and offered > 0
     if number != 0:
         return True
-    evidence = (_number(primary.get("offered_count")) or 0) + (_number(primary.get("count")) or 0) + (_number(primary.get("sample_count")) or 0)
+    evidence = offered + (_number(primary.get("count")) or 0) + (_number(primary.get("sample_count")) or 0)
     return evidence > 0
 
 

@@ -278,3 +278,11 @@ def test_thread_killed_and_user_interrupt_are_rethrown_before_telemetry(tmp_path
     assert "Nothing -> pure ()" in classifier
     assert "ThreadKilled" in classifier and "UserInterrupt" in classifier
     assert "emitHeaderUnavailable" not in classifier
+
+
+def test_prerequisite_unavailable_distribution_states_the_validations_it_could_have_sampled(tmp_path):
+    """No header validated before its prerequisite is a zero-occurrence reading among the
+    validations observed (run 20261104T131252Z-31130032: 0 of 489), not a missing tap."""
+    result = collect(tmp_path, [event(), event("rejected")])
+    unavailable = result["measurements"]["header_prerequisite_unavailable"]
+    assert unavailable["sample_count"] == 0 and unavailable["offered_count"] == 2

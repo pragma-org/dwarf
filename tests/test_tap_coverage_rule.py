@@ -99,3 +99,12 @@ def test_scalar_peak_and_counter_delta_shapes_count_as_values():
     counter = {"status": "available", "unit": "s", "delta": 0.0, "start": 0.29, "end": 0.29, "resets": 0}
     assert not metric_has_value(counter), "a zero counter delta without evidence is not a value"
     assert metric_has_value({**counter, "delta": 12.5})
+
+
+def test_an_empty_distribution_with_an_offered_count_is_an_evidenced_zero():
+    """No header was validated before its prerequisite in run 20261104T131252Z-31130032,
+    out of 489 validations observed: that is a zero-occurrence reading, not a gap."""
+    from profile_manager.tap_coverage import metric_has_value
+    empty = {"status": "unavailable", "unit": "us", "median": None, "sample_count": 0}
+    assert not metric_has_value(empty)
+    assert metric_has_value({**empty, "offered_count": 489})
