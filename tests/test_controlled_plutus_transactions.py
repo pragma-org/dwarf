@@ -829,3 +829,17 @@ def test_mempool_visibility_joins_first_event_after_submit_only():
     assert records[0]["submit_to_mempool_visibility_nanos"] == 250_000_000
     assert records[0]["submit_to_mempool_visibility_micros"] == 250_000.0
     assert "submit_to_mempool_visibility_nanos" not in records[1]
+
+
+def test_join_matches_abbreviated_cardano_trace_ids_by_prefix():
+    """cardano-node's mempool trace carries an 8-hex-character txid; the record
+    carries the full id (run 20261104T122535Z-2da20338 joined 0 of 20 on exact match)."""
+    from scripts.runtime_controlled_plutus_transactions import join_mempool_visibility
+    full = "4d98894e74147e9c87ac7413f599ed76c5c2b91f694153757e2fd97dc8c22c36"
+    records = [{"attempt_id": "plutus-t-0000", "spend_transaction_id": full, "submit_started_at_ns": 1_000_000_000}]
+    events = [
+        {"kind": "mempool-accepted", "tx_id": "deadbeef", "timestamp": "1970-01-01T00:00:01.100Z"},
+        {"kind": "mempool-accepted", "tx_id": full[:8], "timestamp": "1970-01-01T00:00:01.250Z"},
+    ]
+    assert join_mempool_visibility(records, events) == 1
+    assert records[0]["submit_to_mempool_visibility_nanos"] == 250_000_000

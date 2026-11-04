@@ -310,7 +310,14 @@ def join_mempool_visibility(records: list[dict], events) -> int:
         submitted = record.get("submit_started_at_ns")
         if not isinstance(tx_id, str) or not isinstance(submitted, int):
             continue
-        candidates = sorted(moment for moment in first_seen.get(tx_id, []) if moment >= submitted)
+        # cardano-node's mempool trace abbreviates ids (8 hex characters); a traced id
+        # that is a prefix of the record's full id names the same transaction.
+        moments = [
+            moment for seen_id, seen in first_seen.items()
+            if seen_id == tx_id or (len(seen_id) >= 8 and len(seen_id) < len(tx_id) and tx_id.startswith(seen_id))
+            for moment in seen
+        ]
+        candidates = sorted(moment for moment in moments if moment >= submitted)
         if not candidates:
             continue
         nanos = candidates[0] - submitted
