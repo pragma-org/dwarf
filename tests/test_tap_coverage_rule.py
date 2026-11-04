@@ -90,3 +90,12 @@ def test_pages_staging_enforces_the_rule_for_flagged_entries(tmp_path):
     # A flagged archive whose report fails the rule is refused with the missing list.
     with pytest.raises(ValueError, match="workload-backlog"):
         api.check_coverage_rule(RUNS / WORKLOAD_ARCHIVES["amaru-stock"])
+
+
+def test_scalar_peak_and_counter_delta_shapes_count_as_values():
+    from profile_manager.tap_coverage import metric_has_value
+    backlog = {"status": "available", "unit": "operations", "peak": 1.0, "sample_count": 122, "baseline": 1.0}
+    assert metric_has_value(backlog)
+    counter = {"status": "available", "unit": "s", "delta": 0.0, "start": 0.29, "end": 0.29, "resets": 0}
+    assert not metric_has_value(counter), "a zero counter delta without evidence is not a value"
+    assert metric_has_value({**counter, "delta": 12.5})

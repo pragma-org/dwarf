@@ -160,21 +160,22 @@ def _docker_container_identity(
 # its comm is a node binary; otherwise the first process whose comm is one (cardano-node
 # runs under a bash wrapper). No host PID namespace is shared with the dashboard.
 PROC_PROBE_SCRIPT = (
-    "pid=''; "
+    "P=${PROC_ROOT:-/proc}; pid=''; "
     "for c in amaru cardano-node; do "
-    "if [ \"$(cat /proc/1/comm 2>/dev/null)\" = \"$c\" ]; then pid=1; fi; done; "
+    "if [ \"$(cat \"$P/1/comm\" 2>/dev/null)\" = \"$c\" ]; then pid=1; fi; done; "
     "if [ -z \"$pid\" ]; then "
-    "for d in /proc/[0-9]*; do n=$(cat \"$d/comm\" 2>/dev/null); "
-    "if [ \"$n\" = cardano-node ] || [ \"$n\" = amaru ]; then pid=${d#/proc/}; break; fi; done; fi; "
+    "for d in \"$P\"/[0-9]*; do n=$(cat \"$d/comm\" 2>/dev/null); "
+    "if [ \"$n\" = cardano-node ] || [ \"$n\" = amaru ]; then pid=${d##*/}; break; fi; done; fi; "
     "if [ -z \"$pid\" ]; then echo 'error=node process not found'; exit 3; fi; "
     "echo \"pid=$pid\"; "
     "tck=$(getconf CLK_TCK 2>/dev/null); echo \"clk_tck=${tck:-100}\"; "
     "while read -r k v rest; do "
     "case $k in VmRSS:) echo \"vmrss_kb=$v\";; Threads:) echo \"threads=$v\";; esac; "
-    "done < \"/proc/$pid/status\"; "
-    "echo \"fds=$(ls \"/proc/$pid/fd\" 2>/dev/null | wc -l | tr -d ' ')\"; "
-    "set -- $(cat \"/proc/$pid/stat\"); "
-    "echo \"utime=$14\"; echo \"stime=$15\""
+    "done < \"$P/$pid/status\"; "
+    "echo \"fds=$(ls \"$P/$pid/fd\" 2>/dev/null | wc -l | tr -d ' ')\"; "
+    # utime and stime are fields 14 and 15 of /proc/<pid>/stat: positional parameters past 9 need braces.
+    "set -- $(cat \"$P/$pid/stat\"); "
+    "echo \"utime=${14}\"; echo \"stime=${15}\""
 )
 
 

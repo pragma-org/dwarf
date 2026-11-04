@@ -781,3 +781,23 @@ def test_counter_delta_sums_steps_across_a_reset():
 
 def test_distribution_without_samples_names_its_reason():
     assert _distribution([], "rss_bytes", "bytes")["reason"] == "no samples from this source"
+
+
+def test_proc_probe_script_reads_cpu_ticks_from_a_real_shell(tmp_path):
+    """Run the in-container probe script under a real sh against a fake /proc tree:
+    utime and stime are fields 14 and 15 (positional parameters beyond 9)."""
+    import subprocess
+    from profile_manager.measurement_collectors.cardano_resources import PROC_PROBE_SCRIPT
+    proc = tmp_path / "proc" / "1"
+    (proc / "fd").mkdir(parents=True)
+    for n in range(5):
+        (proc / "fd" / str(n)).write_text("")
+    (proc / "comm").write_text("cardano-node\n")
+    (proc / "status").write_text("Name:\tcardano-node\nVmRSS:\t  204800 kB\nThreads:\t29\n")
+    (proc / "stat").write_text("1 (cardano-node) S 0 1 1 0 -1 4194560 100 0 0 0 123400 5600 0 0 20 0 29 0 5 1 2 3\n")
+    result = subprocess.run(["sh", "-c", PROC_PROBE_SCRIPT], capture_output=True, text=True,
+                            env={"PROC_ROOT": str(tmp_path / "proc"), "PATH": "/usr/bin:/bin"})
+    assert result.returncode == 0, result.stderr
+    fields = dict(line.split("=", 1) for line in result.stdout.split())
+    assert fields["pid"] == "1" and fields["vmrss_kb"] == "204800" and fields["threads"] == "29" and fields["fds"] == "5"
+    assert fields["utime"] == "123400" and fields["stime"] == "5600"

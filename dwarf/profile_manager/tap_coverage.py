@@ -56,7 +56,8 @@ def metric_has_value(raw: Any) -> bool:
     value = primary.get("value")
     if isinstance(value, dict):
         value = sum_verdict_dict(value)
-    for key in ("offered_rate", "delta", "absolute_delta", "median"):
+    # Primary statistics in catalog order of preference: counters (delta), rates, gauges (peak), distributions.
+    for key in ("offered_rate", "delta", "absolute_delta", "peak", "median"):
         if value is None:
             value = primary.get(key)
     number = _number(value)
