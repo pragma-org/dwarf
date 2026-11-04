@@ -13750,6 +13750,38 @@ class RuntimeLiveImplementationBaseline(LoadPrimitive):
         )
 
 
+_AMARU_WORKLOAD_FLAGS = (
+    ("plutus_transactions", "--plutus-transactions", int),
+    ("submission_entry", "--submission-entry", str),
+    ("inclusion_fallback_seconds", "--inclusion-fallback-seconds", float),
+    ("epoch_transitions", "--epoch-transitions", int),
+    ("epoch_timeout_seconds", "--epoch-timeout-seconds", float),
+)
+
+
+def _amaru_workload_flag_arguments(params: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+    """Translate optional Amaru workload params into helper flags (only when set)."""
+    arguments: list[str] = []
+    logged: dict[str, Any] = {}
+    for key, flag, cast in _AMARU_WORKLOAD_FLAGS:
+        if key not in params:
+            continue
+        value = cast(params[key])
+        logged[key] = value
+        arguments.extend([flag, str(value)])
+    return arguments, logged
+
+
+def _plutus_workload_attempts(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize the helper's Plutus records for the external accounting tap."""
+    records = ((report.get("plutus_workload") or {}).get("records") or [])
+    if not records:
+        return []
+    from scripts.runtime_controlled_plutus_transactions import _plutus_workload_accounting
+
+    return list(_plutus_workload_accounting(records, "amaru")["attempts"])
+
+
 class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
     """Run one retained real-node leg of the stock/patched Amaru calibration."""
 
@@ -13864,6 +13896,10 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "--plutus-transactions", str(plutus_transactions),
                 "--epoch-observation-seconds", str(epoch_observation_seconds),
             ])
+        amaru_workload: dict[str, Any] = {}
+        if not self._CARDANO_NODE_WORKLOAD:
+            workload_arguments, amaru_workload = _amaru_workload_flag_arguments(self.params)
+            command.extend(workload_arguments)
         handle.log(
             phase="load",
             primitive=self._PRIMITIVE_NAME,
@@ -13882,6 +13918,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "trace_timeout_seconds": trace_timeout_seconds,
                 "plutus_transactions": plutus_transactions,
                 "epoch_observation_seconds": epoch_observation_seconds,
+                **amaru_workload,
             },
         )
         env = os.environ.copy()
@@ -13951,6 +13988,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "attempts": attempts,
                 "plutus_transactions": plutus_transactions,
                 "epoch_observation_seconds": epoch_observation_seconds,
+                **amaru_workload,
                 "report": report,
                 "stdout": stdout[-4096:],
                 "stderr": stderr[-2048:],
@@ -13958,34 +13996,39 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
         )
         successful_outcomes = {"accepted", "ok", "success", "successful"}
         rejected_outcomes = {"rejected", "invalid", "duplicate"}
+        attempts = [
+            {
+                "input_id": str(row.get("attempt_id") or ""),
+                "outcome": str(row.get("outcome") or "unclassified"),
+                "elapsed_micros": int(row.get("elapsed_micros") or 0),
+            }
+            for row in attempt_records
+        ]
+        plutus_attempts = (
+            _plutus_workload_attempts(report) if amaru_workload else []
+        )
+        attempts.extend(plutus_attempts)
         handle.log(
             phase="load",
             primitive=self._PRIMITIVE_NAME,
             level="info",
             event="workload_accounting",
             payload={
-                "attempted": len(attempt_records),
+                "attempted": len(attempts),
                 "successful": sum(
                     str(row.get("outcome") or "").lower() in successful_outcomes
-                    for row in attempt_records
+                    for row in attempts
                 ),
                 "rejected": sum(
                     str(row.get("outcome") or "").lower() in rejected_outcomes
-                    for row in attempt_records
+                    for row in attempts
                 ),
                 "bytes": sum(
                     int(row.get("request_length") or 0) for row in attempt_records
-                ),
-                "batches": len(attempt_records),
+                ) + sum(int(row.get("bytes") or 0) for row in plutus_attempts),
+                "batches": len(attempts),
                 "backlog": None,
-                "attempts": [
-                    {
-                        "input_id": str(row.get("attempt_id") or ""),
-                        "outcome": str(row.get("outcome") or "unclassified"),
-                        "elapsed_micros": int(row.get("elapsed_micros") or 0),
-                    }
-                    for row in attempt_records
-                ],
+                "attempts": attempts,
             },
         )
 

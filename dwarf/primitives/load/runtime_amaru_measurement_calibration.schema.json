@@ -4,26 +4,101 @@
   "type": "object",
   "additionalProperties": false,
   "oneOf": [
-    {"required": ["profile_id"], "not": {"required": ["runtime_root"]}},
-    {"required": ["runtime_root"], "not": {"required": ["profile_id"]}}
+    {
+      "required": [
+        "profile_id"
+      ],
+      "not": {
+        "required": [
+          "runtime_root"
+        ]
+      }
+    },
+    {
+      "required": [
+        "runtime_root"
+      ],
+      "not": {
+        "required": [
+          "profile_id"
+        ]
+      }
+    }
   ],
   "properties": {
-    "helper_script": {"type": "string", "minLength": 1},
-    "python_bin": {"type": "string", "minLength": 1},
+    "helper_script": {
+      "type": "string",
+      "minLength": 1
+    },
+    "python_bin": {
+      "type": "string",
+      "minLength": 1
+    },
     "profile_id": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9_-]{0,80}$"
     },
-    "runtime_root": {"type": "string", "minLength": 1},
-    "output_dir": {"type": "string", "minLength": 1},
-    "attempts": {"type": "integer", "minimum": 30, "maximum": 10000},
+    "runtime_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "output_dir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 10000
+    },
     "case_set": {
       "type": "string",
-      "enum": ["unsupported-version-only-v1", "accepted-and-rejected-v1", "version-table-forward-compat-v1"]
+      "enum": [
+        "unsupported-version-only-v1",
+        "accepted-and-rejected-v1",
+        "version-table-forward-compat-v1"
+      ]
     },
-    "response_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
-    "progress_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
-    "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
-    "expected_helper_exit": {"type": "integer"}
+    "response_timeout_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "progress_timeout_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "timeout_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "expected_helper_exit": {
+      "type": "integer"
+    },
+    "plutus_transactions": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "submission_entry": {
+      "type": "string",
+      "enum": [
+        "p1",
+        "amaru-consumer"
+      ]
+    },
+    "inclusion_fallback_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "epoch_transitions": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "epoch_timeout_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 900
+    }
   }
 }
