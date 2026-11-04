@@ -181,7 +181,12 @@ def _submit(cli: str, *, socket_path: str, network_magic: int, tx_path: Path) ->
     stdout = str(getattr(result, "stdout", "") or "")
     error = ""
     if getattr(result, "returncode", 0) != 0:
-        error = next((line for line in (stderr + "\n" + stdout).splitlines() if line.strip()), "command failed: submit")
+        # The wrapper's clock line precedes any error text and is never the reason.
+        error = next(
+            (line for line in (stderr + "\n" + stdout).splitlines()
+             if line.strip() and not _SUBMIT_STARTED_AT.match(line)),
+            "command failed: submit",
+        )
     return parse_submit_started_at(stderr) or 0, stderr, error
 
 

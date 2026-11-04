@@ -806,6 +806,8 @@ def _reject_double_spends_over_n2n(
                 output_dir=output_dir / "n2n-rejections" / str(record["attempt_id"]),
                 mode="serve_transaction", target_host=host, target_port=port,
                 response_timeout_seconds=5.0, tx_body=tx_term, tx_id=id_term,
+                # The proposal the calibration leg already proved this release accepts.
+                handshake_payload=bytes.fromhex(HANDSHAKE_SUPPORTED_VERSION_HEX),
             )
             outcome.update(served=report["result"]["served"], requested_body=report["result"]["requested_body"],
                            post_serve_response_kind=report["result"]["post_serve_response_kind"])

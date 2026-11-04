@@ -711,7 +711,8 @@ def _fake_double_spend_run(monkeypatch, *, accept=False):
         if command[1:4] == ["conway", "transaction", "submit"]:
             tx = command[command.index("--tx-file") + 1]
             if tx in submitted and not accept:
-                return SimpleNamespace(returncode=1, stdout="", stderr="Command failed: transaction submit  Error: TxValidationErrorInCardanoEra (BadInputsUTxO ...)")
+                # The wrapper prints its clock line first, even when the submit fails.
+                return SimpleNamespace(returncode=1, stdout="", stderr="submit_started_at_ns=1762200000123456789\nCommand failed: transaction submit  Error: TxValidationErrorInCardanoEra (BadInputsUTxO ...)")
             submitted.add(tx)
             return SimpleNamespace(returncode=0, stdout="", stderr="submit_started_at_ns=1762200000123456789\n")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -731,6 +732,8 @@ def test_plutus_workload_records_a_rejected_double_spend_per_batch(monkeypatch, 
     rejected = [r for r in result["records"] if r["attempt_id"].endswith("-double-spend")]
     assert len(rejected) == 1 and rejected[0]["outcome"] == "rejected" and rejected[0]["chain_outcome"] == "rejected-phase1"
     assert "BadInputsUTxO" in rejected[0]["rejected_reason"]
+    assert not rejected[0]["rejected_reason"].startswith("submit_started_at_ns"), "the clock line is not the reason"
+    assert rejected[0]["submit_started_at_ns"] == 1762200000123456789 and rejected[0]["submit_clock"] == "wrapper"
     assert rejected[0]["spend_transaction_id"] == "spend0"
     assert "submit_to_block_inclusion_nanos" not in rejected[0]
     spends = [r for r in result["records"] if not r["attempt_id"].endswith("-double-spend")]

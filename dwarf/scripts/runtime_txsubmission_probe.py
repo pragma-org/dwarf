@@ -285,6 +285,7 @@ def run_probe(
     receive_bytes: int = 64,
     tx_body: bytes | None = None,
     tx_id: bytes | None = None,
+    handshake_payload: bytes | None = None,
 ) -> dict:
     if mode == SERVE_TRANSACTION_MODE:
         if not tx_body or not tx_id:
@@ -293,7 +294,7 @@ def run_probe(
             runtime_metadata_path=runtime_metadata_path, target_node=target_node, output_dir=output_dir,
             target_host=target_host, target_port=target_port, endpoint_source=endpoint_source,
             runtime_identity_path=runtime_identity_path, response_timeout_seconds=response_timeout_seconds,
-            tx_body=tx_body, tx_id=tx_id,
+            tx_body=tx_body, tx_id=tx_id, handshake_payload=handshake_payload,
         )
     network_magic = 42
     if target_port is None:
@@ -479,14 +480,15 @@ def _resolve_endpoint(runtime_metadata_path: Path | None, target_node: str, targ
 def _serve_transaction(
     *, runtime_metadata_path: Path | None, target_node: str, output_dir: Path, target_host: str,
     target_port: int | None, endpoint_source: str, runtime_identity_path: str | None,
-    response_timeout_seconds: float, tx_body: bytes, tx_id: bytes,
+    response_timeout_seconds: float, tx_body: bytes, tx_id: bytes, handshake_payload: bytes | None = None,
 ) -> dict:
     """Offer one transaction as a TxSubmission2 provider so the node's own mempool
     evaluates it: answer MsgRequestTxIds with the id and MsgRequestTxs with the body,
     then read the node's next message and close. One transaction per session; the
-    node's admission decision (its own trace) is the measurement."""
+    node's admission decision (its own trace) is the measurement. ``handshake_payload``
+    lets the caller send the proposal the target is known to accept."""
     port, network_magic = _resolve_endpoint(runtime_metadata_path, target_node, target_port)
-    handshake_payload = _handshake_propose_payload(network_magic)
+    handshake_payload = handshake_payload or _handshake_propose_payload(network_magic)
     init_payload = bytes.fromhex(TXSUBMISSION_INIT_HEX)
     transcript: list[dict] = []
     served = requested_body = False

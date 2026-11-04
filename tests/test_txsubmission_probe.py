@@ -76,16 +76,20 @@ class _FakeNode(threading.Thread):
             self.server.close()
 
 
+AMARU_OFFER = bytes.fromhex("8200a10f84182af400f4")   # the proposal Amaru 20261029 accepts (calibration helper)
+
+
 def test_serve_transaction_offers_the_id_then_the_body(tmp_path):
     node = _FakeNode()
     node.start()
     report = probe.run_probe(
         runtime_metadata_path=None, target_node="amaru-relay-1", output_dir=tmp_path / "probe",
         mode="serve_transaction", target_host="127.0.0.1", target_port=node.port,
-        response_timeout_seconds=2.0, tx_body=BODY, tx_id=TXID_TERM,
+        response_timeout_seconds=2.0, tx_body=BODY, tx_id=TXID_TERM, handshake_payload=AMARU_OFFER,
     )
     node.join(5)
     assert node.error is None
+    assert node.received[0] == AMARU_OFFER, "the caller's known-accepted proposal is sent verbatim"
     assert node.received[1] == bytes.fromhex(probe.TXSUBMISSION_INIT_HEX)
     assert node.received[2] == probe._build_reply_txids_payload_for(TXID_TERM, len(BODY))
     assert node.received[3] == probe._build_reply_txs_payload([BODY])
