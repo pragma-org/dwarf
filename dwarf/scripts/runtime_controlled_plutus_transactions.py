@@ -263,6 +263,86 @@ def _retain_plutus_v2_topology(runtime: dict, destination: Path) -> dict:
     return topology
 
 
+_MEMPOOL_VISIBILITY_KINDS = ("mempool-received", "mempool-attempt", "mempool-accepted")
+
+
+def _event_time_ns(event: dict) -> int | None:
+    """Nanoseconds since the epoch for a normalised trace event (ISO timestamps, up to 9 fraction digits)."""
+    raw = event.get("timestamp") or event.get("at") or event.get("time")
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip().replace("Z", "+00:00")
+    if "." in text:
+        head, rest = text.split(".", 1)
+        digits = ""
+        while rest and rest[0].isdigit():
+            digits += rest[0]
+            rest = rest[1:]
+        fraction_ns = int((digits + "000000000")[:9]) if digits else 0
+        text = head + rest
+    else:
+        fraction_ns = 0
+    from datetime import datetime, timezone
+
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return int(moment.timestamp()) * 1_000_000_000 + fraction_ns
+
+
+def join_mempool_visibility(records: list[dict], events) -> int:
+    """Set ``submit_to_mempool_visibility_*`` on each record from the first mempool
+    receipt of its spend id at or after the submit clock. Returns the count joined."""
+    first_seen: dict[str, list[int]] = {}
+    for event in events:
+        if event.get("kind") not in _MEMPOOL_VISIBILITY_KINDS:
+            continue
+        tx_id = event.get("tx_id")
+        moment = _event_time_ns(event)
+        if isinstance(tx_id, str) and moment is not None:
+            first_seen.setdefault(tx_id, []).append(moment)
+    joined = 0
+    for record in records:
+        tx_id = record.get("spend_transaction_id")
+        submitted = record.get("submit_started_at_ns")
+        if not isinstance(tx_id, str) or not isinstance(submitted, int):
+            continue
+        candidates = sorted(moment for moment in first_seen.get(tx_id, []) if moment >= submitted)
+        if not candidates:
+            continue
+        nanos = candidates[0] - submitted
+        record["submit_to_mempool_visibility_nanos"] = nanos
+        record["submit_to_mempool_visibility_micros"] = nanos / 1_000
+        joined += 1
+    return joined
+
+
+def load_mempool_events(implementation: str, lines) -> list[dict]:
+    """Normalise raw node trace lines through the stock collectors' own parsers."""
+    import json as _json
+
+    if implementation == "amaru":
+        from profile_manager.measurement_collectors.amaru_stock import _normalize_json_event as normalize
+    else:
+        from profile_manager.measurement_collectors.cardano_stock import _normalize_record as normalize
+    events = []
+    for line in lines:
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            record = _json.loads(line)
+        except ValueError:
+            continue
+        event = normalize(record) if isinstance(record, dict) else None
+        if event:
+            events.append(event)
+    return events
+
+
 def _plutus_workload_accounting(
     records: list[dict], implementation: str, *, boundary_node: str | None = None
 ) -> dict:
@@ -276,8 +356,11 @@ def _plutus_workload_accounting(
         required = (
             "attempt_id", "outcome", "spend_transaction_id",
             "transaction_bytes", "elapsed_nanos", "elapsed_micros",
-            "submit_to_block_inclusion_nanos", "submit_to_block_inclusion_micros",
         )
+        # A phase-1 rejection never reaches a block, so inclusion stages are optional there.
+        phase1 = str(record.get("chain_outcome") or "") in {"rejected-phase1", "accepted-unexpected"}
+        if not phase1:
+            required += ("submit_to_block_inclusion_nanos", "submit_to_block_inclusion_micros")
         missing = [key for key in required if record.get(key) is None]
         if missing:
             raise RuntimeError(
@@ -291,13 +374,12 @@ def _plutus_workload_accounting(
             "bytes": int(record["transaction_bytes"]),
             "elapsed_nanos": int(record["elapsed_nanos"]),
             "elapsed_micros": float(record["elapsed_micros"]),
-            "submit_to_block_inclusion_nanos": int(
-                record["submit_to_block_inclusion_nanos"]
-            ),
-            "submit_to_block_inclusion_micros": float(
-                record["submit_to_block_inclusion_micros"]
-            ),
         }
+        if record.get("submit_to_block_inclusion_nanos") is not None:
+            attempt["submit_to_block_inclusion_nanos"] = int(record["submit_to_block_inclusion_nanos"])
+            attempt["submit_to_block_inclusion_micros"] = float(record["submit_to_block_inclusion_micros"])
+        if record.get("rejected_reason"):
+            attempt["rejected_reason"] = str(record["rejected_reason"])
         label = record.get("boundary_node") or boundary_node
         if label is not None:
             attempt["boundary_node"] = str(label)

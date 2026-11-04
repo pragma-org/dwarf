@@ -816,3 +816,16 @@ def test_amaru_attempts_keep_entry_node_stages_with_their_label():
     peer = subject._plutus_workload_accounting([{**record, "submission_entry": "peer"}], "cardano-node", boundary_node="node2")["attempts"][0]
     assert "submit_to_protocol_response_nanos" not in peer and "submit_to_block_inclusion_nanos" in peer and peer["boundary_node"] == "node2"
     assert out["timed_out"] == 0 and out["backlog"] == 0
+
+
+def test_mempool_visibility_joins_first_event_after_submit_only():
+    records = [{"spend_transaction_id": "aa", "submit_started_at_ns": 1_000_000_000},
+               {"spend_transaction_id": "bb", "submit_started_at_ns": 5_000_000_000}]
+    events = [{"kind": "mempool-received", "tx_id": "aa", "timestamp": "1970-01-01T00:00:00.500Z"},   # before submit: ignored
+              {"kind": "mempool-received", "tx_id": "aa", "timestamp": "1970-01-01T00:00:01.250Z"},
+              {"kind": "mempool-received", "tx_id": "aa", "timestamp": "1970-01-01T00:00:02.000Z"},   # resubmission: ignored
+              {"kind": "mempool-accepted", "tx_id": "cc", "timestamp": "1970-01-01T00:00:06.000Z"}]
+    assert subject.join_mempool_visibility(records, events) == 1
+    assert records[0]["submit_to_mempool_visibility_nanos"] == 250_000_000
+    assert records[0]["submit_to_mempool_visibility_micros"] == 250_000.0
+    assert "submit_to_mempool_visibility_nanos" not in records[1]

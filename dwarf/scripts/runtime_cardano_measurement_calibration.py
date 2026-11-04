@@ -159,6 +159,32 @@ def _checked(command: list[str], *, timeout: float = 60) -> subprocess.Completed
     return result
 
 
+_SUBMIT_STARTED_AT = re.compile(r"^submit_started_at_ns=(\d+)\s*$", re.M)
+
+
+def parse_submit_started_at(text: str) -> int | None:
+    """The wall-clock nanoseconds the cardano-cli wrapper printed right before a submit."""
+    match = _SUBMIT_STARTED_AT.search(text or "")
+    return int(match.group(1)) if match else None
+
+
+def _submit(cli: str, *, socket_path: str, network_magic: int, tx_path: Path) -> tuple[int, str, str]:
+    """Submit a signed transaction; returns (wall-clock ns at submit, stderr, error-or-empty).
+
+    The timestamp comes from the containerized wrapper when it prints one, else from
+    this process (recorded as ``submit_clock: helper``)."""
+    result = _run([
+        cli, "conway", "transaction", "submit", "--socket-path", socket_path,
+        "--testnet-magic", str(network_magic), "--tx-file", str(tx_path),
+    ])
+    stderr = str(getattr(result, "stderr", "") or "")
+    stdout = str(getattr(result, "stdout", "") or "")
+    error = ""
+    if getattr(result, "returncode", 0) != 0:
+        error = next((line for line in (stderr + "\n" + stdout).splitlines() if line.strip()), "command failed: submit")
+    return parse_submit_started_at(stderr) or 0, stderr, error
+
+
 def _transaction_id(cli: str, transaction: Path) -> str:
     result = _checked(
         [cli, "conway", "transaction", "txid", "--tx-file", str(transaction)]
@@ -649,6 +675,12 @@ def _containerized_cardano_workload(
             "\"s|$HOST_WORK|/work|;s|$HOST_KEYS|$CONTAINER_KEYS|\")\n"
             "  args+=(\"$arg\")\n"
             "done\n"
+            # The submit clock is read here, after argument rewriting and right before
+            # the container starts, so the mempool-visibility stage excludes the
+            # container start-up and measures the node, not Docker.
+            "if [ \"${1:-}\" = conway ] && [ \"${2:-}\" = transaction ] && [ \"${3:-}\" = submit ]; then\n"
+            "  printf 'submit_started_at_ns=%s\\n' \"$(date +%s%N)\" >&2\n"
+            "fi\n"
             f"{run_prefix}--rm --name \"$NAME\" "
             "--label io.dwarf.managed=true "
             "--label io.dwarf.component=cardano-cli-workload "
@@ -735,14 +767,52 @@ def _await_inclusion(
     return wait(None), False, errors
 
 
+def _double_spend(
+    cli: str, *, socket_path: str, network_magic: int, index: int, tx_path: Path, tx_id: str
+) -> dict[str, Any]:
+    """Resubmit an already-included spend: a phase-1-invalid transaction the mempool must reject.
+
+    The node's refusal is the measurement (``mempool_rejected`` and the rejected
+    workload counter); a submit that succeeds is recorded as ``accepted-unexpected``
+    and never counted as a rejection."""
+    started = time.perf_counter_ns()
+    helper_clock_ns = time.time_ns()
+    submit_started_at_ns, _stderr, error = _submit(
+        cli, socket_path=socket_path, network_magic=network_magic, tx_path=tx_path
+    )
+    elapsed = time.perf_counter_ns() - started
+    record: dict[str, Any] = {
+        "attempt_id": f"plutus-{index:04d}-double-spend",
+        "outcome": "rejected" if error else "accepted-unexpected",
+        "chain_outcome": "rejected-phase1" if error else "accepted-unexpected",
+        "spend_transaction_id": tx_id,
+        "resubmitted_transaction_file": tx_path.name,
+        "relay_forwarded": None,
+        "fallback_errors": [],
+        "transaction_bytes": tx_path.stat().st_size if tx_path.exists() else 0,
+        "elapsed_nanos": elapsed,
+        "elapsed_micros": elapsed / 1_000,
+        "submit_to_protocol_response_nanos": elapsed,
+        "submit_to_protocol_response_micros": elapsed / 1_000,
+        "submit_started_at_ns": submit_started_at_ns or helper_clock_ns,
+        "submit_clock": "wrapper" if submit_started_at_ns else "helper",
+    }
+    if error:
+        record["rejected_reason"] = error[:200]
+    return record
+
+
 def run_plutus_workload(
     *, runtime_root: Path, runtime: dict[str, Any], node: dict[str, Any],
     output_dir: Path, transaction_count: int, script_language: str = "v2",
     fallback_submit: Callable[[Path], None] | None = None,
     inclusion_fallback_seconds: float = 30.0,
+    double_spend_every: int = 20,
 ) -> dict[str, Any]:
     if transaction_count < 1 or transaction_count > 100:
         raise ValueError("plutus transaction count must be within 1..100")
+    if double_spend_every < 1:
+        raise ValueError("double_spend_every must be positive")
     if script_language not in PLUTUS_SCRIPTS:
         raise ValueError(f"unsupported Plutus script language: {script_language}")
     if inclusion_fallback_seconds <= 0:
@@ -791,6 +861,7 @@ def run_plutus_workload(
     }
     records = []
     fallback_sticky_from: int | None = None
+    last_accepted_spend: tuple[Path, str] | None = None
     for index in range(transaction_count):
         sticky = fallback_sticky_from is not None
         expected_outcome = "accepted" if index % 2 == 0 else "rejected"
@@ -884,12 +955,16 @@ def run_plutus_workload(
             "--out-file", str(spend_tx),
         ])
         submit_started = time.perf_counter_ns()
-        _checked([
-            cli, "conway", "transaction", "submit", "--socket-path", socket_path,
-            "--testnet-magic", str(network_magic), "--tx-file", str(spend_tx),
-        ])
+        helper_clock_ns = time.time_ns()
+        submit_started_at_ns, _submit_stderr, submit_error = _submit(
+            cli, socket_path=socket_path, network_magic=network_magic, tx_path=spend_tx
+        )
+        if submit_error:
+            raise RuntimeError(submit_error)
         submit_response_nanos = time.perf_counter_ns() - submit_started
         submit_us = submit_response_nanos / 1_000
+        submit_clock = "wrapper" if submit_started_at_ns else "helper"
+        submit_started_at_ns = submit_started_at_ns or helper_clock_ns
         spend_id = _transaction_id(cli, spend_tx)
         if expected_outcome == "accepted":
             def wait_spend(timeout: float | None, _spend_id=spend_id, _index=index):
@@ -954,7 +1029,17 @@ def run_plutus_workload(
             "submit_to_block_inclusion_micros": outcome_nanos / 1_000,
             "submit_to_chain_adoption_nanos": outcome_nanos,
             "submit_to_chain_adoption_micros": outcome_nanos / 1_000,
+            "submit_started_at_ns": submit_started_at_ns,
+            "submit_clock": submit_clock,
         })
+        if expected_outcome == "accepted":
+            last_accepted_spend = (spend_tx, spend_id)
+        batch_end = (index + 1) % double_spend_every == 0 or index == transaction_count - 1
+        if batch_end and last_accepted_spend is not None:
+            records.append(_double_spend(
+                cli, socket_path=socket_path, network_magic=network_magic,
+                index=index, tx_path=last_accepted_spend[0], tx_id=last_accepted_spend[1],
+            ))
     result = {
         "scripts": {
             outcome: {
@@ -1286,6 +1371,13 @@ def run_leg(
         else None
     )
     trace_text = trace_path.read_text(encoding="utf-8")
+    if plutus_workload and plutus_workload.get("records"):
+        # Submit clock (wrapper) to the target's own mempool receipt, by transaction id.
+        from scripts.runtime_controlled_plutus_transactions import join_mempool_visibility, load_mempool_events
+
+        plutus_workload["mempool_visibility_joined"] = join_mempool_visibility(
+            plutus_workload["records"], load_mempool_events("cardano-node", trace_text.splitlines())
+        )
     log_signals = classify_log_signals(trace_text) if client_case else None
     health_checks = (
         {

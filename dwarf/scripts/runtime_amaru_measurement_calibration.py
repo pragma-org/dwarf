@@ -894,6 +894,13 @@ def run_leg(
     trace_path = output_dir / "raw" / "amaru-relay-1.ndjson"
     _capture_logs(container, since=started_at, destination=trace_path)
     trace_text = trace_path.read_text(encoding="utf-8")
+    if plutus_workload and plutus_workload.get("records"):
+        # Submit clock (entry wrapper) to the relay's own mempool receipt over N2N, by id.
+        from scripts.runtime_controlled_plutus_transactions import join_mempool_visibility, load_mempool_events
+
+        plutus_workload["mempool_visibility_joined"] = join_mempool_visibility(
+            plutus_workload["records"], load_mempool_events("amaru", trace_text.splitlines())
+        )
     log_signals = classify_log_signals(trace_text)
     attempts_path = output_dir / "attempts.ndjson"
     attempts_path.write_text(

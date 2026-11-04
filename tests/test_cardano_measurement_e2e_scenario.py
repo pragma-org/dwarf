@@ -685,3 +685,56 @@ def test_plutus_workload_fallback_becomes_sticky_after_first_miss(monkeypatch, t
     assert [row["relay_forwarded"] for row in result["records"]] == [False, False]
     assert all("timeout_seconds" not in wait for wait in calls["waits"][1:])
     assert result["fallback_sticky_from"] == 0
+
+
+def test_parse_submit_started_at_reads_the_wrapper_line():
+    assert calibration.parse_submit_started_at("warning: x\nsubmit_started_at_ns=1762200000123456789\n") == 1762200000123456789
+    assert calibration.parse_submit_started_at("") is None
+
+
+def _fake_double_spend_run(monkeypatch, *, accept=False):
+    from types import SimpleNamespace
+    submitted = set()
+    runs = []
+
+    def run(command, **_kwargs):
+        runs.append(command)
+        if command[1:4] == ["conway", "transaction", "submit"]:
+            tx = command[command.index("--tx-file") + 1]
+            if tx in submitted and not accept:
+                return SimpleNamespace(returncode=1, stdout="", stderr="Command failed: transaction submit  Error: TxValidationErrorInCardanoEra (BadInputsUTxO ...)")
+            submitted.add(tx)
+            return SimpleNamespace(returncode=0, stdout="", stderr="submit_started_at_ns=1762200000123456789\n")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(calibration, "_run", run)
+    return runs
+
+
+def test_plutus_workload_records_a_rejected_double_spend_per_batch(monkeypatch, tmp_path):
+    _fake_plutus_cli(monkeypatch)
+    runs = _fake_double_spend_run(monkeypatch)
+    runtime, node = _plutus_runtime(tmp_path)
+    result = calibration.run_plutus_workload(
+        runtime_root=tmp_path, runtime=runtime, node=node, output_dir=tmp_path / "out",
+        transaction_count=2, double_spend_every=2,
+    )
+    rejected = [r for r in result["records"] if r["attempt_id"].endswith("-double-spend")]
+    assert len(rejected) == 1 and rejected[0]["outcome"] == "rejected" and rejected[0]["chain_outcome"] == "rejected-phase1"
+    assert "BadInputsUTxO" in rejected[0]["rejected_reason"]
+    assert rejected[0]["spend_transaction_id"] == "spend0"
+    assert "submit_to_block_inclusion_nanos" not in rejected[0]
+    spends = [r for r in result["records"] if not r["attempt_id"].endswith("-double-spend")]
+    assert len(spends) == 2 and all(r["submit_started_at_ns"] == 1762200000123456789 for r in spends)
+    assert [r["outcome"] for r in result["records"]] == ["accepted", "rejected", "rejected"]
+
+
+def test_double_spend_that_is_accepted_is_flagged_not_counted(monkeypatch, tmp_path):
+    _fake_plutus_cli(monkeypatch)
+    _fake_double_spend_run(monkeypatch, accept=True)
+    runtime, node = _plutus_runtime(tmp_path)
+    result = calibration.run_plutus_workload(
+        runtime_root=tmp_path, runtime=runtime, node=node, output_dir=tmp_path / "out",
+        transaction_count=2, double_spend_every=2,
+    )
+    assert [r["outcome"] for r in result["records"] if r["attempt_id"].endswith("-double-spend")] == ["accepted-unexpected"]
