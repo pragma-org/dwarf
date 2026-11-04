@@ -560,6 +560,11 @@ def _serve_transaction(
             except ConnectionResetError:
                 post_kind = "reset"
                 break
+            except EOFError:
+                # The node closed the connection: after the body that is its decision
+                # window ending; before it, the node declined to continue. Reported, not raised.
+                post_kind = "eof"
+                break
             if not payload:
                 break
             transcript.append({"direction": "recv", "payload_hex": payload.hex()})

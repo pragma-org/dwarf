@@ -53,6 +53,7 @@ class _FakeNode(threading.Thread):
         self.received: list[bytes] = []
         self.header_words: list[int] = []
         self.error: Exception | None = None
+        self.close_after_body = False
 
     def _recv_frame(self, conn):
         import struct
@@ -77,6 +78,9 @@ class _FakeNode(threading.Thread):
             conn.sendall(probe._encode_mux_sdu(bytes([0x82, 0x02, 0x81, 0x58, 0x20]) + TXID, mini_protocol_num=4, initiator=False))
             reply_txs = probe._recv_mux_payload(conn)
             self.received.append(reply_txs)
+            if self.close_after_body:
+                conn.close()   # a node that drops the peer after the body: reported, never a crash
+                return
             conn.sendall(probe._encode_mux_sdu(bytes([0x84, 0x00, 0xF5, 0x01, 0x01]), mini_protocol_num=4, initiator=False))  # ack 1, ask again
             conn.close()
         except Exception as exc:  # pragma: no cover - surfaced through self.error
@@ -132,3 +136,20 @@ def test_request_txs_with_indefinite_length_arrays_decodes_and_yields_the_id_ter
     assert probe._parse_request_txs(payload) == [id_term]
     definite = bytes([0x82, 0x02, 0x81]) + id_term
     assert probe._parse_request_txs(definite) == [id_term]
+
+
+def test_serve_transaction_reports_a_node_that_closes_after_the_body(tmp_path):
+    """Live check 2026-11-04: the relay closed the connection after our body; that is the
+    node's decision window, reported as post_serve_response_kind eof, not an EOFError."""
+    node = _FakeNode()
+    node.close_after_body = True
+    node.start()
+    report = probe.run_probe(
+        runtime_metadata_path=None, target_node="amaru-relay-1", output_dir=tmp_path / "probe",
+        mode="serve_transaction", target_host="127.0.0.1", target_port=node.port,
+        response_timeout_seconds=2.0, tx_body=BODY, tx_id=TXID_TERM, handshake_payload=AMARU_OFFER,
+    )
+    node.join(5)
+    assert node.error is None
+    assert report["result"]["served"] is True and report["result"]["requested_body"] is True
+    assert report["result"]["post_serve_response_kind"] == "eof"
