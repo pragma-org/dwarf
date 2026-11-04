@@ -109,18 +109,6 @@
         {
           "implementation": "cardano-node",
           "modes": [
-            "stock"
-          ],
-          "metric_ids": [
-            "block_application",
-            "block_application_by_outcome"
-          ],
-          "source": "stock",
-          "derivation": "Summarized from Cardano-node stock block-application observations."
-        },
-        {
-          "implementation": "cardano-node",
-          "modes": [
             "patched"
           ],
           "metric_ids": [
@@ -1730,7 +1718,8 @@
           ],
           "metric_ids": [
             "cardano-patched-header-validation.header_validation",
-            "cardano-patched-header-validation.header_validation_by_outcome"
+            "cardano-patched-header-validation.header_validation_by_outcome",
+            "header_validation_by_outcome"
           ],
           "source": "patched",
           "derivation": "Summarized from revision-locked Cardano-node header-validation timing events.",
@@ -1951,8 +1940,9 @@
             "pending_range_depth"
           ],
           "source": "patched",
-          "derivation": "Sampled from the Cardano-node BlockFetch handler-queue collector when its contract is built.",
-          "boundary": "cardano-node BlockFetch pending ranges per sample"
+          "derivation": "Sampled from the Cardano-node BlockFetch handler-queue collector when its contract is built; one pending range is one pending request in this comparison.",
+          "boundary": "cardano-node BlockFetch pending ranges per sample",
+          "unit_equivalent": true
         }
       ]
     },

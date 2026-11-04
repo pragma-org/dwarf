@@ -118,8 +118,9 @@ def test_unknown_pick_yields_no_rows():
 
 def test_review_fixes_no_leftover_rows_antithesis_isolation_and_unit_guards():
     amaru = _record("a1", "amaru", "stock", "wa", {"block_application": US(100), "mempool_accepted": {"status": "available", "unit": "events", "value": 40}})
+    # A patched cardano record: stock cardano-node emits no block_application ids at all.
     cardano = _record(
-        "c1", "cardano-node", "stock", "wc",
+        "c1", "cardano-node", "patched", "wc",
         {"adopted_blocks": {"status": "available", "unit": "blocks", "value": 173},
          "cardano-stock-ledger-block-epoch.adopted_blocks": {"status": "available", "unit": "blocks", "value": 173},
          "block_application_by_outcome": {"status": "available", "unit": "us", "value": {"completed": 3}},
@@ -140,3 +141,14 @@ def test_review_fixes_no_leftover_rows_antithesis_isolation_and_unit_guards():
     assert catalog_concept(index, foreign, "transaction_outcomes", foreign["metrics"]["transaction_outcomes"]) is None
     received = _record("a4", "amaru", "stock", "w", {"mempool_received": {"status": "available", "unit": "events", "value": 40}})
     assert catalog_concept(index, received, "mempool_received", received["metrics"]["mempool_received"])["id"] == "mempool-intake-count"
+
+
+def test_metric_cell_reads_a_peak_primary_and_an_evidenced_zero():
+    """workload-backlog's primary statistic is its peak; a header-prerequisite wait with
+    no occurrences among 489 validations is an observed zero, not a blank cell
+    (Compare page, Pages set of 2026-11-04)."""
+    from profile_manager.data.measurement_compare import _metric_cell, cell_state
+    backlog = _metric_cell("backlog", {"status": "available", "unit": "operations", "peak": 3.0, "baseline": 1.0, "sample_count": 122})
+    assert backlog["primary_value"] == 3.0 and cell_state(backlog) == "available"
+    empty = _metric_cell("header_prerequisite_unavailable", {"status": "unavailable", "unit": "us", "median": None, "sample_count": 0, "offered_count": 489})
+    assert empty["primary_value"] == 0 and cell_state(empty) == "observed-zero"

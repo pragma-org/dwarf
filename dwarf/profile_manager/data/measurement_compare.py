@@ -275,8 +275,15 @@ def _metric_cell(name: str, raw: Any) -> dict[str, Any]:
         value = verdict_total = sum_verdict_dict(primary.get("value"))
     if value is None and _number(primary.get("absolute_delta")) is not None:
         value = _number(primary.get("absolute_delta"))
+    if value is None and _number(primary.get("peak")) is not None:
+        # Gauges such as the workload backlog read as their peak (catalog primary_statistic).
+        value = _number(primary.get("peak"))
     if value is None:
         value = row.get("median")
+    if value is None and _number(primary.get("sample_count")) == 0 and (_number(primary.get("offered_count")) or 0) > 0:
+        # An empty distribution whose collector states what it could have sampled is an
+        # observed zero: no event of this kind among offered_count opportunities.
+        value = 0.0
     # A counter's own count is positive evidence even when the row carries a
     # normal value (the shared row builder only maps offered_count for rates).
     count = _number(primary.get("count"))
@@ -308,6 +315,9 @@ def cell_state(row: dict[str, Any] | None) -> str:
             return "observed-zero" if row.get("positive_evidence") else "unavailable"
         return "available"
     if status == "unavailable":
+        # A collector marks an empty distribution unavailable; with its offered count it is an observed zero.
+        if row.get("primary_value") == 0 and row.get("positive_evidence"):
+            return "observed-zero"
         return "unavailable"
     if status == "insufficient-samples":
         return "insufficient-samples"
