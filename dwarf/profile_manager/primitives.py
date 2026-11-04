@@ -13756,6 +13756,7 @@ _AMARU_WORKLOAD_FLAGS = (
     ("inclusion_fallback_seconds", "--inclusion-fallback-seconds", float),
     ("epoch_transitions", "--epoch-transitions", int),
     ("epoch_timeout_seconds", "--epoch-timeout-seconds", float),
+    ("reject_via_n2n", "--reject-via-n2n", int),
 )
 
 

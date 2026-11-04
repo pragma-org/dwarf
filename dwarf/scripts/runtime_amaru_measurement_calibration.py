@@ -766,6 +766,56 @@ def _run_plutus_workload_leg(
     return result
 
 
+CONWAY_ERA_INDEX = 6
+
+
+def _wire_transaction_terms(tx_file: Path, tx_id_hex: str, *, era_index: int = CONWAY_ERA_INDEX) -> tuple[bytes, bytes]:
+    """The N2N TxSubmission2 terms of a cardano-cli transaction envelope: the hard-fork
+    combinator encodes a transaction as ``[era, <tx>]`` and its id as ``[era, h'<32>']``."""
+    from scripts.runtime_txsubmission_probe import _encode_cbor_array, _encode_cbor_bytes, _encode_cbor_uint
+
+    envelope = json.loads(tx_file.read_text(encoding="utf-8"))
+    tx_cbor = bytes.fromhex(str(envelope.get("cborHex") or ""))
+    tx_id = bytes.fromhex(tx_id_hex)
+    if not tx_cbor or len(tx_id) != 32:
+        raise RuntimeError("transaction envelope or id is not usable on the wire")
+    tx_term = _encode_cbor_array(2) + _encode_cbor_uint(era_index) + tx_cbor
+    id_term = _encode_cbor_array(2) + _encode_cbor_uint(era_index) + _encode_cbor_bytes(tx_id)
+    return tx_term, id_term
+
+
+def _reject_double_spends_over_n2n(
+    plutus_workload: dict[str, Any], *, host: str, output_dir: Path, target_node: str, port: int = 3000,
+) -> list[dict[str, Any]]:
+    """Offer each phase-1-invalid (double-spend) transaction to the Amaru target over N2N
+    so its own mempool evaluates and rejects it. The consumer entry never forwards a
+    transaction its own mempool refused, so without this the relay sees no rejection."""
+    from scripts.runtime_txsubmission_probe import run_probe
+
+    work = output_dir / "plutus-workload"
+    outcomes: list[dict[str, Any]] = []
+    for record in plutus_workload.get("records") or []:
+        if record.get("chain_outcome") != "rejected-phase1":
+            continue
+        name = str(record.get("resubmitted_transaction_file") or "")
+        outcome: dict[str, Any] = {"attempt_id": record.get("attempt_id"), "tx_id": record.get("spend_transaction_id")}
+        try:
+            tx_term, id_term = _wire_transaction_terms(work / name, str(record["spend_transaction_id"]))
+            report = run_probe(
+                runtime_metadata_path=None, target_node=target_node,
+                output_dir=output_dir / "n2n-rejections" / str(record["attempt_id"]),
+                mode="serve_transaction", target_host=host, target_port=port,
+                response_timeout_seconds=5.0, tx_body=tx_term, tx_id=id_term,
+            )
+            outcome.update(served=report["result"]["served"], requested_body=report["result"]["requested_body"],
+                           post_serve_response_kind=report["result"]["post_serve_response_kind"])
+        except Exception as exc:  # the leg must finish; the rejection stays unexercised and says so
+            outcome.update(served=False, error=str(exc)[:200])
+        record["n2n_serve"] = outcome
+        outcomes.append(outcome)
+    return outcomes
+
+
 def _latest_tip(container: str) -> dict[str, Any] | None:
     result = _run(["docker", "logs", "--tail", "8000", container], timeout=60)
     if result.returncode != 0:
@@ -826,6 +876,7 @@ def run_leg(
     inclusion_fallback_seconds: float = 30.0,
     epoch_transitions: int = 0,
     epoch_timeout_seconds: float = 260.0,
+    reject_via_n2n: int = 0,
 ) -> dict[str, Any]:
     seed = _validated_seed(seed, canonicalize=False)
     runtime_path = runtime_root / "runtime.json"
@@ -880,6 +931,10 @@ def run_leg(
             inclusion_fallback_seconds=inclusion_fallback_seconds,
             network_magic=network_magic,
         )
+        if reject_via_n2n:
+            plutus_workload["n2n_rejections"] = _reject_double_spends_over_n2n(
+                plutus_workload, host=host, output_dir=output_dir, target_node=service,
+            )
     epoch_wait = None
     if epoch_transitions:
         epoch_wait = _wait_for_epoch_transitions(
@@ -1045,6 +1100,7 @@ def _parser() -> argparse.ArgumentParser:
     leg.add_argument("--inclusion-fallback-seconds", type=float, default=30.0)
     leg.add_argument("--epoch-transitions", type=int, default=0)
     leg.add_argument("--epoch-timeout-seconds", type=float, default=260.0)
+    leg.add_argument("--reject-via-n2n", type=int, choices=(0, 1), default=0)
     pair = sub.add_parser("pair")
     pair.add_argument("--stock", type=Path, required=True)
     pair.add_argument("--patched", type=Path, required=True)
@@ -1079,6 +1135,7 @@ def main(argv: list[str] | None = None) -> int:
             inclusion_fallback_seconds=args.inclusion_fallback_seconds,
             epoch_transitions=args.epoch_transitions,
             epoch_timeout_seconds=args.epoch_timeout_seconds,
+            reject_via_n2n=args.reject_via_n2n,
         )
     else:
         stock = json.loads(args.stock.read_text(encoding="utf-8"))

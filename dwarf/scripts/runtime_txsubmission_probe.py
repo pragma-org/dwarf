@@ -19,6 +19,8 @@ from runtime_txsubmission_accounting import TxSubmissionDecodeError, decode_txsu
 
 HANDSHAKE_PROPOSE_HEX = "8200a10a82182af4"
 TXSUBMISSION_INIT_HEX = "8106"
+# Provider mode: offer one transaction so the node's own mempool evaluates it (no malformation).
+SERVE_TRANSACTION_MODE = "serve_transaction"
 MODE_CASES = {
     "txsubmission_window_pressure": {
         "malformation_id": "reply-txids-overflow-window",
@@ -111,7 +113,44 @@ def _encode_cbor_bytes(payload: bytes) -> bytes:
         return bytes([0x40 + length]) + payload
     if length < 256:
         return bytes([0x58, length]) + payload
+    if length < 65536:
+        return bytes([0x59]) + length.to_bytes(2, "big") + payload
     raise ValueError(f"bytes payload too large for helper encoder: {length}")
+
+
+def _cbor_term_end(payload: bytes, offset: int) -> int:
+    """Offset just past the definite-length CBOR term at ``offset``.
+
+    Covers unsigned ints, byte/text strings, arrays, maps and tags: enough to
+    slice the id and body terms of TxSubmission2 messages."""
+    if offset >= len(payload):
+        raise TxSubmissionDecodeError("truncated CBOR term")
+    initial = payload[offset]
+    major, info = initial >> 5, initial & 0x1F
+    widths = {24: 1, 25: 2, 26: 4, 27: 8}
+    if info < 24:
+        argument, head = info, 1
+    elif info in widths:
+        width = widths[info]
+        argument, head = int.from_bytes(payload[offset + 1:offset + 1 + width], "big"), 1 + width
+    else:
+        raise TxSubmissionDecodeError("indefinite-length CBOR term is not supported here")
+    position = offset + head
+    if major in (0, 1, 7):
+        return position
+    if major in (2, 3):
+        return position + argument
+    if major == 4:
+        for _ in range(argument):
+            position = _cbor_term_end(payload, position)
+        return position
+    if major == 5:
+        for _ in range(argument * 2):
+            position = _cbor_term_end(payload, position)
+        return position
+    if major == 6:
+        return _cbor_term_end(payload, position)
+    raise TxSubmissionDecodeError("unsupported CBOR major type")
 
 
 def _build_reply_txids_payload(count: int) -> bytes:
@@ -138,6 +177,37 @@ def _parse_request_txids(payload: bytes) -> dict:
     return decoded
 
 
+def _build_reply_txids_payload_for(txid_term: bytes, size: int) -> bytes:
+    """MsgReplyTxIds with one entry: ``[1, [[<txid term>, size]]]``."""
+    return (
+        _encode_cbor_array(2) + _encode_cbor_uint(1) + _encode_cbor_array(1)
+        + _encode_cbor_array(2) + txid_term + _encode_cbor_uint(size)
+    )
+
+
+def _build_reply_txs_payload(tx_terms: list[bytes]) -> bytes:
+    """MsgReplyTxs: ``[3, [<tx term>...]]``; each transaction is its wire CBOR term."""
+    return _encode_cbor_array(2) + _encode_cbor_uint(3) + _encode_cbor_array(len(tx_terms)) + b"".join(tx_terms)
+
+
+def _parse_request_txs(payload: bytes) -> list[bytes]:
+    """The id terms a MsgRequestTxs ``[2, [<txid term>...]]`` names, as raw CBOR slices."""
+    decoded = decode_txsubmission_payload(payload)
+    if decoded.get("message_kind") != "request-txs":
+        raise TxSubmissionDecodeError(f"expected request-txs, got {decoded.get('message_kind')}")
+    if len(payload) < 3 or payload[0] != 0x82 or payload[1] != 0x02 or (payload[2] >> 5) != 4:
+        raise TxSubmissionDecodeError("request-txs shape invalid")
+    count, position = payload[2] & 0x1F, 3
+    if count == 24:
+        count, position = payload[3], 4
+    terms = []
+    for _ in range(count):
+        end = _cbor_term_end(payload, position)
+        terms.append(payload[position:end])
+        position = end
+    return terms
+
+
 def _load_runtime_node(runtime_metadata_path: Path, target_node: str) -> dict:
     body = json.loads(runtime_metadata_path.read_text(encoding="utf-8"))
     nodes = list(body.get("haskell_nodes") or []) + list(body.get("nodes") or [])
@@ -157,6 +227,14 @@ def build_result_body(
     negotiated_window: int | None = None,
     overflow_attempt_txids: int | None = None,
 ) -> dict:
+    if mode == SERVE_TRANSACTION_MODE:
+        accounting = dict(accounting or {})
+        return {
+            "served": bool(accounting.get("served")),
+            "requested_body": bool(accounting.get("requested_body")),
+            "post_serve_response_kind": str(accounting.get("post_serve_response_kind") or txsubmission_response_kind),
+            "node_stayed_up": node_stayed_up,
+        }
     case = MODE_CASES[mode]
     accounting = dict(accounting or {})
     if mode == "txsubmission_window_pressure":
@@ -205,7 +283,18 @@ def run_probe(
     runtime_identity_path: str | None = None,
     response_timeout_seconds: float = 2.0,
     receive_bytes: int = 64,
+    tx_body: bytes | None = None,
+    tx_id: bytes | None = None,
 ) -> dict:
+    if mode == SERVE_TRANSACTION_MODE:
+        if not tx_body or not tx_id:
+            raise RuntimeError("serve_transaction requires the wire transaction term and its id term")
+        return _serve_transaction(
+            runtime_metadata_path=runtime_metadata_path, target_node=target_node, output_dir=output_dir,
+            target_host=target_host, target_port=target_port, endpoint_source=endpoint_source,
+            runtime_identity_path=runtime_identity_path, response_timeout_seconds=response_timeout_seconds,
+            tx_body=tx_body, tx_id=tx_id,
+        )
     network_magic = 42
     if target_port is None:
         if runtime_metadata_path is None:
@@ -371,10 +460,110 @@ def run_probe(
     return report
 
 
+def _resolve_endpoint(runtime_metadata_path: Path | None, target_node: str, target_port: int | None) -> tuple[int, int]:
+    """(port, network magic) from the retained runtime metadata or a verified port."""
+    network_magic = 42
+    if target_port is None:
+        if runtime_metadata_path is None:
+            raise RuntimeError("runtime metadata or a verified target port is required")
+        runtime_metadata = json.loads(runtime_metadata_path.read_text(encoding="utf-8"))
+        network_magic = int(runtime_metadata.get("network_magic", 42))
+        node = _load_runtime_node(runtime_metadata_path, target_node)
+        return int(node["port"]), network_magic
+    port = int(target_port)
+    if port <= 0 or port > 65535:
+        raise RuntimeError("verified target port is invalid")
+    return port, network_magic
+
+
+def _serve_transaction(
+    *, runtime_metadata_path: Path | None, target_node: str, output_dir: Path, target_host: str,
+    target_port: int | None, endpoint_source: str, runtime_identity_path: str | None,
+    response_timeout_seconds: float, tx_body: bytes, tx_id: bytes,
+) -> dict:
+    """Offer one transaction as a TxSubmission2 provider so the node's own mempool
+    evaluates it: answer MsgRequestTxIds with the id and MsgRequestTxs with the body,
+    then read the node's next message and close. One transaction per session; the
+    node's admission decision (its own trace) is the measurement."""
+    port, network_magic = _resolve_endpoint(runtime_metadata_path, target_node, target_port)
+    handshake_payload = _handshake_propose_payload(network_magic)
+    init_payload = bytes.fromhex(TXSUBMISSION_INIT_HEX)
+    transcript: list[dict] = []
+    served = requested_body = False
+    post_kind = "unknown"
+    handshake_response = b""
+    handshake_response_kind = "unknown"
+    started = time.perf_counter()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def send(payload: bytes) -> None:
+        sock.sendall(_encode_mux_sdu(payload, mini_protocol_num=4))
+        transcript.append({"direction": "send", "payload_hex": payload.hex()})
+
+    with socket.create_connection((target_host, port), timeout=2.0) as sock:
+        sock.settimeout(response_timeout_seconds)
+        sock.sendall(_encode_mux_sdu(handshake_payload, mini_protocol_num=0))
+        try:
+            handshake_response = _recv_mux_payload(sock)
+            handshake_response_kind = "data" if handshake_response else "eof"
+        except socket.timeout:
+            handshake_response_kind = "timeout"
+        except ConnectionResetError:
+            handshake_response_kind = "reset"
+        if handshake_response_kind != "data":
+            raise RuntimeError(f"valid handshake proposal did not produce a data response; got {handshake_response_kind}")
+        send(init_payload)
+        for _ in range(4):   # request-txids, request-txs, then the node's follow-up
+            try:
+                payload = _recv_mux_payload(sock)
+                post_kind = "data" if payload else "eof"
+            except socket.timeout:
+                post_kind = "timeout"
+                break
+            except ConnectionResetError:
+                post_kind = "reset"
+                break
+            if not payload:
+                break
+            transcript.append({"direction": "recv", "payload_hex": payload.hex()})
+            kind = decode_txsubmission_payload(payload).get("message_kind")
+            if kind == "request-txids" and not served:
+                send(_build_reply_txids_payload_for(tx_id, len(tx_body)))
+                served = True
+            elif kind == "request-txs" and tx_id in _parse_request_txs(payload):
+                send(_build_reply_txs_payload([tx_body]))
+                requested_body = True
+            elif requested_body:
+                break   # the node's message after the body: its decision window has started
+        try:
+            sock.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    accounting = _run_accounting_helper(transcript=transcript, output_dir=output_dir)
+    accounting.update(served=served, requested_body=requested_body, post_serve_response_kind=post_kind)
+    result = build_result_body(
+        mode=SERVE_TRANSACTION_MODE, handshake_response_kind=handshake_response_kind,
+        txsubmission_response_kind=post_kind, node_stayed_up=True, accounting=accounting,
+    )
+    report = {
+        "mode": SERVE_TRANSACTION_MODE, "target_node": target_node, "target_host": target_host, "target_port": port,
+        "malformation_id": None, "handshake_response_kind": handshake_response_kind,
+        "handshake_response_hex": handshake_response.hex(), "txsubmission_response_kind": post_kind,
+        "tx_id_hex": tx_id.hex(), "tx_bytes": len(tx_body), "elapsed_ms": elapsed_ms,
+        "runtime_metadata_path": str(runtime_metadata_path) if runtime_metadata_path is not None else None,
+        "runtime_identity_path": runtime_identity_path, "endpoint_source": endpoint_source,
+        "transcript": transcript, "accounting": accounting, "result": result,
+    }
+    (output_dir / "result.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    emit_target_event(primitive=f"runtime_{SERVE_TRANSACTION_MODE}", event="txsubmission_probe_result", payload=report)
+    return report
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
-    parser.add_argument("--mode", required=True, choices=sorted(MODE_CASES))
+    parser.add_argument("--mode", required=True, choices=sorted(MODE_CASES) + [SERVE_TRANSACTION_MODE])
     args = parser.parse_args(argv)
     config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     runtime_metadata_value = str(config.get("runtime_metadata_path") or "")
@@ -396,6 +585,8 @@ def main(argv: list[str] | None = None) -> int:
         ),
         response_timeout_seconds=float(config.get("response_timeout_seconds", 2.0)),
         receive_bytes=int(config.get("receive_bytes", 64)),
+        tx_body=bytes.fromhex(config["tx_hex"]) if config.get("tx_hex") else None,
+        tx_id=bytes.fromhex(config["tx_id_term_hex"]) if config.get("tx_id_term_hex") else None,
     )
     print(
         " ".join(

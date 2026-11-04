@@ -53,7 +53,8 @@
       "plutus_transactions": 20,
       "submission_entry": "amaru-consumer",
       "epoch_transitions": 1,
-      "epoch_timeout_seconds": 260
+      "epoch_timeout_seconds": 260,
+      "reject_via_n2n": 1
     },
     {
       "primitive": "runtime_real_target_restart_and_readiness",

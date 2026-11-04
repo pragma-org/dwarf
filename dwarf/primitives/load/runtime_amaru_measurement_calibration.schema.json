@@ -99,6 +99,12 @@
       "type": "number",
       "exclusiveMinimum": 0,
       "maximum": 900
+    },
+    "reject_via_n2n": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "1: offer each phase-1-invalid (double-spend) transaction to the Amaru target over N2N TxSubmission2 so its own mempool evaluates and rejects it; the consumer entry would never forward it."
     }
   }
 }

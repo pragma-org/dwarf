@@ -214,6 +214,7 @@ def test_amaru_workload_scenario_extends_e2e_with_transactions_epoch_restart_and
         "submission_entry": "amaru-consumer",
         "epoch_transitions": 1,
         "epoch_timeout_seconds": 260,
+        "reject_via_n2n": 1,
         "timeout_seconds": 1500,
     }
     # Amaru 10.11.20261029 re-establishes chain-sync about six minutes after a
