@@ -79,6 +79,8 @@ server.serve_forever()
     const picker = page.locator('[data-compare-pick-runs]');
     await picker.locator('> summary').click();
     assert.equal(await picker.locator('fieldset').count(), 2, 'one fieldset per workload');
+    const legends = await picker.locator('legend').allTextContents();
+    assert.notEqual(legends[0], legends[1], 'workload legends must be told apart: ' + legends.join(' | '));
     await picker.locator('[data-compare-pick="a1"]').check();
     await picker.locator('[data-compare-pick="c1"]').check();
     await page.waitForFunction(() => /2 runs picked across 2 workloads/.test((document.querySelector('[data-compare-pick-summary]') || {}).textContent || ''));
@@ -90,6 +92,7 @@ server.serve_forever()
 
     const card = page.locator('.mc-metric[data-metric="keepalive-round-trip-time"]');
     await card.waitFor();
+    assert.equal(await page.locator('.mc-note', {hasText: 'Antithesis measurements are grouped'}).count(), 0, 'no Antithesis note without Antithesis runs');
     assert.equal(await card.locator('.mc-bar').count(), 2, 'Amaru and cardano on one card');
     assert.equal(await card.locator('.mc-bar__label .mc-pill--mode').first().textContent(), 'stock');
     const verdicts = page.locator('.mc-metric[data-metric="header-validation-verdicts"]');

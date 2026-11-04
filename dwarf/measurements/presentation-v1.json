@@ -1365,6 +1365,7 @@
       "metric_type": "count",
       "primary_statistic": "value",
       "comparison_direction": "higher",
+      "unit": "transactions",
       "bindings": [
         {
           "implementation": "*",
@@ -1376,7 +1377,9 @@
             "mempool_accepted"
           ],
           "source": "stock",
-          "derivation": "Counted from node mempool telemetry."
+          "derivation": "Counted from node mempool telemetry.",
+          "unit_equivalent": true,
+          "boundary": "Amaru counts mempool events, cardano-node counts transactions; both are per-transaction decisions"
         }
       ]
     },
@@ -1388,6 +1391,7 @@
       "metric_type": "count",
       "primary_statistic": "value",
       "comparison_direction": "lower",
+      "unit": "transactions",
       "bindings": [
         {
           "implementation": "*",
@@ -1399,7 +1403,9 @@
             "mempool_rejected"
           ],
           "source": "stock",
-          "derivation": "Counted from node mempool telemetry; rejection reasons remain in technical details when present."
+          "derivation": "Counted from node mempool telemetry; rejection reasons remain in technical details when present.",
+          "unit_equivalent": true,
+          "boundary": "Amaru counts mempool events, cardano-node counts transactions; both are per-transaction decisions"
         }
       ]
     },
@@ -1425,7 +1431,8 @@
           ],
           "source": "stock",
           "derivation": "Counted from Amaru mempool telemetry.",
-          "boundary": "Amaru receipt events at the mempool boundary"
+          "boundary": "Amaru receipt events at the mempool boundary",
+          "unit_equivalent": true
         }
       ]
     },
@@ -1495,6 +1502,7 @@
       "metric_type": "distribution",
       "primary_statistic": "median",
       "comparison_direction": "neutral",
+      "unit": "transactions",
       "bindings": [
         {
           "implementation": "*",
@@ -1506,7 +1514,9 @@
             "mempool_tx_count"
           ],
           "source": "stock",
-          "derivation": "Sampled from node mempool telemetry."
+          "derivation": "Sampled from node mempool telemetry.",
+          "unit_equivalent": true,
+          "boundary": "Transactions held in the mempool per sample"
         }
       ]
     },
@@ -1601,8 +1611,7 @@
           ],
           "source": "stock",
           "derivation": "Counted from stock Cardano-node mempool accepted and rejected transaction outcomes.",
-          "boundary": "cardano-node accepted plus rejected decisions, one per received transaction",
-          "unit_equivalent": true
+          "boundary": "cardano-node accepted plus rejected decisions, one per received transaction"
         }
       ]
     },

@@ -170,13 +170,30 @@ def _matching_bindings(index: dict[str, Any], record: dict[str, Any], metric_id:
                 continue
             if binding["modes"] and record.get("mode") and record["mode"] not in binding["modes"]:
                 continue
-            unit = concept.get("unit")
-            if unit and not is_companion_metric(metric_id) and canonical_unit(unit, index) != raw_unit and not binding["unit_equivalent"]:
+            if not is_companion_metric(metric_id) and not _unit_fits(index, concept, binding, raw_unit):
                 continue
             matches.append((concept, binding))
         if matches:
             break
     return matches
+
+
+def _unit_fits(index: dict[str, Any], concept: dict[str, Any], binding: dict[str, Any], raw_unit: str) -> bool:
+    """The source concept's unit and its compare_as target's unit both accept the raw unit (or the binding says equivalent)."""
+    from profile_manager.measurement_presentation import canonical_unit
+
+    if binding.get("unit_equivalent"):
+        return True
+    target = index["concepts"].get(concept.get("compare_as") or "") or {}
+    for unit in (concept.get("unit"), target.get("unit")):
+        if unit and canonical_unit(unit, index) != raw_unit:
+            return False
+    return True
+
+
+def is_antithesis_record(record: dict[str, Any]) -> bool:
+    """Antithesis imports keep their own concept table; they never join catalog concept rows."""
+    return record.get("runtime") == "antithesis"
 
 
 def describe_metric(index: dict[str, Any], record: dict[str, Any], metric_id: str, row: dict[str, Any]) -> dict[str, str]:
@@ -194,11 +211,10 @@ def _record_primary(index: dict[str, Any], record: dict[str, Any], concept: dict
     from profile_manager.measurement_presentation import canonical_unit, is_companion_metric
 
     metrics = record.get("metrics") or {}
-    unit = concept.get("unit")
     for candidate in binding.get("metric_ids") or []:
         if is_companion_metric(candidate) or candidate not in metrics:
             continue
-        if unit and canonical_unit(unit, index) != canonical_unit(_raw_unit(metrics[candidate]), index) and not binding["unit_equivalent"]:
+        if not _unit_fits(index, concept, binding, canonical_unit(_raw_unit(metrics[candidate]), index)):
             continue
         return candidate
     return None
@@ -208,6 +224,8 @@ def catalog_concept(index: dict[str, Any], record: dict[str, Any], metric_id: st
     """Concept-keyed row identity for a primary raw metric; None for companions, alternates and unbound ids."""
     from profile_manager.measurement_presentation import canonical_unit, is_companion_metric
 
+    if is_antithesis_record(record):
+        return None
     for concept, binding in _matching_bindings(index, record, metric_id, row):
         if is_companion_metric(metric_id) or _record_primary(index, record, concept, binding) != metric_id:
             continue
@@ -902,6 +920,9 @@ def build_measurement_comparison(
         gkey = group_key(record, rollup)
         for metric_id, row in record["metrics"].items():
             mapped = catalog_concept(index, record, metric_id, row) if picks else None
+            if picks and mapped is None and not is_antithesis_record(record) and _matching_bindings(index, record, metric_id, row):
+                # A companion or a non-primary alternate of a concept this record already contributes through.
+                continue
             info = mapped or describe_metric(index, record, metric_id, row)
             display_id = mapped["id"] if mapped else metric_id
             if filters["category"] and info["category"] != filters["category"]:

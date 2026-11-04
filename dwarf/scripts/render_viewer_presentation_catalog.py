@@ -47,7 +47,8 @@ def rewrite_viewer(path: Path, catalog: dict, *, now: str, check: bool = False) 
         return False
     payload["presentation_catalog"] = catalog
     payload["generated_at_utc"] = now
-    rendered = json.dumps(payload, separators=(", ", ": "))
+    # Inside a <script> block a literal "</" would end the element; JSON reads "<\/" back as "</".
+    rendered = json.dumps(payload, separators=(", ", ": ")).replace("</", "<\\/")
     path.write_text(text[: match.start()] + opening + rendered + closing + text[match.end():], encoding="utf-8")
     return True
 
