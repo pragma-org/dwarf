@@ -285,6 +285,9 @@ def _mount_source(inspected: dict[str, Any], destination: str, *, writable: bool
     return source
 
 
+_IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
+
+
 def _verify_workload_container(
     runtime: dict[str, Any], node: dict[str, Any]
 ) -> dict[str, Any]:
@@ -294,16 +297,22 @@ def _verify_workload_container(
         raise RuntimeError("Cardano workload target has no immutable container identity")
     inspected = _inspect_container(expected_container_id)
     labels = (inspected.get("Config") or {}).get("Labels") or {}
+    component = str(node.get("component") or "node")
     expected_labels = {
-        "ada2.managed": "dwarf",
         "io.dwarf.managed": "true",
-        "io.dwarf.component": "node",
-        "io.dwarf.implementation": "cardano-node",
+        "io.dwarf.component": component,
         "io.dwarf.topology": str(runtime.get("profile_id") or ""),
-        "io.dwarf.node_id": str(node.get("id") or ""),
         "com.docker.compose.project": str(runtime.get("compose_project") or ""),
         "com.docker.compose.service": str(node.get("service_name") or node.get("id") or ""),
     }
+    if component != "support":
+        # A measured node carries the full ownership contract; a support
+        # service (the Amaru consumer) is owned by the topology only.
+        expected_labels.update({
+            "ada2.managed": "dwarf",
+            "io.dwarf.implementation": "cardano-node",
+            "io.dwarf.node_id": str(node.get("id") or ""),
+        })
     if any(not value or labels.get(key) != value for key, value in expected_labels.items()):
         raise RuntimeError("Cardano workload target ownership labels do not match")
     expected_ref = str(node.get("image_ref") or "")
@@ -403,6 +412,39 @@ def _owned_socket_volume(
     return volume_name, workload_user
 
 
+def amaru_entry_node(runtime: dict[str, Any], *, service: str = "amaru-consumer") -> dict[str, Any]:
+    """Describe the Amaru devnet's downstream Cardano consumer as a workload entry node.
+
+    Transactions submitted to its N2C socket reach the measured Amaru relay over
+    N2N tx-submission, because the consumer initiates that connection.
+    """
+    services = ((runtime.get("identity") or {}).get("services") or {})
+    entry = services.get(service) if isinstance(services, dict) else None
+    if (
+        not isinstance(entry, dict)
+        or entry.get("matched") is not True
+        or not entry.get("container")
+        or not entry.get("expected_image")
+        or not entry.get("expected_image_id")
+    ):
+        raise RuntimeError(f"Amaru runtime has no {service} entry node")
+    inspected = _inspect_container(str(entry["container"]))
+    return {
+        "id": service,
+        "service_name": service,
+        "container_name": str(entry["container"]),
+        "container_id": str(inspected.get("Id") or ""),
+        "image_ref": str(entry["expected_image"]),
+        "image_id": str(entry["expected_image_id"]),
+        "container_socket_path": "/state/node.socket",
+        "socket_path": "/state/node.socket",
+        "socket_mount_destination": "/state",
+        "socket_mount_type": "volume",
+        "socket_volume_key": f"{service}-state",
+        "component": "support",
+    }
+
+
 def _cleanup_workload_containers(workload_id: str) -> None:
     label = f"io.dwarf.workload={workload_id}"
     listed = _run(["docker", "ps", "-aq", "--filter", f"label={label}"])
@@ -464,8 +506,13 @@ def _containerized_cardano_workload(
     socket_path = str(node.get("container_socket_path") or "")
     if not container or not socket_path:
         raise RuntimeError("Cardano-node workload has no container socket identity")
-    if "@sha256:" not in image:
+    operator_local_image = _IMAGE_ID.fullmatch(image) is not None
+    if "@sha256:" not in image and not operator_local_image:
         raise RuntimeError("Cardano-node workload image is not digest-pinned")
+    if operator_local_image and not node.get("image_id"):
+        # Operator-prepared builds run from a local image id; the container
+        # verification below proves the inspected image id equals it.
+        node = {**node, "image_id": image}
     inspected_target = _verify_workload_container(runtime, node)
     socket_mount_destination = str(node.get("socket_mount_destination") or "/env")
     socket_mount_path = PurePosixPath(socket_mount_destination)

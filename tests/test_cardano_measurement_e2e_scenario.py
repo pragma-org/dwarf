@@ -298,3 +298,108 @@ def test_cardano_paired_calibration_requires_exact_identity_and_common_samples()
 
     assert result["status"] == "available"
     assert result["metrics"]["handshake_rejection_roundtrip"]["median_percent_delta"] == 10.0
+
+
+def _support_inspect(image_ref, image_id, labels):
+    return {
+        "Id": "c" * 64,
+        "Name": "/consumer",
+        "Names": [],
+        "Image": image_id,
+        "State": {"Running": True},
+        "Config": {"Image": image_ref, "Labels": labels},
+    }
+
+
+def test_verify_workload_container_accepts_support_component_labels(monkeypatch):
+    image_ref = "ghcr.io/intersectmbo/cardano-node@sha256:" + "3" * 64
+    image_id = "sha256:" + "3" * 64
+    inspected = _support_inspect(image_ref, image_id, {
+        "io.dwarf.managed": "true",
+        "io.dwarf.component": "support",
+        "io.dwarf.topology": "profile-o-amaru-target-latest-confirmed",
+        "com.docker.compose.project": "proj",
+        "com.docker.compose.service": "amaru-consumer",
+    })
+    monkeypatch.setattr(calibration, "_inspect_container", lambda _id: inspected)
+    runtime = {"profile_id": "profile-o-amaru-target-latest-confirmed", "compose_project": "proj"}
+    node = {
+        "id": "amaru-consumer", "service_name": "amaru-consumer", "container_name": "consumer",
+        "container_id": "c" * 64, "image_ref": image_ref, "image_id": image_id,
+        "component": "support",
+    }
+
+    assert calibration._verify_workload_container(runtime, node) is inspected
+    with pytest.raises(RuntimeError, match="ownership labels"):
+        calibration._verify_workload_container(runtime, dict(node, component="node"))
+
+
+def _operator_local_workload(monkeypatch, tmp_path, image_ref):
+    image_id = "sha256:" + "d" * 64
+    inspected = _support_inspect(image_ref, image_id, {})
+    monkeypatch.setattr(calibration, "_verify_workload_container", lambda _r, _n: inspected)
+    monkeypatch.setattr(
+        calibration, "_owned_socket_volume", lambda **_k: ("proj_node1-env", "1000:1000")
+    )
+    monkeypatch.setattr(calibration, "_mount_source", lambda *_a, **_k: str(tmp_path / "runs"))
+    output = tmp_path / "output"
+    output.mkdir(exist_ok=True)
+    monkeypatch.setattr(
+        calibration, "_owned_run_output_relative", lambda *_a, **_k: (output, Path("run-1"))
+    )
+    monkeypatch.setattr(calibration, "_cleanup_workload_containers", lambda _id: None)
+    runtime_root = tmp_path / "runtime"
+    key_root = runtime_root / "env" / "utxo-keys" / "utxo1"
+    key_root.mkdir(parents=True, exist_ok=True)
+    (key_root / "utxo.vkey").write_text("{}")
+    (key_root / "utxo.skey").write_text("{}")
+    node = {
+        "id": "node1", "service_name": "node1", "container_name": "node1-1",
+        "container_id": "c" * 64, "image_ref": image_ref,
+        "container_socket_path": "/env/socket/node1/sock", "socket_mount_destination": "/env",
+        "socket_mount_type": "volume", "socket_volume_key": "node1-env",
+    }
+    return calibration._containerized_cardano_workload(
+        runtime_root=runtime_root, runtime={"profile_id": "p", "compose_project": "proj"},
+        node=node, output_dir=output, controller={"Id": "k" * 64},
+    )
+
+
+def test_containerized_workload_accepts_operator_local_image_id_only_when_inspected_matches(
+    monkeypatch, tmp_path
+):
+    with _operator_local_workload(monkeypatch, tmp_path, "sha256:" + "d" * 64) as (
+        workload_runtime, workload_node
+    ):
+        assert Path(workload_runtime["support_binaries"]["cardano-cli"]).is_file()
+        assert workload_node["socket_path"] == "/env/socket/node1/sock"
+
+    with pytest.raises(RuntimeError, match="digest-pinned"):
+        with _operator_local_workload(
+            monkeypatch, tmp_path, "ghcr.io/intersectmbo/cardano-node:11.1.2"
+        ):
+            pass
+
+
+def test_amaru_entry_node_binds_consumer_socket_volume(monkeypatch):
+    monkeypatch.setattr(calibration, "_inspect_container", lambda _id: {"Id": "e" * 64})
+    runtime = {"identity": {"services": {"amaru-consumer": {
+        "container": "consumer-1", "matched": True,
+        "expected_image": "ghcr.io/intersectmbo/cardano-node@sha256:" + "3" * 64,
+        "expected_image_id": "sha256:" + "3" * 64,
+    }}}}
+
+    node = calibration.amaru_entry_node(runtime)
+
+    assert node["id"] == node["service_name"] == "amaru-consumer"
+    assert node["container_name"] == "consumer-1"
+    assert node["container_id"] == "e" * 64
+    assert node["image_ref"].endswith("@sha256:" + "3" * 64)
+    assert node["image_id"] == "sha256:" + "3" * 64
+    assert node["socket_path"] == node["container_socket_path"] == "/state/node.socket"
+    assert node["socket_mount_destination"] == "/state"
+    assert node["socket_mount_type"] == "volume"
+    assert node["socket_volume_key"] == "amaru-consumer-state"
+    assert node["component"] == "support"
+    with pytest.raises(RuntimeError, match="entry node"):
+        calibration.amaru_entry_node({"identity": {"services": {}}})
