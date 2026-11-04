@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,62 @@ _CATALOG_PATH = (
 )
 _SOURCE_VALUES = {"stock", "external", "patched", "reserved"}
 _METRIC_TYPES = {"distribution", "scalar", "count", "unavailable"}
+_DIRECTIONS = {"lower", "higher", "neutral"}
+_EQUIVALENCES = {"exact", "approximate"}
+_TABLE_KEYS = ("implementation_labels", "unit_short", "unit_full")
+# Companion ids carry per-outcome breakdowns of a primary metric and never form rows of their own.
+_COMPANION = re.compile(r"_by_[a-z_]*outcome$")
+
+
+def is_companion_metric(metric_id: str) -> bool:
+    """True for ``<primary>_by_<anything>outcome`` breakdown ids."""
+    return bool(_COMPANION.search(str(metric_id or "")))
+
+
+def companion_parent(metric_id: str) -> str:
+    return _COMPANION.sub("", str(metric_id or ""))
+
+
+def canonical_unit(unit: Any, catalog: dict[str, Any]) -> str:
+    """Shorten a raw unit through the catalog's ``unit_short`` table (``microseconds`` → ``us``)."""
+    raw = str(unit or "").strip()
+    table = catalog.get("unit_short") if isinstance(catalog, dict) else None
+    short = (table or {}).get(raw.lower()) if isinstance(table, dict) else None
+    return str(short) if short else raw
+
+
+def sum_verdict_dict(value: Any) -> float | None:
+    """Sum a verdict dict such as ``{"accepted": 205, "rejected": 0}``; None unless every member is a number."""
+    if not isinstance(value, dict) or not value:
+        return None
+    total = 0.0
+    for member in value.values():
+        if isinstance(member, bool) or not isinstance(member, (int, float)) or not math.isfinite(member):
+            return None
+        total += member
+    return total
+
+
+def _validate_optional_fields(concept: dict[str, Any], concepts_by_id: dict[str, dict[str, Any]]) -> None:
+    cid = concept["id"]
+    if "comparison_direction" in concept and concept["comparison_direction"] not in _DIRECTIONS:
+        raise ValueError(f"invalid comparison_direction for measurement concept {cid}")
+    if "equivalence" in concept and concept["equivalence"] not in _EQUIVALENCES:
+        raise ValueError(f"invalid equivalence for measurement concept {cid}")
+    if "unit" in concept and (not isinstance(concept["unit"], str) or not concept["unit"]):
+        raise ValueError(f"invalid unit for measurement concept {cid}")
+    target_id = concept.get("compare_as")
+    if target_id is not None:
+        target = concepts_by_id.get(target_id)
+        if not isinstance(target_id, str) or target is None:
+            raise ValueError(f"unknown compare_as target for measurement concept {cid}")
+        if target.get("compare_as") is not None:
+            raise ValueError(f"chained compare_as for measurement concept {cid}")
+    for binding in concept.get("bindings") or []:
+        if "boundary" in binding and not isinstance(binding["boundary"], str):
+            raise ValueError(f"invalid boundary for measurement concept {cid}")
+        if "unit_equivalent" in binding and not isinstance(binding["unit_equivalent"], bool):
+            raise ValueError(f"invalid unit_equivalent for measurement concept {cid}")
 
 
 def load_measurement_presentation_catalog(path: Path | None = None) -> dict[str, Any]:
@@ -33,6 +90,12 @@ def load_measurement_presentation_catalog(path: Path | None = None) -> dict[str,
         raise ValueError("measurement presentation catalog requires categories and concepts")
     if set(sources or {}) != _SOURCE_VALUES:
         raise ValueError("measurement presentation catalog source labels are incomplete")
+    for key in _TABLE_KEYS:
+        table = catalog.get(key)
+        if not isinstance(table, dict):
+            raise ValueError(f"measurement presentation catalog requires the {key} table")
+        if not all(isinstance(k, str) and isinstance(v, str) for k, v in table.items()):
+            raise ValueError(f"measurement presentation catalog {key} table must map strings to strings")
     category_ids = {item.get("id") for item in categories if isinstance(item, dict)}
     seen: set[str] = set()
     for concept in concepts:
@@ -48,7 +111,23 @@ def load_measurement_presentation_catalog(path: Path | None = None) -> dict[str,
         for binding in concept.get("bindings") or []:
             if binding.get("source") not in _SOURCE_VALUES:
                 raise ValueError(f"invalid source for measurement concept {concept['id']}")
+    concepts_by_id = {concept["id"]: concept for concept in concepts}
+    for concept in concepts:
+        _validate_optional_fields(concept, concepts_by_id)
     return catalog
+
+
+def _unit_matches(concept: dict[str, Any], binding: dict[str, Any], raw: Any, catalog: dict[str, Any]) -> bool:
+    """A concept with a declared unit only takes raw metrics in that unit, unless the binding says equivalent."""
+    unit = concept.get("unit")
+    if not unit:
+        return True
+    metric = raw if isinstance(raw, dict) else {}
+    primary = metric.get("all") if isinstance(metric.get("all"), dict) else metric
+    raw_unit = primary.get("unit") if isinstance(primary, dict) else None
+    if raw_unit is None:
+        raw_unit = metric.get("unit")
+    return canonical_unit(raw_unit, catalog) == unit or bool(binding.get("unit_equivalent"))
 
 
 def _binding_for(concept: dict[str, Any], target: dict[str, Any]) -> dict[str, Any] | None:
@@ -165,7 +244,7 @@ def _primary(metric_type: str, concept: dict[str, Any], raw: dict[str, Any]) -> 
     if metric_type == "distribution":
         return "Median", raw.get("median")
     if metric_type == "count":
-        return "Event count", raw.get(statistic, raw.get("value"))
+        return "Event count", _verdict_aware(raw.get(statistic, raw.get("value")))
     if metric_type == "scalar":
         labels = {
             "delta": "Change",
@@ -177,8 +256,13 @@ def _primary(metric_type: str, concept: dict[str, Any], raw: dict[str, Any]) -> 
         value = raw.get(statistic)
         if value is None:
             value = raw.get("value", raw.get("delta", raw.get("offered_rate")))
-        return labels.get(statistic, "Measured value"), value
+        return labels.get(statistic, "Measured value"), _verdict_aware(value)
     return "Unavailable", None
+
+
+def _verdict_aware(value: Any) -> Any:
+    """A verdict dict reads as its sum; every other value passes through unchanged."""
+    return sum_verdict_dict(value) if isinstance(value, dict) else value
 
 
 def _card(
@@ -290,10 +374,10 @@ def _fallback_card(metric_id: str, raw_value: Any, target: dict[str, Any]) -> di
     if metric_type == "distribution":
         primary_label, primary_value = "Median", primary.get("median")
     elif metric_type == "count":
-        primary_label, primary_value = "Event count", primary.get("value")
+        primary_label, primary_value = "Event count", _verdict_aware(primary.get("value"))
     elif metric_type == "scalar":
         primary_label = "Measured value"
-        primary_value = primary.get("value", primary.get("delta", primary.get("offered_rate")))
+        primary_value = _verdict_aware(primary.get("value", primary.get("delta", primary.get("offered_rate"))))
     else:
         primary_label, primary_value = "Unavailable", None
     evidence_label, evidence_tone = _evidence_label(sample_count)
@@ -346,10 +430,14 @@ def build_measurement_presentation(
         binding = _binding_for(concept, target_identity)
         if binding is None:
             continue
-        present = [metric_id for metric_id in binding.get("metric_ids") or [] if metric_id in metrics]
+        present = [
+            metric_id
+            for metric_id in binding.get("metric_ids") or []
+            if metric_id in metrics and _unit_matches(concept, binding, metrics[metric_id], catalog)
+        ]
         if not present and binding.get("source") != "reserved":
             continue
-        card = _card(concept, binding, metrics, target_identity)
+        card = _card(concept, binding, {metric_id: metrics[metric_id] for metric_id in present}, target_identity)
         card["source_label"] = catalog["source_labels"][card["source"]]
         cards.append(card)
         consumed.update(present)
@@ -357,7 +445,7 @@ def build_measurement_presentation(
     for metric_id, raw in metrics.items():
         if metric_id in consumed:
             continue
-        if metric_id.endswith("_by_outcome") and metric_id.removesuffix("_by_outcome") in consumed:
+        if is_companion_metric(metric_id) and companion_parent(metric_id) in consumed:
             continue
         card = _fallback_card(metric_id, raw, target_identity)
         card["source_label"] = catalog["source_labels"][card["source"]]

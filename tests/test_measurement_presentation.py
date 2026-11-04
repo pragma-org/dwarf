@@ -405,3 +405,81 @@ def test_fractional_microseconds_are_not_rounded_to_whole_microseconds():
     card = _card(result, "epoch-transition-time")
     assert card["primary_value"] == 2.184
     assert card["primary_display"] == "2.184"
+
+
+# --- cross-implementation compare: catalog fields, unit tables, verdict sums ---
+
+import json
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from profile_manager.measurement_presentation import (
+    canonical_unit,
+    is_companion_metric,
+    sum_verdict_dict,
+)
+
+CATALOG_PATH = Path(__file__).resolve().parents[1] / "dwarf/measurements/presentation-v1.json"
+
+
+def _catalog_with(mutate):
+    catalog = json.loads(CATALOG_PATH.read_text())
+    mutate(catalog)
+    path = Path(tempfile.mkdtemp()) / "catalog.json"
+    path.write_text(json.dumps(catalog))
+    return path
+
+
+def test_catalog_carries_unit_and_label_tables_and_directions():
+    catalog = load_measurement_presentation_catalog()
+    assert catalog["implementation_labels"] == {"amaru": "Amaru", "cardano-node": "Cardano"}
+    assert catalog["unit_short"]["microseconds"] == "us" and catalog["unit_full"]["us"] == "microseconds"
+    directions = {c["id"]: c.get("comparison_direction", "neutral") for c in catalog["concepts"]}
+    assert directions["block-application-time"] == "lower"
+    assert directions["chain-sync-speed"] == "higher"
+    assert directions["mempool-transaction-count"] == "neutral"
+
+
+@pytest.mark.parametrize("mutate,message", [
+    (lambda c: c["concepts"][0].__setitem__("comparison_direction", "best"), "comparison_direction"),
+    (lambda c: c["concepts"][0].__setitem__("equivalence", "close"), "equivalence"),
+    (lambda c: c["concepts"][0].__setitem__("unit", 3), "unit"),
+    (lambda c: c["concepts"][0].__setitem__("compare_as", "no-such-concept"), "compare_as"),
+    (lambda c: (c["concepts"][0].__setitem__("compare_as", c["concepts"][1]["id"]),
+                c["concepts"][1].__setitem__("compare_as", c["concepts"][2]["id"])), "compare_as"),
+    (lambda c: c["concepts"][0]["bindings"][0].__setitem__("unit_equivalent", "yes"), "unit_equivalent"),
+    (lambda c: c.pop("unit_short"), "unit_short"),
+])
+def test_catalog_rejects_invalid_new_fields(mutate, message):
+    with pytest.raises(ValueError, match=message):
+        load_measurement_presentation_catalog(_catalog_with(mutate))
+
+
+def test_companion_rule_and_unit_canonicalisation():
+    assert is_companion_metric("block_application_by_outcome")
+    assert is_companion_metric("protocol_decode_by_decode_outcome")
+    assert is_companion_metric("handshake_state_by_outcome")
+    assert not is_companion_metric("block_application")
+    catalog = load_measurement_presentation_catalog()
+    assert canonical_unit("microseconds", catalog) == "us"
+    assert canonical_unit("us", catalog) == "us"
+    assert canonical_unit("requests", catalog) == "requests"
+
+
+def test_verdict_dict_sums_only_when_all_members_are_numbers():
+    assert sum_verdict_dict({"accepted": 205, "rejected": 0}) == 205
+    assert sum_verdict_dict({"accepted": 3, "detail": {"x": 1}}) is None
+    assert sum_verdict_dict({}) is None
+    assert sum_verdict_dict(7) is None
+
+
+def test_header_validation_verdict_count_card_reads_the_sum():
+    result = build_measurement_presentation(
+        {"header_validation": {"status": "available", "unit": "count", "value": {"accepted": 205, "rejected": 0}}},
+        _target("amaru", "stock"),
+    )
+    card = result["cards"][0]
+    assert card["primary_value"] == 205
+    assert card["raw_metric_ids"] == ["header_validation"]
