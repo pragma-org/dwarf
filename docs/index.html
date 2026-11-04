@@ -13061,6 +13061,13 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       // Reconcile the model as well as the select after a removed or filtered build.
       if (previous !== filters.baseline) result = api.buildComparison(records, filters, payload.presentation_catalog);
     }
+    if (filterNodes.metric && filterNodes.category) {
+      // Metric and Category choices follow the comparison: concept ids under picks, raw ids otherwise.
+      var before = filters.metric + "\u0000" + filters.category;
+      options(filterNodes.metric, result.filters.metrics, "All metrics");
+      options(filterNodes.category, result.filters.categories.map(function (id) { return {key: id, label: result.filters.category_labels[id] || id}; }), "All categories");
+      if (before !== filters.metric + "\u0000" + filters.category) result = api.buildComparison(records, filters, payload.presentation_catalog);
+    }
   }
   function recompute(explicitFilterChange) {
     // A metric route may choose its owning workload during navigation or store

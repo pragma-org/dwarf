@@ -105,6 +105,15 @@ server.serve_forever()
     assert.match(await card.locator('.mc-bar').nth(1).locator('.mc-bar__source').textContent(), /Cardano · keepalive_rtt · us/);
     assert.equal(await card.locator('.mc-best').count(), 1, 'exact rows still highlight the preferred value');
 
+    // Under picks the Metric filter offers concept ids, so one card can be isolated.
+    await page.locator('[data-compare-filter-disclosure] > summary').click();
+    const metricOptions = await page.locator('[data-compare-filter="metric"] option').allTextContents();
+    assert.ok(metricOptions.includes('keepalive-round-trip-time'), 'metric filter lists concept ids under picks: ' + metricOptions.join(','));
+    await page.locator('[data-compare-filter="metric"]').selectOption('keepalive-round-trip-time');
+    await page.waitForFunction(() => document.querySelectorAll('.mc-metric').length === 1);
+    await page.locator('[data-compare-filter="metric"]').selectOption('');
+    await page.locator('[data-compare-filter-disclosure] > summary').click();
+
     // Clear picks restores the one-workload view.
     await page.locator('[data-compare-pick-clear]').click();
     await page.locator('.mc-metric[data-metric="keepalive_round_trip"]').waitFor();
