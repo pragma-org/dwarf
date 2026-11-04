@@ -67,3 +67,20 @@ def test_stage_rejects_release_default_missing_from_trusted_catalog(tmp_path):
             catalog_path=ROOT / "docs/evidence/campaigns.json", downloads=tmp_path / "downloads",
             output=tmp_path / "output",
             trusted_publishers_path=ROOT / "docs/evidence/trusted-publishers.json")
+
+
+def test_pages_caps_allow_full_workload_bundles_and_match_viewer():
+    assert api._MAX_ARCHIVE_BYTES == 95 * 1024 * 1024
+    assert api._MAX_TOTAL_BYTES == 950 * 1024 * 1024
+    assert api._MAX_ARCHIVES == 10
+    viewer = (ROOT / "docs/portable-defaults.js").read_text(encoding="utf-8")
+    assert "var MAX_ARCHIVE_BYTES = 95 * 1024 * 1024;" in viewer
+    assert "var MAX_TOTAL_BYTES = 950 * 1024 * 1024;" in viewer
+    assert "var MAX_ARCHIVES = 10;" in viewer
+
+
+def test_pages_rejects_archive_above_github_file_limit():
+    row = {"url": "runs/run-1-" + "a" * 64 + ".tar.gz", "size_bytes": 95 * 1024 * 1024 + 1,
+           "sha256": "b" * 64, "run_id": "run-1", "implementation": "amaru", "version": "v1"}
+    with pytest.raises(ValueError, match="archive size"):
+        api.validate_defaults({"schema_version": api._SCHEMA, "archives": [row]})
