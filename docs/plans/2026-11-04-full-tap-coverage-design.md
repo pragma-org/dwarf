@@ -4,8 +4,8 @@ Date: 2026-11-04. Repo: V10-FRESH. Status: IMPLEMENTED on `feat/full-tap-coverag
 
 Outcome: the Pages default set is four reruns from the fixed collectors — amaru stock
 `20261104T161325Z-5eb100bf` (52 concepts covered), amaru patched `20261104T165404Z-54138a1b`
-(68), cardano-node stock `20261104T171547Z-f38474f0` (43), cardano-node patched
-`20261104T172204Z-c1faac51` (57) — plus the Antithesis snapshot under a documented
+(68), cardano-node stock `20261104T173836Z-a2edc656` (43), cardano-node patched
+`20261104T174504Z-9c3c3edc` (57) — plus the Antithesis snapshot under a documented
 `coverage_exception`. Every bound concept carries a value or an entry in
 `dwarf/measurements/coverage-exceptions-v1.json`; `profile_manager/tap_coverage.py` is the rule
 and Pages staging enforces it on every `coverage_rule` archive. Beyond §4, the reruns surfaced

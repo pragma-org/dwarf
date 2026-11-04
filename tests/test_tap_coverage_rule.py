@@ -19,8 +19,8 @@ RUNS = ROOT / "docs/evidence/runs"
 WORKLOAD_ARCHIVES = {
     "amaru-stock": "20261104T161325Z-5eb100bf-bundle-export.tar.gz",
     "amaru-patched": "20261104T165404Z-54138a1b-bundle-export.tar.gz",
-    "cardano-stock": "20261104T171547Z-f38474f0-bundle-export.tar.gz",
-    "cardano-patched": "20261104T172204Z-c1faac51-bundle-export.tar.gz",
+    "cardano-stock": "20261104T173836Z-a2edc656-bundle-export.tar.gz",
+    "cardano-patched": "20261104T174504Z-9c3c3edc-bundle-export.tar.gz",
 }
 
 
