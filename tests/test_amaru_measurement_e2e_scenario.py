@@ -211,9 +211,11 @@ def test_amaru_workload_scenario_extends_e2e_with_transactions_epoch_restart_and
         "epoch_timeout_seconds": 260,
         "timeout_seconds": 1500,
     }
+    # Amaru 10.11.20261029 re-establishes chain-sync about six minutes after a
+    # graceful restart (observed 2026-11-04); the gate must outlast that.
     assert load[1] == {
         "primitive": "runtime_real_target_restart_and_readiness",
-        "profile_id": base["profile"], "timeout_seconds": 300, "poll_interval_seconds": 1,
+        "profile_id": base["profile"], "timeout_seconds": 900, "poll_interval_seconds": 1,
     }
     assert load[2]["minimum_blocks"] == 20
     assert load[2]["peer_policy"] == "single-controlled-producer"

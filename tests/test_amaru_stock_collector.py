@@ -584,3 +584,36 @@ def test_peer_connected_counts_each_accepted_span_once_and_keeps_legacy_message(
         "unit": "events",
         "value": 2,
     }
+
+
+def test_mempool_counts_20261029_amaru_mempool_target_messages(tmp_path):
+    tx = "ed18c5ebe774d3a610be3d38e5834f52f266d24c48af4bca47b20fe9fcd01598"
+    records = [
+        {"fields": {"id": tx, "message": "transaction.received", "origin": "remote"},
+         "level": "DEBUG", "target": "amaru::mempool", "timestamp": "2026-11-04T00:28:08.694096Z"},
+        {"fields": {"id": tx, "message": "transaction.accepted", "origin": "remote", "seq_no": 1},
+         "level": "INFO", "target": "amaru::mempool", "timestamp": "2026-11-04T00:28:08.695412Z"},
+        {"fields": {"message": "state.update", "size_bytes": 285, "tx_count": 1},
+         "level": "DEBUG", "target": "amaru::mempool", "timestamp": "2026-11-04T00:28:08.695421Z"},
+        {"fields": {"id": tx, "message": "transaction.evicted", "reason": "included_in_adopted_block",
+                    "tip": [19930, "83" * 32, 3942]},
+         "level": "INFO", "target": "amaru::mempool", "timestamp": "2026-11-04T00:28:09.010536Z"},
+        {"fields": {"message": "state.update", "size_bytes": 0, "tx_count": 0},
+         "level": "DEBUG", "target": "amaru::mempool", "timestamp": "2026-11-04T00:28:09.010600Z"},
+    ]
+    trace = tmp_path / "mempool.ndjson"
+    trace.write_text("".join(json.dumps(record) + "\n" for record in records))
+
+    mempool = _collect_from_paths(
+        tmp_path / "mempool", "amaru-stock-mempool", json_paths=[trace], otlp_paths=[]
+    )
+
+    measurements = mempool["measurements"]
+    assert measurements["mempool_received"]["value"] == 1
+    assert measurements["mempool_accepted"]["value"] == 1
+    assert measurements["mempool_evicted"]["value"] == 1
+    assert measurements["mempool_rejected"]["value"] == 0
+    assert measurements["mempool_tx_count"]["status"] == "available"
+    assert measurements["mempool_tx_count"]["maximum"] == 1
+    assert measurements["mempool_size_bytes"]["maximum"] == 285
+    assert measurements["mempool_terminal_latency"]["all"]["sample_count"] == 2

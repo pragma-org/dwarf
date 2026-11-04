@@ -56,6 +56,12 @@ _JSON_MESSAGE_KINDS = {
     ("amaru::consensus", "mempool.transaction.rejected"): "mempool-rejected",
     ("amaru::consensus", "mempool.transaction.evicted"): "mempool-evicted",
     ("amaru::consensus", "mempool.state.update"): "mempool-state",
+    # Amaru 10.11.20261029 moved the mempool stage to its own crate target.
+    ("amaru::mempool", "transaction.received"): "mempool-received",
+    ("amaru::mempool", "transaction.accepted"): "mempool-accepted",
+    ("amaru::mempool", "transaction.rejected"): "mempool-rejected",
+    ("amaru::mempool", "transaction.evicted"): "mempool-evicted",
+    ("amaru::mempool", "state.update"): "mempool-state",
     ("amaru::ledger", "rules.phase_one"): "ledger-phase-one",
     ("amaru::ledger", "transaction.script.execute"): "plutus-execution",
     ("amaru::protocols", "keepalive.peer.round_trip"): "keepalive-round-trip",

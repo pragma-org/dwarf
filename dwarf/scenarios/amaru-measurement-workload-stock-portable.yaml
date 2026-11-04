@@ -58,7 +58,7 @@
     {
       "primitive": "runtime_real_target_restart_and_readiness",
       "profile_id": "profile-o-amaru-target-latest-confirmed",
-      "timeout_seconds": 300,
+      "timeout_seconds": 900,
       "poll_interval_seconds": 1
     },
     {
