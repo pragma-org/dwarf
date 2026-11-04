@@ -55,7 +55,9 @@
       "timeout_seconds": 1500,
       "expected_helper_exit": 0,
       "plutus_transactions": 20,
-      "epoch_observation_seconds": 60
+      "epoch_observation_seconds": 60,
+      "submission_entry": "peer",
+      "plutus_split": 0.5
     },
     {
       "primitive": "runtime_real_target_restart_and_readiness",

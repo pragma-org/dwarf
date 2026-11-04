@@ -182,7 +182,7 @@ def test_cardano_plutus_workload_preserves_direct_host_execution(
 
     assert received["runtime"] == runtime_body
     assert received["node"] == runtime_body["nodes"][0]
-    assert result["plutus_workload"] == {"status": "completed", "transactions": 1}
+    assert result["plutus_workload"] == {"status": "completed", "transactions": 1, "submission_entry": "target"}
 
 
 def test_cardano_runtime_identity_fails_closed_on_digest_mismatch():
@@ -572,6 +572,8 @@ def test_cardano_workload_scenario_extends_e2e_with_transactions_epoch_restart_a
         "plutus_transactions": 20,
         "epoch_observation_seconds": 60,
         "timeout_seconds": 1500,
+        "submission_entry": "peer",
+        "plutus_split": 0.5,
     }
     assert load[1] == {
         "primitive": "runtime_real_target_restart_and_readiness",
@@ -745,3 +747,58 @@ def test_double_spend_that_is_accepted_is_flagged_not_counted(monkeypatch, tmp_p
         transaction_count=2, double_spend_every=2,
     )
     assert [r["outcome"] for r in result["records"] if r["attempt_id"].endswith("-double-spend")] == ["accepted-unexpected"]
+
+
+def test_cardano_leg_splits_plutus_batch_between_target_and_peer(monkeypatch, tmp_path):
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    runtime_body = _runtime_body()
+    if len(runtime_body["nodes"]) < 2:
+        peer = dict(runtime_body["nodes"][0])
+        peer.update({"id": "node2", "name": "node2", "container_name": "node2-container",
+                     "container_socket_path": "/env/socket/node2/sock"})
+        runtime_body["nodes"].append(peer)
+    runtime_root.joinpath("runtime.json").write_text(json.dumps(runtime_body))
+    calls = []
+    monkeypatch.setattr(calibration, "_controller_container", lambda: None)
+    monkeypatch.setattr(calibration, "_container_ip", lambda _container: "127.0.0.1")
+    monkeypatch.setattr(calibration, "run_attempts", lambda **_kwargs: [{"attempt_id": "handshake-0000", "outcome": "rejected", "elapsed_micros": 1}])
+
+    def run_plutus_workload(**kwargs):
+        node_id = kwargs["node"].get("id") or kwargs["node"].get("name")
+        calls.append((node_id, kwargs["transaction_count"]))
+        return {"records": [{"attempt_id": f"plutus-{node_id}-0", "outcome": "accepted"}], "scripts": {}}
+
+    def capture(_container, *, since, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text('{"ns":"Net.Handshake.Remote","data":{"kind":"Handshake"}}\n')
+        return {"record_count": 1, "protocol_record_count": 1, "byte_count": 1, "namespaces": ["Net.Handshake.Remote"]}
+
+    monkeypatch.setattr(calibration, "run_plutus_workload", run_plutus_workload)
+    monkeypatch.setattr(calibration, "_capture_logs", capture)
+    monkeypatch.setattr(calibration.time, "sleep", lambda _seconds: None)
+    result = calibration.run_leg(
+        runtime_root=runtime_root, output_dir=tmp_path / "output", attempt_count=1, timeout_seconds=1,
+        observation_seconds=0, trace_timeout_seconds=0, plutus_transactions=4,
+        submission_entry="peer", plutus_split=0.5,
+    )
+    assert calls == [("node1", 2), ("node2", 2)]
+    records = result["plutus_workload"]["records"]
+    assert [r["submission_entry"] for r in records] == ["target", "peer"]
+    assert [r["boundary_node"] for r in records] == ["node1", "node2"]
+    assert [r["attempt_id"] for r in records] == ["plutus-t-node1-0", "plutus-p-node2-0"]
+    assert result["plutus_workload"]["submission_entry"] == "peer"
+
+
+def test_cardano_calibration_primitive_passes_submission_entry_flags():
+    from profile_manager.primitives import _cardano_workload_flag_arguments
+    arguments, logged = _cardano_workload_flag_arguments({"submission_entry": "peer", "plutus_split": 0.25})
+    assert arguments == ["--submission-entry", "peer", "--plutus-split", "0.25"]
+    assert logged == {"submission_entry": "peer", "plutus_split": 0.25}
+    assert _cardano_workload_flag_arguments({}) == ([], {})
+
+
+def test_cardano_workload_scenario_submits_through_the_peer():
+    scenario = json.loads((ROOT / "dwarf/scenarios/cardano-measurement-workload-stock-portable.yaml").read_text())
+    calibration_step = next(step for step in scenario["load"] if step["primitive"] == "runtime_cardano_measurement_calibration")
+    assert calibration_step["submission_entry"] == "peer"

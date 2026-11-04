@@ -1249,6 +1249,86 @@ def _peer_observation(
     }
 
 
+SUBMISSION_ENTRIES = ("target", "peer")
+
+
+def _node_label(node: dict[str, Any]) -> str:
+    return str(node.get("id") or node.get("name") or node.get("container_name") or "node")
+
+
+def _run_plutus_batch(
+    *, runtime_root: Path, runtime: dict[str, Any], node: dict[str, Any], output_dir: Path,
+    transaction_count: int, entry: str, prefix: str,
+) -> dict[str, Any]:
+    """One Plutus batch through one node's socket; records carry the entry and its label."""
+    controller = _controller_container()
+    if controller is None:
+        result = run_plutus_workload(
+            runtime_root=runtime_root, runtime=runtime, node=node,
+            output_dir=output_dir, transaction_count=transaction_count,
+        )
+    else:
+        with _containerized_cardano_workload(
+            runtime_root=runtime_root, runtime=runtime, node=node,
+            output_dir=output_dir, controller=controller,
+        ) as (workload_runtime, workload_node):
+            result = run_plutus_workload(
+                runtime_root=runtime_root, runtime=workload_runtime, node=workload_node,
+                output_dir=output_dir, transaction_count=transaction_count,
+            )
+    label = _node_label(node)
+    for record in result.get("records") or []:
+        record["submission_entry"] = entry
+        record["boundary_node"] = label
+        record["attempt_id"] = f"plutus-{prefix}-{record['attempt_id'].removeprefix('plutus-')}"
+    return result
+
+
+def _run_plutus_legs(
+    *, runtime_root: Path, runtime: dict[str, Any], node: dict[str, Any], output_dir: Path,
+    transaction_count: int, submission_entry: str, plutus_split: float,
+) -> dict[str, Any]:
+    """Split the batch between the target's socket (authoritative protocol response)
+    and the independent peer's (so the target's inbound TxSubmission path carries
+    transactions). Peer-submitted records are labelled; their entry-node stages are
+    never read as the target's."""
+    if submission_entry == "target":
+        result = _run_plutus_batch(
+            runtime_root=runtime_root, runtime=runtime, node=node, output_dir=output_dir,
+            transaction_count=transaction_count, entry="target", prefix="t",
+        )
+        result["submission_entry"] = "target"
+        return result
+    peer_count = int(round(transaction_count * plutus_split))
+    target_count = transaction_count - peer_count
+    peer_id, peer_container, peer_socket = _independent_peer(runtime, node)
+    peer_node = next(
+        (candidate for candidate in runtime.get("nodes") or []
+         if str(candidate.get("id") or candidate.get("name") or "") == peer_id),
+        {"id": peer_id, "container_name": peer_container, "container_socket_path": peer_socket},
+    )
+    peer_node = {**peer_node, "id": peer_id, "container_name": peer_container,
+                 "container_socket_path": peer_socket, "socket_path": peer_socket}
+    combined: dict[str, Any] = {"submission_entry": "peer", "plutus_split": plutus_split, "records": [], "legs": []}
+    for count, entry_node, entry, prefix in (
+        (target_count, node, "target", "t"),
+        (peer_count, peer_node, "peer", "p"),
+    ):
+        if count <= 0:
+            continue
+        leg = _run_plutus_batch(
+            runtime_root=runtime_root, runtime=runtime, node=entry_node,
+            output_dir=output_dir / f"plutus-{entry}", transaction_count=count, entry=entry, prefix=prefix,
+        )
+        combined["records"].extend(leg.get("records") or [])
+        combined["legs"].append({"entry": entry, "node": _node_label(entry_node), "transactions": count,
+                                 **{k: v for k, v in leg.items() if k != "records"}})
+        combined.setdefault("scripts", leg.get("scripts"))
+        if leg.get("script_language"):
+            combined["script_language"] = leg["script_language"]
+    return combined
+
+
 def run_leg(
     *,
     runtime_root: Path,
@@ -1261,7 +1341,13 @@ def run_leg(
     plutus_transactions: int = 0,
     epoch_observation_seconds: float = 0,
     attempt_interval_seconds: float = 0.0,
+    submission_entry: str = "target",
+    plutus_split: float = 0.5,
 ) -> dict[str, Any]:
+    if submission_entry not in SUBMISSION_ENTRIES:
+        raise ValueError(f"unsupported submission entry: {submission_entry}")
+    if not 0 <= plutus_split <= 1:
+        raise ValueError("plutus_split must be within 0..1")
     runtime = json.loads((runtime_root / "runtime.json").read_text(encoding="utf-8"))
     target, node = _target(runtime)
     container = str(node.get("container_name") or "")
@@ -1320,30 +1406,15 @@ def run_leg(
         encoding="utf-8",
     )
     if plutus_transactions:
-        controller = _controller_container()
-        if controller is None:
-            plutus_workload = run_plutus_workload(
-                runtime_root=runtime_root,
-                runtime=runtime,
-                node=node,
-                output_dir=output_dir,
-                transaction_count=plutus_transactions,
-            )
-        else:
-            with _containerized_cardano_workload(
-                runtime_root=runtime_root,
-                runtime=runtime,
-                node=node,
-                output_dir=output_dir,
-                controller=controller,
-            ) as (workload_runtime, workload_node):
-                plutus_workload = run_plutus_workload(
-                    runtime_root=runtime_root,
-                    runtime=workload_runtime,
-                    node=workload_node,
-                    output_dir=output_dir,
-                    transaction_count=plutus_transactions,
-                )
+        plutus_workload = _run_plutus_legs(
+            runtime_root=runtime_root,
+            runtime=runtime,
+            node=node,
+            output_dir=output_dir,
+            transaction_count=plutus_transactions,
+            submission_entry=submission_entry,
+            plutus_split=plutus_split,
+        )
     else:
         plutus_workload = None
     if epoch_observation_seconds:
@@ -1536,6 +1607,8 @@ def main(argv: list[str] | None = None) -> int:
     leg.add_argument("--trace-timeout-seconds", type=float, default=20.0)
     leg.add_argument("--plutus-transactions", type=int, default=0)
     leg.add_argument("--epoch-observation-seconds", type=float, default=0)
+    leg.add_argument("--submission-entry", choices=SUBMISSION_ENTRIES, default="target")
+    leg.add_argument("--plutus-split", type=float, default=0.5)
     leg.add_argument("--attempt-interval-seconds", type=float, default=0.0)
     pair = sub.add_parser("pair")
     pair.add_argument("--stock", type=Path, required=True)
@@ -1568,6 +1641,8 @@ def main(argv: list[str] | None = None) -> int:
             trace_timeout_seconds=args.trace_timeout_seconds,
             plutus_transactions=args.plutus_transactions,
             epoch_observation_seconds=args.epoch_observation_seconds,
+            submission_entry=args.submission_entry,
+            plutus_split=args.plutus_split,
             attempt_interval_seconds=args.attempt_interval_seconds,
         )
         trace = result["node_trace"]

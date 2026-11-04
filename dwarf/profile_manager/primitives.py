@@ -13759,17 +13759,34 @@ _AMARU_WORKLOAD_FLAGS = (
 )
 
 
-def _amaru_workload_flag_arguments(params: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
-    """Translate optional Amaru workload params into helper flags (only when set)."""
+_CARDANO_WORKLOAD_FLAGS = (
+    ("submission_entry", "--submission-entry", str),
+    ("plutus_split", "--plutus-split", float),
+)
+
+
+def _workload_flag_arguments(
+    params: dict[str, Any], flags: tuple[tuple[str, str, Any], ...]
+) -> tuple[list[str], dict[str, Any]]:
     arguments: list[str] = []
     logged: dict[str, Any] = {}
-    for key, flag, cast in _AMARU_WORKLOAD_FLAGS:
+    for key, flag, cast in flags:
         if key not in params:
             continue
         value = cast(params[key])
         logged[key] = value
         arguments.extend([flag, str(value)])
     return arguments, logged
+
+
+def _amaru_workload_flag_arguments(params: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+    """Translate optional Amaru workload params into helper flags (only when set)."""
+    return _workload_flag_arguments(params, _AMARU_WORKLOAD_FLAGS)
+
+
+def _cardano_workload_flag_arguments(params: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+    """Translate optional Cardano workload params (submission entry, split) into helper flags."""
+    return _workload_flag_arguments(params, _CARDANO_WORKLOAD_FLAGS)
 
 
 def _plutus_workload_attempts(
@@ -13903,6 +13920,8 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "--plutus-transactions", str(plutus_transactions),
                 "--epoch-observation-seconds", str(epoch_observation_seconds),
             ])
+            cardano_arguments, _cardano_workload = _cardano_workload_flag_arguments(self.params)
+            command.extend(cardano_arguments)
         amaru_workload: dict[str, Any] = {}
         if not self._CARDANO_NODE_WORKLOAD:
             workload_arguments, amaru_workload = _amaru_workload_flag_arguments(self.params)

@@ -123,3 +123,16 @@ def test_normalization_carries_operator_registration_for_instrumented_builds():
         base_haskell_port=33001, base_amaru_port=43001,
     )
     assert plan["nodes"][0]["operator_registration"] == registration
+
+
+def test_cardano_workload_scenario_validates_strictly_with_the_peer_entry():
+    import subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root / "dwarf"))
+    from scripts import validate_scenarios
+    path = root / "dwarf/scenarios/cardano-measurement-workload-stock-portable.yaml"
+    schema_fail, schema_msgs = validate_scenarios.check_schema([path])
+    assert schema_fail == 0, schema_msgs
+    _checked, semantic_fail, semantic_msgs = validate_scenarios.check_semantic([path])
+    assert semantic_fail == 0, semantic_msgs
