@@ -146,8 +146,13 @@ def test_amaru_calibration_primitive_passes_workload_flags_and_merges_plutus_acc
     started = next(event for event in handle.events if event["event"] == "started")
     assert started["payload"]["plutus_transactions"] == 2
     assert started["payload"]["epoch_transitions"] == 1
-    accounting = next(event for event in handle.events if event["event"] == "workload_accounting")
+    accounting_events = [event for event in handle.events if event["event"] == "workload_accounting"]
+    # One backlog sample per attempt (closed loop: 1 in flight) then the cumulative drain to 0.
+    assert [event["payload"]["backlog"] for event in accounting_events] == [1, 1, 1, 0]
+    accounting = next(event for event in accounting_events if event["payload"]["attempts"])
     payload = accounting["payload"]
+    assert payload["timed_out"] == 0
+    assert payload["attempts"][1]["boundary_node"] == "amaru-consumer"
     assert payload["attempted"] == 3
     assert payload["successful"] == 2
     assert payload["rejected"] == 1

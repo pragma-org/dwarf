@@ -613,6 +613,7 @@ def test_mempool_counts_20261029_amaru_mempool_target_messages(tmp_path):
     assert measurements["mempool_accepted"]["value"] == 1
     assert measurements["mempool_evicted"]["value"] == 1
     assert measurements["mempool_rejected"]["value"] == 0
+    assert measurements["mempool_rejected"]["offered_count"] == 1, "a zero carries the receipts it could have counted"
     assert measurements["mempool_tx_count"]["status"] == "available"
     assert measurements["mempool_tx_count"]["maximum"] == 1
     assert measurements["mempool_size_bytes"]["maximum"] == 285

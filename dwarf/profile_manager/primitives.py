@@ -13773,15 +13773,20 @@ def _amaru_workload_flag_arguments(params: dict[str, Any]) -> tuple[list[str], d
 
 
 def _plutus_workload_attempts(
-    report: dict[str, Any], implementation: str = "amaru"
+    report: dict[str, Any], implementation: str = "amaru", *, boundary_node: str | None = None
 ) -> list[dict[str, Any]]:
-    """Normalize the helper's Plutus records for the external accounting tap."""
+    """Normalize the helper's Plutus records for the external accounting tap.
+
+    ``boundary_node`` labels the entry whose socket took the submissions (the
+    Amaru legs submit through a consumer or producer node, never the target)."""
     records = ((report.get("plutus_workload") or {}).get("records") or [])
     if not records:
         return []
     from scripts.runtime_controlled_plutus_transactions import _plutus_workload_accounting
 
-    return list(_plutus_workload_accounting(records, implementation)["attempts"])
+    return list(
+        _plutus_workload_accounting(records, implementation, boundary_node=boundary_node)["attempts"]
+    )
 
 
 class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
@@ -14012,32 +14017,57 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 if plutus_transactions else []
             )
         else:
+            entry = str(
+                amaru_workload.get("submission_entry")
+                or ((report.get("plutus_workload") or {}).get("submission_entry"))
+                or "amaru-consumer"
+            )
             plutus_attempts = (
-                _plutus_workload_attempts(report, "amaru") if amaru_workload else []
+                _plutus_workload_attempts(report, "amaru", boundary_node=entry)
+                if amaru_workload else []
             )
         attempts.extend(plutus_attempts)
+        timed_out_outcomes = {"timeout", "timed_out", "timed-out"}
+        totals = {
+            "attempted": len(attempts),
+            "successful": sum(
+                str(row.get("outcome") or "").lower() in successful_outcomes
+                for row in attempts
+            ),
+            "rejected": sum(
+                str(row.get("outcome") or "").lower() in rejected_outcomes
+                for row in attempts
+            ),
+            "timed_out": sum(
+                str(row.get("outcome") or "").lower() in timed_out_outcomes
+                for row in attempts
+            ),
+            "bytes": sum(
+                int(row.get("request_length") or 0) for row in attempt_records
+            ) + sum(int(row.get("bytes") or 0) for row in plutus_attempts),
+            "batches": len(attempts),
+        }
+        # The workload is closed-loop: one attempt is in flight at a time, so the
+        # backlog curve is a per-attempt series of 1 that drains to 0 at the end.
+        # Per-attempt events carry no totals (attempted 0) so the collector's sums
+        # stay those of the final cumulative event.
+        for row in attempts:
+            handle.log(
+                phase="load",
+                primitive=self._PRIMITIVE_NAME,
+                level="info",
+                event="workload_accounting",
+                payload={
+                    "attempted": 0, "successful": 0, "rejected": 0, "timed_out": 0,
+                    "bytes": 0, "batches": 0, "backlog": 1, "attempts": [],
+                },
+            )
         handle.log(
             phase="load",
             primitive=self._PRIMITIVE_NAME,
             level="info",
             event="workload_accounting",
-            payload={
-                "attempted": len(attempts),
-                "successful": sum(
-                    str(row.get("outcome") or "").lower() in successful_outcomes
-                    for row in attempts
-                ),
-                "rejected": sum(
-                    str(row.get("outcome") or "").lower() in rejected_outcomes
-                    for row in attempts
-                ),
-                "bytes": sum(
-                    int(row.get("request_length") or 0) for row in attempt_records
-                ) + sum(int(row.get("bytes") or 0) for row in plutus_attempts),
-                "batches": len(attempts),
-                "backlog": None,
-                "attempts": attempts,
-            },
+            payload={**totals, "backlog": 0, "attempts": attempts},
         )
 
 

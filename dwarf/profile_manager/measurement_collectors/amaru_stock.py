@@ -570,12 +570,18 @@ def _unavailable_span(kind: str, summary: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _count(events: Iterable[dict[str, Any]], kind: str) -> dict[str, Any]:
-    return {
+def _count(
+    events: Iterable[dict[str, Any]], kind: str, *, offered_count: int | None = None
+) -> dict[str, Any]:
+    metric = {
         "status": "available",
         "unit": "events",
         "value": sum(1 for event in events if event["kind"] == kind),
     }
+    if offered_count is not None:
+        # What the counter could have counted: positive evidence for a zero.
+        metric["offered_count"] = offered_count
+    return metric
 
 
 def _timestamp_datetime(value: Any) -> datetime | None:
@@ -680,7 +686,8 @@ def _build_measurements(measurement_id: str, events: list[dict[str, Any]]) -> tu
             str(event["fields"].get("reason") or "unknown")
             for event in events if event["kind"] == "mempool-rejected"
         )
-        rejected_summary = _count(events, "mempool-rejected")
+        received_count = sum(1 for event in events if event["kind"] == "mempool-received")
+        rejected_summary = _count(events, "mempool-rejected", offered_count=received_count)
         rejected_summary["by_reason"] = dict(sorted(rejected.items()))
         return {
             "mempool_received": _count(events, "mempool-received"),

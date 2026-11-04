@@ -263,8 +263,14 @@ def _retain_plutus_v2_topology(runtime: dict, destination: Path) -> dict:
     return topology
 
 
-def _plutus_workload_accounting(records: list[dict], implementation: str) -> dict:
-    """Normalize every Plutus spend attempt for the existing external collector."""
+def _plutus_workload_accounting(
+    records: list[dict], implementation: str, *, boundary_node: str | None = None
+) -> dict:
+    """Normalize every Plutus spend attempt for the existing external collector.
+
+    ``boundary_node`` names the node whose socket received the submissions; it
+    labels the entry-node stages so a consumer-side timing is never read as the
+    target's."""
     attempts = []
     for record in records:
         required = (
@@ -292,10 +298,30 @@ def _plutus_workload_accounting(records: list[dict], implementation: str) -> dic
                 record["submit_to_block_inclusion_micros"]
             ),
         }
-        if implementation == "cardano-node":
+        label = record.get("boundary_node") or boundary_node
+        if label is not None:
+            attempt["boundary_node"] = str(label)
+        # Entry-node stages are attributable only when the record was submitted at the
+        # labelled entry, forwarded by it on its own and never resubmitted elsewhere.
+        # Cardano records default to the target entry; Amaru records need a label,
+        # because their entry is a consumer or producer node, never the target.
+        labelled = label is not None or implementation == "cardano-node"
+        attributable = (
+            labelled
+            and record.get("relay_forwarded") is not False
+            and not record.get("fallback_errors")
+            and str(record.get("submission_entry") or "target") in {"target", "amaru-consumer", "p1"}
+        )
+        if implementation == "amaru" and label is None:
+            attributable = False
+        if attributable:
             for stage in ("submit_to_protocol_response", "submit_to_chain_adoption"):
-                attempt[f"{stage}_nanos"] = int(record[f"{stage}_nanos"])
-                attempt[f"{stage}_micros"] = float(record[f"{stage}_micros"])
+                if record.get(f"{stage}_nanos") is not None:
+                    attempt[f"{stage}_nanos"] = int(record[f"{stage}_nanos"])
+                    attempt[f"{stage}_micros"] = float(record[f"{stage}_micros"])
+        if record.get("submit_to_mempool_visibility_nanos") is not None:
+            attempt["submit_to_mempool_visibility_nanos"] = int(record["submit_to_mempool_visibility_nanos"])
+            attempt["submit_to_mempool_visibility_micros"] = float(record["submit_to_mempool_visibility_micros"])
         attempts.append(attempt)
     accepted = sum(row["outcome"] == "accepted" for row in attempts)
     rejected = sum(row["outcome"] == "rejected" for row in attempts)

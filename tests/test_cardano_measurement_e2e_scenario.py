@@ -624,7 +624,7 @@ def test_cardano_calibration_primitive_merges_plutus_accounting_stages(monkeypat
         "runtime_root": "/runtime", "attempts": 30, "plutus_transactions": 1,
     }).run(handle, None)
 
-    accounting = next(event for event in handle.events if event["event"] == "workload_accounting")
+    accounting = next(event for event in handle.events if event["event"] == "workload_accounting" and event["payload"]["attempts"])
     payload = accounting["payload"]
     assert payload["attempted"] == 2 and payload["successful"] == 1 and payload["rejected"] == 1
     assert payload["bytes"] == 412

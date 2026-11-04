@@ -442,3 +442,32 @@ def test_sync_speed_does_not_fall_back_when_controlled_range_events_are_incomple
     speed = collector.finalize(context)["measurements"]["sync_speed"]
     assert speed["status"] == "unavailable"
     assert speed["source"] == "controlled-sync-range-events"
+
+
+def test_zero_counters_carry_their_offered_count_and_backlog_curve(tmp_path):
+    attempt = {"input_id": "plutus-0000", "tx_id": "t1", "outcome": "accepted", "bytes": 200, "elapsed_micros": 2.0,
+               "submit_to_protocol_response_micros": 5.0, "boundary_node": "amaru-consumer"}
+    (tmp_path / "log.ndjson").write_text(
+        "\n".join(json.dumps(event) for event in [
+            {"ts": "2026-09-18T12:00:00.000Z", "phase": "phase:hostile:load", "event": "workload_accounting",
+             "payload": {"attempted": 10, "successful": 9, "rejected": 1, "timed_out": 0, "bytes": 1000, "batches": 1, "backlog": 1, "attempts": [attempt]}},
+            {"ts": "2026-09-18T12:00:02.000Z", "phase": "phase:hostile:load", "event": "workload_accounting",
+             "payload": {"attempted": 10, "successful": 10, "rejected": 0, "timed_out": 0, "bytes": 1000, "batches": 1, "backlog": 0, "attempts": []}},
+        ]) + "\n")
+    collector = WorkloadAccountingCollector(_entry("amaru-external-workload-accounting"))
+    context = _context(tmp_path, "amaru-external-workload-accounting")
+    collector.prepare(context); collector.start(context)
+    collector.on_marker({"phase_id": "run", "state": "start", "elapsed_seconds": 0}, context)
+    collector.on_marker({"phase_id": "run", "state": "end", "elapsed_seconds": 2}, context)
+    collector.stop(context)
+    measurements = collector.finalize(context)["measurements"]
+    assert measurements["timed_out_operations"] == {"status": "available", "unit": "operations", "value": 0, "offered_count": 20}
+    assert measurements["rejected_operations"]["offered_count"] == 20 and measurements["rejected_operations"]["value"] == 1
+    assert measurements["backlog"]["status"] == "available" and measurements["backlog"]["peak"] == 1
+    assert measurements["submit_to_protocol_response"]["boundary_node"] == "amaru-consumer"
+    assert measurements["submit_to_protocol_response"]["status"] == "available"
+
+
+def test_backlog_summary_without_points_explains_itself():
+    from profile_manager.measurement_report import backlog_summary
+    assert backlog_summary([])["reason"] == "no backlog samples were retained"

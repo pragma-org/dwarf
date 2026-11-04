@@ -168,3 +168,16 @@ def test_network_keepalive_rtt_derives_from_message_pairs_per_connection(tmp_pat
     assert rtt["minimum"] == 410.0
     assert rtt["maximum"] == 1000.0
     assert "message-pair" in result["claims"]["keepalive_rtt"]
+
+
+def test_mempool_rejected_zero_carries_the_attempt_count(tmp_path):
+    from profile_manager.measurement_collectors import cardano_stock
+    rows = [
+        _line("Mempool.AttemptAdd", "TraceMempoolAttemptingAdd", tx={"txid": "tx1"}),
+        _line("Mempool.AddedTx", "TraceMempoolAddedTx", tx={"txid": "tx1"}, mempoolSize={"numTxs": 1, "bytes": 256}),
+        _line("Mempool.AttemptAdd", "TraceMempoolAttemptingAdd", tx={"txid": "tx2"}),
+        _line("Mempool.AddedTx", "TraceMempoolAddedTx", tx={"txid": "tx2"}, mempoolSize={"numTxs": 2, "bytes": 512}),
+    ]
+    events = [event for event in (cardano_stock._normalize_record(json.loads(row)) for row in rows) if event]
+    metrics, _claims = cardano_stock._build_measurements("cardano-stock-txsubmission-mempool", events)
+    assert metrics["mempool_rejected"] == {"status": "available", "unit": "transactions", "value": 0, "offered_count": 2}

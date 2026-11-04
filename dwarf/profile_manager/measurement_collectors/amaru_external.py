@@ -54,7 +54,13 @@ def _event_time(event: dict[str, Any]) -> float | None:
     return _iso_epoch(event.get("ts"))
 
 
-def _value_metric(value: float | int | None, unit: str, *, reason: str | None = None) -> dict[str, Any]:
+def _value_metric(
+    value: float | int | None,
+    unit: str,
+    *,
+    reason: str | None = None,
+    offered_count: float | int | None = None,
+) -> dict[str, Any]:
     metric = {
         "status": "available" if value is not None else "unavailable",
         "unit": unit,
@@ -62,6 +68,9 @@ def _value_metric(value: float | int | None, unit: str, *, reason: str | None = 
     }
     if reason is not None:
         metric["reason"] = reason
+    if offered_count is not None:
+        # The denominator a zero was counted against: positive evidence for the cell.
+        metric["offered_count"] = offered_count
     return metric
 
 
@@ -153,6 +162,8 @@ class WorkloadAccountingCollector:
                         normalized_attempt["tx_id"] = str(attempt["tx_id"])
                     if (attempt_bytes := _number(attempt.get("bytes"))) is not None:
                         normalized_attempt["bytes"] = attempt_bytes
+                    if attempt.get("boundary_node") is not None:
+                        normalized_attempt["boundary_node"] = str(attempt["boundary_node"])
                     for stage in (
                         "submit_to_protocol_response",
                         "submit_to_mempool_visibility",
@@ -291,16 +302,21 @@ class WorkloadAccountingCollector:
             "submit_to_block_inclusion",
             "submit_to_chain_adoption",
         ):
-            values = [
-                {"value": attempt[f"{stage}_micros"], "unit": "us"}
-                for attempt in attempts
-                if attempt.get(f"{stage}_micros") is not None
+            contributing = [
+                attempt for attempt in attempts if attempt.get(f"{stage}_micros") is not None
             ]
+            values = [{"value": attempt[f"{stage}_micros"], "unit": "us"} for attempt in contributing]
             distribution = distribution_summary(values, unit="us")
             if not values:
                 distribution["reason"] = (
                     "no authoritative correlated boundary was retained for this stage"
                 )
+            boundary_nodes = sorted({
+                str(attempt["boundary_node"]) for attempt in contributing
+                if attempt.get("boundary_node") is not None
+            })
+            # One node per stage: the attempts that carry a stage share its entry.
+            distribution["boundary_node"] = boundary_nodes[0] if len(boundary_nodes) == 1 else None
             stage_distributions[stage] = distribution
         origin = min(
             (item["time"] for item in accounting if item["time"] is not None),
@@ -320,8 +336,8 @@ class WorkloadAccountingCollector:
         measurements = {
             "offered_operations": offered,
             "successful_operations": _value_metric(successful, "operations"),
-            "rejected_operations": _value_metric(rejected, "operations"),
-            "timed_out_operations": _value_metric(timed_out, "operations"),
+            "rejected_operations": _value_metric(rejected, "operations", offered_count=attempted),
+            "timed_out_operations": _value_metric(timed_out, "operations", offered_count=attempted),
             "offered_bytes": _value_metric(byte_count, "bytes"),
             "successful_operations_per_second": _value_metric(
                 successful / duration if duration else None,

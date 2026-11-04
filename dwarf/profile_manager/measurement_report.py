@@ -137,6 +137,7 @@ def backlog_summary(samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
             "peak_at_seconds": None,
             "growth_rate_per_second": None,
             "drain_time_seconds": None,
+            "reason": "no backlog samples were retained",
         }
     start_time, baseline = points[0]
     peak_index, (peak_time, peak) = max(enumerate(points), key=lambda item: item[1][1])

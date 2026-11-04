@@ -225,9 +225,24 @@ def _unavailable(unit: str, reason: str) -> dict[str, Any]:
     return {"status": "unavailable", "unit": unit, "value": None, "reason": reason}
 
 
-def _count(events: list[dict[str, Any]], kinds: set[str], unit: str = "events") -> dict[str, Any]:
+def _count(
+    events: list[dict[str, Any]], kinds: set[str], unit: str = "events", *, offered_count: int | None = None
+) -> dict[str, Any]:
     value = sum(event["kind"] in kinds for event in events)
-    return {"status": "available", "unit": unit, "value": value}
+    metric = {"status": "available", "unit": unit, "value": value}
+    if offered_count is not None:
+        # What the counter could have counted: positive evidence for a zero.
+        metric["offered_count"] = offered_count
+    return metric
+
+
+def _mempool_offered_count(events: list[dict[str, Any]]) -> int:
+    """Transactions the mempool took a decision on: distinct ids across attempt/accept/reject events."""
+    kinds = {"mempool-attempt", "mempool-accepted", "mempool-rejected"}
+    seen = {event.get("tx_id") for event in events if event["kind"] in kinds and event.get("tx_id")}
+    if seen:
+        return len(seen)
+    return sum(event["kind"] in {"mempool-accepted", "mempool-rejected"} for event in events)
 
 
 def _distribution(events: list[dict[str, Any]], *, kinds: set[str], field: str, unit: str) -> dict[str, Any]:
@@ -302,7 +317,10 @@ def _build_measurements(measurement_id: str, events: list[dict[str, Any]]) -> tu
     if measurement_id == "cardano-stock-txsubmission-mempool":
         return {
             "mempool_accepted": _count(events, {"mempool-accepted"}, "transactions"),
-            "mempool_rejected": _count(events, {"mempool-rejected"}, "transactions"),
+            "mempool_rejected": _count(
+                events, {"mempool-rejected"}, "transactions",
+                offered_count=_mempool_offered_count(events),
+            ),
             "mempool_tx_count": _distribution(events, kinds={"mempool-accepted", "mempool-rejected", "mempool-removed"}, field="mempool_tx_count", unit="transactions"),
             "mempool_bytes": _distribution(events, kinds={"mempool-accepted", "mempool-rejected", "mempool-removed"}, field="mempool_bytes", unit="bytes"),
             "mempool_sync_duration": _distribution(events, kinds={"mempool-synced"}, field="duration_micros", unit="us"),

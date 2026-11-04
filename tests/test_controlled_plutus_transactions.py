@@ -793,3 +793,26 @@ def test_live_plutus_v2_topology_files_are_copied_and_digest_checked(tmp_path):
 
     with pytest.raises(RuntimeError, match="digest mismatch"):
         subject._retain_plutus_v2_topology(runtime, tmp_path / "bad")
+
+
+def test_amaru_attempts_keep_entry_node_stages_with_their_label():
+    record = {
+        "attempt_id": "plutus-0000", "outcome": "accepted", "spend_transaction_id": "tx-1",
+        "transaction_bytes": 222, "elapsed_nanos": 2184, "elapsed_micros": 2.184,
+        "submit_to_block_inclusion_nanos": 2000, "submit_to_block_inclusion_micros": 2.0,
+        "submit_to_protocol_response_nanos": 5000, "submit_to_protocol_response_micros": 5.0,
+        "submit_to_chain_adoption_nanos": 9000, "submit_to_chain_adoption_micros": 9.0,
+        "submit_to_mempool_visibility_nanos": 700, "submit_to_mempool_visibility_micros": 0.7,
+        "relay_forwarded": True, "fallback_errors": [],
+    }
+    out = subject._plutus_workload_accounting([record], "amaru", boundary_node="amaru-consumer")
+    attempt = out["attempts"][0]
+    assert attempt["boundary_node"] == "amaru-consumer" and attempt["submit_to_protocol_response_nanos"] == 5000
+    assert attempt["submit_to_chain_adoption_nanos"] == 9000 and attempt["submit_to_mempool_visibility_nanos"] == 700
+    dropped = subject._plutus_workload_accounting([{**record, "fallback_errors": ["resubmitted"]}], "amaru", boundary_node="amaru-consumer")["attempts"][0]
+    assert "submit_to_protocol_response_nanos" not in dropped and dropped["submit_to_mempool_visibility_nanos"] == 700
+    unlabelled = subject._plutus_workload_accounting([record], "amaru")["attempts"][0]
+    assert "submit_to_protocol_response_nanos" not in unlabelled
+    peer = subject._plutus_workload_accounting([{**record, "submission_entry": "peer"}], "cardano-node", boundary_node="node2")["attempts"][0]
+    assert "submit_to_protocol_response_nanos" not in peer and "submit_to_block_inclusion_nanos" in peer and peer["boundary_node"] == "node2"
+    assert out["timed_out"] == 0 and out["backlog"] == 0
