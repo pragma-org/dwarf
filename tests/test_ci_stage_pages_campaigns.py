@@ -18,7 +18,7 @@ def test_committed_default_archives_stage_with_validated_empty_campaign_catalog(
         trusted_publishers_path=ROOT / "docs/evidence/trusted-publishers.json")
     assert json.loads((output / "default-runs.json").read_text())["archives"]
     assert (output / "campaigns.json").is_file()
-    assert len(list((output / "runs").glob("*.tar.gz"))) == 10
+    assert len(list((output / "runs").glob("*.tar.gz"))) == 5   # four coverage-rule workload reruns + the Antithesis snapshot
 
 
 def test_rolling_defaults_retain_committed_antithesis_archive(tmp_path):
@@ -50,7 +50,7 @@ def test_release_asset_listing_is_bounded_and_path_safe():
 
 
 def test_stage_rejects_release_default_missing_from_trusted_catalog(tmp_path):
-    source = ROOT / "docs/evidence/runs/20261017T185758Z-644f18ee-bundle-export.tar.gz"
+    source = ROOT / "docs/evidence/runs/20261104T140927Z-a00e18a6-bundle-export.tar.gz"
     tag = "campaign-" + "c" * 64
     asset = "run-1-" + hashlib.sha256(source.read_bytes()).hexdigest() + ".tar.gz"
     downloads = tmp_path / "downloads" / tag

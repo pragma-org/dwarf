@@ -17,10 +17,10 @@ from profile_manager.tap_coverage import (
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / "docs/evidence/runs"
 WORKLOAD_ARCHIVES = {
-    "amaru-stock": "20261104T013138Z-572908c9-bundle-export.tar.gz",
-    "amaru-patched": "20261104T004457Z-8901e42d-bundle-export.tar.gz",
-    "cardano-stock": "20261104T022354Z-c6fd2046-bundle-export.tar.gz",
-    "cardano-patched": "20261104T024915Z-b1a2f8cb-bundle-export.tar.gz",
+    "amaru-stock": "20261104T140927Z-a00e18a6-bundle-export.tar.gz",
+    "amaru-patched": "20261104T144249Z-a47bed21-bundle-export.tar.gz",
+    "cardano-stock": "20261104T130554Z-ef991882-bundle-export.tar.gz",
+    "cardano-patched": "20261104T132207Z-b5b6981b-bundle-export.tar.gz",
 }
 
 
@@ -42,20 +42,23 @@ def test_exception_catalog_is_well_formed():
 
 
 @pytest.mark.parametrize("leg", sorted(WORKLOAD_ARCHIVES))
-def test_retained_2026_11_04_reports_name_their_gaps_today(leg):
+def test_retained_workload_archives_hold_the_rule(leg):
+    """The Pages default set: every bound concept carries a value or a documented exception."""
     report = _report(RUNS / WORKLOAD_ARCHIVES[leg])
     implementation, mode = report_identity(report)
     assert (implementation, mode) == {"amaru-stock": ("amaru", "stock"), "amaru-patched": ("amaru", "patched"),
                                       "cardano-stock": ("cardano-node", "stock"), "cardano-patched": ("cardano-node", "patched")}[leg]
     result = coverage_report(report["measurements"], implementation, mode)
     assert "restart-readiness" in result["covered"] and "keepalive-round-trip-time" in result["covered"]
-    missing = {row["concept"] for row in result["missing"]}
-    # The known gaps of the first workload runs (design §1), before the fixes rerun.
-    assert "workload-backlog" in missing and "resident-memory" in missing and "submit-to-mempool-visibility-time" in missing
+    assert "resident-memory" in result["covered"] and "workload-backlog" in result["covered"]
+    assert "submit-to-mempool-visibility-time" in result["covered"]
+    assert result["missing"] == [] and result["unbound_ids"] == []
+    excepted = {row["concept"] for row in result["excepted"]}
     if implementation == "amaru":
-        assert "header-arrival-offset" in {row["concept"] for row in result["excepted"]}
-    assert result["unbound_ids"] == []
-    assert rule_holds(report) is False
+        assert "header-arrival-offset" in excepted
+    if leg == "cardano-patched":
+        assert "txsubmission-residence" in result["covered"]   # the v5 contract, exercised through V2 inbound logic
+    assert rule_holds(report) is True
 
 
 def test_rule_holds_on_a_complete_synthetic_report():
@@ -87,9 +90,20 @@ def test_pages_staging_enforces_the_rule_for_flagged_entries(tmp_path):
     api.validate_defaults({"schema_version": api._SCHEMA, "archives": [{**row, "coverage_rule": None, "coverage_exception": "Antithesis snapshot: bounded trace window"}]})
     with pytest.raises(ValueError, match="coverage"):
         api.validate_defaults({"schema_version": api._SCHEMA, "archives": [{**row, "coverage_rule": "yes"}]})
-    # A flagged archive whose report fails the rule is refused with the missing list.
+    # Every flagged archive in the committed set passes the rule; a report missing a tap is refused.
+    for leg in WORKLOAD_ARCHIVES:
+        api.check_coverage_rule(RUNS / WORKLOAD_ARCHIVES[leg])
+    broken = dict(_report(RUNS / WORKLOAD_ARCHIVES["amaru-stock"]))
+    broken["measurements"] = dict(broken["measurements"])
+    broken["measurements"]["backlog"] = {"status": "unavailable", "unit": "operations", "reason": "no backlog samples were retained"}
+    broken_path = tmp_path / "broken-bundle-export.tar.gz"
+    payload = json.dumps(broken).encode()
+    with tarfile.open(broken_path, "w:gz") as tar:
+        info = tarfile.TarInfo("run/measurements/report.json")
+        info.size = len(payload)
+        tar.addfile(info, io.BytesIO(payload))
     with pytest.raises(ValueError, match="workload-backlog"):
-        api.check_coverage_rule(RUNS / WORKLOAD_ARCHIVES["amaru-stock"])
+        api.check_coverage_rule(broken_path)
 
 
 def test_scalar_peak_and_counter_delta_shapes_count_as_values():

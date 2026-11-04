@@ -1,6 +1,25 @@
 # Full tap coverage on the Pages evidence set — design
 
-Date: 2026-11-04. Repo: V10-FRESH. Status: design for approval.
+Date: 2026-11-04. Repo: V10-FRESH. Status: IMPLEMENTED on `feat/full-tap-coverage` (2026-11-04).
+
+Outcome: the Pages default set is four reruns from the fixed collectors — amaru stock
+`20261104T140927Z-a00e18a6` (52 concepts covered), amaru patched `20261104T144249Z-a47bed21`
+(68), cardano-node stock `20261104T130554Z-ef991882` (43), cardano-node patched
+`20261104T132207Z-b5b6981b` (56) — plus the Antithesis snapshot under a documented
+`coverage_exception`. Every bound concept carries a value or an entry in
+`dwarf/measurements/coverage-exceptions-v1.json`; `profile_manager/tap_coverage.py` is the rule
+and Pages staging enforces it on every `coverage_rule` archive. Beyond §4, the reruns surfaced
+and fixed: the cardano image has no grep and runs the node under the dynamic loader (process
+probe matches the cmdline with shell patterns); cardano-node abbreviates mempool trace txids to
+8 hex characters (the visibility join matches by prefix); the resolve step ignored a local
+build's verified instrumentation capabilities; the catalog never bound the patched
+queue/txsubmission bound-estimate ids (bound now; a built binding supersedes its reserved
+placeholder); and cardano-node 11.1.2 defaults to the legacy V1 inbound TxSubmission logic,
+so measurement configs set `TxSubmissionLogicVersion: TxSubmissionLogicV2` for both cardano
+modes to exercise the v5 residence contract. Zero-occurrence distributions count when their
+collector states an `offered_count`. Collectors retain each raw node trace once per run,
+content-addressed under `measurements/shared/`, after eight per-collector copies inflated an
+archive to 418 MB and the viewer (256 MB expansion limit) refused it.
 Follows `docs/plans/2026-11-03-operator-build-workload-measurements-design.md` (the four
 workload runs) and `docs/plans/2026-11-04-cross-implementation-compare-design.md` (the
 Compare page that shows them side by side).
