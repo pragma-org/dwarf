@@ -263,6 +263,10 @@ CARDANO_MEASUREMENT_TRACE_NAMESPACES = (
 )
 # KeepAlive round-trip samples and TraceMempoolSynced are Debug-level in cardano-node 11.1.x.
 CARDANO_MEASUREMENT_TRACE_SEVERITIES = {"KeepAlive.Remote": "Debug", "Mempool": "Debug"}
+# Node settings every cardano measurement config carries (stock and patched alike, so
+# both modes run the same logic): 11.1.2 defaults to the legacy V1 inbound TxSubmission
+# logic, while the v5 residence contract instruments Inbound.V2.
+CARDANO_MEASUREMENT_NODE_SETTINGS = {"TxSubmissionLogicVersion": "TxSubmissionLogicV2"}
 
 
 def _enable_cardano_measurement_traces(config_path: Path) -> dict:
@@ -280,6 +284,7 @@ def _enable_cardano_measurement_traces(config_path: Path) -> dict:
         })
         options[namespace] = configured
     body["TraceOptions"] = options
+    body.update(CARDANO_MEASUREMENT_NODE_SETTINGS)
     config_path.write_text(json.dumps(body, indent=4) + "\n", encoding="utf-8")
     return {
         "enabled": True,

@@ -272,3 +272,7 @@ def test_cardano_config_program_is_self_contained_and_keeps_keepalive_debug(tmp_
     assert options["KeepAlive.Remote"]["severity"] == "Debug"
     assert options["Mempool"]["severity"] == "Debug"   # TraceMempoolSynced is Debug-level
     assert "CARDANO_MEASUREMENT_TRACE_SEVERITIES=" in program
+    # cardano-node 11.1.2 defaults to the legacy V1 inbound TxSubmission logic; the v5
+    # residence contract instruments Inbound.V2, so measurement configs select it.
+    assert json.loads(path.read_text())["TxSubmissionLogicVersion"] == "TxSubmissionLogicV2"
+    assert "CARDANO_MEASUREMENT_NODE_SETTINGS=" in program

@@ -160,3 +160,15 @@ def test_three_patched_taps_are_requestable_on_a_v5_operator_build_but_stay_gate
 def test_measurement_trace_severities_raise_mempool_to_debug():
     from scripts.runtime_compose_substrate import CARDANO_MEASUREMENT_TRACE_SEVERITIES
     assert CARDANO_MEASUREMENT_TRACE_SEVERITIES == {"KeepAlive.Remote": "Debug", "Mempool": "Debug"}
+
+
+def test_measurement_configs_select_the_v2_txsubmission_logic(tmp_path):
+    """Run 20261104T124711Z-eb17bfca retained 3489 instrumented records and none from
+    TxSubmission: 11.1.2 runs Inbound.V1 unless TxSubmissionLogicVersion selects V2."""
+    import json
+    from scripts.runtime_compose_substrate import CARDANO_MEASUREMENT_NODE_SETTINGS, _enable_cardano_measurement_traces
+    assert CARDANO_MEASUREMENT_NODE_SETTINGS == {"TxSubmissionLogicVersion": "TxSubmissionLogicV2"}
+    path = tmp_path / "configuration.yaml"
+    path.write_text(json.dumps({"TraceOptions": {}, "TxSubmissionLogicVersion": "TxSubmissionLogicV1"}))
+    _enable_cardano_measurement_traces(path)
+    assert json.loads(path.read_text())["TxSubmissionLogicVersion"] == "TxSubmissionLogicV2"

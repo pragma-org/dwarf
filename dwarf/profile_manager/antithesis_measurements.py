@@ -46,6 +46,7 @@ def _runtime_sources(files):
 
 def cardano_config_program():
     from scripts.runtime_compose_substrate import (
+        CARDANO_MEASUREMENT_NODE_SETTINGS,
         CARDANO_MEASUREMENT_TRACE_NAMESPACES,
         CARDANO_MEASUREMENT_TRACE_SEVERITIES,
         _enable_cardano_measurement_traces,
@@ -53,6 +54,7 @@ def cardano_config_program():
     return ('import json,shutil\nfrom pathlib import Path\n'
         +'CARDANO_MEASUREMENT_TRACE_NAMESPACES='+repr(CARDANO_MEASUREMENT_TRACE_NAMESPACES)+'\n'
         +'CARDANO_MEASUREMENT_TRACE_SEVERITIES='+repr(CARDANO_MEASUREMENT_TRACE_SEVERITIES)+'\n'
+        +'CARDANO_MEASUREMENT_NODE_SETTINGS='+repr(CARDANO_MEASUREMENT_NODE_SETTINGS)+'\n'
         +inspect.getsource(_enable_cardano_measurement_traces)
         +"\nif __name__=='__main__':\n"
         +"    shutil.copytree('/configs','/target',dirs_exist_ok=True)\n"
