@@ -1413,3 +1413,26 @@ def test_legacy_snapshot_loader_rejects_new_cli_before_conversion(tmp_path):
         capture_output=True, text=True)
     assert result.returncode == 64
     assert 'Legacy snapshot imports are unavailable; use the pinned relay bootstrap producer' in result.stderr
+
+
+def test_operator_instrumented_cardano_service_writes_measurement_traces_without_patched_mode():
+    node = {
+        "id": "node1",
+        "impl": "cardano-node",
+        "listen_address": "127.0.0.1:33001",
+        "host_slot_index": 1,
+        "target_mode": "stock",
+        "image": "sha256:" + "d" * 64,
+        "operator_registration": {"source_build": {"variant": "instrumented"}},
+    }
+
+    service = compose._docker_compose_body(
+        compose_project="dwarf-profile-n-cardano-latest-confirmed",
+        nodes=[node],
+        network_name="testnet_42",
+    )["services"]["node1"]
+
+    assert service["environment"] == {
+        "DWARF_CARDANO_MEASUREMENT_TRACE": "/logs/node1/cardano-measurement.ndjson",
+        "DWARF_CARDANO_PLUTUS_TRACE": "/logs/node1/cardano-plutus.ndjson",
+    }

@@ -519,10 +519,12 @@ def test_plutus_workload_falls_back_to_producer_after_inclusion_timeout(monkeypa
         transaction_count=1, fallback_submit=forwarded.append, inclusion_fallback_seconds=0.1,
     )
 
-    assert [path.name for path in forwarded] == ["lock-0.tx"]
+    # the lock missed the window; the spend then goes straight to the producer
+    assert [path.name for path in forwarded] == ["lock-0.tx", "spend-0.tx"]
     assert calls["waits"][0]["timeout_seconds"] == 0.1
     assert "timeout_seconds" not in calls["waits"][1]
     assert result["records"][0]["relay_forwarded"] is False
+    assert result["records"][0]["fallback_errors"] == []
 
 
 def test_plutus_workload_without_fallback_keeps_single_wait_and_null_relay_flag(monkeypatch, tmp_path):
@@ -631,3 +633,55 @@ def test_cardano_calibration_primitive_merges_plutus_accounting_stages(monkeypat
     assert plutus["submit_to_block_inclusion_micros"] == 2000.0
     assert plutus["submit_to_protocol_response_micros"] == 50.0
     assert plutus["submit_to_chain_adoption_micros"] == 2000.0
+
+
+def test_verify_workload_container_rejects_operator_local_image_id_mismatch(monkeypatch):
+    image_id = "sha256:" + "d" * 64
+    inspected = _support_inspect(image_id, "sha256:" + "e" * 64, {
+        "ada2.managed": "dwarf", "io.dwarf.managed": "true", "io.dwarf.component": "node",
+        "io.dwarf.implementation": "cardano-node", "io.dwarf.topology": "p",
+        "io.dwarf.node_id": "node1", "com.docker.compose.project": "proj",
+        "com.docker.compose.service": "node1",
+    })
+    monkeypatch.setattr(calibration, "_inspect_container", lambda _id: inspected)
+    node = {"id": "node1", "service_name": "node1", "container_name": "consumer",
+            "container_id": "c" * 64, "image_ref": image_id, "image_id": image_id}
+    with pytest.raises(RuntimeError, match="image identity does not match"):
+        calibration._verify_workload_container({"profile_id": "p", "compose_project": "proj"}, node)
+
+
+def test_plutus_workload_tolerates_a_failing_fallback_submit_and_records_it(monkeypatch, tmp_path):
+    calls = _fake_plutus_cli(monkeypatch, wait_outcomes=[RuntimeError("transaction lock0 did not appear")])
+    runtime, node = _plutus_runtime(tmp_path)
+
+    def failing_submit(_path):
+        raise RuntimeError("Transaction already in mempool")
+
+    result = calibration.run_plutus_workload(
+        runtime_root=tmp_path, runtime=runtime, node=node, output_dir=tmp_path / "out",
+        transaction_count=1, fallback_submit=failing_submit, inclusion_fallback_seconds=0.1,
+    )
+
+    record = result["records"][0]
+    assert record["relay_forwarded"] is False
+    # lock: window missed, producer submit failed; spend: sticky producer submit failed too
+    assert record["fallback_errors"] == ["Transaction already in mempool"] * 2
+    assert len(calls["waits"]) == 3
+
+
+def test_plutus_workload_fallback_becomes_sticky_after_first_miss(monkeypatch, tmp_path):
+    calls = _fake_plutus_cli(monkeypatch, wait_outcomes=[RuntimeError("transaction lock0 did not appear")])
+    runtime, node = _plutus_runtime(tmp_path)
+    forwarded = []
+
+    result = calibration.run_plutus_workload(
+        runtime_root=tmp_path, runtime=runtime, node=node, output_dir=tmp_path / "out",
+        transaction_count=2, fallback_submit=forwarded.append, inclusion_fallback_seconds=0.1,
+    )
+
+    # tx 0 lock missed the window -> fallback; from then on every submit goes
+    # to the producer immediately and waits with the default budget only.
+    assert [path.name for path in forwarded] == ["lock-0.tx", "spend-0.tx", "lock-1.tx", "spend-1.tx"]
+    assert [row["relay_forwarded"] for row in result["records"]] == [False, False]
+    assert all("timeout_seconds" not in wait for wait in calls["waits"][1:])
+    assert result["fallback_sticky_from"] == 0

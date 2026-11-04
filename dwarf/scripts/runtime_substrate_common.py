@@ -358,19 +358,24 @@ def normalize_substrate(substrate: dict) -> dict:
                 raise ValueError(f"substrate.nodes[{index}].host must reference a declared substrate.hosts id")
         elif host_id is not None:
             raise ValueError("substrate.nodes[*].host requires substrate.host_strategy='explicit'")
-        normalized_nodes.append(
-            {
-                "id": node_id,
-                "impl": impl,
-                "version": version,
-                "role": role,
-                "host": host_id,
-                "image": image,
-                "source_revision": source_revision,
-                "supporting": bool(node.get("supporting", False)),
-                **measurement_identity,
-            }
-        )
+        normalized_node = {
+            "id": node_id,
+            "impl": impl,
+            "version": version,
+            "role": role,
+            "host": host_id,
+            "image": image,
+            "source_revision": source_revision,
+            "supporting": bool(node.get("supporting", False)),
+            **measurement_identity,
+        }
+        if isinstance(node.get("operator_registration"), dict):
+            # Operator-prepared builds carry their registration so the compose
+            # substrate can recognise an instrumented variant (trace file env).
+            normalized_node["operator_registration"] = json.loads(
+                json.dumps(node["operator_registration"])
+            )
+        normalized_nodes.append(normalized_node)
     topology = substrate.get("topology") or {}
     if not isinstance(topology, dict):
         raise ValueError("substrate.topology must be a mapping")

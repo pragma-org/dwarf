@@ -710,19 +710,29 @@ def _await_inclusion(
     tx_path: Path,
     fallback_submit: Callable[[Path], None] | None,
     inclusion_fallback_seconds: float,
-) -> tuple[Any, bool | None]:
+    sticky: bool = False,
+) -> tuple[Any, bool | None, list[str]]:
     """Wait for inclusion; after the fallback window resubmit through the producer.
 
-    Returns the wait result and whether the entry node forwarded the transaction
-    on its own (None when no fallback path is configured).
+    Returns the wait result, whether the entry node forwarded the transaction
+    on its own (None when no fallback path is configured), and any fallback
+    submit errors.  A failing fallback submit (for example a duplicate the
+    producer already holds) is recorded, not raised: the second wait decides.
+    With ``sticky`` the producer submit happens at once, without a window.
     """
     if fallback_submit is None:
-        return wait(None), None
+        return wait(None), None, []
+    errors: list[str] = []
+    if not sticky:
+        try:
+            return wait(inclusion_fallback_seconds), True, errors
+        except RuntimeError:
+            pass
     try:
-        return wait(inclusion_fallback_seconds), True
-    except RuntimeError:
         fallback_submit(tx_path)
-        return wait(None), False
+    except RuntimeError as error:
+        errors.append(str(error))
+    return wait(None), False, errors
 
 
 def run_plutus_workload(
@@ -780,7 +790,9 @@ def run_plutus_workload(
         for outcome, script in scripts.items()
     }
     records = []
+    fallback_sticky_from: int | None = None
     for index in range(transaction_count):
+        sticky = fallback_sticky_from is not None
         expected_outcome = "accepted" if index % 2 == 0 else "rejected"
         script = scripts[expected_outcome]
         script_address = script_addresses[expected_outcome]
@@ -828,10 +840,13 @@ def run_plutus_workload(
                 arguments["timeout_seconds"] = timeout
             return _wait_for_utxo(**arguments)
 
-        (script_utxo, lock_include_us), lock_forwarded = _await_inclusion(
+        (script_utxo, lock_include_us), lock_forwarded, fallback_errors = _await_inclusion(
             wait_lock, tx_path=lock_tx, fallback_submit=fallback_submit,
-            inclusion_fallback_seconds=inclusion_fallback_seconds,
+            inclusion_fallback_seconds=inclusion_fallback_seconds, sticky=sticky,
         )
+        if lock_forwarded is False and fallback_sticky_from is None:
+            fallback_sticky_from = index
+            sticky = True
         script_tx_in = next(
             key for key in script_utxo if key.startswith(lock_id + "#")
         )
@@ -887,9 +902,9 @@ def run_plutus_workload(
                     arguments["timeout_seconds"] = timeout
                 return _wait_for_utxo(**arguments)
 
-            (_body, include_us), spend_forwarded = _await_inclusion(
+            (_body, include_us), spend_forwarded, spend_errors = _await_inclusion(
                 wait_spend, tx_path=spend_tx, fallback_submit=fallback_submit,
-                inclusion_fallback_seconds=inclusion_fallback_seconds,
+                inclusion_fallback_seconds=inclusion_fallback_seconds, sticky=sticky,
             )
             chain_outcome = "included-valid"
         else:
@@ -904,11 +919,14 @@ def run_plutus_workload(
                     arguments["timeout_seconds"] = timeout
                 return _wait_for_utxo_key_absent(**arguments)
 
-            include_us, spend_forwarded = _await_inclusion(
+            include_us, spend_forwarded, spend_errors = _await_inclusion(
                 wait_collateral, tx_path=spend_tx, fallback_submit=fallback_submit,
-                inclusion_fallback_seconds=inclusion_fallback_seconds,
+                inclusion_fallback_seconds=inclusion_fallback_seconds, sticky=sticky,
             )
             chain_outcome = "included-invalid"
+        if spend_forwarded is False and fallback_sticky_from is None:
+            fallback_sticky_from = index
+        fallback_errors.extend(spend_errors)
         relay_forwarded = (
             None if lock_forwarded is None and spend_forwarded is None
             else bool(lock_forwarded) and bool(spend_forwarded)
@@ -926,6 +944,7 @@ def run_plutus_workload(
             "plutus_submit_us": submit_us,
             "plutus_submit_to_include_us": include_us,
             "relay_forwarded": relay_forwarded,
+            "fallback_errors": fallback_errors,
             "transaction_bytes": spend_tx.stat().st_size,
             "elapsed_nanos": outcome_nanos,
             "elapsed_micros": outcome_nanos / 1_000,
@@ -946,6 +965,7 @@ def run_plutus_workload(
         },
         "transaction_count": transaction_count,
         "script_language": script_language,
+        "fallback_sticky_from": fallback_sticky_from,
         "records": records,
     }
     (work / "result.json").write_text(

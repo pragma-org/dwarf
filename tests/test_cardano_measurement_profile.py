@@ -94,3 +94,32 @@ def test_operator_latest_cardano_profile_opts_into_measurement_traces():
         Path("dwarf/profiles/profile-o-amaru-target-latest-confirmed/profile.yaml").read_text()
     )
     assert amaru["amaru_json_traces"] is True
+
+
+def test_normalization_carries_operator_registration_for_instrumented_builds():
+    registration = {
+        "registration_id": "registration-release-build-dcc7214165f84520844800adb34668e6-instrumented",
+        "implementation": "cardano-node",
+        "source_build": {"variant": "instrumented", "execution_id": "release-build-dcc7214165f84520844800adb34668e6"},
+    }
+    substrate = {
+        "profile_id": "profile-n-cardano-latest-confirmed",
+        "nodes": [{
+            "id": "node1", "impl": "cardano-node", "version": "11.1.2", "role": "producer",
+            "image": "sha256:" + "d" * 64, "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+            "operator_registration": registration,
+        }],
+        "topology": {"edges": []},
+    }
+
+    normalized = normalize_substrate(substrate)
+    node = normalized["nodes"][0]
+    assert node["operator_registration"] == registration
+    assert node["target_mode"] == "stock"
+
+    plan = allocate_node_plan(
+        normalized, runtime_root=Path("/tmp/dwarf-operator-instrumented"),
+        compose_project="dwarf-profile-n-cardano-latest-confirmed",
+        base_haskell_port=33001, base_amaru_port=43001,
+    )
+    assert plan["nodes"][0]["operator_registration"] == registration
