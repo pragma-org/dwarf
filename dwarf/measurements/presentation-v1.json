@@ -670,6 +670,19 @@
       "comparison_direction": "lower",
       "bindings": [
         {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "protocol_decode",
+            "protocol_decode_by_decode_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from revision-locked Amaru protocol receive/decode events.",
+          "boundary": "Amaru patched mini-protocol message decode time per received message"
+        },
+        {
           "implementation": "cardano-node",
           "modes": [
             "patched"
@@ -679,7 +692,8 @@
             "protocol_receive_decode_by_outcome"
           ],
           "source": "patched",
-          "derivation": "Summarized from revision-locked Cardano-node protocol receive/decode events."
+          "derivation": "Summarized from revision-locked Cardano-node protocol receive/decode events.",
+          "boundary": "cardano-node patched mini-protocol receive and decode time per message"
         }
       ]
     },
@@ -688,20 +702,35 @@
       "title": "Protocol handler queue residence",
       "description": "Time a received protocol item waited before its node handler processed it.",
       "category": "latency-processing",
-      "metric_type": "scalar",
-      "primary_statistic": "value",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
       "comparison_direction": "lower",
       "bindings": [
         {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "queue_residence",
+            "queue_residence_by_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru BlockFetch queue residence events.",
+          "boundary": "Amaru BlockFetch request wait time in the handler queue"
+        },
+        {
           "implementation": "cardano-node",
           "modes": [
+            "stock",
             "patched"
           ],
           "metric_ids": [
             "handler_queue_residence"
           ],
           "source": "reserved",
-          "derivation": "No DWARF collector currently implements the internal BlockFetch handler-queue boundary for Cardano-node."
+          "derivation": "No DWARF collector currently implements the internal BlockFetch handler-queue boundary for Cardano-node.",
+          "boundary": "cardano-node internal BlockFetch handler-queue residence (collector contract not built)"
         }
       ]
     },
@@ -710,20 +739,35 @@
       "title": "TxSubmission residence time",
       "description": "Time from the instrumented TxSubmission request boundary to terminal mempool handling.",
       "category": "latency-processing",
-      "metric_type": "scalar",
-      "primary_statistic": "value",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
       "comparison_direction": "lower",
       "bindings": [
         {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "advertised_to_terminal",
+            "advertised_to_terminal_by_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru TxSubmission advertised-to-terminal residence events.",
+          "boundary": "Amaru TxSubmission: transaction advertised by a peer to terminal mempool handling"
+        },
+        {
           "implementation": "cardano-node",
           "modes": [
+            "stock",
             "patched"
           ],
           "metric_ids": [
             "txsubmission_residence"
           ],
           "source": "reserved",
-          "derivation": "No DWARF collector currently implements continuous per-transaction TxSubmission2 residence for Cardano-node."
+          "derivation": "No DWARF collector currently implements continuous per-transaction TxSubmission2 residence for Cardano-node.",
+          "boundary": "cardano-node continuous TxSubmission2 request-to-mempool residence (collector contract not built)"
         }
       ]
     },
@@ -920,6 +964,8 @@
       "metric_type": "count",
       "primary_statistic": "value",
       "comparison_direction": "higher",
+      "compare_as": "chain-advance-count",
+      "equivalence": "approximate",
       "bindings": [
         {
           "implementation": "cardano-node",
@@ -932,7 +978,9 @@
             "cardano-stock-ledger-block-epoch.adopted_blocks"
           ],
           "source": "stock",
-          "derivation": "Counted from Cardano-node chain and ledger adoption traces."
+          "derivation": "Counted from Cardano-node chain and ledger adoption traces.",
+          "boundary": "cardano-node chain adoption events",
+          "unit_equivalent": true
         }
       ]
     },
@@ -990,6 +1038,8 @@
       "metric_type": "count",
       "primary_statistic": "value",
       "comparison_direction": "neutral",
+      "compare_as": "chain-advance-count",
+      "equivalence": "approximate",
       "bindings": [
         {
           "implementation": "amaru",
@@ -1001,7 +1051,8 @@
             "chain_tip_updates"
           ],
           "source": "stock",
-          "derivation": "Counted from Amaru chain-tip telemetry."
+          "derivation": "Counted from Amaru chain-tip telemetry.",
+          "boundary": "Amaru selected-tip changes, including rollback re-selection"
         }
       ]
     },
@@ -1130,7 +1181,7 @@
       "comparison_direction": "lower",
       "bindings": [
         {
-          "implementation": "cardano-node",
+          "implementation": "*",
           "modes": [
             "stock",
             "patched"
@@ -1139,7 +1190,8 @@
             "container_memory_bytes"
           ],
           "source": "external",
-          "derivation": "Sampled from Docker cgroup statistics for the ownership-validated immutable container identity; this is not process RSS."
+          "derivation": "Sampled from Docker cgroup statistics for the ownership-validated immutable container identity; this is not process RSS.",
+          "boundary": "Docker cgroup statistics of the managed target container"
         }
       ]
     },
@@ -1153,7 +1205,7 @@
       "comparison_direction": "lower",
       "bindings": [
         {
-          "implementation": "cardano-node",
+          "implementation": "*",
           "modes": [
             "stock",
             "patched"
@@ -1162,7 +1214,8 @@
             "container_tasks"
           ],
           "source": "external",
-          "derivation": "Sampled from the container cgroup task counter; this is not the target process thread count."
+          "derivation": "Sampled from the container cgroup task counter; this is not the target process thread count.",
+          "boundary": "Docker cgroup statistics of the managed target container"
         }
       ]
     },
@@ -1358,6 +1411,8 @@
       "metric_type": "count",
       "primary_statistic": "value",
       "comparison_direction": "neutral",
+      "compare_as": "mempool-intake-count",
+      "equivalence": "approximate",
       "bindings": [
         {
           "implementation": "amaru",
@@ -1369,7 +1424,8 @@
             "mempool_received"
           ],
           "source": "stock",
-          "derivation": "Counted from Amaru mempool telemetry."
+          "derivation": "Counted from Amaru mempool telemetry.",
+          "boundary": "Amaru receipt events at the mempool boundary"
         }
       ]
     },
@@ -1531,6 +1587,8 @@
       "metric_type": "count",
       "primary_statistic": "value",
       "comparison_direction": "neutral",
+      "compare_as": "mempool-intake-count",
+      "equivalence": "approximate",
       "bindings": [
         {
           "implementation": "cardano-node",
@@ -1542,7 +1600,9 @@
             "transaction_outcomes"
           ],
           "source": "stock",
-          "derivation": "Counted from stock Cardano-node mempool accepted and rejected transaction outcomes."
+          "derivation": "Counted from stock Cardano-node mempool accepted and rejected transaction outcomes.",
+          "boundary": "cardano-node accepted plus rejected decisions, one per received transaction",
+          "unit_equivalent": true
         }
       ]
     },
@@ -1566,6 +1626,657 @@
           "derivation": "No DWARF collector currently implements this internal boundary for the selected target."
         }
       ]
+    },
+    {
+      "id": "header-validation-verdicts",
+      "title": "Header validation verdicts",
+      "description": "Number of block headers the node accepted or rejected at its header-validation boundary (verdict sum).",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "comparison_direction": "higher",
+      "unit": "count",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "stock",
+            "patched"
+          ],
+          "metric_ids": [
+            "header_validation"
+          ],
+          "source": "stock",
+          "derivation": "Summed from Amaru header-validation accepted/rejected verdict counts.",
+          "boundary": "Amaru consensus header validation verdicts counted from stock tracing"
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "stock",
+            "patched"
+          ],
+          "metric_ids": [
+            "header_validation"
+          ],
+          "source": "stock",
+          "derivation": "Summed from Cardano-node header-validation accepted/rejected verdict counts.",
+          "boundary": "cardano-node ChainSync header validation verdicts counted from stock tracing"
+        }
+      ]
+    },
+    {
+      "id": "header-validation-time",
+      "title": "Header validation time",
+      "description": "Time spent validating one block header at the instrumented consensus boundary.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "unit": "us",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "amaru-patched-header-validation.header_validation",
+            "amaru-patched-header-validation.header_validation_by_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from revision-locked Amaru header-validation timing events.",
+          "boundary": "Amaru patched header validation span per header"
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "cardano-patched-header-validation.header_validation",
+            "cardano-patched-header-validation.header_validation_by_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from revision-locked Cardano-node header-validation timing events.",
+          "boundary": "cardano-node patched consensus header validation per header"
+        }
+      ]
+    },
+    {
+      "id": "blockfetch-handler-time",
+      "title": "BlockFetch handler time",
+      "description": "Time the node's BlockFetch handler spent servicing one fetched block.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "handler",
+            "handler_by_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru BlockFetch handler timing events.",
+          "boundary": "Amaru BlockFetch handler service time per completed fetch event"
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "handler_service"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from the Cardano-node BlockFetch handler-queue collector when its contract is built.",
+          "boundary": "cardano-node addFetchedBlock service time inside a merged BlockFetch request"
+        }
+      ]
+    },
+    {
+      "id": "txsubmission-request-to-body-time",
+      "title": "TxSubmission request-to-body time",
+      "description": "Time from a transaction being advertised or requested until its body arrived.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "advertised_to_body"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru TxSubmission advertised-to-body events.",
+          "boundary": "Amaru TxSubmission: advertised transaction id until its body was received"
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "request_to_body_lower_bound"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from the Cardano-node TxSubmission residence collector when its contract is built.",
+          "boundary": "cardano-node TxSubmission2: body request until body receipt, lower bound"
+        }
+      ]
+    },
+    {
+      "id": "txsubmission-body-to-terminal-time",
+      "title": "TxSubmission body-to-terminal time",
+      "description": "Time from a transaction body arriving until the mempool reached a terminal decision for it.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "body_to_terminal"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru TxSubmission body-to-terminal events.",
+          "boundary": "Amaru TxSubmission: body received until mempool accepted/rejected"
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "body_to_terminal_lower_bound"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from the Cardano-node TxSubmission residence collector when its contract is built.",
+          "boundary": "cardano-node TxSubmission2: body receipt until mempool decision, lower bound"
+        }
+      ]
+    },
+    {
+      "id": "txsubmission-pending-depth",
+      "title": "TxSubmission pending depth",
+      "description": "Transactions advertised by peers and still waiting to be requested.",
+      "category": "protocol-ledger",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "neutral",
+      "unit": "transactions",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "pending_depth",
+            "amaru-patched-txsubmission-residence.pending_depth"
+          ],
+          "source": "patched",
+          "derivation": "Sampled from Amaru TxSubmission queue depth events.",
+          "boundary": "Amaru TxSubmission pending transaction ids per sample"
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "pending_body_depth"
+          ],
+          "source": "patched",
+          "derivation": "Sampled from the Cardano-node TxSubmission residence collector when its contract is built.",
+          "boundary": "cardano-node TxSubmission2 pending body requests per sample"
+        }
+      ]
+    },
+    {
+      "id": "txsubmission-inflight-depth",
+      "title": "TxSubmission in-flight depth",
+      "description": "Transaction bodies requested from peers and not yet received.",
+      "category": "protocol-ledger",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "neutral",
+      "unit": "transactions",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "inflight_depth",
+            "amaru-patched-txsubmission-residence.inflight_depth"
+          ],
+          "source": "patched",
+          "derivation": "Sampled from Amaru TxSubmission queue depth events.",
+          "boundary": "Amaru TxSubmission in-flight body requests per sample"
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "inflight_body_depth"
+          ],
+          "source": "patched",
+          "derivation": "Sampled from the Cardano-node TxSubmission residence collector when its contract is built.",
+          "boundary": "cardano-node TxSubmission2 in-flight body requests per sample"
+        }
+      ]
+    },
+    {
+      "id": "blockfetch-pending-depth",
+      "title": "BlockFetch pending depth",
+      "description": "Block ranges requested and still waiting for the handler.",
+      "category": "protocol-ledger",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "neutral",
+      "unit": "requests",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "pending_depth"
+          ],
+          "source": "patched",
+          "derivation": "Sampled from Amaru BlockFetch queue depth events.",
+          "boundary": "Amaru BlockFetch pending requests per sample"
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "pending_range_depth"
+          ],
+          "source": "patched",
+          "derivation": "Sampled from the Cardano-node BlockFetch handler-queue collector when its contract is built.",
+          "boundary": "cardano-node BlockFetch pending ranges per sample"
+        }
+      ]
+    },
+    {
+      "id": "blockfetch-inflight-depth",
+      "title": "BlockFetch in-flight depth",
+      "description": "Block requests sent to peers and not yet answered.",
+      "category": "protocol-ledger",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "neutral",
+      "unit": "requests",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "inflight_depth"
+          ],
+          "source": "patched",
+          "derivation": "Sampled from Amaru BlockFetch queue depth events.",
+          "boundary": "Amaru BlockFetch in-flight requests per sample"
+        }
+      ]
+    },
+    {
+      "id": "submit-to-block-inclusion-time",
+      "title": "Submit-to-block-inclusion time",
+      "description": "Elapsed time from DWARF submitting a transaction until it was observed in a block.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "*",
+          "modes": [
+            "stock",
+            "patched"
+          ],
+          "metric_ids": [
+            "submit_to_block_inclusion"
+          ],
+          "source": "external",
+          "derivation": "Summarized from DWARF workload submission timestamps.",
+          "boundary": "DWARF driver: transaction submission until first block inclusion observed"
+        }
+      ]
+    },
+    {
+      "id": "submit-to-chain-adoption-time",
+      "title": "Submit-to-chain-adoption time",
+      "description": "Elapsed time from DWARF submitting a transaction until its block was adopted on the target's chain.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "*",
+          "modes": [
+            "stock",
+            "patched"
+          ],
+          "metric_ids": [
+            "submit_to_chain_adoption"
+          ],
+          "source": "external",
+          "derivation": "Summarized from DWARF workload submission timestamps.",
+          "boundary": "DWARF driver: transaction submission until the containing block was adopted"
+        }
+      ]
+    },
+    {
+      "id": "submit-to-protocol-response-time",
+      "title": "Submit-to-protocol-response time",
+      "description": "Elapsed time from DWARF submitting a transaction until the node's protocol-level response.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "*",
+          "modes": [
+            "stock",
+            "patched"
+          ],
+          "metric_ids": [
+            "submit_to_protocol_response"
+          ],
+          "source": "external",
+          "derivation": "Summarized from DWARF workload submission timestamps.",
+          "boundary": "DWARF driver: transaction submission until the node answered the submission protocol"
+        }
+      ]
+    },
+    {
+      "id": "submit-to-mempool-visibility-time",
+      "title": "Submit-to-mempool-visibility time",
+      "description": "Elapsed time from DWARF submitting a transaction until it was visible in the target's mempool.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "*",
+          "modes": [
+            "stock",
+            "patched"
+          ],
+          "metric_ids": [
+            "submit_to_mempool_visibility"
+          ],
+          "source": "external",
+          "derivation": "Summarized from DWARF workload submission timestamps.",
+          "boundary": "DWARF driver: transaction submission until mempool visibility observed"
+        }
+      ]
+    },
+    {
+      "id": "offered-byte-count",
+      "title": "Offered workload bytes (total)",
+      "description": "Total bytes DWARF offered to the target during the workload.",
+      "category": "workload-outcomes",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "comparison_direction": "higher",
+      "bindings": [
+        {
+          "implementation": "*",
+          "modes": [
+            "stock",
+            "patched"
+          ],
+          "metric_ids": [
+            "offered_bytes"
+          ],
+          "source": "external",
+          "derivation": "Counted from DWARF workload submissions.",
+          "boundary": "DWARF driver: bytes of every offered operation"
+        }
+      ]
+    },
+    {
+      "id": "timed-out-operation-count",
+      "title": "Timed-out workload operations",
+      "description": "Number of DWARF workload operations that reached no outcome before their deadline.",
+      "category": "workload-outcomes",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "*",
+          "modes": [
+            "stock",
+            "patched"
+          ],
+          "metric_ids": [
+            "timed_out_operations"
+          ],
+          "source": "external",
+          "derivation": "Counted from DWARF workload attempt outcomes.",
+          "boundary": "DWARF driver: operations without a terminal outcome before the attempt deadline"
+        }
+      ]
+    },
+    {
+      "id": "block-decode-time",
+      "title": "Block decoding time",
+      "description": "Time spent decoding one fetched block body before it entered the chain pipeline.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "block_decode",
+            "block_decode_by_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru BlockFetch block decode events.",
+          "boundary": "Amaru BlockFetch block body decode per fetched block"
+        }
+      ]
+    },
+    {
+      "id": "protocol-total-time",
+      "title": "Protocol message total time",
+      "description": "Total time a received mini-protocol message spent from receipt to state transition.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "protocol_total",
+            "protocol_total_by_state_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru protocol state-transition events.",
+          "boundary": "Amaru patched mini-protocol receipt to state-machine transition per message"
+        }
+      ]
+    },
+    {
+      "id": "handshake-ingress-time",
+      "title": "Handshake ingress time",
+      "description": "Time from a handshake message arriving on the wire until it was handed to the decoder.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "handshake_ingress",
+            "handshake_ingress_by_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru handshake ingress events.",
+          "boundary": "Amaru patched handshake message ingress per message"
+        }
+      ]
+    },
+    {
+      "id": "handshake-decode-time",
+      "title": "Handshake decode time",
+      "description": "Time spent decoding one handshake message.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "handshake_decode",
+            "handshake_decode_by_decode_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru handshake decode events.",
+          "boundary": "Amaru patched handshake message decode per message"
+        }
+      ]
+    },
+    {
+      "id": "handshake-negotiation-time",
+      "title": "Handshake negotiation time",
+      "description": "Time spent negotiating protocol versions for one handshake.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "handshake_negotiation",
+            "handshake_negotiation_by_outcome",
+            "handshake_state_by_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru handshake negotiation and state events.",
+          "boundary": "Amaru patched handshake version negotiation per connection"
+        }
+      ]
+    },
+    {
+      "id": "txsubmission-unacked-depth",
+      "title": "TxSubmission unacknowledged depth",
+      "description": "Transactions received from a peer and not yet acknowledged back to it.",
+      "category": "protocol-ledger",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "neutral",
+      "unit": "transactions",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "unacked_depth"
+          ],
+          "source": "patched",
+          "derivation": "Sampled from Amaru TxSubmission queue depth events.",
+          "boundary": "Amaru TxSubmission unacknowledged transactions per sample"
+        }
+      ]
+    },
+    {
+      "id": "txsubmission-blocking-residence",
+      "title": "TxSubmission blocking residence",
+      "description": "Time a TxSubmission request was blocked waiting for the peer.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "bindings": [
+        {
+          "implementation": "amaru",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "blocking_residence",
+            "blocking_residence_by_outcome"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Amaru TxSubmission blocking events.",
+          "boundary": "Amaru TxSubmission blocking request residence per request"
+        }
+      ]
+    },
+    {
+      "id": "chain-advance-count",
+      "title": "Selected-chain advances",
+      "description": "Compare-only row: how often the selected chain advanced, from each node's own progress counter.",
+      "category": "throughput-progress",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "comparison_direction": "neutral",
+      "unit": "events",
+      "bindings": []
+    },
+    {
+      "id": "mempool-intake-count",
+      "title": "Transactions reaching the mempool",
+      "description": "Compare-only row: transactions each node's mempool took a decision on, from each node's own counter.",
+      "category": "protocol-ledger",
+      "metric_type": "count",
+      "primary_statistic": "value",
+      "comparison_direction": "neutral",
+      "unit": "transactions",
+      "bindings": []
     }
   ]
 }

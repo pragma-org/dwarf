@@ -367,6 +367,7 @@ def test_acceptance_run_metric_inventory_has_canonical_client_metadata():
 
     for implementation, mode, metric_ids in (
         ("amaru", "stock", amaru_ids),
+        ("amaru", "patched", amaru_ids),
         ("cardano-node", "patched", cardano_ids),
     ):
         metrics = {
@@ -483,3 +484,66 @@ def test_header_validation_verdict_count_card_reads_the_sum():
     card = result["cards"][0]
     assert card["primary_value"] == 205
     assert card["raw_metric_ids"] == ["header_validation"]
+
+
+# --- vocabulary completeness for the four 2026-11-04 operator workload runs ---
+
+FIXTURE = json.loads((Path(__file__).parent / "fixtures/workload_run_metric_ids.json").read_text())
+
+
+@pytest.mark.parametrize("run_id", sorted(FIXTURE))
+def test_every_workload_run_metric_binds_to_a_concept(run_id):
+    run = FIXTURE[run_id]
+    metrics = {
+        mid: {"status": "available", "unit": run["units"].get(mid) or "events", "value": 1}
+        for mid in run["metric_ids"]
+    }
+    result = build_measurement_presentation(metrics, _target(run["implementation"], run["mode"]))
+    concept_ids = {c["id"] for c in load_measurement_presentation_catalog()["concepts"]}
+    fallback = [c for c in result["cards"] if c["concept_id"] not in concept_ids]
+    assert fallback == [], [c["raw_metric_ids"] for c in fallback]
+    retained = {raw for c in result["cards"] for raw in c["raw_metric_ids"]}
+    assert retained == set(run["metric_ids"])
+
+
+def test_depth_gauges_route_by_unit():
+    metrics = {
+        "pending_depth": {"status": "available", "unit": "requests", "median": 0, "sample_count": 9},
+        "amaru-patched-txsubmission-residence.pending_depth": {
+            "status": "available", "unit": "transactions", "median": 0, "sample_count": 4,
+        },
+    }
+    result = build_measurement_presentation(metrics, _target("amaru", "patched"))
+    assert _card(result, "blockfetch-pending-depth")["raw_metric_ids"] == ["pending_depth"]
+    assert _card(result, "txsubmission-pending-depth")["raw_metric_ids"] == [
+        "amaru-patched-txsubmission-residence.pending_depth"
+    ]
+
+
+def test_approximate_pairs_keep_live_titles_and_point_at_compare_targets():
+    catalog = load_measurement_presentation_catalog()
+    concepts = {c["id"]: c for c in catalog["concepts"]}
+    assert concepts["adopted-block-count"]["title"] == "Blocks adopted"
+    assert concepts["adopted-block-count"]["compare_as"] == "chain-advance-count"
+    assert concepts["adopted-block-count"]["equivalence"] == "approximate"
+    assert concepts["transaction-outcome-count"]["compare_as"] == "mempool-intake-count"
+    assert concepts["chain-advance-count"]["bindings"] == [] and concepts["chain-advance-count"]["unit"] == "events"
+    assert concepts["mempool-intake-count"]["comparison_direction"] == "neutral"
+    for cid in ("txsubmission-pending-depth", "blockfetch-inflight-depth"):
+        assert concepts[cid]["comparison_direction"] == "neutral"
+    assert {b["implementation"] for b in concepts["protocol-decode-time"]["bindings"]} == {"amaru", "cardano-node"}
+    assert {b["implementation"] for b in concepts["header-validation-verdicts"]["bindings"]} == {"amaru", "cardano-node"}
+    for cid in ("header-validation-verdicts", "protocol-decode-time", "blockfetch-handler-time"):
+        assert all(b.get("boundary") for b in concepts[cid]["bindings"]), cid
+
+
+def test_reserved_cardano_boundaries_also_cover_stock_reports():
+    result = build_measurement_presentation(
+        {
+            "handler_queue_residence": {"status": "unavailable", "unit": "us", "reason": "stock node has no boundary"},
+            "txsubmission_residence": {"status": "unavailable", "unit": "us", "reason": "stock node has no interval"},
+        },
+        _target("cardano-node", "stock"),
+    )
+    assert _card(result, "handler-queue-residence")["status"] == "reserved"
+    assert _card(result, "txsubmission-residence")["status"] == "reserved"

@@ -117,17 +117,19 @@ def load_measurement_presentation_catalog(path: Path | None = None) -> dict[str,
     return catalog
 
 
-def _unit_matches(concept: dict[str, Any], binding: dict[str, Any], raw: Any, catalog: dict[str, Any]) -> bool:
-    """A concept with a declared unit only takes raw metrics in that unit, unless the binding says equivalent."""
+def _unit_matches(concept: dict[str, Any], binding: dict[str, Any], metric_id: str, raw: Any, catalog: dict[str, Any]) -> bool:
+    """A concept with a declared unit only takes raw metrics in that unit, unless the binding says equivalent.
+
+    Companion breakdowns follow their primary metric and are never unit-checked."""
     unit = concept.get("unit")
-    if not unit:
+    if not unit or is_companion_metric(metric_id):
         return True
     metric = raw if isinstance(raw, dict) else {}
     primary = metric.get("all") if isinstance(metric.get("all"), dict) else metric
     raw_unit = primary.get("unit") if isinstance(primary, dict) else None
     if raw_unit is None:
         raw_unit = metric.get("unit")
-    return canonical_unit(raw_unit, catalog) == unit or bool(binding.get("unit_equivalent"))
+    return canonical_unit(raw_unit, catalog) == canonical_unit(unit, catalog) or bool(binding.get("unit_equivalent"))
 
 
 def _binding_for(concept: dict[str, Any], target: dict[str, Any]) -> dict[str, Any] | None:
@@ -433,7 +435,7 @@ def build_measurement_presentation(
         present = [
             metric_id
             for metric_id in binding.get("metric_ids") or []
-            if metric_id in metrics and _unit_matches(concept, binding, metrics[metric_id], catalog)
+            if metric_id in metrics and _unit_matches(concept, binding, metric_id, metrics[metric_id], catalog)
         ]
         if not present and binding.get("source") != "reserved":
             continue
