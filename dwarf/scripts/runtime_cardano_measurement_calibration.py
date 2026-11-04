@@ -1280,6 +1280,7 @@ def _run_plutus_batch(
     transaction_count: int, entry: str, prefix: str,
 ) -> dict[str, Any]:
     """One Plutus batch through one node's socket; records carry the entry and its label."""
+    output_dir.mkdir(parents=True, exist_ok=True)   # the strict output resolver needs a real directory
     controller = _controller_container()
     if controller is None:
         result = run_plutus_workload(

@@ -839,3 +839,22 @@ def test_cardano_workload_scenario_submits_through_the_peer():
     scenario = json.loads((ROOT / "dwarf/scenarios/cardano-measurement-workload-stock-portable.yaml").read_text())
     calibration_step = next(step for step in scenario["load"] if step["primitive"] == "runtime_cardano_measurement_calibration")
     assert calibration_step["submission_entry"] == "peer"
+
+
+def test_split_batches_create_their_output_directories(tmp_path, monkeypatch):
+    """Each entry's batch runs in its own sub-directory, which must exist before the
+    strict output-path resolver sees it (run 20261104T121951Z-6fa1f870 failed there)."""
+    seen = []
+    monkeypatch.setattr(calibration, "_controller_container", lambda: None)
+    monkeypatch.setattr(calibration, "_independent_peer", lambda _runtime, _node: ("node2", "peer-container", "/env/socket/node2/sock"))
+
+    def run_plutus_workload(**kwargs):
+        seen.append((kwargs["output_dir"].name, kwargs["output_dir"].is_dir()))
+        return {"records": [], "scripts": {}}
+
+    monkeypatch.setattr(calibration, "run_plutus_workload", run_plutus_workload)
+    calibration._run_plutus_legs(
+        runtime_root=tmp_path, runtime={"nodes": [{"id": "node1"}]}, node={"id": "node1"},
+        output_dir=tmp_path / "calibration", transaction_count=4, submission_entry="peer", plutus_split=0.5,
+    )
+    assert seen == [("plutus-target", True), ("plutus-peer", True)]
