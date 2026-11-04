@@ -3,9 +3,9 @@
 Date: 2026-11-04. Repo: V10-FRESH. Status: IMPLEMENTED on `feat/full-tap-coverage` (2026-11-04).
 
 Outcome: the Pages default set is four reruns from the fixed collectors — amaru stock
-`20261104T140927Z-a00e18a6` (52 concepts covered), amaru patched `20261104T144249Z-a47bed21`
-(68), cardano-node stock `20261104T130554Z-ef991882` (43), cardano-node patched
-`20261104T132207Z-b5b6981b` (56) — plus the Antithesis snapshot under a documented
+`20261104T161325Z-5eb100bf` (52 concepts covered), amaru patched `20261104T165404Z-54138a1b`
+(68), cardano-node stock `20261104T171547Z-f38474f0` (43), cardano-node patched
+`20261104T172204Z-c1faac51` (57) — plus the Antithesis snapshot under a documented
 `coverage_exception`. Every bound concept carries a value or an entry in
 `dwarf/measurements/coverage-exceptions-v1.json`; `profile_manager/tap_coverage.py` is the rule
 and Pages staging enforces it on every `coverage_rule` archive. Beyond §4, the reruns surfaced
@@ -261,10 +261,10 @@ never satisfy the rule; they remain in git history and importable. Cap stays 10.
 | cardano-node (both) | `mempool_sync_duration` | The reruns retained no TraceMempoolSynced record from 11.1.2 even at Mempool Debug (measured, 2026-11-04). |
 | Amaru patched | `queue_residence` | The 200-block controlled sync queued no BlockFetch requests behind one another (measured, 2026-11-04). |
 
-Both were provisional (severity and pressure assumptions); the reruns refuted the assumptions,
-so they stay as measured exceptions. The Amaru N2N rejection (§4.7) was not exercised in the
-retained runs — the probe framed its handshake as responder-sent; see the fix-pass note at
-the top of this document.
+| Amaru (both) | `mempool_rejected` | §4.7 fallback, measured: the served double spend was taken over N2N (ids and body requested) but the relay trace records no mempool decision for it; the counter is an evidenced zero of 40, and the consumer-socket refusal is counted in `rejected_operations`. |
+
+The first two were provisional (severity and pressure assumptions); the reruns refuted the
+assumptions, so they stay as measured exceptions.
 
 ## 7. Left to the builder
 

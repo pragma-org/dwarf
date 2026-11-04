@@ -50,7 +50,7 @@ def test_release_asset_listing_is_bounded_and_path_safe():
 
 
 def test_stage_rejects_release_default_missing_from_trusted_catalog(tmp_path):
-    source = ROOT / "docs/evidence/runs/20261104T140927Z-a00e18a6-bundle-export.tar.gz"
+    source = ROOT / "docs/evidence/runs/20261104T161325Z-5eb100bf-bundle-export.tar.gz"
     tag = "campaign-" + "c" * 64
     asset = "run-1-" + hashlib.sha256(source.read_bytes()).hexdigest() + ".tar.gz"
     downloads = tmp_path / "downloads" / tag

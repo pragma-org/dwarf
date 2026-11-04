@@ -17,10 +17,10 @@ from profile_manager.tap_coverage import (
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / "docs/evidence/runs"
 WORKLOAD_ARCHIVES = {
-    "amaru-stock": "20261104T140927Z-a00e18a6-bundle-export.tar.gz",
-    "amaru-patched": "20261104T144249Z-a47bed21-bundle-export.tar.gz",
-    "cardano-stock": "20261104T130554Z-ef991882-bundle-export.tar.gz",
-    "cardano-patched": "20261104T132207Z-b5b6981b-bundle-export.tar.gz",
+    "amaru-stock": "20261104T161325Z-5eb100bf-bundle-export.tar.gz",
+    "amaru-patched": "20261104T165404Z-54138a1b-bundle-export.tar.gz",
+    "cardano-stock": "20261104T171547Z-f38474f0-bundle-export.tar.gz",
+    "cardano-patched": "20261104T172204Z-c1faac51-bundle-export.tar.gz",
 }
 
 
@@ -73,10 +73,14 @@ def test_rule_holds_on_a_complete_synthetic_report():
 
 
 def test_zero_counts_only_with_evidence():
+    # cardano-node carries no exception for this concept, so a bare zero is a gap there.
     metrics = {"mempool_rejected": {"status": "available", "unit": "events", "value": 0}}
-    assert coverage_report(metrics, "amaru", "stock")["missing"][0]["concept"] == "mempool-rejected-count"
+    assert coverage_report(metrics, "cardano-node", "stock")["missing"][0]["concept"] == "mempool-rejected-count"
     metrics["mempool_rejected"]["offered_count"] = 40
-    assert coverage_report(metrics, "amaru", "stock")["missing"] == []
+    assert coverage_report(metrics, "cardano-node", "stock")["missing"] == []
+    # Amaru's documented §4.7 exception explains the same bare zero instead of hiding it.
+    bare = coverage_report({"mempool_rejected": {"status": "available", "unit": "events", "value": 0}}, "amaru", "stock")
+    assert bare["missing"] == [] and [row["concept"] for row in bare["excepted"]] == ["mempool-rejected-count"]
     verdicts = {"header_validation": {"status": "available", "unit": "count", "value": {"accepted": 5, "rejected": 0}}}
     assert "header-validation-verdicts" in coverage_report(verdicts, "cardano-node", "stock")["covered"]
 

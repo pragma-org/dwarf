@@ -69,6 +69,16 @@
       "concept": "handler-queue-residence",
       "reason": "The 2026-11-04 patched rerun (200-block controlled sync on amaru 10.11.20261029) produced no BlockFetch queue residence events: requests were never queued behind one another at this load. Measured fact, not an assumption.",
       "provisional": false
+    },
+    {
+      "implementation": "amaru",
+      "modes": [
+        "stock",
+        "patched"
+      ],
+      "concept": "mempool-rejected-count",
+      "provisional": false,
+      "reason": "Not exercised at the node boundary: the double spend served over node-to-node TxSubmission (2026-11-04 reruns, probe serve_transaction) was taken by the relay (ids and body requested) but the relay trace records no mempool decision for it, so the counter is an evidenced zero of 40 offered; the double spend is refused at the consumer socket and counted in rejected_operations instead."
     }
   ]
 }
