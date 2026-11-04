@@ -130,9 +130,13 @@ def _catalog_index(catalog: dict[str, Any] | None = None) -> dict[str, Any]:
                     {
                         "concept": concept["id"],
                         "modes": list(binding.get("modes") or []),
-                        "boundary": binding.get("boundary") or "",
+                        # Existing bindings predate `boundary`; their derivation sentence names the source just as well.
+                        "boundary": binding.get("boundary") or binding.get("derivation") or "",
                         "unit_equivalent": bool(binding.get("unit_equivalent")),
                         "primary": metric_id == primary,
+                        # Ordered alternatives of the same concept (bare and collector-prefixed ids):
+                        # a record contributes through the first one it carries in a fitting unit.
+                        "metric_ids": metric_ids,
                     }
                 )
     categories = [{"id": item["id"], "label": item["label"]} for item in catalog["categories"] if item["id"] != "unavailable"]
@@ -185,12 +189,27 @@ def describe_metric(index: dict[str, Any], record: dict[str, Any], metric_id: st
     return {"title": _humanize(metric_id), "category": "uncategorized", "comparison_direction": "neutral"}
 
 
+def _record_primary(index: dict[str, Any], record: dict[str, Any], concept: dict[str, Any], binding: dict[str, Any]) -> str | None:
+    """The first id of the binding that this record carries, non-companion and in a fitting unit."""
+    from profile_manager.measurement_presentation import canonical_unit, is_companion_metric
+
+    metrics = record.get("metrics") or {}
+    unit = concept.get("unit")
+    for candidate in binding.get("metric_ids") or []:
+        if is_companion_metric(candidate) or candidate not in metrics:
+            continue
+        if unit and canonical_unit(unit, index) != canonical_unit(_raw_unit(metrics[candidate]), index) and not binding["unit_equivalent"]:
+            continue
+        return candidate
+    return None
+
+
 def catalog_concept(index: dict[str, Any], record: dict[str, Any], metric_id: str, row: dict[str, Any]) -> dict[str, Any] | None:
-    """Concept-keyed row identity for a primary raw metric; None for companions and unbound ids."""
-    from profile_manager.measurement_presentation import canonical_unit
+    """Concept-keyed row identity for a primary raw metric; None for companions, alternates and unbound ids."""
+    from profile_manager.measurement_presentation import canonical_unit, is_companion_metric
 
     for concept, binding in _matching_bindings(index, record, metric_id, row):
-        if not binding["primary"]:
+        if is_companion_metric(metric_id) or _record_primary(index, record, concept, binding) != metric_id:
             continue
         source_id = binding["concept"]
         row_id = concept.get("compare_as") or source_id

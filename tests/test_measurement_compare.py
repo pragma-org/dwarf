@@ -88,6 +88,28 @@ def test_runs_filter_merges_implementations_on_concept_rows():
     assert catalog_concept(_catalog_index(), amaru, "keepalive_round_trip", amaru["metrics"]["keepalive_round_trip"])["id"] == "keepalive-round-trip-time"
 
 
+def test_alternate_ids_of_one_concept_contribute_once_per_record():
+    depth = _record(
+        "a2", "amaru", "patched", "w",
+        {
+            "pending_depth": {"status": "available", "unit": "requests", "median": 0, "sample_count": 9},
+            "amaru-patched-txsubmission-residence.pending_depth": {"status": "available", "unit": "transactions", "median": 0, "sample_count": 4},
+        },
+    )
+    cardano = _record(
+        "c2", "cardano-node", "stock", "w2",
+        {"adopted_blocks": {"status": "available", "unit": "blocks", "value": 173},
+         "cardano-stock-ledger-block-epoch.adopted_blocks": {"status": "available", "unit": "blocks", "value": 173}},
+    )
+    result = build_measurement_comparison([depth, cardano], filters={"runs": "a2,c2", "show_unmeasured": "1"})
+    rows = {r["metric_id"]: r for r in result["rows"]}
+    assert rows["txsubmission-pending-depth"]["unit"] == "transactions"
+    assert rows["blockfetch-pending-depth"]["unit"] == "requests"
+    adv = rows["chain-advance-count"]
+    contributors = [c for cell in adv["cells"].values() for c in cell["contributors"]]
+    assert [c["metric_id"] for c in contributors] == ["adopted_blocks"], "the prefixed alternate never double-counts"
+
+
 def test_unknown_pick_yields_no_rows():
     amaru = _record("a1", "amaru", "stock", "w", {"keepalive_round_trip": US(1)})
     result = build_measurement_comparison([amaru], filters={"runs": "nope"})
