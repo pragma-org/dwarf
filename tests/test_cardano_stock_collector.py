@@ -120,3 +120,51 @@ def test_factory_registry_binds_every_stock_id(tmp_path):
         "cardano-stock-plutus-execution",
         "cardano-stock-network",
     }
+
+
+def test_network_keepalive_rtt_derives_from_message_pairs_per_connection(tmp_path):
+    connection = {"connectionId": "10.192.3.3:3001 10.192.3.2:3001"}
+    other = {"connectionId": "10.192.3.3:3001 10.192.3.4:3001"}
+    records = [
+        {"at": "2026-11-04T02:07:05.554233748Z", "ns": "KeepAlive.Remote.Send.KeepAlive",
+         "data": {"kind": "Send", "msg": {"agency": "SingClient", "kind": "KeepAlive"}, "peer": connection},
+         "sev": "Debug", "thread": "126", "host": "node1"},
+        {"at": "2026-11-04T02:07:05.554433748Z", "ns": "KeepAlive.Remote.Send.KeepAlive",
+         "data": {"kind": "Send", "msg": {"agency": "SingClient", "kind": "KeepAlive"}, "peer": other},
+         "sev": "Debug", "thread": "127", "host": "node1"},
+        {"at": "2026-11-04T02:07:05.554643181Z", "ns": "KeepAlive.Remote.Receive.KeepAliveResponse",
+         "data": {"kind": "Recv", "msg": {"agency": "SingServer", "kind": "KeepAliveResponse"}, "peer": connection},
+         "sev": "Debug", "thread": "126", "host": "node1"},
+        {"at": "2026-11-04T02:07:05.555433748Z", "ns": "KeepAlive.Remote.Receive.KeepAliveResponse",
+         "data": {"kind": "Recv", "msg": {"agency": "SingServer", "kind": "KeepAliveResponse"}, "peer": other},
+         "sev": "Debug", "thread": "127", "host": "node1"},
+        # a responder-side exchange must not produce a sample
+        {"at": "2026-11-04T02:07:06.000000000Z", "ns": "KeepAlive.Remote.Receive.KeepAlive",
+         "data": {"kind": "Recv", "msg": {"agency": "SingClient", "kind": "KeepAlive"}, "peer": connection},
+         "sev": "Debug", "thread": "126", "host": "node1"},
+        {"at": "2026-11-04T02:07:06.000100000Z", "ns": "KeepAlive.Remote.Send.KeepAliveResponse",
+         "data": {"kind": "Send", "msg": {"agency": "SingServer", "kind": "KeepAliveResponse"}, "peer": connection},
+         "sev": "Debug", "thread": "126", "host": "node1"},
+    ]
+    trace = tmp_path / "node1.ndjson"
+    trace.write_text("".join(json.dumps(record) + "\n" for record in records))
+    run_dir = tmp_path / "run"
+    measurement_id = "cardano-stock-network"
+    context = CollectorContext(
+        measurement_id=measurement_id, definition={"id": measurement_id}, parameters={},
+        run_dir=run_dir, collector_dir=run_dir / "measurements" / "collectors" / measurement_id,
+    )
+    collector = CardanoStockCollector(
+        {"id": measurement_id, "definition": {"id": measurement_id}}, trace_paths=[trace], include_existing=True,
+    )
+    collector.prepare(context)
+    collector.start(context)
+    collector.stop(context)
+    result = collector.finalize(context)
+
+    rtt = result["measurements"]["keepalive_rtt"]
+    assert rtt["status"] == "available"
+    assert rtt["sample_count"] == 2
+    assert rtt["minimum"] == 410.0
+    assert rtt["maximum"] == 1000.0
+    assert "message-pair" in result["claims"]["keepalive_rtt"]

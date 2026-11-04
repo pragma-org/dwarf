@@ -112,6 +112,10 @@ def _normalize_record(record: dict[str, Any]) -> dict[str, Any] | None:
         normalized_kind = "resource-stats"
     elif namespace.startswith("TxSubmission."):
         normalized_kind = "txsubmission-event"
+    elif namespace == "KeepAlive.Remote.Send.KeepAlive":
+        normalized_kind = "keepalive-request"
+    elif namespace == "KeepAlive.Remote.Receive.KeepAliveResponse":
+        normalized_kind = "keepalive-response"
     if normalized_kind is None:
         return None
 
@@ -130,7 +134,9 @@ def _normalize_record(record: dict[str, Any]) -> dict[str, Any] | None:
     if block_hash is not None:
         event["block_hash"] = block_hash
     peer = data.get("peer") or data.get("address")
-    if peer is not None:
+    if isinstance(peer, dict) and peer.get("connectionId") is not None:
+        event["peer_id"] = str(peer["connectionId"])
+    elif peer is not None:
         event["peer_id"] = str(peer)
     slot = data.get("slot")
     if slot is None and isinstance(data.get("newtip"), dict):
@@ -235,6 +241,46 @@ def _distribution(events: list[dict[str, Any]], *, kinds: set[str], field: str, 
     )
 
 
+def _timestamp_micros(value: Any) -> int | None:
+    """Parse an RFC 3339 trace timestamp (nanosecond precision) to integer microseconds."""
+    if not isinstance(value, str) or not value.endswith("Z"):
+        return None
+    from datetime import datetime, timezone
+
+    body, _, fraction = value[:-1].partition(".")
+    try:
+        base = datetime.strptime(body, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    micros = int((fraction + "000000")[:6]) if fraction.isdigit() or not fraction else None
+    if micros is None:
+        return None
+    return int(base.timestamp()) * 1_000_000 + micros
+
+
+def _keepalive_pairs(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pair each sent KeepAlive with the next KeepAliveResponse on the same connection.
+
+    cardano-node 11.1.x's new tracer exposes the keepalive mini-protocol
+    messages but not the client's AddSample round-trip sample, so the round
+    trip is derived from the send/receive trace timestamps per connection.
+    """
+    pending: dict[str, int] = {}
+    samples = []
+    for event in events:
+        peer = event.get("peer_id")
+        sent_at = _timestamp_micros(event.get("timestamp"))
+        if not isinstance(peer, str) or sent_at is None:
+            continue
+        if event["kind"] == "keepalive-request":
+            pending[peer] = sent_at
+        elif event["kind"] == "keepalive-response":
+            started = pending.pop(peer, None)
+            if started is not None and sent_at >= started:
+                samples.append({"value": float(sent_at - started), "unit": "us", "peer_id": peer})
+    return samples
+
+
 def _build_measurements(measurement_id: str, events: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, str]]:
     if measurement_id == "cardano-stock-chain-lifecycle":
         return {
@@ -274,10 +320,22 @@ def _build_measurements(measurement_id: str, events: list[dict[str, Any]]) -> tu
             "plutus_vm_duration": _unavailable("us", "stock Cardano-node does not expose authoritative UPLC wall-clock stage timing"),
         }, {"transaction_outcomes": "node outcomes only; workload execution budgets are correlated separately"}
     if measurement_id == "cardano-stock-network":
+        sampled = _distribution(events, kinds={"keepalive-sample"}, field="duration_micros", unit="us")
+        claims = {"protocol_events": "selected stock traces, not a complete protocol transcript"}
+        if sampled.get("sample_count"):
+            keepalive = sampled
+            claims["keepalive_rtt"] = "node-reported AddSample round trips"
+        else:
+            keepalive = distribution_summary(_keepalive_pairs(events), unit="us")
+            claims["keepalive_rtt"] = (
+                "message-pair round trips derived from KeepAlive send and "
+                "KeepAliveResponse receive trace timestamps per connection; "
+                "an upper bound that includes tracer scheduling"
+            )
         return {
-            "keepalive_rtt": _distribution(events, kinds={"keepalive-sample"}, field="duration_micros", unit="us"),
-            "protocol_events": _count(events, {"chainsync-server-update", "blockfetch-completed", "blockfetch-served", "txsubmission-event", "keepalive-sample"}),
-        }, {"protocol_events": "selected stock traces, not a complete protocol transcript"}
+            "keepalive_rtt": keepalive,
+            "protocol_events": _count(events, {"chainsync-server-update", "blockfetch-completed", "blockfetch-served", "txsubmission-event", "keepalive-sample", "keepalive-request", "keepalive-response"}),
+        }, claims
     return {}, {}
 
 
