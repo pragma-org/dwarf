@@ -270,5 +270,5 @@ def test_cardano_config_program_is_self_contained_and_keeps_keepalive_debug(tmp_
     namespace["_enable_cardano_measurement_traces"](path)
     options = json.loads(path.read_text())["TraceOptions"]
     assert options["KeepAlive.Remote"]["severity"] == "Debug"
-    assert options["Mempool"]["severity"] == "Info"
+    assert options["Mempool"]["severity"] == "Debug"   # TraceMempoolSynced is Debug-level
     assert "CARDANO_MEASUREMENT_TRACE_SEVERITIES=" in program

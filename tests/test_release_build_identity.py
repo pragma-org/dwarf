@@ -153,3 +153,28 @@ def test_instrumented_build_resolves_through_real_run_plan_with_consent(tmp_path
     plan = resolve_run_plan(request, capability_context=context, request_controller=controller)
     assert 'amaru-patched-protocol-decode' in [r['id'] for r in plan['measurements']['resolved']]
     assert plan['versions']['status'] == 'unknown'
+
+
+def test_operator_composite_build_gains_patched_tap_capabilities():
+    """The real cardano-box registration of the 11.1.2 instrumented build (composite v5)."""
+    from profile_manager import antithesis_cardano_bridge as bridge
+    from profile_manager.release_build_identity import instrumented_identity
+    registrations = json.loads((Path(__file__).parent / 'fixtures/operator_registrations.json').read_text())
+    reg = next(r for r in registrations if r['implementation'] == 'cardano-node')
+    identity = instrumented_identity(reg, {'implementation': 'cardano-node', 'version': reg['version'],
+        'source_revision': reg['provenance']['source_revision'], 'image_config_id': reg['config_image_id'],
+        'executable_digest': reg['executable_digest'], 'controller_installation_id': reg['controller_installation_id'],
+        'mode': 'stock', 'identity_kind': 'operator-local-config'})
+    caps = set(identity['verified_instrumentation']['capabilities'])
+    assert {'cardano-patched-header-validation-instrumentation', 'cardano-patched-blockfetch-queue',
+            'cardano-patched-txsubmission-residence', 'cardano-patch-identity',
+            'cardano-patched-protocol-decode', 'cardano-patched-ledger-plutus-stages'} <= caps
+    assert identity['toolchain'] == {'cabal': '3.16.0.0', 'ghc': '9.6.7'}
+    assert identity['measurement_revision'] == bridge.REVISION
+    # An Amaru nanoseconds-v3 build gains the Amaru patch identity but no cardano capability.
+    amaru = next(r for r in registrations if r['implementation'] == 'amaru')
+    amaru_identity = instrumented_identity(amaru, {'implementation': 'amaru', 'version': amaru['version'],
+        'source_revision': amaru['provenance']['source_revision'], 'image_config_id': amaru['config_image_id'],
+        'executable_digest': amaru['executable_digest'], 'controller_installation_id': amaru['controller_installation_id'],
+        'mode': 'stock', 'identity_kind': 'operator-local-config'})
+    assert not {c for c in amaru_identity['verified_instrumentation']['capabilities'] if c.startswith('cardano-')}

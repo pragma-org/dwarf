@@ -309,6 +309,26 @@ def supports_cardano_txsubmission_residence(identity: Mapping[str, Any]) -> bool
             and identity.get("toolchain") == CARDANO_HEADER_TOOLCHAIN)
 
 
+_IMMUTABLE_PROVENANCE_FIELDS = ("image_digest", "executable_digest", "build_result_sha256", "runtime_probe_log_sha256")
+
+
+def operator_evidence_accepted(identity: Mapping[str, Any]) -> bool:
+    """An operator-local instrumented build proves its compiled instrumentation by the
+    evidence bundle digest the controller verified; the runtime probe log is an
+    artefact of the release-catalog build path and such builds never carry one."""
+    if identity.get("identity_kind") != "operator-local-config":
+        return False
+    verified = identity.get("verified_instrumentation")
+    digest = verified.get("evidence_sha256") if isinstance(verified, Mapping) else None
+    return bool(re.fullmatch(r"sha256:[0-9a-f]{64}", str(digest or "")))
+
+
+def required_provenance_fields(identity: Mapping[str, Any]) -> tuple[str, ...]:
+    if operator_evidence_accepted(identity):
+        return tuple(field for field in _IMMUTABLE_PROVENANCE_FIELDS if field != "runtime_probe_log_sha256")
+    return _IMMUTABLE_PROVENANCE_FIELDS
+
+
 def _validate_identity(identity: Mapping[str, Any]) -> str:
     if identity.get('implementation') != 'cardano-node' or identity.get('mode') != 'patched':
         raise ValueError('patched collector implementation or mode differs')
@@ -358,7 +378,7 @@ class CardanoPatchedCollector:
                        HEADER_VALIDATION_MEASUREMENT_ID: supports_cardano_header_validation}[self.measurement_id]
             if not support(self.target_identity):
                 raise ValueError("measurement requires exact source, patch and toolchain")
-            for field in ("image_digest", "executable_digest", "build_result_sha256", "runtime_probe_log_sha256"):
+            for field in required_provenance_fields(self.target_identity):
                 if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(self.target_identity.get(field) or "")):
                     raise ValueError(f"measurement requires immutable {field} provenance")
         if self.max_source_bytes <= 0 or self.max_source_bytes > 64 * 1024 * 1024:

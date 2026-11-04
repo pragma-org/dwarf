@@ -1,0 +1,54 @@
+[
+ {
+  "config_image_id": "sha256:e79a3d6d5741c3349558901dfec5e87a6a0445e29c983ef65a1fbfeaacd433e2",
+  "controller_installation_id": "install-fc2121baf3b96645",
+  "executable_digest": "sha256:51afb5785a7c703cfe2993284fb312b3d399cf556496a9cba3a0acb57c95c630",
+  "image_reference": "sha256:e79a3d6d5741c3349558901dfec5e87a6a0445e29c983ef65a1fbfeaacd433e2",
+  "implementation": "amaru",
+  "inspected_at": "2026-11-03T17:41:40.707078Z",
+  "manifest_digest": null,
+  "platform": "linux/amd64",
+  "provenance": {
+   "public": null,
+   "qualification": "unverified",
+   "source_revision": "23031e0ed4423b9cb899da030d515cb69d203749"
+  },
+  "registration_id": "registration-release-build-099beebe5e624b9f9ea688b3ccd5fcb4-instrumented",
+  "runtime_interface": "extracted-binary",
+  "source_build": {
+   "build_result_sha256": "sha256:67fed39c527d9f6b4f611ee5ee8ddbd737cae7e56c1338840f4f15964ff52ce5",
+   "execution_id": "release-build-099beebe5e624b9f9ea688b3ccd5fcb4",
+   "instrumentation_evidence_sha256": "sha256:31feb2462da7378c25fe908b04444b0f9b90130f3a29ba13f54c6afa002d51fc",
+   "measurement_revision": "nanoseconds-v3",
+   "patch_set_sha256": "ca10dff8c451576a3d7677f74f5d56cd75e90a52d483747a39cfa31a01815f1b",
+   "variant": "instrumented"
+  },
+  "version": "10.11.20261029"
+ },
+ {
+  "config_image_id": "sha256:da63972d1326a92544222504fed6c16095692b61bfc797e1b88457eaffddf26f",
+  "controller_installation_id": "install-fc2121baf3b96645",
+  "executable_digest": "sha256:e75d4d18c319bd2adf22e45627ffbef0fc7e6940a731336127848ab7f1449764",
+  "image_reference": "sha256:da63972d1326a92544222504fed6c16095692b61bfc797e1b88457eaffddf26f",
+  "implementation": "cardano-node",
+  "inspected_at": "2026-11-03T21:04:47.964634Z",
+  "manifest_digest": null,
+  "platform": "linux/amd64",
+  "provenance": {
+   "public": null,
+   "qualification": "unverified",
+   "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5"
+  },
+  "registration_id": "registration-release-build-dcc7214165f84520844800adb34668e6-instrumented",
+  "runtime_interface": null,
+  "source_build": {
+   "build_result_sha256": "sha256:a5b54d09a8708ded5fc51c627c15b16f56aa854c4d0795d32e4b09ff25d67eaf",
+   "execution_id": "release-build-dcc7214165f84520844800adb34668e6",
+   "instrumentation_evidence_sha256": "sha256:86e5353548f88b90dc363ca7ae9118fe12731fb588e6d88ac9de1e428fd71d26",
+   "measurement_revision": "nanoseconds-v5-antithesis1",
+   "patch_set_sha256": "1d45c191ead71ce56049e2dc759d5778868ab93693211e2ebe348afb1109a937",
+   "variant": "instrumented"
+  },
+  "version": "11.1.2"
+ }
+]

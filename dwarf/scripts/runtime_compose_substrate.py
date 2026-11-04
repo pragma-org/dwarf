@@ -261,8 +261,8 @@ CARDANO_MEASUREMENT_TRACE_NAMESPACES = (
     "LedgerMetrics",
     "Resources",
 )
-# KeepAlive round-trip samples (AddSample) are Debug-level in cardano-node 11.1.x.
-CARDANO_MEASUREMENT_TRACE_SEVERITIES = {"KeepAlive.Remote": "Debug"}
+# KeepAlive round-trip samples and TraceMempoolSynced are Debug-level in cardano-node 11.1.x.
+CARDANO_MEASUREMENT_TRACE_SEVERITIES = {"KeepAlive.Remote": "Debug", "Mempool": "Debug"}
 
 
 def _enable_cardano_measurement_traces(config_path: Path) -> dict:

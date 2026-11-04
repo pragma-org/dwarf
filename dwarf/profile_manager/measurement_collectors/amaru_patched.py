@@ -513,7 +513,9 @@ class AmaruPatchedCollector:
         if self.measurement_id == HEADER_VALIDATION_MEASUREMENT_ID:
             if not supports_amaru_header_validation(self.target_identity):
                 raise ValueError("header validation requires the exact nanoseconds-v4 source and patch set")
-            for field in ("image_digest", "executable_digest", "build_result_sha256", "runtime_probe_log_sha256"):
+            from profile_manager.measurement_collectors.cardano_patched import required_provenance_fields
+
+            for field in required_provenance_fields(self.target_identity):
                 if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(self.target_identity.get(field) or "")):
                     raise ValueError(f"header validation requires immutable {field} provenance")
         for path in self.json_paths:

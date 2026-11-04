@@ -246,3 +246,14 @@ def test_real_collector_campaign_join_requires_reconciled_metrics(tmp_path):
     summary["sample_count"]+=1
     assert _normalized_signals(TAP,rows,summary,collector=result)[0]==[]
     assert patched._measurements(TAP,rows)=={}
+
+
+def test_operator_identity_prepares_with_evidence_digest_instead_of_probe_log(tmp_path):
+    selected = identity()
+    operator = {k: v for k, v in selected.items() if k != 'runtime_probe_log_sha256'}
+    operator.update(identity_kind='operator-local-config',
+                    verified_instrumentation={'evidence_sha256': 'sha256:' + 'a' * 64, 'capabilities': []})
+    assert collect(tmp_path, records(), operator)   # must not raise
+    without = {**operator, 'verified_instrumentation': {}}
+    with pytest.raises(ValueError, match='runtime_probe_log_sha256'):
+        collect(tmp_path, records(), without)

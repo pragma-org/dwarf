@@ -106,6 +106,19 @@ CARDANO_PATCHED_CAPABILITIES = CARDANO_STOCK_CAPABILITIES | {
     "cardano-patched-protocol-decode",
     "cardano-patched-ledger-plutus-stages",
 }
+# Capabilities an instrumented Cardano build proves by the recipe revision it was compiled
+# from: v3 adds the header-validation emitter, v4 the BlockFetch handler queue, v5 the
+# TxSubmission residence; the Antithesis import correction keeps v5's instrumentation.
+_CARDANO_V3_CAPABILITIES = frozenset({"cardano-patched-header-validation-instrumentation"})
+_CARDANO_V4_CAPABILITIES = _CARDANO_V3_CAPABILITIES | {"cardano-patched-blockfetch-queue"}
+_CARDANO_V5_CAPABILITIES = _CARDANO_V4_CAPABILITIES | {"cardano-patched-txsubmission-residence"}
+CARDANO_REVISION_CAPABILITIES = {
+    "nanoseconds-v3": _CARDANO_V3_CAPABILITIES,
+    "nanoseconds-v4": _CARDANO_V4_CAPABILITIES,
+    "nanoseconds-v5": _CARDANO_V5_CAPABILITIES,
+    "nanoseconds-v5-antithesis1": _CARDANO_V5_CAPABILITIES,
+}
+CARDANO_PATCH_IDENTITY_CAPABILITY = "cardano-patch-identity"
 
 
 class MeasurementExecutionError(RuntimeError):

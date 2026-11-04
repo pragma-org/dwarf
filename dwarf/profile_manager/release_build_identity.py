@@ -41,10 +41,23 @@ def instrumented_identity(registration, identity):
     if any(identity.get(k) != v for k, v in expected.items()):
         raise ValueError('Compiled instrumentation differs from the selected executable')
     manifest = build_manifest(expected['implementation'], expected['source_revision'], build)
-    from profile_manager.measurement_execution import AMARU_PATCHED_CAPABILITIES, CARDANO_PATCHED_CAPABILITIES
-    capabilities = AMARU_PATCHED_CAPABILITIES if expected['implementation'] == 'amaru' else CARDANO_PATCHED_CAPABILITIES
-    corrected = ({'measurement_revision': manifest['measurement_revision'], 'toolchain': manifest['toolchain'],
-                  'compatibility': manifest['compatibility']} if manifest.get('compatibility') else {})
+    from profile_manager.measurement_execution import (
+        AMARU_PATCHED_CAPABILITIES, CARDANO_PATCHED_CAPABILITIES,
+        CARDANO_PATCH_IDENTITY_CAPABILITY, CARDANO_REVISION_CAPABILITIES,
+    )
+    if expected['implementation'] == 'amaru':
+        capabilities = set(AMARU_PATCHED_CAPABILITIES)
+        corrected = {}
+    else:
+        # The recipe revision the build was compiled from decides which patched taps
+        # it can serve; the toolchain and revision travel with the identity so the
+        # collectors' exact-contract checks can read them.
+        revision = manifest.get('measurement_revision')
+        capabilities = set(CARDANO_PATCHED_CAPABILITIES) | set(CARDANO_REVISION_CAPABILITIES.get(revision, ()))
+        capabilities.add(CARDANO_PATCH_IDENTITY_CAPABILITY)
+        corrected = {'measurement_revision': revision, 'toolchain': manifest.get('toolchain')}
+        if manifest.get('compatibility'):
+            corrected['compatibility'] = manifest['compatibility']
     return {**identity, 'mode':'patched', 'image_digest':expected['image_config_id'],
             'source_build':dict(build), 'patch_set_sha256':manifest['patch_set_sha256'], **corrected,
             'build_result_sha256':build['build_result_sha256'],

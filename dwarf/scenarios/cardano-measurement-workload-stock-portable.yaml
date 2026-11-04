@@ -21,7 +21,7 @@
     "Prepare profile-n-cardano-latest-confirmed through DWARF and verify the operator-selected exact runtime identity before Run is enabled.",
     "This bounded proof validates the measurement path; it does not establish a performance threshold or vulnerability.",
     "This bounded proof validates that every local tap records under a transaction, epoch, restart and sync workload; it does not establish a performance threshold or vulnerability.",
-    "cardano-patched-header-validation, cardano-patched-blockfetch-handler-queue and cardano-patched-txsubmission-residence stay out: the operator-prepared nanoseconds-v5 build carries a composite patch set whose contract for these taps is unbuilt."
+    "cardano-patched-header-validation, cardano-patched-blockfetch-handler-queue and cardano-patched-txsubmission-residence run from the patched measurement profile (cardano-security-patched); they are enabled only for patched identities whose compiled instrumentation the controller verified."
   ],
   "target": {
     "implementation": "cardano-node",
