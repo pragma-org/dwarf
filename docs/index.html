@@ -9644,6 +9644,19 @@ body[data-offline-viewer] .dk-card--flip .dk-face--rear .dk-hash {
 .mc-value { font: 600 .82rem/1.2 var(--dk-mono, ui-monospace, monospace); color: var(--basic-ink); }
 .mc-best .mc-value, .mc-coverage__cell.mc-best > span:first-child { color: var(--dk-gold); font-weight: 750; text-shadow: 0 0 12px rgba(230,198,127,.16); }
 .mc-unit { color: var(--dk-faint); font-size: .68rem; text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }
+/* Hover source: which raw metric id each bar was taken from. Hidden until hover or keyboard focus. */
+.mc-bar, .mc-coverage__cell { position: relative; }
+.mc-bar__source { display: none; position: absolute; left: 0; bottom: calc(100% + 4px); z-index: 6; max-width: 60ch; padding: 6px 8px; border: 1px solid var(--dk-line2, var(--cyan-trace)); border-radius: 8px; background: var(--dk-face, var(--obsidian-2, #14161c)); color: var(--dk-ink, var(--basic-ink, #e8e6df)); font: 500 .7rem/1.4 var(--dk-mono, ui-monospace, monospace); text-transform: none; letter-spacing: 0; white-space: normal; overflow-wrap: anywhere; pointer-events: none; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+.mc-bar:hover > .mc-bar__source, .mc-bar:focus-within > .mc-bar__source, .mc-coverage__cell:hover > .mc-bar__source, .mc-coverage__cell:focus-within > .mc-bar__source { display: block; }
+.mc-pill--mode { text-transform: uppercase; letter-spacing: .06em; }
+.mc-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.mc-pick { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; text-transform: none; letter-spacing: 0; }
+.mc-pick > button { min-height: 0; padding: 0 6px; line-height: 1.3; font-size: .75rem; }
+.mc-pick-runs__list { display: grid; gap: 4px; }
+.mc-pick-runs fieldset { min-width: 0; margin: 2px 0; padding: 6px 10px; border: 1px solid var(--dk-line2, var(--cyan-trace)); border-radius: 8px; }
+.mc-pick-runs legend { padding: 0 4px; font-size: .72rem; color: var(--dk-gold, #e6c67f); }
+.mc-pick-runs label { display: flex; align-items: center; gap: 8px; font-size: .78rem; overflow-wrap: anywhere; }
+.mc-pick-runs [data-compare-pick-clear] { justify-self: start; margin-top: 4px; }
 .mc-delta { font-size: .7rem; color: var(--cyan-primary); }
 .mc-n { color: var(--dk-faint); font-size: .64rem; }
 @media (max-width: 640px) {
@@ -12239,7 +12252,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
   var api = {LIMITS: LIMITS, canonical: canonical, metricCell: metricCell, cellState: cellState, recordFromModel: recordFromModel,
     coherentIdentity: coherentIdentity, evidenceExclusion: evidenceExclusion, reconcileFilterValue: reconcileFilterValue,
     createRunStore: createRunStore, buildComparison: buildComparison, formatValue: formatValue, unitPresentation: unitPresentation, importBatch: importBatch,
-    catalogConcept: catalogConcept, canonicalUnit: canonicalUnit, pickedRuns: pickedRuns};
+    catalogConcept: catalogConcept, canonicalUnit: canonicalUnit, pickedRuns: pickedRuns, scenarioLabel: scenarioLabel};
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root) root.DwarfPortableStore = api;
 })(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : null));
@@ -12641,6 +12654,56 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
   var controls = host && host.querySelector("[data-compare-controls]"), output = host && host.querySelector("[data-compare-output]");
   var disclosureHost = host && host.querySelector("[data-compare-disclosures]");
   var filterDisclosure = host && host.querySelector("[data-compare-filter-disclosure]"), filterPanel = host && host.querySelector("[data-compare-filter-panel]");
+  // Pick runs: one persistent disclosure (its open state survives re-renders) listing every
+  // included eligible run under its workload. Picks lift the one-workload gate (see the store).
+  var pickControl = null, pickList = null;
+  function implLabel(implementation) {
+    var labels = (payload.presentation_catalog || {}).implementation_labels || {};
+    return Object.prototype.hasOwnProperty.call(labels, implementation) ? labels[implementation] : (implementation || "unknown");
+  }
+  function currentPicks() { return api.pickedRuns ? api.pickedRuns(filters) : []; }
+  function applyPicks(ids) { filters.runs = ids.join(","); renderPickList(); page = 0; groupPage = 0; recompute(true); }
+  function renderPickList() {
+    if (!pickList) return;
+    clear(pickList); var picks = currentPicks(), byScenario = new Map();
+    store.snapshot().logical_runs.filter(function (run) { return run.included && run.state === "eligible"; }).forEach(function (run) {
+      var sid = run.record.scenario_id || ""; if (!byScenario.has(sid)) byScenario.set(sid, []); byScenario.get(sid).push(run);
+    });
+    Array.from(byScenario.keys()).sort().forEach(function (sid) {
+      var group = el("fieldset"), legend = el("legend", api.scenarioLabel ? api.scenarioLabel(sid) : sid); group.appendChild(legend);
+      byScenario.get(sid).forEach(function (run) {
+        var record = run.record, label = el("label"), input = el("input"); input.type = "checkbox"; input.setAttribute("data-compare-pick", run.run_id);
+        input.checked = picks.indexOf(run.run_id) >= 0;
+        input.addEventListener("change", function () {
+          var next = currentPicks().filter(function (id) { return id !== run.run_id; }); if (input.checked) next.push(run.run_id);
+          var order = new Map(); store.snapshot().logical_runs.forEach(function (r, i) { order.set(r.run_id, i); });
+          next.sort(function (a, b) { return (order.get(a) || 0) - (order.get(b) || 0); }); applyPicks(next);
+        });
+        label.appendChild(input); label.appendChild(el("span", [implLabel(record.implementation), record.version, record.mode].filter(Boolean).join(" ") + " · " + run.run_id));
+        group.appendChild(label);
+      }); pickList.appendChild(group);
+    });
+    if (!byScenario.size) pickList.appendChild(el("p", "No included runs to pick from.", "mc-note"));
+    var clearPicks = button("Clear picks", function () { applyPicks([]); }, !picks.length); clearPicks.setAttribute("data-compare-pick-clear", ""); pickList.appendChild(clearPicks);
+  }
+  function ensurePickControl() {
+    if (pickControl) return pickControl;
+    pickControl = el("details", null, "mc-disclosure mc-pick-runs"); pickControl.setAttribute("data-compare-pick-runs", "");
+    pickControl.appendChild(el("summary", "Pick runs", "mc-disclosure__summary pill"));
+    pickList = el("div", null, "mc-toolbar-panel mc-pick-runs__list"); pickControl.appendChild(pickList);
+    renderPickList(); return pickControl;
+  }
+  function sourceText(group, cell) {
+    // Hover source for one bar: implementation, raw metric id(s), raw unit, binding boundary.
+    var contributors = (cell && cell.contributors || []).filter(function (c) { return c.metric_id; }); if (!contributors.length) return "";
+    var ids = [], units = [], boundary = "", approximate = false;
+    contributors.forEach(function (c) { if (ids.indexOf(c.metric_id) < 0) ids.push(c.metric_id); if (c.raw_unit && units.indexOf(c.raw_unit) < 0) units.push(c.raw_unit); if (!boundary && c.boundary) boundary = c.boundary; if (c.approximate) approximate = true; });
+    return (approximate ? "≈ approximate pair · " : "") + group.impl_label + " · " + ids.join(", ") + (units.length ? " · " + units.join("/") : "") + (boundary ? " · " + boundary : "");
+  }
+  function attachSource(node, group, cell) {
+    var text = sourceText(group, cell); if (!text) return;
+    node.setAttribute("tabindex", "0"); var tip = el("span", text, "mc-bar__source"); tip.setAttribute("role", "tooltip"); node.appendChild(tip);
+  }
   var filterNodes = {};
   var seedCards = new Map((payload.runs || []).map(function (run) { return [run.run_id, run.card || {}]; }));
   var seedStates = new Map((payload.runs || []).map(function (run) { return [run.run_id, (run.row || {}).display_status]; }));
@@ -12832,7 +12895,8 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
   }
   function state(cell) { return cell.state === 'available' ? null : el('span', stateLabel(cell), 'mc-state mc-state--' + cell.state); }
   function preferredGroups(row, groups) {
-    if (row.comparison_direction !== 'lower' && row.comparison_direction !== 'higher') return new Set();
+    // An approximate pair never crowns a winner.
+    if (row.approximate || (row.comparison_direction !== 'lower' && row.comparison_direction !== 'higher')) return new Set();
     var values = groups.map(function (group) {
       var cell = row.cells[group.key];
       return cell && (cell.state === 'available' || cell.state === 'observed-zero') && typeof cell.value === 'number' && Number.isFinite(cell.value) ? {key: group.key, value: cell.value} : null;
@@ -12884,7 +12948,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
         var cell = row.cells[g.key], isBest = best.has(g.key), td = el('td', null, 'mc-coverage__cell ' + g.color + (isBest ? ' mc-best' : '')); td.setAttribute('data-state', cell.state);
         if (isBest) td.setAttribute('title', 'Preferred ' + row.comparison_direction + ' value among visible builds');
         if (cell.value != null) { td.appendChild(el('span', cell.value_text + ' ')); if (row.unit) td.appendChild(unit(row)); }
-        var stateNode = state(cell); if (stateNode) td.appendChild(stateNode); tr.appendChild(td);
+        var stateNode = state(cell); if (stateNode) td.appendChild(stateNode); attachSource(td, g, cell); tr.appendChild(td);
       }); table.body.appendChild(tr);
     }); section.appendChild(table.wrap);
     navigation(section, 'metrics page', page, Math.ceil(result.rows.length / PAGE), function () { page -= 1; renderComparison(); }, function () { page += 1; renderComparison(); });
@@ -12893,22 +12957,33 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
   function buildLabel(group) {
     var label = el('span', null, 'mc-bar__label'); label.setAttribute('title', group.label);
     label.appendChild(el('span', '', 'mc-build__swatch')); label.appendChild(el('span', group.impl_label, 'mc-bar__node')); label.appendChild(el('span', group.version, 'mc-pill mc-pill--version'));
+    if (group.mode) label.appendChild(el('span', group.mode, 'mc-pill mc-pill--mode'));
     if (filters.show_revisions === '1') label.appendChild(el('span', group.revision_short, 'mc-pill mc-pill--revision')); return label;
   }
   function renderOverview(container, rows, groups) {
     var section = el('section', null, 'mc-overview'); section.setAttribute('id', 'mc-overview');
     var disclosures = disclosureHost || el('div', null, 'mc-disclosures-row'); clear(disclosures);
-    var strip = el('div', null, 'mc-workloads mc-workloads--compact');
-    result.scenario_links.forEach(function (s) { var link = el('a', s.label + ' · ' + s.run_count + ' runs' + (s.date_range ? ' · ' + s.date_range : ''), 'pill mc-workload' + (s.selected ? ' mc-workload--active' : '')); link.href = '#mc-overview'; link.setAttribute('data-compare-workload', s.id); if (s.selected) link.setAttribute('aria-current', 'true'); link.addEventListener('click', function (event) { event.preventDefault(); filters.scenario = s.id; if (filterNodes.scenario) filterNodes.scenario.value = s.id; page = 0; groupPage = 0; recompute(true); }); strip.appendChild(link); });
-    var workloads = toolbarDisclosure('Workloads', 'mc-disclosure mc-workload-picker', function (node) { node.appendChild(strip); });
+    var picks = currentPicks(), strip = el('div', null, picks.length ? 'mc-workloads mc-workloads--compact mc-picks' : 'mc-workloads mc-workloads--compact');
+    if (picks.length) {
+      // Picked runs replace the workload pills: one pill per run, grouped by workload, each removable.
+      var picked = store.snapshot().logical_runs.filter(function (run) { return picks.indexOf(run.run_id) >= 0; });
+      picked.sort(function (a, b) { return (a.record.scenario_id || '') < (b.record.scenario_id || '') ? -1 : (a.record.scenario_id || '') > (b.record.scenario_id || '') ? 1 : 0; });
+      picked.forEach(function (run) {
+        var record = run.record, pill = el('span', null, 'pill mc-pick'); pill.setAttribute('data-compare-picked', run.run_id);
+        pill.appendChild(el('span', (api.scenarioLabel ? api.scenarioLabel(record.scenario_id) : record.scenario_id) + ' · ' + [implLabel(record.implementation), record.version, record.mode].filter(Boolean).join(' ') + ' · ' + run.run_id));
+        var unpick = button('×', function () { applyPicks(currentPicks().filter(function (id) { return id !== run.run_id; })); }); unpick.setAttribute('data-compare-unpick', run.run_id); unpick.setAttribute('aria-label', 'Remove run ' + run.run_id + ' from the picks'); pill.appendChild(unpick); strip.appendChild(pill);
+      });
+    } else result.scenario_links.forEach(function (s) { var link = el('a', s.label + ' · ' + s.run_count + ' runs' + (s.date_range ? ' · ' + s.date_range : ''), 'pill mc-workload' + (s.selected ? ' mc-workload--active' : '')); link.href = '#mc-overview'; link.setAttribute('data-compare-workload', s.id); if (s.selected) link.setAttribute('aria-current', 'true'); link.addEventListener('click', function (event) { event.preventDefault(); filters.scenario = s.id; if (filterNodes.scenario) filterNodes.scenario.value = s.id; page = 0; groupPage = 0; recompute(true); }); strip.appendChild(link); });
+    var workloads = toolbarDisclosure(picks.length ? 'Picked runs · ' + picks.length : 'Workloads', 'mc-disclosure mc-workload-picker', function (node) { node.appendChild(strip); });
     var builds = toolbarDisclosure('Builds · ' + result.groups.length, 'mc-disclosure', function (node) {
       var list = el('ul', null, 'mc-builds'); groups.forEach(function (g) {
         var item = el('li', null, 'mc-build ' + g.color + (result.baseline === g.key ? ' mc-build--baseline' : '')); item.appendChild(buildLabel(g)); item.appendChild(el('span', g.run_count + ' run' + (g.run_count === 1 ? '' : 's') + ' · ' + (g.identity_complete ? 'complete exact identity' : 'incomplete identity — isolated by run'), 'mc-build__meta'));
         item.appendChild(disclosure('Exact build identity', 'mc-build__identity', function (detail) { detail.appendChild(facts({source_revision: g.source_revision, image_digest: g.image_digest, identity_missing: g.identity_missing, identity_source: g.identity_source})); g.run_ids.forEach(function (id) { detail.appendChild(runLink(id)); }); })); list.appendChild(item);
       }); node.appendChild(list);
     });
-    disclosures.appendChild(workloads.control); disclosures.appendChild(builds.control); disclosures.appendChild(workloads.panel); disclosures.appendChild(builds.panel);
+    disclosures.appendChild(workloads.control); disclosures.appendChild(builds.control); disclosures.appendChild(ensurePickControl()); disclosures.appendChild(workloads.panel); disclosures.appendChild(builds.panel);
     if (!disclosureHost) section.appendChild(disclosures);
+    if (picks.length) { var summaryNote = el('p', result.picked_run_count + ' runs picked across ' + result.picked_scenario_count + ' workloads · concept rows', 'mc-note'); summaryNote.setAttribute('data-compare-pick-summary', ''); section.appendChild(summaryNote); }
     if (rows.some(function (row) { return row.concept_grouped; })) section.appendChild(el('p', 'Antithesis measurements are grouped by concept. Each node retains its own samples and timing boundaries.', 'mc-note'));
     var category = null, categoryNode;
     (result.focus_required ? [] : rows).forEach(function (row) {
@@ -12920,7 +12995,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       groups.forEach(function (group) { var b = row.plot.bars.find(function (bar) { return bar.group_key === group.key; }), bar = el('li', null, 'mc-bar ' + group.color); bar.setAttribute('data-state', b.state); bar.setAttribute('data-comparison-group', group.key); bar.appendChild(buildLabel(group));
         var track = el('span', null, 'mc-bar__track'); track.setAttribute('aria-hidden', 'true'); track.appendChild(el('span', '', 'mc-bar__zero'));
         if (b.marker_percent != null) { var fill = el('span', '', 'mc-bar__fill'); fill.setAttribute('style', 'left:' + b.start_percent + '%;width:' + (b.end_percent - b.start_percent) + '%'); track.appendChild(fill); var marker = el('span', '', 'mc-bar__marker'); marker.setAttribute('style', 'left:' + b.marker_percent + '%'); track.appendChild(marker); }
-        bar.appendChild(track); var value = el('span', null, 'mc-bar__reading' + (best.has(group.key) ? ' mc-best' : '')); if (best.has(group.key)) value.setAttribute('title', 'Preferred ' + row.comparison_direction + ' value among visible builds'); reading(value, b, row, false); bar.appendChild(value); bars.appendChild(bar);
+        bar.appendChild(track); var value = el('span', null, 'mc-bar__reading' + (best.has(group.key) ? ' mc-best' : '')); if (best.has(group.key)) value.setAttribute('title', 'Preferred ' + row.comparison_direction + ' value among visible builds'); reading(value, b, row, false); bar.appendChild(value); attachSource(bar, group, row.cells[group.key]); bars.appendChild(bar);
       }); card.appendChild(bars);
       if (row.concept_grouped) card.appendChild(disclosure('Sources and measurement boundaries', 'mc-metric__fingerprint', function (node) {
         node.appendChild(el('p', row.concept_note));
@@ -12933,6 +13008,11 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     }); container.appendChild(section);
   }
   function renderComparison() {
+    if (filterNodes.scenario) {
+      // Picks replace the workload scope: the select is parked until they are cleared.
+      var picksOn = currentPicks().length > 0; filterNodes.scenario.disabled = picksOn;
+      if (filterNodes.scenario.options.length) filterNodes.scenario.options[0].textContent = picksOn ? "Picked runs" : "First workload";
+    }
     if (!output || !result) return; clear(output); host.className = 'mc-page';
     page = Math.min(page, Math.max(0, Math.ceil(result.rows.length / PAGE) - 1)); groupPage = Math.min(groupPage, Math.max(0, Math.ceil(result.groups.length / GROUPS) - 1));
     if (result.omitted_rows) output.appendChild(el('p', 'Comparison limited to ' + result.rows.length + ' rows / 20,000 cells. Choose an exact metric or workload to inspect ' + result.omitted_rows + ' omitted rows.', 'portable-import__cap'));
@@ -13017,6 +13097,10 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       options(filterNodes.category, choices.categories.map(function (id) { return {key: id, label: choices.category_labels[id] || id}; }), "All categories");
       options(filterNodes.metric, choices.metrics, "All metrics");
     }
+    // Picks only ever name runs the session still holds.
+    var present = new Set(snapshot.logical_runs.filter(function (run) { return run.included && run.state === "eligible"; }).map(function (run) { return run.run_id; }));
+    var kept = currentPicks().filter(function (id) { return present.has(id); }); if (kept.length !== currentPicks().length) filters.runs = kept.join(",");
+    renderPickList();
     renderRecent(); renderInventory(); recompute();
   }
   function preference(label, key) {
