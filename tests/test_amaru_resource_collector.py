@@ -801,3 +801,10 @@ def test_proc_probe_script_reads_cpu_ticks_from_a_real_shell(tmp_path):
     fields = dict(line.split("=", 1) for line in result.stdout.split())
     assert fields["pid"] == "1" and fields["vmrss_kb"] == "204800" and fields["threads"] == "29" and fields["fds"] == "5"
     assert fields["utime"] == "123400" and fields["stime"] == "5600"
+
+
+def test_counter_delta_carries_its_sample_count_as_evidence_for_a_zero():
+    """A zero byte delta is a reading, not a gap, when it is backed by samples."""
+    samples = [{"monotonic_seconds": t, "disk_read_bytes": 39100000} for t in range(4)]
+    result = _counter_delta(samples, "disk_read_bytes", "bytes")
+    assert result["delta"] == 0 and result["sample_count"] == 4

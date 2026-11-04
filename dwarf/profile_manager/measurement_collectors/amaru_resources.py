@@ -39,6 +39,7 @@ def _counter_delta(
             "end": None,
             "delta": None,
             "rate_per_second": None,
+            "sample_count": len(points),
             **({"scope": scope} if scope else {}),
             "reason": "at least two monotonic counter samples are required",
         }
@@ -67,6 +68,7 @@ def _counter_delta(
         "duration_seconds": duration,
         "rate_per_second": delta / duration if valid else None,
         "resets": resets,
+        "sample_count": len(points),
         "delta_rule": "sum-of-steps-with-resets",
         **({"scope": scope} if scope else {}),
         **({} if valid else {"reason": "non-positive sample duration"}),
