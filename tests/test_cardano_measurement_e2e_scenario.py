@@ -880,3 +880,36 @@ def test_double_spend_counts_as_rejected_only_on_a_ledger_rejection(tmp_path, mo
     failed = calibration._double_spend("cardano-cli", socket_path="/s", network_magic=42, index=4, tx_path=tmp_path / "spend-3.tx", tx_id="ab" * 32)
     assert failed["outcome"] == "submit-error" and failed["chain_outcome"] == "submit-error"
     assert "does not exist" in failed["rejected_reason"]
+
+
+def test_leg_result_retains_the_applied_node_measurement_settings(tmp_path, monkeypatch):
+    """The substrate's trace-config record (with every non-default node setting it applied,
+    e.g. TxSubmissionLogicVersion) lives in runtime metadata outside the run bundle; the
+    helper copies it into its retained result so a 'stock' archive never hides it
+    (review finding #5)."""
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    runtime_body = _runtime_body()
+    runtime_body["cardano_measurement_traces"] = {
+        "enabled": True, "namespaces": ["Mempool"], "config_path": "/env/configuration.yaml",
+        "node_settings": {"TxSubmissionLogicVersion": "TxSubmissionLogicV2"},
+    }
+    runtime_root.joinpath("runtime.json").write_text(json.dumps(runtime_body))
+    monkeypatch.setattr(calibration, "_controller_container", lambda: None)
+    monkeypatch.setattr(calibration, "_container_ip", lambda _container: "127.0.0.1")
+    monkeypatch.setattr(calibration, "run_attempts", lambda **_kwargs: [{"attempt_id": "handshake-0000", "outcome": "rejected", "elapsed_micros": 1}])
+    monkeypatch.setattr(calibration, "run_plutus_workload", lambda **kwargs: {"records": [], "scripts": {}})
+
+    def capture(_container, *, since, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text('{"ns":"Net.Handshake.Remote","data":{"kind":"Handshake"}}\n')
+        return {"record_count": 1, "protocol_record_count": 1, "byte_count": 1, "namespaces": ["Net.Handshake.Remote"]}
+
+    monkeypatch.setattr(calibration, "_capture_logs", capture)
+    monkeypatch.setattr(calibration.time, "sleep", lambda _seconds: None)
+    result = calibration.run_leg(
+        runtime_root=runtime_root, output_dir=tmp_path / "output", attempt_count=1, timeout_seconds=1,
+        observation_seconds=0, trace_timeout_seconds=0, plutus_transactions=0,
+    )
+    assert result["node_trace"]["measurement_config"]["node_settings"] == {"TxSubmissionLogicVersion": "TxSubmissionLogicV2"}
+    assert result["node_trace"]["measurement_config"]["namespaces"] == ["Mempool"]

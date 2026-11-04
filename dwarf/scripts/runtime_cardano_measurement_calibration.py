@@ -1563,6 +1563,12 @@ def run_leg(
             "minimum_observation_seconds": observation_seconds,
             "observation_timeout_seconds": trace_timeout_seconds,
             "observed_seconds": observed_seconds,
+            # The substrate's trace-config record, with every non-default node setting it
+            # applied, retained here because runtime metadata lives outside the run bundle.
+            "measurement_config": (
+                dict(runtime["cardano_measurement_traces"])
+                if isinstance(runtime.get("cardano_measurement_traces"), dict) else None
+            ),
         },
         **(
             {
