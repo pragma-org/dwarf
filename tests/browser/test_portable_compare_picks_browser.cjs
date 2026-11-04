@@ -33,7 +33,8 @@ function archive(runId, impl, mode, scenario, metrics) {
 }
 const us = median => ({status: 'available', unit: 'us', median, sample_count: 10, mean: median, p95: median, p99: median});
 const amaruFile = archive('a1', 'amaru', 'stock', 'amaru-measurement-workload-stock-portable',
-  {keepalive_round_trip: us(585), header_validation: {status: 'available', unit: 'count', value: {accepted: 205, rejected: 0}}});
+  {keepalive_round_trip: us(585), header_validation: {status: 'available', unit: 'count', value: {accepted: 205, rejected: 0}},
+   mempool_evicted: {status: 'unavailable', unit: 'events', reason: 'no evictions observed'}});
 const cardanoFile = archive('c1', 'cardano-node', 'stock', 'cardano-measurement-workload-stock-portable',
   {keepalive_rtt: us(569.5), header_validation: {status: 'available', unit: 'count', value: {accepted: 127, rejected: 0}}});
 
@@ -84,6 +85,7 @@ server.serve_forever()
     await picker.locator('[data-compare-pick="a1"]').check();
     await picker.locator('[data-compare-pick="c1"]').check();
     await page.waitForFunction(() => /2 runs picked across 2 workloads/.test((document.querySelector('[data-compare-pick-summary]') || {}).textContent || ''));
+    assert.match(await page.locator('[data-compare-pick-summary]').textContent(), /2 concept rows with values · 1 without a value hidden/, 'summary counts hidden valueless rows');
     await page.locator('.mc-workload-picker > summary').click();   // the strip lives in the (lazy) Picked runs disclosure
     await page.locator('.mc-picks').waitFor();                     // the details toggle event is asynchronous
     assert.equal(await page.locator('.mc-picks .mc-pick').count(), 2, 'pick strip replaces workload pills');
