@@ -76,3 +76,16 @@ def test_runtime_normalization_preserves_profile_and_opt_in_measurement_traces()
     assert plan["profile_id"] == profile.id
     assert plan["cardano_measurement_traces"] is True
     assert plan["amaru_json_traces"] is False
+
+
+def test_operator_latest_cardano_profile_opts_into_measurement_traces():
+    profile = find_profile("profile-n-cardano-latest-confirmed")
+    assert profile.cardano_measurement_traces is True
+    document = json.loads(
+        Path("dwarf/profiles/profile-n-cardano-latest-confirmed/profile.yaml").read_text()
+    )
+    assert document["cardano_measurement_traces"] is True
+    amaru = json.loads(
+        Path("dwarf/profiles/profile-o-amaru-target-latest-confirmed/profile.yaml").read_text()
+    )
+    assert amaru["amaru_json_traces"] is True
