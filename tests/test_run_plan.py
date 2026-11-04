@@ -1658,3 +1658,22 @@ def test_instrumented_local_config_requires_actual_inspection_not_manifest_diges
     assert result['state'] == expected
     assert result['required_images'][0]['digest'] is None
     assert result['required_images'][0]['config_image_id'] == config_id
+
+
+def test_resolve_capabilities_include_a_local_builds_verified_instrumentation():
+    """A registered instrumented build's capabilities (granted per recipe revision by
+    release_build_identity) must reach the resolve step; the static patched set alone
+    rejected the cardano v5 taps with 'missing capabilities' (request 2026-11-04)."""
+    from types import SimpleNamespace
+    from profile_manager.measurement_execution import CARDANO_PATCHED_CAPABILITIES
+    profile = SimpleNamespace(amaru_json_traces=None)
+    identity = {
+        "implementation": "cardano-node", "mode": "patched", "identity_kind": "operator-local-config",
+        "verified_instrumentation": {"capabilities": ["cardano-patch-identity", "cardano-patched-header-validation-instrumentation"]},
+    }
+    capabilities = run_plan_module._resolve_capabilities("cardano-node", identity, profile)
+    assert set(CARDANO_PATCHED_CAPABILITIES) <= capabilities
+    assert {"cardano-patch-identity", "cardano-patched-header-validation-instrumentation"} <= capabilities
+    assert capabilities is not CARDANO_PATCHED_CAPABILITIES, "the shared constant is never mutated"
+    # A catalog (non-local) patched target keeps exactly the static set.
+    assert run_plan_module._resolve_capabilities("cardano-node", {"implementation": "cardano-node", "mode": "patched"}, profile) == set(CARDANO_PATCHED_CAPABILITIES)

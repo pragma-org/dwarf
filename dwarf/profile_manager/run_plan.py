@@ -1308,20 +1308,7 @@ def _measurement_context(
         ):
             if node is not None and node.get(field) not in (None, ""):
                 identity[field] = node[field]
-        mode = identity["mode"]
-        if implementation == "amaru" and mode == "patched":
-            capabilities = set(AMARU_PATCHED_CAPABILITIES)
-        elif implementation == "amaru":
-            capabilities = set(AMARU_STOCK_CAPABILITIES)
-        elif mode == "patched":
-            capabilities = CARDANO_PATCHED_CAPABILITIES
-        else:
-            capabilities = CARDANO_STOCK_CAPABILITIES
-        if implementation == "amaru" and identity.get("experimental_instrumentation") is not None:
-            from profile_manager.experimental_instrumentation import CAPABILITIES
-            capabilities |= CAPABILITIES
-        if implementation == "amaru" and profile.amaru_json_traces is not True:
-            capabilities -= AMARU_JSON_TRACE_CAPABILITIES
+        capabilities = _resolve_capabilities(implementation, identity, profile)
         return resolve_measurements(
             scenario,
             target_identity=identity,
@@ -1335,6 +1322,31 @@ def _measurement_context(
         ) from exc
     except (DeploymentVersionGateError, ValueError) as exc:
         raise RunPlanError(str(exc), field="measurements") from exc
+
+
+def _resolve_capabilities(implementation: str, identity: dict[str, Any], profile) -> set[str]:
+    """The capability set the resolve step checks taps against: the implementation's
+    static set for its mode, plus, for an operator-local build, the capabilities its
+    registration verified (granted per recipe revision by release_build_identity), as
+    the execution layer already does."""
+    mode = identity.get("mode")
+    if implementation == "amaru" and mode == "patched":
+        capabilities = set(AMARU_PATCHED_CAPABILITIES)
+    elif implementation == "amaru":
+        capabilities = set(AMARU_STOCK_CAPABILITIES)
+    elif mode == "patched":
+        capabilities = set(CARDANO_PATCHED_CAPABILITIES)
+    else:
+        capabilities = set(CARDANO_STOCK_CAPABILITIES)
+    if identity.get("identity_kind") == "operator-local-config":
+        instrumentation = identity.get("verified_instrumentation") or {}
+        capabilities |= set(instrumentation.get("capabilities") or [])
+    if implementation == "amaru" and identity.get("experimental_instrumentation") is not None:
+        from profile_manager.experimental_instrumentation import CAPABILITIES
+        capabilities |= CAPABILITIES
+    if implementation == "amaru" and profile.amaru_json_traces is not True:
+        capabilities -= AMARU_JSON_TRACE_CAPABILITIES
+    return capabilities
 
 
 def _validate_operator_preference_subject(
