@@ -68,9 +68,14 @@ Anti-goals
   Nothing submits a phase-1-invalid transaction.
 - Cardano patched taps: the operator build is registered with
   `patch_set_sha256 = 1d45c191…`, `measurement_revision = nanoseconds-v5-antithesis1`
-  (the composite v5 + `0008-antithesis-header-import.patch`). The resolved identity of run
-  b1a2f8cb carries `toolchain` and the bridge `compatibility` contract but its verified
-  capabilities are only `cardano-patched-protocol-decode` and `cardano-patched-ledger-plutus-stages`
+  (the composite v5 + `0008-antithesis-header-import.patch`). **Two fixes that the box ran
+  from `deploy/box-workload-v7` never reached `main`:** `203056ec` (the controller applies
+  the import correction to local instrumented builds and `build_manifest` resolves the
+  composite through the bridge) and `19d6412b` (libsodium `config.sub` in the cardano
+  toolchain image). On `main` the box's cardano registration raises "no matching
+  exact-source patch recipe"; with `203056ec` cherry-picked it resolves with `toolchain`
+  and the bridge `compatibility` contract. Its verified capabilities are still only
+  `cardano-patched-protocol-decode` and `cardano-patched-ledger-plutus-stages`
   (`CARDANO_PATCHED_CAPABILITIES`, `measurement_execution.py:105-108`). The three taps
   require `cardano-patched-header-validation-instrumentation` /
   `cardano-patched-blockfetch-queue` / `cardano-patched-txsubmission-residence` plus
@@ -143,16 +148,16 @@ a reset and the sum continues from the new value; the result adds `"resets": n` 
   Amaru shows `transaction.rejected`.
 
 ### 4.3 Cardano patched tap identity
-- `cardano_patched.py`: add `CARDANO_COMPOSITE_PATCH_SHA256 = antithesis_cardano_bridge.COMPOSITE_HASH`
-  to `CARDANO_MEASUREMENT_REVISIONS` as `nanoseconds-v5-antithesis1` and to the three
-  `supports_*` sets; its measurement revision maps to v5 telemetry (the bridge docstring:
-  only an import location changed).
-- Commit the composite recipe: run `supplement_manifest` once and commit the result as
-  `targets/cardano-node/measurement-patches-nanoseconds-v5-antithesis1/<rev>/manifest.json`
-  plus `0008-antithesis-header-import.patch`, so `build_manifest` resolves on every
-  checkout, not only where the build ran.
-- `instrumented_identity` adds `toolchain = manifest["toolchain"]`,
-  `measurement_revision`, and the capabilities granted by the recipe revision:
+- Land the two deploy-only fixes first (`19d6412b`, `203056ec`, cherry-picked onto the
+  feature branch; their tests pass, the three remaining failures in
+  `test_antithesis_measurements.py` are identical on `main`). The composite then resolves
+  on every checkout through `bridge.is_composite_build` / `composite_manifest`; no
+  on-disk recipe is needed.
+- The bridge already maps the composite identity back to v5 for `engine in {antithesis,
+  local}` and `cardano_factory` builds patched factories through the bridge, so the three
+  `supports_*` checks see the base v5 sha. What still blocks them: capabilities and the
+  probe-log field.
+- `instrumented_identity` adds the capabilities granted by the recipe revision:
   v3+ → `cardano-patched-header-validation-instrumentation`, v4+ →
   `cardano-patched-blockfetch-queue`, v5+ → `cardano-patched-txsubmission-residence`, all
   patched → `cardano-patch-identity`. Table `CARDANO_REVISION_CAPABILITIES` in
