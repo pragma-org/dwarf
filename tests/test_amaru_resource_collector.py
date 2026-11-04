@@ -7,7 +7,9 @@ from profile_manager.measurement_collectors.amaru_factory import (
 from profile_manager.measurement_collectors.cardano_resources import (
     CardanoResourceCollector,
     _docker_container_identity,
+    _docker_container_sample,
 )
+from profile_manager.measurement_collectors.amaru_resources import _counter_delta, _distribution
 from profile_manager.measurement_runtime import CollectorContext
 
 import json
@@ -738,3 +740,44 @@ def test_cardano_resource_collector_samples_exact_owned_container_cgroup(
     assert result["measurements"]["container_tasks"]["maximum"] == 16
     assert result["measurements"]["network_rx_bytes"]["scope"] == "container-network-namespace"
     assert commands[1][-1] == "abcdef1234567890"
+
+
+# --- full tap coverage: in-container process probe and reset-tolerant counters ---
+
+def test_docker_sample_reads_process_stats_inside_the_target(tmp_path):
+    def docker_run(command, **_kwargs):
+        if command[:2] == ["docker", "stats"]:
+            return SimpleNamespace(returncode=0, stdout=json.dumps({"ID": "abc123", "Name": "amaru-relay-1", "CPUPerc": "12.5%", "PIDs": "28", "MemUsage": "1.2GiB / 8GiB", "NetIO": "684kB / 20kB", "BlockIO": "9.66MB / 0B"}) + "\n")
+        if command[:2] == ["docker", "exec"]:
+            assert command[2] == "abc123def" and command[3:5] == ["sh", "-c"]
+            return SimpleNamespace(returncode=0, stdout="pid=1\nclk_tck=100\nvmrss_kb=204800\nthreads=29\nfds=31\nutime=1234\nstime=66\n", stderr="")
+        raise AssertionError(command)
+    sample = _docker_container_sample({"container_id": "abc123def", "container_name": "amaru-relay-1"}, docker_run=docker_run)
+    assert sample["rss_bytes"] == 204800 * 1024 and sample["threads"] == 29 and sample["fd_count"] == 31
+    assert sample["cpu_time_seconds"] == 13.0 and sample["probe_mode"] == "docker-exec-proc"
+    assert sample["network_rx_bytes"] == 684000 and sample["container_tasks"] == 28
+
+
+def test_docker_sample_survives_a_failed_process_probe(tmp_path):
+    def docker_run(command, **_kwargs):
+        if command[:2] == ["docker", "stats"]:
+            return SimpleNamespace(returncode=0, stdout=json.dumps({"ID": "abc123", "Name": "n", "CPUPerc": "1%", "PIDs": "3", "MemUsage": "1MiB / 8GiB", "NetIO": "0B / 0B", "BlockIO": "0B / 0B"}) + "\n")
+        return SimpleNamespace(returncode=126, stdout="", stderr="exec: sh: not found")
+    sample = _docker_container_sample({"container_id": "abc123", "container_name": "n"}, docker_run=docker_run)
+    assert sample["rss_bytes"] is None and sample["probe_mode"] == "unavailable"
+    assert "sh: not found" in sample["errors"][0]
+
+
+def test_counter_delta_sums_steps_across_a_reset():
+    samples = [{"monotonic_seconds": t, "network_rx_bytes": v} for t, v in ((0, 1000), (1, 1500), (2, 2000), (3, 100), (4, 400))]
+    result = _counter_delta(samples, "network_rx_bytes", "bytes")
+    assert result["status"] == "available" and result["delta"] == 1300 and result["resets"] == 1
+    assert result["delta_rule"] == "sum-of-steps-with-resets" and result["rate_per_second"] == 325.0
+    last_reset = _counter_delta(samples[:3] + [{"monotonic_seconds": 3, "network_rx_bytes": 0}], "network_rx_bytes", "bytes")
+    assert last_reset["delta"] == 1000 and last_reset["resets"] == 1
+    single = _counter_delta(samples[:1], "network_rx_bytes", "bytes")
+    assert single["status"] == "unavailable" and single["reason"] == "at least two monotonic counter samples are required"
+
+
+def test_distribution_without_samples_names_its_reason():
+    assert _distribution([], "rss_bytes", "bytes")["reason"] == "no samples from this source"

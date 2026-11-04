@@ -12,14 +12,15 @@ from scripts.runtime_resource_profile import collect_samples, resolve_target_pid
 
 
 def _distribution(samples: list[dict[str, Any]], field: str, unit: str) -> dict[str, Any]:
-    return distribution_summary(
-        [
-            {"value": sample.get(field), "unit": unit}
-            for sample in samples
-            if sample.get(field) is not None
-        ],
-        unit=unit,
-    )
+    values = [
+        {"value": sample.get(field), "unit": unit}
+        for sample in samples
+        if sample.get(field) is not None
+    ]
+    summary = distribution_summary(values, unit=unit)
+    if not values:
+        summary["reason"] = "no samples from this source"
+    return summary
 
 
 def _counter_delta(
@@ -44,8 +45,19 @@ def _counter_delta(
     start_time, start = points[0]
     end_time, end = points[-1]
     duration = end_time - start_time
-    delta = end - start
-    valid = duration > 0 and delta >= 0
+    # Sum the positive steps between consecutive samples. A drop is a counter reset
+    # (Docker zeroes NetIO/BlockIO when the container restarts); the bytes between
+    # the reset and the next sample are unknown and are not counted, so the result
+    # is a lower bound instead of an invalid window.
+    delta = 0
+    resets = 0
+    for (_previous_time, previous), (_current_time, current) in zip(points, points[1:]):
+        step = current - previous
+        if step >= 0:
+            delta += step
+        else:
+            resets += 1
+    valid = duration > 0
     return {
         "status": "available" if valid else "unavailable",
         "unit": unit,
@@ -54,8 +66,10 @@ def _counter_delta(
         "delta": delta if valid else None,
         "duration_seconds": duration,
         "rate_per_second": delta / duration if valid else None,
+        "resets": resets,
+        "delta_rule": "sum-of-steps-with-resets",
         **({"scope": scope} if scope else {}),
-        **({} if valid else {"reason": "counter reset or non-positive sample duration"}),
+        **({} if valid else {"reason": "non-positive sample duration"}),
     }
 
 

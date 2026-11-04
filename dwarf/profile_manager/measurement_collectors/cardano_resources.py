@@ -155,6 +155,67 @@ def _docker_container_identity(
     }
 
 
+# Process statistics come from inside the target through `docker exec sh -c`: POSIX sh,
+# `cat` and `ls` only (the node images carry no grep). The node process is PID 1 when
+# its comm is a node binary; otherwise the first process whose comm is one (cardano-node
+# runs under a bash wrapper). No host PID namespace is shared with the dashboard.
+PROC_PROBE_SCRIPT = (
+    "pid=''; "
+    "for c in amaru cardano-node; do "
+    "if [ \"$(cat /proc/1/comm 2>/dev/null)\" = \"$c\" ]; then pid=1; fi; done; "
+    "if [ -z \"$pid\" ]; then "
+    "for d in /proc/[0-9]*; do n=$(cat \"$d/comm\" 2>/dev/null); "
+    "if [ \"$n\" = cardano-node ] || [ \"$n\" = amaru ]; then pid=${d#/proc/}; break; fi; done; fi; "
+    "if [ -z \"$pid\" ]; then echo 'error=node process not found'; exit 3; fi; "
+    "echo \"pid=$pid\"; "
+    "tck=$(getconf CLK_TCK 2>/dev/null); echo \"clk_tck=${tck:-100}\"; "
+    "while read -r k v rest; do "
+    "case $k in VmRSS:) echo \"vmrss_kb=$v\";; Threads:) echo \"threads=$v\";; esac; "
+    "done < \"/proc/$pid/status\"; "
+    "echo \"fds=$(ls \"/proc/$pid/fd\" 2>/dev/null | wc -l | tr -d ' ')\"; "
+    "set -- $(cat \"/proc/$pid/stat\"); "
+    "echo \"utime=$14\"; echo \"stime=$15\""
+)
+
+
+def _proc_probe(identity: dict[str, str], *, docker_run: Callable[..., Any]) -> dict[str, Any]:
+    """Read RSS, threads, fd count and CPU time of the node process inside the target.
+
+    Returns ``{"probe_mode": "unavailable", "error": ...}`` on any failure so the
+    Docker stats sample is never lost to a missing shell or an exited container."""
+    try:
+        result = docker_run(
+            ["docker", "exec", identity["container_id"], "sh", "-c", PROC_PROBE_SCRIPT],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_DOCKER_STATS_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:  # subprocess timeout or a transport failure
+        return {"probe_mode": "unavailable", "error": f"process probe failed: {exc}"}
+    text = str(getattr(result, "stdout", "") or "")
+    if getattr(result, "returncode", 1) != 0:
+        detail = (str(getattr(result, "stderr", "") or "") + "\n" + text).strip()
+        return {"probe_mode": "unavailable", "error": f"process probe exited {result.returncode}: {detail[:200]}"}
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        key, separator, value = line.strip().partition("=")
+        if separator:
+            fields[key] = value.strip()
+    try:
+        clk_tck = int(fields.get("clk_tck") or 100)
+        ticks = int(fields["utime"]) + int(fields["stime"])
+        return {
+            "probe_mode": "docker-exec-proc",
+            "rss_bytes": int(fields["vmrss_kb"]) * 1024,
+            "threads": int(fields["threads"]),
+            "fd_count": int(fields["fds"]),
+            "cpu_time_seconds": ticks / clk_tck,
+        }
+    except (KeyError, ValueError, ZeroDivisionError) as exc:
+        return {"probe_mode": "unavailable", "error": f"process probe output was incomplete: {exc}"}
+
+
 def _docker_container_sample(
     identity: dict[str, str],
     *,
@@ -198,24 +259,29 @@ def _docker_container_sample(
     container_memory_bytes, _memory_limit = _byte_pair(row.get("MemUsage"), "memory")
     network_rx, network_tx = _byte_pair(row.get("NetIO"), "network")
     disk_read, disk_write = _byte_pair(row.get("BlockIO"), "block I/O")
-    return {
+    probe = _proc_probe(identity, docker_run=docker_run)
+    sample = {
         "container_id": identity["container_id"],
         "container_name": identity["container_name"],
         "monotonic_seconds": time.monotonic(),
         "ts_epoch_s": time.time(),
-        "cpu_time_seconds": None,
+        "cpu_time_seconds": probe.get("cpu_time_seconds"),
         "cpu_percent": cpu_percent,
-        "rss_bytes": None,
+        "rss_bytes": probe.get("rss_bytes"),
         "container_memory_bytes": container_memory_bytes,
         "network_rx_bytes": network_rx,
         "network_tx_bytes": network_tx,
         "network_scope": "container-network-namespace",
         "disk_read_bytes": disk_read,
         "disk_write_bytes": disk_write,
-        "fd_count": None,
-        "threads": None,
+        "fd_count": probe.get("fd_count"),
+        "threads": probe.get("threads"),
         "container_tasks": container_tasks,
+        "probe_mode": probe["probe_mode"],
     }
+    if probe.get("error"):
+        sample["errors"] = [probe["error"]]
+    return sample
 
 
 class ManagedContainerResourceCollector(AmaruResourceCollector):
