@@ -1,0 +1,5 @@
+{
+  "type": "PlutusScriptV3",
+  "description": "DWARF revision-retained rejected-outcome measurement workload (V3)",
+  "cborHex": "4746010000222601"
+}

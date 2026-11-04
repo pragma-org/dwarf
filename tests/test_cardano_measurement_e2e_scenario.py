@@ -403,3 +403,138 @@ def test_amaru_entry_node_binds_consumer_socket_volume(monkeypatch):
     assert node["component"] == "support"
     with pytest.raises(RuntimeError, match="entry node"):
         calibration.amaru_entry_node({"identity": {"services": {}}})
+
+
+def _fake_plutus_cli(monkeypatch, *, wait_outcomes=None):
+    """Stand in for cardano-cli and chain queries around run_plutus_workload."""
+    from types import SimpleNamespace
+
+    calls = {"checked": [], "waits": [], "absent_waits": []}
+
+    def checked(command, **_kwargs):
+        calls["checked"].append(command)
+        if "--out-file" in command:
+            Path(command[command.index("--out-file") + 1]).write_text("tx")
+        if command[1:3] == ["address", "build"]:
+            return SimpleNamespace(stdout="addr_test1fake\n")
+        return SimpleNamespace(stdout="")
+
+    def query_utxo(**_kwargs):
+        return {
+            "genesis#0": {"value": {"lovelace": 10**12}},
+            "lock0#1": {"value": {"lovelace": 5_000_000}},
+            "lock1#1": {"value": {"lovelace": 5_000_000}},
+        }
+
+    outcomes = iter(wait_outcomes or [])
+
+    def wait_for_utxo(**kwargs):
+        calls["waits"].append(kwargs)
+        try:
+            outcome = next(outcomes)
+        except StopIteration:
+            outcome = ({kwargs["transaction_id"] + "#0": {"value": {"lovelace": 1}}}, 1.0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    def wait_absent(**kwargs):
+        calls["absent_waits"].append(kwargs)
+        return 1.0
+
+    monkeypatch.setattr(calibration, "_checked", checked)
+    monkeypatch.setattr(calibration, "_query_utxo", query_utxo)
+    monkeypatch.setattr(calibration, "_wait_for_utxo", wait_for_utxo)
+    monkeypatch.setattr(calibration, "_wait_for_utxo_key_absent", wait_absent)
+    monkeypatch.setattr(
+        calibration, "_transaction_id",
+        lambda _cli, path: path.name.split(".")[0].replace("-", ""),
+    )
+    return calls
+
+
+def _plutus_runtime(tmp_path):
+    key_root = tmp_path / "keys"
+    key_root.mkdir()
+    (key_root / "utxo.vkey").write_text("{}")
+    (key_root / "utxo.skey").write_text("{}")
+    runtime = {"network_magic": 42, "workload_socket_remote": True,
+               "workload_key_root": str(key_root), "support_binaries": {"cardano-cli": "fake-cli"}}
+    node = {"socket_path": "/state/node.socket"}
+    return runtime, node
+
+
+def test_select_plutus_language_prefers_v2_then_v3(monkeypatch):
+    from types import SimpleNamespace
+
+    for models, expected in (
+        ({"PlutusV1": [], "PlutusV2": [], "PlutusV3": []}, "v2"),
+        ({"PlutusV1": [], "PlutusV3": []}, "v3"),
+    ):
+        monkeypatch.setattr(
+            calibration, "_checked",
+            lambda command, **_k: SimpleNamespace(stdout=json.dumps({"costModels": models})),
+        )
+        assert calibration.select_plutus_language(
+            cli="cardano-cli", socket_path="/s", network_magic=42
+        ) == expected
+    monkeypatch.setattr(
+        calibration, "_checked",
+        lambda command, **_k: SimpleNamespace(stdout=json.dumps({"costModels": {"PlutusV1": []}})),
+    )
+    with pytest.raises(RuntimeError, match="cost model"):
+        calibration.select_plutus_language(cli="cardano-cli", socket_path="/s", network_magic=42)
+
+
+def test_plutus_workload_uses_v3_control_scripts_when_selected(monkeypatch, tmp_path):
+    import hashlib
+
+    _fake_plutus_cli(monkeypatch)
+    runtime, node = _plutus_runtime(tmp_path)
+
+    result = calibration.run_plutus_workload(
+        runtime_root=tmp_path, runtime=runtime, node=node, output_dir=tmp_path / "out",
+        transaction_count=2, script_language="v3",
+    )
+
+    work = tmp_path / "out" / "plutus-workload"
+    assert (work / "always-succeeds-v3.plutus").is_file()
+    assert (work / "always-fails-v3.plutus").is_file()
+    assert result["script_language"] == "v3"
+    succeeds = ROOT / "dwarf/corpora/redeemer-container/live-controls/always-succeeds-v3.plutus"
+    fails = ROOT / "dwarf/corpora/cardano-measurement/always-fails-v3.plutus"
+    assert result["scripts"]["accepted"]["sha256"] == "sha256:" + hashlib.sha256(succeeds.read_bytes()).hexdigest()
+    assert result["scripts"]["rejected"]["sha256"] == "sha256:" + hashlib.sha256(fails.read_bytes()).hexdigest()
+    assert json.loads(fails.read_text())["type"] == "PlutusScriptV3"
+    assert [row["outcome"] for row in result["records"]] == ["accepted", "rejected"]
+
+
+def test_plutus_workload_falls_back_to_producer_after_inclusion_timeout(monkeypatch, tmp_path):
+    calls = _fake_plutus_cli(monkeypatch, wait_outcomes=[RuntimeError("transaction lock0 did not appear")])
+    runtime, node = _plutus_runtime(tmp_path)
+    forwarded = []
+
+    result = calibration.run_plutus_workload(
+        runtime_root=tmp_path, runtime=runtime, node=node, output_dir=tmp_path / "out",
+        transaction_count=1, fallback_submit=forwarded.append, inclusion_fallback_seconds=0.1,
+    )
+
+    assert [path.name for path in forwarded] == ["lock-0.tx"]
+    assert calls["waits"][0]["timeout_seconds"] == 0.1
+    assert "timeout_seconds" not in calls["waits"][1]
+    assert result["records"][0]["relay_forwarded"] is False
+
+
+def test_plutus_workload_without_fallback_keeps_single_wait_and_null_relay_flag(monkeypatch, tmp_path):
+    calls = _fake_plutus_cli(monkeypatch)
+    runtime, node = _plutus_runtime(tmp_path)
+
+    result = calibration.run_plutus_workload(
+        runtime_root=tmp_path, runtime=runtime, node=node, output_dir=tmp_path / "out",
+        transaction_count=1,
+    )
+
+    assert len(calls["waits"]) == 2
+    assert all("timeout_seconds" not in wait for wait in calls["waits"])
+    assert result["records"][0]["relay_forwarded"] is None
+    assert result["script_language"] == "v2"

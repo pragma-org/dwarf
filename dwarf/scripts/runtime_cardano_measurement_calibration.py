@@ -17,7 +17,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 
 from scripts.runtime_amaru_measurement_calibration import (
     ACCEPTANCE_CASE_SET,
@@ -48,6 +48,16 @@ PLUTUS_SCRIPT = (
     / "always-succeeds-v2.plutus"
 )
 PLUTUS_FAIL_SCRIPT = PLUTUS_SCRIPT.with_name("always-fails-v2.plutus")
+_CORPORA = PLUTUS_SCRIPT.parents[1]
+# Control scripts per Plutus language; the Amaru devnet ships no PlutusV2 cost
+# model, so a live workload selects the language from the protocol parameters.
+PLUTUS_SCRIPTS = {
+    "v2": (PLUTUS_SCRIPT, PLUTUS_FAIL_SCRIPT),
+    "v3": (
+        _CORPORA / "redeemer-container" / "live-controls" / "always-succeeds-v3.plutus",
+        PLUTUS_SCRIPT.with_name("always-fails-v3.plutus"),
+    ),
+}
 
 
 def _utc_now() -> str:
@@ -677,13 +687,58 @@ def _containerized_cardano_workload(
                 primary_error.add_note(f"Cardano workload cleanup failed: {cleanup_error}")
 
 
+def select_plutus_language(*, cli: str, socket_path: str, network_magic: int) -> str:
+    """Pick the control-script language the live chain can evaluate (V2, else V3)."""
+    result = _checked([
+        cli, "query", "protocol-parameters",
+        "--socket-path", socket_path, "--testnet-magic", str(network_magic),
+    ])
+    try:
+        cost_models = json.loads(result.stdout).get("costModels") or {}
+    except (json.JSONDecodeError, AttributeError) as exc:
+        raise RuntimeError("live protocol parameters are not readable") from exc
+    if "PlutusV2" in cost_models:
+        return "v2"
+    if "PlutusV3" in cost_models:
+        return "v3"
+    raise RuntimeError("live protocol parameters have no PlutusV2 or PlutusV3 cost model")
+
+
+def _await_inclusion(
+    wait: Callable[[float | None], Any],
+    *,
+    tx_path: Path,
+    fallback_submit: Callable[[Path], None] | None,
+    inclusion_fallback_seconds: float,
+) -> tuple[Any, bool | None]:
+    """Wait for inclusion; after the fallback window resubmit through the producer.
+
+    Returns the wait result and whether the entry node forwarded the transaction
+    on its own (None when no fallback path is configured).
+    """
+    if fallback_submit is None:
+        return wait(None), None
+    try:
+        return wait(inclusion_fallback_seconds), True
+    except RuntimeError:
+        fallback_submit(tx_path)
+        return wait(None), False
+
+
 def run_plutus_workload(
     *, runtime_root: Path, runtime: dict[str, Any], node: dict[str, Any],
-    output_dir: Path, transaction_count: int,
+    output_dir: Path, transaction_count: int, script_language: str = "v2",
+    fallback_submit: Callable[[Path], None] | None = None,
+    inclusion_fallback_seconds: float = 30.0,
 ) -> dict[str, Any]:
     if transaction_count < 1 or transaction_count > 100:
         raise ValueError("plutus transaction count must be within 1..100")
-    for source in (PLUTUS_SCRIPT, PLUTUS_FAIL_SCRIPT):
+    if script_language not in PLUTUS_SCRIPTS:
+        raise ValueError(f"unsupported Plutus script language: {script_language}")
+    if inclusion_fallback_seconds <= 0:
+        raise ValueError("inclusion_fallback_seconds must be positive")
+    succeeds_script, fails_script = PLUTUS_SCRIPTS[script_language]
+    for source in (succeeds_script, fails_script):
         if not source.is_file():
             raise RuntimeError(f"retained Plutus workload is missing: {source}")
     cli = str((runtime.get("support_binaries") or {}).get("cardano-cli") or "cardano-cli")
@@ -708,11 +763,11 @@ def run_plutus_workload(
     work = output_dir / "plutus-workload"
     work.mkdir(parents=True, exist_ok=True)
     scripts = {
-        "accepted": work / "always-succeeds-v2.plutus",
-        "rejected": work / "always-fails-v2.plutus",
+        "accepted": work / f"always-succeeds-{script_language}.plutus",
+        "rejected": work / f"always-fails-{script_language}.plutus",
     }
-    shutil.copy2(PLUTUS_SCRIPT, scripts["accepted"])
-    shutil.copy2(PLUTUS_FAIL_SCRIPT, scripts["rejected"])
+    shutil.copy2(succeeds_script, scripts["accepted"])
+    shutil.copy2(fails_script, scripts["rejected"])
     payment_address = _checked([
         cli, "address", "build", "--testnet-magic", str(network_magic),
         "--payment-verification-key-file", str(verification_key),
@@ -762,10 +817,20 @@ def run_plutus_workload(
         ])
         lock_submit_us = (time.perf_counter_ns() - lock_started) / 1_000
         lock_id = _transaction_id(cli, lock_tx)
-        script_utxo, lock_include_us = _wait_for_utxo(
-            cli=cli, socket_path=socket_path, network_magic=network_magic,
-            address=script_address, destination=work / f"script-{index}.json",
-            transaction_id=lock_id, present=True,
+
+        def wait_lock(timeout: float | None, _lock_id=lock_id, _index=index):
+            arguments = dict(
+                cli=cli, socket_path=socket_path, network_magic=network_magic,
+                address=script_address, destination=work / f"script-{_index}.json",
+                transaction_id=_lock_id, present=True,
+            )
+            if timeout is not None:
+                arguments["timeout_seconds"] = timeout
+            return _wait_for_utxo(**arguments)
+
+        (script_utxo, lock_include_us), lock_forwarded = _await_inclusion(
+            wait_lock, tx_path=lock_tx, fallback_submit=fallback_submit,
+            inclusion_fallback_seconds=inclusion_fallback_seconds,
         )
         script_tx_in = next(
             key for key in script_utxo if key.startswith(lock_id + "#")
@@ -812,20 +877,42 @@ def run_plutus_workload(
         submit_us = submit_response_nanos / 1_000
         spend_id = _transaction_id(cli, spend_tx)
         if expected_outcome == "accepted":
-            _body, include_us = _wait_for_utxo(
-                cli=cli, socket_path=socket_path, network_magic=network_magic,
-                address=payment_address, destination=work / f"regular-{index}-after.json",
-                transaction_id=spend_id, present=True,
+            def wait_spend(timeout: float | None, _spend_id=spend_id, _index=index):
+                arguments = dict(
+                    cli=cli, socket_path=socket_path, network_magic=network_magic,
+                    address=payment_address, destination=work / f"regular-{_index}-after.json",
+                    transaction_id=_spend_id, present=True,
+                )
+                if timeout is not None:
+                    arguments["timeout_seconds"] = timeout
+                return _wait_for_utxo(**arguments)
+
+            (_body, include_us), spend_forwarded = _await_inclusion(
+                wait_spend, tx_path=spend_tx, fallback_submit=fallback_submit,
+                inclusion_fallback_seconds=inclusion_fallback_seconds,
             )
             chain_outcome = "included-valid"
         else:
-            include_us = _wait_for_utxo_key_absent(
-                cli=cli, socket_path=socket_path, network_magic=network_magic,
-                address=payment_address,
-                destination=work / f"regular-{index}-after.json",
-                utxo_key=collateral,
+            def wait_collateral(timeout: float | None, _collateral=collateral, _index=index):
+                arguments = dict(
+                    cli=cli, socket_path=socket_path, network_magic=network_magic,
+                    address=payment_address,
+                    destination=work / f"regular-{_index}-after.json",
+                    utxo_key=_collateral,
+                )
+                if timeout is not None:
+                    arguments["timeout_seconds"] = timeout
+                return _wait_for_utxo_key_absent(**arguments)
+
+            include_us, spend_forwarded = _await_inclusion(
+                wait_collateral, tx_path=spend_tx, fallback_submit=fallback_submit,
+                inclusion_fallback_seconds=inclusion_fallback_seconds,
             )
             chain_outcome = "included-invalid"
+        relay_forwarded = (
+            None if lock_forwarded is None and spend_forwarded is None
+            else bool(lock_forwarded) and bool(spend_forwarded)
+        )
         outcome_nanos = time.perf_counter_ns() - submit_started
         records.append({
             "attempt_id": f"plutus-{index:04d}",
@@ -838,6 +925,7 @@ def run_plutus_workload(
             "plutus_build_us": build_us,
             "plutus_submit_us": submit_us,
             "plutus_submit_to_include_us": include_us,
+            "relay_forwarded": relay_forwarded,
             "transaction_bytes": spend_tx.stat().st_size,
             "elapsed_nanos": outcome_nanos,
             "elapsed_micros": outcome_nanos / 1_000,
@@ -857,6 +945,7 @@ def run_plutus_workload(
             for outcome, script in scripts.items()
         },
         "transaction_count": transaction_count,
+        "script_language": script_language,
         "records": records,
     }
     (work / "result.json").write_text(
