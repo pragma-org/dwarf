@@ -4,53 +4,71 @@
   "exceptions": [
     {
       "implementation": "amaru",
-      "modes": ["stock", "patched"],
+      "modes": [
+        "stock",
+        "patched"
+      ],
       "concept": "header-arrival-offset",
       "reason": "Amaru 10.11.20261029 exports header receipt in the global epoch and slot start in chain-relative time; the interval is not measurable on this release."
     },
     {
       "implementation": "amaru",
-      "modes": ["patched"],
+      "modes": [
+        "patched"
+      ],
       "concept": "header-validation-time",
       "reason": "The Amaru nanoseconds-v3 patch set for 10.11.20261029 carries no header-validation tap; porting the 20260918 nanoseconds-v4 tap is a separate Rust job."
     },
     {
       "implementation": "cardano-node",
-      "modes": ["stock"],
+      "modes": [
+        "stock"
+      ],
       "concept": "epoch-transition-time",
       "reason": "Stock cardano-node exposes no single authoritative epoch-transition interval; the patched run carries epoch_transition."
     },
     {
       "implementation": "cardano-node",
-      "modes": ["stock"],
+      "modes": [
+        "stock"
+      ],
       "concept": "plutus-execution-time",
       "reason": "Stock cardano-node exposes no authoritative per-execution Plutus wall-clock interval; the patched run carries plutus_vm."
     },
     {
       "implementation": "cardano-node",
-      "modes": ["stock"],
+      "modes": [
+        "stock"
+      ],
       "concept": "handler-queue-residence",
       "reason": "Stock cardano-node does not emit the audited internal BlockFetch handler-queue boundary; the patched run carries the queue residence bounds."
     },
     {
       "implementation": "cardano-node",
-      "modes": ["stock"],
+      "modes": [
+        "stock"
+      ],
       "concept": "txsubmission-residence",
       "reason": "Stock cardano-node does not emit a continuous TxSubmission request-to-mempool residence interval; the patched run carries the residence bounds."
     },
     {
       "implementation": "cardano-node",
-      "modes": ["stock", "patched"],
+      "modes": [
+        "stock",
+        "patched"
+      ],
       "concept": "mempool-sync-time",
-      "reason": "Provisional: TraceMempoolSynced is Debug-level; the Mempool namespace is raised to Debug for the reruns.",
-      "provisional": true
+      "reason": "The 2026-11-04 workload reruns retained no TraceMempoolSynced record from cardano-node 11.1.2 even with the Mempool namespace at Debug; the stock collector reports mempool_sync_duration unavailable. Measured fact, not an assumption.",
+      "provisional": false
     },
     {
       "implementation": "amaru",
-      "modes": ["patched"],
+      "modes": [
+        "patched"
+      ],
       "concept": "handler-queue-residence",
-      "reason": "Provisional: BlockFetch queue residence needs pending requests; the controlled sync range is raised to 200 blocks for the reruns.",
-      "provisional": true
+      "reason": "The 2026-11-04 patched rerun (200-block controlled sync on amaru 10.11.20261029) produced no BlockFetch queue residence events: requests were never queued behind one another at this load. Measured fact, not an assumption.",
+      "provisional": false
     }
   ]
 }

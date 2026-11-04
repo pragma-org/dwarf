@@ -170,5 +170,7 @@ def test_measurement_configs_select_the_v2_txsubmission_logic(tmp_path):
     assert CARDANO_MEASUREMENT_NODE_SETTINGS == {"TxSubmissionLogicVersion": "TxSubmissionLogicV2"}
     path = tmp_path / "configuration.yaml"
     path.write_text(json.dumps({"TraceOptions": {}, "TxSubmissionLogicVersion": "TxSubmissionLogicV1"}))
-    _enable_cardano_measurement_traces(path)
+    record = _enable_cardano_measurement_traces(path)
     assert json.loads(path.read_text())["TxSubmissionLogicVersion"] == "TxSubmissionLogicV2"
+    # The retained trace-config record names every non-default node setting applied (review finding #5).
+    assert record["node_settings"] == {"TxSubmissionLogicVersion": "TxSubmissionLogicV2"}

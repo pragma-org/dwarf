@@ -198,9 +198,11 @@ class RunHandle:
         if measurement_context is not None:
             self.set_measurement_context(measurement_context)
 
-    def log(self, *, phase, primitive, level, event, payload=None):
+    def log(self, *, phase, primitive, level, event, payload=None, ts=None):
+        # ``ts`` lets a primitive record the time an event describes (an attempt's own
+        # clock) instead of the moment it was written; it must be the same ISO form.
         entry = {
-            "ts": _utc_now_iso(),
+            "ts": ts if isinstance(ts, str) and ts else _utc_now_iso(),
             "phase": phase,
             "primitive": primitive,
             "level": level,

@@ -477,6 +477,16 @@ def _resolve_endpoint(runtime_metadata_path: Path | None, target_node: str, targ
     return port, network_magic
 
 
+def _classify_handshake_reply(payload: bytes) -> str:
+    """MsgAcceptVersion is CBOR [1, version, params]; MsgRefuse is [2, reason]; a query
+    reply is [3, versions]. Anything else is reported as the raw kind it was."""
+    if not payload:
+        return "eof"
+    if len(payload) >= 2 and payload[0] in (0x82, 0x83):
+        return {1: "accepted", 2: "refused", 3: "query-reply"}.get(payload[1], "data")
+    return "data"
+
+
 def _serve_transaction(
     *, runtime_metadata_path: Path | None, target_node: str, output_dir: Path, target_host: str,
     target_port: int | None, endpoint_source: str, runtime_identity_path: str | None,
@@ -498,22 +508,25 @@ def _serve_transaction(
     started = time.perf_counter()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    def send(payload: bytes) -> None:
-        sock.sendall(_encode_mux_sdu(payload, mini_protocol_num=4))
+    # We are the connection's initiator: every frame we send carries mux bit 31 clear
+    # (the calibration helper's accepted handshake frame is 0x0000000a); the helper's
+    # ``initiator`` flag names the responder bit, so it is False here.
+    def send(payload: bytes, *, mini_protocol_num: int = 4) -> None:
+        sock.sendall(_encode_mux_sdu(payload, mini_protocol_num=mini_protocol_num, initiator=False))
         transcript.append({"direction": "send", "payload_hex": payload.hex()})
 
     with socket.create_connection((target_host, port), timeout=2.0) as sock:
         sock.settimeout(response_timeout_seconds)
-        sock.sendall(_encode_mux_sdu(handshake_payload, mini_protocol_num=0))
+        send(handshake_payload, mini_protocol_num=0)
         try:
             handshake_response = _recv_mux_payload(sock)
-            handshake_response_kind = "data" if handshake_response else "eof"
+            handshake_response_kind = _classify_handshake_reply(handshake_response)
         except socket.timeout:
             handshake_response_kind = "timeout"
         except ConnectionResetError:
             handshake_response_kind = "reset"
-        if handshake_response_kind != "data":
-            raise RuntimeError(f"valid handshake proposal did not produce a data response; got {handshake_response_kind}")
+        if handshake_response_kind != "accepted":
+            raise RuntimeError(f"handshake proposal was not accepted; got {handshake_response_kind}")
         send(init_payload)
         for _ in range(4):   # request-txids, request-txs, then the node's follow-up
             try:

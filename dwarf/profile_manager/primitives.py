@@ -20,7 +20,7 @@ import subprocess
 import tempfile
 from collections import Counter
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional
@@ -13807,6 +13807,21 @@ def _plutus_workload_attempts(
     )
 
 
+def _attempt_start_time(row: dict) -> dict:
+    """An attempt row's own start clock as epoch seconds, from either form the helpers write."""
+    value = row.get("started_at_epoch_seconds")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return {"started_at_epoch_seconds": float(value)}
+    stamp = row.get("started_at")
+    if isinstance(stamp, str) and stamp:
+        for pattern in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+            try:
+                return {"started_at_epoch_seconds": datetime.strptime(stamp, pattern).replace(tzinfo=timezone.utc).timestamp()}
+            except ValueError:
+                continue
+    return {}
+
+
 class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
     """Run one retained real-node leg of the stock/patched Amaru calibration."""
 
@@ -14028,6 +14043,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
                 "input_id": str(row.get("attempt_id") or ""),
                 "outcome": str(row.get("outcome") or "unclassified"),
                 "elapsed_micros": int(row.get("elapsed_micros") or 0),
+                **_attempt_start_time(row),
             }
             for row in attempt_records
         ]
@@ -14067,21 +14083,28 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             ) + sum(int(row.get("bytes") or 0) for row in plutus_attempts),
             "batches": len(attempts),
         }
-        # The workload is closed-loop: one attempt is in flight at a time, so the
-        # backlog curve is a per-attempt series of 1 that drains to 0 at the end.
-        # Per-attempt events carry no totals (attempted 0) so the collector's sums
-        # stay those of the final cumulative event.
+        # The workload is closed-loop: one attempt is in flight from its start to its
+        # end. Each attempt yields two samples at the attempt's own clock (in flight at
+        # its start, drained at its end) so the backlog series sits in real time; an
+        # attempt without a clock yields one undated sample. Samples carry no totals
+        # (attempted 0) so the collector's sums stay those of the cumulative event.
+        empty = {"attempted": 0, "successful": 0, "rejected": 0, "timed_out": 0, "bytes": 0, "batches": 0, "attempts": []}
         for row in attempts:
-            handle.log(
-                phase="load",
-                primitive=self._PRIMITIVE_NAME,
-                level="info",
-                event="workload_accounting",
-                payload={
-                    "attempted": 0, "successful": 0, "rejected": 0, "timed_out": 0,
-                    "bytes": 0, "batches": 0, "backlog": 1, "attempts": [],
-                },
-            )
+            start = row.get("started_at_epoch_seconds")
+            if isinstance(start, (int, float)):
+                started = datetime.fromtimestamp(start, tz=timezone.utc)
+                ended = started + timedelta(microseconds=int(row.get("elapsed_micros") or 0))
+                for moment, backlog in ((started, 1), (ended, 0)):
+                    handle.log(
+                        phase="load", primitive=self._PRIMITIVE_NAME, level="info",
+                        event="workload_accounting", payload={**empty, "backlog": backlog},
+                        ts=moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    )
+            else:
+                handle.log(
+                    phase="load", primitive=self._PRIMITIVE_NAME, level="info",
+                    event="workload_accounting", payload={**empty, "backlog": 1},
+                )
         handle.log(
             phase="load",
             primitive=self._PRIMITIVE_NAME,

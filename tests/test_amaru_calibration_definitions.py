@@ -541,12 +541,14 @@ def test_calibration_primitive_emits_outcome_independent_workload_accounting(
             "outcome": "rejected",
             "elapsed_micros": 12,
             "request_length": 8,
+            "started_at_epoch_seconds": 1_700_000_000.0,
         },
         {
             "attempt_id": "b",
             "outcome": "timeout",
             "elapsed_micros": 34,
             "request_length": 8,
+            "started_at_epoch_seconds": 1_700_000_001.0,
         },
     ]
 
@@ -573,9 +575,14 @@ def test_calibration_primitive_emits_outcome_independent_workload_accounting(
     primitive.run(handle, None)
 
     accounting_events = [event for event in handle.events if event["event"] == "workload_accounting"]
-    # One backlog sample per attempt (nothing attempted yet, one in flight), then the cumulative event.
+    # Two backlog samples per attempt at the attempt's own clock (one in flight at its
+    # start, none at its end), then the cumulative event (review finding #4).
     samples, accounting = accounting_events[:-1], accounting_events[-1]
-    assert len(samples) == 2 and all(e["payload"]["attempted"] == 0 and e["payload"]["backlog"] == 1 for e in samples)
+    assert [(e["payload"]["backlog"], e["payload"]["attempted"]) for e in samples] == [(1, 0), (0, 0), (1, 0), (0, 0)]
+    assert [e["ts"] for e in samples] == [
+        "2023-11-14T22:13:20.000000Z", "2023-11-14T22:13:20.000012Z",
+        "2023-11-14T22:13:21.000000Z", "2023-11-14T22:13:21.000034Z",
+    ]
     assert accounting["payload"] == {
         "attempted": 2,
         "successful": 0,
@@ -585,8 +592,8 @@ def test_calibration_primitive_emits_outcome_independent_workload_accounting(
         "batches": 2,
         "backlog": 0,
         "attempts": [
-            {"input_id": "a", "outcome": "rejected", "elapsed_micros": 12},
-            {"input_id": "b", "outcome": "timeout", "elapsed_micros": 34},
+            {"input_id": "a", "outcome": "rejected", "elapsed_micros": 12, "started_at_epoch_seconds": 1_700_000_000.0},
+            {"input_id": "b", "outcome": "timeout", "elapsed_micros": 34, "started_at_epoch_seconds": 1_700_000_001.0},
         ],
     }
 

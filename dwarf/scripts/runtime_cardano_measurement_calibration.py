@@ -181,12 +181,11 @@ def _submit(cli: str, *, socket_path: str, network_magic: int, tx_path: Path) ->
     stdout = str(getattr(result, "stdout", "") or "")
     error = ""
     if getattr(result, "returncode", 0) != 0:
-        # The wrapper's clock line precedes any error text and is never the reason.
-        error = next(
-            (line for line in (stderr + "\n" + stdout).splitlines()
-             if line.strip() and not _SUBMIT_STARTED_AT.match(line)),
-            "command failed: submit",
-        )
+        # The wrapper's clock line precedes any error text and is never the reason; the
+        # node's reason may span several lines, so the whole bounded text is kept.
+        lines = [line.strip() for line in (stderr + "\n" + stdout).splitlines()
+                 if line.strip() and not _SUBMIT_STARTED_AT.match(line)]
+        error = (" ".join(lines) or "command failed: submit")[:600]
     return parse_submit_started_at(stderr) or 0, stderr, error
 
 
@@ -772,6 +771,14 @@ def _await_inclusion(
     return wait(None), False, errors
 
 
+# cardano-cli renders a node's LocalTxSubmission refusal through these ledger error
+# constructors, whichever implementation answered; anything else is not a rejection.
+LEDGER_REJECTION_MARKERS = (
+    "TxValidationErrorInCardanoEra", "TxValidationEraMismatch", "ApplyTxError",
+    "ShelleyTxValidationError", "UtxoFailure", "UtxowFailure",
+)
+
+
 def _double_spend(
     cli: str, *, socket_path: str, network_magic: int, index: int, tx_path: Path, tx_id: str
 ) -> dict[str, Any]:
@@ -786,10 +793,14 @@ def _double_spend(
         cli, socket_path=socket_path, network_magic=network_magic, tx_path=tx_path
     )
     elapsed = time.perf_counter_ns() - started
+    # Only the node's own ledger refusal is a rejection; a transport or tooling failure
+    # is recorded as a submit error and never counted against the node.
+    rejected = bool(error) and any(marker in error for marker in LEDGER_REJECTION_MARKERS)
+    outcome = "rejected" if rejected else ("submit-error" if error else "accepted-unexpected")
     record: dict[str, Any] = {
         "attempt_id": f"plutus-{index:04d}-double-spend",
-        "outcome": "rejected" if error else "accepted-unexpected",
-        "chain_outcome": "rejected-phase1" if error else "accepted-unexpected",
+        "outcome": outcome,
+        "chain_outcome": "rejected-phase1" if rejected else outcome,
         "spend_transaction_id": tx_id,
         "resubmitted_transaction_file": tx_path.name,
         "relay_forwarded": None,

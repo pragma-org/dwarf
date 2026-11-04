@@ -290,6 +290,9 @@ def _enable_cardano_measurement_traces(config_path: Path) -> dict:
         "enabled": True,
         "namespaces": sorted(CARDANO_MEASUREMENT_TRACE_NAMESPACES),
         "config_path": str(config_path),
+        # Every non-default node setting applied, so a retained run never reads as
+        # plain stock when it ran with measurement settings.
+        "node_settings": dict(CARDANO_MEASUREMENT_NODE_SETTINGS),
     }
 
 

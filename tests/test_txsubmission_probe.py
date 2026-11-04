@@ -51,15 +51,24 @@ class _FakeNode(threading.Thread):
         self.server.listen(1)
         self.port = self.server.getsockname()[1]
         self.received: list[bytes] = []
+        self.header_words: list[int] = []
         self.error: Exception | None = None
+
+    def _recv_frame(self, conn):
+        import struct
+        header = probe._recv_exact(conn, 8)
+        _timestamp, word = struct.unpack(">II", header)
+        self.header_words.append(word)
+        return probe._recv_exact(conn, word & 0xFFFF)
 
     def run(self):
         try:
             conn, _ = self.server.accept()
             conn.settimeout(5)
-            handshake = probe._recv_mux_payload(conn)
+            handshake = self._recv_frame(conn)
             self.received.append(handshake)
-            conn.sendall(probe._encode_mux_sdu(handshake, mini_protocol_num=0, initiator=False))
+            # MsgAcceptVersion [1, 15, params]: the node accepted the proposal.
+            conn.sendall(probe._encode_mux_sdu(bytes.fromhex("83010f84182af400f4"), mini_protocol_num=0, initiator=False))
             init = probe._recv_mux_payload(conn)                      # MsgInit from the client
             self.received.append(init)
             conn.sendall(probe._encode_mux_sdu(bytes([0x84, 0x00, 0xF5, 0x00, 0x01]), mini_protocol_num=4, initiator=False))  # request-txids blocking, ack 0, req 1
@@ -90,6 +99,10 @@ def test_serve_transaction_offers_the_id_then_the_body(tmp_path):
     node.join(5)
     assert node.error is None
     assert node.received[0] == AMARU_OFFER, "the caller's known-accepted proposal is sent verbatim"
+    # Every frame we send travels in the initiator direction (mux bit 31 clear), exactly as
+    # the calibration helper's accepted handshake frame 0x0000000a (review finding #1).
+    assert node.header_words and all(word >> 31 == 0 for word in node.header_words), [hex(w) for w in node.header_words]
+    assert report["handshake_response_kind"] == "accepted"
     assert node.received[1] == bytes.fromhex(probe.TXSUBMISSION_INIT_HEX)
     assert node.received[2] == probe._build_reply_txids_payload_for(TXID_TERM, len(BODY))
     assert node.received[3] == probe._build_reply_txs_payload([BODY])

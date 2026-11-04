@@ -258,8 +258,13 @@ never satisfy the rule; they remain in git history and importable. Cap stays 10.
 | Amaru patched | `amaru-patched-header-validation.*` | Patch set nanoseconds-v3 for 20261029 has no header tap; porting the 20260918 v4 tap is a separate Rust job. |
 | cardano stock only | `epoch_transition_duration`, `plutus_vm_duration`, `handler_queue_residence`, `txsubmission_residence` | Stock node boundaries, reserved by contract; the patched run carries `epoch_transition`, `plutus_vm`, `queue_residence_*`, `request_to_terminal_*`. |
 
-Provisional until the rerun proves them: `mempool_sync_duration` (severity assumption),
-Amaru patched `queue_residence` (pressure assumption).
+| cardano-node (both) | `mempool_sync_duration` | The reruns retained no TraceMempoolSynced record from 11.1.2 even at Mempool Debug (measured, 2026-11-04). |
+| Amaru patched | `queue_residence` | The 200-block controlled sync queued no BlockFetch requests behind one another (measured, 2026-11-04). |
+
+Both were provisional (severity and pressure assumptions); the reruns refuted the assumptions,
+so they stay as measured exceptions. The Amaru N2N rejection (§4.7) was not exercised in the
+retained runs — the probe framed its handshake as responder-sent; see the fix-pass note at
+the top of this document.
 
 ## 7. Left to the builder
 

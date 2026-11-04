@@ -387,6 +387,9 @@ def _plutus_workload_accounting(
             attempt["submit_to_block_inclusion_micros"] = float(record["submit_to_block_inclusion_micros"])
         if record.get("rejected_reason"):
             attempt["rejected_reason"] = str(record["rejected_reason"])
+        if isinstance(record.get("submit_started_at_ns"), int):
+            # The attempt's own clock, so a backlog series can be placed in time.
+            attempt["started_at_epoch_seconds"] = record["submit_started_at_ns"] / 1_000_000_000
         label = record.get("boundary_node") or boundary_node
         if label is not None:
             attempt["boundary_node"] = str(label)
@@ -408,7 +411,11 @@ def _plutus_workload_accounting(
                 if record.get(f"{stage}_nanos") is not None:
                     attempt[f"{stage}_nanos"] = int(record[f"{stage}_nanos"])
                     attempt[f"{stage}_micros"] = float(record[f"{stage}_micros"])
-        if record.get("submit_to_mempool_visibility_nanos") is not None:
+        # Mempool visibility is joined against the target's own trace, so a resubmitted
+        # record keeps it; a peer-submitted record does not, because its clock started
+        # at another node's socket and would mix two entry paths under one label.
+        if (record.get("submit_to_mempool_visibility_nanos") is not None
+                and str(record.get("submission_entry") or "target") != "peer"):
             attempt["submit_to_mempool_visibility_nanos"] = int(record["submit_to_mempool_visibility_nanos"])
             attempt["submit_to_mempool_visibility_micros"] = float(record["submit_to_mempool_visibility_micros"])
         attempts.append(attempt)

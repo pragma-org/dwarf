@@ -843,3 +843,38 @@ def test_join_matches_abbreviated_cardano_trace_ids_by_prefix():
     ]
     assert join_mempool_visibility(records, events) == 1
     assert records[0]["submit_to_mempool_visibility_nanos"] == 250_000_000
+
+
+def test_peer_submitted_records_keep_no_entry_node_visibility_stage():
+    """A peer-submitted record's mempool visibility was measured at node2, not the target;
+    like its protocol-response and chain-adoption stages it is dropped (review finding #3)."""
+    from scripts.runtime_controlled_plutus_transactions import _plutus_workload_accounting
+    records = [
+        {"attempt_id": "plutus-t-0000", "outcome": "accepted", "elapsed_micros": 5.0, "elapsed_nanos": 5000, "transaction_bytes": 10,
+         "spend_transaction_id": "ab" * 32, "submission_entry": "target", "boundary_node": "node1",
+         "submit_to_block_inclusion_nanos": 9000, "submit_to_block_inclusion_micros": 9.0,
+         "submit_to_mempool_visibility_nanos": 1000, "submit_to_mempool_visibility_micros": 1.0,
+         "submit_to_protocol_response_nanos": 2000, "submit_to_protocol_response_micros": 2.0},
+        {"attempt_id": "plutus-p-0000", "outcome": "accepted", "elapsed_micros": 5.0, "elapsed_nanos": 5000, "transaction_bytes": 10,
+         "spend_transaction_id": "cd" * 32, "submission_entry": "peer", "boundary_node": "node2",
+         "submit_to_block_inclusion_nanos": 9000, "submit_to_block_inclusion_micros": 9.0,
+         "submit_to_mempool_visibility_nanos": 1000, "submit_to_mempool_visibility_micros": 1.0,
+         "submit_to_protocol_response_nanos": 2000, "submit_to_protocol_response_micros": 2.0},
+    ]
+    accounting = _plutus_workload_accounting(records, "cardano-node")
+    rows = {row["input_id"]: row for row in accounting["attempts"]}
+    assert "submit_to_mempool_visibility_nanos" in rows["plutus-t-0000"]
+    assert not any(key.startswith("submit_to_mempool_visibility") or key.startswith("submit_to_protocol_response") for key in rows["plutus-p-0000"]), rows["plutus-p-0000"]
+
+
+def test_attempt_rows_carry_their_own_start_time():
+    """The backlog series needs each attempt's own clock, not the moment the leg
+    reported (review finding #4): rows carry started_at_epoch_seconds from the
+    wrapper's submit clock."""
+    from scripts.runtime_controlled_plutus_transactions import _plutus_workload_accounting
+    record = {"attempt_id": "plutus-t-0000", "outcome": "accepted", "elapsed_micros": 5.0, "elapsed_nanos": 5000, "transaction_bytes": 10,
+              "spend_transaction_id": "ab" * 32, "submission_entry": "target", "boundary_node": "node1",
+              "submit_to_block_inclusion_nanos": 9000, "submit_to_block_inclusion_micros": 9.0,
+              "submit_started_at_ns": 1_762_200_000_123_456_789, "submit_clock": "wrapper"}
+    row = _plutus_workload_accounting([record], "cardano-node")["attempts"][0]
+    assert row["started_at_epoch_seconds"] == 1_762_200_000.123456789

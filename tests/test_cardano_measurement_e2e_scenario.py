@@ -858,3 +858,25 @@ def test_split_batches_create_their_output_directories(tmp_path, monkeypatch):
         output_dir=tmp_path / "calibration", transaction_count=4, submission_entry="peer", plutus_split=0.5,
     )
     assert seen == [("plutus-target", True), ("plutus-peer", True)]
+
+
+def test_double_spend_counts_as_rejected_only_on_a_ledger_rejection(tmp_path, monkeypatch):
+    """A transport or tooling failure is not a node rejection (review finding #2)."""
+    from types import SimpleNamespace
+    calls = {"n": 0}
+    outputs = [
+        "submit_started_at_ns=1762200000123456789\nCommand failed: transaction submit  Error:\nTxValidationErrorInCardanoEra (ConwayUtxowFailure (UtxoFailure (BadInputsUTxO ...)))",
+        "submit_started_at_ns=1762200000223456789\nCommand failed: transaction submit  Error: Network.Socket.connect: <socket: 11>: does not exist (No such file or directory)",
+    ]
+
+    def run(command, **kwargs):
+        text = outputs[min(calls["n"], 1)]; calls["n"] += 1
+        return SimpleNamespace(returncode=1, stdout="", stderr=text)
+
+    monkeypatch.setattr(calibration, "_run", run)
+    rejected = calibration._double_spend("cardano-cli", socket_path="/s", network_magic=42, index=3, tx_path=tmp_path / "spend-3.tx", tx_id="ab" * 32)
+    assert rejected["outcome"] == "rejected" and rejected["chain_outcome"] == "rejected-phase1"
+    assert "BadInputsUTxO" in rejected["rejected_reason"] and "submit_started_at_ns" not in rejected["rejected_reason"]
+    failed = calibration._double_spend("cardano-cli", socket_path="/s", network_magic=42, index=4, tx_path=tmp_path / "spend-3.tx", tx_id="ab" * 32)
+    assert failed["outcome"] == "submit-error" and failed["chain_outcome"] == "submit-error"
+    assert "does not exist" in failed["rejected_reason"]
