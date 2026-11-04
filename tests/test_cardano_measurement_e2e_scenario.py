@@ -442,7 +442,13 @@ def _fake_plutus_cli(monkeypatch, *, wait_outcomes=None):
         calls["absent_waits"].append(kwargs)
         return 1.0
 
+    def run(command, **_kwargs):
+        # Submits go through _run so the wrapper's submit clock line is captured.
+        calls["checked"].append(command)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
     monkeypatch.setattr(calibration, "_checked", checked)
+    monkeypatch.setattr(calibration, "_run", run)
     monkeypatch.setattr(calibration, "_query_utxo", query_utxo)
     monkeypatch.setattr(calibration, "_wait_for_utxo", wait_for_utxo)
     monkeypatch.setattr(calibration, "_wait_for_utxo_key_absent", wait_absent)
@@ -506,7 +512,8 @@ def test_plutus_workload_uses_v3_control_scripts_when_selected(monkeypatch, tmp_
     assert result["scripts"]["accepted"]["sha256"] == "sha256:" + hashlib.sha256(succeeds.read_bytes()).hexdigest()
     assert result["scripts"]["rejected"]["sha256"] == "sha256:" + hashlib.sha256(fails.read_bytes()).hexdigest()
     assert json.loads(fails.read_text())["type"] == "PlutusScriptV3"
-    assert [row["outcome"] for row in result["records"]] == ["accepted", "rejected"]
+    spends = [row for row in result["records"] if not row["attempt_id"].endswith("-double-spend")]
+    assert [row["outcome"] for row in spends] == ["accepted", "rejected"]
 
 
 def test_plutus_workload_falls_back_to_producer_after_inclusion_timeout(monkeypatch, tmp_path):
@@ -682,7 +689,7 @@ def test_plutus_workload_fallback_becomes_sticky_after_first_miss(monkeypatch, t
     # tx 0 lock missed the window -> fallback; from then on every submit goes
     # to the producer immediately and waits with the default budget only.
     assert [path.name for path in forwarded] == ["lock-0.tx", "spend-0.tx", "lock-1.tx", "spend-1.tx"]
-    assert [row["relay_forwarded"] for row in result["records"]] == [False, False]
+    assert [row["relay_forwarded"] for row in result["records"] if not row["attempt_id"].endswith("-double-spend")] == [False, False]
     assert all("timeout_seconds" not in wait for wait in calls["waits"][1:])
     assert result["fallback_sticky_from"] == 0
 
