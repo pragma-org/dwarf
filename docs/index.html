@@ -12998,7 +12998,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       // Rows without a value on any picked build are hidden unless the operator asks for them; say so.
       var hidden = filters.show_unmeasured === '1' ? 0 : result.unmeasured_metric_count || 0;
       var summaryText = result.picked_run_count + ' runs picked across ' + result.picked_scenario_count + ' workloads · ' + result.rows.length + ' concept rows with values';
-      if (hidden) summaryText += ' · ' + hidden + ' without a value hidden (Filter → Include unmeasured metrics shows them)';
+      if (hidden) summaryText += ' · ' + hidden + ' without a value hidden';
       var summaryNote = el('p', summaryText, 'mc-note'); summaryNote.setAttribute('data-compare-pick-summary', ''); section.appendChild(summaryNote);
     }
     if (rows.some(function (row) { return row.antithesis_grouped; })) section.appendChild(el('p', 'Antithesis measurements are grouped by concept. Each node retains its own samples and timing boundaries.', 'mc-note'));
