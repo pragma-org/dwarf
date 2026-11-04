@@ -808,3 +808,27 @@ def test_counter_delta_carries_its_sample_count_as_evidence_for_a_zero():
     samples = [{"monotonic_seconds": t, "disk_read_bytes": 39100000} for t in range(4)]
     result = _counter_delta(samples, "disk_read_bytes", "bytes")
     assert result["delta"] == 0 and result["sample_count"] == 4
+
+
+def test_proc_probe_script_finds_a_node_run_under_the_dynamic_loader(tmp_path):
+    """cardano-node images start the node via ld-linux, so its comm is the loader's
+    name; the entrypoint shell (whose cmdline also names the node) must not be picked."""
+    import subprocess
+    from profile_manager.measurement_collectors.cardano_resources import PROC_PROBE_SCRIPT
+    procs = {
+        "1": ("bash", "bash\0-lc\0exec cardano-node run --config /env/configuration.yaml\0"),
+        "8": ("ld-linux-x86-64", "/nix/store/ld-linux-x86-64.so.2\0/nix/store/bin/cardano-node\0run\0"),
+        "9": ("tee", "tee\0/logs/node1/node.log\0"),
+    }
+    for pid, (comm, cmdline) in procs.items():
+        proc = tmp_path / "proc" / pid
+        (proc / "fd").mkdir(parents=True)
+        (proc / "comm").write_text(comm + "\n")
+        (proc / "cmdline").write_bytes(cmdline.encode())
+        (proc / "status").write_text(f"Name:\t{comm}\nVmRSS:\t  {int(pid) * 1000} kB\nThreads:\t{pid}\n")
+        (proc / "stat").write_text(f"{pid} ({comm}) S 0 1 1 0 -1 4194560 100 0 0 0 500 60 0 0 20 0 1 0 5 1 2 3\n")
+    result = subprocess.run(["sh", "-c", PROC_PROBE_SCRIPT], capture_output=True, text=True,
+                            env={"PROC_ROOT": str(tmp_path / "proc"), "PATH": "/usr/bin:/bin"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    fields = dict(line.split("=", 1) for line in result.stdout.split())
+    assert fields["pid"] == "8" and fields["vmrss_kb"] == "8000" and fields["threads"] == "8"

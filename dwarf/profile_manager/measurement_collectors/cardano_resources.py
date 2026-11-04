@@ -166,6 +166,12 @@ PROC_PROBE_SCRIPT = (
     "if [ -z \"$pid\" ]; then "
     "for d in \"$P\"/[0-9]*; do n=$(cat \"$d/comm\" 2>/dev/null); "
     "if [ \"$n\" = cardano-node ] || [ \"$n\" = amaru ]; then pid=${d##*/}; break; fi; done; fi; "
+    # A node started through the dynamic loader carries the loader's comm; match its
+    # cmdline instead, skipping the entrypoint shell and log tee whose cmdlines name it too.
+    "if [ -z \"$pid\" ]; then "
+    "for d in \"$P\"/[0-9]*; do n=$(cat \"$d/comm\" 2>/dev/null); "
+    "case $n in sh|bash|dash|tee|tini|timeout) continue;; esac; "
+    "if tr '\\0' ' ' < \"$d/cmdline\" 2>/dev/null | grep -q 'cardano-node\\|amaru'; then pid=${d##*/}; break; fi; done; fi; "
     "if [ -z \"$pid\" ]; then echo 'error=node process not found'; exit 3; fi; "
     "echo \"pid=$pid\"; "
     "tck=$(getconf CLK_TCK 2>/dev/null); echo \"clk_tck=${tck:-100}\"; "
