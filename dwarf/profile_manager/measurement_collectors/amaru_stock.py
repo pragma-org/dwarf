@@ -42,6 +42,12 @@ _JSON_EVENT_KINDS = {
 # The pinned binary's JSON formatter retains the Rust module as ``target`` and
 # places the logical schema path in ``fields.message``.  Keep this separate
 # from the logical target/name representation used by trace fixtures and OTLP.
+# Amaru 10.11.20261029 renamed the ``manager.peer.connected`` message to a
+# ``manager.peer.accepted`` span; its ``new`` record is the one connection event.
+_JSON_SPAN_OPEN_KINDS = {
+    ("amaru::protocols", "manager.peer.accepted"): "peer-connected",
+}
+
 _JSON_MESSAGE_KINDS = {
     ("amaru::consensus", "perf.header.lifecycle"): "header-lifecycle",
     ("amaru::consensus", "perf.fork.switch"): "fork-switch",
@@ -118,6 +124,14 @@ def _normalize_json_event(record: dict[str, Any]) -> dict[str, Any] | None:
         if isinstance(message, str)
         else None
     ) or _JSON_EVENT_KINDS.get((target, name))
+    if kind is None:
+        span = record.get("span")
+        if (
+            isinstance(span, dict)
+            and isinstance(span.get("name"), str)
+            and message == "new"
+        ):
+            kind = _JSON_SPAN_OPEN_KINDS.get((target, span["name"].lower()))
     if kind is None:
         return None
     event: dict[str, Any] = {

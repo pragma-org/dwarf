@@ -550,3 +550,37 @@ def _collect_from_paths(
     collector.start(context)
     collector.stop(context)
     return collector.finalize(context)
+
+
+def test_peer_connected_counts_each_accepted_span_once_and_keeps_legacy_message(tmp_path):
+    span = {"name": "manager.peer.accepted", "target": "amaru::protocols"}
+    records = [
+        {
+            "timestamp": "2026-11-03T21:52:57.641000Z",
+            "level": "DEBUG",
+            "fields": {"conn_id": 1, "message": message, "peer": "10.192.2.4:3001"},
+            "target": "amaru::protocols",
+            "span": span,
+            "id": 49540420534796292,
+        }
+        for message in ("new", "enter", "exit", "close")
+    ] + [
+        {
+            "timestamp": "2026-11-03T21:52:58.000000Z",
+            "level": "DEBUG",
+            "fields": {"message": "manager.peer.connected", "peer": "10.192.2.5:3001"},
+            "target": "amaru::protocols",
+        },
+    ]
+    trace = tmp_path / "peers.ndjson"
+    trace.write_text("".join(json.dumps(record) + "\n" for record in records))
+
+    network = _collect_from_paths(
+        tmp_path / "net", "amaru-stock-network", json_paths=[trace], otlp_paths=[]
+    )
+
+    assert network["measurements"]["peer_connected"] == {
+        "status": "available",
+        "unit": "events",
+        "value": 2,
+    }
