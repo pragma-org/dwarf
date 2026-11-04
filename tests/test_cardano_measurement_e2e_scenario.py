@@ -585,3 +585,49 @@ def test_cardano_workload_scenario_extends_e2e_with_transactions_epoch_restart_a
         assert tap in blockers
     text = path.read_text(encoding="utf-8")
     assert "/home/" not in text and "/Users/" not in text
+
+
+def test_cardano_calibration_primitive_merges_plutus_accounting_stages(monkeypatch, tmp_path):
+    import subprocess
+
+    from profile_manager.primitives import RuntimeCardanoMeasurementCalibration
+
+    class Handle:
+        run_dir = tmp_path
+        events = []
+
+        def log(self, **event):
+            self.events.append(event)
+
+    def run(command, **_kwargs):
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        record = {
+            "attempt_id": "plutus-0000", "outcome": "accepted",
+            "spend_transaction_id": "ab" * 32, "transaction_bytes": 400,
+            "elapsed_nanos": 2_000_000, "elapsed_micros": 2000.0,
+            "submit_to_block_inclusion_nanos": 2_000_000, "submit_to_block_inclusion_micros": 2000.0,
+            "submit_to_protocol_response_nanos": 50_000, "submit_to_protocol_response_micros": 50.0,
+            "submit_to_chain_adoption_nanos": 2_000_000, "submit_to_chain_adoption_micros": 2000.0,
+        }
+        (output_dir / "result.json").write_text(json.dumps({"plutus_workload": {"records": [record]}}))
+        (output_dir / "attempts.ndjson").write_text(json.dumps({
+            "attempt_id": "handshake-0000", "outcome": "rejected", "elapsed_micros": 5, "request_length": 12,
+        }) + "\n")
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    handle = Handle()
+    RuntimeCardanoMeasurementCalibration(params={
+        "runtime_root": "/runtime", "attempts": 30, "plutus_transactions": 1,
+    }).run(handle, None)
+
+    accounting = next(event for event in handle.events if event["event"] == "workload_accounting")
+    payload = accounting["payload"]
+    assert payload["attempted"] == 2 and payload["successful"] == 1 and payload["rejected"] == 1
+    assert payload["bytes"] == 412
+    plutus = payload["attempts"][1]
+    assert plutus["input_id"] == "plutus-0000"
+    assert plutus["submit_to_block_inclusion_micros"] == 2000.0
+    assert plutus["submit_to_protocol_response_micros"] == 50.0
+    assert plutus["submit_to_chain_adoption_micros"] == 2000.0

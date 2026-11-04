@@ -261,6 +261,8 @@ CARDANO_MEASUREMENT_TRACE_NAMESPACES = (
     "LedgerMetrics",
     "Resources",
 )
+# KeepAlive round-trip samples (AddSample) are Debug-level in cardano-node 11.1.x.
+CARDANO_MEASUREMENT_TRACE_SEVERITIES = {"KeepAlive.Remote": "Debug"}
 
 
 def _enable_cardano_measurement_traces(config_path: Path) -> dict:
@@ -272,7 +274,10 @@ def _enable_cardano_measurement_traces(config_path: Path) -> dict:
     for namespace in CARDANO_MEASUREMENT_TRACE_NAMESPACES:
         current = options.get(namespace)
         configured = dict(current) if isinstance(current, dict) else {}
-        configured.update({"severity": "Info", "detail": "DDetailed"})
+        configured.update({
+            "severity": CARDANO_MEASUREMENT_TRACE_SEVERITIES.get(namespace, "Info"),
+            "detail": "DDetailed",
+        })
         options[namespace] = configured
     body["TraceOptions"] = options
     config_path.write_text(json.dumps(body, indent=4) + "\n", encoding="utf-8")

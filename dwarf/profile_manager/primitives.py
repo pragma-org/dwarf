@@ -13772,14 +13772,16 @@ def _amaru_workload_flag_arguments(params: dict[str, Any]) -> tuple[list[str], d
     return arguments, logged
 
 
-def _plutus_workload_attempts(report: dict[str, Any]) -> list[dict[str, Any]]:
+def _plutus_workload_attempts(
+    report: dict[str, Any], implementation: str = "amaru"
+) -> list[dict[str, Any]]:
     """Normalize the helper's Plutus records for the external accounting tap."""
     records = ((report.get("plutus_workload") or {}).get("records") or [])
     if not records:
         return []
     from scripts.runtime_controlled_plutus_transactions import _plutus_workload_accounting
 
-    return list(_plutus_workload_accounting(records, "amaru")["attempts"])
+    return list(_plutus_workload_accounting(records, implementation)["attempts"])
 
 
 class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
@@ -14004,9 +14006,15 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             }
             for row in attempt_records
         ]
-        plutus_attempts = (
-            _plutus_workload_attempts(report) if amaru_workload else []
-        )
+        if self._CARDANO_NODE_WORKLOAD:
+            plutus_attempts = (
+                _plutus_workload_attempts(report, "cardano-node")
+                if plutus_transactions else []
+            )
+        else:
+            plutus_attempts = (
+                _plutus_workload_attempts(report, "amaru") if amaru_workload else []
+            )
         attempts.extend(plutus_attempts)
         handle.log(
             phase="load",

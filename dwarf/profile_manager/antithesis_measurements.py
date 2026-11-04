@@ -45,9 +45,14 @@ def _runtime_sources(files):
 
 
 def cardano_config_program():
-    from scripts.runtime_compose_substrate import CARDANO_MEASUREMENT_TRACE_NAMESPACES, _enable_cardano_measurement_traces
+    from scripts.runtime_compose_substrate import (
+        CARDANO_MEASUREMENT_TRACE_NAMESPACES,
+        CARDANO_MEASUREMENT_TRACE_SEVERITIES,
+        _enable_cardano_measurement_traces,
+    )
     return ('import json,shutil\nfrom pathlib import Path\n'
         +'CARDANO_MEASUREMENT_TRACE_NAMESPACES='+repr(CARDANO_MEASUREMENT_TRACE_NAMESPACES)+'\n'
+        +'CARDANO_MEASUREMENT_TRACE_SEVERITIES='+repr(CARDANO_MEASUREMENT_TRACE_SEVERITIES)+'\n'
         +inspect.getsource(_enable_cardano_measurement_traces)
         +"\nif __name__=='__main__':\n"
         +"    shutil.copytree('/configs','/target',dirs_exist_ok=True)\n"
@@ -56,7 +61,7 @@ def cardano_config_program():
         +"    body=json.loads(path.read_text())\n"
         +"    for name,options in body['TraceOptions'].items():\n"
         +"        if any(name==ns or name.startswith(ns+'.') for ns in CARDANO_MEASUREMENT_TRACE_NAMESPACES):\n"
-        +"            options.update(severity='Info',detail='DDetailed')\n"
+        +"            options.update(severity=CARDANO_MEASUREMENT_TRACE_SEVERITIES.get(name,'Info'),detail='DDetailed')\n"
         +"            options.pop('maxFrequency',None)\n"
         +"    path.write_text(json.dumps(body,indent=2)+'\\n')\n")
 

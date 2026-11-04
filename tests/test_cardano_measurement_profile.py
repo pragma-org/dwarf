@@ -50,7 +50,12 @@ def test_measurement_trace_config_enables_only_audited_machine_namespaces(tmp_pa
     }
     assert required <= set(options)
     assert options["Net.PeerSelection"] == {"severity": "Silence"}
-    assert all(options[name]["severity"] == "Info" for name in required)
+    # KeepAlive AddSample (the only round-trip sample) is a Debug-level
+    # message in cardano-node 11.1.x; every other audited namespace is Info.
+    assert options["KeepAlive.Remote"]["severity"] == "Debug"
+    assert all(
+        options[name]["severity"] == "Info" for name in required - {"KeepAlive.Remote"}
+    )
     assert all(options[name]["detail"] == "DDetailed" for name in required)
     assert result["namespaces"] == sorted(required)
 

@@ -257,3 +257,18 @@ def test_generated_patched_definition_stages_with_original_tap_id_and_bytes(tmp_
     with zipfile.ZipFile(io.BytesIO(base64.b64decode(result['archive_base64']))) as archive:
         name='provenance/preview/inputs/measurements/cardano-instrumented-protocol-decode.yaml'
         assert archive.read(name)==load_definition('measurements',tap).source
+
+
+def test_cardano_config_program_is_self_contained_and_keeps_keepalive_debug(tmp_path):
+    from profile_manager.antithesis_measurements import cardano_config_program
+
+    program = cardano_config_program()
+    namespace: dict = {}
+    exec(compile(program, "cardano_config_program", "exec"), namespace)
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"TraceOptions": {}}))
+    namespace["_enable_cardano_measurement_traces"](path)
+    options = json.loads(path.read_text())["TraceOptions"]
+    assert options["KeepAlive.Remote"]["severity"] == "Debug"
+    assert options["Mempool"]["severity"] == "Info"
+    assert "CARDANO_MEASUREMENT_TRACE_SEVERITIES=" in program
