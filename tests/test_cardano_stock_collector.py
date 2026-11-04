@@ -181,3 +181,13 @@ def test_mempool_rejected_zero_carries_the_attempt_count(tmp_path):
     events = [event for event in (cardano_stock._normalize_record(json.loads(row)) for row in rows) if event]
     metrics, _claims = cardano_stock._build_measurements("cardano-stock-txsubmission-mempool", events)
     assert metrics["mempool_rejected"] == {"status": "available", "unit": "transactions", "value": 0, "offered_count": 2}
+
+
+def test_chain_lifecycle_rollback_zero_carries_the_chain_events_it_scanned():
+    """A rollback count of zero over N chain events is a reading, not a gap
+    (run 20261104T124102Z-22717c0b: rollback-count missed the coverage rule)."""
+    from profile_manager.measurement_collectors.cardano_stock import _build_measurements
+    events = [{"kind": "chain-adopted"}, {"kind": "chainsync-validated-header"}, {"kind": "keepalive-sample"}]
+    measurements, _notes = _build_measurements("cardano-stock-chain-lifecycle", events)
+    assert measurements["rollbacks"]["value"] == 0
+    assert measurements["rollbacks"]["offered_count"] == 2 == measurements["chain_events"]["value"]

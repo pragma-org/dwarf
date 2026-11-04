@@ -298,10 +298,12 @@ def _keepalive_pairs(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _build_measurements(measurement_id: str, events: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, str]]:
     if measurement_id == "cardano-stock-chain-lifecycle":
+        chain_events = _count(events, {"chainsync-downloaded-header", "chainsync-rolled-back", "chainsync-validated-header", "chainsync-server-update", "chain-adopted", "chain-fork-switch", "forge-adopted-block"})
         return {
-            "chain_events": _count(events, {"chainsync-downloaded-header", "chainsync-rolled-back", "chainsync-validated-header", "chainsync-server-update", "chain-adopted", "chain-fork-switch", "forge-adopted-block"}),
+            "chain_events": chain_events,
             "adopted_blocks": _count(events, {"chain-adopted", "forge-adopted-block"}, "blocks"),
-            "rollbacks": _count(events, {"chainsync-rolled-back", "chain-fork-switch"}),
+            # Zero rollbacks among N chain events is a reading: the chain events are its evidence.
+            "rollbacks": _count(events, {"chainsync-rolled-back", "chain-fork-switch"}, offered_count=chain_events["value"]),
         }, {"chain_events": "stock node trace events, not inferred chain correctness"}
     if measurement_id == "cardano-stock-blockfetch":
         return {
