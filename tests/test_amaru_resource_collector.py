@@ -832,3 +832,26 @@ def test_proc_probe_script_finds_a_node_run_under_the_dynamic_loader(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     fields = dict(line.split("=", 1) for line in result.stdout.split())
     assert fields["pid"] == "8" and fields["vmrss_kb"] == "8000" and fields["threads"] == "8"
+
+
+def test_proc_probe_script_needs_no_grep(tmp_path):
+    """The cardano-node image ships no grep: the probe must find the loader-run node
+    with shell built-ins only (run 20261104T124102Z-22717c0b: 'grep: command not found')."""
+    import shutil
+    import subprocess
+    from profile_manager.measurement_collectors.cardano_resources import PROC_PROBE_SCRIPT
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("sh", "cat", "ls", "wc", "tr", "getconf"):
+        (bin_dir / tool).symlink_to(shutil.which(tool))
+    proc = tmp_path / "proc" / "9"
+    (proc / "fd").mkdir(parents=True)
+    (proc / "comm").write_text("ld-linux-x86-64\n")
+    (proc / "cmdline").write_bytes(b"/opt/rt/lib64/ld-linux-x86-64.so.2\0--library-path\0/opt/rt/lib64\0/opt/rt/bin/cardano-node\0run\0")
+    (proc / "status").write_text("Name:\tld-linux-x86-64\nVmRSS:\t  9000 kB\nThreads:\t9\n")
+    (proc / "stat").write_text("9 (ld-linux-x86-64) S 1 1 1 0 -1 4194560 100 0 0 0 500 60 0 0 20 0 9 0 5 1 2 3\n")
+    result = subprocess.run([str(bin_dir / "sh"), "-c", PROC_PROBE_SCRIPT], capture_output=True, text=True,
+                            env={"PROC_ROOT": str(tmp_path / "proc"), "PATH": str(bin_dir)})
+    assert result.returncode == 0, result.stdout + result.stderr
+    fields = dict(line.split("=", 1) for line in result.stdout.split())
+    assert fields["pid"] == "9" and fields["vmrss_kb"] == "9000"
