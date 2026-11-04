@@ -456,11 +456,17 @@ def build_measurement_presentation(
         present = _present(chosen)
         card = _card(concept, chosen, {metric_id: metrics[metric_id] for metric_id in present}, target_identity)
         card["source_label"] = catalog["source_labels"][card["source"]]
+        superseded = [
+            metric_id
+            for binding in candidates if binding is not chosen and binding.get("source") == "reserved"
+            for metric_id in binding.get("metric_ids") or [] if metric_id in metrics
+        ]
+        if superseded:
+            # The placeholder a built contract replaced stays accounted for, never shown as a source.
+            card["superseded_metric_ids"] = superseded
         cards.append(card)
         consumed.update(present)
-        for binding in candidates:
-            if binding.get("source") == "reserved":
-                consumed.update(metric_id for metric_id in binding.get("metric_ids") or [] if metric_id in metrics)
+        consumed.update(superseded)
 
     for metric_id, raw in metrics.items():
         if metric_id in consumed:

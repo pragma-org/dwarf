@@ -376,7 +376,8 @@ def test_acceptance_run_metric_inventory_has_canonical_client_metadata():
         }
         result = build_measurement_presentation(metrics, _target(implementation, mode))
         retained = {
-            raw_id for card in result["cards"] for raw_id in card["raw_metric_ids"]
+            raw_id for card in result["cards"]
+            for raw_id in card["raw_metric_ids"] + card.get("superseded_metric_ids", [])
         }
         assert retained == metric_ids
         assert not any(
@@ -502,7 +503,7 @@ def test_every_workload_run_metric_binds_to_a_concept(run_id):
     concept_ids = {c["id"] for c in load_measurement_presentation_catalog()["concepts"]}
     fallback = [c for c in result["cards"] if c["concept_id"] not in concept_ids]
     assert fallback == [], [c["raw_metric_ids"] for c in fallback]
-    retained = {raw for c in result["cards"] for raw in c["raw_metric_ids"]}
+    retained = {raw for c in result["cards"] for raw in c["raw_metric_ids"] + c.get("superseded_metric_ids", [])}
     assert retained == set(run["metric_ids"])
 
 
@@ -574,4 +575,5 @@ def test_cardano_patched_bound_estimates_bind_to_their_concepts():
     result = build_measurement_presentation(metrics, _target("cardano-node", "patched"))
     queue_cards = [card for card in result["cards"] if card["concept_id"] == "handler-queue-residence"]
     assert len(queue_cards) == 1 and queue_cards[0]["source"] == "patched"
+    assert queue_cards[0]["superseded_metric_ids"] == ["handler_queue_residence"]
     assert not any(card["raw_metric_ids"] == ["handler_queue_residence"] for card in result["cards"])
