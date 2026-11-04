@@ -527,3 +527,195 @@ def test_mux_response_reader_retains_a_fragmented_complete_frame():
             return fragment
 
     assert calibration._recv_mux_frame(FragmentedSocket()) == frame
+
+
+def _write_workload_runtime(tmp_path):
+    manifest = "sha256:" + "1" * 64
+    config_id = "sha256:" + "2" * 64
+    image = f"ghcr.io/pragma-org/amaru:test@{manifest}"
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    (runtime_root / "runtime.json").write_text(json.dumps({
+        "compose_project": "workload-test",
+        "network_magic": 42,
+        "actual_topology": {"amaru_services": ["amaru-relay-1"]},
+        "images": {"amaru": image},
+        "identity": {"services": {"amaru-relay-1": {
+            "matched": True, "expected_image": image,
+            "expected_image_id": config_id, "artifact_image_id": config_id,
+        }}},
+        "versions": {"catalog_snapshot": {"selected_releases": [{
+            "implementation": "amaru", "version": "10.11.test", "source_revision": "a" * 40,
+            "artifacts": [{"kind": "oci", "availability": "available", "digest": manifest}],
+        }]}},
+    }), encoding="utf-8")
+    return runtime_root
+
+
+def _patch_leg_basics(monkeypatch):
+    healthy = {"running": True, "status": "running", "exit_code": 0, "oom_killed": False, "restart_count": 0}
+    monkeypatch.setattr(calibration, "_compose_container", lambda *_args: "container")
+    monkeypatch.setattr(calibration, "_container_ip", lambda *_args: "127.0.0.1")
+    monkeypatch.setattr(calibration, "_container_state", lambda *_args: dict(healthy))
+    monkeypatch.setattr(calibration, "_latest_tip", lambda *_args: {"block_height": 1, "hash": "a"})
+    monkeypatch.setattr(calibration, "_wait_for_progress", lambda *_a, **_k: {"block_height": 2, "hash": "b"})
+    monkeypatch.setattr(calibration, "run_attempts", lambda **_kwargs: [{
+        "attempt_id": "accepted", "case": "supported-version-acceptance", "outcome": "accepted",
+        "expected_external_outcome": "accepted", "elapsed_micros": 1,
+    }])
+    monkeypatch.setattr(calibration, "_capture_logs", lambda _c, *, since, destination: (
+        destination.parent.mkdir(parents=True, exist_ok=True), destination.write_text("", encoding="utf-8")))
+    monkeypatch.setattr(calibration, "classify_log_signals", lambda _text: {"fatal": []})
+
+
+def test_workload_identity_digest_unchanged_without_workload_options():
+    import hashlib
+
+    baseline = build_workload_identity(attempt_count=100, case_set=ACCEPTANCE_CASE_SET)
+    body = {key: value for key, value in baseline.items() if key != "workload_digest"}
+    assert set(body) == {
+        "scenario_id", "seed", "attempt_count", "mini_protocol", "case_set", "cases",
+        "network_magic", "transport", "target_port", "mux_direction_bit", "response_cap_bytes",
+    }
+    expected = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert baseline["workload_digest"] == f"sha256:{expected}"
+
+    with_workload = build_workload_identity(
+        attempt_count=100, case_set=ACCEPTANCE_CASE_SET, plutus_transactions=20, epoch_transitions=1,
+    )
+    assert with_workload["plutus_transactions"] == 20
+    assert with_workload["submission_entry"] == "amaru-consumer"
+    assert with_workload["epoch_transitions"] == 1
+    assert with_workload["workload_digest"] != baseline["workload_digest"]
+
+
+def test_extract_latest_epoch_reads_tip_update_epoch_field():
+    text = "\n".join(json.dumps(record) for record in [
+        {"fields": {"message": "tip.update", "epoch": 3, "slot": 1201, "block_height": 234, "header_hash": "9b" * 32}, "target": "amaru::ledger"},
+        {"fields": {"message": "other"}},
+        {"fields": {"message": "tip.update", "epoch": 4, "slot": 1601, "block_height": 300, "header_hash": "aa" * 32}},
+        {"fields": {"message": "tip.update", "epoch": True, "slot": 1602, "block_height": 301, "header_hash": "ab" * 32}},
+    ])
+    assert calibration.extract_latest_epoch(text) == 4
+    assert calibration.extract_latest_epoch("") is None
+
+
+def test_wait_for_epoch_transitions_returns_when_epoch_advances(monkeypatch):
+    epochs = iter([3, 3, 4])
+    monkeypatch.setattr(calibration, "_latest_epoch", lambda _container: next(epochs))
+    monkeypatch.setattr(calibration.time, "sleep", lambda _seconds: None)
+
+    result = calibration._wait_for_epoch_transitions("container", count=1, timeout_seconds=10)
+
+    assert (result["epoch_before"], result["epoch_after"]) == (3, 4)
+    assert result["elapsed_seconds"] >= 0
+
+
+def test_wait_for_epoch_transitions_times_out_with_reason(monkeypatch):
+    monkeypatch.setattr(calibration, "_latest_epoch", lambda _container: 3)
+    clock = iter([0.0, 0.0, 5.0, 11.0, 12.0, 13.0])
+    monkeypatch.setattr(calibration.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(calibration.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(RuntimeError, match="did not cross 1 epoch"):
+        calibration._wait_for_epoch_transitions("container", count=1, timeout_seconds=10)
+
+
+def test_run_leg_runs_plutus_workload_through_consumer_with_producer_fallback(monkeypatch, tmp_path):
+    from contextlib import contextmanager
+    from pathlib import Path
+
+    from scripts import runtime_cardano_measurement_calibration as cardano
+    from scripts import runtime_controlled_plutus_transactions as controlled
+
+    runtime_root = _write_workload_runtime(tmp_path)
+    _patch_leg_basics(monkeypatch)
+    received = {}
+    checked = []
+    monkeypatch.setattr(cardano, "_controller_container", lambda: {"Id": "k" * 64})
+    monkeypatch.setattr(controlled, "_prepare_amaru_transaction_producer", lambda runtime, output_dir, stack, *, runtime_root, controller: (
+        {**runtime, "support_binaries": {"cardano-cli": "producer-cli"}, "workload_key_root": str(tmp_path / "keys"), "workload_socket_remote": True},
+        {"id": "bootstrap-cardano", "socket_path": "/state/node.socket", "container_socket_path": "/state/node.socket"},
+    ))
+    monkeypatch.setattr(cardano, "amaru_entry_node", lambda runtime: {"id": "amaru-consumer", "socket_path": "/state/node.socket", "container_socket_path": "/state/node.socket"})
+
+    @contextmanager
+    def consumer_workload(*, runtime_root, runtime, node, output_dir, controller):
+        yield {**runtime, "support_binaries": {"cardano-cli": "consumer-cli"}}, node
+
+    monkeypatch.setattr(cardano, "_containerized_cardano_workload", consumer_workload)
+    monkeypatch.setattr(cardano, "select_plutus_language", lambda **kwargs: received.setdefault("language_query", kwargs) and "v3")
+    monkeypatch.setattr(cardano, "_checked", lambda command, **_k: checked.append(command))
+
+    def run_plutus_workload(**kwargs):
+        received.update(kwargs)
+        return {"transaction_count": 2, "script_language": "v3", "records": [{"attempt_id": "plutus-0000"}]}
+
+    monkeypatch.setattr(cardano, "run_plutus_workload", run_plutus_workload)
+    monkeypatch.setattr(calibration, "_wait_for_epoch_transitions", lambda *_a, **_k: {"epoch_before": 3, "epoch_after": 4, "elapsed_seconds": 1.5})
+
+    result = calibration.run_leg(
+        runtime_root=runtime_root, output_dir=tmp_path / "output", attempt_count=3,
+        timeout_seconds=0.1, case_set=ACCEPTANCE_CASE_SET, plutus_transactions=2, epoch_transitions=1,
+    )
+
+    assert received["script_language"] == "v3"
+    assert received["inclusion_fallback_seconds"] == 30.0
+    assert received["transaction_count"] == 2
+    assert received["node"]["id"] == "amaru-consumer"
+    assert received["runtime"]["support_binaries"]["cardano-cli"] == "consumer-cli"
+    assert received["language_query"]["cli"] == "consumer-cli"
+    received["fallback_submit"](Path("/work/lock-0.tx"))
+    assert checked[-1][:4] == ["producer-cli", "conway", "transaction", "submit"]
+    assert "--tx-file" in checked[-1] and "/work/lock-0.tx" in checked[-1]
+    assert result["plutus_workload"]["script_language"] == "v3"
+    assert result["epoch_wait"] == {"epoch_before": 3, "epoch_after": 4, "elapsed_seconds": 1.5}
+    assert result["workload_identity"]["plutus_transactions"] == 2
+    assert result["workload_identity"]["epoch_transitions"] == 1
+
+
+def test_run_leg_without_workload_options_keeps_legacy_result_shape(monkeypatch, tmp_path):
+    runtime_root = _write_workload_runtime(tmp_path)
+    _patch_leg_basics(monkeypatch)
+
+    result = calibration.run_leg(
+        runtime_root=runtime_root, output_dir=tmp_path / "output", attempt_count=3,
+        timeout_seconds=0.1, case_set=ACCEPTANCE_CASE_SET,
+    )
+
+    assert result["plutus_workload"] is None
+    assert result["epoch_wait"] is None
+    assert "plutus_transactions" not in result["workload_identity"]
+
+
+@pytest.mark.parametrize("argv", [
+    ["--plutus-transactions", "101"],
+    ["--epoch-transitions", "6"],
+    ["--submission-entry", "relay1"],
+    ["--epoch-timeout-seconds", "0"],
+    ["--inclusion-fallback-seconds", "0"],
+])
+def test_helper_rejects_out_of_range_workload_options(monkeypatch, argv, tmp_path):
+    monkeypatch.setattr(calibration, "run_leg", lambda **_kwargs: pytest.fail("run_leg must not run"))
+    with pytest.raises(SystemExit):
+        calibration.main(["leg", "--runtime-root", str(tmp_path), "--output-dir", str(tmp_path / "o"), "--attempts", "30", *argv])
+
+
+def test_helper_passes_in_range_workload_options_to_run_leg(monkeypatch, tmp_path):
+    received = {}
+
+    def run_leg(**kwargs):
+        received.update(kwargs)
+        return {"status": "available"}
+
+    monkeypatch.setattr(calibration, "run_leg", run_leg)
+    assert calibration.main([
+        "leg", "--runtime-root", str(tmp_path), "--output-dir", str(tmp_path / "o"), "--attempts", "30",
+        "--plutus-transactions", "20", "--submission-entry", "p1", "--inclusion-fallback-seconds", "15",
+        "--epoch-transitions", "1", "--epoch-timeout-seconds", "260",
+    ]) == 0
+    assert received["plutus_transactions"] == 20
+    assert received["submission_entry"] == "p1"
+    assert received["inclusion_fallback_seconds"] == 15.0
+    assert received["epoch_transitions"] == 1
+    assert received["epoch_timeout_seconds"] == 260.0

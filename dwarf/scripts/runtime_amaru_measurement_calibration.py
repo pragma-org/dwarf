@@ -49,6 +49,10 @@ HANDSHAKE_UNKNOWN_FUTURE_VERSION_OFFER_HEX = (
 )
 RESPONSE_CAP_BYTES = 256
 MAX_SEED = (1 << 64) - 1
+# Where workload transactions enter the devnet: the downstream Cardano consumer
+# (so they reach the measured relay over N2N tx-submission) or the producer.
+SUBMISSION_ENTRIES = ("p1", "amaru-consumer")
+DEFAULT_SUBMISSION_ENTRY = "amaru-consumer"
 
 _CASE_SETS = {
     # A responder must accept the greatest common version and ignore version
@@ -136,7 +140,13 @@ def build_case_plan(*, attempt_count: int, case_set: str = DEFAULT_CASE_SET) -> 
 
 
 def build_workload_identity(
-    *, attempt_count: int, seed: str = SEED, case_set: str = DEFAULT_CASE_SET
+    *,
+    attempt_count: int,
+    seed: str = SEED,
+    case_set: str = DEFAULT_CASE_SET,
+    plutus_transactions: int = 0,
+    submission_entry: str = DEFAULT_SUBMISSION_ENTRY,
+    epoch_transitions: int = 0,
 ) -> dict[str, Any]:
     plan = build_case_plan(attempt_count=attempt_count, case_set=case_set)
     case_rows = []
@@ -160,6 +170,16 @@ def build_workload_identity(
         "mux_direction_bit": 0,
         "response_cap_bytes": RESPONSE_CAP_BYTES,
     }
+    if plutus_transactions or epoch_transitions:
+        # Only a requested workload changes the identity; handshake-only legs
+        # keep their historical digest.
+        body.update(
+            {
+                "plutus_transactions": int(plutus_transactions),
+                "submission_entry": submission_entry,
+                "epoch_transitions": int(epoch_transitions),
+            }
+        )
     digest = hashlib.sha256(
         json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -616,6 +636,136 @@ def _peer_observation(peer_id: str, container: str, network_magic: int) -> dict[
     }
 
 
+def extract_latest_epoch(log_text: str) -> int | None:
+    """Return the epoch of the last adopted tip record, from its ``epoch`` field."""
+    latest = None
+    for line in log_text.splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        fields = record.get("fields") if isinstance(record, dict) else None
+        if not isinstance(fields, dict) or fields.get("message") not in {"tip.update", "tip.adopt"}:
+            continue
+        epoch = fields.get("epoch")
+        if isinstance(epoch, int) and not isinstance(epoch, bool) and epoch >= 0:
+            latest = epoch
+    return latest
+
+
+def _latest_epoch(container: str) -> int | None:
+    result = _run(["docker", "logs", "--tail", "8000", container], timeout=60)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"cannot read logs from {container}")
+    return extract_latest_epoch(result.stdout + "\n" + result.stderr)
+
+
+def _wait_for_epoch_transitions(
+    container: str, *, count: int, timeout_seconds: float, poll_seconds: float = 2.0
+) -> dict[str, Any]:
+    """Block until the measured node has adopted tips in ``count`` later epochs."""
+    before = _latest_epoch(container)
+    if before is None:
+        raise RuntimeError("Amaru target logs contain no epoch")
+    started = time.monotonic()
+    deadline = started + timeout_seconds
+    last = before
+    while True:
+        current = _latest_epoch(container)
+        if current is not None:
+            last = current
+        if last - before >= count:
+            return {
+                "epoch_before": before,
+                "epoch_after": last,
+                "elapsed_seconds": time.monotonic() - started,
+            }
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"Amaru target did not cross {count} epoch boundary(ies) within "
+                f"{timeout_seconds:g} s (epoch {before} -> {last})"
+            )
+        time.sleep(poll_seconds)
+
+
+def _run_plutus_workload_leg(
+    *,
+    runtime: dict[str, Any],
+    runtime_root: Path,
+    output_dir: Path,
+    transaction_count: int,
+    submission_entry: str,
+    inclusion_fallback_seconds: float,
+    network_magic: int,
+) -> dict[str, Any]:
+    """Run the shared Plutus lock/spend workload against the Amaru devnet.
+
+    The producer bridge (genesis key, p1 socket) comes from the controlled
+    Plutus script; the consumer entry reuses the same key through the
+    consumer's socket so transactions reach the relay over N2N.  Imports are
+    local because the Cardano helper imports this module.
+    """
+    from contextlib import ExitStack
+
+    from scripts import runtime_cardano_measurement_calibration as cardano
+    from scripts.runtime_controlled_plutus_transactions import (
+        _prepare_amaru_transaction_producer,
+    )
+
+    if submission_entry not in SUBMISSION_ENTRIES:
+        raise ValueError(f"unsupported submission entry: {submission_entry}")
+    controller = cardano._controller_container()
+    with ExitStack() as stack:
+        producer_runtime, producer_node = _prepare_amaru_transaction_producer(
+            runtime, output_dir, stack, runtime_root=runtime_root, controller=controller
+        )
+        producer_cli = str(producer_runtime["support_binaries"]["cardano-cli"])
+        producer_socket = str(producer_node["socket_path"])
+        fallback_submit = None
+        if submission_entry == "p1":
+            entry_runtime, entry_node = producer_runtime, producer_node
+        else:
+            if controller is None:
+                raise RuntimeError(
+                    "amaru-consumer submission entry requires the controller container"
+                )
+            entry_runtime, entry_node = stack.enter_context(
+                cardano._containerized_cardano_workload(
+                    runtime_root=runtime_root,
+                    runtime=producer_runtime,
+                    node=cardano.amaru_entry_node(runtime),
+                    output_dir=output_dir,
+                    controller=controller,
+                )
+            )
+
+            def fallback_submit(tx_path: Path) -> None:
+                cardano._checked([
+                    producer_cli, "conway", "transaction", "submit",
+                    "--socket-path", producer_socket,
+                    "--testnet-magic", str(network_magic),
+                    "--tx-file", str(tx_path),
+                ])
+
+        entry_cli = str(entry_runtime["support_binaries"]["cardano-cli"])
+        entry_socket = str(entry_node["socket_path"])
+        language = cardano.select_plutus_language(
+            cli=entry_cli, socket_path=entry_socket, network_magic=network_magic
+        )
+        result = cardano.run_plutus_workload(
+            runtime_root=runtime_root,
+            runtime=entry_runtime,
+            node=entry_node,
+            output_dir=output_dir,
+            transaction_count=transaction_count,
+            script_language=language,
+            fallback_submit=fallback_submit,
+            inclusion_fallback_seconds=inclusion_fallback_seconds,
+        )
+    result["submission_entry"] = submission_entry
+    return result
+
+
 def _latest_tip(container: str) -> dict[str, Any] | None:
     result = _run(["docker", "logs", "--tail", "8000", container], timeout=60)
     if result.returncode != 0:
@@ -671,6 +821,11 @@ def run_leg(
     seed: str = SEED,
     progress_timeout_seconds: float = 120.0,
     attempt_interval_seconds: float = 0.0,
+    plutus_transactions: int = 0,
+    submission_entry: str = DEFAULT_SUBMISSION_ENTRY,
+    inclusion_fallback_seconds: float = 30.0,
+    epoch_transitions: int = 0,
+    epoch_timeout_seconds: float = 260.0,
 ) -> dict[str, Any]:
     seed = _validated_seed(seed, canonicalize=False)
     runtime_path = runtime_root / "runtime.json"
@@ -714,6 +869,22 @@ def run_leg(
         if peer_id is not None and peer_container is not None
         else None
     )
+    plutus_workload = None
+    if plutus_transactions:
+        plutus_workload = _run_plutus_workload_leg(
+            runtime=runtime,
+            runtime_root=runtime_root,
+            output_dir=output_dir,
+            transaction_count=plutus_transactions,
+            submission_entry=submission_entry,
+            inclusion_fallback_seconds=inclusion_fallback_seconds,
+            network_magic=network_magic,
+        )
+    epoch_wait = None
+    if epoch_transitions:
+        epoch_wait = _wait_for_epoch_transitions(
+            container, count=epoch_transitions, timeout_seconds=epoch_timeout_seconds
+        )
     tip_after = _wait_for_progress(
         container,
         start_height=int(tip_before["block_height"]),
@@ -755,8 +926,15 @@ def run_leg(
         **build_result_context(output_dir=output_dir),
         "target": target,
         "workload_identity": build_workload_identity(
-            attempt_count=attempt_count, seed=seed, case_set=case_set
+            attempt_count=attempt_count,
+            seed=seed,
+            case_set=case_set,
+            plutus_transactions=plutus_transactions,
+            submission_entry=submission_entry,
+            epoch_transitions=epoch_transitions,
         ),
+        "plutus_workload": plutus_workload,
+        "epoch_wait": epoch_wait,
         "measurements": {"handshake_rejection_roundtrip": summarized["combined"]},
         "measurements_by_outcome": {
             "handshake_rejection_roundtrip": summarized["by_outcome"]
@@ -855,6 +1033,11 @@ def _parser() -> argparse.ArgumentParser:
     leg.add_argument("--seed", type=_cli_seed)
     leg.add_argument("--progress-timeout-seconds", type=float, default=120.0)
     leg.add_argument("--attempt-interval-seconds", type=float, default=0.0)
+    leg.add_argument("--plutus-transactions", type=int, default=0)
+    leg.add_argument("--submission-entry", choices=SUBMISSION_ENTRIES, default=DEFAULT_SUBMISSION_ENTRY)
+    leg.add_argument("--inclusion-fallback-seconds", type=float, default=30.0)
+    leg.add_argument("--epoch-transitions", type=int, default=0)
+    leg.add_argument("--epoch-timeout-seconds", type=float, default=260.0)
     pair = sub.add_parser("pair")
     pair.add_argument("--stock", type=Path, required=True)
     pair.add_argument("--patched", type=Path, required=True)
@@ -867,6 +1050,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "leg":
         if args.attempts < 30 or args.attempts > 10_000:
             raise SystemExit("--attempts must be within 30..10000")
+        if args.plutus_transactions < 0 or args.plutus_transactions > 100:
+            raise SystemExit("--plutus-transactions must be within 0..100")
+        if args.epoch_transitions < 0 or args.epoch_transitions > 5:
+            raise SystemExit("--epoch-transitions must be within 0..5")
+        if args.epoch_timeout_seconds <= 0 or args.epoch_timeout_seconds > 900:
+            raise SystemExit("--epoch-timeout-seconds must be within (0, 900]")
+        if args.inclusion_fallback_seconds <= 0:
+            raise SystemExit("--inclusion-fallback-seconds must be positive")
         result = run_leg(
             runtime_root=args.runtime_root,
             output_dir=args.output_dir,
@@ -876,6 +1067,11 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed if args.seed is not None else SEED,
             progress_timeout_seconds=args.progress_timeout_seconds,
             attempt_interval_seconds=args.attempt_interval_seconds,
+            plutus_transactions=args.plutus_transactions,
+            submission_entry=args.submission_entry,
+            inclusion_fallback_seconds=args.inclusion_fallback_seconds,
+            epoch_transitions=args.epoch_transitions,
+            epoch_timeout_seconds=args.epoch_timeout_seconds,
         )
     else:
         stock = json.loads(args.stock.read_text(encoding="utf-8"))
