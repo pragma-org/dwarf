@@ -538,3 +538,50 @@ def test_plutus_workload_without_fallback_keeps_single_wait_and_null_relay_flag(
     assert all("timeout_seconds" not in wait for wait in calls["waits"])
     assert result["records"][0]["relay_forwarded"] is None
     assert result["script_language"] == "v2"
+
+
+def test_cardano_workload_scenario_extends_e2e_with_transactions_epoch_restart_and_sync():
+    base = json.loads(
+        (ROOT / "dwarf/scenarios/cardano-measurement-e2e-stock-portable.yaml").read_text()
+    )
+    path = ROOT / "dwarf/scenarios/cardano-measurement-workload-stock-portable.yaml"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    parsed = scenario_from_body((json.dumps(doc) + "\n").encode())
+
+    assert parsed.id == "cardano-measurement-workload-stock-portable"
+    assert (parsed.profile, parsed.measurement_profile) == (base["profile"], base["measurement_profile"])
+    assert parsed.target == base["target"]
+    assert [m.id for m in parsed.measurements] == ["cardano-stock-header-validation"]
+    load = doc["load"]
+    assert [l["primitive"] for l in load] == [
+        "runtime_cardano_measurement_calibration",
+        "runtime_real_target_restart_and_readiness",
+        "runtime_controlled_sync_range",
+    ]
+    assert load[0] == {
+        **base["load"][0],
+        "plutus_transactions": 20,
+        "epoch_observation_seconds": 60,
+        "timeout_seconds": 1500,
+    }
+    assert load[1] == {
+        "primitive": "runtime_real_target_restart_and_readiness",
+        "profile_id": base["profile"], "timeout_seconds": 300, "poll_interval_seconds": 1,
+    }
+    assert load[2]["minimum_blocks"] == 20
+    assert load[2]["peer_policy"] == "three-node-controlled-local-mesh"
+    assert [a["primitive"] for a in doc["assertions"]] == [
+        "load_events_are_ok", "restart_readiness_complete", "controlled_sync_range_complete",
+        "target_progress_continues", "no_target_fatal_signal",
+    ]
+    assert doc["assertions"][0] == {"primitive": "load_events_are_ok", "min_completed": 3, "min_event_count": 3}
+    assert [p["primitive"] for p in doc["probes"]] == [
+        "runtime_target_health_and_progress", "runtime_peer_session_health",
+    ]
+    assert "workload" in doc["tags"]
+    blockers = " ".join(doc["promotion_blockers"])
+    for tap in ("cardano-patched-header-validation", "cardano-patched-blockfetch-handler-queue",
+                "cardano-patched-txsubmission-residence"):
+        assert tap in blockers
+    text = path.read_text(encoding="utf-8")
+    assert "/home/" not in text and "/Users/" not in text

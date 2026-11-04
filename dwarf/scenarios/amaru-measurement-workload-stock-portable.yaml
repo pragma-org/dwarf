@@ -1,0 +1,106 @@
+{
+  "spec_version": "v1",
+  "id": "amaru-measurement-workload-stock-portable",
+  "title": "Amaru stock measurements — operator-selected release — workload",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "amaru",
+    "measurement",
+    "stock",
+    "real-node",
+    "end-to-end",
+    "resolved-plan",
+    "fresh-profile-deploy-required",
+    "workload"
+  ],
+  "evidence_intent": "candidate",
+  "promotion_blockers": [
+    "Prepare profile-o-amaru-target-latest-confirmed through DWARF and verify the operator-selected exact runtime identity before Run is enabled.",
+    "This bounded proof validates the measurement path; it does not establish a performance threshold or vulnerability.",
+    "This bounded proof validates that every local tap records under a transaction, epoch, restart and sync workload; it does not establish a performance threshold or vulnerability."
+  ],
+  "target": {
+    "implementation": "amaru",
+    "version": "resolved-plan"
+  },
+  "runtime": "devnet",
+  "profile": "profile-o-amaru-target-latest-confirmed",
+  "measurement_profile": "amaru-security-default",
+  "measurements": [
+    {
+      "id": "amaru-stock-header-validation",
+      "enabled": true,
+      "parameters": {},
+      "threshold_gate": {
+        "enabled": false,
+        "thresholds": []
+      }
+    }
+  ],
+  "seed": "0xA11CE501",
+  "setup": [],
+  "load": [
+    {
+      "primitive": "runtime_amaru_measurement_calibration",
+      "profile_id": "profile-o-amaru-target-latest-confirmed",
+      "attempts": 100,
+      "case_set": "accepted-and-rejected-v1",
+      "response_timeout_seconds": 2,
+      "timeout_seconds": 1500,
+      "expected_helper_exit": 0,
+      "plutus_transactions": 20,
+      "submission_entry": "amaru-consumer",
+      "epoch_transitions": 1,
+      "epoch_timeout_seconds": 260
+    },
+    {
+      "primitive": "runtime_real_target_restart_and_readiness",
+      "profile_id": "profile-o-amaru-target-latest-confirmed",
+      "timeout_seconds": 300,
+      "poll_interval_seconds": 1
+    },
+    {
+      "primitive": "runtime_controlled_sync_range",
+      "profile_id": "profile-o-amaru-target-latest-confirmed",
+      "minimum_blocks": 20,
+      "timeout_seconds": 240,
+      "poll_interval_seconds": 1,
+      "peer_policy": "single-controlled-producer"
+    }
+  ],
+  "faults": [],
+  "probes": [
+    {
+      "primitive": "runtime_target_health_and_progress",
+      "report_path": "outputs/client-example-proof/controlled-sync-range.json",
+      "progress_reference": "load-start"
+    },
+    {
+      "primitive": "runtime_peer_session_health",
+      "report_path": "outputs/client-example-proof/controlled-sync-range.json"
+    }
+  ],
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "min_completed": 3,
+      "min_event_count": 3
+    },
+    {
+      "primitive": "restart_readiness_complete"
+    },
+    {
+      "primitive": "controlled_sync_range_complete",
+      "minimum_blocks": 20
+    },
+    {
+      "primitive": "target_progress_continues"
+    },
+    {
+      "primitive": "no_target_fatal_signal"
+    }
+  ],
+  "teardown": []
+}

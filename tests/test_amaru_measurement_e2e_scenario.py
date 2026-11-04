@@ -182,3 +182,50 @@ def test_amaru_calibration_primitive_without_workload_options_keeps_legacy_comma
         "--plutus-transactions", "--submission-entry", "--inclusion-fallback-seconds",
         "--epoch-transitions", "--epoch-timeout-seconds",
     ))
+
+
+def test_amaru_workload_scenario_extends_e2e_with_transactions_epoch_restart_and_sync():
+    base = json.loads(
+        (ROOT / "dwarf/scenarios/amaru-measurement-e2e-stock-portable.yaml").read_text()
+    )
+    path = ROOT / "dwarf/scenarios/amaru-measurement-workload-stock-portable.yaml"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    parsed = scenario_from_body((json.dumps(doc) + "\n").encode())
+
+    assert parsed.id == "amaru-measurement-workload-stock-portable"
+    assert (parsed.profile, parsed.measurement_profile) == (base["profile"], base["measurement_profile"])
+    assert parsed.target == base["target"]
+    assert parsed.seed == base["seed"]
+    assert [m.id for m in parsed.measurements] == ["amaru-stock-header-validation"]
+    load = doc["load"]
+    assert [l["primitive"] for l in load] == [
+        "runtime_amaru_measurement_calibration",
+        "runtime_real_target_restart_and_readiness",
+        "runtime_controlled_sync_range",
+    ]
+    assert load[0] == {
+        **base["load"][0],
+        "plutus_transactions": 20,
+        "submission_entry": "amaru-consumer",
+        "epoch_transitions": 1,
+        "epoch_timeout_seconds": 260,
+        "timeout_seconds": 1500,
+    }
+    assert load[1] == {
+        "primitive": "runtime_real_target_restart_and_readiness",
+        "profile_id": base["profile"], "timeout_seconds": 300, "poll_interval_seconds": 1,
+    }
+    assert load[2]["minimum_blocks"] == 20
+    assert load[2]["peer_policy"] == "single-controlled-producer"
+    assert [a["primitive"] for a in doc["assertions"]] == [
+        "load_events_are_ok", "restart_readiness_complete", "controlled_sync_range_complete",
+        "target_progress_continues", "no_target_fatal_signal",
+    ]
+    assert doc["assertions"][0] == {"primitive": "load_events_are_ok", "min_completed": 3, "min_event_count": 3}
+    assert doc["assertions"][2]["minimum_blocks"] == 20
+    assert [p["primitive"] for p in doc["probes"]] == [
+        "runtime_target_health_and_progress", "runtime_peer_session_health",
+    ]
+    assert "workload" in doc["tags"]
+    text = path.read_text(encoding="utf-8")
+    assert "/home/" not in text and "/Users/" not in text
