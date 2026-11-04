@@ -1,7 +1,10 @@
 # Cross-implementation measurement compare — design
 
 Date: 2026-11-04. Repo: V10-FRESH (`pragma-org/dwarf` public main, internal main).
-Status: design for approval. Follows `docs/plans/2026-11-03-operator-build-workload-measurements-design.md`,
+Status: implemented on `feat/cross-implementation-compare`; acceptance run 2026-11-04 against the
+Pages default set (four workload runs picked: seven headline cards with four labelled bars each,
+raw ids on hover, ≈ mark and no winner on the approximate row, nothing under "Other metrics").
+Follows `docs/plans/2026-11-03-operator-build-workload-measurements-design.md`,
 whose four workload runs are the first data this feature is for.
 
 ## 1. Intent
