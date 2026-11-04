@@ -572,16 +572,18 @@ def test_calibration_primitive_emits_outcome_independent_workload_accounting(
 
     primitive.run(handle, None)
 
-    accounting = next(
-        event for event in handle.events if event["event"] == "workload_accounting"
-    )
+    accounting_events = [event for event in handle.events if event["event"] == "workload_accounting"]
+    # One backlog sample per attempt (nothing attempted yet, one in flight), then the cumulative event.
+    samples, accounting = accounting_events[:-1], accounting_events[-1]
+    assert len(samples) == 2 and all(e["payload"]["attempted"] == 0 and e["payload"]["backlog"] == 1 for e in samples)
     assert accounting["payload"] == {
         "attempted": 2,
         "successful": 0,
         "rejected": 1,
+        "timed_out": 1,
         "bytes": 16,
         "batches": 2,
-        "backlog": None,
+        "backlog": 0,
         "attempts": [
             {"input_id": "a", "outcome": "rejected", "elapsed_micros": 12},
             {"input_id": "b", "outcome": "timeout", "elapsed_micros": 34},
