@@ -418,9 +418,8 @@ class CardanoPatchedCollector:
             for path in self.json_paths
         )
         raw_sources = loaded.pop("_raw_sources")
-        raw_path = context.artifact_path("raw/cardano-measurement.ndjson")
-        raw_path.parent.mkdir(parents=True, exist_ok=True)
-        raw_path.write_bytes(b"\n".join(raw for _name, raw in raw_sources))
+        # The instrumented trace is shared by every patched collector of the run: retain it once.
+        raw_artifact = context.shared_artifact("cardano-measurement.ndjson", b"\n".join(raw for _name, raw in raw_sources))
         normalized_path = context.artifact_path("normalized.ndjson")
         normalized_path.write_text(
             "".join(json.dumps(event, sort_keys=True) + "\n" for event in loaded["events"]),
@@ -447,7 +446,7 @@ class CardanoPatchedCollector:
                 )
             },
             "artifacts": {
-                "raw_json": raw_path.relative_to(context.run_dir).as_posix(),
+                "raw_json": raw_artifact,
                 "normalized": normalized_path.relative_to(context.run_dir).as_posix(),
                 "correlations": context.artifact_path("correlations.json").relative_to(context.run_dir).as_posix(),
                 "result": context.artifact_path("result.json").relative_to(context.run_dir).as_posix(),

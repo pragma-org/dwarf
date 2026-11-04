@@ -413,9 +413,8 @@ class CardanoStockCollector:
             sources.append((str(path), body, truncated))
         loaded = _load_cardano_trace_bytes(sources)
         raw_sources = loaded.pop("_raw_sources")
-        raw_path = context.artifact_path("raw/cardano-node.ndjson")
-        raw_path.parent.mkdir(parents=True, exist_ok=True)
-        raw_path.write_bytes(b"\n".join(body for _name, body in raw_sources))
+        # The node trace is shared by every collector of the run: retain it once.
+        raw_artifact = context.shared_artifact("cardano-node.ndjson", b"\n".join(body for _name, body in raw_sources))
         normalized_path = context.artifact_path("normalized.ndjson")
         normalized_path.write_text(
             "".join(json.dumps(event, sort_keys=True) + "\n" for event in loaded["events"]),
@@ -439,7 +438,7 @@ class CardanoStockCollector:
                 )
             },
             "artifacts": {
-                "raw": raw_path.relative_to(context.run_dir).as_posix(),
+                "raw": raw_artifact,
                 "normalized": normalized_path.relative_to(context.run_dir).as_posix(),
                 "correlations": context.artifact_path("correlations.json").relative_to(context.run_dir).as_posix(),
                 "result": context.artifact_path("result.json").relative_to(context.run_dir).as_posix(),

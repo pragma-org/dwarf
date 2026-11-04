@@ -403,7 +403,9 @@ def test_collector_retains_bounded_raw_normalized_correlation_and_result_artifac
     assert result["export"]["incomplete"] is True
     assert result["export"]["truncated_sources"]
     collector_dir = tmp_path / "measurements/collectors/amaru-stock-mempool"
-    assert (collector_dir / "raw/amaru-json.ndjson").is_file()
+    raw_json = result["artifacts"]["raw_json"]
+    assert raw_json.startswith("measurements/shared/") and raw_json.endswith("-amaru-json.ndjson")
+    assert (collector_dir.parents[2] / raw_json).is_file()
     assert (collector_dir / "normalized.ndjson").is_file()
     assert (collector_dir / "correlations.json").is_file()
     assert (collector_dir / "result.json").is_file()

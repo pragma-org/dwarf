@@ -806,13 +806,12 @@ class AmaruStockCollector:
         )
         loaded["source_revision"] = self.source_revision
         raw_sources = loaded.pop("_raw_sources")
-        raw_dir = context.artifact_path("raw")
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        (raw_dir / "amaru-json.ndjson").write_bytes(
-            b"\n".join(raw for _name, raw in raw_sources["json"])
+        # The node trace is shared by every collector of the run: retain it once.
+        raw_json_artifact = context.shared_artifact(
+            "amaru-json.ndjson", b"\n".join(raw for _name, raw in raw_sources["json"])
         )
-        (raw_dir / "otlp.jsonl").write_bytes(
-            b"\n".join(raw for _name, raw in raw_sources["otlp"])
+        raw_otlp_artifact = context.shared_artifact(
+            "otlp.jsonl", b"\n".join(raw for _name, raw in raw_sources["otlp"])
         )
         normalized_path = context.artifact_path("normalized.ndjson")
         normalized_path.write_text(
@@ -843,8 +842,8 @@ class AmaruStockCollector:
                 ),
             },
             "artifacts": {
-                "raw_json": context.artifact_path("raw/amaru-json.ndjson").relative_to(context.run_dir).as_posix(),
-                "raw_otlp": context.artifact_path("raw/otlp.jsonl").relative_to(context.run_dir).as_posix(),
+                "raw_json": raw_json_artifact,
+                "raw_otlp": raw_otlp_artifact,
                 "normalized": normalized_path.relative_to(context.run_dir).as_posix(),
                 "correlations": context.artifact_path("correlations.json").relative_to(context.run_dir).as_posix(),
                 "result": context.artifact_path("result.json").relative_to(context.run_dir).as_posix(),

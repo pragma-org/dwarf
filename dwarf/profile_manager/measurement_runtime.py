@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import operator
 import os
@@ -61,6 +62,15 @@ _TARGET_RESULT_FIELDS = {
 }
 
 
+def _within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 class MeasurementArtifactPathError(ValueError):
     """Raised when a collector attempts to write outside its evidence root."""
 
@@ -89,6 +99,24 @@ class CollectorContext:
                 f"collector artifact path escapes its evidence root: {relative_path}"
             ) from exc
         return destination
+
+    def shared_artifact(self, name: str, payload: bytes) -> str:
+        """Retain a large raw input once per run, content-addressed under
+        ``measurements/shared/``; returns the run-relative path. Collectors that read the
+        same node trace share one copy instead of each archiving their own."""
+        if not isinstance(name, str) or not name or "/" in name or "\\" in name or name in {".", ".."} or ".." in name.split("."):
+            raise MeasurementArtifactPathError(f"shared artifact name must be a bare file name: {name!r}")
+        if not isinstance(payload, (bytes, bytearray)):
+            raise MeasurementArtifactPathError("shared artifact payload must be bytes")
+        digest = hashlib.sha256(payload).hexdigest()
+        shared_dir = self.run_dir / "measurements" / "shared"
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        destination = shared_dir / f"{digest[:16]}-{name}"
+        if not destination.exists():
+            temporary = destination.with_name(destination.name + f".{os.getpid()}.part")
+            temporary.write_bytes(bytes(payload))
+            os.replace(temporary, destination)
+        return destination.relative_to(self.run_dir).as_posix()
 
     def write_json(self, relative_path: str, payload: Any) -> str:
         destination = self.artifact_path(relative_path)
@@ -457,13 +485,15 @@ class MeasurementRuntime:
                     f"{record.entry['id']} collector artifact escapes its evidence root: {value}"
                 )
             path = self.run_dir.joinpath(*posix.parts)
-            try:
-                path.relative_to(collector_root)
-                path.resolve().relative_to(collector_root.resolve())
-            except ValueError as exc:
+            shared_root = self.measurements_dir / "shared"
+            # A collector's evidence lives under its own directory, or under the run's
+            # content-addressed shared root (CollectorContext.shared_artifact) for raw
+            # inputs that several collectors retain once.
+            roots = (collector_root, shared_root) if tuple(posix.parts[:2]) == ("measurements", "shared") else (collector_root,)
+            if not any(_within(path, root) for root in roots):
                 raise MeasurementArtifactPathError(
                     f"{record.entry['id']} collector artifact belongs outside its evidence root: {value}"
-                ) from exc
+                )
             current = self.run_dir
             for part in posix.parts:
                 current = current / part

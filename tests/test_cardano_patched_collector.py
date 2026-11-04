@@ -155,7 +155,8 @@ def test_collector_retains_raw_normalized_and_per_outcome_distributions(tmp_path
     assert result["measurements"]["protocol_receive_decode_by_outcome"]["accepted"]["mean"] == 7.0
     assert result["measurements"]["protocol_receive_decode_by_outcome"]["timeout"]["mean"] == 17.0
     assert result["performance_authority"] == "requires-paired-calibration"
-    assert (context.collector_dir / "raw/cardano-measurement.ndjson").is_file()
+    assert result["artifacts"]["raw_json"].startswith("measurements/shared/")
+    assert (context.run_dir / result["artifacts"]["raw_json"]).is_file()
     assert (context.collector_dir / "normalized.ndjson").is_file()
 
 

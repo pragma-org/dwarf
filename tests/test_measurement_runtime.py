@@ -1069,3 +1069,43 @@ def test_result_write_failure_preserves_terminal_run_and_lock_cleanup(
     assert runtime["collector_errors"][-1]["message"] == "bounded per-tap write failure"
     assert not (handle.run_dir / "measurements/tap-a/result.json").exists()
     assert lock.closed is True
+
+
+class SharedArtifactCollector(RecordingCollector):
+    """Retains its raw input once per run and declares the shared path."""
+
+    def finalize(self, context):
+        shared = context.shared_artifact("node-trace.ndjson", b'{"kind":"trace"}\n')
+        context.write_json("result.json", {"artifacts": {"raw": shared}})
+        return {"artifacts": {"raw": shared}}
+
+
+def test_runtime_retains_a_declared_shared_artifact(tmp_path):
+    runtime = MeasurementRuntime(
+        run_dir=tmp_path, resolution=_resolution(_resolved("tap-a")),
+        collector_factories={"tap-a": lambda _entry: SharedArtifactCollector([])},
+    )
+    runtime.prepare(); runtime.start(); runtime.finalize()
+    assert runtime.snapshot()["collector_states"] == {"tap-a": "finalized"}, runtime.snapshot()["collector_errors"]
+    shared = list((tmp_path / "measurements" / "shared").glob("*-node-trace.ndjson"))
+    assert len(shared) == 1
+    retained = [json.loads(path.read_text()) for path in tmp_path.rglob("result.json")]
+    listed = [row for row in retained if isinstance(row.get("artifacts"), list)]
+    assert listed and any(shared[0].relative_to(tmp_path).as_posix() in row["artifacts"] for row in listed)
+
+
+class EscapingResultCollector(RecordingCollector):
+    def finalize(self, context):
+        (context.run_dir / "events").mkdir(exist_ok=True)
+        (context.run_dir / "events" / "stolen.ndjson").write_text("x")
+        return {"artifacts": {"raw": "events/stolen.ndjson"}}
+
+
+def test_runtime_still_refuses_artifacts_outside_both_evidence_roots(tmp_path):
+    runtime = MeasurementRuntime(
+        run_dir=tmp_path, resolution=_resolution(_resolved("tap-a")),
+        collector_factories={"tap-a": lambda _entry: EscapingResultCollector([])},
+    )
+    runtime.prepare(); runtime.start(); runtime.finalize()
+    assert runtime.snapshot()["collector_states"] == {"tap-a": "error"}
+    assert runtime.snapshot()["collector_errors"][0]["type"] == "MeasurementArtifactPathError"

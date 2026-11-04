@@ -103,7 +103,8 @@ def test_collector_writes_bounded_raw_normalized_and_measurement_results(tmp_pat
     assert result["measurements"]["blockfetch_duration"]["median"] == 4300
     assert result["measurements"]["blockfetch_bytes"]["value"] == 2048
     assert result["export"]["incomplete"] is True
-    assert context.artifact_path("raw/cardano-node.ndjson").is_file()
+    assert result["artifacts"]["raw"].startswith("measurements/shared/") and result["artifacts"]["raw"].endswith("-cardano-node.ndjson")
+    assert (context.run_dir / result["artifacts"]["raw"]).is_file()
     assert context.artifact_path("normalized.ndjson").is_file()
     assert context.artifact_path("result.json").is_file()
 
