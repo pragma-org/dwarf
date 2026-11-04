@@ -547,3 +547,31 @@ def test_reserved_cardano_boundaries_also_cover_stock_reports():
     )
     assert _card(result, "handler-queue-residence")["status"] == "reserved"
     assert _card(result, "txsubmission-residence")["status"] == "reserved"
+
+
+def test_cardano_patched_bound_estimates_bind_to_their_concepts():
+    """Every id the cardano patched collectors emit binds to a concept, so the
+    coverage rule and the Compare page can read them (run 20261104T124711Z-eb17bfca
+    reported seven unbound ids)."""
+    ids = {
+        "queue_residence_lower_bound": "handler-queue-residence",
+        "queue_residence_upper_bound": "handler-queue-residence",
+        "request_to_terminal_lower_bound": "txsubmission-residence",
+        "request_to_terminal_upper_bound": "txsubmission-residence",
+        "request_to_body_upper_bound": "txsubmission-request-to-body-time",
+        "body_to_terminal_upper_bound": "txsubmission-body-to-terminal-time",
+        "header_prerequisite_unavailable": "header-prerequisite-unavailable-time",
+    }
+    metrics = {mid: {"status": "available", "unit": "microseconds", "median": 5.0, "sample_count": 3} for mid in ids}
+    result = build_measurement_presentation(metrics, _target("cardano-node", "patched"))
+    by_raw = {raw: card["concept_id"] for card in result["cards"] for raw in card["raw_metric_ids"]}
+    assert {mid: by_raw.get(mid) for mid in ids} == ids
+    # Lower bound stays the primary when both bounds are present.
+    queue = next(card for card in result["cards"] if card["concept_id"] == "handler-queue-residence")
+    assert queue["raw_metric_ids"][0] == "queue_residence_lower_bound"
+    # A built contract supersedes its reserved placeholder: one card, no fallback card for the placeholder.
+    metrics["handler_queue_residence"] = {"status": "unavailable", "unit": "us", "reason": "stock Cardano-node does not emit the audited internal handler queue boundary"}
+    result = build_measurement_presentation(metrics, _target("cardano-node", "patched"))
+    queue_cards = [card for card in result["cards"] if card["concept_id"] == "handler-queue-residence"]
+    assert len(queue_cards) == 1 and queue_cards[0]["source"] == "patched"
+    assert not any(card["raw_metric_ids"] == ["handler_queue_residence"] for card in result["cards"])

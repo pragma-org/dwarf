@@ -132,7 +132,9 @@ def _unit_matches(concept: dict[str, Any], binding: dict[str, Any], metric_id: s
     return canonical_unit(raw_unit, catalog) == canonical_unit(unit, catalog) or bool(binding.get("unit_equivalent"))
 
 
-def _binding_for(concept: dict[str, Any], target: dict[str, Any]) -> dict[str, Any] | None:
+def _bindings_for(concept: dict[str, Any], target: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every binding of ``concept`` that applies to the target, implementation-specific
+    ones first, reserved placeholders last."""
     implementation = str(target.get("implementation") or "")
     mode = str(target.get("mode") or "")
     candidates = []
@@ -143,10 +145,13 @@ def _binding_for(concept: dict[str, Any], target: dict[str, Any]) -> dict[str, A
         if modes and mode not in modes:
             continue
         candidates.append(binding)
-    if not candidates:
-        return None
-    candidates.sort(key=lambda item: item.get("implementation") == "*", reverse=False)
-    return candidates[0]
+    candidates.sort(key=lambda item: (item.get("source") == "reserved", item.get("implementation") == "*"))
+    return candidates
+
+
+def _binding_for(concept: dict[str, Any], target: dict[str, Any]) -> dict[str, Any] | None:
+    candidates = _bindings_for(concept, target)
+    return candidates[0] if candidates else None
 
 
 def _humanize(raw_id: str) -> str:
@@ -429,20 +434,33 @@ def build_measurement_presentation(
     cards: list[dict[str, Any]] = []
     consumed: set[str] = set()
     for concept in catalog["concepts"]:
-        binding = _binding_for(concept, target_identity)
-        if binding is None:
+        candidates = _bindings_for(concept, target_identity)
+        if not candidates:
             continue
-        present = [
-            metric_id
-            for metric_id in binding.get("metric_ids") or []
-            if metric_id in metrics and _unit_matches(concept, binding, metric_id, metrics[metric_id], catalog)
-        ]
-        if not present and binding.get("source") != "reserved":
+
+        def _present(binding: dict[str, Any]) -> list[str]:
+            return [
+                metric_id
+                for metric_id in binding.get("metric_ids") or []
+                if metric_id in metrics and _unit_matches(concept, binding, metric_id, metrics[metric_id], catalog)
+            ]
+
+        # A built binding with retained ids wins; a reserved placeholder shows only when
+        # nothing built is present. The placeholder's ids are consumed either way so a
+        # superseded placeholder never surfaces as a fallback card.
+        chosen = next((b for b in candidates if b.get("source") != "reserved" and _present(b)), None)
+        if chosen is None:
+            chosen = next((b for b in candidates if b.get("source") == "reserved"), None)
+        if chosen is None:
             continue
-        card = _card(concept, binding, {metric_id: metrics[metric_id] for metric_id in present}, target_identity)
+        present = _present(chosen)
+        card = _card(concept, chosen, {metric_id: metrics[metric_id] for metric_id in present}, target_identity)
         card["source_label"] = catalog["source_labels"][card["source"]]
         cards.append(card)
         consumed.update(present)
+        for binding in candidates:
+            if binding.get("source") == "reserved":
+                consumed.update(metric_id for metric_id in binding.get("metric_ids") or [] if metric_id in metrics)
 
     for metric_id, raw in metrics.items():
         if metric_id in consumed:

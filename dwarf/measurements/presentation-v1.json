@@ -731,6 +731,19 @@
           "source": "reserved",
           "derivation": "No DWARF collector currently implements the internal BlockFetch handler-queue boundary for Cardano-node.",
           "boundary": "cardano-node internal BlockFetch handler-queue residence (collector contract not built)"
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "queue_residence_lower_bound",
+            "queue_residence_upper_bound"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from the Cardano-node BlockFetch handler-queue collector: time between a merged request entering the handler queue and its service, as lower and upper bounds.",
+          "boundary": "cardano-node BlockFetch merged-request handler-queue residence (bounds bracket the native STM step)"
         }
       ]
     },
@@ -768,6 +781,19 @@
           "source": "reserved",
           "derivation": "No DWARF collector currently implements continuous per-transaction TxSubmission2 residence for Cardano-node.",
           "boundary": "cardano-node continuous TxSubmission2 request-to-mempool residence (collector contract not built)"
+        },
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "request_to_terminal_lower_bound",
+            "request_to_terminal_upper_bound"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from the Cardano-node TxSubmission residence collector: body request until the native body-state update, as lower and upper bounds.",
+          "boundary": "cardano-node TxSubmission2 inbound V2: body request until body handled (terminal is the body-state update, not mempool acceptance)"
         }
       ]
     },
@@ -1775,11 +1801,12 @@
             "patched"
           ],
           "metric_ids": [
-            "request_to_body_lower_bound"
+            "request_to_body_lower_bound",
+            "request_to_body_upper_bound"
           ],
           "source": "patched",
           "derivation": "Summarized from the Cardano-node TxSubmission residence collector when its contract is built.",
-          "boundary": "cardano-node TxSubmission2: body request until body receipt, lower bound"
+          "boundary": "cardano-node TxSubmission2: body request until body receipt (lower and upper bounds)"
         }
       ]
     },
@@ -1810,11 +1837,12 @@
             "patched"
           ],
           "metric_ids": [
-            "body_to_terminal_lower_bound"
+            "body_to_terminal_lower_bound",
+            "body_to_terminal_upper_bound"
           ],
           "source": "patched",
           "derivation": "Summarized from the Cardano-node TxSubmission residence collector when its contract is built.",
-          "boundary": "cardano-node TxSubmission2: body receipt until mempool decision, lower bound"
+          "boundary": "cardano-node TxSubmission2: body receipt until mempool decision (lower and upper bounds)"
         }
       ]
     },
@@ -2286,6 +2314,30 @@
       "comparison_direction": "neutral",
       "unit": "transactions",
       "bindings": []
+    },
+    {
+      "id": "header-prerequisite-unavailable-time",
+      "title": "Header prerequisite wait",
+      "description": "Time the instrumented consensus boundary spent on a header whose validation prerequisite (its predecessor state) was not yet available.",
+      "category": "latency-processing",
+      "metric_type": "distribution",
+      "primary_statistic": "median",
+      "comparison_direction": "lower",
+      "unit": "us",
+      "bindings": [
+        {
+          "implementation": "cardano-node",
+          "modes": [
+            "patched"
+          ],
+          "metric_ids": [
+            "header_prerequisite_unavailable"
+          ],
+          "source": "patched",
+          "derivation": "Summarized from Cardano-node header-validation records whose outcome was unavailable.",
+          "boundary": "cardano-node consensus header validation attempted before its prerequisite was available"
+        }
+      ]
     }
   ]
 }
