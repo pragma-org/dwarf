@@ -62,9 +62,13 @@ REQUIRED_FINGERPRINT_PARTS = (
     "measurement_profile_digest",
     "report_schema_version",
 )
+# Bars (build groups) also split by mode so stock and patched builds of one release are told apart.
+GROUP_IDENTITY_FIELDS = IDENTITY_FIELDS + ("mode",)
 ROLLUP_MODES = ("exact", "version", "run")
 FILTER_KEYS = (
     "impl", "version", "scenario", "category", "metric", "outcome", "since", "until", "baseline", "rollup",
+    # Picked run ids (comma-separated): lifts the one-workload gate and keys rows by catalog concept.
+    "runs",
     # Display preferences: carried in every link and form, never part of aggregation or provenance.
     "show_unmeasured", "show_provenance", "show_samples", "show_evidence", "show_revisions",
 )
@@ -100,15 +104,111 @@ def _text(value: Any) -> str:
 def _catalog_index(catalog: dict[str, Any] | None = None) -> dict[str, Any]:
     from profile_manager.measurement_presentation import load_measurement_presentation_catalog
 
+    from profile_manager.measurement_presentation import is_companion_metric
+
     catalog = catalog or load_measurement_presentation_catalog()
     by_metric: dict[str, dict[str, str]] = {}
+    concepts: dict[str, dict[str, Any]] = {}
+    bindings: dict[str, dict[str, list[dict[str, Any]]]] = {}
     for concept in catalog["concepts"]:
+        direction = concept.get("comparison_direction") or "neutral"
+        concepts[concept["id"]] = {
+            "title": concept["title"],
+            "category": concept["category"],
+            "comparison_direction": direction,
+            "unit": concept.get("unit"),
+            "metric_type": concept.get("metric_type"),
+            "compare_as": concept.get("compare_as"),
+            "equivalence": concept.get("equivalence") or "exact",
+        }
         for binding in concept.get("bindings") or []:
-            for metric_id in binding.get("metric_ids") or []:
-                by_metric.setdefault(metric_id, {"title": concept["title"], "category": concept["category"]})
+            metric_ids = list(binding.get("metric_ids") or [])
+            primary = next((m for m in metric_ids if not is_companion_metric(m)), None)
+            for metric_id in metric_ids:
+                by_metric.setdefault(metric_id, {"title": concept["title"], "category": concept["category"], "comparison_direction": direction})
+                bindings.setdefault(binding["implementation"], {}).setdefault(metric_id, []).append(
+                    {
+                        "concept": concept["id"],
+                        "modes": list(binding.get("modes") or []),
+                        "boundary": binding.get("boundary") or "",
+                        "unit_equivalent": bool(binding.get("unit_equivalent")),
+                        "primary": metric_id == primary,
+                    }
+                )
     categories = [{"id": item["id"], "label": item["label"]} for item in catalog["categories"] if item["id"] != "unavailable"]
     categories.append({"id": "uncategorized", "label": "Other metrics"})
-    return {"by_metric": by_metric, "categories": categories, "order": {c["id"]: i for i, c in enumerate(categories)}}
+    return {
+        "by_metric": by_metric,
+        "categories": categories,
+        "order": {c["id"]: i for i, c in enumerate(categories)},
+        "concepts": concepts,
+        "bindings": bindings,
+        "implementation_labels": dict(catalog.get("implementation_labels") or {}),
+        "unit_short": dict(catalog.get("unit_short") or {}),
+        "unit_full": dict(catalog.get("unit_full") or {}),
+    }
+
+
+def _raw_unit(row: dict[str, Any]) -> str:
+    return str(row.get("unit") or "")
+
+
+def _matching_bindings(index: dict[str, Any], record: dict[str, Any], metric_id: str, row: dict[str, Any]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Bindings of this raw id for the record's implementation (then ``*``) whose mode and unit fit."""
+    from profile_manager.measurement_presentation import canonical_unit, is_companion_metric
+
+    matches: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    raw_unit = canonical_unit(_raw_unit(row), index)
+    for implementation in (record.get("implementation") or "", "*"):
+        for binding in (index.get("bindings") or {}).get(implementation, {}).get(metric_id, []):
+            concept = index["concepts"].get(binding["concept"])
+            if concept is None:
+                continue
+            if binding["modes"] and record.get("mode") and record["mode"] not in binding["modes"]:
+                continue
+            unit = concept.get("unit")
+            if unit and not is_companion_metric(metric_id) and canonical_unit(unit, index) != raw_unit and not binding["unit_equivalent"]:
+                continue
+            matches.append((concept, binding))
+        if matches:
+            break
+    return matches
+
+
+def describe_metric(index: dict[str, Any], record: dict[str, Any], metric_id: str, row: dict[str, Any]) -> dict[str, str]:
+    """Title, category and direction for one raw metric of one record, resolved through its bindings (unit-aware)."""
+    for concept, _binding in _matching_bindings(index, record, metric_id, row):
+        return {"title": concept["title"], "category": concept["category"], "comparison_direction": concept["comparison_direction"]}
+    known = index["by_metric"].get(metric_id)
+    if known:
+        return {"title": known["title"], "category": known["category"], "comparison_direction": known.get("comparison_direction") or "neutral"}
+    return {"title": _humanize(metric_id), "category": "uncategorized", "comparison_direction": "neutral"}
+
+
+def catalog_concept(index: dict[str, Any], record: dict[str, Any], metric_id: str, row: dict[str, Any]) -> dict[str, Any] | None:
+    """Concept-keyed row identity for a primary raw metric; None for companions and unbound ids."""
+    from profile_manager.measurement_presentation import canonical_unit
+
+    for concept, binding in _matching_bindings(index, record, metric_id, row):
+        if not binding["primary"]:
+            continue
+        source_id = binding["concept"]
+        row_id = concept.get("compare_as") or source_id
+        row_concept = index["concepts"].get(row_id) or concept
+        unit = row_concept.get("unit") or canonical_unit(_raw_unit(row), index)
+        return {
+            "id": row_id,
+            "title": row_concept["title"],
+            "category": row_concept["category"],
+            "comparison_direction": row_concept["comparison_direction"],
+            "boundary": binding["boundary"],
+            "approximate": concept.get("equivalence") == "approximate",
+            "raw_unit": _raw_unit(row),
+            "source_concept": source_id,
+            "unit": unit,
+            "key": json.dumps(["catalog-concept-v1", row_id, unit], separators=(",", ":")),
+        }
+    return None
 
 
 def _humanize(metric_id: str) -> str:
@@ -124,10 +224,18 @@ def _metric_cell(name: str, raw: Any) -> dict[str, Any]:
     """One metric of one run, normalized once for every comparison."""
     from profile_manager.data.operate_run import _measurement_metric_row
 
+    from profile_manager.measurement_presentation import sum_verdict_dict
+
     row = _measurement_metric_row(name, raw)
     metric = raw if isinstance(raw, dict) else {}
     primary = metric.get("all") if isinstance(metric.get("all"), dict) else metric
     value = row.get("value")
+    verdict_total = None
+    if isinstance(value, dict):
+        # A verdict dict such as {"accepted": 205, "rejected": 0} reads as its sum.
+        value = verdict_total = sum_verdict_dict(value)
+    elif value is None and isinstance(primary.get("value"), dict):
+        value = verdict_total = sum_verdict_dict(primary.get("value"))
     if value is None and _number(primary.get("absolute_delta")) is not None:
         value = _number(primary.get("absolute_delta"))
     if value is None:
@@ -139,6 +247,9 @@ def _metric_cell(name: str, raw: Any) -> dict[str, Any]:
         count = _number(primary.get("offered_count"))
     if count is None:
         count = _number(row.get("count"))
+    if count is None and verdict_total is not None:
+        # The summed verdicts are the counter's own count: positive evidence for the cell.
+        count = verdict_total
     sample_count = _number(row.get("sample_count")) or 0.0
     has_delta_evidence = _number(primary.get("baseline")) is not None and _number(primary.get("hostile")) is not None
     row["primary_value"] = _number(value)
@@ -406,11 +517,13 @@ def group_key(record: dict[str, Any], rollup: str = "exact") -> str:
         return f"run|{record['run_id']}"
     if record.get("provenance_state") != "complete":
         return f"incomplete|{record['run_id']}"
-    return "|".join(record.get(key) or "" for key in IDENTITY_FIELDS)
+    return "|".join(record.get(key) or "" for key in GROUP_IDENTITY_FIELDS)
 
 
 def _group_label(record: dict[str, Any], rollup: str) -> str:
     base = f"{record.get('implementation') or 'unknown'} {record.get('version') or 'unknown version'}".strip()
+    if record.get("mode"):
+        base += f" · {record['mode']}"
     if rollup == "run":
         return f"{base} · run {record['run_id']}"
     if rollup == "version":
@@ -571,12 +684,20 @@ def _present_row(row: dict[str, Any], groups: list[dict[str, Any]]) -> None:
         row["incompatibility"] = None
 
 
+def picked_runs(filters: dict[str, str]) -> list[str]:
+    return [run_id.strip() for run_id in (filters.get("runs") or "").split(",") if run_id.strip()]
+
+
 def _record_matches(record: dict[str, Any], filters: dict[str, str]) -> bool:
     if filters.get("impl") and record.get("implementation") != filters["impl"]:
         return False
     if filters.get("version") and record.get("version") != filters["version"]:
         return False
-    if filters.get("scenario") and record.get("scenario_id") != filters["scenario"]:
+    picks = picked_runs(filters)
+    if picks:
+        if record.get("run_id") not in picks:
+            return False
+    elif filters.get("scenario") and record.get("scenario_id") != filters["scenario"]:
         return False
     if filters.get("outcome") and filters["outcome"] not in (record.get("exit_status"), record.get("verdict")):
         return False
@@ -649,17 +770,17 @@ def build_measurement_comparison(
     index = _catalog_index(catalog)
     deduped, conflicts = dedupe_records(records)
 
-    def describe(metric_id: str) -> dict[str, str]:
-        return index["by_metric"].get(metric_id) or {"title": _humanize(metric_id), "category": "uncategorized"}
+    picks = picked_runs(filters)
 
     option_sets: dict[str, set[str]] = {"implementations": set(), "versions": set(), "scenarios": set(), "categories": set(), "metrics": set()}
     for record in deduped:
         option_sets["implementations"].add(record["implementation"])
         option_sets["versions"].add(record["version"])
         option_sets["scenarios"].add(record["scenario_id"])
-        for metric_id in record["metrics"]:
-            option_sets["metrics"].add(metric_id)
-            option_sets["categories"].add(describe(metric_id)["category"])
+        for metric_id, row in record["metrics"].items():
+            mapped = catalog_concept(index, record, metric_id, row) if picks else None
+            option_sets["metrics"].add(mapped["id"] if mapped else metric_id)
+            option_sets["categories"].add((mapped or describe_metric(index, record, metric_id, row))["category"])
 
     matching = [r for r in deduped if _record_matches(r, filters)]
     scenario_records: dict[str, list[dict[str, Any]]] = {}
@@ -680,7 +801,7 @@ def build_measurement_comparison(
                 "selected": filters["scenario"] == sid,
             }
         )
-    focus_required = not filters["scenario"] and len(scenario_links) > 1
+    focus_required = not filters["scenario"] and not picks and len(scenario_links) > 1
     excluded_runs = [
         {
             "run_id": r["run_id"], "state": r["provenance_state"], "reason": r["provenance_reason"],
@@ -705,6 +826,7 @@ def build_measurement_comparison(
                 "key": key,
                 "implementation": record["implementation"],
                 "version": record["version"],
+                "mode": record.get("mode") or "",
                 "source_revision": record["source_revision"],
                 "image_digest": record["image_digest"],
                 "identity_complete": record["provenance_state"] == "complete",
@@ -729,7 +851,10 @@ def build_measurement_comparison(
         group["color"] = f"mc-color-{position % GROUP_COLORS}"
         siblings = by_version[(group["implementation"], group["version"])]
         base = f"{group['implementation']} {group['version']}".strip()
-        group["label_short"] = base if len(siblings) == 1 else f"{base} · build {group['source_revision'][:12] or group['run_ids'][0]}"
+        if group["mode"]:
+            base += f" · {group['mode']}"
+        same_mode = [s for s in siblings if s["mode"] == group["mode"]]
+        group["label_short"] = base if len(same_mode) == 1 else f"{base} · build {group['source_revision'][:12] or group['run_ids'][0]}"
         if rollup == "version" and len(siblings) > 1:
             group["rollup_blocked"] = [
                 field for field in ("source_revision", "image_digest")
@@ -757,24 +882,30 @@ def build_measurement_comparison(
     for record in selected:
         gkey = group_key(record, rollup)
         for metric_id, row in record["metrics"].items():
-            info = describe(metric_id)
+            mapped = catalog_concept(index, record, metric_id, row) if picks else None
+            info = mapped or describe_metric(index, record, metric_id, row)
+            display_id = mapped["id"] if mapped else metric_id
             if filters["category"] and info["category"] != filters["category"]:
                 continue
-            if filters["metric"] and metric_id != filters["metric"]:
+            if filters["metric"] and filters["metric"] not in (metric_id, display_id):
                 continue
             fp, parts, missing = compatibility_fingerprint(record, metric_id, row)
+            row_key = mapped["key"] if mapped else fp
             entry = rows_by_fp.setdefault(
-                fp,
+                row_key,
                 {
-                    "fingerprint": fp,
-                    "fingerprint_parts": parts,
+                    "fingerprint": row_key,
+                    "fingerprint_parts": {"concept": mapped["id"], "runtime": parts["runtime"], "unit": mapped["unit"]} if mapped else parts,
                     "provenance_complete": not missing,
                     "provenance_missing": missing,
-                    "metric_id": metric_id,
+                    "metric_id": display_id,
                     "title": info["title"],
                     "category": info["category"],
                     "category_label": next((c["label"] for c in index["categories"] if c["id"] == info["category"]), info["category"]),
-                    "unit": parts["unit"],
+                    "comparison_direction": info.get("comparison_direction") or "neutral",
+                    "concept_grouped": bool(mapped),
+                    "approximate": False,
+                    "unit": mapped["unit"] if mapped else parts["unit"],
                     "scenario_id": parts["scenario_id"],
                     "runtime": parts["runtime"],
                     "mode": parts["mode"],
@@ -784,8 +915,20 @@ def build_measurement_comparison(
                     "_contributors": {},
                 },
             )
-            entry["_contributors"].setdefault(gkey, []).append(_contributor(record, row, cell_state(row), fp))
-            metric_rows_by_group.setdefault((gkey, metric_id), []).append(fp)
+            if mapped:
+                entry["provenance_missing"] = sorted(set(entry["provenance_missing"]) | set(missing))
+                entry["provenance_complete"] = not entry["provenance_missing"]
+                entry["approximate"] = entry["approximate"] or mapped["approximate"]
+            contributor = _contributor(record, row, cell_state(row), fp)
+            contributor.update(
+                metric_id=metric_id,
+                raw_unit=_raw_unit(row),
+                boundary=mapped["boundary"] if mapped else "",
+                approximate=bool(mapped and mapped["approximate"]),
+                source_concept=mapped["source_concept"] if mapped else None,
+            )
+            entry["_contributors"].setdefault(gkey, []).append(contributor)
+            metric_rows_by_group.setdefault((gkey, display_id), []).append(row_key)
             groups_by_key[gkey]["metric_ids"].add(metric_id)
 
     rows = list(rows_by_fp.values())
@@ -794,7 +937,10 @@ def build_measurement_comparison(
         for group in groups:
             contributors = contributors_by_fp[row["fingerprint"]].get(group["key"])
             if contributors:
-                row["cells"][group["key"]] = _aggregate(sorted(contributors, key=lambda c: c["run_id"]))
+                cell = _aggregate(sorted(contributors, key=lambda c: c["run_id"]))
+                if len({c["fingerprint"] for c in contributors}) > 1:
+                    cell["mixed_provenance"] = True
+                row["cells"][group["key"]] = cell
                 continue
             cell = _empty_cell()
             alternatives = sorted({fp for fp in metric_rows_by_group.get((group["key"], row["metric_id"]), []) if fp != row["fingerprint"]})
@@ -852,6 +998,8 @@ def build_measurement_comparison(
 
     disagreements = []
     for row in rows:
+        if row.get("approximate"):
+            continue
         numeric = {key: cell for key, cell in row["cells"].items() if cell["value"] is not None}
         if len(numeric) < 2:
             continue
@@ -920,4 +1068,6 @@ def build_measurement_comparison(
         },
         "record_count": len(deduped),
         "run_count": len(selected),
+        "picked_run_count": len(selected) if picks else 0,
+        "picked_scenario_count": len({r["scenario_id"] for r in selected}) if picks else 0,
     }
