@@ -133,8 +133,11 @@ a reset and the sum continues from the new value; the result adds `"resets": n` 
   the attempt, and only when `relay_forwarded` is not False and `fallback_errors` is empty.
   The external collector copies `boundary_node` into each stage distribution as
   `boundary_node` so the catalog hover shows "measured at amaru-consumer".
-- `submit_to_mempool_visibility`: `run_plutus_workload` records `submit_started_at` (UTC,
-  `time.time_ns()`) per spend. After the leg, the helper joins each spend id with the first
+- `submit_to_mempool_visibility`: the generated wrapper in `_containerized_cardano_workload`
+  prints `submit_started_at_ns=<time since epoch>` immediately before the `cardano-cli
+  transaction submit` call, and `run_plutus_workload` parses it into the record (not the
+  helper-side clock: that would mostly measure the container start-up, 356–626 ms per
+  submit in the retained runs). After the leg, the helper joins each spend id with the first
   mempool-received or mempool-accepted event for that id in the stock mempool trace of the
   node that receives it (Amaru: `amaru-relay-1` JSON log `transaction.received`; cardano:
   node1 `TraceMempoolAddedTx`/`AttemptingAdd`), and sets `submit_to_mempool_visibility_nanos`
@@ -143,9 +146,15 @@ a reset and the sum continues from the new value; the result adds `"resets": n` 
   resubmits the previous accepted spend transaction file (its inputs are now consumed). The
   submit must fail; the record is `{"attempt_id": "plutus-<n>-double-spend", "outcome":
   "rejected", "chain_outcome": "rejected-phase1", ...}` with `rejected_reason` = the CLI
-  error's first line. One per batch of 20 (so `rejected_operations` and `mempool_rejected`
-  are ≥ 1 on every leg). The cardano stock mempool trace shows `TraceMempoolRejectedTx`;
-  Amaru shows `transaction.rejected`.
+  error's first line. One per batch of 20, so `rejected_operations` ≥ 1 on every leg. On
+  the cardano leg the submit goes over N2C to node1, whose stock mempool trace shows
+  `TraceMempoolRejectedTx`, so `mempool_rejected` ≥ 1. On the Amaru leg the N2C entry is a
+  cardano-node (consumer or p1) whose own mempool refuses the double spend, and
+  `amaru-relay-1` never sees it; see §4.7 for how the Amaru mempool rejection is exercised.
+- Peer-submitted records (§4.4) drop `submit_to_protocol_response` and
+  `submit_to_chain_adoption`: only the target's own socket is authoritative for them. Each
+  stage distribution is therefore built from one `boundary_node` and labelled with it
+  (`node1` on the cardano leg, `amaru-consumer` on the Amaru leg).
 
 ### 4.3 Cardano patched tap identity
 - Land the two deploy-only fixes first (`19d6412b`, `203056ec`, cherry-picked onto the
@@ -167,7 +176,11 @@ a reset and the sum continues from the new value; the result adds `"resets": n` 
   operator path proves the compiled instrumentation by its evidence bundle; the probe log
   is an artefact of the release-catalog build path. Same relaxation in Amaru's header
   validation gate for symmetry.
-- Scenario blocker text updated; the three taps enabled in the cardano workload scenario.
+- The three taps are enabled through the measurement profile
+  `dwarf/measurement-profiles/cardano-security-patched.yaml` (the box request expands it
+  with consent), not through the scenario: the scenario file is shared by the stock and
+  patched reruns, and an explicit unavailable tap would fail the stock resolution. Scenario
+  blocker text updated.
 - `CARDANO_MEASUREMENT_TRACE_SEVERITIES` gains `"Mempool": "Debug"`.
 
 ### 4.4 Cardano submission entry
@@ -181,17 +194,34 @@ them. Records carry `submission_entry` and `boundary_node`. The scenario sets
 
 ### 4.5 BlockFetch queue pressure (Amaru patched `queue_residence`)
 `runtime_controlled_sync_range` in the Amaru workload scenario goes from 20 to 200 blocks
-and the restart leg keeps the node down for 30 s before readiness, so the catch-up fetch
-has pending requests. Amaru patched queue residence then has samples; if it still has
-none after the rerun, the tap is reported with its reason and listed in §6.
+so the catch-up fetch has pending requests. No restart hold-down: `restart_readiness` keeps
+its current meaning (the primitive's `docker restart --time 30` is a termination grace,
+and the two implementations must stay comparable on that card). If `queue_residence`
+still has no samples after the rerun, it is reported with its reason and listed in §6.
 
 ### 4.6 The rule as a test
-`tests/test_tap_coverage_rule.py`: for each retained workload report in
-`docs/evidence/runs/` (unpacked in the test), every non-companion metric either has a
-numeric primary value (verdict dicts summed, observed zeros with evidence count) or its id
-is in the per-implementation exception list of §6 with the exact reason string. The Pages
+`tests/test_tap_coverage_rule.py` is concept-level: using the catalog index
+(`measurement_compare._catalog_index`, `catalog_concept`), for each retained workload
+report in `docs/evidence/runs/` every concept bound for that implementation and mode has a
+numeric primary value on at least one of its bound ids (verdict dicts summed, observed
+zeros with evidence count), or the concept is in the per-implementation-and-mode exception
+list of §6 with the exact reason string. Reserved placeholder ids
+(`handler_queue_residence`, `txsubmission_residence`) therefore pass on the patched run
+through their patched alternates and are exceptions on the stock run only. A second
+assertion checks that no raw id of the report is unbound. The Pages
 staging script refuses an archive that fails the rule unless the manifest entry carries
 `"coverage_exception": "<reason>"` (used for the Antithesis snapshot).
+
+### 4.7 Amaru mempool rejection over N2N
+`dwarf/scripts/runtime_txsubmission_probe.py` already handshakes with Amaru and answers
+`MsgRequestTxIds` with ids. It gains a `serve-transaction` mode: reply with one id and
+size, answer the following `MsgRequestTxs` with the CBOR body given on the command line,
+then wait for the relay's mempool decision window and close. The Amaru Plutus leg calls
+it once per batch with the double-spend transaction (its body is already signed and on
+disk), so `amaru-relay-1` evaluates and rejects it: `transaction.rejected` appears in its
+mempool trace and `mempool_rejected` ≥ 1. This is the one wire-level addition in the plan
+and it is built last; if it does not land, Amaru `mempool_rejected` stays an
+evidence-backed observed zero (0 of N received) and is listed in §6 as "not exercised".
 
 ## 5. Runs and the Pages set
 
