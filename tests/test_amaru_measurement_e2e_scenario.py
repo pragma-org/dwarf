@@ -222,7 +222,7 @@ def test_amaru_workload_scenario_extends_e2e_with_transactions_epoch_restart_and
         "primitive": "runtime_real_target_restart_and_readiness",
         "profile_id": base["profile"], "timeout_seconds": 900, "poll_interval_seconds": 1,
     }
-    assert load[2]["minimum_blocks"] == 20
+    assert load[2]["minimum_blocks"] == 200
     assert load[2]["peer_policy"] == "single-controlled-producer"
     assert [a["primitive"] for a in doc["assertions"]] == [
         "load_events_are_ok", "restart_readiness_complete", "controlled_sync_range_complete",
@@ -236,3 +236,10 @@ def test_amaru_workload_scenario_extends_e2e_with_transactions_epoch_restart_and
     assert "workload" in doc["tags"]
     text = path.read_text(encoding="utf-8")
     assert "/home/" not in text and "/Users/" not in text
+
+
+def test_amaru_workload_scenario_syncs_two_hundred_blocks():
+    """BlockFetch queue residence needs pending requests: a 200-block controlled sync."""
+    doc = json.loads((ROOT / "dwarf/scenarios/amaru-measurement-workload-stock-portable.yaml").read_text())
+    step = next(s for s in doc["load"] if s["primitive"] == "runtime_controlled_sync_range")
+    assert step["minimum_blocks"] == 200 and step["timeout_seconds"] == 900

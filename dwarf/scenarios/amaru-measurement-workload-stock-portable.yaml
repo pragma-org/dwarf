@@ -64,8 +64,8 @@
     {
       "primitive": "runtime_controlled_sync_range",
       "profile_id": "profile-o-amaru-target-latest-confirmed",
-      "minimum_blocks": 20,
-      "timeout_seconds": 240,
+      "minimum_blocks": 200,
+      "timeout_seconds": 900,
       "poll_interval_seconds": 1,
       "peer_policy": "single-controlled-producer"
     }
