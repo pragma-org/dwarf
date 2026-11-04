@@ -128,6 +128,15 @@ def _cbor_term_end(payload: bytes, offset: int) -> int:
     initial = payload[offset]
     major, info = initial >> 5, initial & 0x1F
     widths = {24: 1, 25: 2, 26: 4, 27: 8}
+    if info == 31 and major in (2, 3, 4, 5):
+        # Indefinite length: items (or chunks) until the break code 0xFF.
+        position = offset + 1
+        while True:
+            if position >= len(payload):
+                raise TxSubmissionDecodeError("truncated indefinite-length CBOR term")
+            if payload[position] == 0xFF:
+                return position + 1
+            position = _cbor_term_end(payload, position)
     if info < 24:
         argument, head = info, 1
     elif info in widths:
@@ -195,13 +204,26 @@ def _parse_request_txs(payload: bytes) -> list[bytes]:
     decoded = decode_txsubmission_payload(payload)
     if decoded.get("message_kind") != "request-txs":
         raise TxSubmissionDecodeError(f"expected request-txs, got {decoded.get('message_kind')}")
-    if len(payload) < 3 or payload[0] != 0x82 or payload[1] != 0x02 or (payload[2] >> 5) != 4:
+    # Walk the raw bytes: outer array head (definite or indefinite), the tag 2, then the
+    # inner array of id terms, each sliced verbatim so the reply echoes the node's own encoding.
+    if not payload or (payload[0] >> 5) != 4:
         raise TxSubmissionDecodeError("request-txs shape invalid")
-    count, position = payload[2] & 0x1F, 3
-    if count == 24:
-        count, position = payload[3], 4
+    position = 1 + {24: 1, 25: 2, 26: 4, 27: 8}.get(payload[0] & 0x1F, 0)
+    if payload[position] != 0x02:
+        raise TxSubmissionDecodeError("request-txs shape invalid")
+    position += 1
+    inner = payload[position]
+    if (inner >> 5) != 4:
+        raise TxSubmissionDecodeError("request-txs shape invalid")
+    info = inner & 0x1F
+    if info == 31:
+        count, position = None, position + 1
+    else:
+        width = {24: 1, 25: 2, 26: 4, 27: 8}.get(info, 0)
+        count = info if info < 24 else int.from_bytes(payload[position + 1:position + 1 + width], "big")
+        position += 1 + width
     terms = []
-    for _ in range(count):
+    while (count is None and payload[position] != 0xFF) or (count is not None and len(terms) < count):
         end = _cbor_term_end(payload, position)
         terms.append(payload[position:end])
         position = end

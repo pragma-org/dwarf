@@ -120,3 +120,15 @@ def test_amaru_workload_scenario_rejects_the_double_spend_over_n2n():
     from profile_manager.primitives import _amaru_workload_flag_arguments
     arguments, logged = _amaru_workload_flag_arguments({"reject_via_n2n": 1})
     assert arguments == ["--reject-via-n2n", "1"] and logged == {"reject_via_n2n": 1}
+
+
+def test_request_txs_with_indefinite_length_arrays_decodes_and_yields_the_id_terms():
+    """Amaru 20261029 encodes MsgRequestTxs as [2, [* txid]] with an indefinite-length
+    array (live serve check, 2026-11-04: 'unsupported additional info 31')."""
+    from scripts.runtime_txsubmission_accounting import decode_txsubmission_payload
+    id_term = bytes([0x82, 0x06, 0x58, 0x20]) + TXID          # [era 6, h'32']
+    payload = bytes([0x9F, 0x02, 0x9F]) + id_term + bytes([0xFF, 0xFF])   # [_ 2, [_ id]]
+    assert decode_txsubmission_payload(payload).get("message_kind") == "request-txs"
+    assert probe._parse_request_txs(payload) == [id_term]
+    definite = bytes([0x82, 0x02, 0x81]) + id_term
+    assert probe._parse_request_txs(definite) == [id_term]

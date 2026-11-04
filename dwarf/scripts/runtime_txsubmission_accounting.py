@@ -41,14 +41,35 @@ def _read_item(data: bytes, index: int = 0) -> tuple[object, int]:
     if major == 0:
         return _read_uint(data, index, additional)
     if major == 2:
+        if additional == 31:
+            # Indefinite-length byte string: definite chunks until the break code.
+            chunks = bytearray()
+            while True:
+                if index >= len(data):
+                    raise TxSubmissionDecodeError("truncated indefinite bytes")
+                if data[index] == 0xFF:
+                    return bytes(chunks), index + 1
+                chunk, index = _read_item(data, index)
+                if not isinstance(chunk, bytes):
+                    raise TxSubmissionDecodeError("indefinite bytes chunk is not a byte string")
+                chunks.extend(chunk)
         length, index = _read_uint(data, index, additional)
         end = index + length
         if end > len(data):
             raise TxSubmissionDecodeError("truncated bytes")
         return data[index:end], end
     if major == 4:
-        length, index = _read_uint(data, index, additional)
         items: list[object] = []
+        if additional == 31:
+            # Indefinite-length array (Amaru encodes MsgRequestTxs this way): items until the break code.
+            while True:
+                if index >= len(data):
+                    raise TxSubmissionDecodeError("truncated indefinite array")
+                if data[index] == 0xFF:
+                    return items, index + 1
+                item, index = _read_item(data, index)
+                items.append(item)
+        length, index = _read_uint(data, index, additional)
         for _ in range(length):
             item, index = _read_item(data, index)
             items.append(item)
