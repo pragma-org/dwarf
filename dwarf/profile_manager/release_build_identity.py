@@ -23,6 +23,13 @@ def build_manifest(implementation, revision, build):
         if (manifest.get('patch_set_sha256') == build.get('patch_set_sha256')
                 and manifest.get('measurement_revision', 'v1') == build.get('measurement_revision')):
             return manifest
+    if build.get('auto_ported') is True:
+        # A derived (auto-ported) recipe lives in runtime state, never under targets/.
+        from profile_manager.measurement_patch_port import load_derived_manifest
+        manifest = load_derived_manifest(implementation, revision)
+        if (manifest and manifest.get('patch_set_sha256') == build.get('patch_set_sha256')
+                and manifest.get('measurement_revision', 'v1') == build.get('measurement_revision')):
+            return manifest
     from profile_manager import antithesis_cardano_bridge as bridge
     if bridge.is_composite_build(implementation, revision, build):
         return bridge.composite_manifest(bridge.base_patch_manifest())

@@ -63,6 +63,21 @@ def _register(selected, job, result, variant, controller):
         registration['source_build'].update(
             patch_set_sha256=row.get('patch_set_sha256'), measurement_revision=row.get('measurement_revision'),
             instrumentation_evidence_sha256=check.get('evidence_sha256'))
+        if row.get('auto_ported'):
+            # An auto-ported build is only registrable with the derived recipe it was
+            # built from; persist it so run-time identity and export can find it.
+            from profile_manager.measurement_patch_port import PortError, save_derived_recipe
+            derived = row.get('derived_manifest')
+            if (not isinstance(derived, dict) or derived.get('auto_ported') is not True
+                    or (derived.get('source') or {}).get('revision') != selected['source_revision']
+                    or derived.get('patch_set_sha256') != row.get('patch_set_sha256')):
+                raise ValueError('Auto-ported build is missing its derived recipe')
+            try:
+                save_derived_recipe(selected['implementation'], selected['source_revision'], derived, row.get('port_result') or {})
+            except PortError as exc:
+                raise ValueError('Auto-ported build is missing its derived recipe: ' + str(exc)) from exc
+            registration['source_build'].update(auto_ported=True,
+                                                ported_from_source_revision=row.get('ported_from_source_revision'))
         from profile_manager.release_build_identity import build_manifest
         build_manifest(selected['implementation'], selected['source_revision'], registration['source_build'])
     ledger = OperatorVersionDecisionLedger()

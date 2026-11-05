@@ -92,3 +92,70 @@ def test_stale_source_selection_rejected_before_start(setup):
     with pytest.raises(ValueError, match='source revision changed'):
         release_preparation('amaru', 'test-build', source_revision='f'*40, start=True,
             controller=lambda *a, **kw: pytest.fail('stale source must not submit'))
+
+
+import json
+from pathlib import Path
+from profile_manager import measurement_patch_port as port_module
+V4 = Path(__file__).resolve().parents[1] / 'dwarf/targets/amaru/measurement-patches-nanoseconds-v4/aedfe797a5b8ef00d8b362be40b47a52c3b4a379/manifest.json'
+
+
+def _derived():
+    base = json.loads(V4.read_text())
+    return port_module.derive_manifest(base, source_revision='b' * 40, release='test-build',
+        preimages={p['path']: 'ab' * 32 for i in base['patches'] for p in i['preimages']}, base_recipe_dir='measurement-patches-nanoseconds-v4/aedfe797a5b8ef00d8b362be40b47a52c3b4a379')
+
+
+def _controller(derived, *, with_recipe=True):
+    def controller(op, params, timeout, **kw):
+        if op == 'release.prepare': return {'execution_id': params['execution_id']}
+        if op == 'image.inspect':
+            return {'config_image_id': 'sha256:' + 'c' * 64, 'platform': 'linux/amd64', 'installation_id': 'test', 'runtime_interface': 'extracted-binary'}
+        row = {'state': 'ready', 'mode': 'patched', 'config_image_id': 'sha256:' + 'c' * 64, 'executable_digest': 'sha256:' + 'd' * 64,
+               'source_revision': 'b' * 40, 'runtime_interface': 'extracted-binary', 'build_result_sha256': 'sha256:' + 'e' * 64,
+               'qualification': 'unverified', 'compatibility': 'unknown-until-run', 'completed_at': '2026-11-05T12:00:00Z',
+               'patch_set_sha256': derived['patch_set_sha256'], 'measurement_revision': derived['measurement_revision'],
+               'instrumentation_checks': {'state': 'compiled', 'runtime': 'pending', 'evidence_sha256': 'sha256:' + 'f' * 64},
+               'auto_ported': True, 'ported_from_source_revision': derived['derived_from']['source_revision'], 'port_result': {'status': 'ported'}}
+        if with_recipe: row['derived_manifest'] = derived
+        return {'execution_id': params['execution_id'], 'state': 'applied', 'audit_receipt': 'controller/audit.json',
+                'result': {'status': 'prepared', 'implementation': 'amaru', 'version': 'test-build', 'digest': 'sha256:' + 'a' * 64,
+                           'source_revision': 'b' * 40, 'platform': 'linux/amd64', 'controller_installation_id': 'test',
+                           'variants': {'stock': {'state': 'blocked', 'message': 'not under test'}, 'instrumented': row}}}
+    return controller
+
+
+def test_auto_ported_instrumented_registers_and_persists_derived_recipe(setup):
+    from profile_manager.release_preparations import release_preparation
+    from profile_manager.version_discovery import load_operator_registrations
+    from profile_manager.release_build_identity import build_manifest
+    derived = _derived(); controller = _controller(derived)
+    release_preparation('amaru', 'test-build', start=True, controller=controller)
+    result = release_preparation('amaru', 'test-build', controller=controller)
+    assert 'measurement_profile=amaru-security-patched' in result['variants']['instrumented']['run_url']
+    [registration] = load_operator_registrations()['registrations']
+    assert registration['source_build']['auto_ported'] is True
+    assert registration['source_build']['ported_from_source_revision'] == derived['derived_from']['source_revision']
+    assert port_module.load_derived_manifest('amaru', 'b' * 40) == derived
+    assert build_manifest('amaru', 'b' * 40, registration['source_build'])['auto_ported'] is True
+
+
+def test_auto_ported_row_without_derived_recipe_is_unavailable(setup):
+    from profile_manager.release_preparations import release_preparation
+    from profile_manager.version_discovery import load_operator_registrations
+    controller = _controller(_derived(), with_recipe=False)
+    release_preparation('amaru', 'test-build', start=True, controller=controller)
+    result = release_preparation('amaru', 'test-build', controller=controller)
+    assert result['variants']['instrumented']['state'] == 'unavailable'
+    assert 'derived recipe' in result['variants']['instrumented']['message']
+    assert load_operator_registrations()['registrations'] == []
+
+
+def test_auto_ported_registration_is_idempotent(setup):
+    from profile_manager.release_preparations import release_preparation
+    from profile_manager.version_discovery import load_operator_registrations
+    controller = _controller(_derived())
+    release_preparation('amaru', 'test-build', start=True, controller=controller)
+    release_preparation('amaru', 'test-build', controller=controller)
+    release_preparation('amaru', 'test-build', controller=controller)
+    assert len(load_operator_registrations()['registrations']) == 1

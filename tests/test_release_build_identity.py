@@ -178,3 +178,19 @@ def test_operator_composite_build_gains_patched_tap_capabilities():
         'executable_digest': amaru['executable_digest'], 'controller_installation_id': amaru['controller_installation_id'],
         'mode': 'stock', 'identity_kind': 'operator-local-config'})
     assert not {c for c in amaru_identity['verified_instrumentation']['capabilities'] if c.startswith('cardano-')}
+
+
+def test_build_manifest_resolves_persisted_auto_ported_recipe(tmp_path, monkeypatch):
+    from profile_manager import measurement_patch_port as port_module
+    from profile_manager.release_build_identity import build_manifest
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT', str(tmp_path))
+    base = json.loads((ROOT / 'targets/amaru/measurement-patches-nanoseconds-v4/aedfe797a5b8ef00d8b362be40b47a52c3b4a379/manifest.json').read_text())
+    derived = port_module.derive_manifest(base, source_revision='b' * 40, release='x', preimages={p['path']: 'ab' * 32 for i in base['patches'] for p in i['preimages']}, base_recipe_dir='d')
+    build = {'variant': 'instrumented', 'build_result_sha256': 'sha256:' + 'c' * 64, 'instrumentation_evidence_sha256': 'sha256:' + 'd' * 64,
+             'patch_set_sha256': derived['patch_set_sha256'], 'measurement_revision': derived['measurement_revision'], 'auto_ported': True}
+    with pytest.raises(ValueError, match='no matching exact-source patch recipe'):
+        build_manifest('amaru', 'b' * 40, build)                      # not persisted yet
+    port_module.save_derived_recipe('amaru', 'b' * 40, derived, {})
+    assert build_manifest('amaru', 'b' * 40, build) == derived
+    with pytest.raises(ValueError, match='no matching exact-source patch recipe'):
+        build_manifest('amaru', 'b' * 40, {**build, 'auto_ported': False})   # committed lookup never sees derived

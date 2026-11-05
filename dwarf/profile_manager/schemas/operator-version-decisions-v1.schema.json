@@ -42,7 +42,7 @@
         "platform": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*$"},
         "runtime_interface": {"enum": ["extracted-binary", null]},
         "controller_installation_id": {"$ref": "#/$defs/safeId"},
-        "source_build": {"type": "object", "additionalProperties": false, "required": ["variant", "build_result_sha256", "execution_id"], "properties": {"variant": {"enum": ["stock", "instrumented"]}, "build_result_sha256": {"$ref": "#/$defs/prefixedDigest"}, "patch_set_sha256": {"$ref": "#/$defs/digest"}, "measurement_revision": {"type": "string", "minLength": 1, "maxLength": 64}, "instrumentation_evidence_sha256": {"$ref": "#/$defs/prefixedDigest"}, "execution_id": {"$ref": "#/$defs/safeId"}}},
+        "source_build": {"type": "object", "additionalProperties": false, "required": ["variant", "build_result_sha256", "execution_id"], "properties": {"variant": {"enum": ["stock", "instrumented"]}, "build_result_sha256": {"$ref": "#/$defs/prefixedDigest"}, "patch_set_sha256": {"$ref": "#/$defs/digest"}, "measurement_revision": {"type": "string", "minLength": 1, "maxLength": 64}, "instrumentation_evidence_sha256": {"$ref": "#/$defs/prefixedDigest"}, "execution_id": {"$ref": "#/$defs/safeId"}, "auto_ported": {"type": "boolean"}, "ported_from_source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"}}},
         "inspected_at": {"$ref": "#/$defs/timestamp"},
         "provenance": {
           "type": "object",

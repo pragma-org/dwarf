@@ -74,3 +74,13 @@ def test_saved_derived_recipe_is_not_audited(tmp_path, monkeypatch):
     port.save_derived_recipe('amaru', NEW, port.derive_manifest(base, source_revision=NEW, release='x',
         preimages=_preimages(base, 'ab' * 32), base_recipe_dir='d'), {})
     assert audited_measurement_revisions() == before and NEW not in before
+
+
+def test_provenance_gate_treats_auto_ported_build_like_any_other():
+    from profile_manager.version_provenance import ProvenanceIndex, build_provenance
+    index = ProvenanceIndex.from_catalog({'releases': [{'implementation': 'amaru', 'version': '10.11.20261105', 'source_revision': NEW}]})
+    target = {'implementation': 'amaru', 'version': '10.11.20261105', 'source_revision': NEW}
+    ok = build_provenance(target, [{'status': 'seen', 'implementation': 'amaru', 'git_commit': NEW}], index=index)
+    assert ok['status'] == 'verified'
+    bad = build_provenance(target, [{'status': 'mismatch', 'component': 'amaru', 'claimed_label': '10.11.20261105', 'observed_git_commit': 'a' * 40}], index=index)
+    assert bad['status'] == 'mismatch' and bad['problems']
