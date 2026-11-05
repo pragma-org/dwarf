@@ -67,3 +67,21 @@ def test_export_readme_states_runtime_proof(persisted):
         lines = tar.extractfile('README.txt').read().decode().splitlines()
     assert lines[1] == 'Proven by run run-7: patched-only taps carried data.'
     assert 'proven by run' in (ROOT / 'dwarf/dashboard/static/js/release-preparations.js').read_text()
+
+
+def test_export_materialises_the_cardano_composite_correction_patch(tmp_path, monkeypatch):
+    """Review fix 1: the persisted cardano derived manifest is the composite; its 0008
+    patch exists only in code (bridge.CORRECTION), so export must write it like _copy_recipe."""
+    from profile_manager import antithesis_cardano_bridge as bridge
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT', str(tmp_path))
+    v5_dir = 'measurement-patches-nanoseconds-v5/fef83fed01d7926f3de83b3b917be5a4a48768b5'
+    base = json.loads((ROOT / 'dwarf/targets/cardano-node' / v5_dir / 'manifest.json').read_text())
+    derived = port.derive_manifest(base, source_revision=NEW, release='11.1.3', preimages={p['path']: p['sha256'] for i in base['patches'] for p in i['preimages']}, base_recipe_dir=v5_dir)
+    composite = bridge.composite_manifest(derived)
+    assert composite['patches'][-1]['path'] == bridge.PATCH_NAME
+    port.save_derived_recipe('cardano-node', NEW, composite, {'status': 'ported'})
+    result = port.export_derived_recipe('cardano-node', NEW)
+    with tarfile.open(result['path']) as tar:
+        names = tar.getnames()
+        assert 'patches/' + bridge.PATCH_NAME in names and len([n for n in names if n.startswith('patches/')]) == len(composite['patches'])
+        assert hashlib.sha256(tar.extractfile('patches/' + bridge.PATCH_NAME).read()).hexdigest() == bridge.CORRECTION_HASH

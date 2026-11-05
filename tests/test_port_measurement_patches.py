@@ -71,6 +71,8 @@ def test_cardano_dependency_patches_are_inherited_and_toolchain_checked(tmp_path
     (repo / '.github/workflows/haskell.yml').write_text("jobs:\n  build:\n    strategy:\n      matrix:\n        ghc: ['9.6.7']\n")
     _git(repo, 'add', '.'); _git(repo, 'commit', '--quiet', '-m', 'ci'); rev = _git(repo, 'rev-parse', 'HEAD')
     work = _work(tmp_path, repo, rev, 'irrelevant\n', implementation='cardano-node', root='dependency:ouroboros-network-1.2.0.0', toolchain={'ghc': '9.6.7', 'cabal': '3.16.0.0'})
+    (repo / '.github/workflows/haskell.yml').write_text("jobs:\n  build:\n    strategy:\n      matrix:\n        ghc: ['9.6']\n"); _git(repo, 'commit', '--quiet', '-am', 'series'); rev = _git(repo, 'rev-parse', 'HEAD')
+    json.dump({'implementation': 'cardano-node', 'source_revision': rev, 'repository': str(repo)}, open(work / 'request.json', 'w'))
     result = driver.port(work)
     assert result['status'] == 'ported' and result['checks'][0]['status'] == 'inherited'
     assert result['preimages'] == {'tracked.txt': 'ab' * 32} and result['preimages_changed'] == []
@@ -84,3 +86,14 @@ def test_cardano_other_ghc_series_fails_port(tmp_path):
     work = _work(tmp_path, repo, rev, 'x\n', implementation='cardano-node', root='dependency:x-1', toolchain={'ghc': '9.6.7', 'cabal': '3.16.0.0'})
     result = driver.port(work)
     assert result['status'] == 'failed' and result['toolchain_check']['status'] == 'failed' and 'GHC series' in result['failure']
+
+
+def test_ghc_series_pattern_is_the_bare_series_shared_with_the_compile_gate():
+    """Review fix 3: port stage and compile gate must agree, or the port stage says ok
+    and the compile fails forty minutes later."""
+    import re
+    from controller import release_builds
+    pattern = driver.ghc_series_pattern('9.6')
+    assert re.search(pattern, "matrix:\n  ghc: ['9.6', '9.8']\n") and re.search(pattern, 'ghc: ["9.6"]')
+    assert not re.search(pattern, "ghc: ['9.6.7']") and not re.search(pattern, "ghc: ['19.6']")
+    assert repr(driver.GHC_SERIES_TEMPLATE) in release_builds._cardano_driver()

@@ -166,12 +166,18 @@ def export_derived_recipe(implementation: str, source_revision: str) -> dict[str
         ("manifest.json", json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"),
         ("port-result.json", (recipe_dir / "port-result.json").read_bytes() if (recipe_dir / "port-result.json").is_file() else b"{}\n"),
     ]
+    from profile_manager import antithesis_cardano_bridge as bridge
     for item in manifest.get("patches", []):
         name = str(item["path"])
-        file = base_dir / name
-        if not file.is_file():
-            raise PortError(f"base patch missing: {name}")
-        content = file.read_bytes()
+        if Path(name).name == bridge.PATCH_NAME and item.get("sha256") == bridge.CORRECTION_HASH:
+            # The cardano composite's import correction lives in code, not on disk
+            # (exactly as the build's _copy_recipe materialises it).
+            content = bridge.CORRECTION.encode("utf-8")
+        else:
+            file = base_dir / name
+            if not file.is_file():
+                raise PortError(f"base patch missing: {name}")
+            content = file.read_bytes()
         if hashlib.sha256(content).hexdigest() != item.get("sha256"):
             raise PortError(f"base patch digest mismatch: {name}")
         members.append(("patches/" + name, content))

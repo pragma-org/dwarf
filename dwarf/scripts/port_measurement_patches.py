@@ -27,6 +27,17 @@ class PortCheckError(RuntimeError):
     """The patch series cannot be ported to this revision (honest, not fatal)."""
 
 
+# The single source of the CI-matrix rule: the bare GHC series (e.g. '9.6') must be
+# quoted inside a `ghc: [...]` list. The controller injects this same template into
+# the Cardano compile driver, so the port stage can never say "ok" where the compile
+# gate would refuse.
+GHC_SERIES_TEMPLATE = r"(?m)^\s*ghc:\s*\[[^\n]*[\"']{series}[\"']"
+
+
+def ghc_series_pattern(series: str) -> str:
+    return GHC_SERIES_TEMPLATE.replace("{series}", re.escape(series))
+
+
 def _run(arguments: list[str], *, cwd: Path | None = None) -> str:
     completed = subprocess.run(arguments, cwd=cwd, text=True, capture_output=True)
     if completed.returncode != 0:
@@ -112,8 +123,7 @@ def check_cardano_toolchain(source: Path, manifest: dict[str, Any]) -> dict[str,
     workflow = source / ".github" / "workflows" / "haskell.yml"
     if not workflow.is_file():
         return {"status": "failed", "ghc_series": series, "detail": "no .github/workflows/haskell.yml at this revision"}
-    pattern = r"(?m)^\s*ghc:\s*\[[^\n]*[\"']" + re.escape(series) + r"(?:\.\d+)?[\"']"
-    if re.search(pattern, workflow.read_text(encoding="utf-8", errors="replace")):
+    if re.search(ghc_series_pattern(series), workflow.read_text(encoding="utf-8", errors="replace")):
         return {"status": "ok", "ghc_series": series, "detail": ""}
     return {"status": "failed", "ghc_series": series,
             "detail": f"GHC series {series} is not declared in .github/workflows/haskell.yml"}

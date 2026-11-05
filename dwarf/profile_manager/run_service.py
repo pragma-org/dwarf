@@ -328,10 +328,13 @@ def _require_equal(actual: object, expected: object, label: str) -> None:
 _LOGGER = logging.getLogger(__name__)
 
 
-def _prove_auto_ported_recipe(*, run_dir: Path, run_id: str) -> None:
+def _prove_auto_ported_recipe(*, run_dir: Path, run_id: str, exit_status: object) -> None:
     """A run whose target is an auto-ported instrumented build proves that
     recipe when it ran patched and carried data on the patched-only taps.
-    Advisory: it never changes the run's own outcome."""
+    Advisory: it never changes the run's own outcome. Only a run that passed
+    counts (spec: "a completed run"); tap data from an errored run proves nothing."""
+    if exit_status != "pass":
+        return
     try:
         report_path = run_dir / "measurements" / "report.json"
         if not report_path.is_file():
@@ -469,7 +472,7 @@ def _reconcile_result(
         raise RunServiceError(
             "forensic bundle verification failed: " + "; ".join(verified.errors)
         )
-    _prove_auto_ported_recipe(run_dir=run_dir, run_id=handle.run_id)
+    _prove_auto_ported_recipe(run_dir=run_dir, run_id=handle.run_id, exit_status=exit_status)
     terminal = RunLedger(execution.state_dir).transition(
         handle.run_id,
         FINAL_STATES_BY_EXIT_STATUS[exit_status],

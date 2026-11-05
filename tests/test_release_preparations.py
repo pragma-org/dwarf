@@ -169,3 +169,18 @@ def test_auto_ported_row_shows_runtime_proof_once_a_run_proved_it(setup):
     port_module.mark_proven('amaru', 'b' * 40, run_id='run-9', proof={'proven': True, 'covered': ['x'], 'excepted': [], 'missing': [], 'patched_only': ['x']})
     row = release_preparation('amaru', 'test-build', controller=controller)['variants']['instrumented']
     assert row['validation']['status'] == 'auto-ported-proven' and row['validation']['proven_by_run'] == 'run-9'
+
+
+def test_registration_refuses_to_overwrite_a_different_persisted_recipe(setup):
+    """Review fix 2: one storage slot per (impl, revision); a newer patch series must
+    not silently replace a recipe an earlier registration (possibly proven) depends on."""
+    from profile_manager.release_preparations import release_preparation
+    from profile_manager.version_discovery import load_operator_registrations
+    earlier = _derived(); earlier['patch_set_sha256'] = 'd' * 64
+    port_module.save_derived_recipe('amaru', 'b' * 40, earlier, {'status': 'ported'})
+    controller = _controller(_derived())        # the v4-derived candidate: a different patch set
+    release_preparation('amaru', 'test-build', start=True, controller=controller)
+    row = release_preparation('amaru', 'test-build', controller=controller)['variants']['instrumented']
+    assert row['state'] == 'unavailable' and 'different auto-ported recipe' in row['message']
+    assert load_operator_registrations()['registrations'] == []
+    assert port_module.load_derived_manifest('amaru', 'b' * 40)['patch_set_sha256'] == 'd' * 64

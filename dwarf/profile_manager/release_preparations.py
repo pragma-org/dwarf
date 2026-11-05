@@ -73,10 +73,15 @@ def _register(selected, job, result, variant, controller):
                     or derived.get('patch_set_sha256') != row.get('patch_set_sha256')):
                 raise ValueError('Auto-ported build is missing its derived recipe')
             persisted = load_derived_manifest(selected['implementation'], selected['source_revision'])
+            if persisted and persisted.get('patch_set_sha256') != derived.get('patch_set_sha256'):
+                # One storage slot per (implementation, revision): an earlier registration,
+                # possibly proven by a run, depends on the persisted recipe. Never replace it.
+                raise ValueError('A different auto-ported recipe is already persisted for this revision '
+                                 '(patch set ' + str(persisted.get('patch_set_sha256'))[:12] + '); the earlier build keeps it')
             try:
-                # Every status poll re-registers; a recipe already persisted for this
+                # Every status poll re-registers; the recipe already persisted for this
                 # exact patch set (possibly proven by a run since) must not be re-saved.
-                if not persisted or persisted.get('patch_set_sha256') != derived.get('patch_set_sha256'):
+                if not persisted:
                     save_derived_recipe(selected['implementation'], selected['source_revision'], derived, row.get('port_result') or {})
             except PortError as exc:
                 raise ValueError('Auto-ported build is missing its derived recipe: ' + str(exc)) from exc

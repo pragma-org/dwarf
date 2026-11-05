@@ -377,10 +377,11 @@ def _cardano_driver():
         raise ValueError('Cardano source validation anchor changed')
     # Require the exact source's own CI matrix to name the compiler series.
     # The selected recipe separately checks the full installed compiler version.
-    validation = """
+    from scripts.port_measurement_patches import GHC_SERIES_TEMPLATE
+    validation = f"""
     workflow=source/'.github/workflows/haskell.yml'
     ghc_series='.'.join(toolchain['ghc'].split('.')[:2])
-    if not workflow.is_file() or not re.search(r'(?m)^\\s*ghc:\\s*\\[[^\\n]*[\"\\\']'+re.escape(ghc_series)+r'[\"\\\']',workflow.read_text()):
+    if not workflow.is_file() or not re.search({GHC_SERIES_TEMPLATE!r}.replace('{{series}}',re.escape(ghc_series)),workflow.read_text()):
         raise ValueError('Selected source does not declare this GHC series in its CI matrix')
 """
     return driver.replace(anchor, anchor + validation)

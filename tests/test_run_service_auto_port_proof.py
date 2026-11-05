@@ -42,7 +42,7 @@ def _registered(auto_ported):
     port.save_derived_recipe('amaru', NEW, derived, {'status': 'ported'})
 
 
-def _run(tmp_path, monkeypatch, report, run_id):
+def _run(tmp_path, monkeypatch, report, run_id, *, exit_status='pass'):
     from profile_manager.config import storage_roots
     state_dir = Path(storage_roots().state)
     run_dir = tmp_path / 'runs' / run_id
@@ -60,7 +60,7 @@ def _run(tmp_path, monkeypatch, report, run_id):
         (run_dir / 'manifest.json').write_text(json.dumps({
             'run_id': run_id, 'framework': {'commit': release_revision},
             'scenario': {'id': 'run-service-parity', 'sha256': scenario_sha256},
-            'exit_status': 'pass', 'execution': {'security_verdict': 'pass'},
+            'exit_status': exit_status, 'execution': {'security_verdict': {'pass': 'pass', 'fail': 'fail'}.get(exit_status, 'inconclusive')},
             'run_service': {'plan_path': 'inputs/run-service-plan.json',
                             'plan_sha256': hashlib.sha256(run_service._canonical_bytes(plan)).hexdigest()}}))
         ledger = run_service.RunLedger(state_dir)
@@ -122,3 +122,14 @@ def test_reconcile_survives_a_missing_report(runtime, monkeypatch):
     result = _run(runtime, monkeypatch, report, 'run-proof-4')
     assert result['ledger']['state'] == 'completed'
     assert port.load_derived_manifest('amaru', NEW)['validation']['status'] == 'auto-ported-candidate'
+
+
+@pytest.mark.parametrize('exit_status', ['error', 'precondition_failed', 'interrupted', 'fail'])
+def test_reconcile_never_proves_from_a_run_that_did_not_pass(runtime, monkeypatch, exit_status):
+    """Review fix 4: spec 4b says a *completed* run; a report with tap data from an
+    errored or failed run is not proof."""
+    _registered(auto_ported=True)
+    result = _run(runtime, monkeypatch, _pointed(_report('20261104T165404Z-54138a1b-bundle-export.tar.gz')), 'run-' + exit_status, exit_status=exit_status)
+    assert result['ledger']['state'] != 'running'
+    assert port.load_derived_manifest('amaru', NEW)['validation']['status'] == 'auto-ported-candidate'
+    assert OperatorVersionDecisionLedger().read().get('auto_port_proofs', []) == []
