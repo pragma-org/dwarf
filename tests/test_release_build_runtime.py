@@ -331,3 +331,117 @@ def test_cardano_compile_request_carries_configured_build_jobs(runtime, monkeypa
     builds._compile_cardano(context, 'stock', path, manifest)
     assert seen['request']['build_jobs'] == 16
     assert seen['request']['mode'] == 'stock' and seen['request']['revision'] == selected['source_revision']
+
+
+import hashlib
+from profile_manager import measurement_patch_port as port_module
+
+V4 = Path(__file__).resolve().parents[1] / 'dwarf/targets/amaru/measurement-patches-nanoseconds-v4/aedfe797a5b8ef00d8b362be40b47a52c3b4a379/manifest.json'
+V5 = Path(__file__).resolve().parents[1] / 'dwarf/targets/cardano-node/measurement-patches-nanoseconds-v5/fef83fed01d7926f3de83b3b917be5a4a48768b5/manifest.json'
+
+
+def _fake_port(status, base):
+    preimages = {p['path']: 'ab' * 32 for item in base['patches'] for p in item['preimages']}
+    def container(variant, role, image, command, *, work=None, entrypoint=None):
+        if role == 'port':
+            (work / 'output').mkdir(); (work / 'output' / 'port-result.json').write_text(json.dumps({
+                'status': status, 'preimages': preimages if status == 'ported' else {},
+                'checks': [{'path': base['patches'][0]['path'], 'status': 'ok' if status == 'ported' else 'failed', 'detail': 'hunk FAILED'}],
+                'failure': None if status == 'ported' else 'patch did not apply'}))
+            return ''
+        return 'amaru 10.11\nCommands:\n  run  Run the node\n'
+    return container
+
+
+def _instrumented_context(runtime, monkeypatch, status):
+    base = json.loads(V4.read_text())
+    def blocked(selected, variant):
+        if variant == 'instrumented':
+            raise builds.BuildBlocked('No instrumentation patch for this exact source revision')
+        pytest.fail('stock not under test')
+    monkeypatch.setattr(builds, '_recipe', blocked)
+    monkeypatch.setattr(port_module, 'select_base_recipe', lambda impl, **kw: (V4, base))
+    context = builds.BuildContext(runtime, {**PARAMS, 'image': 'ghcr.io/pragma-org/amaru@' + DIGEST}, 'build-test', 3600, threading.Event())
+    context.container = _fake_port(status, base); context.run = lambda *a, **kw: ''
+    return context, base
+
+
+def test_port_role_is_declared_with_bounded_ceiling(runtime):
+    assert 'port' in builds._ROLES and builds._CEILINGS == {'compile': 14400, 'port': 900}
+    calls = []
+    def run(args, **kw):
+        calls.append(kw)
+        if args[0] == 'container':
+            return DockerResult(0, json.dumps([{'Config': {'Labels': builds._labels(runtime, 'build-test')}}]), '')
+        return DockerResult(0, '', '')
+    runtime._run = run
+    context = builds.BuildContext(runtime, PARAMS, 'build-test', 3600, threading.Event())
+    work = context.directory / 'instrumented' / 'work'; work.mkdir(parents=True)
+    context.container('instrumented', 'port', 'python@' + DIGEST, ['python3', '/work/port.py'], work=work)
+    assert calls[0]['timeout'] == 900
+
+
+def test_instrumented_without_exact_recipe_is_auto_ported_and_labelled(runtime, monkeypatch):
+    context, base = _instrumented_context(runtime, monkeypatch, 'ported')
+    seen = {}
+    def compile_source(context, variant, path, manifest):
+        seen['manifest'] = manifest; seen['path'] = path
+        directory = context.directory / variant / 'image-context'; directory.mkdir(parents=True); (directory / 'executable').write_bytes(b'bin')
+        return directory, {'executable_digest': 'sha256:' + 'c' * 64, 'build_result_sha256': DIGEST, 'toolchain': manifest['toolchain']}
+    monkeypatch.setattr(builds, '_compile_amaru', compile_source)
+    monkeypatch.setattr(builds, '_instrumentation_check', lambda c, b, m: {'state': 'compiled', 'runtime': 'pending', 'evidence_sha256': DIGEST, 'capabilities': []})
+    monkeypatch.setattr(builds, '_check_packaged_executable', lambda *a: None)
+    runtime.inspect_image = lambda *a, **kw: {'config_image_id': 'sha256:' + 'c' * 64, 'platform': 'linux/amd64', 'runtime_interface': 'extracted-binary', 'manifest_references': []}
+    result = builds._build_variant(context, 'instrumented')
+    assert seen['manifest']['auto_ported'] is True and seen['manifest']['source']['revision'] == REVISION
+    assert seen['path'] == context.directory / 'instrumented' / 'derived-recipe' / 'manifest.json'
+    assert result['state'] == 'ready' and result['mode'] == 'patched' and result['auto_ported'] is True
+    assert result['ported_from_source_revision'] == base['source']['revision']
+    assert result['derived_manifest']['validation']['status'] == 'auto-ported-candidate'
+    assert result['patch_set_sha256'] == base['patch_set_sha256'] and result['measurement_revision'] == base['measurement_revision']
+    assert result['port_result']['status'] == 'ported'
+    copied = context.directory / 'instrumented' / 'derived-recipe' / base['patches'][0]['path']
+    assert hashlib.sha256(copied.read_bytes()).hexdigest() == base['patches'][0]['sha256']
+
+
+def test_failed_port_blocks_instrumented_with_attempt_and_stock_still_builds(runtime, monkeypatch):
+    context, _ = _instrumented_context(runtime, monkeypatch, 'failed')
+    with pytest.raises(builds.PortBlocked, match='did not port cleanly') as info:
+        builds._build_variant(context, 'instrumented')
+    assert info.value.attempt['checks'][0]['status'] == 'failed'
+    def variant(context, mode):
+        if mode == 'instrumented': raise builds.PortBlocked('Instrumentation patches did not port cleanly to deadbeef: x', attempt={'status': 'failed', 'checks': []})
+        return {'state': 'ready'}
+    monkeypatch.setattr(builds, '_build_variant', variant)
+    progress = builds.prepare_release(runtime, {**PARAMS, 'execution_id': 'build-test-2'}, 'build-test-2', timeout=60, cancel_event=threading.Event())
+    assert progress['variants']['stock'] == {'state': 'ready'}
+    assert progress['variants']['instrumented']['state'] == 'blocked' and progress['variants']['instrumented']['port_attempt'] == {'status': 'failed', 'checks': []}
+
+
+def test_compile_failure_after_port_does_not_persist_or_register(runtime, monkeypatch):
+    context, _ = _instrumented_context(runtime, monkeypatch, 'ported')
+    def boom(*a):
+        raise ValueError('cargo build failed')
+    monkeypatch.setattr(builds, '_compile_amaru', boom)
+    with pytest.raises(ValueError, match='cargo build failed'):
+        builds._build_variant(context, 'instrumented')
+    assert not (context.directory / 'instrumented' / 'image-context').exists()
+    assert not (context.directory / 'progress.json').exists()
+
+
+def test_recipe_still_ignores_derived_manifests(runtime, monkeypatch, tmp_path):
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT', str(tmp_path))
+    base = json.loads(V4.read_text())
+    derived = port_module.derive_manifest(base, source_revision='9' * 40, release='x', preimages={p['path']: 'ab' * 32 for i in base['patches'] for p in i['preimages']}, base_recipe_dir='d')
+    port_module.save_derived_recipe('amaru', '9' * 40, derived, {})
+    with pytest.raises(builds.BuildBlocked, match='exact source revision'):
+        builds._recipe({'implementation': 'amaru', 'source_revision': '9' * 40}, 'instrumented')
+
+
+def test_finalize_recipe_keeps_cardano_composite_for_derived_v5():
+    from profile_manager import antithesis_cardano_bridge as bridge
+    base = json.loads(V5.read_text())
+    derived = port_module.derive_manifest(base, source_revision='8' * 40, release='11.1.3', preimages={p['path']: p['sha256'] for i in base['patches'] for p in i['preimages']}, base_recipe_dir='measurement-patches-nanoseconds-v5/fef83fed01d7926f3de83b3b917be5a4a48768b5')
+    path, manifest = builds._finalize_recipe('cardano-node', 'instrumented', V5, derived)
+    assert manifest['patch_set_sha256'] == bridge.COMPOSITE_HASH and manifest['auto_ported'] is True
+    assert manifest['patches'][-1]['path'] == bridge.PATCH_NAME

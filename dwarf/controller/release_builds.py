@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 _JOB = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 _DIGEST = re.compile(r'^sha256:[0-9a-f]{64}$')
 _VARIANTS = ('stock', 'instrumented')
-_ROLES = ('compile', 'version', 'help', 'interface', 'identity')
+_ROLES = ('compile', 'port', 'version', 'help', 'interface', 'identity')
+_CEILINGS = {'compile': 14400, 'port': 900}
 _MAX_JSON = 1024 * 1024
 _MAX_LOG = 8 * 1024 * 1024
 
@@ -30,6 +31,14 @@ class BuildBlocked(ValueError):
 
 class BuildCancelled(RuntimeError):
     pass
+
+
+class PortBlocked(BuildBlocked):
+    """The patch series could not be auto-ported; ``attempt`` is the port-check result."""
+
+    def __init__(self, message, attempt):
+        super().__init__(message)
+        self.attempt = attempt
 
 
 def _now():
@@ -203,7 +212,7 @@ class BuildContext:
         args += [image, *command]
         log = self.directory / variant / (role + '.log')
         try:
-            return self.run(args, log, ceiling=14400 if role == 'compile' else 60)
+            return self.run(args, log, ceiling=_CEILINGS.get(role, 60))
         finally:
             _cleanup_name(self.runtime, self.execution_id, name)
 
@@ -232,6 +241,17 @@ def _recipe(selected, variant):
     path, manifest = max(choices, key=lambda item: recipe_rank(item[1]))
     if exact and manifest['source']['revision'] != selected['source_revision']:
         raise ValueError('Recipe source revision differs from selected release')
+    path, manifest = _finalize_recipe(implementation, variant, path, manifest)
+    return path, manifest, exact
+
+
+def _finalize_recipe(implementation, variant, path, manifest):
+    """Verify a recipe's patch set and apply the Cardano composite correction.
+    Shared by committed recipes and auto-ported (derived) ones."""
+    if implementation == 'amaru':
+        from scripts import build_amaru_measurement_target as builder
+    else:
+        from scripts import build_cardano_measurement_target as builder
     builder.verify_patch_set(path.parent, manifest)
     if implementation == 'cardano-node' and variant == 'instrumented':
         from profile_manager import antithesis_cardano_bridge as bridge
@@ -239,7 +259,47 @@ def _recipe(selected, variant):
             # v5 alone does not compile; apply the verified import correction
             # and carry its composite identity through build and registration.
             manifest = bridge.composite_manifest(manifest)
-    return path, manifest, exact
+    return path, manifest
+
+
+def _port_recipe(context):
+    """Derive an exact recipe for a revision that has no committed one: run the
+    port-check stage in the builder container against the newest committed
+    patch series, then re-pin that series to the new revision's preimages.
+    Everything downstream (exact-preimage driver, patch-set digest, compiled
+    marker check, provenance gate) runs unchanged on the derived recipe."""
+    from profile_manager.measurement_patch_port import PortError, REPOSITORIES, derive_manifest, select_base_recipe
+    from scripts.experimental_amaru_instrumentation import BUILDER_BASE
+    implementation = context.selected['implementation']
+    revision = context.selected['source_revision']
+    try:
+        base_path, base = select_base_recipe(implementation)
+    except PortError as exc:
+        raise BuildBlocked(str(exc)) from exc
+    work = context.directory / 'instrumented' / 'port' / 'work'
+    work.mkdir(parents=True)
+    _copy_recipe(base_path, base, work)
+    shutil.copyfile(ROOT / 'scripts' / 'port_measurement_patches.py', work / 'port.py')
+    _write(work / 'request.json', {'implementation': implementation, 'source_revision': revision,
+                                   'repository': REPOSITORIES[implementation]})
+    context.stage('instrumented', 'port-check')
+    context.container('instrumented', 'port', BUILDER_BASE, ['python3', '/work/port.py'], work=work)
+    result_path = work / 'output' / 'port-result.json'
+    _no_symlinks(result_path)
+    result = _json(result_path)
+    context.port_result = result
+    if result.get('status') != 'ported':
+        raise PortBlocked('Instrumentation patches did not port cleanly to ' + revision[:12] + ': '
+                          + str(result.get('failure') or '')[:1500], attempt=result)
+    derived = derive_manifest(base, source_revision=revision, release=context.selected['version'],
+                              preimages=result['preimages'],
+                              base_recipe_dir=str(base_path.parent.relative_to(ROOT / 'targets' / implementation)))
+    derived_dir = context.directory / 'instrumented' / 'derived-recipe'
+    derived_dir.mkdir(parents=True)
+    _copy_recipe(base_path, derived, derived_dir)
+    _write(derived_dir / 'port-result.json', result)
+    path, manifest = _finalize_recipe(implementation, 'instrumented', derived_dir / 'manifest.json', derived)
+    return path, manifest, True
 
 
 def _bridge():
@@ -438,8 +498,13 @@ def _instrumentation_check(context, binary, manifest):
 
 
 def _build_variant(context, variant):
-    path, manifest, exact = _recipe(context.selected, variant)
-    directory = context.directory / variant; directory.mkdir()
+    try:
+        path, manifest, exact = _recipe(context.selected, variant)
+    except BuildBlocked:
+        if variant != 'instrumented':
+            raise
+        path, manifest, exact = _port_recipe(context)
+    directory = context.directory / variant; directory.mkdir(exist_ok=True)
     compiler = _compile_amaru if context.selected['implementation'] == 'amaru' else _compile_cardano
     image_context, metadata = compiler(context, variant, path, manifest)
     instrumentation = None
@@ -485,6 +550,9 @@ def _build_variant(context, variant):
         result.update(patch_set_sha256=manifest['patch_set_sha256'],
                       measurement_revision=manifest.get('measurement_revision', 'v1'),
                       instrumentation_checks=instrumentation)
+    if manifest.get('auto_ported'):
+        result.update(auto_ported=True, ported_from_source_revision=manifest['derived_from']['source_revision'],
+                      derived_manifest=manifest, port_result=getattr(context, 'port_result', None))
     return result
 
 
@@ -531,7 +599,11 @@ def prepare_release(runtime, parameters, execution_id, timeout, cancel_event):
                     context.remaining()
                     progress['variants'][variant] = _build_variant(context, variant)
                 except BuildBlocked as exc:
-                    progress['variants'][variant] = {'state': 'blocked', 'message': str(exc)[:3000]}
+                    row = {'state': 'blocked', 'message': str(exc)[:3000]}
+                    attempt = getattr(exc, 'attempt', None)
+                    if attempt:
+                        row['port_attempt'] = attempt
+                    progress['variants'][variant] = row
                 except Exception as exc:
                     progress['variants'][variant] = {'state': 'cancelled' if cancel_event.is_set() else 'failed',
                         'message': str(exc)[:3000]}
