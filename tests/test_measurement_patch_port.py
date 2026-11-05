@@ -1,0 +1,76 @@
+import json
+from pathlib import Path
+import pytest
+from profile_manager import measurement_patch_port as port
+
+ROOT = Path(__file__).resolve().parents[1] / 'dwarf'
+AMARU_V4 = ROOT / 'targets/amaru/measurement-patches-nanoseconds-v4/aedfe797a5b8ef00d8b362be40b47a52c3b4a379/manifest.json'
+CARDANO_V5 = ROOT / 'targets/cardano-node/measurement-patches-nanoseconds-v5/fef83fed01d7926f3de83b3b917be5a4a48768b5/manifest.json'
+NEW = 'f' * 40
+
+
+def test_select_base_recipe_prefers_newest_series():
+    assert port.select_base_recipe('amaru')[0] == AMARU_V4
+    assert port.select_base_recipe('cardano-node')[0] == CARDANO_V5
+
+
+def test_select_base_recipe_refuses_empty_root_and_unknown_impl(tmp_path):
+    with pytest.raises(port.PortError, match='No committed patch series'):
+        port.select_base_recipe('amaru', targets_root=tmp_path)
+    with pytest.raises(port.PortError):
+        port.select_base_recipe('haskell')
+
+
+def _preimages(manifest, digest):
+    return {p['path']: digest for item in manifest['patches'] for p in item['preimages']}
+
+
+def test_derive_manifest_rewrites_identity_and_preimages_only():
+    base = json.loads(AMARU_V4.read_text()); snapshot = json.loads(AMARU_V4.read_text())
+    derived = port.derive_manifest(base, source_revision=NEW, release='10.11.20261105',
+        preimages=_preimages(base, 'ab' * 32), base_recipe_dir='measurement-patches-nanoseconds-v4/aedfe797a5b8ef00d8b362be40b47a52c3b4a379')
+    assert base == snapshot                                   # input untouched
+    assert derived['source']['revision'] == NEW and derived['source']['release'] == '10.11.20261105'
+    assert 'tag' not in derived['source']
+    assert all(p['sha256'] == 'ab' * 32 for item in derived['patches'] for p in item['preimages'])
+    assert derived['auto_ported'] is True
+    assert derived['derived_from'] == {'source_revision': base['source']['revision'],
+        'measurement_revision': base['measurement_revision'], 'patch_set_sha256': base['patch_set_sha256'],
+        'recipe_dir': 'measurement-patches-nanoseconds-v4/aedfe797a5b8ef00d8b362be40b47a52c3b4a379'}
+    assert derived['validation']['ported_from_source_revision'] == base['source']['revision']
+    assert derived['validation']['status'] == 'auto-ported-candidate'
+    assert derived['validation']['compiled'] is False and derived['validation']['runtime_qualified'] is False
+    assert derived['patch_set_sha256'] == base['patch_set_sha256']
+    assert derived['measurement_revision'] == base['measurement_revision']
+    assert [p['sha256'] for p in derived['patches']] == [p['sha256'] for p in base['patches']]
+
+
+def test_derive_manifest_requires_every_preimage_and_valid_revision():
+    base = json.loads(AMARU_V4.read_text())
+    with pytest.raises(port.PortError, match='preimage missing'):
+        port.derive_manifest(base, source_revision=NEW, release='x', preimages={}, base_recipe_dir='d')
+    with pytest.raises(port.PortError):
+        port.derive_manifest(base, source_revision='abc', release='x', preimages=_preimages(base, 'ab' * 32), base_recipe_dir='d')
+
+
+def test_save_and_load_derived_recipe_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT', str(tmp_path))
+    base = json.loads(AMARU_V4.read_text())
+    derived = port.derive_manifest(base, source_revision=NEW, release='x', preimages=_preimages(base, 'ab' * 32), base_recipe_dir='d')
+    directory = port.save_derived_recipe('amaru', NEW, derived, {'status': 'ported'})
+    assert directory == port.derived_manifest_path('amaru', NEW).parent
+    assert port.load_derived_manifest('amaru', NEW) == derived
+    assert json.loads((directory / 'port-result.json').read_text()) == {'status': 'ported'}
+    assert port.load_derived_manifest('amaru', 'e' * 40) is None
+    with pytest.raises(port.PortError):
+        port.save_derived_recipe('amaru', NEW, base, {})   # base is not auto_ported
+
+
+def test_saved_derived_recipe_is_not_audited(tmp_path, monkeypatch):
+    from scripts.build_amaru_measurement_target import audited_measurement_revisions
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT', str(tmp_path))
+    before = audited_measurement_revisions()
+    base = json.loads(AMARU_V4.read_text())
+    port.save_derived_recipe('amaru', NEW, port.derive_manifest(base, source_revision=NEW, release='x',
+        preimages=_preimages(base, 'ab' * 32), base_recipe_dir='d'), {})
+    assert audited_measurement_revisions() == before and NEW not in before
