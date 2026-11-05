@@ -56,10 +56,6 @@ services:
       DWARF_HOST_ARCH: ${DWARF_HOST_ARCH:?set DWARF_HOST_ARCH to the detected installation host architecture}
       DWARF_AVAILABLE_IMAGE_DIGESTS: ${DWARF_AVAILABLE_IMAGE_DIGESTS:-}
       DWARF_AVAILABLE_CREDENTIALS: ${DWARF_AVAILABLE_CREDENTIALS:-}
-      # Build-container limits. Unset keeps the shared-host defaults (2 CPUs, 8g);
-      # a host dedicated to DWARF sets them to its real size in .env.
-      DWARF_BUILD_CPUS: ${DWARF_BUILD_CPUS:-}
-      DWARF_BUILD_MEMORY: ${DWARF_BUILD_MEMORY:-}
       # Web-driven substrate control channel. When set to 1 (and the deploy
       # host has been provisioned via delivery/control-plane/provision-control-channel.sh),
       # deploy/remove/status/active are sent to the host as restricted verbs
@@ -139,6 +135,11 @@ services:
       ADA2_DWARF_LAUNCH_ROOT: /var/dwarf/launches
       ADA2_DWARF_RUN_LEDGER_ROOT: /var/dwarf/run-ledger
       ADA2_DWARF_REMOTE_BASE: /var/dwarf/controller-state/controller/topology-runtimes
+      # Build-container limits (release, library and toolchain builds). Unset keeps
+      # the shared-host defaults (2 CPUs, 8g); a host dedicated to DWARF exports
+      # its real size at install time (see INSTALL.md).
+      DWARF_BUILD_CPUS: ${DWARF_BUILD_CPUS:-}
+      DWARF_BUILD_MEMORY: ${DWARF_BUILD_MEMORY:-}
       # Generated profiles are written by the validated dashboard workflow.
       # The controller sees only this catalog subtree and only read-only, then
       # independently re-resolves it against its signed release catalog.

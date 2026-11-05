@@ -1771,7 +1771,12 @@ def test_build_resource_knobs_reach_the_controller():
     common = (ROOT / "delivery/scripts/common.sh").read_text(encoding="utf-8")
     install = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
 
-    assert "DWARF_BUILD_CPUS: ${DWARF_BUILD_CPUS:-}" in compose
-    assert "DWARF_BUILD_MEMORY: ${DWARF_BUILD_MEMORY:-}" in compose
+    import yaml
+    services = yaml.safe_load(compose)["services"]
+    controller_env = services["dwarf-controller"]["environment"]
+    assert controller_env["DWARF_BUILD_CPUS"] == "${DWARF_BUILD_CPUS:-}"
+    assert controller_env["DWARF_BUILD_MEMORY"] == "${DWARF_BUILD_MEMORY:-}"
+    # The dashboard never builds; the knobs belong to the controller only.
+    assert "DWARF_BUILD_CPUS" not in services["dwarf-fw"]["environment"]
     assert "export DWARF_BUILD_CPUS" in common and "export DWARF_BUILD_MEMORY" in common
     assert "`DWARF_BUILD_CPUS`" in install and "`DWARF_BUILD_MEMORY`" in install
