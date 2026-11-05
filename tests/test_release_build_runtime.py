@@ -308,3 +308,26 @@ def test_cardano_toolchain_parallelism_follows_configured_cpus(monkeypatch):
     assert recipe == cardano_builder_dockerfile().replace('$(nproc)', '16')
     monkeypatch.delenv('DWARF_BUILD_CPUS')
     assert builds._toolchain_recipe() == cardano_builder_dockerfile().replace('$(nproc)', '2')
+
+
+def test_cardano_compile_request_carries_configured_build_jobs(runtime, monkeypatch):
+    monkeypatch.setattr(_os, 'cpu_count', lambda: 16)
+    monkeypatch.setenv('DWARF_BUILD_CPUS', '16')
+    selected = {**PARAMS, 'implementation': 'cardano-node', 'source_revision': 'fef83fed01d7926f3de83b3b917be5a4a48768b5',
+                'image': 'ghcr.io/intersectmbo/cardano-node@' + DIGEST}
+    context = builds.BuildContext(runtime, selected, 'build-test', 60, threading.Event())
+    directory = context.directory / 'stock'; directory.mkdir()
+    path, manifest, _ = builds._recipe(selected, 'stock')
+    context.run = lambda *a, **kw: ''
+    runtime.inspect_image = lambda *a, **kw: {'config_image_id': DIGEST}
+    seen = {}
+    def compiler(variant, role, image, command, *, work=None, entrypoint=None):
+        seen['request'] = json.loads((work / 'request.json').read_text())
+        output = work / 'image-context'; output.mkdir()
+        (output / 'cardano-node').write_bytes(b'compiled binary'); (output / 'runtime-root').mkdir()
+        (work / 'build-evidence.json').write_text(json.dumps({'source_revision': selected['source_revision'],
+            'executable_digest': builds._hash(output / 'cardano-node'), 'toolchain': manifest['toolchain']}))
+    context.container = compiler
+    builds._compile_cardano(context, 'stock', path, manifest)
+    assert seen['request']['build_jobs'] == 16
+    assert seen['request']['mode'] == 'stock' and seen['request']['revision'] == selected['source_revision']

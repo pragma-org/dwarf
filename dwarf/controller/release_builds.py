@@ -332,9 +332,11 @@ def _compile_cardano(context, variant, path, manifest):
     _copy_recipe(path, manifest, work)
     shutil.copyfile(ROOT / 'scripts' / 'build_cardano_measurement_target.py', work / 'builder.py')
     (work / 'driver.py').write_text(_cardano_driver())
+    from controller.build_resources import build_resources
     _write(work / 'request.json', {'revision': context.selected['source_revision'],
         'location': 'https://github.com/IntersectMBO/cardano-node.git',
-        'base_image': context.selected['image'], 'mode': variant})
+        'base_image': context.selected['image'], 'mode': variant,
+        'build_jobs': build_resources()['jobs']})
     toolchain = directory / 'toolchain'; toolchain.mkdir()
     # These trusted toolchain stages compile small C libraries before the
     # bounded node builder runs. Parallelism follows the configured build CPUs.

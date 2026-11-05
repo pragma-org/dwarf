@@ -54,6 +54,20 @@ def runtime_libraries(binary):
     return result
 
 
+def build_command(manifest,request):
+    """The recipe's own cabal command plus bounded parallelism.
+
+    The host passes ``build_jobs`` (from its configured build CPUs) in
+    request.json; absent means the historical 2. Parallelism changes how fast
+    the build runs, never what it produces, and the flags are recorded in the
+    build evidence as ``effective_build_flags``.
+    """
+    jobs=request.get('build_jobs',2)
+    if isinstance(jobs,bool) or not isinstance(jobs,int) or jobs<1:
+        raise ValueError('build_jobs must be a positive integer')
+    return list(manifest['build']['command'])+[f'-j{jobs}',f'--ghc-options=-j{jobs}']
+
+
 def compile_source(work):
     request=json.loads((work/'request.json').read_text())
     manifest=builder.load_manifest(work/'manifest.json')
@@ -86,7 +100,8 @@ def compile_source(work):
         project=source/'cabal.project.local'
         if project.exists():raise ValueError('Source already has cabal.project.local; refusing to replace build settings')
         project.write_text('packages: '+' '.join('vendor/'+name.removeprefix('dependency:') for name in dependencies)+'\n')
-    builder.run_logged(manifest['build']['command']+['-j2'],cwd=source,log_path=work/'compile.log',env=env)
+    command=build_command(manifest,request)
+    builder.run_logged(command,cwd=source,log_path=work/'compile.log',env=env)
     binary=Path(subprocess.check_output(manifest['build']['binary_query'],cwd=source,env=env,text=True).strip())
     context=work/'image-context';context.mkdir()
     shutil.copy2(binary,context/'cardano-node')
@@ -95,6 +110,7 @@ def compile_source(work):
     (context/'Dockerfile').write_text(builder.measurement_dockerfile(request['base_image'],
         source_revision=revision,patch_set_sha256=manifest['patch_set_sha256'] if patch_set else 'stock'))
     evidence={'source_revision':revision,'toolchain':toolchain,'patch_set':patch_set,'applied_patches':applied,'runtime_libraries':libraries,
+              'effective_build_flags':command[len(manifest['build']['command']):],
               'runtime_library_strategy':'node-ldd-plus-builder-libc6-v1',
               'executable_digest':'sha256:'+builder.sha256_file(binary)}
     (work/'build-evidence.json').write_text(json.dumps(evidence,sort_keys=True))

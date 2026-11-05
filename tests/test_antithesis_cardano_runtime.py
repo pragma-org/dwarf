@@ -86,3 +86,18 @@ def test_successful_ldd_with_unresolved_dependency_blocks_packaging(runtime, tmp
                         SimpleNamespace(returncode=0, stdout='libsnappy.so.1 => not found\n', stderr=''))
     with pytest.raises(ValueError, match='unresolved'):
         runtime.runtime_libraries(Path('/node'))
+
+
+def test_build_command_uses_host_build_jobs(runtime):
+    """The recipe's cabal command is untouched; the driver adds parallelism from
+    the host's build limits (passed as request.json build_jobs), defaulting to the
+    historical 2 and refusing nonsense."""
+    manifest = {'build': {'command': ['cabal', 'build', '--builddir=d', '-w', 'ghc-9.6.7', 'exe:cardano-node']}}
+    assert runtime.build_command(manifest, {'build_jobs': 16}) == manifest['build']['command'] + ['-j16', '--ghc-options=-j16']
+    assert runtime.build_command(manifest, {}) == manifest['build']['command'] + ['-j2', '--ghc-options=-j2']
+    for bad in (0, -1, 'lots', 2.5):
+        with pytest.raises(ValueError):
+            runtime.build_command(manifest, {'build_jobs': bad})
+    source = Path(__file__).resolve().parents[1].joinpath('dwarf/scripts/antithesis_cardano_source.py').read_text()
+    assert 'command=build_command(manifest,request)' in source and "'effective_build_flags'" in source
+    assert "+['-j2']" not in source
