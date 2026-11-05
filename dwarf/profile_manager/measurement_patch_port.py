@@ -113,9 +113,13 @@ def derive_manifest(
 
 
 def derived_recipe_root() -> Path:
-    from profile_manager.config import storage_roots
+    """Derived recipes live beside the operator version ledger (``<version-catalog
+    state>/version-catalog/derived-measurement-patches``). That directory is the
+    one piece of dashboard state the controller also mounts, so the process that
+    plans a topology can resolve a registration's auto-ported recipe (F22)."""
+    from profile_manager.operator_version_decisions import OperatorVersionDecisionLedger
 
-    return Path(storage_roots().state) / "derived-measurement-patches"
+    return Path(OperatorVersionDecisionLedger().root) / "derived-measurement-patches"
 
 
 def derived_manifest_path(implementation: str, source_revision: str) -> Path:

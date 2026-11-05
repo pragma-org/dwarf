@@ -140,3 +140,15 @@ def test_base_recipes_are_ordered_nearest_base_release_first():
     assert cardano[0][0] == CARDANO_V5 and cardano[0][1]['source']['release'] == '11.1.2'
     with pytest.raises(port.PortError, match='No committed patch series'):
         port.select_base_recipes('amaru', targets_root=Path('/nonexistent'))
+
+
+def test_derived_recipes_live_beside_the_operator_ledger(tmp_path, monkeypatch):
+    """F22 (live): the controller sees only the dashboard's version-catalog state, not
+    its whole state root; a derived recipe written elsewhere is invisible to planning."""
+    from profile_manager.operator_version_decisions import OperatorVersionDecisionLedger
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT', str(tmp_path / 'runtime'))
+    monkeypatch.setenv('ADA2_DWARF_VERSION_CATALOG_STATE_DIR', str(tmp_path / 'dashboard-state'))
+    assert port.derived_recipe_root() == OperatorVersionDecisionLedger().root / 'derived-measurement-patches'
+    assert port.derived_recipe_root() == tmp_path / 'dashboard-state' / 'version-catalog' / 'derived-measurement-patches'
+    monkeypatch.delenv('ADA2_DWARF_VERSION_CATALOG_STATE_DIR')
+    assert port.derived_recipe_root() == tmp_path / 'runtime' / 'state' / 'version-catalog' / 'derived-measurement-patches'
