@@ -9,8 +9,9 @@ CARDANO_V5 = ROOT / 'targets/cardano-node/measurement-patches-nanoseconds-v5/fef
 NEW = 'f' * 40
 
 
-def test_select_base_recipe_prefers_newest_series():
-    assert port.select_base_recipe('amaru')[0] == AMARU_V4
+def test_select_base_recipe_is_the_nearest_base_not_the_newest_series():
+    # F19: the v4 series exists only for a September base; the adjacent 20261029 v3 recipe is tried first.
+    assert port.select_base_recipe('amaru')[0] == AMARU_V4.parent.parent.parent / 'measurement-patches-nanoseconds-v3/23031e0ed4423b9cb899da030d515cb69d203749/manifest.json'
     assert port.select_base_recipe('cardano-node')[0] == CARDANO_V5
 
 
@@ -122,3 +123,20 @@ def test_mark_proven_round_trip_is_idempotent(tmp_path, monkeypatch):
     assert port.load_derived_manifest('amaru', NEW)['validation']['status'] == 'auto-ported-proven'
     with pytest.raises(port.PortError):
         port.mark_proven('amaru', 'c' * 40, run_id='run-3', proof=proof)
+
+
+def test_base_recipes_are_ordered_nearest_base_release_first():
+    """F19: newest *series* is not nearest *base*. Candidates go newest base release
+    first (tie → highest series rank), so an adjacent revision's recipe is tried first."""
+    ordered = [(p.parent.parent.name, p.parent.name[:8], m['source']['release']) for p, m in port.select_base_recipes('amaru')]
+    assert ordered[0] == ('measurement-patches-nanoseconds-v3', '23031e0e', '10.11.20261029')
+    assert ordered[1][2] == '10.11.20260925'
+    assert [o[0] for o in ordered if o[1] == 'aedfe797'] == ['measurement-patches-nanoseconds-v4', 'measurement-patches-nanoseconds-v3']   # same base: higher series first
+    releases = [o[2] for o in ordered]
+    assert releases == sorted(releases, key=port._release_key, reverse=True)
+    assert port._release_key('10.11.20261029') > port._release_key('10.11.30-gd3a6dafc') > port._release_key('10.11.0')
+    assert port.select_base_recipe('amaru')[1]['source']['release'] == '10.11.20261029'     # first candidate
+    cardano = port.select_base_recipes('cardano-node')
+    assert cardano[0][0] == CARDANO_V5 and cardano[0][1]['source']['release'] == '11.1.2'
+    with pytest.raises(port.PortError, match='No committed patch series'):
+        port.select_base_recipes('amaru', targets_root=Path('/nonexistent'))

@@ -73,8 +73,10 @@
             link.textContent = 'Use ' + key + ' build'; block.append(link);
           }
           const diagnostic = build.log_tail || build.diagnostic || (build.message?.length > 240 ? build.message : null);
-          const portChecks = build.state === 'blocked' && Array.isArray(build.port_attempt?.checks)
-            ? build.port_attempt.checks.map(check => [check.path, check.status, check.detail].filter(Boolean).join(' · ')).join('\n') : '';
+          const attempts = build.state === 'blocked' && Array.isArray(build.port_attempt?.attempts) && build.port_attempt.attempts.length
+            ? build.port_attempt.attempts : (build.state === 'blocked' && Array.isArray(build.port_attempt?.checks) ? [build.port_attempt] : []);
+          const portChecks = attempts.map(a => [a.base_release || a.base_source_revision ? 'base ' + (a.base_release || String(a.base_source_revision).slice(0, 12)) + (a.measurement_revision ? ' (' + a.measurement_revision + ')' : '') + ' → ' + a.status : '']
+            .concat((a.checks || []).map(check => '  ' + [check.path, check.status, check.detail].filter(Boolean).join(' · '))).filter(Boolean).join('\n')).join('\n');
           if (diagnostic || portChecks) {
             const detail = document.createElement('details');
             const summary = document.createElement('summary'); summary.textContent = 'Build log';

@@ -4,11 +4,14 @@ source revision?
 
 Runs inside the builder container as ``python3 /work/port.py`` with only the
 job directory mounted (stdlib only). Input: ``/work/request.json``
-(``implementation``, ``source_revision``, ``repository``), ``/work/manifest.json``
-(the *base* manifest) and the base patch files next to it. Output:
-``/work/output/port-result.json`` — ``status`` ``ported`` or ``failed`` with the
-per-patch checks, the new revision's preimage digests and the reason. It never
-builds anything and never writes outside ``/work``.
+(``implementation``, ``source_revision``, ``repository``, optional
+``candidates``) and the candidate base recipes — ``/work/candidates/<i>/``
+(manifest.json + patch files), tried in order, or a single ``/work/manifest.json``
+with its patches. The source is fetched once; the first candidate whose patches
+all apply is ported. Output: ``/work/output/port-result.json`` — ``status``
+``ported`` or ``failed``, the winning ``candidate_index``, every ``attempts[]``
+with its per-patch checks, the new revision's preimage digests and the reason.
+It never builds anything and never writes outside ``/work``.
 """
 from __future__ import annotations
 
@@ -129,31 +132,61 @@ def check_cardano_toolchain(source: Path, manifest: dict[str, Any]) -> dict[str,
             "detail": f"GHC series {series} is not declared in .github/workflows/haskell.yml"}
 
 
+def _candidates(work: Path) -> list[tuple[Path, dict[str, Any]]]:
+    """Candidate recipe directories in try order: candidates/<i>/ or the job root."""
+    root = work / "candidates"
+    if root.is_dir():
+        dirs = sorted((d for d in root.iterdir() if d.is_dir()), key=lambda d: int(d.name))
+        return [(d, json.loads((d / "manifest.json").read_text(encoding="utf-8"))) for d in dirs]
+    return [(work, json.loads((work / "manifest.json").read_text(encoding="utf-8")))]
+
+
 def port(work: Path) -> dict[str, Any]:
     work = Path(work)
     output = work / "output"
     output.mkdir(parents=True, exist_ok=True)
     result: dict[str, Any] = {
-        "schema_version": 1, "status": "failed", "implementation": None, "source_revision": None,
+        "schema_version": 2, "status": "failed", "implementation": None, "source_revision": None,
+        "candidate_index": None, "attempts": [],
         "base_source_revision": None, "base_patch_set_sha256": None, "measurement_revision": None,
         "checks": [], "preimages": {}, "preimages_changed": [], "toolchain_check": None, "failure": None,
     }
     try:
         request = json.loads((work / "request.json").read_text(encoding="utf-8"))
-        manifest = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
+        result.update(implementation=request["implementation"], source_revision=request["source_revision"])
+        candidates = _candidates(work)
+        if not candidates:
+            raise PortCheckError("no candidate patch series supplied")
+        ensure_git()
+        source = work / "source"
+        fetch_exact_source(str(request["repository"]), str(request["source_revision"]), source)
+        chosen = None
+        for index, (directory, manifest) in enumerate(candidates):
+            checks = check_patches(source, directory, manifest)
+            attempt = {"index": index, "base_source_revision": manifest["source"]["revision"],
+                       "base_release": str(manifest.get("source", {}).get("release", "")),
+                       "measurement_revision": manifest.get("measurement_revision", "v1"),
+                       "patch_set_sha256": manifest.get("patch_set_sha256"),
+                       "status": "failed" if any(c["status"] == "failed" for c in checks) else "ported",
+                       "checks": checks}
+            result["attempts"].append(attempt)
+            if attempt["status"] == "ported":
+                chosen = (index, directory, manifest, checks)
+                break
+        if chosen is None:
+            result["checks"] = result["attempts"][-1]["checks"]   # the last attempt's rejects, for single-candidate readers
+            raise PortCheckError(f"no committed patch series applies to {request['source_revision'][:12]} "
+                                 f"({len(candidates)} tried): " + "; ".join(
+                                     f"{a['base_release'] or a['base_source_revision'][:12]}/{a['measurement_revision']}: "
+                                     + next((c["detail"].splitlines()[0] if c["detail"] else c["path"] for c in a["checks"] if c["status"] == "failed"), "")
+                                     for a in result["attempts"])[:1500])
+        index, directory, manifest, checks = chosen
         result.update(
-            implementation=request["implementation"], source_revision=request["source_revision"],
+            candidate_index=index, checks=checks,
             base_source_revision=manifest["source"]["revision"],
             base_patch_set_sha256=manifest.get("patch_set_sha256"),
             measurement_revision=manifest.get("measurement_revision", "v1"),
         )
-        ensure_git()
-        source = work / "source"
-        fetch_exact_source(str(request["repository"]), str(request["source_revision"]), source)
-        result["checks"] = check_patches(source, work, manifest)
-        failed = [check for check in result["checks"] if check["status"] == "failed"]
-        if failed:
-            raise PortCheckError(f"patch did not apply: {failed[0]['path']}: {failed[0]['detail'][:500]}")
         preimages, changed = collect_preimages(source, manifest)
         result["preimages"] = preimages
         result["preimages_changed"] = changed

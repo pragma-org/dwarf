@@ -268,20 +268,25 @@ def _port_recipe(context):
     patch series, then re-pin that series to the new revision's preimages.
     Everything downstream (exact-preimage driver, patch-set digest, compiled
     marker check, provenance gate) runs unchanged on the derived recipe."""
-    from profile_manager.measurement_patch_port import PortError, REPOSITORIES, derive_manifest, select_base_recipe
+    from profile_manager.measurement_patch_port import PortError, REPOSITORIES, derive_manifest, select_base_recipes
     from scripts.experimental_amaru_instrumentation import BUILDER_BASE
     implementation = context.selected['implementation']
     revision = context.selected['source_revision']
     try:
-        base_path, base = select_base_recipe(implementation)
+        candidates = select_base_recipes(implementation)
     except PortError as exc:
         raise BuildBlocked(str(exc)) from exc
     work = context.directory / 'instrumented' / 'port' / 'work'
     work.mkdir(parents=True)
-    _copy_recipe(base_path, base, work)
+    # Every committed series rides along, nearest base first; the container fetches
+    # the source once and ports the first series that applies.
+    for index, (candidate_path, candidate) in enumerate(candidates):
+        candidate_dir = work / 'candidates' / str(index)
+        candidate_dir.mkdir(parents=True)
+        _copy_recipe(candidate_path, candidate, candidate_dir)
     shutil.copyfile(ROOT / 'scripts' / 'port_measurement_patches.py', work / 'port.py')
     _write(work / 'request.json', {'implementation': implementation, 'source_revision': revision,
-                                   'repository': REPOSITORIES[implementation]})
+                                   'repository': REPOSITORIES[implementation], 'candidates': len(candidates)})
     context.stage('instrumented', 'port-check')
     context.container('instrumented', 'port', BUILDER_BASE, ['python3', '/work/port.py'], work=work)
     result_path = work / 'output' / 'port-result.json'
@@ -291,6 +296,12 @@ def _port_recipe(context):
     if result.get('status') != 'ported':
         raise PortBlocked('Instrumentation patches did not port cleanly to ' + revision[:12] + ': '
                           + str(result.get('failure') or '')[:1500], attempt=result)
+    index = result.get('candidate_index')
+    if not isinstance(index, int) or not 0 <= index < len(candidates):
+        raise PortBlocked('Port result names no valid candidate', attempt=result)
+    base_path, base = candidates[index]
+    if result.get('base_source_revision') != base['source']['revision']:
+        raise PortBlocked('Port result base revision does not match the chosen candidate', attempt=result)
     derived = derive_manifest(base, source_revision=revision, release=context.selected['version'],
                               preimages=result['preimages'],
                               base_recipe_dir=str(base_path.parent.relative_to(ROOT / 'targets' / implementation)))

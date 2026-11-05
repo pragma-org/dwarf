@@ -345,7 +345,8 @@ def _fake_port(status, base):
     def container(variant, role, image, command, *, work=None, entrypoint=None):
         if role == 'port':
             (work / 'output').mkdir(); (work / 'output' / 'port-result.json').write_text(json.dumps({
-                'status': status, 'preimages': preimages if status == 'ported' else {},
+                'status': status, 'candidate_index': 0 if status == 'ported' else None, 'base_source_revision': base['source']['revision'],
+                'attempts': [{'index': 0, 'status': status}], 'preimages': preimages if status == 'ported' else {},
                 'checks': [{'path': base['patches'][0]['path'], 'status': 'ok' if status == 'ported' else 'failed', 'detail': 'hunk FAILED'}],
                 'failure': None if status == 'ported' else 'patch did not apply'}))
             return ''
@@ -360,7 +361,7 @@ def _instrumented_context(runtime, monkeypatch, status):
             raise builds.BuildBlocked('No instrumentation patch for this exact source revision')
         pytest.fail('stock not under test')
     monkeypatch.setattr(builds, '_recipe', blocked)
-    monkeypatch.setattr(port_module, 'select_base_recipe', lambda impl, **kw: (V4, base))
+    monkeypatch.setattr(port_module, 'select_base_recipes', lambda impl, **kw: [(V4, base)])
     context = builds.BuildContext(runtime, {**PARAMS, 'image': 'ghcr.io/pragma-org/amaru@' + DIGEST}, 'build-test', 3600, threading.Event())
     context.container = _fake_port(status, base); context.run = lambda *a, **kw: ''
     return context, base
@@ -445,3 +446,37 @@ def test_finalize_recipe_keeps_cardano_composite_for_derived_v5():
     path, manifest = builds._finalize_recipe('cardano-node', 'instrumented', V5, derived)
     assert manifest['patch_set_sha256'] == bridge.COMPOSITE_HASH and manifest['auto_ported'] is True
     assert manifest['patches'][-1]['path'] == bridge.PATCH_NAME
+
+
+def test_port_stage_offers_every_committed_series_and_derives_from_the_one_that_applied(runtime, monkeypatch):
+    """F19 live finding: the v4 series rejected on 20261022 while the 20261029 v3 recipe
+    applied. The controller must ship all candidates and derive from the winner."""
+    V3_NEWEST = Path(__file__).resolve().parents[1] / 'dwarf/targets/amaru/measurement-patches-nanoseconds-v3/23031e0ed4423b9cb899da030d515cb69d203749/manifest.json'
+    bases = [(V3_NEWEST, json.loads(V3_NEWEST.read_text())), (V4, json.loads(V4.read_text()))]
+    seen = {}
+    def container(variant, role, image, command, *, work=None, entrypoint=None):
+        if role == 'port':
+            seen['candidates'] = sorted(p.name for p in (work / 'candidates').iterdir())
+            seen['request'] = json.loads((work / 'request.json').read_text())
+            winner = bases[1][1]   # pretend only the v4 series applied
+            (work / 'output').mkdir(); (work / 'output' / 'port-result.json').write_text(json.dumps({
+                'status': 'ported', 'candidate_index': 1, 'base_source_revision': winner['source']['revision'],
+                'measurement_revision': winner['measurement_revision'], 'base_patch_set_sha256': winner['patch_set_sha256'],
+                'preimages': {p['path']: 'ab' * 32 for i in winner['patches'] for p in i['preimages']},
+                'checks': [{'path': winner['patches'][0]['path'], 'status': 'ok', 'detail': ''}], 'failure': None,
+                'attempts': [{'index': 0, 'status': 'failed'}, {'index': 1, 'status': 'ported'}]}))
+            return ''
+        return 'amaru 10.11\nCommands:\n  run  Run the node\n'
+    def blocked(selected, variant):
+        raise builds.BuildBlocked('No instrumentation patch for this exact source revision')
+    monkeypatch.setattr(builds, '_recipe', blocked)
+    monkeypatch.setattr(port_module, 'select_base_recipes', lambda impl, **kw: bases)
+    context = builds.BuildContext(runtime, {**PARAMS, 'image': 'ghcr.io/pragma-org/amaru@' + DIGEST}, 'build-test', 3600, threading.Event())
+    context.container = container; context.run = lambda *a, **kw: ''
+    path, manifest, exact = builds._port_recipe(context)
+    assert seen['candidates'] == ['0', '1'] and seen['request']['candidates'] == 2
+    assert json.loads((context.directory / 'instrumented/port/work/candidates/0/manifest.json').read_text())['source']['revision'] == bases[0][1]['source']['revision']
+    assert manifest['derived_from']['source_revision'] == bases[1][1]['source']['revision']
+    assert manifest['derived_from']['recipe_dir'].startswith('measurement-patches-nanoseconds-v4/')
+    assert manifest['measurement_revision'] == bases[1][1]['measurement_revision'] and manifest['auto_ported'] is True
+    assert context.port_result['attempts'][0]['status'] == 'failed'

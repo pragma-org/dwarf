@@ -97,3 +97,42 @@ def test_ghc_series_pattern_is_the_bare_series_shared_with_the_compile_gate():
     assert re.search(pattern, "matrix:\n  ghc: ['9.6', '9.8']\n") and re.search(pattern, 'ghc: ["9.6"]')
     assert not re.search(pattern, "ghc: ['9.6.7']") and not re.search(pattern, "ghc: ['19.6']")
     assert repr(driver.GHC_SERIES_TEMPLATE) in release_builds._cardano_driver()
+
+
+def _candidates(tmp_path, repo, revision, patch_texts, *, implementation='amaru'):
+    """A multi-candidate job: /work/candidates/<i>/{manifest.json,0001.patch}, ordered as given."""
+    work = tmp_path / 'work'; work.mkdir()
+    for i, text in enumerate(patch_texts):
+        c = work / 'candidates' / str(i); c.mkdir(parents=True)
+        (c / '0001.patch').write_text(text)
+        (c / 'manifest.json').write_text(json.dumps({'source': {'revision': str(i) * 40, 'release': f'1.{i}'}, 'measurement_revision': f'nanoseconds-v{i}',
+            'patch_set_sha256': str(i) * 64, 'patches': [{'path': '0001.patch', 'sha256': hashlib.sha256(text.encode()).hexdigest(),
+            'preimages': [{'path': 'tracked.txt', 'sha256': 'ab' * 32}]}], 'toolchain': 'nightly'}))
+    (work / 'request.json').write_text(json.dumps({'implementation': implementation, 'source_revision': revision, 'repository': str(repo), 'candidates': len(patch_texts)}))
+    return work
+
+
+def test_first_applying_candidate_wins_and_every_attempt_is_recorded(tmp_path):
+    repo, rev = _repo(tmp_path); other, _ = _repo(tmp_path / 'o', content='something else\n')
+    work = _candidates(tmp_path, repo, rev, [_patch_for(other), _patch_for(repo)])
+    result = driver.port(work)
+    assert result['status'] == 'ported' and result['candidate_index'] == 1
+    assert result['base_source_revision'] == '1' * 40 and result['measurement_revision'] == 'nanoseconds-v1' and result['base_patch_set_sha256'] == '1' * 64
+    assert [a['status'] for a in result['attempts']] == ['failed', 'ported']
+    assert result['attempts'][0]['base_source_revision'] == '0' * 40 and result['attempts'][0]['checks'][0]['status'] == 'failed'
+    assert result['checks'] == result['attempts'][1]['checks']
+
+
+def test_no_applying_candidate_fails_naming_every_base(tmp_path):
+    repo, rev = _repo(tmp_path); other, _ = _repo(tmp_path / 'o', content='something else\n')
+    work = _candidates(tmp_path, repo, rev, [_patch_for(other), _patch_for(other)])
+    result = driver.port(work)
+    assert result['status'] == 'failed' and result['candidate_index'] is None
+    assert len(result['attempts']) == 2 and all(a['status'] == 'failed' for a in result['attempts'])
+    assert 'no committed patch series applies' in result['failure'] and '2 tried' in result['failure']
+
+
+def test_single_manifest_job_still_works(tmp_path):
+    repo, rev = _repo(tmp_path); work = _work(tmp_path, repo, rev, _patch_for(repo))
+    result = driver.port(work)
+    assert result['status'] == 'ported' and result['candidate_index'] == 0 and len(result['attempts']) == 1

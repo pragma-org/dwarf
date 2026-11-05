@@ -36,22 +36,42 @@ _REVISION = re.compile(r"[0-9a-f]{40}")
 _TARGETS = Path(__file__).resolve().parents[1] / "targets"
 
 
-def select_base_recipe(implementation: str, *, targets_root: Path | None = None) -> tuple[Path, dict[str, Any]]:
-    """The newest committed patch series for ``implementation``: (manifest path, manifest)."""
+def _release_key(release: str) -> tuple:
+    """Version-aware ordering of a release label: each dot-part compares by its
+    leading integer, then its suffix (``30-gd3a6dafc`` < ``20261029``); a part
+    with no leading integer sorts below every numeric one."""
+    key = []
+    for part in str(release).split("."):
+        match = re.match(r"(\d+)(.*)", part)
+        key.append((1, int(match.group(1)), match.group(2)) if match else (0, 0, part))
+    return tuple(key)
+
+
+def select_base_recipes(implementation: str, *, targets_root: Path | None = None) -> list[tuple[Path, dict[str, Any]]]:
+    """Every committed patch series for ``implementation`` in the order a port
+    should try them: nearest base first — newest base *release* first, and for
+    the same base the highest series rank. (The newest series is not the
+    nearest base: a ``-v4`` series may only exist for an old revision while an
+    adjacent revision carries a ``-v3`` recipe that applies cleanly.)"""
     if implementation not in IMPLEMENTATIONS:
         raise PortError(f"unknown implementation: {implementation!r}")
     from profile_manager.antithesis_artifacts import recipe_rank
 
     root = Path(targets_root) if targets_root is not None else _TARGETS
-    candidates: list[tuple[tuple[int, str, str], Path, dict[str, Any]]] = []
+    candidates: list[tuple[tuple, Path, dict[str, Any]]] = []
     for path in sorted((root / implementation).glob("measurement-patches*/*/manifest.json")):
         manifest = json.loads(path.read_text(encoding="utf-8"))
         release = str((manifest.get("source") or {}).get("release", ""))
-        candidates.append(((recipe_rank(manifest), release, str(path)), path, manifest))
+        candidates.append(((_release_key(release), recipe_rank(manifest), str(path)), path, manifest))
     if not candidates:
         raise PortError(f"No committed patch series available to port for {implementation}")
-    _, path, manifest = max(candidates, key=lambda item: item[0])
-    return path, manifest
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return [(path, manifest) for _, path, manifest in candidates]
+
+
+def select_base_recipe(implementation: str, *, targets_root: Path | None = None) -> tuple[Path, dict[str, Any]]:
+    """The first candidate a port tries: (manifest path, manifest)."""
+    return select_base_recipes(implementation, targets_root=targets_root)[0]
 
 
 def derive_manifest(
