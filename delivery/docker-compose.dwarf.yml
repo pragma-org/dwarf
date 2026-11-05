@@ -56,6 +56,10 @@ services:
       DWARF_HOST_ARCH: ${DWARF_HOST_ARCH:?set DWARF_HOST_ARCH to the detected installation host architecture}
       DWARF_AVAILABLE_IMAGE_DIGESTS: ${DWARF_AVAILABLE_IMAGE_DIGESTS:-}
       DWARF_AVAILABLE_CREDENTIALS: ${DWARF_AVAILABLE_CREDENTIALS:-}
+      # Build-container limits. Unset keeps the shared-host defaults (2 CPUs, 8g);
+      # a host dedicated to DWARF sets them to its real size in .env.
+      DWARF_BUILD_CPUS: ${DWARF_BUILD_CPUS:-}
+      DWARF_BUILD_MEMORY: ${DWARF_BUILD_MEMORY:-}
       # Web-driven substrate control channel. When set to 1 (and the deploy
       # host has been provisioned via delivery/control-plane/provision-control-channel.sh),
       # deploy/remove/status/active are sent to the host as restricted verbs

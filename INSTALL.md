@@ -241,6 +241,8 @@ Keep `.env` private.
 | `DWARF_CONTAINER_NAME` | `dwarf-fw` |
 | `DWARF_DASHBOARD_BIND` | `127.0.0.1` |
 | `DWARF_DASHBOARD_PORT` | `8787` |
+| `DWARF_BUILD_CPUS` | Unset keeps `2` CPUs per build container. On a host dedicated to DWARF, set it to the host CPU count (for example `16`); the value never exceeds what the host reports. It also sets the Amaru `CARGO_BUILD_JOBS` and the Cardano toolchain parallelism. |
+| `DWARF_BUILD_MEMORY` | Unset keeps `8g` per build container. On a dedicated host, set it below the host total with headroom for the node containers (for example `20g`). Accepted units: `k`, `m`, `g`. |
 | `DWARF_RUNTIME_ROOT` | `${XDG_DATA_HOME:-$HOME/.local/share}/dwarf` |
 
 Use an absolute path for a custom runtime root.

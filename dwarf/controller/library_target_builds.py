@@ -451,18 +451,14 @@ def _default_builder(
         raise LibraryTargetBuildError("library target workspace is outside controller state") from exc
     host_workspace = Path(runtime.host_state_dir) / relative_workspace
     name = _container_name(runtime, requirement)
+    from controller.build_resources import build_resources, docker_limit_arguments
     arguments = [
         "run",
         "--name",
         name,
         "--platform",
         requirement["platform"],
-        "--cpus",
-        "2",
-        "--memory",
-        "8g",
-        "--pids-limit",
-        "512",
+        *docker_limit_arguments(build_resources()),
         "--security-opt",
         "no-new-privileges",
         "--log-opt",

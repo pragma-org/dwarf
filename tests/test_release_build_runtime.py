@@ -271,3 +271,40 @@ def test_cardano_output_packaging_is_reconstructed_from_trusted_recipe(runtime, 
         source_revision=selected['source_revision'],patch_set_sha256='stock').replace('COPY --chmod=0755 ', 'COPY ')
     assert (output/'cardano-node-wrapper').read_text() == measurement_wrapper()
     assert '$(nproc)' not in (directory/'toolchain/Dockerfile').read_text()
+
+
+import os as _os
+
+
+def test_build_containers_follow_configured_host_resources(runtime, monkeypatch):
+    monkeypatch.setattr(_os, 'cpu_count', lambda: 16)
+    monkeypatch.setenv('DWARF_BUILD_CPUS', '16')
+    monkeypatch.setenv('DWARF_BUILD_MEMORY', '20g')
+    calls = []
+    def run(args, **kw):
+        calls.append(args)
+        if args[0] == 'container':
+            return DockerResult(0, json.dumps([{'Config': {'Labels': builds._labels(runtime, 'build-test')}}]), '')
+        return DockerResult(0, '', '')
+    runtime._run = run
+    context = builds.BuildContext(runtime, PARAMS, 'build-test', 60, threading.Event())
+    work = context.directory / 'stock' / 'work'; work.mkdir(parents=True)
+    context.container('stock', 'compile', 'python@' + DIGEST, ['python', '/work/driver.py'], work=work)
+    args = list(calls[0])
+    assert args[args.index('--cpus') + 1] == '16'
+    assert args[args.index('--memory') + 1] == '20g'
+    assert args[args.index('--pids-limit') + 1] == '4096'
+    assert "'CARGO_BUILD_JOBS':'16'" in builds._amaru_driver(stock=True)
+    assert "'CARGO_BUILD_JOBS':'2'" not in builds._amaru_driver(stock=False)
+
+
+def test_cardano_toolchain_parallelism_follows_configured_cpus(monkeypatch):
+    from profile_manager.antithesis_artifacts import cardano_builder_dockerfile
+    monkeypatch.setattr(_os, 'cpu_count', lambda: 16)
+    monkeypatch.setenv('DWARF_BUILD_CPUS', '16')
+    monkeypatch.delenv('DWARF_BUILD_MEMORY', raising=False)
+    recipe = builds._toolchain_recipe()
+    assert '$(nproc)' not in recipe
+    assert recipe == cardano_builder_dockerfile().replace('$(nproc)', '16')
+    monkeypatch.delenv('DWARF_BUILD_CPUS')
+    assert builds._toolchain_recipe() == cardano_builder_dockerfile().replace('$(nproc)', '2')

@@ -872,3 +872,21 @@ def test_new_target_generated_manifest_freezes_identity_and_verifies_binary_befo
     binary.write_bytes(b"tampered after the exact target was frozen")
     with pytest.raises(ValueError, match="binary digest"):
         load_target_manifest(target_id, manifests_dir=binding["manifests_dir"])
+
+
+def test_library_builder_container_follows_configured_host_resources(tmp_path, monkeypatch):
+    import os as _os
+    monkeypatch.setattr(_os, "cpu_count", lambda: 16)
+    monkeypatch.setenv("DWARF_BUILD_CPUS", "16")
+    monkeypatch.setenv("DWARF_BUILD_MEMORY", "20g")
+    runtime = FakeDockerRuntime(tmp_path)
+    prepare_library_targets(
+        runtime, [_requirement()], execution_id="library-build-resources",
+        timeout=30, cancel_event=threading.Event(),
+    )
+    builders = [tuple(c) for c in runtime.commands if c and c[0] == "run" and "--entrypoint" not in c]
+    assert builders, "the compile container was never started"
+    args = builders[0]
+    assert args[args.index("--cpus") + 1] == "16"
+    assert args[args.index("--memory") + 1] == "20g"
+    assert args[args.index("--pids-limit") + 1] == "4096"

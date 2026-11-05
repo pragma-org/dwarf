@@ -186,8 +186,9 @@ class BuildContext:
 
     def container(self, variant, role, image, command, *, work=None, entrypoint=None):
         name = _name(self.runtime, self.execution_id, variant, role)
+        from controller.build_resources import build_resources, docker_limit_arguments
         args = ['run', '--name', name, '--platform', 'linux/amd64',
-                '--cpus', '2', '--memory', '8g', '--pids-limit', '512',
+                *docker_limit_arguments(build_resources()),
                 '--security-opt', 'no-new-privileges', '--log-opt', 'max-size=8m', '--log-opt', 'max-file=1']
         for key, value in _labels(self.runtime, self.execution_id).items():
             args += ['--label', key + '=' + value]
@@ -266,8 +267,21 @@ def _amaru_driver(*, stock):
     anchor = "observed.append(dict(path=item['path'],sha256=digest))"
     if driver.count(anchor) != 1:
         raise ValueError('Exact Amaru preimage check anchor changed')
-    return driver.replace(anchor,
+    driver = driver.replace(anchor,
         "if digest!=item['sha256']: raise RuntimeError('exact preimage mismatch')\n            " + anchor)
+    from controller.build_resources import build_resources
+    jobs_anchor = "'CARGO_BUILD_JOBS':'2'"
+    if driver.count(jobs_anchor) != 1:
+        raise ValueError('Amaru build job count anchor changed')
+    return driver.replace(jobs_anchor, "'CARGO_BUILD_JOBS':'" + str(build_resources()['jobs']) + "'")
+
+
+def _toolchain_recipe():
+    """The trusted Cardano toolchain recipe with its parallelism bounded to the
+    configured build CPUs (a shared host keeps the conservative default)."""
+    from profile_manager.antithesis_artifacts import cardano_builder_dockerfile
+    from controller.build_resources import build_resources
+    return cardano_builder_dockerfile().replace('$(nproc)', str(build_resources()['cpus']))
 
 
 def _compile_amaru(context, variant, path, manifest):
@@ -313,7 +327,6 @@ def _cardano_driver():
 
 
 def _compile_cardano(context, variant, path, manifest):
-    from profile_manager.antithesis_artifacts import cardano_builder_dockerfile
     directory = context.directory / variant
     work = directory / 'work'; work.mkdir()
     _copy_recipe(path, manifest, work)
@@ -324,8 +337,8 @@ def _compile_cardano(context, variant, path, manifest):
         'base_image': context.selected['image'], 'mode': variant})
     toolchain = directory / 'toolchain'; toolchain.mkdir()
     # These trusted toolchain stages compile small C libraries before the
-    # bounded node builder runs. Do not expand parallelism to every host CPU.
-    recipe = cardano_builder_dockerfile().replace('$(nproc)', '2')
+    # bounded node builder runs. Parallelism follows the configured build CPUs.
+    recipe = _toolchain_recipe()
     (toolchain / 'Dockerfile').write_text(recipe)
     # Recipe-keyed reuse stays local. Every execution inspects its built ID.
     tag = 'dwarf/release-cardano-builder:' + hashlib.sha256(recipe.encode()).hexdigest()[:24]

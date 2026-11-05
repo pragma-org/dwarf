@@ -1762,3 +1762,16 @@ def test_runtime_image_retries_transient_snapshot_mirror_failures():
     # Pinned versions and the lists cleanup are unchanged by the retry wrapper.
     assert "docker-compose=${DOCKER_COMPOSE_VERSION}" in dockerfile
     assert "rm -rf /var/lib/apt/lists/*" in dockerfile
+
+
+def test_build_resource_knobs_reach_the_controller():
+    """A dedicated host can give builds its real CPUs and memory; the knobs must
+    travel from .env through compose into the controller and be documented."""
+    compose = (ROOT / "delivery/docker-compose.dwarf.yml").read_text(encoding="utf-8")
+    common = (ROOT / "delivery/scripts/common.sh").read_text(encoding="utf-8")
+    install = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
+
+    assert "DWARF_BUILD_CPUS: ${DWARF_BUILD_CPUS:-}" in compose
+    assert "DWARF_BUILD_MEMORY: ${DWARF_BUILD_MEMORY:-}" in compose
+    assert "export DWARF_BUILD_CPUS" in common and "export DWARF_BUILD_MEMORY" in common
+    assert "`DWARF_BUILD_CPUS`" in install and "`DWARF_BUILD_MEMORY`" in install
