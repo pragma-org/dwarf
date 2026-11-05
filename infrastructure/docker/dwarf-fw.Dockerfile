@@ -36,7 +36,7 @@ LABEL org.opencontainers.image.title="DWARF dashboard" \
       io.dwarf.component.role=${DWARF_COMPONENT_ROLE} \
       io.dwarf.catalog.revision=${DWARF_CATALOG_REVISION}
 
-RUN printf 'Acquire::Check-Valid-Until "false";\nAcquire::Check-Date "false";\n' >/etc/apt/apt.conf.d/90snapshot \
+RUN printf 'Acquire::Check-Valid-Until "false";\nAcquire::Check-Date "false";\nAcquire::Retries "5";\nAcquire::http::Timeout "120";\n' >/etc/apt/apt.conf.d/90snapshot \
     && cat >/etc/apt/sources.list.d/debian.sources <<EOF
 Types: deb
 URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/
@@ -51,19 +51,30 @@ Components: main
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        bash=${BASH_VERSION} \
-        ca-certificates=${CA_CERTIFICATES_VERSION} \
-        docker.io=${DOCKER_IO_VERSION} \
-        docker-cli=${DOCKER_CLI_VERSION} \
-        docker-compose=${DOCKER_COMPOSE_VERSION} \
-        jq=${JQ_VERSION} \
-        libsodium23=${LIBSODIUM_VERSION} \
-        libsecp256k1-2=${LIBSECP256K1_VERSION} \
-        openssh-client=${OPENSSH_CLIENT_VERSION} \
-        rsync=${RSYNC_VERSION} \
-        tmux=${TMUX_VERSION} \
+# snapshot.debian.org intermittently answers 504 for single pinned .deb files; a
+# fresh install must survive that without changing the pinned versions below.
+RUN for attempt in 1 2 3 4 5; do \
+        if apt-get update \
+            && apt-get install -y --no-install-recommends \
+                bash=${BASH_VERSION} \
+                ca-certificates=${CA_CERTIFICATES_VERSION} \
+                docker.io=${DOCKER_IO_VERSION} \
+                docker-cli=${DOCKER_CLI_VERSION} \
+                docker-compose=${DOCKER_COMPOSE_VERSION} \
+                jq=${JQ_VERSION} \
+                libsodium23=${LIBSODIUM_VERSION} \
+                libsecp256k1-2=${LIBSECP256K1_VERSION} \
+                openssh-client=${OPENSSH_CLIENT_VERSION} \
+                rsync=${RSYNC_VERSION} \
+                tmux=${TMUX_VERSION}; then \
+            break; \
+        fi; \
+        if [ "${attempt}" -eq 5 ]; then \
+            echo "apt install failed after ${attempt} attempts" >&2; exit 1; \
+        fi; \
+        echo "apt install failed (attempt ${attempt}); retrying in 20s" >&2; \
+        sleep 20; \
+    done \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid 1000 dwarf \

@@ -1747,3 +1747,18 @@ def test_basic_empty_coverage_links_to_the_supported_optional_afl_path(monkeypat
     assert 'href="/operate/scenarios"' in html
     assert 'href="/operate/targets"' in html
     assert "open Advanced" not in html
+
+
+def test_runtime_image_retries_transient_snapshot_mirror_failures():
+    """Fresh installs pin Debian packages to snapshot.debian.org, which intermittently
+    answers 504 for single .deb files; one failed fetch must not fail the install."""
+    dockerfile = (ROOT / "infrastructure/docker/dwarf-fw.Dockerfile").read_text(encoding="utf-8")
+
+    assert 'Acquire::Retries "5";' in dockerfile
+    assert 'Acquire::http::Timeout "120";' in dockerfile
+    # The pinned install is retried a bounded number of times, not left to one attempt.
+    assert "for attempt in 1 2 3 4 5; do" in dockerfile
+    assert "apt install failed (attempt ${attempt}); retrying" in dockerfile
+    # Pinned versions and the lists cleanup are unchanged by the retry wrapper.
+    assert "docker-compose=${DOCKER_COMPOSE_VERSION}" in dockerfile
+    assert "rm -rf /var/lib/apt/lists/*" in dockerfile
