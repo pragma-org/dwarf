@@ -71,6 +71,57 @@ def fetch_exact_source(repository: str, revision: str, destination: Path) -> str
     return actual
 
 
+def reset_source(source: Path) -> None:
+    """Return the fetched source to the exact revision (a failed candidate may
+    have applied some of its patches)."""
+    _run(["git", "-C", str(source), "reset", "-q", "--hard", "FETCH_HEAD"])
+    _run(["git", "-C", str(source), "clean", "-fdxq"])
+
+
+def _digest_preimages(source: Path, item: dict[str, Any]) -> dict[str, str]:
+    """Digest a patch's preimage files as they are *now* — i.e. after the patches
+    before it in the series — raising when one is missing at this revision."""
+    digests: dict[str, str] = {}
+    for preimage in item.get("preimages", []):
+        path = str(preimage["path"])
+        file = source / path
+        if not file.is_file():
+            raise PortCheckError(f"preimage path missing: {path}")
+        digests[path] = hashlib.sha256(file.read_bytes()).hexdigest()
+    return digests
+
+
+def apply_series(source: Path, patches_root: Path, manifest: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+    """Apply a candidate's patches in order, strict ``git apply --check`` then
+    ``git apply`` each, digesting every patch's preimages immediately before it
+    applies. A file touched by several patches therefore gets a distinct expected
+    digest per patch — the state the real build driver verifies (F24).
+    Dependency-rooted patches (cardano) apply to pinned archives identical for
+    every node revision: ``inherited``, with the base recipe's own per-patch
+    digests. Stops at the first patch that does not apply."""
+    checks: list[dict[str, str]] = []
+    collected: list[dict[str, Any]] = []
+    for item in manifest["patches"]:
+        path = str(item["path"])
+        if str(item.get("root", "")).startswith("dependency:"):
+            checks.append({"path": path, "status": "inherited", "detail": ""})
+            collected.append({"path": path, "preimages": {str(p["path"]): str(p.get("sha256", "")) for p in item.get("preimages", [])}})
+            continue
+        digests = _digest_preimages(source, item)
+        collected.append({"path": path, "preimages": digests})
+        completed = subprocess.run(
+            ["git", "apply", "--check", "--whitespace=error-all", str(patches_root / path)],
+            cwd=source, text=True, capture_output=True,
+        )
+        if completed.returncode != 0:
+            checks.append({"path": path, "status": "failed",
+                           "detail": (completed.stderr or completed.stdout).strip()[-2048:]})
+            break
+        _run(["git", "apply", "--whitespace=error-all", str(patches_root / path)], cwd=source)
+        checks.append({"path": path, "status": "ok", "detail": ""})
+    return checks, collected
+
+
 def check_patches(source: Path, patches_root: Path, manifest: dict[str, Any]) -> list[dict[str, str]]:
     """Strict ``git apply --check --whitespace=error-all`` per patch, the same
     check the build drivers use. Dependency-rooted patches (cardano) apply to
@@ -149,7 +200,7 @@ def port(work: Path) -> dict[str, Any]:
         "schema_version": 2, "status": "failed", "implementation": None, "source_revision": None,
         "candidate_index": None, "attempts": [],
         "base_source_revision": None, "base_patch_set_sha256": None, "measurement_revision": None,
-        "checks": [], "preimages": {}, "preimages_changed": [], "toolchain_check": None, "failure": None,
+        "checks": [], "patch_preimages": [], "preimages": {}, "preimages_changed": [], "toolchain_check": None, "failure": None,
     }
     try:
         request = json.loads((work / "request.json").read_text(encoding="utf-8"))
@@ -162,17 +213,27 @@ def port(work: Path) -> dict[str, Any]:
         fetch_exact_source(str(request["repository"]), str(request["source_revision"]), source)
         chosen = None
         for index, (directory, manifest) in enumerate(candidates):
-            checks = check_patches(source, directory, manifest)
+            if index:
+                reset_source(source)
             attempt = {"index": index, "base_source_revision": manifest["source"]["revision"],
                        "base_release": str(manifest.get("source", {}).get("release", "")),
                        "measurement_revision": manifest.get("measurement_revision", "v1"),
                        "patch_set_sha256": manifest.get("patch_set_sha256"),
-                       "status": "failed" if any(c["status"] == "failed" for c in checks) else "ported",
-                       "checks": checks}
+                       "status": "failed", "checks": []}
             result["attempts"].append(attempt)
-            if attempt["status"] == "ported":
-                chosen = (index, directory, manifest, checks)
-                break
+            try:
+                checks, collected = apply_series(source, directory, manifest)
+            except PortCheckError as exc:
+                if len(candidates) == 1:
+                    raise
+                attempt["checks"] = [{"path": "", "status": "failed", "detail": str(exc)[:2048]}]
+                continue
+            attempt["checks"] = checks
+            if any(c["status"] == "failed" for c in checks):
+                continue
+            attempt["status"] = "ported"
+            chosen = (index, directory, manifest, checks, collected)
+            break
         if chosen is None:
             result["checks"] = result["attempts"][-1]["checks"]   # the last attempt's rejects, for single-candidate readers
             raise PortCheckError(f"no committed patch series applies to {request['source_revision'][:12]} "
@@ -180,16 +241,25 @@ def port(work: Path) -> dict[str, Any]:
                                      f"{a['base_release'] or a['base_source_revision'][:12]}/{a['measurement_revision']}: "
                                      + next((c["detail"].splitlines()[0] if c["detail"] else c["path"] for c in a["checks"] if c["status"] == "failed"), "")
                                      for a in result["attempts"])[:1500])
-        index, directory, manifest, checks = chosen
+        index, directory, manifest, checks, collected = chosen
         result.update(
             candidate_index=index, checks=checks,
             base_source_revision=manifest["source"]["revision"],
             base_patch_set_sha256=manifest.get("patch_set_sha256"),
             measurement_revision=manifest.get("measurement_revision", "v1"),
         )
-        preimages, changed = collect_preimages(source, manifest)
-        result["preimages"] = preimages
-        result["preimages_changed"] = changed
+        base_digests = {(str(p["path"]), str(pre["path"])): str(pre.get("sha256", ""))
+                        for p in manifest["patches"] for pre in p.get("preimages", [])}
+        flat: dict[str, str] = {}
+        changed: set[str] = set()
+        for entry in collected:
+            for path, digest in entry["preimages"].items():
+                flat[path] = digest
+                if digest != base_digests.get((entry["path"], path)):
+                    changed.add(path)
+        result["patch_preimages"] = collected
+        result["preimages"] = flat
+        result["preimages_changed"] = sorted(changed)
         if request["implementation"] == "cardano-node":
             result["toolchain_check"] = check_cardano_toolchain(source, manifest)
             if result["toolchain_check"]["status"] != "ok":

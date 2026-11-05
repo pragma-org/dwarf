@@ -152,3 +152,16 @@ def test_derived_recipes_live_beside_the_operator_ledger(tmp_path, monkeypatch):
     assert port.derived_recipe_root() == tmp_path / 'dashboard-state' / 'version-catalog' / 'derived-measurement-patches'
     monkeypatch.delenv('ADA2_DWARF_VERSION_CATALOG_STATE_DIR')
     assert port.derived_recipe_root() == tmp_path / 'runtime' / 'state' / 'version-catalog' / 'derived-measurement-patches'
+
+
+def test_derive_manifest_keeps_distinct_per_patch_preimages_for_the_same_file():
+    """F24: the cardano v5 series lists DwarfMeasurement.hs under 0004, 0006 and 0007
+    with three different digests; a derived manifest must keep each patch's own."""
+    base = json.loads(CARDANO_V5.read_text())
+    per_patch = [{'path': p['path'], 'preimages': {pre['path']: pre['sha256'] for pre in p['preimages']}} for p in base['patches']]
+    derived = port.derive_manifest(base, source_revision=NEW, release='11.1.3', preimages=per_patch, base_recipe_dir='d')
+    digests = {p['path'][:4]: pre['sha256'] for p in derived['patches'] for pre in p['preimages'] if pre['path'].endswith('DwarfMeasurement.hs')}
+    assert digests['0004'] != digests['0006'] != digests['0007']
+    assert digests == {p['path'][:4]: pre['sha256'] for p in base['patches'] for pre in p['preimages'] if pre['path'].endswith('DwarfMeasurement.hs')}
+    with pytest.raises(port.PortError, match='preimage missing for'):
+        port.derive_manifest(base, source_revision=NEW, release='x', preimages=per_patch[:-1], base_recipe_dir='d')

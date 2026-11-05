@@ -20,7 +20,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 
 class PortError(ValueError):
@@ -76,12 +76,23 @@ def select_base_recipe(implementation: str, *, targets_root: Path | None = None)
 
 def derive_manifest(
     base: Mapping[str, Any], *, source_revision: str, release: str,
-    preimages: Mapping[str, str], base_recipe_dir: str,
+    preimages: Mapping[str, str] | Sequence[Mapping[str, Any]], base_recipe_dir: str,
 ) -> dict[str, Any]:
     """``base`` re-pinned to ``source_revision``: same patches and patch-set digest,
-    new preimage digests, marked auto-ported. ``base`` is not modified."""
+    new preimage digests, marked auto-ported. ``base`` is not modified.
+
+    ``preimages`` is the port driver's ``patch_preimages`` — one
+    ``{"path": <patch>, "preimages": {<file>: <sha256>}}`` per patch — so a file
+    several patches touch keeps a distinct digest per patch (F24). A flat
+    ``{<file>: <sha256>}`` is accepted for single-patch series."""
     if not _REVISION.fullmatch(str(source_revision)):
         raise PortError("source revision must be a 40-character lowercase git revision")
+    if isinstance(preimages, Mapping):
+        per_patch: dict[str, Mapping[str, str]] | None = None
+        flat: Mapping[str, str] = preimages
+    else:
+        per_patch = {str(entry.get("path")): dict(entry.get("preimages") or {}) for entry in preimages}
+        flat = {}
     derived = copy.deepcopy(dict(base))
     source = dict(derived.get("source") or {})
     source["revision"] = source_revision
@@ -89,11 +100,12 @@ def derive_manifest(
     source.pop("tag", None)
     derived["source"] = source
     for item in derived.get("patches", []):
+        digests = per_patch.get(str(item.get("path")), {}) if per_patch is not None else flat
         for preimage in item.get("preimages", []):
             path = preimage.get("path")
-            if path not in preimages:
+            if path not in digests:
                 raise PortError(f"preimage missing for {path}")
-            preimage["sha256"] = preimages[path]
+            preimage["sha256"] = digests[path]
     derived["auto_ported"] = True
     derived["derived_from"] = {
         "source_revision": base["source"]["revision"],

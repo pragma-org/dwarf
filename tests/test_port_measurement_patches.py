@@ -136,3 +136,57 @@ def test_single_manifest_job_still_works(tmp_path):
     repo, rev = _repo(tmp_path); work = _work(tmp_path, repo, rev, _patch_for(repo))
     result = driver.port(work)
     assert result['status'] == 'ported' and result['candidate_index'] == 0 and len(result['attempts']) == 1
+
+
+def _series(tmp_path, repo, revision, patches, *, name='candidates/0'):
+    """A candidate whose patches apply in sequence; preimages are placeholders the port must replace."""
+    work = tmp_path / 'work'; work.mkdir(exist_ok=True)
+    c = work / name; c.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for i, (fname, text, files) in enumerate(patches, start=1):
+        (c / fname).write_text(text)
+        entries.append({'path': fname, 'sha256': hashlib.sha256(text.encode()).hexdigest(), 'preimages': [{'path': f, 'sha256': 'ab' * 32} for f in files]})
+    (c / 'manifest.json').write_text(json.dumps({'source': {'revision': 'a' * 40, 'release': '1.0'}, 'measurement_revision': 'v9', 'patch_set_sha256': 'c' * 64, 'patches': entries, 'toolchain': 'nightly'}))
+    (work / 'request.json').write_text(json.dumps({'implementation': 'amaru', 'source_revision': revision, 'repository': str(repo), 'candidates': 1}))
+    return work
+
+
+def _two_step_patches(repo):
+    """Patch 1 creates new.txt; patch 2 modifies new.txt (depends on patch 1)."""
+    (repo / 'new.txt').write_text('one\n'); _git(repo, 'add', 'new.txt'); first = _git(repo, 'diff', '--cached') + '\n'
+    _git(repo, 'commit', '--quiet', '-m', 'p1'); (repo / 'new.txt').write_text('one\ntwo\n'); second = _git(repo, 'diff') + '\n'
+    _git(repo, 'checkout', '--', 'new.txt'); _git(repo, 'reset', '--quiet', '--hard', 'HEAD~1')
+    return first, second
+
+
+def test_preimages_are_collected_per_patch_in_sequence(tmp_path):
+    """F24 (live, cardano 11.1.3): a file listed by several patches has a different
+    expected digest for each — the state after the previous patch. One flat map
+    gave every patch the last digest and the compile refused the port."""
+    repo, rev = _repo(tmp_path); first, second = _two_step_patches(repo)
+    work = _series(tmp_path, repo, rev, [('0001.patch', first, ['tracked.txt']), ('0002.patch', second, ['new.txt', 'tracked.txt'])])
+    result = driver.port(work)
+    assert result['status'] == 'ported', result['failure']
+    assert [p['path'] for p in result['patch_preimages']] == ['0001.patch', '0002.patch']
+    assert result['patch_preimages'][1]['preimages']['new.txt'] == hashlib.sha256(b'one\n').hexdigest()   # after patch 1, before patch 2
+    assert result['patch_preimages'][0]['preimages'] == {'tracked.txt': hashlib.sha256(b'original\n').hexdigest()}
+    assert sorted(result['preimages_changed']) == ['new.txt', 'tracked.txt']
+
+
+def test_second_patch_needing_the_first_cannot_be_checked_against_pristine_source(tmp_path):
+    repo, rev = _repo(tmp_path); first, second = _two_step_patches(repo)
+    work = _series(tmp_path, repo, rev, [('0002.patch', second, ['new.txt'])])        # patch 2 alone
+    result = driver.port(work)
+    assert result['status'] == 'failed' and 'preimage path missing: new.txt' in result['failure']   # honest: its preimage does not exist yet
+
+
+def test_a_failed_candidate_leaves_no_trace_for_the_next(tmp_path):
+    repo, rev = _repo(tmp_path); first, second = _two_step_patches(repo)
+    work = _series(tmp_path, repo, rev, [('0001.patch', first, ['tracked.txt']), ('0002.patch', 'garbage\n', ['new.txt'])], name='candidates/0')
+    _series(tmp_path, repo, rev, [('0001.patch', first, ['tracked.txt'])], name='candidates/1')
+    (work / 'request.json').write_text(json.dumps({'implementation': 'amaru', 'source_revision': rev, 'repository': str(repo), 'candidates': 2}))
+    result = driver.port(work)
+    assert result['status'] == 'ported' and result['candidate_index'] == 1
+    assert result['attempts'][0]['status'] == 'failed'
+    assert not (work / 'source' / 'new.txt').exists() or (work / 'source' / 'new.txt').read_text() == 'one\n'
+    assert result['patch_preimages'][0]['preimages'] == {'tracked.txt': hashlib.sha256(b'original\n').hexdigest()}

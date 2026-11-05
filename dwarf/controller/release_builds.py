@@ -303,7 +303,7 @@ def _port_recipe(context):
     if result.get('base_source_revision') != base['source']['revision']:
         raise PortBlocked('Port result base revision does not match the chosen candidate', attempt=result)
     derived = derive_manifest(base, source_revision=revision, release=context.selected['version'],
-                              preimages=result['preimages'],
+                              preimages=result.get('patch_preimages') or result['preimages'],
                               base_recipe_dir=str(base_path.parent.relative_to(ROOT / 'targets' / implementation)))
     derived_dir = context.directory / 'instrumented' / 'derived-recipe'
     derived_dir.mkdir(parents=True)
