@@ -192,3 +192,56 @@ def export_derived_recipe(implementation: str, source_revision: str) -> dict[str
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     return {"path": str(target), "sha256": "sha256:" + digest, "destination": destination,
             "members": [name for name, _ in members]}
+
+
+def patched_only_concepts(implementation: str, *, catalog_index: dict[str, Any] | None = None) -> list[str]:
+    """Concepts the catalog binds for mode ``patched`` but not for ``stock``: the
+    taps only an instrumented build can carry, hence the proof surface for a port."""
+    from profile_manager.data.measurement_compare import _catalog_index
+    from profile_manager.tap_coverage import _bindings_for
+
+    index = catalog_index or _catalog_index()
+    patched = {concept for concept, _, _ in _bindings_for(index, implementation, "patched")}
+    stock = {concept for concept, _, _ in _bindings_for(index, implementation, "stock")}
+    return sorted(patched - stock)
+
+
+def proof_from_report(report: Mapping[str, Any], implementation: str) -> dict[str, Any]:
+    """Did this run carry data on the patched-only taps? Proven only for a run
+    whose target identity says ``patched``, with at least one patched-only
+    concept covered and none *missing* — present in the report without a value —
+    the same rule DWARF's tap-coverage gate applies. Patched-only concepts whose
+    raw ids never appear in the report are listed as ``absent`` (a patch series
+    need not emit every bound concept on every revision) and do not block proof."""
+    from profile_manager.tap_coverage import coverage_report, report_identity
+
+    only = patched_only_concepts(implementation)
+    try:
+        _, mode = report_identity(dict(report))
+    except ValueError:
+        mode = ""
+    metrics = report.get("measurements") if isinstance(report, Mapping) else None
+    result = coverage_report(metrics if isinstance(metrics, dict) else {}, implementation, "patched")
+    covered = sorted(concept for concept in result["covered"] if concept in only)
+    excepted = sorted(row["concept"] for row in result["excepted"] if row["concept"] in only)
+    missing = sorted(row["concept"] for row in result["missing"] if row["concept"] in only)
+    absent = sorted(set(only) - set(covered) - set(excepted) - set(missing))
+    return {"proven": mode == "patched" and not missing and bool(covered),
+            "patched_only": only, "covered": covered, "excepted": excepted, "missing": missing, "absent": absent}
+
+
+def mark_proven(implementation: str, source_revision: str, *, run_id: str, proof: Mapping[str, Any]) -> dict[str, Any]:
+    """Promote a persisted derived recipe to ``auto-ported-proven``. The first
+    proving run is kept; later runs do not overwrite it."""
+    manifest = load_derived_manifest(implementation, source_revision)
+    if manifest is None:
+        raise PortError(f"No auto-ported recipe for {implementation} {source_revision[:12]}")
+    validation = dict(manifest.get("validation") or {})
+    if validation.get("status") != "auto-ported-proven":
+        validation.update({
+            "status": "auto-ported-proven", "runtime_qualified": True, "proven_by_run": str(run_id),
+            "proof": {"covered": list(proof.get("covered") or []), "excepted": list(proof.get("excepted") or [])},
+        })
+        manifest["validation"] = validation
+        _write_json(derived_manifest_path(implementation, source_revision), manifest)
+    return manifest

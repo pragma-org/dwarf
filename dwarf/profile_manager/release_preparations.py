@@ -66,14 +66,18 @@ def _register(selected, job, result, variant, controller):
         if row.get('auto_ported'):
             # An auto-ported build is only registrable with the derived recipe it was
             # built from; persist it so run-time identity and export can find it.
-            from profile_manager.measurement_patch_port import PortError, save_derived_recipe
+            from profile_manager.measurement_patch_port import PortError, load_derived_manifest, save_derived_recipe
             derived = row.get('derived_manifest')
             if (not isinstance(derived, dict) or derived.get('auto_ported') is not True
                     or (derived.get('source') or {}).get('revision') != selected['source_revision']
                     or derived.get('patch_set_sha256') != row.get('patch_set_sha256')):
                 raise ValueError('Auto-ported build is missing its derived recipe')
+            persisted = load_derived_manifest(selected['implementation'], selected['source_revision'])
             try:
-                save_derived_recipe(selected['implementation'], selected['source_revision'], derived, row.get('port_result') or {})
+                # Every status poll re-registers; a recipe already persisted for this
+                # exact patch set (possibly proven by a run since) must not be re-saved.
+                if not persisted or persisted.get('patch_set_sha256') != derived.get('patch_set_sha256'):
+                    save_derived_recipe(selected['implementation'], selected['source_revision'], derived, row.get('port_result') or {})
             except PortError as exc:
                 raise ValueError('Auto-ported build is missing its derived recipe: ' + str(exc)) from exc
             registration['source_build'].update(auto_ported=True,
@@ -140,6 +144,12 @@ def release_preparation(implementation, version, *, digest=None, source_revision
                             row['run_url'] = _register(selected, job, result, variant, controller)
                         except (OSError, RuntimeError, ValueError) as exc:
                             row.update(state='unavailable', message=str(exc))
+                        else:
+                            if row.get('auto_ported'):
+                                from profile_manager.measurement_patch_port import load_derived_manifest
+                                derived = load_derived_manifest(selected['implementation'], selected['source_revision'])
+                                if derived:
+                                    row['validation'] = derived.get('validation') or {}
                 state = 'completed'
             elif state not in {'running', 'cancelling'}:
                 variants = {k: {**v, 'state': 'interrupted'} if v.get('state') in {'building','pending'} else v

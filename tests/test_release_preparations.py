@@ -159,3 +159,13 @@ def test_auto_ported_registration_is_idempotent(setup):
     release_preparation('amaru', 'test-build', controller=controller)
     release_preparation('amaru', 'test-build', controller=controller)
     assert len(load_operator_registrations()['registrations']) == 1
+
+
+def test_auto_ported_row_shows_runtime_proof_once_a_run_proved_it(setup):
+    from profile_manager.release_preparations import release_preparation
+    derived = _derived(); controller = _controller(derived)
+    release_preparation('amaru', 'test-build', start=True, controller=controller)
+    release_preparation('amaru', 'test-build', controller=controller)
+    port_module.mark_proven('amaru', 'b' * 40, run_id='run-9', proof={'proven': True, 'covered': ['x'], 'excepted': [], 'missing': [], 'patched_only': ['x']})
+    row = release_preparation('amaru', 'test-build', controller=controller)['variants']['instrumented']
+    assert row['validation']['status'] == 'auto-ported-proven' and row['validation']['proven_by_run'] == 'run-9'

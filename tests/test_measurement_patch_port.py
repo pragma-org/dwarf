@@ -84,3 +84,41 @@ def test_provenance_gate_treats_auto_ported_build_like_any_other():
     assert ok['status'] == 'verified'
     bad = build_provenance(target, [{'status': 'mismatch', 'component': 'amaru', 'claimed_label': '10.11.20261105', 'observed_git_commit': 'a' * 40}], index=index)
     assert bad['status'] == 'mismatch' and bad['problems']
+
+
+import tarfile
+RUNS = Path(__file__).resolve().parents[1] / 'docs/evidence/runs'
+
+
+def _report(name):
+    with tarfile.open(RUNS / name, 'r:gz') as tar:
+        member = next(m for m in tar.getmembers() if m.name.endswith('/measurements/report.json'))
+        return json.loads(tar.extractfile(member).read())
+
+
+def test_patched_only_concepts_exist_for_amaru():
+    only = port.patched_only_concepts('amaru')
+    assert only and all(isinstance(c, str) for c in only) and only == sorted(only)
+
+
+def test_patched_run_with_tap_data_proves_and_stock_run_does_not():
+    proven = port.proof_from_report(_report('20261104T165404Z-54138a1b-bundle-export.tar.gz'), 'amaru')   # amaru-patched workload
+    assert proven['proven'] is True and proven['missing'] == [] and proven['covered']
+    assert proven['absent'] == ['header-validation-time']   # bound patched-only, never emitted by this series: not a block
+    stock = port.proof_from_report(_report('20261104T161325Z-5eb100bf-bundle-export.tar.gz'), 'amaru')    # amaru-stock workload
+    assert stock['proven'] is False
+
+
+def test_mark_proven_round_trip_is_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT', str(tmp_path))
+    base = json.loads(AMARU_V4.read_text())
+    port.save_derived_recipe('amaru', NEW, port.derive_manifest(base, source_revision=NEW, release='x', preimages=_preimages(base, 'ab' * 32), base_recipe_dir='d'), {})
+    proof = {'proven': True, 'covered': ['a'], 'excepted': [], 'missing': [], 'patched_only': ['a']}
+    first = port.mark_proven('amaru', NEW, run_id='run-1', proof=proof)
+    assert first['validation']['status'] == 'auto-ported-proven' and first['validation']['runtime_qualified'] is True
+    assert first['validation']['proven_by_run'] == 'run-1'
+    again = port.mark_proven('amaru', NEW, run_id='run-2', proof=proof)
+    assert again['validation']['proven_by_run'] == 'run-1'
+    assert port.load_derived_manifest('amaru', NEW)['validation']['status'] == 'auto-ported-proven'
+    with pytest.raises(port.PortError):
+        port.mark_proven('amaru', 'c' * 40, run_id='run-3', proof=proof)

@@ -42,10 +42,14 @@
           block.append(heading, text);
           if (build.auto_ported) {
             const base = String(build.ported_from_source_revision || '').slice(0, 12);
-            heading.textContent = label + ' · auto-ported from ' + base;
+            const provenBy = build.validation?.status === 'auto-ported-proven' ? String(build.validation.proven_by_run || '') : '';
+            heading.textContent = label + ' · auto-ported from ' + base + (provenBy ? ' · proven by run ' + provenBy : '');
             const note = document.createElement('p');
-            note.textContent = 'Provisional: patch set machine-ported from ' + base
-              + '. Its patches applied cleanly and the taps compiled, but a human has not reviewed this port. Export it for review to commit it under dwarf/targets/.';
+            note.textContent = (provenBy
+              ? 'Proven: run ' + provenBy + ' used the patched measurement profile and carried data on the patched-only taps. '
+              : 'Provisional: patch set machine-ported from ' + base
+                + '. Its patches applied cleanly and the taps compiled, but a human has not reviewed this port. ')
+              + 'Export it for review to commit it under dwarf/targets/.';
             const exportButton = document.createElement('button');
             exportButton.type = 'button'; exportButton.className = 'dk-btn'; exportButton.textContent = 'Export for review';
             const exported = document.createElement('p');

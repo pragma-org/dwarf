@@ -19,10 +19,15 @@
     "preferred_defaults": {
       "type": "array",
       "items": {"$ref": "#/$defs/preference"}
+    },
+    "auto_port_proofs": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/autoPortProof"}
     }
   },
   "$defs": {
     "safeId": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$"},
+    "autoPortProof": {"type": "object", "additionalProperties": false, "required": ["proof_id", "registration_id", "implementation", "source_revision", "run_id", "covered", "excepted", "recorded_at"], "properties": {"proof_id": {"$ref": "#/$defs/safeId"}, "registration_id": {"$ref": "#/$defs/safeId"}, "implementation": {"$ref": "#/$defs/safeId"}, "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "run_id": {"$ref": "#/$defs/safeId"}, "covered": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 256}}, "excepted": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 256}}, "recorded_at": {"$ref": "#/$defs/timestamp"}}},
     "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "prefixedDigest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
     "timestamp": {"type": "string", "format": "date-time"},

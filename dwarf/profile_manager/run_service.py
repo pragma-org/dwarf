@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, replace
 import fcntl
 import hashlib
 import json
+import logging
 from pathlib import Path
 import re
 from typing import Any, Mapping
@@ -324,6 +325,49 @@ def _require_equal(actual: object, expected: object, label: str) -> None:
         )
 
 
+_LOGGER = logging.getLogger(__name__)
+
+
+def _prove_auto_ported_recipe(*, run_dir: Path, run_id: str) -> None:
+    """A run whose target is an auto-ported instrumented build proves that
+    recipe when it ran patched and carried data on the patched-only taps.
+    Advisory: it never changes the run's own outcome."""
+    try:
+        report_path = run_dir / "measurements" / "report.json"
+        if not report_path.is_file():
+            return
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        identity = report.get("target_identity") if isinstance(report, dict) else None
+        registration_id = identity.get("operator_registration_id") if isinstance(identity, dict) else None
+        if not isinstance(registration_id, str) or not registration_id:
+            return
+        from profile_manager.version_discovery import load_operator_registration
+        registration = load_operator_registration(registration_id)["registration"]
+        build = registration.get("source_build") or {}
+        if build.get("auto_ported") is not True:
+            return
+        implementation = str(registration.get("implementation") or "")
+        revision = str((registration.get("provenance") or {}).get("source_revision") or "")
+        from profile_manager.measurement_patch_port import mark_proven, proof_from_report
+        proof = proof_from_report(report, implementation)
+        if not proof["proven"]:
+            return
+        manifest = mark_proven(implementation, revision, run_id=run_id, proof=proof)
+        if manifest["validation"].get("proven_by_run") != run_id:
+            return  # an earlier run already proved it
+        from datetime import datetime, timezone
+        from profile_manager.operator_version_decisions import OperatorVersionDecisionLedger
+        ledger = OperatorVersionDecisionLedger()
+        ledger.append_auto_port_proof({
+            "proof_id": "auto-port-proof-" + hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:32],
+            "registration_id": registration_id, "implementation": implementation, "source_revision": revision,
+            "run_id": run_id, "covered": proof["covered"], "excepted": proof["excepted"],
+            "recorded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }, expected_revision=ledger.read()["revision"])
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        _LOGGER.warning("auto-port proof skipped for %s: %s", run_id, exc)
+
+
 def _reconcile_result(
     *, handle: Any, execution: _ResolvedExecution, request: RunRequest
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -425,6 +469,7 @@ def _reconcile_result(
         raise RunServiceError(
             "forensic bundle verification failed: " + "; ".join(verified.errors)
         )
+    _prove_auto_ported_recipe(run_dir=run_dir, run_id=handle.run_id)
     terminal = RunLedger(execution.state_dir).transition(
         handle.run_id,
         FINAL_STATES_BY_EXIT_STATUS[exit_status],

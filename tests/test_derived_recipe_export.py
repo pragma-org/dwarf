@@ -58,3 +58,12 @@ def test_versions_ui_labels_auto_ported_builds():
         assert needle in js, needle
     learn = (ROOT / 'dwarf/dashboard/templates/learn/versions.j2').read_text()
     assert 'Auto-ported instrumented builds' in learn and 'Export for review' in learn
+
+
+def test_export_readme_states_runtime_proof(persisted):
+    port.mark_proven('amaru', NEW, run_id='run-7', proof={'proven': True, 'covered': ['x'], 'excepted': [], 'missing': [], 'patched_only': ['x']})
+    result = port.export_derived_recipe('amaru', NEW)
+    with tarfile.open(result['path']) as tar:
+        lines = tar.extractfile('README.txt').read().decode().splitlines()
+    assert lines[1] == 'Proven by run run-7: patched-only taps carried data.'
+    assert 'proven by run' in (ROOT / 'dwarf/dashboard/static/js/release-preparations.js').read_text()

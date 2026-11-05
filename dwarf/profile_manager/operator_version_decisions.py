@@ -788,6 +788,7 @@ def empty_state() -> dict[str, Any]:
         "registrations": [],
         "decisions": [],
         "preferred_defaults": [],
+        "auto_port_proofs": [],
     }
     document["revision"] = canonical_revision(document)
     return document
@@ -1058,6 +1059,19 @@ class OperatorVersionDecisionLedger:
             ):
                 raise ValueError("registration_id already exists")
             document["registrations"].append(copy.deepcopy(registration))
+
+        return self._mutate(expected_revision, append)
+
+    def append_auto_port_proof(
+        self, proof: dict[str, Any], *, expected_revision: str
+    ) -> dict[str, Any]:
+        """Retain the run that proved an auto-ported recipe. Not a version
+        decision: it never changes support, qualification or defaults."""
+        def append(document: dict[str, Any]) -> None:
+            proofs = document.setdefault("auto_port_proofs", [])
+            if any(item["proof_id"] == proof.get("proof_id") for item in proofs):
+                raise ValueError("proof_id already exists")
+            proofs.append(copy.deepcopy(proof))
 
         return self._mutate(expected_revision, append)
 
