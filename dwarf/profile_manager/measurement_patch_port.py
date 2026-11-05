@@ -128,3 +128,67 @@ def load_derived_manifest(implementation: str, source_revision: str) -> dict[str
         return None
     manifest = json.loads(path.read_text(encoding="utf-8"))
     return manifest if isinstance(manifest, dict) and manifest.get("auto_ported") is True else None
+
+
+_README_FIRST_LINE = "Auto-ported DWARF measurement patch set — review before committing."
+
+
+def export_derived_recipe(implementation: str, source_revision: str) -> dict[str, Any]:
+    """Bundle a persisted derived recipe (manifest, port result, the base patch
+    files it re-pins, destination, README) as a tar.gz for human review.
+    Nothing is written under ``dwarf/targets/`` — that step is the reviewer's."""
+    import hashlib
+    import tarfile
+    from profile_manager.config import storage_roots
+
+    manifest = load_derived_manifest(implementation, source_revision)
+    if manifest is None:
+        raise PortError(f"No auto-ported recipe for {implementation} {source_revision[:12]}")
+    recipe_dir = derived_manifest_path(implementation, source_revision).parent
+    base_dir = _TARGETS / implementation / str(manifest["derived_from"]["recipe_dir"])
+    destination = (f"dwarf/targets/{implementation}/measurement-patches-"
+                   f"{manifest.get('measurement_revision', 'v1')}/{source_revision}/")
+    validation = manifest.get("validation") or {}
+    if validation.get("status") == "auto-ported-proven":
+        proof = f"Proven by run {validation.get('proven_by_run')}: patched-only taps carried data."
+    else:
+        proof = "Not yet proven by a run."
+    readme = "\n".join([
+        _README_FIRST_LINE, proof, "",
+        "1. Verify: PYTHONPATH=dwarf python3 -c 'from scripts.build_" + ("amaru" if implementation == "amaru" else "cardano")
+        + "_measurement_target import verify_patch_set' against this manifest.json and patches/.",
+        "2. Build the instrumented variant for this revision from the dashboard (Versions → Download & build).",
+        "3. Run a measured scenario with the patched measurement profile and confirm the patched-only taps carry data.",
+        "4. Copy manifest.json and patches/* to " + destination + " and remove the auto_ported and derived_from keys only after review.",
+        "",
+    ])
+    members: list[tuple[str, bytes]] = [
+        ("manifest.json", json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"),
+        ("port-result.json", (recipe_dir / "port-result.json").read_bytes() if (recipe_dir / "port-result.json").is_file() else b"{}\n"),
+    ]
+    for item in manifest.get("patches", []):
+        name = str(item["path"])
+        file = base_dir / name
+        if not file.is_file():
+            raise PortError(f"base patch missing: {name}")
+        content = file.read_bytes()
+        if hashlib.sha256(content).hexdigest() != item.get("sha256"):
+            raise PortError(f"base patch digest mismatch: {name}")
+        members.append(("patches/" + name, content))
+    members.append(("DESTINATION.txt", (destination + "\n").encode("utf-8")))
+    members.append(("README.txt", readme.encode("utf-8")))
+    bundles = Path(storage_roots().bundles)
+    bundles.mkdir(parents=True, exist_ok=True)
+    target = bundles / f"derived-recipe-{implementation}-{source_revision[:12]}.tar.gz"
+    temporary = target.with_name(target.name + ".tmp")
+    with tarfile.open(temporary, "w:gz") as tar:
+        for name, content in members:
+            import io
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            info.mtime = 0
+            tar.addfile(info, io.BytesIO(content))
+    os.replace(temporary, target)
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    return {"path": str(target), "sha256": "sha256:" + digest, "destination": destination,
+            "members": [name for name, _ in members]}

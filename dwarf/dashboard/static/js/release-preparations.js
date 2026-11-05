@@ -40,16 +40,41 @@
           const text = document.createElement('p');
           text.textContent = [build.state, build.stage, build.message?.slice(0, 240)].filter(Boolean).join(' · ');
           block.append(heading, text);
+          if (build.auto_ported) {
+            const base = String(build.ported_from_source_revision || '').slice(0, 12);
+            heading.textContent = label + ' · auto-ported from ' + base;
+            const note = document.createElement('p');
+            note.textContent = 'Provisional: patch set machine-ported from ' + base
+              + '. Its patches applied cleanly and the taps compiled, but a human has not reviewed this port. Export it for review to commit it under dwarf/targets/.';
+            const exportButton = document.createElement('button');
+            exportButton.type = 'button'; exportButton.className = 'dk-btn'; exportButton.textContent = 'Export for review';
+            const exported = document.createElement('p');
+            exportButton.addEventListener('click', async () => {
+              exportButton.disabled = true;
+              try {
+                const response = await fetch('/api/versions/derived-recipe/export', {
+                  method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                  body: new URLSearchParams({token, implementation:row.dataset.implementation, source_revision:row.dataset.sourceRevision})
+                });
+                const result = await response.json();
+                exported.textContent = response.ok ? 'Exported: ' + result.path : (result.error || 'Export failed');
+              } catch (error) { exported.textContent = 'Export failed. ' + error.message; }
+              finally { exportButton.disabled = false; }
+            });
+            block.append(note, exportButton, exported);
+          }
           if (build.state === 'ready' && build.run_url?.startsWith('/run?')) {
             const link = document.createElement('a');
             link.className = 'dk-btn'; link.href = build.run_url;
             link.textContent = 'Use ' + key + ' build'; block.append(link);
           }
           const diagnostic = build.log_tail || build.diagnostic || (build.message?.length > 240 ? build.message : null);
-          if (diagnostic) {
+          const portChecks = build.state === 'blocked' && Array.isArray(build.port_attempt?.checks)
+            ? build.port_attempt.checks.map(check => [check.path, check.status, check.detail].filter(Boolean).join(' · ')).join('\n') : '';
+          if (diagnostic || portChecks) {
             const detail = document.createElement('details');
             const summary = document.createElement('summary'); summary.textContent = 'Build log';
-            const log = document.createElement('pre'); log.textContent = String(diagnostic).slice(-8192);
+            const log = document.createElement('pre'); log.textContent = [portChecks, diagnostic ? String(diagnostic).slice(-8192) : ''].filter(Boolean).join('\n');
             log.style.maxWidth = 'min(32rem, 60vw)'; log.style.overflowX = 'auto';
             detail.append(summary, log); block.append(detail);
           }

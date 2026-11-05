@@ -20,5 +20,7 @@
 cardano-profile deploy &lt;profile-id&gt; --dry-run
 cardano-profile deploy &lt;profile-id&gt; --approve --acknowledge-unknown-version</code></pre></section>
 
+<section><span class="eyebrow">Instrumented builds</span><h2>Auto-ported instrumented builds</h2><p>A version with no hand-written measurement patch manifest for its exact source revision gets the newest committed patch series ported and verified automatically when you press <strong>Download &amp; build</strong>: the patches must apply cleanly to that revision, the taps must compile, and the result is labelled <code>auto-ported from &lt;revision&gt;</code>. Such a build is provisional until a person reviews the port; it stays <code>auto-ported-candidate</code> until a run with its patched measurement profile shows data on the patched-only taps, which marks it <code>auto-ported-proven</code>. <strong>Export for review</strong> produces the bundle (manifest, patches, destination, README) to commit under <code>dwarf/targets/</code>; nothing is written into the repository automatically.</p></section>
+
 <section><span class="eyebrow">Claim boundary</span><h2>What this does not prove</h2><p>A confirmed local devnet does not prove compatibility on public networks, correctness under every adversarial scenario, or Antithesis readiness. Antithesis submission remains a separate preflight and approval gate. Historical runs retain their exact resolved identities even after defaults change.</p></section>
 {% endblock %}

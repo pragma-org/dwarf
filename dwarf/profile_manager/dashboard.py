@@ -3287,6 +3287,31 @@ def dispatch_version_download_request(*, method, path, expected_token, body=b"")
         return 409, ctype, json.dumps({"ok": False, "error": str(exc)}).encode()
 
 
+def dispatch_derived_recipe_export_request(*, method, path, expected_token, body=b""):
+    """Export one persisted auto-ported recipe as a review bundle."""
+    if urlsplit(path).path != "/api/versions/derived-recipe/export":
+        return None
+    ctype = "application/json; charset=utf-8"
+    if method != "POST":
+        return 405, ctype, b'{"ok":false,"error":"use POST"}'
+    ok, error = check_form_token(path, body, expected=expected_token)
+    if not ok:
+        return 401, ctype, json.dumps({"ok": False, "error": error}).encode()
+    import re as _re
+    from profile_manager.measurement_patch_port import IMPLEMENTATIONS, PortError, export_derived_recipe
+    form = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+    implementation = (form.get("implementation") or [""])[0]
+    revision = (form.get("source_revision") or [""])[0]
+    if (set(form) != {"implementation", "source_revision", "token"}
+            or any(len(values) != 1 for values in form.values())
+            or implementation not in IMPLEMENTATIONS or not _re.fullmatch(r"[0-9a-f]{40}", revision)):
+        return 409, ctype, b'{"ok":false,"error":"unexpected export fields"}'
+    try:
+        return 200, ctype, json.dumps({"ok": True, **export_derived_recipe(implementation, revision)}).encode()
+    except (PortError, OSError, ValueError) as exc:
+        return 409, ctype, json.dumps({"ok": False, "error": str(exc)}).encode()
+
+
 def dispatch_version_refresh_request(*, method, path, expected_token, body=b""):
     """Start one authenticated, serialized official-release refresh."""
     if urlsplit(path).path != "/api/versions/refresh":
@@ -5565,6 +5590,11 @@ def serve_dashboard_handler_factory(expected_token, *, serving_port=None, servin
                 method="POST", path=self.path, body=body_bytes, expected_token=expected_token)
             if version_download is not None:
                 self._send(*version_download)
+                return
+            derived_export = dispatch_derived_recipe_export_request(
+                method="POST", path=self.path, body=body_bytes, expected_token=expected_token)
+            if derived_export is not None:
+                self._send(*derived_export)
                 return
             binary_import = dispatch_binary_import_request(
                 method="POST",
