@@ -275,3 +275,55 @@ def mark_proven(implementation: str, source_revision: str, *, run_id: str, proof
         manifest["validation"] = validation
         _write_json(derived_manifest_path(implementation, source_revision), manifest)
     return manifest
+
+
+def record_run_proof(run_dir: Path, run_id: str, exit_status: object) -> dict[str, Any] | None:
+    """Prove an auto-ported recipe from one retained run, if the run can.
+
+    Returns the proof when the run's target is an auto-ported instrumented
+    registration, the run passed, and its patched-only taps carried data;
+    ``None`` otherwise. Marks the derived recipe proven (first run wins) and
+    retains one ``auto_port_proofs`` ledger row per proving run. Idempotent:
+    calling it again for the same run changes nothing. Advisory: it raises
+    nothing a caller must handle beyond :class:`PortError` for a missing recipe
+    — callers that cannot write the version-catalog state (the controller's
+    read-only view) simply fail to persist and the dashboard records it later.
+    """
+    if exit_status != "pass":
+        return None
+    run_dir = Path(run_dir)
+    report_path = run_dir / "measurements" / "report.json"
+    if not report_path.is_file():
+        return None
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    identity = report.get("target_identity") if isinstance(report, dict) else None
+    registration_id = identity.get("operator_registration_id") if isinstance(identity, dict) else None
+    if not isinstance(registration_id, str) or not registration_id:
+        return None
+    from profile_manager.operator_version_decisions import OperatorVersionDecisionLedger
+    from profile_manager.version_discovery import load_operator_registration
+
+    registration = load_operator_registration(registration_id)["registration"]
+    build = registration.get("source_build") or {}
+    if build.get("auto_ported") is not True:
+        return None
+    implementation = str(registration.get("implementation") or "")
+    revision = str((registration.get("provenance") or {}).get("source_revision") or "")
+    proof = proof_from_report(report, implementation)
+    if not proof["proven"]:
+        return proof
+    mark_proven(implementation, revision, run_id=run_id, proof=proof)
+    ledger = OperatorVersionDecisionLedger()
+    state = ledger.read()
+    if any(row.get("run_id") == run_id for row in state.get("auto_port_proofs", [])):
+        return proof
+    from datetime import datetime, timezone
+    import hashlib
+
+    ledger.append_auto_port_proof({
+        "proof_id": "auto-port-proof-" + hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:32],
+        "registration_id": registration_id, "implementation": implementation, "source_revision": revision,
+        "run_id": run_id, "covered": proof["covered"], "excepted": proof["excepted"],
+        "recorded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }, expected_revision=state["revision"])
+    return proof

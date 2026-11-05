@@ -133,3 +133,25 @@ def test_reconcile_never_proves_from_a_run_that_did_not_pass(runtime, monkeypatc
     assert result['ledger']['state'] != 'running'
     assert port.load_derived_manifest('amaru', NEW)['validation']['status'] == 'auto-ported-candidate'
     assert OperatorVersionDecisionLedger().read().get('auto_port_proofs', []) == []
+
+
+def test_record_run_proof_is_a_public_idempotent_step(runtime, monkeypatch):
+    """F23 (live): the run service executes inside the controller, whose view of the
+    version-catalog state is read-only; the dashboard must be able to record the proof
+    itself from the retained run, and doing so twice must not duplicate the ledger row."""
+    from profile_manager.config import storage_roots
+    _registered(auto_ported=True)
+    run_id = 'run-dashboard-side'
+    run_dir = Path(storage_roots().runs) / run_id
+    (run_dir / 'measurements').mkdir(parents=True)
+    (run_dir / 'measurements' / 'report.json').write_text(json.dumps(_pointed(_report('20261104T165404Z-54138a1b-bundle-export.tar.gz'))))
+    assert port.record_run_proof(run_dir, run_id, 'fail') is None
+    assert port.load_derived_manifest('amaru', NEW)['validation']['status'] == 'auto-ported-candidate'
+    first = port.record_run_proof(run_dir, run_id, 'pass')
+    assert first and first['proven'] is True and first['covered']
+    assert port.load_derived_manifest('amaru', NEW)['validation']['proven_by_run'] == run_id
+    again = port.record_run_proof(run_dir, run_id, 'pass')            # dashboard after a run-service hook that already succeeded
+    assert again and again['proven'] is True
+    proofs = OperatorVersionDecisionLedger().read().get('auto_port_proofs', [])
+    assert len(proofs) == 1 and proofs[0]['run_id'] == run_id
+    assert port.record_run_proof(Path(storage_roots().runs) / 'missing-run', 'missing-run', 'pass') is None

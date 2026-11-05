@@ -3032,6 +3032,19 @@ def dispatch_run_start_request(
                     result = response.get("result") or {}
                     run_id = str(result.get("run_id") or "")
                     exit_code = int(result.get("exit_code", 1))
+                    if run_id:
+                        # The controller ran it with a read-only view of version-catalog
+                        # state; the dashboard owns that state, so it records any
+                        # auto-port proof from the retained run here (F23). Advisory.
+                        try:
+                            from profile_manager.config import storage_roots as _runs_roots
+                            from profile_manager.measurement_patch_port import record_run_proof
+
+                            record_run_proof(
+                                _runs_roots().runs / run_id, run_id, result.get("exit_status")
+                            )
+                        except (OSError, RuntimeError, ValueError, KeyError, TypeError):
+                            pass
                     yield _sse_event(
                         "result",
                         {

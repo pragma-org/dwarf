@@ -4946,3 +4946,37 @@ def test_operator_preference_change_invalidates_previously_resolved_prepare(tmp_
     )
     assert response[0] == 409
     assert "selection changed" in json.loads(response[2])["error"]["message"]
+
+
+def test_installed_run_start_records_auto_port_proof_from_the_retained_run(tmp_path, monkeypatch):
+    """F23: the controller executes the run with a read-only view of version-catalog
+    state, so the dashboard — which owns that state — records the auto-port proof
+    from the retained run as soon as the controller reports it passed."""
+    from profile_manager import measurement_patch_port as port_module
+    from profile_manager.config import storage_roots
+    monkeypatch.setenv("ADA2_DWARF_LAUNCH_ROOT", str(tmp_path))
+    monkeypatch.setenv("DWARF_CONTROLLER_URL", "http://dwarf-controller:8790")
+    monkeypatch.setenv("DWARF_CONTROLLER_TOKEN", "x" * 48)
+    request = {"scenario_id": "edge-cases-cbor-tx-body-amaru"}
+    run_plan = __import__("profile_manager.run_plan", fromlist=["resolve_run_plan", "digest_run_plan"])
+    digest = run_plan.digest_run_plan(run_plan.resolve_run_plan(request))
+    recorded = []
+    monkeypatch.setattr(port_module, "record_run_proof", lambda run_dir, run_id, exit_status: recorded.append((Path(run_dir), run_id, exit_status)) or {"proven": True})
+
+    def request_controller(operation, parameters, timeout, idempotency_key=None):
+        assert operation == "run.execute"
+        return {"status": "applied", "execution_id": parameters["execution_id"],
+                "result": {"status": "completed", "run_id": "20261105T120941Z-e9280f8b", "exit_code": 0,
+                           "exit_status": "pass", "security_verdict": "pass"}}
+
+    status, _content_type, stream = dashboard.dispatch_run_start_request(
+        method="POST", path="/api/run/start?token=secret",
+        body=json.dumps({"request": request, "plan_digest": digest}).encode("utf-8"),
+        expected_token="secret",
+        preflight_runner=lambda _launch_id, _plan: {"state": "ready", "checks": []},
+        request_controller=request_controller,
+        command_builder=lambda _launch_id: (_ for _ in ()).throw(AssertionError("must not spawn locally")),
+    )
+    output = b"".join(stream)
+    assert status == 200 and b"run_id: 20261105T120941Z-e9280f8b" in output
+    assert recorded == [(Path(storage_roots().runs) / "20261105T120941Z-e9280f8b", "20261105T120941Z-e9280f8b", "pass")]
