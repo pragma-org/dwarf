@@ -68,14 +68,36 @@ def is_composite_build(implementation, revision, build):
             and build.get('patch_set_sha256') == COMPOSITE_HASH and build.get('measurement_revision') == REVISION)
 
 
+def _ported_from_correction_base(identity):
+    """An auto-ported build whose recipe was derived from the packaged correction
+    base carries the same patches and the same compiled behaviour at another
+    source revision (F25). Its registration names that base explicitly."""
+    build = identity.get('source_build')
+    return (isinstance(build, dict) and build.get('auto_ported') is True
+            and build.get('ported_from_source_revision') == SOURCE_REVISION)
+
+
+def base_form_of(manifest):
+    """The inverse of :func:`composite_manifest`: the v5 base shape of a composite
+    recipe (the correction patch removed, base identity restored). Used to validate
+    an auto-ported composite build against the packaged v5 contract."""
+    if manifest.get('patch_set_sha256') != COMPOSITE_HASH or manifest.get('measurement_revision') != REVISION:
+        raise ValueError('manifest is not the composite recipe')
+    base = copy.deepcopy(manifest)
+    base['patches'] = [p for p in base.get('patches', []) if p.get('path') != PATCH_NAME]
+    base.update(patch_set_sha256=BASE_HASH, measurement_revision=BASE_REVISION)
+    base.pop('compatibility', None)
+    return base
+
+
 def _base_identity(identity):
+    packaged = identity.get('source_revision') == SOURCE_REVISION and identity.get('version') == '11.1.2'
     if (identity.get('compatibility') != contract()
             or identity.get('patch_set_sha256') != COMPOSITE_HASH
             or identity.get('measurement_revision') != REVISION
             or identity.get('engine', 'local') not in ENGINES
             or identity.get('implementation') != 'cardano-node'
-            or identity.get('source_revision') != SOURCE_REVISION
-            or identity.get('version') != '11.1.2'
+            or not (packaged or _ported_from_correction_base(identity))
             or identity.get('mode') != 'patched'
             or identity.get('toolchain') != shared.CARDANO_HEADER_TOOLCHAIN):
         raise ValueError('Antithesis Cardano compatibility identity differs')

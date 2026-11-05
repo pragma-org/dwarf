@@ -30,6 +30,13 @@ def build_manifest(implementation, revision, build):
         if (manifest and manifest.get('patch_set_sha256') == build.get('patch_set_sha256')
                 and manifest.get('measurement_revision', 'v1') == build.get('measurement_revision')):
             return manifest
+        from profile_manager import antithesis_cardano_bridge as bridge
+        if (manifest and manifest.get('patch_set_sha256') == bridge.COMPOSITE_HASH
+                and build.get('patch_set_sha256') == bridge.BASE_HASH
+                and build.get('measurement_revision') == bridge.BASE_REVISION):
+            # The composite bridge validates a build against the packaged v5 base
+            # shape; for a derived composite recipe that shape is derived too (F25).
+            return bridge.base_form_of(manifest)
     from profile_manager import antithesis_cardano_bridge as bridge
     if bridge.is_composite_build(implementation, revision, build):
         return bridge.composite_manifest(bridge.base_patch_manifest())

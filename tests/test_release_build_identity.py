@@ -194,3 +194,26 @@ def test_build_manifest_resolves_persisted_auto_ported_recipe(tmp_path, monkeypa
     assert build_manifest('amaru', 'b' * 40, build) == derived
     with pytest.raises(ValueError, match='no matching exact-source patch recipe'):
         build_manifest('amaru', 'b' * 40, {**build, 'auto_ported': False})   # committed lookup never sees derived
+
+
+def test_build_manifest_answers_the_base_form_for_a_derived_composite_recipe(tmp_path, monkeypatch):
+    """F25 (live, cardano 11.1.3): the composite bridge validates a local build against
+    the packaged v5 base by asking for BASE_HASH/nanoseconds-v5; for an auto-ported
+    composite recipe that base form must come from the derived manifest."""
+    from profile_manager import antithesis_cardano_bridge as bridge
+    from profile_manager import measurement_patch_port as port_module
+    from profile_manager.release_build_identity import build_manifest
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT', str(tmp_path))
+    base = json.loads((ROOT / 'targets/cardano-node/measurement-patches-nanoseconds-v5/fef83fed01d7926f3de83b3b917be5a4a48768b5/manifest.json').read_text())
+    derived = bridge.composite_manifest(port_module.derive_manifest(base, source_revision='9' * 40, release='11.1.3',
+        preimages=[{'path': p['path'], 'preimages': {q['path']: q['sha256'] for q in p['preimages']}} for p in base['patches']], base_recipe_dir='d'))
+    port_module.save_derived_recipe('cardano-node', '9' * 40, derived, {})
+    composite_build = {'variant': 'instrumented', 'build_result_sha256': 'sha256:' + 'c' * 64, 'instrumentation_evidence_sha256': 'sha256:' + 'd' * 64,
+                       'patch_set_sha256': bridge.COMPOSITE_HASH, 'measurement_revision': bridge.REVISION, 'auto_ported': True}
+    assert build_manifest('cardano-node', '9' * 40, composite_build) == derived
+    base_form = build_manifest('cardano-node', '9' * 40, {**composite_build, 'patch_set_sha256': bridge.BASE_HASH, 'measurement_revision': bridge.BASE_REVISION})
+    assert base_form['patch_set_sha256'] == bridge.BASE_HASH and base_form['measurement_revision'] == bridge.BASE_REVISION
+    assert [p['path'] for p in base_form['patches']] == [p['path'] for p in base['patches']] and base_form['auto_ported'] is True
+    assert base_form['source']['revision'] == '9' * 40 and 'compatibility' not in base_form
+    with pytest.raises(ValueError, match='no matching exact-source patch recipe'):
+        build_manifest('cardano-node', '9' * 40, {**composite_build, 'patch_set_sha256': 'e' * 64})
