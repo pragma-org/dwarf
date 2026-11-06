@@ -594,3 +594,47 @@ def test_library_prepare_contract_is_bounded_and_exact():
     ):
         with pytest.raises(ContractError):
             parse_request({**body, **changes})
+
+
+def _adapt_request(**changes):
+    body = _request('antithesis.artifact-adapt', implementation='amaru',
+                    registration_id='registration-release-build-' + 'a' * 32 + '-instrumented',
+                    config_image_id='sha256:' + 'b' * 64, executable_digest='sha256:' + 'c' * 64,
+                    source_revision='d' * 40, artifact_id='e' * 32,
+                    execution_id='antithesis-adapt-' + 'f' * 32,
+                    idempotency_key='antithesis-adapt-' + 'f' * 32, timeout_seconds=1800)
+    return {**body, **changes}
+
+
+def test_antithesis_artifact_adapt_contract():
+    parsed = parse_request(_adapt_request())
+    assert parsed.operation is Operation.ANTITHESIS_ARTIFACT_ADAPT
+    assert dict(parsed.parameters) == {
+        'implementation': 'amaru',
+        'registration_id': 'registration-release-build-' + 'a' * 32 + '-instrumented',
+        'config_image_id': 'sha256:' + 'b' * 64,
+        'executable_digest': 'sha256:' + 'c' * 64,
+        'source_revision': 'd' * 40,
+        'artifact_id': 'e' * 32,
+        'execution_id': 'antithesis-adapt-' + 'f' * 32,
+    }
+
+
+def test_antithesis_artifact_adapt_requires_idempotency_key():
+    body = _adapt_request()
+    del body['idempotency_key']
+    with pytest.raises(ContractError):
+        parse_request(body)
+
+
+def test_antithesis_artifact_adapt_rejects_extra_and_invalid_fields():
+    for changes in ({'mode': 'stock'}, {'implementation': 'other'}, {'config_image_id': 'latest'},
+                    {'source_revision': 'main'}, {'artifact_id': 'E' * 32},
+                    {'execution_id': 'build-one'}):
+        with pytest.raises(ContractError):
+            parse_request(_adapt_request(**changes))
+
+
+def test_antithesis_artifact_adapt_timeout_ceiling():
+    with pytest.raises(ContractError):
+        parse_request(_adapt_request(timeout_seconds=1801))

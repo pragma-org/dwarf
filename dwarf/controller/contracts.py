@@ -28,6 +28,7 @@ class Operation(str, Enum):
     IMAGE_AVAILABILITY = "image.availability"
     IMAGE_DOWNLOAD = "image.download"
     RELEASE_PREPARE = "release.prepare"
+    ANTITHESIS_ARTIFACT_ADAPT = "antithesis.artifact-adapt"
     LIBRARY_PREPARE = "library.prepare"
     ARTIFACT_PACKAGE = "artifact.package"
     TOPOLOGY_HEALTH = "topology.health"
@@ -51,6 +52,17 @@ _PARAMETERS: dict[Operation, frozenset[str]] = {
     Operation.INVENTORY_GET: frozenset(),
     Operation.IMAGE_AVAILABILITY: frozenset({"implementation", "version", "digest"}),
     Operation.RELEASE_PREPARE: frozenset({"implementation", "version", "digest", "source_revision", "execution_id"}),
+    Operation.ANTITHESIS_ARTIFACT_ADAPT: frozenset(
+        {
+            "implementation",
+            "registration_id",
+            "config_image_id",
+            "executable_digest",
+            "source_revision",
+            "artifact_id",
+            "execution_id",
+        }
+    ),
     Operation.LIBRARY_PREPARE: frozenset(
         {
             "scenario_id",
@@ -97,6 +109,9 @@ _TIMEOUT_CEILINGS = {
     Operation.IMAGE_AVAILABILITY: 20,
     Operation.IMAGE_DOWNLOAD: 1800,
     Operation.RELEASE_PREPARE: 43200,
+    # Re-tag, identity run, preload exercise and the Amaru extraction probe
+    # of an already-built release: minutes, never a compile.
+    Operation.ANTITHESIS_ARTIFACT_ADAPT: 1800,
     Operation.LIBRARY_PREPARE: 14400,
     Operation.ARTIFACT_PACKAGE: 1800,
     # The native Amaru verifier takes two fresh semantic samples and is
@@ -117,6 +132,7 @@ _TIMEOUT_CEILINGS = {
 }
 _MUTATIONS = {
     Operation.RELEASE_PREPARE,
+    Operation.ANTITHESIS_ARTIFACT_ADAPT,
     Operation.LIBRARY_PREPARE,
     Operation.IMAGE_DOWNLOAD,
     Operation.ARTIFACT_PACKAGE,
@@ -292,6 +308,28 @@ def _validate_parameters(operation: Operation, raw: Mapping[str, Any]) -> dict[s
                 raise ContractError("source_revision must be an exact commit")
             result["source_revision"] = revision
         return result
+    if operation is Operation.ANTITHESIS_ARTIFACT_ADAPT:
+        implementation = raw.get("implementation")
+        if implementation not in {"amaru", "cardano-node"}:
+            raise ContractError("implementation is unsupported")
+        revision = raw.get("source_revision")
+        if not isinstance(revision, str) or not _SOURCE_REVISION.fullmatch(revision):
+            raise ContractError("source_revision must be an exact commit")
+        artifact_id = _text(raw.get("artifact_id"), "artifact_id", maximum=32)
+        if not re.fullmatch(r"[0-9a-f]{32}", artifact_id):
+            raise ContractError("artifact_id is invalid")
+        execution_id = _text(raw.get("execution_id"), "execution_id", maximum=49)
+        if not re.fullmatch(r"antithesis-adapt-[0-9a-f]{32}", execution_id):
+            raise ContractError("execution_id is invalid")
+        return {
+            "implementation": implementation,
+            "registration_id": _text(raw.get("registration_id"), "registration_id"),
+            "config_image_id": _digest(raw.get("config_image_id"), "config_image_id"),
+            "executable_digest": _digest(raw.get("executable_digest"), "executable_digest"),
+            "source_revision": revision,
+            "artifact_id": artifact_id,
+            "execution_id": execution_id,
+        }
     if operation is Operation.LIBRARY_PREPARE:
         version = _text(raw.get("version"), "version", maximum=64)
         if not _VERSION.fullmatch(version):

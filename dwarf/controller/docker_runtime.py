@@ -299,6 +299,18 @@ class DockerRuntime:
         from controller.release_builds import cleanup
         return cleanup(self, execution_id)
 
+    def adapt_antithesis_artifact(self, parameters, execution_id, *, timeout, cancel_event):
+        from controller.antithesis_adapt import adapt_artifact
+        return adapt_artifact(self, parameters, execution_id, timeout, cancel_event)
+
+    def antithesis_adapt_progress(self, execution_id):
+        from controller.antithesis_adapt import read_progress
+        return read_progress(self, execution_id)
+
+    def cleanup_antithesis_adapt(self, parameters, execution_id):
+        from controller.antithesis_adapt import cleanup
+        return cleanup(self, execution_id)
+
     def _approved_image_identities(self) -> set[str]:
         return {
             _immutable_image_identity(item.strip())

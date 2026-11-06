@@ -2787,3 +2787,80 @@ def test_library_prepare_reports_reviewed_incompatible_source_failure(tmp_path):
         "code": "library_target_source_incompatible",
         "stage": "library_target_build",
     }
+
+
+def _adapt_request(execution_id='antithesis-adapt-' + 'f' * 32, **changes):
+    return _request('antithesis.artifact-adapt', implementation='amaru',
+                    registration_id='registration-release-build-' + 'a' * 32 + '-instrumented',
+                    config_image_id='sha256:' + 'b' * 64, executable_digest='sha256:' + 'c' * 64,
+                    source_revision='d' * 40, artifact_id='e' * 32, execution_id=execution_id,
+                    idempotency_key=execution_id, timeout_seconds=1800, **changes)
+
+
+def _wait_terminal(service, execution_id):
+    for _ in range(200):
+        _, record = _dispatch(service, _request('execution.status', execution_id=execution_id))
+        if record['state'] != 'running':
+            return record
+        time.sleep(.01)
+    raise AssertionError('execution never left running')
+
+
+def test_antithesis_artifact_adapt_dispatches_to_runtime(tmp_path):
+    runtime = FakeRuntime()
+    calls = []
+    def adapt(parameters, execution_id, *, timeout, cancel_event):
+        calls.append((dict(parameters), execution_id))
+        return {'status': 'adapted', 'artifact_id': parameters['artifact_id'],
+                'reference': 'dwarf-antithesis-node-' + parameters['artifact_id'] + ':prepared'}
+    runtime.adapt_antithesis_artifact = adapt
+    runtime.antithesis_adapt_progress = lambda execution_id: {'stage': 'identity-version'}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    request = _adapt_request()
+    status, accepted = _dispatch(service, request)
+    assert status == 202 and accepted['execution_id'] == 'antithesis-adapt-' + 'f' * 32
+    assert _dispatch(service, request) == (status, accepted)
+    terminal = _wait_terminal(service, accepted['execution_id'])
+    assert terminal['state'] == 'applied'
+    assert terminal['result']['status'] == 'adapted'
+    assert terminal['progress'] == {'stage': 'identity-version'}
+    assert calls[0][1] == accepted['execution_id']
+    assert calls[0][0]['config_image_id'] == 'sha256:' + 'b' * 64
+    restarted = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, retained = _dispatch(restarted, _request('execution.status', execution_id=accepted['execution_id']))
+    assert retained['state'] == 'applied'
+    assert retained['result']['reference'].endswith(':prepared')
+
+
+def test_antithesis_artifact_adapt_failure_is_allow_listed(tmp_path):
+    runtime = FakeRuntime()
+    def adapt(parameters, execution_id, *, timeout, cancel_event):
+        raise DockerRuntimeError('image sha256:bbbb is not present on this controller',
+                                 code='image-missing', stage='adapt')
+    runtime.adapt_antithesis_artifact = adapt
+    runtime.antithesis_adapt_progress = lambda execution_id: {'stage': 'inspect', 'detail': 'image sha256:bbbb is not present'}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, accepted = _dispatch(service, _adapt_request())
+    terminal = _wait_terminal(service, accepted['execution_id'])
+    assert terminal['state'] == 'failed'
+    assert terminal['failure']['code'] == 'image-missing'
+    assert terminal['failure']['stage'] == 'adapt'
+    assert terminal['failure']['message'] != 'controller runtime failed'
+    assert terminal['progress']['detail'].startswith('image sha256:bbbb')
+
+
+def test_antithesis_artifact_adapt_interrupted_record_is_cleaned_up(tmp_path):
+    runtime = FakeRuntime()
+    cleaned = []
+    runtime.cleanup_antithesis_adapt = lambda parameters, execution_id: cleaned.append(execution_id)
+    runtime.antithesis_adapt_progress = lambda execution_id: {}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    execution_id = 'antithesis-adapt-' + '1' * 32
+    record = {'schema_version': 'v1', 'execution_id': execution_id, 'operation': 'antithesis.artifact-adapt',
+              'request_parameters': {'execution_id': execution_id}, 'state': 'running',
+              'accepted_at': '2026-11-06T00:00:00Z', 'completed_at': None}
+    (service.executions_dir / f'{execution_id}.json').write_text(json.dumps(record))
+    restarted = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, status = _dispatch(restarted, _request('execution.status', execution_id=execution_id))
+    assert status['state'] == 'interrupted'
+    assert cleaned == [execution_id]
