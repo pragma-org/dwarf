@@ -208,3 +208,15 @@ def test_cleanup_sweeps_only_adapt_roles(runtime):
     inspected = [call[2] for call in runtime.calls if call[:2] == ('container', 'inspect')]
     assert inspected and all('-adapt-' in name for name in inspected)
     assert {name.split('-adapt-', 1)[1] for name in inspected} == {'identity', 'preload', 'preload-compile', 'identity-version'}
+
+
+def test_extraction_probe_passes_the_host_path_for_the_mount(runtime, monkeypatch):
+    seen = {}
+    def fake_probe_amaru(image, directory, expected_digest=None, *, host_directory=None):
+        seen.update(image=image, directory=directory, host_directory=host_directory)
+        return expected_digest
+    monkeypatch.setattr('profile_manager.antithesis_artifacts.probe_amaru', fake_probe_amaru)
+    context = adapt.AdaptContext(runtime, {}, EXECUTION_ID, 600, threading.Event())
+    adapt._extraction_probe(context, 'dwarf-antithesis-node-x:prepared', 'sha256:' + 'a' * 64)
+    assert seen['directory'] == runtime.state_dir / 'antithesis-adapts' / EXECUTION_ID / 'probe'
+    assert seen['host_directory'] == Path('/host/controller/antithesis-adapts') / EXECUTION_ID / 'probe'

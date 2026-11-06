@@ -305,3 +305,21 @@ def test_from_registration_failed_controller_message_is_bounded(adapter_state, m
     assert final['failure_code'] == 'provenance-mismatch'
     assert final['message'] == 'binary git commit dddddddddddd differs from registered ' + ADAPT_REV
     assert 'reference' not in final
+
+
+def test_amaru_probe_mounts_the_host_side_path_when_given(tmp_path,monkeypatch):
+    """Inside the controller the job directory has a different path on the host;
+    the Docker daemon resolves bind sources on the host (F26)."""
+    from profile_manager import antithesis_artifacts as a
+    mounts=[]
+    def fake(image,directory,suffix,entrypoint,arguments,**kwargs):
+        mounts.append(kwargs.get('mount'))
+        if suffix=='extract':(directory/'extracted/amaru').write_bytes(b'binary')
+    monkeypatch.setattr(a,'_probe',fake)
+    import hashlib
+    digest='sha256:'+hashlib.sha256(b'binary').hexdigest()
+    host=Path('/host/controller/antithesis-adapts/job/probe')
+    assert a.probe_amaru('fixture:tag',tmp_path,digest,host_directory=host)==digest
+    assert mounts[0]=='type=bind,src=/host/controller/antithesis-adapts/job/probe/extracted,dst=/target'
+    assert mounts[1]==mounts[2]==mounts[0]+',readonly'
+    assert (tmp_path/'extracted/amaru').is_file()

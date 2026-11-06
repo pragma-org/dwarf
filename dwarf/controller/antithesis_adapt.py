@@ -136,7 +136,9 @@ def _extraction_probe(context, reference, expected_digest):
     from profile_manager.antithesis_artifacts import probe_amaru
     probe = context.directory / 'probe'
     probe.mkdir(exist_ok=True)
-    return probe_amaru(reference, probe, expected_digest)
+    # The controller's job directory has a different path on the host; the
+    # daemon resolves the probe's bind mount there (F26).
+    return probe_amaru(reference, probe, expected_digest, host_directory=context._host_path(probe))
 
 
 def _provenance(context, implementation, reference, source_revision):

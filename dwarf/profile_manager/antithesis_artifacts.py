@@ -175,8 +175,12 @@ def _probe(image,directory,suffix,entrypoint,arguments,*,mount=None,user=None):
         subprocess.run(['docker','rm','-f',name],capture_output=True,timeout=30)
 
 
-def probe_amaru(image,directory,expected_digest=None):
-    """Exercise the real extraction command and the consuming bootstrap image."""
+def probe_amaru(image,directory,expected_digest=None,*,host_directory=None):
+    """Exercise the real extraction command and the consuming bootstrap image.
+
+    ``host_directory`` is the same job directory as seen by the Docker daemon
+    when the caller runs inside a container (the controller): bind sources are
+    resolved on the host, not in the caller's namespace."""
     import yaml
     from scripts import qualify_node_versions as assembly
     model=yaml.safe_load((assembly.BASE_PACKAGE/'docker-compose.yaml').read_text())
@@ -188,7 +192,8 @@ def probe_amaru(image,directory,expected_digest=None):
     # Root without DAC capabilities must also work on native Linux hosts.
     # Only this mount is writable; its enclosing job directory stays private.
     output.chmod(0o777)
-    mount='type=bind,src='+str(output.resolve())+',dst=/target'
+    host_output=(Path(host_directory)/'extracted') if host_directory is not None else output.resolve()
+    mount='type=bind,src='+str(host_output)+',dst=/target'
     # The source command is Compose-escaped; Docker's direct argv is not.
     _probe(image,directory,'extract',extractor['entrypoint'],
         [extractor['command'][0].replace('$$','$')],mount=mount,user='0:0')
