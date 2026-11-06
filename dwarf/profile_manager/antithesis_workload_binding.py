@@ -136,6 +136,79 @@ def _guard_runtime_evidence(additions):
     return [observer, entrypoint, anytime, recovery]
 
 
+VICTIM_SOURCES = [('sm-cardano-victim', 'relay1'), ('sm-amaru-victim', 'amaru-relay-1')]
+# Volumes each curated clone needs beside the harness volumes it shares.
+CLONE_VOLUMES = {'sm-cardano-seed': ['sm-cardano-state'],
+                 'sm-cardano-victim': ['sm-cardano-state', 'sm-cardano-runtime-evidence'],
+                 'sm-amaru-victim': ['sm-amaru-state', 'sm-amaru-runtime-evidence']}
+
+
+def add_clone_services(compose, original, names):
+    """Copy the named curated services into the compose, victims unlabelled."""
+    for name in names:
+        compose['services'][name] = _service(name, original['services'][name])
+
+
+def rebind_victims(compose, binding, rows, pairs):
+    """Give each victim clone the version-bound image of its relay and a binding row."""
+    for victim, relay in pairs:
+        if victim not in compose['services']:
+            continue
+        target, selected = compose['services'][victim], compose['services'][relay]
+        row = copy.deepcopy(rows[relay])
+        row.update(service=victim, baseline_image=target['image'])
+        target['image'] = selected['image']
+        if victim == 'sm-amaru-victim':
+            for key in ('AMARU_BIN','AMARU_MIGRATE_CHAIN_DB'):
+                if key in selected['environment']:
+                    target['environment'][key] = selected['environment'][key]
+            for mount in selected['volumes']:
+                if isinstance(mount,dict) and mount.get('target') == '/target':
+                    target['volumes'].append(copy.deepcopy(mount))
+            if 'amaru-target-extract' in selected['depends_on']:
+                target['depends_on']['amaru-target-extract'] = copy.deepcopy(selected['depends_on']['amaru-target-extract'])
+            if row.get('target_binary',{}).get('mode') == 'legacy-wrapper':
+                row['target_binary']['source_service'] = victim
+        row['image'] = target['image']
+        binding['services'].append(row)
+        binding['target_contract']['services'].append(victim)
+
+
+def add_victims(files, resolved, version_binding, implementations):
+    """Generated path: verify the curated sources, then add only the victim clones
+    (and the seed) the target implementations need. Returns the added names."""
+    sources = {name:_read(name) for name in SOURCE_SHA256}
+    if any(hashlib.sha256(sources[name]).hexdigest()!=digest for name,digest in SOURCE_SHA256.items()):
+        raise ValueError('Workload source changed')
+    original = yaml.safe_load(sources['docker-compose.yaml'])
+    # Both victim clones wait on the shared seed (it gates on p1 and amaru-relay-1).
+    names = ['sm-cardano-seed']
+    if 'cardano-node' in implementations:
+        names += ['sm-cardano-victim']
+    if 'amaru' in implementations:
+        names += ['sm-amaru-victim']
+    compose = yaml.safe_load(files[COMPOSE])
+    binding = copy.deepcopy(version_binding)
+    if binding.get('target_contract') is None:
+        raise ValueError('Unbound control target contract')
+    rows = {s['service']:s for s in binding['services']}
+    for name in names:
+        service = original['services'][name]
+        if not set(service.get('depends_on', {})) <= set(compose['services']) | set(names):
+            raise ValueError('victim dependency missing from the harness: ' + name)
+    add_clone_services(compose, original, names)
+    for name in names:
+        for volume in CLONE_VOLUMES.get(name, []):
+            compose['volumes'].setdefault(volume, copy.deepcopy(original['volumes'][volume]))
+    rebind_victims(compose, binding, rows, [(v, r) for v, r in VICTIM_SOURCES if v in names])
+    if 'sm-cardano-victim' in names:
+        files['environment/sm-cardano-topology.json'] = sources['sm-cardano-topology.json'].decode()
+    files[COMPOSE] = yaml.safe_dump(compose, sort_keys=False)
+    version_binding.clear()
+    version_binding.update(binding)
+    return names
+
+
 def bind_workload(files, scenario, resolved, version_binding):
     report = {'status':'recorded', 'scenario_id':scenario.id, 'runtime_verified':False,
               'targets':[], 'issues':[], 'source_digests':{}}
@@ -174,30 +247,11 @@ def bind_workload(files, scenario, resolved, version_binding):
         rows = {s['service']:s for s in binding['services']}
         if binding.get('target_contract') is None or binding['target_contract']['scope'] != 'mixed':
             raise ValueError('Unbound control target contract')
-        for name in sorted(ADDITIONS | {'sidecar'}):
-            compose['services'][name] = _service(name, original['services'][name])
+        add_clone_services(compose, original, sorted(ADDITIONS | {'sidecar'}))
         for name, value in original['volumes'].items():
             if name not in compose['volumes']:
                 compose['volumes'][name] = copy.deepcopy(value)
-        for victim, relay in [('sm-cardano-victim','relay1'),('sm-amaru-victim','amaru-relay-1')]:
-            target, selected = compose['services'][victim], compose['services'][relay]
-            row = copy.deepcopy(rows[relay])
-            row.update(service=victim, baseline_image=target['image'])
-            target['image'] = selected['image']
-            if victim == 'sm-amaru-victim':
-                for key in ('AMARU_BIN','AMARU_MIGRATE_CHAIN_DB'):
-                    if key in selected['environment']:
-                        target['environment'][key] = selected['environment'][key]
-                for mount in selected['volumes']:
-                    if isinstance(mount,dict) and mount.get('target') == '/target':
-                        target['volumes'].append(copy.deepcopy(mount))
-                if 'amaru-target-extract' in selected['depends_on']:
-                    target['depends_on']['amaru-target-extract'] = copy.deepcopy(selected['depends_on']['amaru-target-extract'])
-                if row.get('target_binary',{}).get('mode') == 'legacy-wrapper':
-                    row['target_binary']['source_service'] = victim
-            row['image'] = target['image']
-            binding['services'].append(row)
-            binding['target_contract']['services'].append(victim)
+        rebind_victims(compose, binding, rows, VICTIM_SOURCES)
         # Build the reviewed sources, not an assumed match inside a remote image.
         workload = compose['services']['sm-workload']
         declared_image = workload.pop('image')
