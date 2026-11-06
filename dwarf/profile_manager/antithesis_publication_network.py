@@ -28,6 +28,26 @@ def valid_registry_prefix(value):
             and REPOSITORY.fullmatch(value.removeprefix('ghcr.io/')) is not None)
 
 
+_VISIBILITY_STATUS = re.compile(r'Anonymous public read returned HTTP (401|403|404)\b')
+
+
+def visibility_required(error):
+    """True when an anonymous read failed the way a private GHCR package fails
+    (401/403/404), i.e. the one manual "make public" click is still missing."""
+    return isinstance(error, PackageError) and _VISIBILITY_STATUS.search(str(error)) is not None
+
+
+def package_settings_urls(reference):
+    """The GitHub pages where a package's visibility is changed. The owner kind
+    is not derivable from the reference, so both forms are returned."""
+    repository, _ = image_reference(reference)
+    owner, _, package = repository.partition('/')
+    encoded = quote(package, safe='')
+    return {'owner': owner, 'package': package,
+            'user': f'https://github.com/users/{owner}/packages/container/{encoded}/settings',
+            'org': f'https://github.com/orgs/{owner}/packages/container/{encoded}/settings'}
+
+
 ACCEPT = ', '.join(['application/vnd.oci.image.index.v1+json',
     'application/vnd.docker.distribution.manifest.list.v2+json',
     'application/vnd.oci.image.manifest.v1+json',

@@ -65,6 +65,9 @@ let stderr='';server.stderr.on('data',x=>stderr+=x);
  await get('publication-try').fill('1');
  await check();assert.equal(fs.existsSync(calls),false,'readiness cannot submit');
  assert.equal(await get('submit').isDisabled(),false);
+ const groups=await page.locator('#antithesis-submission-checks li.run-wizard__checklist-group').evaluateAll(n=>n.map(e=>[e.dataset.group,e.dataset.state]));
+ assert.ok(groups.some(([g,s])=>g==='Package'&&s==='ok')&&groups.some(([g,s])=>g==='MOOG requester (external)'&&s==='ok'),JSON.stringify(groups));
+ assert.equal(await page.locator('#antithesis-submission-checks li[data-check="public_image"]').count(),1,'one public-image row per reference');
  const oldCheck=await get('submission-lookup').inputValue();
  // A settings save must not be bypassed by recovering old ready status.
  await page.locator('[data-antithesis-wizard]').evaluate(n=>n.dispatchEvent(new CustomEvent('antithesis-settings-updated',{bubbles:true})));

@@ -19,7 +19,7 @@ from profile_manager import antithesis_publication as publication
 from profile_manager import antithesis_preflight as preflight
 from profile_manager import moog, remote, run_service
 from profile_manager.antithesis_package import PackageError
-from profile_manager.antithesis_publication_network import validate_target, verify_git, verify_image
+from profile_manager.antithesis_publication_network import package_settings_urls, visibility_required, validate_target, verify_git, verify_image
 from profile_manager.config import load_config, DeploymentConfig, storage_roots
 from profile_manager.data.operate_config import moog_setup_payload
 
@@ -279,11 +279,41 @@ print(json.dumps({'credentials':bool(credentials),'public_key':public_key}))
     return {'checks': checks, 'facts': query_facts(config, target)}
 
 
+CHECK_LABELS = {
+    'configuration': ('Configuration', 'MOOG settings', False),
+    'package': ('Package', 'Static package checks', False),
+    'generated_selections': ('Package', 'Generated selections applied', False),
+    'public_git': ('Public Git', 'Public Git files match', False),
+    'public_image': ('Public images', 'Public image', False),
+    'requester_wallet_metadata': ('MOOG requester (external)', 'Requester wallet', True),
+    'requester_vkey': ('MOOG requester (external)', 'Requester verification key', True),
+    'requester_wallet_funded': ('MOOG requester (external)', 'Requester wallet funded', True),
+    'github_profile_vkey': ('GitHub profile (external)', 'Profile moog.vkey', True),
+    'github_codeowners': ('GitHub profile (external)', 'CODEOWNERS', True),
+    'moog_user_registered': ('MOOG registration (external)', 'User registered', True),
+    'moog_role_registered': ('MOOG registration (external)', 'Role registered', True),
+    'moog_repo_whitelisted': ('MOOG registration (external)', 'Repository whitelisted', True),
+    'facts_users': ('MOOG registration (external)', 'Registered users', True),
+    'facts_roles': ('MOOG registration (external)', 'Registered roles', True),
+    'facts_white_list': ('MOOG registration (external)', 'Whitelist', True),
+    'transport_credentials': ('MOOG requester (external)', 'Transport credentials', True),
+    'selected_wallet': ('MOOG requester (external)', 'Selected wallet', True),
+    'requester': ('MOOG requester (external)', 'Requester', True),
+    'duplicate': ('Duplicate request', 'No existing MOOG request for this attempt', False),
+}
+
+
+def label_check(check):
+    """Attach the checklist group, label and external flag to a check record."""
+    group, label, external = CHECK_LABELS.get(check.get('id'), ('Other', str(check.get('id')), False))
+    return {**check, 'group': check.get('group', group), 'label': check.get('label', label), 'external': check.get('external', external)}
+
+
 def _evaluate(row):
     config = load_settings()
     checks = []
-    def add(name, state, detail):
-        checks.append(dict(id=name, state=state, detail=detail))
+    def add(name, state, detail, **extra):
+        checks.append(label_check(dict(id=name, state=state, detail=detail, **extra)))
     cfg = config.moog
     if not cfg.get('enabled') or not cfg.get('token_id') or str(cfg['token_id']).startswith('REPLACE_'):
         add('configuration', 'error', 'Enable MOOG and save a real token ID in the settings section.')
@@ -329,13 +359,25 @@ def _evaluate(row):
         if ref in images:
             continue
         if ref.startswith('ghcr.io/'):
-            images[ref] = verify_image(ref)
+            try:
+                images[ref] = verify_image(ref)
+            except PackageError as exc:
+                images[ref] = {'verification': 'failed'}
+                extra = {}
+                if visibility_required(exc):
+                    try:
+                        extra = {'urls': {k: v for k, v in package_settings_urls(ref).items() if k in ('user', 'org')}}
+                    except PackageError:
+                        extra = {}
+                add('public_image', 'error', ref + ': ' + str(exc), **extra)
+            else:
+                add('public_image', 'ok', ref + ': public manifest and config verified.')
         else:
             images[ref] = {'verification': 'not_checked'}
             add('public_image', 'error', 'Public delivery cannot be verified for this registry yet: ' + ref)
     row['images'] = images
     observed = query_requester(config, row['target'])
-    checks.extend(observed['checks'])
+    checks.extend(label_check(c) for c in observed['checks'])
     matches = matching_facts(observed['facts'], row['target'])
     if matches:
         row['existing_test_run_id'] = matches[0]['id'] if len(matches) == 1 else None

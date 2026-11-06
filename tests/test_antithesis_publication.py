@@ -313,3 +313,32 @@ def test_handoff_preserves_source_findings_and_qualification_limits(built):
 @pytest.mark.parametrize('identifier',['',0,[],{}])
 def test_invalid_creation_identity_rejected(built,identifier):
     with pytest.raises(PackageError):module().create_handoff(built['receipt']['id'],'ghcr.io/example/dwarf',request_id=identifier)
+
+
+def test_verify_reports_visibility_required_per_package(built,monkeypatch):
+    """One private package and one public one: the handoff names exactly the
+    private package with its settings URLs and stays awaiting-visibility; once
+    it is public the next verify reaches images-public."""
+    h=create(built)
+    private={'ghcr.io/example/dwarf-sm-workload:'+h['id']}
+    def verify(reference,expected_id=None):
+        if reference in private:
+            raise PackageError('Anonymous public read returned HTTP 404. Check visibility, reference and provider rate limits.',status=422)
+        return {'reference':reference.split('@')[0].split(':')[0]+'@sha256:'+'c'*64,'manifest_digest':'sha256:'+'c'*64,
+                'amd64_manifest_digest':IMAGE_ID,'config_digest':'sha256:'+'d'*64,'platform':'linux/amd64','anonymous':True,
+                'expected_identity_matched':bool(expected_id)}
+    monkeypatch.setattr(module(),'verify_image',verify)
+    job=run(h,'verify-images')
+    assert job['state']=='succeeded',job
+    receipt=module().read_handoff(h['id'])
+    assert receipt['state']=='awaiting-visibility'
+    assert receipt['visibility_required']==[{'service':'sm-workload','reference':'ghcr.io/example/dwarf-sm-workload:'+h['id'],
+        'package':'dwarf-sm-workload','owner':'example','status':'private',
+        'urls':{'user':'https://github.com/users/example/packages/container/dwarf-sm-workload/settings',
+                'org':'https://github.com/orgs/example/packages/container/dwarf-sm-workload/settings'}}]
+    assert 'inventory' not in receipt
+    with pytest.raises(PackageError):module().read_result(h['id'])
+    private.clear()
+    assert run(h,'verify-images')['state']=='succeeded'
+    receipt=module().read_handoff(h['id'])
+    assert receipt['state']=='images-public' and receipt['visibility_required']==[]

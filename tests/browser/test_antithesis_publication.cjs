@@ -38,9 +38,9 @@ def controller(operation,parameters,timeout,idempotency_key=None):
 antithesis_image_build.controller_request=controller;antithesis_image_build._POLL_SECONDS=0.05;antithesis_image_build._docker=forbidden
 antithesis_publication.controller_request=controller;antithesis_publication._POLL_SECONDS=0.05
 def verify_image(reference,expected_id=None):
-    if Path(os.environ['BUILD_TEST_CONTROL']).read_text()=='private':
+    if Path(os.environ['BUILD_TEST_CONTROL']).read_text()=='private' and 'dwarf-sm-workload' in reference:
         from profile_manager.antithesis_package import PackageError
-        raise PackageError('Image is private. Make the package public first.')
+        raise PackageError('Anonymous public read returned HTTP 404. Check visibility, reference and provider rate limits.',status=422)
     return dict(reference=reference.split('@')[0].split(':')[0]+'@sha256:'+'c'*64,platform='linux/amd64',anonymous=True,expected_identity_matched=bool(expected_id))
 def verify_git(repository,commit,directory,files):
     return dict(repository=repository,commit=commit,directory=directory,file_count=len(files),anonymous=True)
@@ -52,7 +52,7 @@ ADA2_DWARF_STATE_DIR:path.join(temp,'state'),ADA2_DWARF_RUNS_DIR:path.join(temp,
 let stderr='';server.stderr.on('data',d=>stderr+=d);
 (async()=>{let browser;try{
  const port=await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(Error('startup timed out')),15000);server.stdout.once('data',d=>{clearTimeout(t);resolve(Number(d.toString().trim()))});server.once('error',reject)});
- browser=await chromium.launch();const page=await browser.newPage({viewport:{width:1440,height:1000}});
+ browser=await chromium.launch();const page=await browser.newPage({viewport:{width:1440,height:1000}});await page.addInitScript(()=>{window.DWARF_VISIBILITY_POLL_MS=300;});
  const errors=[],posts=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.method()==='POST')posts.push(new URL(r.url()).pathname)});
  const get=id=>page.locator('#antithesis-'+id);await page.goto(`http://127.0.0.1:${port}/run/antithesis`);
  await page.waitForFunction(()=>document.querySelector('#antithesis-scenario').options.length>1);
@@ -88,9 +88,14 @@ let stderr='';server.stderr.on('data',d=>stderr+=d);
  assert.equal(await get('publication-pat').inputValue(),'','the PAT field is cleared once it is sent');
  const pushed=JSON.parse(fs.readFileSync(control+'.pushes','utf8'));
  assert.deepEqual(pushed.map(p=>[p.username,p.secret]),[['example','ghp_browser_once']],'the controller received the one-time PAT through the staged secret');
- fs.writeFileSync(control,'private');await get('publication-verify-images').click();await waitPublication('error');
+ fs.writeFileSync(control,'private');await get('publication-verify-images').click();await waitPublication('awaiting-visibility');
  assert.equal(await get('publication-download').isVisible(),false);
- fs.writeFileSync(control,'ok');await get('publication-verify-images').click();await waitPublication('images-public');
+ const visibility=page.locator('#antithesis-publication-images li.run-wizard__visibility');
+ assert.equal(await visibility.count(),1,'exactly the private package is listed');
+ assert.equal(await visibility.getAttribute('data-package'),'dwarf-sm-workload');
+ assert.equal(await visibility.locator('a').first().getAttribute('href'),'https://github.com/users/example/packages/container/dwarf-sm-workload/settings');
+ // Flip the package to public: the wizard re-verifies on its own (no click).
+ fs.writeFileSync(control,'ok');await waitPublication('images-public');
  const download=page.waitForEvent('download');await get('publication-download').click();assert.match((await download).suggestedFilename(),/^antithesis-public-/);
  await get('publication-repository').fill('Example/dwarf');await get('publication-commit').fill('e'.repeat(40));
  await get('publication-directory').fill('antithesis/example');await get('publication-requester').fill('tester');

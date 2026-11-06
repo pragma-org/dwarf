@@ -49,8 +49,32 @@
     const labels = {ready: 'Ready for submission', submitted: 'Submitted to MOOG', pending: 'Pending', running: 'Running',
       completed: job.outcome === 'failure' ? 'Completed with findings' : 'Completed', failed: 'Execution failed'};
     status(job.state, `${labels[job.state] || job.state} · ${job.message || ''}${job.refresh_error ? ' ' + job.refresh_error : ''}`);
-    get('submission-checks').replaceChildren(...[...(job.checks || []).map(c => `${c.state} · ${c.detail}`),
-      ...(job.limitations || [])].map(text => { const li = document.createElement('li'); li.textContent = text; return li; }));
+    // Prerequisite checklist: one group per area; external failures say so and point outside DWARF.
+    const groups = new Map();
+    for (const c of job.checks || []) {
+      const group = c.group || 'Other';
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(c);
+    }
+    const items = [];
+    for (const [group, checks] of groups) {
+      const li = document.createElement('li'); li.className = 'run-wizard__checklist-group'; li.dataset.group = group;
+      const failing = checks.some(c => c.state === 'error');
+      li.dataset.state = failing ? 'error' : 'ok';
+      const title = document.createElement('strong'); title.textContent = `${failing ? '✗' : '✓'} ${group}`; li.append(title);
+      const inner = document.createElement('ul');
+      for (const c of checks) {
+        const row = document.createElement('li'); row.dataset.check = c.id; row.dataset.state = c.state;
+        row.append(`${c.state === 'ok' ? '✓' : '✗'} ${c.label || c.id} · ${c.detail}`);
+        if (c.state === 'error' && c.external) row.append(' · external: fix outside DWARF');
+        if (c.state === 'error' && c.id === 'configuration') { const a = document.createElement('a'); a.href = '/operate/config'; a.textContent = 'Open Operate settings'; row.append(' · ', a); }
+        if (c.state === 'error' && c.urls) { const a = document.createElement('a'); a.href = c.urls.user; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'make the package public'; row.append(' · ', a); }
+        inner.append(row);
+      }
+      li.append(inner); items.push(li);
+    }
+    for (const text of job.limitations || []) { const li = document.createElement('li'); li.className = 'run-wizard__checklist-note'; li.textContent = text; items.push(li); }
+    get('submission-checks').replaceChildren(...items);
     get('submission-identity').textContent = `Check: ${job.id}` + (job.test_run_id ? ` · MOOG request: ${job.test_run_id}` : '')
       + (job.dwarf_run_id ? ` · DWARF run: ${job.dwarf_run_id}` : '');
     get('submission-receipt').textContent = JSON.stringify(job, null, 2);

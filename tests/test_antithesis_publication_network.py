@@ -138,3 +138,19 @@ def test_public_read_rejects_private_destination_before_connect(monkeypatch):
 def test_malformed_tag_before_digest_rejected_before_network(monkeypatch):
     monkeypatch.setattr(module(),'_get',lambda *a:pytest.fail('invalid reference reached network'))
     with pytest.raises(PackageError):module().verify_image('ghcr.io/example/test:bad?tag@sha256:'+'a'*64)
+
+
+def test_package_settings_urls():
+    from profile_manager.antithesis_publication_network import package_settings_urls, visibility_required
+    from profile_manager.antithesis_package import PackageError
+    urls = package_settings_urls('ghcr.io/j-gainsec/dwarf-sm-workload:' + 'd' * 32)
+    assert urls == {'owner': 'j-gainsec', 'package': 'dwarf-sm-workload',
+                    'user': 'https://github.com/users/j-gainsec/packages/container/dwarf-sm-workload/settings',
+                    'org': 'https://github.com/orgs/j-gainsec/packages/container/dwarf-sm-workload/settings'}
+    nested = package_settings_urls('ghcr.io/owner/nested/name@sha256:' + 'a' * 64)
+    assert nested['package'] == 'nested/name' and nested['user'].endswith('/packages/container/nested%2Fname/settings')
+    assert visibility_required(PackageError('Anonymous public read returned HTTP 404. Check visibility, reference and provider rate limits.', status=422))
+    assert visibility_required(PackageError('Anonymous public read returned HTTP 401. x', status=422))
+    assert visibility_required(PackageError('Anonymous public read returned HTTP 403. x', status=422))
+    assert not visibility_required(PackageError('Anonymous public read returned HTTP 500. x', status=422))
+    assert not visibility_required(PackageError('Public image identity differs from the saved build.', status=422))

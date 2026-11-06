@@ -17,7 +17,7 @@ from profile_manager import antithesis_image_build as build
 from profile_manager.topology_actions import TopologyActionError, controller_request
 from profile_manager import antithesis_preparation as prep
 from profile_manager.antithesis_package import PackageError
-from profile_manager.antithesis_publication_network import REPOSITORY, validate_target, verify_image, verify_git, valid_registry_prefix
+from profile_manager.antithesis_publication_network import REPOSITORY, validate_target, verify_image, verify_git, valid_registry_prefix, visibility_required, package_settings_urls
 
 
 def state_directory():return prep.state_directory().parent/'publications'
@@ -245,18 +245,33 @@ def _verify_images(directory,receipt,progress):
     files=_files(directory,receipt,'source')
     compose=yaml.safe_load(files['docker-compose.yaml'][0]);cache={};rows={r['service']:r for r in receipt['images']}
     deadline=time.monotonic()+600
+    private=[]
     for name,service in compose['services'].items():
         if time.monotonic()>deadline:raise PackageError('Public image verification timed out. Retry the read-only check.',status=504)
         row=rows.get(name);reference=(row.get('public',{}).get('reference') or row['destination']) if row else service.get('image')
         if not reference or 'build' in service:raise PackageError('Every public service must use an image without build directives.',status=422)
         progress('Verifying public image for '+name+'.')
         key=(reference,row['image_id'] if row else None)
-        if key not in cache:cache[key]=verify_image(reference,key[1])
+        if key not in cache:
+            try:cache[key]=verify_image(reference,key[1])
+            except PackageError as exc:
+                if not visibility_required(exc):raise
+                cache[key]=None   # the package exists but is still private; keep checking the rest
+        if cache[key] is None:
+            urls=package_settings_urls(reference)
+            private.append({'service':name,'reference':reference,'package':urls['package'],'owner':urls['owner'],
+                            'status':'private','urls':{'user':urls['user'],'org':urls['org']}})
+            continue
         # The Antithesis image-parameter path accepts repository@digest;
         # normalize verified catalog images as well as locally built images.
         service['image']=cache[key]['reference']
         if row:
             row['public']=cache[key]
+    if private:
+        receipt.update(visibility_required=private,state='awaiting-visibility',
+                       message='Some packages are still private. Open each link, make the package public (once per package name), then verify again.')
+        return
+    receipt['visibility_required']=[]
     # Keep inspection provenance private; publish only the generated runtime tree.
     files={name:entry for name,entry in files.items() if name!='provenance' and not name.startswith('provenance/')}
     files['docker-compose.yaml']=(yaml.safe_dump(compose,sort_keys=False).encode(),files['docker-compose.yaml'][1])

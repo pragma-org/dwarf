@@ -405,3 +405,36 @@ def test_requester_accepts_live_release_whitelist_shape_only_for_matching_github
     result=ready_env['query_requester'](ready_env['config'],ready_env['target'])
     assert next(c['state'] for c in result['checks'] if c['id']=='moog_repo_whitelisted')==expected
     assert facts==original
+
+
+def test_readiness_checks_carry_group_and_label(ready_env):
+    row=check(ready_env)
+    assert row['state']=='ready'
+    by_id={c['id']:c for c in row['checks']}
+    assert by_id['package']['group']=='Package' and by_id['package']['label']
+    assert by_id['public_git']['group']=='Public Git'
+    assert by_id['public_image']['group']=='Public images'
+    assert by_id['requester']['group']=='MOOG requester (external)' and by_id['requester']['external'] is True
+    assert by_id['duplicate']['group']=='Duplicate request'
+    assert all({'id','state','detail','group','label'}<=set(c) for c in row['checks'])
+
+
+def test_public_image_checks_are_reported_per_reference(ready_env,staged,monkeypatch):
+    m=module()
+    path=Path(staged['receipt']['source']['compose_path'])/'docker-compose.yaml'
+    path.write_text(path.read_text()+'  second:\n    image: ghcr.io/example/other:tag\n    container_name: second\n    init: true\n')
+    updated=m.prep.prepare_package(staged['receipt']['request'],{'compose_path':str(path.parent),'image_references':[]})
+    ready_env['source']['id']=updated['receipt']['id']
+    def verify(reference,expected_id=None):
+        if reference.endswith('other:tag'):
+            raise PackageError('Anonymous public read returned HTTP 404. Check visibility, reference and provider rate limits.',status=422)
+        return {'anonymous':True,'platform':'linux/amd64'}
+    monkeypatch.setattr(m,'verify_image',verify)
+    row=check(ready_env,'c'*32)
+    assert row['state']=='blocked'
+    images=[c for c in row['checks'] if c['id']=='public_image']
+    assert len(images)==2
+    states={c['detail'].split(' ')[0] if False else (c['state'],'other:tag' in c['detail']) for c in images}
+    assert states=={('ok',False),('error',True)}
+    private=next(c for c in images if c['state']=='error')
+    assert private['urls']['user'].endswith('/packages/container/other/settings')

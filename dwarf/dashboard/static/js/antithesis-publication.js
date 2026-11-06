@@ -16,6 +16,7 @@
   }
   function reset(){
     generation++;handoff=null;pending=null;clearExport();get('images').replaceChildren();
+    if(visibilityTimer){clearTimeout(visibilityTimer);visibilityTimer=null;}
     status('unprepared','Build a generated package, then prepare its publication handoff.');controls();
   }
   function sync(){
@@ -46,6 +47,16 @@
   async function display(h,stamp){
     check(h);handoff=h;clearExport();get('images').replaceChildren();
     for(const row of h.images){const li=document.createElement('li');li.textContent=`${row.service}: ${row.destination}${row.push_completed?' · pushed':''}${row.public?' · public identity verified':''}`;get('images').append(li);}
+    for(const item of h.visibility_required||[]){
+      // The one manual step: make the package public on GitHub (once per package name).
+      const li=document.createElement('li');li.className='run-wizard__visibility';li.dataset.package=item.package;
+      li.append(`${item.service}: package ${item.owner}/${item.package} is still private — `);
+      const user=document.createElement('a');user.href=item.urls.user;user.target='_blank';user.rel='noopener';user.textContent='make it public (user account)';
+      const org=document.createElement('a');org.href=item.urls.org;org.target='_blank';org.rel='noopener';org.textContent='organisation account';
+      li.append(user,' · or, for an organisation: ',org,'. Verification re-runs automatically until it passes.');
+      get('images').append(li);
+    }
+    scheduleVisibilityPoll(h,stamp);
     if(h.inventory){
       const response=await api('result',{handoff_id:h.id});if(stamp!==generation)return;
       const result=response.preparation;check(result?.receipt);
@@ -61,6 +72,14 @@
       get('request-summary').textContent=`Public Git files match. Local request checks: ${h.request_plan.state}. This is a preview; remote readiness is unverified.`;
       get('request-result').hidden=false;
     }
+  }
+  const VISIBILITY_POLL_MS=Number(window.DWARF_VISIBILITY_POLL_MS)||15000,VISIBILITY_POLL_MAX=40;
+  let visibilityTimer=null,visibilityRounds=0;
+  function scheduleVisibilityPoll(h,stamp){
+    if(visibilityTimer){clearTimeout(visibilityTimer);visibilityTimer=null;}
+    if(h.state!=='awaiting-visibility'||!(h.visibility_required||[]).length||visibilityRounds>=VISIBILITY_POLL_MAX)return;
+    visibilityTimer=setTimeout(()=>{visibilityTimer=null;if(stamp!==generation||busy||pending)return;visibilityRounds++;
+      perform({kind:'action',payload:{handoff_id:h.id,action:'verify-images',target:null,request_id:randomId()}});},VISIBILITY_POLL_MS);
   }
   async function perform(operation){
     if(busy)return;const stamp=generation;busy=true;pending=operation;controls();get('request-result').hidden=true;
@@ -106,7 +125,7 @@
     });
   }
   get('resume').addEventListener('click',()=>{if(pending)perform(pending);});
-  get('prefix').addEventListener('input',reset);
+  get('prefix').addEventListener('input',()=>{visibilityRounds=0;reset();});
   for(const name of ['repository','commit','directory','requester','try'])get(name).addEventListener('input',()=>{
     // A response for old Git inputs must never populate the current request preview.
     if(pending?.payload?.action==='verify-git'){generation++;pending=null;}
