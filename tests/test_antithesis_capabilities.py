@@ -95,3 +95,12 @@ def test_phases_are_flattened_in_order():
     assert [(row['phase'], row['primitive']) for row in result['primitives']] == [
         ('one:load', 'load_shell_command'), ('two:assertions', 'load_events_are_ok')]
     assert result['level'] == 'full'
+
+
+def test_assertions_whose_evidence_producer_is_unsupported_are_unsupported_too():
+    matrix = load_matrix()['primitives']
+    assert matrix['mempool_failure_contained']['status'] == 'unsupported'
+    assert matrix['peer_connectivity_observed']['status'] == 'unsupported'
+    result = classify(catalog('runtime-substrate-mempool-failure-containment-mixed-amaru'))
+    statuses = {row['primitive']: row['status'] for row in result['primitives']}
+    assert statuses['mempool_failure_contained'] == 'unsupported'

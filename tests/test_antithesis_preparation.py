@@ -15,6 +15,7 @@ import pytest
 import yaml
 
 from test_antithesis_package import request
+from test_antithesis_version_binding import catalog  # noqa: F401 - fixture
 
 
 COMPOSE = b"services:\n  node:\n    image: example/node:unknown-experiment\n    volumes:\n      - ./config.json:/config.json:ro\n"
@@ -437,3 +438,13 @@ def test_malformed_service_shapes_can_be_staged_for_explicit_validation(tmp_path
     report=inspect_package(files)
     assert any(r['state']=='fail' and r['code']=='compose-shape' for r in report['checks'])
     assert result['receipt']['submission_ready'] is False
+
+
+def test_prepared_receipt_carries_the_capability_classification(catalog, tmp_path):
+    from profile_manager.antithesis_preparation import prepare_package, read_preparation
+    from test_antithesis_amaru_binding import selection
+    from test_antithesis_package import request
+    prepared = prepare_package(request(scenario_id='runtime-substrate-mempool-failure-containment-mixed-amaru', versions=selection('mixed')), {}, state_dir=tmp_path / 'state')
+    capabilities = prepared['receipt']['capabilities']
+    assert capabilities['level'] == 'partial' and capabilities['gaps']
+    assert read_preparation(prepared['receipt']['id'], state_dir=tmp_path / 'state')['receipt']['capabilities'] == capabilities

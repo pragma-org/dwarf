@@ -188,3 +188,30 @@ def test_dockerfile_places_test_commands_where_the_chmod_and_composer_expect():
     assert 'USER root' in dockerfile[:dockerfile.index(chmod)]
     pattern = chmod.split()[-1]
     assert [p for p in placed if fnmatch.fnmatch(p, pattern)], (pattern, placed)
+
+
+def test_attach_scenario_maps_the_first_target_node_onto_the_victim_clone():
+    attach = body(attach={'topology': 'cardano_amaru'}, target={'implementation': 'amaru', 'version': 'any'})
+    projection = generated.project_nodes(attach, generated.scenario_nodes(attach))
+    assert projection['services']['amaru-relay-1'] == 'sm-amaru-victim'
+    assert projection['services']['amaru-relay-2'] == 'amaru-relay-2'
+    assert projection['services']['p1'] == 'p1'
+    assert projection['victims'] == ['sm-amaru-victim']
+    cardano = body(attach={'topology': 'cardano_amaru'})
+    projection = generated.project_nodes(cardano, generated.scenario_nodes(cardano))
+    assert projection['services']['p1'] == 'sm-cardano-victim' and projection['services']['relay1'] == 'relay1'
+
+
+def test_workload_joins_the_consumer_network_when_a_mapped_service_lives_there(catalog):
+    attach = body(attach={'topology': 'cardano_amaru'}, target={'implementation': 'amaru', 'version': 'any'})
+    files, resolved, binding = bound(attach)
+    report = generated.bind_generated_workload(files, attach, resolved, binding, classify(attach))
+    assert report['status'] == 'applied'
+    compose = yaml.safe_load(files['environment/docker-compose.yaml'])
+    assert compose['services']['dwarf-workload']['networks'] == {'default': {}, 'amaru-consumer-net': {}}
+    names = {n['name'] for n in report['runtime_metadata']['nodes']}
+    assert 'sm-amaru-victim' in names and 'amaru-consumer' in names
+    cardano_only = body(substrate=substrate(('node1', 'cardano-node'), ('node2', 'cardano-node')))
+    files, resolved, binding = bound(cardano_only)
+    generated.bind_generated_workload(files, cardano_only, resolved, binding, classify(cardano_only))
+    assert 'networks' not in yaml.safe_load(files['environment/docker-compose.yaml'])['services']['dwarf-workload']

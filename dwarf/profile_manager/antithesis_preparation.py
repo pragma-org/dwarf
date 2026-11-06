@@ -415,12 +415,14 @@ def prepare_package(value, source, *, state_dir=None):
     _shape(source, {'build':set(), 'url':{'url'}, 'existing':{'compose_path','image_references'}}[kind], 'source')
     workload_binding = {'status':'recorded', 'source':'supplied-package', 'runtime_verified':False}
     measurement_binding = {'status':'supplied-package','targets':[],'issues':[]}
+    capabilities = None
     description, issues = {'kind':kind}, []
     if kind == 'build':
         preview = preview_package(value)
         version_binding = preview['version_binding']
         workload_binding = preview['workload_binding']
         measurement_binding = preview['measurement_binding']
+        capabilities = preview.get('capabilities')
         # Rebase the generated environment and its relative inputs together.
         files = {}
         for name,text in preview['files'].items():
@@ -471,6 +473,7 @@ def prepare_package(value, source, *, state_dir=None):
                'state':'staged', 'execution_ready':False, 'submission_ready':False,
                'source':description, 'request':value, 'compose_path':compose_path,
                'version_binding':version_binding, 'workload_binding':workload_binding, 'measurement_binding':measurement_binding,
+               'capabilities':capabilities,
                'inventory':_inventory(files), 'images':images, 'build_requirements':builds,
                'issues':issues, 'compatibility':'not-evaluated',
                'package_contract':{'moog_source_commit':'2642c60b5598562294e553fb3491fc5228033c91','deployed_agent_verified':False}}

@@ -143,3 +143,31 @@ def test_client_target_resolves_from_package_runtime_without_docker(package, tmp
     assert target['implementation'] == implementation
     assert target['network_magic'] == 42
     assert target['observation_transport'] == 'antithesis-package'
+
+
+def test_compose_substrate_merges_the_readiness_result_into_the_report(package, tmp_path):
+    handle = _Handle(tmp_path / 'run')
+    readiness = tmp_path / 'run' / 'outputs' / 'antithesis-readiness.json'
+    readiness.parent.mkdir(parents=True)
+    readiness.write_text(json.dumps({'ready': ['node1', 'node2'], 'checked_at': '2026-11-06T00:00:00Z'}))
+    prim = primitives.RuntimeComposeSubstrate(params={'output_dir': 'outputs/substrate-compose'})
+    prim.bound_substrate = {'nodes': []}
+    prim.bound_state = {}
+    prim.run(handle, random.Random(0))
+    report = prim.bound_state['substrate_compose_report']
+    assert report['healthy'] is True and all(n['healthy'] is True for n in report['nodes'])
+    assert report['readiness']['ready'] == ['node1', 'node2']
+    on_disk = json.loads((tmp_path / 'run' / 'outputs' / 'substrate-compose' / 'compose-report.json').read_text())
+    assert on_disk['healthy'] is True
+    completed = _events(handle, 'runtime_compose_substrate', 'completed')[0]['payload']
+    assert completed['report']['healthy'] is True and all(n['healthy'] for n in completed['report']['nodes'])
+    assert all(e['payload']['healthy'] for e in _events(handle, 'runtime_compose_substrate', 'node_started'))
+
+
+def test_compose_substrate_without_readiness_leaves_health_unknown(package, tmp_path):
+    handle = _Handle(tmp_path / 'run')
+    prim = primitives.RuntimeComposeSubstrate(params={'output_dir': 'outputs/substrate-compose'})
+    prim.bound_substrate = {'nodes': []}
+    prim.bound_state = {}
+    prim.run(handle, random.Random(0))
+    assert prim.bound_state['substrate_compose_report'].get('healthy') is None

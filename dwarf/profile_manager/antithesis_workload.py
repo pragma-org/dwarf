@@ -90,15 +90,10 @@ def after_prepare(handle, package, *, status_dir=DEFAULT_STATUS, environ=None, s
     runtime = json.loads((package / 'runtime.json').read_text(encoding='utf-8'))
     timeout = float(environ.get('DWARF_ANTITHESIS_READY_TIMEOUT') or DEFAULT_READY_TIMEOUT)
     ready = wait_ready(runtime, timeout, sleep=sleep)
-    try:
-        report = json.loads((package / 'compose-report.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        report = {'nodes': [{'id': identifier} for identifier in ready]}
-    for node in report.get('nodes') or []:
-        node['healthy'] = node.get('id') in ready
-    report['healthy'] = True
-    report['readiness'] = {'ready': ready, 'checked_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
-    _write_json(Path(handle.run_dir) / 'outputs' / 'substrate-compose' / 'compose-report.json', report)
+    # The substrate lifecycle primitives merge this into the package's compose
+    # report when they run, so health assertions see the probe's result.
+    _write_json(Path(handle.run_dir) / 'outputs' / 'antithesis-readiness.json',
+                {'ready': ready, 'checked_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'timeout_seconds': timeout})
     handle.log(phase='framework', primitive='antithesis-workload', level='info', event='antithesis_ready',
                payload={'ready': ready, 'timeout_seconds': timeout})
     sdk.setup_complete(environ)

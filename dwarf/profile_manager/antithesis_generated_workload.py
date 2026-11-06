@@ -88,7 +88,13 @@ def project_nodes(scenario, nodes):
                        'message': 'The scenario profile ' + str(scenario.profile) + ' is not in this catalog; no nodes were projected.'})
         return {'services': services, 'victims': [], 'issues': issues}
     if _attach_topology(scenario) == 'cardano_amaru':
+        # Attached layouts keep their names; the first node of the target
+        # implementation becomes the victim clone so faults hit an observed node.
         services = {n['id']: n['id'] for n in nodes}
+        victim = {'cardano-node': 'sm-cardano-victim', 'amaru': 'sm-amaru-victim'}.get(target)
+        first = next((n['id'] for n in nodes if n['impl'] == target), None)
+        if victim and first:
+            services[first] = victim
     else:
         pools = {'cardano-node': list(CARDANO_SLOTS if target == 'cardano-node' else CARDANO_CONTROL),
                  'amaru': list(AMARU_SLOTS if target == 'amaru' else AMARU_CONTROL)}
@@ -210,12 +216,23 @@ def bind_generated_workload(files, scenario, resolved, version_binding, classifi
             mounts.append(volume + ':/inputs/' + service + ':ro')
     depends = {victim: {'condition': 'service_healthy'} for victim in projection['victims']}
     depends['sidecar'] = {'condition': 'service_started'}
+    # Join every network a mapped service lives on (amaru-consumer sits on its own).
+    networks = set()
+    for record in runtime['nodes']:
+        declared = compose['services'].get(record['name'], {}).get('networks')
+        if isinstance(declared, dict):
+            networks.update(declared)
+        elif isinstance(declared, list):
+            networks.update(str(n) for n in declared)
+    networks -= {'default'}
     compose['services'][WORKLOAD_SERVICE] = {
         'build': {'context': './dwarf-workload'}, 'platform': 'linux/amd64',
         'container_name': WORKLOAD_SERVICE, 'hostname': WORKLOAD_SERVICE + '.example', 'init': True, 'user': '0:0',
         'environment': {'DWARF_ANTITHESIS_PACKAGE_DIR': '/opt/dwarf/package', 'DWARF_ANTITHESIS_READY_TIMEOUT': '900'},
         'labels': {'com.antithesis.exclude_from_faults': topology.FAULT_EXCLUSION, 'com.dwarf.build-network': 'none'},
         'volumes': mounts, 'depends_on': depends}
+    if networks:
+        compose['services'][WORKLOAD_SERVICE]['networks'] = {name: {} for name in ['default', *sorted(networks)]}
     compose['volumes']['dwarf-workload-evidence'] = {}
     files[COMPOSE] = yaml.safe_dump(compose, sort_keys=False)
     package = {PACKAGE_PREFIX + 'package/scenario.yaml': scenario.raw_bytes.decode('utf-8'),

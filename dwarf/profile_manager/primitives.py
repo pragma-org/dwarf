@@ -4923,6 +4923,17 @@ class RuntimeComposeSubstrate(LoadPrimitive):
             reports = _delegated_package_step(handle, primitive="runtime_compose_substrate", phase="setup",
                                               output_dir=output_dir, copies=["runtime.json", "compose-report.json"])
             report = reports["compose-report.json"]
+            readiness_path = Path(handle.run_dir) / "outputs" / "antithesis-readiness.json"
+            if readiness_path.is_file():
+                # The workload's readiness probe (after_prepare) is the health evidence
+                # inside the package; the shipped report only names the nodes.
+                readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+                ready = set(readiness.get("ready") or [])
+                for node in report.get("nodes", []):
+                    node["healthy"] = node.get("id") in ready
+                report["healthy"] = bool(report.get("nodes")) and all(node.get("healthy") for node in report["nodes"])
+                report["readiness"] = readiness
+                (output_dir / "compose-report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             metadata_path = output_dir / "runtime.json"
             if self.bound_state is not None:
                 self.bound_state["substrate_runtime_root"] = str(output_dir)

@@ -700,3 +700,15 @@ def test_reserve_records_the_capability_classification(ready_env,staged,monkeypa
     recorded=entry['provenance']['antithesis_capabilities']
     assert recorded['level']=='partial' and recorded['reason'] is None
     assert [g['primitive'] for g in recorded['gaps']]==['runtime_tracer_capture']
+
+
+def test_real_generated_preparation_reaches_readiness_with_the_capability_row(ready_env,monkeypatch):
+    from test_antithesis_amaru_binding import selection
+    from test_antithesis_package import request
+    m=module()
+    prepared=m.prep.prepare_package(request(scenario_id='runtime-substrate-mempool-failure-containment-mixed-amaru',versions=selection('mixed')),{})
+    env=dict(ready_env);env['source']={'kind':'preparation','id':prepared['receipt']['id']}
+    row=check(env);checks={c['id']:c for c in row['checks']}
+    assert checks['scenario_capabilities']['state']=='warn'
+    assert checks.get('generated_selections',{}).get('state')!='error'
+    assert m._capabilities_record(row)['level']=='partial'

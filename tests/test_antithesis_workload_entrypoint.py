@@ -137,8 +137,9 @@ def test_after_prepare_emits_setup_complete_only_after_ready_then_waits_for_go(t
         workload.after_prepare(Handle(), package, status_dir=status, environ=env, sleep=sleep)
         lines = _sdk_lines(tmp_path / 'out' / 'sdk.jsonl')
         assert [l for l in lines if 'antithesis_setup' in l] == [{'antithesis_setup': {'status': 'complete', 'details': {'message': 'ready to go'}}}]
-        report = json.loads((Handle.run_dir / 'outputs' / 'substrate-compose' / 'compose-report.json').read_text())
-        assert report['healthy'] is True and report['nodes'][0]['healthy'] is True
+        readiness = json.loads((Handle.run_dir / 'outputs' / 'antithesis-readiness.json').read_text())
+        assert readiness['ready'] == ['node1'] and readiness['checked_at']
+        assert not (Handle.run_dir / 'outputs' / 'substrate-compose' / 'compose-report.json').exists()
         assert any(e.get('event') == 'antithesis_ready' for e in events)
     finally:
         stop.set(); server.close()

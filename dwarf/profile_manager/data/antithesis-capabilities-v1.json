@@ -9,54 +9,185 @@
     "unsupported": "The primitive needs Docker, host processes or host tools that do not exist inside the package; it is skipped with a gap event."
   },
   "primitives": {
-    "all_nodes_responsive": {"status": "runs", "note": ""},
-    "peer_connectivity_observed": {"status": "runs", "note": ""},
-    "substrate_quorum_observed": {"status": "runs", "note": ""},
-    "all_nodes_started_clean": {"status": "runs", "note": ""},
-    "load_events_are_ok": {"status": "runs", "note": ""},
-    "parser_exit_status": {"status": "runs", "note": ""},
-    "target_progress_continues": {"status": "runs", "note": ""},
-    "no_target_fatal_signal": {"status": "runs", "note": ""},
-    "invalid_protocol_cases_contained": {"status": "runs", "note": ""},
-    "submit_outcome_matches": {"status": "runs", "note": ""},
-    "mempool_failure_contained": {"status": "runs", "note": ""},
-
-    "runtime_multi_node_observation": {"status": "runs-with-note", "note": "Cardano tips are read with cardano-cli over the mounted node socket and Amaru tips from the mounted victim log; connection state is reported unavailable (no process access inside the package)."},
-    "runtime_substrate_tip_warmup": {"status": "runs-with-note", "note": "Tips are read over the mounted node socket or victim log, not docker exec."},
-    "runtime_verify_exact_target": {"status": "runs-with-note", "note": "Target identity comes from the package's prepared-release binding, not a live measurement context."},
-    "runtime_tx_submit_differential": {"status": "runs-with-note", "note": "Submit API hosts come from the package runtime.json service names."},
-    "runtime_txsubmission_window_pressure": {"status": "runs-with-note", "note": "The target host comes from the package runtime.json service name; 127.0.0.1 is not the node."},
-    "load_shell_command": {"status": "runs-with-note", "note": "The command's tool must exist in the dwarf-workload image (controller image lineage)."},
-
-    "runtime_install_version": {"status": "delegated", "note": "Node images are pinned in the package compose; the primitive reads install-report.json shipped with the package."},
-    "runtime_compose_substrate": {"status": "delegated", "note": "Antithesis starts the compose; the primitive reads the package-shipped runtime.json and compose-report.json."},
-    "runtime_teardown_substrate": {"status": "delegated", "note": "Antithesis owns the compose lifecycle; the primitive records a delegated teardown."},
-    "runtime_attach_topology": {"status": "delegated", "note": "The package ships runtime.json for the attached topology; no docker ps inside the package."},
-
-    "fault_local_port_drop": {"status": "delegated-fault", "note": "Platform network faults replace iptables drops."},
-    "fault_local_port_delay": {"status": "delegated-fault", "note": "Platform network faults replace tc netem delays."},
-    "fault_node_freeze": {"status": "delegated-fault", "note": "Platform pause/stop faults replace SIGSTOP on a host pid."},
-    "runtime_byzantine_cardano_node": {"status": "delegated-fault", "note": "Needs docker run for the proxy container; platform faults stand in."},
-    "runtime_network_partition": {"status": "delegated-fault", "note": "Needs docker network disconnect; platform network faults stand in."},
-
-    "runtime_target_health_and_progress": {"status": "unsupported", "note": "Reads docker inspect/logs and docker exec cardano-cli."},
-    "runtime_wait_for_chain_progress": {"status": "unsupported", "note": "Reads tips through docker exec or docker logs."},
-    "runtime_peer_session_health": {"status": "unsupported", "note": "Observes peers through docker exec."},
-    "runtime_protocol_decode_cases": {"status": "unsupported", "note": "Uses docker ps/inspect/run and docker logs."},
-    "runtime_amaru_measurement_calibration": {"status": "unsupported", "note": "Uses docker ps/inspect and docker logs."},
-    "runtime_tracer_capture": {"status": "unsupported", "note": "Uses docker ps/exec against the tracer container."},
-    "runtime_generated_node_freeze_check": {"status": "unsupported", "note": "Resolves host pids and TCP to 127.0.0.1."},
-    "runtime_generated_node_recovery_check": {"status": "unsupported", "note": "Resolves host pids and TCP to 127.0.0.1."},
-    "runtime_real_target_restart_and_readiness": {"status": "unsupported", "note": "Runs docker restart."},
-    "runtime_controlled_chain_progress_window": {"status": "unsupported", "note": "Uses docker inspect and host log paths."},
-    "runtime_controlled_sync_range": {"status": "unsupported", "note": "Reads tips through docker exec or docker logs."},
-    "runtime_snapshot_capture": {"status": "unsupported", "note": "Runs docker stop/start and tars host directories."},
-    "runtime_simulate_peer_set_capture": {"status": "unsupported", "note": "Spawns a local Amaru binary."},
-    "runtime_opcert_header_soak": {"status": "unsupported", "note": "Runs docker run --network host and a host forger."},
-    "forge_block": {"status": "unsupported", "note": "Deferred host-side block-apply workbench."},
-    "serve_crafted_block": {"status": "unsupported", "note": "Deferred host-side block-apply workbench."},
-    "block_apply_differential": {"status": "unsupported", "note": "Runs host tmux and a host Amaru checkout."},
-    "runtime_plutus_phase2_differential_observation": {"status": "unsupported", "note": "Resolves the target process through docker inspect or host pid files."},
-    "runtime_preview_parity_baseline": {"status": "unsupported", "note": "Checks host pid files and host log sizes."}
+    "all_nodes_responsive": {
+      "status": "runs",
+      "note": ""
+    },
+    "peer_connectivity_observed": {
+      "status": "unsupported",
+      "note": "Needs observed peer edges from connection state, which is unavailable inside the package (no process access)."
+    },
+    "substrate_quorum_observed": {
+      "status": "runs",
+      "note": ""
+    },
+    "all_nodes_started_clean": {
+      "status": "runs",
+      "note": ""
+    },
+    "load_events_are_ok": {
+      "status": "runs",
+      "note": ""
+    },
+    "parser_exit_status": {
+      "status": "runs",
+      "note": ""
+    },
+    "target_progress_continues": {
+      "status": "runs",
+      "note": ""
+    },
+    "no_target_fatal_signal": {
+      "status": "runs",
+      "note": ""
+    },
+    "invalid_protocol_cases_contained": {
+      "status": "runs",
+      "note": ""
+    },
+    "submit_outcome_matches": {
+      "status": "runs",
+      "note": ""
+    },
+    "mempool_failure_contained": {
+      "status": "unsupported",
+      "note": "Its evidence producer runtime_mempool_failure_probe needs docker exec inside the package; without that event the assertion can only fail."
+    },
+    "runtime_multi_node_observation": {
+      "status": "runs-with-note",
+      "note": "Cardano tips are read with cardano-cli over the mounted node socket and Amaru tips from the mounted victim log; connection state is reported unavailable (no process access inside the package)."
+    },
+    "runtime_substrate_tip_warmup": {
+      "status": "runs-with-note",
+      "note": "Tips are read over the mounted node socket or victim log, not docker exec."
+    },
+    "runtime_verify_exact_target": {
+      "status": "runs-with-note",
+      "note": "Target identity comes from the package's prepared-release binding, not a live measurement context."
+    },
+    "runtime_tx_submit_differential": {
+      "status": "runs-with-note",
+      "note": "Submit API hosts come from the package runtime.json service names."
+    },
+    "runtime_txsubmission_window_pressure": {
+      "status": "runs-with-note",
+      "note": "The target host comes from the package runtime.json service name; 127.0.0.1 is not the node."
+    },
+    "load_shell_command": {
+      "status": "runs-with-note",
+      "note": "The command's tool must exist in the dwarf-workload image (controller image lineage)."
+    },
+    "runtime_install_version": {
+      "status": "delegated",
+      "note": "Node images are pinned in the package compose; the primitive reads install-report.json shipped with the package."
+    },
+    "runtime_compose_substrate": {
+      "status": "delegated",
+      "note": "Antithesis starts the compose; the primitive reads the package-shipped runtime.json and compose-report.json."
+    },
+    "runtime_teardown_substrate": {
+      "status": "delegated",
+      "note": "Antithesis owns the compose lifecycle; the primitive records a delegated teardown."
+    },
+    "runtime_attach_topology": {
+      "status": "delegated",
+      "note": "The package ships runtime.json for the attached topology; no docker ps inside the package."
+    },
+    "fault_local_port_drop": {
+      "status": "delegated-fault",
+      "note": "Platform network faults replace iptables drops."
+    },
+    "fault_local_port_delay": {
+      "status": "delegated-fault",
+      "note": "Platform network faults replace tc netem delays."
+    },
+    "fault_node_freeze": {
+      "status": "delegated-fault",
+      "note": "Platform pause/stop faults replace SIGSTOP on a host pid."
+    },
+    "runtime_byzantine_cardano_node": {
+      "status": "delegated-fault",
+      "note": "Needs docker run for the proxy container; platform faults stand in."
+    },
+    "runtime_network_partition": {
+      "status": "delegated-fault",
+      "note": "Needs docker network disconnect; platform network faults stand in."
+    },
+    "runtime_target_health_and_progress": {
+      "status": "unsupported",
+      "note": "Reads docker inspect/logs and docker exec cardano-cli."
+    },
+    "runtime_wait_for_chain_progress": {
+      "status": "unsupported",
+      "note": "Reads tips through docker exec or docker logs."
+    },
+    "runtime_peer_session_health": {
+      "status": "unsupported",
+      "note": "Observes peers through docker exec."
+    },
+    "runtime_protocol_decode_cases": {
+      "status": "unsupported",
+      "note": "Uses docker ps/inspect/run and docker logs."
+    },
+    "runtime_amaru_measurement_calibration": {
+      "status": "unsupported",
+      "note": "Uses docker ps/inspect and docker logs."
+    },
+    "runtime_tracer_capture": {
+      "status": "unsupported",
+      "note": "Uses docker ps/exec against the tracer container."
+    },
+    "runtime_generated_node_freeze_check": {
+      "status": "unsupported",
+      "note": "Resolves host pids and TCP to 127.0.0.1."
+    },
+    "runtime_generated_node_recovery_check": {
+      "status": "unsupported",
+      "note": "Resolves host pids and TCP to 127.0.0.1."
+    },
+    "runtime_real_target_restart_and_readiness": {
+      "status": "unsupported",
+      "note": "Runs docker restart."
+    },
+    "runtime_controlled_chain_progress_window": {
+      "status": "unsupported",
+      "note": "Uses docker inspect and host log paths."
+    },
+    "runtime_controlled_sync_range": {
+      "status": "unsupported",
+      "note": "Reads tips through docker exec or docker logs."
+    },
+    "runtime_snapshot_capture": {
+      "status": "unsupported",
+      "note": "Runs docker stop/start and tars host directories."
+    },
+    "runtime_simulate_peer_set_capture": {
+      "status": "unsupported",
+      "note": "Spawns a local Amaru binary."
+    },
+    "runtime_opcert_header_soak": {
+      "status": "unsupported",
+      "note": "Runs docker run --network host and a host forger."
+    },
+    "forge_block": {
+      "status": "unsupported",
+      "note": "Deferred host-side block-apply workbench."
+    },
+    "serve_crafted_block": {
+      "status": "unsupported",
+      "note": "Deferred host-side block-apply workbench."
+    },
+    "block_apply_differential": {
+      "status": "unsupported",
+      "note": "Runs host tmux and a host Amaru checkout."
+    },
+    "runtime_plutus_phase2_differential_observation": {
+      "status": "unsupported",
+      "note": "Resolves the target process through docker inspect or host pid files."
+    },
+    "runtime_preview_parity_baseline": {
+      "status": "unsupported",
+      "note": "Checks host pid files and host log sizes."
+    }
   }
 }
