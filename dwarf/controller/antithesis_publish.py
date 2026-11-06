@@ -202,7 +202,11 @@ def build_images(runtime, parameters, execution_id, timeout, cancel_event):
                   'build_count': len(plan), 'legacy_builder': legacy_builder}
         job.progress(status='built', stage='complete', current_service=None, completed_at=_now(), result=result)
         return result
-    except DockerRuntimeError:
+    except DockerRuntimeError as exc:
+        # job.blocked() already recorded coded failures; _run's own errors
+        # (timeout, output cap, stdin) carry no code and must not leave 'building'.
+        if exc.failure_code is None:
+            job.progress(status='failed', stage='error', detail=_detail(exc))
         raise
     except BaseException as exc:
         job.progress(status='failed', stage='error', detail=_detail(exc))
@@ -295,7 +299,9 @@ def publish_images(runtime, parameters, execution_id, timeout, cancel_event):
         result = {'status': 'published', 'handoff_id': parameters['handoff_id'], 'registry': 'ghcr.io', 'pushed': pushed}
         job.progress(status='published', stage='complete', current_image=None, completed_at=_now(), result=result)
         return result
-    except DockerRuntimeError:
+    except DockerRuntimeError as exc:
+        if exc.failure_code is None:
+            job.progress(status='failed', stage='error', detail=_detail(exc))
         raise
     except BaseException as exc:
         job.progress(status='failed', stage='error', detail=_detail(exc))

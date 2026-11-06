@@ -163,7 +163,7 @@ def start_operation(identifier,action,*,target=None,request_id=None,publish_toke
     if previous:return previous
     lock=build._lock(directory/'operation.lock')
     if lock is None:raise PackageError('Another publication operation is active.',status=409)
-    worker_lock=None
+    worker_lock=None;secret_id=None
     try:
         previous=recover()
         if previous:lock.close();return previous
@@ -182,7 +182,6 @@ def start_operation(identifier,action,*,target=None,request_id=None,publish_toke
         worker_lock=build._lock(op/'worker.lock')
         status={'id':operation_id,'handoff_id':identifier,'action':action,'target':target,'state':'queued',
                 'created_at':_now(),'message':'Publication operation queued.','submission_ready':False}
-        secret_id=None
         if action=='push':
             if save_token and publish_token:
                 _persist_publish_token(token);status['token_saved']=True
@@ -192,12 +191,17 @@ def start_operation(identifier,action,*,target=None,request_id=None,publish_toke
         # Persist before any external mutation; even a crash cannot silently replay a push.
         if action=='push':receipt['push_attempted']=True
         receipt.pop('request_plan',None);receipt.pop('git',None)
+        restore_state=receipt['state']
         receipt.update(state='working',message='Publication operation in progress.')
         build._save(directory/'receipt.json',receipt)
         threading.Thread(target=_worker,args=(directory,op,status.copy(),receipt,lock,worker_lock),
-                         kwargs={'secret_id':secret_id,'controller':controller or controller_request},daemon=True).start()
+                         kwargs={'secret_id':secret_id,'controller':controller or controller_request,'restore_state':restore_state},daemon=True).start()
         return status
     except Exception:
+        # A staged PAT must not outlive the request that staged it.
+        if secret_id:
+            from profile_manager.binary_imports import discard_secret
+            discard_secret(secret_id)
         if worker_lock:worker_lock.close()
         lock.close();raise
 
@@ -211,8 +215,16 @@ def _push(directory,op,receipt,progress,*,secret_id,controller):
     username=receipt['registry_prefix'].removeprefix('ghcr.io/').split('/')[0]
     execution_id='antithesis-publish-'+uuid.uuid4().hex
     progress('Logging in to ghcr.io and pushing '+str(len(images))+' image(s) from the controller.')
-    controller('antithesis.image-publish',{'handoff_id':receipt['id'],'secret_id':secret_id,'username':username,
-        'images':images,'execution_id':execution_id},3600,idempotency_key=execution_id)
+    try:
+        controller('antithesis.image-publish',{'handoff_id':receipt['id'],'secret_id':secret_id,'username':username,
+            'images':images,'execution_id':execution_id},3600,idempotency_key=execution_id)
+    except TopologyActionError as exc:
+        # Nothing was accepted, so nothing can replay: the handoff stays pushable.
+        receipt['push_attempted']=False
+        receipt.update(state='planned',message='Push could not start; the handoff can be pushed again.')
+        raise PackageError('The controller did not accept the push: '+str(exc)) from exc
+    # Recorded before polling so a lost status poll still leaves the operator the execution to recover.
+    receipt['push_execution_id']=execution_id
     while True:
         try:observed=controller('execution.status',{'execution_id':execution_id},10)
         except TopologyActionError as exc:
@@ -255,7 +267,8 @@ def _verify_images(directory,receipt,progress):
         if key not in cache:
             try:cache[key]=verify_image(reference,key[1])
             except PackageError as exc:
-                if not visibility_required(exc):raise
+                # Only a pushed package can be "still private"; before a push a 404 means it does not exist.
+                if not visibility_required(exc) or not receipt.get('push_attempted'):raise
                 cache[key]=None   # the package exists but is still private; keep checking the rest
         if cache[key] is None:
             urls=package_settings_urls(reference)
@@ -314,7 +327,7 @@ def _verify_git(directory,receipt,target,progress):
                    message='Public Git assets match. Review the existing MOOG request and remaining checks; nothing was submitted.')
 
 
-def _worker(directory,op,status,receipt,lock,worker_lock,*,secret_id=None,controller=None):
+def _worker(directory,op,status,receipt,lock,worker_lock,*,secret_id=None,controller=None,restore_state=None):
     def progress(message):
         status.update(state='running',message=message);build._save(op/'status.json',status)
     try:
@@ -328,6 +341,8 @@ def _worker(directory,op,status,receipt,lock,worker_lock,*,secret_id=None,contro
         build._save(directory/'receipt.json',receipt)
         status.update(state='succeeded',message=receipt['message'])
     except (PackageError,build.BuildFailure) as exc:
+        # A bounded failure that did not move the handoff leaves it where it was, not 'working'.
+        if receipt.get('state')=='working' and restore_state:receipt.update(state=restore_state,message=str(exc))
         build._save(directory/'receipt.json',receipt)
         status.update(state='failed',message=str(exc))
     except Exception:

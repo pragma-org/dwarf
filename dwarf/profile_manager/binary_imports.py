@@ -471,6 +471,7 @@ def stage_secret(value: str, *, root: Path | None = None, lifetime_seconds: int 
         raise BinaryImportError("registry credential is empty or invalid")
     staging = Path(root) if root is not None else _default_staging_root()
     staging.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _sweep_expired_secrets(staging)
     secret_id = "ghcr-" + secrets.token_hex(12)
     directory = staging / secret_id
     created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -491,6 +492,42 @@ def stage_secret(value: str, *, root: Path | None = None, lifetime_seconds: int 
         if directory_fd is not None:
             os.close(directory_fd)
     return secret_id
+
+
+def _sweep_expired_secrets(staging: Path, *, now: datetime | None = None) -> int:
+    """Remove staged credentials whose operation never discarded them (the
+    dashboard died between staging and completion) once they have expired.
+    Same owner and symlink checks as the import records; errors skip a candidate."""
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    removed = 0
+    try:
+        candidates = sorted(staging.glob("ghcr-*"))[:256]
+    except OSError:
+        return 0
+    for candidate in candidates:
+        try:
+            if not re.fullmatch(r"ghcr-[0-9a-f]{24}", candidate.name):
+                continue
+            directory_stat = candidate.lstat()
+            descriptor_path = candidate / "descriptor.json"
+            descriptor_stat = descriptor_path.lstat()
+            if (
+                stat.S_ISLNK(directory_stat.st_mode) or not stat.S_ISDIR(directory_stat.st_mode)
+                or stat.S_ISLNK(descriptor_stat.st_mode) or not stat.S_ISREG(descriptor_stat.st_mode)
+                or directory_stat.st_uid not in {0, os.geteuid()} or descriptor_stat.st_size > 4096
+            ):
+                continue
+            descriptor = json.loads(descriptor_path.read_bytes())
+            if descriptor.get("kind") != "ghcr-publish-pat":
+                continue
+            expires = datetime.fromisoformat(str(descriptor.get("expires_at") or "").replace("Z", "+00:00"))
+            if expires.tzinfo is None or expires.astimezone(timezone.utc) > current:
+                continue
+            shutil.rmtree(candidate, ignore_errors=True)
+            removed += 1
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    return removed
 
 
 def discard_secret(secret_id: str, *, root: Path | None = None) -> None:

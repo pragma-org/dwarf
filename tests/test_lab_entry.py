@@ -130,3 +130,8 @@ def test_wizard_without_prepared_builds_points_to_versions_page(monkeypatch):
     html = dashboard.render_route_html('/run/antithesis', token='t')
     assert 'No prepared build for this implementation' in html
     assert Elements(html).matching('a', href='/operate/versions')
+
+
+def test_antithesis_page_tells_the_user_the_saved_pat_is_stored_unencrypted():
+    html = dashboard.render_route_html('/run/antithesis', token='t')
+    assert 'stored unencrypted' in html, 'the save opt-in must say the PAT is kept in plaintext'

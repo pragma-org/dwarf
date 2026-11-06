@@ -194,7 +194,7 @@
       <p class="dk-note">Choose a GHCR repository prefix (pre-filled from the saved GHCR prefix; a change here applies to this submission only). Each built service gets a separate package and unique tag. The controller logs in to ghcr.io with the PAT below, pushes, and never stores the PAT unless you tick the box. After pushing, make each new package public in GitHub once; the links appear here and verification polls until they pass.</p>
       <label>GHCR repository prefix<input id="antithesis-publication-prefix" type="text" placeholder="ghcr.io/owner/dwarf" autocomplete="off"></label>
       <label>GHCR publish PAT (write:packages)<input id="antithesis-publication-pat" type="password" placeholder="Leave blank to use the saved PAT" autocomplete="new-password"></label>
-      <label><input type="checkbox" id="antithesis-publication-save-pat"> Save this PAT to DWARF settings for later pushes</label>
+      <label><input type="checkbox" id="antithesis-publication-save-pat"> Save this PAT to DWARF settings for later pushes (stored unencrypted in the DWARF config on this host)</label>
       <button type="button" id="antithesis-publication-create" class="dk-btn" disabled>Prepare publication handoff</button>
       <p id="antithesis-publication-state" class="run-wizard__selection" role="status" aria-live="polite">Build a generated package first.</p>
       <button type="button" id="antithesis-publication-resume" class="dk-btn" hidden>Recover operation status</button>

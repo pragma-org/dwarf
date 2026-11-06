@@ -257,3 +257,21 @@ def test_build_rewrites_copy_chmod_when_the_cli_has_no_buildkit(runtime, prepare
         assert '--chmod' not in dockerfile
         assert 'COPY workload/test/v1/mixed-miniprotocol-security/ /opt/antithesis/test/v1/mixed-miniprotocol-security/\nRUN chmod -R 0755 /opt/antithesis/test/v1/mixed-miniprotocol-security/' in dockerfile
         assert result['legacy_builder'] is True
+
+
+@pytest.mark.parametrize('message', ['Docker operation timed out', 'Docker operation output exceeded limit'])
+def test_runtime_failure_without_a_code_records_failed_progress(runtime, prepared, monkeypatch, message):
+    """Review fix: _run's own code-less errors (timeout, output cap) must leave
+    progress.json failed with the bounded message, not stuck at 'building'."""
+    from controller.docker_runtime import DockerRuntimeError
+    _preparations_dir(monkeypatch)
+    original = runtime._run
+    def _run(arguments, timeout=30, execution_id=None, **kwargs):
+        if tuple(arguments)[:1] == ('build',):
+            raise DockerRuntimeError(message)
+        return original(arguments, timeout, execution_id, **kwargs)
+    runtime._run = _run
+    with pytest.raises(DockerRuntimeError):
+        publish.build_images(runtime, _build_params(prepared['receipt']['id']), BUILD_ID, 1800, threading.Event())
+    progress = publish.read_build_progress(runtime, BUILD_ID)
+    assert progress['status'] == 'failed' and progress['stage'] == 'error' and message in progress['detail'], progress

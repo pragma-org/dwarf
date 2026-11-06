@@ -1002,3 +1002,16 @@ def test_legacy_import_digest_recovery_rejects_mismatched_controller_evidence(tm
                 staging_root=root,
                 request_controller=status,
             )
+
+
+def test_expired_staged_secrets_are_swept_on_the_next_staging(tmp_path):
+    """Review fix: a staged registry credential whose operation never discarded
+    it (dashboard crash) is removed once it has expired, on the next staging."""
+    from profile_manager import binary_imports
+    root = tmp_path / "version-imports"
+    stale = binary_imports.stage_secret("ghp_stale", root=root, lifetime_seconds=-1)
+    fresh = binary_imports.stage_secret("ghp_fresh", root=root)
+    assert not (root / stale).exists(), "an expired staged credential is removed on the next staging"
+    assert (root / fresh / "secret").read_text() == "ghp_fresh"
+    binary_imports.stage_secret("ghp_other", root=root)
+    assert (root / fresh).exists(), "unexpired secrets stay"

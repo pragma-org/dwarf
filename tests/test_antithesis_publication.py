@@ -319,7 +319,9 @@ def test_verify_reports_visibility_required_per_package(built,monkeypatch):
     """One private package and one public one: the handoff names exactly the
     private package with its settings URLs and stays awaiting-visibility; once
     it is public the next verify reaches images-public."""
+    _no_saved_pat(monkeypatch)
     h=create(built)
+    assert run(h,'push',publish_token=PAT,controller=fake_publish_controller([]))['state']=='succeeded'
     private={'ghcr.io/example/dwarf-sm-workload:'+h['id']}
     def verify(reference,expected_id=None):
         if reference in private:
@@ -342,3 +344,52 @@ def test_verify_reports_visibility_required_per_package(built,monkeypatch):
     assert run(h,'verify-images')['state']=='succeeded'
     receipt=module().read_handoff(h['id'])
     assert receipt['state']=='images-public' and receipt['visibility_required']==[]
+
+
+def test_start_call_failure_keeps_the_handoff_pushable_and_discards_the_secret(built,monkeypatch):
+    """Review fix: a controller that cannot even accept the publish (unreachable,
+    contract rejection) must not leave the handoff 'working' with push_attempted."""
+    from profile_manager import binary_imports
+    _no_saved_pat(monkeypatch)
+    h=create(built)
+    staged=[];real=binary_imports.stage_secret
+    monkeypatch.setattr(binary_imports,'stage_secret',lambda value,**kw:(staged.append(real(value,**kw)) or staged[-1]))
+    def controller(operation,parameters,timeout,idempotency_key=None):
+        raise module().TopologyActionError('controller unreachable')
+    job=run(h,'push',publish_token=PAT,controller=controller)
+    assert job['state']=='failed' and 'controller unreachable' in job['message'],job
+    receipt=module().read_handoff(h['id'])
+    assert receipt['push_attempted'] is False and receipt['state']=='planned'
+    assert staged and not (binary_imports._default_staging_root()/staged[0]).exists()
+    assert run(h,'push',publish_token=PAT,controller=fake_publish_controller([]))['state']=='succeeded'
+
+
+def test_start_operation_failure_after_staging_discards_the_secret(built,monkeypatch):
+    """Review fix: if start_operation fails after the PAT was staged, the staged
+    file must not outlive the failed request."""
+    from profile_manager import binary_imports
+    _no_saved_pat(monkeypatch)
+    h=create(built)
+    root=binary_imports._default_staging_root()
+    before={p.name for p in root.glob('ghcr-*')} if root.exists() else set()
+    real=build._save
+    def save(path,payload):
+        if path.name=='status.json' and 'operations' in Path(path).parts:raise OSError('disk full')
+        return real(path,payload)
+    monkeypatch.setattr(build,'_save',save)
+    with pytest.raises(OSError):module().start_operation(h['id'],'push',request_id='c'*32,publish_token=PAT)
+    assert {p.name for p in root.glob('ghcr-*')}==before,'a failed start must not leave a staged PAT behind'
+    assert module().read_handoff(h['id'])['push_attempted'] is False
+
+
+def test_verify_before_push_does_not_claim_packages_are_private(built,monkeypatch):
+    """Review fix: a 404 on a handoff that was never pushed means the package
+    does not exist yet, not that someone must make it public."""
+    h=create(built)
+    def verify(reference,expected_id=None):
+        raise PackageError('Anonymous public read returned HTTP 404. Check visibility, reference and provider rate limits.',status=422)
+    monkeypatch.setattr(module(),'verify_image',verify)
+    job=run(h,'verify-images')
+    assert job['state']=='failed' and 'HTTP 404' in job['message'],job
+    receipt=module().read_handoff(h['id'])
+    assert receipt['state']=='planned' and not receipt.get('visibility_required')

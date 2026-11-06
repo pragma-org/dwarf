@@ -83,6 +83,7 @@
   }
   async function perform(operation){
     if(busy)return;const stamp=generation;busy=true;pending=operation;controls();get('request-result').hidden=true;
+    let followUp=null;
     try{
       status('working','Starting or recovering the publication operation…');
       if(operation.kind==='create'){
@@ -103,12 +104,17 @@
         if(['succeeded','failed','interrupted'].includes(op.state)){
           const response=await api('read',{handoff_id:operation.payload.handoff_id});if(stamp!==generation)return;
           await display(response.handoff,stamp);if(stamp!==generation)return;
-          pending=null;status(op.state==='succeeded'?handoff.state:'error',op.message);break;
+          pending=null;status(op.state==='succeeded'?handoff.state:'error',op.message);
+          // Right after a completed push, verify once so the "make public" links appear without a click.
+          if(op.state==='succeeded'&&operation.payload.action==='push'&&handoff.state==='awaiting-visibility')
+            followUp={kind:'action',payload:{handoff_id:handoff.id,action:'verify-images',target:null,request_id:randomId()}};
+          break;
         }
         await new Promise(resolve=>setTimeout(resolve,1000));
       }
     }catch(error){if(stamp===generation)status('error',`${error.name==='AbortError'?'Response timed out.':error.message} Recover operation status before starting another operation.`);}
     finally{busy=false;controls();}
+    if(followUp&&stamp===generation)await perform(followUp);
   }
   get('create').addEventListener('click',()=>perform({kind:'create',payload:{build_id:source,registry_prefix:get('prefix').value.trim(),request_id:randomId()}}));
   for(const [button,action] of [['push','push'],['verify-images','verify-images'],['verify-git','verify-git']]){

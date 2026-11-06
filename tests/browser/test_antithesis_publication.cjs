@@ -76,6 +76,7 @@ let stderr='';server.stderr.on('data',d=>stderr+=d);
  await get('publication-create').click();await waitPublication('planned');
  assert.equal(posts.some(p=>p.endsWith('/publication-action')),false,'creating a handoff must not push');
  assert.equal(await get('publication-save-pat').isChecked(),false,'saving the PAT is opt-in');
+ fs.writeFileSync(control,'private');   // new package names are private right after a push
  await get('publication-pat').fill('ghp_browser_once');
  let lostOperation;
  await page.route('**/api/antithesis-run/package/publication-action',async route=>{
@@ -88,7 +89,9 @@ let stderr='';server.stderr.on('data',d=>stderr+=d);
  assert.equal(await get('publication-pat').inputValue(),'','the PAT field is cleared once it is sent');
  const pushed=JSON.parse(fs.readFileSync(control+'.pushes','utf8'));
  assert.deepEqual(pushed.map(p=>[p.username,p.secret]),[['example','ghp_browser_once']],'the controller received the one-time PAT through the staged secret');
- fs.writeFileSync(control,'private');await get('publication-verify-images').click();await waitPublication('awaiting-visibility');
+ // The wizard verifies right after the push: the private package is listed without a Verify click.
+ assert.equal(posts.filter(p=>p.endsWith('/publication-action')).length,3,'aborted push, recovered push, then one automatic verify');
+ await page.waitForFunction(()=>document.querySelectorAll('#antithesis-publication-images li.run-wizard__visibility').length===1);
  assert.equal(await get('publication-download').isVisible(),false);
  const visibility=page.locator('#antithesis-publication-images li.run-wizard__visibility');
  assert.equal(await visibility.count(),1,'exactly the private package is listed');
@@ -121,5 +124,5 @@ let stderr='';server.stderr.on('data',d=>stderr+=d);
  await get('publication-verify-images').click();await waitPublication('images-public');
  assert.equal(fs.existsSync(path.join(temp,'runs')),false);assert.deepEqual(errors,[]);
  assert.ok(posts.every(p=>p.startsWith('/api/antithesis-run/')));
- console.log('PASS: explicit publication, no implicit push, lost-response recovery, manual visibility/retry, download, Git/MOOG preview, stale inputs, mobile layout, no Local execution/submission');
+ console.log('PASS: explicit publication, no implicit push, lost-response recovery, post-push auto-verify + visibility links/retry, download, Git/MOOG preview, stale inputs, mobile layout, no Local execution/submission');
 }finally{if(browser)await browser.close();server.kill('SIGTERM');fs.rmSync(temp,{recursive:true,force:true})}})().catch(e=>{console.error(e,stderr);process.exitCode=1});
