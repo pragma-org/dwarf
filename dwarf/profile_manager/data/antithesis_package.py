@@ -15,6 +15,15 @@ MAX_BODY_BYTES=32768
 _PREPARING = threading.BoundedSemaphore(1)
 
 
+def _registration_implementation(registration_id):
+    """The implementation an operator registration was prepared for, or None."""
+    from profile_manager.version_discovery import load_operator_registration
+    try:
+        return load_operator_registration(registration_id)['registration'].get('implementation')
+    except ValueError:
+        return None
+
+
 def dispatch_package_request(*, method, path, body=b'', expected_token=None):
     route=urlsplit(path).path
     if not route.startswith(PREFIX):
@@ -24,7 +33,7 @@ def dispatch_package_request(*, method, path, body=b'', expected_token=None):
     def error(status,message):
         return reply(status,{'ok':False,'error':{'message':message}})
     action = route[len(PREFIX):]
-    if action not in ('preview','prepare','read','node-start','node-status','build','build-status','build-result','publication-create','publication-action','publication-status','publication-read','publication-result','validate','validation-status','readiness','submission-status','submit','submission-refresh'):
+    if action not in ('preview','prepare','read','node-select','node-status','build','build-status','build-result','publication-create','publication-action','publication-status','publication-read','publication-result','validate','validation-status','readiness','submission-status','submit','submission-refresh'):
         return error(404,'Unknown package endpoint.')
     if method != 'POST':
         return error(405,'Package endpoints require POST.')
@@ -50,11 +59,16 @@ def dispatch_package_request(*, method, path, body=b'', expected_token=None):
         token = value.get('token') if isinstance(value,dict) else None
         if not isinstance(token,str) or not token or not expected_token or not hmac.compare_digest(token.encode(),expected_token.encode()):
             return error(403,'A valid dashboard token is required to acquire or read prepared assets.')
-        if action in ('node-start','node-status'):
+        if action in ('node-select','node-status'):
             from profile_manager import antithesis_artifacts
-            if action=='node-start':
-                _shape(value,{'token','request','request_id'},'request')
-                artifact=antithesis_artifacts.start(value['request'],value['request_id'])
+            if action=='node-select':
+                _shape(value,{'token','implementation','registration_id'},'request')
+                registration_id=value['registration_id']
+                if not isinstance(registration_id,str) or not registration_id:
+                    raise PackageError('Choose a prepared build.',field='registration_id',status=422)
+                if _registration_implementation(registration_id)!=value['implementation']:
+                    raise PackageError('The prepared build belongs to a different implementation.',field='registration_id',status=422)
+                artifact=antithesis_artifacts.from_registration(registration_id)
             else:
                 _shape(value,{'token','artifact_id'},'request')
                 artifact=antithesis_artifacts.read(value['artifact_id'])

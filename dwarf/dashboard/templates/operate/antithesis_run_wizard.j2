@@ -68,21 +68,20 @@
         </select></label>
         {% endfor %}
       </div></fieldset>
-      <details><summary>Experimental node source, binary or image</summary>
-        <p class="dk-note">Prepare a node artifact using the existing DWARF build and binary packaging helpers. Paths refer to the DWARF host. A completed artifact replaces that implementation's catalog image in generated packages. Source builds use existing recipes and toolchains; commit source changes before building.</p>
+      <details><summary>Select prepared build</summary>
+        <p class="dk-note">Use a release the operator already prepared on the Versions page instead of the catalog image. The build is checked on the controller before it binds: the binary's reported commit must match the registered source, dynamically linked images must start with a preloaded library present, and Amaru must extract into the control image. Nothing is compiled here.</p>
         {% for implementation, label in [('cardano-node','Cardano-node'),('amaru','Amaru')] %}
         <fieldset data-antithesis-node="{{ implementation }}"><legend>{{ label }}</legend>
-          {% if implementation == 'cardano-node' %}<p class="dk-note">Cardano source builds require a recipe for the exact commit. For other commits, supply a compiled Linux/amd64 binary or image with the Stock variant.</p>{% endif %}
-          <label>Node input<select data-node-field="kind"><option value="catalog">Catalog image</option><option value="binary">Compiled binary / archive</option><option value="source">Source directory or official Git repository</option><option value="image">Image on the DWARF Docker host</option></select></label>
-          <div data-node-inputs hidden>
-            <label>Path, repository URL or image reference<input data-node-field="location" type="text" spellcheck="false"></label>
-            <label>Version label<input data-node-field="version" type="text" placeholder="Selected version or experimental label"></label>
-            <label>Source commit<input data-node-field="revision" type="text" placeholder="Full commit; source directories use HEAD" spellcheck="false"></label>
-            <label>Packaging base image (optional)<input data-node-field="base_image" type="text" placeholder="Default: shared catalog runtime image" spellcheck="false"></label>
-            <button type="button" class="dk-btn" data-node-release>Use resolved release source</button>
-            <button type="button" class="dk-btn" data-node-prepare>Prepare node artifact</button>
-            <p data-node-status role="status">No artifact prepared.</p>
-          </div>
+          {% set builds = catalog.prepared_builds.get(implementation, []) %}
+          {% if builds %}
+          <label>Prepared build<select data-node-registration><option value="">Catalog image</option>
+            {% for b in builds %}<option value="{{ b.registration_id }}" data-mode="{{ b.mode }}" data-version="{{ b.version }}">{{ b.label }}</option>{% endfor %}
+          </select></label>
+          <button type="button" class="dk-btn" data-node-select disabled>Use prepared build</button>
+          <p data-node-status role="status">Catalog image in use.</p>
+          {% else %}
+          <p class="dk-note" data-node-empty>No prepared build for this implementation — prepare one on the <a href="/operate/versions">Versions page</a>. The catalog image stays in use.</p>
+          {% endif %}
         </fieldset>
         {% endfor %}
       </details>

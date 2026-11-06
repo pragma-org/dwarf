@@ -30,13 +30,6 @@ def test_completed_artifact_cannot_silently_change_node_or_variant(tmp_path, mon
         a.selected_artifacts({'amaru':identifier}, 'instrumented')
 
 
-def test_raw_binary_cannot_be_declared_patched_without_evidence():
-    from profile_manager import antithesis_artifacts as a
-    with pytest.raises(ValueError, match='instrument'):
-        a.validate_request(dict(implementation='amaru', kind='binary', location='/tmp/a',
-            version='custom', revision='', mode='instrumented', base_image=''))
-
-
 def test_prepared_binary_is_consumed_by_mixed_victims(monkeypatch):
     from profile_manager import antithesis_artifacts as a
     from profile_manager.antithesis_package import preview_package
@@ -78,20 +71,11 @@ def test_pending_artifact_never_falls_back_to_catalog():
         preview_package(value)
 
 
-def test_source_with_dirty_changes_is_not_silently_rebuilt_from_head(tmp_path):
-    import subprocess
-    from profile_manager import antithesis_artifacts as a
-    subprocess.run(['git','init',str(tmp_path)],check=True,capture_output=True)
-    (tmp_path/'uncommitted.rs').write_text('custom code')
-    with pytest.raises(ValueError,match='uncommitted'):
-        a._source({'implementation':'amaru','location':str(tmp_path),'revision':'','mode':'stock'},tmp_path/'job','example:tag')
-
-
 def test_node_endpoint_requires_authentication_before_intake(monkeypatch):
     from profile_manager.data.antithesis_package import dispatch_package_request
     from profile_manager import antithesis_artifacts as a
-    monkeypatch.setattr(a,'start',lambda *args:pytest.fail('unauthorized intake'))
-    status,_,_=dispatch_package_request(method='POST',path='/api/antithesis-run/package/node-start',
+    monkeypatch.setattr(a,'from_registration',lambda *args,**kwargs:pytest.fail('unauthorized intake'))
+    status,_,_=dispatch_package_request(method='POST',path='/api/antithesis-run/package/node-select',
         body=b'{"token":"wrong"}',expected_token='right')
     assert status==403
 
@@ -103,18 +87,6 @@ def test_cardano_linux_builder_reuses_existing_toolchain_without_coverage_flags(
     assert 'LIBSODIUM_REV=' in text
     assert 'GhcSancov' not in text
     assert 'python3' in text
-
-
-def test_exact_amaru_source_uses_linux_adapter_and_latest_patch_recipe(monkeypatch,tmp_path):
-    from profile_manager import antithesis_artifacts as a
-    request=dict(implementation='amaru',location='https://github.com/pragma-org/amaru.git',
-        revision='aedfe797a5b8ef00d8b362be40b47a52c3b4a379',mode='instrumented')
-    def isolated(value,directory,*,exact):
-        assert value==request
-        assert exact[1]['measurement_revision']=='nanoseconds-v4'
-        return 'linux-context',{'mode':'patched'}
-    monkeypatch.setattr(a,'_experimental_amaru',isolated)
-    assert a._source(request,tmp_path,'unused')[0]=='linux-context'
 
 
 def test_instrumented_mixed_requires_both_prepared_targets(monkeypatch):
@@ -130,13 +102,6 @@ def test_instrumented_mixed_requires_both_prepared_targets(monkeypatch):
     result=preview_package(value)
     assert result['version_binding']['status']!='applied'
     assert any(i['code']=='patched-build-not-implemented' for i in result['issues'])
-
-
-def test_source_packaging_base_requires_digest():
-    from profile_manager import antithesis_artifacts as a
-    with pytest.raises(ValueError,match='digest'):
-        a.validate_request(dict(implementation='amaru',kind='source',location='/tmp/source',
-            version='custom',revision='',mode='stock',base_image='example/base:mutable'))
 
 
 def test_amaru_probe_rejects_extraction_mismatch_before_bootstrap(tmp_path,monkeypatch):

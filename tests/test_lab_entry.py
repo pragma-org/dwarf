@@ -66,3 +66,67 @@ def test_local_run_still_uses_its_existing_pipeline():
     assert 'data-start-url="/api/run/start"' in html
     assert 'data-dashboard-token="local-token"' in html
     assert 'antithesis-run-wizard.js' not in html
+
+
+_REGISTRATIONS = [
+    {'registration_id': 'registration-release-build-' + '1' * 32 + '-stock', 'implementation': 'amaru',
+     'version': '10.11.20260918', 'config_image_id': 'sha256:' + 'a' * 64,
+     'provenance': {'source_revision': 'aedfe797a5b8ef00d8b362be40b47a52c3b4a379', 'qualification': 'unverified'},
+     'source_build': {'variant': 'stock', 'execution_id': 'release-build-' + '1' * 32, 'build_result_sha256': 'sha256:' + 'c' * 64}},
+    {'registration_id': 'registration-release-build-' + '2' * 32 + '-instrumented', 'implementation': 'amaru',
+     'version': '10.11.20261029', 'config_image_id': 'sha256:' + 'b' * 64,
+     'provenance': {'source_revision': 'b' * 40, 'qualification': 'unverified'},
+     'source_build': {'variant': 'instrumented', 'execution_id': 'release-build-' + '2' * 32, 'build_result_sha256': 'sha256:' + 'c' * 64,
+                      'patch_set_sha256': 'sha256:' + 'd' * 64, 'measurement_revision': 'nanoseconds-v4',
+                      'instrumentation_evidence_sha256': 'sha256:' + 'e' * 64,
+                      'auto_ported': True, 'ported_from_source_revision': 'aedfe797a5b8ef00d8b362be40b47a52c3b4a379'}},
+]
+_PROOFS = [{'proof_id': 'auto-port-proof-' + 'f' * 32, 'registration_id': _REGISTRATIONS[1]['registration_id'],
+            'implementation': 'amaru', 'source_revision': 'b' * 40, 'run_id': '20261105T123349Z-41454fc8'}]
+
+
+class _Ledger:
+    state = {'revision': 'r', 'registrations': [], 'auto_port_proofs': []}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def read(self):
+        return self.state
+
+
+def test_prepared_build_options_label_auto_ported_and_proven(monkeypatch):
+    from profile_manager.data import antithesis_run_wizard as wizard
+    options = wizard.prepared_build_options({'revision': 'r', 'registrations': _REGISTRATIONS, 'auto_port_proofs': _PROOFS})
+    assert set(options) == {'amaru', 'cardano-node'} and options['cardano-node'] == []
+    stock, patched = options['amaru']
+    assert stock == {'registration_id': _REGISTRATIONS[0]['registration_id'], 'version': '10.11.20260918', 'mode': 'stock',
+                     'source_revision': 'aedfe797a5b8ef00d8b362be40b47a52c3b4a379', 'label': '10.11.20260918 · stock'}
+    assert patched['mode'] == 'patched'
+    assert patched['label'] == '10.11.20261029 · patched · auto-ported from aedfe797a5b8 · proven by run 20261105T123349Z-41454fc8'
+
+
+def test_wizard_lists_prepared_builds_per_implementation(monkeypatch):
+    from profile_manager.data import antithesis_run_wizard as wizard
+    _Ledger.state = {'revision': 'r', 'registrations': _REGISTRATIONS, 'auto_port_proofs': _PROOFS}
+    monkeypatch.setattr(wizard, 'OperatorVersionDecisionLedger', _Ledger)
+    html = dashboard.render_route_html('/run/antithesis', token='t')
+    elements = Elements(html)
+    selects = elements.matching('select')
+    assert any('data-node-registration' in a for a in selects)
+    options = [a for a in elements.matching('option') if a.get('value', '').startswith('registration-release-build-')]
+    assert {a['value'] for a in options} == {r['registration_id'] for r in _REGISTRATIONS}
+    assert {a.get('data-mode') for a in options} == {'stock', 'patched'}
+    assert 'auto-ported from aedfe797a5b8 · proven by run 20261105T123349Z-41454fc8' in html
+    assert 'Experimental node source, binary or image' not in html
+    assert 'node-start' not in html
+    assert [a for a in elements.matching('button') if 'data-node-select' in a]
+
+
+def test_wizard_without_prepared_builds_points_to_versions_page(monkeypatch):
+    from profile_manager.data import antithesis_run_wizard as wizard
+    _Ledger.state = {'revision': 'r', 'registrations': [], 'auto_port_proofs': []}
+    monkeypatch.setattr(wizard, 'OperatorVersionDecisionLedger', _Ledger)
+    html = dashboard.render_route_html('/run/antithesis', token='t')
+    assert 'No prepared build for this implementation' in html
+    assert Elements(html).matching('a', href='/operate/versions')

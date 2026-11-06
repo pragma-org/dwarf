@@ -236,3 +236,46 @@ def test_handoff_protocol_and_shape_follow_emitted_command_not_scenario_label(mo
     monkeypatch.setattr(antithesis_package.native, 'render_bundle', render)
     result = generate()
     assert result['engine_handoff']['adversary'] == {'protocol':'blockfetch','shape':'block'}
+
+
+def _node_select(body, expected_token='right'):
+    from profile_manager.data.antithesis_package import dispatch_package_request
+    status, _, payload = dispatch_package_request(method='POST', path='/api/antithesis-run/package/node-select',
+                                                  body=json.dumps(body).encode(), expected_token=expected_token)
+    return status, json.loads(payload)
+
+
+def test_node_select_starts_adapter_and_returns_202(monkeypatch):
+    from profile_manager import antithesis_artifacts as a
+    from profile_manager.data import antithesis_package as endpoint
+    registration_id = 'registration-release-build-' + '1' * 32 + '-stock'
+    calls = []
+    def from_registration(rid):
+        calls.append(rid)
+        return {'id': 'a' * 32, 'state': 'building', 'implementation': 'amaru', 'registration_id': rid, 'message': 'Adapting prepared release'}
+    monkeypatch.setattr(a, 'from_registration', from_registration)
+    monkeypatch.setattr(endpoint, '_registration_implementation', lambda rid: 'amaru')
+    status, body = _node_select({'token': 'right', 'implementation': 'amaru', 'registration_id': registration_id})
+    assert status == 202 and body['ok'] is True and body['artifact']['id'] == 'a' * 32
+    assert calls == [registration_id]
+
+
+def test_node_select_rejects_implementation_mismatch(monkeypatch):
+    from profile_manager import antithesis_artifacts as a
+    from profile_manager.data import antithesis_package as endpoint
+    monkeypatch.setattr(a, 'from_registration', lambda rid: pytest.fail('adapter must not start'))
+    monkeypatch.setattr(endpoint, '_registration_implementation', lambda rid: 'cardano-node')
+    status, body = _node_select({'token': 'right', 'implementation': 'amaru', 'registration_id': 'registration-release-build-' + '1' * 32 + '-stock'})
+    assert status == 422 and body['error']['field'] == 'registration_id'
+
+
+def test_node_select_requires_token():
+    status, body = _node_select({'token': 'wrong', 'implementation': 'amaru', 'registration_id': 'registration-x'})
+    assert status == 403
+
+
+def test_node_start_action_is_gone():
+    from profile_manager.data.antithesis_package import dispatch_package_request
+    status, _, payload = dispatch_package_request(method='POST', path='/api/antithesis-run/package/node-start',
+                                                  body=b'{"token":"right"}', expected_token='right')
+    assert status == 404
