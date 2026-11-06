@@ -33,7 +33,14 @@ def module():
     return antithesis_image_build
 
 
+@pytest.fixture(autouse=True)
+def fast_poll(monkeypatch):
+    monkeypatch.setattr(module(), '_POLL_SECONDS', 0)
+
+
 def fake_docker(calls):
+    """Only the retained bounded CLI helper (`_docker`) is exercised with this
+    in the dashboard; builds themselves go through the controller."""
     def run(argv, *, cwd, log_path, timeout):
         calls.append(argv)
         if argv[1:3] == ['image', 'inspect']:
@@ -43,6 +50,52 @@ def fake_docker(calls):
         assert (Path(cwd)/'workload/Dockerfile').is_file()
         return ''
     return run
+
+
+def fake_controller(calls, *, fail=None, rows=None, hold=None, node_child=None):
+    """A controller that builds like controller/antithesis_publish does: rows for
+    every build: service and every node artifact, all with IMAGE_ID. `fail` is a
+    (code, detail) tuple ('partial' keeps the first row in progress); `rows`
+    overrides the returned rows; `hold` is an Event the build waits on;
+    `node_child` is the amd64 child id reported for node-artifact rows."""
+    from profile_manager import antithesis_preparation as prep
+    from profile_manager.antithesis_image_build import _plan
+    executions = {}
+    def controller(operation, parameters, timeout, idempotency_key=None):
+        calls.append((operation, dict(parameters), timeout, idempotency_key))
+        if operation == 'antithesis.image-build':
+            if hold is not None:
+                assert hold.wait(5)
+            prepared = prep.read_preparation(parameters['preparation_id'])
+            files, _ = prep._unpack(base64.b64decode(prepared['archive_base64']))
+            compose, builds = _plan(files)
+            built = []
+            for artifact in prepared['receipt'].get('version_binding', {}).get('node_artifacts', {}).values():
+                for name, service in compose['services'].items():
+                    if service.get('image') == artifact['reference']:
+                        built.append({'service': name, 'reference': artifact['reference'], 'image_id': node_child or IMAGE_ID,
+                                      'artifact_image_id': artifact['image_id'], 'artifact_id': artifact['id'],
+                                      'platform': 'linux/amd64', 'publication': 'local-only'})
+            for index, item in enumerate(builds):
+                built.append({'service': item['service'],
+                              'reference': 'dwarf-antithesis-' + parameters['execution_id'].rsplit('-', 1)[-1] + '-' + str(index) + ':prepared',
+                              'image_id': IMAGE_ID, 'platform': 'linux/amd64', 'publication': 'local-only'})
+            if fail is not None:
+                code, detail = fail
+                executions[parameters['execution_id']] = {
+                    'state': 'failed', 'failure': {'code': code, 'stage': 'image-build', 'message': 'canned ' + code},
+                    'progress': {'status': 'failed', 'stage': 'build', 'detail': detail, 'built_images': built[:1] if code == 'partial' else []}}
+            else:
+                executions[parameters['execution_id']] = {
+                    'state': 'applied',
+                    'result': {'status': 'built', 'preparation_id': parameters['preparation_id'],
+                               'built_images': rows if rows is not None else built, 'build_host': 'DWARF controller', 'build_count': len(builds)},
+                    'progress': {'status': 'built', 'stage': 'complete'}}
+            return {'status': 'accepted', 'execution_id': parameters['execution_id']}
+        if operation == 'execution.status':
+            return {'execution_id': parameters['execution_id'], **executions[parameters['execution_id']]}
+        raise AssertionError(operation)
+    return controller
 
 
 def wait(build, identifier):
@@ -56,10 +109,13 @@ def wait(build, identifier):
 
 def test_generated_build_materializes_separate_package_without_changing_selections(prepared, monkeypatch):
     build = module(); calls = []
-    monkeypatch.setattr(build, '_docker', fake_docker(calls))
-    identifier = build.start_build(prepared['receipt']['id'])['id']
+    monkeypatch.setattr(build, '_docker', lambda *a, **k: pytest.fail('the dashboard must not run docker'))
+    identifier = build.start_build(prepared['receipt']['id'], controller=fake_controller(calls))['id']
     status = wait(build, identifier)
     assert status['state'] == 'built', status
+    assert status['execution_id'].startswith('antithesis-build-')
+    assert calls[0][0] == 'antithesis.image-build' and calls[0][1]['preparation_id'] == prepared['receipt']['id']
+    assert calls[0][2] == 3600 and calls[0][3] == calls[0][1]['execution_id']
     result = build.read_build_result(identifier)
     receipt = result['receipt']
     assert receipt['preparation_id'] == prepared['receipt']['id']
@@ -77,8 +133,8 @@ def test_generated_build_materializes_separate_package_without_changing_selectio
     before['services']['sm-workload'] = expected
     assert after == before
     assert receipt['built_images'][0]['reference'].startswith('dwarf-antithesis-')
-    assert len(calls) == 2
-    assert not any('push' in c or 'up' in c for c in calls)
+    assert [c[0] for c in calls] == ['antithesis.image-build', 'execution.status']
+    assert receipt['build_host'] == 'DWARF controller' and receipt['execution_id'] == status['execution_id']
     assert all(archive.read(n) == original.read(n) for n in original.namelist() if n != 'docker-compose.yaml')
     assert read_preparation(prepared['receipt']['id']) == prepared
     assert not {'image-build-required','workload-image-build-required'} & {i['code'] for i in receipt['issues']}
@@ -88,50 +144,49 @@ def test_generated_build_materializes_separate_package_without_changing_selectio
 def test_authentication_precedes_any_build_work(prepared, monkeypatch):
     from profile_manager.data.antithesis_package import dispatch_package_request
     build = module()
-    monkeypatch.setattr(build, 'start_build', lambda *a: pytest.fail('unauthorized build'))
+    monkeypatch.setattr(build, 'start_build', lambda *a, **k: pytest.fail('unauthorized build'))
     status, _, _ = dispatch_package_request(method='POST', path='/api/antithesis-run/package/build',
         body=json.dumps({'token':'wrong','preparation_id':prepared['receipt']['id']}).encode(), expected_token='test')
     assert status == 403
 
 
-def test_failed_build_does_not_produce_a_download_and_can_retry(prepared, monkeypatch):
+def test_failed_build_does_not_produce_a_download_and_can_retry(prepared):
     build = module()
-    def fail(*args, **kwargs):
-        raise build.BuildFailure('Docker build failed (exit 7).')
-    monkeypatch.setattr(build, '_docker', fail)
-    first = build.start_build(prepared['receipt']['id'])['id']
-    assert wait(build, first)['state'] == 'failed'
+    first = build.start_build(prepared['receipt']['id'],
+                              controller=fake_controller([], fail=('image-build-failed', 'sm-workload: ERROR: failed to solve')))['id']
+    failed = wait(build, first)
+    assert failed['state'] == 'failed' and failed['message'] == 'sm-workload: ERROR: failed to solve'
     with pytest.raises(build.PackageError, match='not complete'):
         build.read_build_result(first)
-    monkeypatch.setattr(build, '_docker', fake_docker([]))
-    second = build.start_build(prepared['receipt']['id'])['id']
+    second = build.start_build(prepared['receipt']['id'], controller=fake_controller([]))['id']
     assert second != first and wait(build, second)['state'] == 'built'
 
 
-def test_concurrent_builds_are_rejected_and_source_copy_is_private(prepared, monkeypatch):
-    build = module(); entered = threading.Event(); release = threading.Event(); calls=[]
-    def held(argv, **kwargs):
-        if argv[1] == 'build':
-            entered.set(); assert release.wait(5)
-            assert 'builds' in str(kwargs['cwd'])
-        return fake_docker(calls)(argv, **kwargs)
-    monkeypatch.setattr(build, '_docker', held)
-    first = build.start_build(prepared['receipt']['id'])['id']
+def test_concurrent_builds_are_rejected_and_source_copy_is_private(prepared):
+    build = module(); release = threading.Event(); entered = threading.Event(); calls = []
+    inner = fake_controller(calls, hold=release)
+    def held(operation, parameters, timeout, idempotency_key=None):
+        if operation == 'antithesis.image-build':
+            entered.set()
+        return inner(operation, parameters, timeout, idempotency_key)
+    first = build.start_build(prepared['receipt']['id'], controller=held)['id']
     try:
         assert entered.wait(5)
         with pytest.raises(build.PackageError) as error:
-            build.start_build(prepared['receipt']['id'])
+            build.start_build(prepared['receipt']['id'], controller=held)
         assert error.value.status == 409
-    finally: release.set()
+    finally:
+        release.set()
     assert wait(build, first)['state'] == 'built'
+    assert (build.state_directory()/first).stat().st_mode & 0o777 == 0o700
 
 
-def test_changed_preparation_is_rejected_before_docker(prepared, monkeypatch):
+def test_changed_preparation_is_rejected_before_docker(prepared):
     from profile_manager.antithesis_preparation import state_directory
-    build = module(); monkeypatch.setattr(build, '_docker', lambda *a, **k:pytest.fail('changed source built'))
+    build = module()
     (state_directory()/prepared['receipt']['id']/'package/miniprotocol/workload/Dockerfile').write_text('FROM changed')
     with pytest.raises(build.PackageError, match='changed'):
-        build.start_build(prepared['receipt']['id'])
+        build.start_build(prepared['receipt']['id'], controller=lambda *a, **k: pytest.fail('changed source built'))
 
 
 def test_supplied_assets_are_not_built(tmp_path, monkeypatch):
@@ -139,21 +194,21 @@ def test_supplied_assets_are_not_built(tmp_path, monkeypatch):
     root=tmp_path/'source';root.mkdir();(root/'docker-compose.yaml').write_text('services:\n  node:\n    build: .\n')
     result=prepare_package(case(package_source='existing'),{'compose_path':str(root),'image_references':[]})
     with pytest.raises(module().PackageError, match='generated'):
-        module().start_build(result['receipt']['id'])
+        module().start_build(result['receipt']['id'], controller=lambda *a, **k: pytest.fail('supplied asset built'))
 
 
-def test_wrong_image_architecture_is_not_success(prepared, monkeypatch):
-    build=module(); run=fake_docker([])
-    def wrong(argv, **kwargs):
-        return run(argv, **kwargs).replace('amd64','arm64')
-    monkeypatch.setattr(build,'_docker',wrong)
-    identifier=build.start_build(prepared['receipt']['id'])['id']
+def test_wrong_image_architecture_is_not_success(prepared):
+    build=module()
+    rows=[{'service':'sm-workload','reference':'dwarf-antithesis-'+'f'*32+'-0:prepared','image_id':IMAGE_ID,
+           'platform':'linux/arm64','publication':'local-only'}]
+    identifier=build.start_build(prepared['receipt']['id'],controller=fake_controller([],rows=rows))['id']
     assert wait(build,identifier)['state']=='failed'
 
 
-def test_result_tampering_is_detected(prepared,monkeypatch):
-    build=module();monkeypatch.setattr(build,'_docker',fake_docker([]))
-    identifier=build.start_build(prepared['receipt']['id'])['id'];assert wait(build,identifier)['state']=='built'
+def test_result_tampering_is_detected(prepared):
+    build=module()
+    identifier=build.start_build(prepared['receipt']['id'],controller=fake_controller([]))['id']
+    assert wait(build,identifier)['state']=='built'
     (build.state_directory()/identifier/'package/docker-compose.yaml').write_text('services: {}')
     with pytest.raises(build.PackageError,match='changed'):build.read_build_result(identifier)
 
@@ -161,7 +216,7 @@ def test_result_tampering_is_detected(prepared,monkeypatch):
 def test_api_build_status_result_and_no_local_execution(prepared, monkeypatch):
     from profile_manager.data.antithesis_package import dispatch_package_request
     from profile_manager import run_service, remote
-    build=module();monkeypatch.setattr(build,'_docker',fake_docker([]))
+    build=module();monkeypatch.setattr(build,'controller_request',fake_controller([]))
     monkeypatch.setattr(run_service,'execute_run',lambda *a,**k:pytest.fail('Local execution'))
     monkeypatch.setattr(remote,'run_moog_create_test',lambda *a,**k:pytest.fail('MOOG submission'))
     def api(action, payload, method='POST'):
@@ -177,11 +232,11 @@ def test_api_build_status_result_and_no_local_execution(prepared, monkeypatch):
     assert api('build',{'preparation_id':prepared['receipt']['id'],'extra':1})[0]==400
 
 
-def test_zero_build_snapshot_is_honest_without_running_docker(catalog,monkeypatch):
+def test_zero_build_snapshot_is_honest_without_running_docker(catalog):
     from test_antithesis_package import request
     prepared=prepare_package(request(),{})
-    build=module();monkeypatch.setattr(build,'_docker',lambda *a,**k:pytest.fail('no build required'))
-    identifier=build.start_build(prepared['receipt']['id'])['id']
+    build=module()
+    identifier=build.start_build(prepared['receipt']['id'],controller=lambda *a,**k:pytest.fail('no build required'))['id']
     status=wait(build,identifier);assert status['state']=='not-required'
     assert status['built_images']==[]
     assert build.read_build_result(identifier)['receipt']['execution_ready'] is False
@@ -216,19 +271,19 @@ def test_docker_timeout_is_bounded(tmp_path):
         build._docker([sys.executable,'-c','import time;time.sleep(30)'],cwd=tmp_path,log_path=tmp_path/'log',timeout=.05)
 
 
-def test_repeated_start_request_recovers_same_completed_job(prepared, monkeypatch):
-    build=module();calls=[];monkeypatch.setattr(build,'_docker',fake_docker(calls));request_id='b'*32
-    first=build.start_build(prepared['receipt']['id'],request_id=request_id)
+def test_repeated_start_request_recovers_same_completed_job(prepared):
+    build=module();calls=[];controller=fake_controller(calls);request_id='b'*32
+    first=build.start_build(prepared['receipt']['id'],request_id=request_id,controller=controller)
     assert wait(build,first['id'])['state']=='built'
-    second=build.start_build(prepared['receipt']['id'],request_id=request_id)
+    second=build.start_build(prepared['receipt']['id'],request_id=request_id,controller=controller)
     assert second['id']==first['id'] and second['state']=='built'
     assert len(calls)==2
     with pytest.raises(build.PackageError,match='different preparation'):
-        build.start_build('c'*32,request_id=request_id)
+        build.start_build('c'*32,request_id=request_id,controller=controller)
 
 
-def test_built_receipt_supersedes_build_limitation(prepared,monkeypatch):
-    build=module();monkeypatch.setattr(build,'_docker',fake_docker([]));job=build.start_build(prepared['receipt']['id'])
+def test_built_receipt_supersedes_build_limitation(prepared):
+    build=module();job=build.start_build(prepared['receipt']['id'],controller=fake_controller([]))
     assert wait(build,job['id'])['state']=='built'
     receipt=build.read_build_result(job['id'])['receipt']
     assert not any('Workload build,' in s for s in receipt['workload_binding']['limitations'])
@@ -245,13 +300,10 @@ def test_later_image_failure_retains_partial_success(catalog,monkeypatch):
         result['files']['environment/docker-compose.yaml']=yaml.safe_dump(body,sort_keys=False)
         return result
     monkeypatch.setattr(prep,'preview_package',two_builds)
-    prepared=prepare_package(case(),{});build=module();calls=[]
-    def second_fails(argv,**kwargs):
-        if argv[1]=='build' and any(str(a).endswith('-1:prepared') for a in argv):
-            raise build.BuildFailure('Second build failed.')
-        return fake_docker(calls)(argv,**kwargs)
-    monkeypatch.setattr(build,'_docker',second_fails)
-    job=build.start_build(prepared['receipt']['id']);status=wait(build,job['id'])
+    prepared=prepare_package(case(),{});build=module()
+    # The controller reports the rows it finished before the failure in its progress.
+    job=build.start_build(prepared['receipt']['id'],controller=fake_controller([],fail=('partial','second-workload: build failed')))
+    status=wait(build,job['id'])
     assert status['state']=='failed' and len(status['built_images'])==1
     assert status['built_images'][0]['service']=='sm-workload'
     with pytest.raises(build.PackageError):build.read_build_result(job['id'])
@@ -270,18 +322,14 @@ def test_native_node_index_is_verified_then_publishes_immutable_amd64_child(cata
     request['versions'].update(artifacts={'amaru':node['id']})
     request['versions']['versions']['amaru']='custom'
     prepared=prepare_package(request,{})
-    build=module();calls=[]
-    fallback=fake_docker(calls)
-    def docker(argv, **kwargs):
-        if argv[1:3]==['image','inspect'] and argv[-1] in (node['reference'],index_id):
-            calls.append(argv)
-            if '--platform' in argv:
-                assert argv[-1]==index_id, 'Resolve the verified immutable index, not its mutable tag'
-                return json.dumps([{'Id':child_id,'Os':'linux','Architecture':platform}])
-            return json.dumps([{'Id':IMAGE_ID if changed else index_id,'Os':'linux','Architecture':'amd64'}])
-        return fallback(argv,**kwargs)
-    monkeypatch.setattr(build,'_docker',docker)
-    status=wait(build,build.start_build(prepared['receipt']['id'])['id'])
+    build=module()
+    # The controller verifies the index and resolves the amd64 child; the
+    # dashboard passes its rows through or records the failure.
+    if changed or platform!='amd64' or child is None:
+        controller=fake_controller([],fail=('artifact-image-missing','prepared node image is missing or changed'))
+    else:
+        controller=fake_controller([],node_child=child_id)
+    status=wait(build,build.start_build(prepared['receipt']['id'],controller=controller)['id'])
     if changed or platform!='amd64' or child is None:
         assert status['state']=='failed'
         assert status['built_images']==[]
@@ -291,3 +339,19 @@ def test_native_node_index_is_verified_then_publishes_immutable_amd64_child(cata
         assert row['image_id']==child_id
         assert row['artifact_image_id']==index_id
         assert build.read_build_result(status['id'])['receipt']['version_binding']['node_artifacts']['amaru']['image_id']==index_id
+
+
+def test_build_never_invokes_docker_in_the_dashboard(prepared, monkeypatch):
+    build=module();monkeypatch.setattr(build,'_docker',lambda *a,**k:pytest.fail('docker in the dashboard'))
+    import subprocess
+    monkeypatch.setattr(subprocess,'Popen',lambda *a,**k:pytest.fail('subprocess in the dashboard'))
+    identifier=build.start_build(prepared['receipt']['id'],controller=fake_controller([]))['id']
+    assert wait(build,identifier)['state']=='built'
+
+
+def test_build_status_mirrors_controller_failure_detail(prepared):
+    build=module()
+    job=build.start_build(prepared['receipt']['id'],controller=fake_controller([],fail=('image-build-failed','sm-workload: no space left on device')))
+    status=wait(build,job['id'])
+    assert status['state']=='failed' and status['message']=='sm-workload: no space left on device'
+    assert status['failure_code']=='image-build-failed'

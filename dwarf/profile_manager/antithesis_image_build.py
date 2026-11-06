@@ -12,16 +12,19 @@ import re
 import signal
 import subprocess
 import threading
+import time
 import uuid
 
 import yaml
 
 from profile_manager import antithesis_preparation as prep
 from profile_manager.antithesis_package import PackageError, _json
+from profile_manager.topology_actions import TopologyActionError, controller_request
 
 _ACTIVE = {'queued', 'building'}
 _TERMINAL = {'built', 'not-required'}
 BUILD_TIMEOUT = 1200
+_POLL_SECONDS = 2.0
 LOG_LIMIT = 256 * 1024
 
 
@@ -123,10 +126,14 @@ def _plan(files):
     return compose, builds
 
 
-def start_build(preparation_id, *, request_id=None):
+def start_build(preparation_id, *, request_id=None, controller=None):
+    """Build the package's generated images through the controller (the only
+    process with Docker). The dashboard keeps the job rows, the receipt and the
+    package copy; the controller returns the built-image rows."""
     identifier = request_id if request_id is not None else uuid.uuid4().hex
     if not isinstance(identifier, str) or not prep._ID.fullmatch(identifier):
         raise PackageError('Invalid build request ID.', field='request_id')
+    controller = controller or controller_request
     def recover():
         if not (state_directory()/identifier/'status.json').exists():
             return None
@@ -160,10 +167,11 @@ def start_build(preparation_id, *, request_id=None):
                   'state':'queued', 'created_at':datetime.now(timezone.utc).isoformat(),
                   'current_service':None, 'build_count':len(builds), 'built_images':[],
                   'execution_ready':False, 'submission_ready':False,
-                  'message':'Waiting to build generated images.'}
+                  'execution_id':'antithesis-build-'+uuid.uuid4().hex,
+                  'message':'Waiting for the controller to build generated images.'}
         _save(directory/'status.json', status)
         worker = threading.Thread(target=_worker,
-            args=(directory, status.copy(), source, files, compose, builds, global_lock, job_lock), daemon=True)
+            args=(directory, status.copy(), source, files, compose, builds, global_lock, job_lock, controller), daemon=True)
         worker.start()
         return status
     except Exception:
@@ -172,48 +180,73 @@ def start_build(preparation_id, *, request_id=None):
         raise
 
 
-def _worker(directory, status, source, files, compose, builds, global_lock, job_lock):
+_IMAGE_ROW_ID = re.compile(r'sha256:[0-9a-f]{64}')
+
+
+def _controller_build(status, source, builds, controller, directory):
+    """Ask the controller to build; mirror its progress; return its rows."""
+    execution_id = status['execution_id']
+    controller('antithesis.image-build', {'preparation_id': source['id'], 'execution_id': execution_id},
+               3600, idempotency_key=execution_id)
+    while True:
+        try:
+            observed = controller('execution.status', {'execution_id': execution_id}, 10)
+        except TopologyActionError as exc:
+            if str(exc) != 'execution is not managed by this controller':
+                raise
+            observed = {'execution_id': execution_id, 'state': 'interrupted'}
+        if observed.get('execution_id') != execution_id:
+            raise BuildFailure('Build status has a different execution identity.')
+        progress = observed.get('progress') or {}
+        if observed.get('state') in {'running', 'cancelling'}:
+            current = progress.get('current_service')
+            if current and current != status.get('current_service'):
+                status.update(state='building', current_service=current, message=f'Building {current} for linux/amd64 on the controller.')
+                _save(directory/'status.json', status)
+            if _POLL_SECONDS:
+                time.sleep(_POLL_SECONDS)
+            continue
+        break
+    if observed.get('state') == 'applied':
+        result = observed.get('result') or {}
+        if result.get('status') != 'built' or result.get('preparation_id') != source['id']:
+            raise BuildFailure('Controller build result differs from the prepared package.')
+        rows = result.get('built_images')
+        if not isinstance(rows, list):
+            raise BuildFailure('Controller build result carries no image rows.')
+        for row in rows:
+            if (not isinstance(row, dict) or row.get('platform') != 'linux/amd64'
+                    or not _IMAGE_ROW_ID.fullmatch(str(row.get('image_id', '')))):
+                raise BuildFailure('Built image metadata does not identify a Linux/amd64 image.')
+        return rows
+    partial = progress.get('built_images')
+    if isinstance(partial, list):
+        status['built_images'] = [row for row in partial if isinstance(row, dict)]
+    failure = observed.get('failure') or {}
+    status['failure_code'] = failure.get('code')
+    raise BuildFailure(progress.get('detail') or failure.get('message')
+                       or 'Image build ' + str(observed.get('state')) + ' on the controller.')
+
+
+def _worker(directory, status, source, files, compose, builds, global_lock, job_lock, controller):
     try:
         package = directory/'package'; prep._write_tree(package, files)
-        # Prepared node images are built on this daemon and must join publication.
-        for artifact in source.get('version_binding',{}).get('node_artifacts',{}).values():
-            raw=_docker(['docker','image','inspect',artifact['reference']],cwd=package,
-                        log_path=directory/('node-'+artifact['implementation']+'.log'),timeout=30)
-            if json.loads(raw)[0].get('Id') != artifact['image_id']:
-                raise BuildFailure('Prepared node image changed; prepare the node again.')
-            # Docker's containerd store can report an OCI index for the original
-            # artifact. Publication checks the selected platform image instead.
-            # Resolve that child through the verified immutable parent identity.
-            raw=_docker(['docker','image','inspect','--platform','linux/amd64',artifact['image_id']],
-                        cwd=package,log_path=directory/('node-'+artifact['implementation']+'-platform.log'),timeout=30)
-            info=json.loads(raw)[0]
-            if (info.get('Os')!='linux' or info.get('Architecture')!='amd64'
-                    or not re.fullmatch(r'sha256:[0-9a-f]{64}',info.get('Id',''))):
-                raise BuildFailure('Prepared node image must provide Linux/amd64.')
-            for name,service in compose['services'].items():
-                if service.get('image')==artifact['reference']:
-                    status['built_images'].append({'service':name,'reference':artifact['reference'],
-                        'image_id':info['Id'],'artifact_image_id':artifact['image_id'],
-                        'artifact_id':artifact['id'],'platform':'linux/amd64','publication':'local-only'})
-        for index, build in enumerate(builds):
-            name = build['service']
-            status.update(state='building', current_service=name, message=f'Building {name} for linux/amd64.')
+        node_artifacts = source.get('version_binding',{}).get('node_artifacts',{})
+        if builds or node_artifacts:
+            status.update(state='building', message='Building generated images on the controller.')
             _save(directory/'status.json', status)
-            reference = f'dwarf-antithesis-{status["id"]}-{index}:prepared'
-            context = package/build['context']
-            _docker(['docker','build','--platform','linux/amd64','--tag',reference,
-                     '--file',build['dockerfile'],'.'], cwd=context,
-                    log_path=directory/f'build-{index}.log', timeout=BUILD_TIMEOUT)
-            raw = _docker(['docker','image','inspect','--platform','linux/amd64',reference],
-                          cwd=context, log_path=directory/f'image-{index}.log', timeout=30)
-            info = json.loads(raw)[0]
-            if (info.get('Os') != 'linux' or info.get('Architecture') != 'amd64'
-                    or not re.fullmatch(r'sha256:[a-f0-9]{64}', info.get('Id',''))):
-                raise BuildFailure('Built image metadata does not identify a Linux/amd64 image.')
-            status['built_images'].append({'service':name,'reference':reference,'image_id':info['Id'],
-                                           'platform':'linux/amd64','publication':'local-only'})
-            compose['services'][name].pop('build')
-            compose['services'][name]['image'] = reference
+            rows = _controller_build(status, source, builds, controller, directory)
+            by_service = {}
+            for row in rows:
+                status['built_images'].append(dict(row))
+                if 'artifact_id' not in row:
+                    by_service[row['service']] = row['reference']
+            for build in builds:
+                name = build['service']
+                if name not in by_service:
+                    raise BuildFailure(f'Controller did not build {name}.')
+                compose['services'][name].pop('build')
+                compose['services'][name]['image'] = by_service[name]
             _save(directory/'status.json', status)
         if builds:
             (package/'docker-compose.yaml').write_text(yaml.safe_dump(compose, sort_keys=False))
@@ -225,7 +258,7 @@ def _worker(directory, status, source, files, compose, builds, global_lock, job_
                       'image-build-publication-deferred','publication-deferred'}
         issues = [i for i in source['issues'] if i['code'] not in superseded]
         issues.extend(i for i in findings if i not in issues)
-        issues.append({'code':'publication-required','message':'Built images exist only on the Dwarf build host. Publication, runtime validation and MOOG submission remain separate.'
+        issues.append({'code':'publication-required','message':'Built images exist only on the Dwarf controller host. Publication, runtime validation and MOOG submission remain separate.'
                        if builds else 'No generated image build was needed. Existing images and remote execution have not been verified.'})
         state = 'built' if builds else 'not-required'
         receipt = dict(source, id=status['id'], state=state, preparation_id=source['id'],
@@ -233,7 +266,8 @@ def _worker(directory, status, source, files, compose, builds, global_lock, job_
                        compose_path=compose_path, images=images, build_requirements=[],
                        built_images=status['built_images'], issues=issues,
                        execution_ready=False, submission_ready=False)
-        receipt['build_host'] = 'Dwarf dashboard Docker daemon'
+        receipt['build_host'] = 'DWARF controller'
+        receipt['execution_id'] = status['execution_id']
         receipt['workload_binding'] = json.loads(json.dumps(source['workload_binding']))
         workload_image = receipt['workload_binding'].get('workload_image')
         if workload_image:
@@ -246,13 +280,14 @@ def _worker(directory, status, source, files, compose, builds, global_lock, job_
 
         _save(directory/'receipt.json', receipt)
         status.update(state=state, current_service=None,
-                      message='Images built locally; package saved. Publication and remote validation remain.' if builds
+                      message='Images built on the controller; package saved. Publication and remote validation remain.' if builds
                       else 'No image build was needed. Existing images were not built or verified.')
     except BuildFailure as exc:
-        status.update(state='failed', message=str(exc))
+        status.update(state='failed', current_service=None, message=str(exc))
     except Exception:
-        # Raw subprocess/provider errors may contain credentials; retain only bounded private CLI logs.
-        status.update(state='failed', message='Image preparation failed. Check Docker availability and the private build logs on the Dwarf host.')
+        # Raw transport errors may carry credentials; keep only the bounded private logs.
+        status.update(state='failed', current_service=None,
+                      message='Image preparation failed. Check the controller and the private build logs on the Dwarf host.')
     finally:
         try:
             status['finished_at'] = datetime.now(timezone.utc).isoformat()

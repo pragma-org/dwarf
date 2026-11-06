@@ -11,16 +11,30 @@ from pathlib import Path
 import json,time,os
 def forbidden(*args,**kwargs):raise AssertionError('Execution invoked')
 run_service.execute_run=forbidden;run_plan.resolve_run_plan=forbidden;remote.run_moog_create_test=forbidden
-def docker(argv,**kwargs):
-    assert argv[0]=='docker'
-    if argv[1]=='build':
+import base64
+from profile_manager import antithesis_preparation as prep
+executions={}
+def controller(operation,parameters,timeout,idempotency_key=None):
+    if operation=='antithesis.image-build':
         time.sleep(.2)
+        prepared=prep.read_preparation(parameters['preparation_id'])
+        files,_=prep._unpack(base64.b64decode(prepared['archive_base64']))
+        compose,builds=antithesis_image_build._plan(files)
         if Path(os.environ['BUILD_TEST_CONTROL']).read_text()=='fail':
-            raise antithesis_image_build.BuildFailure('Docker operation failed (exit 7).')
-        return ''
-    assert argv[1:3]==['image','inspect']
-    return json.dumps([{'Id':'sha256:'+'a'*64,'Os':'linux','Architecture':'amd64'}])
-antithesis_image_build._docker=docker
+            executions[parameters['execution_id']]={'state':'failed','failure':{'code':'image-build-failed','stage':'image-build','message':'canned'},
+                'progress':{'status':'failed','stage':'build','detail':'sm-workload: Docker operation failed (exit 7).','built_images':[]}}
+        else:
+            rows=[{'service':b['service'],'reference':'dwarf-antithesis-'+parameters['execution_id'].rsplit('-',1)[-1]+'-%d:prepared'%i,
+                   'image_id':'sha256:'+'a'*64,'platform':'linux/amd64','publication':'local-only'} for i,b in enumerate(builds)]
+            executions[parameters['execution_id']]={'state':'applied','result':{'status':'built','preparation_id':parameters['preparation_id'],
+                'built_images':rows,'build_host':'DWARF controller','build_count':len(builds)},'progress':{'status':'built'}}
+        return {'status':'accepted','execution_id':parameters['execution_id']}
+    if operation=='execution.status':
+        return {'execution_id':parameters['execution_id'],**executions[parameters['execution_id']]}
+    raise AssertionError(operation)
+antithesis_image_build.controller_request=controller
+antithesis_image_build._POLL_SECONDS=0.05
+antithesis_image_build._docker=forbidden
 server=ThreadingHTTPServer(('127.0.0.1',0),dashboard.serve_dashboard_handler_factory('build-test'))
 print(server.server_port,flush=True);server.serve_forever()
 `],{cwd:root,env:{...process.env,PYTHONPATH:'.:dwarf',BUILD_TEST_CONTROL:control,

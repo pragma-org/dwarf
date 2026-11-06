@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from test_antithesis_image_build import storage, prepared, catalog, fake_docker, wait, IMAGE_ID
+from test_antithesis_image_build import storage, prepared, catalog, fake_docker, fake_controller, fast_poll, wait, IMAGE_ID
 from profile_manager import antithesis_image_build as build
 from profile_manager.antithesis_package import PackageError
 from profile_manager import antithesis_preparation as prep
@@ -20,7 +20,7 @@ def module():
 
 @pytest.fixture
 def built(prepared, monkeypatch):
-    monkeypatch.setattr(build, '_docker', fake_docker([]))
+    monkeypatch.setattr(build, 'controller_request', fake_controller([]))
     identifier = build.start_build(prepared['receipt']['id'])['id']
     assert wait(build, identifier)['state'] == 'built'
     return build.read_build_result(identifier)
