@@ -19,10 +19,14 @@ from profile_manager import antithesis_image_build as builds
 from profile_manager import antithesis_versions as versions
 from profile_manager.antithesis_package import PackageError
 from profile_manager.binary_imports import extract_uploaded_binary, ImportLimits
+from profile_manager.topology_actions import TopologyActionError, controller_request
+from profile_manager.version_discovery import load_operator_registration
 from controller.docker_runtime import DockerRuntime
 
 IMPLEMENTATIONS = {'amaru', 'cardano-node'}
 ROOT = Path(__file__).resolve().parents[1]
+_ADAPT_TIMEOUT = 1800
+_POLL_SECONDS = 2.0
 
 
 def state_directory():
@@ -170,6 +174,109 @@ def start(value, identifier):
     except Exception:
         if job_lock is not None:job_lock.close()
         lock.close();raise
+
+
+def artifact_id_for(registration_id):
+    """The artifact row ID of an operator registration (stable, 32 hex)."""
+    return hashlib.sha256(str(registration_id).encode()).hexdigest()[:32]
+
+
+def _row_from_registration(registration, result):
+    """Project a ledger registration plus the controller's adapt result onto the
+    artifact-row contract every Antithesis binder already reads."""
+    build = registration.get('source_build') or {}
+    implementation = registration['implementation']
+    mode = 'patched' if build.get('variant') == 'instrumented' else 'stock'
+    row = {'id': result['artifact_id'], 'state': 'complete', 'registration_id': registration['registration_id'],
+           'registration': registration, 'implementation': implementation, 'version': registration['version'],
+           'mode': mode, 'source_revision': registration['provenance']['source_revision'],
+           'reference': result['reference'], 'image_id': registration['config_image_id'],
+           'image_digest': registration['config_image_id'], 'executable_digest': registration['executable_digest'],
+           'runtime_interface': registration.get('runtime_interface'),
+           'runtime_probe_log_sha256': result.get('runtime_probe_log_sha256'),
+           'provenance_check': result.get('provenance_check'), 'preload_check': result.get('preload_check'),
+           'bootstrap_probe': result.get('bootstrap_probe'),
+           'message': 'Prepared release adapted; ready to bind into the Antithesis harness'}
+    for key in ('patch_set_sha256', 'measurement_revision', 'build_result_sha256'):
+        if key in build:
+            row[key] = build[key]
+    if implementation == 'cardano-node' and mode == 'patched':
+        from profile_manager.antithesis_cardano_bridge import contract
+        row['compatibility'] = contract()
+    return row
+
+
+def from_registration(registration_id, *, controller=None):
+    """Adapt an operator-prepared release into an artifact row through the
+    controller (the only process with Docker). Returns the current row."""
+    controller = controller or controller_request
+    identifier = artifact_id_for(registration_id)
+    root = state_directory(); root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory = root / identifier
+    if (directory / 'status.json').exists():
+        existing = read(identifier)
+        if existing['state'] in {'building', 'complete'}:
+            return existing
+    try:
+        registration = load_operator_registration(registration_id)['registration']
+    except ValueError as exc:
+        directory.mkdir(mode=0o700, exist_ok=True)
+        row = {'id': identifier, 'state': 'failed', 'registration_id': registration_id,
+               'created_at': datetime.now(timezone.utc).isoformat(),
+               'message': 'Prepared release ' + str(registration_id) + ' is not in the operator ledger: ' + str(exc)}
+        builds._save(directory / 'status.json', row)
+        return row
+    directory.mkdir(mode=0o700, exist_ok=True)
+    job_lock = builds._lock(directory / 'worker.lock')
+    if job_lock is None:
+        return read(identifier)
+    build = registration.get('source_build') or {}
+    row = {'id': identifier, 'state': 'building', 'registration_id': registration_id,
+           'implementation': registration['implementation'], 'version': registration['version'],
+           'mode': 'patched' if build.get('variant') == 'instrumented' else 'stock',
+           'source_revision': registration['provenance']['source_revision'],
+           'created_at': datetime.now(timezone.utc).isoformat(), 'message': 'Adapting prepared release'}
+    builds._save(directory / 'status.json', row)
+    threading.Thread(target=_adapt_worker, args=(directory, registration, row.copy(), job_lock, controller), daemon=True).start()
+    return row
+
+
+def _adapt_worker(directory, registration, row, job_lock, controller):
+    execution_id = 'antithesis-adapt-' + row['id']
+    try:
+        controller('antithesis.artifact-adapt', {
+            'implementation': registration['implementation'], 'registration_id': registration['registration_id'],
+            'config_image_id': registration['config_image_id'], 'executable_digest': registration['executable_digest'],
+            'source_revision': registration['provenance']['source_revision'],
+            'artifact_id': row['id'], 'execution_id': execution_id}, _ADAPT_TIMEOUT, idempotency_key=execution_id)
+        while True:
+            try:
+                status = controller('execution.status', {'execution_id': execution_id}, 10)
+            except TopologyActionError as exc:
+                if str(exc) != 'execution is not managed by this controller':
+                    raise
+                status = {'execution_id': execution_id, 'state': 'interrupted'}
+            if status.get('execution_id') != execution_id:
+                raise ValueError('Adapt status has a different execution identity')
+            if status.get('state') not in {'running', 'cancelling'}:
+                break
+            if _POLL_SECONDS:
+                import time; time.sleep(_POLL_SECONDS)
+        if status.get('state') == 'applied':
+            result = status.get('result') or {}
+            if result.get('status') != 'adapted' or result.get('artifact_id') != row['id']:
+                raise ValueError('Controller adapt result differs from the selected release')
+            row = _row_from_registration(registration, result)
+        else:
+            failure = status.get('failure') or {}
+            detail = (status.get('progress') or {}).get('detail')
+            row.update(state='failed', failure_code=failure.get('code'),
+                       message=detail or failure.get('message') or ('Adapt ' + str(status.get('state'))))
+    except Exception as exc:
+        (directory / 'failure.txt').write_text(str(exc))
+        row.update(state='failed', message='Adapting the prepared release failed; see the private node artifact log on the DWARF host')
+    finally:
+        builds._save(directory / 'status.json', row); job_lock.close()
 
 
 def _worker(directory, request, row, lock, job_lock):

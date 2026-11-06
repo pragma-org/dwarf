@@ -180,3 +180,163 @@ def test_cardano_import_correction_has_distinct_verified_composite(tmp_path):
     assert corrected['compatibility']==bridge.contract()
     with pytest.raises(ValueError,match='exact v5'):
         bridge.supplement_manifest({**manifest,'patch_set_sha256':'0'*64},tmp_path)
+
+
+# --- adapter: operator-prepared releases → artifact rows -------------------
+
+ADAPT_REV = '23031e0ed4423b9cb899da030d515cb69d203749'
+
+
+def _registration(implementation='amaru', variant='instrumented', **changes):
+    from test_release_build_identity import registration, cardano_registration
+    base = registration() if implementation == 'amaru' else cardano_registration()
+    base['registration_id'] = 'registration-release-build-' + '1' * 32 + '-' + variant
+    base['runtime_interface'] = 'extracted-binary' if implementation == 'amaru' else None
+    if variant == 'stock':
+        base['source_build'] = {'variant': 'stock', 'execution_id': 'release-build-' + '1' * 32,
+                                'build_result_sha256': 'sha256:' + 'c' * 64}
+    else:
+        base['source_build']['execution_id'] = 'release-build-' + '1' * 32
+    base.update(changes)
+    return base
+
+
+def _adapt_result(artifact_id, **changes):
+    return {'status': 'adapted', 'artifact_id': artifact_id,
+            'reference': 'dwarf-antithesis-node-' + artifact_id + ':prepared', 'image_id': 'sha256:' + 'a' * 64,
+            'executable_digest': 'sha256:' + 'b' * 64, 'runtime_interface': 'extracted-binary',
+            'runtime_probe_log_sha256': 'sha256:' + 'e' * 64,
+            'provenance_check': {'state': 'ok', 'label': '10.11.20261029', 'binary_commit': ADAPT_REV},
+            'preload_check': {'state': 'not-applicable-static', 'dso_sha256': None, 'log_sha256': None},
+            'bootstrap_probe': 'version-and-run-help', **changes}
+
+
+def _fake_controller(calls, *, terminal):
+    def controller(operation, parameters, timeout, idempotency_key=None):
+        calls.append((operation, dict(parameters), timeout, idempotency_key))
+        if operation == 'antithesis.artifact-adapt':
+            return {'status': 'accepted', 'execution_id': parameters['execution_id']}
+        if operation == 'execution.status':
+            return {'execution_id': parameters['execution_id'], **terminal(parameters['execution_id'])}
+        raise AssertionError(operation)
+    return controller
+
+
+def _wait(a, identifier):
+    import time
+    for _ in range(300):
+        row = a.read(identifier)
+        if row['state'] != 'building':
+            return row
+        time.sleep(.01)
+    raise AssertionError('row stayed building')
+
+
+@pytest.fixture
+def adapter_state(tmp_path, monkeypatch):
+    from profile_manager import antithesis_artifacts as a
+    monkeypatch.setattr(a, 'state_directory', lambda: tmp_path)
+    monkeypatch.setattr(a, '_POLL_SECONDS', 0)
+    return a
+
+
+def test_row_from_registration_matches_contract(adapter_state):
+    a = adapter_state
+    import hashlib
+    reg = _registration()
+    identifier = hashlib.sha256(reg['registration_id'].encode()).hexdigest()[:32]
+    row = a._row_from_registration(reg, _adapt_result(identifier))
+    assert row['id'] == identifier and row['state'] == 'complete'
+    assert row['reference'] == 'dwarf-antithesis-node-' + identifier + ':prepared'
+    assert row['implementation'] == 'amaru' and row['version'] == '10.11.20261029' and row['mode'] == 'patched'
+    assert row['source_revision'] == ADAPT_REV
+    assert row['image_id'] == row['image_digest'] == reg['config_image_id']
+    assert row['executable_digest'] == reg['executable_digest']
+    assert row['runtime_interface'] == 'extracted-binary'
+    assert row['runtime_probe_log_sha256'] == 'sha256:' + 'e' * 64
+    assert row['patch_set_sha256'] == reg['source_build']['patch_set_sha256']
+    assert row['measurement_revision'] == 'nanoseconds-v3'
+    assert row['build_result_sha256'] == 'sha256:' + 'c' * 64
+    assert row['registration'] == reg and row['registration_id'] == reg['registration_id']
+    assert row['provenance_check']['state'] == 'ok' and row['preload_check']['state'] == 'not-applicable-static'
+    assert row['bootstrap_probe'] == 'version-and-run-help'
+    assert 'compatibility' not in row and 'experimental_instrumentation' not in row
+    stock = a._row_from_registration(_registration(variant='stock'), _adapt_result(identifier))
+    assert stock['mode'] == 'stock' and 'patch_set_sha256' not in stock
+
+
+def test_row_from_registration_cardano_patched_has_compatibility(adapter_state):
+    a = adapter_state
+    from profile_manager import antithesis_cardano_bridge as bridge
+    patched = a._row_from_registration(_registration('cardano-node'), _adapt_result('f' * 32, runtime_interface=None, bootstrap_probe=None))
+    assert patched['compatibility'] == bridge.contract()
+    assert patched['runtime_interface'] is None and patched['bootstrap_probe'] is None
+    stock = a._row_from_registration(_registration('cardano-node', 'stock'), _adapt_result('f' * 32, runtime_interface=None))
+    assert 'compatibility' not in stock
+
+
+def test_from_registration_writes_complete_row(adapter_state, monkeypatch):
+    a = adapter_state
+    reg = _registration()
+    monkeypatch.setattr(a, 'load_operator_registration', lambda rid: {'revision': 'r1', 'registration': reg})
+    calls = []
+    controller = _fake_controller(calls, terminal=lambda eid: {'state': 'applied', 'result': _adapt_result(eid.split('-')[-1])})
+    row = a.from_registration(reg['registration_id'], controller=controller)
+    assert row['state'] == 'building' and row['registration_id'] == reg['registration_id']
+    final = _wait(a, row['id'])
+    assert final['state'] == 'complete'
+    assert a.selected_artifacts({'amaru': row['id']}, 'instrumented')['amaru']['reference'] == final['reference']
+    adapt_call = next(c for c in calls if c[0] == 'antithesis.artifact-adapt')
+    assert adapt_call[1] == {'implementation': 'amaru', 'registration_id': reg['registration_id'],
+                             'config_image_id': reg['config_image_id'], 'executable_digest': reg['executable_digest'],
+                             'source_revision': ADAPT_REV, 'artifact_id': row['id'], 'execution_id': 'antithesis-adapt-' + row['id']}
+    assert adapt_call[2] == 1800 and adapt_call[3] == 'antithesis-adapt-' + row['id']
+
+
+def test_from_registration_unknown_registration_fails_row(adapter_state, monkeypatch):
+    a = adapter_state
+    def missing(rid):
+        raise ValueError('operator registration is missing or ambiguous')
+    monkeypatch.setattr(a, 'load_operator_registration', missing)
+    calls = []
+    row = a.from_registration('registration-release-build-' + '2' * 32 + '-stock', controller=_fake_controller(calls, terminal=None))
+    assert row['state'] == 'failed'
+    assert 'registration-release-build-' + '2' * 32 + '-stock' in row['message']
+    assert a.read(row['id'])['state'] == 'failed'
+    assert calls == []
+
+
+def test_from_registration_returns_building_row_without_second_call(adapter_state, monkeypatch):
+    a = adapter_state
+    import threading
+    reg = _registration()
+    monkeypatch.setattr(a, 'load_operator_registration', lambda rid: {'revision': 'r1', 'registration': reg})
+    gate = threading.Event()
+    calls = []
+    def terminal(eid):
+        gate.wait(2)
+        return {'state': 'applied', 'result': _adapt_result(eid.split('-')[-1])}
+    controller = _fake_controller(calls, terminal=terminal)
+    first = a.from_registration(reg['registration_id'], controller=controller)
+    second = a.from_registration(reg['registration_id'], controller=controller)
+    assert first['state'] == second['state'] == 'building' and first['id'] == second['id']
+    assert sum(1 for c in calls if c[0] == 'antithesis.artifact-adapt') == 1
+    gate.set()
+    assert _wait(a, first['id'])['state'] == 'complete'
+
+
+def test_from_registration_failed_controller_message_is_bounded(adapter_state, monkeypatch):
+    a = adapter_state
+    reg = _registration()
+    monkeypatch.setattr(a, 'load_operator_registration', lambda rid: {'revision': 'r1', 'registration': reg})
+    calls = []
+    controller = _fake_controller(calls, terminal=lambda eid: {
+        'state': 'failed',
+        'failure': {'code': 'provenance-mismatch', 'stage': 'adapt', 'message': 'binary git commit differs from the registered source revision'},
+        'progress': {'stage': 'identity-version', 'detail': 'binary git commit dddddddddddd differs from registered ' + ADAPT_REV}})
+    row = a.from_registration(reg['registration_id'], controller=controller)
+    final = _wait(a, row['id'])
+    assert final['state'] == 'failed'
+    assert final['failure_code'] == 'provenance-mismatch'
+    assert final['message'] == 'binary git commit dddddddddddd differs from registered ' + ADAPT_REV
+    assert 'reference' not in final
