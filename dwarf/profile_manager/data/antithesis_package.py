@@ -102,13 +102,15 @@ def dispatch_package_request(*, method, path, body=b'', expected_token=None):
                 'publication-read': {'token','handoff_id'},
                 'publication-result': {'token','handoff_id'},
             }
-            _shape(value, shapes[action], 'request')
+            optional = {'publish_token','save_token'} & set(value) if action == 'publication-action' else set()
+            _shape(value, shapes[action] | optional, 'request')
             if action == 'publication-create':
                 return reply(200,{'ok':True,'handoff':antithesis_publication.create_handoff(
                     value['build_id'],value['registry_prefix'],request_id=value['request_id'])})
             if action == 'publication-action':
                 return reply(202,{'ok':True,'operation':antithesis_publication.start_operation(
-                    value['handoff_id'],value['action'],target=value['target'],request_id=value['request_id'])})
+                    value['handoff_id'],value['action'],target=value['target'],request_id=value['request_id'],
+                    publish_token=value.get('publish_token'),save_token=bool(value.get('save_token')))})
             if action == 'publication-status':
                 return reply(200,{'ok':True,'operation':antithesis_publication.read_operation(value['handoff_id'],value['operation_id'])})
             if action == 'publication-read':

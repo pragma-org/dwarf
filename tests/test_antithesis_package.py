@@ -306,3 +306,23 @@ def test_node_select_rejects_registrations_without_source_build(monkeypatch):
     status, body = _node_select({'token': 'right', 'implementation': 'amaru', 'registration_id': 'registration-release-build-' + '4' * 32 + '-stock'})
     assert status == 422 and body['error']['field'] == 'registration_id'
     assert 'prepared build' in body['error']['message'].lower()
+
+
+def test_publication_push_shape_accepts_an_optional_one_time_token(monkeypatch):
+    from profile_manager import antithesis_publication
+    from profile_manager.data.antithesis_package import dispatch_package_request
+    seen = {}
+    def start_operation(identifier, action, *, target=None, request_id=None, publish_token=None, save_token=False):
+        seen.update(identifier=identifier, action=action, publish_token=publish_token, save_token=save_token)
+        return {'id': request_id, 'handoff_id': identifier, 'action': action, 'target': target, 'state': 'queued', 'submission_ready': False}
+    monkeypatch.setattr(antithesis_publication, 'start_operation', start_operation)
+    body = {'token': 'right', 'handoff_id': 'a' * 32, 'action': 'push', 'target': None, 'request_id': 'b' * 32,
+            'publish_token': 'ghp_once', 'save_token': True}
+    status, _, payload = dispatch_package_request(method='POST', path='/api/antithesis-run/package/publication-action',
+                                                  body=json.dumps(body).encode(), expected_token='right')
+    assert status == 202 and seen == {'identifier': 'a' * 32, 'action': 'push', 'publish_token': 'ghp_once', 'save_token': True}
+    assert 'ghp_once' not in payload.decode()
+    without = {k: v for k, v in body.items() if k not in ('publish_token', 'save_token')}
+    status, _, _ = dispatch_package_request(method='POST', path='/api/antithesis-run/package/publication-action',
+                                            body=json.dumps(without).encode(), expected_token='right')
+    assert status == 202 and seen['publish_token'] is None and seen['save_token'] is False

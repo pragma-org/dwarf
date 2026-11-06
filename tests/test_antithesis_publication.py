@@ -39,9 +39,41 @@ def finished(identifier, operation):
     pytest.fail('publication worker did not finish')
 
 
-def run(handoff, action, target=None, request_id=None):
-    job = module().start_operation(handoff['id'], action, target=target, request_id=request_id)
+def run(handoff, action, target=None, request_id=None, **kw):
+    job = module().start_operation(handoff['id'], action, target=target, request_id=request_id, **kw)
     return finished(handoff['id'], job['id'])
+
+
+PAT = 'ghp_' + 'Publish' * 5
+
+
+def fake_publish_controller(calls, *, fail=None):
+    """A controller that publishes: it reads the staged secret (so the test can
+    prove the secret existed during the operation) and records every call."""
+    from profile_manager import binary_imports
+    executions = {}
+    def controller(operation, parameters, timeout, idempotency_key=None):
+        calls.append((operation, dict(parameters), timeout, idempotency_key))
+        if operation == 'antithesis.image-publish':
+            secret = binary_imports._default_staging_root() / parameters['secret_id'] / 'secret'
+            calls[-1][1]['_secret_seen'] = secret.read_text() if secret.is_file() else None
+            if fail is not None:
+                code, detail = fail
+                executions[parameters['execution_id']] = {'state': 'failed', 'failure': {'code': code, 'stage': 'image-publish', 'message': 'canned ' + code},
+                                                          'progress': {'status': 'failed', 'stage': 'login', 'detail': detail}}
+            else:
+                executions[parameters['execution_id']] = {'state': 'applied', 'result': {'status': 'published', 'handoff_id': parameters['handoff_id'], 'registry': 'ghcr.io',
+                                                          'pushed': [{'destination': row['destination'], 'image_id': row['image_id'], 'pushed_at': 'now'} for row in parameters['images']]},
+                                                          'progress': {'status': 'published'}}
+            return {'status': 'accepted', 'execution_id': parameters['execution_id']}
+        if operation == 'execution.status':
+            return {'execution_id': parameters['execution_id'], **executions[parameters['execution_id']]}
+        raise AssertionError(operation)
+    return controller
+
+
+def _no_saved_pat(monkeypatch):
+    monkeypatch.setattr(module(), '_saved_publish_token', lambda: '')
 
 
 def public_images(monkeypatch):
@@ -73,28 +105,96 @@ def test_destination_validation_before_side_effects(built,prefix):
     with pytest.raises(PackageError):module().create_handoff(built['receipt']['id'],prefix)
 
 
-def test_explicit_push_checks_image_identity_and_replay_never_pushes_twice(built,monkeypatch):
-    h=create(built);calls=[]
-    def docker(argv,**kwargs):
-        calls.append(argv)
-        if argv[1:3]==['image','inspect']:return json.dumps([{'Id':IMAGE_ID,'Os':'linux','Architecture':'amd64'}])
-        assert argv[1] in ('tag','push');return ''
-    monkeypatch.setattr(build,'_docker',docker)
-    job=run(h,'push',request_id='1'*32)
+def test_explicit_push_runs_in_the_controller_and_replay_never_pushes_twice(built,monkeypatch):
+    _no_saved_pat(monkeypatch)
+    monkeypatch.setattr(build,'_docker',lambda *a,**k:pytest.fail('docker in the dashboard'))
+    h=create(built);calls=[];controller=fake_publish_controller(calls)
+    job=run(h,'push',request_id='1'*32,publish_token=PAT,controller=controller)
     assert job['state']=='succeeded',job
     assert module().read_handoff(h['id'])['state']=='awaiting-visibility'
-    assert run(h,'push',request_id='1'*32)==job
-    assert sum(c[1]=='push' for c in calls)==1
-    with pytest.raises(PackageError):module().start_operation(h['id'],'push',request_id='2'*32)
+    assert module().read_handoff(h['id'])['images'][0]['push_completed'] is True
+    assert run(h,'push',request_id='1'*32,publish_token=PAT,controller=controller)==job
+    assert sum(c[0]=='antithesis.image-publish' for c in calls)==1
+    with pytest.raises(PackageError):module().start_operation(h['id'],'push',request_id='2'*32,publish_token=PAT,controller=controller)
+    start=next(c for c in calls if c[0]=='antithesis.image-publish')
+    assert start[1]['username']=='example' and start[1]['handoff_id']==h['id']
+    assert start[1]['images']==[{'reference':row['reference'],'image_id':row['image_id'],'destination':row['destination']} for row in h['images']]
+    assert start[2]==3600 and start[3]==start[1]['execution_id']
 
 
-def test_changed_image_ref_is_rejected_before_push(built,monkeypatch):
+def test_push_stages_the_token_and_never_records_it(built,monkeypatch):
+    _no_saved_pat(monkeypatch)
     h=create(built);calls=[]
-    def docker(argv,**kwargs):
-        calls.append(argv);return json.dumps([{'Id':'sha256:'+'f'*64,'Os':'linux','Architecture':'amd64'}])
-    monkeypatch.setattr(build,'_docker',docker)
-    assert run(h,'push')['state']=='failed'
-    assert not any(c[1]=='push' for c in calls)
+    assert run(h,'push',publish_token=PAT,controller=fake_publish_controller(calls))['state']=='succeeded'
+    start=next(c for c in calls if c[0]=='antithesis.image-publish')
+    assert start[1]['_secret_seen']==PAT, 'the controller read the staged secret during the push'
+    import re
+    assert re.fullmatch(r'ghcr-[0-9a-f]{24}',start[1]['secret_id'])
+    everything=''
+    for path in (module().state_directory()/h['id']).rglob('*.json'):
+        everything+=path.read_text()
+    assert PAT not in everything and start[1]['secret_id'] not in everything
+
+
+def test_push_deletes_the_staged_secret_after_the_operation_ends(built,monkeypatch):
+    from profile_manager import binary_imports
+    _no_saved_pat(monkeypatch)
+    for fail in (None,('registry-login-failed','ghcr.io rejected the login')):
+        h=module().create_handoff(built['receipt']['id'],'ghcr.io/example/dwarf')
+        calls=[];run(h,'push',publish_token=PAT,controller=fake_publish_controller(calls,fail=fail))
+        secret_id=next(c for c in calls if c[0]=='antithesis.image-publish')[1]['secret_id']
+        assert not (binary_imports._default_staging_root()/secret_id).exists()
+
+
+def test_failed_push_can_be_retried(built,monkeypatch):
+    _no_saved_pat(monkeypatch)
+    h=create(built)
+    job=run(h,'push',publish_token=PAT,controller=fake_publish_controller([],fail=('registry-login-failed','ghcr.io rejected the login for example')))
+    assert job['state']=='failed' and job['message']=='ghcr.io rejected the login for example'
+    receipt=module().read_handoff(h['id'])
+    assert receipt['push_attempted'] is False and receipt['state']=='planned'
+    assert PAT not in json.dumps(receipt)
+    assert run(h,'push',publish_token=PAT,controller=fake_publish_controller([]))['state']=='succeeded'
+    assert module().read_handoff(h['id'])['state']=='awaiting-visibility'
+
+
+def test_push_without_any_token_is_422(built,monkeypatch):
+    _no_saved_pat(monkeypatch)
+    h=create(built)
+    with pytest.raises(PackageError) as error:
+        module().start_operation(h['id'],'push',controller=fake_publish_controller([]))
+    assert error.value.status==422 and 'write:packages' in str(error.value)
+    assert module().read_handoff(h['id'])['push_attempted'] is False
+
+
+def test_push_uses_the_saved_pat_when_none_is_typed(built,monkeypatch):
+    monkeypatch.setattr(module(),'_saved_publish_token',lambda:'ghp_saved')
+    h=create(built);calls=[]
+    assert run(h,'push',controller=fake_publish_controller(calls))['state']=='succeeded'
+    assert next(c for c in calls if c[0]=='antithesis.image-publish')[1]['_secret_seen']=='ghp_saved'
+
+
+def test_push_with_save_token_persists_the_pat_through_settings(built,monkeypatch):
+    saved={}
+    from profile_manager.config import DeploymentConfig
+    monkeypatch.setattr(module(),'_load_config',lambda:DeploymentConfig.from_dict({'moog':{'ghcr_prefix':'ghcr.io/saved/dwarf'}}))
+    monkeypatch.setattr(module(),'_save_config',lambda config:saved.update(config.moog))
+    monkeypatch.setattr(module(),'_saved_publish_token',lambda:'')
+    h=create(built)
+    job=run(h,'push',publish_token=PAT,save_token=True,controller=fake_publish_controller([]))
+    assert job['state']=='succeeded' and job['token_saved'] is True
+    assert saved['ghcr_publish_pat']==PAT and saved['ghcr_prefix']=='ghcr.io/saved/dwarf'
+    assert PAT not in json.dumps(module().read_handoff(h['id']))
+
+
+def test_push_uses_the_typed_prefix_without_saving_it(built,monkeypatch):
+    _no_saved_pat(monkeypatch)
+    monkeypatch.setattr(module(),'_save_config',lambda config:pytest.fail('settings must not change'))
+    h=module().create_handoff(built['receipt']['id'],'ghcr.io/typed/dwarf')
+    calls=[]
+    assert run(h,'push',publish_token=PAT,controller=fake_publish_controller(calls))['state']=='succeeded'
+    start=next(c for c in calls if c[0]=='antithesis.image-publish')
+    assert start[1]['username']=='typed' and start[1]['images'][0]['destination'].startswith('ghcr.io/typed/dwarf-')
 
 
 def test_anonymous_verification_materializes_runtime_only_package(built,monkeypatch):

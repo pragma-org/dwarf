@@ -11,17 +11,32 @@ from pathlib import Path
 import json,time,os
 def forbidden(*args,**kwargs):raise AssertionError('Execution invoked')
 run_service.execute_run=forbidden;run_plan.resolve_run_plan=forbidden;remote.run_moog_create_test=forbidden
-def docker(argv,**kwargs):
-    assert argv[0]=='docker'
-    if argv[1]=='build':
+import base64
+from profile_manager import antithesis_preparation as prep, binary_imports
+executions={};pushes=[]
+def controller(operation,parameters,timeout,idempotency_key=None):
+    if operation=='antithesis.image-build':
         time.sleep(.2)
-        if Path(os.environ['BUILD_TEST_CONTROL']).read_text()=='fail':
-            raise antithesis_image_build.BuildFailure('Docker operation failed (exit 7).')
-        return ''
-    if argv[1] in ('tag','push'):return ''
-    assert argv[1:3]==['image','inspect']
-    return json.dumps([{'Id':'sha256:'+'a'*64,'Os':'linux','Architecture':'amd64'}])
-antithesis_image_build._docker=docker
+        prepared=prep.read_preparation(parameters['preparation_id'])
+        files,_=prep._unpack(base64.b64decode(prepared['archive_base64']))
+        compose,builds=antithesis_image_build._plan(files)
+        rows=[{'service':b['service'],'reference':'dwarf-antithesis-'+parameters['execution_id'].rsplit('-',1)[-1]+'-%d:prepared'%i,
+               'image_id':'sha256:'+'a'*64,'platform':'linux/amd64','publication':'local-only'} for i,b in enumerate(builds)]
+        executions[parameters['execution_id']]={'state':'applied','result':{'status':'built','preparation_id':parameters['preparation_id'],
+            'built_images':rows,'build_host':'DWARF controller','build_count':len(builds)},'progress':{'status':'built'}}
+        return {'status':'accepted','execution_id':parameters['execution_id']}
+    if operation=='antithesis.image-publish':
+        secret=binary_imports._default_staging_root()/parameters['secret_id']/'secret'
+        pushes.append({'username':parameters['username'],'secret':secret.read_text() if secret.is_file() else None})
+        Path(os.environ['BUILD_TEST_CONTROL']+'.pushes').write_text(json.dumps(pushes))
+        executions[parameters['execution_id']]={'state':'applied','result':{'status':'published','handoff_id':parameters['handoff_id'],'registry':'ghcr.io',
+            'pushed':[{'destination':r['destination'],'image_id':r['image_id'],'pushed_at':'now'} for r in parameters['images']]},'progress':{'status':'published'}}
+        return {'status':'accepted','execution_id':parameters['execution_id']}
+    if operation=='execution.status':
+        return {'execution_id':parameters['execution_id'],**executions[parameters['execution_id']]}
+    raise AssertionError(operation)
+antithesis_image_build.controller_request=controller;antithesis_image_build._POLL_SECONDS=0.05;antithesis_image_build._docker=forbidden
+antithesis_publication.controller_request=controller;antithesis_publication._POLL_SECONDS=0.05
 def verify_image(reference,expected_id=None):
     if Path(os.environ['BUILD_TEST_CONTROL']).read_text()=='private':
         from profile_manager.antithesis_package import PackageError
@@ -60,6 +75,8 @@ let stderr='';server.stderr.on('data',d=>stderr+=d);
  const waitPublication=state=>page.waitForFunction(s=>document.querySelector('#antithesis-publication-state').dataset.state===s,state);
  await get('publication-create').click();await waitPublication('planned');
  assert.equal(posts.some(p=>p.endsWith('/publication-action')),false,'creating a handoff must not push');
+ assert.equal(await get('publication-save-pat').isChecked(),false,'saving the PAT is opt-in');
+ await get('publication-pat').fill('ghp_browser_once');
  let lostOperation;
  await page.route('**/api/antithesis-run/package/publication-action',async route=>{
    const response=await route.fetch();lostOperation=(await response.json()).operation.id;await route.abort('failed');
@@ -68,6 +85,9 @@ let stderr='';server.stderr.on('data',d=>stderr+=d);
  await page.unroute('**/api/antithesis-run/package/publication-action');
  await get('publication-resume').click();await waitPublication('awaiting-visibility');
  assert.equal(await get('publication-push').isDisabled(),true);
+ assert.equal(await get('publication-pat').inputValue(),'','the PAT field is cleared once it is sent');
+ const pushed=JSON.parse(fs.readFileSync(control+'.pushes','utf8'));
+ assert.deepEqual(pushed.map(p=>[p.username,p.secret]),[['example','ghp_browser_once']],'the controller received the one-time PAT through the staged secret');
  fs.writeFileSync(control,'private');await get('publication-verify-images').click();await waitPublication('error');
  assert.equal(await get('publication-download').isVisible(),false);
  fs.writeFileSync(control,'ok');await get('publication-verify-images').click();await waitPublication('images-public');

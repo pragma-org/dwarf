@@ -93,7 +93,17 @@
   }
   get('create').addEventListener('click',()=>perform({kind:'create',payload:{build_id:source,registry_prefix:get('prefix').value.trim(),request_id:randomId()}}));
   for(const [button,action] of [['push','push'],['verify-images','verify-images'],['verify-git','verify-git']]){
-    get(button).addEventListener('click',()=>perform({kind:'action',payload:{handoff_id:handoff.id,action,target:action==='verify-git'?target():null,request_id:randomId()}}));
+    get(button).addEventListener('click',()=>{
+      const payload={handoff_id:handoff.id,action,target:action==='verify-git'?target():null,request_id:randomId()};
+      if(action==='push'){
+        // One-time by default: the PAT travels with this request only and the field is cleared.
+        const pat=get('pat').value;
+        if(pat)payload.publish_token=pat;
+        if(get('save-pat').checked)payload.save_token=true;
+        get('pat').value='';
+      }
+      perform({kind:'action',payload});
+    });
   }
   get('resume').addEventListener('click',()=>{if(pending)perform(pending);});
   get('prefix').addEventListener('input',reset);
@@ -110,6 +120,7 @@
   for(const [id,name] of [['repository','github_repo'],['commit','target_commit'],['directory','target_directory'],['requester','github_user']]){
     get(id).value=settings?.querySelector(`[name="${name}"]`)?.value||'';
   }
+  if(!get('prefix').value)get('prefix').value=settings?.querySelector('[name="ghcr_prefix"]')?.value||'';
   root.addEventListener('antithesis-image-build-updated',sync);
   root.addEventListener('antithesis-preparation-updated',sync);sync();
 })();
