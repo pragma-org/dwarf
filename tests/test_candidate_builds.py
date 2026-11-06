@@ -327,3 +327,37 @@ def test_cardano_binary_queries_match_trusted_manifest_compiler_and_build_direct
         "exe:cardano-node-production-handshake-coverage",
     )
     assert all(plan.status == "unresolved" for plan in (stock, patched, coverage))
+
+
+def test_compatible_patch_orders_by_select_base_recipes(tmp_path, monkeypatch):
+    """Two trusted recipes both apply; the shared port ordering (newest base
+    release first) decides, not the hard-coded catalog order."""
+    candidate = source_candidate(tmp_path / "repo")
+    trusted = tmp_path / "trusted"
+    for relative in ("dwarf/profile_manager/candidate_builds.py", "dwarf/profile_manager/testplease_candidates.py",
+                     "dwarf/profile_manager/candidate_build_environments.py",
+                     "dwarf/spec/v1/candidate-build-environment.schema.json",
+                     "dwarf/spec/v1/candidate-dependency-closure.schema.json",
+                     "dwarf/scripts/build_amaru_measurement_target.py", "dwarf/scripts/build_amaru_coverage_target.py"):
+        dest = trusted / relative
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(builds.TRUSTED_ROOT / relative, dest)
+    shutil.copytree((builds.TRUSTED_ROOT / builds._COVERAGE["amaru"]).parent, (trusted / builds._COVERAGE["amaru"]).parent)
+    manifests = {}
+    for revision, release in (("a" * 40, "10.11.20260903"), ("b" * 40, "10.11.20260925")):
+        directory = f"dwarf/targets/amaru/measurement-patches-nanoseconds-v3/{revision}"
+        patch = write(trusted, directory + "/patches/change.patch", "--- a/input.txt\n+++ b/input.txt\n@@ -1 +1 @@\n-before\n+after " + release + "\n")
+        row = {"path": "patches/change.patch", "sha256": hashlib.sha256(patch.read_bytes()).hexdigest(),
+               "preimages": [{"path": "input.txt", "sha256": hashlib.sha256(b"before\n").hexdigest()}]}
+        manifests[release] = {"patches": [row], "patch_set_sha256": hashlib.sha256(f'{row["sha256"]}  {row["path"]}\n'.encode()).hexdigest(),
+                              "source": {"revision": revision, "release": release}, "measurement_revision": "nanoseconds-v3",
+                              "toolchain": "nightly-2026-09-04", "base_image": "example.invalid/runtime@sha256:" + "b" * 64, "dependencies": []}
+        write(trusted, directory + "/manifest.json", json.dumps(manifests[release]))
+    monkeypatch.setattr(builds, "TRUSTED_ROOT", trusted)
+    monkeypatch.setattr(builds, "_PATCHES", {"amaru": (
+        "dwarf/targets/amaru/measurement-patches-nanoseconds-v3/" + "a" * 40 + "/manifest.json",   # older base listed first
+        "dwarf/targets/amaru/measurement-patches-nanoseconds-v3/" + "b" * 40 + "/manifest.json")})
+    write(candidate.source_root, "input.txt", "before\n")
+    candidate = discover_candidates(tmp_path / "repo", repository_commit=COMMIT)[0]
+    manifest, _ = builds._compatible_patch(candidate, builds._assets("amaru"))
+    assert manifest["source"]["release"] == "10.11.20260925"

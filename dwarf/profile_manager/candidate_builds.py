@@ -221,8 +221,22 @@ def _toolchain(candidate: CandidateSnapshot):
     return tools, tuple(inputs), tuple(unresolved)
 
 
+def _ordered_assets(implementation, assets):
+    """Try trusted recipes in the order every DWARF track ports them: nearest
+    base first (newest base release, then series rank), from
+    ``measurement_patch_port.select_base_recipes``. Recipes that ordering does
+    not know keep their catalog order after the ranked ones."""
+    from profile_manager.measurement_patch_port import PortError, select_base_recipes
+    try:
+        ranked = select_base_recipes(implementation, targets_root=TRUSTED_ROOT / "dwarf" / "targets")
+    except PortError:
+        return list(assets)
+    order = {manifest.get("patch_set_sha256"): index for index, (_, manifest) in enumerate(ranked)}
+    return sorted(assets, key=lambda item: order.get(item[0].get("patch_set_sha256"), len(order)))
+
+
 def _compatible_patch(candidate, assets):
-    for manifest, inputs in assets:
+    for manifest, inputs in _ordered_assets(candidate.implementation, assets):
         if candidate.implementation == "amaru":
             try:
                 for patch in manifest["patches"]:
