@@ -185,6 +185,98 @@ def fetch_test_run_facts(config, moog_config, test_run_id, timeout=60):
         return []
 
 
+_ANTITHESIS_SUBCOMMANDS = frozenset({"runs", "run", "properties", "events", "logs", "build-logs"})
+_ANTITHESIS_NDJSON = frozenset({"events", "logs", "build-logs"})
+_ANTITHESIS_EXIT = {2: "authorization or SSO failure", 3: "proxy or network failure", 4: "invalid JSON from proxy"}
+
+
+def fetch_antithesis(
+    config, moog_config, subcommand, *, run_id=None, limit=None, cursor=None, query=None,
+    input_hash=None, vtime=None, timeout=60,
+):
+    """Read Antithesis run data through the MOOG proxy (`moog antithesis …`) on the host.
+
+    No MOOG_* environment is passed: the host's OAuth file authorises the proxy.
+    Returns {'ok', 'payload', 'exit_code', 'error'}; `payload` is the parsed JSON
+    (a list of objects for the NDJSON subcommands) and `error` is a bounded,
+    DWARF-authored text — proxy output is never echoed into it."""
+    import json
+
+    from profile_manager.moog import normalize_moog_config
+
+    if subcommand not in _ANTITHESIS_SUBCOMMANDS:
+        raise ValueError(f"unsupported moog antithesis subcommand: {subcommand}")
+    cfg = normalize_moog_config(moog_config)
+    argv = [cfg["moog_binary"], "antithesis", subcommand]
+    for flag, value in (("--run-id", run_id), ("--limit", limit), ("--cursor", cursor), ("--q", query),
+                        ("--input-hash", input_hash), ("--vtime", vtime)):
+        if value is not None:
+            argv += [flag, str(value)]
+    result = ssh_command(config, " ".join(shlex.quote(part) for part in argv), timeout=timeout)
+
+    def failure(error):
+        return {"ok": False, "payload": None, "exit_code": result.returncode, "error": str(error)[:200]}
+
+    if result.returncode != 0:
+        label = _ANTITHESIS_EXIT.get(result.returncode, "moog antithesis failed")
+        return failure(f"{label} (exit {result.returncode})")
+    text = result.stdout or ""
+    if subcommand in _ANTITHESIS_NDJSON:
+        rows = []
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            try:
+                parsed = json.loads(line)
+            except ValueError as exc:
+                return failure(f"invalid NDJSON: {exc}")
+            if not isinstance(parsed, dict):
+                return failure("invalid NDJSON: row is not an object")
+            rows.append(parsed)
+        return {"ok": True, "payload": rows, "exit_code": 0, "error": ""}
+    try:
+        parsed = json.loads(text)
+    except ValueError as exc:
+        return failure(f"invalid JSON: {exc}")
+    return {"ok": True, "payload": parsed, "exit_code": 0, "error": ""}
+
+
+def find_antithesis_run(config, moog_config, test_run_id, *, max_pages=5, limit=50, timeout=60):
+    """Find the Antithesis run launched for one MOOG test run.
+
+    The proxy's run rows carry MOOG's launch document in `description`; its
+    `testRunId` is the join key. Exactly one match is 'found'; two or more are
+    'ambiguous' (a retried launch) and never silently chosen."""
+    import json
+
+    cursor = None
+    matches = []
+    pages = 0
+    while pages < max_pages:
+        out = fetch_antithesis(config, moog_config, "runs", limit=limit, cursor=cursor, timeout=timeout)
+        pages += 1
+        if not out["ok"]:
+            return {"status": "error", "run": None, "matches": len(matches), "pages": pages, "error": out["error"]}
+        payload = out["payload"] if isinstance(out["payload"], dict) else {}
+        for row in payload.get("data") or []:
+            if not isinstance(row, dict):
+                continue
+            try:
+                description = json.loads(row.get("description") or "")
+            except (ValueError, TypeError):
+                continue
+            if isinstance(description, dict) and description.get("testRunId") == test_run_id:
+                matches.append(row)
+        cursor = payload.get("next_cursor")
+        if not cursor or len(matches) >= 2:
+            break
+    if len(matches) == 1:
+        return {"status": "found", "run": matches[0], "matches": 1, "pages": pages, "error": ""}
+    if matches:
+        return {"status": "ambiguous", "run": None, "matches": len(matches), "pages": pages, "error": ""}
+    return {"status": "not_found", "run": None, "matches": 0, "pages": pages, "error": ""}
+
+
 def ssh_command(config, remote_command, timeout=None, dry_run=False, verb=None):
     argv = render_ssh_command(config, remote_command, verb=verb)
     rendered = shell_join(argv)

@@ -1,0 +1,40 @@
+{
+ "data": [
+  {
+   "completed_at": "2026-10-20T23:25:16Z",
+   "created_at": "2026-10-20T20:16:14Z",
+   "creator": {
+    "name": "pragma",
+    "type": "unknown"
+   },
+   "description": "{\"testRun\":{\"commitId\":\"14b95fbff2d566ef054bd3499a1a94756eb4fda4\",\"directory\":\"antithesis/cardano_amaru_miniprotocol_selected_validation\",\"platform\":\"github\",\"repository\":{\"organization\":\"cyber-castellum\",\"repo\":\"dwarf\"},\"requester\":\"j-gainsec\",\"try\":1,\"type\":\"test-run\"},\"testRunId\":\"1111111111111111111111111111111111111111111111111111111111111111\"}",
+   "launcher": "Cardano Test",
+   "parameters": {
+    "antithesis.duration": "60",
+    "antithesis.test_name": "amaru-v2",
+    "custom.faults_enabled": "true",
+    "custom.instrumented": "true"
+   },
+   "results": {
+    "environment": {
+     "antithesis_version": "v62-14",
+     "images": [
+      {
+       "image": "us-central1-docker.pkg.dev/molten-verve-216720/pragma-repository/cardano-moog-config@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+       "name": "cardano-moog-config",
+       "tag": "03c042dce5"
+      },
+      {
+       "image": "ghcr.io/cardano-foundation/cardano-node-antithesis/configurator@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+       "name": "configurator",
+       "tag": null
+      }
+     ]
+    }
+   },
+   "run_id": "788998d60b09b96953e830e9f9ae2c7b-62-14",
+   "status": "completed"
+  }
+ ],
+ "next_cursor": null
+}

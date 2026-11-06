@@ -1,0 +1,113 @@
+{
+ "data": [
+  {
+   "counterexample_count": 2,
+   "counterexamples": [
+    {
+     "antithesis_error": "state_cant_be_materialized (guest timed out)",
+     "exit_code": -11000,
+     "guest_stopped": true,
+     "is_examplar": false,
+     "moment": {
+      "input_hash": "5320310742201315112",
+      "vtime": "1593.1689715865068"
+     },
+     "output_hash": "AAAAAAAAAAA="
+    }
+   ],
+   "description": "This property aggregates all errors from Antithesis system components and Antith",
+   "example_count": 0,
+   "examples": [],
+   "id": "1ea488bbfbf3331fc8687430e90262fb",
+   "is_event": true,
+   "is_group": false,
+   "name": "No Antithesis errors",
+   "status": "Failing"
+  },
+  {
+   "counterexample_count": 0,
+   "counterexamples": [],
+   "description": "This property verifies that all images in the environment are built for the expe",
+   "example_count": 12,
+   "examples": [],
+   "id": "4c9aaffcf8fb719faa38c184f68d6b03",
+   "is_event": false,
+   "is_group": false,
+   "name": "Software images match expected platform",
+   "status": "Passing"
+  },
+  {
+   "counterexample_count": 0,
+   "counterexamples": [],
+   "description": "\nThis property reports the unique containers that sent traffic over the Antithes",
+   "example_count": 17,
+   "examples": [],
+   "id": "2c9044cb39a45e6b53f14c8430e114ff",
+   "is_event": false,
+   "is_group": false,
+   "name": "Containers joined the Antithesis network",
+   "status": "Passing"
+  },
+  {
+   "counterexample_count": 0,
+   "counterexamples": [],
+   "description": "\nThis metric tracks the peak memory usage of your software over each test run. T",
+   "example_count": 37243,
+   "examples": [],
+   "id": "c4386cb75c3a5407227cac7868a1249d",
+   "is_event": true,
+   "is_group": false,
+   "name": "Always: Peak memory usage",
+   "status": "Passing"
+  },
+  {
+   "counterexample_count": 1,
+   "counterexamples": [
+    {
+     "antithesis_error": null,
+     "exit_code": null,
+     "guest_stopped": null,
+     "is_examplar": null,
+     "moment": {
+      "input_hash": "-1948821169496309697",
+      "vtime": "1002.5402905223891"
+     },
+     "output_hash": "AAAAAAAAAAA="
+    }
+   ],
+   "description": "",
+   "example_count": 0,
+   "examples": [],
+   "id": "e0fb4488dbe7f7ab4567736b4c66b15d",
+   "is_event": true,
+   "is_group": true,
+   "name": "container: amaru-relay-1, exit code: 1",
+   "status": "Failing"
+  },
+  {
+   "counterexample_count": 0,
+   "counterexamples": [],
+   "description": "DWARF SDK always",
+   "example_count": 41,
+   "examples": [],
+   "id": "dddddddddddddddddddddddddddddddd",
+   "is_event": false,
+   "is_group": false,
+   "name": "Always: mixed-miniprotocol-security: victim keeps serving after malformed handshake",
+   "status": "Passing"
+  },
+  {
+   "counterexample_count": 0,
+   "counterexamples": [],
+   "description": "DWARF SDK sometimes",
+   "example_count": 3,
+   "examples": [],
+   "id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "is_event": false,
+   "is_group": false,
+   "name": "Sometimes: mixed-miniprotocol-security: adversary reached block-fetch",
+   "status": "Passing"
+  }
+ ],
+ "next_cursor": null
+}
