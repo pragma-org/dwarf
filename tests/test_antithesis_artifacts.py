@@ -245,7 +245,7 @@ def test_from_registration_writes_complete_row(adapter_state, monkeypatch):
     reg = _registration()
     monkeypatch.setattr(a, 'load_operator_registration', lambda rid: {'revision': 'r1', 'registration': reg})
     calls = []
-    controller = _fake_controller(calls, terminal=lambda eid: {'state': 'applied', 'result': _adapt_result(eid.split('-')[-1])})
+    controller = _fake_controller(calls, terminal=lambda eid: {'state': 'applied', 'result': _adapt_result(a.artifact_id_for(reg['registration_id']))})
     row = a.from_registration(reg['registration_id'], controller=controller)
     assert row['state'] == 'building' and row['registration_id'] == reg['registration_id']
     final = _wait(a, row['id'])
@@ -254,8 +254,10 @@ def test_from_registration_writes_complete_row(adapter_state, monkeypatch):
     adapt_call = next(c for c in calls if c[0] == 'antithesis.artifact-adapt')
     assert adapt_call[1] == {'implementation': 'amaru', 'registration_id': reg['registration_id'],
                              'config_image_id': reg['config_image_id'], 'executable_digest': reg['executable_digest'],
-                             'source_revision': ADAPT_REV, 'artifact_id': row['id'], 'execution_id': 'antithesis-adapt-' + row['id']}
-    assert adapt_call[2] == 1800 and adapt_call[3] == 'antithesis-adapt-' + row['id']
+                             'source_revision': ADAPT_REV, 'artifact_id': row['id'], 'execution_id': row['execution_id']}
+    import re
+    assert re.fullmatch(r'antithesis-adapt-[0-9a-f]{32}', row['execution_id'])
+    assert adapt_call[2] == 1800 and adapt_call[3] == row['execution_id']
 
 
 def test_from_registration_unknown_registration_fails_row(adapter_state, monkeypatch):
@@ -280,7 +282,7 @@ def test_from_registration_returns_building_row_without_second_call(adapter_stat
     calls = []
     def terminal(eid):
         gate.wait(2)
-        return {'state': 'applied', 'result': _adapt_result(eid.split('-')[-1])}
+        return {'state': 'applied', 'result': _adapt_result(a.artifact_id_for(reg['registration_id']))}
     controller = _fake_controller(calls, terminal=terminal)
     first = a.from_registration(reg['registration_id'], controller=controller)
     second = a.from_registration(reg['registration_id'], controller=controller)
@@ -323,3 +325,34 @@ def test_amaru_probe_mounts_the_host_side_path_when_given(tmp_path,monkeypatch):
     assert mounts[0]=='type=bind,src=/host/controller/antithesis-adapts/job/probe/extracted,dst=/target'
     assert mounts[1]==mounts[2]==mounts[0]+',readonly'
     assert (tmp_path/'extracted/amaru').is_file()
+
+
+def test_from_registration_retry_after_failure_uses_a_fresh_execution_id(adapter_state, monkeypatch):
+    """The controller replays an idempotency key: a retry with the same key would
+    only re-read the failed record (F27). Each attempt gets its own execution."""
+    a = adapter_state
+    reg = _registration()
+    monkeypatch.setattr(a, 'load_operator_registration', lambda rid: {'revision': 'r1', 'registration': reg})
+    calls = []
+    outcomes = iter([
+        {'state': 'failed', 'failure': {'code': 'extraction-probe-failed', 'stage': 'adapt', 'message': 'probe failed'}},
+        {'state': 'applied', 'result': None}])
+    seen = {}
+    def controller(operation, parameters, timeout, idempotency_key=None):
+        calls.append((operation, dict(parameters), idempotency_key))
+        if operation == 'antithesis.artifact-adapt':
+            seen[parameters['execution_id']] = next(outcomes)
+            return {'status': 'accepted', 'execution_id': parameters['execution_id']}
+        status = dict(seen[parameters['execution_id']])
+        if status.get('state') == 'applied':
+            status['result'] = _adapt_result(parameters['execution_id'] and a.artifact_id_for(reg['registration_id']))
+        return {'execution_id': parameters['execution_id'], **status}
+    first = a.from_registration(reg['registration_id'], controller=controller)
+    assert _wait(a, first['id'])['state'] == 'failed'
+    second = a.from_registration(reg['registration_id'], controller=controller)
+    assert second['state'] == 'building'
+    assert _wait(a, second['id'])['state'] == 'complete'
+    starts = [c for c in calls if c[0] == 'antithesis.artifact-adapt']
+    assert len(starts) == 2
+    assert starts[0][1]['execution_id'] != starts[1][1]['execution_id']
+    assert starts[0][2] != starts[1][2]

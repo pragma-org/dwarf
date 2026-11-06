@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 import threading
+import uuid
 
 from profile_manager import antithesis_image_build as builds
 from profile_manager import antithesis_versions as versions
@@ -114,7 +115,10 @@ def from_registration(registration_id, *, controller=None):
     if job_lock is None:
         return read(identifier)
     build = registration.get('source_build') or {}
+    # One controller execution per attempt: the controller replays an
+    # idempotency key, so a retry must never reuse a failed execution's id.
     row = {'id': identifier, 'state': 'building', 'registration_id': registration_id,
+           'execution_id': 'antithesis-adapt-' + uuid.uuid4().hex,
            'implementation': registration['implementation'], 'version': registration['version'],
            'mode': 'patched' if build.get('variant') == 'instrumented' else 'stock',
            'source_revision': registration['provenance']['source_revision'],
@@ -125,7 +129,7 @@ def from_registration(registration_id, *, controller=None):
 
 
 def _adapt_worker(directory, registration, row, job_lock, controller):
-    execution_id = 'antithesis-adapt-' + row['id']
+    execution_id = row['execution_id']
     try:
         controller('antithesis.artifact-adapt', {
             'implementation': registration['implementation'], 'registration_id': registration['registration_id'],
