@@ -87,6 +87,10 @@ WORKDIR /home/dwarf/dwarf-fw
 
 COPY dwarf/ /home/dwarf/dwarf-fw/dwarf/
 COPY antithesis/cardano_amaru_relay_bootstrap_control/ /home/dwarf/dwarf-fw/antithesis/cardano_amaru_relay_bootstrap_control/
+# The wizard-supported scenario pins this curated workload package by content
+# (antithesis_workload_binding.SOURCE); without it every installed dashboard
+# reports workload-source-contract-changed.
+COPY antithesis/cardano_amaru_miniprotocol_security/ /home/dwarf/dwarf-fw/antithesis/cardano_amaru_miniprotocol_security/
 COPY antithesis/components/dwarf-adversary/coverage-docker/Dockerfile /home/dwarf/dwarf-fw/antithesis/components/dwarf-adversary/coverage-docker/Dockerfile
 COPY infrastructure/docker/dwarf-fw-entrypoint.sh /usr/local/bin/dwarf-fw-entrypoint
 COPY infrastructure/docker/requirements-framework.txt /tmp/requirements-framework.txt

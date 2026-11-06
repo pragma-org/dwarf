@@ -1780,3 +1780,15 @@ def test_build_resource_knobs_reach_the_controller():
     assert "DWARF_BUILD_CPUS" not in services["dwarf-fw"]["environment"]
     assert "export DWARF_BUILD_CPUS" in common and "export DWARF_BUILD_MEMORY" in common
     assert "`DWARF_BUILD_CPUS`" in install and "`DWARF_BUILD_MEMORY`" in install
+
+
+def test_dashboard_image_ships_the_pinned_antithesis_workload_package():
+    """The one wizard-supported scenario binds its curated workload from
+    antithesis/cardano_amaru_miniprotocol_security; an installed dashboard that
+    lacks that directory reports 'workload-source-contract-changed' forever (F29)."""
+    from pathlib import Path
+    from profile_manager import antithesis_workload_binding as binding
+    root = Path(__file__).resolve().parents[1]
+    dockerfile = (root / 'infrastructure/docker/dwarf-fw.Dockerfile').read_text()
+    relative = binding.SOURCE.relative_to(root).as_posix()
+    assert f'COPY {relative}/ /home/dwarf/dwarf-fw/{relative}/' in dockerfile
