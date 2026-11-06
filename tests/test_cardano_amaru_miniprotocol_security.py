@@ -106,7 +106,12 @@ def test_compose_preserves_the_baseline_and_only_adds_named_security_services():
     security = load_yaml(COMPOSE)
     assert set(security["services"]) == BASELINE_SERVICES | SECURITY_SERVICES
     for name in BASELINE_SERVICES - {"sidecar"}:
-        assert security["services"][name] == baseline["services"][name], name
+        service = dict(security["services"][name])
+        if name in ("amaru-relay-1", "amaru-relay-2"):
+            # spec.md: the control relays are fault-excluded in this package; the
+            # baseline harness leaves them as its victims. Only that label differs.
+            assert service.pop("labels") == {"com.antithesis.exclude_from_faults": "network,kill,pause,stop"}, name
+        assert service == baseline["services"][name], name
     base_sidecar = baseline["services"]["sidecar"]
     sidecar = security["services"]["sidecar"]
     for field in (
