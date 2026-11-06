@@ -1,0 +1,84 @@
+"""Classify a scenario's primitives against the committed Antithesis capability matrix.
+
+The matrix (``data/antithesis-capabilities-v1.json``) says, per primitive, whether it
+runs inside the ``dwarf-workload`` container, runs with a documented difference, is
+delegated to the package or the platform, or is unsupported there. Anything not
+listed is unsupported. The classification is computed at preview time (declared
+gaps in the package manifest) and consumed again at run time (skip policy).
+"""
+from __future__ import annotations
+
+import json
+from functools import lru_cache
+from pathlib import Path
+
+STATUSES = ('runs', 'runs-with-note', 'delegated', 'delegated-fault', 'unsupported')
+LEVELS = ('full', 'partial', 'none')
+MATRIX_PATH = Path(__file__).resolve().parent / 'data' / 'antithesis-capabilities-v1.json'
+_PHASES = ('setup', 'load', 'faults', 'probes', 'assertions', 'teardown')
+_RUNNABLE = {'runs', 'runs-with-note'}
+_GAP_CODES = {'unsupported': 'primitive-unsupported-on-antithesis',
+              'delegated-fault': 'fault-delegated-to-platform'}
+_NO_SUT_RUNTIMES = {'library', 'single-node'}
+
+
+@lru_cache(maxsize=1)
+def _matrix_text():
+    return MATRIX_PATH.read_text(encoding='utf-8')
+
+
+def load_matrix():
+    matrix = json.loads(_matrix_text())
+    if matrix.get('schema_version') != 1 or matrix.get('default') not in STATUSES:
+        raise ValueError('unsupported Antithesis capability matrix')
+    for name, row in matrix['primitives'].items():
+        if row.get('status') not in STATUSES:
+            raise ValueError('unknown capability status for ' + name)
+    return matrix
+
+
+def _steps(scenario):
+    """Yield (phase label, primitive name) in execution order, phases flattened."""
+    if scenario.phases:
+        for phase in scenario.phases:
+            for name in _PHASES:
+                for ref in getattr(phase, name):
+                    yield phase.id + ':' + name, name, ref.primitive
+        return
+    for name in _PHASES:
+        for ref in getattr(scenario, name):
+            yield name, name, ref.primitive
+
+
+def classify(scenario):
+    matrix = load_matrix()
+    default = matrix['default']
+    rows, gaps, runnable_load = [], [], False
+    for label, phase, primitive in _steps(scenario):
+        entry = matrix['primitives'].get(primitive) or {'status': default, 'note': 'Not listed in the capability matrix.'}
+        status = entry['status']
+        rows.append({'phase': label, 'primitive': primitive, 'status': status, 'note': entry.get('note', '')})
+        if phase == 'load' and status in _RUNNABLE:
+            runnable_load = True
+        code = _GAP_CODES.get(status)
+        if code:
+            gaps.append({'kind': 'implementation-gap', 'code': code, 'primitive': primitive, 'phase': label,
+                         'message': primitive + ': ' + (entry.get('note') or status)})
+    reason = None
+    if scenario.runtime in _NO_SUT_RUNTIMES:
+        reason = 'no-faultable-sut'
+    elif not runnable_load:
+        reason = 'no-runnable-load'
+    if reason:
+        level = 'none'
+    elif any(row['status'] == 'unsupported' for row in rows):
+        level = 'partial'
+    else:
+        level = 'full'
+    return {'schema_version': 1, 'matrix': 'antithesis-capabilities-v1', 'level': level, 'reason': reason,
+            'runnable_load': runnable_load, 'primitives': rows, 'gaps': gaps}
+
+
+def skip_policy(classification):
+    """Primitive name -> status for every entry that does not simply run."""
+    return {row['primitive']: row['status'] for row in classification['primitives'] if row['status'] != 'runs'}
