@@ -385,14 +385,22 @@ def _external_result_verification(
     if not isinstance(provenance, dict):
         provenance = {}
         errors.append("external result provenance is not an object")
-    imported = provenance.get("result_bundle")
-    if not isinstance(imported, dict):
-        imported = {}
-        errors.append("verified result import receipt is missing")
-    if provenance.get("verdict_reason") != "verified_non_vacuous_result_bundle":
-        errors.append("ledger does not record a verified non-vacuous result bundle")
-    if imported.get("verdict") != "imported" or imported.get("signature_verdict") != "verified":
-        errors.append("result bundle import or signature is not verified")
+    # Two verified sources: a signed result bundle imported by the ingestion
+    # service, or an Antithesis report collected through the MOOG proxy and
+    # written into this run directory (source: antithesis-report).
+    antithesis = provenance.get("verdict_reason") == "verified_antithesis_report"
+    if antithesis:
+        if not isinstance(provenance.get("antithesis_result"), dict):
+            errors.append("antithesis result provenance is missing")
+    else:
+        imported = provenance.get("result_bundle")
+        if not isinstance(imported, dict):
+            imported = {}
+            errors.append("verified result import receipt is missing")
+        if provenance.get("verdict_reason") != "verified_non_vacuous_result_bundle":
+            errors.append("ledger does not record a verified non-vacuous result bundle")
+        if imported.get("verdict") != "imported" or imported.get("signature_verdict") != "verified":
+            errors.append("result bundle import or signature is not verified")
 
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -423,7 +431,8 @@ def _external_result_verification(
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
-    result_run_id = provenance.get("result_bundle_run_id")
+    # An Antithesis report lives in the external run's own directory.
+    result_run_id = entry.get("run_id") if antithesis else provenance.get("result_bundle_run_id")
     expected_hash = provenance.get("result_bundle_manifest_sha256")
     if not (
         isinstance(result_run_id, str)
@@ -443,6 +452,17 @@ def _external_result_verification(
         and external.get("backend") == entry.get("backend")
     ):
         errors.append("result bundle external identity is inconsistent")
+    if antithesis:
+        recorded = manifest.get("result") if isinstance(manifest.get("result"), dict) else {}
+        try:
+            digest = hashlib.sha256((manifest_path.parent / "external" / "result.json").read_bytes()).hexdigest()
+        except OSError:
+            digest = None
+        if recorded.get("source") != "antithesis-report" or recorded.get("sha256") != digest:
+            errors.append("antithesis result hash is inconsistent")
+        antithesis_run = (provenance.get("antithesis_result") or {}).get("antithesis_run_id")
+        if not isinstance(external, dict) or external.get("antithesis_run_id") != antithesis_run:
+            errors.append("antithesis run identity is inconsistent")
     expected_scenario = entry.get("scenario")
     observed_scenario = manifest.get("scenario")
     if not isinstance(expected_scenario, dict) or not isinstance(observed_scenario, dict):
@@ -538,6 +558,51 @@ def _external_evidence_path_matches(
         )
     except (OSError, RuntimeError):
         return False
+
+
+def _antithesis_result_view(run_dir: Path, entry: dict[str, Any]) -> dict[str, Any] | None:
+    """The sanitised Antithesis result for the page: property rows with name,
+    kind, source, status and counts; never the report link."""
+    path = run_dir / "external" / "result.json"
+    if not path.is_file():
+        return None
+    try:
+        result = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(result, dict):
+        return None
+    provenance = entry.get("provenance") if isinstance(entry.get("provenance"), dict) else {}
+    recorded = provenance.get("antithesis_result") if isinstance(provenance.get("antithesis_result"), dict) else {}
+    try:
+        gaps = json.loads((run_dir / "gaps.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        gaps = {}
+    missing = gaps.get("missing") if isinstance(gaps, dict) and isinstance(gaps.get("missing"), list) else []
+    properties = []
+    for row in (result.get("properties") or [])[:200]:
+        if not isinstance(row, dict):
+            continue
+        properties.append({
+            "name": str(row.get("name") or ""),
+            "kind": str(row.get("kind") or "platform"),
+            "source": str(row.get("source") or "antithesis"),
+            "status": str(row.get("status") or "Unknown"),
+            "example_count": row.get("example_count"),
+            "counterexample_count": row.get("counterexample_count"),
+        })
+    return {
+        "source": "antithesis-report",
+        "antithesis_run_id": result.get("antithesis_run_id"),
+        "run_status": result.get("run_status"),
+        "verdict_reason": provenance.get("verdict_reason"),
+        "reason": recorded.get("reason") or provenance.get("verdict_reason"),
+        "dwarf_property_count": result.get("dwarf_property_count"),
+        "properties_truncated": bool(result.get("properties_truncated")),
+        "properties": properties,
+        "report_link_retained": (run_dir / "external" / "report-link.json").is_file(),
+        "gaps": [str(item.get("path")) for item in missing if isinstance(item, dict) and item.get("path")],
+    }
 
 
 def _external_run_detail(
@@ -743,6 +808,7 @@ def _external_run_detail(
         "external/link.json",
         "external/status.json",
         "external/submission.json",
+        "external/result.json",
     ):
         path = run_dir / relative
         if path.is_file():
@@ -756,6 +822,12 @@ def _external_run_detail(
 
     result_bundle_present, result_bundle_verified, result_errors = (
         _external_result_verification(entry)
+    )
+    result_view = _antithesis_result_view(run_dir, entry)
+    result_source = (
+        "antithesis-report" if result_view is not None
+        else "signed-bundle" if result_bundle_present
+        else None
     )
     verify_errors = [*errors, *result_errors]
     verify_status = (
@@ -809,6 +881,8 @@ def _external_run_detail(
             "submission_present": submission_path.is_file(),
             "result_bundle_present": result_bundle_present,
             "result_bundle_verified": result_bundle_verified,
+            "result_source": result_source,
+            "result": result_view,
             "verdict_reason": provenance.get("verdict_reason"),
             "receipt_integrity": "fail" if errors else "verified",
             "receipt_errors": errors,

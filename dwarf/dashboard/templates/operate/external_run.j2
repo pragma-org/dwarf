@@ -13,10 +13,14 @@
     <article class="dk-panel">
       <span class="eyebrow">DWARF verdict</span>
       <h3>{{ run.verdict_status }}</h3>
-      {% if run.external.result_bundle_verified %}
+      {% if run.external.result_bundle_verified and run.external.result_source == 'antithesis-report' %}
+      <p>DWARF collected the Antithesis properties table through the MOOG proxy; the retained result, manifest hash, chain, external binding, scenario identity, non-vacuous assertions and verdict still agree.</p>
+      {% elif run.external.result_bundle_verified %}
       <p>DWARF's ingestion service recorded a verified signature, and the retained result identity, manifest hash, chain, external binding, non-vacuous assertions, and verdict still agree.</p>
       {% elif run.external.result_bundle_present %}
       <p>A result bundle is present, but its retained identity, signature provenance, hash chain, or non-vacuous assertions did not revalidate.</p>
+      {% elif run.external.result %}
+      <p>An Antithesis result was collected through the MOOG proxy, but it does not establish a DWARF pass or fail (<code>{{ run.external.verdict_reason }}</code>). Provider completion alone cannot produce a verdict.</p>
       {% else %}
       <p>No signed DWARF result bundle was supplied. Provider completion alone cannot produce a pass or fail verdict.</p>
       {% endif %}
@@ -39,6 +43,41 @@
   <span class="eyebrow">Evidence boundary</span>
   <h2 id="external-evidence-heading">Why this run is inconclusive</h2>
   <p>No signed DWARF result bundle was supplied, so DWARF retained the provider facts but did not infer a test pass or failure. A provider outcome of <code>{{ run.external.outcome or 'unknown' }}</code> is preserved exactly and remains semantically separate.</p>
+</section>
+{% elif run.external.verdict_reason in ('no_dwarf_assertions', 'properties_unavailable', 'antithesis_run_not_terminal', 'antithesis_result_invalid') %}
+<section class="run-precondition-warning" aria-labelledby="external-evidence-heading">
+  <span class="eyebrow">Evidence boundary</span>
+  <h2 id="external-evidence-heading">Why this run is inconclusive</h2>
+  {% if run.external.verdict_reason == 'no_dwarf_assertions' %}
+  <p>The Antithesis properties table has no DWARF assertion, so there is nothing to pass or fail: platform properties alone cannot establish a DWARF verdict. A provider outcome of <code>{{ run.external.outcome or 'unknown' }}</code> is preserved exactly.</p>
+  {% elif run.external.verdict_reason == 'properties_unavailable' %}
+  <p>The Antithesis properties table was not available when the result was collected; refresh the submission in the wizard to collect it again.</p>
+  {% elif run.external.verdict_reason == 'antithesis_run_not_terminal' %}
+  <p>MOOG reported completion while the Antithesis run was still in progress; refresh the submission in the wizard once the run is complete.</p>
+  {% else %}
+  <p>The retained Antithesis result could not be read; refresh the submission in the wizard to collect it again.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if run.external.result %}
+<section aria-labelledby="external-properties-heading">
+  <span class="eyebrow">Antithesis properties</span>
+  <h2 id="external-properties-heading">Properties table · {{ run.external.result.properties|length }} row{{ '' if run.external.result.properties|length == 1 else 's' }} · {{ run.external.result.dwarf_property_count }} DWARF</h2>
+  <p>Collected through the MOOG proxy for Antithesis run <code>{{ run.external.result.antithesis_run_id }}</code> ({{ run.external.result.run_status }}); verdict reason <code>{{ run.external.result.reason or '—' }}</code>.{% if run.external.result.report_link_retained %} The signed report link is retained privately on the host and is not shown.{% endif %}{% if run.external.result.properties_truncated %} The proxy returned a partial properties page; rows beyond the first page are not shown.{% endif %}</p>
+  <div class="responsive-table">
+    <table class="config-table">
+      <thead><tr><th>Property</th><th>Kind</th><th>Source</th><th>Status</th><th>Examples</th><th>Counterexamples</th></tr></thead>
+      <tbody>
+      {% for property in run.external.result.properties %}
+        <tr><td>{{ property.name }}</td><td><code>{{ property.kind }}</code></td><td><code>{{ property.source }}</code></td><td><span class="result-pill result-pill--{{ 'pass' if property.status == 'Passing' else 'fail' }}">{{ property.status }}</span></td><td>{{ property.example_count }}</td><td>{{ property.counterexample_count }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if run.external.result.gaps %}
+  <p class="dk-note">Not exported by the platform: {% for gap in run.external.result.gaps %}<code>{{ gap }}</code>{{ ', ' if not loop.last }}{% endfor %}.</p>
+  {% endif %}
 </section>
 {% endif %}
 

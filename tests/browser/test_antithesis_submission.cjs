@@ -31,6 +31,13 @@ def facts(config,t):
     if phase=='error':raise RuntimeError('TOP_SECRET')
     return [{'id':'f'*64,'key':{'type':'test-run','platform':'github','repository':dict(zip(['organization','repo'],t['repository'].split('/'))),'requester':t['requester'],'commitId':t['commit'],'directory':t['directory'],'try':t['try_number']},'value':{'phase':phase,'outcome':'failure' if phase=='finished' else None,'url':'https://secret/?auth=TOP_SECRET'}}]
 s.query_facts=facts
+FIX=Path('tests/fixtures/antithesis_proxy')
+def find_run(config,moog_config,test_run_id,**k):
+    return {'status':'found','run':json.loads((FIX/'run-completed.json').read_text()),'matches':1,'pages':1,'error':''}
+def fetch(config,moog_config,sub,**k):
+    name={'run':'run-completed.json','properties':'properties.json'}[sub]
+    return {'ok':True,'payload':json.loads((FIX/name).read_text()),'exit_code':0,'error':''}
+remote.find_antithesis_run=find_run;remote.fetch_antithesis=fetch
 server=ThreadingHTTPServer(('127.0.0.1',0),dashboard.serve_dashboard_handler_factory('submission-test'))
 print(server.server_port,flush=True);server.serve_forever()
 `],{cwd:root,env:{...process.env,PYTHONPATH:'.:dwarf',SUBMIT_CONTROL:control,SUBMIT_CALLS:calls,ADA2_DWARF_STATE_DIR:path.join(temp,'state'),ADA2_DWARF_RUNS_DIR:path.join(temp,'runs'),ADA2_DWARF_BUNDLES_DIR:path.join(temp,'bundles'),ADA2_PROFILE_MANAGER_CONFIG:path.join(temp,'config.yaml')},stdio:['ignore','pipe','pipe']});
@@ -87,6 +94,10 @@ let stderr='';server.stderr.on('data',x=>stderr+=x);
  fs.writeFileSync(control,'running');await get('submission-refresh').click();await state('running');
  fs.writeFileSync(control,'finished');await get('submission-refresh').click();await state('completed');
  assert.match(await get('submission-state').textContent(),/findings/);
+ // The result came back through the proxy: DWARF's verdict line and the run page link appear.
+ assert.equal(await get('submission-verdict').isVisible(),true,'verdict line shown once the run is terminal');
+ assert.match(await get('submission-verdict').textContent(),/DWARF verdict: fail · platform_property_failed/);
+ assert.match(await get('submission-verdict').locator('a').getAttribute('href'),/^\/operate\/runs\/external-antithesis-[0-9a-f]{24}$/);
  fs.writeFileSync(control,'error');await get('submission-refresh').click();await state('completed');
  assert.match(await get('submission-state').textContent(),/refresh failed/i);
  assert.equal((await page.locator('body').innerText()).includes('TOP_SECRET'),false);
@@ -94,5 +105,5 @@ let stderr='';server.stderr.on('data',x=>stderr+=x);
  await get('submission-recover').click();await state('completed');assert.equal(await get('submit').isDisabled(),true);
  for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await get('submission-state').scrollIntoViewIfNeeded();assert.equal(await page.locator('.shell-main').evaluate(n=>n.scrollWidth>n.clientWidth),false);if(process.env.DWARF_CHECKPOINT_SCREENSHOTS)await page.screenshot({path:path.join(process.env.DWARF_CHECKPOINT_SCREENSHOTS,`submission-${width}.png`)});}
  assert.equal(fs.readFileSync(calls,'utf8').trim().split('\n').length,1);assert.deepEqual(errors,[]);assert.ok(posts.every(p=>p.startsWith('/api/antithesis-run/')));
- console.log('PASS: readiness, changed target, one explicit submission, lost-response/reload recovery, pending/running/completed-with-findings, refresh failure, mobile; no Local execution');
+ console.log('PASS: readiness, changed target, one explicit submission, lost-response/reload recovery, pending/running/completed-with-findings + proxy result verdict, refresh failure, mobile; no Local execution');
 }finally{if(browser)await browser.close();server.kill('SIGTERM');fs.rmSync(temp,{recursive:true,force:true})}})().catch(e=>{console.error(e,stderr);process.exitCode=1});

@@ -79,6 +79,17 @@
       + (job.dwarf_run_id ? ` · DWARF run: ${job.dwarf_run_id}` : '');
     get('submission-receipt').textContent = JSON.stringify(job, null, 2);
     get('submission-result').hidden = false;
+    // The DWARF verdict comes from the ledger once the Antithesis result was collected; never a report link.
+    const verdict = get('submission-verdict');
+    if (job.result && typeof job.result === 'object') {
+      verdict.hidden = false; verdict.dataset.state = job.result.state;
+      if (job.result.state === 'verified' || job.result.state === 'inconclusive') {
+        const a = document.createElement('a'); a.href = job.result.run_page; a.textContent = 'Open run page';
+        verdict.replaceChildren(`DWARF verdict: ${job.result.verdict} · ${job.result.reason} · `, a);
+      } else {
+        verdict.textContent = `Result not collected yet: ${job.result.reason}${job.result.detail ? ' (' + job.result.detail + ')' : ''}. Refresh again later.`;
+      }
+    } else { verdict.hidden = true; verdict.textContent = ''; }
     controls();
   }
   function sync() {

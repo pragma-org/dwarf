@@ -681,3 +681,85 @@ def test_present_running_status_must_contain_exact_bound_fact(tmp_path):
         "status receipt does not contain exactly the matched external fact" in error
         for error in detail["external"]["receipt_errors"]
     )
+
+
+# ---------------------------------------------------------------------------
+# AT-4: an Antithesis report result on the run page
+
+_AT4 = Path(__file__).resolve().parent / "fixtures" / "antithesis_proxy"
+
+
+def _antithesis_report_run(tmp_path: Path, rows: list | None = None) -> tuple[Path, str]:
+    from profile_manager import antithesis_results, run_service
+
+    request = run_service.ExternalRunRequest(
+        backend="antithesis", origin="external",
+        launch={"transport": "moog", "repository": "pragma-org/dwarf", "directory": "antithesis/x", "commit": "c" * 40, "try": 1},
+        runs_dir=tmp_path / "runs", state_dir=tmp_path / "state",
+        scenario_path=Path(__file__).resolve().parent / "fixtures" / "run-service-parity.yaml",
+    )
+    run_id = run_service.reserve_external_run(request)["run_id"]
+    run_service.record_external_submission(run_id, state_dir=tmp_path / "state",
+        response={"returncode": 0, "stdout": "ok", "stderr": ""}, external_test_run_id="moog-at4-1")
+    run = json.loads((_AT4 / "run-completed.json").read_text())
+    props = json.loads((_AT4 / "properties.json").read_text())
+    if rows is not None:
+        props["data"] = rows
+    entry = RunLedger(tmp_path / "state").get(run_id)
+    run_dir = Path(entry["evidence_path"])
+    result = antithesis_results.normalise_result(run, props, test_run_id="moog-at4-1")
+    antithesis_results.write_result_bundle(run_dir, entry=entry, result=result, raw={"run": run, "properties": props},
+                                           scenario_source=b"id: x\n", measurements=None)
+    antithesis_results._private_write(run_dir / "external" / "report-link.json", b'{"url": "https://secret/?auth=TOP_SECRET"}\n')
+    run_service.reconcile_external_status(run_id, state_dir=tmp_path / "state", phase="completed",
+        status_evidence={"test_run_id": "moog-at4-1", "phase": "completed"}, result_path=run_dir / "external" / "result.json")
+    return tmp_path / "runs", run_id
+
+
+def _page(detail):
+    return render("operate/external_run.j2", page_title="x", density="reading", active="operate", active_sub="runs", run=detail)
+
+
+def test_antithesis_report_result_is_verified_and_rendered(tmp_path):
+    runs_dir, run_id = _antithesis_report_run(tmp_path)
+    detail = operate_run_detail(run_id, runs_dir=runs_dir)
+    assert detail is not None and detail["verdict_status"] == "fail"
+    ext = detail["external"]
+    assert ext["result_bundle_present"] is True and ext["result_bundle_verified"] is True, ext["result_errors"]
+    assert ext["result_errors"] == [] and ext["result_source"] == "antithesis-report"
+    view = ext["result"]
+    assert view["antithesis_run_id"] == "788998d60b09b96953e830e9f9ae2c7b-62-14" and view["run_status"] == "completed"
+    assert view["reason"] == "platform_property_failed" and view["dwarf_property_count"] == 2
+    assert view["report_link_retained"] is True and view["properties_truncated"] is False
+    assert len(view["properties"]) == 7
+    assert view["properties"][0] == {"name": "No Antithesis errors", "kind": "platform", "source": "antithesis",
+                                     "status": "Failing", "example_count": 0, "counterexample_count": 2}
+    assert "measurements/report.json" in view["gaps"]
+    listed = {f["path"] for f in ext["evidence_files"]}
+    assert "external/result.json" in listed and "external/report-link.json" not in listed
+    html = _page(detail)
+    assert "Antithesis properties" in html and "No Antithesis errors" in html and "retained privately" in html
+    assert "TOP_SECRET" not in html and "auth=" not in html
+    assert "No signed DWARF result bundle was supplied" not in html
+    assert "MOOG proxy" in html
+
+
+def test_antithesis_report_result_tamper_is_reported_on_the_run_page(tmp_path):
+    runs_dir, run_id = _antithesis_report_run(tmp_path)
+    result_path = runs_dir / run_id / "external" / "result.json"
+    data = json.loads(result_path.read_text()); data["failing"] = []
+    result_path.write_text(json.dumps(data))
+    detail = operate_run_detail(run_id, runs_dir=runs_dir)
+    assert detail["external"]["result_bundle_verified"] is False
+    assert any("antithesis result hash" in error for error in detail["external"]["result_errors"])
+
+
+def test_inconclusive_antithesis_result_explains_itself(tmp_path):
+    rows = [{"id": "f" * 32, "name": "No Antithesis errors", "status": "Passing", "is_event": False, "is_group": False,
+             "example_count": 1, "examples": [], "counterexample_count": 0, "counterexamples": []}]
+    runs_dir, run_id = _antithesis_report_run(tmp_path, rows=rows)
+    detail = operate_run_detail(run_id, runs_dir=runs_dir)
+    assert detail["verdict_status"] == "inconclusive" and detail["external"]["verdict_reason"] == "no_dwarf_assertions"
+    assert detail["external"]["result"]["properties"][0]["name"] == "No Antithesis errors"
+    html = _page(detail)
+    assert "no DWARF assertion" in html and "No signed DWARF result bundle was supplied" not in html
