@@ -480,3 +480,26 @@ def test_port_stage_offers_every_committed_series_and_derives_from_the_one_that_
     assert manifest['derived_from']['recipe_dir'].startswith('measurement-patches-nanoseconds-v4/')
     assert manifest['measurement_revision'] == bases[1][1]['measurement_revision'] and manifest['auto_ported'] is True
     assert context.port_result['attempts'][0]['status'] == 'failed'
+
+
+def test_container_adds_readonly_mounts(runtime, monkeypatch):
+    context = builds.BuildContext(runtime, {**PARAMS, 'image': 'ghcr.io/pragma-org/amaru@' + DIGEST},
+                                  'build-test', 60, threading.Event())
+    (context.directory / 'stock').mkdir()
+    argv = []
+    def run(arguments, timeout=30, execution_id=None, **kwargs):
+        argv.append(tuple(arguments))
+        if arguments[:2] == ('container', 'inspect'):
+            return DockerResult(1, '[]', 'Error: No such object: ' + arguments[2])
+        return DockerResult(0, 'ok', '')
+    runtime._run = run
+    library = runtime.state_dir / 'release-builds' / 'build-test' / 'preload' / 'lib.so'
+    preload = runtime.state_dir / 'release-builds' / 'build-test' / 'preload' / 'ld.so.preload'
+    context.container('stock', 'preload', 'sha256:' + 'c' * 64, ['--version'], entrypoint='/usr/local/bin/amaru',
+                      mounts=[(library, '/usr/lib/lib.so'), (preload, '/etc/ld.so.preload')])
+    run_call = next(call for call in argv if call[0] == 'run')
+    assert '--network=none' in run_call and '--read-only' in run_call and '--cap-drop=ALL' in run_call
+    assert '--mount' in run_call
+    mounts = [run_call[i + 1] for i, item in enumerate(run_call) if item == '--mount']
+    assert mounts == ['type=bind,src=/host/controller/release-builds/build-test/preload/lib.so,dst=/usr/lib/lib.so,readonly',
+                      'type=bind,src=/host/controller/release-builds/build-test/preload/ld.so.preload,dst=/etc/ld.so.preload,readonly']

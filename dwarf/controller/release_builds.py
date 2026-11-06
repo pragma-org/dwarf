@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 _JOB = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 _DIGEST = re.compile(r'^sha256:[0-9a-f]{64}$')
 _VARIANTS = ('stock', 'instrumented')
-_ROLES = ('compile', 'port', 'version', 'help', 'interface', 'identity')
+_ROLES = ('compile', 'port', 'version', 'help', 'interface', 'identity',
+          'identity-version', 'preload-compile', 'preload')
 _CEILINGS = {'compile': 14400, 'port': 900}
 _MAX_JSON = 1024 * 1024
 _MAX_LOG = 8 * 1024 * 1024
@@ -193,7 +194,11 @@ class BuildContext:
             raise RuntimeError('Build command failed: ' + output[-3000:])
         return output
 
-    def container(self, variant, role, image, command, *, work=None, entrypoint=None):
+    def _host_path(self, path):
+        relative = Path(path).relative_to(Path(self.runtime.state_dir))
+        return Path(self.runtime.host_state_dir) / relative
+
+    def container(self, variant, role, image, command, *, work=None, entrypoint=None, mounts=()):
         name = _name(self.runtime, self.execution_id, variant, role)
         from controller.build_resources import build_resources, docker_limit_arguments
         args = ['run', '--name', name, '--platform', 'linux/amd64',
@@ -202,11 +207,13 @@ class BuildContext:
         for key, value in _labels(self.runtime, self.execution_id).items():
             args += ['--label', key + '=' + value]
         if work is not None:
-            relative = work.relative_to(Path(self.runtime.state_dir))
-            host = Path(self.runtime.host_state_dir) / relative
-            args += ['--mount', 'type=bind,src=' + str(host) + ',dst=/work']
+            args += ['--mount', 'type=bind,src=' + str(self._host_path(work)) + ',dst=/work']
         else:
             args += ['--network=none', '--read-only', '--cap-drop=ALL']
+        # Read-only files from this job's own state directory (the preload
+        # exercise); the hardened flags above stay in force.
+        for source, destination in mounts:
+            args += ['--mount', 'type=bind,src=' + str(self._host_path(source)) + ',dst=' + destination + ',readonly']
         if entrypoint:
             args += ['--entrypoint', entrypoint]
         args += [image, *command]
