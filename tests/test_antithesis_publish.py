@@ -206,3 +206,25 @@ def test_stage_secret_writes_0600_with_expiry_and_discard_removes_it(tmp_path):
     binary_imports.discard_secret(secret_id, root=tmp_path)
     assert not (tmp_path / secret_id).exists()
     binary_imports.discard_secret(secret_id, root=tmp_path)   # idempotent
+
+
+def test_inspect_falls_back_when_the_cli_lacks_platform(runtime, prepared, monkeypatch):
+    """The controller image's docker CLI may predate `image inspect --platform`
+    (F31): fall back to a plain inspect and still check Os/Architecture."""
+    _preparations_dir(monkeypatch)
+    original = runtime._run
+    seen = []
+    def _run(arguments, timeout=30, execution_id=None, **kwargs):
+        arguments = tuple(arguments)
+        if arguments[:2] == ('image', 'inspect') and '--platform' in arguments:
+            seen.append(arguments)
+            if kwargs.get('output_path'):
+                Path(kwargs['output_path']).write_text("unknown flag: --platform\nSee 'docker image inspect --help'.\n")
+            return DockerResult(125, '', "unknown flag: --platform\nSee 'docker image inspect --help'.")
+        return original(arguments, timeout, execution_id, **kwargs)
+    runtime._run = _run
+    result = publish.build_images(runtime, _build_params(prepared['receipt']['id']), BUILD_ID, 1800, threading.Event())
+    assert result['status'] == 'built'
+    assert seen, 'the --platform form is still tried first'
+    plain = [c['argv'] for c in runtime.calls if c['argv'][:2] == ('image', 'inspect') and '--platform' not in c['argv']]
+    assert plain, 'the plain inspect was used as the fallback'

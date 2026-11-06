@@ -100,6 +100,10 @@ class _Job:
 
 def _inspect_amd64(job, image, log):
     result = job.run(('image', 'inspect', '--platform', 'linux/amd64', image), log=log, ceiling=30)
+    if result.returncode and 'unknown flag' in (result.stderr or '') + (result.stdout or ''):
+        # Older docker CLIs (the controller image's) predate `--platform`; the
+        # plain inspect still reports Os/Architecture for a single-platform image.
+        result = job.run(('image', 'inspect', image), log=log, ceiling=30)
     if result.returncode:
         return None
     try:
