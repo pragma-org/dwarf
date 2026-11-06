@@ -7846,3 +7846,16 @@ def test_remove_with_missing_retained_compose_fails_without_false_success(tmp_pa
         runtime.apply(_plan(action="remove"), "execution-missing-compose", threading.Event())
 
     assert current.is_dir()
+
+
+def test_run_feeds_stdin_path_to_the_child_without_putting_it_on_argv(tmp_path):
+    import sys
+    from controller.docker_runtime import DockerRuntime
+    secret = tmp_path / 'secret'
+    secret.write_text('hunter2\n')
+    secret.chmod(0o600)
+    runtime = DockerRuntime(installation_id='test-install', docker_binary=sys.executable, state_dir=tmp_path)
+    result = runtime._run(('-c', 'import sys; print("got:" + sys.stdin.read().strip())'), timeout=20, stdin_path=secret)
+    assert result.returncode == 0 and 'got:hunter2' in result.stdout
+    plain = runtime._run(('-c', 'import sys; print(repr(sys.stdin.read()))'), timeout=20)
+    assert plain.stdout.strip() == "''"

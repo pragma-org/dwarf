@@ -193,6 +193,14 @@ def _bounded_failure(exc: BaseException, *, secret: str) -> dict[str, Any]:
         ("provenance-unreadable", "adapt"): "binary version output carries no readable identity",
         ("preload-exercise-failed", "adapt"): "image did not run a dependency-bearing ld.so.preload library",
         ("extraction-probe-failed", "adapt"): "Amaru extraction into the control image failed",
+        # antithesis.image-build / antithesis.image-publish (controller/antithesis_publish.py)
+        ("build-source-invalid", "image-build"): "package preparation changed since it was inspected",
+        ("image-build-failed", "image-build"): "package image build failed; see the private build log",
+        ("artifact-image-missing", "image-build"): "a prepared node artifact image is not present on this controller",
+        ("registry-secret-invalid", "image-publish"): "the staged registry credential is missing, expired or not owned by DWARF",
+        ("registry-login-failed", "image-publish"): "registry login was rejected; check the GHCR publish PAT (write:packages)",
+        ("image-tag-failed", "image-publish"): "a package image could not be tagged for the registry",
+        ("image-push-failed", "image-publish"): "a package image push was rejected by the registry",
     }
     artifact_message = artifact_failures.get((code, stage))
     if failure_type == "DockerRuntimeError" and artifact_message is not None:
@@ -496,6 +504,8 @@ class ControllerService:
                     Operation.ARTIFACT_PACKAGE.value,
                     Operation.RELEASE_PREPARE.value,
                     Operation.ANTITHESIS_ARTIFACT_ADAPT.value,
+                    Operation.ANTITHESIS_IMAGE_BUILD.value,
+                    Operation.ANTITHESIS_IMAGE_PUBLISH.value,
                 }
                 and (
                     state in {"running", "cancelling"}
@@ -507,6 +517,8 @@ class ControllerService:
                 cleanup_hooks = {
                     Operation.RELEASE_PREPARE.value: "cleanup_release_build",
                     Operation.ANTITHESIS_ARTIFACT_ADAPT.value: "cleanup_antithesis_adapt",
+                    Operation.ANTITHESIS_IMAGE_BUILD.value: "cleanup_antithesis_build",
+                    Operation.ANTITHESIS_IMAGE_PUBLISH.value: "cleanup_antithesis_publish",
                 }
                 cleanup = getattr(self.runtime, cleanup_hooks.get(record.get("operation"), "cleanup_artifact_package"), None)
                 try:
@@ -579,6 +591,8 @@ class ControllerService:
                 Operation.IMAGE_DOWNLOAD.value,
                 Operation.RELEASE_PREPARE.value,
                 Operation.ANTITHESIS_ARTIFACT_ADAPT.value,
+                Operation.ANTITHESIS_IMAGE_BUILD.value,
+                Operation.ANTITHESIS_IMAGE_PUBLISH.value,
                 Operation.LIBRARY_PREPARE.value,
                 Operation.TOPOLOGY_APPLY.value,
                 Operation.RUN_EXECUTE.value,
@@ -610,6 +624,8 @@ class ControllerService:
             if operation == Operation.ARTIFACT_PACKAGE.value
             else parameters.get("digest") if operation in {Operation.IMAGE_DOWNLOAD.value, Operation.RELEASE_PREPARE.value}
             else parameters.get("config_image_id") if operation == Operation.ANTITHESIS_ARTIFACT_ADAPT.value
+            else parameters.get("build_sha256") if operation == Operation.ANTITHESIS_IMAGE_BUILD.value
+            else parameters.get("publish_sha256") if operation == Operation.ANTITHESIS_IMAGE_PUBLISH.value
             else parameters.get("requirements_digest") if operation == Operation.LIBRARY_PREPARE.value
             else parameters.get("plan_digest")
         )
@@ -627,7 +643,7 @@ class ControllerService:
         )
         if not valid:
             return False
-        if operation in {Operation.ARTIFACT_PACKAGE.value, Operation.IMAGE_DOWNLOAD.value, Operation.RELEASE_PREPARE.value, Operation.ANTITHESIS_ARTIFACT_ADAPT.value, Operation.LIBRARY_PREPARE.value}:
+        if operation in {Operation.ARTIFACT_PACKAGE.value, Operation.IMAGE_DOWNLOAD.value, Operation.RELEASE_PREPARE.value, Operation.ANTITHESIS_ARTIFACT_ADAPT.value, Operation.ANTITHESIS_IMAGE_BUILD.value, Operation.ANTITHESIS_IMAGE_PUBLISH.value, Operation.LIBRARY_PREPARE.value}:
             result = record.get("result")
             return (
                 isinstance(result, dict)
@@ -635,7 +651,7 @@ class ControllerService:
                 and (
                     (
                         record.get("state") == "applied"
-                        and result.get("status") == ({Operation.IMAGE_DOWNLOAD.value: "downloaded", Operation.RELEASE_PREPARE.value: "prepared", Operation.ANTITHESIS_ARTIFACT_ADAPT.value: "adapted", Operation.LIBRARY_PREPARE.value: "prepared"}.get(operation, "packaged"))
+                        and result.get("status") == ({Operation.IMAGE_DOWNLOAD.value: "downloaded", Operation.RELEASE_PREPARE.value: "prepared", Operation.ANTITHESIS_ARTIFACT_ADAPT.value: "adapted", Operation.ANTITHESIS_IMAGE_BUILD.value: "built", Operation.ANTITHESIS_IMAGE_PUBLISH.value: "published", Operation.LIBRARY_PREPARE.value: "prepared"}.get(operation, "packaged"))
                     )
                     or (
                         record.get("state") == "cancelled"
@@ -780,7 +796,8 @@ class ControllerService:
                 "installation_id": self.installation_id,
                 "inspected_at": _utc_now(),
             }
-        if request.operation in {Operation.ARTIFACT_PACKAGE, Operation.IMAGE_DOWNLOAD, Operation.RELEASE_PREPARE, Operation.ANTITHESIS_ARTIFACT_ADAPT}:
+        if request.operation in {Operation.ARTIFACT_PACKAGE, Operation.IMAGE_DOWNLOAD, Operation.RELEASE_PREPARE,
+                                 Operation.ANTITHESIS_ARTIFACT_ADAPT, Operation.ANTITHESIS_IMAGE_BUILD, Operation.ANTITHESIS_IMAGE_PUBLISH}:
             return self._idempotent(request, self._artifact_start)
         if request.operation is Operation.LIBRARY_PREPARE:
             return self._idempotent(request, self._library_prepare)
@@ -819,7 +836,8 @@ class ControllerService:
             "operation": request.operation.value,
             "request_sha256": self._intent_sha256(request),
             "request_parameters": _thaw(request.parameters),
-            "plan_sha256": parameters.get("executable_sha256", parameters.get("digest", parameters.get("config_image_id"))),
+            "plan_sha256": parameters.get("executable_sha256", parameters.get("digest", parameters.get(
+                "config_image_id", parameters.get("publish_sha256", parameters.get("build_sha256"))))),
             "topology_id": None,
             "state": "running",
             "accepted_at": accepted_at,
@@ -853,14 +871,19 @@ class ControllerService:
         downloading = request.operation is Operation.IMAGE_DOWNLOAD
         preparing = request.operation is Operation.RELEASE_PREPARE
         adapting = request.operation is Operation.ANTITHESIS_ARTIFACT_ADAPT
+        building = request.operation is Operation.ANTITHESIS_IMAGE_BUILD
+        publishing = request.operation is Operation.ANTITHESIS_IMAGE_PUBLISH
         release_operation = downloading or preparing
         terminal_status = (
             "prepared" if preparing else "downloaded" if downloading
-            else "adapted" if adapting else "packaged"
+            else "adapted" if adapting else "built" if building
+            else "published" if publishing else "packaged"
         )
         artifact_digest = (
             parameters["digest"] if release_operation
             else parameters["config_image_id"] if adapting
+            else parameters["build_sha256"] if building
+            else parameters["publish_sha256"] if publishing
             else parameters["executable_sha256"]
         )
         before = (
@@ -868,6 +891,10 @@ class ControllerService:
             if release_operation
             else {key: parameters[key] for key in ("implementation", "registration_id", "config_image_id")}
             if adapting
+            else {"preparation_id": parameters["preparation_id"]}
+            if building
+            else {key: parameters[key] for key in ("handoff_id", "publish_sha256")}
+            if publishing
             else {key: parameters[key] for key in ("import_id", "executable_sha256")}
         )
         lock_started = time.monotonic()
@@ -887,6 +914,8 @@ class ControllerService:
                 result = _thaw(
                     (self.runtime.prepare_release if preparing else self.runtime.download_image if downloading
                      else self.runtime.adapt_antithesis_artifact if adapting
+                     else self.runtime.build_antithesis_images if building
+                     else self.runtime.publish_antithesis_images if publishing
                      else self.runtime.package_artifact)(
                         parameters,
                         execution_id,
@@ -1182,6 +1211,10 @@ class ControllerService:
                if record.get("operation") == Operation.RELEASE_PREPARE.value else {}),
             **({"progress": self.runtime.antithesis_adapt_progress(execution_id)}
                if record.get("operation") == Operation.ANTITHESIS_ARTIFACT_ADAPT.value else {}),
+            **({"progress": self.runtime.antithesis_build_progress(execution_id)}
+               if record.get("operation") == Operation.ANTITHESIS_IMAGE_BUILD.value else {}),
+            **({"progress": self.runtime.antithesis_publish_progress(execution_id)}
+               if record.get("operation") == Operation.ANTITHESIS_IMAGE_PUBLISH.value else {}),
         }
 
     def _run_resolution_request(

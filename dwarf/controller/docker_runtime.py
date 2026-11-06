@@ -311,6 +311,30 @@ class DockerRuntime:
         from controller.antithesis_adapt import cleanup
         return cleanup(self, execution_id)
 
+    def build_antithesis_images(self, parameters, execution_id, *, timeout, cancel_event):
+        from controller.antithesis_publish import build_images
+        return build_images(self, parameters, execution_id, timeout, cancel_event)
+
+    def publish_antithesis_images(self, parameters, execution_id, *, timeout, cancel_event):
+        from controller.antithesis_publish import publish_images
+        return publish_images(self, parameters, execution_id, timeout, cancel_event)
+
+    def antithesis_build_progress(self, execution_id):
+        from controller.antithesis_publish import read_build_progress
+        return read_build_progress(self, execution_id)
+
+    def antithesis_publish_progress(self, execution_id):
+        from controller.antithesis_publish import read_publish_progress
+        return read_publish_progress(self, execution_id)
+
+    def cleanup_antithesis_build(self, parameters, execution_id):
+        from controller.antithesis_publish import cleanup_build
+        return cleanup_build(self, execution_id)
+
+    def cleanup_antithesis_publish(self, parameters, execution_id):
+        from controller.antithesis_publish import cleanup_publish
+        return cleanup_publish(self, execution_id)
+
     def _approved_image_identities(self) -> set[str]:
         return {
             _immutable_image_identity(item.strip())
@@ -1967,6 +1991,7 @@ class DockerRuntime:
         *,
         output_limit: int | None = None,
         output_path: Path | None = None,
+        stdin_path: Path | None = None,
     ) -> DockerResult:
         argv = [self.docker_binary, *arguments]
         if self._external_runner is not None:
@@ -1982,10 +2007,20 @@ class DockerRuntime:
                 raise DockerRuntimeError("Docker operation output exceeded limit")
             return result
         retained_log = output_path.open('wb') if output_path is not None else None
+        # A secret (e.g. a registry PAT for --password-stdin) is fed through
+        # stdin from a private file; it never appears on argv or in logs.
+        stdin_fd = None
+        if stdin_path is not None:
+            try:
+                stdin_fd = os.open(stdin_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            except OSError as exc:
+                if retained_log is not None:
+                    retained_log.close()
+                raise DockerRuntimeError("stdin source is unavailable") from exc
         try:
             process = subprocess.Popen(
                 argv,
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL if stdin_fd is None else stdin_fd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=output_limit is None,
@@ -1996,6 +2031,9 @@ class DockerRuntime:
             if retained_log is not None:
                 retained_log.close()
             raise DockerRuntimeError("Docker CLI is unavailable") from exc
+        finally:
+            if stdin_fd is not None:
+                os.close(stdin_fd)
         if execution_id is not None:
             with self._process_lock:
                 self._processes[execution_id] = process

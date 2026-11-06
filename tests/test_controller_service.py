@@ -2864,3 +2864,84 @@ def test_antithesis_artifact_adapt_interrupted_record_is_cleaned_up(tmp_path):
     _, status = _dispatch(restarted, _request('execution.status', execution_id=execution_id))
     assert status['state'] == 'interrupted'
     assert cleaned == [execution_id]
+
+
+def _build_request(execution_id='antithesis-build-' + 'f' * 32):
+    return _request('antithesis.image-build', preparation_id='a' * 32, execution_id=execution_id,
+                    idempotency_key=execution_id, timeout_seconds=3600)
+
+
+def _publish_request(execution_id='antithesis-publish-' + 'f' * 32):
+    images = [{'reference': 'dwarf-antithesis-' + 'b' * 32 + '-0:prepared', 'image_id': 'sha256:' + 'c' * 64,
+               'destination': 'ghcr.io/j-gainsec/dwarf-sm-workload:' + 'd' * 32}]
+    return _request('antithesis.image-publish', handoff_id='d' * 32, secret_id='ghcr-' + 'e' * 24, username='j-gainsec',
+                    images=images, execution_id=execution_id, idempotency_key=execution_id, timeout_seconds=3600)
+
+
+def test_antithesis_image_build_dispatches_to_runtime(tmp_path):
+    runtime = FakeRuntime()
+    calls = []
+    runtime.build_antithesis_images = lambda parameters, execution_id, *, timeout, cancel_event: (
+        calls.append((dict(parameters), execution_id)) or {'status': 'built', 'preparation_id': parameters['preparation_id'], 'built_images': []})
+    runtime.antithesis_build_progress = lambda execution_id: {'stage': 'build', 'current_service': 'sm-workload'}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    status, accepted = _dispatch(service, _build_request())
+    assert status == 202
+    terminal = _wait_terminal(service, accepted['execution_id'])
+    assert terminal['state'] == 'applied' and terminal['result']['status'] == 'built'
+    assert terminal['progress']['current_service'] == 'sm-workload'
+    assert calls[0][0]['preparation_id'] == 'a' * 32
+    restarted = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, retained = _dispatch(restarted, _request('execution.status', execution_id=accepted['execution_id']))
+    assert retained['state'] == 'applied'
+
+
+def test_antithesis_image_publish_dispatches_and_bounds_login_failures(tmp_path):
+    runtime = FakeRuntime()
+    def publish(parameters, execution_id, *, timeout, cancel_event):
+        raise DockerRuntimeError('login failed: ghp_SECRETVALUE rejected', code='registry-login-failed', stage='image-publish')
+    runtime.publish_antithesis_images = publish
+    runtime.antithesis_publish_progress = lambda execution_id: {'stage': 'login'}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    status, accepted = _dispatch(service, _publish_request())
+    assert status == 202
+    terminal = _wait_terminal(service, accepted['execution_id'])
+    assert terminal['state'] == 'failed'
+    assert terminal['failure']['code'] == 'registry-login-failed' and terminal['failure']['stage'] == 'image-publish'
+    assert 'ghp_SECRETVALUE' not in json.dumps(terminal)
+    assert 'ghp_SECRETVALUE' not in (service.executions_dir / (accepted['execution_id'] + '.json')).read_text()
+
+
+def test_antithesis_image_publish_success_receipt_binds_the_image_set(tmp_path):
+    runtime = FakeRuntime()
+    runtime.publish_antithesis_images = lambda parameters, execution_id, *, timeout, cancel_event: {
+        'status': 'published', 'handoff_id': parameters['handoff_id'], 'pushed': [{'destination': parameters['images'][0]['destination']}]}
+    runtime.antithesis_publish_progress = lambda execution_id: {}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, accepted = _dispatch(service, _publish_request())
+    terminal = _wait_terminal(service, accepted['execution_id'])
+    assert terminal['state'] == 'applied' and terminal['result']['status'] == 'published'
+    record = json.loads((service.executions_dir / (accepted['execution_id'] + '.json')).read_text())
+    assert record['plan_sha256'].startswith('sha256:')
+    restarted = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, retained = _dispatch(restarted, _request('execution.status', execution_id=accepted['execution_id']))
+    assert retained['state'] == 'applied'
+
+
+def test_antithesis_build_and_publish_interrupted_records_are_cleaned_up(tmp_path):
+    runtime = FakeRuntime()
+    cleaned = []
+    runtime.cleanup_antithesis_build = lambda parameters, execution_id: cleaned.append(('build', execution_id))
+    runtime.cleanup_antithesis_publish = lambda parameters, execution_id: cleaned.append(('publish', execution_id))
+    runtime.antithesis_build_progress = lambda execution_id: {}
+    runtime.antithesis_publish_progress = lambda execution_id: {}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    for operation, execution_id in (('antithesis.image-build', 'antithesis-build-' + '1' * 32), ('antithesis.image-publish', 'antithesis-publish-' + '2' * 32)):
+        record = {'schema_version': 'v1', 'execution_id': execution_id, 'operation': operation,
+                  'request_parameters': {'execution_id': execution_id}, 'state': 'running', 'accepted_at': '2026-11-06T00:00:00Z', 'completed_at': None}
+        (service.executions_dir / f'{execution_id}.json').write_text(json.dumps(record))
+    restarted = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    for execution_id in ('antithesis-build-' + '1' * 32, 'antithesis-publish-' + '2' * 32):
+        _, status = _dispatch(restarted, _request('execution.status', execution_id=execution_id))
+        assert status['state'] == 'interrupted'
+    assert sorted(cleaned) == [('build', 'antithesis-build-' + '1' * 32), ('publish', 'antithesis-publish-' + '2' * 32)]

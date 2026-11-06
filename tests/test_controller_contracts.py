@@ -645,3 +645,51 @@ def test_antithesis_artifact_adapt_registration_id_is_a_safe_identity():
     for bad in ('registration with spaces', '../registration', 'r' * 257, ''):
         with pytest.raises(ContractError):
             parse_request(_adapt_request(registration_id=bad))
+
+
+def _build_request(**changes):
+    body = _request('antithesis.image-build', preparation_id='a' * 32,
+                    execution_id='antithesis-build-' + 'f' * 32, idempotency_key='antithesis-build-' + 'f' * 32,
+                    timeout_seconds=3600)
+    return {**body, **changes}
+
+
+def _publish_images(count=1):
+    return [{'reference': f'dwarf-antithesis-{"b" * 32}-{i}:prepared', 'image_id': 'sha256:' + 'c' * 64,
+             'destination': f'ghcr.io/j-gainsec/dwarf-sm-workload-{i}:' + 'd' * 32} for i in range(count)]
+
+
+def _publish_request(**changes):
+    body = _request('antithesis.image-publish', handoff_id='d' * 32, secret_id='ghcr-' + 'e' * 24, username='j-gainsec',
+                    images=_publish_images(), execution_id='antithesis-publish-' + 'f' * 32,
+                    idempotency_key='antithesis-publish-' + 'f' * 32, timeout_seconds=3600)
+    return {**body, **changes}
+
+
+def test_antithesis_image_build_contract():
+    parsed = parse_request(_build_request())
+    assert parsed.operation is Operation.ANTITHESIS_IMAGE_BUILD
+    assert dict(parsed.parameters) == {'preparation_id': 'a' * 32, 'execution_id': 'antithesis-build-' + 'f' * 32,
+                                       'build_sha256': 'sha256:' + __import__('hashlib').sha256(('a' * 32).encode()).hexdigest()}
+    for changes in ({'preparation_id': 'A' * 32}, {'execution_id': 'build-one'}, {'extra': 1}, {'timeout_seconds': 3601}):
+        with pytest.raises(ContractError):
+            parse_request(_build_request(**changes))
+    body = _build_request(); del body['idempotency_key']
+    with pytest.raises(ContractError):
+        parse_request(body)
+
+
+def test_antithesis_image_publish_contract_binds_the_image_set():
+    parsed = parse_request(_publish_request())
+    assert parsed.operation is Operation.ANTITHESIS_IMAGE_PUBLISH
+    parameters = dict(parsed.parameters)
+    assert parameters['images'] == _publish_images()
+    assert parameters['username'] == 'j-gainsec' and parameters['secret_id'] == 'ghcr-' + 'e' * 24
+    assert parameters['publish_sha256'] == 'sha256:' + __import__('hashlib').sha256(
+        __import__('json').dumps(_publish_images(), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    for changes in ({'images': []}, {'images': _publish_images(33)}, {'images': [{**_publish_images()[0], 'destination': 'docker.io/x/y:tag'}]},
+                    {'images': [{**_publish_images()[0], 'image_id': 'latest'}]}, {'images': [{**_publish_images()[0], 'token': 'ghp_x'}]},
+                    {'secret_id': 'ghp_realtoken'}, {'username': 'J Gainsec'}, {'execution_id': 'antithesis-build-' + 'f' * 32},
+                    {'timeout_seconds': 3601}):
+        with pytest.raises(ContractError):
+            parse_request(_publish_request(**changes))

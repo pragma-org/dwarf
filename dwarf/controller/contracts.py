@@ -8,6 +8,8 @@ these finite operations, but it must consume these validated value objects.
 from __future__ import annotations
 
 import hmac
+import hashlib
+import json
 import re
 import uuid
 from dataclasses import dataclass
@@ -29,6 +31,8 @@ class Operation(str, Enum):
     IMAGE_DOWNLOAD = "image.download"
     RELEASE_PREPARE = "release.prepare"
     ANTITHESIS_ARTIFACT_ADAPT = "antithesis.artifact-adapt"
+    ANTITHESIS_IMAGE_BUILD = "antithesis.image-build"
+    ANTITHESIS_IMAGE_PUBLISH = "antithesis.image-publish"
     LIBRARY_PREPARE = "library.prepare"
     ARTIFACT_PACKAGE = "artifact.package"
     TOPOLOGY_HEALTH = "topology.health"
@@ -62,6 +66,10 @@ _PARAMETERS: dict[Operation, frozenset[str]] = {
             "artifact_id",
             "execution_id",
         }
+    ),
+    Operation.ANTITHESIS_IMAGE_BUILD: frozenset({"preparation_id", "execution_id"}),
+    Operation.ANTITHESIS_IMAGE_PUBLISH: frozenset(
+        {"handoff_id", "secret_id", "username", "images", "execution_id"}
     ),
     Operation.LIBRARY_PREPARE: frozenset(
         {
@@ -112,6 +120,10 @@ _TIMEOUT_CEILINGS = {
     # Re-tag, identity run, preload exercise and the Amaru extraction probe
     # of an already-built release: minutes, never a compile.
     Operation.ANTITHESIS_ARTIFACT_ADAPT: 1800,
+    # Package image builds (1200 s each, few per package) and GHCR pushes
+    # (600 s each) of an already-prepared package.
+    Operation.ANTITHESIS_IMAGE_BUILD: 3600,
+    Operation.ANTITHESIS_IMAGE_PUBLISH: 3600,
     Operation.LIBRARY_PREPARE: 14400,
     Operation.ARTIFACT_PACKAGE: 1800,
     # The native Amaru verifier takes two fresh semantic samples and is
@@ -133,6 +145,8 @@ _TIMEOUT_CEILINGS = {
 _MUTATIONS = {
     Operation.RELEASE_PREPARE,
     Operation.ANTITHESIS_ARTIFACT_ADAPT,
+    Operation.ANTITHESIS_IMAGE_BUILD,
+    Operation.ANTITHESIS_IMAGE_PUBLISH,
     Operation.LIBRARY_PREPARE,
     Operation.IMAGE_DOWNLOAD,
     Operation.ARTIFACT_PACKAGE,
@@ -149,6 +163,13 @@ _IMAGE = re.compile(
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _CATALOG_REVISION = re.compile(r"^[0-9a-f]{64}$")
 _SOURCE_REVISION = re.compile(r"^[0-9a-f]{40}$")
+_HEX32 = re.compile(r"^[0-9a-f]{32}$")
+_GHCR_COMPONENT = r"[a-z0-9]+(?:[._-][a-z0-9]+)*"
+# A wizard push destination: ghcr.io/<owner>/<name...>:<32-hex handoff id>.
+_GHCR_DESTINATION = re.compile(
+    r"^ghcr\.io/" + _GHCR_COMPONENT + r"(?:/" + _GHCR_COMPONENT + r")+:[0-9a-f]{32}$"
+)
+_SECRET_ID = re.compile(r"^ghcr-[0-9a-f]{24}$")
 _IMAGE_LOOKUP = re.compile(
     r"^[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?"
     r"(?:/[a-z0-9][a-z0-9._-]*)*"
@@ -333,6 +354,58 @@ def _validate_parameters(operation: Operation, raw: Mapping[str, Any]) -> dict[s
             "source_revision": revision,
             "artifact_id": artifact_id,
             "execution_id": execution_id,
+        }
+    if operation is Operation.ANTITHESIS_IMAGE_BUILD:
+        preparation_id = _text(raw.get("preparation_id"), "preparation_id", maximum=32)
+        if not _HEX32.fullmatch(preparation_id):
+            raise ContractError("preparation_id is invalid")
+        execution_id = _text(raw.get("execution_id"), "execution_id", maximum=49)
+        if not re.fullmatch(r"antithesis-build-[0-9a-f]{32}", execution_id):
+            raise ContractError("execution_id is invalid")
+        return {
+            "preparation_id": preparation_id,
+            "execution_id": execution_id,
+            # Audit receipts bind a sha256 plan digest; the preparation id is the plan.
+            "build_sha256": "sha256:" + hashlib.sha256(preparation_id.encode()).hexdigest(),
+        }
+    if operation is Operation.ANTITHESIS_IMAGE_PUBLISH:
+        handoff_id = _text(raw.get("handoff_id"), "handoff_id", maximum=32)
+        if not _HEX32.fullmatch(handoff_id):
+            raise ContractError("handoff_id is invalid")
+        secret_id = _text(raw.get("secret_id"), "secret_id", maximum=29)
+        if not _SECRET_ID.fullmatch(secret_id):
+            raise ContractError("secret_id is invalid")
+        username = _identifier(raw.get("username"), "username")
+        images = raw.get("images")
+        if not isinstance(images, list) or not 1 <= len(images) <= 32:
+            raise ContractError("images must list between 1 and 32 images")
+        normalized_images: list[dict[str, str]] = []
+        for index, raw_image in enumerate(images):
+            field = f"images[{index}]"
+            image = _mapping(raw_image, field)
+            _strict(image, {"reference", "image_id", "destination"}, field)
+            reference = _text(image.get("reference"), field + ".reference", maximum=512)
+            if reference.startswith("-") or "://" in reference or ".." in reference or not _IMAGE_LOOKUP.fullmatch(reference):
+                raise ContractError(field + ".reference is unsafe")
+            destination = _text(image.get("destination"), field + ".destination", maximum=256)
+            if not _GHCR_DESTINATION.fullmatch(destination):
+                raise ContractError(field + ".destination must be a ghcr.io destination tagged with the handoff id")
+            normalized_images.append({
+                "reference": reference,
+                "image_id": _digest(image.get("image_id"), field + ".image_id"),
+                "destination": destination,
+            })
+        execution_id = _text(raw.get("execution_id"), "execution_id", maximum=51)
+        if not re.fullmatch(r"antithesis-publish-[0-9a-f]{32}", execution_id):
+            raise ContractError("execution_id is invalid")
+        canonical = json.dumps(normalized_images, sort_keys=True, separators=(",", ":")).encode()
+        return {
+            "handoff_id": handoff_id,
+            "secret_id": secret_id,
+            "username": username,
+            "images": normalized_images,
+            "execution_id": execution_id,
+            "publish_sha256": "sha256:" + hashlib.sha256(canonical).hexdigest(),
         }
     if operation is Operation.LIBRARY_PREPARE:
         version = _text(raw.get("version"), "version", maximum=64)
