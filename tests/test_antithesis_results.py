@@ -216,3 +216,92 @@ def test_result_assertions_mark_unencountered_sometimes_as_fail():
         ('No Antithesis errors', 'platform', 'antithesis', 'fail'), ('Always: a', 'always', 'dwarf', 'pass'),
         ('Sometimes: b', 'sometimes', 'dwarf', 'fail'), ('Sometimes: c', 'sometimes', 'dwarf', 'pass')]
     assert all(set(a) == {'id', 'name', 'kind', 'source', 'result'} for a in assertions)
+
+
+# ---------------------------------------------------------------------------
+# Task 3: bundle writer
+
+def _entry(tmp_path):
+    run_dir = tmp_path / 'runs' / ('external-antithesis-' + 'a' * 24)
+    return run_dir, {'run_id': run_dir.name, 'kind': 'external', 'backend': 'antithesis', 'evidence_path': str(run_dir),
+                     'scenario': {'id': 'cardano-amaru-miniprotocol-security-local', 'sha256': 'b' * 64},
+                     'provenance': {'external_test_run_id': TEST_RUN_ID}}
+
+
+def _write(tmp_path, m, *, run=None, props=None, measurements=None, scenario_source=b'id: x\n'):
+    run_dir, entry = _entry(tmp_path)
+    run = run or fixture('run-completed.json'); props = fixture('properties.json') if props is None else props
+    result = m.normalise_result(run, props, test_run_id=TEST_RUN_ID)
+    path = m.write_result_bundle(run_dir, entry=entry, result=result, raw={'run': run, 'properties': props},
+                                 scenario_source=scenario_source, measurements=measurements)
+    return run_dir, entry, result, path
+
+
+def test_write_result_bundle_lays_out_local_shape_and_binds_the_chain(tmp_path):
+    import hashlib
+    m = results_module()
+    run = fixture('run-completed.json'); run['links'] = {'triage_report': 'https://example.invalid/report?auth=SECRET'}
+    run_dir, entry, result, manifest_path = _write(tmp_path, m, run=run)
+    assert manifest_path == run_dir / 'manifest.json'
+    for rel in ('external/result.json', 'external/report/run.json', 'external/report/properties.json', 'assertions.json', 'chain.json', 'scenario.yaml', 'gaps.json'):
+        assert (run_dir / rel).is_file(), rel
+    assert (run_dir / 'external' / 'report').stat().st_mode & 0o777 == 0o700
+    assert (run_dir / 'external' / 'report' / 'run.json').stat().st_mode & 0o777 == 0o600
+    manifest = json.loads(manifest_path.read_text()); chain = json.loads((run_dir / 'chain.json').read_text())
+    from profile_manager.data.measurement_compare import _evidence_state
+    assert _evidence_state(run_dir.name, manifest, chain) == ('bound', chain['manifest_hash'])
+    assert chain['run_id'] == run_dir.name and chain['source'] == 'antithesis-report'
+    assert manifest['schema_version'] == 'v1' and manifest['run_id'] == run_dir.name
+    assert manifest['runtime'] == 'antithesis' and manifest['kind'] == 'external' and manifest['backend'] == 'antithesis'
+    assert manifest['scenario'] == entry['scenario']
+    assert manifest['external'] == {'backend': 'antithesis', 'test_run_id': TEST_RUN_ID, 'antithesis_run_id': run['run_id'], 'run_status': 'completed'}
+    assert manifest['exit_status'] == 'pass' and manifest['started_at'] == run['created_at'] and manifest['ended_at'] == run['completed_at']
+    assert manifest['assertion_summary'] == {'total': 7, 'pass': 5, 'fail': 2}
+    assert manifest['execution']['security_verdict'] == 'fail'
+    assert manifest['result'] == {'source': 'antithesis-report', 'sha256': hashlib.sha256((run_dir / 'external' / 'result.json').read_bytes()).hexdigest()}
+    assert 'measurements' not in manifest
+    assert json.loads((run_dir / 'assertions.json').read_text()) == m.result_assertions(result)
+    assert (run_dir / 'scenario.yaml').read_bytes() == b'id: x\n'
+    gaps = json.loads((run_dir / 'gaps.json').read_text())
+    assert gaps['schema_version'] == 'v1' and gaps['runtime'] == 'antithesis'
+    assert {g['path'] for g in gaps['missing']} >= {'probes/', 'metrics/', 'launch/', 'measurements/report.json'}
+    assert all(g['reason'] for g in gaps['missing'])
+    everything = ''.join(p.read_text() for p in run_dir.rglob('*') if p.is_file())
+    assert 'auth=' not in everything and 'triage_report' not in everything, 'the report link never enters the bundle, not even the raw run row'
+
+
+def test_write_result_bundle_refuses_to_overwrite_a_complete_bundle(tmp_path):
+    m = results_module()
+    run_dir, entry, result, path = _write(tmp_path, m)
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match='already complete'):
+        m.write_result_bundle(run_dir, entry=entry, result=result, raw={'run': fixture('run-completed.json'), 'properties': fixture('properties.json')},
+                              scenario_source=None, measurements=None)
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('rows,status,exit_status,security', [
+    ([_row('No Antithesis errors'), _row('Always: a'), _row('Sometimes: b', examples=2)], 'completed', 'pass', 'pass'),
+    ([_row('No Antithesis errors'), _row('Always: a', 'Failing')], 'completed', 'pass', 'fail'),
+    ([_row('No Antithesis errors'), _row('Always: a')], 'in_progress', 'fail', 'fail'),
+])
+def test_bundle_manifest_verdict_agrees_with_result_verdict(tmp_path, rows, status, exit_status, security):
+    m = results_module()
+    run = fixture('run-completed.json'); run['status'] = status
+    props = fixture('properties.json'); props['data'] = rows
+    run_dir, entry, result, path = _write(tmp_path, m, run=run, props=props)
+    manifest = json.loads(path.read_text())
+    assert manifest['exit_status'] == exit_status and manifest['execution']['security_verdict'] == security
+    verdict, _reason = m.result_verdict(result)
+    assert verdict == security or verdict == 'inconclusive'
+
+
+def test_write_result_bundle_includes_measurements_when_given(tmp_path):
+    m = results_module()
+    measurements = {'schema_version': 'v1', 'scenario': 'x', 'source': 'antithesis-events', 'complete': False, 'measurements': {'block_application': {'status': 'available', 'value': 1.5, 'unit': 'us'}}}
+    run_dir, entry, result, path = _write(tmp_path, m, measurements=measurements, scenario_source=None)
+    manifest = json.loads(path.read_text())
+    assert manifest['measurements'] == measurements
+    assert json.loads((run_dir / 'measurements' / 'report.json').read_text()) == measurements
+    assert 'measurements/report.json' not in {g['path'] for g in json.loads((run_dir / 'gaps.json').read_text())['missing']}
+    assert not (run_dir / 'scenario.yaml').exists()

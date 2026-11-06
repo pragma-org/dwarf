@@ -138,3 +138,119 @@ def result_assertions(result: Mapping[str, Any]) -> list[dict[str, Any]]:
             "result": "pass" if bool(row.get("passed")) and not unencountered else "fail",
         })
     return assertions
+
+
+# ---------------------------------------------------------------------------
+# bundle writer
+
+_GAPS = (
+    ("probes/", "Antithesis does not export DWARF probe output; the platform's properties table stands in."),
+    ("metrics/", "No DWARF metrics collector ran inside the Antithesis environment."),
+    ("launch/", "The launch happened through MOOG; see external/launch.json and external/submission.json."),
+    ("chain.json (signed)", "The chain entry binds the manifest hash only; there is no local signing step for an external run."),
+    ("evidence volume", "The Antithesis evidence volume is not retrievable after the run."),
+)
+_MEASUREMENTS_GAP = ("measurements/report.json", "No dwarf_measurements lines were retrievable from the Antithesis events.")
+
+
+def _private_dir(path):
+    import os
+    path.mkdir(parents=True, exist_ok=True)
+    os.chmod(path, 0o700)
+
+
+def _private_write(path, data: bytes):
+    import os
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        os.write(fd, data)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.chmod(path, 0o600)
+
+
+def _json_bytes(value) -> bytes:
+    import json
+    return json.dumps(value, sort_keys=True, indent=1, ensure_ascii=False).encode("utf-8") + b"\n"
+
+
+def bundle_complete(run_dir) -> bool:
+    """True when manifest.json exists and chain.json binds its hash."""
+    import json
+    from pathlib import Path
+
+    from profile_manager import forensic
+
+    run_dir = Path(run_dir)
+    try:
+        manifest = json.loads((run_dir / "manifest.json").read_bytes())
+        chain = json.loads((run_dir / "chain.json").read_bytes())
+    except (OSError, ValueError):
+        return False
+    return isinstance(manifest, dict) and isinstance(chain, dict) and \
+        chain.get("manifest_hash") == forensic._sha256_hex(forensic._canonical_json(manifest))
+
+
+def write_result_bundle(run_dir, *, entry: Mapping[str, Any], result: Mapping[str, Any], raw: Mapping[str, Any],
+                        scenario_source: bytes | None, measurements: Mapping[str, Any] | None):
+    """Write the local run-bundle layout for an Antithesis result into the
+    ledger-backed run directory and return the manifest path.
+
+    Raw proxy rows go under external/report/ (0700/0600) with the run row's
+    `links` dropped (they carry the signed report URL). A complete bundle is
+    never overwritten."""
+    import hashlib
+    from pathlib import Path
+
+    from profile_manager import forensic
+    from profile_manager.scenario_verdict import evaluate_scenario_verdict
+
+    run_dir = Path(run_dir)
+    if bundle_complete(run_dir):
+        raise ValueError("result bundle already complete")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    report = run_dir / "external" / "report"
+    _private_dir(run_dir / "external")
+    _private_dir(report)
+    raw_run = {k: v for k, v in (raw.get("run") or {}).items() if k != "links"} if isinstance(raw.get("run"), Mapping) else {}
+    _private_write(report / "run.json", _json_bytes(raw_run))
+    _private_write(report / "properties.json", _json_bytes(raw.get("properties") if isinstance(raw.get("properties"), Mapping) else {}))
+    result_bytes = _json_bytes(dict(result))
+    _private_write(run_dir / "external" / "result.json", result_bytes)
+
+    assertions = result_assertions(result)
+    summary = {"total": len(assertions), "pass": sum(a["result"] == "pass" for a in assertions), "fail": sum(a["result"] == "fail" for a in assertions)}
+    exit_status = "pass" if result.get("run_status") == "completed" else "fail"
+    canonical = evaluate_scenario_verdict(exit_status=exit_status, assertions=summary, measurements=None, run_kind="external")
+    manifest = {
+        "schema_version": "v1",
+        "run_id": run_dir.name,
+        "kind": "external",
+        "runtime": "antithesis",
+        "backend": "antithesis",
+        "scenario": dict(entry.get("scenario") or {}),
+        "external": {"backend": "antithesis", "test_run_id": result.get("test_run_id"),
+                     "antithesis_run_id": result.get("antithesis_run_id"), "run_status": result.get("run_status")},
+        "exit_status": exit_status,
+        "started_at": result.get("created_at"),
+        "ended_at": result.get("completed_at"),
+        "assertion_summary": summary,
+        "execution": {"security_verdict": canonical.security_verdict, "reason_codes": list(canonical.reason_codes)},
+        "result": {"source": "antithesis-report", "sha256": hashlib.sha256(result_bytes).hexdigest()},
+    }
+    missing = [{"path": path, "reason": reason} for path, reason in _GAPS]
+    if measurements is not None:
+        manifest["measurements"] = dict(measurements)
+        (run_dir / "measurements").mkdir(exist_ok=True)
+        forensic.atomic_write_bytes(run_dir / "measurements" / "report.json", _json_bytes(dict(measurements)))
+    else:
+        missing.append({"path": _MEASUREMENTS_GAP[0], "reason": _MEASUREMENTS_GAP[1]})
+    forensic.atomic_write_bytes(run_dir / "assertions.json", _json_bytes(assertions))
+    if scenario_source is not None:
+        forensic.atomic_write_bytes(run_dir / "scenario.yaml", bytes(scenario_source))
+    forensic.atomic_write_bytes(run_dir / "gaps.json", _json_bytes({"schema_version": "v1", "runtime": "antithesis", "missing": missing}))
+    manifest_bytes = forensic._canonical_json(manifest)
+    forensic.atomic_write_bytes(run_dir / "manifest.json", manifest_bytes)
+    forensic.atomic_write_bytes(run_dir / "chain.json", _json_bytes({"run_id": run_dir.name, "manifest_hash": forensic._sha256_hex(manifest_bytes), "source": "antithesis-report"}))
+    return run_dir / "manifest.json"
