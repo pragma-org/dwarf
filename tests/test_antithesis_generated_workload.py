@@ -184,5 +184,7 @@ def test_dockerfile_places_test_commands_where_the_chmod_and_composer_expect():
     assert '/opt/antithesis/test/v1/dwarf/anytime_health.py' in placed
     assert '/opt/dwarf/package/runtime.json' not in placed  # package/ is filled by the preview, not the asset tree
     chmod = next(line for line in dockerfile if line.startswith('RUN chmod'))
+    # The controller base image runs as the unprivileged dwarf user; chmod on root-owned copies needs root (F41).
+    assert 'USER root' in dockerfile[:dockerfile.index(chmod)]
     pattern = chmod.split()[-1]
     assert [p for p in placed if fnmatch.fnmatch(p, pattern)], (pattern, placed)
