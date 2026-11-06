@@ -160,6 +160,7 @@ services:
       # verify the resolver catalog revision carried by topology plans.
       ADA2_DWARF_VERSION_CATALOG_STATE_DIR: /var/dwarf/dashboard-state
       ADA2_DWARF_VERSION_IMPORTS_DIR: /var/dwarf/version-imports
+      DWARF_CONTROLLER_PREPARATIONS_DIR: /var/dwarf/dashboard-state/antithesis/preparations
       # Docker uses host paths, not paths inside this controller container.
       DWARF_CONTROLLER_HOST_STATE_DIR: ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/controller-state
       # Revalidate retained source-build receipts during controller-side plan resolution.
@@ -188,6 +189,9 @@ services:
       - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/measurement-profiles:/var/dwarf/dashboard-state/measurement-profiles:ro
       - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/version-catalog:/var/dwarf/dashboard-state/version-catalog:ro
       - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/version-imports:/var/dwarf/version-imports:ro
+      # Antithesis package preparations: the controller builds and pushes the
+      # package images (the dashboard has no Docker socket); read-only.
+      - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/antithesis/preparations:/var/dwarf/dashboard-state/antithesis/preparations:ro
       - ${DWARF_RUNTIME_ROOT:?set DWARF_RUNTIME_ROOT}/state/measurement-targets:/var/dwarf/controller-state/measurement-targets:ro
       - dwarf-bundles:/var/dwarf/bundles
       - dwarf-launches:/var/dwarf/launches:ro

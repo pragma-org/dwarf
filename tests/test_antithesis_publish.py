@@ -1,0 +1,208 @@
+import json
+import os
+import threading
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from controller import antithesis_publish as publish
+from controller.docker_runtime import DockerResult, DockerRuntimeError
+from test_antithesis_image_build import prepared, storage, IMAGE_ID  # noqa: F401  (fixtures)
+from test_antithesis_version_binding import catalog  # noqa: F401  (fixture used by `prepared`)
+
+BUILD_ID = 'antithesis-build-' + 'f' * 32
+PUBLISH_ID = 'antithesis-publish-' + 'e' * 32
+PAT = 'ghp_' + 'S3cret' * 6
+
+
+def _inspect_json(image_id=IMAGE_ID):
+    return json.dumps([{'Id': image_id, 'Os': 'linux', 'Architecture': 'amd64'}])
+
+
+@pytest.fixture
+def runtime(tmp_path):
+    def _run(arguments, timeout=30, execution_id=None, *, output_limit=None, output_path=None, stdin_path=None):
+        arguments = tuple(arguments)
+        runtime.calls.append({'argv': arguments, 'stdin_path': stdin_path, 'output_path': output_path})
+        if output_path is not None:
+            Path(output_path).write_text('log for ' + ' '.join(arguments[:3]) + '\n')
+        head = arguments[:2]
+        if head == ('image', 'inspect'):
+            if runtime.missing_image and runtime.missing_image in arguments:
+                return DockerResult(1, '[]', 'Error: No such image: ' + runtime.missing_image)
+            return DockerResult(0, _inspect_json(), '')
+        if arguments[0] == 'build':
+            return DockerResult(runtime.build_rc, 'Successfully built', '' if runtime.build_rc == 0 else 'ERROR: failed to solve')
+        if 'login' in arguments:
+            return DockerResult(runtime.login_rc, 'Login Succeeded' if runtime.login_rc == 0 else '',
+                                '' if runtime.login_rc == 0 else 'Error response from daemon: denied: token ' + PAT + ' rejected')
+        if arguments[0] == 'tag':
+            return DockerResult(0, '', '')
+        if 'push' in arguments:
+            return DockerResult(runtime.push_rc, 'pushed', '' if runtime.push_rc == 0 else 'denied: requested access to the resource is denied')
+        return DockerResult(0, '', '')
+    runtime = SimpleNamespace(state_dir=tmp_path / 'controller-state', host_state_dir=Path('/host/controller'),
+                              installation_id='test-install', calls=[], _run=_run, build_rc=0, login_rc=0, push_rc=0, missing_image=None,
+                              version_imports_dir=tmp_path / 'version-imports')
+    runtime.state_dir.mkdir()
+    runtime.version_imports_dir.mkdir()
+    return runtime
+
+
+def _build_params(preparation_id):
+    return {'preparation_id': preparation_id, 'execution_id': BUILD_ID, 'build_sha256': 'sha256:' + 'a' * 64}
+
+
+def _preparations_dir(monkeypatch):
+    directory = Path(os.environ['ADA2_DWARF_STATE_DIR']) / 'antithesis' / 'preparations'
+    monkeypatch.setenv('DWARF_CONTROLLER_PREPARATIONS_DIR', str(directory))
+    return directory
+
+
+def test_build_unpacks_the_preparation_and_builds_each_build_service(runtime, prepared, monkeypatch):
+    _preparations_dir(monkeypatch)
+    preparation_id = prepared['receipt']['id']
+    result = publish.build_images(runtime, _build_params(preparation_id), BUILD_ID, 1800, threading.Event())
+    assert result['status'] == 'built' and result['preparation_id'] == preparation_id
+    assert result['build_host'] == 'DWARF controller'
+    built = [row for row in result['built_images'] if row.get('reference', '').startswith('dwarf-antithesis-')]
+    assert built and built[0]['service'] == 'sm-workload'
+    assert built[0]['reference'] == 'dwarf-antithesis-' + 'f' * 32 + '-0:prepared'
+    assert built[0]['image_id'] == IMAGE_ID and built[0]['publication'] == 'local-only'
+    build_call = next(c for c in runtime.calls if c['argv'][0] == 'build')
+    argv = build_call['argv']
+    assert argv[argv.index('--platform') + 1] == 'linux/amd64'
+    context = Path(argv[-1])
+    assert context == runtime.state_dir / 'antithesis-builds' / BUILD_ID / 'package' / 'miniprotocol'
+    assert (context / 'workload' / 'Dockerfile').is_file()
+    assert argv[argv.index('--file') + 1] == str(context / 'workload' / 'Dockerfile')
+    progress = publish.read_build_progress(runtime, BUILD_ID)
+    assert progress['status'] == 'built' and progress['execution_id'] == BUILD_ID
+
+
+def test_build_refuses_a_preparation_whose_inventory_changed(runtime, prepared, monkeypatch):
+    directory = _preparations_dir(monkeypatch)
+    preparation_id = prepared['receipt']['id']
+    compose = directory / preparation_id / 'package' / 'docker-compose.yaml'
+    compose.write_text(compose.read_text() + '\n# tampered\n')
+    with pytest.raises(DockerRuntimeError) as info:
+        publish.build_images(runtime, _build_params(preparation_id), BUILD_ID, 1800, threading.Event())
+    assert info.value.failure_code == 'build-source-invalid' and info.value.failure_stage == 'image-build'
+    assert not any(c['argv'][0] == 'build' for c in runtime.calls)
+
+
+def test_build_reports_a_failed_docker_build(runtime, prepared, monkeypatch):
+    _preparations_dir(monkeypatch)
+    runtime.build_rc = 1
+    with pytest.raises(DockerRuntimeError) as info:
+        publish.build_images(runtime, _build_params(prepared['receipt']['id']), BUILD_ID, 1800, threading.Event())
+    assert info.value.failure_code == 'image-build-failed'
+    assert publish.read_build_progress(runtime, BUILD_ID)['status'] == 'failed'
+
+
+def test_build_reports_a_missing_node_artifact_image(runtime, prepared, monkeypatch):
+    _preparations_dir(monkeypatch)
+    receipt = prepared['receipt']
+    # Give the preparation a node artifact row so the controller must find its image.
+    directory = Path(os.environ['DWARF_CONTROLLER_PREPARATIONS_DIR']) / receipt['id']
+    stored = json.loads((directory / 'receipt.json').read_text())
+    stored.setdefault('version_binding', {})['node_artifacts'] = {'amaru': {
+        'id': 'c' * 32, 'implementation': 'amaru', 'reference': 'dwarf-antithesis-node-' + 'c' * 32 + ':prepared',
+        'image_id': 'sha256:' + 'b' * 64}}
+    (directory / 'receipt.json').write_text(json.dumps(stored))
+    runtime.missing_image = 'dwarf-antithesis-node-' + 'c' * 32 + ':prepared'
+    with pytest.raises(DockerRuntimeError) as info:
+        publish.build_images(runtime, _build_params(receipt['id']), BUILD_ID, 1800, threading.Event())
+    assert info.value.failure_code == 'artifact-image-missing'
+
+
+# --- publish ---------------------------------------------------------------
+
+def _stage(runtime, value=PAT, *, expired=False):
+    from profile_manager import binary_imports
+    secret_id = binary_imports.stage_secret(value, root=runtime.version_imports_dir)
+    if expired:
+        descriptor = runtime.version_imports_dir / secret_id / 'descriptor.json'
+        body = json.loads(descriptor.read_text())
+        body['expires_at'] = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat().replace('+00:00', 'Z')
+        descriptor.write_text(json.dumps(body))
+    return secret_id
+
+
+def _publish_params(secret_id):
+    return {'handoff_id': 'd' * 32, 'secret_id': secret_id, 'username': 'j-gainsec',
+            'images': [{'reference': 'dwarf-antithesis-' + 'f' * 32 + '-0:prepared', 'image_id': IMAGE_ID,
+                        'destination': 'ghcr.io/j-gainsec/dwarf-sm-workload:' + 'd' * 32}],
+            'execution_id': PUBLISH_ID, 'publish_sha256': 'sha256:' + 'e' * 64}
+
+
+def test_publish_logs_in_with_password_stdin_then_tags_and_pushes(runtime, monkeypatch):
+    secret_id = _stage(runtime)
+    result = publish.publish_images(runtime, _publish_params(secret_id), PUBLISH_ID, 1800, threading.Event())
+    assert result['status'] == 'published' and result['registry'] == 'ghcr.io'
+    assert result['pushed'][0]['destination'] == 'ghcr.io/j-gainsec/dwarf-sm-workload:' + 'd' * 32
+    login = next(c for c in runtime.calls if 'login' in c['argv'])
+    assert login['argv'][:2] == ('--config', login['argv'][1]) and login['argv'][1].startswith('/tmp/dwarf-ghcr-')
+    assert login['argv'][2:] == ('login', 'ghcr.io', '-u', 'j-gainsec', '--password-stdin')
+    assert login['stdin_path'] == runtime.version_imports_dir / secret_id / 'secret'
+    order = [c['argv'][0] if c['argv'][0] != '--config' else c['argv'][2] for c in runtime.calls]
+    assert order == ['login', 'image', 'tag', 'push']
+    push = runtime.calls[-1]['argv']
+    assert push[:2] == ('--config', login['argv'][1]) and push[2:] == ('push', 'ghcr.io/j-gainsec/dwarf-sm-workload:' + 'd' * 32)
+    assert not Path(login['argv'][1]).exists(), 'temporary docker config must be removed'
+    everything = json.dumps([list(c['argv']) for c in runtime.calls]) + json.dumps(publish.read_publish_progress(runtime, PUBLISH_ID)) + json.dumps(result)
+    for log in (runtime.state_dir / 'antithesis-publishes' / PUBLISH_ID).rglob('*.log'):
+        everything += log.read_text()
+    assert PAT not in everything and secret_id not in json.dumps(result)
+
+
+def test_publish_refuses_an_expired_secret(runtime):
+    secret_id = _stage(runtime, expired=True)
+    with pytest.raises(DockerRuntimeError) as info:
+        publish.publish_images(runtime, _publish_params(secret_id), PUBLISH_ID, 1800, threading.Event())
+    assert info.value.failure_code == 'registry-secret-invalid' and info.value.failure_stage == 'image-publish'
+    assert not any('login' in c['argv'] for c in runtime.calls)
+
+
+def test_publish_refuses_a_missing_secret(runtime):
+    with pytest.raises(DockerRuntimeError) as info:
+        publish.publish_images(runtime, _publish_params('ghcr-' + '0' * 24), PUBLISH_ID, 1800, threading.Event())
+    assert info.value.failure_code == 'registry-secret-invalid'
+
+
+def test_publish_login_failure_is_bounded(runtime):
+    secret_id = _stage(runtime)
+    runtime.login_rc = 1
+    with pytest.raises(DockerRuntimeError) as info:
+        publish.publish_images(runtime, _publish_params(secret_id), PUBLISH_ID, 1800, threading.Event())
+    assert info.value.failure_code == 'registry-login-failed'
+    assert PAT not in str(info.value)
+    progress = publish.read_publish_progress(runtime, PUBLISH_ID)
+    assert progress['status'] == 'failed' and PAT not in json.dumps(progress)
+    assert not any(c['argv'][0] == 'tag' for c in runtime.calls)
+
+
+def test_publish_push_failure_keeps_the_rejected_destination(runtime):
+    secret_id = _stage(runtime)
+    runtime.push_rc = 1
+    with pytest.raises(DockerRuntimeError) as info:
+        publish.publish_images(runtime, _publish_params(secret_id), PUBLISH_ID, 1800, threading.Event())
+    assert info.value.failure_code == 'image-push-failed'
+    assert 'dwarf-sm-workload' in publish.read_publish_progress(runtime, PUBLISH_ID)['detail']
+
+
+def test_stage_secret_writes_0600_with_expiry_and_discard_removes_it(tmp_path):
+    from profile_manager import binary_imports
+    secret_id = binary_imports.stage_secret(PAT, root=tmp_path)
+    assert __import__('re').fullmatch(r'ghcr-[0-9a-f]{24}', secret_id)
+    secret = tmp_path / secret_id / 'secret'
+    assert secret.read_text() == PAT and (secret.stat().st_mode & 0o777) == 0o600
+    descriptor = json.loads((tmp_path / secret_id / 'descriptor.json').read_text())
+    assert descriptor['kind'] == 'ghcr-publish-pat' and descriptor['secret_id'] == secret_id
+    expires = datetime.fromisoformat(descriptor['expires_at'].replace('Z', '+00:00'))
+    assert timedelta(minutes=14) < expires - datetime.now(timezone.utc) <= timedelta(minutes=15)
+    binary_imports.discard_secret(secret_id, root=tmp_path)
+    assert not (tmp_path / secret_id).exists()
+    binary_imports.discard_secret(secret_id, root=tmp_path)   # idempotent

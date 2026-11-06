@@ -11,6 +11,7 @@ import io
 import json
 import gzip
 import os
+import secrets
 import re
 import shutil
 import stat
@@ -456,6 +457,48 @@ def stage_binary_import(
             os.close(import_fd)
         if root_fd is not None:
             os.close(root_fd)
+
+
+SECRET_LIFETIME_SECONDS = 15 * 60
+
+
+def stage_secret(value: str, *, root: Path | None = None, lifetime_seconds: int = SECRET_LIFETIME_SECONDS) -> str:
+    """Stage a registry credential for the controller the way uploaded binaries
+    are staged: a private, expiring directory under version-imports. The value
+    is never a request parameter; the controller reads it by id and the
+    dashboard discards it when the operation ends."""
+    if not isinstance(value, str) or not value.strip() or len(value) > 4096 or any(ord(ch) < 32 for ch in value):
+        raise BinaryImportError("registry credential is empty or invalid")
+    staging = Path(root) if root is not None else _default_staging_root()
+    staging.mkdir(parents=True, exist_ok=True, mode=0o700)
+    secret_id = "ghcr-" + secrets.token_hex(12)
+    directory = staging / secret_id
+    created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    descriptor = {"schema_version": "v1", "kind": "ghcr-publish-pat", "secret_id": secret_id,
+                  "created_at": created_at, "expires_at": _expiry(created_at, lifetime_seconds), "state": "staged"}
+    directory_fd = None
+    try:
+        os.mkdir(directory, 0o700)
+        directory_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+        _write_private(directory_fd, "secret", value.encode("utf-8"))
+        _write_private(directory_fd, "descriptor.json",
+                       json.dumps(descriptor, sort_keys=True, separators=(",", ":")).encode() + b"\n")
+        os.fsync(directory_fd)
+    except OSError as exc:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise BinaryImportError("cannot safely stage registry credential") from exc
+    finally:
+        if directory_fd is not None:
+            os.close(directory_fd)
+    return secret_id
+
+
+def discard_secret(secret_id: str, *, root: Path | None = None) -> None:
+    if not re.fullmatch(r"ghcr-[0-9a-f]{24}", str(secret_id)):
+        return
+    directory = (Path(root) if root is not None else _default_staging_root()) / secret_id
+    if directory.is_dir() and not directory.is_symlink():
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def _default_staging_root() -> Path:
