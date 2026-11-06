@@ -356,3 +356,25 @@ def test_from_registration_retry_after_failure_uses_a_fresh_execution_id(adapter
     assert len(starts) == 2
     assert starts[0][1]['execution_id'] != starts[1][1]['execution_id']
     assert starts[0][2] != starts[1][2]
+
+
+@pytest.mark.parametrize('modern', [False, True])
+def test_amaru_probe_honours_the_executable_s_own_run_command(tmp_path,monkeypatch,modern):
+    """New Amaru releases group lifecycle commands under `node`; the probe asks
+    the extracted executable (--help) instead of assuming `run` (F28)."""
+    from profile_manager import antithesis_artifacts as a
+    import hashlib
+    calls=[]
+    def fake(image,directory,suffix,entrypoint,arguments,**kwargs):
+        calls.append((suffix,list(arguments)))
+        if suffix=='extract':(directory/'extracted/amaru').write_bytes(b'binary');return ''
+        if suffix=='help':
+            return 'Commands:\n  node  Manage and operate the Amaru node\n' if modern else 'Commands:\n  run  Run the node\n'
+        if suffix=='interface' and modern and arguments[:2]!=['node','run']:
+            raise RuntimeError("error: unrecognized subcommand 'run'")
+        return 'ok'
+    monkeypatch.setattr(a,'_probe',fake)
+    digest='sha256:'+hashlib.sha256(b'binary').hexdigest()
+    assert a.probe_amaru('fixture:tag',tmp_path,digest)==digest
+    assert [s for s,_ in calls]==['extract','version','help','interface']
+    assert calls[-1][1]==(['node','run','--help'] if modern else ['run','--help'])

@@ -207,8 +207,13 @@ def probe_amaru(image,directory,expected_digest=None,*,host_directory=None):
     digest='sha256:'+hashlib.sha256(binary.read_bytes()).hexdigest()
     if expected_digest and digest!=expected_digest:
         raise ValueError('Harness-extracted Amaru differs from selected executable')
-    for suffix,args in [('version',['--version']),('interface',['run','--help'])]:
-        _probe(assembly.CONTROL_AMARU_IMAGE,directory,suffix,['/target/amaru'],args,mount=mount+',readonly')
+    readonly=mount+',readonly'
+    _probe(assembly.CONTROL_AMARU_IMAGE,directory,'version',['/target/amaru'],['--version'],mount=readonly)
+    # New Amaru releases group lifecycle commands under `node`; ask the
+    # extracted executable itself, exactly as the controller build does.
+    help_text=_probe(assembly.CONTROL_AMARU_IMAGE,directory,'help',['/target/amaru'],['--help'],mount=readonly) or ''
+    command=['node','run'] if re.search(r'^\s{2,}node\s+\S',help_text,re.MULTILINE) else ['run']
+    _probe(assembly.CONTROL_AMARU_IMAGE,directory,'interface',['/target/amaru'],[*command,'--help'],mount=readonly)
     return digest
 
 
