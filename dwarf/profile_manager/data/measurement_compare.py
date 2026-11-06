@@ -468,6 +468,7 @@ def collect_measurement_run_records(runs_dir: Path, *, source: str = "local", ru
                 "mode": mode,
                 "runtime": _text(manifest.get("runtime")),
                 "external_test_run_id": _text(_dict(manifest.get("external")).get("test_run_id")),
+                "antithesis_support": _text(_dict(manifest.get("capabilities")).get("level")),
                 "profile_id": _text(profile.get("id")),
                 "profile_sha256": _text(profile.get("sha256")),
                 "measurement_profile_id": _text(measurement_profile.get("id")),

@@ -687,3 +687,16 @@ def test_library_scenario_is_blocked_with_no_faultable_sut(ready_env,staged,monk
     monkeypatch.setattr(m,'read_source',lambda source:staged)
     row=check(ready_env);checks={c['id']:c for c in row['checks']}
     assert 'No faultable SUT' in checks['scenario_capabilities']['detail'] and row['state']=='blocked'
+
+
+def test_reserve_records_the_capability_classification(ready_env,staged,monkeypatch):
+    m=module();receipt=staged['receipt']
+    receipt['capabilities']={'level':'partial','reason':None,'runnable_load':True,'primitives':[],
+                             'gaps':[{'kind':'implementation-gap','code':'primitive-unsupported-on-antithesis','field':'scenario_id',
+                                      'primitive':'runtime_tracer_capture','phase':'load','message':'runtime_tracer_capture: docker'}]}
+    monkeypatch.setattr(m,'read_source',lambda source:staged)
+    row=_submitted(ready_env,monkeypatch)
+    entry=_entry(m,row)
+    recorded=entry['provenance']['antithesis_capabilities']
+    assert recorded['level']=='partial' and recorded['reason'] is None
+    assert [g['primitive'] for g in recorded['gaps']]==['runtime_tracer_capture']

@@ -87,6 +87,23 @@
 </section>
 {% endif %}
 
+{% if run.external.capabilities %}
+<section aria-labelledby="external-capabilities-heading">
+  <span class="eyebrow">Antithesis support</span>
+  <h2 id="external-capabilities-heading">Declared support: <code>{{ run.external.capabilities.level }}</code>{% if run.external.capabilities.reason %} · <code>{{ run.external.capabilities.reason }}</code>{% endif %}</h2>
+  <p>What the package declared at preview time from the capability matrix: lifecycle steps the package provides, faults the platform injects, and primitives DWARF's runner skipped inside the package. A skipped primitive never counts as a pass.</p>
+  {% if run.external.capabilities.gaps %}
+  <ul>
+    {% for gap in run.external.capabilities.gaps %}
+    <li><code>{{ gap.code }}</code> · <code>{{ gap.primitive }}</code>{% if gap.phase %} ({{ gap.phase }}){% endif %}: {{ gap.message }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="dk-note">No declared gaps: every primitive ran inside the package.</p>
+  {% endif %}
+</section>
+{% endif %}
+
 <section aria-labelledby="external-identity-heading">
   <span class="eyebrow">External identity</span>
   <h2 id="external-identity-heading">What was linked</h2>

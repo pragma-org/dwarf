@@ -878,6 +878,7 @@ def _external_run_detail(
             "phase": provider_phase,
             "outcome": value.get("outcome"),
             "linked_existing": linked_existing,
+            "capabilities": provenance.get("antithesis_capabilities") if isinstance(provenance.get("antithesis_capabilities"), dict) else None,
             "submission_present": submission_path.is_file(),
             "result_bundle_present": result_bundle_present,
             "result_bundle_verified": result_bundle_verified,

@@ -763,3 +763,19 @@ def test_inconclusive_antithesis_result_explains_itself(tmp_path):
     assert detail["external"]["result"]["properties"][0]["name"] == "No Antithesis errors"
     html = _page(detail)
     assert "no DWARF assertion" in html and "No signed DWARF result bundle was supplied" not in html
+
+
+def test_external_run_page_shows_antithesis_support_and_gaps(tmp_path, monkeypatch):
+    from profile_manager.run_ledger import RunLedger
+    runs_dir, run_id = _linked_external_run(tmp_path)
+    ledger = RunLedger(tmp_path / "state")
+    entry = ledger.get(run_id)
+    entry["provenance"]["antithesis_capabilities"] = {"level": "partial", "reason": None, "gaps": [
+        {"kind": "implementation-gap", "code": "primitive-unsupported-on-antithesis", "primitive": "runtime_tracer_capture",
+         "phase": "load", "message": "runtime_tracer_capture: docker exec"}]}
+    ledger.annotate(run_id, provenance=entry["provenance"])
+    detail = operate_run_detail(run_id, runs_dir=runs_dir)
+    assert detail["external"]["capabilities"]["level"] == "partial"
+    html = render("operate/external_run.j2", page_title="x", density="reading", active="operate", active_sub="runs", run=detail)
+    assert "Antithesis support" in html and "partial" in html
+    assert "primitive-unsupported-on-antithesis" in html and "runtime_tracer_capture" in html

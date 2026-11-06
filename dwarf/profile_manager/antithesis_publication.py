@@ -69,6 +69,7 @@ def create_handoff(build_id,registry_prefix,*,request_id=None):
                  'request':source['request'],'version_binding':source['version_binding'],
                  'workload_binding':source['workload_binding'], 'measurement_binding':source.get('measurement_binding',{}),'source_inventory':prep._inventory(files),
                  'workload_image_contents':list((source.get('workload_binding') or {}).get('image_contents') or []),
+                 'capabilities':source.get('capabilities'),
                  'source_issues':source['issues'],
                  'limitations':['Static contract review, fresh local validation and exact candidate config-image inspection remain separate gates.',
                      'Anonymous manifests/configs do not establish layer retrieval, binary behavior or remote qualification.'],

@@ -445,6 +445,16 @@ def _scenario_record(row):
         return None
 
 
+def _capabilities_record(row):
+    """The package's declared Antithesis support (level, reason, gaps), read from
+    the preparation receipt; None when the source cannot be read."""
+    try:
+        capabilities = (read_source(row['source'])['receipt'] or {}).get('capabilities')
+        return capabilities if isinstance(capabilities, dict) else None
+    except (PackageError, KeyError, TypeError, OSError, ValueError):
+        return None
+
+
 def _scenario_path(row):
     # A package that differs from the public commit did not run remotely: no
     # scenario identity is bound, so no verdict is ever attributed to one.
@@ -466,7 +476,8 @@ def _redacted_fact(fact):
 
 def _reserve(row):
     result = run_service.reserve_external_run(run_service.ExternalRunRequest(
-        backend='antithesis', origin='external', launch=_launch(row), scenario_path=_scenario_path(row)))
+        backend='antithesis', origin='external', launch=_launch(row), scenario_path=_scenario_path(row),
+        capabilities=_capabilities_record(row)))
     row['dwarf_run_id'] = result['run_id']
     return result
 

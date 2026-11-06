@@ -395,3 +395,24 @@ def test_rebuild_measurements_keeps_one_service_per_report():
     assert identity["implementation"] == "cardano-node" and report["service"] == "sm-cardano-victim"
     assert report["services"] == ["sm-amaru-adversary", "sm-cardano-victim"]
     assert report["measurements"]["block_application"]["value"] == 2.0
+
+
+def test_write_result_bundle_carries_capability_gaps_into_gaps_json(tmp_path):
+    from profile_manager import antithesis_results as m
+    run_dir, entry = _entry(tmp_path)
+    entry['provenance']['antithesis_capabilities'] = {'level': 'partial', 'reason': None, 'gaps': [
+        {'kind': 'implementation-gap', 'code': 'primitive-unsupported-on-antithesis', 'primitive': 'runtime_tracer_capture',
+         'phase': 'load', 'message': 'runtime_tracer_capture: docker exec'},
+        {'kind': 'implementation-gap', 'code': 'fault-delegated-to-platform', 'primitive': 'fault_node_freeze',
+         'phase': 'faults', 'message': 'fault_node_freeze: platform faults'}]}
+    run = fixture('run-completed.json'); props = fixture('properties.json')
+    result = m.normalise_result(run, props, test_run_id=TEST_RUN_ID)
+    m.write_result_bundle(run_dir, entry=entry, result=result, raw={'run': run, 'properties': props}, scenario_source=None, measurements=None)
+    gaps = json.loads((run_dir / 'gaps.json').read_text())
+    capability = [g for g in gaps['missing'] if g.get('kind') == 'implementation-gap']
+    assert [(g['code'], g['primitive'], g['path']) for g in capability] == [
+        ('primitive-unsupported-on-antithesis', 'runtime_tracer_capture', 'primitive:runtime_tracer_capture'),
+        ('fault-delegated-to-platform', 'fault_node_freeze', 'primitive:fault_node_freeze')]
+    assert any(g['path'] == 'measurements/report.json' for g in gaps['missing'])
+    manifest = json.loads((run_dir / 'manifest.json').read_text())
+    assert manifest['capabilities'] == {'level': 'partial', 'reason': None, 'gap_count': 2}

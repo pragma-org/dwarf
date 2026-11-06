@@ -254,6 +254,14 @@ def write_result_bundle(run_dir, *, entry: Mapping[str, Any], result: Mapping[st
         "result": {"source": "antithesis-report", "sha256": hashlib.sha256(result_bytes).hexdigest()},
     }
     missing = [{"path": path, "reason": reason} for path, reason in _GAPS]
+    provenance = entry.get("provenance") if isinstance(entry.get("provenance"), Mapping) else {}
+    capabilities = provenance.get("antithesis_capabilities") if isinstance(provenance.get("antithesis_capabilities"), Mapping) else None
+    if capabilities is not None:
+        declared = [gap for gap in (capabilities.get("gaps") or []) if isinstance(gap, Mapping)]
+        manifest["capabilities"] = {"level": capabilities.get("level"), "reason": capabilities.get("reason"), "gap_count": len(declared)}
+        for gap in declared:
+            missing.append({"path": "primitive:" + str(gap.get("primitive") or ""), "reason": str(gap.get("message") or ""),
+                            "kind": "implementation-gap", "code": gap.get("code"), "primitive": gap.get("primitive"), "phase": gap.get("phase")})
     if measurements is not None:
         manifest["measurements"] = dict(measurements)
         (run_dir / "measurements").mkdir(exist_ok=True)

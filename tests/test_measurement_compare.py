@@ -217,3 +217,23 @@ def test_rebuild_measurements_returns_none_without_lines():
     from profile_manager.antithesis_results import rebuild_measurements
     assert rebuild_measurements([], scenario="s", target_identity={}) is None
     assert rebuild_measurements([{"output_text": "{\"other\": 1}"}], scenario="s", target_identity={}) is None
+
+
+def test_compare_record_carries_antithesis_support(tmp_path):
+    import json
+    from pathlib import Path
+    from profile_manager import antithesis_results
+    from profile_manager.data.measurement_compare import collect_measurement_run_records
+    fixtures = Path(__file__).resolve().parent / "fixtures" / "antithesis_proxy"
+    run = json.loads((fixtures / "run-completed.json").read_text()); props = json.loads((fixtures / "properties.json").read_text())
+    run_dir = tmp_path / "runs" / ("external-antithesis-" + "d" * 24)
+    entry = {"run_id": run_dir.name, "kind": "external", "backend": "antithesis", "evidence_path": str(run_dir),
+             "scenario": {"id": "cardano-amaru-miniprotocol-security-local", "sha256": "c" * 64},
+             "provenance": {"external_test_run_id": "f" * 64, "antithesis_capabilities": {"level": "full", "reason": None, "gaps": []}}}
+    result = antithesis_results.normalise_result(run, props, test_run_id="f" * 64)
+    measurements = {"schema_version": "v1", "scenario": "cardano-amaru-miniprotocol-security-local", "source": "antithesis-events", "complete": False,
+                    "target_identity": {"engine": "antithesis", "implementation": "cardano-node", "mode": "patched", "version": "10.6.2"},
+                    "measurements": {"block_application": {"status": "available", "value": 3.2, "unit": "us"}}}
+    antithesis_results.write_result_bundle(run_dir, entry=entry, result=result, raw={"run": run, "properties": props}, scenario_source=None, measurements=measurements)
+    [record] = collect_measurement_run_records(tmp_path / "runs")
+    assert record["antithesis_support"] == "full"

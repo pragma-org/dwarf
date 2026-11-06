@@ -78,6 +78,7 @@ class ExternalRunRequest:
     state_dir: Path | str | None = None
     scenario_path: Path | str | None = None
     registry_path: Path | str | None = None
+    capabilities: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.backend == "local" or self.backend not in _BACKENDS:
@@ -640,6 +641,14 @@ def reserve_external_run(request: ExternalRunRequest) -> dict[str, Any]:
         "plan_path": str(plan_path.resolve()),
         "verdict_contract": resolved_plan["verdict_contract"],
     }
+    if isinstance(request.capabilities, Mapping):
+        # The package's declared Antithesis support travels with the run so the
+        # result, run page and compare view can label its gaps.
+        provenance["antithesis_capabilities"] = {
+            "level": request.capabilities.get("level"),
+            "reason": request.capabilities.get("reason"),
+            "gaps": [dict(gap) for gap in (request.capabilities.get("gaps") or []) if isinstance(gap, Mapping)],
+        }
     ledger = RunLedger(state_dir)
     try:
         existing = ledger.get(run_id)
