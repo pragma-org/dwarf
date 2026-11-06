@@ -123,8 +123,11 @@ def from_registration(registration_id, *, controller=None):
            'mode': 'patched' if build.get('variant') == 'instrumented' else 'stock',
            'source_revision': registration['provenance']['source_revision'],
            'created_at': datetime.now(timezone.utc).isoformat(), 'message': 'Adapting prepared release'}
-    builds._save(directory / 'status.json', row)
-    threading.Thread(target=_adapt_worker, args=(directory, registration, row.copy(), job_lock, controller), daemon=True).start()
+    try:
+        builds._save(directory / 'status.json', row)
+        threading.Thread(target=_adapt_worker, args=(directory, registration, row.copy(), job_lock, controller), daemon=True).start()
+    except Exception:
+        job_lock.close(); raise
     return row
 
 
@@ -163,7 +166,10 @@ def _adapt_worker(directory, registration, row, job_lock, controller):
         (directory / 'failure.txt').write_text(str(exc))
         row.update(state='failed', message='Adapting the prepared release failed; see the private node artifact log on the DWARF host')
     finally:
-        builds._save(directory / 'status.json', row); job_lock.close()
+        try:
+            builds._save(directory / 'status.json', row)
+        finally:
+            job_lock.close()
 
 
 def _probe(image,directory,suffix,entrypoint,arguments,*,mount=None,user=None):

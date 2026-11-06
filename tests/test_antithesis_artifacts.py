@@ -378,3 +378,40 @@ def test_amaru_probe_honours_the_executable_s_own_run_command(tmp_path,monkeypat
     assert a.probe_amaru('fixture:tag',tmp_path,digest)==digest
     assert [s for s,_ in calls]==['extract','version','help','interface']
     assert calls[-1][1]==(['node','run','--help'] if modern else ['run','--help'])
+
+
+def test_from_registration_releases_the_worker_lock_when_the_row_cannot_be_saved(adapter_state, monkeypatch):
+    """A failure between taking worker.lock and starting the thread must not leak
+    the lock (the replaced start() closed its locks on the same path)."""
+    a = adapter_state
+    reg = _registration()
+    monkeypatch.setattr(a, 'load_operator_registration', lambda rid: {'revision': 'r1', 'registration': reg})
+    original = a.builds._save
+    def failing_save(path, value):
+        if path.name == 'status.json' and value.get('state') == 'building':
+            raise OSError('disk full')
+        return original(path, value)
+    monkeypatch.setattr(a.builds, '_save', failing_save)
+    with pytest.raises(OSError):
+        a.from_registration(reg['registration_id'], controller=_fake_controller([], terminal=None))
+    monkeypatch.setattr(a.builds, '_save', original)
+    calls = []
+    row = a.from_registration(reg['registration_id'], controller=_fake_controller(calls, terminal=lambda eid: {'state': 'applied', 'result': _adapt_result(a.artifact_id_for(reg['registration_id']))}))
+    assert row['state'] == 'building'           # the lock was free again
+    assert _wait(a, row['id'])['state'] == 'complete'
+
+
+def test_adapt_worker_releases_the_lock_when_the_final_save_fails(adapter_state, monkeypatch, tmp_path):
+    a = adapter_state
+    reg = _registration()
+    directory = tmp_path / a.artifact_id_for(reg['registration_id']); directory.mkdir()
+    job_lock = a.builds._lock(directory / 'worker.lock')
+    assert job_lock is not None
+    monkeypatch.setattr(a.builds, '_save', lambda path, value: (_ for _ in ()).throw(OSError('disk full')))
+    row = {'id': directory.name, 'state': 'building', 'execution_id': 'antithesis-adapt-' + 'a' * 32, 'registration_id': reg['registration_id']}
+    controller = _fake_controller([], terminal=lambda eid: {'state': 'applied', 'result': _adapt_result(directory.name)})
+    with pytest.raises(OSError):
+        a._adapt_worker(directory, reg, row, job_lock, controller)
+    released = a.builds._lock(directory / 'worker.lock')
+    assert released is not None
+    released.close()

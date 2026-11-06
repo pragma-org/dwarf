@@ -15,11 +15,11 @@ MAX_BODY_BYTES=32768
 _PREPARING = threading.BoundedSemaphore(1)
 
 
-def _registration_implementation(registration_id):
-    """The implementation an operator registration was prepared for, or None."""
+def _prepared_registration(registration_id):
+    """The operator registration record, or None when the ledger has no such row."""
     from profile_manager.version_discovery import load_operator_registration
     try:
-        return load_operator_registration(registration_id)['registration'].get('implementation')
+        return load_operator_registration(registration_id)['registration']
     except ValueError:
         return None
 
@@ -66,7 +66,12 @@ def dispatch_package_request(*, method, path, body=b'', expected_token=None):
                 registration_id=value['registration_id']
                 if not isinstance(registration_id,str) or not registration_id:
                     raise PackageError('Choose a prepared build.',field='registration_id',status=422)
-                if _registration_implementation(registration_id)!=value['implementation']:
+                registration=_prepared_registration(registration_id)
+                if registration is None:
+                    raise PackageError('Prepared build '+registration_id+' is no longer in the operator ledger; reload the page.',field='registration_id',status=422)
+                if not isinstance(registration.get('source_build'),dict):
+                    raise PackageError('Choose a prepared build: this registration is an inspected image, not an operator build.',field='registration_id',status=422)
+                if registration.get('implementation')!=value['implementation']:
                     raise PackageError('The prepared build belongs to a different implementation.',field='registration_id',status=422)
                 artifact=antithesis_artifacts.from_registration(registration_id)
             else:

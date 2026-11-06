@@ -21,7 +21,7 @@ class Ledger:
          'provenance':{'source_revision':'a'*40},'source_build':{'variant':'instrumented','execution_id':'release-build-'+'2'*32,'build_result_sha256':'sha256:'+'c'*64,
          'patch_set_sha256':'sha256:'+'d'*64,'measurement_revision':'nanoseconds-v4','instrumentation_evidence_sha256':'sha256:'+'e'*64}}]}
 wizard.OperatorVersionDecisionLedger=Ledger
-endpoint._registration_implementation=lambda rid:'amaru'
+endpoint._prepared_registration=lambda rid:{'implementation':'amaru','source_build':{'variant':'stock'}}
 rows={};attempts={}
 def from_registration(registration_id,*,controller=None):
     identifier=a.artifact_id_for(registration_id)
