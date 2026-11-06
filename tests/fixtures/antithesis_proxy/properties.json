@@ -93,7 +93,7 @@
    "id": "dddddddddddddddddddddddddddddddd",
    "is_event": false,
    "is_group": false,
-   "name": "Always: mixed-miniprotocol-security: victim keeps serving after malformed handshake",
+   "name": "Always: mixed_sm_victim_keeps_serving_after_malformed_handshake",
    "status": "Passing"
   },
   {
@@ -105,7 +105,7 @@
    "id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
    "is_event": false,
    "is_group": false,
-   "name": "Sometimes: mixed-miniprotocol-security: adversary reached block-fetch",
+   "name": "Sometimes: mixed_sm_adversary_reached_block_fetch",
    "status": "Passing"
   }
  ],
