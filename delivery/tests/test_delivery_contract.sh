@@ -257,6 +257,8 @@ grep -qF 'DWARF_GHCR_PREFIX: ${DWARF_GHCR_PREFIX:-}' "${PACKAGE_ROOT}/delivery/d
 grep -qF 'DWARF_GHCR_PUBLISH_PAT: ${DWARF_GHCR_PUBLISH_PAT:-}' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
 grep -qF 'state/antithesis/preparations:/var/dwarf/dashboard-state/antithesis/preparations:ro' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
 grep -qF 'DWARF_CONTROLLER_PREPARATIONS_DIR: /var/dwarf/dashboard-state/antithesis/preparations' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
+# The bind source must exist with the runtime ownership before compose starts, or Docker creates it root-owned and the dashboard cannot write preparations.
+grep -qF '"${DWARF_RUNTIME_ROOT}/state/antithesis/preparations"' "${PACKAGE_ROOT}/delivery/scripts/common.sh"
 grep -q 'Acquire::Check-Valid-Until "false";' "${PACKAGE_ROOT}/infrastructure/docker/dwarf-fw.Dockerfile"
 grep -q 'Acquire::Check-Date "false";' "${PACKAGE_ROOT}/infrastructure/docker/dwarf-fw.Dockerfile"
 if grep -q '\\\"false\\\"' "${PACKAGE_ROOT}/infrastructure/docker/dwarf-fw.Dockerfile"; then

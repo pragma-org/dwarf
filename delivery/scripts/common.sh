@@ -213,13 +213,13 @@ PY
 }
 
 ensure_runtime_dirs() {
-  mkdir -p "${DWARF_RUNTIME_ROOT}/runs" "${DWARF_RUNTIME_ROOT}/state" "${DWARF_RUNTIME_ROOT}/state/launches" "${DWARF_RUNTIME_ROOT}/state/run-ledger" "${DWARF_RUNTIME_ROOT}/state/measurement-targets" "${DWARF_RUNTIME_ROOT}/state/measurements" "${DWARF_RUNTIME_ROOT}/state/measurement-profiles" "${DWARF_RUNTIME_ROOT}/state/scenarios" "${DWARF_RUNTIME_ROOT}/state/version-catalog" "${DWARF_RUNTIME_ROOT}/state/version-imports" "${DWARF_RUNTIME_ROOT}/bundles" "${DWARF_RUNTIME_ROOT}/controller-state"
+  mkdir -p "${DWARF_RUNTIME_ROOT}/runs" "${DWARF_RUNTIME_ROOT}/state" "${DWARF_RUNTIME_ROOT}/state/launches" "${DWARF_RUNTIME_ROOT}/state/run-ledger" "${DWARF_RUNTIME_ROOT}/state/measurement-targets" "${DWARF_RUNTIME_ROOT}/state/measurements" "${DWARF_RUNTIME_ROOT}/state/measurement-profiles" "${DWARF_RUNTIME_ROOT}/state/scenarios" "${DWARF_RUNTIME_ROOT}/state/version-catalog" "${DWARF_RUNTIME_ROOT}/state/version-imports" "${DWARF_RUNTIME_ROOT}/state/antithesis" "${DWARF_RUNTIME_ROOT}/state/antithesis/preparations" "${DWARF_RUNTIME_ROOT}/bundles" "${DWARF_RUNTIME_ROOT}/controller-state"
   prepare_profile_catalog
   # The framework container runs as uid 1000 and writes run bundles + state into
   # these bind-mounted dirs. Make them writable regardless of which host uid owns
   # them (a fresh clone's dirs, or dirs Docker auto-created as root). Best-effort:
   # ignore if the current user may not chmod pre-existing dirs.
-  chmod 0770 "${DWARF_RUNTIME_ROOT}" "${DWARF_RUNTIME_ROOT}/runs" "${DWARF_RUNTIME_ROOT}/state" "${DWARF_RUNTIME_ROOT}/state/launches" "${DWARF_RUNTIME_ROOT}/state/run-ledger" "${DWARF_RUNTIME_ROOT}/state/measurement-targets" "${DWARF_RUNTIME_ROOT}/state/measurements" "${DWARF_RUNTIME_ROOT}/state/measurement-profiles" "${DWARF_RUNTIME_ROOT}/state/profiles" "${DWARF_RUNTIME_ROOT}/state/scenarios" "${DWARF_RUNTIME_ROOT}/state/version-catalog" "${DWARF_RUNTIME_ROOT}/state/version-imports" "${DWARF_RUNTIME_ROOT}/bundles" "${DWARF_RUNTIME_ROOT}/controller-state" 2>/dev/null || true
+  chmod 0770 "${DWARF_RUNTIME_ROOT}" "${DWARF_RUNTIME_ROOT}/runs" "${DWARF_RUNTIME_ROOT}/state" "${DWARF_RUNTIME_ROOT}/state/launches" "${DWARF_RUNTIME_ROOT}/state/run-ledger" "${DWARF_RUNTIME_ROOT}/state/measurement-targets" "${DWARF_RUNTIME_ROOT}/state/measurements" "${DWARF_RUNTIME_ROOT}/state/measurement-profiles" "${DWARF_RUNTIME_ROOT}/state/profiles" "${DWARF_RUNTIME_ROOT}/state/scenarios" "${DWARF_RUNTIME_ROOT}/state/version-catalog" "${DWARF_RUNTIME_ROOT}/state/version-imports" "${DWARF_RUNTIME_ROOT}/state/antithesis" "${DWARF_RUNTIME_ROOT}/state/antithesis/preparations" "${DWARF_RUNTIME_ROOT}/bundles" "${DWARF_RUNTIME_ROOT}/controller-state" 2>/dev/null || true
   # Placeholder SSH files so the read-only key/known_hosts mounts always have an
   # existing source on a fresh install (empty = no fan-out configured, harmless).
   [[ -e "${DWARF_SSH_KNOWN_HOSTS}" ]] || : > "${DWARF_SSH_KNOWN_HOSTS}"
