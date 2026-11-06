@@ -4714,6 +4714,29 @@ class RuntimeSubstrateResume(_RuntimeSubstrateCheckpointPrimitive):
     mode_name = "resume"
 
 
+def antithesis_package_mode():
+    """Inside an Antithesis ``dwarf-workload`` container the compose already runs;
+    lifecycle primitives read the package-shipped reports instead of Docker."""
+    value = os.environ.get("DWARF_ANTITHESIS_PACKAGE_DIR", "").strip()
+    return Path(value) if value else None
+
+
+def _delegated_package_step(handle, *, primitive, phase, output_dir, copies):
+    """Copy the named package files into ``output_dir`` and log the delegation.
+    Returns the parsed copies keyed by file name."""
+    package = antithesis_package_mode()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    parsed = {}
+    for name in copies:
+        source = package / name
+        data = json.loads(source.read_text(encoding="utf-8"))
+        (output_dir / name).write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        parsed[name] = data
+    handle.log(phase=phase, primitive=primitive, level="info", event="delegated_to_package",
+               payload={"package": str(package), "output_dir": str(output_dir), "files": list(copies)})
+    return parsed
+
+
 class RuntimeInstallVersion(LoadPrimitive):
     """Resolve requested Cardano/Amaru node versions for a composed substrate."""
 
@@ -4724,6 +4747,18 @@ class RuntimeInstallVersion(LoadPrimitive):
         if not self.bound_substrate:
             raise ValueError("runtime_install_version requires scenario.substrate")
         output_dir = _resolve_output_path(handle, self.params["output_dir"])
+        if antithesis_package_mode() is not None:
+            reports = _delegated_package_step(handle, primitive="runtime_install_version", phase="setup",
+                                              output_dir=output_dir, copies=["install-report.json"])
+            report = reports["install-report.json"]
+            if self.bound_state is not None:
+                self.bound_state["substrate_install_report"] = report
+                self.bound_state["substrate_install_report_path"] = str(output_dir / "install-report.json")
+            handle.log(phase="setup", primitive="runtime_install_version", level="info", event="completed",
+                       payload={"exit_code": 0, "outcome": "ok", "delegated": "antithesis-package",
+                                "artifact_summary": {"has_install_report": True, "has_install_log": False},
+                                "report": report, "stdout": "", "stderr": ""})
+            return
         timeout = float(self.params.get("timeout_seconds", 300))
         expect_exit = int(self.params.get("expect_exit", 0))
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -4812,6 +4847,17 @@ class RuntimeAttachTopology(LoadPrimitive):
         timeout = float(self.params.get("timeout_seconds", 120))
         if topology != "cardano_amaru":
             raise ValueError(f"runtime_attach_topology: unsupported topology {topology!r}")
+        if antithesis_package_mode() is not None:
+            reports = _delegated_package_step(handle, primitive="runtime_attach_topology", phase="setup",
+                                              output_dir=output_dir, copies=["runtime.json"])
+            meta = reports["runtime.json"]
+            handle.log(phase="setup", primitive="runtime_attach_topology", level="info", event="completed",
+                       payload={"exit_code": 0, "outcome": "ok", "delegated": "antithesis-package",
+                                "artifact_summary": {"has_runtime_json": True,
+                                                     "haskell_nodes": len(meta.get("haskell_nodes", [])),
+                                                     "amaru_nodes": len(meta.get("amaru_nodes", []))},
+                                "runtime_metadata_path": str(runtime_json), "stdout": "", "stderr": ""})
+            return
         command = [
             "python3",
             str(DWARF_ROOT / "scripts" / "adapt_cardano_amaru_runtime.py"),
@@ -4873,6 +4919,23 @@ class RuntimeComposeSubstrate(LoadPrimitive):
         if not self.bound_substrate:
             raise ValueError("runtime_compose_substrate requires scenario.substrate")
         output_dir = _resolve_output_path(handle, self.params["output_dir"])
+        if antithesis_package_mode() is not None:
+            reports = _delegated_package_step(handle, primitive="runtime_compose_substrate", phase="setup",
+                                              output_dir=output_dir, copies=["runtime.json", "compose-report.json"])
+            report = reports["compose-report.json"]
+            metadata_path = output_dir / "runtime.json"
+            if self.bound_state is not None:
+                self.bound_state["substrate_runtime_root"] = str(output_dir)
+                self.bound_state["substrate_runtime_metadata_path"] = str(metadata_path)
+                self.bound_state["substrate_bundle_runtime_metadata_path"] = str(metadata_path)
+                self.bound_state["substrate_compose_report"] = report
+            for node in report.get("nodes", []):
+                handle.log(phase="setup", primitive="runtime_compose_substrate", level="info", event="node_started", payload=node)
+            handle.log(phase="setup", primitive="runtime_compose_substrate", level="info", event="completed",
+                       payload={"exit_code": 0, "outcome": "ok", "delegated": "antithesis-package",
+                                "artifact_summary": {"has_compose_report": True, "node_count": len(report.get("nodes", []))},
+                                "report": report, "stdout": "", "stderr": ""})
+            return
         timeout = float(self.params.get("timeout_seconds", 420))
         expect_exit = int(self.params.get("expect_exit", 0))
         healthy_timeout = float(self.params.get("healthy_timeout_seconds", 180))
@@ -5116,6 +5179,17 @@ class RuntimeTeardownSubstrate(LoadPrimitive):
     def run(self, handle, rng):
         state = self.bound_state or {}
         runtime_metadata_path = str(self.params.get("runtime_metadata_path") or state.get("substrate_runtime_metadata_path") or "")
+        if antithesis_package_mode() is not None:
+            output_dir = _resolve_output_path(handle, self.params["output_dir"])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            report = {"delegated": "antithesis-package", "stopped_count": 0, "remaining_sessions": 0, "nodes": [],
+                      "runtime_metadata_path": runtime_metadata_path}
+            (output_dir / "teardown-report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            handle.log(phase="teardown", primitive="runtime_teardown_substrate", level="info", event="completed",
+                       payload={"exit_code": 0, "outcome": "ok", "delegated": "antithesis-package",
+                                "artifact_summary": {"has_teardown_report": True, "stopped_count": 0},
+                                "report": report, "stdout": "", "stderr": ""})
+            return
         if not runtime_metadata_path:
             handle.log(
                 phase="teardown",
@@ -15322,6 +15396,37 @@ def _client_epoch() -> float:
     return datetime.now(timezone.utc).timestamp()
 
 
+def _package_client_runtime_target(runtime, implementation, metadata_path):
+    """Inside an Antithesis package the nodes are reached by service name over the
+    compose network, Cardano sockets through mounted state volumes and Amaru logs
+    through mounted evidence volumes; no container inspection is possible."""
+    key = "haskell_nodes" if implementation == "cardano-node" else "amaru_nodes" if implementation == "amaru" else None
+    if key is None:
+        raise RuntimeError(f"unsupported client target implementation: {implementation}")
+    nodes = runtime.get(key) or []
+    node = next((item for item in nodes if item.get("id") == "node1"), None) if key == "haskell_nodes" else None
+    node = node or (nodes[0] if nodes else None)
+    if not isinstance(node, dict):
+        raise RuntimeError(f"package runtime has no {implementation} target")
+    host, _, port = str(node.get("listen_address") or "").rpartition(":")
+    peers = [item for item in (runtime.get("nodes") or []) if item.get("id") != node.get("id")]
+    peer = peers[0] if peers else {}
+    return {
+        "id": node.get("id"),
+        "implementation": implementation,
+        "container": None,
+        "listen_host": host or node.get("name"),
+        "listen_port": int(port) if port.isdigit() else int(node.get("port") or 0),
+        "socket_path": node.get("socket_path"),
+        "network_magic": runtime.get("network_magic", 42),
+        "log_path": node.get("log_path"),
+        "measurement_log_path": None,
+        "peer": {"id": peer.get("id"), "container": None, "socket_path": peer.get("socket_path")},
+        "runtime_metadata_path": str(metadata_path),
+        "observation_transport": "antithesis-package",
+    }
+
+
 def _resolve_client_runtime_target(handle, params: dict[str, Any]) -> dict[str, Any]:
     profile_id = str(params.get("profile_id") or "")
     metadata_value = params.get("runtime_metadata_path")
@@ -15370,6 +15475,8 @@ def _resolve_client_runtime_target(handle, params: dict[str, Any]) -> dict[str, 
         execution_identity = frozen_target["subject"]
         frozen_execution_identity = True
     implementation = str(execution_identity.get("implementation") or "")
+    if runtime.get("observation_transport") == "antithesis-package":
+        return _package_client_runtime_target(runtime, implementation, metadata_path)
     if implementation == "cardano-node":
         nodes = runtime.get("haskell_nodes") or []
         node = next((item for item in nodes if item.get("id") == "node1"), None)

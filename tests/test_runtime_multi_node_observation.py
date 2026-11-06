@@ -179,3 +179,42 @@ def test_minimal_container_uses_busybox_for_loopback_connection(monkeypatch, tmp
     assert result["responsive"] is True
     assert result["connect_successes"] == 1
     assert any(command[3:6] == ["/bin/busybox", "nc", "-z"] for command in commands)
+
+
+def test_package_mode_connection_state_uses_tcp_only_and_reports_no_process_access(monkeypatch, tmp_path):
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("package mode must not run docker or inspect host processes")
+
+    monkeypatch.setattr(observation, "resolve_target_process", forbidden)
+    monkeypatch.setattr(observation, "_run", forbidden)
+    attempts = []
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def fake_connect(address, timeout=None):
+        attempts.append(address)
+        return _Conn()
+
+    monkeypatch.setattr(observation.socket, "create_connection", fake_connect)
+    result = observation._observe_connection_state(
+        runtime_metadata_path=tmp_path / "runtime.json",
+        node={"name": "sm-cardano-victim", "id": "node1", "port": 3001,
+              "listen_address": "sm-cardano-victim.example:3001", "observation_transport": "antithesis-package"},
+        known_ports={3001: "node1"},
+        known_container_ips={},
+        target_host="127.0.0.1",
+        connect_attempts=2,
+    )
+    assert attempts == [("sm-cardano-victim.example", 3001)] * 2
+    assert result["responsive"] is True
+    assert result["connect_successes"] == 2 and result["connect_failures"] == 0
+    assert result["pid"] is None and result["pid_scope"] == "none"
+    assert result["connect_scope"] == "antithesis-package"
+    assert result["socket_observation"] == {"status": "unavailable", "reason": "no process access inside the Antithesis package"}
+    assert result["peer_nodes_connected"] is None and result["ss_match_count"] is None
+    assert result["responsiveness_basis"] == ["tcp-connect"]

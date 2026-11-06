@@ -394,6 +394,37 @@ def _observe_connection_state(
     connect_attempts: int,
 ) -> dict:
     container_name = str(node.get("container_name") or "")
+    if node.get("observation_transport") == "antithesis-package":
+        # Inside the package: no Docker, no host pids; the node is a compose service.
+        host, _, port_text = str(node.get("listen_address") or "").rpartition(":")
+        port = int(port_text) if port_text.isdigit() else int(node.get("port") or 0)
+        connect_successes = 0
+        connect_failures = 0
+        for _ in range(connect_attempts):
+            try:
+                with socket.create_connection((host or str(node.get("name") or ""), port), timeout=1.0):
+                    connect_successes += 1
+            except OSError:
+                connect_failures += 1
+        return {
+            "target_node": str(node.get("name") or ""),
+            "pid": None,
+            "pid_scope": "none",
+            "port": port,
+            "container_port": port,
+            "connect_scope": "antithesis-package",
+            "connect_successes": connect_successes,
+            "connect_failures": connect_failures,
+            "ss_match_count": None,
+            "ss_listen_count": None,
+            "ss_established_count": None,
+            "lsof_socket_count": None,
+            "peer_nodes_connected": None,
+            "responsive": connect_successes >= 1,
+            "responsiveness_basis": ["tcp-connect"],
+            "socket_observation": {"status": "unavailable", "reason": "no process access inside the Antithesis package"},
+            "ss_lines": None,
+        }
     if container_name:
         port = int(node.get("port") or 0)
         container_port = int(str(node.get("container_listen_address") or "node:3001").rsplit(":", 1)[1])
