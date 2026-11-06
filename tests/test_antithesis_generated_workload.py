@@ -162,3 +162,27 @@ def test_unknown_profile_is_an_issue_not_a_crash():
     assert generated.scenario_nodes(unknown) == []
     projection = generated.project_nodes(unknown, [])
     assert [i['code'] for i in projection['issues']] == ['profile-unknown']
+
+
+def test_dockerfile_places_test_commands_where_the_chmod_and_composer_expect():
+    """Simulate Docker COPY semantics (a source directory's contents land under the
+    destination) and check the chmod glob and the Test Composer catalog path."""
+    import fnmatch
+    import re
+    dockerfile = (generated.ASSETS / 'Dockerfile').read_text().splitlines()
+    placed = []
+    for line in dockerfile:
+        match = re.match(r'COPY (\S+) (\S+)', line)
+        if not match:
+            continue
+        source, destination = match.groups()
+        root = generated.ASSETS / source.rstrip('/')
+        for path in root.rglob('*'):
+            if path.is_file():
+                placed.append(destination.rstrip('/') + '/' + path.relative_to(root).as_posix())
+    assert '/opt/antithesis/test/v1/dwarf/singleton_driver_scenario.py' in placed
+    assert '/opt/antithesis/test/v1/dwarf/anytime_health.py' in placed
+    assert '/opt/dwarf/package/runtime.json' not in placed  # package/ is filled by the preview, not the asset tree
+    chmod = next(line for line in dockerfile if line.startswith('RUN chmod'))
+    pattern = chmod.split()[-1]
+    assert [p for p in placed if fnmatch.fnmatch(p, pattern)], (pattern, placed)
