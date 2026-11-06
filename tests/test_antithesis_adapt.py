@@ -218,5 +218,40 @@ def test_extraction_probe_passes_the_host_path_for_the_mount(runtime, monkeypatc
     monkeypatch.setattr('profile_manager.antithesis_artifacts.probe_amaru', fake_probe_amaru)
     context = adapt.AdaptContext(runtime, {}, EXECUTION_ID, 600, threading.Event())
     adapt._extraction_probe(context, 'dwarf-antithesis-node-x:prepared', 'sha256:' + 'a' * 64)
-    assert seen['directory'] == runtime.state_dir / 'antithesis-adapts' / EXECUTION_ID / 'probe'
-    assert seen['host_directory'] == Path('/host/controller/antithesis-adapts') / EXECUTION_ID / 'probe'
+    assert seen['directory'] == adapt._probe_directory(context)
+    assert seen['host_directory'] == Path('/host/controller/antithesis-adapts') / EXECUTION_ID / seen['directory'].name
+
+
+def test_adapt_marks_progress_failed_for_docker_errors_raised_outside_the_gates(runtime, monkeypatch):
+    executable = _elf()
+    _install_fakes(monkeypatch, executable=executable, version_output=AMARU_VERSION)
+    def timed_out(context, implementation, reference, source_revision):
+        raise DockerRuntimeError('Docker operation timed out', code='artifact_probe_failed', stage='artifact_probe')
+    monkeypatch.setattr(adapt, '_provenance', timed_out)
+    with pytest.raises(DockerRuntimeError):
+        adapt.adapt_artifact(runtime, _params(executable=executable), EXECUTION_ID, 600, threading.Event())
+    progress = adapt.read_progress(runtime, EXECUTION_ID)
+    assert progress['status'] == 'failed' and 'timed out' in progress['detail']
+
+
+def test_adapt_context_never_touches_the_release_builds_directory(runtime):
+    cancelled = threading.Event()
+    context = adapt.AdaptContext(runtime, {}, EXECUTION_ID, 600, cancelled)
+    assert not (runtime.state_dir / 'release-builds').exists()
+    assert context.directory == runtime.state_dir / 'antithesis-adapts' / EXECUTION_ID
+    cancelled.set()
+    with pytest.raises(Exception, match='Adapt cancelled'):
+        context.remaining()
+
+
+def test_extraction_probe_uses_a_per_execution_probe_directory(runtime, monkeypatch):
+    seen = {}
+    def fake_probe_amaru(image, directory, expected_digest=None, *, host_directory=None):
+        seen.update(directory=directory, host_directory=host_directory)
+        return expected_digest
+    monkeypatch.setattr('profile_manager.antithesis_artifacts.probe_amaru', fake_probe_amaru)
+    context = adapt.AdaptContext(runtime, {}, EXECUTION_ID, 600, threading.Event())
+    adapt._extraction_probe(context, 'dwarf-antithesis-node-x:prepared', 'sha256:' + 'a' * 64)
+    assert seen['directory'].name == 'probe-' + EXECUTION_ID.rsplit('-', 1)[-1][:12]
+    assert seen['directory'] == adapt._probe_directory(context)
+    assert seen['host_directory'].name == seen['directory'].name

@@ -23,7 +23,7 @@ class Ledger:
 wizard.OperatorVersionDecisionLedger=Ledger
 endpoint._prepared_registration=lambda rid:{'implementation':'amaru','source_build':{'variant':'stock'}}
 rows={};attempts={}
-def from_registration(registration_id,*,controller=None):
+def from_registration(registration_id,*,controller=None,implementation=None):
     identifier=a.artifact_id_for(registration_id)
     attempts[registration_id]=attempts.get(registration_id,0)+1
     if identifier in rows and rows[identifier]['state']=='complete':return rows[identifier]

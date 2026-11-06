@@ -638,3 +638,10 @@ def test_antithesis_artifact_adapt_rejects_extra_and_invalid_fields():
 def test_antithesis_artifact_adapt_timeout_ceiling():
     with pytest.raises(ContractError):
         parse_request(_adapt_request(timeout_seconds=1801))
+
+
+def test_antithesis_artifact_adapt_registration_id_is_a_safe_identity():
+    parse_request(_adapt_request(registration_id='registration-release-build-' + 'a' * 32 + '-instrumented'))
+    for bad in ('registration with spaces', '../registration', 'r' * 257, ''):
+        with pytest.raises(ContractError):
+            parse_request(_adapt_request(registration_id=bad))

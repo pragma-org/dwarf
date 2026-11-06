@@ -415,3 +415,85 @@ def test_adapt_worker_releases_the_lock_when_the_final_save_fails(adapter_state,
     released = a.builds._lock(directory / 'worker.lock')
     assert released is not None
     released.close()
+
+
+def test_from_registration_unknown_registration_row_carries_the_requested_implementation(adapter_state, monkeypatch):
+    a = adapter_state
+    def missing(rid):
+        raise ValueError('operator registration is missing or ambiguous')
+    monkeypatch.setattr(a, 'load_operator_registration', missing)
+    row = a.from_registration('registration-release-build-' + '5' * 32 + '-stock', controller=_fake_controller([], terminal=None), implementation='amaru')
+    assert row['state'] == 'failed' and row['implementation'] == 'amaru'
+
+
+def test_row_from_registration_copies_toolchain_for_instrumented_builds(adapter_state):
+    a = adapter_state
+    from profile_manager.release_build_identity import build_manifest
+    reg = _registration()
+    identifier = a.artifact_id_for(reg['registration_id'])
+    row = a._row_from_registration(reg, _adapt_result(identifier))
+    assert row['toolchain'] == build_manifest('amaru', ADAPT_REV, reg['source_build'])['toolchain'] == 'nightly-2026-09-04'
+    stock = a._row_from_registration(_registration(variant='stock'), _adapt_result(identifier))
+    assert 'toolchain' not in stock
+
+
+def test_from_registration_re_adapts_when_the_prepared_tag_is_gone(adapter_state, monkeypatch):
+    """A complete row is only reused while its :prepared image still exists."""
+    a = adapter_state
+    reg = _registration()
+    monkeypatch.setattr(a, 'load_operator_registration', lambda rid: {'revision': 'r1', 'registration': reg})
+    identifier = a.artifact_id_for(reg['registration_id'])
+    calls = []
+    def controller(operation, parameters, timeout, idempotency_key=None):
+        calls.append(operation)
+        if operation == 'image.inspect':
+            raise a.TopologyActionError('image lookup failed')
+        if operation == 'antithesis.artifact-adapt':
+            return {'status': 'accepted', 'execution_id': parameters['execution_id']}
+        return {'execution_id': parameters['execution_id'], 'state': 'applied', 'result': _adapt_result(identifier)}
+    first = a.from_registration(reg['registration_id'], controller=controller)
+    assert _wait(a, first['id'])['state'] == 'complete'
+    calls.clear()
+    again = a.from_registration(reg['registration_id'], controller=controller)
+    assert again['state'] == 'building'
+    assert calls[0] == 'image.inspect' and 'antithesis.artifact-adapt' in calls
+    assert _wait(a, again['id'])['state'] == 'complete'
+
+
+def test_from_registration_reuses_a_complete_row_whose_image_still_exists(adapter_state, monkeypatch):
+    a = adapter_state
+    reg = _registration()
+    monkeypatch.setattr(a, 'load_operator_registration', lambda rid: {'revision': 'r1', 'registration': reg})
+    identifier = a.artifact_id_for(reg['registration_id'])
+    calls = []
+    def controller(operation, parameters, timeout, idempotency_key=None):
+        calls.append((operation, dict(parameters)))
+        if operation == 'image.inspect':
+            return {'config_image_id': reg['config_image_id'], 'platform': 'linux/amd64'}
+        if operation == 'antithesis.artifact-adapt':
+            return {'status': 'accepted', 'execution_id': parameters['execution_id']}
+        return {'execution_id': parameters['execution_id'], 'state': 'applied', 'result': _adapt_result(identifier)}
+    first = a.from_registration(reg['registration_id'], controller=controller)
+    assert _wait(a, first['id'])['state'] == 'complete'
+    calls.clear()
+    again = a.from_registration(reg['registration_id'], controller=controller)
+    assert again['state'] == 'complete'
+    assert [op for op, _ in calls] == ['image.inspect']
+    assert calls[0][1]['image'] == again['reference'] and calls[0][1]['implementation'] == 'amaru'
+
+
+def test_from_registration_reports_building_while_another_worker_holds_the_lock(adapter_state, monkeypatch, tmp_path):
+    a = adapter_state
+    import json
+    reg = _registration()
+    monkeypatch.setattr(a, 'load_operator_registration', lambda rid: {'revision': 'r1', 'registration': reg})
+    identifier = a.artifact_id_for(reg['registration_id'])
+    directory = tmp_path / identifier; directory.mkdir()
+    (directory / 'status.json').write_text(json.dumps({'id': identifier, 'state': 'failed', 'registration_id': reg['registration_id'],
+                                                       'implementation': 'amaru', 'message': 'old failure'}))
+    held = a.builds._lock(directory / 'worker.lock')
+    try:
+        row = a.from_registration(reg['registration_id'], controller=_fake_controller([], terminal=None))
+        assert row['state'] == 'building' and 'old failure' not in row['message']
+    finally:
+        held.close()

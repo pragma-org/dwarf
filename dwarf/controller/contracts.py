@@ -315,6 +315,10 @@ def _validate_parameters(operation: Operation, raw: Mapping[str, Any]) -> dict[s
         revision = raw.get("source_revision")
         if not isinstance(revision, str) or not _SOURCE_REVISION.fullmatch(revision):
             raise ContractError("source_revision must be an exact commit")
+        registration_id = _text(raw.get("registration_id"), "registration_id", maximum=256)
+        # Same shape as profile_manager.version_discovery._REGISTRATION_ID.
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}", registration_id):
+            raise ContractError("registration_id is not a safe local identity")
         artifact_id = _text(raw.get("artifact_id"), "artifact_id", maximum=32)
         if not re.fullmatch(r"[0-9a-f]{32}", artifact_id):
             raise ContractError("artifact_id is invalid")
@@ -323,7 +327,7 @@ def _validate_parameters(operation: Operation, raw: Mapping[str, Any]) -> dict[s
             raise ContractError("execution_id is invalid")
         return {
             "implementation": implementation,
-            "registration_id": _text(raw.get("registration_id"), "registration_id"),
+            "registration_id": registration_id,
             "config_image_id": _digest(raw.get("config_image_id"), "config_image_id"),
             "executable_digest": _digest(raw.get("executable_digest"), "executable_digest"),
             "source_revision": revision,

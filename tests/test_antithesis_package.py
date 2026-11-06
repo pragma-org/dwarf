@@ -250,20 +250,20 @@ def test_node_select_starts_adapter_and_returns_202(monkeypatch):
     from profile_manager.data import antithesis_package as endpoint
     registration_id = 'registration-release-build-' + '1' * 32 + '-stock'
     calls = []
-    def from_registration(rid):
-        calls.append(rid)
+    def from_registration(rid, **kw):
+        calls.append((rid, kw.get('implementation')))
         return {'id': 'a' * 32, 'state': 'building', 'implementation': 'amaru', 'registration_id': rid, 'message': 'Adapting prepared release'}
     monkeypatch.setattr(a, 'from_registration', from_registration)
     monkeypatch.setattr(endpoint, '_prepared_registration', lambda rid: {'implementation': 'amaru', 'source_build': {'variant': 'stock'}})
     status, body = _node_select({'token': 'right', 'implementation': 'amaru', 'registration_id': registration_id})
     assert status == 202 and body['ok'] is True and body['artifact']['id'] == 'a' * 32
-    assert calls == [registration_id]
+    assert calls == [(registration_id, 'amaru')]
 
 
 def test_node_select_rejects_implementation_mismatch(monkeypatch):
     from profile_manager import antithesis_artifacts as a
     from profile_manager.data import antithesis_package as endpoint
-    monkeypatch.setattr(a, 'from_registration', lambda rid: pytest.fail('adapter must not start'))
+    monkeypatch.setattr(a, 'from_registration', lambda rid, **kw: pytest.fail('adapter must not start'))
     monkeypatch.setattr(endpoint, '_prepared_registration', lambda rid: {'implementation': 'cardano-node', 'source_build': {'variant': 'stock'}})
     status, body = _node_select({'token': 'right', 'implementation': 'amaru', 'registration_id': 'registration-release-build-' + '1' * 32 + '-stock'})
     assert status == 422 and body['error']['field'] == 'registration_id'
@@ -286,7 +286,7 @@ def test_node_select_unknown_registration_is_422_with_its_own_message(monkeypatc
     named as missing, not reported as 'a different implementation'."""
     from profile_manager import antithesis_artifacts as a
     from profile_manager.data import antithesis_package as endpoint
-    monkeypatch.setattr(a, 'from_registration', lambda rid: pytest.fail('adapter must not start'))
+    monkeypatch.setattr(a, 'from_registration', lambda rid, **kw: pytest.fail('adapter must not start'))
     monkeypatch.setattr(endpoint, '_prepared_registration', lambda rid: None)
     rid = 'registration-release-build-' + '3' * 32 + '-stock'
     status, body = _node_select({'token': 'right', 'implementation': 'amaru', 'registration_id': rid})
@@ -301,7 +301,7 @@ def test_node_select_rejects_registrations_without_source_build(monkeypatch):
     any controller call."""
     from profile_manager import antithesis_artifacts as a
     from profile_manager.data import antithesis_package as endpoint
-    monkeypatch.setattr(a, 'from_registration', lambda rid: pytest.fail('adapter must not start'))
+    monkeypatch.setattr(a, 'from_registration', lambda rid, **kw: pytest.fail('adapter must not start'))
     monkeypatch.setattr(endpoint, '_prepared_registration', lambda rid: {'implementation': 'amaru'})
     status, body = _node_select({'token': 'right', 'implementation': 'amaru', 'registration_id': 'registration-release-build-' + '4' * 32 + '-stock'})
     assert status == 422 and body['error']['field'] == 'registration_id'

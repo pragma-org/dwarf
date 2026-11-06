@@ -73,7 +73,7 @@ def dispatch_package_request(*, method, path, body=b'', expected_token=None):
                     raise PackageError('Choose a prepared build: this registration is an inspected image, not an operator build.',field='registration_id',status=422)
                 if registration.get('implementation')!=value['implementation']:
                     raise PackageError('The prepared build belongs to a different implementation.',field='registration_id',status=422)
-                artifact=antithesis_artifacts.from_registration(registration_id)
+                artifact=antithesis_artifacts.from_registration(registration_id,implementation=value['implementation'])
             else:
                 _shape(value,{'token','artifact_id'},'request')
                 artifact=antithesis_artifacts.read(value['artifact_id'])

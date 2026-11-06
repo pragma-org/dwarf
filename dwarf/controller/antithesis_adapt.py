@@ -47,14 +47,9 @@ class AdaptContext(builds.BuildContext):
     """A build context whose evidence lives under ``antithesis-adapts/``."""
 
     def __init__(self, runtime, selected, execution_id, timeout, cancellation):
-        super().__init__(runtime, selected, execution_id, timeout, cancellation)
-        self.directory = _directory(runtime, execution_id)
+        super().__init__(runtime, selected, execution_id, timeout, cancellation,
+                         directory=_directory(runtime, execution_id), label='Adapt')
         (self.directory / _VARIANT).mkdir(parents=True, exist_ok=True)
-        # BuildContext.__init__ created the release-builds job directory; the
-        # adapt never writes there.
-        stray = builds._directory(runtime, execution_id)
-        if stray.is_dir() and not any(stray.iterdir()):
-            stray.rmdir()
 
     def stage(self, variant, stage):
         _progress(self, stage=stage)
@@ -132,9 +127,15 @@ def _builder_image(context):
     return info['config_image_id']
 
 
+def _probe_directory(context):
+    # Unique per execution: the probe names its containers after this
+    # directory, so two adapts can never collide on a container name.
+    return context.directory / ('probe-' + context.execution_id.rsplit('-', 1)[-1][:12])
+
+
 def _extraction_probe(context, reference, expected_digest):
     from profile_manager.antithesis_artifacts import probe_amaru
-    probe = context.directory / 'probe'
+    probe = _probe_directory(context)
     probe.mkdir(exist_ok=True)
     # The controller's job directory has a different path on the host; the
     # daemon resolves the probe's bind mount there (F26).
@@ -252,7 +253,7 @@ def adapt_artifact(runtime, parameters, execution_id, timeout, cancel_event):
             except Exception as exc:
                 raise _blocked(context, 'extraction-probe-failed', 'extraction-probe', 'extraction probe failed: ' + str(exc)) from exc
             bootstrap_probe = 'version-and-run-help'
-            version_log = context.directory / 'probe' / 'version-probe.log'
+            version_log = _probe_directory(context) / 'version-probe.log'
             if version_log.is_file():
                 probe_log_sha256 = builds._hash(version_log)
         result = {'status': 'adapted', 'artifact_id': artifact_id, 'reference': reference, 'image_id': config_image_id,
@@ -261,7 +262,12 @@ def adapt_artifact(runtime, parameters, execution_id, timeout, cancel_event):
                   'bootstrap_probe': bootstrap_probe, 'interpreter': interpreter}
         _progress(context, status='adapted', stage='complete', completed_at=builds._now(), result=result)
         return result
-    except DockerRuntimeError:
+    except DockerRuntimeError as exc:
+        progress = builds._json(context.directory / 'progress.json')
+        if progress.get('status') != 'failed':
+            # Raised outside the gates (e.g. a Docker timeout): the progress
+            # record must still say so.
+            _progress(context, status='failed', detail=_detail(exc))
         if tagged:
             runtime._run(('rmi', reference), timeout=30, execution_id=execution_id)
         raise

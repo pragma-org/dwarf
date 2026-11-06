@@ -160,21 +160,22 @@ def read_progress(runtime, execution_id):
 
 
 class BuildContext:
-    def __init__(self, runtime, selected, execution_id, timeout, cancellation):
+    def __init__(self, runtime, selected, execution_id, timeout, cancellation, *, directory=None, label='Release preparation'):
         self.runtime = runtime
         self.selected = selected
         self.execution_id = execution_id
-        self.directory = _directory(runtime, execution_id)
+        self.label = label
+        self.directory = _directory(runtime, execution_id) if directory is None else directory
         self.directory.mkdir(parents=True, exist_ok=True)
         self.deadline = time.monotonic() + timeout
         self.cancellation = cancellation
 
     def remaining(self, ceiling=None):
         if self.cancellation.is_set():
-            raise BuildCancelled('Release preparation cancelled')
+            raise BuildCancelled(self.label + ' cancelled')
         left = self.deadline - time.monotonic()
         if left <= 0:
-            raise TimeoutError('Release preparation reached its time limit')
+            raise TimeoutError(self.label + ' reached its time limit')
         return max(1, math.ceil(min(left, ceiling) if ceiling else left))
 
     def stage(self, variant, stage):

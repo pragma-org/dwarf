@@ -1,7 +1,9 @@
-"""Antithesis orchestration around DWARF's existing node artifact helpers.
+"""Antithesis node artifacts: operator-prepared releases adapted for the harness.
 
-Jobs do not alter the Local registry or controller configuration. Compilation
-uses existing build recipes inside disposable Linux containers.
+Nothing is compiled here. The Versions page prepares releases; this module
+asks the controller (the only process with Docker) to adapt a registration
+into an artifact row, and keeps the probe/packaging helpers the controller
+and the harness share.
 """
 from __future__ import annotations
 
@@ -84,13 +86,32 @@ def _row_from_registration(registration, result):
     for key in ('patch_set_sha256', 'measurement_revision', 'build_result_sha256'):
         if key in build:
             row[key] = build[key]
+    if mode == 'patched':
+        from profile_manager.release_build_identity import build_manifest
+        try:
+            toolchain = build_manifest(implementation, row['source_revision'], build).get('toolchain')
+        except ValueError:
+            toolchain = None
+        if toolchain is not None:
+            row['toolchain'] = toolchain
     if implementation == 'cardano-node' and mode == 'patched':
         from profile_manager.antithesis_cardano_bridge import contract
         row['compatibility'] = contract()
     return row
 
 
-def from_registration(registration_id, *, controller=None):
+def _prepared_image_present(row, controller):
+    """A complete row is reused only while its :prepared image still exists on
+    the controller (an image prune must lead to a clear re-adapt)."""
+    try:
+        inspected = controller('image.inspect', {'implementation': row['implementation'], 'version': row['version'],
+                                                 'image': row['reference']}, 20)
+    except (TopologyActionError, ValueError, KeyError, TypeError):
+        return False
+    return isinstance(inspected, dict) and inspected.get('config_image_id') == row.get('image_id')
+
+
+def from_registration(registration_id, *, controller=None, implementation=None):
     """Adapt an operator-prepared release into an artifact row through the
     controller (the only process with Docker). Returns the current row."""
     controller = controller or controller_request
@@ -99,21 +120,25 @@ def from_registration(registration_id, *, controller=None):
     directory = root / identifier
     if (directory / 'status.json').exists():
         existing = read(identifier)
-        if existing['state'] in {'building', 'complete'}:
+        if existing['state'] == 'building':
+            return existing
+        if existing['state'] == 'complete' and _prepared_image_present(existing, controller):
             return existing
     try:
         registration = load_operator_registration(registration_id)['registration']
     except ValueError as exc:
         directory.mkdir(mode=0o700, exist_ok=True)
         row = {'id': identifier, 'state': 'failed', 'registration_id': registration_id,
-               'created_at': datetime.now(timezone.utc).isoformat(),
+               'implementation': implementation, 'created_at': datetime.now(timezone.utc).isoformat(),
                'message': 'Prepared release ' + str(registration_id) + ' is not in the operator ledger: ' + str(exc)}
         builds._save(directory / 'status.json', row)
         return row
     directory.mkdir(mode=0o700, exist_ok=True)
     job_lock = builds._lock(directory / 'worker.lock')
     if job_lock is None:
-        return read(identifier)
+        # Another worker holds this row; what is on disk may still be the
+        # previous attempt's terminal state.
+        return {**read(identifier), 'state': 'building', 'message': 'Adapting prepared release'}
     build = registration.get('source_build') or {}
     # One controller execution per attempt: the controller replays an
     # idempotency key, so a retry must never reuse a failed execution's id.
