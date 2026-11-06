@@ -228,3 +228,32 @@ def test_inspect_falls_back_when_the_cli_lacks_platform(runtime, prepared, monke
     assert seen, 'the --platform form is still tried first'
     plain = [c['argv'] for c in runtime.calls if c['argv'][:2] == ('image', 'inspect') and '--platform' not in c['argv']]
     assert plain, 'the plain inspect was used as the fallback'
+
+
+@pytest.mark.parametrize('has_buildx', [False, True])
+def test_build_rewrites_copy_chmod_when_the_cli_has_no_buildkit(runtime, prepared, monkeypatch, has_buildx):
+    """The controller image's docker CLI has no buildx (F32): `COPY --chmod`
+    needs BuildKit, so the controller's own copy of the Dockerfile is rewritten
+    to COPY + RUN chmod, exactly as release_builds does for Cardano images.
+    With buildx present the Dockerfile is built as written."""
+    _preparations_dir(monkeypatch)
+    original = runtime._run
+    def _run(arguments, timeout=30, execution_id=None, **kwargs):
+        arguments = tuple(arguments)
+        if arguments[:2] == ('buildx', 'version'):
+            runtime.calls.append({'argv': arguments, 'stdin_path': None, 'output_path': None})
+            return DockerResult(0, 'github.com/docker/buildx v0.19.0', '') if has_buildx else DockerResult(1, '', "docker: 'buildx' is not a docker command.")
+        return original(arguments, timeout, execution_id, **kwargs)
+    runtime._run = _run
+    result = publish.build_images(runtime, _build_params(prepared['receipt']['id']), BUILD_ID, 1800, threading.Event())
+    assert result['status'] == 'built'
+    build_call = next(c for c in runtime.calls if c['argv'][0] == 'build')
+    dockerfile = Path(build_call['argv'][build_call['argv'].index('--file') + 1]).read_text()
+    original_text = (Path(__file__).resolve().parents[1] / 'antithesis/cardano_amaru_miniprotocol_security/workload/Dockerfile').read_text()
+    assert 'COPY --chmod=0755' in original_text
+    if has_buildx:
+        assert dockerfile == original_text
+    else:
+        assert '--chmod' not in dockerfile
+        assert 'COPY workload/test/v1/mixed-miniprotocol-security/ /opt/antithesis/test/v1/mixed-miniprotocol-security/\nRUN chmod -R 0755 /opt/antithesis/test/v1/mixed-miniprotocol-security/' in dockerfile
+        assert result['legacy_builder'] is True

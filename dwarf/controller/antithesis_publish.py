@@ -115,6 +115,16 @@ def _inspect_amd64(job, image, log):
     return info
 
 
+_COPY_CHMOD = re.compile(r'^COPY\s+--chmod=(?P<mode>[0-7]{3,4})\s+(?P<rest>.+?)\s+(?P<destination>\S+)\s*$', re.MULTILINE)
+
+
+def _legacy_builder_dockerfile(text):
+    """Rewrite `COPY --chmod=M src dst` to `COPY src dst` + `RUN chmod -R M dst`
+    for a docker CLI without BuildKit. Equivalent for the copied tree."""
+    return _COPY_CHMOD.sub(lambda m: 'COPY ' + m.group('rest') + ' ' + m.group('destination')
+                           + '\nRUN chmod -R ' + m.group('mode') + ' ' + m.group('destination'), text)
+
+
 # ---------------------------------------------------------------------------
 # build
 
@@ -162,12 +172,24 @@ def build_images(runtime, parameters, execution_id, timeout, cancel_event):
                 if isinstance(service, dict) and service.get('image') == reference:
                     rows.append({'service': name, 'reference': reference, 'image_id': info['Id'], 'artifact_image_id': image_id,
                                  'artifact_id': artifact['id'], 'platform': 'linux/amd64', 'publication': 'local-only'})
+        legacy_builder = False
+        if plan:
+            # The controller image's docker CLI may lack buildx; the legacy
+            # builder cannot do `COPY --chmod`, so the controller's own copy of
+            # the Dockerfile is rewritten to COPY + RUN chmod (the package the
+            # dashboard keeps is untouched). release_builds does the same for
+            # Cardano images.
+            probe = job.run(('buildx', 'version'), log='buildx.log', ceiling=15)
+            legacy_builder = probe.returncode != 0
+            job.progress(legacy_builder=legacy_builder)
         for index, item in enumerate(plan):
             name = item['service']
             job.progress(stage='build', current_service=name)
             reference = 'dwarf-antithesis-' + execution_id.rsplit('-', 1)[-1] + '-' + str(index) + ':prepared'
             context = package / item['context']
             dockerfile = context / item['dockerfile']
+            if legacy_builder:
+                dockerfile.write_text(_legacy_builder_dockerfile(dockerfile.read_text()))
             result = job.run(('build', '--platform', 'linux/amd64', '--tag', reference, '--file', str(dockerfile), str(context)),
                              log='build-' + str(index) + '.log', ceiling=BUILD_CEILING)
             if result.returncode:
@@ -177,7 +199,7 @@ def build_images(runtime, parameters, execution_id, timeout, cancel_event):
                 raise job.blocked('image-build-failed', 'build', name + ': built image is not a linux/amd64 image')
             rows.append({'service': name, 'reference': reference, 'image_id': info['Id'], 'platform': 'linux/amd64', 'publication': 'local-only'})
         result = {'status': 'built', 'preparation_id': preparation_id, 'built_images': rows, 'build_host': 'DWARF controller',
-                  'build_count': len(plan)}
+                  'build_count': len(plan), 'legacy_builder': legacy_builder}
         job.progress(status='built', stage='complete', current_service=None, completed_at=_now(), result=result)
         return result
     except DockerRuntimeError:
