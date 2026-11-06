@@ -1022,3 +1022,98 @@ def test_cli_dashboard_and_scheduler_produce_real_parity_artifacts(
     assert len({frozenset(item["layout"]) for item in observed.values()}) == 1
     assert len({frozenset(item["ledger"]) for item in observed.values()}) == 1
     assert all(item["verify"].ok for item in observed.values())
+
+
+# ---------------------------------------------------------------------------
+# AT-4: verdict from an Antithesis report (source: antithesis-report)
+
+_AT4_FIXTURES = ROOT / "tests/fixtures/antithesis_proxy"
+
+
+def _at4_row(name, status="Passing", examples=1):
+    return {"id": "f" * 32, "name": name, "status": status, "is_event": False, "is_group": False,
+            "example_count": examples, "examples": [], "counterexample_count": 0 if status == "Passing" else 1, "counterexamples": []}
+
+
+def _at4_reserve(tmp_path, *, scenario=PARITY_SCENARIO, test_run_id="moog-at4-1"):
+    request = run_service.ExternalRunRequest(
+        backend="antithesis", origin="external",
+        launch={"transport": "moog", "repository": "pragma-org/dwarf", "directory": "antithesis/x", "commit": "c" * 40, "try": 1},
+        runs_dir=tmp_path / "runs", state_dir=tmp_path / "state", scenario_path=scenario,
+    )
+    run_id = run_service.reserve_external_run(request)["run_id"]
+    run_service.record_external_submission(run_id, state_dir=tmp_path / "state",
+        response={"returncode": 0, "stdout": "ok", "stderr": ""}, external_test_run_id=test_run_id)
+    return run_id
+
+
+def _at4_bundle(tmp_path, run_id, *, rows=None, test_run_id="moog-at4-1"):
+    from profile_manager import antithesis_results
+    run = json.loads((_AT4_FIXTURES / "run-completed.json").read_text())
+    props = json.loads((_AT4_FIXTURES / "properties.json").read_text())
+    if rows is not None:
+        props["data"] = rows
+    entry = run_service.RunLedger(tmp_path / "state").get(run_id)
+    result = antithesis_results.normalise_result(run, props, test_run_id=test_run_id)
+    manifest = antithesis_results.write_result_bundle(Path(entry["evidence_path"]), entry=entry, result=result,
+        raw={"run": run, "properties": props}, scenario_source=None, measurements=None)
+    return manifest, manifest.parent / "external" / "result.json", run["run_id"]
+
+
+def _at4_reconcile(tmp_path, run_id, result_path, test_run_id="moog-at4-1"):
+    return run_service.reconcile_external_status(run_id, state_dir=tmp_path / "state", phase="completed",
+        status_evidence={"test_run_id": test_run_id, "phase": "completed"}, result_path=result_path)
+
+
+@pytest.mark.parametrize("rows,verdict,reason", [
+    ([_at4_row("No Antithesis errors"), _at4_row("Always: a"), _at4_row("Sometimes: b", examples=2)], "pass", "verified_antithesis_report"),
+    ([_at4_row("No Antithesis errors"), _at4_row("Always: a", "Failing")], "fail", "verified_antithesis_report"),
+    ([_at4_row("No Antithesis errors", "Failing"), _at4_row("Always: a")], "fail", "verified_antithesis_report"),
+    ([_at4_row("No Antithesis errors")], "inconclusive", "no_dwarf_assertions"),
+])
+def test_antithesis_report_verdict_pass_fail_and_inconclusive(tmp_path, rows, verdict, reason):
+    run_id = _at4_reserve(tmp_path)
+    manifest, result_path, antithesis_run_id = _at4_bundle(tmp_path, run_id, rows=rows)
+    entry = _at4_reconcile(tmp_path, run_id, result_path)
+    assert entry["state"] == "completed" and entry["verdict"] == verdict
+    assert entry["provenance"]["verdict_reason"] == reason
+    assert entry["provenance"]["antithesis_result"]["antithesis_run_id"] == antithesis_run_id
+    if verdict == "inconclusive":
+        assert entry.get("manifest_path") in (None, "")
+    else:
+        assert entry["manifest_path"] == str(manifest)
+        assert entry["provenance"]["result_bundle_manifest_sha256"] == json.loads((manifest.parent / "chain.json").read_text())["manifest_hash"]
+
+
+def test_antithesis_report_requires_scenario_binding(tmp_path):
+    run_id = _at4_reserve(tmp_path, scenario=None)
+    _manifest, result_path, _ = _at4_bundle(tmp_path, run_id)
+    entry = _at4_reconcile(tmp_path, run_id, result_path)
+    assert entry["verdict"] == "inconclusive" and entry["provenance"]["verdict_reason"] == "result_bundle_scenario_unbound"
+
+
+def test_antithesis_report_rejects_foreign_test_run_id(tmp_path):
+    run_id = _at4_reserve(tmp_path)
+    _manifest, result_path, _ = _at4_bundle(tmp_path, run_id, test_run_id="moog-other")
+    entry = _at4_reconcile(tmp_path, run_id, result_path)
+    assert entry["verdict"] == "inconclusive" and entry["provenance"]["verdict_reason"] == "result_bundle_external_identity_mismatch"
+
+
+def test_antithesis_report_detects_a_tampered_result(tmp_path):
+    run_id = _at4_reserve(tmp_path)
+    _manifest, result_path, _ = _at4_bundle(tmp_path, run_id)
+    tampered = json.loads(result_path.read_text()); tampered["properties"] = []
+    result_path.write_text(json.dumps(tampered))
+    entry = _at4_reconcile(tmp_path, run_id, result_path)
+    assert entry["verdict"] == "inconclusive" and entry["provenance"]["verdict_reason"] == "antithesis_result_hash_mismatch"
+
+
+def test_terminal_inconclusive_run_accepts_a_later_antithesis_report(tmp_path):
+    run_id = _at4_reserve(tmp_path)
+    first = _at4_reconcile(tmp_path, run_id, None)
+    assert first["state"] == "completed" and first["verdict"] == "inconclusive"
+    assert first["provenance"]["verdict_reason"] == "no_verified_result_bundle"
+    manifest, result_path, _ = _at4_bundle(tmp_path, run_id, rows=[_at4_row("No Antithesis errors"), _at4_row("Always: a")])
+    later = _at4_reconcile(tmp_path, run_id, result_path)
+    assert later["state"] == "completed" and later["verdict"] == "pass"
+    assert later["provenance"]["verdict_reason"] == "verified_antithesis_report" and later["manifest_path"] == str(manifest)

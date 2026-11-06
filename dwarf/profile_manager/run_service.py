@@ -866,6 +866,92 @@ def link_existing_external_run(
             fcntl.flock(lock_stream.fileno(), fcntl.LOCK_UN)
 
 
+def _antithesis_report_verdict(
+    entry: Mapping[str, Any],
+    *,
+    external_test_run_id: str | None,
+    result_path: Path,
+) -> tuple[str, str | None, str, dict[str, Any]]:
+    """Verdict from an Antithesis result written by antithesis_results.write_result_bundle.
+
+    The result, manifest and chain in the run directory must agree with the
+    ledger (scenario, external identity, hashes) before the properties table
+    is allowed to decide anything; the manifest's canonical verdict must then
+    equal the result's."""
+    import hashlib
+
+    from profile_manager.antithesis_results import RESULT_SCHEMA, result_verdict
+
+    run_dir = Path(str(entry.get("evidence_path") or ""))
+    try:
+        result_bytes = Path(result_path).read_bytes()
+        result = json.loads(result_bytes)
+        manifest = _read_json_object(run_dir / "manifest.json", "antithesis result manifest")
+        chain = _read_json_object(run_dir / "chain.json", "antithesis result chain")
+    except (RunServiceError, OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return "inconclusive", None, "antithesis_result_invalid", {"antithesis_result_error": f"{type(exc).__name__}: {exc}"}
+    if not isinstance(result, dict) or result.get("schema_version") != RESULT_SCHEMA:
+        return "inconclusive", None, "antithesis_result_invalid", {}
+    evidence: dict[str, Any] = {
+        "antithesis_result": {
+            "antithesis_run_id": result.get("antithesis_run_id"),
+            "run_status": result.get("run_status"),
+            "dwarf_property_count": result.get("dwarf_property_count"),
+            "failing": [str(name) for name in (result.get("failing") or [])][:20],
+            "properties_truncated": bool(result.get("properties_truncated")),
+        }
+    }
+    expected_scenario = entry.get("scenario")
+    if not isinstance(expected_scenario, Mapping):
+        return "inconclusive", None, "result_bundle_scenario_unbound", evidence
+    observed_scenario = manifest.get("scenario") or {}
+    if not isinstance(observed_scenario, Mapping) or observed_scenario.get("id") != expected_scenario.get("id") or (
+        str(observed_scenario.get("sha256") or "").removeprefix("sha256:")
+        != str(expected_scenario.get("sha256") or "").removeprefix("sha256:")
+    ):
+        return "inconclusive", None, "result_bundle_scenario_identity_mismatch", evidence
+    expected_external_id = (entry.get("provenance") or {}).get("external_test_run_id")
+    external = manifest.get("external") or {}
+    if (
+        not expected_external_id
+        or external_test_run_id != expected_external_id
+        or result.get("test_run_id") != expected_external_id
+        or not isinstance(external, Mapping)
+        or external.get("test_run_id") != expected_external_id
+        or external.get("backend") != entry.get("backend")
+    ):
+        return "inconclusive", None, "result_bundle_external_identity_mismatch", evidence
+    manifest_hash = forensic_module._sha256_hex(forensic_module._canonical_json(manifest))
+    if (
+        chain.get("manifest_hash") != manifest_hash
+        or chain.get("run_id") != run_dir.name
+        or manifest.get("run_id") != run_dir.name
+    ):
+        return "inconclusive", None, "result_bundle_manifest_hash_mismatch", evidence
+    recorded = manifest.get("result") or {}
+    if not isinstance(recorded, Mapping) or recorded.get("sha256") != hashlib.sha256(result_bytes).hexdigest():
+        return "inconclusive", None, "antithesis_result_hash_mismatch", evidence
+    verdict, reason = result_verdict(result)
+    evidence["antithesis_result"]["reason"] = reason
+    if verdict == "inconclusive":
+        return "inconclusive", None, reason, evidence
+
+    from profile_manager.scenario_verdict import evaluate_scenario_verdict
+
+    summary = manifest.get("assertion_summary") or {}
+    canonical = evaluate_scenario_verdict(
+        exit_status=str(manifest.get("exit_status") or "unknown"),
+        assertions=summary if isinstance(summary, Mapping) else None,
+        measurements=manifest.get("measurements"),
+        run_kind="external",
+    )
+    claimed = (manifest.get("execution") or {}).get("security_verdict")
+    if canonical.security_verdict != verdict or claimed != verdict:
+        return "inconclusive", None, "result_bundle_verdict_mismatch", evidence
+    evidence["result_bundle_manifest_sha256"] = manifest_hash
+    return verdict, str(run_dir / "manifest.json"), "verified_antithesis_report", evidence
+
+
 def _external_result_verdict(
     entry: Mapping[str, Any],
     *,
@@ -874,6 +960,7 @@ def _external_result_verdict(
     result_signature_path: Path | str | None,
     trusted_public_key_hex: str | None,
     result_runs_dir: Path | str | None,
+    result_path: Path | str | None = None,
 ) -> tuple[str, str | None, str, dict[str, Any]]:
     """Import and validate a signed result without trusting adapter assertions."""
     supplied = (
@@ -881,6 +968,12 @@ def _external_result_verdict(
         result_signature_path,
         result_runs_dir,
     )
+    if result_path is not None and not any(value is not None for value in supplied):
+        # source: antithesis-report — a result the dashboard collected through
+        # the MOOG proxy, checked against the ledger before it decides anything.
+        return _antithesis_report_verdict(
+            entry, external_test_run_id=external_test_run_id, result_path=Path(result_path)
+        )
     if not any(value is not None for value in supplied):
         return "inconclusive", None, "no_verified_result_bundle", {}
     if not all(value is not None for value in supplied):
@@ -1045,6 +1138,7 @@ def reconcile_external_status(
     result_signature_path: Path | str | None = None,
     trusted_public_key_hex: str | None = None,
     result_runs_dir: Path | str | None = None,
+    result_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Reconcile external operational state without inventing a test verdict."""
     ledger = RunLedger(state_dir)
@@ -1093,6 +1187,7 @@ def reconcile_external_status(
             result_signature_path=result_signature_path,
             trusted_public_key_hex=trusted_public_key_hex,
             result_runs_dir=result_runs_dir,
+            result_path=result_path,
         )
     )
     provenance.update(result_provenance)
