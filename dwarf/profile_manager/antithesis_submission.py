@@ -350,8 +350,15 @@ def _evaluate(row):
             return config, checks, []
     if report['state'] == 'blocked':
         return config, checks, []
-    row['git'] = verify_git(row['target']['repository'], row['target']['commit'], row['target']['directory'], files)
-    add('public_git', 'ok', 'Public Git files and executable modes match this saved package.')
+    try:
+        row['git'] = verify_git(row['target']['repository'], row['target']['commit'], row['target']['directory'], files)
+        add('public_git', 'ok', 'Public Git files and executable modes match this saved package.')
+    except PackageError as exc:
+        # The package differs from the public commit: submission stays blocked,
+        # but the exact MOOG attempt may already exist — keep going so it is
+        # observed and Refresh can link and judge the retained run (F34).
+        row['git'] = {'verification': 'failed'}
+        add('public_git', 'error', str(exc))
     images = {}
     for image in report['images']:
         ref = image['reference']

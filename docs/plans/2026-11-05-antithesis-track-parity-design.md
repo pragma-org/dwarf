@@ -444,11 +444,15 @@ package is:
   `external/result.json`.
 - **Machine-readable sources already exist (corrected 2026-11-06).** The
   console triage report is HTML behind GitHub SSO and is kept raw only. The
-  normaliser's inputs are (1) `moog antithesis run --run-id`, `properties
-  --run-id --limit 50 --cursor n` and `logs --run-id` (moog.py already wraps
-  `moog antithesis`; the OAuth file on cardano-box authorises them; the
-  requester logs `~/moog-secrets/requester/measured-20261021-*.jsonl` and
-  `validation-20261020-*.json` are the samples), and (2) the in-environment
+  normaliser's inputs are (1) `moog antithesis runs/run/properties/events`
+  (corrected 2026-11-06 during AT-4: moog.py did NOT wrap `moog antithesis`;
+  AT-4 added `remote.fetch_antithesis` + `moog.build_moog_antithesis_command`
+  and the control-shim read verbs `moog-antithesis-*`, `moog-test-run(s)`;
+  `properties` takes only `--run-id` in moog v0.5.1.3; the join MOOG test run
+  → Antithesis run is `description.testRunId`, not the fact URL; the OAuth
+  file on cardano-box authorises; samples under
+  `~/moog-secrets/requester/measured-20261021-*` and `validation-20261020-*`,
+  sanitised copies in `tests/fixtures/antithesis_proxy/`), and (2) the in-environment
   `dwarf-measurements` service output, whose shape is already fixed and
   sampled: `/evidence/<service>/snapshot.json` + `measurements/report.json`
   (`schema_version: v1`, `target_identity.engine: 'antithesis'`;

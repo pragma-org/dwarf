@@ -549,3 +549,20 @@ def test_result_collection_failure_never_breaks_the_status_refresh(ready_env,mon
     row=wait(m.refresh(row['id'])['id'])
     assert row['state']=='completed' and row['result']['state']=='unavailable' and row['result']['reason']=='report_fetch_failed'
     assert 'TOP_SECRET' not in json.dumps(row)
+
+
+def test_git_mismatch_still_records_an_existing_attempt(ready_env,monkeypatch):
+    """F34: a package that differs from the public commit blocks submission, but
+    the exact MOOG attempt may already exist; readiness must still observe it so
+    Refresh can link and judge the retained run."""
+    m=module()
+    monkeypatch.setattr(m,'verify_git',lambda *a:(_ for _ in ()).throw(PackageError('Public Git files or executable modes differ from the exported package.',status=422)))
+    monkeypatch.setattr(m,'query_requester',lambda *a:{'checks':[{'id':'requester','state':'ok','detail':'Verified'}],'facts':[fact(ready_env,'finished','failure')]})
+    row=check(ready_env)
+    assert row['state']=='blocked' and row['existing_test_run_id']=='f'*64
+    assert any(c['id']=='public_git' and c['state']=='error' and 'differ' in c['detail'] for c in row['checks'])
+    assert 'TOP_SECRET' not in json.dumps(row)
+    monkeypatch.setattr(m,'query_facts',lambda *a:[fact(ready_env,'finished','failure')])
+    _proxy(monkeypatch)
+    row=wait(m.refresh(row['id'])['id'])
+    assert row['state']=='completed' and row['result']['state']=='verified' and row['result']['verdict']=='fail'
