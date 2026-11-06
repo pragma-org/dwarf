@@ -566,7 +566,9 @@ def test_git_mismatch_still_records_an_existing_attempt(ready_env,monkeypatch):
     monkeypatch.setattr(m,'query_facts',lambda *a:[fact(ready_env,'finished','failure')])
     _proxy(monkeypatch)
     row=wait(m.refresh(row['id'])['id'])
-    assert row['state']=='completed' and row['result']['state']=='verified' and row['result']['verdict']=='fail'
+    # Review #8: the run executed the public commit, not this package — no scenario identity is bound, so no verdict is attributed to one.
+    assert row['state']=='completed' and row['result']['state']=='inconclusive' and row['result']['reason']=='result_bundle_scenario_unbound'
+    assert not _entry(m,row).get('scenario')
 
 
 def test_query_requester_uses_the_probe_verb_in_shim_mode(ready_env,monkeypatch):
@@ -583,3 +585,55 @@ def test_query_requester_uses_the_probe_verb_in_shim_mode(ready_env,monkeypatch)
     assert captured and captured[0][0]==('moog-requester-probe',) and "'wallet','info'" in captured[0][1]
     rows={c['id']:c['state'] for c in result['checks']}
     assert rows['transport_credentials']=='ok' and rows['selected_wallet']=='ok'
+
+
+def test_non_terminal_or_tableless_results_are_not_frozen_into_a_bundle(ready_env,monkeypatch):
+    """Review #1: MOOG says finished while the Antithesis row is still in progress (or the
+    table is empty): nothing is written, the reason is retryable, and the next refresh collects."""
+    m=module();row=_submitted(ready_env,monkeypatch)
+    monkeypatch.setattr(m,'query_facts',lambda *a:[fact(ready_env,'finished','failure')])
+    _proxy(monkeypatch,run=at4('run-in-progress.json'))
+    row=wait(m.refresh(row['id'])['id'])
+    assert row['result']=={'state':'unavailable','reason':'antithesis_run_not_terminal','detail':''}
+    run_dir=Path(_entry(m,row)['evidence_path'])
+    assert not (run_dir/'manifest.json').exists() and not (run_dir/'external'/'result.json').exists()
+    _proxy(monkeypatch,props={'data':[],'next_cursor':None})
+    row=wait(m.refresh(row['id'])['id'])
+    assert row['result']['reason']=='properties_unavailable' and not (run_dir/'manifest.json').exists()
+    _proxy(monkeypatch)
+    row=wait(m.refresh(row['id'])['id'])
+    assert row['result']['state']=='verified' and row['result']['verdict']=='fail'
+
+
+def test_refresh_evidence_carries_the_matched_fact_without_the_report_link(ready_env,monkeypatch):
+    """Review #3: the run page cross-checks the status and link receipts against the
+    matched MOOG fact; the wizard's receipts carry it with value.url removed."""
+    from profile_manager.data.operate_run import operate_run_detail
+    m=module();row=_submitted(ready_env,monkeypatch)
+    f=fact(ready_env,'finished','failure');f['value'].update(duration=1,**{'from':{'from':{'duration':1,'faults_enabled':False,'phase':'pending'},'phase':'accepted'}})
+    monkeypatch.setattr(m,'query_facts',lambda *a:[f])
+    _proxy(monkeypatch);row=wait(m.refresh(row['id'])['id'])
+    entry=_entry(m,row);run_dir=Path(entry['evidence_path'])
+    status=json.loads((run_dir/'external'/'status.json').read_text())
+    assert [f['id'] for f in status['facts']]==['f'*64] and 'url' not in status['facts'][0]['value'] and status['report_available'] is True
+    detail=operate_run_detail(row['dwarf_run_id'],runs_dir=run_dir.parent)
+    assert detail['external']['receipt_errors']==[],detail['external']['receipt_errors']
+    assert detail['external']['receipt_integrity']=='verified' and detail['external']['outcome']=='failure'
+    assert 'TOP_SECRET' not in json.dumps(detail)
+
+
+def test_plain_key_requester_probe_sees_the_saved_pat(ready_env,monkeypatch):
+    """Review #5: load_settings() strips secrets; the non-shim probe must take the
+    credential presence from the full config, not the stripped one."""
+    from profile_manager.config import DeploymentConfig
+    m=module();captured=[]
+    monkeypatch.setattr(m.remote,'control_shim_enabled',lambda:False)
+    full=DeploymentConfig.from_dict({'moog':{**ready_env['config'].moog,'github_pat':'ghp_saved'}})
+    monkeypatch.setattr(m,'load_config',lambda:full)
+    def ssh(config,command,timeout=None,dry_run=False,verb=None):
+        captured.append(command);return m.remote.CommandResult(0,'{"credentials":true,"public_key":"vkey-selected"}','','')
+    monkeypatch.setattr(m.remote,'ssh_command',ssh)
+    monkeypatch.setattr(m,'_query_readiness',lambda *a,**k:{'checks':[],'requester_public_key':'vkey-selected'})
+    monkeypatch.setattr(m,'query_facts',lambda *a:[])
+    ready_env['query_requester'](ready_env['config'],ready_env['target'])
+    assert 'credentials_configured=True' in captured[0] and 'ghp_saved' not in captured[0]

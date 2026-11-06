@@ -1626,8 +1626,8 @@ def _github_error(exc: Exception) -> str:
 GITHUB_USER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 MOOG_TEST_RUN_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 ANTITHESIS_RUN_ID_RE = re.compile(r"^[0-9a-f]{32}-[0-9]{1,6}-[0-9]{1,6}$")
-ANTITHESIS_CURSOR_RE = re.compile(r"^[A-Za-z0-9+/=_-]{1,256}$")
-ANTITHESIS_QUERY_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+ANTITHESIS_CURSOR_RE = re.compile(r"^[A-Za-z0-9+/=_][A-Za-z0-9+/=_-]{0,255}$")   # never a leading dash: it would reach moog as a flag
+ANTITHESIS_QUERY_RE = re.compile(r"^[A-Za-z0-9_.:][A-Za-z0-9_.:-]{0,63}$")
 _ANTITHESIS_INPUT_HASH_RE = re.compile(r"^-?[0-9]{1,24}$")
 _ANTITHESIS_VTIME_RE = re.compile(r"^[0-9]{1,12}(?:\.[0-9]{1,16})?$")
 ANTITHESIS_SUBCOMMANDS = frozenset({"runs", "run", "properties", "events", "logs", "build-logs"})
@@ -1703,7 +1703,7 @@ def build_moog_antithesis_command(
 _SECRETS_ROOT_RE = re.compile(r"^/[A-Za-z0-9_./-]+$")
 
 
-def build_moog_requester_probe_command(moog_config: dict[str, Any]) -> str:
+def build_moog_requester_probe_command(moog_config: dict[str, Any], *, credentials_configured: bool | None = None) -> str:
     """Read-only requester probe for the Antithesis wizard: are the transport
     credential files present and readable, and which wallet is selected. The
     script carries the configured paths and the credential presence as literals
@@ -1715,7 +1715,7 @@ def build_moog_requester_probe_command(moog_config: dict[str, Any]) -> str:
     passphrase = repr(secrets_root + "/requester/wallet.passphrase")
     wallet = repr(str(config.get("requester_wallet_file") or ""))
     binary = repr(str(config.get("moog_binary") or ""))
-    configured = bool(config.get("github_pat"))
+    configured = bool(config.get("github_pat")) if credentials_configured is None else bool(credentials_configured)
     script = f"""import json, pathlib, os, subprocess
 credentials_configured={configured}
 p=pathlib.Path({passphrase})

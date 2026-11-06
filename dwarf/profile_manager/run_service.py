@@ -928,6 +928,11 @@ def _antithesis_report_verdict(
         or manifest.get("run_id") != run_dir.name
     ):
         return "inconclusive", None, "result_bundle_manifest_hash_mismatch", evidence
+    anchor = (entry.get("provenance") or {}).get("result_bundle_manifest_sha256")
+    if anchor and anchor != manifest_hash:
+        # The ledger already anchored a manifest for this run: a consistent
+        # rewrite of result/manifest/chain must not move that anchor.
+        return "inconclusive", None, "result_bundle_manifest_hash_mismatch", evidence
     recorded = manifest.get("result") or {}
     if not isinstance(recorded, Mapping) or recorded.get("sha256") != hashlib.sha256(result_bytes).hexdigest():
         return "inconclusive", None, "antithesis_result_hash_mismatch", evidence

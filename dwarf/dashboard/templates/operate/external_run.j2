@@ -44,7 +44,7 @@
   <h2 id="external-evidence-heading">Why this run is inconclusive</h2>
   <p>No signed DWARF result bundle was supplied, so DWARF retained the provider facts but did not infer a test pass or failure. A provider outcome of <code>{{ run.external.outcome or 'unknown' }}</code> is preserved exactly and remains semantically separate.</p>
 </section>
-{% elif run.external.verdict_reason in ('no_dwarf_assertions', 'properties_unavailable', 'antithesis_run_not_terminal', 'antithesis_result_invalid') %}
+{% elif run.external.verdict_reason in ('no_dwarf_assertions', 'properties_unavailable', 'antithesis_run_not_terminal', 'antithesis_result_invalid', 'properties_truncated', 'result_bundle_scenario_unbound', 'result_bundle_scenario_identity_mismatch', 'result_bundle_external_identity_mismatch', 'result_bundle_manifest_hash_mismatch', 'antithesis_result_hash_mismatch', 'result_bundle_verdict_mismatch') %}
 <section class="run-precondition-warning" aria-labelledby="external-evidence-heading">
   <span class="eyebrow">Evidence boundary</span>
   <h2 id="external-evidence-heading">Why this run is inconclusive</h2>
@@ -54,6 +54,12 @@
   <p>The Antithesis properties table was not available when the result was collected; refresh the submission in the wizard to collect it again.</p>
   {% elif run.external.verdict_reason == 'antithesis_run_not_terminal' %}
   <p>MOOG reported completion while the Antithesis run was still in progress; refresh the submission in the wizard once the run is complete.</p>
+  {% elif run.external.verdict_reason == 'properties_truncated' %}
+  <p>The proxy returned only the first page of the Antithesis properties table; no failure was seen on it, and a pass needs the whole table.</p>
+  {% elif run.external.verdict_reason == 'result_bundle_scenario_unbound' %}
+  <p>No scenario identity is bound to this run: the package that was checked differs from the public commit the run executed, so DWARF attributes no verdict to a scenario. The properties table below is shown for inspection only.</p>
+  {% elif run.external.verdict_reason in ('result_bundle_scenario_identity_mismatch', 'result_bundle_external_identity_mismatch', 'result_bundle_manifest_hash_mismatch', 'antithesis_result_hash_mismatch', 'result_bundle_verdict_mismatch') %}
+  <p>The retained result no longer agrees with the ledger (<code>{{ run.external.verdict_reason }}</code>); the recorded verdict is kept and the files on disk are not trusted.</p>
   {% else %}
   <p>The retained Antithesis result could not be read; refresh the submission in the wizard to collect it again.</p>
   {% endif %}

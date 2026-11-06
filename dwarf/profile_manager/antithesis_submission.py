@@ -233,8 +233,14 @@ def _query_readiness(config, target):
 def query_requester(config, target):
     # One builder renders the read-only probe for plain-key hosts and for the
     # control shim, which regenerates it from the fixed verb (F35).
+    # load_settings() strips secrets; the credential presence comes from the
+    # full config (the shim reads the host's own config for the same reason).
     try:
-        command = moog.build_moog_requester_probe_command(config.moog)
+        configured = bool((load_config().moog or {}).get('github_pat'))
+    except Exception:   # noqa: BLE001 - no config file means no saved credential
+        configured = False
+    try:
+        command = moog.build_moog_requester_probe_command(config.moog, credentials_configured=configured)
     except ValueError as exc:
         raise PackageError('The existing MOOG transport requires a simple absolute secrets-root path.', status=422) from exc
     result = remote.ssh_command(config, command, timeout=20, verb=('moog-requester-probe',))
@@ -425,8 +431,22 @@ def _scenario_record(row):
 
 
 def _scenario_path(row):
+    # A package that differs from the public commit did not run remotely: no
+    # scenario identity is bound, so no verdict is ever attributed to one.
+    if (row.get('git') or {}).get('verification') == 'failed':
+        return None
     record = _scenario_record(row)
     return record.path if record is not None else None
+
+
+def _redacted_fact(fact):
+    """The matched MOOG fact for the run's receipts, without the signed report URL."""
+    import copy
+    redacted = copy.deepcopy(fact)
+    value = redacted.get('value')
+    if isinstance(value, dict):
+        value.pop('url', None)
+    return redacted
 
 
 def _reserve(row):
@@ -506,7 +526,7 @@ def _bind_observed_fact(row, fact):
                                                                                 scenario_path=_scenario_path(row)))
     row['dwarf_run_id'] = reserved['run_id']
     run_service.link_existing_external_run(row['dwarf_run_id'], state_dir=roots.state, external_test_run_id=identifier,
-        link_evidence={'test_run_id': identifier, 'source': 'moog-facts', 'target': row['target']})
+        link_evidence={'test_run_id': identifier, 'source': 'moog-facts', 'target': row['target'], 'facts': [_redacted_fact(fact)]})
 
 
 def _acknowledged_test_id(stdout):
@@ -625,7 +645,7 @@ def _refresh(row):
         return
     # Report URLs can contain signed credentials. Retain their availability only.
     evidence = {'test_run_id': identifier, 'phase': safe_phase, 'outcome': safe_outcome,
-                'report_available': bool(value.get('url')), 'observed_at': _now()}
+                'report_available': bool(value.get('url')), 'observed_at': _now(), 'facts': [_redacted_fact(fact)]}
     # A result collected earlier stays part of the reconciliation; a plain
     # status refresh must not downgrade a verified verdict reason.
     run_service.reconcile_external_status(row['dwarf_run_id'], state_dir=storage_roots().state,
@@ -654,6 +674,7 @@ def _refresh(row):
 
 
 _UNRESOLVED = {'ambiguous': 'antithesis_run_ambiguous', 'not_found': 'antithesis_run_not_found'}
+_RETRY_LATER = {'antithesis_run_not_terminal', 'properties_unavailable'}
 
 
 def _existing_result_path(row):
@@ -720,6 +741,11 @@ def collect_result(row, config, fact, *, phase, evidence):
         return {'state': 'unavailable', 'reason': 'report_fetch_failed', 'detail': str(properties.get('error') or '')[:200]}
     table = properties['payload'] if isinstance(properties['payload'], dict) else None
     result = results.normalise_result(run, table, test_run_id=identifier)
+    _verdict, reason = results.result_verdict(result)
+    if reason in _RETRY_LATER:
+        # Not a result yet (run still in progress, table empty): write nothing,
+        # so the next refresh collects again instead of reusing a frozen bundle.
+        return {'state': 'unavailable', 'reason': reason, 'detail': ''}
     # Measurements: only the dwarf_measurements progress lines survive the run (proxy cap 50).
     events = remote.fetch_antithesis(config, config.moog, 'events', run_id=antithesis_run_id, query='dwarf_measurements')
     lines = events['payload'] if events.get('ok') and isinstance(events.get('payload'), list) else []

@@ -359,3 +359,39 @@ def test_find_antithesis_run_stops_when_the_proxy_repeats_a_page(config, monkeyp
     assert found['status'] == 'not_found' and found['pages'] == 2 and found['matches'] == 0
     assert 'newest 2 runs' in found['error'] and 'paging' in found['error']
     assert seen == ['/bin/moog antithesis runs --limit 100', '/bin/moog antithesis runs --limit 100 --cursor c2FtZQ==']
+
+
+def test_write_result_bundle_drops_nested_links_everywhere(tmp_path):
+    """Review #4: links can sit on property rows and counterexamples too."""
+    m = results_module()
+    run = fixture('run-completed.json'); run['links'] = {'triage_report': 'https://x/?auth=TOP'}
+    props = fixture('properties.json')
+    props['data'][0]['links'] = {'self': 'https://x/p?auth=TOP'}
+    props['data'][0]['counterexamples'] = [{'moment': {'vtime': '1'}, 'links': {'logs': 'https://x/l?auth=TOP'}}]
+    run_dir, entry, result, _ = _write(tmp_path, m, run=run, props=props)
+    everything = ''.join(p.read_text() for p in run_dir.rglob('*') if p.is_file())
+    assert 'auth=' not in everything and '"links"' not in everything
+
+
+def test_proxy_argument_values_cannot_start_with_a_dash():
+    """Review #6: a value beginning with '-' would reach the moog CLI as a flag."""
+    from profile_manager import moog as m
+    for call in (lambda: m.build_moog_antithesis_command(moog_config(), 'runs', cursor='--help'), lambda: m.build_moog_antithesis_command(moog_config(), 'runs', cursor='-'),
+                 lambda: m.build_moog_antithesis_command(moog_config(), 'events', run_id=RUN_ID, query='--help'), lambda: m.build_moog_antithesis_command(moog_config(), 'events', run_id=RUN_ID, query='-x')):
+        with pytest.raises(ValueError):
+            call()
+    assert m.build_moog_antithesis_command(moog_config(), 'logs', run_id=RUN_ID, input_hash='-254310451031', vtime='12.5').endswith('--input-hash -254310451031 --vtime 12.5')
+
+
+def test_rebuild_measurements_keeps_one_service_per_report():
+    """Review #7: the mixed package has one dwarf_measurements service per node; rows of
+    other services must not overwrite the chosen implementation's values."""
+    import json
+    from profile_manager.antithesis_results import antithesis_target_identity, rebuild_measurements
+    line = lambda service, value: {"output_text": json.dumps({"dwarf_measurements": service, "collectors": {"c": {"measurements": {"block_application": {"status": "available", "value": value, "unit": "us"}}}}})}
+    events = [line("sm-cardano-victim", 1.0), line("sm-amaru-adversary", 9.0), line("sm-cardano-victim", 2.0)]
+    identity = antithesis_target_identity(events)
+    report = rebuild_measurements(events, scenario="s", target_identity=identity)
+    assert identity["implementation"] == "cardano-node" and report["service"] == "sm-cardano-victim"
+    assert report["services"] == ["sm-amaru-adversary", "sm-cardano-victim"]
+    assert report["measurements"]["block_application"]["value"] == 2.0

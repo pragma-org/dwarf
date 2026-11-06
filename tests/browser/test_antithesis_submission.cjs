@@ -35,6 +35,7 @@ FIX=Path('tests/fixtures/antithesis_proxy')
 def find_run(config,moog_config,test_run_id,**k):
     return {'status':'found','run':json.loads((FIX/'run-completed.json').read_text()),'matches':1,'pages':1,'error':''}
 def fetch(config,moog_config,sub,**k):
+    if sub=='events':return {'ok':True,'payload':[],'exit_code':0,'error':''}
     name={'run':'run-completed.json','properties':'properties.json'}[sub]
     return {'ok':True,'payload':json.loads((FIX/name).read_text()),'exit_code':0,'error':''}
 remote.find_antithesis_run=find_run;remote.fetch_antithesis=fetch

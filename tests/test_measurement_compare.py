@@ -208,7 +208,7 @@ def test_rebuild_measurements_from_progress_lines():
     identity = {"engine": "antithesis", "implementation": "cardano-node", "mode": "patched", "version": "10.6.2"}
     report = rebuild_measurements(events, scenario="s", target_identity=identity)
     assert report == {"schema_version": "v1", "scenario": "s", "target_identity": identity, "source": "antithesis-events", "complete": False,
-                      "services": ["sm-cardano-victim"],
+                      "service": "sm-cardano-victim", "services": ["sm-cardano-victim"],
                       "measurements": {"block_application": {"status": "available", "value": 3.2, "unit": "us"},
                                        "handler_service": {"status": "unavailable", "value": None, "unit": "us"}}}
 

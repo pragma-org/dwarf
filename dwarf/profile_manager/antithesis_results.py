@@ -175,6 +175,15 @@ def _private_write(path, data: bytes):
     os.chmod(path, 0o600)
 
 
+def _strip_links(value):
+    """Drop every `links` mapping (they carry signed report URLs) at any depth."""
+    if isinstance(value, Mapping):
+        return {k: _strip_links(v) for k, v in value.items() if k != "links"}
+    if isinstance(value, list):
+        return [_strip_links(item) for item in value]
+    return value
+
+
 def _json_bytes(value) -> bytes:
     import json
     return json.dumps(value, sort_keys=True, indent=1, ensure_ascii=False).encode("utf-8") + b"\n"
@@ -218,9 +227,9 @@ def write_result_bundle(run_dir, *, entry: Mapping[str, Any], result: Mapping[st
     report = run_dir / "external" / "report"
     _private_dir(run_dir / "external")
     _private_dir(report)
-    raw_run = {k: v for k, v in (raw.get("run") or {}).items() if k != "links"} if isinstance(raw.get("run"), Mapping) else {}
+    raw_run = _strip_links(raw.get("run")) if isinstance(raw.get("run"), Mapping) else {}
     _private_write(report / "run.json", _json_bytes(raw_run))
-    _private_write(report / "properties.json", _json_bytes(raw.get("properties") if isinstance(raw.get("properties"), Mapping) else {}))
+    _private_write(report / "properties.json", _json_bytes(_strip_links(raw.get("properties")) if isinstance(raw.get("properties"), Mapping) else {}))
     result_bytes = _json_bytes(dict(result))
     _private_write(run_dir / "external" / "result.json", result_bytes)
 
@@ -309,10 +318,14 @@ def rebuild_measurements(events, *, scenario: str, target_identity: Mapping[str,
     lines = _progress_lines(events)
     if not lines:
         return None
+    # One report describes one measured service (the one the identity names:
+    # the first seen); other services' rows must not overwrite its values.
+    service = lines[0]["dwarf_measurements"]
     measurements: dict[str, dict[str, Any]] = {}
-    services = set()
+    services = {line["dwarf_measurements"] for line in lines}
     for line in lines:
-        services.add(line["dwarf_measurements"])
+        if line["dwarf_measurements"] != service:
+            continue
         collectors = line.get("collectors") if isinstance(line.get("collectors"), Mapping) else {}
         for collector in collectors.values():
             if not isinstance(collector, Mapping):
@@ -323,4 +336,4 @@ def rebuild_measurements(events, *, scenario: str, target_identity: Mapping[str,
                     continue
                 measurements[str(name)] = {"status": cell.get("status"), "value": cell.get("value"), "unit": cell.get("unit")}
     return {"schema_version": "v1", "scenario": scenario, "target_identity": dict(target_identity),
-            "source": "antithesis-events", "complete": False, "services": sorted(services), "measurements": measurements}
+            "source": "antithesis-events", "complete": False, "service": service, "services": sorted(services), "measurements": measurements}

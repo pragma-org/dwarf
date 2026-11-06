@@ -1117,3 +1117,24 @@ def test_terminal_inconclusive_run_accepts_a_later_antithesis_report(tmp_path):
     later = _at4_reconcile(tmp_path, run_id, result_path)
     assert later["state"] == "completed" and later["verdict"] == "pass"
     assert later["provenance"]["verdict_reason"] == "verified_antithesis_report" and later["manifest_path"] == str(manifest)
+
+
+def test_antithesis_report_rewrite_is_rejected_against_the_ledger_anchor(tmp_path):
+    """Review #2: a consistent rewrite of result/manifest/chain must not re-anchor the ledger."""
+    from profile_manager import antithesis_results
+    run_id = _at4_reserve(tmp_path)
+    manifest, result_path, _ = _at4_bundle(tmp_path, run_id, rows=[_at4_row("No Antithesis errors"), _at4_row("Always: a")])
+    first = _at4_reconcile(tmp_path, run_id, result_path)
+    assert first["verdict"] == "pass" and first["provenance"]["verdict_reason"] == "verified_antithesis_report"
+    anchor = first["provenance"]["result_bundle_manifest_sha256"]
+    run_dir = manifest.parent
+    for name in ("manifest.json", "chain.json", "external/result.json"):
+        (run_dir / name).unlink()
+    run = json.loads((_AT4_FIXTURES / "run-completed.json").read_text()); props = json.loads((_AT4_FIXTURES / "properties.json").read_text())
+    props["data"] = [_at4_row("No Antithesis errors"), _at4_row("Always: b")]
+    entry = run_service.RunLedger(tmp_path / "state").get(run_id)
+    result = antithesis_results.normalise_result(run, props, test_run_id="moog-at4-1")
+    antithesis_results.write_result_bundle(run_dir, entry=entry, result=result, raw={"run": run, "properties": props}, scenario_source=None, measurements=None)
+    later = _at4_reconcile(tmp_path, run_id, result_path)
+    assert later["verdict"] == "pass" and later["provenance"]["verdict_reason"] == "result_bundle_manifest_hash_mismatch"
+    assert later["provenance"]["result_bundle_manifest_sha256"] == anchor
