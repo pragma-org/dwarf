@@ -601,7 +601,9 @@ def _antithesis_result_view(run_dir: Path, entry: dict[str, Any]) -> dict[str, A
         "properties_truncated": bool(result.get("properties_truncated")),
         "properties": properties,
         "report_link_retained": (run_dir / "external" / "report-link.json").is_file(),
-        "gaps": [str(item.get("path")) for item in missing if isinstance(item, dict) and item.get("path")],
+        # Declared primitive gaps (kind implementation-gap) are shown in their own section.
+        "gaps": [str(item.get("path")) for item in missing
+                 if isinstance(item, dict) and item.get("path") and item.get("kind") != "implementation-gap"],
     }
 
 

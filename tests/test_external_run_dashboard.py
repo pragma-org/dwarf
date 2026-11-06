@@ -779,3 +779,15 @@ def test_external_run_page_shows_antithesis_support_and_gaps(tmp_path, monkeypat
     html = render("operate/external_run.j2", page_title="x", density="reading", active="operate", active_sub="runs", run=detail)
     assert "Antithesis support" in html and "partial" in html
     assert "primitive-unsupported-on-antithesis" in html and "runtime_tracer_capture" in html
+
+
+def test_result_view_keeps_declared_primitive_gaps_out_of_the_platform_gap_list(tmp_path):
+    from profile_manager.data.operate_run import _antithesis_result_view
+    run_dir = tmp_path / "run"
+    (run_dir / "external").mkdir(parents=True)
+    (run_dir / "external" / "result.json").write_text(json.dumps({"antithesis_run_id": "x", "run_status": "completed", "properties": []}))
+    (run_dir / "gaps.json").write_text(json.dumps({"missing": [
+        {"path": "measurements/report.json", "reason": "not exported"},
+        {"path": "primitive:runtime_tracer_capture", "reason": "docker", "kind": "implementation-gap", "code": "primitive-unsupported-on-antithesis"}]}))
+    view = _antithesis_result_view(run_dir, {"provenance": {}})
+    assert view["gaps"] == ["measurements/report.json"]
