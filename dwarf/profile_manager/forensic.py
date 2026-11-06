@@ -302,6 +302,7 @@ class RunHandle:
 
         passes = sum(1 for a in self._assertions if a.get("result") == "pass")
         fails = sum(1 for a in self._assertions if a.get("result") == "fail")
+        skipped = sum(1 for a in self._assertions if a.get("result") == "skipped")
         telemetry_summary = _materialize_telemetry(
             log_path=self._log_path,
             events_dir=self._events_dir,
@@ -328,7 +329,7 @@ class RunHandle:
             "started_at": self._started_at,
             "ended_at": ended_at,
             "exit_status": exit_status,
-            "assertion_summary": {"total": len(self._assertions), "pass": passes, "fail": fails},
+            "assertion_summary": {"total": len(self._assertions), "pass": passes, "fail": fails, **({"skipped": skipped} if skipped else {})},
             "actor": self._actor,
             "resource_snapshot": _build_resource_snapshot(self._start_resource_snapshot, self._end_resource_snapshot, self._started_at, ended_at),
             "telemetry": telemetry_summary,

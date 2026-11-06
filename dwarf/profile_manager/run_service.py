@@ -27,7 +27,10 @@ from profile_manager.run_ledger import (
 )
 
 
-_ORIGINS = frozenset({"cli", "dashboard", "scheduler", "replay", "ci", "external"})
+_ORIGINS = frozenset({"cli", "dashboard", "scheduler", "replay", "ci", "external", "antithesis"})
+_ENGINE_BACKENDS = frozenset({"local", "antithesis"})
+# Seam for the Antithesis workload entrypoint: callable(RunRequest) -> {"after_prepare", "primitive_policy"}.
+ANTITHESIS_HOOKS = None
 _BACKENDS = frozenset({"local", "antithesis", "moog", "external"})
 _SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
 _REVISION = re.compile(r"^[0-9a-f]{40}$")
@@ -487,10 +490,13 @@ def _record_reconciliation_failure(
 
 def execute_run(request: RunRequest) -> dict[str, Any]:
     """Execute one local scenario and reconcile bundle, manifest, and ledger."""
-    if request.backend != "local":
+    if request.backend not in _ENGINE_BACKENDS:
         raise RunServiceError(
             f"backend {request.backend!r} execution is not implemented by the local Run Service"
         )
+    hooks = {}
+    if request.backend == "antithesis" and ANTITHESIS_HOOKS is not None:
+        hooks = dict(ANTITHESIS_HOOKS(request) or {})
     execution = _resolve_execution(request)
     _enforce_direct_library_prerequisites(execution.scenario_definition)
     plan = execution.plan
@@ -508,6 +514,8 @@ def execute_run(request: RunRequest) -> dict[str, Any]:
         actor=f"run-service:{request.origin}",
         run_service_plan=plan,
         defer_ledger_terminal=True,
+        after_prepare=hooks.get("after_prepare"),
+        primitive_policy=hooks.get("primitive_policy"),
     )
     try:
         manifest, ledger = _reconcile_result(

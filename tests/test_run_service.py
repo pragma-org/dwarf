@@ -530,7 +530,51 @@ def test_external_launch_idempotency_rejects_a_different_scenario_binding(tmp_pa
     assert retained["scenario"] == first["ledger"]["scenario"]
 
 
-def test_execute_run_refuses_non_local_backend_before_engine_execution(
+def test_execute_run_accepts_antithesis_backend_and_passes_hooks(tmp_path, monkeypatch):
+    observed = {}
+
+    def stop_after_binding(path, **kwargs):
+        observed.update(kwargs)
+        raise RuntimeError("binding observed")
+
+    monkeypatch.setattr(run_service.scenario_module, "run_scenario", stop_after_binding)
+    hook = lambda handle: None  # noqa: E731
+    monkeypatch.setattr(run_service, "ANTITHESIS_HOOKS",
+                        lambda request: {"after_prepare": hook, "primitive_policy": {"fault_node_freeze": "delegated-fault"}})
+
+    with pytest.raises(RuntimeError, match="binding observed"):
+        run_service.execute_run(
+            run_service.RunRequest(
+                scenario_path=PARITY_SCENARIO,
+                origin="antithesis",
+                backend="antithesis",
+                runs_dir=tmp_path / "runs",
+                state_dir=tmp_path / "state",
+            )
+        )
+
+    assert observed["backend"] == "antithesis"
+    assert observed["origin"] == "antithesis"
+    assert observed["after_prepare"] is hook
+    assert observed["primitive_policy"] == {"fault_node_freeze": "delegated-fault"}
+    assert observed["run_service_plan"]["invocation"]["backend"] == "antithesis"
+
+
+def test_local_backend_passes_no_hooks(tmp_path, monkeypatch):
+    observed = {}
+
+    def stop_after_binding(path, **kwargs):
+        observed.update(kwargs)
+        raise RuntimeError("binding observed")
+
+    monkeypatch.setattr(run_service.scenario_module, "run_scenario", stop_after_binding)
+    monkeypatch.setattr(run_service, "ANTITHESIS_HOOKS", lambda request: {"after_prepare": object()})
+    with pytest.raises(RuntimeError, match="binding observed"):
+        run_service.execute_run(run_service.RunRequest(scenario_path=PARITY_SCENARIO, runs_dir=tmp_path / "runs", state_dir=tmp_path / "state"))
+    assert observed["after_prepare"] is None and observed["primitive_policy"] is None
+
+
+def test_execute_run_refuses_unimplemented_backends_before_engine_execution(
     tmp_path, monkeypatch
 ):
     calls = []
@@ -545,7 +589,7 @@ def test_execute_run_refuses_non_local_backend_before_engine_execution(
             run_service.RunRequest(
                 scenario_path=PARITY_SCENARIO,
                 origin="external",
-                backend="antithesis",
+                backend="moog",
                 runs_dir=tmp_path / "runs",
                 state_dir=tmp_path / "state",
             )

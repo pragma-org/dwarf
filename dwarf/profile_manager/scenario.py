@@ -1090,8 +1090,15 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                  measurement_collector_factories=None,
                  run_kind="scenario", origin="forensic", backend="local",
                  run_service_plan=None, scenario_definition=None,
-                 registry_definition=None, defer_ledger_terminal=False):
+                 registry_definition=None, defer_ledger_terminal=False,
+                 after_prepare=None, primitive_policy=None):
     """Execute a scenario end-to-end, producing a forensic bundle.
+
+    ``after_prepare(handle)`` runs once after preparation (measurements and
+    observer started) and before the first phase; an exception ends the run
+    with ``precondition_failed``. ``primitive_policy`` maps primitive names to
+    a capability status; ``unsupported`` and ``delegated-fault`` entries are
+    skipped with a ``primitive_skipped`` event instead of being instantiated.
 
     v1 runs setup → load → per-iteration probe fan-out → assertions → teardown.
     Faults and continuous probes are deferred to later slices.
@@ -1398,6 +1405,37 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     observer = telemetry.ObserverCollector(metrics_dir=handle.run_dir / "metrics", pid=os.getpid())
     observer.start()
 
+    policy = dict(primitive_policy or {})
+
+    def _skipped(phase_label, ref):
+        status = policy.get(ref.primitive)
+        if status not in _SKIP_STATUSES:
+            return False
+        handle.log(phase=phase_label, primitive=ref.primitive, level="warning", event="primitive_skipped",
+                   payload={"policy": status, "reason": "capability matrix: " + status})
+        return True
+
+    if after_prepare is not None:
+        try:
+            after_prepare(handle)
+        except Exception as exc:  # noqa: BLE001 - the hook decides readiness; report and stop
+            message = str(exc)[:512]
+            precondition = {"reason": "after_prepare_failed", "reason_code": "after_prepare_failed",
+                            "message": message, "type": type(exc).__name__}
+            handle.set_precondition(precondition)
+            handle.log(phase="framework", primitive="framework", level="error",
+                       event="precondition_failed", payload=precondition)
+            observer.stop()
+            handle.set_telemetry_summary(observer.summarize())
+            if measurement_runtime is not None:
+                handle.set_measurement_context(measurement_runtime.finalize())
+            handle.end(exit_status="precondition_failed",
+                       end_resource_snapshot=forensic.capture_local_resource_snapshot(pid=os.getpid(), data_dir=handle.run_dir))
+            if topology_lock is not None:
+                topology_lock.close()
+            return handle
+        handle.log(phase="framework", primitive="framework", level="info", event="after_prepare_completed", payload={})
+
     overall = "pass"
     shared_state = {}
 
@@ -1426,6 +1464,8 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         from profile_manager import primitives as _primitives_module
         applied = []
         for ref in phase_obj.faults:
+            if _skipped(_phase_step(phase_obj.id, "fault"), ref):
+                continue
             prim = _primitives_module.instantiate(
                 registry, name=ref.primitive, params=ref.params,
                 runtime=scen.runtime, target_implementation=scen.target["implementation"],
@@ -1469,6 +1509,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     def _run_phase_assertions(phase_obj, outcomes):
         nonlocal overall
         for ref in phase_obj.assertions:
+            if _skipped(_phase_step(phase_obj.id, "assertions"), ref):
+                handle.assertion_result(primitive=ref.primitive, params=ref.params, evaluated_value=None,
+                                        data_points_used=0, result="skipped", note=policy.get(ref.primitive))
+                continue
             prim = primitives.instantiate(
                 registry, name=ref.primitive, params=ref.params,
                 runtime=scen.runtime, target_implementation=scen.target["implementation"],
@@ -1498,12 +1542,12 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
             try:
                 _run_phase(
                     handle, rng, registry, scen, phase_obj.setup, _phase_step(phase_obj.id, "setup"),
-                    shared_state=shared_state,
+                    shared_state=shared_state, primitive_policy=policy,
                 )
                 active_faults = _run_faults_for_phase(phase_obj)
                 _run_phase(
                     handle, rng, registry, scen, phase_obj.load, _phase_step(phase_obj.id, "load"),
-                    shared_state=shared_state,
+                    shared_state=shared_state, primitive_policy=policy,
                 )
                 _remove_faults_for_phase(phase_obj, active_faults)
                 active_faults = []
@@ -1511,6 +1555,8 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                 outcomes = _extract_outcomes(handle)
 
                 for ref in phase_obj.probes:
+                    if _skipped(_phase_step(phase_obj.id, "probes"), ref):
+                        continue
                     prim = primitives.instantiate(
                         registry, name=ref.primitive, params=ref.params,
                         runtime=scen.runtime, target_implementation=scen.target["implementation"],
@@ -1535,7 +1581,7 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                     active_faults = []
                 _run_phase(
                     handle, rng, registry, scen, phase_obj.teardown, _phase_step(phase_obj.id, "teardown"),
-                    ignore_errors=True, shared_state=shared_state,
+                    ignore_errors=True, shared_state=shared_state, primitive_policy=policy,
                 )
                 if measurement_runtime is not None:
                     measurement_runtime.mark_phase(
@@ -1561,7 +1607,7 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
             except Exception:
                 pass
         try:
-            _run_phase(handle, rng, registry, scen, scen.teardown, "teardown", ignore_errors=True, shared_state=shared_state)
+            _run_phase(handle, rng, registry, scen, scen.teardown, "teardown", ignore_errors=True, shared_state=shared_state, primitive_policy=policy)
         except Exception:
             pass
     finally:
@@ -2277,9 +2323,17 @@ def replay_run(run_id, *, runs_dir, state_dir, registry_path=None):
     return replay
 
 
-def _run_phase(handle, rng, registry, scen, refs, phase, ignore_errors=False, shared_state=None):
+_SKIP_STATUSES = frozenset({"unsupported", "delegated-fault"})
+
+
+def _run_phase(handle, rng, registry, scen, refs, phase, ignore_errors=False, shared_state=None, primitive_policy=None):
     from profile_manager import primitives
+    policy = primitive_policy or {}
     for ref in refs:
+        if policy.get(ref.primitive) in _SKIP_STATUSES:
+            handle.log(phase=phase, primitive=ref.primitive, level="warning", event="primitive_skipped",
+                       payload={"policy": policy[ref.primitive], "reason": "capability matrix: " + policy[ref.primitive]})
+            continue
         try:
             prim = primitives.instantiate(
                 registry, name=ref.primitive, params=ref.params,
