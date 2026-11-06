@@ -401,6 +401,23 @@ package is:
    scenario is not the pinned one, and the preview says which path was
    used.
 
+**AT-2 as built (2026-11-06; plan `docs/plans/2026-11-06-antithesis-catalog-parity-plan.md`).**
+Victims are the curated clones (`sm-cardano-victim`, `sm-amaru-victim`, with the
+shared `sm-cardano-seed`) added to the `mixed-control-v1` harness for every
+generated package; `compile_topology` labels every harness service, so no label
+is stripped from relays. Scenario node ids (substrate list, profile counts, or the
+attached layout) map onto harness services; the package ships a `runtime.json`
+without container fields and the workload reaches Cardano tips with `cardano-cli`
+over mounted state-volume sockets and Amaru tips from the mounted victim log, with
+connection state reported unavailable. The substrate lifecycle primitives read the
+package-shipped reports (`DWARF_ANTITHESIS_PACKAGE_DIR`). The capability matrix v1
+(`data/antithesis-capabilities-v1.json`) marks the `docker exec`/host-pid
+primitives unsupported, so most devnet scenarios classify `partial`; AT-2b re-routes
+them to the same package routes after the first real run ("full landing", user
+decision). The `dwarf-workload` image is `FROM dwarf/controller:current` (has
+`cardano-cli` and the framework tree), runs as root, checks its release revision
+against the package, and is built with `--network none`.
+
 ### Piece 3 — Self-serve tail
 
 - **GHCR publish PAT** exactly as the parity doc's early-win section
