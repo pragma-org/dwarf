@@ -1413,3 +1413,36 @@ def test_learn_cli_catalog_documents_moog_workflow_commands():
     assert "cardano-profile moog preflight --asset-dir <dir> --repo <org/repo> --github-user <user> --directory <path> --commit <sha> --json" in commands
     assert "cardano-profile moog asset scaffold --to <dir> --json" in commands
     assert "cardano-profile moog create-test-plan --asset-dir <dir> --repo <org/repo> --github-user <user> --directory <path> --commit <sha> --json" in commands
+
+
+def test_ghcr_fields_are_configurable_and_the_pat_is_masked():
+    config = DeploymentConfig.from_dict({"moog": {"ghcr_prefix": "ghcr.io/config-owner/dwarf", "ghcr_publish_pat": "ghp_config"}})
+    payload = moog_setup_payload(config, environ={"DWARF_GHCR_PREFIX": "ghcr.io/env-owner/dwarf"})
+    fields = {field["key"]: field for field in payload["fields"]}
+    assert fields["ghcr_prefix"]["value"] == "ghcr.io/env-owner/dwarf"
+    assert fields["ghcr_prefix"]["source"] == "env:DWARF_GHCR_PREFIX"
+    assert fields["ghcr_prefix"]["group"] == "Antithesis"
+    assert fields["ghcr_publish_pat"]["value"] == ""
+    assert fields["ghcr_publish_pat"]["configured"] is True
+    assert fields["ghcr_publish_pat"]["secret"] is True and fields["ghcr_publish_pat"]["kind"] == "password"
+    assert fields["ghcr_publish_pat"]["group"] == "Antithesis"
+    assert "ghp_config" not in json.dumps(payload)
+
+
+def test_ghcr_prefix_must_be_a_ghcr_namespace():
+    import pytest
+    config = DeploymentConfig.from_dict({"moog": {}})
+    with pytest.raises(ValueError, match="ghcr.io"):
+        apply_moog_setup_form(config, {"ghcr_prefix": ["docker.io/example"]}, partial=True)
+    with pytest.raises(ValueError, match="ghcr.io"):
+        apply_moog_setup_form(config, {"ghcr_prefix": ["ghcr.io/owner-only"]}, partial=True)   # package name part is required
+    assert apply_moog_setup_form(config, {"ghcr_prefix": ["ghcr.io/j-gainsec/dwarf"]}, partial=True).moog["ghcr_prefix"] == "ghcr.io/j-gainsec/dwarf"
+    assert apply_moog_setup_form(config, {"ghcr_prefix": [""]}, partial=True).moog["ghcr_prefix"] == ""
+
+
+def test_blank_ghcr_pat_keeps_the_saved_value():
+    config = DeploymentConfig.from_dict({"moog": {"ghcr_publish_pat": "ghp_existing"}})
+    updated = apply_moog_setup_form(config, {"ghcr_publish_pat": [""], "ghcr_prefix": ["ghcr.io/j-gainsec/dwarf"]}, partial=True)
+    assert updated.moog["ghcr_publish_pat"] == "ghp_existing"
+    replaced = apply_moog_setup_form(config, {"ghcr_publish_pat": ["ghp_new"]}, partial=True)
+    assert replaced.moog["ghcr_publish_pat"] == "ghp_new"

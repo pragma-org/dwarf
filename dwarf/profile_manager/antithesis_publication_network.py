@@ -19,6 +19,15 @@ DIGEST = re.compile(r'sha256:[a-f0-9]{64}')
 SHA = re.compile(r'[a-f0-9]{40}')
 _COMPONENT = r'[a-z0-9]+(?:[._-][a-z0-9]+)*'
 REPOSITORY = re.compile(_COMPONENT + r'(?:/' + _COMPONENT + r')+')
+PREFIX_MAX = 180
+
+
+def valid_registry_prefix(value):
+    """A lowercase GHCR namespace the wizard may push to (ghcr.io/owner[/path])."""
+    return (isinstance(value, str) and len(value) <= PREFIX_MAX and value.startswith('ghcr.io/')
+            and REPOSITORY.fullmatch(value.removeprefix('ghcr.io/')) is not None)
+
+
 ACCEPT = ', '.join(['application/vnd.oci.image.index.v1+json',
     'application/vnd.docker.distribution.manifest.list.v2+json',
     'application/vnd.oci.image.manifest.v1+json',

@@ -16,7 +16,7 @@ import yaml
 from profile_manager import antithesis_image_build as build
 from profile_manager import antithesis_preparation as prep
 from profile_manager.antithesis_package import PackageError
-from profile_manager.antithesis_publication_network import REPOSITORY, validate_target, verify_image, verify_git
+from profile_manager.antithesis_publication_network import REPOSITORY, validate_target, verify_image, verify_git, valid_registry_prefix
 
 
 def state_directory():return prep.state_directory().parent/'publications'
@@ -41,8 +41,7 @@ def read_handoff(identifier):
 
 def create_handoff(build_id,registry_prefix,*,request_id=None):
     identifier=_id(request_id if request_id is not None else uuid.uuid4().hex,'request_id')
-    if (not isinstance(registry_prefix,str) or len(registry_prefix)>180 or not registry_prefix.startswith('ghcr.io/')
-            or not REPOSITORY.fullmatch(registry_prefix.removeprefix('ghcr.io/'))):
+    if not valid_registry_prefix(registry_prefix):
         raise PackageError('Use a lowercase GHCR repository prefix, such as ghcr.io/owner/dwarf.',status=422)
     root=state_directory();root.mkdir(parents=True,exist_ok=True,mode=0o700)
     lock=build._lock(root/'.create.lock')

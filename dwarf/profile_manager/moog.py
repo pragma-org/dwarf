@@ -38,6 +38,8 @@ DEFAULT_MOOG_CONFIG: dict[str, Any] = {
     "antithesis_registry": "us-central1-docker.pkg.dev/molten-verve-216720/cardano-repository",
     "antithesis_api_key": "",
     "docker_config_path": "",
+    "ghcr_prefix": "",
+    "ghcr_publish_pat": "",
     "agent_email_user": "",
     "agent_email_password": "",
 }
@@ -102,6 +104,8 @@ def normalize_moog_config(raw: dict[str, Any] | None) -> dict[str, Any]:
         "antithesis_registry",
         "antithesis_api_key",
         "docker_config_path",
+        "ghcr_prefix",
+        "ghcr_publish_pat",
         "agent_email_user",
         "agent_email_password",
     ):

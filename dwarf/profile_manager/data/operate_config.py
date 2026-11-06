@@ -47,6 +47,8 @@ MOOG_SETUP_FIELDS: list[dict[str, Any]] = [
     {"key": "antithesis_registry", "label": "Container registry", "group": "Antithesis", "env": ["MOOG_REGISTRY"], "help": "Registry used by the Moog agent for Antithesis assets."},
     {"key": "antithesis_api_key", "label": "Antithesis API key", "group": "Antithesis", "kind": "password", "secret": True, "env": ["MOOG_ANTITHESIS_API_KEY", "ANTITHESIS_API_KEY"], "help": "Read/proxy API key if that path is enabled later."},
     {"key": "docker_config_path", "label": "Docker config path", "group": "Antithesis", "env": ["MOOG_DOCKER_CONFIG_PATH"], "help": "Remote path to Docker registry auth config."},
+    {"key": "ghcr_prefix", "label": "GHCR prefix", "group": "Antithesis", "env": ["DWARF_GHCR_PREFIX", "GHCR_PREFIX"], "help": "GHCR repository prefix the run wizard pushes package images to, e.g. ghcr.io/j-gainsec/dwarf (images become <prefix>-<service>). The wizard can override it per submission."},
+    {"key": "ghcr_publish_pat", "label": "GHCR publish PAT", "group": "Antithesis", "kind": "password", "secret": True, "env": ["DWARF_GHCR_PUBLISH_PAT", "GHCR_PUBLISH_PAT"], "help": "GitHub PAT with write:packages used by the controller to push package images. Leave blank to enter it once per push."},
     {"key": "agent_email_user", "label": "Agent email user", "group": "Agent service", "env": ["MOOG_AGENT_EMAIL_USER"], "help": "Email account used by moog-agent result collection."},
     {"key": "agent_email_password", "label": "Agent email password", "group": "Agent service", "kind": "password", "secret": True, "env": ["MOOG_AGENT_EMAIL_PASSWORD"], "help": "Email password used by moog-agent result collection."},
 ]
@@ -206,6 +208,10 @@ def apply_moog_setup_form(config, form: dict[str, list[str]], *, partial: bool =
         value = _first_form_value(form, key)
         if meta.get("secret") and value == "":
             continue
+        if key == "ghcr_prefix" and value:
+            from profile_manager.antithesis_publication_network import valid_registry_prefix
+            if not valid_registry_prefix(value):
+                raise ValueError("GHCR prefix must be a lowercase ghcr.io repository prefix such as ghcr.io/owner/dwarf")
         updated[key] = value
     from profile_manager.moog import set_moog_config
     return set_moog_config(config, updated)

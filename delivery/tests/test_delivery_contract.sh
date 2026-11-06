@@ -253,6 +253,8 @@ grep -q 'moog healthcheck --json' "${PACKAGE_ROOT}/delivery/scripts/common.sh"
 grep -q 'MOOG_GITHUB_PAT' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
 grep -q 'MOOG_ANTITHESIS_LAUNCH_URL' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
 grep -q 'MOOG_REGISTRY' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
+grep -qF 'DWARF_GHCR_PREFIX: ${DWARF_GHCR_PREFIX:-}' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
+grep -qF 'DWARF_GHCR_PUBLISH_PAT: ${DWARF_GHCR_PUBLISH_PAT:-}' "${PACKAGE_ROOT}/delivery/docker-compose.dwarf.yml"
 grep -q 'Acquire::Check-Valid-Until "false";' "${PACKAGE_ROOT}/infrastructure/docker/dwarf-fw.Dockerfile"
 grep -q 'Acquire::Check-Date "false";' "${PACKAGE_ROOT}/infrastructure/docker/dwarf-fw.Dockerfile"
 if grep -q '\\\"false\\\"' "${PACKAGE_ROOT}/infrastructure/docker/dwarf-fw.Dockerfile"; then
