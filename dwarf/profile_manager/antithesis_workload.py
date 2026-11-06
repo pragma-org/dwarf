@@ -1,0 +1,215 @@
+"""The ``dwarf-workload`` container entrypoint (BC1: lifecycle inside the package).
+
+One process runs the whole scenario through ``run_service.execute_run`` with
+``backend='antithesis'``. Its ``after_prepare`` hook waits until every mapped
+node answers, emits ``setup_complete``, then blocks on ``/status/go`` written by
+the Test Composer singleton driver. When the scenario ends, every assertion
+becomes a fallback-SDK event and ``/status/exit`` + ``/status/done`` release the
+driver with the scenario's exit code.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import socket
+import time
+from pathlib import Path
+
+from profile_manager import antithesis_sdk as sdk
+
+DEFAULT_PACKAGE = '/opt/dwarf/package'
+DEFAULT_STATUS = '/status'
+DEFAULT_RUNS = '/evidence/runs'
+DEFAULT_STATE = '/evidence/state'
+DEFAULT_READY_TIMEOUT = 900.0
+EXIT_CODES = {'pass': 0, 'fail': 1, 'error': 2, 'precondition_failed': 3}
+REVISION_MISMATCH = 4
+_IDENT = re.compile(r'[^a-z0-9_]')
+_VALUE_LIMIT = 512
+_MEASUREMENT_LIMIT = 64
+_GO_LOG_EVERY = 60.0
+
+
+def property_id(primitive, prefix='dwarf_'):
+    return prefix + _IDENT.sub('_', str(primitive).lower())
+
+
+def installed_revision(environ=None):
+    environ = os.environ if environ is None else environ
+    revision = (environ.get('DWARF_SOURCE_REVISION') or '').strip()
+    if revision:
+        return revision
+    identity = Path(__file__).resolve().parents[1] / 'release-identity.json'
+    try:
+        return str(json.loads(identity.read_text(encoding='utf-8')).get('release_revision') or 'unknown')
+    except (OSError, ValueError):
+        return 'unknown'
+
+
+def _tcp_reachable(address, timeout=3.0):
+    host, _, port = str(address).rpartition(':')
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def wait_ready(runtime, timeout, *, now=time.monotonic, sleep=time.sleep, reachable=_tcp_reachable, poll=5.0):
+    """Block until every node answers on its listen address (and its socket exists
+    for Cardano nodes). Returns the ready ids in order; raises on timeout."""
+    nodes = list(runtime.get('nodes') or [])
+    deadline = now() + float(timeout)
+    while True:
+        unready = []
+        for node in nodes:
+            ok = reachable(node.get('listen_address') or '')
+            socket_path = node.get('socket_path')
+            if ok and socket_path:
+                ok = Path(socket_path).exists()
+            if not ok:
+                unready.append(node['id'])
+        if not unready:
+            return [node['id'] for node in nodes]
+        if now() >= deadline:
+            raise RuntimeError('antithesis readiness probe timed out: ' + ', '.join(unready))
+        sleep(poll)
+
+
+def _write_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+
+
+def after_prepare(handle, package, *, status_dir=DEFAULT_STATUS, environ=None, sleep=time.sleep):
+    environ = os.environ if environ is None else environ
+    package = Path(package)
+    status_dir = Path(status_dir)
+    runtime = json.loads((package / 'runtime.json').read_text(encoding='utf-8'))
+    timeout = float(environ.get('DWARF_ANTITHESIS_READY_TIMEOUT') or DEFAULT_READY_TIMEOUT)
+    ready = wait_ready(runtime, timeout, sleep=sleep)
+    try:
+        report = json.loads((package / 'compose-report.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        report = {'nodes': [{'id': identifier} for identifier in ready]}
+    for node in report.get('nodes') or []:
+        node['healthy'] = node.get('id') in ready
+    report['healthy'] = True
+    report['readiness'] = {'ready': ready, 'checked_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+    _write_json(Path(handle.run_dir) / 'outputs' / 'substrate-compose' / 'compose-report.json', report)
+    handle.log(phase='framework', primitive='antithesis-workload', level='info', event='antithesis_ready',
+               payload={'ready': ready, 'timeout_seconds': timeout})
+    sdk.setup_complete(environ)
+    go = status_dir / 'go'
+    waited = 0.0
+    while not go.exists():
+        sleep(1.0)
+        waited += 1.0
+        if waited % _GO_LOG_EVERY == 0:
+            handle.log(phase='framework', primitive='antithesis-workload', level='info', event='waiting_for_driver',
+                       payload={'waited_seconds': waited})
+    handle.log(phase='framework', primitive='antithesis-workload', level='info', event='driver_released', payload={})
+
+
+def _clip(value):
+    text = value if isinstance(value, str) else json.dumps(value, sort_keys=True, default=str)
+    return text[:_VALUE_LIMIT]
+
+
+def _measurement_rows(run_dir):
+    path = Path(run_dir) / 'measurements' / 'compact-table.json'
+    try:
+        value = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    rows = value.get('rows') if isinstance(value, dict) else value
+    if not isinstance(rows, list):
+        return None
+    return rows[:_MEASUREMENT_LIMIT]
+
+
+def finish(run_dir, exit_status, *, status_dir=DEFAULT_STATUS, environ=None, error=None):
+    """Turn the bundle's assertions into SDK events and release the driver."""
+    environ = os.environ if environ is None else environ
+    run_dir = Path(run_dir) if run_dir is not None else None
+    rows = []
+    if run_dir is not None:
+        try:
+            rows = json.loads((run_dir / 'assertions.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            rows = []
+    for row in rows:
+        primitive = row.get('primitive') or 'unknown'
+        result = row.get('result')
+        if result == 'skipped':
+            sdk.emit_assert('reachability', property_id(primitive, 'dwarf_skipped_'), True,
+                            details={'policy': row.get('note')}, environ=environ)
+            continue
+        sdk.emit_assert('always', property_id(primitive), result == 'pass',
+                        details={'result': result, 'evaluated_value': _clip(row.get('evaluated_value'))}, environ=environ)
+    details = {'exit_status': exit_status}
+    if error:
+        details['error'] = str(error)[:_VALUE_LIMIT]
+    sdk.emit_assert('sometimes', 'dwarf_scenario_completed', exit_status in ('pass', 'fail'), details=details, environ=environ)
+    measurements = _measurement_rows(run_dir) if run_dir is not None else None
+    if measurements is not None:
+        sdk.emit_assert('reachability', 'dwarf_measurements_reported', True, details={'measurements': measurements}, environ=environ)
+    code = EXIT_CODES.get(exit_status, 2)
+    _release(status_dir, code)
+    return code
+
+
+def _release(status_dir, code):
+    status_dir = Path(status_dir)
+    status_dir.mkdir(parents=True, exist_ok=True)
+    (status_dir / 'exit').write_text(str(code) + '\n', encoding='utf-8')
+    (status_dir / 'done').write_text('done\n', encoding='utf-8')
+
+
+def hooks_for(package, *, status_dir, environ):
+    package = Path(package)
+    try:
+        capabilities = json.loads((package / 'capabilities.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        capabilities = {'primitives': []}
+    from profile_manager.antithesis_capabilities import skip_policy
+    policy = skip_policy(capabilities)
+
+    def hooks(request):
+        return {'after_prepare': lambda handle: after_prepare(handle, package, status_dir=status_dir, environ=environ),
+                'primitive_policy': policy}
+    return hooks
+
+
+def _parser():
+    parser = argparse.ArgumentParser(prog='cardano-profile antithesis workload')
+    parser.add_argument('--package', default=None)
+    parser.add_argument('--runs-dir', default=DEFAULT_RUNS)
+    parser.add_argument('--state-dir', default=DEFAULT_STATE)
+    parser.add_argument('--status-dir', default=DEFAULT_STATUS)
+    return parser
+
+
+def main(argv=None, environ=None):
+    environ = os.environ if environ is None else environ
+    args = _parser().parse_args(argv)
+    package = Path(args.package or environ.get('DWARF_ANTITHESIS_PACKAGE_DIR') or DEFAULT_PACKAGE)
+    status_dir = Path(args.status_dir)
+    expected = (package / 'expected-revision').read_text(encoding='utf-8').strip() if (package / 'expected-revision').exists() else ''
+    installed = installed_revision(environ)
+    if not expected or expected != installed:
+        _release(status_dir, REVISION_MISMATCH)
+        return REVISION_MISMATCH
+    from profile_manager import run_service
+    run_service.ANTITHESIS_HOOKS = hooks_for(package, status_dir=status_dir, environ=environ)
+    request = run_service.RunRequest(scenario_path=package / 'scenario.yaml', origin='antithesis', backend='antithesis',
+                                     runs_dir=Path(args.runs_dir), state_dir=Path(args.state_dir))
+    try:
+        result = run_service.execute_run(request)
+    except Exception as exc:  # noqa: BLE001 - the driver must be released with an honest outcome
+        return finish(None, 'error', status_dir=status_dir, environ=environ, error=exc)
+    run_dir = result.get('run_dir')
+    exit_status = str((result.get('manifest') or {}).get('exit_status') or 'error')
+    return finish(run_dir, exit_status, status_dir=status_dir, environ=environ)

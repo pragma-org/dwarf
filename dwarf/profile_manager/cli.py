@@ -372,6 +372,9 @@ def build_parser():
     antithesis_build.add_argument("--registry", default=None)
     antithesis_build.add_argument("--tag", default="latest")
     antithesis_build.add_argument("--json", action="store_true")
+    antithesis_workload = antithesis_sub.add_parser("workload", help="Run the packaged scenario inside an Antithesis dwarf-workload container")
+    for option in ("--package", "--runs-dir", "--state-dir", "--status-dir"):
+        antithesis_workload.add_argument(option, default=None)
 
     status = subcommands.add_parser("status")
     status.add_argument("--dry-run", action="store_true")
@@ -1588,6 +1591,14 @@ def cmd_antithesis(args):
     from profile_manager.profiles import find_profile
     from profile_manager.antithesis import build_antithesis_bundle, DEFAULT_REGISTRY
 
+    if args.antithesis_command == "workload":
+        from profile_manager import antithesis_workload
+        argv = []
+        for option in ("package", "runs_dir", "state_dir", "status_dir"):
+            value = getattr(args, option)
+            if value is not None:
+                argv += ["--" + option.replace("_", "-"), value]
+        return antithesis_workload.main(argv)
     if args.antithesis_command == "build":
         profile = find_profile(args.profile_id)
         registry = args.registry or DEFAULT_REGISTRY
