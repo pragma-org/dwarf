@@ -1446,3 +1446,80 @@ def test_blank_ghcr_pat_keeps_the_saved_value():
     assert updated.moog["ghcr_publish_pat"] == "ghp_existing"
     replaced = apply_moog_setup_form(config, {"ghcr_publish_pat": ["ghp_new"]}, partial=True)
     assert replaced.moog["ghcr_publish_pat"] == "ghp_new"
+
+
+# ---------------------------------------------------------------------------
+# AT-4 Task 8a: the wizard's MOOG reads travel as fixed control-shim verbs
+import pytest  # noqa: E402
+
+def test_wizard_moog_reads_use_fixed_control_shim_verbs(monkeypatch):
+    from profile_manager import antithesis_submission
+    captured = []
+
+    def fake_ssh(config, remote_command, timeout=None, dry_run=False, verb=None):
+        captured.append((verb, remote_command))
+        return CommandResult(0, "[]", "", "ssh cardano-box ...")
+
+    monkeypatch.setenv("ADA2_DWARF_CONTROL_SHIM", "1")
+    monkeypatch.setattr(remote, "ssh_command", fake_ssh)
+    moog_config = {"moog_binary": "/bin/moog", "mpfs_host": "https://mpfs.example", "token_id": "tok"}
+    config = DeploymentConfig.from_dict({"moog": moog_config})
+    run_id = "788998d60b09b96953e830e9f9ae2c7b-62-14"
+    remote.fetch_test_run_facts(config, moog_config, "a" * 64)
+    remote.fetch_antithesis(config, moog_config, "properties", run_id=run_id)
+    remote.fetch_antithesis(config, moog_config, "runs", limit=50, cursor="Mg==")
+    remote.fetch_antithesis(config, moog_config, "runs", limit=50)
+    remote.fetch_antithesis(config, moog_config, "events", run_id=run_id, query="dwarf_measurements")
+    antithesis_submission.query_facts(config, {"requester": "J-GainSec", "repository": "x/y", "commit": "c" * 40, "directory": "d", "try_number": 1})
+    assert [verb for verb, _ in captured] == [
+        ("moog-test-run", "a" * 64),
+        ("moog-antithesis-properties", run_id),
+        ("moog-antithesis-runs", "Mg=="),
+        ("moog-antithesis-runs",),
+        ("moog-antithesis-events", run_id, "dwarf_measurements"),
+        ("moog-test-runs", "J-GainSec"),
+    ]
+    # The non-shim command is still rendered for dry-run and plain-key hosts.
+    assert all("/bin/moog" in command for _, command in captured)
+
+
+def _shim_run(tmp_path, original):
+    shim = tmp_path / "dwarf-deploy-shim"
+    shim.write_bytes((ROOT / "delivery/control-plane/dwarf-deploy-shim.py").read_bytes())
+    config = tmp_path / "config.yaml"
+    config.write_text(json.dumps({"moog": {"moog_binary": "/bin/moog", "mpfs_host": "https://mpfs.example", "token_id": "tok"}}), encoding="utf-8")
+    (tmp_path / "dwarf-control.conf").write_text(f"DWARF_ROOT={ROOT / 'dwarf'}\nCONFIG_PATH={config}\n", encoding="utf-8")
+    return subprocess.run([sys.executable, str(shim)], text=True, capture_output=True, check=False,
+                          env={**dict(os.environ), "SSH_ORIGINAL_COMMAND": original, "ADA2_PROFILE_MANAGER_CONFIG": str(config)})
+
+
+@pytest.mark.parametrize("original,expected", [
+    ("moog-antithesis-run 788998d60b09b96953e830e9f9ae2c7b-62-14 --dry-run", "/bin/moog antithesis run --run-id 788998d60b09b96953e830e9f9ae2c7b-62-14"),
+    ("moog-antithesis-properties 788998d60b09b96953e830e9f9ae2c7b-62-14 --dry-run", "/bin/moog antithesis properties --run-id 788998d60b09b96953e830e9f9ae2c7b-62-14"),
+    ("moog-antithesis-runs --dry-run", "/bin/moog antithesis runs --limit 50"),
+    ("moog-antithesis-runs cGFnZTI= --dry-run", "/bin/moog antithesis runs --limit 50 --cursor cGFnZTI="),
+    ("moog-antithesis-events 788998d60b09b96953e830e9f9ae2c7b-62-14 dwarf_measurements --dry-run", "/bin/moog antithesis events --run-id 788998d60b09b96953e830e9f9ae2c7b-62-14 --q dwarf_measurements"),
+    ("moog-test-runs J-GainSec --dry-run", "/bin/moog facts test-runs --whose J-GainSec --no-pretty"),
+    ("moog-test-run " + "a" * 64 + " --dry-run", "/bin/moog facts test-runs --test-run-id " + "a" * 64),
+])
+def test_control_shim_generates_the_wizard_moog_read_commands(tmp_path, original, expected):
+    completed = _shim_run(tmp_path, original)
+    assert completed.returncode == 0, completed.stderr
+    assert expected in completed.stdout
+    assert "MOOG_TOKEN_ID=tok" in completed.stdout or "antithesis" in expected
+
+
+@pytest.mark.parametrize("original,reason", [
+    ("moog-antithesis-run ../etc --dry-run", "bad-run-id"),
+    ("moog-antithesis-run --dry-run", "bad-token-count"),
+    ("moog-antithesis-runs 'a b' --dry-run", "bad-cursor"),
+    ("moog-antithesis-events 788998d60b09b96953e830e9f9ae2c7b-62-14 --dry-run", "bad-token-count"),
+    ("moog-antithesis-events 788998d60b09b96953e830e9f9ae2c7b-62-14 'x y' --dry-run", "bad-query"),
+    ("moog-test-runs 'bad user!' --dry-run", "bad-github-user"),
+    ("moog-test-run zz --dry-run", "bad-test-run-id"),
+    ("moog-antithesis-logs 788998d60b09b96953e830e9f9ae2c7b-62-14 --dry-run", "verb-not-allowed"),
+])
+def test_control_shim_rejects_malformed_wizard_moog_reads(tmp_path, original, reason):
+    completed = _shim_run(tmp_path, original)
+    assert completed.returncode == 77
+    assert reason in completed.stderr

@@ -42,6 +42,13 @@ READ_VERBS = {
     "active",
     "moog-health",
     "moog-facts",
+    # Antithesis wizard reads through the host's MOOG proxy (AT-4).
+    "moog-test-runs",
+    "moog-test-run",
+    "moog-antithesis-runs",
+    "moog-antithesis-run",
+    "moog-antithesis-properties",
+    "moog-antithesis-events",
     "topology-health",
     "profile-health",
     "launch-preflight",
@@ -58,6 +65,15 @@ WRITE_VERBS = {
     "topology-redeploy",
 }
 ALLOWED_VERBS = READ_VERBS | WRITE_VERBS
+# verb -> (min args, max args); the builders in profile_manager.moog validate each value.
+_MOOG_READ_VERBS = {
+    "moog-test-runs": (1, 1),
+    "moog-test-run": (1, 1),
+    "moog-antithesis-runs": (0, 1),
+    "moog-antithesis-run": (1, 1),
+    "moog-antithesis-properties": (1, 1),
+    "moog-antithesis-events": (2, 2),
+}
 
 # A profile id / view token: starts alnum, then alnum/-/_ , bounded length.
 _ARG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,80}$")
@@ -160,7 +176,17 @@ def main() -> int:
     verb = tokens[0]
     launch = None
     run_env = None
-    if verb == "moog-create-test":
+    read_args = None
+    if verb in _MOOG_READ_VERBS:
+        dry_run = tokens[-1] == "--dry-run"
+        core = tokens[:-1] if dry_run else tokens
+        read_args = core[1:]
+        low, high = _MOOG_READ_VERBS[verb]
+        if not low <= len(read_args) <= high:
+            return _reject(conf, original, "bad-token-count")
+        rest = []
+        arg = None
+    elif verb == "moog-create-test":
         dry_run = tokens[-1] == "--dry-run"
         core = tokens[:-1] if dry_run else tokens
         if len(core) != 8:
@@ -232,9 +258,15 @@ def main() -> int:
         from profile_manager.inspect import inspect_health_command
         from profile_manager.config import load_config
         from profile_manager.moog import (
+            build_moog_antithesis_command,
             build_moog_create_test_command,
             build_moog_facts_command,
             build_moog_health_command,
+            build_moog_test_run_command,
+            build_moog_test_runs_command,
+            check_antithesis_arguments,
+            check_github_user,
+            check_test_run_id,
             normalize_moog_config,
         )
         from profile_manager.smoke import find_smoke_test, smoke_remote_command
@@ -277,6 +309,40 @@ def main() -> int:
             script = build_moog_facts_command(normalize_moog_config(config.moog))
         except Exception as exc:
             return _reject(conf, original, f"moog-facts-config-failed:{type(exc).__name__}")
+    elif verb in _MOOG_READ_VERBS:
+        # Read-only proxy commands; the value checks live in profile_manager.moog
+        # so the dashboard and this shim reject exactly the same inputs — and
+        # they run before any host config is read.
+        try:
+            if verb == "moog-test-runs":
+                check_github_user(read_args[0])
+            elif verb == "moog-test-run":
+                check_test_run_id(read_args[0])
+            elif verb == "moog-antithesis-runs":
+                check_antithesis_arguments("runs", limit=50, cursor=read_args[0] if read_args else None)
+            elif verb == "moog-antithesis-events":
+                check_antithesis_arguments("events", run_id=read_args[0], query=read_args[1])
+            else:
+                check_antithesis_arguments(verb.removeprefix("moog-antithesis-"), run_id=read_args[0])
+        except ValueError as exc:
+            return _reject(conf, original, str(exc))
+        try:
+            moog_config = normalize_moog_config(load_config().moog)
+        except Exception as exc:
+            return _reject(conf, original, f"{verb}-config-failed:{type(exc).__name__}")
+        try:
+            if verb == "moog-test-runs":
+                script = build_moog_test_runs_command(moog_config, read_args[0])
+            elif verb == "moog-test-run":
+                script = build_moog_test_run_command(moog_config, read_args[0])
+            elif verb == "moog-antithesis-runs":
+                script = build_moog_antithesis_command(moog_config, "runs", limit=50, cursor=read_args[0] if read_args else None)
+            elif verb == "moog-antithesis-events":
+                script = build_moog_antithesis_command(moog_config, "events", run_id=read_args[0], query=read_args[1])
+            else:
+                script = build_moog_antithesis_command(moog_config, verb.removeprefix("moog-antithesis-"), run_id=read_args[0])
+        except ValueError as exc:
+            return _reject(conf, original, str(exc))
     elif verb == "topology-health":
         state_dir = conf.get("STATE_DIR")
         if not state_dir:

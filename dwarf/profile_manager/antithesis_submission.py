@@ -191,11 +191,10 @@ def matching_facts(facts, target):
 
 
 def query_facts(config, target):
-    cfg = config.moog
-    command = ' '.join([f'MOOG_MPFS_HOST={shlex.quote(cfg["mpfs_host"])}',
-                        f'MOOG_TOKEN_ID={shlex.quote(cfg["token_id"])}', shlex.quote(cfg['moog_binary']),
-                        'facts test-runs --whose', shlex.quote(target['requester']), '--no-pretty'])
-    result = remote.ssh_command(config, command, timeout=60)
+    # One builder for the dashboard and the control shim; the shim regenerates
+    # this from the fixed verb when the host runs in shim mode.
+    command = moog.build_moog_test_runs_command(config.moog, target['requester'])
+    result = remote.ssh_command(config, command, timeout=60, verb=('moog-test-runs', target['requester']))
     if result.returncode or len(result.stdout) > 8 * 1024 * 1024:
         raise ValueError('Requester facts unavailable')
     facts = json.loads(result.stdout)

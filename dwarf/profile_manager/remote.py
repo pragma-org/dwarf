@@ -170,22 +170,16 @@ def fetch_test_run_facts(config, moog_config, test_run_id, timeout=60):
     """Return parsed JSON from `moog facts test-runs --test-run-id <id>` on the host."""
     import json
 
-    from profile_manager.moog import normalize_moog_config
+    from profile_manager.moog import build_moog_test_run_command
 
-    cfg = normalize_moog_config(moog_config)
-    command = (
-        f"MOOG_MPFS_HOST={shlex.quote(cfg['mpfs_host'])} "
-        f"MOOG_TOKEN_ID={shlex.quote(cfg['token_id'])} "
-        f"{shlex.quote(cfg['moog_binary'])} facts test-runs --test-run-id {shlex.quote(test_run_id)}"
-    )
-    result = ssh_command(config, command, timeout=timeout)
+    command = build_moog_test_run_command(moog_config, test_run_id)
+    result = ssh_command(config, command, timeout=timeout, verb=("moog-test-run", test_run_id))
     try:
         return json.loads(result.stdout) if result.stdout.strip() else []
     except (ValueError, AttributeError):
         return []
 
 
-_ANTITHESIS_SUBCOMMANDS = frozenset({"runs", "run", "properties", "events", "logs", "build-logs"})
 _ANTITHESIS_NDJSON = frozenset({"events", "logs", "build-logs"})
 _ANTITHESIS_EXIT = {2: "authorization or SSO failure", 3: "proxy or network failure", 4: "invalid JSON from proxy"}
 
@@ -196,23 +190,26 @@ def fetch_antithesis(
 ):
     """Read Antithesis run data through the MOOG proxy (`moog antithesis …`) on the host.
 
-    No MOOG_* environment is passed: the host's OAuth file authorises the proxy.
-    Returns {'ok', 'payload', 'exit_code', 'error'}; `payload` is the parsed JSON
-    (a list of objects for the NDJSON subcommands) and `error` is a bounded,
-    DWARF-authored text — proxy output is never echoed into it."""
+    The command comes from profile_manager.moog.build_moog_antithesis_command
+    (shared with the control shim, which regenerates it from the fixed verb
+    sent here). Returns {'ok', 'payload', 'exit_code', 'error'}; `payload` is
+    the parsed JSON (a list of objects for the NDJSON subcommands) and `error`
+    is a bounded, DWARF-authored text — proxy output is never echoed into it.
+    Invalid arguments raise ValueError before anything is sent."""
     import json
 
-    from profile_manager.moog import normalize_moog_config
+    from profile_manager.moog import build_moog_antithesis_command
 
-    if subcommand not in _ANTITHESIS_SUBCOMMANDS:
-        raise ValueError(f"unsupported moog antithesis subcommand: {subcommand}")
-    cfg = normalize_moog_config(moog_config)
-    argv = [cfg["moog_binary"], "antithesis", subcommand]
-    for flag, value in (("--run-id", run_id), ("--limit", limit), ("--cursor", cursor), ("--q", query),
-                        ("--input-hash", input_hash), ("--vtime", vtime)):
-        if value is not None:
-            argv += [flag, str(value)]
-    result = ssh_command(config, " ".join(shlex.quote(part) for part in argv), timeout=timeout)
+    command = build_moog_antithesis_command(moog_config, subcommand, run_id=run_id, limit=limit, cursor=cursor,
+                                            query=query, input_hash=input_hash, vtime=vtime)
+    verb = ("moog-antithesis-" + subcommand,)
+    if subcommand == "runs":
+        verb += (cursor,) if cursor is not None else ()
+    elif subcommand == "events":
+        verb += (run_id, query)
+    else:
+        verb += (run_id,)
+    result = ssh_command(config, command, timeout=timeout, verb=verb)
 
     def failure(error):
         return {"ok": False, "payload": None, "exit_code": result.returncode, "error": str(error)[:200]}

@@ -1614,3 +1614,87 @@ def _github_error(exc: Exception) -> str:
     if isinstance(exc, urllib.error.URLError):
         return f"GitHub URL error: {exc.reason}"
     return str(exc)
+
+
+# ---------------------------------------------------------------------------
+# Read-only MOOG proxy commands for the Antithesis wizard. One builder serves
+# both the dashboard (plain-key hosts, dry-run rendering) and the restricted
+# control shim (which regenerates the command from a fixed verb), so the
+# argument validation is the same on both sides. ValueError messages are the
+# shim's rejection reasons.
+
+GITHUB_USER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
+MOOG_TEST_RUN_ID_RE = re.compile(r"^[0-9a-f]{64}$")
+ANTITHESIS_RUN_ID_RE = re.compile(r"^[0-9a-f]{32}-[0-9]{1,6}-[0-9]{1,6}$")
+ANTITHESIS_CURSOR_RE = re.compile(r"^[A-Za-z0-9+/=_-]{1,256}$")
+ANTITHESIS_QUERY_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+_ANTITHESIS_INPUT_HASH_RE = re.compile(r"^-?[0-9]{1,24}$")
+_ANTITHESIS_VTIME_RE = re.compile(r"^[0-9]{1,12}(?:\.[0-9]{1,16})?$")
+ANTITHESIS_SUBCOMMANDS = frozenset({"runs", "run", "properties", "events", "logs", "build-logs"})
+
+
+def _moog_facts_prefix(config: dict[str, Any]) -> str:
+    return (f"MOOG_MPFS_HOST={shlex.quote(config['mpfs_host'])} "
+            f"MOOG_TOKEN_ID={shlex.quote(config['token_id'])} {shlex.quote(config['moog_binary'])}")
+
+
+def check_github_user(requester: Any) -> str:
+    if not isinstance(requester, str) or not GITHUB_USER_RE.fullmatch(requester):
+        raise ValueError("bad-github-user")
+    return requester
+
+
+def check_test_run_id(test_run_id: Any) -> str:
+    if not isinstance(test_run_id, str) or not MOOG_TEST_RUN_ID_RE.fullmatch(test_run_id):
+        raise ValueError("bad-test-run-id")
+    return test_run_id
+
+
+def check_antithesis_arguments(subcommand: str, *, run_id=None, limit=None, cursor=None, query=None, input_hash=None, vtime=None) -> None:
+    """Reject anything that is not a well-formed proxy argument; the message is the shim's rejection reason."""
+    if subcommand not in ANTITHESIS_SUBCOMMANDS:
+        raise ValueError("bad-subcommand")
+    if subcommand != "runs" and (not isinstance(run_id, str) or not ANTITHESIS_RUN_ID_RE.fullmatch(run_id)):
+        raise ValueError("bad-run-id")
+    if subcommand == "runs" and run_id is not None:
+        raise ValueError("bad-run-id")
+    if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200):
+        raise ValueError("bad-limit")
+    if cursor is not None and (not isinstance(cursor, str) or not ANTITHESIS_CURSOR_RE.fullmatch(cursor)):
+        raise ValueError("bad-cursor")
+    if query is not None and (not isinstance(query, str) or not ANTITHESIS_QUERY_RE.fullmatch(query)):
+        raise ValueError("bad-query")
+    if input_hash is not None and not _ANTITHESIS_INPUT_HASH_RE.fullmatch(str(input_hash)):
+        raise ValueError("bad-input-hash")
+    if vtime is not None and not _ANTITHESIS_VTIME_RE.fullmatch(str(vtime)):
+        raise ValueError("bad-vtime")
+
+
+def build_moog_test_runs_command(moog_config: dict[str, Any], requester: str) -> str:
+    """`moog facts test-runs --whose <requester> --no-pretty` for the wizard's readiness and refresh."""
+    check_github_user(requester)
+    config = normalize_moog_config(moog_config)
+    return f"{_moog_facts_prefix(config)} facts test-runs --whose {shlex.quote(requester)} --no-pretty"
+
+
+def build_moog_test_run_command(moog_config: dict[str, Any], test_run_id: str) -> str:
+    """`moog facts test-runs --test-run-id <id>` for one MOOG test run."""
+    check_test_run_id(test_run_id)
+    config = normalize_moog_config(moog_config)
+    return f"{_moog_facts_prefix(config)} facts test-runs --test-run-id {shlex.quote(test_run_id)}"
+
+
+def build_moog_antithesis_command(
+    moog_config: dict[str, Any], subcommand: str, *, run_id: str | None = None, limit: int | None = None,
+    cursor: str | None = None, query: str | None = None, input_hash: str | None = None, vtime: str | None = None,
+) -> str:
+    """`moog antithesis <subcommand> …` through the host's MOOG proxy (the host
+    OAuth file authorises; no MOOG_* environment is needed)."""
+    check_antithesis_arguments(subcommand, run_id=run_id, limit=limit, cursor=cursor, query=query, input_hash=input_hash, vtime=vtime)
+    config = normalize_moog_config(moog_config)
+    argv = [config["moog_binary"], "antithesis", subcommand]
+    for flag, value in (("--run-id", run_id), ("--limit", limit), ("--cursor", cursor), ("--q", query),
+                        ("--input-hash", input_hash), ("--vtime", vtime)):
+        if value is not None:
+            argv += [flag, str(value)]
+    return " ".join(shlex.quote(part) for part in argv)

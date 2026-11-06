@@ -14,6 +14,7 @@ from profile_manager.moog import normalize_moog_config
 
 FIXTURES = Path(__file__).resolve().parent / 'fixtures' / 'antithesis_proxy'
 TEST_RUN_ID = '1' * 64
+RUN_ID = '788998d60b09b96953e830e9f9ae2c7b-62-14'
 
 
 def fixture(name):
@@ -52,10 +53,12 @@ def test_fetch_antithesis_builds_the_proxy_command_without_moog_env(config, monk
     assert 'MOOG_' not in seen[0]
 
 
-def test_fetch_antithesis_quotes_every_value(config, monkeypatch):
-    seen = fake_ssh(monkeypatch, [(0, '{"run_id":"x"}', '')])
-    remote.fetch_antithesis(config, moog_config(), 'run', run_id='abc; rm -rf /')
-    assert seen == ["/bin/moog antithesis run --run-id 'abc; rm -rf /'"]
+def test_fetch_antithesis_validates_every_value_before_building_a_command(config, monkeypatch):
+    seen = fake_ssh(monkeypatch, [])
+    for kwargs in ({'run_id': 'abc; rm -rf /'}, {'run_id': 'not-a-run-id'}, {'run_id': RUN_ID, 'query': 'a b'}, {'cursor': 'x y'}, {'limit': 'ten'}):
+        with pytest.raises(ValueError):
+            remote.fetch_antithesis(config, moog_config(), 'runs' if 'cursor' in kwargs or 'limit' in kwargs else ('events' if 'query' in kwargs else 'run'), **kwargs)
+    assert seen == []
 
 
 @pytest.mark.parametrize('rc,stdout,stderr,error', [
@@ -66,7 +69,7 @@ def test_fetch_antithesis_quotes_every_value(config, monkeypatch):
 ])
 def test_fetch_antithesis_reports_exit_codes_and_bad_json(config, monkeypatch, rc, stdout, stderr, error):
     fake_ssh(monkeypatch, [(rc, stdout, stderr)])
-    out = remote.fetch_antithesis(config, moog_config(), 'properties', run_id='r-1-1')
+    out = remote.fetch_antithesis(config, moog_config(), 'properties', run_id=RUN_ID)
     assert out['ok'] is False and out['payload'] is None and out['exit_code'] == rc
     assert out['error'].startswith(error)
     assert len(out['error']) <= 200
@@ -74,18 +77,18 @@ def test_fetch_antithesis_reports_exit_codes_and_bad_json(config, monkeypatch, r
 
 def test_fetch_antithesis_parses_ndjson_for_events(config, monkeypatch):
     seen = fake_ssh(monkeypatch, [(0, '{"a":1}\n\n{"b":2}\n', '')])
-    out = remote.fetch_antithesis(config, moog_config(), 'events', run_id='r-1-1', query='dwarf_measurements')
+    out = remote.fetch_antithesis(config, moog_config(), 'events', run_id=RUN_ID, query='dwarf_measurements')
     assert out['ok'] is True and out['payload'] == [{'a': 1}, {'b': 2}]
-    assert seen == ['/bin/moog antithesis events --run-id r-1-1 --q dwarf_measurements']
+    assert seen == ['/bin/moog antithesis events --run-id ' + RUN_ID + ' --q dwarf_measurements']
     fake_ssh(monkeypatch, [(0, '{"a":1}\nnot json\n', '')])
-    bad = remote.fetch_antithesis(config, moog_config(), 'logs', run_id='r-1-1')
+    bad = remote.fetch_antithesis(config, moog_config(), 'logs', run_id=RUN_ID)
     assert bad['ok'] is False and bad['payload'] is None and bad['error'].startswith('invalid NDJSON')
 
 
 def test_fetch_antithesis_rejects_unknown_subcommands(config, monkeypatch):
     fake_ssh(monkeypatch, [])
     with pytest.raises(ValueError):
-        remote.fetch_antithesis(config, moog_config(), 'delete', run_id='r')
+        remote.fetch_antithesis(config, moog_config(), 'delete', run_id=RUN_ID)
 
 
 def test_find_antithesis_run_joins_on_the_description_test_run_id(config, monkeypatch):
@@ -305,3 +308,21 @@ def test_write_result_bundle_includes_measurements_when_given(tmp_path):
     assert json.loads((run_dir / 'measurements' / 'report.json').read_text()) == measurements
     assert 'measurements/report.json' not in {g['path'] for g in json.loads((run_dir / 'gaps.json').read_text())['missing']}
     assert not (run_dir / 'scenario.yaml').exists()
+
+
+# ---------------------------------------------------------------------------
+# Task 8a: one builder for the proxy commands (dashboard and control shim)
+
+def test_moog_proxy_command_builders_validate_and_render():
+    from profile_manager import moog as m
+    cfg = moog_config()
+    assert m.build_moog_antithesis_command(cfg, 'run', run_id=RUN_ID) == '/bin/moog antithesis run --run-id ' + RUN_ID
+    assert m.build_moog_antithesis_command(cfg, 'runs', limit=50, cursor='cGFnZTI=') == '/bin/moog antithesis runs --limit 50 --cursor cGFnZTI='
+    assert m.build_moog_antithesis_command(cfg, 'events', run_id=RUN_ID, query='dwarf_measurements') == '/bin/moog antithesis events --run-id ' + RUN_ID + ' --q dwarf_measurements'
+    assert m.build_moog_test_runs_command(cfg, 'J-GainSec') == "MOOG_MPFS_HOST=https://mpfs.plutimus.com MOOG_TOKEN_ID=token /bin/moog facts test-runs --whose J-GainSec --no-pretty"
+    assert m.build_moog_test_run_command(cfg, 'a' * 64) == "MOOG_MPFS_HOST=https://mpfs.plutimus.com MOOG_TOKEN_ID=token /bin/moog facts test-runs --test-run-id " + 'a' * 64
+    for call in (lambda: m.build_moog_antithesis_command(cfg, 'run', run_id='x; rm -rf /'), lambda: m.build_moog_antithesis_command(cfg, 'runs', cursor='a b'),
+                 lambda: m.build_moog_antithesis_command(cfg, 'events', run_id=RUN_ID, query='x y'), lambda: m.build_moog_antithesis_command(cfg, 'drop', run_id=RUN_ID),
+                 lambda: m.build_moog_antithesis_command(cfg, 'run'), lambda: m.build_moog_test_runs_command(cfg, 'bad user!'), lambda: m.build_moog_test_run_command(cfg, 'zz')):
+        with pytest.raises(ValueError):
+            call()
