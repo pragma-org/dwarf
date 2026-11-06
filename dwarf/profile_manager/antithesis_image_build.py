@@ -122,7 +122,11 @@ def _plan(files):
             raise PackageError('Generated Dockerfile is missing.', status=422)
         if service.get('platform', 'linux/amd64') != 'linux/amd64':
             raise PackageError('Generated build must target linux/amd64.', status=422)
-        builds.append({'service':name, 'context':context, 'dockerfile':dockerfile})
+        labels = service.get('labels') if isinstance(service.get('labels'), dict) else {}
+        network = labels.get('com.dwarf.build-network')
+        if network not in (None, 'none'):
+            raise PackageError('Unsupported build network.', status=422)
+        builds.append({'service':name, 'context':context, 'dockerfile':dockerfile, 'network':network})
     return compose, builds
 
 

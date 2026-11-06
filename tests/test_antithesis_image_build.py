@@ -355,3 +355,18 @@ def test_build_status_mirrors_controller_failure_detail(prepared):
     status=wait(build,job['id'])
     assert status['state']=='failed' and status['message']=='sm-workload: no space left on device'
     assert status['failure_code']=='image-build-failed'
+
+
+def test_plan_reads_the_build_network_label():
+    body={'services':{'dwarf-workload':{'build':{'context':'./dwarf-workload'},'labels':{'com.dwarf.build-network':'none'}},
+                      'other':{'build':{'context':'./other'}}}}
+    files={'docker-compose.yaml':(yaml.safe_dump(body).encode(),0o644),
+           'dwarf-workload/Dockerfile':(b'FROM x',0o644),'other/Dockerfile':(b'FROM x',0o644)}
+    _,builds=module()._plan(files)
+    assert {b['service']:b['network'] for b in builds}=={'dwarf-workload':'none','other':None}
+
+
+def test_plan_rejects_unknown_build_network():
+    body={'services':{'w':{'build':{'context':'./w'},'labels':{'com.dwarf.build-network':'host'}}}}
+    files={'docker-compose.yaml':(yaml.safe_dump(body).encode(),0o644),'w/Dockerfile':(b'FROM x',0o644)}
+    with pytest.raises(module().PackageError,match='Unsupported build network'):module()._plan(files)

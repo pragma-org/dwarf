@@ -637,3 +637,53 @@ def test_plain_key_requester_probe_sees_the_saved_pat(ready_env,monkeypatch):
     monkeypatch.setattr(m,'query_facts',lambda *a:[])
     ready_env['query_requester'](ready_env['config'],ready_env['target'])
     assert 'credentials_configured=True' in captured[0] and 'ghp_saved' not in captured[0]
+
+
+def _generated_receipt(staged, level, *, gaps=()):
+    receipt=staged['receipt'];request=receipt['request'];request['package_source']='build'
+    receipt['version_binding']={'status':'applied'}
+    receipt['workload_binding']={'status':'applied' if level!='none' else 'recorded','source':'dwarf-workload'}
+    primitives=[{'phase':'load','primitive':'runtime_multi_node_observation','status':'runs-with-note','note':''},
+                {'phase':'faults','primitive':'fault_node_freeze','status':'delegated-fault','note':''}]
+    if level=='partial':primitives.append({'phase':'probes','primitive':'runtime_target_health_and_progress','status':'unsupported','note':'docker exec'})
+    receipt['capabilities']={'level':level,'reason':'no-runnable-load' if level=='none' else None,'runnable_load':level!='none',
+                             'primitives':primitives,'gaps':list(gaps)}
+    receipt['issues'].extend(gaps)
+    return receipt
+
+
+def test_generated_workload_with_declared_gaps_passes_generated_selections(ready_env,staged,monkeypatch):
+    m=module()
+    gaps=[{'code':'primitive-unsupported-on-antithesis','field':'scenario_id','kind':'implementation-gap','primitive':'runtime_target_health_and_progress','phase':'probes','message':'x'}]
+    _generated_receipt(staged,'partial',gaps=gaps)
+    monkeypatch.setattr(m,'read_source',lambda source:staged)
+    row=check(ready_env);checks={c['id']:c for c in row['checks']}
+    assert 'generated_selections' not in checks or checks['generated_selections']['state']!='error'
+    assert checks['scenario_capabilities']['state']=='warn'
+    assert checks['scenario_capabilities']['group']=='Package' and checks['scenario_capabilities']['label']=='Antithesis support'
+    assert '1 unsupported' in checks['scenario_capabilities']['detail'] and '1 fault' in checks['scenario_capabilities']['detail']
+    assert row['state']=='ready'
+
+
+def test_generated_workload_full_support_is_ok(ready_env,staged,monkeypatch):
+    m=module();_generated_receipt(staged,'full')
+    monkeypatch.setattr(m,'read_source',lambda source:staged)
+    row=check(ready_env);checks={c['id']:c for c in row['checks']}
+    assert checks['scenario_capabilities']['state']=='ok' and row['state']=='ready'
+
+
+def test_generated_workload_without_runnable_load_is_blocked(ready_env,staged,monkeypatch):
+    m=module();_generated_receipt(staged,'none')
+    monkeypatch.setattr(m,'read_source',lambda source:staged)
+    row=check(ready_env);checks={c['id']:c for c in row['checks']}
+    assert checks['scenario_capabilities']['state']=='error'
+    assert 'No runnable load on Antithesis' in checks['scenario_capabilities']['detail']
+    assert row['state']=='blocked'
+
+
+def test_library_scenario_is_blocked_with_no_faultable_sut(ready_env,staged,monkeypatch):
+    m=module();receipt=_generated_receipt(staged,'none');receipt['capabilities']['reason']='no-faultable-sut'
+    receipt['workload_binding']={'status':'recorded','source':'none'}
+    monkeypatch.setattr(m,'read_source',lambda source:staged)
+    row=check(ready_env);checks={c['id']:c for c in row['checks']}
+    assert 'No faultable SUT' in checks['scenario_capabilities']['detail'] and row['state']=='blocked'

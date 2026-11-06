@@ -275,3 +275,21 @@ def test_runtime_failure_without_a_code_records_failed_progress(runtime, prepare
         publish.build_images(runtime, _build_params(prepared['receipt']['id']), BUILD_ID, 1800, threading.Event())
     progress = publish.read_build_progress(runtime, BUILD_ID)
     assert progress['status'] == 'failed' and progress['stage'] == 'error' and message in progress['detail'], progress
+
+
+def test_build_passes_network_none_only_for_labelled_services(runtime, monkeypatch, catalog):
+    import copy
+    from profile_manager import antithesis_versions
+    from profile_manager.antithesis_preparation import prepare_package
+    from test_antithesis_package import request
+    from test_antithesis_amaru_binding import selection
+    _preparations_dir(monkeypatch)
+    prepared = prepare_package(request(scenario_id='runtime-substrate-mempool-failure-containment-mixed-amaru', versions=selection('mixed')), {})
+    result = publish.build_images(runtime, _build_params(prepared['receipt']['id']), BUILD_ID, 1800, threading.Event())
+    assert result['status'] == 'built'
+    builds = [c['argv'] for c in runtime.calls if c['argv'][0] == 'build']
+    workload = [argv for argv in builds if argv[-1].endswith('/dwarf-workload')]
+    assert len(workload) == 1 and workload[0][workload[0].index('--network') + 1] == 'none'
+    assert all('--network' not in argv for argv in builds if not argv[-1].endswith('/dwarf-workload'))
+    row = next(r for r in result['built_images'] if r['service'] == 'dwarf-workload')
+    assert row['network'] == 'none'

@@ -393,3 +393,15 @@ def test_verify_before_push_does_not_claim_packages_are_private(built,monkeypatc
     assert job['state']=='failed' and 'HTTP 404' in job['message'],job
     receipt=module().read_handoff(h['id'])
     assert receipt['state']=='planned' and not receipt.get('visibility_required')
+
+
+def test_handoff_receipt_carries_workload_image_contents(built):
+    assert create(built)['workload_image_contents']==[]
+
+
+def test_handoff_copies_image_contents_from_the_workload_binding(built,monkeypatch):
+    source=build.read_build_result(built['receipt']['id'])
+    source['receipt']['workload_binding']['image_contents']=[{'path':'environment/dwarf-workload/Dockerfile','sha256':'sha256:'+'1'*64}]
+    monkeypatch.setattr(build,'read_build_result',lambda identifier:source)
+    receipt=module().create_handoff(built['receipt']['id'],'ghcr.io/example/dwarf',request_id='c'*32)
+    assert receipt['workload_image_contents']==[{'path':'environment/dwarf-workload/Dockerfile','sha256':'sha256:'+'1'*64}]

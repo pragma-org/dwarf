@@ -190,14 +190,18 @@ def build_images(runtime, parameters, execution_id, timeout, cancel_event):
             dockerfile = context / item['dockerfile']
             if legacy_builder:
                 dockerfile.write_text(_legacy_builder_dockerfile(dockerfile.read_text()))
-            result = job.run(('build', '--platform', 'linux/amd64', '--tag', reference, '--file', str(dockerfile), str(context)),
-                             log='build-' + str(index) + '.log', ceiling=BUILD_CEILING)
+            argv = ['build', '--platform', 'linux/amd64']
+            if item.get('network') == 'none':
+                argv += ['--network', 'none']
+            argv += ['--tag', reference, '--file', str(dockerfile), str(context)]
+            result = job.run(tuple(argv), log='build-' + str(index) + '.log', ceiling=BUILD_CEILING)
             if result.returncode:
                 raise job.blocked('image-build-failed', 'build', name + ': ' + (result.stderr or result.stdout)[-_DETAIL_LIMIT:])
             info = _inspect_amd64(job, reference, 'image-' + str(index) + '.log')
             if info is None:
                 raise job.blocked('image-build-failed', 'build', name + ': built image is not a linux/amd64 image')
-            rows.append({'service': name, 'reference': reference, 'image_id': info['Id'], 'platform': 'linux/amd64', 'publication': 'local-only'})
+            rows.append({'service': name, 'reference': reference, 'image_id': info['Id'], 'platform': 'linux/amd64',
+                         'publication': 'local-only', 'network': item.get('network')})
         result = {'status': 'built', 'preparation_id': preparation_id, 'built_images': rows, 'build_host': 'DWARF controller',
                   'build_count': len(plan), 'legacy_builder': legacy_builder}
         job.progress(status='built', stage='complete', current_service=None, completed_at=_now(), result=result)

@@ -268,6 +268,7 @@ CHECK_LABELS = {
     'configuration': ('Configuration', 'MOOG settings', False),
     'package': ('Package', 'Static package checks', False),
     'generated_selections': ('Package', 'Generated selections applied', False),
+    'scenario_capabilities': ('Package', 'Antithesis support', False),
     'public_git': ('Public Git', 'Public Git files match', False),
     'public_image': ('Public images', 'Public image', False),
     'requester_wallet_metadata': ('MOOG requester (external)', 'Requester wallet', True),
@@ -324,6 +325,20 @@ def _evaluate(row):
         binding=receipt.get('version_binding',{})
         artifacts=binding.get('node_artifacts',{})
         patched_applied=bool(artifacts) and all(a.get('mode')=='patched' for a in artifacts.values())
+        capabilities=receipt.get('capabilities') or {}
+        if capabilities:
+            level=capabilities.get('level')
+            rows_=capabilities.get('primitives') or []
+            counts={s:sum(1 for r in rows_ if r.get('status')==s) for s in ('delegated','delegated-fault','unsupported')}
+            if level=='none':
+                reason=capabilities.get('reason')
+                detail=('No faultable SUT: library and single-node scenarios have no topology to fault.' if reason=='no-faultable-sut'
+                        else 'No runnable load on Antithesis: every load primitive needs Docker, host processes or host tools (declared gaps).')
+                add('scenario_capabilities','error',detail)
+            elif level=='partial':
+                add('scenario_capabilities','warn',f"Partial: {counts['delegated']} lifecycle steps delegated to the package, {counts['delegated-fault']} faults delegated to the platform, {counts['unsupported']} unsupported primitives skipped as declared gaps.")
+            else:
+                add('scenario_capabilities','ok',f"Full: every primitive runs inside the package ({counts['delegated']} lifecycle steps delegated, {counts['delegated-fault']} faults delegated to the platform).")
         unsupported = ((request['versions']['build_variant']=='instrumented' and not patched_applied)
                        or receipt.get('measurement_binding',{}).get('status')=='partial'
                        or receipt.get('measurement_binding',{}).get('status') not in {'applied','not-requested'}
