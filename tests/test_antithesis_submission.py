@@ -531,13 +531,14 @@ def test_refresh_does_not_rewrite_a_complete_bundle(ready_env,monkeypatch):
 
 @pytest.mark.parametrize('find,reason',[
     ({'status':'ambiguous','run':None,'matches':2,'pages':1,'error':''},'antithesis_run_ambiguous'),
-    ({'status':'not_found','run':None,'matches':0,'pages':5,'error':''},'antithesis_run_not_found'),
+    ({'status':'not_found','run':None,'matches':0,'pages':2,'error':'searched the newest 100 runs; the proxy ignores paging cursors, older runs are unreachable'},'antithesis_run_not_found'),
 ])
 def test_unresolved_antithesis_runs_leave_the_verdict_inconclusive(ready_env,monkeypatch,find,reason):
     m=module();row=_submitted(ready_env,monkeypatch)
     monkeypatch.setattr(m,'query_facts',lambda *a:[fact(ready_env,'finished','failure')])
     _proxy(monkeypatch,find=find);row=wait(m.refresh(row['id'])['id'])
     assert row['result']['state']=='unavailable' and row['result']['reason']==reason
+    assert row['result']['detail']==find['error']
     assert _entry(m,row)['verdict']=='inconclusive'
 
 

@@ -324,7 +324,7 @@ def main() -> int:
             elif verb == "moog-test-run":
                 check_test_run_id(read_args[0])
             elif verb == "moog-antithesis-runs":
-                check_antithesis_arguments("runs", limit=50, cursor=read_args[0] if read_args else None)
+                check_antithesis_arguments("runs", limit=100, cursor=read_args[0] if read_args else None)
             elif verb == "moog-antithesis-events":
                 check_antithesis_arguments("events", run_id=read_args[0], query=read_args[1])
             else:
@@ -343,7 +343,7 @@ def main() -> int:
             elif verb == "moog-test-run":
                 script = build_moog_test_run_command(moog_config, read_args[0])
             elif verb == "moog-antithesis-runs":
-                script = build_moog_antithesis_command(moog_config, "runs", limit=50, cursor=read_args[0] if read_args else None)
+                script = build_moog_antithesis_command(moog_config, "runs", limit=100, cursor=read_args[0] if read_args else None)
             elif verb == "moog-antithesis-events":
                 script = build_moog_antithesis_command(moog_config, "events", run_id=read_args[0], query=read_args[1])
             else:

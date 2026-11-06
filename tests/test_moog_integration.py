@@ -1496,8 +1496,8 @@ def _shim_run(tmp_path, original):
 @pytest.mark.parametrize("original,expected", [
     ("moog-antithesis-run 788998d60b09b96953e830e9f9ae2c7b-62-14 --dry-run", "/bin/moog antithesis run --run-id 788998d60b09b96953e830e9f9ae2c7b-62-14"),
     ("moog-antithesis-properties 788998d60b09b96953e830e9f9ae2c7b-62-14 --dry-run", "/bin/moog antithesis properties --run-id 788998d60b09b96953e830e9f9ae2c7b-62-14"),
-    ("moog-antithesis-runs --dry-run", "/bin/moog antithesis runs --limit 50"),
-    ("moog-antithesis-runs cGFnZTI= --dry-run", "/bin/moog antithesis runs --limit 50 --cursor cGFnZTI="),
+    ("moog-antithesis-runs --dry-run", "/bin/moog antithesis runs --limit 100"),
+    ("moog-antithesis-runs cGFnZTI= --dry-run", "/bin/moog antithesis runs --limit 100 --cursor cGFnZTI="),
     ("moog-antithesis-events 788998d60b09b96953e830e9f9ae2c7b-62-14 dwarf_measurements --dry-run", "/bin/moog antithesis events --run-id 788998d60b09b96953e830e9f9ae2c7b-62-14 --q dwarf_measurements"),
     ("moog-test-runs J-GainSec --dry-run", "/bin/moog facts test-runs --whose J-GainSec --no-pretty"),
     ("moog-test-run " + "a" * 64 + " --dry-run", "/bin/moog facts test-runs --test-run-id " + "a" * 64),

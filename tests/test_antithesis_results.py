@@ -96,7 +96,7 @@ def test_find_antithesis_run_joins_on_the_description_test_run_id(config, monkey
     found = remote.find_antithesis_run(config, moog_config(), TEST_RUN_ID)
     assert found['status'] == 'found' and found['matches'] == 1 and found['pages'] == 2
     assert found['run']['run_id'] == fixture('run-completed.json')['run_id']
-    assert seen == ['/bin/moog antithesis runs --limit 50', '/bin/moog antithesis runs --limit 50 --cursor cGFnZTI=']
+    assert seen == ['/bin/moog antithesis runs --limit 100', '/bin/moog antithesis runs --limit 100 --cursor cGFnZTI=']
 
 
 def test_find_antithesis_run_is_ambiguous_when_two_rows_match(config, monkeypatch):
@@ -110,7 +110,7 @@ def test_find_antithesis_run_stops_at_max_pages_and_reports_not_found(config, mo
     page = fixture('runs-page-1.json')
     fake_ssh(monkeypatch, [(0, json.dumps(page), '')] * 3)
     found = remote.find_antithesis_run(config, moog_config(), '9' * 64, max_pages=2)
-    assert found == {'status': 'not_found', 'run': None, 'matches': 0, 'pages': 2, 'error': ''}
+    assert found['status'] == 'not_found' and found['run'] is None and found['matches'] == 0 and found['pages'] == 2 and 'newest 2 runs' in found['error']
 
 
 def test_find_antithesis_run_skips_rows_without_a_json_description(config, monkeypatch):
@@ -192,6 +192,12 @@ def _result(status='completed', rows=None, properties=True):
     return m.normalise_result(run, props if properties else None, test_run_id=TEST_RUN_ID)
 
 
+def _truncated(rows):
+    m = results_module()
+    props = fixture('properties.json'); props['data'] = rows; props['next_cursor'] = 'MgAAAAAAAAA='
+    return m.normalise_result(fixture('run-completed.json'), props, test_run_id=TEST_RUN_ID)
+
+
 def _row(name, status='Passing', examples=1):
     return {'id': 'f' * 32, 'name': name, 'status': status, 'is_event': False, 'is_group': False,
             'example_count': examples, 'examples': [], 'counterexample_count': 0 if status == 'Passing' else 1, 'counterexamples': []}
@@ -207,6 +213,8 @@ def _row(name, status='Passing', examples=1):
     (lambda: _result(rows=[_row('No Antithesis errors'), _row('Always: a'), _row('Sometimes: b', examples=0)]), ('fail', 'sometimes_not_encountered')),
     (lambda: _result(rows=[_row('No Antithesis errors'), _row('Always: a'), _row('Sometimes: b', examples=3)]), ('pass', 'verified_antithesis_report')),
     (lambda: _result(), ('fail', 'platform_property_failed')),   # the real 2026-10-20 table: DWARF rows pass, platform rows fail
+    (lambda: _truncated([_row('No Antithesis errors'), _row('Always: a'), _row('Sometimes: b', examples=3)]), ('inconclusive', 'properties_truncated')),
+    (lambda: _truncated([_row('No Antithesis errors'), _row('Always: a', 'Failing')]), ('fail', 'assertions_failed')),
 ])
 def test_result_verdict_rules(result, expected):
     assert results_module().result_verdict(result()) == expected
@@ -339,3 +347,15 @@ def test_requester_probe_builder_embeds_paths_and_reads_no_config_file():
     assert 'credentials_configured=False' in m.build_moog_requester_probe_command({**cfg, 'github_pat': ''})
     with pytest.raises(ValueError, match='bad-secrets-root'):
         m.build_moog_requester_probe_command({**cfg, 'secrets_root': 'rel/path'})
+
+
+def test_find_antithesis_run_stops_when_the_proxy_repeats_a_page(config, monkeypatch):
+    """F36: moog v0.5.1.3's proxy ignores --cursor (every page is the first page)
+    and caps a page at 100 rows. The lookup must notice the repeat, stop, and say
+    how far it could see instead of burning the page budget."""
+    page = fixture('runs-page-1.json'); page['next_cursor'] = 'c2FtZQ=='
+    seen = fake_ssh(monkeypatch, [(0, json.dumps(page), '')] * 5)
+    found = remote.find_antithesis_run(config, moog_config(), '9' * 64)
+    assert found['status'] == 'not_found' and found['pages'] == 2 and found['matches'] == 0
+    assert 'newest 2 runs' in found['error'] and 'paging' in found['error']
+    assert seen == ['/bin/moog antithesis runs --limit 100', '/bin/moog antithesis runs --limit 100 --cursor c2FtZQ==']

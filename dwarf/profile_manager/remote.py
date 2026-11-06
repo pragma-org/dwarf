@@ -238,25 +238,33 @@ def fetch_antithesis(
     return {"ok": True, "payload": parsed, "exit_code": 0, "error": ""}
 
 
-def find_antithesis_run(config, moog_config, test_run_id, *, max_pages=5, limit=50, timeout=60):
+def find_antithesis_run(config, moog_config, test_run_id, *, max_pages=5, limit=100, timeout=60):
     """Find the Antithesis run launched for one MOOG test run.
 
     The proxy's run rows carry MOOG's launch document in `description`; its
     `testRunId` is the join key. Exactly one match is 'found'; two or more are
-    'ambiguous' (a retried launch) and never silently chosen."""
+    'ambiguous' (a retried launch) and never silently chosen. moog v0.5.1.3's
+    proxy ignores paging cursors (every page is the newest page) and caps a page
+    at 100 rows, so a repeated page stops the search and the result says how
+    far it could see."""
     import json
 
     cursor = None
     matches = []
     pages = 0
+    seen_cursors = set()
+    seen_runs = set()
+    repeated = False
     while pages < max_pages:
         out = fetch_antithesis(config, moog_config, "runs", limit=limit, cursor=cursor, timeout=timeout)
         pages += 1
         if not out["ok"]:
             return {"status": "error", "run": None, "matches": len(matches), "pages": pages, "error": out["error"]}
         payload = out["payload"] if isinstance(out["payload"], dict) else {}
-        for row in payload.get("data") or []:
-            if not isinstance(row, dict):
+        rows = [row for row in (payload.get("data") or []) if isinstance(row, dict)]
+        new_runs = {str(row.get("run_id")) for row in rows} - seen_runs
+        for row in rows:
+            if str(row.get("run_id")) not in new_runs:
                 continue
             try:
                 description = json.loads(row.get("description") or "")
@@ -264,14 +272,22 @@ def find_antithesis_run(config, moog_config, test_run_id, *, max_pages=5, limit=
                 continue
             if isinstance(description, dict) and description.get("testRunId") == test_run_id:
                 matches.append(row)
+        seen_runs |= new_runs
         cursor = payload.get("next_cursor")
-        if not cursor or len(matches) >= 2:
+        if not new_runs or not cursor or cursor in seen_cursors:
+            repeated = bool(cursor) and (not new_runs or cursor in seen_cursors)
+            break
+        seen_cursors.add(cursor)
+        if len(matches) >= 2:
             break
     if len(matches) == 1:
         return {"status": "found", "run": matches[0], "matches": 1, "pages": pages, "error": ""}
     if matches:
         return {"status": "ambiguous", "run": None, "matches": len(matches), "pages": pages, "error": ""}
-    return {"status": "not_found", "run": None, "matches": 0, "pages": pages, "error": ""}
+    detail = f"searched the newest {len(seen_runs)} runs"
+    if repeated:
+        detail += "; the proxy ignores paging cursors, older runs are unreachable"
+    return {"status": "not_found", "run": None, "matches": 0, "pages": pages, "error": detail}
 
 
 def ssh_command(config, remote_command, timeout=None, dry_run=False, verb=None):

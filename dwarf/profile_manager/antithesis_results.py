@@ -117,6 +117,11 @@ def result_verdict(result: Mapping[str, Any]) -> tuple[str, str]:
     if any(row.get("kind") == "sometimes" and _int(row.get("example_count")) == 0 for row in dwarf):
         # A `sometimes` that was never encountered is the vacuous case the SDK itself reports as failing.
         return "fail", "sometimes_not_encountered"
+    if result.get("properties_truncated"):
+        # The proxy returned only the first page of properties (moog v0.5.1.3
+        # cannot page them); a failure seen is a failure, but a pass needs the
+        # whole table.
+        return "inconclusive", "properties_truncated"
     return "pass", "verified_antithesis_report"
 
 
