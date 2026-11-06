@@ -14,9 +14,10 @@ from profile_manager import antithesis_topology as topology
 SOURCE = Path(__file__).resolve().parents[2] / 'antithesis/cardano_amaru_miniprotocol_security'
 SCENARIO = 'cardano-amaru-miniprotocol-security-local'
 SCENARIO_SHA256 = 'ac36cd4b640a613184965018523677eb6459c5cb2465b0a398ef492c8f56ed19'
-# Reviewed recipe at cb72871. A source change requires re-tracing its consumers.
+# Reviewed recipe at cb72871; compose re-traced 2026-11-06 for the amaru-relay fault
+# labels (spec.md:80). A source change requires re-tracing its consumers.
 SOURCE_SHA256 = {
-    'docker-compose.yaml': 'a1888be32cba0d896432431597692e7ea302e27ec263b37f8a97997a1b53e62c',
+    'docker-compose.yaml': 'e636d38bfc47ad205a960048aaa929781d3a5277d687e5e53f59b1ce2bd9c18a',
     'sm-cardano-topology.json': '836006973c51c515c6834e73a9532327af607fc161f50b7cee268b07be41482d',
     'workload/Dockerfile': 'e9cfd733d883eaa4c96cd3cf573612ff9181c0e27b8469d5c455231ece46ec94',
     'workload/miniprotocol_observer.py': '455e4fb870b9658b3a48cfde5f0b79f54833160bc8ddd56113503b7ff7803732',

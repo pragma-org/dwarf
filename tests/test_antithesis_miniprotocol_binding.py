@@ -353,3 +353,11 @@ def test_packaged_recovery_does_not_claim_success_without_runtime_evidence(catal
     path='environment/miniprotocol/workload/test/v1/mixed-miniprotocol-security/eventually_recovery.py'
     exec(compile(generated['files'][path],path,'exec'),{})
     assert ('mixed_sm_targets_and_consumer_recovered',available) in emitted
+
+
+def test_curated_amaru_relays_are_fault_excluded():
+    body = yaml.safe_load((SOURCE/'docker-compose.yaml').read_text())
+    for name in ('amaru-relay-1', 'amaru-relay-2'):
+        assert body['services'][name]['labels'] == {'com.antithesis.exclude_from_faults': 'network,kill,pause,stop'}
+    victims = {name for name, service in body['services'].items() if 'labels' not in service}
+    assert victims == {'sm-cardano-seed', 'sm-cardano-victim', 'sm-amaru-victim'}

@@ -170,6 +170,7 @@ services:
     <<: *amaru
     container_name: dwarf-control-amaru-relay-1
     hostname: amaru-relay-1.example
+    labels: *fault-exclude
     environment:
       AMARU_LOG: debug
       AMARU_COLOR: never
@@ -198,6 +199,7 @@ services:
     <<: *amaru
     container_name: dwarf-control-amaru-relay-2
     hostname: amaru-relay-2.example
+    labels: *fault-exclude
     environment:
       AMARU_LOG: debug
       AMARU_COLOR: never
