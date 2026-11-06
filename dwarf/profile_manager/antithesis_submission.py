@@ -416,9 +416,36 @@ def _launch(row):
                 duration_hours=request['duration_hours'], faults=request['faults'] == 'on', **{'try': t['try_number']})
 
 
+def _scenario_record(row):
+    """The catalog scenario the package was generated from (None when the
+    source cannot be read): binds the external run to a scenario at reservation
+    so a later result can be judged against it."""
+    from profile_manager.data.catalog_definitions import CatalogError, load_definition
+    source = row.get('source') or {}
+    try:
+        kind = source.get('kind')
+        if kind == 'preparation':
+            preparation_id = source['id']
+        elif kind == 'build':
+            preparation_id = build.read_build_result(source['id'])['receipt']['preparation_id']
+        elif kind == 'publication':
+            preparation_id = publication.read_handoff(source['id'])['preparation_id']
+        else:
+            return None
+        scenario_id = (prep.read_preparation(preparation_id)['receipt'].get('request') or {}).get('scenario_id')
+        return load_definition('scenarios', scenario_id) if scenario_id else None
+    except (PackageError, CatalogError, KeyError, TypeError, OSError):
+        return None
+
+
+def _scenario_path(row):
+    record = _scenario_record(row)
+    return record.path if record is not None else None
+
+
 def _reserve(row):
     result = run_service.reserve_external_run(run_service.ExternalRunRequest(
-        backend='antithesis', origin='external', launch=_launch(row)))
+        backend='antithesis', origin='external', launch=_launch(row), scenario_path=_scenario_path(row)))
     row['dwarf_run_id'] = result['run_id']
     return result
 
@@ -489,7 +516,8 @@ def _bind_observed_fact(row, fact):
     launch.update(mode='link-existing', external_test_run_id=identifier,
                   duration_hours=value.get('duration', requested.get('duration')),
                   faults=requested.get('faults_enabled'))
-    reserved = run_service.reserve_external_run(run_service.ExternalRunRequest(backend='antithesis', launch=launch))
+    reserved = run_service.reserve_external_run(run_service.ExternalRunRequest(backend='antithesis', launch=launch,
+                                                                                scenario_path=_scenario_path(row)))
     row['dwarf_run_id'] = reserved['run_id']
     run_service.link_existing_external_run(row['dwarf_run_id'], state_dir=roots.state, external_test_run_id=identifier,
         link_evidence={'test_run_id': identifier, 'source': 'moog-facts', 'target': row['target']})
@@ -612,8 +640,10 @@ def _refresh(row):
     # Report URLs can contain signed credentials. Retain their availability only.
     evidence = {'test_run_id': identifier, 'phase': safe_phase, 'outcome': safe_outcome,
                 'report_available': bool(value.get('url')), 'observed_at': _now()}
+    # A result collected earlier stays part of the reconciliation; a plain
+    # status refresh must not downgrade a verified verdict reason.
     run_service.reconcile_external_status(row['dwarf_run_id'], state_dir=storage_roots().state,
-        phase=safe_phase, status_evidence=evidence)
+        phase=safe_phase, status_evidence=evidence, result_path=_existing_result_path(row))
     if safe_phase in {'finished', 'completed'}:
         state = 'completed'
         message = 'MOOG reports this request finished with outcome failure. The cause is not classified; inspect the Antithesis report.' if safe_outcome == 'failure' else 'Run completed. Review its evidence; completion alone does not establish a passing test verdict.'
@@ -625,9 +655,102 @@ def _refresh(row):
         state, message = row.get('previous_state', 'uncertain'), 'MOOG phase is unknown. Previous operational status retained.'
     else:
         state, message = 'pending', 'MOOG request is pending; remote completion has not been reported.'
+    if observed_terminal:
+        # The run is over: keep the report link privately, collect the Antithesis
+        # result through the proxy and let the ledger judge it.
+        row['result'] = _collect_result_safely(row, config, fact, phase=safe_phase, evidence=evidence)
+        if row['result'].get('state') == 'verified':
+            message = ('DWARF verdict ' + str(row['result']['verdict']) + ' (' + str(row['result']['reason'])
+                       + '). Open the run page for the properties table.')
     row.update(state=state, message=message, outcome=safe_outcome, observation=evidence)
     row.pop('refresh_error', None)
     row.pop('previous_state', None)
+
+
+_UNRESOLVED = {'ambiguous': 'antithesis_run_ambiguous', 'not_found': 'antithesis_run_not_found'}
+
+
+def _existing_result_path(row):
+    """external/result.json of a complete, chain-bound bundle for this run, else None."""
+    from profile_manager import antithesis_results as results
+    from profile_manager.run_ledger import RunLedger
+    if not row.get('dwarf_run_id'):
+        return None
+    try:
+        entry = RunLedger(storage_roots().state).get(row['dwarf_run_id'])
+        run_dir = Path(entry['evidence_path'])
+    except Exception:   # noqa: BLE001 - an unreadable ledger entry simply means no result yet
+        return None
+    path = run_dir / 'external' / 'result.json'
+    return path if results.bundle_complete(run_dir) and path.is_file() else None
+
+
+def _result_summary(row, result, entry):
+    """What the wizard shows: the ledger's verdict and the sanitised counts; never a URL."""
+    provenance = entry.get('provenance') or {}
+    verified = provenance.get('verdict_reason') == 'verified_antithesis_report'
+    detail = provenance.get('antithesis_result') or {}
+    return {'state': 'verified' if verified else 'inconclusive',
+            'verdict': entry.get('verdict'),
+            'reason': detail.get('reason') or provenance.get('verdict_reason'),
+            'antithesis_run_id': result.get('antithesis_run_id'),
+            'dwarf_property_count': result.get('dwarf_property_count'),
+            'failing': [str(name) for name in (result.get('failing') or [])][:10],
+            'run_page': '/operate/runs/' + str(row['dwarf_run_id'])}
+
+
+def collect_result(row, config, fact, *, phase, evidence):
+    """Antithesis result for a terminal MOOG test run.
+
+    Writes external/report-link.json (0600) once, finds the Antithesis run
+    through the proxy (description.testRunId), fetches the run row and the
+    properties table, writes the local bundle and reconciles the ledger with
+    external/result.json. A complete bundle is reused, never refetched."""
+    from profile_manager import antithesis_results as results
+    from profile_manager.run_ledger import RunLedger
+    roots = storage_roots()
+    identifier = fact['id']
+    entry = RunLedger(roots.state).get(row['dwarf_run_id'])
+    run_dir = Path(entry['evidence_path'])
+    url = (fact.get('value') or {}).get('url')
+    link = run_dir / 'external' / 'report-link.json'
+    if isinstance(url, str) and url and not link.exists():
+        results._private_dir(run_dir / 'external')
+        results._private_write(link, json.dumps({'url': url, 'observed_at': _now()}, sort_keys=True).encode() + b'\n')
+    result_path = run_dir / 'external' / 'result.json'
+    if results.bundle_complete(run_dir) and result_path.is_file():
+        return _result_summary(row, json.loads(result_path.read_text()), entry)
+    found = remote.find_antithesis_run(config, config.moog, identifier)
+    if found.get('status') != 'found':
+        return {'state': 'unavailable', 'reason': _UNRESOLVED.get(found.get('status'), 'report_fetch_failed'),
+                'detail': str(found.get('error') or '')[:200]}
+    run = found['run']
+    antithesis_run_id = run.get('run_id')
+    fetched = remote.fetch_antithesis(config, config.moog, 'run', run_id=antithesis_run_id)
+    if fetched.get('ok') and isinstance(fetched.get('payload'), dict):
+        run = fetched['payload']
+    properties = remote.fetch_antithesis(config, config.moog, 'properties', run_id=antithesis_run_id)
+    if not properties.get('ok'):
+        return {'state': 'unavailable', 'reason': 'report_fetch_failed', 'detail': str(properties.get('error') or '')[:200]}
+    table = properties['payload'] if isinstance(properties['payload'], dict) else None
+    result = results.normalise_result(run, table, test_run_id=identifier)
+    record = _scenario_record(row)
+    try:
+        results.write_result_bundle(run_dir, entry=entry, result=result, raw={'run': run, 'properties': table or {}},
+                                    scenario_source=record.source if record is not None else None, measurements=None)
+    except ValueError:
+        pass   # completed by a concurrent refresh; judge what is there
+    reconciled = run_service.reconcile_external_status(row['dwarf_run_id'], state_dir=roots.state, phase=phase,
+                                                       status_evidence=evidence, result_path=result_path)
+    return _result_summary(row, json.loads(result_path.read_text()), reconciled)
+
+
+def _collect_result_safely(row, config, fact, *, phase, evidence):
+    try:
+        return collect_result(row, config, fact, phase=phase, evidence=evidence)
+    except Exception as exc:   # noqa: BLE001 - result collection must never break the status refresh
+        # Only the exception type: proxy errors could echo host details.
+        return {'state': 'unavailable', 'reason': 'report_fetch_failed', 'detail': type(exc).__name__}
 
 
 def _worker(row, action, lock, worker):

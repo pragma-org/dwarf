@@ -438,3 +438,113 @@ def test_public_image_checks_are_reported_per_reference(ready_env,staged,monkeyp
     assert states=={('ok',False),('error',True)}
     private=next(c for c in images if c['state']=='error')
     assert private['urls']['user'].endswith('/packages/container/other/settings')
+
+
+# ---------------------------------------------------------------------------
+# AT-4 Task 5: scenario binding at reservation and result collection on refresh
+
+AT4=Path(__file__).resolve().parent/'fixtures'/'antithesis_proxy'
+
+
+def at4(name):return json.loads((AT4/name).read_text())
+
+
+def _submitted(ready_env,monkeypatch):
+    m=module();row=check(ready_env)
+    monkeypatch.setattr(m.remote,'run_moog_create_test',lambda *a,**k:m.remote.CommandResult(0,json.dumps({'test_run_id':'f'*64}),'',''))
+    return wait(m.submit(row['id'])['id'])
+
+
+def _proxy(monkeypatch,*,find=None,run=None,props=None):
+    m=module();calls=[]
+    run=run or at4('run-completed.json');props=at4('properties.json') if props is None else props
+    def find_run(config,moog_config,test_run_id,**kw):
+        calls.append(('find',test_run_id));return find or {'status':'found','run':run,'matches':1,'pages':1,'error':''}
+    def fetch(config,moog_config,subcommand,**kw):
+        calls.append((subcommand,kw.get('run_id')))
+        if subcommand=='run':return {'ok':True,'payload':run,'exit_code':0,'error':''}
+        if subcommand=='properties':return {'ok':True,'payload':props,'exit_code':0,'error':''}
+        raise AssertionError(subcommand)
+    monkeypatch.setattr(m.remote,'find_antithesis_run',find_run);monkeypatch.setattr(m.remote,'fetch_antithesis',fetch)
+    return calls
+
+
+def _entry(m,row):
+    from profile_manager.run_ledger import RunLedger
+    return RunLedger(m.storage_roots().state).get(row['dwarf_run_id'])
+
+
+def test_reserve_binds_the_package_scenario(ready_env,monkeypatch):
+    m=module();row=_submitted(ready_env,monkeypatch)
+    entry=_entry(m,row)
+    assert entry['scenario']['id']=='cardano-node-cbor-block-header-fuzz' and len(entry['scenario']['sha256'])==64
+
+
+def test_refresh_collects_the_result_and_records_a_verdict(ready_env,monkeypatch):
+    m=module();row=_submitted(ready_env,monkeypatch)
+    run=at4('run-completed.json');run['links']={'triage_report':'https://secret/report?auth=TOP_SECRET'}
+    calls=_proxy(monkeypatch,run=run)
+    monkeypatch.setattr(m,'query_facts',lambda *a:[fact(ready_env,'finished','failure')])
+    row=wait(m.refresh(row['id'])['id'])
+    assert row['state']=='completed',row
+    assert row['result']['state']=='verified' and row['result']['verdict']=='fail' and row['result']['reason']=='platform_property_failed',row['result']
+    assert row['result']['antithesis_run_id']==run['run_id'] and row['result']['dwarf_property_count']==2
+    assert row['result']['run_page']=='/operate/runs/'+row['dwarf_run_id'] and 'No Antithesis errors' in row['result']['failing']
+    assert calls==[('find','f'*64),('run',run['run_id']),('properties',run['run_id'])]
+    assert 'verdict fail' in row['message']
+    entry=_entry(m,row)
+    assert entry['verdict']=='fail' and entry['provenance']['verdict_reason']=='verified_antithesis_report'
+    run_dir=Path(entry['evidence_path']);link=run_dir/'external'/'report-link.json'
+    assert link.stat().st_mode&0o777==0o600 and 'TOP_SECRET' in link.read_text()
+    assert (run_dir/'manifest.json').is_file() and (run_dir/'external'/'result.json').is_file()
+    everything=''.join(p.read_text() for p in run_dir.rglob('*') if p.is_file() and p!=link)
+    assert 'TOP_SECRET' not in everything and 'TOP_SECRET' not in json.dumps(row)
+
+
+def test_refresh_keeps_inconclusive_when_the_proxy_fails_and_retries_next_time(ready_env,monkeypatch):
+    m=module();row=_submitted(ready_env,monkeypatch)
+    monkeypatch.setattr(m,'query_facts',lambda *a:[fact(ready_env,'finished','success')])
+    _proxy(monkeypatch,find={'status':'error','run':None,'matches':0,'pages':1,'error':'proxy or network failure (exit 3)'})
+    row=wait(m.refresh(row['id'])['id'])
+    assert row['state']=='completed'
+    assert row['result']=={'state':'unavailable','reason':'report_fetch_failed','detail':'proxy or network failure (exit 3)'}
+    entry=_entry(m,row)
+    assert entry['verdict']=='inconclusive' and entry['provenance']['verdict_reason']=='no_verified_result_bundle'
+    assert not (Path(entry['evidence_path'])/'manifest.json').exists()
+    passing=[r for r in at4('properties.json')['data'] if r['status']=='Passing']
+    _proxy(monkeypatch,props={'data':passing,'next_cursor':None})
+    row=wait(m.refresh(row['id'])['id'])
+    assert row['result']['state']=='verified' and row['result']['verdict']=='pass',row['result']
+    assert _entry(m,row)['verdict']=='pass'
+
+
+def test_refresh_does_not_rewrite_a_complete_bundle(ready_env,monkeypatch):
+    m=module();row=_submitted(ready_env,monkeypatch)
+    monkeypatch.setattr(m,'query_facts',lambda *a:[fact(ready_env,'finished','failure')])
+    _proxy(monkeypatch);row=wait(m.refresh(row['id'])['id']);assert row['result']['state']=='verified'
+    manifest=Path(_entry(m,row)['evidence_path'])/'manifest.json';before=manifest.read_bytes()
+    calls=_proxy(monkeypatch,find={'status':'error','run':None,'matches':0,'pages':1,'error':'down'})
+    row=wait(m.refresh(row['id'])['id'])
+    assert row['result']['state']=='verified' and row['result']['verdict']=='fail' and calls==[] and manifest.read_bytes()==before
+
+
+@pytest.mark.parametrize('find,reason',[
+    ({'status':'ambiguous','run':None,'matches':2,'pages':1,'error':''},'antithesis_run_ambiguous'),
+    ({'status':'not_found','run':None,'matches':0,'pages':5,'error':''},'antithesis_run_not_found'),
+])
+def test_unresolved_antithesis_runs_leave_the_verdict_inconclusive(ready_env,monkeypatch,find,reason):
+    m=module();row=_submitted(ready_env,monkeypatch)
+    monkeypatch.setattr(m,'query_facts',lambda *a:[fact(ready_env,'finished','failure')])
+    _proxy(monkeypatch,find=find);row=wait(m.refresh(row['id'])['id'])
+    assert row['result']['state']=='unavailable' and row['result']['reason']==reason
+    assert _entry(m,row)['verdict']=='inconclusive'
+
+
+def test_result_collection_failure_never_breaks_the_status_refresh(ready_env,monkeypatch):
+    m=module();row=_submitted(ready_env,monkeypatch)
+    monkeypatch.setattr(m,'query_facts',lambda *a:[fact(ready_env,'finished','failure')])
+    def boom(*a,**k):raise RuntimeError('TOP_SECRET')
+    monkeypatch.setattr(m.remote,'find_antithesis_run',boom)
+    row=wait(m.refresh(row['id'])['id'])
+    assert row['state']=='completed' and row['result']['state']=='unavailable' and row['result']['reason']=='report_fetch_failed'
+    assert 'TOP_SECRET' not in json.dumps(row)
