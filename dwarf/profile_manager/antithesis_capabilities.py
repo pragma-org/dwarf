@@ -62,7 +62,7 @@ def classify(scenario):
             runnable_load = True
         code = _GAP_CODES.get(status)
         if code:
-            gaps.append({'kind': 'implementation-gap', 'code': code, 'primitive': primitive, 'phase': label,
+            gaps.append({'kind': 'implementation-gap', 'code': code, 'field': 'scenario_id', 'primitive': primitive, 'phase': label,
                          'message': primitive + ': ' + (entry.get('note') or status)})
     reason = None
     if scenario.runtime in _NO_SUT_RUNTIMES:

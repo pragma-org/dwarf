@@ -326,3 +326,65 @@ def test_publication_push_shape_accepts_an_optional_one_time_token(monkeypatch):
     status, _, _ = dispatch_package_request(method='POST', path='/api/antithesis-run/package/publication-action',
                                             body=json.dumps(without).encode(), expected_token='right')
     assert status == 202 and seen['publish_token'] is None and seen['save_token'] is False
+
+
+def _mixed_versions():
+    from test_antithesis_amaru_binding import selection
+    return selection('mixed')
+
+
+def test_devnet_scenario_previews_through_the_generated_workload(monkeypatch):
+    import copy
+    from profile_manager import antithesis_versions
+    from profile_manager.version_catalog import load_version_catalog
+    data = load_version_catalog()
+    monkeypatch.setattr(antithesis_versions, 'load_effective_version_catalog', lambda: copy.deepcopy(data))
+    result = generate(request(scenario_id='runtime-substrate-mempool-failure-containment-mixed-amaru', versions=_mixed_versions()))
+    assert result['workload_binding']['source'] == 'dwarf-workload'
+    assert result['workload_binding']['status'] == 'applied'
+    assert result['capabilities']['level'] == 'partial'
+    assert 'environment/dwarf-workload/Dockerfile' in result['files']
+    compose = yaml.safe_load(result['files']['environment/docker-compose.yaml'])
+    assert 'dwarf-workload' in compose['services'] and 'sm-cardano-victim' in compose['services']
+    assert 'sm-workload' not in compose['services']
+    rows = {r['field']: r for r in result['engine_handoff']['inputs']}
+    assert rows['scenario_id']['status'] == 'partial'
+    assert 'dwarf-workload' in rows['scenario_id']['detail']
+    assert rows['topology']['status'] == 'applied'
+    manifest = json.loads(result['files']['package-manifest.json'])
+    assert manifest['capabilities'] == result['capabilities']
+    codes = {issue['code'] for issue in result['issues']}
+    assert 'primitive-unsupported-on-antithesis' in codes
+    assert 'scenario-harness-workload-not-implemented' not in codes
+    assert any(image['service'] == 'dwarf-workload' for image in result['images'])
+
+
+def test_profile_scenario_without_versions_is_recorded_with_binding_gaps():
+    result = generate(request(scenario_id='m3-runtime-profile-restart-postrecovery-blockfetch'))
+    assert result['workload_binding']['source'] == 'dwarf-workload'
+    assert result['capabilities']['level'] == 'full'
+    assert 'environment/dwarf-workload/package/runtime.json' in result['files']
+    assert result['version_binding']['source'] == 'control-harness'
+    assert result['engine_handoff']['renderer'] == 'control-harness'
+
+
+def test_library_scenario_keeps_the_native_path_and_reports_no_faultable_sut():
+    result = generate(request(scenario_id='cardano-node-cbor-block-header-fuzz'))
+    assert result['capabilities']['level'] == 'none'
+    assert result['capabilities']['reason'] == 'no-faultable-sut'
+    assert result['workload_binding']['source'] == 'none'
+    assert any(issue['code'] == 'scenario-capability-none' for issue in result['issues'])
+    compose = yaml.safe_load(result['files']['environment/docker-compose.yaml'])
+    assert 'dwarf-adversary' in compose['services'] and 'dwarf-workload' not in compose['services']
+
+
+def test_curated_scenario_keeps_the_curated_binder(monkeypatch):
+    import copy
+    from profile_manager import antithesis_versions
+    from profile_manager.version_catalog import load_version_catalog
+    data = load_version_catalog()
+    monkeypatch.setattr(antithesis_versions, 'load_effective_version_catalog', lambda: copy.deepcopy(data))
+    result = generate(request(scenario_id='cardano-amaru-miniprotocol-security-local', versions=_mixed_versions()))
+    assert result['workload_binding']['source'] == 'curated-miniprotocol'
+    assert result['workload_binding']['status'] == 'applied'
+    assert 'environment/dwarf-workload/Dockerfile' not in result['files']

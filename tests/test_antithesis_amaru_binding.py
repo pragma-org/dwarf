@@ -96,9 +96,15 @@ def test_default_harness_binds_versions_without_claiming_scenario_workload(catal
     assert result['engine_handoff']['renderer_invoked'] is True
     assert result['engine_handoff']['adversary'] is None
     fields={r['field']:r for r in result['engine_handoff']['inputs']}
-    assert fields['scenario_id']['status']=='recorded'
     assert fields['versions']['status']=='applied'
-    assert 'scenario-harness-workload-not-implemented' in {i['code'] for i in result['issues']}
+    if scope=='mixed':
+        # Devnet scenarios now run DWARF's own runner inside the package (AT-2).
+        assert result['workload_binding']['source']=='dwarf-workload'
+        assert fields['scenario_id']['status'] in ('applied','partial')
+        assert 'scenario-harness-workload-not-implemented' not in {i['code'] for i in result['issues']}
+    else:
+        assert fields['scenario_id']['status']=='recorded'
+        assert 'scenario-harness-workload-not-implemented' in {i['code'] for i in result['issues']}
     assert 'dwarf-adversary' not in compose(result)['services']
     assessment=resolve_versions({**v,'topology':value['topology'],'topology_digest':None,'scenario_id':scenario_id})
     assert assessment['release_resolution']==report['release_resolution']

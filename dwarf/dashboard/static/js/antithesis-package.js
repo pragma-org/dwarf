@@ -43,7 +43,9 @@
       versions:'Node versions',build_variant:'Stock / instrumented',experimental_intent:'Experimental intent',
       measurements:'Measurement taps',duration_hours:'Duration',faults:'Fault policy'};
     const statuses={applied:'Applied to preview',partial:'Partly applied',recorded:'Recorded only'};
-    get('engine-summary').textContent=handoff.workload_binding?.status==='applied'
+    get('engine-summary').textContent=handoff.workload_binding?.source==='dwarf-workload'&&handoff.workload_binding?.status==='applied'
+      ? 'Existing mixed harness · DWARF scenario runner (dwarf-workload) executes this scenario inside the package · workload image build required. Unsupported primitives are declared gaps; runtime unverified.'
+      : handoff.workload_binding?.status==='applied'
       ? 'Existing mixed harness · paired mini-protocol workload and observing test commands connected · workload image build required. Partial scenario translation; runtime unverified.'
       : handoff.renderer==='control-harness'
       ? 'Existing Amaru/mixed control harness · node-version preparation. Scenario workload and observing assertions are not connected.'
@@ -63,6 +65,15 @@
     }));
     get('engine-configs').textContent=handoff.config_files.length
       ? 'Included configuration: '+handoff.config_files.join(', '):'No scenario configuration emitted.';
+  }
+  function showCapabilities(capabilities){
+    const line=get('package-capabilities'),list=get('package-capability-list');
+    if(!capabilities||typeof capabilities.level!=='string'||!Array.isArray(capabilities.gaps)){line.textContent='';list.hidden=true;list.replaceChildren();return;}
+    line.dataset.level=capabilities.level;
+    line.textContent=`Antithesis support: ${capabilities.level}`+(capabilities.reason?` (${capabilities.reason})`:'')
+      +` · ${capabilities.primitives.length} primitives, ${capabilities.gaps.length} declared gaps.`;
+    list.replaceChildren(...capabilities.gaps.map(gap=>{const li=document.createElement('li');li.textContent=`${gap.code}: ${gap.message}`;return li;}));
+    list.hidden=!capabilities.gaps.length;
   }
   get('package-file').addEventListener('change',showFile);
   get('preview-package').addEventListener('click',async()=>{
@@ -85,6 +96,7 @@
             &&['applied','partial','recorded'].includes(input.status)))throw new Error('Invalid engine handoff response.');
       files=result.files;
       showHandoff(handoff);
+      showCapabilities(result.capabilities);
       get('package-issues').replaceChildren(...result.issues.map(issue=>{const li=document.createElement('li');li.textContent=issue.message;return li;}));
       get('package-file').replaceChildren(...Object.keys(files).sort().map(name=>{
         const option=document.createElement('option');option.value=name;option.textContent=name;return option;

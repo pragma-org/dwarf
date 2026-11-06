@@ -210,7 +210,7 @@ def add_victims(files, resolved, version_binding, implementations):
 
 
 def bind_workload(files, scenario, resolved, version_binding):
-    report = {'status':'recorded', 'scenario_id':scenario.id, 'runtime_verified':False,
+    report = {'status':'recorded', 'source':'none', 'scenario_id':scenario.id, 'runtime_verified':False,
               'targets':[], 'issues':[], 'source_digests':{}}
     def gap(code, message):
         report['issues'].append({'code':code, 'field':'scenario_id',
@@ -271,7 +271,7 @@ def bind_workload(files, scenario, resolved, version_binding):
     files.update(additions)
     version_binding.clear()
     version_binding.update(binding)
-    report.update(status='applied', targets=['sm-cardano-victim','sm-amaru-victim'],
+    report.update(status='applied', source='curated-miniprotocol', targets=['sm-cardano-victim','sm-amaru-victim'],
         recipe='cardano_amaru_miniprotocol_security', evidence='emitted-configuration',
         source_digests={name:'sha256:'+digest for name,digest in SOURCE_SHA256.items()},
         source_patches=[{'path':name, 'sha256':'sha256:'+hashlib.sha256(additions[name].encode()).hexdigest(),

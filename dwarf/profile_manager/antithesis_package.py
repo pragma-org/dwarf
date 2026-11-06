@@ -15,6 +15,8 @@ from profile_manager import antithesis_generator as native
 from profile_manager import antithesis_topology as topology
 from profile_manager import antithesis_harness as harness
 from profile_manager import antithesis_workload_binding as workload
+from profile_manager import antithesis_generated_workload as generated_workload
+from profile_manager.antithesis_capabilities import classify
 from profile_manager.antithesis_version_binding import bind_native_versions
 from profile_manager.data.catalog_definitions import CatalogError, load_definition
 from profile_manager.scenario import ScenarioValidationError, scenario_from_body
@@ -201,9 +203,13 @@ def preview_package(value):
     except topology.TopologyError as exc:
         raise PackageError(str(exc),field='topology.'+exc.field,status=exc.status) from exc
 
+    classification = classify(scenario)
+    # Devnet scenarios other than the curated recipe run DWARF's own runner inside
+    # the package (generated path); library/single-node keep the native adversary.
+    generated_path = scenario.runtime == 'devnet' and scenario.id != workload.SCENARIO
     control = None
     if value['topology']['source'] == 'scenario-default':
-        control = harness.resolve_default(scenario)
+        control = generated_workload.resolve_generated_topology(scenario) if generated_path else harness.resolve_default(scenario)
     elif resolved['state'] == 'resolved' and resolved['request']['template_id'] in {'amaru-control-v1','mixed-control-v1'}:
         if resolved['topology_digest'] != value['topology_digest']:
             raise PackageError('Topology changed. Resolve it again before generating the package.', field='topology_digest', status=409)
@@ -270,10 +276,16 @@ def preview_package(value):
     version_binding = (harness.bind_versions(files, v, control,
         scenario_default=scenario.target.get('version') if value['topology']['source']=='scenario-default' else None)
         if control else bind_native_versions(files, v, scenario))
-    workload_binding = workload.bind_workload(files, scenario, control, version_binding)
+    if generated_path:
+        workload_binding = generated_workload.bind_generated_workload(files, scenario, control, version_binding, classification)
+    else:
+        workload_binding = workload.bind_workload(files, scenario, control, version_binding)
     issues.extend(workload_binding['issues'])
-    if control and workload_binding['status'] != 'applied':
+    if control and workload_binding['status'] != 'applied' and not generated_path:
         gap('scenario-harness-workload-not-implemented', 'scenario_id', 'The control harness is prepared, but this scenario workload and its observing assertions are not connected.')
+    if classification['level'] == 'none' and not generated_path:
+        gap('scenario-capability-none', 'scenario_id', 'No runnable workload for Antithesis: ' + str(classification['reason']) + '.')
+    issues.extend(classification['gaps'])
     issues.extend(version_binding['issues'])
     if version_binding['status'] == 'recorded' and v['policy'] != 'profile-default':
         gap('version-binding-not-implemented','versions','This requested version intent could not be applied. See the specific binding gaps; no substitute release was chosen.')
@@ -304,6 +316,16 @@ def preview_package(value):
 
     gap('image-build-publication-deferred','package_source','Images have not been built or published. The public GitHub publication trigger and submission will be connected later.')
     handoff = _engine_handoff(files, renderer_invoked=renderer_invoked, version_binding=version_binding, workload_binding=workload_binding)
+    if workload_binding.get('source') == 'dwarf-workload' and workload_binding['status'] == 'applied':
+        counts = {status: sum(1 for row in classification['primitives'] if row['status'] == status)
+                  for status in ('delegated', 'delegated-fault', 'unsupported')}
+        rows = {r['field']: r for r in handoff['inputs']}
+        rows['scenario_id'].update(status='applied' if classification['level'] == 'full' else 'partial',
+            detail=("DWARF's own runner (dwarf-workload) executes this scenario inside the package. Antithesis support " + classification['level']
+                    + ': ' + str(counts['delegated']) + ' lifecycle steps delegated to the package, ' + str(counts['delegated-fault'])
+                    + ' faults delegated to the platform, ' + str(counts['unsupported']) + ' primitives unsupported (declared gaps).'),
+            evidence=['environment/docker-compose.yaml', 'environment/dwarf-workload/Dockerfile', 'package-manifest.json'])
+        rows['topology'].update(status='applied', detail='The mixed control harness plus the curated victim clones for the scenario target; scenario node ids are mapped to harness services in the package runtime.json.')
     for item in handoff['inputs']:
         if item['field']=='measurements' and measurement_binding['status']=='applied':
             item.update(status='applied',detail='Existing DWARF collectors are bound to target-specific traces; periodic results are retained and logged. Runtime data availability remains unverified.')
@@ -319,6 +341,7 @@ def preview_package(value):
     manifest = {'schema_version':1,'backend':'antithesis','state':'incomplete','execution_ready':False,
         'request':value,'issues':issues,'images':images,'compatibility':'not-evaluated',
         'engine_handoff':handoff, 'version_binding':version_binding, 'workload_binding':workload_binding, 'measurement_binding':measurement_binding,
+        'capabilities':classification,
         'generator_source_digest':_sha(Path(harness.__file__ if control else native.__file__).read_bytes()),
         'files':{name:_sha(text.encode()) for name,text in sorted(files.items())}}
     files['package-manifest.json'] = _json(manifest)
@@ -335,5 +358,6 @@ def preview_package(value):
     return {'state':'incomplete','execution_ready':False,'issues':issues,'files':files,
         'inventory':inventory,'package_digest':digest,'images':images,'engine_handoff':handoff,
         'version_binding':version_binding, 'workload_binding':workload_binding, 'measurement_binding':measurement_binding,
+        'capabilities':classification,
         'archive_base64':base64.b64encode(output.getvalue()).decode(),
         'archive_name':'antithesis-preview-'+digest.split(':')[1][:12]+'.zip'}
