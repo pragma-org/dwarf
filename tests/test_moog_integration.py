@@ -1523,3 +1523,10 @@ def test_control_shim_rejects_malformed_wizard_moog_reads(tmp_path, original, re
     completed = _shim_run(tmp_path, original)
     assert completed.returncode == 77
     assert reason in completed.stderr
+
+
+def test_control_shim_generates_the_requester_probe(tmp_path):
+    completed = _shim_run(tmp_path, "moog-requester-probe --dry-run")
+    assert completed.returncode == 0, completed.stderr
+    assert "'wallet','info'" in completed.stdout and "'/bin/moog'" in completed.stdout
+    assert _shim_run(tmp_path, "moog-requester-probe extra --dry-run").returncode == 77

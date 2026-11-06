@@ -326,3 +326,16 @@ def test_moog_proxy_command_builders_validate_and_render():
                  lambda: m.build_moog_antithesis_command(cfg, 'run'), lambda: m.build_moog_test_runs_command(cfg, 'bad user!'), lambda: m.build_moog_test_run_command(cfg, 'zz')):
         with pytest.raises(ValueError):
             call()
+
+
+def test_requester_probe_builder_embeds_paths_and_reads_no_config_file():
+    from profile_manager import moog as m
+    cfg = {'moog_binary': '/bin/moog', 'secrets_root': '/srv/secrets', 'requester_wallet_file': '/srv/secrets/requester/requester.json', 'github_pat': 'x'}
+    script = m.build_moog_requester_probe_command(cfg)
+    assert script.startswith("python3 - <<'PY'\n") and script.rstrip().endswith('PY')
+    for needle in ("'/srv/secrets/requester/wallet.passphrase'", "'/srv/secrets/requester/requester.json'", "'/bin/moog'", 'credentials_configured=True', "'wallet','info'"):
+        assert needle in script, needle
+    assert 'dwarf-v4' not in script and 'config.yaml' not in script and 'x' not in script.split('credentials_configured=True')[0][-2:]
+    assert 'credentials_configured=False' in m.build_moog_requester_probe_command({**cfg, 'github_pat': ''})
+    with pytest.raises(ValueError, match='bad-secrets-root'):
+        m.build_moog_requester_probe_command({**cfg, 'secrets_root': 'rel/path'})

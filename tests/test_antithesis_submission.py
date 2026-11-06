@@ -566,3 +566,19 @@ def test_git_mismatch_still_records_an_existing_attempt(ready_env,monkeypatch):
     _proxy(monkeypatch)
     row=wait(m.refresh(row['id'])['id'])
     assert row['state']=='completed' and row['result']['state']=='verified' and row['result']['verdict']=='fail'
+
+
+def test_query_requester_uses_the_probe_verb_in_shim_mode(ready_env,monkeypatch):
+    """F35: in shim mode the requester probe travels as a fixed verb instead of being refused."""
+    m=module();captured=[]
+    monkeypatch.setattr(m.remote,'control_shim_enabled',lambda:True)
+    def ssh(config,command,timeout=None,dry_run=False,verb=None):
+        captured.append((verb,command));return m.remote.CommandResult(0,'{"credentials":true,"public_key":"vkey-selected"}','','')
+    monkeypatch.setattr(m.remote,'ssh_command',ssh)
+    required=['requester_wallet_metadata','requester_vkey','requester_wallet_funded','github_profile_vkey','github_codeowners','moog_user_registered','moog_role_registered','moog_repo_whitelisted','facts_users','facts_roles','facts_white_list']
+    monkeypatch.setattr(m,'_query_readiness',lambda *a,**k:{'checks':[{'id':i,'state':'ok','detail':'ok'} for i in required],'requester_public_key':'vkey-selected'})
+    monkeypatch.setattr(m,'query_facts',lambda *a:[])
+    result=ready_env['query_requester'](ready_env['config'],ready_env['target'])
+    assert captured and captured[0][0]==('moog-requester-probe',) and "'wallet','info'" in captured[0][1]
+    rows={c['id']:c['state'] for c in result['checks']}
+    assert rows['transport_credentials']=='ok' and rows['selected_wallet']=='ok'

@@ -1698,3 +1698,38 @@ def build_moog_antithesis_command(
         if value is not None:
             argv += [flag, str(value)]
     return " ".join(shlex.quote(part) for part in argv)
+
+
+_SECRETS_ROOT_RE = re.compile(r"^/[A-Za-z0-9_./-]+$")
+
+
+def build_moog_requester_probe_command(moog_config: dict[str, Any]) -> str:
+    """Read-only requester probe for the Antithesis wizard: are the transport
+    credential files present and readable, and which wallet is selected. The
+    script carries the configured paths and the credential presence as literals
+    (no host config file is read); it prints one JSON object."""
+    config = normalize_moog_config(moog_config)
+    secrets_root = str(config.get("secrets_root") or "")
+    if not _SECRETS_ROOT_RE.fullmatch(secrets_root) or "/../" in secrets_root + "/":
+        raise ValueError("bad-secrets-root")
+    passphrase = repr(secrets_root + "/requester/wallet.passphrase")
+    wallet = repr(str(config.get("requester_wallet_file") or ""))
+    binary = repr(str(config.get("moog_binary") or ""))
+    configured = bool(config.get("github_pat"))
+    script = f"""import json, pathlib, os, subprocess
+credentials_configured={configured}
+p=pathlib.Path({passphrase})
+w=pathlib.Path({wallet})
+credentials=credentials_configured and p.is_file() and p.stat().st_size>0 and os.access(p,os.R_OK) and w.is_file() and os.access(w,os.R_OK)
+public_key=''
+try:
+    env=os.environ.copy()
+    env['MOOG_WALLET_PASSPHRASE']=p.read_text().rstrip('\\n')
+    result=subprocess.run([{binary},'wallet','info','-w',str(w),'--no-pretty'],env=env,capture_output=True,text=True,timeout=15)
+    if result.returncode==0:
+        public_key=json.loads(result.stdout).get('publicKey','')
+except Exception:
+    pass
+print(json.dumps({{'credentials':bool(credentials),'public_key':public_key}}))
+"""
+    return "python3 - <<'PY'\n" + script + "PY\n"

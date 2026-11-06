@@ -49,6 +49,7 @@ READ_VERBS = {
     "moog-antithesis-run",
     "moog-antithesis-properties",
     "moog-antithesis-events",
+    "moog-requester-probe",
     "topology-health",
     "profile-health",
     "launch-preflight",
@@ -73,6 +74,7 @@ _MOOG_READ_VERBS = {
     "moog-antithesis-run": (1, 1),
     "moog-antithesis-properties": (1, 1),
     "moog-antithesis-events": (2, 2),
+    "moog-requester-probe": (0, 0),
 }
 
 # A profile id / view token: starts alnum, then alnum/-/_ , bounded length.
@@ -262,6 +264,7 @@ def main() -> int:
             build_moog_create_test_command,
             build_moog_facts_command,
             build_moog_health_command,
+            build_moog_requester_probe_command,
             build_moog_test_run_command,
             build_moog_test_runs_command,
             check_antithesis_arguments,
@@ -314,7 +317,9 @@ def main() -> int:
         # so the dashboard and this shim reject exactly the same inputs — and
         # they run before any host config is read.
         try:
-            if verb == "moog-test-runs":
+            if verb == "moog-requester-probe":
+                pass   # no client values; the host config alone shapes the probe
+            elif verb == "moog-test-runs":
                 check_github_user(read_args[0])
             elif verb == "moog-test-run":
                 check_test_run_id(read_args[0])
@@ -331,7 +336,9 @@ def main() -> int:
         except Exception as exc:
             return _reject(conf, original, f"{verb}-config-failed:{type(exc).__name__}")
         try:
-            if verb == "moog-test-runs":
+            if verb == "moog-requester-probe":
+                script = build_moog_requester_probe_command(moog_config)
+            elif verb == "moog-test-runs":
                 script = build_moog_test_runs_command(moog_config, read_args[0])
             elif verb == "moog-test-run":
                 script = build_moog_test_run_command(moog_config, read_args[0])

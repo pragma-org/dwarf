@@ -231,33 +231,13 @@ def _query_readiness(config, target):
 
 
 def query_requester(config, target):
-    if remote.control_shim_enabled():
-        raise PackageError('The restricted control channel lacks the read-only requester probe required by this wizard. Configure a supported MOOG requester connection.', status=422)
-    cfg = config.moog
-    # Existing non-shim remote.run_moog_create_test expands this path unquoted.
-    if not re.fullmatch(r'/[A-Za-z0-9_./-]+', cfg['secrets_root']):
-        raise PackageError('The existing MOOG transport requires a simple absolute secrets-root path.', status=422)
-    script = '''import json, pathlib, os, subprocess
-try:
-    cfg=json.load(open('/home/dwarf/dwarf-v4/var/state/config.yaml'))
-    credentials=bool(cfg.get('moog',{}).get('github_pat'))
-except Exception:
-    credentials=False
-p=pathlib.Path(PASSPHRASE)
-w=pathlib.Path(WALLET)
-credentials=credentials and p.is_file() and p.stat().st_size>0 and os.access(p,os.R_OK) and w.is_file() and os.access(w,os.R_OK)
-public_key=''
-try:
-    env=os.environ.copy()
-    env['MOOG_WALLET_PASSPHRASE']=p.read_text().rstrip('\\n')
-    result=subprocess.run([BINARY,'wallet','info','-w',str(w),'--no-pretty'],env=env,capture_output=True,text=True,timeout=15)
-    if result.returncode==0:
-        public_key=json.loads(result.stdout).get('publicKey','')
-except Exception:
-    pass
-print(json.dumps({'credentials':bool(credentials),'public_key':public_key}))
-'''.replace('PASSPHRASE)', repr(cfg['secrets_root'] + '/requester/wallet.passphrase') + ')').replace('WALLET)', repr(cfg['requester_wallet_file']) + ')').replace('BINARY,', repr(cfg['moog_binary']) + ',')
-    result = remote.ssh_command(config, "python3 - <<'PY'\n" + script + '\nPY', timeout=20)
+    # One builder renders the read-only probe for plain-key hosts and for the
+    # control shim, which regenerates it from the fixed verb (F35).
+    try:
+        command = moog.build_moog_requester_probe_command(config.moog)
+    except ValueError as exc:
+        raise PackageError('The existing MOOG transport requires a simple absolute secrets-root path.', status=422) from exc
+    result = remote.ssh_command(config, command, timeout=20, verb=('moog-requester-probe',))
     probe = json.loads(result.stdout) if result.returncode == 0 else {}
     credentials = probe.get('credentials') is True
     readiness = _query_readiness(config, target)
