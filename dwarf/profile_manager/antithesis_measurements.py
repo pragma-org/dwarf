@@ -107,7 +107,22 @@ def bind_measurements(files, request, scenario, versions, workload):
         for key in ('patch_set_sha256','measurement_revision','executable_digest','toolchain',
                     'build_result_sha256','runtime_probe_log_sha256','compatibility'):
             if key in artifact:identity[key]=artifact[key]
-        if artifact.get('experimental_instrumentation'):
+        registration=artifact.get('registration')
+        if registration and identity['mode']=='patched':
+            # Operator-prepared release: the same identity object the local run
+            # hands its collectors, so auto-ported recipes bind here exactly
+            # when they bind locally.
+            from profile_manager.release_build_identity import instrumented_identity
+            identity.update(identity_kind='operator-local-config',image_config_id=artifact['image_id'],
+                controller_installation_id=registration.get('controller_installation_id'),
+                executable_digest=artifact.get('executable_digest'))
+            try:
+                identity=instrumented_identity(registration,identity)
+            except ValueError as exc:
+                gap_message='Prepared release instrumentation does not match the selected executable: '+str(exc)
+                for selected in selections:gap(selected['id'],gap_message)
+                continue
+        elif artifact.get('experimental_instrumentation'):
             candidate=artifact['experimental_instrumentation']
             identity.update(identity_kind='operator-local-config',image_config_id=artifact['image_id'],
                 controller_installation_id=candidate['controller_installation_id'],experimental_instrumentation=candidate)

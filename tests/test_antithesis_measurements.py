@@ -276,3 +276,121 @@ def test_cardano_config_program_is_self_contained_and_keeps_keepalive_debug(tmp_
     # residence contract instruments Inbound.V2, so measurement configs select it.
     assert json.loads(path.read_text())["TxSubmissionLogicVersion"] == "TxSubmissionLogicV2"
     assert "CARDANO_MEASUREMENT_NODE_SETTINGS=" in program
+
+
+# --- patched identity from operator registrations (AT-1 Task 4) ------------
+
+AMARU_V4_REV='aedfe797a5b8ef00d8b362be40b47a52c3b4a379'
+
+
+def _amaru_registration(source_revision=AMARU_V4_REV, **build_changes):
+    root=Path(__file__).resolve().parents[1]/'dwarf/targets'
+    manifest=json.loads((root/'amaru/measurement-patches-nanoseconds-v4'/AMARU_V4_REV/'manifest.json').read_text())
+    return {'registration_id':'registration-release-build-'+'1'*32+'-instrumented','implementation':'amaru',
+        'version':'10.11.20260918','config_image_id':'sha256:'+'c'*64,'executable_digest':'sha256:'+'b'*64,
+        'controller_installation_id':'test','runtime_interface':'extracted-binary',
+        'provenance':{'source_revision':source_revision,'qualification':'unverified'},
+        'source_build':{'variant':'instrumented','execution_id':'release-build-'+'1'*32,
+            'build_result_sha256':'sha256:'+'d'*64,'patch_set_sha256':manifest['patch_set_sha256'],
+            'measurement_revision':manifest['measurement_revision'],'instrumentation_evidence_sha256':'sha256:'+'e'*64,
+            **build_changes}}
+
+
+def _cardano_registration():
+    from test_release_build_identity import cardano_registration
+    reg=cardano_registration()
+    reg.update(registration_id='registration-release-build-'+'2'*32+'-instrumented',runtime_interface=None,
+               config_image_id='sha256:'+'f'*64)
+    reg['source_build']['execution_id']='release-build-'+'2'*32
+    return reg
+
+
+def _rows_from(*registrations):
+    from profile_manager import antithesis_artifacts as a
+    rows={}
+    for reg in registrations:
+        identifier=a.artifact_id_for(reg['registration_id'])
+        result={'status':'adapted','artifact_id':identifier,'reference':'dwarf-antithesis-node-'+identifier+':prepared',
+            'image_id':reg['config_image_id'],'executable_digest':reg['executable_digest'],
+            'runtime_interface':reg['runtime_interface'],'runtime_probe_log_sha256':'sha256:'+'e'*64,
+            'provenance_check':{'state':'ok','label':reg['version'],'binary_commit':reg['provenance']['source_revision']},
+            'preload_check':{'state':'not-applicable-static','dso_sha256':None,'log_sha256':None},
+            'bootstrap_probe':'version-and-run-help' if reg['implementation']=='amaru' else None}
+        rows[identifier]=a._row_from_registration(reg,result)
+    return rows
+
+
+def _instrumented_preview(monkeypatch,rows,tap_ids):
+    from profile_manager import antithesis_artifacts as a
+    from profile_manager.antithesis_package import preview_package
+    monkeypatch.setattr(a,'read',lambda identifier:rows[identifier])
+    value=request(scenario_id='cardano-amaru-miniprotocol-security-local',measurements={'profile_id':None,'tap_ids':tap_ids})
+    artifacts={row['implementation']:row['id'] for row in rows.values()}
+    value['versions'].update(policy='latest-stable',build_variant='instrumented',artifacts=artifacts)
+    return preview_package(value)
+
+
+def test_patched_identity_uses_instrumented_identity(monkeypatch):
+    from profile_manager.release_build_identity import validate_collector_identity
+    rows=_rows_from(_amaru_registration(),_cardano_registration())
+    result=_instrumented_preview(monkeypatch,rows,['amaru-patched-header-validation','cardano-patched-header-validation'])
+    binding=result['measurement_binding']
+    assert binding['status']=='applied',binding['issues']
+    assert {t['identity']['implementation'] for t in binding['targets']}=={'amaru','cardano-node'}
+    for target in binding['targets']:
+        identity=target['identity']
+        assert identity['identity_kind']=='operator-local-config'
+        assert identity['engine']=='antithesis' and identity['mode']=='patched'
+        assert identity['image_config_id']==identity['image_digest']
+        assert identity['verified_instrumentation']['controller_installation_id']=='test'
+        assert identity['source_build']['variant']=='instrumented'
+        assert 'experimental_instrumentation' not in identity
+        assert validate_collector_identity(identity)
+
+
+def test_auto_ported_amaru_registration_binds_patched_taps(tmp_path,monkeypatch):
+    from profile_manager import measurement_patch_port as port_module
+    monkeypatch.setenv('ADA2_DWARF_RUNTIME_ROOT',str(tmp_path))
+    root=Path(__file__).resolve().parents[1]/'dwarf/targets'
+    base=json.loads((root/'amaru/measurement-patches-nanoseconds-v4'/AMARU_V4_REV/'manifest.json').read_text())
+    derived=port_module.derive_manifest(base,source_revision='b'*40,release='x',
+        preimages={p['path']:'ab'*32 for i in base['patches'] for p in i['preimages']},base_recipe_dir='d')
+    port_module.save_derived_recipe('amaru','b'*40,derived,{})
+    reg=_amaru_registration(source_revision='b'*40,patch_set_sha256=derived['patch_set_sha256'],
+        measurement_revision=derived['measurement_revision'],auto_ported=True,ported_from_source_revision=AMARU_V4_REV)
+    rows=_rows_from(reg,_cardano_registration())
+    # header-validation is pinned to the exact 0918 source; a derived recipe
+    # serves the ported taps, exactly as the local run does.
+    result=_instrumented_preview(monkeypatch,rows,['amaru-patched-protocol-decode'])
+    binding=result['measurement_binding']
+    assert binding['status']=='applied',binding['issues']
+    amaru=next(t for t in binding['targets'] if t['identity']['implementation']=='amaru')
+    assert amaru['identity']['source_build']['auto_ported'] is True
+    assert amaru['identity']['source_build']['ported_from_source_revision']==AMARU_V4_REV
+    assert amaru['identity']['source_revision']=='b'*40
+    assert [e['id'] for e in amaru['entries']]==['amaru-patched-protocol-decode']
+
+
+def test_legacy_experimental_row_still_binds(monkeypatch):
+    from profile_manager import antithesis_artifacts as a
+    from profile_manager import antithesis_measurements as am
+    from profile_manager.antithesis_package import preview_package
+    candidate={'source_revision':'a'*40,'template_id':'nanoseconds-v3','measurement_revision':'nanoseconds-v3',
+        'patch_set_sha256':'sha256:'+'1'*64,'evidence_sha256':'sha256:'+'2'*64,
+        'controller_installation_id':'antithesis-artifact-'+'a'*32,'config_image_id':'sha256:'+'c'*64,'executable_digest':'sha256:'+'b'*64}
+    row={'id':'a'*32,'state':'complete','implementation':'amaru','version':'10.11.20260918','mode':'patched',
+        'source_revision':'a'*40,'patch_set_sha256':'sha256:'+'1'*64,'measurement_revision':'nanoseconds-v3',
+        'image_id':'sha256:'+'c'*64,'reference':'dwarf-antithesis-fixture-amaru:prepared','runtime_interface':'extracted-binary',
+        'experimental_instrumentation':candidate}
+    cardano=_rows_from(_cardano_registration())
+    rows={'a'*32:row,**cardano}
+    seen=[]
+    def capture(*,json_trace_paths,target_identity,**kw):
+        seen.append(target_identity);return {'amaru-patched-header-validation'}
+    monkeypatch.setattr(am,'build_amaru_patched_factories',capture)
+    monkeypatch.setattr(a,'read',lambda identifier:rows[identifier])
+    value=request(scenario_id='cardano-amaru-miniprotocol-security-local',measurements={'profile_id':None,'tap_ids':['amaru-patched-header-validation']})
+    value['versions'].update(policy='latest-stable',build_variant='instrumented',artifacts={'amaru':'a'*32,'cardano-node':next(iter(cardano))})
+    preview_package(value)
+    assert seen and seen[0]['experimental_instrumentation']==candidate
+    assert seen[0]['identity_kind']=='operator-local-config' and 'verified_instrumentation' not in seen[0]
