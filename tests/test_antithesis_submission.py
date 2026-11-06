@@ -464,6 +464,7 @@ def _proxy(monkeypatch,*,find=None,run=None,props=None):
         calls.append((subcommand,kw.get('run_id')))
         if subcommand=='run':return {'ok':True,'payload':run,'exit_code':0,'error':''}
         if subcommand=='properties':return {'ok':True,'payload':props,'exit_code':0,'error':''}
+        if subcommand=='events':return {'ok':True,'payload':[],'exit_code':0,'error':''}
         raise AssertionError(subcommand)
     monkeypatch.setattr(m.remote,'find_antithesis_run',find_run);monkeypatch.setattr(m.remote,'fetch_antithesis',fetch)
     return calls
@@ -490,7 +491,7 @@ def test_refresh_collects_the_result_and_records_a_verdict(ready_env,monkeypatch
     assert row['result']['state']=='verified' and row['result']['verdict']=='fail' and row['result']['reason']=='platform_property_failed',row['result']
     assert row['result']['antithesis_run_id']==run['run_id'] and row['result']['dwarf_property_count']==2
     assert row['result']['run_page']=='/operate/runs/'+row['dwarf_run_id'] and 'No Antithesis errors' in row['result']['failing']
-    assert calls==[('find','f'*64),('run',run['run_id']),('properties',run['run_id'])]
+    assert calls==[('find','f'*64),('run',run['run_id']),('properties',run['run_id']),('events',run['run_id'])]
     assert 'verdict fail' in row['message']
     entry=_entry(m,row)
     assert entry['verdict']=='fail' and entry['provenance']['verdict_reason']=='verified_antithesis_report'

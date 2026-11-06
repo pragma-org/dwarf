@@ -734,10 +734,15 @@ def collect_result(row, config, fact, *, phase, evidence):
         return {'state': 'unavailable', 'reason': 'report_fetch_failed', 'detail': str(properties.get('error') or '')[:200]}
     table = properties['payload'] if isinstance(properties['payload'], dict) else None
     result = results.normalise_result(run, table, test_run_id=identifier)
+    # Measurements: only the dwarf_measurements progress lines survive the run (proxy cap 50).
+    events = remote.fetch_antithesis(config, config.moog, 'events', run_id=antithesis_run_id, query='dwarf_measurements')
+    lines = events['payload'] if events.get('ok') and isinstance(events.get('payload'), list) else []
+    measurements = results.rebuild_measurements(lines, scenario=str((entry.get('scenario') or {}).get('id') or ''),
+                                                target_identity=results.antithesis_target_identity(lines))
     record = _scenario_record(row)
     try:
         results.write_result_bundle(run_dir, entry=entry, result=result, raw={'run': run, 'properties': table or {}},
-                                    scenario_source=record.source if record is not None else None, measurements=None)
+                                    scenario_source=record.source if record is not None else None, measurements=measurements)
     except ValueError:
         pass   # completed by a concurrent refresh; judge what is there
     reconciled = run_service.reconcile_external_status(row['dwarf_run_id'], state_dir=roots.state, phase=phase,

@@ -254,3 +254,68 @@ def write_result_bundle(run_dir, *, entry: Mapping[str, Any], result: Mapping[st
     forensic.atomic_write_bytes(run_dir / "manifest.json", manifest_bytes)
     forensic.atomic_write_bytes(run_dir / "chain.json", _json_bytes({"run_id": run_dir.name, "manifest_hash": forensic._sha256_hex(manifest_bytes), "source": "antithesis-report"}))
     return run_dir / "manifest.json"
+
+
+# ---------------------------------------------------------------------------
+# measurements from the proxy's event stream
+
+# The curated packages name their services after the node they wrap.
+_SERVICE_IMPLEMENTATIONS = (("cardano", "cardano-node"), ("amaru", "amaru"))
+
+
+def _progress_lines(events):
+    """The dwarf_measurements progress lines (antithesis_measurement_runtime.progress_summary) in order."""
+    import json
+
+    lines = []
+    for event in events or []:
+        if not isinstance(event, Mapping):
+            continue
+        try:
+            parsed = json.loads(event.get("output_text") or "")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(parsed, Mapping) and isinstance(parsed.get("dwarf_measurements"), str) and parsed["dwarf_measurements"]:
+            lines.append(parsed)
+    return lines
+
+
+def antithesis_target_identity(events) -> dict[str, Any]:
+    """What the proxy exports about the measured target: the engine and, from
+    the measured service's name, the implementation. Version and mode are left
+    empty until the catalog parity work binds them (identity stays partial)."""
+    implementation = None
+    for line in _progress_lines(events):
+        service = line["dwarf_measurements"]
+        for marker, name in _SERVICE_IMPLEMENTATIONS:
+            if marker in service:
+                implementation = name
+                break
+        if implementation:
+            break
+    return {"engine": "antithesis", "implementation": implementation, "mode": None, "version": None}
+
+
+def rebuild_measurements(events, *, scenario: str, target_identity: Mapping[str, Any]) -> dict[str, Any] | None:
+    """A partial measurements/report.json from the dwarf_measurements progress
+    lines in the Antithesis event stream (the service's files are not
+    retrievable after the run; the proxy caps events at 50). The last line per
+    service wins; None when no line was retrievable."""
+    lines = _progress_lines(events)
+    if not lines:
+        return None
+    measurements: dict[str, dict[str, Any]] = {}
+    services = set()
+    for line in lines:
+        services.add(line["dwarf_measurements"])
+        collectors = line.get("collectors") if isinstance(line.get("collectors"), Mapping) else {}
+        for collector in collectors.values():
+            if not isinstance(collector, Mapping):
+                continue
+            rows = collector.get("measurements") if isinstance(collector.get("measurements"), Mapping) else {}
+            for name, cell in rows.items():
+                if not isinstance(cell, Mapping):
+                    continue
+                measurements[str(name)] = {"status": cell.get("status"), "value": cell.get("value"), "unit": cell.get("unit")}
+    return {"schema_version": "v1", "scenario": scenario, "target_identity": dict(target_identity),
+            "source": "antithesis-events", "complete": False, "services": sorted(services), "measurements": measurements}

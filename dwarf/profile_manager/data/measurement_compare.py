@@ -192,8 +192,10 @@ def _unit_fits(index: dict[str, Any], concept: dict[str, Any], binding: dict[str
 
 
 def is_antithesis_record(record: dict[str, Any]) -> bool:
-    """Antithesis imports keep their own concept table; they never join catalog concept rows."""
-    return record.get("runtime") == "antithesis"
+    """Hand-imported Antithesis archives keep their own concept table; a
+    ledger-bound Antithesis run (an external run with a collected result)
+    joins the catalog concept rows like any other run."""
+    return record.get("runtime") == "antithesis" and not record.get("external_test_run_id")
 
 
 def describe_metric(index: dict[str, Any], record: dict[str, Any], metric_id: str, row: dict[str, Any]) -> dict[str, str]:
@@ -465,6 +467,7 @@ def collect_measurement_run_records(runs_dir: Path, *, source: str = "local", ru
                 **identity,
                 "mode": mode,
                 "runtime": _text(manifest.get("runtime")),
+                "external_test_run_id": _text(_dict(manifest.get("external")).get("test_run_id")),
                 "profile_id": _text(profile.get("id")),
                 "profile_sha256": _text(profile.get("sha256")),
                 "measurement_profile_id": _text(measurement_profile.get("id")),

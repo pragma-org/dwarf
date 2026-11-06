@@ -152,3 +152,68 @@ def test_metric_cell_reads_a_peak_primary_and_an_evidenced_zero():
     assert backlog["primary_value"] == 3.0 and cell_state(backlog) == "available"
     empty = _metric_cell("header_prerequisite_unavailable", {"status": "unavailable", "unit": "us", "median": None, "sample_count": 0, "offered_count": 489})
     assert empty["primary_value"] == 0 and cell_state(empty) == "observed-zero"
+
+
+# ---------------------------------------------------------------------------
+# AT-4: ledger-bound Antithesis runs join the catalog concepts; hand imports stay isolated
+
+def test_ledger_bound_antithesis_record_joins_catalog_concepts():
+    from profile_manager.data.measurement_compare import _catalog_index, catalog_concept, is_antithesis_record
+    index = _catalog_index()
+    bound = _record("external-antithesis-" + "a" * 24, "amaru", "patched", "anti", {"block_application": US(9)},
+                    runtime="antithesis", external_test_run_id="f" * 64)
+    assert is_antithesis_record(bound) is False
+    assert catalog_concept(index, bound, "block_application", bound["metrics"]["block_application"])["id"] == "block-application-time"
+
+
+def test_hand_imported_antithesis_record_keeps_its_own_table():
+    from profile_manager.data.measurement_compare import _catalog_index, catalog_concept, is_antithesis_record
+    index = _catalog_index()
+    imported = _record("x1", "amaru", "patched", "anti", {"block_application": US(9)}, runtime="antithesis", derived_import_identity="e" * 64)
+    assert is_antithesis_record(imported) is True
+    assert catalog_concept(index, imported, "block_application", imported["metrics"]["block_application"]) is None
+
+
+def test_collect_records_picks_up_an_antithesis_result_bundle(tmp_path):
+    import json
+    from pathlib import Path
+    from profile_manager import antithesis_results
+    from profile_manager.data.measurement_compare import collect_measurement_run_records
+    fixtures = Path(__file__).resolve().parent / "fixtures" / "antithesis_proxy"
+    run = json.loads((fixtures / "run-completed.json").read_text()); props = json.loads((fixtures / "properties.json").read_text())
+    run_dir = tmp_path / "runs" / ("external-antithesis-" + "b" * 24)
+    entry = {"run_id": run_dir.name, "kind": "external", "backend": "antithesis", "evidence_path": str(run_dir),
+             "scenario": {"id": "cardano-amaru-miniprotocol-security-local", "sha256": "c" * 64}, "provenance": {"external_test_run_id": "f" * 64}}
+    result = antithesis_results.normalise_result(run, props, test_run_id="f" * 64)
+    measurements = {"schema_version": "v1", "scenario": "cardano-amaru-miniprotocol-security-local", "source": "antithesis-events", "complete": False,
+                    "target_identity": {"engine": "antithesis", "implementation": "cardano-node", "mode": "patched", "version": "10.6.2"},
+                    "measurements": {"block_application": {"status": "available", "value": 3.2, "unit": "us"}}}
+    antithesis_results.write_result_bundle(run_dir, entry=entry, result=result, raw={"run": run, "properties": props}, scenario_source=None, measurements=measurements)
+    records = collect_measurement_run_records(tmp_path / "runs")
+    assert len(records) == 1
+    record = records[0]
+    assert record["run_id"] == run_dir.name and record["runtime"] == "antithesis" and record["external_test_run_id"] == "f" * 64
+    assert record["scenario_id"] == "cardano-amaru-miniprotocol-security-local" and record["evidence_state"] == "bound"
+    assert record["implementation"] == "cardano-node" and record["verdict"] == "fail" and "block_application" in record["metrics"]
+
+
+def test_rebuild_measurements_from_progress_lines():
+    import json
+    from profile_manager.antithesis_results import rebuild_measurements
+    line = lambda service, measurements: {"output_text": json.dumps({"dwarf_measurements": service, "source_available": True, "source_window_incomplete": False,
+        "collector_errors": [], "collectors": {"c1": {"source_records": 3, "normalized_records": 3, "incomplete": False, "measurements": measurements}}, "artifacts": "/evidence/" + service})}
+    events = [line("sm-cardano-victim", {"block_application": {"status": "available", "value": 1.5, "unit": "us"}}),
+              {"output_text": "not json"}, {"output_text": json.dumps({"other": 1})},
+              line("sm-cardano-victim", {"block_application": {"status": "available", "value": 3.2, "unit": "us"}, "handler_service": {"status": "unavailable", "unit": "us"}})]
+    identity = {"engine": "antithesis", "implementation": "cardano-node", "mode": "patched", "version": "10.6.2"}
+    report = rebuild_measurements(events, scenario="s", target_identity=identity)
+    assert report == {"schema_version": "v1", "scenario": "s", "target_identity": identity, "source": "antithesis-events", "complete": False,
+                      "services": ["sm-cardano-victim"],
+                      "measurements": {"block_application": {"status": "available", "value": 3.2, "unit": "us"},
+                                       "handler_service": {"status": "unavailable", "value": None, "unit": "us"}}}
+
+
+def test_rebuild_measurements_returns_none_without_lines():
+    from profile_manager.antithesis_results import rebuild_measurements
+    assert rebuild_measurements([], scenario="s", target_identity={}) is None
+    assert rebuild_measurements([{"output_text": "{\"other\": 1}"}], scenario="s", target_identity={}) is None
