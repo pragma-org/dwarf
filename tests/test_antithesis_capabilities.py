@@ -129,3 +129,34 @@ def test_exact_target_verification_is_unsupported_until_the_package_identity_rou
     rows = {r['primitive']: r['status'] for r in result['primitives']}
     assert rows['runtime_verify_exact_target'] == 'unsupported'
     assert 'package' in load_matrix()['primitives']['runtime_verify_exact_target']['note']
+
+
+def test_client_proof_assertions_follow_their_evidence_producer():
+    """AT-2b: an assertion that can only read a proof written by an unsupported
+    producer is skipped with a gap naming the producer, not failed for lack of
+    a file the package could never write."""
+    matrix = load_matrix()['primitives']
+    producers = {name: row['evidence_producer'] for name, row in matrix.items() if 'evidence_producer' in row}
+    assert producers['target_progress_continues'] == 'runtime_target_health_and_progress'
+    assert producers['no_target_fatal_signal'] == 'runtime_target_health_and_progress'
+    assert producers['unrelated_peer_session_usable'] == 'runtime_peer_session_health'
+    assert all(producer in matrix for producer in producers.values())
+    result = classify(catalog('client-example-txsubmission-window-amaru-portable-20260918'))
+    rows = {row['primitive']: row for row in result['primitives']}
+    for name in ('target_progress_continues', 'no_target_fatal_signal'):
+        assert rows[name]['status'] == 'unsupported'
+        assert 'runtime_target_health_and_progress' in rows[name]['note']
+        assert skip_policy(result)[name] == 'unsupported'
+    assert any(gap['primitive'] == 'target_progress_continues' and gap['code'] == 'assertion-evidence-unsupported' for gap in result['gaps'])
+
+
+def test_assertion_with_a_running_producer_keeps_its_own_status():
+    body = json.loads(FREEZE_YAML)
+    body['probes'] = [{'primitive': 'all_nodes_responsive'}]
+    body['assertions'] = [{'primitive': 'target_progress_continues'}]
+    body['faults'] = []
+    result = classify(scenario_from_body(json.dumps(body).encode()))
+    rows = {row['primitive']: row for row in result['primitives']}
+    # No producer in this scenario at all: the matrix entry's own status stands
+    # (a genuinely missing proof is a scenario defect, not a package gap).
+    assert rows['target_progress_continues']['status'] == 'runs'

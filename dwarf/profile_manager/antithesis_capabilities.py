@@ -19,6 +19,7 @@ _PHASES = ('setup', 'load', 'faults', 'probes', 'assertions', 'teardown')
 _RUNNABLE = {'runs', 'runs-with-note'}
 _GAP_CODES = {'unsupported': 'primitive-unsupported-on-antithesis',
               'delegated-fault': 'fault-delegated-to-platform'}
+_SKIPPED = frozenset(_GAP_CODES)
 _NO_SUT_RUNTIMES = {'library', 'single-node'}
 
 
@@ -34,6 +35,9 @@ def load_matrix():
     for name, row in matrix['primitives'].items():
         if row.get('status') not in STATUSES:
             raise ValueError('unknown capability status for ' + name)
+        producer = row.get('evidence_producer')
+        if producer is not None and producer not in matrix['primitives']:
+            raise ValueError('unknown evidence producer for ' + name)
     return matrix
 
 
@@ -50,20 +54,35 @@ def _steps(scenario):
             yield name, name, ref.primitive
 
 
+def _entry(matrix, primitive):
+    return matrix['primitives'].get(primitive) or {'status': matrix['default'], 'note': 'Not listed in the capability matrix.'}
+
+
 def classify(scenario):
     matrix = load_matrix()
-    default = matrix['default']
+    steps = list(_steps(scenario))
+    # An assertion that only reads a proof written by another primitive follows
+    # that producer: if the scenario's producer is skipped, the assertion is
+    # skipped with a gap naming it, instead of failing for a file the package
+    # can never write (AT-2b). A producer absent from the scenario is a scenario
+    # defect, not a package gap, so the assertion keeps its own status.
+    present = {primitive for _, _, primitive in steps}
+    skipped_producers = {primitive for _, _, primitive in steps if _entry(matrix, primitive)['status'] in _SKIPPED}
     rows, gaps, runnable_load = [], [], False
-    for label, phase, primitive in _steps(scenario):
-        entry = matrix['primitives'].get(primitive) or {'status': default, 'note': 'Not listed in the capability matrix.'}
-        status = entry['status']
-        rows.append({'phase': label, 'primitive': primitive, 'status': status, 'note': entry.get('note', '')})
+    for label, phase, primitive in steps:
+        entry = _entry(matrix, primitive)
+        status, note, code = entry['status'], entry.get('note', ''), _GAP_CODES.get(entry['status'])
+        producer = entry.get('evidence_producer')
+        if producer in present and producer in skipped_producers and status in _RUNNABLE:
+            status = 'unsupported'
+            note = 'Its evidence producer ' + producer + ' is skipped inside the package; without that proof the assertion can only fail.'
+            code = 'assertion-evidence-unsupported'
+        rows.append({'phase': label, 'primitive': primitive, 'status': status, 'note': note})
         if phase == 'load' and status in _RUNNABLE:
             runnable_load = True
-        code = _GAP_CODES.get(status)
         if code:
             gaps.append({'kind': 'implementation-gap', 'code': code, 'field': 'scenario_id', 'primitive': primitive, 'phase': label,
-                         'message': primitive + ': ' + (entry.get('note') or status)})
+                         'message': primitive + ': ' + (note or status)})
     reason = None
     if scenario.runtime in _NO_SUT_RUNTIMES:
         reason = 'no-faultable-sut'

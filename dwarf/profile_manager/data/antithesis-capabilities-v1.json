@@ -35,11 +35,13 @@
     },
     "target_progress_continues": {
       "status": "runs",
-      "note": ""
+      "note": "",
+      "evidence_producer": "runtime_target_health_and_progress"
     },
     "no_target_fatal_signal": {
       "status": "runs",
-      "note": ""
+      "note": "",
+      "evidence_producer": "runtime_target_health_and_progress"
     },
     "invalid_protocol_cases_contained": {
       "status": "runs",
@@ -188,6 +190,12 @@
     "runtime_preview_parity_baseline": {
       "status": "unsupported",
       "note": "Checks host pid files and host log sizes."
+    },
+    "unrelated_peer_session_usable": {
+      "status": "runs",
+      "note": "",
+      "evidence_producer": "runtime_peer_session_health"
     }
-  }
+  },
+  "evidence_producer": "Optional per assertion: the probe primitive that writes the proof this assertion reads. When that producer is skipped in a scenario (unsupported or delegated-fault), the assertion is classified unsupported with a gap naming the producer instead of failing for a proof the package can never write."
 }
