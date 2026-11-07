@@ -1114,7 +1114,15 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     )
     prepared_measurements = None
     measurement_auto_skip = None
-    if measurement_context is None:
+    if measurement_context is None and primitives.antithesis_package_mode():
+        # Inside the Antithesis package there is no locally deployed profile
+        # runtime to bind collectors to; the package's dwarf-measurements
+        # service collects from the mounted evidence volumes instead (F43).
+        measurement_auto_skip = (
+            "delegated to the Antithesis package collector (dwarf-measurements); "
+            "no local profile runtime inside the package"
+        )
+    elif measurement_context is None:
         from profile_manager.launch_store import measurement_resolution_from_environment
 
         expected_measurements = measurement_resolution_from_environment()

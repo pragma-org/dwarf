@@ -107,3 +107,18 @@ def test_skipped_assertions_never_count_as_passes():
     verdict = evaluate_scenario_verdict(exit_status="pass", assertions={"total": 2, "pass": 1, "fail": 0, "skipped": 1},
                                         measurements=None, run_kind="scenario")
     assert verdict.security_verdict == "pass"
+
+
+def test_package_mode_delegates_scenario_measurements_to_the_package_collector(tmp_path, monkeypatch):
+    """F43: inside the package there is no locally deployed profile runtime; the
+    dwarf-measurements sidecar collects, so the runner must not prepare local
+    measurements (which would abort the run before readiness)."""
+    monkeypatch.setenv("DWARF_ANTITHESIS_PACKAGE_DIR", str(tmp_path / "package"))
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("local measurement preparation ran inside the package")
+    monkeypatch.setattr(scenario, "prepare_auto_measurements", forbidden)
+    handle, manifest, assertions = _run(tmp_path, monkeypatch, primitive_policy=POLICY)
+    skipped = [e for e in _events(handle) if e.get("event") == "measurement_auto_attach_skipped"]
+    assert skipped and "dwarf-measurements" in skipped[0]["payload"]["reason"]
+    assert manifest["exit_status"] == "pass"
