@@ -33,6 +33,7 @@ class Operation(str, Enum):
     ANTITHESIS_ARTIFACT_ADAPT = "antithesis.artifact-adapt"
     ANTITHESIS_IMAGE_BUILD = "antithesis.image-build"
     ANTITHESIS_IMAGE_PUBLISH = "antithesis.image-publish"
+    ANTITHESIS_PACKAGE_VALIDATE = "antithesis.package-validate"
     LIBRARY_PREPARE = "library.prepare"
     ARTIFACT_PACKAGE = "artifact.package"
     TOPOLOGY_HEALTH = "topology.health"
@@ -71,6 +72,7 @@ _PARAMETERS: dict[Operation, frozenset[str]] = {
     Operation.ANTITHESIS_IMAGE_PUBLISH: frozenset(
         {"handoff_id", "secret_id", "username", "images", "execution_id"}
     ),
+    Operation.ANTITHESIS_PACKAGE_VALIDATE: frozenset({"stage_id", "archive_sha256", "execution_id"}),
     Operation.LIBRARY_PREPARE: frozenset(
         {
             "scenario_id",
@@ -124,6 +126,9 @@ _TIMEOUT_CEILINGS = {
     # (600 s each) of an already-prepared package.
     Operation.ANTITHESIS_IMAGE_BUILD: 3600,
     Operation.ANTITHESIS_IMAGE_PUBLISH: 3600,
+    # Image inspections (600 s budget) plus the config-image candidate build,
+    # readback and cleanup (600 s budget) of a saved package; never a compile.
+    Operation.ANTITHESIS_PACKAGE_VALIDATE: 1500,
     Operation.LIBRARY_PREPARE: 14400,
     Operation.ARTIFACT_PACKAGE: 1800,
     # The native Amaru verifier takes two fresh semantic samples and is
@@ -147,6 +152,7 @@ _MUTATIONS = {
     Operation.ANTITHESIS_ARTIFACT_ADAPT,
     Operation.ANTITHESIS_IMAGE_BUILD,
     Operation.ANTITHESIS_IMAGE_PUBLISH,
+    Operation.ANTITHESIS_PACKAGE_VALIDATE,
     Operation.LIBRARY_PREPARE,
     Operation.IMAGE_DOWNLOAD,
     Operation.ARTIFACT_PACKAGE,
@@ -406,6 +412,19 @@ def _validate_parameters(operation: Operation, raw: Mapping[str, Any]) -> dict[s
             "images": normalized_images,
             "execution_id": execution_id,
             "publish_sha256": "sha256:" + hashlib.sha256(canonical).hexdigest(),
+        }
+    if operation is Operation.ANTITHESIS_PACKAGE_VALIDATE:
+        stage_id = _text(raw.get("stage_id"), "stage_id", maximum=33)
+        if not re.fullmatch(r"validate-[0-9a-f]{24}", stage_id):
+            raise ContractError("stage_id is invalid")
+        execution_id = _text(raw.get("execution_id"), "execution_id", maximum=52)
+        if not re.fullmatch(r"antithesis-validate-[0-9a-f]{32}", execution_id):
+            raise ContractError("execution_id is invalid")
+        return {
+            "stage_id": stage_id,
+            # The staged archive's digest is the plan the audit receipt binds.
+            "archive_sha256": _digest(raw.get("archive_sha256"), "archive_sha256"),
+            "execution_id": execution_id,
         }
     if operation is Operation.LIBRARY_PREPARE:
         version = _text(raw.get("version"), "version", maximum=64)

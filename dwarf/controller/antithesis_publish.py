@@ -53,7 +53,8 @@ def _detail(text):
 def _directory(runtime, execution_id, kind):
     if not isinstance(execution_id, str) or not builds._JOB.fullmatch(execution_id):
         raise ValueError('Invalid execution ID')
-    root = Path(runtime.state_dir) / ('antithesis-builds' if kind == 'build' else 'antithesis-publishes')
+    root = Path(runtime.state_dir) / {'build': 'antithesis-builds', 'publish': 'antithesis-publishes',
+                                      'validate': 'antithesis-validations'}[kind]
     path = root / execution_id
     if root.is_symlink() or path.is_symlink():
         raise ValueError('Job directory cannot be a symlink')

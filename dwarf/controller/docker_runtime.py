@@ -335,6 +335,18 @@ class DockerRuntime:
         from controller.antithesis_publish import cleanup_publish
         return cleanup_publish(self, execution_id)
 
+    def validate_antithesis_package(self, parameters, execution_id, *, timeout, cancel_event):
+        from controller.antithesis_validate import validate_package
+        return validate_package(self, parameters, execution_id, timeout, cancel_event)
+
+    def antithesis_validate_progress(self, execution_id):
+        from controller.antithesis_validate import read_validate_progress
+        return read_validate_progress(self, execution_id)
+
+    def cleanup_antithesis_validate(self, parameters, execution_id):
+        from controller.antithesis_validate import cleanup_validate
+        return cleanup_validate(self, execution_id)
+
     def _approved_image_identities(self) -> set[str]:
         return {
             _immutable_image_identity(item.strip())

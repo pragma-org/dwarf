@@ -693,3 +693,24 @@ def test_antithesis_image_publish_contract_binds_the_image_set():
                     {'timeout_seconds': 3601}):
         with pytest.raises(ContractError):
             parse_request(_publish_request(**changes))
+
+
+def _validate_request(**changes):
+    execution_id = 'antithesis-validate-' + 'f' * 32
+    body = _request('antithesis.package-validate', stage_id='validate-' + 'a' * 24, archive_sha256='sha256:' + 'b' * 64,
+                    execution_id=execution_id, idempotency_key=execution_id, timeout_seconds=1500)
+    return {**body, **changes}
+
+
+def test_antithesis_package_validate_contract():
+    parsed = parse_request(_validate_request())
+    assert parsed.operation is Operation.ANTITHESIS_PACKAGE_VALIDATE
+    assert dict(parsed.parameters) == {'stage_id': 'validate-' + 'a' * 24, 'archive_sha256': 'sha256:' + 'b' * 64,
+                                       'execution_id': 'antithesis-validate-' + 'f' * 32}
+    for changes in ({'stage_id': 'ghcr-' + 'a' * 24}, {'stage_id': 'validate-' + 'A' * 24}, {'archive_sha256': 'b' * 64},
+                    {'execution_id': 'antithesis-build-' + 'f' * 32}, {'extra': 1}, {'timeout_seconds': 1501}):
+        with pytest.raises(ContractError):
+            parse_request(_validate_request(**changes))
+    body = _validate_request(); del body['idempotency_key']
+    with pytest.raises(ContractError):
+        parse_request(body)

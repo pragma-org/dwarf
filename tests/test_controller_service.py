@@ -2945,3 +2945,60 @@ def test_antithesis_build_and_publish_interrupted_records_are_cleaned_up(tmp_pat
         _, status = _dispatch(restarted, _request('execution.status', execution_id=execution_id))
         assert status['state'] == 'interrupted'
     assert sorted(cleaned) == [('build', 'antithesis-build-' + '1' * 32), ('publish', 'antithesis-publish-' + '2' * 32)]
+
+
+def _validate_request(execution_id='antithesis-validate-' + 'f' * 32):
+    return _request('antithesis.package-validate', stage_id='validate-' + 'a' * 24, archive_sha256='sha256:' + 'b' * 64,
+                    execution_id=execution_id, idempotency_key=execution_id, timeout_seconds=1500)
+
+
+def test_antithesis_package_validate_dispatches_to_runtime_and_binds_the_archive(tmp_path):
+    runtime = FakeRuntime()
+    calls = []
+    runtime.validate_antithesis_package = lambda parameters, execution_id, *, timeout, cancel_event: (
+        calls.append((dict(parameters), execution_id)) or {'status': 'validated', 'execution_id': execution_id,
+                                                           'stage_id': parameters['stage_id'], 'archive_sha256': parameters['archive_sha256'],
+                                                           'images': [], 'compose_schema': {'state': 'pass'}, 'candidate': {'context_blocked': True}})
+    runtime.antithesis_validate_progress = lambda execution_id: {'stage': 'image-inspect', 'current_image': 'example/node:experimental'}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    status, accepted = _dispatch(service, _validate_request())
+    assert status == 202
+    terminal = _wait_terminal(service, accepted['execution_id'])
+    assert terminal['state'] == 'applied' and terminal['result']['status'] == 'validated'
+    assert terminal['progress']['current_image'] == 'example/node:experimental'
+    assert calls[0][0]['stage_id'] == 'validate-' + 'a' * 24
+    record = json.loads((service.executions_dir / (accepted['execution_id'] + '.json')).read_text())
+    assert record['plan_sha256'] == 'sha256:' + 'b' * 64
+    restarted = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, retained = _dispatch(restarted, _request('execution.status', execution_id=accepted['execution_id']))
+    assert retained['state'] == 'applied'
+
+
+def test_antithesis_package_validate_failure_is_bounded(tmp_path):
+    runtime = FakeRuntime()
+    def validate(parameters, execution_id, *, timeout, cancel_event):
+        raise DockerRuntimeError('archive at /private/path changed', code='package-archive-invalid', stage='package-validate')
+    runtime.validate_antithesis_package = validate
+    runtime.antithesis_validate_progress = lambda execution_id: {'stage': 'staged-archive'}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, accepted = _dispatch(service, _validate_request())
+    terminal = _wait_terminal(service, accepted['execution_id'])
+    assert terminal['state'] == 'failed'
+    assert terminal['failure']['code'] == 'package-archive-invalid' and terminal['failure']['stage'] == 'package-validate'
+    assert '/private/path' not in json.dumps(terminal)
+
+
+def test_antithesis_package_validate_interrupted_record_is_cleaned_up(tmp_path):
+    runtime = FakeRuntime()
+    cleaned = []
+    runtime.cleanup_antithesis_validate = lambda parameters, execution_id: cleaned.append(execution_id)
+    runtime.antithesis_validate_progress = lambda execution_id: {}
+    service = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    execution_id = 'antithesis-validate-' + '3' * 32
+    record = {'schema_version': 'v1', 'execution_id': execution_id, 'operation': 'antithesis.package-validate',
+              'request_parameters': {'execution_id': execution_id}, 'state': 'running', 'accepted_at': '2026-11-07T00:00:00Z', 'completed_at': None}
+    (service.executions_dir / f'{execution_id}.json').write_text(json.dumps(record))
+    restarted = ControllerService(TOKEN, tmp_path, runtime, 'revision-123', 'test-install')
+    _, status = _dispatch(restarted, _request('execution.status', execution_id=execution_id))
+    assert status['state'] == 'interrupted'
+    assert cleaned == [execution_id]

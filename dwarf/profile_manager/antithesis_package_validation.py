@@ -1,20 +1,29 @@
-"""Explicit validation of saved Antithesis packages; no workload execution or submission."""
+"""Explicit validation of saved Antithesis packages; no workload execution or submission.
+
+Static mode reads the saved snapshot only. Artifacts mode adds the Docker
+facts: local image platforms, the effective Compose schema and the pinned MOOG
+config-image candidate. Those need a Docker socket, which only the controller
+has (BC2), so the exact archive is staged for ``antithesis.package-validate``
+and the controller returns facts (F51); this module turns them into the
+preflight contract rows and keeps every policy text. Anonymous GHCR checks are
+HTTP and stay here.
+"""
 from __future__ import annotations
 
 import base64
 from datetime import datetime, timezone
 import json
-from pathlib import Path
 import re
-import shutil
 import threading
 import time
+import uuid
 
 from profile_manager import antithesis_preparation as prep
 from profile_manager import antithesis_image_build as build
 from profile_manager import antithesis_publication as publication
 from profile_manager import antithesis_preflight as preflight
 from profile_manager.antithesis_publication_network import verify_image
+from profile_manager.topology_actions import TopologyActionError, controller_request
 
 # Pinned User.Agent.PushTest.dockerfile, not a supplied Dockerfile.
 CONFIG_DOCKERFILE = '''FROM docker.io/debian:stable-slim AS build
@@ -25,6 +34,13 @@ RUN sed -i 's/${INTERNAL_NETWORK}/false/g' /docker-compose.yaml
 '''
 _ACTIVE = {'queued','running'}
 _SYSTEM_ROOTS = {'bin','boot','dev','etc','home','lib','lib32','lib64','libx32','media','mnt','opt','proc','root','run','sbin','srv','sys','tmp','usr','var'}
+_IMAGE_ID = re.compile(r'sha256:[a-f0-9]{64}')
+CONTROLLER_TIMEOUT = 1500
+_POLL_SECONDS = 2.0
+
+
+class InspectionUnavailable(Exception):
+    """The controller could not inspect; the private cause stays on the Dwarf host."""
 
 
 def state_directory():
@@ -53,7 +69,7 @@ def read_validation(identifier):
     return result
 
 
-def start_validation(source,mode,request_id):
+def start_validation(source,mode,request_id,*,controller=None):
     identifier=_id(request_id)
     prep._shape(source,{'kind','id'},'source')
     if source['kind'] not in ('preparation','build','publication') or mode not in ('static','artifacts'):
@@ -77,31 +93,36 @@ def start_validation(source,mode,request_id):
             lock.close();return previous
         reader={'preparation':prep.read_preparation,'build':build.read_build_result,'publication':publication.read_result}[source['kind']]
         result=reader(source['id'])
-        files,_=prep._unpack(base64.b64decode(result['archive_base64']))
+        archive=base64.b64decode(result['archive_base64'])
+        files,_=prep._unpack(archive)
         directory=root/identifier;directory.mkdir(mode=0o700)
         worker_lock=build._lock(directory/'worker.lock')
         status=dict(schema_version=1,id=identifier,source=source,mode=mode,state='queued',
                     created_at=datetime.now(timezone.utc).isoformat(),execution_ready=False,submission_ready=False,
                     message='Checking the saved package.',report=None)
         build._save(directory/'status.json',status)
-        threading.Thread(target=_worker,args=(directory,status.copy(),files,lock,worker_lock),daemon=True).start()
+        threading.Thread(target=_worker,args=(directory,status.copy(),files,archive,lock,worker_lock,controller or controller_request),daemon=True).start()
         return status
     except Exception:
         if worker_lock:worker_lock.close()
         lock.close();raise
 
 
-def _worker(directory,status,files,lock,worker_lock):
+def _worker(directory,status,files,archive,lock,worker_lock,controller):
     try:
         status.update(state='running');build._save(directory/'status.json',status)
         report=preflight.inspect_package(files)
         status['report']=report
         build._save(directory/'status.json',status)
         if status['mode']=='artifacts':
-            inspect_images(directory,report)
+            try:
+                facts=_controller_facts(directory,status,archive,controller)
+            except InspectionUnavailable:
+                facts=None
+            inspect_images(directory,report,facts)
             if report['state']=='blocked':
                 preflight.add_check(report,'C01','candidate-image','not_checked','Fix static package failures before building the config-image candidate.')
-            else:inspect_candidate(directory,files,report,status['id'])
+            else:inspect_candidate(report,facts)
         else:
             preflight.add_check(report,'C02','image-inspection','not_checked','Use Inspect images/config image for local image metadata and anonymous GHCR checks.')
             preflight.add_check(report,'C01','candidate-image','not_checked','Candidate config-image contents have not been inspected.')
@@ -117,24 +138,63 @@ def _worker(directory,status,files,lock,worker_lock):
         finally:worker_lock.close();lock.close()
 
 
-def inspect_images(directory,report):
-    cache={};public_cache={};deadline=time.monotonic()+600
-    for index,row in enumerate(report['images']):
+def _controller_facts(directory,status,archive,controller):
+    """Stage the exact archive, ask the controller to inspect it, mirror its
+    progress, return its facts. The staged copy never outlives the request."""
+    from profile_manager.binary_imports import BinaryImportError, discard_staged_package, stage_package_archive
+    try:
+        stage_id,archive_sha256=stage_package_archive(archive)
+    except BinaryImportError as exc:
+        raise InspectionUnavailable() from exc
+    execution_id='antithesis-validate-'+uuid.uuid4().hex
+    status.update(controller_execution_id=execution_id,message='Inspecting images and the config-image candidate on the controller.')
+    build._save(directory/'status.json',status)
+    try:
+        try:
+            controller('antithesis.package-validate',{'stage_id':stage_id,'archive_sha256':archive_sha256,'execution_id':execution_id},
+                       CONTROLLER_TIMEOUT,idempotency_key=execution_id)
+        except TopologyActionError as exc:
+            raise InspectionUnavailable() from exc
+        while True:
+            try:observed=controller('execution.status',{'execution_id':execution_id},10)
+            except TopologyActionError as exc:
+                if str(exc)!='execution is not managed by this controller':raise InspectionUnavailable() from exc
+                observed={'execution_id':execution_id,'state':'interrupted'}
+            if observed.get('execution_id')!=execution_id:raise InspectionUnavailable()
+            if observed.get('state') in {'running','cancelling'}:
+                stage=(observed.get('progress') or {}).get('stage')
+                if stage and stage!=status.get('controller_stage'):
+                    status.update(controller_stage=stage);build._save(directory/'status.json',status)
+                if _POLL_SECONDS:time.sleep(_POLL_SECONDS)
+                continue
+            break
+    finally:
+        discard_staged_package(stage_id)
+    if observed.get('state')!='applied':
+        status['controller_failure_code']=(observed.get('failure') or {}).get('code')
+        raise InspectionUnavailable()
+    facts=observed.get('result')
+    if (not isinstance(facts,dict) or facts.get('status')!='validated' or facts.get('archive_sha256')!=archive_sha256
+            or facts.get('execution_id')!=execution_id):
+        raise InspectionUnavailable()
+    return facts
+
+
+def inspect_images(directory,report,facts):
+    """Local platform facts from the controller (``None`` when it could not
+    inspect) plus the anonymous GHCR verification done here over HTTP."""
+    local={}
+    for row in (facts or {}).get('images') or []:
+        if isinstance(row,dict) and isinstance(row.get('reference'),str):
+            local[row['reference']]=row
+    public_cache={}
+    for row in report['images']:
         reference=row['reference'];location='services.'+row['service']
-        if time.monotonic()>deadline:
-            preflight.add_check(report,'C02','image-inspection','not_checked','Image inspection time budget exhausted.',location);continue
-        if reference not in cache:
-            try:
-                raw=build._docker(['docker','image','inspect','--platform','linux/amd64',reference],cwd=directory,
-                                  log_path=directory/f'local-image-{index}.log',timeout=30)
-                info=json.loads(raw)[0]
-                valid=info.get('Os')=='linux' and info.get('Architecture')=='amd64'
-                identity=info.get('Id','')
-                if not re.fullmatch(r'sha256:[a-f0-9]{64}',identity):raise ValueError('invalid identity')
-                cache[reference]=('pass' if valid else 'fail','Local image metadata is Linux/amd64.' if valid else 'Local image has a different OS/architecture.',identity)
-            except Exception:
-                cache[reference]=('not_checked','Local Linux/amd64 image metadata unavailable. No service image was pulled.',None)
-        state,detail,identity=cache[reference]
+        fact=local.get(reference) or {}
+        identity=fact.get('image_id') if isinstance(fact.get('image_id'),str) and _IMAGE_ID.fullmatch(fact.get('image_id')) else None
+        state=fact.get('state') if fact.get('state') in ('pass','fail') and identity else 'not_checked'
+        detail={'pass':'Local image metadata is Linux/amd64.','fail':'Local image has a different OS/architecture.'}.get(
+            state,'Local Linux/amd64 image metadata unavailable. No service image was pulled.')
         preflight.add_check(report,'C02','local-image-platform',state,detail,location)
         row['local_image_id']=identity
         if not reference.startswith('ghcr.io/'):
@@ -151,82 +211,52 @@ def inspect_images(directory,report):
             preflight.add_check(report,'C15','image-drift','warn','Local image differs from the current public reference. Pin the intended digest before delivery.',location)
 
 
-def inspect_candidate(directory,files,report,identifier):
-    """Build pinned MOOG recipe and compare files using a never-started container."""
-    if any(name.split('/')[0] in _SYSTEM_ROOTS for name in files):
+def inspect_candidate(report,facts):
+    """Turn the controller's candidate facts into C01/C02/C15 rows."""
+    if facts is None:
+        preflight.add_check(report,'C01','candidate-image','not_checked','Candidate build/inspection did not complete. Check Docker and private job logs; this is not a packaging pass.')
+        return
+    candidate=facts.get('candidate') if isinstance(facts.get('candidate'),dict) else {}
+    if candidate.get('context_blocked'):
         preflight.add_check(report,'C01','candidate-context','fail','Package would overwrite config-image system paths before MOOG executes sed. Move assets under a dedicated relative directory.')
         return
-    context=directory/'candidate-context';prep._write_tree(context,files)
-    # Validate the effective Compose without importing host environment values.
-    schema_file=directory/'effective-compose.yaml'
-    schema_file.write_bytes(files['docker-compose.yaml'][0].replace(b'${INTERNAL_NETWORK}',b'false'))
+    schema=(facts.get('compose_schema') or {}).get('state')
     report['checks']=[r for r in report['checks'] if r['code']!='compose-schema']
-    try:
-        build._docker(['docker','compose','--project-name','dwarf-antithesis-check','--env-file','/dev/null',
-                       '--project-directory',str(context),'--file',str(schema_file),'config',
-                       '--quiet','--no-interpolate','--no-env-resolution'],cwd=context,
-                      log_path=directory/'compose-schema.log',timeout=30)
-    except build.BuildFailure:
+    if schema=='fail':
         preflight.add_check(report,'C01','compose-schema','fail','Docker Compose config check failed. Inspect the private diagnostic for invalid configuration or unavailable CLI support.')
         return
-    except OSError:
+    if schema!='pass':
         preflight.add_check(report,'C01','compose-schema','not_checked','Docker Compose is unavailable; candidate inspection was not attempted.')
         preflight.add_check(report,'C01','candidate-image','not_checked','Candidate inspection requires a successful Compose config check.')
         return
     preflight.add_check(report,'C01','compose-schema','pass','Docker Compose config accepted the effective file without environment interpolation or service env-file resolution.')
-    dockerfile=directory/'MOOG-config.Dockerfile';dockerfile.write_text(CONFIG_DOCKERFILE)
-    tag='dwarf-antithesis-config-check:'+identifier
-    name='dwarf-antithesis-check-'+identifier
-    report['candidate']={'reference':tag,'container_name':name,'moog_source_commit':preflight.MOOG_COMMIT,
+    report['candidate']={'reference':candidate.get('reference'),'container_name':candidate.get('container_name'),'moog_source_commit':preflight.MOOG_COMMIT,
                          'base_reference':'docker.io/debian:stable-slim','base_identity':'not_checked',
                          'recipe_sha256':prep._sha(CONFIG_DOCKERFILE.encode()),'platform':'linux/amd64',
                          'scope':'Local candidate only; actual remote MOOG image remains unverified.',
-                         'cleanup':{}}
-    candidate=report['candidate'];deadline=time.monotonic()+600
-    attempted=False;created=False
-    def docker(args,label,timeout=30):
-        remaining=deadline-time.monotonic()
-        if remaining<=0:raise TimeoutError('candidate inspection budget exhausted')
-        return build._docker(['docker',*args],cwd=context,log_path=directory/(label+'.log'),timeout=min(timeout,remaining))
-    try:
-        attempted=True
-        docker(['build','--platform','linux/amd64','--network=none','--tag',tag,'--file',str(dockerfile),'.'],'candidate-build',300)
-        info=json.loads(docker(['image','inspect',tag],'candidate-image'))[0]
-        if info.get('Os')!='linux' or info.get('Architecture')!='amd64' or not re.fullmatch(r'sha256:[a-f0-9]{64}',info.get('Id','')):
-            preflight.add_check(report,'C02','candidate-platform','fail','Candidate image metadata is not Linux/amd64.');return
-        candidate['image_id']=info['Id']
-        preflight.add_check(report,'C15','candidate-base','not_checked','Final candidate image identity is retained; the mutable Debian base digest and actual remote build identity are not established.')
-        # Mark before create so a lost response still triggers cleanup of our unique name.
-        created=True
-        docker(['create','--platform','linux/amd64','--network','none','--name',name,info['Id'],'/bin/true'],'candidate-create')
-        copied=directory/'candidate-readback';copied.mkdir(mode=0o700)
-        compared=[]
-        for index,(path,(data,mode)) in enumerate(sorted(files.items())):
-            target=copied/str(index)
-            try:
-                docker(['cp',name+':/'+path,str(target)],f'candidate-copy-{index}')
-                expected=data.replace(b'${INTERNAL_NETWORK}',b'false') if path=='docker-compose.yaml' else data
-                if data is None:
-                    matches=not target.is_symlink() and target.is_dir() and target.stat().st_mode & 0o777==mode
-                else:
-                    matches=(not target.is_symlink() and target.is_file() and target.stat().st_size==len(expected)
-                             and target.read_bytes()==expected and target.stat().st_mode & 0o777==mode)
-            except (OSError,build.BuildFailure):matches=False
-            if not matches:
-                preflight.add_check(report,'C01','candidate-files','fail','Candidate file is missing or differs in bytes/mode (including Docker ignore rules).',path)
-            else:compared.append({'path':path,'kind':'directory' if data is None else 'file','sha256':None if data is None else prep._sha(expected),'mode':mode})
-            if target.is_dir() and not target.is_symlink():shutil.rmtree(target)
-        candidate['files']=compared
-        if not any(r['code']=='candidate-files' and r['state']=='fail' for r in report['checks']):
-            preflight.add_check(report,'C01','candidate-files','pass','All packaged files and directory modes match stopped-image readback after the pinned MOOG Compose substitution.')
-    except Exception:
-        preflight.add_check(report,'C01','candidate-image','not_checked','Candidate build/inspection did not complete. Check Docker and private job logs; this is not a packaging pass.')
-    finally:
-        for label,args,needed in [('container',['rm','-f',name],created),('image',['image','rm',tag],attempted)]:
-            if not needed:continue
-            try:
-                build._docker(['docker',*args],cwd=context,log_path=directory/('cleanup-'+label+'.log'),timeout=30)
-                candidate['cleanup'][label]='removed'
-            except Exception:
-                candidate['cleanup'][label]='unconfirmed'
+                         'inspected_on':'DWARF controller','cleanup':{}}
+    record=report['candidate']
+    cleanup=candidate.get('cleanup') if isinstance(candidate.get('cleanup'),dict) else {}
+    for label in ('container','image'):
+        if label in cleanup:
+            record['cleanup'][label]='removed' if cleanup[label]=='removed' else 'unconfirmed'
+            if record['cleanup'][label]=='unconfirmed':
                 preflight.add_check(report,'C01','candidate-cleanup','warn','Temporary '+label+' cleanup was not confirmed; inspect the saved candidate identity.')
+    image_id=candidate.get('image_id')
+    if isinstance(image_id,str) and _IMAGE_ID.fullmatch(image_id):record['image_id']=image_id
+    if candidate.get('platform_ok') is False:
+        preflight.add_check(report,'C02','candidate-platform','fail','Candidate image metadata is not Linux/amd64.');return
+    if not candidate.get('completed'):
+        preflight.add_check(report,'C01','candidate-image','not_checked','Candidate build/inspection did not complete. Check Docker and private job logs; this is not a packaging pass.')
+        return
+    preflight.add_check(report,'C15','candidate-base','not_checked','Final candidate image identity is retained; the mutable Debian base digest and actual remote build identity are not established.')
+    compared=[]
+    for row in candidate.get('files') or []:
+        if not isinstance(row,dict) or not isinstance(row.get('path'),str):continue
+        if row.get('matches') is True:
+            compared.append({'path':row['path'],'kind':row.get('kind'),'sha256':row.get('sha256'),'mode':row.get('mode')})
+        else:
+            preflight.add_check(report,'C01','candidate-files','fail','Candidate file is missing or differs in bytes/mode (including Docker ignore rules).',row['path'])
+    record['files']=compared
+    if not any(r['code']=='candidate-files' and r['state']=='fail' for r in report['checks']):
+        preflight.add_check(report,'C01','candidate-files','pass','All packaged files and directory modes match stopped-image readback after the pinned MOOG Compose substitution.')

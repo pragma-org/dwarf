@@ -494,19 +494,67 @@ def stage_secret(value: str, *, root: Path | None = None, lifetime_seconds: int 
     return secret_id
 
 
-def _sweep_expired_secrets(staging: Path, *, now: datetime | None = None) -> int:
-    """Remove staged credentials whose operation never discarded them (the
-    dashboard died between staging and completion) once they have expired.
-    Same owner and symlink checks as the import records; errors skip a candidate."""
+PACKAGE_ARCHIVE_LIFETIME_SECONDS = 30 * 60
+_STAGED_KINDS = {"ghcr": "ghcr-publish-pat", "validate": "antithesis-package-archive"}
+
+
+def stage_package_archive(data: bytes, *, root: Path | None = None,
+                          lifetime_seconds: int = PACKAGE_ARCHIVE_LIFETIME_SECONDS) -> tuple[str, str]:
+    """Stage an exact Antithesis package archive for the controller's
+    artifacts-mode inspection (F51), the way registry credentials are staged:
+    a private, expiring directory under version-imports the controller reads by
+    id and verifies by digest. Returns ``(stage_id, archive_sha256)``."""
+    if not isinstance(data, (bytes, bytearray)) or not data or len(data) > 32 * 1024 * 1024:
+        raise BinaryImportError("package archive is empty or too large")
+    staging = Path(root) if root is not None else _default_staging_root()
+    staging.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _sweep_expired_secrets(staging, prefix="validate")
+    stage_id = "validate-" + secrets.token_hex(12)
+    archive_sha256 = "sha256:" + hashlib.sha256(data).hexdigest()
+    directory = staging / stage_id
+    created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    descriptor = {"schema_version": "v1", "kind": "antithesis-package-archive", "stage_id": stage_id,
+                  "archive_sha256": archive_sha256, "created_at": created_at,
+                  "expires_at": _expiry(created_at, lifetime_seconds), "state": "staged"}
+    directory_fd = None
+    try:
+        os.mkdir(directory, 0o700)
+        directory_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+        _write_private(directory_fd, "package.zip", bytes(data))
+        _write_private(directory_fd, "descriptor.json",
+                       json.dumps(descriptor, sort_keys=True, separators=(",", ":")).encode() + b"\n")
+        os.fsync(directory_fd)
+    except OSError as exc:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise BinaryImportError("cannot safely stage the package archive") from exc
+    finally:
+        if directory_fd is not None:
+            os.close(directory_fd)
+    return stage_id, archive_sha256
+
+
+def discard_staged_package(stage_id: str, *, root: Path | None = None) -> None:
+    if not re.fullmatch(r"validate-[0-9a-f]{24}", str(stage_id)):
+        return
+    directory = (Path(root) if root is not None else _default_staging_root()) / stage_id
+    if directory.is_dir() and not directory.is_symlink():
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def _sweep_expired_secrets(staging: Path, *, now: datetime | None = None, prefix: str = "ghcr") -> int:
+    """Remove staged credentials (or staged package archives, ``prefix="validate"``)
+    whose operation never discarded them (the dashboard died between staging and
+    completion) once they have expired. Same owner and symlink checks as the
+    import records; errors skip a candidate."""
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     removed = 0
     try:
-        candidates = sorted(staging.glob("ghcr-*"))[:256]
+        candidates = sorted(staging.glob(prefix + "-*"))[:256]
     except OSError:
         return 0
     for candidate in candidates:
         try:
-            if not re.fullmatch(r"ghcr-[0-9a-f]{24}", candidate.name):
+            if not re.fullmatch(prefix + r"-[0-9a-f]{24}", candidate.name):
                 continue
             directory_stat = candidate.lstat()
             descriptor_path = candidate / "descriptor.json"
@@ -518,7 +566,7 @@ def _sweep_expired_secrets(staging: Path, *, now: datetime | None = None) -> int
             ):
                 continue
             descriptor = json.loads(descriptor_path.read_bytes())
-            if descriptor.get("kind") != "ghcr-publish-pat":
+            if descriptor.get("kind") != _STAGED_KINDS[prefix]:
                 continue
             expires = datetime.fromisoformat(str(descriptor.get("expires_at") or "").replace("Z", "+00:00"))
             if expires.tzinfo is None or expires.astimezone(timezone.utc) > current:
