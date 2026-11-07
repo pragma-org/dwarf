@@ -104,3 +104,18 @@ def test_assertions_whose_evidence_producer_is_unsupported_are_unsupported_too()
     result = classify(catalog('runtime-substrate-mempool-failure-containment-mixed-amaru'))
     statuses = {row['primitive']: row['status'] for row in result['primitives']}
     assert statuses['mempool_failure_contained'] == 'unsupported'
+
+
+def test_public_network_devnet_is_none_before_the_primitive_walk():
+    public = json.dumps({
+        'spec_version': 'v1', 'id': 'public-probe', 'title': 'public', 'authors': ['t'], 'tags': [],
+        'target': {'implementation': 'cardano-node', 'version': 'any'}, 'runtime': 'devnet',
+        'substrate': {'compose_mode': 'docker', 'network': 'preview',
+                      'nodes': [{'id': 'node1', 'impl': 'cardano-node', 'version': 'resolved-plan', 'identity_binding': 'resolved-plan', 'role': 'honest'}],
+                      'topology': {'edges': []}},
+        'load': [{'primitive': 'load_shell_command', 'command': 'true'}],
+        'assertions': [{'primitive': 'load_events_are_ok'}],
+    }).encode()
+    result = classify(scenario_from_body(public))
+    assert result['level'] == 'none' and result['reason'] == 'public-network'
+    assert result['runnable_load'] is True

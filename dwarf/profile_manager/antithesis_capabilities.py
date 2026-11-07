@@ -67,7 +67,16 @@ def classify(scenario):
     reason = None
     if scenario.runtime in _NO_SUT_RUNTIMES:
         reason = 'no-faultable-sut'
-    elif not runnable_load:
+    elif scenario.runtime == 'devnet':
+        # The devnet itself can rule the scenario out before any primitive does:
+        # a public network (no internet on the platform) or no target node.
+        from profile_manager.antithesis_generated_rig import scenario_devnet
+        codes = {issue['code'] for issue in scenario_devnet(scenario)['issues']}
+        if 'public-network' in codes:
+            reason = 'public-network'
+        elif 'no-faultable-sut' in codes:
+            reason = 'no-faultable-sut'
+    if reason is None and not runnable_load:
         reason = 'no-runnable-load'
     if reason:
         level = 'none'
