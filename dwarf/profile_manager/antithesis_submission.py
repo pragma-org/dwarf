@@ -533,7 +533,7 @@ def _bind_observed_fact(row, fact):
         if retained and retained != identifier:
             raise PackageError('Retained ledger identity differs from the observed MOOG run.', status=409)
         if not retained:
-            path = Path(entry['evidence_path']) / 'external' / 'reconciliation.json'
+            path = run_service.external_evidence_dir(entry) / 'external' / 'reconciliation.json'
             run_service._write_receipt(path, {'test_run_id': identifier, 'source': 'moog-facts', 'target': row['target']})
             ledger.annotate(row['dwarf_run_id'], provenance={**provenance, 'external_test_run_id': identifier,
                             'reconciliation_path': str(path)})
@@ -712,7 +712,7 @@ def _existing_result_path(row):
         return None
     try:
         entry = RunLedger(storage_roots().state).get(row['dwarf_run_id'])
-        run_dir = Path(entry['evidence_path'])
+        run_dir = run_service.external_evidence_dir(entry)
     except Exception:   # noqa: BLE001 - an unreadable ledger entry simply means no result yet
         return None
     path = run_dir / 'external' / 'result.json'
@@ -745,7 +745,7 @@ def collect_result(row, config, fact, *, phase, evidence):
     roots = storage_roots()
     identifier = fact['id']
     entry = RunLedger(roots.state).get(row['dwarf_run_id'])
-    run_dir = Path(entry['evidence_path'])
+    run_dir = run_service.external_evidence_dir(entry)
     url = (fact.get('value') or {}).get('url')
     link = run_dir / 'external' / 'report-link.json'
     if isinstance(url, str) and url and not link.exists():

@@ -1182,3 +1182,64 @@ def test_antithesis_report_rewrite_is_rejected_against_the_ledger_anchor(tmp_pat
     later = _at4_reconcile(tmp_path, run_id, result_path)
     assert later["verdict"] == "pass" and later["provenance"]["verdict_reason"] == "result_bundle_manifest_hash_mismatch"
     assert later["provenance"]["result_bundle_manifest_sha256"] == anchor
+
+
+def _container_like_namespaces(tmp_path, monkeypatch):
+    """A container install: the process sees /var/dwarf/runs, the operator sees the host path."""
+    process_runs = tmp_path / "runs"
+    host_runs = Path("/srv/dwarf/runs")
+    monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(process_runs))
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path / "bundles"))
+    monkeypatch.setenv("DWARF_HOST_RUNS_DIR", str(host_runs))
+    return process_runs, host_runs
+
+
+def test_external_reservation_records_declared_host_namespace_from_a_container(tmp_path, monkeypatch):
+    process_runs, host_runs = _container_like_namespaces(tmp_path, monkeypatch)
+    request = run_service.ExternalRunRequest(
+        backend="antithesis", origin="dashboard",
+        launch={"transport": "moog", "repository": "pragma-org/dwarf", "directory": "antithesis/generated/x",
+                "commit": "a" * 40, "try": 1},
+        runs_dir=process_runs, state_dir=tmp_path / "state",
+    )
+
+    reserved = run_service.reserve_external_run(request)
+
+    run_id = reserved["run_id"]
+    assert reserved["ledger"]["evidence_path"] == str(host_runs / run_id)
+    assert reserved["plan"]["storage"]["runs_dir"] == str(host_runs)
+    assert reserved["plan"]["storage"]["state_dir"] == str((tmp_path / "state").resolve())
+    assert reserved["ledger"]["provenance"]["plan_path"] == str(host_runs / run_id / "inputs" / "run-service-plan.json")
+    # The evidence itself is written where the process can reach it.
+    assert (process_runs / run_id / "inputs" / "run-service-plan.json").is_file()
+    assert (process_runs / run_id / "external" / "launch.json").is_file()
+
+
+def test_external_evidence_dir_maps_the_declared_host_path_back_to_the_process(tmp_path, monkeypatch):
+    process_runs, host_runs = _container_like_namespaces(tmp_path, monkeypatch)
+    entry = {"evidence_path": str(host_runs / "external-antithesis-abc")}
+
+    assert run_service.external_evidence_dir(entry) == process_runs / "external-antithesis-abc"
+    # Outside the declared host namespace the path is taken as written.
+    assert run_service.external_evidence_dir({"evidence_path": str(tmp_path / "elsewhere")}) == tmp_path / "elsewhere"
+    monkeypatch.delenv("DWARF_HOST_RUNS_DIR")
+    assert run_service.external_evidence_dir(entry) == host_runs / "external-antithesis-abc"
+
+
+def test_external_receipts_are_written_under_the_process_run_dir_in_a_container(tmp_path, monkeypatch):
+    process_runs, _ = _container_like_namespaces(tmp_path, monkeypatch)
+    request = run_service.ExternalRunRequest(
+        backend="antithesis", origin="dashboard",
+        launch={"transport": "moog", "repository": "pragma-org/dwarf", "directory": "antithesis/generated/x",
+                "commit": "a" * 40, "try": 1},
+        runs_dir=process_runs, state_dir=tmp_path / "state",
+    )
+    run_id = run_service.reserve_external_run(request)["run_id"]
+
+    run_service.record_external_submission(
+        run_id, state_dir=tmp_path / "state",
+        response={"returncode": 0, "stdout": "submitted", "stderr": ""}, external_test_run_id="moog-test-9",
+    )
+
+    assert (process_runs / run_id / "external" / "submission.json").is_file()

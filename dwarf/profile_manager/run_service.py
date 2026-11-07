@@ -12,6 +12,7 @@ import fcntl
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 import re
 from typing import Any, Mapping
@@ -19,7 +20,7 @@ from typing import Any, Mapping
 from profile_manager import forensic as forensic_module
 from profile_manager import primitives as primitives_module
 from profile_manager import scenario as scenario_module
-from profile_manager.config import storage_roots
+from profile_manager.config import StorageConfigurationError, storage_roots
 from profile_manager.run_ledger import (
     FINAL_STATES_BY_EXIT_STATUS,
     RunLedger,
@@ -557,6 +558,47 @@ def _external_storage_paths(request: ExternalRunRequest) -> tuple[Path, Path]:
     return Path(runs_dir).resolve(), Path(state_dir).resolve()
 
 
+def host_runs_dir() -> Path | None:
+    """The operator-visible runs directory a container install declares
+    (``DWARF_HOST_RUNS_DIR``), or ``None`` when the process namespace is the
+    operator's namespace."""
+    raw = os.environ.get("DWARF_HOST_RUNS_DIR", "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    return path if path.is_absolute() else None
+
+
+def declared_runs_dir(runs_dir: Path) -> Path:
+    """The namespace the ledger and plan record for external runs: the
+    declared host directory when one exists, else the process directory. The
+    run page checks ledger paths against the declared host namespace, so a
+    reservation made inside the container must speak it too (F39)."""
+    return host_runs_dir() or runs_dir
+
+
+def external_evidence_dir(entry: Mapping[str, Any], *, runs_dir: Path | None = None) -> Path:
+    """Where this process reads and writes an external run's evidence. A ledger
+    path recorded in the declared host namespace maps back onto the process
+    runs directory; any other path is taken as written."""
+    declared = Path(str(entry.get("evidence_path") or ""))
+    host = host_runs_dir()
+    if host is None:
+        return declared
+    try:
+        relative = declared.relative_to(host)
+    except ValueError:
+        return declared
+    if runs_dir is None:
+        try:
+            runs_dir = storage_roots().runs
+        except StorageConfigurationError:
+            # No canonical process namespace is configured: the declared path
+            # is the only one there is.
+            return declared
+    return Path(runs_dir) / relative
+
+
 def _write_receipt(path: Path, payload: Mapping[str, Any]) -> None:
     try:
         encoded = json.dumps(
@@ -624,12 +666,16 @@ def reserve_external_run(request: ExternalRunRequest) -> dict[str, Any]:
         "evidence_layout": "external-run-evidence-v1",
         "verdict_contract": "verified-non-vacuous-bundle-or-inconclusive-v1",
     }
+    # Paths the ledger and plan declare live in the operator's namespace; the
+    # evidence itself is written under the process runs directory.
+    declared_runs = declared_runs_dir(runs_dir)
+    declared_run_dir = declared_runs / run_id
     plan = {
         "schema_version": "dwarf.run-service.invocation.v1",
         "plan_digest": _sha256(_canonical_bytes(resolved_plan)),
         "resolved": resolved_plan,
         "invocation": {"origin": request.origin, "backend": request.backend},
-        "storage": {"runs_dir": str(runs_dir), "state_dir": str(state_dir)},
+        "storage": {"runs_dir": str(declared_runs), "state_dir": str(state_dir)},
     }
     run_dir = runs_dir / run_id
     plan_path = run_dir / "inputs" / "run-service-plan.json"
@@ -637,8 +683,8 @@ def reserve_external_run(request: ExternalRunRequest) -> dict[str, Any]:
     provenance = {
         "actor": f"run-service:{request.origin}",
         "external_key": external_key,
-        "launch_request_path": str(launch_path.resolve()),
-        "plan_path": str(plan_path.resolve()),
+        "launch_request_path": str(declared_run_dir / "external" / "launch.json"),
+        "plan_path": str(declared_run_dir / "inputs" / "run-service-plan.json"),
         "verdict_contract": resolved_plan["verdict_contract"],
     }
     if isinstance(request.capabilities, Mapping):
@@ -732,7 +778,7 @@ def reserve_external_run(request: ExternalRunRequest) -> dict[str, Any]:
             backend=request.backend,
             scenario=scenario_identity,
             release_revision=release_revision,
-            evidence_path=str(run_dir.resolve()),
+            evidence_path=str(declared_run_dir),
             provenance=provenance,
         )
         created = True
@@ -771,7 +817,7 @@ def record_external_submission(
     entry = ledger.get(run_id)
     if entry.get("kind") != "external":
         raise RunServiceError(f"run is not external: {run_id}")
-    evidence_dir = Path(str(entry["evidence_path"]))
+    evidence_dir = external_evidence_dir(entry)
     receipt_path = evidence_dir / "external" / "submission.json"
     receipt = dict(response)
     if external_test_run_id:
@@ -811,7 +857,7 @@ def link_existing_external_run(
     evidence = dict(link_evidence)
     if evidence.get("test_run_id") != external_test_run_id:
         raise RunServiceError("linked external test id does not match evidence")
-    evidence_dir = Path(str(entry["evidence_path"]))
+    evidence_dir = external_evidence_dir(entry)
     lock_path = evidence_dir / "external" / "link.lock"
     with lock_path.open("a+b") as lock_stream:
         fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
@@ -899,7 +945,7 @@ def _antithesis_report_verdict(
 
     from profile_manager.antithesis_results import RESULT_SCHEMA, result_verdict
 
-    run_dir = Path(str(entry.get("evidence_path") or ""))
+    run_dir = external_evidence_dir(entry)
     try:
         result_bytes = Path(result_path).read_bytes()
         result = json.loads(result_bytes)
@@ -1180,7 +1226,7 @@ def reconcile_external_status(
             "external test id mismatch: "
             f"expected {expected_external_id!r}, observed {observed_external_id!r}"
         )
-    evidence_dir = Path(str(entry["evidence_path"]))
+    evidence_dir = external_evidence_dir(entry)
     status_path = evidence_dir / "external" / "status.json"
     _write_receipt(status_path, dict(status_evidence))
     normalized = str(phase or "unknown").strip().lower()

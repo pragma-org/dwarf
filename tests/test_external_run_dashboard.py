@@ -791,3 +791,31 @@ def test_result_view_keeps_declared_primitive_gaps_out_of_the_platform_gap_list(
         {"path": "primitive:runtime_tracer_capture", "reason": "docker", "kind": "implementation-gap", "code": "primitive-unsupported-on-antithesis"}]}))
     view = _antithesis_result_view(run_dir, {"provenance": {}})
     assert view["gaps"] == ["measurements/report.json"]
+
+
+def test_dashboard_reserved_external_run_passes_receipt_integrity_on_a_container_install(tmp_path, monkeypatch):
+    """F39: the wizard reserves from inside the container; the page requires the declared host namespace."""
+    from profile_manager import run_service
+
+    process_runs = tmp_path / "runs"
+    host_runs = Path("/srv/dwarf/runs")
+    monkeypatch.setenv("ADA2_DWARF_RUNS_DIR", str(process_runs))
+    monkeypatch.setenv("ADA2_DWARF_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ADA2_DWARF_BUNDLES_DIR", str(tmp_path / "bundles"))
+    monkeypatch.setenv("DWARF_HOST_RUNS_DIR", str(host_runs))
+    reserved = run_service.reserve_external_run(run_service.ExternalRunRequest(
+        backend="antithesis", origin="dashboard",
+        launch={"transport": "moog", "repository": "pragma-org/dwarf", "directory": "antithesis/generated/x",
+                "commit": "a" * 40, "try": 1},
+        runs_dir=process_runs, state_dir=tmp_path / "state",
+    ))
+
+    detail = operate_run_detail(reserved["run_id"], runs_dir=process_runs)
+
+    assert detail is not None
+    assert "ledger evidence path does not match this run directory" not in detail["external"]["receipt_errors"]
+    # What remains is the queued state itself: nothing has been submitted or linked yet.
+    assert detail["external"]["receipt_errors"] == [
+        "ledger has no bound external test id",
+        "matched external fact value is not an object",
+    ]
