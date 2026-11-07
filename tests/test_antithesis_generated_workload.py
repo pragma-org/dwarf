@@ -187,3 +187,12 @@ def test_attached_workload_joins_the_consumer_network_and_mounts_the_victim(cata
     victim = next(n for n in report['runtime_metadata']['nodes'] if n['name'] == 'sm-amaru-victim')
     assert victim['log_path'] == '/inputs/sm-amaru-victim/amaru.log' and victim['submit_api_url'] == 'http://sm-amaru-victim.example:3011/api/submit/tx'
     assert report['targets'] == ['sm-amaru-victim'] and report['evidence_volumes'] == {}
+
+
+def test_dockerfile_keeps_the_framework_home_for_scenario_shell_commands():
+    """Catalog load_shell_command steps reference $HOME/dwarf-fw; the image runs as
+    root (F41), so HOME must stay the framework user's home (live finding F42)."""
+    lines = (generated.ASSETS / 'Dockerfile').read_text().splitlines()
+    user_root = next(i for i, line in enumerate(lines) if line.strip() == 'USER root')
+    assert any(line.strip() == 'ENV HOME=/home/dwarf' for line in lines[user_root:]), lines
+    assert any(line.startswith('WORKDIR /home/dwarf/dwarf-fw') for line in lines)
