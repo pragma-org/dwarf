@@ -212,3 +212,64 @@ def test_cleanup_validate_removes_leftover_container_image_and_context(runtime):
     assert ('rm', '-f', 'dwarf-antithesis-check-' + 'f' * 32) in runtime.calls
     assert ('image', 'rm', 'dwarf-antithesis-config-check:' + 'f' * 32) in runtime.calls
     assert not (directory / 'context').exists()
+
+
+def test_statically_blocked_package_gets_image_facts_only(runtime):
+    """Review I1: a package the static contract blocked must not reach compose or
+    the candidate build on the controller; its images are still inspected."""
+    files = package()
+    files['docker-compose.yaml'] = (files['docker-compose.yaml'][0].replace(b'services:', b'include:\n  - other.yaml\nservices:'), 0o644)
+    result = _validate(runtime, files)
+    assert result['images'][0]['state'] == 'pass'
+    assert result['compose_schema'] == {'state': 'not_checked'}
+    assert result['candidate'] == {'static_blocked': True}
+    assert not any(call[0] in ('compose', 'build', 'create') for call in runtime.calls)
+
+
+def test_image_inspect_timeout_marks_that_image_not_checked_and_keeps_the_rest(runtime):
+    """Review I2: one Docker timeout must not throw away every fact."""
+    original = runtime._run
+    def timing_out(arguments, *args, **kwargs):
+        if arguments[:2] == ('image', 'inspect') and arguments[-1] == 'example/node:experimental':
+            raise DockerRuntimeError('docker image inspect timed out after 30s')
+        return original(arguments, *args, **kwargs)
+    runtime._run = timing_out
+    result = _validate(runtime, package())
+    assert result['images'][0] == {'reference': 'example/node:experimental', 'state': 'not_checked', 'image_id': None}
+    assert result['candidate']['completed'] is True
+
+
+def test_candidate_build_timeout_is_a_fact_and_still_cleans_up(runtime):
+    original = runtime._run
+    def timing_out(arguments, *args, **kwargs):
+        if arguments[0] == 'build':
+            raise DockerRuntimeError('docker build timed out after 300s')
+        return original(arguments, *args, **kwargs)
+    runtime._run = timing_out
+    result = _validate(runtime, package())
+    candidate = result['candidate']
+    assert candidate['attempted'] is True and candidate['completed'] is False
+    assert candidate['cleanup'] == {'image': 'removed'}
+    assert 'timed out' not in json.dumps(result)
+
+
+def test_cancel_during_candidate_still_removes_container_and_image(runtime):
+    """Review I3: cleanup must not depend on the job deadline or cancel flag."""
+    import threading
+    from controller.release_builds import BuildCancelled
+    cancel = threading.Event()
+    original = runtime._run
+    def cancelling(arguments, *args, **kwargs):
+        result = original(arguments, *args, **kwargs)
+        if arguments[0] == 'create':
+            cancel.set()
+        return result
+    runtime._run = cancelling
+    parameters = stage(runtime, package())
+    with pytest.raises(BuildCancelled):
+        validate.validate_package(runtime, parameters, EXECUTION_ID, 600, cancel)
+    suffix = EXECUTION_ID.rsplit('-', 1)[-1]
+    assert ('rm', '-f', 'dwarf-antithesis-check-' + suffix) in runtime.calls
+    assert ('image', 'rm', 'dwarf-antithesis-config-check:' + suffix) in runtime.calls
+    progress = validate.read_validate_progress(runtime, EXECUTION_ID)
+    assert progress['status'] == 'failed'

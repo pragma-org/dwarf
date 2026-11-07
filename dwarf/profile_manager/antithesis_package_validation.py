@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 from datetime import datetime, timezone
+import hashlib
 import json
 import re
 import threading
@@ -37,6 +38,8 @@ _SYSTEM_ROOTS = {'bin','boot','dev','etc','home','lib','lib32','lib64','libx32',
 _IMAGE_ID = re.compile(r'sha256:[a-f0-9]{64}')
 CONTROLLER_TIMEOUT = 1500
 _POLL_SECONDS = 2.0
+_STATUS_RETRIES = 3
+_CANDIDATE_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}')
 
 
 class InspectionUnavailable(Exception):
@@ -122,7 +125,7 @@ def _worker(directory,status,files,archive,lock,worker_lock,controller):
             inspect_images(directory,report,facts)
             if report['state']=='blocked':
                 preflight.add_check(report,'C01','candidate-image','not_checked','Fix static package failures before building the config-image candidate.')
-            else:inspect_candidate(report,facts)
+            else:inspect_candidate(report,facts,files)
         else:
             preflight.add_check(report,'C02','image-inspection','not_checked','Use Inspect images/config image for local image metadata and anonymous GHCR checks.')
             preflight.add_check(report,'C01','candidate-image','not_checked','Candidate config-image contents have not been inspected.')
@@ -142,24 +145,38 @@ def _controller_facts(directory,status,archive,controller):
     """Stage the exact archive, ask the controller to inspect it, mirror its
     progress, return its facts. The staged copy never outlives the request."""
     from profile_manager.binary_imports import BinaryImportError, discard_staged_package, stage_package_archive
-    try:
-        stage_id,archive_sha256=stage_package_archive(archive)
-    except BinaryImportError as exc:
-        raise InspectionUnavailable() from exc
     execution_id='antithesis-validate-'+uuid.uuid4().hex
-    status.update(controller_execution_id=execution_id,message='Inspecting images and the config-image candidate on the controller.')
-    build._save(directory/'status.json',status)
+    stage_id=None
     try:
+        try:
+            stage_id,archive_sha256=stage_package_archive(archive)
+        except BinaryImportError as exc:
+            raise InspectionUnavailable() from exc
+        status.update(controller_execution_id=execution_id,message='Inspecting images and the config-image candidate on the controller.')
+        build._save(directory/'status.json',status)
         try:
             controller('antithesis.package-validate',{'stage_id':stage_id,'archive_sha256':archive_sha256,'execution_id':execution_id},
                        CONTROLLER_TIMEOUT,idempotency_key=execution_id)
         except TopologyActionError as exc:
             raise InspectionUnavailable() from exc
+        failures=0
         while True:
-            try:observed=controller('execution.status',{'execution_id':execution_id},10)
+            try:
+                observed=controller('execution.status',{'execution_id':execution_id},10)
+                failures=0
             except TopologyActionError as exc:
-                if str(exc)!='execution is not managed by this controller':raise InspectionUnavailable() from exc
-                observed={'execution_id':execution_id,'state':'interrupted'}
+                if str(exc)=='execution is not managed by this controller':
+                    observed={'execution_id':execution_id,'state':'interrupted'}
+                else:
+                    # A transient status failure is retried; a persistent one ends the
+                    # dashboard's wait and asks the controller to stop the job.
+                    failures+=1
+                    if failures<_STATUS_RETRIES:
+                        if _POLL_SECONDS:time.sleep(_POLL_SECONDS)
+                        continue
+                    try:controller('execution.cancel',{'execution_id':execution_id,'reason':'dashboard lost the controller status'},30)
+                    except Exception:pass  # noqa: BLE001 - best effort; the controller's own ceiling bounds the job
+                    raise InspectionUnavailable() from exc
             if observed.get('execution_id')!=execution_id:raise InspectionUnavailable()
             if observed.get('state') in {'running','cancelling'}:
                 stage=(observed.get('progress') or {}).get('stage')
@@ -169,7 +186,7 @@ def _controller_facts(directory,status,archive,controller):
                 continue
             break
     finally:
-        discard_staged_package(stage_id)
+        if stage_id:discard_staged_package(stage_id)
     if observed.get('state')!='applied':
         status['controller_failure_code']=(observed.get('failure') or {}).get('code')
         raise InspectionUnavailable()
@@ -211,12 +228,17 @@ def inspect_images(directory,report,facts):
             preflight.add_check(report,'C15','image-drift','warn','Local image differs from the current public reference. Pin the intended digest before delivery.',location)
 
 
-def inspect_candidate(report,facts):
-    """Turn the controller's candidate facts into C01/C02/C15 rows."""
+def inspect_candidate(report,facts,files):
+    """Turn the controller's candidate facts into C01/C02/C15 rows. The
+    controller is trusted for Docker, not for completeness: every packaged
+    file must come back with the digest this side computes."""
     if facts is None:
         preflight.add_check(report,'C01','candidate-image','not_checked','Candidate build/inspection did not complete. Check Docker and private job logs; this is not a packaging pass.')
         return
     candidate=facts.get('candidate') if isinstance(facts.get('candidate'),dict) else {}
+    if candidate.get('static_blocked'):
+        preflight.add_check(report,'C01','candidate-image','not_checked','Fix static package failures before building the config-image candidate.')
+        return
     if candidate.get('context_blocked'):
         preflight.add_check(report,'C01','candidate-context','fail','Package would overwrite config-image system paths before MOOG executes sed. Move assets under a dedicated relative directory.')
         return
@@ -230,7 +252,9 @@ def inspect_candidate(report,facts):
         preflight.add_check(report,'C01','candidate-image','not_checked','Candidate inspection requires a successful Compose config check.')
         return
     preflight.add_check(report,'C01','compose-schema','pass','Docker Compose config accepted the effective file without environment interpolation or service env-file resolution.')
-    report['candidate']={'reference':candidate.get('reference'),'container_name':candidate.get('container_name'),'moog_source_commit':preflight.MOOG_COMMIT,
+    def _name(value):
+        return value if isinstance(value,str) and _CANDIDATE_NAME.fullmatch(value) else None
+    report['candidate']={'reference':_name(candidate.get('reference')),'container_name':_name(candidate.get('container_name')),'moog_source_commit':preflight.MOOG_COMMIT,
                          'base_reference':'docker.io/debian:stable-slim','base_identity':'not_checked',
                          'recipe_sha256':prep._sha(CONFIG_DOCKERFILE.encode()),'platform':'linux/amd64',
                          'scope':'Local candidate only; actual remote MOOG image remains unverified.',
@@ -250,13 +274,20 @@ def inspect_candidate(report,facts):
         preflight.add_check(report,'C01','candidate-image','not_checked','Candidate build/inspection did not complete. Check Docker and private job logs; this is not a packaging pass.')
         return
     preflight.add_check(report,'C15','candidate-base','not_checked','Final candidate image identity is retained; the mutable Debian base digest and actual remote build identity are not established.')
-    compared=[]
+    expected={}
+    for path,(data,mode) in files.items():
+        body=data.replace(b'${INTERNAL_NETWORK}',b'false') if path=='docker-compose.yaml' and data is not None else data
+        expected[path]=('directory' if data is None else 'file',None if data is None else hashlib.sha256(body).hexdigest(),mode)
+    compared=[];seen=set()
     for row in candidate.get('files') or []:
-        if not isinstance(row,dict) or not isinstance(row.get('path'),str):continue
-        if row.get('matches') is True:
-            compared.append({'path':row['path'],'kind':row.get('kind'),'sha256':row.get('sha256'),'mode':row.get('mode')})
+        if not isinstance(row,dict) or not isinstance(row.get('path'),str) or row['path'] not in expected or row['path'] in seen:continue
+        seen.add(row['path']);kind,sha,mode=expected[row['path']]
+        if row.get('matches') is True and row.get('kind')==kind and row.get('sha256')==sha and row.get('mode')==mode:
+            compared.append({'path':row['path'],'kind':kind,'sha256':sha,'mode':mode})
         else:
             preflight.add_check(report,'C01','candidate-files','fail','Candidate file is missing or differs in bytes/mode (including Docker ignore rules).',row['path'])
+    for path in sorted(set(expected)-seen):
+        preflight.add_check(report,'C01','candidate-files','fail','Controller readback did not cover this packaged file.',path)
     record['files']=compared
     if not any(r['code']=='candidate-files' and r['state']=='fail' for r in report['checks']):
         preflight.add_check(report,'C01','candidate-files','pass','All packaged files and directory modes match stopped-image readback after the pinned MOOG Compose substitution.')

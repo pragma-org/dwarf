@@ -208,19 +208,53 @@ def test_runtime_image_takes_the_docker_cli_from_dockers_pinned_repository():
     assert key.startswith(b"-----BEGIN PGP PUBLIC KEY BLOCK-----")
 
 
-def test_installer_refreshes_the_control_shim_when_the_channel_already_exists():
-    """F38: re-running install.sh on a host with a provisioned channel preserved
-    shim mode but left the old shim file in place, so shim fixes never reached a
-    redeployed host unless copied by hand."""
-    install = (ROOT / "delivery/scripts/install.sh").read_text(encoding="utf-8")
+def _refresh_shim(tmp_path, *, authorized_command=None, installed=True, env=None):
+    import os, subprocess
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True, exist_ok=True)
+    source = ROOT / "delivery/control-plane/dwarf-deploy-shim.py"
+    target = tmp_path / "custom" / "dwarf-deploy-shim" if authorized_command else home / "dwarf-control" / "dwarf-deploy-shim"
+    if installed and not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source.read_text() + "\n# stale marker\n")
+        target.chmod(0o755)
+    if authorized_command:
+        (home / ".ssh" / "authorized_keys").write_text(
+            'restrict,command="' + str(target) + '" ssh-ed25519 AAAA dwarf-control-channel\n')
+    environment = {**os.environ, "HOME": str(home), **(env or {})}
+    completed = subprocess.run(["bash", str(ROOT / "delivery/scripts/refresh-control-shim.sh")],
+                               capture_output=True, text=True, env=environment, check=False)
+    return completed, target, source
 
-    preserved = install.index("detected previously-provisioned control channel; preserving shim mode")
-    block = install[preserved:preserved + 1200]
-    assert 'SHIM_TARGET="${DWARF_CONTROL_INSTALL_DIR:-${HOME}/dwarf-control}/dwarf-deploy-shim"' in block
-    assert 'cmp -s "${CONTROL_PLANE_DIR}/dwarf-deploy-shim.py" "${SHIM_TARGET}"' in block
-    assert 'cp "${CONTROL_PLANE_DIR}/dwarf-deploy-shim.py" "${SHIM_TARGET}"' in block
-    assert 'chmod 755 "${SHIM_TARGET}"' in block
-    assert "refreshed the installed control shim" in block
+
+def test_refresh_control_shim_replaces_a_stale_shim_atomically_and_keeps_the_previous_copy(tmp_path):
+    """F38 (review I4/M11): the refresh is its own script, finds the shim through
+    the authorized_keys forced command, replaces it by rename and keeps a .prev."""
+    completed, target, source = _refresh_shim(tmp_path, authorized_command=True, env={"ADA2_DWARF_CONTROL_SHIM": "1"})
+    assert completed.returncode == 0, completed.stderr
+    assert target.read_text() == source.read_text() and target.stat().st_mode & 0o777 == 0o755
+    assert (target.parent / "dwarf-deploy-shim.prev").read_text().endswith("# stale marker\n")
+    assert "refreshed the installed control shim at " + str(target) in completed.stdout
+
+
+def test_refresh_control_shim_uses_the_default_install_dir_and_reports_a_missing_shim(tmp_path):
+    completed, target, source = _refresh_shim(tmp_path)
+    assert completed.returncode == 0 and target.read_text() == source.read_text()
+    again, _, _ = _refresh_shim(tmp_path)
+    assert "already matches this release" in again.stdout
+    missing, target, _ = _refresh_shim(tmp_path / "other", installed=False)
+    assert missing.returncode == 0 and "expected at " + str(target) + " but not found" in missing.stdout
+
+
+def test_installer_and_deploy_refresh_the_control_shim_whenever_a_channel_exists():
+    install = (ROOT / "delivery/scripts/install.sh").read_text(encoding="utf-8")
+    deploy = (ROOT / "delivery/scripts/deploy.sh").read_text(encoding="utf-8")
+    staged = install.index('if [[ -s "${DWARF_SSH_KEY_PATH}" ]]; then')
+    block = install[staged:staged + 900]
+    # The refresh does not hide behind the env flag operators were told to set.
+    assert 'refresh-control-shim.sh' in block
+    assert block.index('refresh-control-shim.sh') > block.index('preserving shim mode')
+    assert 'refresh-control-shim.sh' in deploy
 
 
 def test_runtime_image_allows_host_uid_to_traverse_packaged_source():

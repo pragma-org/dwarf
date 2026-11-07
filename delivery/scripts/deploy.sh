@@ -9,6 +9,10 @@ ensure_package_layout
 ensure_runtime_dirs
 ensure_controller_identity
 enable_existing_control_channel
+# A redeploy ships this release's forced-command shim to an existing channel (F38).
+if [[ -s "${DWARF_SSH_KEY_PATH}" && -f "${SCRIPT_DIR}/refresh-control-shim.sh" ]]; then
+  bash "${SCRIPT_DIR}/refresh-control-shim.sh"
+fi
 seed_example_runs
 seed_example_bundles
 seed_scenarios

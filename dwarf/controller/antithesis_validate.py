@@ -45,9 +45,10 @@ def _invalid(message):
 def _verified_staged_archive(runtime, stage_id, archive_sha256):
     """The staged package archive as bytes, or a bounded error. Same owner,
     symlink, descriptor and expiry checks as the staged registry credential."""
-    root = Path(getattr(runtime, 'version_imports_dir', None) or os.environ.get('ADA2_DWARF_VERSION_IMPORTS_DIR', ''))
-    if not STAGE_ID.fullmatch(str(stage_id)) or not str(root):
+    root_raw = getattr(runtime, 'version_imports_dir', None) or os.environ.get('ADA2_DWARF_VERSION_IMPORTS_DIR', '')
+    if not STAGE_ID.fullmatch(str(stage_id)) or not root_raw:
         raise _invalid('package archive reference is invalid')
+    root = Path(root_raw)
     nofollow = getattr(os, 'O_NOFOLLOW', 0)
     directory = root / stage_id
     try:
@@ -105,10 +106,14 @@ def _verified_staged_archive(runtime, stage_id, archive_sha256):
 def _inspect_local(job, reference, log):
     """Local image facts: ``pass`` (linux/amd64), ``fail`` (another platform)
     or ``not_checked`` (absent or unreadable). Nothing is pulled."""
-    result = job.run(('image', 'inspect', '--platform', 'linux/amd64', reference), log=log, ceiling=INSPECT_CEILING)
-    if result.returncode and 'unknown flag' in (result.stderr or '') + (result.stdout or ''):
-        result = job.run(('image', 'inspect', reference), log=log, ceiling=INSPECT_CEILING)
     unknown = {'reference': reference, 'state': 'not_checked', 'image_id': None}
+    try:
+        result = job.run(('image', 'inspect', '--platform', 'linux/amd64', reference), log=log, ceiling=INSPECT_CEILING)
+        if result.returncode and 'unknown flag' in (result.stderr or '') + (result.stdout or ''):
+            result = job.run(('image', 'inspect', reference), log=log, ceiling=INSPECT_CEILING)
+    except (DockerRuntimeError, TimeoutError):
+        # One slow or capped inspect is a fact about that image, not the end of the job.
+        return unknown
     if result.returncode:
         return unknown
     try:
@@ -146,7 +151,7 @@ def _compose_schema(job, context, files):
         result = job.run(('compose', '--project-name', 'dwarf-antithesis-check', '--env-file', '/dev/null',
                           '--project-directory', str(context), '--file', str(schema_file), 'config',
                           '--quiet', '--no-interpolate', '--no-env-resolution'), log='compose-schema.log', ceiling=COMPOSE_CEILING)
-    except (DockerRuntimeError, OSError):
+    except (DockerRuntimeError, OSError, TimeoutError):
         return {'state': 'not_checked'}
     return {'state': 'pass' if result.returncode == 0 else 'fail'}
 
@@ -173,6 +178,7 @@ def _candidate(job, context, files, compose_schema, dockerfile_text):
         return job.run(arguments, log=log, ceiling=min(ceiling, remaining))
 
     try:
+      try:
         candidate['attempted'] = True
         built = run(('build', '--platform', 'linux/amd64', '--network', 'none', '--tag', tag, '--file', str(dockerfile), str(context)),
                     'candidate-build.log', BUILD_CEILING)
@@ -213,17 +219,30 @@ def _candidate(job, context, files, compose_schema, dockerfile_text):
         candidate['files'] = rows
         candidate['completed'] = True
         return candidate
+      except (DockerRuntimeError, TimeoutError):
+        # A timed-out or output-capped step is a fact (completed stays False);
+        # cancellation propagates after the cleanup below.
+        return candidate
     finally:
-        for label, arguments, needed in (('container', ('rm', '-f', name), candidate['created']),
-                                         ('image', ('image', 'rm', tag), candidate['attempted'])):
-            if not needed:
-                continue
-            try:
-                result = job.run(arguments, log='cleanup-' + label + '.log', ceiling=30)
-                candidate['cleanup'][label] = 'removed' if result.returncode == 0 else 'unconfirmed'
-            except Exception:  # noqa: BLE001 - cleanup must not mask the inspection result
-                candidate['cleanup'][label] = 'unconfirmed'
+        _remove_candidate(job.runtime, job.execution_id, job.directory, name if candidate['created'] else None,
+                          tag if candidate['attempted'] else None, candidate['cleanup'])
         shutil.rmtree(readback, ignore_errors=True)
+
+
+def _remove_candidate(runtime, execution_id, directory, container, image, cleanup):
+    """Remove the candidate container and image directly through the runtime,
+    outside the job's deadline and cancel flag, so a cancelled or timed-out
+    inspection never leaves them on the host daemon."""
+    for label, arguments in (('container', ('rm', '-f', container) if container else None),
+                             ('image', ('image', 'rm', image) if image else None)):
+        if arguments is None:
+            continue
+        try:
+            result = runtime._run(arguments, timeout=30, execution_id=execution_id,
+                                  output_limit=64 * 1024, output_path=directory / ('cleanup-' + label + '.log'))
+            cleanup[label] = 'removed' if result.returncode == 0 else 'unconfirmed'
+        except Exception:  # noqa: BLE001 - cleanup must not mask the inspection result
+            cleanup[label] = 'unconfirmed'
 
 
 def validate_package(runtime, parameters, execution_id, timeout, cancel_event):
@@ -246,7 +265,12 @@ def validate_package(runtime, parameters, execution_id, timeout, cancel_event):
         files, _ = prep._unpack(data)
         report = preflight.inspect_package(files)
         images = _inspect_images(job, report)
-        if any(name.split('/')[0] in _SYSTEM_ROOTS for name in files):
+        if report['state'] == 'blocked':
+            # The static contract already refused this package; its Compose file
+            # is not trusted with `compose config` or a build on the socket host.
+            compose_schema = {'state': 'not_checked'}
+            candidate = {'static_blocked': True}
+        elif any(name.split('/')[0] in _SYSTEM_ROOTS for name in files):
             compose_schema = {'state': 'not_checked'}
             candidate = {'context_blocked': True}
         else:
@@ -279,15 +303,11 @@ def cleanup_validate(runtime, execution_id):
         progress = read_validate_progress(runtime, execution_id) or {}
     except ValueError:
         progress = {}
-    for key, arguments in (('candidate_container', ('rm', '-f')), ('candidate_reference', ('image', 'rm'))):
-        value = progress.get(key)
-        if isinstance(value, str) and value:
-            try:
-                runtime._run(arguments + (value,), timeout=30, execution_id=execution_id)
-            except Exception:  # noqa: BLE001 - best-effort cleanup after an interruption
-                pass
     from controller.antithesis_publish import _directory
     directory = _directory(runtime, execution_id, 'validate')
+    container, image = progress.get('candidate_container'), progress.get('candidate_reference')
+    _remove_candidate(runtime, execution_id, directory, container if isinstance(container, str) else None,
+                      image if isinstance(image, str) else None, {})
     for name in ('context', 'candidate-readback'):
         path = directory / name
         if path.is_dir() and not path.is_symlink():

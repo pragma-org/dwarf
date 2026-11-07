@@ -1243,3 +1243,19 @@ def test_external_receipts_are_written_under_the_process_run_dir_in_a_container(
     )
 
     assert (process_runs / run_id / "external" / "submission.json").is_file()
+
+
+def test_explicit_runs_dir_outside_the_canonical_root_is_not_rewritten_to_the_host_namespace(tmp_path, monkeypatch):
+    """Review M5: only the canonical process runs directory maps onto the host one."""
+    process_runs, host_runs = _container_like_namespaces(tmp_path, monkeypatch)
+    elsewhere = tmp_path / "elsewhere"
+    request = run_service.ExternalRunRequest(
+        backend="antithesis", origin="cli",
+        launch={"transport": "moog", "repository": "pragma-org/dwarf", "directory": "antithesis/generated/x",
+                "commit": "a" * 40, "try": 1},
+        runs_dir=elsewhere, state_dir=tmp_path / "state",
+    )
+    reserved = run_service.reserve_external_run(request)
+    assert reserved["ledger"]["evidence_path"] == str((elsewhere / reserved["run_id"]).resolve())
+    assert reserved["plan"]["storage"]["runs_dir"] == str(elsewhere.resolve())
+    assert run_service.external_evidence_dir(reserved["ledger"]) == (elsewhere / reserved["run_id"]).resolve()

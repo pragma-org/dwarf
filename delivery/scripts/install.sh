@@ -131,20 +131,18 @@ fi
 # passed this time — so re-running install.sh never silently disables an
 # existing channel. ensure_runtime_dirs seeds only an EMPTY placeholder key,
 # so `-s` is false on a fresh install.
-if [[ "${ADA2_DWARF_CONTROL_SHIM:-}" != 1 && -s "${DWARF_SSH_KEY_PATH}" ]]; then
-  export ADA2_DWARF_CONTROL_SHIM=1
-  [[ "${CONTROL_CHANNEL_STATUS}" == "skipped" ]] && CONTROL_CHANNEL_STATUS="pre-existing (preserved)"
-  echo "    detected previously-provisioned control channel; preserving shim mode"
+if [[ -s "${DWARF_SSH_KEY_PATH}" ]]; then
+  if [[ "${ADA2_DWARF_CONTROL_SHIM:-}" != 1 ]]; then
+    export ADA2_DWARF_CONTROL_SHIM=1
+    [[ "${CONTROL_CHANNEL_STATUS}" == "skipped" ]] && CONTROL_CHANNEL_STATUS="pre-existing (preserved)"
+    echo "    detected previously-provisioned control channel; preserving shim mode"
+  fi
   # The channel was provisioned by an earlier release; the forced-command shim
   # it installed is that release's shim. Refresh it so shim fixes ship with a
-  # redeploy instead of waiting for a hand copy (F38). The key, authorized_keys
-  # entry and config are left exactly as provisioned.
-  SHIM_TARGET="${DWARF_CONTROL_INSTALL_DIR:-${HOME}/dwarf-control}/dwarf-deploy-shim"
-  if [[ -f "${SHIM_TARGET}" ]] && ! cmp -s "${CONTROL_PLANE_DIR}/dwarf-deploy-shim.py" "${SHIM_TARGET}"; then
-    cp "${CONTROL_PLANE_DIR}/dwarf-deploy-shim.py" "${SHIM_TARGET}"
-    chmod 755 "${SHIM_TARGET}"
-    echo "    refreshed the installed control shim at ${SHIM_TARGET}"
-  fi
+  # redeploy instead of waiting for a hand copy (F38) — whether shim mode came
+  # from this detection or from ADA2_DWARF_CONTROL_SHIM=1 in .env. The key,
+  # authorized_keys entry and config are left exactly as provisioned.
+  bash "${SCRIPT_DIR}/refresh-control-shim.sh"
 fi
 
 # --- start the dashboard ----------------------------------------------------

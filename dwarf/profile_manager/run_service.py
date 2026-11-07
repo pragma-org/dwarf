@@ -574,7 +574,16 @@ def declared_runs_dir(runs_dir: Path) -> Path:
     declared host directory when one exists, else the process directory. The
     run page checks ledger paths against the declared host namespace, so a
     reservation made inside the container must speak it too (F39)."""
-    return host_runs_dir() or runs_dir
+    host = host_runs_dir()
+    if host is None:
+        return runs_dir
+    try:
+        canonical = storage_roots().runs
+    except StorageConfigurationError:
+        return runs_dir
+    # Only the canonical process directory is the host directory's mount; an
+    # explicit --runs-dir elsewhere stays where it is (review M5).
+    return host if Path(runs_dir).resolve() == Path(canonical).resolve() else runs_dir
 
 
 def external_evidence_dir(entry: Mapping[str, Any], *, runs_dir: Path | None = None) -> Path:

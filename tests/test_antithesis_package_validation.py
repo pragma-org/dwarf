@@ -171,7 +171,7 @@ def test_authentication_precedes_inspection(staged,monkeypatch):
 def test_context_system_paths_fail_without_a_candidate_row():
     m=module();files=package();files['etc/ld.so.preload']=(b'/evil',0o644)
     report=m.preflight.inspect_package(files)
-    m.inspect_candidate(report,facts_for(files,execution_id='antithesis-validate-'+'a'*32,archive_sha256='sha256:'+'b'*64,context_blocked=True))
+    m.inspect_candidate(report,facts_for(files,execution_id='antithesis-validate-'+'a'*32,archive_sha256='sha256:'+'b'*64,context_blocked=True),files)
     assert any(r['code']=='candidate-context' and r['state']=='fail' for r in report['checks'])
     assert 'candidate' not in report
 
@@ -179,7 +179,7 @@ def test_context_system_paths_fail_without_a_candidate_row():
 def test_candidate_directory_mismatch_is_reported_at_its_path():
     m=module();files=package(volumes=['./empty:/data']);files['empty']=(None,0o755);files['.dockerignore']=(b'empty\n',0o644)
     report=m.preflight.inspect_package(files)
-    m.inspect_candidate(report,facts_for(files,execution_id='antithesis-validate-'+'8'*32,archive_sha256='sha256:'+'b'*64,corrupt_paths={'empty'}))
+    m.inspect_candidate(report,facts_for(files,execution_id='antithesis-validate-'+'8'*32,archive_sha256='sha256:'+'b'*64,corrupt_paths={'empty'}),files)
     assert any(r['code']=='candidate-files' and r['location']=='empty' and r['state']=='fail' for r in report['checks'])
 
 
@@ -215,7 +215,7 @@ def test_wrong_local_platform_and_cleanup_failure_are_visible(tmp_path):
     report=m.preflight.inspect_package(files)
     m.inspect_images(tmp_path,report,facts_for(files,execution_id='antithesis-validate-'+'9'*32,archive_sha256='sha256:'+'b'*64,platform='arm64'))
     assert any(r['code']=='local-image-platform' and r['state']=='fail' for r in report['checks'])
-    m.inspect_candidate(report,facts_for(files,execution_id='antithesis-validate-'+'9'*32,archive_sha256='sha256:'+'b'*64,unclean=True))
+    m.inspect_candidate(report,facts_for(files,execution_id='antithesis-validate-'+'9'*32,archive_sha256='sha256:'+'b'*64,unclean=True),files)
     assert report['candidate']['cleanup']['container']=='unconfirmed'
     assert any(r['code']=='candidate-cleanup' and r['state']=='warn' for r in report['checks'])
 
@@ -257,3 +257,39 @@ def test_compose_schema_failure_blocks_the_candidate_rows(staged):
     assert any(r['code']=='compose-schema' and r['state']=='fail' for r in checks)
     assert not any(r['code']=='candidate-files' for r in checks)
     assert 'candidate' not in result['report']
+
+
+def test_incomplete_readback_rows_do_not_pass_candidate_files():
+    """Review M8: the controller is trusted for Docker, not for completeness."""
+    m=module();files=package();report=m.preflight.inspect_package(files)
+    facts=facts_for(files,execution_id='antithesis-validate-'+'a'*32,archive_sha256='sha256:'+'b'*64)
+    facts['candidate']['files']=facts['candidate']['files'][:1]
+    m.inspect_candidate(report,facts,files)
+    rows=[r for r in report['checks'] if r['code']=='candidate-files']
+    assert rows and all(r['state']=='fail' for r in rows)
+    facts=facts_for(files,execution_id='antithesis-validate-'+'a'*32,archive_sha256='sha256:'+'b'*64)
+    facts['candidate']['files'][0]['sha256']='0'*64
+    report=m.preflight.inspect_package(files);m.inspect_candidate(report,facts,files)
+    assert any(r['code']=='candidate-files' and r['state']=='fail' for r in report['checks'])
+
+
+def test_transient_status_errors_are_retried_and_persistent_ones_cancel(staged,monkeypatch):
+    from profile_manager.topology_actions import TopologyActionError
+    m=module();monkeypatch.setattr(m,'_POLL_SECONDS',0)
+    calls=[];inner=fake_controller(calls);flaky={'left':2}
+    def controller(operation,parameters,timeout,idempotency_key=None):
+        if operation=='execution.status' and flaky['left']>0:
+            flaky['left']-=1;raise TopologyActionError('temporary failure')
+        return inner(operation,parameters,timeout,idempotency_key)
+    result=wait(m.start_validation({'kind':'preparation','id':staged['receipt']['id']},'artifacts','c'*32,controller=controller)['id'])
+    assert any(r['code']=='candidate-files' and r['state']=='pass' for r in result['report']['checks'])
+    seen=[]
+    def broken(operation,parameters,timeout,idempotency_key=None):
+        seen.append(operation)
+        if operation=='antithesis.package-validate':return {'status':'accepted','execution_id':parameters['execution_id']}
+        if operation=='execution.status':raise TopologyActionError('gone')
+        return {}
+    result=wait(m.start_validation({'kind':'preparation','id':staged['receipt']['id']},'artifacts','9'*32,controller=broken)['id'])
+    assert result['state']=='complete'
+    assert 'execution.cancel' in seen
+    assert any(r['code']=='candidate-image' and r['state']=='not_checked' for r in result['report']['checks'])

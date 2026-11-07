@@ -528,7 +528,12 @@ def _external_evidence_path_matches(
     runs_dir: Path,
     plan: dict[str, Any],
 ) -> bool:
-    """Match a ledger path in either the process or declared host namespace."""
+    """Match a ledger path against this run directory. Without a declared host
+    namespace the process path must match; with ``DWARF_HOST_RUNS_DIR`` set,
+    only the declared host namespace is accepted, for both the plan's runs
+    directory and the ledger path (a process path is treated as a bypass).
+    Reservations made before F39 recorded process paths and keep failing this
+    check on purpose: their ledger rows are immutable evidence."""
     if not isinstance(entry_path, str) or not entry_path:
         return False
     declared = Path(entry_path)
