@@ -16,7 +16,9 @@ COMPOSE = 'environment/docker-compose.yaml'
 AMARU_TARGETS = {'amaru-relay-1', 'amaru-relay-2'}
 # Reviewed atomic binary + CLI-launcher extraction program at 53779.
 # Pin the complete program so a changed branch cannot silently skip the copy.
-_EXTRACTION_COMMAND_SHA256 = 'acc3b22300ebc5bfcc234700289ce495db23a6f503200f33142be3155bc5e70c'
+# Re-traced 2026-11-07: the launcher appends AMARU_RUN_EXTRA_ARGS on `run`
+# (generated Antithesis rig listen/submit ports); the copy steps are unchanged.
+_EXTRACTION_COMMAND_SHA256 = '41bc50110a1b73f6536f6267038b573fcfa3d15af1ae4cdf41e334d84831c1f9'
 
 
 def default_scope(scenario):

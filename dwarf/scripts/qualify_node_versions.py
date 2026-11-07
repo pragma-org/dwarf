@@ -281,6 +281,48 @@ echo "pinned ExperimentalProtocolsEnabled={value} in every generated node config
 """
 
 
+def amaru_target_extract_service(amaru_image: str, scope: str) -> dict[str, Any]:
+    """The exited extraction service that copies the exact Amaru executable and
+    the launcher into the shared ``amaru-target-bin`` volume (atomic replace)."""
+    return {
+        "image": amaru_image,
+        "user": "0:0",
+        "entrypoint": ["/bin/sh", "-ec"],
+        "command": [
+            "temporary=; "
+            "cleanup() { status=$$?; trap - 0; "
+            '[ -z "$${temporary:-}" ] || rm -f "$$temporary" || true; '
+            'exit "$$status"; }; '
+            "abort() { status=$$1; trap - 0 1 2 3 15; "
+            '[ -z "$${temporary:-}" ] || rm -f "$$temporary" || true; '
+            'exit "$$status"; }; '
+            "trap cleanup 0; "
+            "trap 'abort 129' 1; trap 'abort 130' 2; "
+            "trap 'abort 131' 3; trap 'abort 143' 15; "
+            "temporary=$$(mktemp /target/.amaru.XXXXXX); "
+            'cp /usr/local/bin/amaru "$$temporary"; '
+            'chmod 0755 "$$temporary"; '
+            'mv -f "$$temporary" /target/amaru; '
+            'temporary=$$(mktemp /target/.amaru-launch.XXXXXX); '
+            + 'printf %s ' + shlex.quote(launcher_script().replace('$', '$$'))
+            + ' > "$$temporary"; '
+            + 'chmod 0755 "$$temporary"; '
+            + 'mv -f "$$temporary" /target/amaru-launch; '
+            +
+            "temporary=; "
+            "trap - 0 1 2 3 15"
+        ],
+        "volumes": [
+            {"type": "volume", "source": "amaru-target-bin", "target": "/target"}
+        ],
+        "labels": {
+            "com.dwarf.qualification": "true",
+            "com.dwarf.qualification.scope": scope,
+            "com.antithesis.exclude_from_faults": "network,kill,pause,stop",
+        },
+    }
+
+
 def transform_compose_model(
     model: dict[str, Any],
     *,
@@ -367,43 +409,7 @@ def transform_compose_model(
                 environment.pop("AMARU_MIGRATE_CHAIN_DB", None)
 
     if modern_amaru and amaru_image:
-        services[AMARU_TARGET_EXTRACT] = {
-            "image": amaru_image,
-            "user": "0:0",
-            "entrypoint": ["/bin/sh", "-ec"],
-            "command": [
-                "temporary=; "
-                "cleanup() { status=$$?; trap - 0; "
-                '[ -z "$${temporary:-}" ] || rm -f "$$temporary" || true; '
-                'exit "$$status"; }; '
-                "abort() { status=$$1; trap - 0 1 2 3 15; "
-                '[ -z "$${temporary:-}" ] || rm -f "$$temporary" || true; '
-                'exit "$$status"; }; '
-                "trap cleanup 0; "
-                "trap 'abort 129' 1; trap 'abort 130' 2; "
-                "trap 'abort 131' 3; trap 'abort 143' 15; "
-                "temporary=$$(mktemp /target/.amaru.XXXXXX); "
-                'cp /usr/local/bin/amaru "$$temporary"; '
-                'chmod 0755 "$$temporary"; '
-                'mv -f "$$temporary" /target/amaru; '
-                'temporary=$$(mktemp /target/.amaru-launch.XXXXXX); '
-                + 'printf %s ' + shlex.quote(launcher_script().replace('$', '$$'))
-                + ' > "$$temporary"; '
-                + 'chmod 0755 "$$temporary"; '
-                + 'mv -f "$$temporary" /target/amaru-launch; '
-                +
-                "temporary=; "
-                "trap - 0 1 2 3 15"
-            ],
-            "volumes": [
-                {"type": "volume", "source": "amaru-target-bin", "target": "/target"}
-            ],
-            "labels": {
-                "com.dwarf.qualification": "true",
-                "com.dwarf.qualification.scope": scope,
-                "com.antithesis.exclude_from_faults": "network,kill,pause,stop",
-            },
-        }
+        services[AMARU_TARGET_EXTRACT] = amaru_target_extract_service(amaru_image, scope)
         transformed.setdefault("volumes", {})["amaru-target-bin"] = {}
 
     if cardano_experimental_protocols is not None:

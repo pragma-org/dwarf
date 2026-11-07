@@ -215,3 +215,147 @@ def render_rig(devnet, scenario_id):
                'networks': {'default': {'name': 'dwarf-' + str(scenario_id), 'driver': 'bridge', 'internal': '${INTERNAL_NETWORK:-false}'}}}
     files[COMPOSE] = yaml.safe_dump(compose, sort_keys=False)
     return {'compose': compose, 'files': files, 'services': {n['id']: n['id'] for n in devnet['nodes']}, 'source_revision': revision}
+
+
+# ---- versions ---------------------------------------------------------------------
+
+def _row(node, **fields):
+    return {'service': node['id'], 'role': node['role'], 'implementation': node['impl'], 'baseline_image': None,
+            'image': None, 'status': 'unchanged', 'supporting': node['supporting'], **fields}
+
+
+def _apply_cardano(compose, node, reference):
+    compose['services'][node['id']]['image'] = reference
+
+
+def _apply_modern_amaru(compose, node, reference, scope, assembly):
+    service = compose['services'][node['id']]
+    service['image'] = assembly.CONTROL_AMARU_IMAGE
+    service['environment'].update(AMARU_BIN='/target/amaru-launch', AMARU_MIGRATE_CHAIN_DB='true')
+    service['volumes'].append({'type': 'volume', 'source': 'amaru-target-bin', 'target': '/target', 'read_only': True})
+    service['depends_on'][assembly.AMARU_TARGET_EXTRACT] = {'condition': 'service_completed_successfully', 'required': True}
+    if assembly.AMARU_TARGET_EXTRACT not in compose['services']:
+        extractor = assembly.amaru_target_extract_service(reference, scope)
+        extractor['labels'] = {'com.antithesis.exclude_from_faults': topology.FAULT_EXCLUSION}
+        extractor.update(platform='linux/amd64', container_name=assembly.AMARU_TARGET_EXTRACT,
+                         hostname=assembly.AMARU_TARGET_EXTRACT + '.example', init=True)
+        compose['services'][assembly.AMARU_TARGET_EXTRACT] = extractor
+        compose['volumes']['amaru-target-bin'] = {}
+
+
+def _apply_legacy_amaru(compose, node, reference):
+    service = compose['services'][node['id']]
+    service['image'] = reference
+    for key in ('AMARU_BIN', 'AMARU_MIGRATE_CHAIN_DB', 'AMARU_RUN_EXTRA_ARGS'):
+        service['environment'].pop(key, None)
+
+
+def bind_rig_versions(files, intent, devnet, rendered, *, scenario_default=None):
+    """Bind one selected release per implementation to every node of the rendered rig.
+
+    Same report shape as ``antithesis_harness.bind_versions``; supporting nodes
+    take the catalog's default release for their implementation.
+    """
+    from profile_manager import antithesis_versions as versions
+    from profile_manager import version_catalog
+    from profile_manager.amaru_runtime import uses_modern_amaru_runtime_interface
+    from profile_manager.antithesis_artifacts import binding_selection
+    from scripts import qualify_node_versions as assembly
+    import hashlib
+    from pathlib import Path
+
+    report = {'status': 'recorded', 'source': 'generated-rig', 'policy': intent['policy'], 'catalog_digest': None,
+              'selected_releases': [], 'services': [], 'issues': [], 'compatibility': 'not-evaluated',
+              'runtime_identity': 'unverified', 'target_contract': None}
+
+    def gap(code, message, field='versions'):
+        report['issues'].append({'code': code, 'field': field, 'kind': 'implementation-gap', 'message': message})
+
+    compose = rendered['compose']
+    nodes = [n for n in devnet['nodes']]
+    rows = {n['id']: _row(n) for n in nodes}
+    targets = {n['impl'] for n in nodes if not n['supporting']}
+    report['target_contract'] = {'scope': devnet['shape'], 'services': list(devnet['faultable']),
+                                 'template_revision': rendered['source_revision'], 'evidence': 'emitted-configuration',
+                                 'bootstrap_policy': 'in-package genesis; selected Amaru binary is the relay runtime',
+                                 'assembly_source_digest': 'sha256:' + hashlib.sha256(Path(assembly.__file__).read_bytes()).hexdigest()}
+    if intent['build_variant'] != 'stock' and not intent.get('artifacts'):
+        gap('patched-build-not-implemented', 'Measurement-patched assembly is not connected. Baseline images were retained.')
+        report['services'] = list(rows.values())
+        return report
+    try:
+        catalog, report['catalog_digest'] = versions._snapshot()
+    except versions.VersionError:
+        gap('version-catalog-unavailable', 'The shared release catalog is unavailable; target versions were not changed.')
+        report['services'] = list(rows.values())
+        return report
+    selected, report['release_resolution'], findings, artifacts = binding_selection(catalog, intent, targets, scenario_default=scenario_default)
+    report['node_artifacts'] = artifacts
+    if intent['build_variant'] == 'instrumented' and not targets <= set(artifacts):
+        gap('patched-build-not-implemented', 'Prepare an instrumented artifact for every selected target implementation.')
+        report['services'] = list(rows.values())
+        return report
+    for finding in findings:
+        if finding['code'] != 'local-qualification-context':
+            gap(finding['code'], finding['message'], 'versions.' + finding['field'])
+    for implementation in sorted(set(intent['versions']) - targets):
+        gap('unused-target-selection', 'No ' + implementation + ' target exists in this devnet; the selection remains intent.')
+    supporting = {n['impl'] for n in nodes if n['supporting']} - targets
+    for implementation in sorted(supporting):
+        try:
+            selected[implementation] = version_catalog.resolve_default(
+                catalog, 'cardano-only' if implementation == 'cardano-node' else 'amaru-only')['release']
+        except version_catalog.CatalogError:
+            gap('supporting-release-unavailable', 'The catalog has no default ' + implementation + ' release for the supporting node.')
+    applied = set()
+    for implementation in sorted(targets | supporting):
+        release = selected.get(implementation)
+        if release is None:
+            if intent['policy'] == 'exact' and implementation not in intent['versions']:
+                gap('missing-exact-version', 'Select a version for ' + implementation + '.', 'versions.versions.' + implementation)
+            continue
+        bucket = 'selected_releases' if implementation in targets else 'supporting_releases'
+        report.setdefault(bucket, []).append({k: release[k] for k in ('implementation', 'version', 'source_revision')})
+        candidates = versions.stock_image_candidates(release)
+        if len(candidates) != 1:
+            gap('ambiguous-stock-images' if candidates else 'missing-stock-image',
+                'The selected ' + implementation + ' release needs one usable declared stock image; no substitute was chosen.')
+            continue
+        reference, artifact = next(iter(candidates.items()))
+        mode = None
+        if implementation == 'amaru':
+            modern = artifacts.get(implementation, {}).get('runtime_interface') == 'extracted-binary' or uses_modern_amaru_runtime_interface(reference)
+            if not modern and reference.rsplit('@', 1)[-1] != assembly.CONTROL_AMARU_IMAGE.rsplit('@', 1)[-1]:
+                gap('amaru-runtime-interface-not-implemented', 'This Amaru image has no connected executable/bootstrap interface. '
+                    'Supply its complete package or add its adapter; compatibility has not been judged.')
+                continue
+            mode = 'extracted-binary' if modern else 'legacy-wrapper'
+        for node in nodes:
+            if node['impl'] != implementation:
+                continue
+            if implementation == 'cardano-node':
+                _apply_cardano(compose, node, reference)
+            elif mode == 'extracted-binary':
+                _apply_modern_amaru(compose, node, reference, devnet['shape'], assembly)
+            else:
+                _apply_legacy_amaru(compose, node, reference)
+            rows[node['id']].update(image=compose['services'][node['id']]['image'], status='applied',
+                                    requested_version=release['version'], source_revision=release['source_revision'],
+                                    provenance='catalog-declaration', artifact=artifact)
+            if implementation == 'amaru':
+                rows[node['id']].update(bootstrap_image=assembly.CONTROL_AMARU_IMAGE if mode == 'extracted-binary' else None,
+                                        target_binary={'mode': mode, 'image': reference,
+                                                       'path': '/target/amaru' if mode == 'extracted-binary' else '/bin/amaru',
+                                                       'source_service': assembly.AMARU_TARGET_EXTRACT if mode == 'extracted-binary' else node['id']})
+        applied.add(implementation)
+        if '@sha256:' not in reference or artifact.get('availability') != 'available':
+            gap('unverified-image-reference', 'The declared ' + implementation + ' reference was applied; runtime identity and availability remain unverified.')
+    report['services'] = list(rows.values())
+    if assembly.AMARU_TARGET_EXTRACT in compose['services']:
+        report['services'].append({'service': assembly.AMARU_TARGET_EXTRACT, 'role': 'artifact-source', 'implementation': 'amaru',
+                                   'baseline_image': None, 'image': compose['services'][assembly.AMARU_TARGET_EXTRACT]['image'],
+                                   'status': 'applied', 'supporting': False})
+    if applied:
+        report['status'] = 'applied' if targets <= applied and not (set(intent['versions']) - targets) else 'partial'
+        files[COMPOSE] = yaml.safe_dump(compose, sort_keys=False)
+    return report
