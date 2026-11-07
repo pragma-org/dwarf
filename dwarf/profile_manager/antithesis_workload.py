@@ -156,6 +156,26 @@ def _measurement_rows(run_dir):
     return rows[:_MEASUREMENT_LIMIT]
 
 
+def _last_phase_error(run_dir):
+    """The last ``phase_error`` event of the run log, as SDK-sized details."""
+    found = {}
+    try:
+        lines = (Path(run_dir) / 'log.ndjson').read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return found
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get('event') != 'phase_error':
+            continue
+        payload = event.get('payload') or {}
+        found = {'error': (str(payload.get('type') or 'Error') + ': ' + str(payload.get('message') or ''))[:_VALUE_LIMIT],
+                 'failed_primitive': str(event.get('primitive') or ''), 'failed_phase': str(event.get('phase') or '')}
+    return found
+
+
 def finish(run_dir, exit_status, *, status_dir=DEFAULT_STATUS, environ=None, error=None):
     """Turn the bundle's assertions into SDK events and release the driver."""
     environ = os.environ if environ is None else environ
@@ -178,6 +198,9 @@ def finish(run_dir, exit_status, *, status_dir=DEFAULT_STATUS, environ=None, err
     details = {'exit_status': exit_status}
     if error:
         details['error'] = str(error)[:_VALUE_LIMIT]
+    elif run_dir is not None and exit_status not in ('pass', 'fail'):
+        # Say why in the platform report: the bundle may not be reachable afterwards.
+        details.update(_last_phase_error(run_dir))
     sdk.emit_assert('sometimes', 'dwarf_scenario_completed', exit_status in ('pass', 'fail'), details=details, environ=environ)
     measurements = _measurement_rows(run_dir) if run_dir is not None else None
     if measurements is not None:

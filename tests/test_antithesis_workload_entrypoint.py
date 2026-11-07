@@ -299,3 +299,23 @@ def test_wait_ready_treats_a_raising_tip_query_as_not_ready(tmp_path):
                                    sleep=lambda s: clock.__setitem__('t', clock['t'] + s), tip=tip) == ['node1']
     finally:
         stop.set(); server.close()
+
+
+def test_finish_carries_the_phase_error_into_the_scenario_completed_event(tmp_path):
+    """A run that ends 'error' must say why in the SDK event: the platform report
+    shows the details, and the bundle may not be reachable afterwards."""
+    run_dir = tmp_path / 'runs' / 'run-err'
+    run_dir.mkdir(parents=True)
+    (run_dir / 'assertions.json').write_text('[]')
+    (run_dir / 'manifest.json').write_text(json.dumps({'exit_status': 'error', 'run_id': 'run-err'}))
+    (run_dir / 'log.ndjson').write_text('\n'.join([
+        json.dumps({'event': 'started', 'primitive': 'runtime_txsubmission_window_pressure', 'phase': 'load', 'payload': {}}),
+        json.dumps({'event': 'phase_error', 'primitive': 'runtime_txsubmission_window_pressure', 'phase': 'load',
+                    'payload': {'message': 'requires substrate runtime metadata', 'type': 'ValueError'}}),
+    ]) + '\n')
+    env = {'ANTITHESIS_OUTPUT_DIR': str(tmp_path / 'out')}
+    assert workload.finish(run_dir, 'error', status_dir=tmp_path / 'status', environ=env) == 2
+    completed = next(r['antithesis_assert'] for r in _sdk_lines(tmp_path / 'out' / 'sdk.jsonl') if r['antithesis_assert']['id'] == 'dwarf_scenario_completed')
+    assert completed['condition'] is False
+    assert completed['details']['error'] == 'ValueError: requires substrate runtime metadata'
+    assert completed['details']['failed_primitive'] == 'runtime_txsubmission_window_pressure'
