@@ -401,22 +401,59 @@ package is:
    scenario is not the pinned one, and the preview says which path was
    used.
 
-**AT-2 as built (2026-11-06; plan `docs/plans/2026-11-06-antithesis-catalog-parity-plan.md`).**
-Victims are the curated clones (`sm-cardano-victim`, `sm-amaru-victim`, with the
-shared `sm-cardano-seed`) added to the `mixed-control-v1` harness for every
-generated package; `compile_topology` labels every harness service, so no label
-is stripped from relays. Scenario node ids (substrate list, profile counts, or the
-attached layout) map onto harness services; the package ships a `runtime.json`
-without container fields and the workload reaches Cardano tips with `cardano-cli`
-over mounted state-volume sockets and Amaru tips from the mounted victim log, with
-connection state reported unavailable. The substrate lifecycle primitives read the
-package-shipped reports (`DWARF_ANTITHESIS_PACKAGE_DIR`). The capability matrix v1
-(`data/antithesis-capabilities-v1.json`) marks the `docker exec`/host-pid
-primitives unsupported, so most devnet scenarios classify `partial`; AT-2b re-routes
-them to the same package routes after the first real run ("full landing", user
-decision). The `dwarf-workload` image is `FROM dwarf/controller:current` (has
-`cardano-cli` and the framework tree), runs as root, checks its release revision
-against the package, and is built with `--network none`.
+**AT-2 first build (2026-11-06) — REJECTED by the user on 2026-11-07.** The first
+build projected every scenario onto the fixed `mixed-control-v1` rig with the
+curated victim clones. That lost the scenario (roles ignored, three nodes per
+implementation at most, the rig's edges instead of the scenario's), started the
+Amaru side for cardano-only tests, demanded an Amaru version pick for them, and
+made a cardano-only test's readiness depend on an Amaru bootstrap. The lifecycle
+inside the package (entrypoint, readiness gate, driver handshake, SDK events, skip
+policy, capability matrix and its plumbing, package-mode primitives, network-off
+build) stands and is reused.
+
+**AT-2 corrected (2026-11-07; plan `docs/plans/2026-11-07-antithesis-catalog-parity-v2-plan.md`).**
+The generated package renders **the scenario's own devnet** from the control
+rig's proven building blocks instead of projecting onto a fixed rig:
+
+- **Nodes = the scenario's nodes.** `substrate.nodes` as declared (ids, impl,
+  role, edges); a `profile` expands exactly as the local run does
+  (`node1..N` cardano producers, `amaru1..M` consumers, `bootstrap-cardano`
+  supporting producer for amaru-only); `attach.topology: cardano_amaru` keeps the
+  rig by name. Public-network substrates and profiles (`preview`, `preprod`,
+  `mainnet`) are `none` with reason `public-network`: the platform has no
+  internet.
+- **Every cardano node is a producer**, as in the local Docker runtime: the
+  Cardano Foundation `configurator` generates genesis and pool keys **inside the
+  environment** at run time for `poolCount = N`; each node mounts its own
+  `/configs/<i>`; its topology file is rendered from the scenario's edges.
+  `tracer` and `log-tailer` stay (node logs reach the platform's log capture);
+  `tracer-sidecar`, `sidecar`, `amaru-consumer*` and the victim clones are not
+  rendered.
+- **Amaru nodes use the rig's `amaru-relay-bootstrap` wrapper** against the
+  producer their first edge names (`/live` = that producer's ChainDB, `AMARU_PEER`
+  = that producer); the selected Amaru release is assembled exactly as the rig
+  does (`amaru-target-extract` + `/target/amaru-launch` for modern releases, the
+  image itself for legacy ones). The launcher passes `AMARU_RUN_EXTRA_ARGS` so the
+  node serves N2N on `3000` and the submit API on `3011`.
+- **Faultable = every node of the target implementation that is not a supporting
+  node** (producers included; the platform's faults are bounded and the chain
+  survives a paused producer in a 3-producer devnet). Everything else carries the
+  fault-exclusion label. `no-faultable-sut` applies to `library`, `single-node`
+  and a devnet whose target implementation has no node.
+- **Versions per node from the one release per implementation** the user
+  selected (prepared artifacts from Piece 1 included). A cardano-only test asks
+  for no Amaru version; an amaru-only test's supporting producer uses the
+  catalog's default cardano-node release and is shown as supporting.
+- **Readiness = local-run parity**: TCP + socket + a real block over the mounted
+  socket for every cardano node (`cardano-cli query tip`), TCP + the
+  `.bootstrap-complete` sentinel for every Amaru node; `setup_complete` only
+  after that. The ready timeout is 900 s for cardano-only rigs and 2400 s when
+  Amaru must bootstrap (three completed epochs at 200 s each).
+- The package `runtime.json` keeps node ids as service names
+  (`<id>.example:<3001|3000>`, `/inputs/<id>/node.socket`, `/inputs/<id>/amaru.log`)
+  and no container fields; the rest of the first build (entrypoint, SDK events,
+  skip policy, capability plumbing, package-mode primitives, `--network none`
+  build, `FROM dwarf/controller:current`) is unchanged.
 
 ### Piece 3 — Self-serve tail
 
@@ -652,6 +689,19 @@ All seven Antithesis invariants from the parity doc hold. In addition:
   follow-on. Note: `spec.md:79` says the control relays are excluded, but
   the miniprotocol compose (:169, :197) carries no label on them; AT-2 fixes
   the compose to match the spec.
+
+  **Corrected 2026-11-07 (user rejection of the first AT-2 build).** Generated
+  packages no longer project onto a fixed rig. The scenario's own devnet is
+  rendered (see "AT-2 corrected" under Piece 2): a cardano-only scenario starts
+  only Cardano containers, an amaru-only scenario starts its Amaru nodes plus
+  the one supporting producer the local run also uses, and mixed scenarios start
+  exactly their declared nodes. Faultable services are the target
+  implementation's non-supporting nodes, producers included; the
+  `no-faultable-sut` refusal applies to `library`, `single-node` and a devnet
+  without a node of the target implementation. Public-network scenarios are
+  refused with `public-network`. "Use the proven version pair" is not a rule:
+  any catalogued release binds, and an incompatible pair fails honestly at the
+  readiness gate (exit 3, no `setup_complete`).
 
 ## Approval
 
