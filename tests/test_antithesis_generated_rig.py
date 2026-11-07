@@ -408,3 +408,11 @@ def test_unresolved_supporting_release_is_partial_without_a_contradictory_gap(ca
     codes = [i['code'] for i in report['issues']]
     assert 'supporting-release-unavailable' in codes and 'missing-exact-version' not in codes
     assert report['status'] == 'partial'
+
+
+def test_configurator_gets_the_peer_sharing_env_the_script_actually_reads():
+    # F47: configurator.sh sets .PeerSharing from its PEER_SHARING env (default true); the testnet.yaml key is ignored.
+    out = rendered(body(profile='profile-a-haskell-peersharing-disabled'))
+    assert out['compose']['services']['configurator']['environment'] == {'PEER_SHARING': 'false'}
+    sub = rendered(body(substrate=substrate(('node1', 'cardano-node'), ('node2', 'cardano-node'))))
+    assert sub['compose']['services']['configurator']['environment'] == {'PEER_SHARING': 'false'}

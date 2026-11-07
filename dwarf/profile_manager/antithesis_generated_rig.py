@@ -188,6 +188,9 @@ def render_rig(devnet, scenario_id):
         raise topology.TopologyError('The rig testnet input changed (PeerSharing); review the rig renderer.', status=503)
     peer_sharing = bool((devnet.get('profile_options') or {}).get('peer_sharing'))
     files['environment/testnet.yaml'] = _PEER_SHARING.sub('PeerSharing: ' + ('true' if peer_sharing else 'false'), testnet)
+    # configurator.sh writes .PeerSharing from its own PEER_SHARING env (default
+    # true) and ignores the testnet.yaml key (live finding F47).
+    configurator['environment'] = {'PEER_SHARING': 'true' if peer_sharing else 'false'}
     files['environment/tracer-config.yaml'] = inputs['tracer-config.yaml'].decode()
     producer = source['services'][PRODUCER_TEMPLATE]
     for node in cardano:
