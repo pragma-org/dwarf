@@ -62,8 +62,8 @@
       "note": "Tips are read over the mounted node socket or the mounted node log, not docker exec."
     },
     "runtime_verify_exact_target": {
-      "status": "runs-with-note",
-      "note": "Target identity comes from the package's prepared-release binding, not a live measurement context."
+      "status": "unsupported",
+      "note": "Reads the frozen local launch identity (resolved-plan fields and the measurement context) that the package does not carry; the package records the bound release in its version binding instead. AT-2b adds the package identity route."
     },
     "runtime_tx_submit_differential": {
       "status": "runs-with-note",

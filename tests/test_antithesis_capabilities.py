@@ -119,3 +119,13 @@ def test_public_network_devnet_is_none_before_the_primitive_walk():
     result = classify(scenario_from_body(public))
     assert result['level'] == 'none' and result['reason'] == 'public-network'
     assert result['runnable_load'] is True
+
+
+def test_exact_target_verification_is_unsupported_until_the_package_identity_route_exists():
+    """F46: runtime_verify_exact_target reads the frozen local launch identity
+    (resolved-plan fields + measurement context) that the package does not carry;
+    inside the package it raised and turned a healthy run into 'error'."""
+    result = classify(catalog('client-example-txsubmission-window-amaru-portable-20260918'))
+    rows = {r['primitive']: r['status'] for r in result['primitives']}
+    assert rows['runtime_verify_exact_target'] == 'unsupported'
+    assert 'package' in load_matrix()['primitives']['runtime_verify_exact_target']['note']
