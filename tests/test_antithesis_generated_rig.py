@@ -142,7 +142,9 @@ def test_cardano_profile_renders_only_cardano_blocks():
     assert topology['localRoots'][0]['valency'] == 2 and topology['publicRoots'] == []
     assert set(out['compose']['volumes']) == {'tracer', 'node1-configs', 'node2-configs', 'node3-configs',
                                               'node1-state', 'node2-state', 'node3-state', 'node1-evidence', 'node2-evidence', 'node3-evidence'}
-    assert out['compose']['networks'] == {'default': {'name': 'dwarf-rig-case', 'driver': 'bridge', 'internal': '${INTERNAL_NETWORK:-false}'}}
+    # No networks block: the preflight (C01/C05) rejects host interpolation and internal networks; the implicit
+    # default network is what the control rig path ships too.
+    assert 'networks' not in out['compose'] and '${' not in out['files']['environment/docker-compose.yaml']
     assert 'environment/amaru-runtime/era-history.json' not in out['files']
     assert 'environment/tracer-config.yaml' in out['files']
     assert out['source_revision'].startswith('sha256:')

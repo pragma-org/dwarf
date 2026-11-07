@@ -226,8 +226,10 @@ def render_rig(devnet, scenario_id):
         service['hostname'] = name + '.example'
         service['platform'] = 'linux/amd64'
         service['init'] = True
-    compose = {'services': services, 'volumes': volumes,
-               'networks': {'default': {'name': 'dwarf-' + str(scenario_id), 'driver': 'bridge', 'internal': '${INTERNAL_NETWORK:-false}'}}}
+    # No networks block: the package preflight rejects host interpolation (C01) and
+    # internal networks (C05); the implicit default network is what the control
+    # rig path ships as well. Antithesis isolates the environment itself.
+    compose = {'services': services, 'volumes': volumes}
     files[COMPOSE] = yaml.safe_dump(compose, sort_keys=False)
     return {'compose': compose, 'files': files, 'services': {n['id']: n['id'] for n in devnet['nodes']}, 'source_revision': revision}
 
