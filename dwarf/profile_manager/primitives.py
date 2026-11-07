@@ -15491,7 +15491,14 @@ def _resolve_client_runtime_target(handle, params: dict[str, Any]) -> dict[str, 
 
     frozen_execution_identity = False
     plan_sha256 = getattr(handle, "_run_service_plan_sha256", None)
-    if getattr(handle, "_measurement_context", None) is not None or not plan_sha256:
+    package_dir = antithesis_package_mode()
+    if (
+        getattr(handle, "_measurement_context", None) is not None
+        or not plan_sha256
+        # Inside the Antithesis package there is no retained launch store to
+        # freeze an identity from; the package's own target is the identity (F50).
+        or (package_dir is not None and _package_target_identity(package_dir) is not None)
+    ):
         execution_identity = _measurement_target_identity(handle)
     else:
         if not isinstance(plan_sha256, str):

@@ -192,3 +192,21 @@ def test_measurement_target_identity_still_raises_without_a_package(tmp_path, mo
     monkeypatch.delenv('DWARF_ANTITHESIS_PACKAGE_DIR', raising=False)
     with pytest.raises(RuntimeError, match='unavailable'):
         primitives._measurement_target_identity(_Handle(tmp_path))
+
+
+def test_client_target_prefers_the_package_identity_over_the_frozen_launch_plan(package, monkeypatch):
+    """F50: execute_run always carries a run-service plan digest; inside the package
+    there is no retained launch store to freeze an identity from, so the package
+    target must win before the frozen-plan route is attempted."""
+    import profile_manager.operator_version_decisions as decisions
+
+    def forbidden(*_args, **_kwargs):
+        raise decisions.InvalidOperatorVersionState('retained launch plan parent is unsafe')
+    monkeypatch.setattr(decisions, 'build_operator_version_execution_target', forbidden)
+    runtime = json.loads((package / 'runtime.json').read_text())
+    runtime['target_implementation'] = 'amaru'
+    (package / 'runtime.json').write_text(json.dumps(runtime))
+    handle = _Handle(package.parent / 'run')
+    handle._run_service_plan_sha256 = 'a' * 64
+    target = primitives._resolve_client_runtime_target(handle, {'profile_id': None, 'runtime_metadata_path': str(package / 'runtime.json')})
+    assert target['id'] == 'node2' and target['observation_transport'] == 'antithesis-package'
