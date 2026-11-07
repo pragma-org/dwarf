@@ -1,0 +1,69 @@
+{
+  "gaps": [
+    {
+      "code": "primitive-unsupported-on-antithesis",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "runtime_mempool_failure_probe: Not listed in the capability matrix.",
+      "phase": "load",
+      "primitive": "runtime_mempool_failure_probe"
+    },
+    {
+      "code": "primitive-unsupported-on-antithesis",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "mempool_failure_contained: Its evidence producer runtime_mempool_failure_probe needs docker exec inside the package; without that event the assertion can only fail.",
+      "phase": "assertions",
+      "primitive": "mempool_failure_contained"
+    }
+  ],
+  "level": "partial",
+  "matrix": "antithesis-capabilities-v1",
+  "primitives": [
+    {
+      "note": "Node images are pinned in the package compose; the primitive reads install-report.json shipped with the package.",
+      "phase": "setup",
+      "primitive": "runtime_install_version",
+      "status": "delegated"
+    },
+    {
+      "note": "Antithesis starts the compose; the primitive reads the package-shipped runtime.json and compose-report.json.",
+      "phase": "setup",
+      "primitive": "runtime_compose_substrate",
+      "status": "delegated"
+    },
+    {
+      "note": "Not listed in the capability matrix.",
+      "phase": "load",
+      "primitive": "runtime_mempool_failure_probe",
+      "status": "unsupported"
+    },
+    {
+      "note": "Cardano tips are read with cardano-cli over the mounted node socket and Amaru tips from the mounted node log; connection state is reported unavailable (no process access inside the package).",
+      "phase": "load",
+      "primitive": "runtime_multi_node_observation",
+      "status": "runs-with-note"
+    },
+    {
+      "note": "",
+      "phase": "assertions",
+      "primitive": "all_nodes_responsive",
+      "status": "runs"
+    },
+    {
+      "note": "Its evidence producer runtime_mempool_failure_probe needs docker exec inside the package; without that event the assertion can only fail.",
+      "phase": "assertions",
+      "primitive": "mempool_failure_contained",
+      "status": "unsupported"
+    },
+    {
+      "note": "Antithesis owns the compose lifecycle; the primitive records a delegated teardown.",
+      "phase": "teardown",
+      "primitive": "runtime_teardown_substrate",
+      "status": "delegated"
+    }
+  ],
+  "reason": null,
+  "runnable_load": true,
+  "schema_version": 1
+}

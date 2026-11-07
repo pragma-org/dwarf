@@ -1,0 +1,43 @@
+{
+  "compose_mode": "docker",
+  "compose_project": "antithesis",
+  "delegated": "antithesis-package",
+  "healthy": null,
+  "network": "testnet_42",
+  "network_magic": 42,
+  "node_count": 2,
+  "nodes": [
+    {
+      "healthy": null,
+      "id": "node1",
+      "impl": "cardano-node",
+      "listen_address": "node1.example:3001",
+      "role": "submitter",
+      "version": "10.7.1"
+    },
+    {
+      "healthy": null,
+      "id": "node2",
+      "impl": "amaru",
+      "listen_address": "node2.example:3000",
+      "role": "observer",
+      "version": "10.11.20260918"
+    }
+  ],
+  "runtime_metadata_path": "/opt/dwarf/package/runtime.json",
+  "support_binaries": {
+    "cardano-cli": "/usr/local/bin/cardano-cli"
+  },
+  "topology": {
+    "edges": [
+      {
+        "from": "node1",
+        "to": "node2"
+      },
+      {
+        "from": "node2",
+        "to": "node1"
+      }
+    ]
+  }
+}
