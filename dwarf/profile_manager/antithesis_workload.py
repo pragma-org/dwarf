@@ -69,6 +69,14 @@ def _socket_tip(runtime):
     return tip
 
 
+def _tip_or_none(query, node):
+    """A hung or garbled tip query means "not ready yet", never an aborted gate."""
+    try:
+        return query(node)
+    except Exception:  # noqa: BLE001 - subprocess timeout, decode error, OSError
+        return None
+
+
 def _has_real_block(tip):
     from scripts.runtime_compose_substrate import _tip_has_real_chain_progress
     return _tip_has_real_chain_progress(tip)
@@ -88,7 +96,7 @@ def wait_ready(runtime, timeout, *, now=time.monotonic, sleep=time.sleep, reacha
             ok = reachable(node.get('listen_address') or '')
             socket_path = node.get('socket_path')
             if ok and socket_path:
-                ok = Path(socket_path).exists() and _has_real_block(query(node))
+                ok = Path(socket_path).exists() and _has_real_block(_tip_or_none(query, node))
             sentinel = node.get('bootstrap_sentinel')
             if ok and sentinel:
                 ok = Path(sentinel).exists()

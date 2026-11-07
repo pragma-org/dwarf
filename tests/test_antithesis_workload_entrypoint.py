@@ -281,3 +281,21 @@ def test_cli_wires_the_workload_subcommand(monkeypatch):
     monkeypatch.setattr(workload, 'main', lambda argv, environ=None: (seen.setdefault('argv', argv), 7)[1])
     assert cli.main(['antithesis', 'workload', '--package', '/p']) == 7
     assert seen['argv'] == ['--package', '/p']
+
+
+def test_wait_ready_treats_a_raising_tip_query_as_not_ready(tmp_path):
+    port, stop, server = _listener()
+    try:
+        sock = tmp_path / 'node.socket'
+        sock.write_text('')
+        nodes = [{'id': 'node1', 'impl': 'cardano-node', 'listen_address': '127.0.0.1:%d' % port, 'socket_path': str(sock)}]
+        clock = {'t': 0.0}
+
+        def tip(node):
+            if clock['t'] < 20:
+                raise TimeoutError('cardano-cli hung')
+            return {'ok': True, 'slot': 40, 'block': 2, 'hash': 'ab'}
+        assert workload.wait_ready({'nodes': nodes}, timeout=60, now=lambda: clock['t'],
+                                   sleep=lambda s: clock.__setitem__('t', clock['t'] + s), tip=tip) == ['node1']
+    finally:
+        stop.set(); server.close()

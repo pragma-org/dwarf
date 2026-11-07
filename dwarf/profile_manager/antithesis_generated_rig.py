@@ -30,6 +30,8 @@ PRODUCER_TEMPLATE, AMARU_TEMPLATE = 'p1', 'amaru-relay-1'
 AMARU_RUNTIME_INPUTS = ('amaru-runtime/era-history.json', 'amaru-runtime/global-parameters.json')
 AMARU_COMMAND = 'exec > >(tee -a /evidence/amaru.log) 2>&1\nexec amaru-relay-bootstrap\n'
 _POOL_COUNT = re.compile(r'^poolCount: 3$', re.MULTILINE)
+_PEER_SHARING = re.compile(r'^PeerSharing: true$', re.MULTILINE)
+_EXPERIMENTAL = re.compile(r'^ExperimentalProtocolsEnabled: (true|false)$', re.MULTILINE)
 _CONFIG_GLOB = '/configs/[123]'
 ATTACH_CARDANO = ['p1', 'p2', 'p3', 'relay1', 'relay2', 'amaru-consumer']
 ATTACH_AMARU = ['amaru-relay-1', 'amaru-relay-2']
@@ -63,7 +65,9 @@ def scenario_devnet(scenario):
     ``no-faultable-sut``).
     """
     target = str(scenario.target.get('implementation') or '')
-    devnet = {'shape': 'none', 'network': None, 'nodes': [], 'edges': [], 'target': target, 'faultable': [], 'issues': []}
+    devnet = {'shape': 'none', 'network': None, 'nodes': [], 'edges': [], 'target': target, 'faultable': [], 'issues': [],
+              # Rendered profile options; a substrate has explicit edges and no peer sharing.
+              'profile_options': {'peer_sharing': False, 'cardano_experimental_protocols': None}}
     if scenario.substrate:
         substrate = scenario.substrate
         devnet['network'] = str(substrate.get('network') or '')
@@ -88,6 +92,12 @@ def scenario_devnet(scenario):
                                            + devnet['network'] + '; Antithesis environments have no internet, so it cannot run there.'))
             return devnet
         devnet['network'] = _PRIVATE_PREFIX + str(profile.network_magic)
+        devnet['profile_options'] = {'peer_sharing': bool(profile.peer_sharing),
+                                     'cardano_experimental_protocols': profile.cardano_experimental_protocols}
+        unrendered = [name for name in ('plutus_v2_genesis', 'kes_genesis_override') if getattr(profile, name, None)]
+        if unrendered:
+            devnet['issues'].append(_issue('profile-option-not-rendered', 'The scenario profile sets ' + ', '.join(unrendered)
+                                           + '; the Antithesis rig does not render these genesis options yet, so the devnet would differ from the local run.'))
         nodes = []
         if profile.node_count == 0 and profile.amaru_node_count:
             nodes.append(_node('bootstrap-cardano', 'cardano-node', 'bootstrap-producer', supporting=True))
@@ -129,8 +139,9 @@ def _topology_file(node, devnet):
             continue
         peer = by_id[edge['to']]
         points.append({'address': peer['id'] + '.example', 'port': AMARU_PORT if peer['impl'] == 'amaru' else CARDANO_PORT})
+    # Only the scenario's edges are peers: no ledger peers (local-run parity, useLedgerAfterSlot -1).
     return json.dumps({'localRoots': [{'accessPoints': points, 'advertise': False, 'trustable': True, 'valency': len(points)}],
-                       'publicRoots': [], 'useLedgerAfterSlot': 0}, indent=2) + '\n'
+                       'publicRoots': [], 'useLedgerAfterSlot': -1}, indent=2) + '\n'
 
 
 def _amaru_producer(node, devnet):
@@ -172,7 +183,11 @@ def render_rig(devnet, scenario_id):
     testnet = inputs['testnet.yaml'].decode()
     if len(_POOL_COUNT.findall(testnet)) != 1:
         raise topology.TopologyError('The rig testnet input changed; review the rig renderer.', status=503)
-    files['environment/testnet.yaml'] = _POOL_COUNT.sub('poolCount: %d' % len(cardano), testnet)
+    testnet = _POOL_COUNT.sub('poolCount: %d' % len(cardano), testnet)
+    if len(_PEER_SHARING.findall(testnet)) != 1:
+        raise topology.TopologyError('The rig testnet input changed (PeerSharing); review the rig renderer.', status=503)
+    peer_sharing = bool((devnet.get('profile_options') or {}).get('peer_sharing'))
+    files['environment/testnet.yaml'] = _PEER_SHARING.sub('PeerSharing: ' + ('true' if peer_sharing else 'false'), testnet)
     files['environment/tracer-config.yaml'] = inputs['tracer-config.yaml'].decode()
     producer = source['services'][PRODUCER_TEMPLATE]
     for node in cardano:
@@ -298,20 +313,23 @@ def bind_rig_versions(files, intent, devnet, rendered, *, scenario_default=None)
     for finding in findings:
         if finding['code'] != 'local-qualification-context':
             gap(finding['code'], finding['message'], 'versions.' + finding['field'])
-    for implementation in sorted(set(intent['versions']) - targets):
-        gap('unused-target-selection', 'No ' + implementation + ' target exists in this devnet; the selection remains intent.')
     supporting = {n['impl'] for n in nodes if n['supporting']} - targets
+    for implementation in sorted(set(intent['versions']) - targets - supporting):
+        gap('unused-target-selection', 'No ' + implementation + ' target exists in this devnet; the selection remains intent.')
     for implementation in sorted(supporting):
+        chosen = intent['versions'].get(implementation)
         try:
-            selected[implementation] = version_catalog.resolve_default(
-                catalog, 'cardano-only' if implementation == 'cardano-node' else 'amaru-only')['release']
+            # An explicit selection drives the supporting node too; otherwise the catalog default.
+            selected[implementation] = (version_catalog.resolve_release(catalog, implementation, chosen) if chosen
+                                        else version_catalog.resolve_default(catalog, 'cardano-only' if implementation == 'cardano-node' else 'amaru-only')['release'])
         except version_catalog.CatalogError:
-            gap('supporting-release-unavailable', 'The catalog has no default ' + implementation + ' release for the supporting node.')
+            gap('supporting-release-unavailable', 'The catalog has no ' + ('release ' + chosen if chosen else 'default release')
+                + ' for the supporting ' + implementation + ' node; its baseline image was retained.')
     applied = set()
     for implementation in sorted(targets | supporting):
         release = selected.get(implementation)
         if release is None:
-            if intent['policy'] == 'exact' and implementation not in intent['versions']:
+            if intent['policy'] == 'exact' and implementation in targets and implementation not in intent['versions']:
                 gap('missing-exact-version', 'Select a version for ' + implementation + '.', 'versions.versions.' + implementation)
             continue
         bucket = 'selected_releases' if implementation in targets else 'supporting_releases'
@@ -356,6 +374,23 @@ def bind_rig_versions(files, intent, devnet, rendered, *, scenario_default=None)
                                    'baseline_image': None, 'image': compose['services'][assembly.AMARU_TARGET_EXTRACT]['image'],
                                    'status': 'applied', 'supporting': False})
     if applied:
-        report['status'] = 'applied' if targets <= applied and not (set(intent['versions']) - targets) else 'partial'
+        report['status'] = ('applied' if (targets | supporting) <= applied and not (set(intent['versions']) - targets - supporting)
+                            else 'partial')
         files[COMPOSE] = yaml.safe_dump(compose, sort_keys=False)
+    if 'cardano-node' in applied and any(n['impl'] == 'amaru' for n in nodes):
+        _pin_experimental_protocols(files, devnet, selected['cardano-node']['version'], assembly)
     return report
+
+
+def _pin_experimental_protocols(files, devnet, cardano_version, assembly):
+    """Amaru-bearing rigs pin ExperimentalProtocolsEnabled exactly as the local
+    runtime does: a profile pin wins, otherwise the cardano-node 11.1+ policy
+    (NodeToNodeV_16 breaks Amaru's handshake)."""
+    pinned = (devnet.get('profile_options') or {}).get('cardano_experimental_protocols')
+    enabled = pinned if pinned is not None else assembly.cardano_experimental_protocols_policy(devnet['shape'], cardano_version)
+    if enabled is None:
+        return
+    testnet = files.get('environment/testnet.yaml') or ''
+    if len(_EXPERIMENTAL.findall(testnet)) != 1:
+        raise topology.TopologyError('The rig testnet input changed (ExperimentalProtocolsEnabled); review the rig renderer.', status=503)
+    files['environment/testnet.yaml'] = _EXPERIMENTAL.sub('ExperimentalProtocolsEnabled: ' + ('true' if enabled else 'false'), testnet)

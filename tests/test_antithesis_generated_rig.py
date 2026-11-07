@@ -342,3 +342,67 @@ def test_patched_build_without_artifacts_is_not_applied(catalog):
     scenario = body(profile='profile-a-haskell-peersharing-disabled')
     files, out, report = _bound_rig(scenario, chosen('10.7.1', build_variant='instrumented'))
     assert report['status'] == 'recorded' and [i['code'] for i in report['issues']] == ['patched-build-not-implemented']
+
+
+# ---- review fix pass (2026-11-07) -----------------------------------------------
+
+def test_amaru_rigs_pin_experimental_protocols_off_for_cardano_11_1(catalog):
+    # C1: cardano-node 11.1+ offers NodeToNodeV_16 with experimental protocols on; Amaru drops the handshake.
+    amaru_only = body(profile='profile-z-amaru-20260918-nanoseconds-v3', target={'implementation': 'amaru', 'version': 'any'})
+    files, out, report = _bound_rig(amaru_only, chosen(versions={'amaru': '10.11.20260918'}))
+    assert files['environment/testnet.yaml'].count('ExperimentalProtocolsEnabled: false') == 1
+    mixed = body(substrate=substrate(('node1', 'cardano-node'), ('node2', 'amaru')))
+    files, out, report = _bound_rig(mixed, chosen(versions={'amaru': '10.11.20260918', 'cardano-node': '11.1.2'}))
+    assert files['environment/testnet.yaml'].count('ExperimentalProtocolsEnabled: false') == 1
+    files, out, report = _bound_rig(mixed, chosen(versions={'amaru': '10.11.20260918', 'cardano-node': '10.7.1'}))
+    assert 'ExperimentalProtocolsEnabled: true' in files['environment/testnet.yaml']
+    cardano_only = body(profile='profile-a-haskell-peersharing-disabled')
+    files, out, report = _bound_rig(cardano_only, chosen('11.1.2'))
+    assert 'ExperimentalProtocolsEnabled: true' in files['environment/testnet.yaml']
+
+
+def test_profile_pinned_experimental_protocols_win(catalog):
+    from profile_manager import profiles
+    import dataclasses
+    pinned = dataclasses.replace(profiles.find_profile('profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3'), cardano_experimental_protocols=True)
+    scenario = body(profile='profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3', target={'implementation': 'amaru', 'version': 'any'})
+    import unittest.mock as mock
+    with mock.patch.object(profiles, 'find_profile', return_value=pinned):
+        files, out, report = _bound_rig(scenario, chosen(versions={'amaru': '10.11.20260918', 'cardano-node': '11.1.2'}))
+    assert files['environment/testnet.yaml'].count('ExperimentalProtocolsEnabled: true') == 1
+
+
+def test_rig_renders_peer_sharing_from_the_profile_and_no_ledger_peers():
+    out = rendered(body(profile='profile-a-haskell-peersharing-disabled'))
+    assert out['files']['environment/testnet.yaml'].count('PeerSharing: false') == 1
+    assert json.loads(out['files']['environment/topology/node1.json'])['useLedgerAfterSlot'] == -1
+    sub = rendered(body(substrate=substrate(('node1', 'cardano-node'), ('node2', 'cardano-node'))))
+    assert sub['files']['environment/testnet.yaml'].count('PeerSharing: false') == 1
+
+
+def test_profile_options_the_rig_cannot_render_are_declared():
+    devnet = rig.scenario_devnet(body(profile='profile-za-amaru-20260918-plutus-v2', target={'implementation': 'amaru', 'version': 'any'}))
+    assert devnet['shape'] == 'amaru-only'
+    assert [i['code'] for i in devnet['issues']] == ['profile-option-not-rendered']
+    assert 'plutus_v2_genesis' in devnet['issues'][0]['message']
+
+
+def test_explicit_cardano_selection_binds_the_supporting_producer(catalog):
+    scenario = body(profile='profile-z-amaru-20260918-nanoseconds-v3', target={'implementation': 'amaru', 'version': 'any'})
+    files, out, report = _bound_rig(scenario, chosen(versions={'amaru': '10.11.20260918', 'cardano-node': '10.7.1'}))
+    assert report['status'] == 'applied', report['issues']
+    assert 'unused-target-selection' not in {i['code'] for i in report['issues']}
+    compose = yaml.safe_load(files['environment/docker-compose.yaml'])
+    assert compose['services']['bootstrap-cardano']['image'].startswith('ghcr.io/intersectmbo/cardano-node@sha256:')
+    assert [(r['implementation'], r['version']) for r in report['supporting_releases']] == [('cardano-node', '10.7.1')]
+    assert 'ExperimentalProtocolsEnabled: true' in files['environment/testnet.yaml']
+
+
+def test_unresolved_supporting_release_is_partial_without_a_contradictory_gap(catalog, monkeypatch):
+    from profile_manager import version_catalog
+    monkeypatch.setattr(version_catalog, 'resolve_default', lambda catalog, scope: (_ for _ in ()).throw(version_catalog.CatalogError('none')))
+    scenario = body(profile='profile-z-amaru-20260918-nanoseconds-v3', target={'implementation': 'amaru', 'version': 'any'})
+    files, out, report = _bound_rig(scenario, chosen(versions={'amaru': '10.11.20260918'}))
+    codes = [i['code'] for i in report['issues']]
+    assert 'supporting-release-unavailable' in codes and 'missing-exact-version' not in codes
+    assert report['status'] == 'partial'
