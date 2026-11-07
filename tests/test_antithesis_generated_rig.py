@@ -103,3 +103,93 @@ def test_devnet_without_a_target_node_has_no_faultable_sut():
                     target={'implementation': 'amaru', 'version': 'any'})
     devnet = rig.scenario_devnet(scenario)
     assert devnet['shape'] == 'none' and [i['code'] for i in devnet['issues']] == ['no-faultable-sut']
+
+
+# ---- Task 2: render the rig ---------------------------------------------------
+
+FAULT = 'com.antithesis.exclude_from_faults'
+
+
+def rendered(scenario):
+    return rig.render_rig(rig.scenario_devnet(scenario), scenario.id)
+
+
+def test_cardano_profile_renders_only_cardano_blocks():
+    out = rendered(body(profile='profile-a-haskell-peersharing-disabled'))
+    services = out['compose']['services']
+    assert set(services) == {'configurator', 'tracer', 'log-tailer', 'node1', 'node2', 'node3'}
+    assert out['services'] == {'node1': 'node1', 'node2': 'node2', 'node3': 'node3'}
+    assert out['files']['environment/testnet.yaml'].count('poolCount: 3') == 1
+    configurator = services['configurator']
+    assert [v for v in configurator['volumes'] if v.endswith(':/configs/1')] == ['node1-configs:/configs/1']
+    assert [v for v in configurator['volumes'] if v.endswith(':/configs/3')] == ['node3-configs:/configs/3']
+    assert '/configs/*' in configurator['command'][0] and '/configs/[123]' not in configurator['command'][0]
+    for name in ('configurator', 'tracer', 'log-tailer'):
+        assert services[name]['labels'][FAULT] == 'network,kill,pause,stop'
+    for name in ('node1', 'node2', 'node3'):
+        assert FAULT not in (services[name].get('labels') or {})
+        assert services[name]['hostname'] == name + '.example' and services[name]['container_name'] == name
+        assert services[name]['platform'] == 'linux/amd64' and services[name]['init'] is True
+        assert services[name]['environment']['CARDANO_BLOCK_PRODUCER'] is True
+        assert set(services[name]['depends_on']) == {'configurator', 'tracer'}
+    node2 = services['node2']
+    assert node2['volumes'] == ['node2-configs:/configs:ro', './topology/node2.json:/configs/configs/topology.json:ro',
+                                'node2-state:/state', 'node2-evidence:/evidence', 'tracer:/tracer']
+    topology = json.loads(out['files']['environment/topology/node2.json'])
+    assert topology['localRoots'][0]['accessPoints'] == [{'address': 'node1.example', 'port': 3001}, {'address': 'node3.example', 'port': 3001}]
+    assert topology['localRoots'][0]['valency'] == 2 and topology['publicRoots'] == []
+    assert set(out['compose']['volumes']) == {'tracer', 'node1-configs', 'node2-configs', 'node3-configs',
+                                              'node1-state', 'node2-state', 'node3-state', 'node1-evidence', 'node2-evidence', 'node3-evidence'}
+    assert out['compose']['networks'] == {'default': {'name': 'dwarf-rig-case', 'driver': 'bridge', 'internal': '${INTERNAL_NETWORK:-false}'}}
+    assert 'environment/amaru-runtime/era-history.json' not in out['files']
+    assert 'environment/tracer-config.yaml' in out['files']
+    assert out['source_revision'].startswith('sha256:')
+
+
+def test_amaru_only_profile_bootstraps_from_the_supporting_producer():
+    scenario = body(profile='profile-z-amaru-20260918-nanoseconds-v3', target={'implementation': 'amaru', 'version': 'any'})
+    out = rendered(scenario)
+    services = out['compose']['services']
+    assert set(services) == {'configurator', 'tracer', 'log-tailer', 'bootstrap-cardano', 'amaru1'}
+    assert services['bootstrap-cardano']['labels'][FAULT] == 'network,kill,pause,stop'
+    assert FAULT not in (services['amaru1'].get('labels') or {})
+    amaru = services['amaru1']
+    assert amaru['entrypoint'] == ['/bin/bash', '-euo', 'pipefail', '-c']
+    assert amaru['command'] == ['exec > >(tee -a /evidence/amaru.log) 2>&1\nexec amaru-relay-bootstrap\n']
+    assert amaru['environment']['RELAY_NAME'] == 'amaru1' and amaru['environment']['AMARU_PEER'] == 'bootstrap-cardano.example:3001'
+    assert amaru['environment']['AMARU_RUN_EXTRA_ARGS'] == '--listen-address 0.0.0.0:3000 --submit-api-address 0.0.0.0:3011'
+    assert amaru['environment']['AMARU_NETWORK'] == 'testnet_42'
+    assert amaru['volumes'] == ['bootstrap-cardano-state:/live:ro', 'bootstrap-cardano-configs:/cardano/config:ro',
+                                './amaru-runtime:/amaru-runtime:ro', 'amaru-startup:/startup', 'amaru1-state:/srv/amaru', 'amaru1-evidence:/evidence']
+    assert amaru['depends_on'] == {'bootstrap-cardano': {'condition': 'service_started'}}
+    assert 'networks' not in amaru and amaru['hostname'] == 'amaru1.example'
+    assert {'environment/amaru-runtime/era-history.json', 'environment/amaru-runtime/global-parameters.json'} <= set(out['files'])
+    assert out['files']['environment/testnet.yaml'].count('poolCount: 1') == 1
+    assert 'amaru-startup' in out['compose']['volumes'] and 'amaru1-state' in out['compose']['volumes']
+
+
+def test_mixed_substrate_peers_amaru_with_its_first_cardano_edge():
+    edges = [{'from': 'node2', 'to': 'node1'}, {'from': 'node1', 'to': 'node2'}]
+    scenario = body(substrate=substrate(('node1', 'cardano-node'), ('node2', 'amaru'), edges=edges))
+    out = rendered(scenario)
+    services = out['compose']['services']
+    assert services['node2']['environment']['AMARU_PEER'] == 'node1.example:3001'
+    assert services['node2']['volumes'][0] == 'node1-state:/live:ro'
+    topology = json.loads(out['files']['environment/topology/node1.json'])
+    assert topology['localRoots'][0]['accessPoints'] == [{'address': 'node2.example', 'port': 3000}]
+    assert FAULT not in (services['node1'].get('labels') or {}) and services['node2']['labels'][FAULT]
+
+
+def test_amaru_without_a_cardano_edge_peers_with_the_first_producer():
+    scenario = body(substrate=substrate(('node1', 'cardano-node'), ('node2', 'amaru'), edges=[{'from': 'node1', 'to': 'node2'}]))
+    assert rendered(scenario)['compose']['services']['node2']['environment']['AMARU_PEER'] == 'node1.example:3001'
+
+
+def test_render_refuses_a_none_shape_and_a_changed_rig_source(monkeypatch):
+    public = body(substrate=substrate(('node1', 'cardano-node'), network='preview'))
+    with pytest.raises(TopologyError):
+        rig.render_rig(rig.scenario_devnet(public), public.id)
+    from profile_manager import antithesis_topology
+    monkeypatch.setattr(antithesis_topology, '_source', lambda: (_ for _ in ()).throw(TopologyError('changed', status=503)))
+    with pytest.raises(TopologyError):
+        rendered(body(profile='profile-a-haskell-peersharing-disabled'))
