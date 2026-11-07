@@ -122,3 +122,27 @@ def test_package_mode_delegates_scenario_measurements_to_the_package_collector(t
     skipped = [e for e in _events(handle) if e.get("event") == "measurement_auto_attach_skipped"]
     assert skipped and "dwarf-measurements" in skipped[0]["payload"]["reason"]
     assert manifest["exit_status"] == "pass"
+
+
+def test_package_mode_seeds_the_package_runtime_as_the_deployed_substrate(tmp_path, monkeypatch):
+    """F48: profile scenarios have no runtime_compose_substrate step; inside the
+    package the rendered devnet's runtime.json is the deployed runtime, so the
+    runner seeds the shared state and the prepared-runtime handle attribute."""
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "runtime.json").write_text(json.dumps({"nodes": []}), encoding="utf-8")
+    monkeypatch.setenv("DWARF_ANTITHESIS_PACKAGE_DIR", str(package))
+    seen = {}
+    original = scenario._run_phase
+
+    def capture(handle, rng, registry, scen, refs, phase, **kwargs):
+        seen["state"] = dict(kwargs.get("shared_state") or {})
+        seen["prepared"] = getattr(handle, "_prepared_runtime_metadata_path", None)
+        return original(handle, rng, registry, scen, refs, phase, **kwargs)
+    monkeypatch.setattr(scenario, "_run_phase", capture)
+    handle, manifest, assertions = _run(tmp_path, monkeypatch, primitive_policy=POLICY)
+    expected = str(package / "runtime.json")
+    assert seen["state"]["substrate_runtime_metadata_path"] == expected
+    assert seen["state"]["substrate_bundle_runtime_metadata_path"] == expected
+    assert str(seen["prepared"]) == expected
+    assert manifest["exit_status"] == "pass"
