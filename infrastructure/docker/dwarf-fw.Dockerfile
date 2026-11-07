@@ -8,9 +8,12 @@ ARG SOURCE_DATE_EPOCH=0
 ARG DEBIAN_SNAPSHOT=20260429T000000Z
 ARG BASH_VERSION=5.2.37-2+b8
 ARG CA_CERTIFICATES_VERSION=20250419
-ARG DOCKER_IO_VERSION=26.1.5+dfsg1-9+b12
-ARG DOCKER_CLI_VERSION=26.1.5+dfsg1-9+b12
-ARG DOCKER_COMPOSE_VERSION=2.26.1-4
+# Docker CLI and Compose plugin come from Docker's own apt repository (F45):
+# Debian trixie's 26.1 / 2.26 packages lack `compose config --no-env-resolution`
+# and `image inspect --platform`, which the Antithesis package validator uses.
+# The container never runs an engine; it talks to the host daemon's socket.
+ARG DOCKER_CLI_VERSION=5:29.9.2-1~debian.13~trixie
+ARG DOCKER_COMPOSE_VERSION=5.6.1-1~debian.13~trixie
 ARG JQ_VERSION=1.7.1-6+deb13u1
 ARG LIBSODIUM_VERSION=1.0.18-1+deb13u1
 ARG LIBSECP256K1_VERSION=0.5.0-2+b1
@@ -51,6 +54,19 @@ Components: main
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
 
+# Docker's release key (Docker Release (CE deb) <docker@docker.com>,
+# 9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88) is vendored, so the build
+# never trusts a key fetched at build time; the pinned package versions above
+# select exact .deb files from Docker's pool.
+COPY infrastructure/docker/docker-archive-keyring.asc /usr/share/keyrings/docker-archive-keyring.asc
+RUN cat >/etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/debian
+Suites: trixie
+Components: stable
+Signed-By: /usr/share/keyrings/docker-archive-keyring.asc
+EOF
+
 # snapshot.debian.org intermittently answers 504 for single pinned .deb files; a
 # fresh install must survive that without changing the pinned versions below.
 RUN for attempt in 1 2 3 4 5; do \
@@ -58,9 +74,8 @@ RUN for attempt in 1 2 3 4 5; do \
             && apt-get install -y --no-install-recommends \
                 bash=${BASH_VERSION} \
                 ca-certificates=${CA_CERTIFICATES_VERSION} \
-                docker.io=${DOCKER_IO_VERSION} \
-                docker-cli=${DOCKER_CLI_VERSION} \
-                docker-compose=${DOCKER_COMPOSE_VERSION} \
+                docker-ce-cli=${DOCKER_CLI_VERSION} \
+                docker-compose-plugin=${DOCKER_COMPOSE_VERSION} \
                 jq=${JQ_VERSION} \
                 libsodium23=${LIBSODIUM_VERSION} \
                 libsecp256k1-2=${LIBSECP256K1_VERSION} \

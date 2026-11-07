@@ -177,7 +177,50 @@ def test_runtime_image_pins_docker_compose_plugin():
     )
 
     assert "ARG DOCKER_COMPOSE_VERSION=" in dockerfile
-    assert "docker-compose=${DOCKER_COMPOSE_VERSION}" in dockerfile
+    assert "docker-compose-plugin=${DOCKER_COMPOSE_VERSION}" in dockerfile
+
+
+def test_runtime_image_takes_the_docker_cli_from_dockers_pinned_repository():
+    """F45: Debian trixie ships Docker 26.1 / Compose 2.26, which lacks the
+    `compose config --no-env-resolution` and `image inspect --platform` flags the
+    package validator needs. The CLI and Compose plugin come from Docker's own
+    apt repository, exactly pinned, signed by the vendored release key."""
+    import hashlib
+
+    dockerfile = (ROOT / "infrastructure/docker/dwarf-fw.Dockerfile").read_text(encoding="utf-8")
+    key = (ROOT / "infrastructure/docker/docker-archive-keyring.asc").read_bytes()
+
+    assert "ARG DOCKER_CLI_VERSION=5:29.9.2-1~debian.13~trixie" in dockerfile
+    assert "ARG DOCKER_COMPOSE_VERSION=5.6.1-1~debian.13~trixie" in dockerfile
+    assert "docker-ce-cli=${DOCKER_CLI_VERSION}" in dockerfile
+    assert "docker-compose-plugin=${DOCKER_COMPOSE_VERSION}" in dockerfile
+    # The Debian-packaged engine, CLI and compose wrapper are gone: the container
+    # only talks to the host's daemon.
+    assert "docker.io=" not in dockerfile
+    assert "docker-cli=" not in dockerfile
+    assert "docker-compose=${" not in dockerfile
+    assert "URIs: https://download.docker.com/linux/debian" in dockerfile
+    assert "Suites: trixie" in dockerfile and "Components: stable" in dockerfile
+    assert "Signed-By: /usr/share/keyrings/docker-archive-keyring.asc" in dockerfile
+    assert "COPY infrastructure/docker/docker-archive-keyring.asc /usr/share/keyrings/docker-archive-keyring.asc" in dockerfile
+    # Docker Release (CE deb) <docker@docker.com>, fingerprint 9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88.
+    assert hashlib.sha256(key).hexdigest() == "1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570"
+    assert key.startswith(b"-----BEGIN PGP PUBLIC KEY BLOCK-----")
+
+
+def test_installer_refreshes_the_control_shim_when_the_channel_already_exists():
+    """F38: re-running install.sh on a host with a provisioned channel preserved
+    shim mode but left the old shim file in place, so shim fixes never reached a
+    redeployed host unless copied by hand."""
+    install = (ROOT / "delivery/scripts/install.sh").read_text(encoding="utf-8")
+
+    preserved = install.index("detected previously-provisioned control channel; preserving shim mode")
+    block = install[preserved:preserved + 1200]
+    assert 'SHIM_TARGET="${DWARF_CONTROL_INSTALL_DIR:-${HOME}/dwarf-control}/dwarf-deploy-shim"' in block
+    assert 'cmp -s "${CONTROL_PLANE_DIR}/dwarf-deploy-shim.py" "${SHIM_TARGET}"' in block
+    assert 'cp "${CONTROL_PLANE_DIR}/dwarf-deploy-shim.py" "${SHIM_TARGET}"' in block
+    assert 'chmod 755 "${SHIM_TARGET}"' in block
+    assert "refreshed the installed control shim" in block
 
 
 def test_runtime_image_allows_host_uid_to_traverse_packaged_source():
@@ -1760,7 +1803,7 @@ def test_runtime_image_retries_transient_snapshot_mirror_failures():
     assert "for attempt in 1 2 3 4 5; do" in dockerfile
     assert "apt install failed (attempt ${attempt}); retrying" in dockerfile
     # Pinned versions and the lists cleanup are unchanged by the retry wrapper.
-    assert "docker-compose=${DOCKER_COMPOSE_VERSION}" in dockerfile
+    assert "docker-compose-plugin=${DOCKER_COMPOSE_VERSION}" in dockerfile
     assert "rm -rf /var/lib/apt/lists/*" in dockerfile
 
 
