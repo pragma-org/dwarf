@@ -14235,6 +14235,29 @@ def _write_client_example_proof(handle, filename: str, payload: dict[str, Any]) 
     return destination
 
 
+def _package_target_identity(package_dir: Path) -> dict[str, Any] | None:
+    """Inside an Antithesis package the bound target is the package's own
+    runtime record: the scenario's target implementation and the first node of
+    that implementation that is not a supporting node (F48)."""
+    try:
+        runtime = json.loads((package_dir / "runtime.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    implementation = str(runtime.get("target_implementation") or "")
+    node = next((item for item in runtime.get("nodes") or []
+                 if item.get("implementation") == implementation and not item.get("supporting")), None)
+    if not implementation or node is None:
+        return None
+    return {
+        "implementation": implementation,
+        "version": node.get("version"),
+        "mode": "stock",
+        "image_reference": node.get("image"),
+        "identity_kind": "antithesis-package",
+        "node_id": node.get("id"),
+    }
+
+
 def _measurement_target_identity(handle) -> dict[str, Any]:
     context = getattr(handle, "_measurement_context", None) or {}
     resolution = context.get("resolution") if isinstance(context, dict) else None
@@ -14242,6 +14265,10 @@ def _measurement_target_identity(handle) -> dict[str, Any]:
         resolution = context
     identity = (resolution or {}).get("target_identity")
     if not isinstance(identity, dict) or not identity:
+        package_dir = antithesis_package_mode()
+        packaged = _package_target_identity(package_dir) if package_dir is not None else None
+        if packaged is not None:
+            return packaged
         raise RuntimeError("resolved measurement target identity is unavailable")
     return dict(identity)
 

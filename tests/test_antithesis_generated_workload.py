@@ -196,3 +196,10 @@ def test_dockerfile_keeps_the_framework_home_for_scenario_shell_commands():
     user_root = next(i for i, line in enumerate(lines) if line.strip() == 'USER root')
     assert any(line.strip() == 'ENV HOME=/home/dwarf' for line in lines[user_root:]), lines
     assert any(line.startswith('WORKDIR /home/dwarf/dwarf-fw') for line in lines)
+
+
+def test_runtime_records_the_scenario_target_implementation(catalog):
+    scenario = body(profile='profile-z-amaru-20260918-nanoseconds-v3', target={'implementation': 'amaru', 'version': 'any'})
+    files, report, binding = bound_rig(scenario, chosen(versions={'amaru': '10.11.20260918'}))
+    runtime = report['runtime_metadata']
+    assert runtime['target_implementation'] == 'amaru' and runtime['profile_id'] == 'profile-z-amaru-20260918-nanoseconds-v3'

@@ -171,3 +171,24 @@ def test_compose_substrate_without_readiness_leaves_health_unknown(package, tmp_
     prim.bound_state = {}
     prim.run(handle, random.Random(0))
     assert prim.bound_state['substrate_compose_report'].get('healthy') is None
+
+
+def test_measurement_target_identity_falls_back_to_the_package_target(package):
+    """F48: profile-scoped primitives resolve the bound target inside the package
+    without a local measurement context."""
+    runtime = json.loads((package / 'runtime.json').read_text())
+    runtime['target_implementation'] = 'amaru'
+    runtime['nodes'][0]['supporting'] = True
+    (package / 'runtime.json').write_text(json.dumps(runtime))
+    handle = _Handle(package.parent / 'run')
+    identity = primitives._measurement_target_identity(handle)
+    assert identity['implementation'] == 'amaru' and identity['node_id'] == 'node2'
+    assert identity['version'] == '10.11.20261022' and identity['identity_kind'] == 'antithesis-package'
+    target = primitives._resolve_client_runtime_target(handle, {'profile_id': None, 'runtime_metadata_path': str(package / 'runtime.json')})
+    assert target['id'] == 'node2' and target['listen_host'] == 'sm-amaru-victim.example'
+
+
+def test_measurement_target_identity_still_raises_without_a_package(tmp_path, monkeypatch):
+    monkeypatch.delenv('DWARF_ANTITHESIS_PACKAGE_DIR', raising=False)
+    with pytest.raises(RuntimeError, match='unavailable'):
+        primitives._measurement_target_identity(_Handle(tmp_path))

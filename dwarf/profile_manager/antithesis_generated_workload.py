@@ -103,6 +103,7 @@ def runtime_metadata(scenario, devnet, services, version_binding, compose, *, at
         ids = [r['id'] for r in records]
         edges = [{'from': a, 'to': b} for a in ids for b in ids if a != b]
     return {'compose_mode': 'docker', 'profile_id': scenario.profile, 'compose_project': 'antithesis',
+            'target_implementation': scenario.target.get('implementation'),
             'network': devnet.get('network') or 'testnet_42', 'network_magic': 42,
             'support_binaries': {'cardano-cli': '/usr/local/bin/cardano-cli'},
             'nodes': records, 'haskell_nodes': [r for r in records if r['impl'] == 'cardano-node'],

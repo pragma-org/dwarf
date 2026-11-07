@@ -1447,15 +1447,13 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     overall = "pass"
     shared_state = {}
     package_dir = primitives.antithesis_package_mode()
-    if package_dir is not None:
+    if package_dir is not None and getattr(handle, "_prepared_runtime_metadata_path", None) is None:
         # Inside the Antithesis package the rendered devnet's runtime.json is the
-        # deployed runtime: profile scenarios have no compose step to seed it and
-        # no locally deployed profile to fall back on (F48).
-        package_runtime = str(package_dir / "runtime.json")
-        shared_state["substrate_runtime_metadata_path"] = package_runtime
-        shared_state["substrate_bundle_runtime_metadata_path"] = package_runtime
-        if getattr(handle, "_prepared_runtime_metadata_path", None) is None:
-            handle._prepared_runtime_metadata_path = package_runtime
+        # deployed profile runtime: profile-scoped primitives resolve it through
+        # the prepared-runtime handle, exactly as after a local measurement
+        # preparation (F48). The substrate state stays untouched: profile-endpoint
+        # primitives accept exactly one of profile_id or substrate metadata.
+        handle._prepared_runtime_metadata_path = str(package_dir / "runtime.json")
 
     active_faults = []  # list of instances in apply order, for LIFO removal
     phases = (

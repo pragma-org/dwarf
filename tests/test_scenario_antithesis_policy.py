@@ -142,7 +142,9 @@ def test_package_mode_seeds_the_package_runtime_as_the_deployed_substrate(tmp_pa
     monkeypatch.setattr(scenario, "_run_phase", capture)
     handle, manifest, assertions = _run(tmp_path, monkeypatch, primitive_policy=POLICY)
     expected = str(package / "runtime.json")
-    assert seen["state"]["substrate_runtime_metadata_path"] == expected
-    assert seen["state"]["substrate_bundle_runtime_metadata_path"] == expected
+    # Profile-endpoint primitives accept exactly one of profile_id or substrate
+    # metadata, so the substrate state must stay empty; the prepared-runtime
+    # handle is what the profile route reads first.
+    assert "substrate_runtime_metadata_path" not in seen["state"]
     assert str(seen["prepared"]) == expected
     assert manifest["exit_status"] == "pass"
