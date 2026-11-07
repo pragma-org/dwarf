@@ -332,7 +332,8 @@ def _evaluate(row):
             counts={s:sum(1 for r in rows_ if r.get('status')==s) for s in ('delegated','delegated-fault','unsupported')}
             if level=='none':
                 reason=capabilities.get('reason')
-                detail=('No faultable SUT: library and single-node scenarios have no topology to fault.' if reason=='no-faultable-sut'
+                detail=('No faultable SUT: library and single-node scenarios have no topology to fault, or the devnet has no node of the target implementation.' if reason=='no-faultable-sut'
+                        else 'This scenario runs on a public network; Antithesis environments have no internet, so it cannot run there.' if reason=='public-network'
                         else 'No runnable load on Antithesis: every load primitive needs Docker, host processes or host tools (declared gaps).')
                 add('scenario_capabilities','error',detail)
             elif level=='partial':

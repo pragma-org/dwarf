@@ -712,3 +712,11 @@ def test_real_generated_preparation_reaches_readiness_with_the_capability_row(re
     assert checks['scenario_capabilities']['state']=='warn'
     assert checks.get('generated_selections',{}).get('state')!='error'
     assert m._capabilities_record(row)['level']=='partial'
+
+
+def test_public_network_scenario_is_blocked_with_the_platform_reason(ready_env,staged,monkeypatch):
+    m=module();receipt=_generated_receipt(staged,'none');receipt['capabilities']['reason']='public-network'
+    monkeypatch.setattr(m,'read_source',lambda source:staged)
+    row=check(ready_env);checks={c['id']:c for c in row['checks']}
+    assert checks['scenario_capabilities']['state']=='error' and row['state']=='blocked'
+    assert 'public network' in checks['scenario_capabilities']['detail'] and 'no internet' in checks['scenario_capabilities']['detail']

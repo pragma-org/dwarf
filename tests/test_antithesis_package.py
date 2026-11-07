@@ -341,22 +341,26 @@ def test_devnet_scenario_previews_through_the_generated_workload(monkeypatch):
     monkeypatch.setattr(antithesis_versions, 'load_effective_version_catalog', lambda: copy.deepcopy(data))
     result = generate(request(scenario_id='runtime-substrate-mempool-failure-containment-mixed-amaru', versions=_mixed_versions()))
     assert result['workload_binding']['source'] == 'dwarf-workload'
-    assert result['workload_binding']['status'] == 'applied'
+    assert result['workload_binding']['status'] == 'applied', result['workload_binding']['issues']
+    assert result['workload_binding']['template'] == 'scenario-rig' and result['workload_binding']['rig']['shape'] == 'mixed'
+    assert result['version_binding']['source'] == 'generated-rig' and result['version_binding']['status'] == 'applied'
     assert result['capabilities']['level'] == 'partial'
     assert 'environment/dwarf-workload/Dockerfile' in result['files']
     compose = yaml.safe_load(result['files']['environment/docker-compose.yaml'])
-    assert 'dwarf-workload' in compose['services'] and 'sm-cardano-victim' in compose['services']
-    assert 'sm-workload' not in compose['services']
+    assert set(compose['services']) == {'configurator', 'tracer', 'log-tailer', 'node1', 'node2', 'amaru-target-extract', 'dwarf-workload'}
+    assert compose['services']['node2']['environment']['AMARU_PEER'] == 'node1.example:3001'
     rows = {r['field']: r for r in result['engine_handoff']['inputs']}
     assert rows['scenario_id']['status'] == 'partial'
     assert 'dwarf-workload' in rows['scenario_id']['detail']
-    assert rows['topology']['status'] == 'applied'
+    assert rows['topology']['status'] == 'applied' and 'scenario devnet' in rows['topology']['detail'].lower()
+    assert result['engine_handoff']['renderer'] == 'scenario-rig'
     manifest = json.loads(result['files']['package-manifest.json'])
     assert manifest['capabilities'] == result['capabilities']
     codes = {issue['code'] for issue in result['issues']}
     assert 'primitive-unsupported-on-antithesis' in codes
     assert 'scenario-harness-workload-not-implemented' not in codes
     assert any(image['service'] == 'dwarf-workload' for image in result['images'])
+    assert 'environment/testnet.yaml' in result['files'] and 'environment/topology/node1.json' in result['files']
 
 
 def test_profile_scenario_without_versions_is_recorded_with_binding_gaps():
@@ -364,8 +368,71 @@ def test_profile_scenario_without_versions_is_recorded_with_binding_gaps():
     assert result['workload_binding']['source'] == 'dwarf-workload'
     assert result['capabilities']['level'] == 'full'
     assert 'environment/dwarf-workload/package/runtime.json' in result['files']
-    assert result['version_binding']['source'] == 'control-harness'
-    assert result['engine_handoff']['renderer'] == 'control-harness'
+    assert result['version_binding']['source'] == 'generated-rig'
+    assert result['engine_handoff']['renderer'] == 'scenario-rig'
+
+
+def _catalog(monkeypatch):
+    import copy
+    from profile_manager import antithesis_versions
+    from profile_manager.version_catalog import load_version_catalog
+    data = load_version_catalog()
+    monkeypatch.setattr(antithesis_versions, 'load_effective_version_catalog', lambda: copy.deepcopy(data))
+
+
+def test_cardano_only_scenario_starts_only_cardano_containers(monkeypatch):
+    _catalog(monkeypatch)
+    versions = {'policy': 'exact', 'versions': {'cardano-node': '10.7.1'}, 'build_variant': 'stock', 'experimental_intent': False}
+    result = generate(request(scenario_id='m3-runtime-node2-copied-state-bounded-divergence', versions=versions))
+    assert result['version_binding']['status'] == 'applied', result['version_binding']['issues']
+    assert result['workload_binding']['status'] == 'applied' and result['workload_binding']['rig']['shape'] == 'cardano-only'
+    compose = yaml.safe_load(result['files']['environment/docker-compose.yaml'])
+    assert set(compose['services']) == {'configurator', 'tracer', 'log-tailer', 'node1', 'node2', 'node3', 'dwarf-workload'}
+    assert not any('amaru' in name for name in compose['services'])
+    assert result['files']['environment/testnet.yaml'].count('poolCount: 3') == 1
+    assert compose['services']['dwarf-workload']['environment']['DWARF_ANTITHESIS_READY_TIMEOUT'] == '900'
+    assert result['workload_binding']['targets'] == ['node1', 'node2', 'node3']
+    # A cardano-only scenario whose load is unsupported still renders its rig, without the workload.
+    none = generate(request(scenario_id='m3-runtime-blockfetch-port-drop-timeout', versions=versions))
+    assert none['capabilities']['level'] == 'none' and none['workload_binding']['status'] == 'recorded'
+    assert set(yaml.safe_load(none['files']['environment/docker-compose.yaml'])['services']) == {'configurator', 'tracer', 'log-tailer', 'node1', 'node2', 'node3'}
+
+
+def test_amaru_only_scenario_starts_its_supporting_producer_and_amaru(monkeypatch):
+    _catalog(monkeypatch)
+    versions = {'policy': 'exact', 'versions': {'amaru': '10.11.20260918'}, 'build_variant': 'stock', 'experimental_intent': False}
+    result = generate(request(scenario_id='client-example-txsubmission-window-amaru-portable-20260918', versions=versions))
+    assert result['version_binding']['status'] == 'applied', result['version_binding']['issues']
+    compose = yaml.safe_load(result['files']['environment/docker-compose.yaml'])
+    # The scenario declares its own measurement taps, so the collector service rides along.
+    assert set(compose['services']) == {'configurator', 'tracer', 'log-tailer', 'bootstrap-cardano', 'amaru1', 'amaru-target-extract',
+                                        'dwarf-workload', 'dwarf-measurements'}
+    # Some scenario taps have no remote hook (pre-existing 'partial'); the connected ones ride the rig's own evidence volume.
+    assert result['measurement_binding']['status'] in ('applied', 'partial'), result['measurement_binding']['issues']
+    assert 'amaru1-evidence:/inputs/amaru1:ro' in compose['services']['dwarf-measurements']['volumes']
+    assert compose['services']['dwarf-workload']['environment']['DWARF_ANTITHESIS_READY_TIMEOUT'] == '2400'
+    assert result['workload_binding']['targets'] == ['amaru1']
+    assert 'unused-target-selection' not in {i['code'] for i in result['issues']}
+
+
+def test_public_network_scenario_is_refused_without_a_compose():
+    result = generate(request(scenario_id='runtime-substrate-txsubmission-window-pressure-example-smoke'))
+    assert result['capabilities']['level'] == 'none' and result['capabilities']['reason'] == 'public-network'
+    assert result['workload_binding']['status'] == 'recorded' and result['workload_binding']['source'] == 'dwarf-workload'
+    assert 'environment/docker-compose.yaml' not in result['files']
+    assert 'public-network' in {i['code'] for i in result['issues']}
+    assert result['engine_handoff']['renderer'] is None
+
+
+def test_attached_scenario_keeps_the_control_rig_with_a_victim_clone(monkeypatch):
+    _catalog(monkeypatch)
+    result = generate(request(scenario_id='cardano-amaru-relay-bootstrap-control-local', versions=_mixed_versions()))
+    assert result['workload_binding']['status'] == 'applied', result['workload_binding']['issues']
+    assert result['workload_binding']['template'] == 'mixed-control-v1'
+    assert result['version_binding']['source'] == 'control-harness' and result['engine_handoff']['renderer'] == 'control-harness'
+    compose = yaml.safe_load(result['files']['environment/docker-compose.yaml'])
+    assert {'sm-cardano-seed', 'p1', 'amaru-relay-1', 'dwarf-workload'} <= set(compose['services'])
+    assert ('sm-amaru-victim' in compose['services']) or ('sm-cardano-victim' in compose['services'])
 
 
 def test_library_scenario_keeps_the_native_path_and_reports_no_faultable_sut():

@@ -44,7 +44,9 @@
       measurements:'Measurement taps',duration_hours:'Duration',faults:'Fault policy'};
     const statuses={applied:'Applied to preview',partial:'Partly applied',recorded:'Recorded only'};
     get('engine-summary').textContent=handoff.workload_binding?.source==='dwarf-workload'&&handoff.workload_binding?.status==='applied'
-      ? 'Existing mixed harness · DWARF scenario runner (dwarf-workload) executes this scenario inside the package · workload image build required. Unsupported primitives are declared gaps; runtime unverified.'
+      ? (handoff.renderer==='scenario-rig'
+          ? 'Scenario devnet rendered from the control rig blocks · DWARF scenario runner (dwarf-workload) executes this scenario inside the package · workload image build required. Unsupported primitives are declared gaps; runtime unverified.'
+          : 'Existing mixed harness · DWARF scenario runner (dwarf-workload) executes this scenario inside the package · workload image build required. Unsupported primitives are declared gaps; runtime unverified.')
       : handoff.workload_binding?.status==='applied'
       ? 'Existing mixed harness · paired mini-protocol workload and observing test commands connected · workload image build required. Partial scenario translation; runtime unverified.'
       : handoff.renderer==='control-harness'

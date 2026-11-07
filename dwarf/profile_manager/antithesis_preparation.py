@@ -430,7 +430,8 @@ def prepare_package(value, source, *, state_dir=None):
                 _add(files, name.removeprefix('environment/'), text.encode(), 0o644)
             _add(files, 'provenance/preview/'+name, text.encode(), 0o644)
         issues.extend(preview['issues'])
-        description['generator'] = ('existing-control-harness-preview' if preview['engine_handoff']['renderer']=='control-harness' else 'existing-native-preview')
+        description['generator'] = {'control-harness': 'existing-control-harness-preview', 'scenario-rig': 'scenario-rig-preview'}.get(
+            preview['engine_handoff']['renderer'], 'existing-native-preview')
         description['normalization'] = 'environment/ copied to package root; complete inspection snapshot retained under provenance/preview/'
     elif kind == 'url':
         url = source['url']

@@ -15,6 +15,7 @@ from profile_manager import antithesis_generator as native
 from profile_manager import antithesis_topology as topology
 from profile_manager import antithesis_harness as harness
 from profile_manager import antithesis_workload_binding as workload
+from profile_manager import antithesis_generated_rig as generated_rig
 from profile_manager import antithesis_generated_workload as generated_workload
 from profile_manager.antithesis_capabilities import classify
 from profile_manager.antithesis_version_binding import bind_native_versions
@@ -113,6 +114,7 @@ def _engine_handoff(files, *, renderer_invoked, version_binding, workload_bindin
         return None
 
     control = version_binding.get('source') == 'control-harness'
+    rig = version_binding.get('source') == 'generated-rig'
     inputs = []
     def row(field, status, detail, evidence=()):
         inputs.append({'field':field, 'status':status, 'detail':detail, 'evidence':list(evidence)})
@@ -158,12 +160,19 @@ def _engine_handoff(files, *, renderer_invoked, version_binding, workload_bindin
             if bound else 'Requested versions were not applied. The control harness retains its baseline images; inspect the binding gaps.')
         rows['build_variant']['detail'] = ('Stock selects the declared target artifact through the existing executable adapter. Bootstrap support tools remain pinned; no measurement patches or image builds were applied.'
             if bound else 'The requested stock/instrumented selection has no applied target binding.')
-    if workload_binding and workload_binding['status'] == 'applied':
+    if rig:
+        rows = {r['field']:r for r in inputs}
+        rows['versions']['detail'] = ('Selected releases are bound to every node of the scenario devnet; a supporting producer uses the catalog default. '
+                                      'Amaru reports its target binary separately from the fixed bootstrap wrapper; runtime behavior remains unverified.'
+            if bound else 'Requested versions were not applied. The rendered devnet retains the rig baseline images; inspect the binding gaps.')
+        rows['build_variant']['detail'] = ('Stock selects the declared release artifact for every node through the existing executable adapter. No image builds were applied.'
+            if bound else 'The requested stock/instrumented selection has no applied node binding.')
+    if workload_binding and workload_binding['status'] == 'applied' and workload_binding.get('source') != 'dwarf-workload':
         rows['scenario_id'].update(status='partial', detail='The existing paired mini-protocol workload, observer and test-command build sources are connected. Local probe orchestration remains untranslated; execution is unverified.', evidence=[compose_path, 'environment/miniprotocol/workload/Dockerfile', 'package-manifest.json'])
         rows['topology']['detail'] = 'The mixed control harness includes dedicated mini-protocol victims, paired fuzzers and the existing observer inputs.'
     return {
         'workload_binding':workload_binding,
-        'renderer':'control-harness' if control else 'native-scenario' if renderer_invoked else None,
+        'renderer':'control-harness' if control else 'scenario-rig' if rig else 'native-scenario' if renderer_invoked else None,
         'renderer_invoked':renderer_invoked,
         'environment_emitted':environment_emitted,
         'adversary':{'protocol':argument('--protocol'), 'shape':argument('--cbor-shape')}
@@ -205,11 +214,23 @@ def preview_package(value):
 
     classification = classify(scenario)
     # Devnet scenarios other than the curated recipe run DWARF's own runner inside
-    # the package (generated path); library/single-node keep the native adversary.
+    # the package (generated path): their own devnet is rendered from the control
+    # rig's blocks; attached layouts keep the control rig; library/single-node
+    # keep the native adversary.
     generated_path = scenario.runtime == 'devnet' and scenario.id != workload.SCENARIO
-    control = None
+    devnet = generated_rig.scenario_devnet(scenario) if generated_path else None
+    rig_path = bool(devnet) and devnet['shape'] in generated_rig.SHAPES
+    control, rendered = None, None
     if value['topology']['source'] == 'scenario-default':
-        control = generated_workload.resolve_generated_topology(scenario) if generated_path else harness.resolve_default(scenario)
+        if rig_path:
+            renderer_invoked = True
+            try:
+                rendered = generated_rig.render_rig(devnet, scenario.id)
+            except topology.TopologyError as exc:
+                raise PackageError(str(exc), field='topology', status=exc.status) from exc
+            files.update(rendered['files'])
+        elif not generated_path or devnet['shape'] == 'attach':
+            control = harness.resolve_default(scenario)
     elif resolved['state'] == 'resolved' and resolved['request']['template_id'] in {'amaru-control-v1','mixed-control-v1'}:
         if resolved['topology_digest'] != value['topology_digest']:
             raise PackageError('Topology changed. Resolve it again before generating the package.', field='topology_digest', status=409)
@@ -221,6 +242,8 @@ def preview_package(value):
             harness.emit(files, control)
         except topology.TopologyError as exc:
             raise PackageError(str(exc), field='topology', status=exc.status) from exc
+    elif rig_path or (generated_path and value['topology']['source'] == 'scenario-default'):
+        pass  # the rig is already rendered, or the devnet was refused (issues follow)
     elif value['topology']['source'] != 'scenario-default':
         if resolved['state'] == 'resolved':
             if resolved['topology_digest'] != value['topology_digest']:
@@ -273,11 +296,16 @@ def preview_package(value):
             gap('scenario-generator-not-implemented','scenario_id','No package adapter implements this selected scenario: '+str(exc))
 
     v = value['versions']
-    version_binding = (harness.bind_versions(files, v, control,
-        scenario_default=scenario.target.get('version') if value['topology']['source']=='scenario-default' else None)
-        if control else bind_native_versions(files, v, scenario))
+    scenario_default = scenario.target.get('version') if value['topology']['source']=='scenario-default' else None
+    if rig_path and rendered is not None:
+        version_binding = generated_rig.bind_rig_versions(files, v, devnet, rendered, scenario_default=scenario_default)
+    elif control:
+        version_binding = harness.bind_versions(files, v, control, scenario_default=scenario_default)
+    else:
+        version_binding = bind_native_versions(files, v, scenario)
     if generated_path:
-        workload_binding = generated_workload.bind_generated_workload(files, scenario, control, version_binding, classification)
+        workload_binding = generated_workload.bind_generated_workload(files, scenario, version_binding, classification,
+                                                                      devnet=devnet, rendered=rendered, resolved=control)
     else:
         workload_binding = workload.bind_workload(files, scenario, control, version_binding)
     issues.extend(workload_binding['issues'])
@@ -325,7 +353,14 @@ def preview_package(value):
                     + ': ' + str(counts['delegated']) + ' lifecycle steps delegated to the package, ' + str(counts['delegated-fault'])
                     + ' faults delegated to the platform, ' + str(counts['unsupported']) + ' primitives unsupported (declared gaps).'),
             evidence=['environment/docker-compose.yaml', 'environment/dwarf-workload/Dockerfile', 'package-manifest.json'])
-        rows['topology'].update(status='applied', detail='The mixed control harness plus the curated victim clones for the scenario target; scenario node ids are mapped to harness services in the package runtime.json.')
+        if workload_binding.get('template') == 'scenario-rig':
+            runtime = workload_binding.get('runtime_metadata') or {}
+            rows['topology'].update(status='applied', detail=(
+                'Scenario devnet rendered from the control rig blocks: ' + str(len(runtime.get('haskell_nodes') or []))
+                + ' cardano producer(s), ' + str(len(runtime.get('amaru_nodes') or [])) + ' Amaru node(s); genesis and pool keys are generated '
+                'inside the package by the configurator; faultable services: ' + ', '.join(workload_binding.get('targets') or []) + '.'))
+        else:
+            rows['topology'].update(status='applied', detail='The mixed control harness plus the curated victim clone for the scenario target; attached node names map to harness services in the package runtime.json.')
     for item in handoff['inputs']:
         if item['field']=='measurements' and measurement_binding['status']=='applied':
             item.update(status='applied',detail='Existing DWARF collectors are bound to target-specific traces; periodic results are retained and logged. Runtime data availability remains unverified.')
@@ -342,7 +377,7 @@ def preview_package(value):
         'request':value,'issues':issues,'images':images,'compatibility':'not-evaluated',
         'engine_handoff':handoff, 'version_binding':version_binding, 'workload_binding':workload_binding, 'measurement_binding':measurement_binding,
         'capabilities':classification,
-        'generator_source_digest':_sha(Path(harness.__file__ if control else native.__file__).read_bytes()),
+        'generator_source_digest':_sha(Path(generated_rig.__file__ if rig_path else harness.__file__ if control else native.__file__).read_bytes()),
         'files':{name:_sha(text.encode()) for name,text in sorted(files.items())}}
     files['package-manifest.json'] = _json(manifest)
     inventory = [{'path':name,'sha256':_sha(text.encode()),'bytes':len(text.encode())} for name,text in sorted(files.items())]

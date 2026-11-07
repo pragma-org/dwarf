@@ -1,5 +1,9 @@
 # AT-2 Catalog Parity Implementation Plan
 
+> **Superseded 2026-11-07 for Tasks 4-5 and the "always mixed" projection:** the user rejected
+> the fixed-rig projection; `docs/plans/2026-11-07-antithesis-catalog-parity-v2-plan.md` renders
+> the scenario's own devnet instead. Tasks 1-3 and 6-11 of this plan stand as built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Any catalog scenario (not only the curated mini-protocol one) previews, prepares, builds and submits as an Antithesis package in which DWARF's own scenario runner is the workload, with the scenario's unsupported primitives declared as gaps instead of silently dropped.
