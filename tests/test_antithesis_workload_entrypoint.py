@@ -102,7 +102,8 @@ def test_wait_ready_waits_for_ports_and_sockets(tmp_path):
             clock['t'] += seconds
             if clock['t'] >= 10 and not sock.exists():
                 sock.write_text('')
-        ready = workload.wait_ready({'nodes': nodes}, timeout=60, now=now, sleep=sleep)
+        block = lambda node: {'ok': True, 'slot': 7, 'block': 1, 'hash': 'ab'}
+        ready = workload.wait_ready({'nodes': nodes}, timeout=60, now=now, sleep=sleep, tip=block)
         assert ready == ['node1', 'node2']
     finally:
         stop.set(); server.close()
@@ -112,7 +113,70 @@ def test_wait_ready_times_out_with_unready_ids(tmp_path):
     nodes = [{'id': 'node1', 'impl': 'cardano-node', 'listen_address': '127.0.0.1:1', 'socket_path': str(tmp_path / 'missing')}]
     clock = {'t': 0.0}
     with pytest.raises(RuntimeError, match='antithesis readiness probe timed out: node1'):
-        workload.wait_ready({'nodes': nodes}, timeout=5, now=lambda: clock['t'], sleep=lambda s: clock.__setitem__('t', clock['t'] + s))
+        workload.wait_ready({'nodes': nodes}, timeout=5, now=lambda: clock['t'], sleep=lambda s: clock.__setitem__('t', clock['t'] + s),
+                            tip=lambda node: {'ok': True, 'slot': 1, 'block': 1, 'hash': 'h'})
+
+
+def test_wait_ready_needs_a_real_block_over_the_cardano_socket(tmp_path):
+    port, stop, server = _listener()
+    try:
+        sock = tmp_path / 'node.socket'
+        sock.write_text('')
+        nodes = [{'id': 'node1', 'impl': 'cardano-node', 'listen_address': '127.0.0.1:%d' % port, 'socket_path': str(sock)}]
+        clock = {'t': 0.0}
+        tips = {'calls': 0}
+
+        def tip(node):
+            tips['calls'] += 1
+            return {'ok': True, 'slot': 0, 'block': 0, 'hash': ''} if clock['t'] < 20 else {'ok': True, 'slot': 40, 'block': 2, 'hash': 'ab'}
+        ready = workload.wait_ready({'nodes': nodes}, timeout=60, now=lambda: clock['t'],
+                                    sleep=lambda s: clock.__setitem__('t', clock['t'] + s), tip=tip)
+        assert ready == ['node1'] and tips['calls'] >= 2
+        clock['t'] = 0.0
+        with pytest.raises(RuntimeError, match='timed out: node1'):
+            workload.wait_ready({'nodes': nodes}, timeout=5, now=lambda: clock['t'],
+                                sleep=lambda s: clock.__setitem__('t', clock['t'] + s), tip=lambda node: {'ok': False, 'slot': None, 'block': None, 'hash': None})
+    finally:
+        stop.set(); server.close()
+
+
+def test_wait_ready_needs_the_amaru_bootstrap_sentinel(tmp_path):
+    port, stop, server = _listener()
+    try:
+        sentinel = tmp_path / 'state' / '.bootstrap-complete'
+        nodes = [{'id': 'amaru1', 'impl': 'amaru', 'listen_address': '127.0.0.1:%d' % port, 'socket_path': None,
+                  'bootstrap_sentinel': str(sentinel)}]
+        clock = {'t': 0.0}
+
+        def sleep(seconds):
+            clock['t'] += seconds
+            if clock['t'] >= 15 and not sentinel.exists():
+                sentinel.parent.mkdir(parents=True, exist_ok=True)
+                sentinel.write_text('')
+        assert workload.wait_ready({'nodes': nodes}, timeout=60, now=lambda: clock['t'], sleep=sleep) == ['amaru1']
+        sentinel.unlink()
+        clock['t'] = 0.0
+        with pytest.raises(RuntimeError, match='timed out: amaru1'):
+            workload.wait_ready({'nodes': nodes}, timeout=5, now=lambda: clock['t'], sleep=lambda s: clock.__setitem__('t', clock['t'] + s))
+    finally:
+        stop.set(); server.close()
+
+
+def test_socket_tip_queries_cardano_cli_over_the_mounted_socket(monkeypatch):
+    from scripts import runtime_multi_node_observation as observation
+    seen = {}
+
+    def fake_run(argv, timeout=None, env=None):
+        seen.update(argv=argv, env=env)
+        class Proc:
+            returncode, stdout, stderr = 0, json.dumps({'slot': 9, 'block': 3, 'hash': 'cd', 'syncProgress': '100.00'}), ''
+        return Proc()
+    monkeypatch.setattr(observation, '_run', fake_run)
+    tip = workload._socket_tip({'support_binaries': {'cardano-cli': '/usr/local/bin/cardano-cli'}, 'network_magic': 42})
+    result = tip({'id': 'node1', 'socket_path': '/inputs/node1/node.socket'})
+    assert result['block'] == 3 and workload._has_real_block(result)
+    assert seen['argv'] == ['/usr/local/bin/cardano-cli', 'query', 'tip', '--testnet-magic', '42']
+    assert seen['env']['CARDANO_NODE_SOCKET_PATH'] == '/inputs/node1/node.socket'
 
 
 def test_after_prepare_emits_setup_complete_only_after_ready_then_waits_for_go(tmp_path):

@@ -55,11 +55,11 @@
     },
     "runtime_multi_node_observation": {
       "status": "runs-with-note",
-      "note": "Cardano tips are read with cardano-cli over the mounted node socket and Amaru tips from the mounted victim log; connection state is reported unavailable (no process access inside the package)."
+      "note": "Cardano tips are read with cardano-cli over the mounted node socket and Amaru tips from the mounted node log; connection state is reported unavailable (no process access inside the package)."
     },
     "runtime_substrate_tip_warmup": {
       "status": "runs-with-note",
-      "note": "Tips are read over the mounted node socket or victim log, not docker exec."
+      "note": "Tips are read over the mounted node socket or the mounted node log, not docker exec."
     },
     "runtime_verify_exact_target": {
       "status": "runs-with-note",

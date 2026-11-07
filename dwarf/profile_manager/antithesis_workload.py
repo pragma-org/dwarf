@@ -57,18 +57,41 @@ def _tcp_reachable(address, timeout=3.0):
         return False
 
 
-def wait_ready(runtime, timeout, *, now=time.monotonic, sleep=time.sleep, reachable=_tcp_reachable, poll=5.0):
-    """Block until every node answers on its listen address (and its socket exists
-    for Cardano nodes). Returns the ready ids in order; raises on timeout."""
+def _socket_tip(runtime):
+    """Real-block probe over the mounted socket, the same query the local
+    compose gate uses (``runtime_compose_substrate._wait_for_cardano_node_block``)."""
+    from scripts.runtime_multi_node_observation import _query_tip_once
+    cardano_cli = (runtime.get('support_binaries') or {}).get('cardano-cli') or 'cardano-cli'
+    magic = int(runtime.get('network_magic') or 42)
+
+    def tip(node):
+        return _query_tip_once(cardano_cli=cardano_cli, socket_path=Path(node['socket_path']), network_magic=magic)
+    return tip
+
+
+def _has_real_block(tip):
+    from scripts.runtime_compose_substrate import _tip_has_real_chain_progress
+    return _tip_has_real_chain_progress(tip)
+
+
+def wait_ready(runtime, timeout, *, now=time.monotonic, sleep=time.sleep, reachable=_tcp_reachable, poll=5.0, tip=None):
+    """Block until every node is ready, with local-run parity: TCP on its listen
+    address; a Cardano node also needs its socket and a real block over it; an
+    Amaru node also needs its bootstrap sentinel. Returns the ready ids in
+    order; raises on timeout."""
     nodes = list(runtime.get('nodes') or [])
     deadline = now() + float(timeout)
+    query = tip if tip is not None else _socket_tip(runtime)
     while True:
         unready = []
         for node in nodes:
             ok = reachable(node.get('listen_address') or '')
             socket_path = node.get('socket_path')
             if ok and socket_path:
-                ok = Path(socket_path).exists()
+                ok = Path(socket_path).exists() and _has_real_block(query(node))
+            sentinel = node.get('bootstrap_sentinel')
+            if ok and sentinel:
+                ok = Path(sentinel).exists()
             if not ok:
                 unready.append(node['id'])
         if not unready:

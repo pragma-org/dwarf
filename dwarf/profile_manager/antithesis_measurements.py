@@ -147,9 +147,12 @@ def bind_measurements(files, request, scenario, versions, workload):
             bound.add(identifier)
         if not entries:continue
         target=compose['services'][service]
-        # The connected mixed workload already records each victim's stdout in
-        # a dedicated volume; reuse that exact source rather than Docker logs.
-        evidence='sm-'+('amaru' if implementation=='amaru' else 'cardano')+'-runtime-evidence'
+        # The connected workload already records each node's stdout in a
+        # dedicated volume; reuse that exact source rather than Docker logs. The
+        # generated rig names its volumes per node; the curated rig uses the
+        # victim clones' fixed names.
+        evidence=(workload.get('evidence_volumes') or {}).get(service) or (
+            'sm-'+('amaru' if implementation=='amaru' else 'cardano')+'-runtime-evidence')
         env=target.setdefault('environment',{})
         mount='/inputs/'+service
         patterns=[mount+'/amaru.log'] if implementation=='amaru' else []

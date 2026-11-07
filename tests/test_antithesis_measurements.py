@@ -394,3 +394,22 @@ def test_legacy_experimental_row_still_binds(monkeypatch):
     preview_package(value)
     assert seen and seen[0]['experimental_instrumentation']==candidate
     assert seen[0]['identity_kind']=='operator-local-config' and 'verified_instrumentation' not in seen[0]
+
+
+def test_generated_rig_targets_use_their_own_evidence_volumes():
+    from profile_manager import antithesis_generated_rig as rig
+    from profile_manager.antithesis_measurements import bind_measurements
+    from test_antithesis_generated_rig import body
+    scenario=body(profile='profile-a-haskell-peersharing-disabled', target={'implementation':'cardano-node','version':'10.7.1'})
+    rendered=rig.render_rig(rig.scenario_devnet(scenario), scenario.id)
+    files=dict(rendered['files'])
+    versions={'status':'applied','node_artifacts':{},'services':[
+        {'service':name,'implementation':'cardano-node','requested_version':'10.7.1','source_revision':'f'*40,'artifact':{'digest':'sha256:'+'a'*64}}
+        for name in ('node1','node2','node3')]}
+    workload={'status':'applied','targets':['node1','node2','node3'],'evidence_volumes':{'node1':'node1-evidence','node2':'node2-evidence','node3':'node3-evidence'}}
+    report=bind_measurements(files,{'profile_id':None,'tap_ids':['cardano-stock-blockfetch']},scenario,versions,workload)
+    assert report['status']!='not-requested' and report['targets'], report['issues']
+    assert {t['evidence_volume'] for t in report['targets']}=={'node1-evidence','node2-evidence','node3-evidence'}
+    compose=yaml.safe_load(files['environment/docker-compose.yaml'])
+    assert 'node1-evidence:/inputs/node1:ro' in compose['services']['dwarf-measurements']['volumes']
+    assert 'sm-cardano-runtime-evidence:/inputs/node1:ro' not in compose['services']['dwarf-measurements']['volumes']

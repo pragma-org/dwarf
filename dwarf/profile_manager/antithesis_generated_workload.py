@@ -1,11 +1,12 @@
 """Generated Antithesis path: DWARF's own scenario runner is the workload.
 
 For every catalog scenario that is not the curated mini-protocol recipe, the
-package is the existing mixed control harness plus the curated victim clones for
-the scenario's target implementation plus one ``dwarf-workload`` service built
-from the installed controller image. The scenario's nodes are projected onto the
-harness services; the workload reaches them over mounted node sockets and
-evidence volumes, never Docker. See the AT-2 plan for the matrix and routes.
+package is the scenario's own devnet rendered from the control rig's blocks
+(``antithesis_generated_rig``) plus one ``dwarf-workload`` service built from the
+installed controller image. Attached scenarios (``attach.topology: cardano_amaru``)
+keep the mixed control rig by name with a victim clone for the first target node.
+The workload reaches the nodes over mounted node sockets, state and evidence
+volumes, never Docker. See the AT-2 v2 plan for the matrix and routes.
 """
 from __future__ import annotations
 
@@ -16,26 +17,22 @@ from pathlib import Path
 
 import yaml
 
+from profile_manager import antithesis_generated_rig as rig
 from profile_manager import antithesis_topology as topology
 from profile_manager import antithesis_workload_binding as curated
 
 ASSETS = Path(__file__).resolve().parent / 'antithesis_assets' / 'dwarf-workload'
 PACKAGE_PREFIX = 'environment/dwarf-workload/'
 COMPOSE = curated.COMPOSE
-TEMPLATE = 'mixed-control-v1'
 WORKLOAD_SERVICE = 'dwarf-workload'
-CARDANO_PORT, AMARU_PORT, AMARU_SUBMIT_PORT = 3001, 3000, 3011
-CARDANO_SLOTS = ['sm-cardano-victim', 'relay1', 'relay2']
-CARDANO_CONTROL = ['relay1', 'relay2', 'p1', 'p2', 'p3']
-AMARU_SLOTS = ['sm-amaru-victim', 'amaru-relay-1', 'amaru-relay-2']
-AMARU_CONTROL = ['amaru-relay-1', 'amaru-relay-2']
-# Harness state volumes that carry each Cardano service's node.socket.
+CARDANO_PORT, AMARU_PORT, AMARU_SUBMIT_PORT = rig.CARDANO_PORT, rig.AMARU_PORT, rig.AMARU_SUBMIT_PORT
+READY_TIMEOUT_CARDANO, READY_TIMEOUT_AMARU = '900', '2400'
+# Attached layouts: harness state volumes that carry each Cardano service's node.socket.
 STATE_VOLUMES = {'p1': 'p1-state', 'p2': 'p2-state', 'p3': 'p3-state', 'relay1': 'relay1-state',
                  'relay2': 'relay2-state', 'amaru-consumer': 'amaru-consumer-state',
                  'sm-cardano-victim': 'sm-cardano-state'}
 EVIDENCE_VOLUMES = {'sm-amaru-victim': 'sm-amaru-runtime-evidence'}
-ATTACH_CARDANO = ['p1', 'p2', 'p3', 'relay1', 'relay2', 'amaru-consumer']
-ATTACH_AMARU = ['amaru-relay-1', 'amaru-relay-2']
+ATTACH_CARDANO, ATTACH_AMARU = rig.ATTACH_CARDANO, rig.ATTACH_AMARU
 
 
 def _sha(text):
@@ -46,107 +43,67 @@ def _json(value):
     return json.dumps(value, sort_keys=True, indent=2, allow_nan=False) + '\n'
 
 
-def _attach_topology(scenario):
-    body = yaml.safe_load(scenario.raw_bytes) or {}
-    return (body.get('attach') or {}).get('topology')
-
-
-def scenario_nodes(scenario):
-    """The scenario's declared nodes: substrate list, profile counts, or the attached layout."""
-    if scenario.substrate:
-        return [{'id': str(n['id']), 'impl': str(n.get('impl') or 'cardano-node'), 'role': str(n.get('role') or 'node')}
-                for n in scenario.substrate.get('nodes') or []]
-    if scenario.profile:
-        from profile_manager.profiles import find_profile
-        try:
-            profile = find_profile(scenario.profile)
-        except (KeyError, OSError, ValueError):
-            return []
-        nodes = []
-        if profile.node_count == 0 and profile.amaru_node_count:
-            nodes.append({'id': 'bootstrap-cardano', 'impl': 'cardano-node', 'role': 'bootstrap-producer'})
-        nodes += [{'id': 'node%d' % i, 'impl': 'cardano-node', 'role': 'producer'} for i in range(1, profile.node_count + 1)]
-        nodes += [{'id': 'amaru%d' % i, 'impl': 'amaru', 'role': 'consumer'} for i in range(1, profile.amaru_node_count + 1)]
-        return nodes
-    if _attach_topology(scenario) == 'cardano_amaru':
-        return ([{'id': n, 'impl': 'cardano-node', 'role': 'attached'} for n in ATTACH_CARDANO]
-                + [{'id': n, 'impl': 'amaru', 'role': 'attached'} for n in ATTACH_AMARU])
-    return []
-
-
-def template_for(scenario, nodes):
-    """Every generated package projects onto the public mixed layout (the only
-    Antithesis-supported devnet with victim recipes)."""
-    return TEMPLATE
-
-
-def project_nodes(scenario, nodes):
-    target = scenario.target.get('implementation')
-    services, issues = {}, []
-    if scenario.profile and not nodes and not scenario.substrate:
-        issues.append({'code': 'profile-unknown', 'field': 'scenario_id', 'kind': 'implementation-gap',
-                       'message': 'The scenario profile ' + str(scenario.profile) + ' is not in this catalog; no nodes were projected.'})
-        return {'services': services, 'victims': [], 'issues': issues}
-    if _attach_topology(scenario) == 'cardano_amaru':
-        # Attached layouts keep their names; the first node of the target
-        # implementation becomes the victim clone so faults hit an observed node.
-        services = {n['id']: n['id'] for n in nodes}
-        victim = {'cardano-node': 'sm-cardano-victim', 'amaru': 'sm-amaru-victim'}.get(target)
-        first = next((n['id'] for n in nodes if n['impl'] == target), None)
-        if victim and first:
-            services[first] = victim
-    else:
-        pools = {'cardano-node': list(CARDANO_SLOTS if target == 'cardano-node' else CARDANO_CONTROL),
-                 'amaru': list(AMARU_SLOTS if target == 'amaru' else AMARU_CONTROL)}
-        overflow = []
-        for node in nodes:
-            pool = pools.get(node['impl'])
-            if pool:
-                services[node['id']] = pool.pop(0)
-            else:
-                overflow.append(node['id'])
-        if overflow:
-            issues.append({'code': 'topology-capacity-exceeded', 'field': 'scenario_id', 'kind': 'implementation-gap',
-                           'message': 'The mixed control harness has no service left for ' + ', '.join(overflow) + '.'})
-    victims = []
-    if target == 'cardano-node':
-        victims.append('sm-cardano-victim')
-    if target == 'amaru':
-        victims.append('sm-amaru-victim')
-    return {'services': services, 'victims': victims, 'issues': issues}
+def attach_projection(devnet):
+    """Attached layouts keep their names; the first node of the target
+    implementation becomes the victim clone so faults hit an observed node."""
+    target = devnet['target']
+    services = {n['id']: n['id'] for n in devnet['nodes']}
+    victim = {'cardano-node': 'sm-cardano-victim', 'amaru': 'sm-amaru-victim'}.get(target)
+    first = next((n['id'] for n in devnet['nodes'] if n['impl'] == target), None)
+    if victim and first:
+        services[first] = victim
+    return {'services': services, 'victims': [victim] if victim and first else [], 'issues': []}
 
 
 def _service_rows(version_binding):
     return {row['service']: row for row in version_binding.get('services', [])}
 
 
-def runtime_metadata(scenario, nodes, projection, version_binding, compose):
+def _record(node, service, row, compose, *, scenario, routes):
+    amaru = node['impl'] == 'amaru'
+    port = AMARU_PORT if amaru else CARDANO_PORT
+    host = service + '.example'
+    return {'id': node['id'], 'name': service, 'impl': node['impl'], 'implementation': node['impl'],
+            'role': node['role'], 'supporting': bool(node.get('supporting')),
+            'version': row.get('requested_version') or scenario.target.get('version') or 'unknown',
+            'image': compose['services'].get(service, {}).get('image'),
+            'listen_address': host + ':' + str(port), 'port': port, 'container_listen_address': host + ':' + str(port),
+            'socket_path': routes.get('socket_path'), 'log_path': routes.get('log_path'),
+            'submit_api_url': routes.get('submit_api_url'), 'bootstrap_sentinel': routes.get('bootstrap_sentinel'),
+            'observation_transport': 'antithesis-package'}
+
+
+def _attach_routes(node, service):
+    if node['impl'] == 'amaru':
+        return {'log_path': '/inputs/' + service + '/amaru.log' if service in EVIDENCE_VOLUMES else None,
+                'submit_api_url': 'http://' + service + '.example:' + str(AMARU_SUBMIT_PORT) + '/api/submit/tx' if service in EVIDENCE_VOLUMES else None}
+    return {'socket_path': '/inputs/' + service + '/node.socket'}
+
+
+def _rig_routes(node, compose):
+    if node['impl'] == 'amaru':
+        modern = 'AMARU_RUN_EXTRA_ARGS' in (compose['services'][node['id']].get('environment') or {})
+        return {'log_path': '/inputs/' + node['id'] + '/amaru.log',
+                'submit_api_url': 'http://' + node['id'] + '.example:' + str(AMARU_SUBMIT_PORT) + '/api/submit/tx' if modern else None,
+                'bootstrap_sentinel': '/inputs/' + node['id'] + '-state/.bootstrap-complete'}
+    return {'socket_path': '/inputs/' + node['id'] + '/node.socket'}
+
+
+def runtime_metadata(scenario, devnet, services, version_binding, compose, *, attached):
     rows = _service_rows(version_binding)
     records = []
-    for node in nodes:
-        service = projection['services'].get(node['id'])
+    for node in devnet['nodes']:
+        service = services.get(node['id'])
         if service is None:
             continue
-        row = rows.get(service, {})
-        amaru = node['impl'] == 'amaru'
-        port = AMARU_PORT if amaru else CARDANO_PORT
-        host = service + '.example'
-        record = {'id': node['id'], 'name': service, 'impl': node['impl'], 'implementation': node['impl'],
-                  'role': node['role'], 'version': row.get('requested_version') or scenario.target.get('version') or 'unknown',
-                  'image': compose['services'].get(service, {}).get('image'),
-                  'listen_address': host + ':' + str(port), 'port': port,
-                  'container_listen_address': host + ':' + str(port),
-                  'socket_path': None if amaru else '/inputs/' + service + '/node.socket',
-                  'log_path': '/inputs/' + service + '/amaru.log' if service in EVIDENCE_VOLUMES else None,
-                  'submit_api_url': 'http://' + host + ':' + str(AMARU_SUBMIT_PORT) + '/api/submit/tx' if service in EVIDENCE_VOLUMES else None,
-                  'observation_transport': 'antithesis-package'}
-        records.append(record)
-    edges = (scenario.substrate or {}).get('topology', {}).get('edges') if scenario.substrate else None
+        routes = _attach_routes(node, service) if attached else _rig_routes(node, compose)
+        records.append(_record(node, service, rows.get(service, {}), compose, scenario=scenario, routes=routes))
+    edges = devnet['edges']
     if not edges:
         ids = [r['id'] for r in records]
         edges = [{'from': a, 'to': b} for a in ids for b in ids if a != b]
     return {'compose_mode': 'docker', 'profile_id': scenario.profile, 'compose_project': 'antithesis',
-            'network': 'testnet_42', 'network_magic': 42,
+            'network': devnet.get('network') or 'testnet_42', 'network_magic': 42,
             'support_binaries': {'cardano-cli': '/usr/local/bin/cardano-cli'},
             'nodes': records, 'haskell_nodes': [r for r in records if r['impl'] == 'cardano-node'],
             'amaru_nodes': [r for r in records if r['impl'] == 'amaru'],
@@ -184,51 +141,80 @@ def _asset_files():
     return files
 
 
-def bind_generated_workload(files, scenario, resolved, version_binding, classification):
-    if scenario.id == curated.SCENARIO:
-        raise ValueError('curated scenario uses bind_workload')
-    report = {'status': 'recorded', 'source': WORKLOAD_SERVICE, 'scenario_id': scenario.id, 'runtime_verified': False,
-              'targets': [], 'issues': [], 'template': TEMPLATE, 'projection': None, 'runtime_metadata': None,
-              'image_contents': []}
-    nodes = scenario_nodes(scenario)
-    projection = project_nodes(scenario, nodes)
-    report['projection'] = projection
-    report['issues'].extend(projection['issues'])
-    if classification['level'] == 'none':
-        report['issues'].append({'code': 'scenario-capability-none', 'field': 'scenario_id', 'kind': 'implementation-gap',
-                                 'message': 'No runnable workload for Antithesis: ' + str(classification['reason']) + '.'})
-    if report['issues'] or resolved is None:
-        return report
-    target = scenario.target.get('implementation')
-    try:
-        curated.add_victims(files, resolved, version_binding, {target})
-    except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
-        report['issues'].append({'code': 'workload-source-contract-changed', 'field': 'scenario_id', 'kind': 'implementation-gap',
-                                 'message': 'The curated victim recipe could not be attached: ' + str(exc)})
-        return report
-    compose = yaml.safe_load(files[COMPOSE])
-    runtime = runtime_metadata(scenario, nodes, projection, version_binding, compose)
-    mounts = ['dwarf-workload-evidence:/evidence']
+def _attach_mounts_and_networks(runtime, compose):
+    mounts, networks, depends = [], set(), {}
     for record in runtime['nodes']:
         service = record['name']
         volume = STATE_VOLUMES.get(service) if record['impl'] == 'cardano-node' else EVIDENCE_VOLUMES.get(service)
         if volume and volume in compose['volumes']:
             mounts.append(volume + ':/inputs/' + service + ':ro')
-    depends = {victim: {'condition': 'service_healthy'} for victim in projection['victims']}
-    depends['sidecar'] = {'condition': 'service_started'}
-    # Join every network a mapped service lives on (amaru-consumer sits on its own).
-    networks = set()
-    for record in runtime['nodes']:
-        declared = compose['services'].get(record['name'], {}).get('networks')
+        declared = compose['services'].get(service, {}).get('networks')
         if isinstance(declared, dict):
             networks.update(declared)
         elif isinstance(declared, list):
             networks.update(str(n) for n in declared)
     networks -= {'default'}
+    return mounts, networks, depends
+
+
+def _rig_mounts(runtime):
+    mounts = []
+    for record in runtime['nodes']:
+        if record['impl'] == 'cardano-node':
+            mounts.append(record['id'] + '-state:/inputs/' + record['id'] + ':ro')
+        else:
+            mounts.append(record['id'] + '-evidence:/inputs/' + record['id'] + ':ro')
+            mounts.append(record['id'] + '-state:/inputs/' + record['id'] + '-state:ro')
+    return mounts
+
+
+def bind_generated_workload(files, scenario, version_binding, classification, *, devnet, rendered=None, resolved=None):
+    """Attach ``dwarf-workload`` to the scenario's rendered rig (or the attached
+    control rig) and ship the package files it needs."""
+    if scenario.id == curated.SCENARIO:
+        raise ValueError('curated scenario uses bind_workload')
+    attached = devnet['shape'] == 'attach'
+    report = {'status': 'recorded', 'source': WORKLOAD_SERVICE, 'scenario_id': scenario.id, 'runtime_verified': False,
+              'targets': [], 'issues': [], 'template': 'mixed-control-v1' if attached else 'scenario-rig',
+              'projection': None, 'runtime_metadata': None, 'image_contents': [], 'evidence_volumes': {},
+              'rig': None if attached else {'shape': devnet['shape'], 'source_revision': (rendered or {}).get('source_revision')}}
+    report['issues'].extend(devnet['issues'])
+    if classification['level'] == 'none' and classification['reason'] not in {i['code'] for i in devnet['issues']}:
+        report['issues'].append({'code': 'scenario-capability-none', 'field': 'scenario_id', 'kind': 'implementation-gap',
+                                 'message': 'No runnable workload for Antithesis: ' + str(classification['reason']) + '.'})
+    if report['issues'] or (attached and resolved is None) or (not attached and rendered is None):
+        return report
+    if attached:
+        projection = attach_projection(devnet)
+        report['projection'] = projection
+        try:
+            curated.add_victims(files, resolved, version_binding, {devnet['target']})
+        except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
+            report['issues'].append({'code': 'workload-source-contract-changed', 'field': 'scenario_id', 'kind': 'implementation-gap',
+                                     'message': 'The curated victim recipe could not be attached: ' + str(exc)})
+            return report
+        services, targets = projection['services'], list(projection['victims'])
+    else:
+        services, targets = dict(rendered['services']), list(devnet['faultable'])
+    compose = yaml.safe_load(files[COMPOSE])
+    runtime = runtime_metadata(scenario, devnet, services, version_binding, compose, attached=attached)
+    networks = set()
+    if attached:
+        mounts, networks, _ = _attach_mounts_and_networks(runtime, compose)
+        depends = {victim: {'condition': 'service_healthy'} for victim in targets}
+        depends['sidecar'] = {'condition': 'service_started'}
+        timeout = READY_TIMEOUT_AMARU if runtime['amaru_nodes'] else READY_TIMEOUT_CARDANO
+    else:
+        mounts = _rig_mounts(runtime)
+        depends = {record['name']: {'condition': 'service_started'} for record in runtime['nodes']}
+        depends['configurator'] = {'condition': 'service_completed_successfully'}
+        timeout = READY_TIMEOUT_AMARU if runtime['amaru_nodes'] else READY_TIMEOUT_CARDANO
+        report['evidence_volumes'] = {record['name']: record['name'] + '-evidence' for record in runtime['nodes']}
+    mounts.append('dwarf-workload-evidence:/evidence')
     compose['services'][WORKLOAD_SERVICE] = {
         'build': {'context': './dwarf-workload'}, 'platform': 'linux/amd64',
         'container_name': WORKLOAD_SERVICE, 'hostname': WORKLOAD_SERVICE + '.example', 'init': True, 'user': '0:0',
-        'environment': {'DWARF_ANTITHESIS_PACKAGE_DIR': '/opt/dwarf/package', 'DWARF_ANTITHESIS_READY_TIMEOUT': '900'},
+        'environment': {'DWARF_ANTITHESIS_PACKAGE_DIR': '/opt/dwarf/package', 'DWARF_ANTITHESIS_READY_TIMEOUT': timeout},
         'labels': {'com.antithesis.exclude_from_faults': topology.FAULT_EXCLUSION, 'com.dwarf.build-network': 'none'},
         'volumes': mounts, 'depends_on': depends}
     if networks:
@@ -243,17 +229,13 @@ def bind_generated_workload(files, scenario, resolved, version_binding, classifi
                PACKAGE_PREFIX + 'package/expected-revision': expected_revision() + '\n'}
     files.update(_asset_files())
     files.update(package)
-    report.update(status='applied', targets=list(projection['victims']), runtime_metadata=runtime,
+    report.update(status='applied', targets=targets, runtime_metadata=runtime,
                   evidence='emitted-configuration', base_image='dwarf/controller:current',
                   image_contents=[{'path': name, 'sha256': _sha(files[name])} for name in sorted(files) if name.startswith(PACKAGE_PREFIX)],
                   test_commands=['v1/dwarf/singleton_driver_scenario.py', 'v1/dwarf/anytime_health.py'],
-                  setup_gate='Entrypoint runs prepare, waits for every mapped node (TCP + Cardano socket), emits setup_complete, then blocks on /status/go.',
-                  limitations=['Node observation uses mounted sockets and victim log files; connection state is unavailable inside the package.',
+                  setup_gate='Entrypoint runs prepare, waits for every node (TCP, Cardano socket + real block, Amaru bootstrap sentinel), '
+                             'emits setup_complete, then blocks on /status/go.',
+                  limitations=['Node observation uses mounted sockets and node log files; connection state is unavailable inside the package.',
                                'Primitives marked unsupported in the capability matrix are skipped with a gap event.',
                                'Workload build, node bootstrap and Antithesis execution remain unverified until the first real run.'])
     return report
-
-
-def resolve_generated_topology(scenario):
-    return topology.resolve_topology({'source': 'new', 'name': 'Scenario supporting harness',
-                                      'template_id': TEMPLATE, 'cardano_count': 2, 'amaru_count': 2, 'network_magic': 42})
