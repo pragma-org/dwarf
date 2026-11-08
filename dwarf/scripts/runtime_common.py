@@ -24,25 +24,52 @@ class RuntimeConfig:
     fallback_range: tuple[str, str]
 
 
-PROFILE_A_CONFIG = RuntimeConfig(
-    runtime_root=Path("/opt/dwarf/cardano-profiles/profile-a-haskell-peersharing-disabled"),
-    env_root=Path("/opt/dwarf/cardano-profiles/profile-a-haskell-peersharing-disabled/env"),
-    session="cardano-profile-a",
-    cardano_cli=Path("/home/dwarf/.local/bin/cardano-cli"),
-    cardano_node=Path("/home/dwarf/.local/bin/cardano-node"),
-    network_magic="42",
-    blockfetch_bin="/home/dwarf/dwarf-fw/targets/amaru/target/release/dwarf-amaru-runtime-blockfetch",
-    chainsync_bin="/home/dwarf/amaru-verification/target/debug/amaru",
-    log_paths=(
-        Path("/opt/dwarf/cardano-profiles/profile-a-haskell-peersharing-disabled/logs/node3/stdout.log"),
-        Path("/opt/dwarf/cardano-profiles/profile-a-haskell-peersharing-disabled/logs/node2/stdout.log"),
-        Path("/opt/dwarf/cardano-profiles/profile-a-haskell-peersharing-disabled/logs/node1/stdout.log"),
-    ),
-    fallback_range=(
-        "4318100.9166aa0afdf7fc09ff1504b987371f62b24022b81726a7cff09165d78069e50b",
-        "4318130.f71200f374e97287835e573fadfa9a051bbb7dd40f85f746973f28bed5d43fb0",
-    ),
-)
+_LEGACY_PROFILES_ROOT = Path("/opt/dwarf/cardano-profiles")
+_LEGACY_BIN = Path("/home/dwarf/.local/bin")
+
+
+def _resolve_binary(name: str) -> Path:
+    legacy = _LEGACY_BIN / name
+    if legacy.exists():
+        return legacy
+    found = shutil.which(name)
+    return Path(found) if found else legacy
+
+
+def resolve_profile_config(profile_id: str, *, legacy_root: Path | None = None) -> RuntimeConfig:
+    """Build the helper config for a profile against whichever layout exists.
+
+    The host-devnet era kept profiles under ``/opt/dwarf/cardano-profiles/<id>`` with binaries in
+    ``~/.local/bin``; a dashboard install keeps the profile runtime under the controller state
+    (``profile_manager.profiles.runtime_root``) with ``cardano-cli`` on PATH. Legacy wins when present.
+    """
+    legacy = Path(legacy_root) if legacy_root is not None else _LEGACY_PROFILES_ROOT / profile_id
+    runtime_root = legacy
+    if not legacy.exists():
+        try:
+            from profile_manager import profiles as _profiles
+
+            runtime_root = Path(_profiles.runtime_root(profile_id))
+        except Exception:  # noqa: BLE001 - stay on the legacy path when the package is unavailable
+            runtime_root = legacy
+    return RuntimeConfig(
+        runtime_root=runtime_root,
+        env_root=runtime_root / "env",
+        session="cardano-profile-a",
+        cardano_cli=_resolve_binary("cardano-cli"),
+        cardano_node=_resolve_binary("cardano-node"),
+        network_magic="42",
+        blockfetch_bin="/home/dwarf/dwarf-fw/targets/amaru/target/release/dwarf-amaru-runtime-blockfetch",
+        chainsync_bin="/home/dwarf/amaru-verification/target/debug/amaru",
+        log_paths=tuple(runtime_root / "logs" / node / "stdout.log" for node in ("node3", "node2", "node1")),
+        fallback_range=(
+            "4318100.9166aa0afdf7fc09ff1504b987371f62b24022b81726a7cff09165d78069e50b",
+            "4318130.f71200f374e97287835e573fadfa9a051bbb7dd40f85f746973f28bed5d43fb0",
+        ),
+    )
+
+
+PROFILE_A_CONFIG = resolve_profile_config("profile-a-haskell-peersharing-disabled")
 
 
 def run(args, *, timeout=60, check=True, text=True, capture_output=True, env=None):
