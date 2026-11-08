@@ -142,8 +142,12 @@ def test_fresh_deploy_pulls_missing_target_before_starting_containers(tmp_path):
     assert calls.index(f"image inspect {CARDANO}", calls.index(f"pull {CARDANO}")) < up
 
 
+LOCALTX_HELPER = "ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:ae1938a2ebdefa9cdf340021774e3a2551afd2da48d855fb2ba829cede13fb34"
+
+
 def test_cached_targets_are_not_pulled_again(tmp_path):
-    result, calls = run_delivery(tmp_path, present=[AMARU, CARDANO])
+    # targets and the pinned local-tx-submission helper (F89c) are all present: nothing is pulled
+    result, calls = run_delivery(tmp_path, present=[AMARU, CARDANO, LOCALTX_HELPER])
     assert result.returncode == 0, result.stderr
     assert not any(call.startswith("pull ") for call in calls)
 
