@@ -20,7 +20,7 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "network": "preview",
+    "network": "testnet_42",
     "nodes": [
       {
         "id": "node1",

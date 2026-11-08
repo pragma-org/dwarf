@@ -184,3 +184,41 @@ def test_port_plan_still_skips_a_resolved_plan_docker_substrate():
     ], "topology": {"edges": []}}}
     plan = port.plan_port(document)
     assert plan["status"] == "skip" and plan["reason"] == "already resolved-plan"
+
+
+# --- part 4: move single-host public-network smoke substrates to the private devnet ------------
+
+
+def _preview_document(*, magic=42, hosts=False, title="Compose a preview substrate and record a checkpoint"):
+    substrate = {"compose_mode": "docker", "network": "preview", "nodes": [
+        {"id": "node1", "impl": "cardano-node", "version": "resolved-plan", "identity_binding": "resolved-plan", "role": "honest"},
+        {"id": "node2", "impl": "cardano-node", "version": "resolved-plan", "identity_binding": "resolved-plan", "role": "honest"},
+    ], "topology": {"edges": [{"from": "node1", "to": "node2"}, {"from": "node2", "to": "node1"}]}}
+    if hosts:
+        substrate["host_strategy"] = "explicit"; substrate["hosts"] = [{"id": "h1"}]
+    return {"id": "x", "title": title, "substrate": substrate,
+            "load": [{"primitive": "runtime_multi_node_observation", "network_magic": magic},
+                     {"primitive": "runtime_other", "testnet_magic": magic}]}
+
+
+def test_network_move_sets_the_private_devnet_and_its_magic():
+    plan = port.plan_network_move(_preview_document(magic=2))
+    assert plan["status"] == "port"
+    doc = plan["document"]
+    assert doc["substrate"]["network"] == "testnet_42"
+    assert [x.get("network_magic", x.get("testnet_magic")) for x in doc["load"]] == [42, 42]
+    assert doc["title"] == "Compose a private devnet substrate and record a checkpoint"
+    assert "substrate.network: preview -> testnet_42" in plan["changes"]
+
+
+def test_network_move_keeps_already_matching_magic_and_reports_only_real_changes():
+    plan = port.plan_network_move(_preview_document(magic=42, title="Plain title"))
+    assert plan["changes"] == ["substrate.network: preview -> testnet_42"]
+    assert plan["document"]["title"] == "Plain title"
+
+
+def test_network_move_skips_multihost_and_non_public_substrates():
+    assert port.plan_network_move(_preview_document(hosts=True))["status"] == "skip"
+    doc = _preview_document(); doc["substrate"]["network"] = "testnet_42"
+    assert port.plan_network_move(doc)["status"] == "skip"
+    assert port.plan_network_move({"id": "y"})["status"] == "skip"

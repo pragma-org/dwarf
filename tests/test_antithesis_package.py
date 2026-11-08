@@ -416,7 +416,7 @@ def test_amaru_only_scenario_starts_its_supporting_producer_and_amaru(monkeypatc
 
 
 def test_public_network_scenario_is_refused_without_a_compose():
-    result = generate(request(scenario_id='runtime-substrate-txsubmission-window-pressure-example-smoke'))
+    result = generate(request(scenario_id='runtime-substrate-multihost-honest-baseline-example-smoke'))
     assert result['capabilities']['level'] == 'none' and result['capabilities']['reason'] == 'public-network'
     assert result['workload_binding']['status'] == 'recorded' and result['workload_binding']['source'] == 'dwarf-workload'
     assert 'environment/docker-compose.yaml' not in result['files']

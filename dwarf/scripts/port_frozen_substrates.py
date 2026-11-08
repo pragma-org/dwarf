@@ -106,12 +106,52 @@ def _render(document: dict[str, Any], original_text: str) -> str:
     return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
 
 
-def port_files(paths: list[Path], *, apply: bool, max_nodes: int = DEFAULT_MAX_NODES) -> dict[str, Any]:
+PUBLIC_NETWORKS = {"preview", "preprod", "mainnet"}
+PRIVATE_DEVNET = "testnet_42"
+PRIVATE_DEVNET_MAGIC = 42
+
+
+def plan_network_move(document: dict[str, Any]) -> dict[str, Any]:
+    """Move a single-host public-network smoke substrate onto the private devnet.
+
+    A substrate on ``preview`` starts cold nodes that must download the whole public chain
+    before they can serve tip, peer or transaction-submission queries, which a smoke window
+    never allows. The private devnet starts in seconds and is the same on every run. The
+    scenario's own node queries are aligned with the devnet magic; explicit multi-host
+    substrates are left alone. Returns the same shape as :func:`plan_port`.
+    """
+    substrate = document.get("substrate")
+    if not isinstance(substrate, dict):
+        return {"status": "skip", "reason": "no substrate", "changes": [], "document": document}
+    network = str(substrate.get("network") or "")
+    if network not in PUBLIC_NETWORKS:
+        return {"status": "skip", "reason": "not a public network", "changes": [], "document": document}
+    if substrate.get("host_strategy") == "explicit" or substrate.get("hosts"):
+        return {"status": "skip", "reason": "explicit multi-host substrate", "changes": [], "document": document}
+    moved = json.loads(json.dumps(document))
+    changes = [f"substrate.network: {network} -> {PRIVATE_DEVNET}"]
+    moved["substrate"]["network"] = PRIVATE_DEVNET
+    for section in ("setup", "load", "probes", "assertions", "teardown"):
+        for index, step in enumerate(moved.get(section) or []):
+            if not isinstance(step, dict):
+                continue
+            for key in ("network_magic", "testnet_magic"):
+                if key in step and step[key] != PRIVATE_DEVNET_MAGIC:
+                    changes.append(f"{section}[{index}].{key}: {step[key]} -> {PRIVATE_DEVNET_MAGIC}")
+                    step[key] = PRIVATE_DEVNET_MAGIC
+    title = moved.get("title")
+    if isinstance(title, str) and f"a {network} substrate" in title:
+        moved["title"] = title.replace(f"a {network} substrate", "a private devnet substrate")
+        changes.append("title: public network wording -> private devnet")
+    return {"status": "port", "reason": None, "changes": changes, "document": moved}
+
+
+def port_files(paths: list[Path], *, apply: bool, max_nodes: int = DEFAULT_MAX_NODES, planner=None) -> dict[str, Any]:
     rows = []
     for path in paths:
         text = path.read_text(encoding="utf-8")
         document = json.loads(text)
-        plan = plan_port(document, max_nodes=max_nodes)
+        plan = planner(document) if planner is not None else plan_port(document, max_nodes=max_nodes)
         row = {"path": str(path), "status": plan["status"], "reason": plan["reason"], "changes": plan["changes"]}
         if plan["status"] == "port" and apply:
             path.write_text(_render(plan["document"], text), encoding="utf-8")
@@ -130,14 +170,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--apply", action="store_true", help="write the ported files (default: dry run)")
     parser.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
     parser.add_argument("--report", type=Path, help="write the JSON report here")
+    parser.add_argument("--move-public-to-devnet", action="store_true",
+                        help="move single-host public-network substrates to the private devnet instead of porting bindings")
     parser.add_argument("files", nargs="*", type=Path, help="scenario files (default: every catalog scenario)")
     args = parser.parse_args(argv)
     paths = args.files or sorted(SCENARIOS_DIR.glob("*.yaml"))
-    report = port_files(paths, apply=args.apply, max_nodes=args.max_nodes)
+    report = port_files(paths, apply=args.apply, max_nodes=args.max_nodes,
+                        planner=plan_network_move if args.move_public_to_devnet else None)
     for row in report["rows"]:
         if row["status"] == "port":
             print(f"{'PORTED' if args.apply else 'PORT  '} {Path(row['path']).name}: {len(row['changes'])} changes")
-        elif row["reason"] not in {"no substrate", "already resolved-plan"}:
+        elif row["reason"] not in {"no substrate", "already resolved-plan", "not a public network"}:
             print(f"SKIP   {Path(row['path']).name}: {row['reason']}")
     print(json.dumps(report["summary"]))
     if args.report:

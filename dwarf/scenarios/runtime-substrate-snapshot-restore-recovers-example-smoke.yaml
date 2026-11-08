@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "runtime-substrate-snapshot-restore-recovers-example-smoke",
-  "title": "Compose a preview substrate, restore a captured node snapshot, and verify recovery",
+  "title": "Compose a private devnet substrate, restore a captured node snapshot, and verify recovery",
   "authors": [
     "dwarf"
   ],
@@ -17,7 +17,7 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "network": "preview",
+    "network": "testnet_42",
     "nodes": [
       {
         "id": "node1",
@@ -85,7 +85,7 @@
       ],
       "observation_window_seconds": 10,
       "sample_interval_seconds": 1,
-      "network_magic": 2,
+      "network_magic": 42,
       "observation_primitives": [
         "tip_state",
         "connection_state"

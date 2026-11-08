@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "runtime-substrate-checkpoint-capture-clean-example-smoke",
-  "title": "Compose a preview substrate and record a full substrate checkpoint",
+  "title": "Compose a private devnet substrate and record a full substrate checkpoint",
   "authors": [
     "dwarf"
   ],
@@ -16,7 +16,7 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "network": "preview",
+    "network": "testnet_42",
     "nodes": [
       {
         "id": "node1",

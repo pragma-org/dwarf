@@ -38,3 +38,36 @@ def test_profile_config_keeps_the_legacy_layout_when_it_exists(tmp_path, monkeyp
 def test_module_constant_is_built_by_the_resolver():
     assert isinstance(rc.PROFILE_A_CONFIG, rc.RuntimeConfig)
     assert rc.PROFILE_A_CONFIG.session == "cardano-profile-a"
+
+
+def test_long_socket_paths_are_reached_through_a_short_link(tmp_path, monkeypatch):
+    """F94: a unix socket path may hold at most 107 bytes; the controller-side profile runtime path
+    is longer, so cardano-cli failed with ``unixPathMax 108``. Long paths go through a short link."""
+    deep = tmp_path / ("d" * 60) / ("e" * 60) / "socket" / "node1"
+    deep.mkdir(parents=True)
+    target = deep / "sock"
+    target.write_text("", encoding="utf-8")
+    import tempfile; monkeypatch.setattr(rc, "_SHORT_SOCKET_DIR", Path(tempfile.mkdtemp(prefix="ds", dir="/tmp")))
+    short = rc.short_socket_path(target)
+    assert len(str(short)) < 100 and short.resolve() == target.resolve()
+    assert rc.short_socket_path(tmp_path / "x.sock") == tmp_path / "x.sock"  # short paths unchanged
+
+
+def test_query_tip_passes_the_short_link_to_cardano_cli(tmp_path, monkeypatch):
+    root = tmp_path / ("r" * 70) / ("q" * 40)
+    sock = root / "socket" / "node1" / "sock"
+    sock.parent.mkdir(parents=True); sock.write_text("", encoding="utf-8")
+    import tempfile; monkeypatch.setattr(rc, "_SHORT_SOCKET_DIR", Path(tempfile.mkdtemp(prefix="ds", dir="/tmp")))
+    seen = {}
+
+    def fake_run(args, **kwargs):
+        seen["socket"] = kwargs["env"]["CARDANO_NODE_SOCKET_PATH"]
+        from types import SimpleNamespace
+        return SimpleNamespace(returncode=0, stdout='{"slot": 5, "block": 2, "syncProgress": "100.00", "hash": "ab"}', stderr="")
+
+    monkeypatch.setattr(rc, "run", fake_run)
+    config = rc.RuntimeConfig(runtime_root=root, env_root=root / "env", session="s", cardano_cli=Path("/bin/true"),
+                              cardano_node=Path("/bin/true"), network_magic="42", blockfetch_bin="", chainsync_bin="",
+                              log_paths=(), fallback_range=("", ""))
+    assert rc.query_tip(config, "node1")["slot"] == 5
+    assert len(seen["socket"]) < 100

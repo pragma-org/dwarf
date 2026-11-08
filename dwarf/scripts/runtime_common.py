@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -192,6 +193,33 @@ def start_session_with_details(config: RuntimeConfig) -> dict:
     return details
 
 
+_SHORT_SOCKET_DIR = Path("/tmp/dwarf-sock")
+_UNIX_SOCKET_PATH_LIMIT = 100  # sun_path holds 108 bytes including the terminator; keep a margin
+
+
+def short_socket_path(path: Path) -> Path:
+    """Return a path short enough for a unix socket connect, linking to ``path`` when needed (F94).
+
+    The kernel limits the path string given to ``connect``; it resolves a symlink after that check,
+    so a short link to a deeply nested socket works for any client.
+    """
+    path = Path(path)
+    if len(str(path)) <= _UNIX_SOCKET_PATH_LIMIT:
+        return path
+    import hashlib
+    _SHORT_SOCKET_DIR.mkdir(parents=True, exist_ok=True)
+    link = _SHORT_SOCKET_DIR / (hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16] + ".sock")
+    try:
+        if link.is_symlink() and Path(os.readlink(link)) == path:
+            return link
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        link.symlink_to(path)
+    except OSError:
+        return path
+    return link
+
+
 def query_tip(config: RuntimeConfig, node: str):
     socket_candidates = (
         config.runtime_root / "socket" / f"{node}.sock",
@@ -212,7 +240,7 @@ def query_tip(config: RuntimeConfig, node: str):
 
     last_error = None
     for socket_path in existing_candidates:
-        env = {"CARDANO_NODE_SOCKET_PATH": str(socket_path)}
+        env = {"CARDANO_NODE_SOCKET_PATH": str(short_socket_path(socket_path))}
         result = run(
             [str(config.cardano_cli), "query", "tip", "--testnet-magic", config.network_magic],
             timeout=15,
