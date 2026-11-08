@@ -76,40 +76,6 @@ def _tip_query_ok(*, runtime_metadata_path: Path, node_id: str, metadata: dict) 
     return bool(sample.get("ok"))
 
 
-def run_submit_probe(config: dict) -> dict:
-    runtime_metadata_path = Path(config["runtime_metadata_path"])
-    metadata = _load_metadata(runtime_metadata_path)
-    fixture = _load_fixture(str(config["probe_case"]))
-    fixture_bytes = bytes.fromhex(str(fixture["tx_cbor_hex"]))
-    expected = dict(fixture.get("expected") or {})
-    target_node = str(config["target_node"])
-    observer_node = str(config.get("observer_node") or target_node)
-
-    result = {
-        "fixture_id": str(fixture.get("fixture_id") or config["probe_case"]),
-        "fixture_path": str(fixture["_fixture_path"]),
-        "fixture_sha256": _sha256_hex(fixture_bytes),
-        "submission_outcome": str(expected.get("submission_outcome") or "submitted_fixture_contract"),
-        "validation_tag": str(config.get("is_valid_flag_override") or expected.get("validation_tag") or ""),
-        "mempool_admission_decision": str(expected.get("mempool_admission_decision") or expected.get("admission_decision") or ""),
-        "admission_decision": str(expected.get("admission_decision") or ""),
-        "rejection_reason": str(expected.get("rejection_reason") or ""),
-        "validation_tag_mismatch_detected": bool(expected.get("validation_tag_mismatch_detected", False)),
-        "exunits_limit_enforced": bool(expected.get("exunits_limit_enforced", False)),
-        "observed_exunits": int(config.get("ex_units_override") or expected.get("observed_exunits", 0) or 0),
-        "max_tx_exunits": int(expected.get("max_tx_exunits", 0) or 0),
-        "retry_behavior_matches_spec": bool(expected.get("retry_behavior_matches_spec", False)),
-        "retry_count_observed": int(expected.get("retry_count_observed", 0) or 0),
-        "retry_budget": int(expected.get("retry_budget", 0) or 0),
-        "terminal_outcome_recorded": bool(expected.get("terminal_outcome_recorded", False)),
-        "trace_reasons": list(expected.get("trace_reasons") or []),
-        "target_node_healthy": _node_responsive(runtime_metadata_path, target_node),
-        "observer_node_responsive": _node_responsive(runtime_metadata_path, observer_node),
-        "observer_tip_query_ok": _tip_query_ok(runtime_metadata_path=runtime_metadata_path, node_id=observer_node, metadata=metadata),
-    }
-    return result
-
-
 def run_differential_probe(config: dict) -> dict:
     runtime_metadata_path = Path(config["runtime_metadata_path"])
     metadata = _load_metadata(runtime_metadata_path)
@@ -137,12 +103,12 @@ def run_differential_probe(config: dict) -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
-    parser.add_argument("--mode", choices=["submit", "differential"], required=True)
+    parser.add_argument("--mode", choices=["differential"], required=True)
     args = parser.parse_args(argv)
     config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     output_dir = Path(config["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
-    result = run_submit_probe(config) if args.mode == "submit" else run_differential_probe(config)
+    result = run_differential_probe(config)
     report = {
         "mode": args.mode,
         "probe_case": str(config["probe_case"]),

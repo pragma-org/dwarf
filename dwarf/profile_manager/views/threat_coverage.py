@@ -116,10 +116,6 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-016",),
         "risks": ("RR-016", "RR-031"),
     },
-    "runtime-substrate-plutus-phase2-exunits-cost-model-string-undercharge-mixed-amaru": {
-        "threats": ("TM-016", "TM-036"),
-        "risks": ("RR-016", "RR-031"),
-    },
     "runtime-substrate-mempool-failure-containment-mixed-amaru": {
         "threats": ("TM-012",),
         "risks": ("RR-012",),

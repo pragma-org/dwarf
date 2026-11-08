@@ -6663,11 +6663,6 @@ class _RuntimePlutusPhase2ProbePrimitive(LoadPrimitive):
         )
 
 
-class RuntimePlutusPhase2SubmitProbe(_RuntimePlutusPhase2ProbePrimitive):
-    primitive_name = "runtime_plutus_phase2_submit_probe"
-    mode_name = "submit"
-
-
 class RuntimePlutusPhase2DifferentialObservation(_RuntimePlutusPhase2ProbePrimitive):
     primitive_name = "runtime_plutus_phase2_differential_observation"
     mode_name = "differential"
@@ -21889,112 +21884,6 @@ class ValidationPathParityPreserved(AssertionPrimitive):
                 "completed": 1 if latest is not None else 0,
                 "parity_match": parity_match,
                 "mismatched_validation_steps": mismatched_validation_steps,
-            },
-            "data_points_used": [payload] if latest is not None else [],
-            "result": result,
-            "note": note,
-        }
-
-
-class PlutusPhase2IsValidMismatchRejected(AssertionPrimitive):
-    """Pass iff a mis-flagged IsValid witness is rejected with ValidationTagMismatch semantics."""
-
-    def evaluate(self, handle):
-        source_primitive = str(self.params.get("source_primitive") or "runtime_plutus_phase2_submit_probe")
-        latest, payload = _latest_completed_payload(handle, phase="load", primitive=source_primitive)
-        result_body = payload.get("result") or {}
-        admission_decision = str(result_body.get("admission_decision") or "").lower()
-        rejection_reason = str(result_body.get("rejection_reason") or "")
-        validation_tag_mismatch_detected = bool(result_body.get("validation_tag_mismatch_detected", False))
-        enough = (
-            latest is not None
-            and payload.get("outcome") == "ok"
-            and admission_decision == "rejected"
-            and rejection_reason == "ValidationTagMismatch"
-            and validation_tag_mismatch_detected
-        )
-        result = "pass" if enough else "fail"
-        note = None if enough else "expected phase-2 IsValid mismatch to be rejected with ValidationTagMismatch"
-        return {
-            "primitive": "plutus_phase2_isvalid_mismatch_rejected",
-            "params": dict(self.params),
-            "evaluated_value": {
-                "completed": 1 if latest is not None else 0,
-                "admission_decision": admission_decision,
-                "rejection_reason": rejection_reason,
-                "validation_tag_mismatch_detected": validation_tag_mismatch_detected,
-            },
-            "data_points_used": [payload] if latest is not None else [],
-            "result": result,
-            "note": note,
-        }
-
-
-class PlutusPhase2ExUnitsOverrunRejected(AssertionPrimitive):
-    """Pass iff phase-2 admission rejects transactions whose ExUnits exceed the configured limit."""
-
-    def evaluate(self, handle):
-        source_primitive = str(self.params.get("source_primitive") or "runtime_plutus_phase2_submit_probe")
-        latest, payload = _latest_completed_payload(handle, phase="load", primitive=source_primitive)
-        result_body = payload.get("result") or {}
-        admission_decision = str(result_body.get("admission_decision") or "").lower()
-        exunits_limit_enforced = bool(result_body.get("exunits_limit_enforced", False))
-        observed_exunits = int(result_body.get("observed_exunits", 0) or 0)
-        max_tx_exunits = int(result_body.get("max_tx_exunits", 0) or 0)
-        enough = (
-            latest is not None
-            and payload.get("outcome") == "ok"
-            and admission_decision == "rejected"
-            and exunits_limit_enforced
-            and observed_exunits > max_tx_exunits >= 1
-        )
-        result = "pass" if enough else "fail"
-        note = None if enough else "expected phase-2 ExUnits overrun to be rejected on mempool admission"
-        return {
-            "primitive": "plutus_phase2_exunits_overrun_rejected",
-            "params": dict(self.params),
-            "evaluated_value": {
-                "completed": 1 if latest is not None else 0,
-                "admission_decision": admission_decision,
-                "exunits_limit_enforced": exunits_limit_enforced,
-                "observed_exunits": observed_exunits,
-                "max_tx_exunits": max_tx_exunits,
-            },
-            "data_points_used": [payload] if latest is not None else [],
-            "result": result,
-            "note": note,
-        }
-
-
-class PlutusPhase2DoNotInterveneRetryClean(AssertionPrimitive):
-    """Pass iff the DoNotIntervene retry path stays inside the configured retry budget and matches spec."""
-
-    def evaluate(self, handle):
-        source_primitive = str(self.params.get("source_primitive") or "runtime_plutus_phase2_submit_probe")
-        latest, payload = _latest_completed_payload(handle, phase="load", primitive=source_primitive)
-        result_body = payload.get("result") or {}
-        retry_behavior_matches_spec = bool(result_body.get("retry_behavior_matches_spec", False))
-        retry_count_observed = int(result_body.get("retry_count_observed", 2**31 - 1) or 0)
-        retry_budget = int(result_body.get("retry_budget", 0) or 0)
-        terminal_outcome_recorded = bool(result_body.get("terminal_outcome_recorded", False))
-        enough = (
-            latest is not None
-            and payload.get("outcome") == "ok"
-            and retry_behavior_matches_spec
-            and terminal_outcome_recorded
-            and retry_count_observed <= retry_budget
-        )
-        result = "pass" if enough else "fail"
-        note = None if enough else "expected DoNotIntervene retry behavior to remain within the configured budget"
-        return {
-            "primitive": "plutus_phase2_donotintervene_retry_clean",
-            "params": dict(self.params),
-            "evaluated_value": {
-                "completed": 1 if latest is not None else 0,
-                "retry_behavior_matches_spec": retry_behavior_matches_spec,
-                "retry_count_observed": retry_count_observed,
-                "retry_budget": retry_budget,
-                "terminal_outcome_recorded": terminal_outcome_recorded,
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,
