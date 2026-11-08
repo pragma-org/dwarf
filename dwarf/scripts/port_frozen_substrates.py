@@ -51,7 +51,17 @@ def plan_port(document: dict[str, Any], *, max_nodes: int = DEFAULT_MAX_NODES) -
     nodes = substrate["nodes"]
     bindings = {str(node.get("identity_binding") or "frozen") for node in nodes}
     if bindings == {"resolved-plan"}:
-        return {"status": "skip", "reason": "already resolved-plan", "changes": [], "document": document}
+        # bindings are already catalog-resolved; only a host compose mode (unrunnable on a dashboard
+        # install, which has no node binaries) is left to move
+        previous_mode = str(substrate.get("compose_mode") or "host")
+        if previous_mode == "docker":
+            return {"status": "skip", "reason": "already resolved-plan", "changes": [], "document": document}
+        if substrate.get("host_strategy") == "explicit" or substrate.get("hosts"):
+            return {"status": "skip", "reason": "explicit multi-host substrate", "changes": [], "document": document}
+        ported = json.loads(json.dumps(document))
+        ported["substrate"]["compose_mode"] = "docker"
+        return {"status": "port", "reason": None,
+                "changes": [f"substrate.compose_mode: {previous_mode} -> docker"], "document": ported}
     if bindings != {"frozen"}:
         return {"status": "skip", "reason": "mixed node bindings", "changes": [], "document": document}
     if len(nodes) > max_nodes:

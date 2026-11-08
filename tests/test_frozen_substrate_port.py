@@ -123,10 +123,10 @@ def test_port_plan_refuses_what_the_resolver_cannot_express(nodes, reason):
 
 
 def test_port_plan_skips_already_portable_and_large_substrates():
-    portable = _frozen_document(_frozen_nodes())
+    portable = _frozen_document(_frozen_nodes(), compose_mode="docker")
     for node in portable["substrate"]["nodes"]:
         node["identity_binding"] = "resolved-plan"
-    assert port.plan_port(portable)["status"] == "skip"
+    assert port.plan_port(portable)["status"] == "skip"  # resolved-plan + docker: nothing left to port
     large_nodes = [{"id": f"node{i}", "impl": "cardano-node", "version": "10.7.1", "role": "honest"} for i in range(1, 21)]
     plan = port.plan_port(_frozen_document(large_nodes), max_nodes=19)
     assert plan["status"] == "skip" and "20 nodes" in plan["reason"]
@@ -160,3 +160,27 @@ def test_port_accepts_future_amaru_release_labels():
     assert plan["status"] == "port"
     assert plan["document"]["substrate"]["nodes"][2]["version"] == "11.2.20270115"
     assert port.plan_port(_frozen_document(_frozen_nodes(amaru="0.1.2")))["status"] == "skip"
+
+
+# --- part 3: resolved-plan substrates still declaring the host compose mode --------------------
+
+
+def test_port_plan_moves_a_resolved_plan_host_substrate_to_docker_without_touching_bindings():
+    document = {"id": "x", "substrate": {"compose_mode": "host", "network": "preview", "nodes": [
+        {"id": "node1", "impl": "cardano-node", "version": "resolved-plan", "identity_binding": "resolved-plan", "role": "submitter"},
+        {"id": "node2", "impl": "amaru", "version": "resolved-plan", "identity_binding": "resolved-plan", "role": "observer"},
+    ], "topology": {"edges": []}}}
+    plan = port.plan_port(document)
+    assert plan["status"] == "port"
+    assert plan["changes"] == ["substrate.compose_mode: host -> docker"]
+    assert plan["document"]["substrate"]["compose_mode"] == "docker"
+    assert [n["identity_binding"] for n in plan["document"]["substrate"]["nodes"]] == ["resolved-plan", "resolved-plan"]
+    assert document["substrate"]["compose_mode"] == "host"  # no side effects
+
+
+def test_port_plan_still_skips_a_resolved_plan_docker_substrate():
+    document = {"id": "x", "substrate": {"compose_mode": "docker", "network": "testnet_42", "nodes": [
+        {"id": "node1", "impl": "cardano-node", "version": "resolved-plan", "identity_binding": "resolved-plan", "role": "honest"},
+    ], "topology": {"edges": []}}}
+    plan = port.plan_port(document)
+    assert plan["status"] == "skip" and plan["reason"] == "already resolved-plan"

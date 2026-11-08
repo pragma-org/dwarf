@@ -25,7 +25,7 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "compose_mode": "host",
+    "compose_mode": "docker",
     "network": "preview",
     "nodes": [
       {
