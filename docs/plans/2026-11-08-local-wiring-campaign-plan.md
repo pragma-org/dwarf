@@ -61,6 +61,13 @@ Public catalog impact: 110 scenario files change two or three fields each; the e
 - Order: `0-f53-affected` → profile-bound batches (substrates persist; each profile deployed once) → library → single-node → self-composing cardano → self-composing Amaru.
 - Ledger: `campaign-ledger.jsonl` (batch, scenario, profile, gates, prepare stages, launch id, exit code, run id, verdict, seconds); `campaign-status.json` summary; `campaign.log`.
 
+## Evidence retention and cleanup (user, 2026-11-08: "make sure the evidence/output is saved including the taps … and remove the docker containers or volumes when the scenario is validated end to end")
+
+- Every run keeps its full directory under the runs root (log, assertions, probes, `measurements/` with every tap's collector result, `report.json`, `compact-table.json`, outputs) and its run-ledger entry. The campaign additionally pulls the **signed portable bundle** of every finished run (`GET /runs/<run_id>/bundle`, produced by `runtime_bundle_export` with signature verification) and keeps a copy under `/Volumes/DevStorage/dwarf-work/bundles/campaign/`; the ledger row records the bundle path and size. Done by hand for today's five finished runs (shim pass, e2e-stock pass, profile-o workload pass 5/5, the two failing proofs) → `/Volumes/DevStorage/dwarf-work/bundles/runs/`.
+- Self-composing scenarios tear their devnet down themselves (`runtime_teardown_substrate`, `compose down --volumes --remove-orphans`; 0 leftovers on the box today). The campaign checks after each such run that no `dwarf-substrate-<run>` container, volume or network remains and removes any that does.
+- Profile runtimes are shared by their batch and **removed by the campaign when the batch is done** (dashboard topology action `remove`, confirmed by the campaign), so no profile substrate outlives the runs that needed it. At the end: `docker image prune -f` and `docker volume prune -f` on the box (dangling only).
+- Cleaned today on the box: 147 GB of Docker build cache (left by the day's image builds), 40 stale Antithesis package images (8.6 GB), dangling objects → 278 GB free → 422 GB free. **Not touched, user decision:** `controller-state/release-builds/` holds 35 GB of retained operator source builds from 11-05 (two Amaru builds at 12 GB each); their registrations and receipts reference them.
+
 ## Monitoring
 
 - A `Monitor` on `campaign.log` for `RESULT|PREPARE-FAILED|ERROR|DASHBOARD-UNREACHABLE|campaign finished`, re-armed every 30 minutes.
