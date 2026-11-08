@@ -935,6 +935,26 @@ def is_port_open(host: str, port: int) -> bool:
         return sock.connect_ex((host, port)) == 0
 
 
+def _health_endpoints(node: dict) -> list[tuple[str, int]]:
+    """Endpoints to probe for a node, most reachable first.
+
+    A container node is probed at its container endpoint (reachable from the controller on the
+    substrate network and from the host); the published loopback port is the fallback for host
+    callers. Host nodes keep the loopback probe.
+    """
+    container_ip = str(node.get("container_ip") or "")
+    container_listen = str(node.get("container_listen_address") or "")
+    if container_ip and ":" in container_listen:
+        try:
+            # a container node is probed only at its container endpoint: inside the controller
+            # the published loopback port is the controller's own loopback, never the node
+            return [(container_ip, int(container_listen.rsplit(":", 1)[1]))]
+        except ValueError:
+            pass
+    host, port_text = str(node["listen_address"]).rsplit(":", 1)
+    return [(host, int(port_text))]
+
+
 def wait_for_nodes_healthy(nodes: list[dict], *, timeout_seconds: float) -> list[dict]:
     deadline = time.time() + timeout_seconds
     statuses = [{"id": node["id"], "healthy": False, "listen_address": node["listen_address"]} for node in nodes]
@@ -942,13 +962,15 @@ def wait_for_nodes_healthy(nodes: list[dict], *, timeout_seconds: float) -> list
     while time.time() < deadline:
         all_healthy = True
         for node in nodes:
-            host, port_text = str(node["listen_address"]).rsplit(":", 1)
-            port = int(port_text)
-            port_ready = (
-                True
-                if node.get("health_probe") == "path-only"
-                else is_port_open(host, port)
-            )
+            port_ready = False
+            if node.get("health_probe") == "path-only":
+                port_ready = True
+            else:
+                for host, port in _health_endpoints(node):
+                    if is_port_open(host, port):
+                        port_ready = True
+                        by_id[node["id"]]["probed_endpoint"] = f"{host}:{port}"
+                        break
             path_ready = True
             if node.get("health_probe") == "port-only":
                 path_ready = True

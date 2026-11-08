@@ -338,3 +338,30 @@ def test_public_branch_passes_sibling_endpoints_next_to_the_upstream_relay():
     assert "access_points=_sibling_container_access_points(node, plan) + upstream_access_points" in docker_fn
     # the custom-testnet branch uses the same helper
     assert docker_fn.count("_sibling_container_access_points(node, plan)") >= 2
+
+
+# --- F86: the shared health waiter probes a container node at its container endpoint ---------
+
+def test_health_waiter_probes_the_container_endpoint_for_container_nodes(monkeypatch):
+    from scripts import runtime_substrate_common as common
+    probed = []
+
+    def fake_is_port_open(host, port):
+        probed.append((host, port))
+        return (host, port) == ("10.9.0.2", 3001)
+
+    monkeypatch.setattr(common, "is_port_open", fake_is_port_open)
+    node = {"id": "node1", "impl": "cardano-node", "listen_address": "127.0.0.1:37971",
+            "container_ip": "10.9.0.2", "container_listen_address": "node1:3001", "health_probe": "port-only"}
+    statuses = common.wait_for_nodes_healthy([node], timeout_seconds=1.0)
+    assert statuses[0]["healthy"] is True
+    assert statuses[0]["probed_endpoint"] == "10.9.0.2:3001"
+    assert probed[0] == ("10.9.0.2", 3001)
+
+
+def test_health_waiter_keeps_the_loopback_probe_for_host_nodes(monkeypatch):
+    from scripts import runtime_substrate_common as common
+    monkeypatch.setattr(common, "is_port_open", lambda host, port: (host, port) == ("127.0.0.1", 3101))
+    node = {"id": "node1", "impl": "cardano-node", "listen_address": "127.0.0.1:3101", "health_probe": "port-only"}
+    statuses = common.wait_for_nodes_healthy([node], timeout_seconds=1.0)
+    assert statuses[0]["healthy"] is True and statuses[0]["probed_endpoint"] == "127.0.0.1:3101"
