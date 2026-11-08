@@ -2,7 +2,7 @@
 
 **Goal.** Prove every registered primitive is wired and runs honestly through the local path after F53/F53b, by running the smallest catalog set that covers all 274 primitives, through the dashboard exactly as a user does.
 
-**Status.** Prepared, not started. Starts on the user's word.
+**Status.** Running since 2026-11-08 06:39Z (user: "go ahead and do that" = build the patched targets first, then run everything). 119 runs after the frozen-identity swap below.
 
 ## Scope
 
@@ -20,7 +20,25 @@
 
 - 2 need the explicit **unknown-version acknowledgement** gate (profile-g preview2 proof, cardano preview build); the driver applies it and records it.
 - **10 are blocked**: their measurement profile needs a **patched target build** that is not prepared on cardano-box — Amaru `aedfe797` + patch set `47787f15` (profile-z / zb / za), Amaru `b159172f` + `4c22d7b0` (profile-u), Amaru `d3a6dafc` + `4c22d7b0` (profile-x), cardano-node `fef83fed` + `1c52fa42` (profile-v). These 10 are the only scenarios reaching **27 primitives** (block-application sampling, canonical chain progress, cbor conformance/roundtrip, handshake/opcert/plutus case families, controlled transfers/plutus/chain-progress windows, the window marks, protocol decode cases, exact-target verification, chain-progress wait, peer-session usability). One of them is the F53 Amaru window scenario (`client-example-txsubmission-window-amaru-portable-20260918`, profile-z).
-- **Decision for the user:** (a) prepare the four patched targets once through Versions → Prepare (compiles once per target; the box did Amaru patched builds before) and keep the 10 in the campaign, or (b) run the 112 now and leave the 27 primitives as a declared gap until the patched targets exist.
+- **Decision for the user:** (a) prepare the four patched targets once and keep the 10 in the campaign, or (b) run the 112 now and leave the 27 primitives as a declared gap until the patched targets exist. **The user chose (a).**
+
+## Patched targets built (2026-11-08)
+
+- **Correction.** Versions → Prepare does not build these targets: it builds operator registrations (stock + instrumented variants from the catalog revision). A `measurement_target_mode: patched` profile is resolved by `measurement_targets.resolve_patched_*_target`, which needs a record under `state/measurement-targets/<impl>/<revision>/<patch_set>.json`. Those records are produced only by DWARF's trusted host-side builders `dwarf/scripts/build_amaru_measurement_target.py` and `build_cardano_measurement_target.py` (exact detached checkout, patch and preimage verification, pinned toolchain, static-binary check, image smoke, bootstrap-wrapper probe, record publish). The registry dir is mounted read-only into the controller, so one record serves both dashboard and controller.
+- The box had built three of the four in September (`~/work/build-amaru-0918-ns-v3`, `~/dwarf-measurement-builds/amaru-b159172-nanoseconds-v2-20260920`, `~/dwarf-builds/cardano-measurement-fef83fed-nanoseconds-v2-20260920-r3`) but the images had been pruned and the registry of this installation was empty, so all four were rebuilt from the public tree `a447c018` with `~/mt_build_20261108.sh` (toolchains already present: rustup nightly-2026-09-04 + musl target, cargo-zigbuild 0.23.4, Zig 0.15.2 via `~/.venvs/dwarf-moog-fix`, GHC 9.6.7 + cabal 3.16.0.0 via ghcup, warm `~/.cabal/store`).
+
+| Target | Patch set | Build dir | Wall | Executable vs September |
+|---|---|---|---|---|
+| Amaru `aedfe797` (10.11.20260918) ns-v3 | `47787f15…` | `~/dwarf-measurement-builds/amaru-aedfe797-ns-v3-20261108` | 7 min | identical (`45c96358…`) |
+| Amaru `b159172f` (10.11.20260912) ns-v2 | `4c22d7b0…` | `…/amaru-b159172f-ns-v2-20261108` | 6 min | differs (`05233bac…` → `5d0d95b9…`) |
+| Amaru `d3a6dafc` (v10.11.20260912-30-gd3a6dafc) ns-v2 | `4c22d7b0…` | `…/amaru-d3a6dafc-ns-v2-20261108` | 6 min | no local September build to compare |
+| cardano-node `fef83fed` (11.1.2) ns-v2 | `1c52fa42…` | `…/cardano-fef83fed-ns-v2-20261108` | 15 min | identical (`3fb83f12…`) |
+
+All four records are in `~/.local/share/dwarf/state/measurement-targets/`; images `dwarf/amaru-measurement:*` and `dwarf/cardano-measurement:11.1.2-fef83fed-1c52fa42` are local. Total 19 minutes, not the 1–2 hours estimated.
+
+- **Second dry run:** 114/122 resolve. The remaining 8 fail a different gate: they carry a **frozen** `runtime_verify_exact_target` pin (`identity_binding` frozen) to the September image id (and, for `b159172f`/`d3a6dafc`, executable digest), and `run_plan._scenario_target_bindings` refuses a plan whose qualified target differs ("Select a matching historical target or a resolved-plan scenario"). The September images no longer exist anywhere, so no historical target can match.
+- **Swap.** Six of the eight have `-portable-20260918` siblings with `identity_binding: resolved-plan` that use the same primitives: block-application, cbor-decoding, invalid-mini-protocol, simple-transfer (profile-z) and plutus-vm (profile-za). All five resolve. They replace the 8 frozen runs; profiles zb, u and x drop out, profile-z joins. The campaign is now **119 runs on 13 profile substrates**.
+- **Declared gap (8 primitives):** `runtime_opcert_header_cases`, `runtime_opcert_header_soak`, `opcert_case_verdicts_match_expected`, `opcert_verdicts_agree`, `opcert_soak_invariant_holds`, `opcert_soak_reasons_agree`, `opcert_soak_verdicts_agree` (every opcert scenario in the catalog is frozen to the September digests, none has a portable sibling) and `minimum_adopted_block_range_observed` (only in the frozen `client-example-block-application-{amaru,cardano}`). Closing it needs a catalog decision: re-freeze those scenarios to the 2026-11-08 digests (for `aedfe797` and `fef83fed` the executable is byte-identical, only the image id moved) or add portable siblings. Not done without the user.
 
 ## Execution
 
@@ -42,7 +60,7 @@
 
 ### `0-f53-affected` (14)
 
-- `client-example-txsubmission-window-amaru-portable-20260918` — **blocked: needs patched target build**
+- `client-example-txsubmission-window-amaru-portable-20260918` — resolves since the `aedfe797` patched target build
 - `phase3-runtime-generated-haskell3-node1-invalid-cbor`
 - `phase3-runtime-generated-haskell3-node1-malformed-blockfetch`
 - `phase3-runtime-generated-haskell3-node1-malformed-handshake`
@@ -161,12 +179,19 @@
 - `phase3-runtime-profile-a-restart-postrecovery-blockfetch-primitive`
 - `phase3-runtime-profile-a-syscall-trace-primitive`
 
-### `5-profile-profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3` (4)
+### `5-profile-profile-zb-mixed-1112-amaru-20260918-nanoseconds-v3` (0 — dropped)
 
-- `client-example-invalid-mini-protocol-amaru-20260918-mixed-1112` — **blocked: needs patched target build**
-- `opcert-soak-counter-edge-mixed-1112-amaru-20260918` — **blocked: needs patched target build**
-- `opcert-header-validation-cases-mixed-1112-amaru-20260918` — **blocked: needs patched target build**
-- `client-example-simple-transfer-amaru-20260918-mixed-1112` — **blocked: needs patched target build**
+- `client-example-invalid-mini-protocol-amaru-20260918-mixed-1112` — frozen to September image id; replaced by the portable sibling in profile-z
+- `opcert-soak-counter-edge-mixed-1112-amaru-20260918` — frozen; no portable sibling → declared gap
+- `opcert-header-validation-cases-mixed-1112-amaru-20260918` — frozen; no portable sibling → declared gap
+- `client-example-simple-transfer-amaru-20260918-mixed-1112` — frozen; replaced by the portable sibling in profile-z
+
+### `5-profile-profile-z-amaru-20260918-nanoseconds-v3` (4 — added)
+
+- `client-example-block-application-amaru-portable-20260918`
+- `client-example-cbor-decoding-amaru-portable-20260918`
+- `client-example-invalid-mini-protocol-amaru-portable-20260918`
+- `client-example-simple-transfer-amaru-portable-20260918`
 
 ### `5-profile-profile-i-generated-haskell3` (4)
 
@@ -175,10 +200,10 @@
 - `phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo`
 - `phase3-runtime-generated-haskell3-gc-capture-primitive`
 
-### `5-profile-profile-u-amaru-measurement-nanoseconds-v2` (2)
+### `5-profile-profile-u-amaru-measurement-nanoseconds-v2` (0 — dropped)
 
-- `client-example-block-application-amaru-canonical-v2` — **blocked: needs patched target build**
-- `client-example-block-application-amaru` — **blocked: needs patched target build**
+- `client-example-block-application-amaru-canonical-v2` — frozen to September image + executable; replaced by the portable sibling in profile-z
+- `client-example-block-application-amaru` — frozen; replaced by the portable sibling (its `minimum_adopted_block_range_observed` → declared gap)
 
 ### `5-profile-profile-g-haskell-preview2-proof` (2)
 
@@ -191,19 +216,20 @@
 
 ### `5-profile-profile-za-amaru-20260918-plutus-v2` (1)
 
-- `client-example-plutus-vm-amaru-onchain-v2-20260918` — **blocked: needs patched target build**
+- `client-example-plutus-vm-amaru-onchain-v2-20260918` — frozen to September image id; replaced by
+- `client-example-plutus-vm-amaru-portable-20260918`
 
 ### `5-profile-none` (1)
 
 - `consensus-chainhold-upstream-differential`
 
-### `5-profile-profile-x-amaru-cbor-fix-regression-nanoseconds-v2` (1)
+### `5-profile-profile-x-amaru-cbor-fix-regression-nanoseconds-v2` (0 — dropped)
 
-- `client-example-cbor-decoding-amaru-d3a6dafc-regression` — **blocked: needs patched target build**
+- `client-example-cbor-decoding-amaru-d3a6dafc-regression` — frozen to September image + executable; replaced by the portable cbor sibling in profile-z
 
 ### `5-profile-profile-v-cardano-measurement-nanoseconds-v2` (1)
 
-- `cardano-n2n-handshake-version-table-forward-compat-1112` — **blocked: needs patched target build**
+- `cardano-n2n-handshake-version-table-forward-compat-1112` — resolves since the `fef83fed` patched target build
 
 ### `5-profile-profile-r-amaru-measurement-stock-control` (1)
 
