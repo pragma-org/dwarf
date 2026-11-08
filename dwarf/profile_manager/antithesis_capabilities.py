@@ -97,6 +97,11 @@ def classify(scenario):
             reason = 'no-faultable-sut'
     if reason is None and not runnable_load:
         reason = 'no-runnable-load'
+    assertions = [row for row in rows if row['phase'].endswith('assertions')]
+    if reason is None and assertions and all(row['status'] in _SKIPPED for row in assertions):
+        # Every verdict the scenario could produce is skipped: a run would
+        # evaluate nothing, so there is nothing to submit (vacuous coverage).
+        reason = 'no-evaluable-assertion'
     if reason:
         level = 'none'
     elif any(row['status'] == 'unsupported' for row in rows):

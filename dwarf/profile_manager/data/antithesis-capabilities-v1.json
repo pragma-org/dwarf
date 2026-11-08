@@ -195,6 +195,11 @@
       "status": "runs",
       "note": "",
       "evidence_producer": "runtime_peer_session_health"
+    },
+    "txsubmission_window_enforced": {
+      "status": "runs",
+      "note": "",
+      "evidence_producer": "runtime_txsubmission_window_pressure"
     }
   },
   "evidence_producer": "Optional per assertion: the probe primitive that writes the proof this assertion reads. When that producer is skipped in a scenario (unsupported or delegated-fault), the assertion is classified unsupported with a gap naming the producer instead of failing for a proof the package can never write."

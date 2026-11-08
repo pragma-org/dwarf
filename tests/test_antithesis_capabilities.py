@@ -60,7 +60,8 @@ def test_unknown_primitive_defaults_to_unsupported_and_fault_is_delegated():
     assert statuses['fault_node_freeze'] == 'delegated-fault'
     assert statuses['unknown_primitive_x'] == 'unsupported'
     assert statuses['load_shell_command'] == 'runs-with-note'
-    assert result['level'] == 'partial'
+    # Its only assertion is unsupported, so a run could evaluate nothing: refused, not "partial".
+    assert result['level'] == 'none' and result['reason'] == 'no-evaluable-assertion'
     assert {gap['code'] for gap in result['gaps']} == {'fault-delegated-to-platform', 'primitive-unsupported-on-antithesis'}
     assert skip_policy(result) == {'fault_node_freeze': 'delegated-fault', 'unknown_primitive_x': 'unsupported',
                                    'load_shell_command': 'runs-with-note'}
@@ -160,3 +161,26 @@ def test_assertion_with_a_running_producer_keeps_its_own_status():
     # No producer in this scenario at all: the matrix entry's own status stands
     # (a genuinely missing proof is a scenario defect, not a package gap).
     assert rows['target_progress_continues']['status'] == 'runs'
+
+
+def test_window_assertion_runs_and_follows_its_probe():
+    """AT-2b: txsubmission_window_enforced only reads the probe's result file;
+    unlisted it defaulted to unsupported and was skipped, which let a run whose
+    probe failed end with every assertion skipped."""
+    matrix = load_matrix()['primitives']
+    assert matrix['txsubmission_window_enforced']['status'] == 'runs'
+    assert matrix['txsubmission_window_enforced']['evidence_producer'] == 'runtime_txsubmission_window_pressure'
+    result = classify(catalog('client-example-txsubmission-window-amaru-portable-20260918'))
+    rows = {row['primitive']: row for row in result['primitives']}
+    assert rows['txsubmission_window_enforced']['status'] == 'runs'
+    assert result['level'] == 'partial'
+
+
+def test_scenario_whose_assertions_are_all_skipped_is_refused_as_unverifiable():
+    body = json.loads(FREEZE_YAML)
+    body['faults'] = []
+    body['probes'] = [{'primitive': 'runtime_target_health_and_progress'}]
+    body['assertions'] = [{'primitive': 'target_progress_continues'}, {'primitive': 'no_target_fatal_signal'}]
+    result = classify(scenario_from_body(json.dumps(body).encode()))
+    assert result['level'] == 'none' and result['reason'] == 'no-evaluable-assertion'
+    assert all(row['status'] == 'unsupported' for row in result['primitives'] if row['phase'] == 'assertions')

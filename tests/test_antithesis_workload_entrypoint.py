@@ -365,3 +365,24 @@ def test_wait_ready_stops_on_an_amaru_blocking_signal(tmp_path):
             workload.wait_ready({'nodes': nodes}, timeout=60, now=lambda: 0.0, sleep=lambda s: None)
     finally:
         stop.set(); server.close()
+
+
+def test_finish_never_reports_pass_when_every_assertion_was_skipped(tmp_path, monkeypatch):
+    """A run with no evaluated assertion proves nothing; the package reports it
+    as a precondition failure, not a pass (vacuous coverage rule)."""
+    run_dir = tmp_path / 'run'; run_dir.mkdir()
+    (run_dir / 'assertions.json').write_text(json.dumps([
+        {'primitive': 'a', 'result': 'skipped', 'note': 'unsupported'},
+        {'primitive': 'b', 'result': 'skipped', 'note': 'unsupported'}]))
+    events = []
+    monkeypatch.setattr(workload.sdk, 'emit_assert', lambda kind, name, ok, details=None, environ=None: events.append((kind, name, ok, details)))
+    code = workload.finish(run_dir, 'pass', status_dir=tmp_path / 'status', environ={})
+    assert code == workload.EXIT_CODES['precondition_failed']
+    completed = [e for e in events if e[1] == 'dwarf_scenario_completed'][0]
+    assert completed[2] is False
+    assert completed[3]['exit_status'] == 'precondition_failed' and 'skipped' in completed[3]['error']
+    assert (tmp_path / 'status' / 'exit').read_text().strip() == str(workload.EXIT_CODES['precondition_failed'])
+    # A run with one evaluated assertion keeps its own status.
+    (run_dir / 'assertions.json').write_text(json.dumps([{'primitive': 'a', 'result': 'pass'}, {'primitive': 'b', 'result': 'skipped', 'note': 'x'}]))
+    events.clear()
+    assert workload.finish(run_dir, 'pass', status_dir=tmp_path / 'status2', environ={}) == 0

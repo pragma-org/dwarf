@@ -206,6 +206,10 @@ def finish(run_dir, exit_status, *, status_dir=DEFAULT_STATUS, environ=None, err
             rows = json.loads((run_dir / 'assertions.json').read_text(encoding='utf-8'))
         except (OSError, ValueError):
             rows = []
+    if rows and exit_status == 'pass' and all(row.get('result') == 'skipped' for row in rows):
+        # Nothing was evaluated: a pass here would be vacuous coverage.
+        exit_status = 'precondition_failed'
+        error = error or 'every assertion was skipped by the capability policy; the run evaluated nothing'
     for row in rows:
         primitive = row.get('primitive') or 'unknown'
         result = row.get('result')
