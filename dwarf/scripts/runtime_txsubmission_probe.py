@@ -17,7 +17,11 @@ from runtime_telemetry import emit_target_event  # noqa: E402
 from runtime_txsubmission_accounting import TxSubmissionDecodeError, decode_txsubmission_payload  # noqa: E402
 
 
-HANDSHAKE_PROPOSE_HEX = "8200a10a82182af4"
+# MsgProposeVersions {13, 14, 15: [magic 42, diffusionMode=false, peerSharing=0, query=false]}:
+# the version table cardano-node 10.x/11.x and Amaru accept (F53). The old
+# version-10 proposal was refused with VersionMismatch by every current node.
+HANDSHAKE_PROPOSE_HEX = "8200a30d84182af400f40e84182af400f40f84182af400f4"
+PROPOSED_VERSIONS = (13, 14, 15)
 TXSUBMISSION_INIT_HEX = "8106"
 # Provider mode: offer one transaction so the node's own mempool evaluates it (no malformation).
 SERVE_TRANSACTION_MODE = "serve_transaction"
@@ -46,7 +50,8 @@ MODE_CASES = {
 def _encode_mux_sdu(payload: bytes, *, mini_protocol_num: int, initiator: bool = True, timestamp: int = 0) -> bytes:
     import struct
 
-    header_word = ((1 if initiator else 0) << 31) | ((mini_protocol_num & 0x7FFF) << 16) | (len(payload) & 0xFFFF)
+    # Mux mode bit: 0 marks a frame sent by the initiator, 1 one sent by the responder.
+    header_word = ((0 if initiator else 1) << 31) | ((mini_protocol_num & 0x7FFF) << 16) | (len(payload) & 0xFFFF)
     return struct.pack(">II", timestamp & 0xFFFFFFFF, header_word) + payload
 
 
@@ -100,7 +105,32 @@ def _encode_cbor_uint(value: int) -> bytes:
 
 
 def _handshake_propose_payload(network_magic: int) -> bytes:
-    return b"\x82\x00\xa1\x0a\x82" + _encode_cbor_uint(network_magic) + b"\xf4"
+    """MsgProposeVersions with the current node-to-node versions and their
+    four-field version data [magic, diffusionMode=false, peerSharing=0, query=false]."""
+    data = b"\x84" + _encode_cbor_uint(network_magic) + b"\xf4\x00\xf4"
+    table = b"".join(_encode_cbor_uint(version) + data for version in PROPOSED_VERSIONS)
+    return b"\x82\x00" + bytes([0xa0 + len(PROPOSED_VERSIONS)]) + table
+
+
+def _refusal_detail(payload: bytes) -> str:
+    """Human detail for MsgRefuse: VersionMismatch lists the versions the node offers."""
+    try:
+        if payload[:4] == b"\x82\x02\x82\x00" and payload[4] & 0xE0 == 0x80:
+            count = payload[4] & 0x1F
+            versions = []
+            offset = 5
+            for _ in range(count):
+                value = payload[offset]
+                if value < 24:
+                    versions.append(value); offset += 1
+                elif value == 24:
+                    versions.append(payload[offset + 1]); offset += 2
+                else:
+                    raise ValueError
+            return " (version mismatch; node supports " + ", ".join(str(v) for v in versions) + ")"
+    except (IndexError, ValueError):
+        pass
+    return ""
 
 
 def _encode_cbor_array(length: int) -> bytes:
@@ -288,7 +318,7 @@ def build_result_body(
         return {
             "fatal_error_contained": txsubmission_response_kind in {"reset", "eof", "timeout"} and node_stayed_up,
             "node_stayed_up": node_stayed_up,
-            "protocol_session_survived": handshake_response_kind == "data" and node_stayed_up,
+            "protocol_session_survived": handshake_response_kind == "accepted" and node_stayed_up,
         }
     raise ValueError(f"unsupported mode: {mode}")
 
@@ -356,13 +386,19 @@ def run_probe(
         sock.sendall(handshake_frame)
         try:
             handshake_response = _recv_mux_payload(sock)
-            handshake_response_kind = "data" if handshake_response else "eof"
+            handshake_response_kind = _classify_handshake_reply(handshake_response)
         except socket.timeout:
             handshake_response_kind = "timeout"
+        except EOFError:
+            # A clean close (FIN) mid-frame is the node ending the session, not a crash of ours.
+            handshake_response_kind = "eof"
         except ConnectionResetError:
             handshake_response_kind = "reset"
-        if handshake_response_kind != "data":
-            raise RuntimeError(f"valid handshake proposal did not produce a data response; got {handshake_response_kind}")
+        if handshake_response_kind != "accepted":
+            # A refusal is not a session: the mini-protocol frames that follow
+            # would be judged by a node that already closed the connection.
+            raise RuntimeError("valid handshake proposal was not accepted; got " + handshake_response_kind
+                               + _refusal_detail(handshake_response))
         if mode == "txsubmission_window_pressure":
             sock.sendall(txsubmission_init_frame)
             transcript.append({"direction": "send", "payload_hex": txsubmission_init_payload.hex()})
@@ -371,6 +407,8 @@ def run_probe(
                 valid_request_response_kind = "data" if valid_request_response else "eof"
             except socket.timeout:
                 valid_request_response_kind = "timeout"
+            except EOFError:
+                valid_request_response_kind = "eof"
             except ConnectionResetError:
                 valid_request_response_kind = "reset"
             if valid_request_response_kind == "data":
@@ -439,6 +477,9 @@ def run_probe(
             txsubmission_response_kind = "data" if txsubmission_response else "eof"
         except socket.timeout:
             txsubmission_response_kind = "timeout"
+        except EOFError:
+            # A clean close (FIN) mid-frame is the node ending the session, not a crash of ours.
+            txsubmission_response_kind = "eof"
         except ConnectionResetError:
             txsubmission_response_kind = "reset"
 
@@ -531,10 +572,9 @@ def _serve_transaction(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # We are the connection's initiator: every frame we send carries mux bit 31 clear
-    # (the calibration helper's accepted handshake frame is 0x0000000a); the helper's
-    # ``initiator`` flag names the responder bit, so it is False here.
+    # (the calibration helper's accepted handshake frame is 0x0000000a).
     def send(payload: bytes, *, mini_protocol_num: int = 4) -> None:
-        sock.sendall(_encode_mux_sdu(payload, mini_protocol_num=mini_protocol_num, initiator=False))
+        sock.sendall(_encode_mux_sdu(payload, mini_protocol_num=mini_protocol_num))
         transcript.append({"direction": "send", "payload_hex": payload.hex()})
 
     with socket.create_connection((target_host, port), timeout=2.0) as sock:
@@ -545,6 +585,9 @@ def _serve_transaction(
             handshake_response_kind = _classify_handshake_reply(handshake_response)
         except socket.timeout:
             handshake_response_kind = "timeout"
+        except EOFError:
+            # A clean close (FIN) mid-frame is the node ending the session, not a crash of ours.
+            handshake_response_kind = "eof"
         except ConnectionResetError:
             handshake_response_kind = "reset"
         if handshake_response_kind != "accepted":

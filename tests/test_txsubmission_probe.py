@@ -153,3 +153,104 @@ def test_serve_transaction_reports_a_node_that_closes_after_the_body(tmp_path):
     assert node.error is None
     assert report["result"]["served"] is True and report["result"]["requested_body"] is True
     assert report["result"]["post_serve_response_kind"] == "eof"
+
+
+class _RefusingNode(threading.Thread):
+    """A node that answers any proposal with MsgRefuse VersionMismatch [14, 15], as
+    cardano-node 11.1.2 does to a version-10 proposal, then closes."""
+
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.server = socket.socket()
+        self.server.bind(("127.0.0.1", 0))
+        self.server.listen(1)
+        self.port = self.server.getsockname()[1]
+        self.received: list[bytes] = []
+        self.header_words: list[int] = []
+
+    def run(self):
+        import struct
+        try:
+            conn, _ = self.server.accept()
+            conn.settimeout(5)
+            header = probe._recv_exact(conn, 8)
+            _ts, word = struct.unpack(">II", header)
+            self.header_words.append(word)
+            self.received.append(probe._recv_exact(conn, word & 0xFFFF))
+            conn.sendall(probe._encode_mux_sdu(bytes.fromhex("82028200820e0f"), mini_protocol_num=0, initiator=False))
+            conn.close()
+        finally:
+            self.server.close()
+
+
+class _WindowNode(threading.Thread):
+    """Accepts version 14, asks for three txids, then drops the peer that offers four."""
+
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.server = socket.socket()
+        self.server.bind(("127.0.0.1", 0))
+        self.server.listen(1)
+        self.port = self.server.getsockname()[1]
+        self.received: list[bytes] = []
+        self.header_words: list[int] = []
+
+    def run(self):
+        import struct
+        try:
+            conn, _ = self.server.accept()
+            conn.settimeout(5)
+            for _ in range(3):
+                header = probe._recv_exact(conn, 8)
+                _ts, word = struct.unpack(">II", header)
+                self.header_words.append(word)
+                self.received.append(probe._recv_exact(conn, word & 0xFFFF))
+                if len(self.received) == 1:
+                    conn.sendall(probe._encode_mux_sdu(bytes.fromhex("83010e84182af400f4"), mini_protocol_num=0, initiator=False))
+                elif len(self.received) == 2:
+                    conn.sendall(probe._encode_mux_sdu(bytes([0x84, 0x00, 0xF5, 0x00, 0x03]), mini_protocol_num=4, initiator=False))
+            conn.close()
+        finally:
+            self.server.close()
+
+
+def test_handshake_proposal_offers_versions_13_to_15_with_four_field_data():
+    """F53: cardano-node 10.x/11.x and Amaru answer versions 13-15 with the
+    four-field version data; the old version-10 proposal was refused
+    (VersionMismatch) by every current node, and the probe carried on."""
+    assert probe._handshake_propose_payload(42).hex() == "8200a30d84182af400f40e84182af400f40f84182af400f4"
+    assert probe.HANDSHAKE_PROPOSE_HEX == probe._handshake_propose_payload(42).hex()
+    assert probe._handshake_propose_payload(2).hex() == "8200a30d8402f400f40e8402f400f40f8402f400f4"
+
+
+def test_mux_sdu_direction_bit_names_the_sender():
+    initiator = probe._encode_mux_sdu(b"\x00", mini_protocol_num=0)
+    responder = probe._encode_mux_sdu(b"\x00", mini_protocol_num=0, initiator=False)
+    assert int.from_bytes(initiator[4:8], "big") >> 31 == 0
+    assert int.from_bytes(responder[4:8], "big") >> 31 == 1
+
+
+@pytest.mark.parametrize("mode", ["txsubmission_window_pressure", "txsubmission_batch_pressure",
+                                  "txsubmission_unexpected_body", "mempool_failure_probe"])
+def test_probe_modes_stop_at_a_refused_handshake(tmp_path, mode):
+    node = _RefusingNode()
+    node.start()
+    with pytest.raises(RuntimeError, match=r"not accepted; got refused .*14, 15"):
+        probe.run_probe(runtime_metadata_path=None, target_node="node1", output_dir=tmp_path / mode, mode=mode,
+                        target_host="127.0.0.1", target_port=node.port, response_timeout_seconds=2.0)
+    node.join(5)
+    assert node.received[0] == probe._handshake_propose_payload(42)
+    assert node.header_words and all(word >> 31 == 0 for word in node.header_words)
+
+
+def test_window_probe_reports_an_accepted_handshake_and_the_rejected_overflow(tmp_path):
+    node = _WindowNode()
+    node.start()
+    report = probe.run_probe(runtime_metadata_path=None, target_node="node1", output_dir=tmp_path / "w",
+                             mode="txsubmission_window_pressure", target_host="127.0.0.1", target_port=node.port,
+                             response_timeout_seconds=2.0)
+    node.join(5)
+    assert report["handshake_response_kind"] == "accepted"
+    assert report["result"]["negotiated_window"] == 3 and report["result"]["overflow_attempt_txids"] == 4
+    assert report["result"]["overflow_rejected"] is True
+    assert all(word >> 31 == 0 for word in node.header_words)

@@ -23,7 +23,7 @@ class _Handle:
 
 def test_handshake_proposal_uses_the_selected_network_magic():
     assert runtime_txsubmission_probe._handshake_propose_payload(2).hex() == (
-        "8200a10a8202f4"
+        "8200a30d8402f400f40e8402f400f40f8402f400f4"
     )
     assert runtime_txsubmission_probe._handshake_propose_payload(42).hex() == (
         runtime_txsubmission_probe.HANDSHAKE_PROPOSE_HEX
