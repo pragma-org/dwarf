@@ -1436,3 +1436,32 @@ def test_operator_instrumented_cardano_service_writes_measurement_traces_without
         "DWARF_CARDANO_MEASUREMENT_TRACE": "/logs/node1/cardano-measurement.ndjson",
         "DWARF_CARDANO_PLUTUS_TRACE": "/logs/node1/cardano-plutus.ndjson",
     }
+
+
+def test_amaru_progress_parser_reads_json_traces_from_the_control_rig():
+    """AT-2b: the Antithesis package runs Amaru with AMARU_WITH_JSON_TRACES=true,
+    so the same intersect/advance/converge facts arrive as JSON trace lines
+    (fields.message + structured fields) instead of key=value text."""
+    import json as _json
+    lines = [
+        '[amaru1 bootstrap-producer] + era-readiness predicate satisfied - tip_slot=1211 tip_epoch=3',
+        _json.dumps({"timestamp": "2026-11-08T01:40:00Z", "level": "INFO", "fields": {
+            "message": "manager.peer.handshake_completed", "peer": "10.192.6.3:3001", "conn_id": 0}}),
+        _json.dumps({"timestamp": "2026-11-08T01:40:01Z", "level": "INFO", "fields": {
+            "message": "chainsync.intersect_found", "peer": "10.192.6.3:3001",
+            "current": [1194, "4d55", 243], "highest": [1278, "5db7", 267]}}),
+        _json.dumps({"timestamp": "2026-11-08T01:40:02Z", "level": "DEBUG", "fields": {
+            "message": "tip.adopt", "slot": 1202, "block_height": 244, "suppressed": 0}}),
+    ]
+    parsed = compose._parse_amaru_runtime_progress("\n".join(lines) + "\n")
+    assert parsed["bootstrap_slot"] == 1194 and parsed["highest_peer_slot"] == 1278
+    assert parsed["latest_adopted_slot"] == 1202
+    assert parsed["advanced"] is True and parsed["converged"] is False and parsed["ready"] is False
+    lines.append(_json.dumps({"timestamp": "2026-11-08T01:40:30Z", "level": "DEBUG", "fields": {
+        "message": "tip.adopt", "slot": 1280, "block_height": 268, "suppressed": 0}}))
+    parsed = compose._parse_amaru_runtime_progress("\n".join(lines) + "\n")
+    assert parsed["converged"] is True and parsed["ready"] is True and parsed["blocking_signals"] == []
+    lines.append(_json.dumps({"timestamp": "2026-11-08T01:40:31Z", "level": "ERROR", "fields": {
+        "message": "thread 'main' panicked at src/consensus.rs:12"}}))
+    parsed = compose._parse_amaru_runtime_progress("\n".join(lines) + "\n")
+    assert parsed["blocking_signals"] == ["panic"] and parsed["ready"] is False

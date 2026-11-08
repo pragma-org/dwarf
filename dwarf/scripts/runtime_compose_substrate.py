@@ -412,6 +412,28 @@ def _parse_amaru_runtime_progress(text: str) -> dict:
         int(value)
         for value in re.findall(r"\btip\.adopt\b[^\n]*?\bslot=([0-9]+)", text or "")
     )
+    # JSON traces (AMARU_WITH_JSON_TRACES=true, as the Antithesis control rig
+    # runs Amaru) carry the same facts as structured fields: intersections as
+    # current/highest points and adoptions as a slot field.
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            fields = json.loads(line).get("fields") or {}
+        except (ValueError, AttributeError):
+            continue
+        message = str(fields.get("message") or "")
+        if message == "chainsync.intersect_found":
+            current, highest = fields.get("current"), fields.get("highest")
+            if isinstance(current, list) and current and isinstance(highest, list) and highest:
+                try:
+                    current_intersections.append((int(current[0]), int(highest[0])))
+                    highest_slots.append(int(highest[0]))
+                except (TypeError, ValueError):
+                    pass
+        elif message == "tip.adopt" and isinstance(fields.get("slot"), int):
+            adopted_slots.append(int(fields["slot"]))
     blocking_patterns = {
         "invalid-vrf-proof": r"Invalid VRF proof|VRFKeyBadProof",
         "panic": r"\bpanicked at\b",
